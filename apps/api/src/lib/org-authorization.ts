@@ -1,3 +1,5 @@
+import type { FastifyBaseLogger } from 'fastify'
+import { OperationalEvent } from '@project-vault/shared'
 import type {
   OrgAuthorizationCheckContext,
   OrgAuthorizationOutcome,
@@ -5,11 +7,108 @@ import type {
 import { resolveActiveOrgRole } from '../plugins/authenticate.js'
 import type { OrgRole } from '../plugins/require-org-role.js'
 import { roleRank } from './secure-route.js'
+import { operationalLog } from './logger.js'
 
 const RECOGNIZED_MINIMUM_ROLES = new Set<string>(['owner', 'admin', 'member', 'viewer'])
 
 function isRecognizedOrgRole(value: string): value is OrgRole {
   return RECOGNIZED_MINIMUM_ROLES.has(value)
+}
+
+// ---------------------------------------------------------------------------------------------
+// AC8 (Task 5) — per-extension rate-limiting, mirroring capability-gate.ts's
+// `tryAcquireSlot`/`accountingKeyFor`-style in-flight accounting. This is a DISTINCT accounting
+// map and budget from capability-gate.ts's own `inFlightCounts` — checkMembership must never
+// borrow or share capability-gate's budget, per the story's explicit instruction. Bounded state:
+// an entry exists only while its key has a non-zero in-flight count and is deleted at zero.
+// ---------------------------------------------------------------------------------------------
+
+/** AC8: per-extension in-flight cap for `checkOrgAuthorization()`. PV-internal; not part of the
+ * published `extension-api` contract. */
+export const ORG_AUTHORIZATION_MAX_IN_FLIGHT_PER_EXTENSION = 20
+
+const orgAuthorizationInFlightCounts = new Map<string, number>()
+
+function orgAuthorizationAccountingKeyFor(extensionName: string): string {
+  return `org-authorization:${extensionName}`
+}
+
+function tryAcquireOrgAuthorizationSlot(key: string, max: number): boolean {
+  const current = orgAuthorizationInFlightCounts.get(key) ?? 0
+  if (current >= max) return false
+  orgAuthorizationInFlightCounts.set(key, current + 1)
+  return true
+}
+
+function releaseOrgAuthorizationSlot(key: string): void {
+  const current = orgAuthorizationInFlightCounts.get(key) ?? 0
+  if (current <= 1) orgAuthorizationInFlightCounts.delete(key)
+  else orgAuthorizationInFlightCounts.set(key, current - 1)
+}
+
+/** Test-only introspection — never called from production code. */
+export function __getOrgAuthorizationInFlightCountForTests(extensionName: string): number {
+  return orgAuthorizationInFlightCounts.get(orgAuthorizationAccountingKeyFor(extensionName)) ?? 0
+}
+
+/** Test-only reset — never called from production code. */
+export function __resetOrgAuthorizationRateLimitForTests(): void {
+  orgAuthorizationInFlightCounts.clear()
+}
+
+const RATE_LIMITED_REASON_CODE = 'rate-limited'
+
+type AuditLogger = Partial<Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>>
+
+/**
+ * AC8(b) — a new structured audit-log entry recorded on EVERY `checkOrgAuthorization()` call
+ * (granted, denied, or errored — including a rate-limited call), mirroring
+ * `capability-gate-audit.ts`'s pattern of a dedicated, allowlisted-fields recording function.
+ * Deliberately logs only `organizationId`/`viewerIdentityId`/`minimumRole`/`outcome`/
+ * `extensionName` — never `reasonCode` or any other internal error detail (AC3/AC4's existing
+ * non-leak discipline; a distinct `reasonCode` per denial branch would itself be a
+ * membership-existence oracle, the exact class of leak fixed elsewhere in this file).
+ *
+ * Never throws — a logging failure must never affect `checkOrgAuthorization()`'s own return
+ * value.
+ */
+function recordOrgAuthorizationCheckAudit(
+  logger: AuditLogger,
+  fields: {
+    extensionName: string
+    organizationId: string
+    viewerIdentityId: string
+    minimumRole: string
+    outcome: OrgAuthorizationOutcome['outcome']
+  }
+): void {
+  try {
+    operationalLog(
+      logger,
+      'info',
+      OperationalEvent.ORG_AUTHORIZATION_CHECK_RECORDED,
+      'orgAuthorization.checkMembership() call recorded',
+      fields
+    )
+  } catch {
+    // Never let an audit-logging failure surface to the caller.
+  }
+}
+
+/** AC8 — the host-only context threaded in by `loader.ts`'s `buildHostServices()`. Never part of
+ * the extension-facing `OrgAuthorizationCheckContext`/`checkMembership()` public signature. */
+export type CheckOrgAuthorizationHostContext = {
+  /** Identifies the loaded extension's own accounting bucket — never shared across extensions,
+   * and never the capability-gate's own budget. */
+  extensionName: string
+  logger?: AuditLogger
+  /** Test-only override of the per-extension in-flight cap, mirroring
+   * `checkCapability()`'s `maxInFlightPerSurface` seam. */
+  maxInFlight?: number
+}
+
+const DEFAULT_HOST_CONTEXT: CheckOrgAuthorizationHostContext = {
+  extensionName: 'unknown-extension',
 }
 
 // AC4: reasonCode on the 'error' outcome must never leak raw internal detail (e.g. driver/DB
@@ -29,7 +128,7 @@ const INTERNAL_ERROR_REASON_CODE = 'resolution-failed'
  * Never throws (AC4) and never caches/memoizes across calls (AC5) — every call re-runs Task 1's
  * resolution fresh.
  */
-export async function checkOrgAuthorization(
+async function resolveOrgAuthorizationOutcome(
   context: OrgAuthorizationCheckContext
 ): Promise<OrgAuthorizationOutcome> {
   // AC7: an out-of-enum minimumRole must be rejected before it ever reaches roleRank()'s
@@ -69,4 +168,56 @@ export async function checkOrgAuthorization(
   }
 
   return { outcome: 'authorized' }
+}
+
+/**
+ * Story 23.9 AC8 (Task 5) — wraps `resolveOrgAuthorizationOutcome()` with (a) per-extension
+ * rate-limiting via a distinct in-flight accounting budget from capability-gate.ts's own, and
+ * (b) a structured audit-log entry recorded on every call regardless of outcome. `hostContext` is
+ * threaded in by `loader.ts`'s `buildHostServices()` closure — it is never part of the
+ * extension-facing `checkMembership(context)` call signature extensions themselves invoke.
+ */
+export async function checkOrgAuthorization(
+  context: OrgAuthorizationCheckContext,
+  hostContext: CheckOrgAuthorizationHostContext = DEFAULT_HOST_CONTEXT
+): Promise<OrgAuthorizationOutcome> {
+  const logger = hostContext.logger ?? {}
+  const accountingKey = orgAuthorizationAccountingKeyFor(hostContext.extensionName)
+  const maxInFlight = hostContext.maxInFlight ?? ORG_AUTHORIZATION_MAX_IN_FLIGHT_PER_EXTENSION
+
+  if (!tryAcquireOrgAuthorizationSlot(accountingKey, maxInFlight)) {
+    operationalLog(
+      logger,
+      'warn',
+      OperationalEvent.ORG_AUTHORIZATION_RATE_LIMITED,
+      'checkMembership() call denied without invoking resolution — extension at its in-flight cap',
+      { extensionName: hostContext.extensionName }
+    )
+    const outcome: OrgAuthorizationOutcome = {
+      outcome: 'error',
+      reasonCode: RATE_LIMITED_REASON_CODE,
+    }
+    recordOrgAuthorizationCheckAudit(logger, {
+      extensionName: hostContext.extensionName,
+      organizationId: context.organizationId,
+      viewerIdentityId: context.viewerIdentityId,
+      minimumRole: context.minimumRole,
+      outcome: outcome.outcome,
+    })
+    return outcome
+  }
+
+  try {
+    const outcome = await resolveOrgAuthorizationOutcome(context)
+    recordOrgAuthorizationCheckAudit(logger, {
+      extensionName: hostContext.extensionName,
+      organizationId: context.organizationId,
+      viewerIdentityId: context.viewerIdentityId,
+      minimumRole: context.minimumRole,
+      outcome: outcome.outcome,
+    })
+    return outcome
+  } finally {
+    releaseOrgAuthorizationSlot(accountingKey)
+  }
 }

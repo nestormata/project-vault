@@ -5,14 +5,20 @@ const { resolveActiveOrgRole } = vi.hoisted(() => ({
 }))
 vi.mock('../plugins/authenticate.js', () => ({ resolveActiveOrgRole }))
 
-import { checkOrgAuthorization } from './org-authorization.js'
+import {
+  checkOrgAuthorization,
+  __getOrgAuthorizationInFlightCountForTests,
+  __resetOrgAuthorizationRateLimitForTests,
+} from './org-authorization.js'
 
 const ORG_ID = 'org-1'
 const VIEWER_ID = 'user-1'
 const NOT_A_MEMBER = { outcome: 'denied', reasonCode: 'not-a-member' } as const
+const AUDIT_EVENT_TYPE = 'org_authorization.check_recorded'
 
 beforeEach(() => {
   vi.clearAllMocks()
+  __resetOrgAuthorizationRateLimitForTests()
 })
 
 describe('checkOrgAuthorization — AC3: denied, never error, never throws', () => {
@@ -143,6 +149,246 @@ describe('checkOrgAuthorization — AC7: unrecognized minimumRole returns error,
         minimumRole: '' as any,
       })
     ).resolves.toEqual({ outcome: 'error', reasonCode: 'invalid-minimum-role' })
+  })
+})
+
+describe('checkOrgAuthorization — AC8: per-extension rate-limiting (Task 5)', () => {
+  it('a call within the configured in-flight cap is not rate-limited', async () => {
+    resolveActiveOrgRole.mockResolvedValue('owner')
+
+    const result = await checkOrgAuthorization(
+      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+      { extensionName: 'ext-a', maxInFlight: 1 }
+    )
+
+    expect(result).toEqual({ outcome: 'authorized' })
+  })
+
+  it('the slot is released after the call completes, so a second sequential call for the same extension is never blocked', async () => {
+    resolveActiveOrgRole.mockResolvedValue('owner')
+    const hostContext = { extensionName: 'ext-b', maxInFlight: 1 }
+
+    const first = await checkOrgAuthorization(
+      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+      hostContext
+    )
+    const second = await checkOrgAuthorization(
+      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+      hostContext
+    )
+
+    expect(first).toEqual({ outcome: 'authorized' })
+    expect(second).toEqual({ outcome: 'authorized' })
+    expect(__getOrgAuthorizationInFlightCountForTests('ext-b')).toBe(0)
+  })
+
+  it('a call over the in-flight cap (concurrent calls for the same extension) is denied with a rate-limit error, never invoking resolution', async () => {
+    // Never resolves during the test — keeps the slot held so the second, concurrent call finds
+    // the accounting key already at its cap of 1.
+    let releaseFirst: (() => void) | undefined
+    resolveActiveOrgRole.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseFirst = () => resolve('owner')
+        })
+    )
+    const hostContext = { extensionName: 'ext-c', maxInFlight: 1 }
+
+    const firstPromise = checkOrgAuthorization(
+      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+      hostContext
+    )
+    // Let the first call actually acquire its slot before firing the second.
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const second = await checkOrgAuthorization(
+      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+      hostContext
+    )
+
+    expect(second).toEqual({ outcome: 'error', reasonCode: 'rate-limited' })
+    expect(resolveActiveOrgRole).toHaveBeenCalledTimes(1)
+
+    releaseFirst?.()
+    await expect(firstPromise).resolves.toEqual({ outcome: 'authorized' })
+  })
+
+  it('rate-limit accounting is per-extension — a saturated extension does not block a different extension', async () => {
+    let releaseFirst: (() => void) | undefined
+    resolveActiveOrgRole.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseFirst = () => resolve('owner')
+        })
+    )
+
+    const firstPromise = checkOrgAuthorization(
+      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+      { extensionName: 'ext-d', maxInFlight: 1 }
+    )
+    await Promise.resolve()
+    await Promise.resolve()
+
+    resolveActiveOrgRole.mockResolvedValueOnce('owner')
+    const otherExtensionResult = await checkOrgAuthorization(
+      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+      { extensionName: 'ext-e', maxInFlight: 1 }
+    )
+
+    expect(otherExtensionResult).toEqual({ outcome: 'authorized' })
+
+    releaseFirst?.()
+    await firstPromise
+  })
+
+  it("never sharing capability-gate.ts's own accounting map: a call resolves independently of any capability-gate in-flight state", async () => {
+    resolveActiveOrgRole.mockResolvedValue('owner')
+
+    const result = await checkOrgAuthorization(
+      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+      { extensionName: 'ext-f' }
+    )
+
+    expect(result).toEqual({ outcome: 'authorized' })
+  })
+})
+
+describe('checkOrgAuthorization — AC8: structured audit-log entry per call (Task 5)', () => {
+  function makeLoggerSpy() {
+    return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), fatal: vi.fn() }
+  }
+
+  it('an authorized outcome produces exactly one audit-log entry with no leaked reasonCode', async () => {
+    resolveActiveOrgRole.mockResolvedValue('owner')
+    const logger = makeLoggerSpy()
+
+    await checkOrgAuthorization(
+      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+      { extensionName: 'ext-audit-1', logger }
+    )
+
+    const auditCalls = logger.info.mock.calls.filter(
+      ([fields]) => fields.eventType === AUDIT_EVENT_TYPE
+    )
+    expect(auditCalls).toHaveLength(1)
+    const [fields] = auditCalls[0]
+    expect(fields).toMatchObject({
+      extensionName: 'ext-audit-1',
+      organizationId: ORG_ID,
+      viewerIdentityId: VIEWER_ID,
+      minimumRole: 'owner',
+      outcome: 'authorized',
+    })
+    expect(fields).not.toHaveProperty('reasonCode')
+  })
+
+  it('a denied outcome (not-a-member) produces exactly one audit-log entry with no leaked reasonCode', async () => {
+    resolveActiveOrgRole.mockResolvedValue(null)
+    const logger = makeLoggerSpy()
+
+    await checkOrgAuthorization(
+      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+      { extensionName: 'ext-audit-2', logger }
+    )
+
+    const auditCalls = logger.info.mock.calls.filter(
+      ([fields]) => fields.eventType === AUDIT_EVENT_TYPE
+    )
+    expect(auditCalls).toHaveLength(1)
+    const [fields] = auditCalls[0]
+    expect(fields.outcome).toBe('denied')
+    expect(fields).not.toHaveProperty('reasonCode')
+  })
+
+  it('an errored outcome (invalid minimumRole) produces exactly one audit-log entry with no leaked reasonCode', async () => {
+    const logger = makeLoggerSpy()
+
+    await checkOrgAuthorization(
+      {
+        organizationId: ORG_ID,
+        viewerIdentityId: VIEWER_ID,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately outside the compile-time union (AC7)
+        minimumRole: 'super-admin' as any,
+      },
+      { extensionName: 'ext-audit-3', logger }
+    )
+
+    const auditCalls = logger.info.mock.calls.filter(
+      ([fields]) => fields.eventType === AUDIT_EVENT_TYPE
+    )
+    expect(auditCalls).toHaveLength(1)
+    const [fields] = auditCalls[0]
+    expect(fields.outcome).toBe('error')
+    expect(fields).not.toHaveProperty('reasonCode')
+  })
+
+  it('a rate-limited call still produces exactly one audit-log entry, with outcome error and no leaked reasonCode', async () => {
+    let releaseFirst: (() => void) | undefined
+    resolveActiveOrgRole.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseFirst = () => resolve('owner')
+        })
+    )
+    const logger = makeLoggerSpy()
+    const hostContext = { extensionName: 'ext-audit-4', logger, maxInFlight: 1 }
+
+    const firstPromise = checkOrgAuthorization(
+      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+      hostContext
+    )
+    await Promise.resolve()
+    await Promise.resolve()
+
+    await checkOrgAuthorization(
+      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+      hostContext
+    )
+
+    // The first call's own audit entry has not been recorded yet — it is still pending inside
+    // resolveOrgAuthorizationOutcome() until releaseFirst() unblocks it below. Only the
+    // rate-limited second call's audit entry exists at this point.
+    const auditCallsBeforeRelease = logger.info.mock.calls.filter(
+      ([fields]) => fields.eventType === AUDIT_EVENT_TYPE
+    )
+    expect(auditCallsBeforeRelease).toHaveLength(1)
+    const [rateLimitedFields] = auditCallsBeforeRelease[0]
+    expect(rateLimitedFields.outcome).toBe('error')
+    expect(rateLimitedFields).not.toHaveProperty('reasonCode')
+
+    releaseFirst?.()
+    await firstPromise
+
+    // Now the first call's own audit entry has also landed — exactly one entry per call, ever.
+    const auditCallsAfterRelease = logger.info.mock.calls.filter(
+      ([fields]) => fields.eventType === AUDIT_EVENT_TYPE
+    )
+    expect(auditCallsAfterRelease).toHaveLength(2)
+  })
+
+  it('never logs the reasonCode field even when present internally on the resolved outcome', async () => {
+    resolveActiveOrgRole.mockResolvedValue('viewer')
+    const logger = makeLoggerSpy()
+
+    await checkOrgAuthorization(
+      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'admin' },
+      { extensionName: 'ext-audit-5', logger }
+    )
+
+    const [fields] = logger.info.mock.calls[0]
+    expect(fields.outcome).toBe('denied')
+    expect(Object.keys(fields).sort()).toEqual(
+      [
+        'eventType',
+        'extensionName',
+        'minimumRole',
+        'organizationId',
+        'outcome',
+        'traceId',
+        'viewerIdentityId',
+      ].sort()
+    )
   })
 })
 
