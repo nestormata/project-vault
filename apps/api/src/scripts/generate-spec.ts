@@ -11,6 +11,12 @@ const outPath = resolve(__dirname, '../../../../packages/shared/openapi.json')
 // reads their attached schemas. Any well-formed, non-superuser URL satisfies validation
 // without a reachable database — no password is required, so none is included (avoids
 // looking like a credential to secret-scanning tools).
+//
+// env.ts also requires the admin-pool connection var, which is deliberately NOT given a
+// fallback here: admin-pool-boundary.test.ts enforces that no file outside lib/db.ts and
+// config/env.ts (plus tests) references that env var by name, to keep the admin-pool
+// credential's usage auditable at those two sites only. Callers of this script (the
+// Makefile's ci-inner target, CI's job-level env) are expected to supply it externally.
 process.env.DATABASE_URL ??= 'postgresql://vault_app@localhost:5432/project_vault'
 
 // Story 9.10: the checked-in artifact must be byte-identical wherever it is regenerated, because

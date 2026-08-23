@@ -8,6 +8,7 @@ import { resolveActiveOrgRole } from '../plugins/authenticate.js'
 import type { OrgRole } from '../plugins/require-org-role.js'
 import { roleRank } from './secure-route.js'
 import { operationalLog } from './logger.js'
+import { getRequestContext } from './request-context.js'
 
 const RECOGNIZED_MINIMUM_ROLES = new Set<string>(['owner', 'admin', 'member', 'viewer'])
 
@@ -118,6 +119,13 @@ const DEFAULT_HOST_CONTEXT: CheckOrgAuthorizationHostContext = {
 // verbatim, contradicting this comment's own stated intent.
 const INTERNAL_ERROR_REASON_CODE = 'resolution-failed'
 
+// Story 23.11 AC4: no ambient per-request context bound (e.g. this is called from code that
+// isn't running inside a request lifecycle at all — see request-context.ts's Dev Notes on
+// machine-authenticated routes, which never populate request.authContext and therefore never
+// bind this context) fails closed with this fixed reasonCode. Never thrown, never falls back to
+// any other org id.
+const NO_REQUEST_CONTEXT_REASON_CODE = 'no-request-context'
+
 /**
  * Story 23.9 — `HostServices.orgAuthorization.checkMembership()`'s real implementation, bound to
  * the loading extension by `loader.ts`'s `buildHostServices()`. Reuses
@@ -127,6 +135,16 @@ const INTERNAL_ERROR_REASON_CODE = 'resolution-failed'
  *
  * Never throws (AC4) and never caches/memoizes across calls (AC5) — every call re-runs Task 1's
  * resolution fresh.
+ *
+ * Story 23.11 AC3/AC4: the org this check runs against is always the ambient per-request context
+ * (`request-context.ts`'s `getRequestContext()`) — `context` (the extension-facing call shape)
+ * no longer carries an `organizationId` field at all, so there is structurally no way for a
+ * caller to supply an arbitrary org. The ambient-context check lives HERE, inside
+ * `checkOrgAuthorization()`'s existing resolution path (not as an early return in
+ * `checkOrgAuthorization()` itself, before the audit-logging call), so a `no-request-context`
+ * outcome still flows through the same `recordOrgAuthorizationCheckAudit()` call every other
+ * outcome does (AC4 pre-mortem finding: a bypassed audit path here would let a request-lifecycle
+ * refactor silently break every `checkMembership` call for months with no operational signal).
  */
 async function resolveOrgAuthorizationOutcome(
   context: OrgAuthorizationCheckContext
@@ -137,9 +155,14 @@ async function resolveOrgAuthorizationOutcome(
     return { outcome: 'error', reasonCode: 'invalid-minimum-role' }
   }
 
+  const ambientContext = getRequestContext()
+  if (!ambientContext) {
+    return { outcome: 'error', reasonCode: NO_REQUEST_CONTEXT_REASON_CODE }
+  }
+
   let role: OrgRole | null
   try {
-    role = await resolveActiveOrgRole(context.viewerIdentityId, context.organizationId)
+    role = await resolveActiveOrgRole(context.viewerIdentityId, ambientContext.orgId)
   } catch {
     // AC4: a genuine internal failure (e.g. a DB error during resolution) maps to 'error', never
     // an escaping exception. reasonCode is a fixed, generic diagnostic string — never the raw
@@ -168,6 +191,17 @@ async function resolveOrgAuthorizationOutcome(
   }
 
   return { outcome: 'authorized' }
+}
+
+// Story 23.11: the audit log's `organizationId` field is sourced from the ambient context, not
+// the (now nonexistent) `context.organizationId`. When no ambient context is bound at all (the
+// AC4 fail-closed path), this fixed placeholder is logged instead of a real org id — there is no
+// caller-supplied value to fall back to, and falling back to one would defeat the entire point of
+// this story.
+const UNBOUND_CONTEXT_AUDIT_ORG_ID = 'unbound-context'
+
+function auditOrganizationId(): string {
+  return getRequestContext()?.orgId ?? UNBOUND_CONTEXT_AUDIT_ORG_ID
 }
 
 /**
@@ -199,7 +233,7 @@ export async function checkOrgAuthorization(
     }
     recordOrgAuthorizationCheckAudit(logger, {
       extensionName: hostContext.extensionName,
-      organizationId: context.organizationId,
+      organizationId: auditOrganizationId(),
       viewerIdentityId: context.viewerIdentityId,
       minimumRole: context.minimumRole,
       outcome: outcome.outcome,
@@ -211,7 +245,7 @@ export async function checkOrgAuthorization(
     const outcome = await resolveOrgAuthorizationOutcome(context)
     recordOrgAuthorizationCheckAudit(logger, {
       extensionName: hostContext.extensionName,
-      organizationId: context.organizationId,
+      organizationId: auditOrganizationId(),
       viewerIdentityId: context.viewerIdentityId,
       minimumRole: context.minimumRole,
       outcome: outcome.outcome,

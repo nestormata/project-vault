@@ -10,11 +10,22 @@ import {
   __getOrgAuthorizationInFlightCountForTests,
   __resetOrgAuthorizationRateLimitForTests,
 } from './org-authorization.js'
+import { runWithRequestContext } from './request-context.js'
 
 const ORG_ID = 'org-1'
 const VIEWER_ID = 'user-1'
 const NOT_A_MEMBER = { outcome: 'denied', reasonCode: 'not-a-member' } as const
 const AUDIT_EVENT_TYPE = 'org_authorization.check_recorded'
+
+/**
+ * Story 23.11: every test in this suite runs `checkOrgAuthorization()` inside an ambient context
+ * bound for `ORG_ID` — the org is now always resolved from `request-context.ts`'s ambient store,
+ * never from a caller-supplied `organizationId` field (AC3). The dedicated AC4 suite below is the
+ * one place that deliberately does NOT bind a context, to prove the fail-closed path.
+ */
+function withAmbientOrg<T>(fn: () => Promise<T>): Promise<T> {
+  return runWithRequestContext({ orgId: ORG_ID, userId: VIEWER_ID }, fn)
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -25,11 +36,12 @@ describe('checkOrgAuthorization — AC3: denied, never error, never throws', () 
   it('non-existent organization/identity (no membership row) returns denied/not-a-member', async () => {
     resolveActiveOrgRole.mockResolvedValue(null)
 
-    const result = await checkOrgAuthorization({
-      organizationId: ORG_ID,
-      viewerIdentityId: VIEWER_ID,
-      minimumRole: 'viewer',
-    })
+    const result = await withAmbientOrg(() =>
+      checkOrgAuthorization({
+        viewerIdentityId: VIEWER_ID,
+        minimumRole: 'viewer',
+      })
+    )
 
     expect(result).toEqual(NOT_A_MEMBER)
     expect(resolveActiveOrgRole).toHaveBeenCalledWith(VIEWER_ID, ORG_ID)
@@ -40,11 +52,12 @@ describe('checkOrgAuthorization — AC3: denied, never error, never throws', () 
     // any non-active row — checkOrgAuthorization must map that the same way as "no row at all".
     resolveActiveOrgRole.mockResolvedValue(null)
 
-    const result = await checkOrgAuthorization({
-      organizationId: ORG_ID,
-      viewerIdentityId: VIEWER_ID,
-      minimumRole: 'owner',
-    })
+    const result = await withAmbientOrg(() =>
+      checkOrgAuthorization({
+        viewerIdentityId: VIEWER_ID,
+        minimumRole: 'owner',
+      })
+    )
 
     expect(result).toEqual(NOT_A_MEMBER)
   })
@@ -52,11 +65,12 @@ describe('checkOrgAuthorization — AC3: denied, never error, never throws', () 
   it('an active member whose role is below minimumRole is denied, not errored', async () => {
     resolveActiveOrgRole.mockResolvedValue('viewer')
 
-    const result = await checkOrgAuthorization({
-      organizationId: ORG_ID,
-      viewerIdentityId: VIEWER_ID,
-      minimumRole: 'admin',
-    })
+    const result = await withAmbientOrg(() =>
+      checkOrgAuthorization({
+        viewerIdentityId: VIEWER_ID,
+        minimumRole: 'admin',
+      })
+    )
 
     expect(result.outcome).toBe('denied')
   })
@@ -67,11 +81,12 @@ describe('checkOrgAuthorization — AC4: genuine internal failure returns error,
     resolveActiveOrgRole.mockRejectedValue(new Error('connection terminated unexpectedly'))
 
     await expect(
-      checkOrgAuthorization({
-        organizationId: ORG_ID,
-        viewerIdentityId: VIEWER_ID,
-        minimumRole: 'viewer',
-      })
+      withAmbientOrg(() =>
+        checkOrgAuthorization({
+          viewerIdentityId: VIEWER_ID,
+          minimumRole: 'viewer',
+        })
+      )
     ).resolves.toEqual({ outcome: 'error', reasonCode: expect.any(String) })
   })
 
@@ -79,62 +94,106 @@ describe('checkOrgAuthorization — AC4: genuine internal failure returns error,
     resolveActiveOrgRole.mockRejectedValue(new Error('boom'))
 
     expect(() =>
-      checkOrgAuthorization({
-        organizationId: ORG_ID,
-        viewerIdentityId: VIEWER_ID,
-        minimumRole: 'viewer',
-      })
+      runWithRequestContext({ orgId: ORG_ID, userId: VIEWER_ID }, () =>
+        checkOrgAuthorization({
+          viewerIdentityId: VIEWER_ID,
+          minimumRole: 'viewer',
+        })
+      )
     ).not.toThrow()
+  })
+})
+
+describe('checkOrgAuthorization — Story 23.11 AC4: no ambient context bound fails closed', () => {
+  it('returns { outcome: "error", reasonCode: "no-request-context" } when called outside any bound request', async () => {
+    const result = await checkOrgAuthorization({
+      viewerIdentityId: VIEWER_ID,
+      minimumRole: 'viewer',
+    })
+
+    expect(result).toEqual({ outcome: 'error', reasonCode: 'no-request-context' })
+    expect(resolveActiveOrgRole).not.toHaveBeenCalled()
+  })
+
+  it('never throws when called with no ambient context', () => {
+    expect(() =>
+      checkOrgAuthorization({ viewerIdentityId: VIEWER_ID, minimumRole: 'viewer' })
+    ).not.toThrow()
+  })
+
+  it('still records exactly one audit-log entry for the no-request-context outcome (never bypasses the audit path)', async () => {
+    const info = vi.fn()
+    const logger = { info, warn: vi.fn(), error: vi.fn(), fatal: vi.fn() }
+
+    await checkOrgAuthorization(
+      { viewerIdentityId: VIEWER_ID, minimumRole: 'viewer' },
+      { extensionName: 'ext-no-context', logger }
+    )
+
+    const auditCalls = info.mock.calls.filter(([fields]) => fields.eventType === AUDIT_EVENT_TYPE)
+    expect(auditCalls).toHaveLength(1)
+    expect(auditCalls[0]?.[0]).toMatchObject({
+      extensionName: 'ext-no-context',
+      viewerIdentityId: VIEWER_ID,
+      minimumRole: 'viewer',
+      outcome: 'error',
+    })
+    expect(auditCalls[0]?.[0]).not.toHaveProperty('reasonCode')
+  })
+
+  it('never falls back to any caller-supplied org — the extension-facing context has no organizationId field to supply one', async () => {
+    const result = await checkOrgAuthorization({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately outside the compile-time shape, proving there is no field to smuggle an org through
+      ...({ organizationId: 'org-attacker-supplied' } as any),
+      viewerIdentityId: VIEWER_ID,
+      minimumRole: 'viewer',
+    })
+
+    expect(result).toEqual({ outcome: 'error', reasonCode: 'no-request-context' })
+    expect(resolveActiveOrgRole).not.toHaveBeenCalled()
   })
 })
 
 describe('checkOrgAuthorization — AC5: request-scoped, never cached across calls', () => {
   it('reflects a role downgrade between two consecutive calls for the same identity/org', async () => {
     resolveActiveOrgRole.mockResolvedValueOnce('admin')
-    const first = await checkOrgAuthorization({
-      organizationId: ORG_ID,
-      viewerIdentityId: VIEWER_ID,
-      minimumRole: 'admin',
-    })
+    const first = await withAmbientOrg(() =>
+      checkOrgAuthorization({ viewerIdentityId: VIEWER_ID, minimumRole: 'admin' })
+    )
     expect(first).toEqual({ outcome: 'authorized' })
 
     resolveActiveOrgRole.mockResolvedValueOnce('viewer')
-    const second = await checkOrgAuthorization({
-      organizationId: ORG_ID,
-      viewerIdentityId: VIEWER_ID,
-      minimumRole: 'admin',
-    })
+    const second = await withAmbientOrg(() =>
+      checkOrgAuthorization({ viewerIdentityId: VIEWER_ID, minimumRole: 'admin' })
+    )
     expect(second.outcome).toBe('denied')
     expect(resolveActiveOrgRole).toHaveBeenCalledTimes(2)
   })
 
   it('reflects membership removal between two consecutive calls', async () => {
     resolveActiveOrgRole.mockResolvedValueOnce('owner')
-    const first = await checkOrgAuthorization({
-      organizationId: ORG_ID,
-      viewerIdentityId: VIEWER_ID,
-      minimumRole: 'owner',
-    })
+    const first = await withAmbientOrg(() =>
+      checkOrgAuthorization({ viewerIdentityId: VIEWER_ID, minimumRole: 'owner' })
+    )
     expect(first).toEqual({ outcome: 'authorized' })
 
     resolveActiveOrgRole.mockResolvedValueOnce(null)
-    const second = await checkOrgAuthorization({
-      organizationId: ORG_ID,
-      viewerIdentityId: VIEWER_ID,
-      minimumRole: 'owner',
-    })
+    const second = await withAmbientOrg(() =>
+      checkOrgAuthorization({ viewerIdentityId: VIEWER_ID, minimumRole: 'owner' })
+    )
     expect(second).toEqual(NOT_A_MEMBER)
   })
 })
 
 describe('checkOrgAuthorization — AC7: unrecognized minimumRole returns error, never a silent pass/deny or throw', () => {
   it('an out-of-enum minimumRole value returns error/invalid-minimum-role without querying resolution', async () => {
-    const result = await checkOrgAuthorization({
-      organizationId: ORG_ID,
-      viewerIdentityId: VIEWER_ID,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately outside the compile-time union (AC7)
-      minimumRole: 'super-admin' as any,
-    })
+    const result = await withAmbientOrg(() =>
+      checkOrgAuthorization({
+        viewerIdentityId: VIEWER_ID,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately outside the compile-time union (AC7)
+        minimumRole: 'super-admin' as any,
+      })
+    )
 
     expect(result).toEqual({ outcome: 'error', reasonCode: 'invalid-minimum-role' })
     expect(resolveActiveOrgRole).not.toHaveBeenCalled()
@@ -142,12 +201,13 @@ describe('checkOrgAuthorization — AC7: unrecognized minimumRole returns error,
 
   it('does not throw for the out-of-enum value', async () => {
     await expect(
-      checkOrgAuthorization({
-        organizationId: ORG_ID,
-        viewerIdentityId: VIEWER_ID,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately outside the compile-time union (AC7)
-        minimumRole: '' as any,
-      })
+      withAmbientOrg(() =>
+        checkOrgAuthorization({
+          viewerIdentityId: VIEWER_ID,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately outside the compile-time union (AC7)
+          minimumRole: '' as any,
+        })
+      )
     ).resolves.toEqual({ outcome: 'error', reasonCode: 'invalid-minimum-role' })
   })
 })
@@ -156,9 +216,11 @@ describe('checkOrgAuthorization — AC8: per-extension rate-limiting (Task 5)', 
   it('a call within the configured in-flight cap is not rate-limited', async () => {
     resolveActiveOrgRole.mockResolvedValue('owner')
 
-    const result = await checkOrgAuthorization(
-      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
-      { extensionName: 'ext-a', maxInFlight: 1 }
+    const result = await withAmbientOrg(() =>
+      checkOrgAuthorization(
+        { viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+        { extensionName: 'ext-a', maxInFlight: 1 }
+      )
     )
 
     expect(result).toEqual({ outcome: 'authorized' })
@@ -168,14 +230,17 @@ describe('checkOrgAuthorization — AC8: per-extension rate-limiting (Task 5)', 
     resolveActiveOrgRole.mockResolvedValue('owner')
     const hostContext = { extensionName: 'ext-b', maxInFlight: 1 }
 
-    const first = await checkOrgAuthorization(
-      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
-      hostContext
-    )
-    const second = await checkOrgAuthorization(
-      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
-      hostContext
-    )
+    const { first, second } = await withAmbientOrg(async () => {
+      const first = await checkOrgAuthorization(
+        { viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+        hostContext
+      )
+      const second = await checkOrgAuthorization(
+        { viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+        hostContext
+      )
+      return { first, second }
+    })
 
     expect(first).toEqual({ outcome: 'authorized' })
     expect(second).toEqual({ outcome: 'authorized' })
@@ -194,17 +259,15 @@ describe('checkOrgAuthorization — AC8: per-extension rate-limiting (Task 5)', 
     )
     const hostContext = { extensionName: 'ext-c', maxInFlight: 1 }
 
-    const firstPromise = checkOrgAuthorization(
-      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
-      hostContext
+    const firstPromise = withAmbientOrg(() =>
+      checkOrgAuthorization({ viewerIdentityId: VIEWER_ID, minimumRole: 'owner' }, hostContext)
     )
     // Let the first call actually acquire its slot before firing the second.
     await Promise.resolve()
     await Promise.resolve()
 
-    const second = await checkOrgAuthorization(
-      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
-      hostContext
+    const second = await withAmbientOrg(() =>
+      checkOrgAuthorization({ viewerIdentityId: VIEWER_ID, minimumRole: 'owner' }, hostContext)
     )
 
     expect(second).toEqual({ outcome: 'error', reasonCode: 'rate-limited' })
@@ -223,17 +286,21 @@ describe('checkOrgAuthorization — AC8: per-extension rate-limiting (Task 5)', 
         })
     )
 
-    const firstPromise = checkOrgAuthorization(
-      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
-      { extensionName: 'ext-d', maxInFlight: 1 }
+    const firstPromise = withAmbientOrg(() =>
+      checkOrgAuthorization(
+        { viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+        { extensionName: 'ext-d', maxInFlight: 1 }
+      )
     )
     await Promise.resolve()
     await Promise.resolve()
 
     resolveActiveOrgRole.mockResolvedValueOnce('owner')
-    const otherExtensionResult = await checkOrgAuthorization(
-      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
-      { extensionName: 'ext-e', maxInFlight: 1 }
+    const otherExtensionResult = await withAmbientOrg(() =>
+      checkOrgAuthorization(
+        { viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+        { extensionName: 'ext-e', maxInFlight: 1 }
+      )
     )
 
     expect(otherExtensionResult).toEqual({ outcome: 'authorized' })
@@ -245,9 +312,11 @@ describe('checkOrgAuthorization — AC8: per-extension rate-limiting (Task 5)', 
   it("never sharing capability-gate.ts's own accounting map: a call resolves independently of any capability-gate in-flight state", async () => {
     resolveActiveOrgRole.mockResolvedValue('owner')
 
-    const result = await checkOrgAuthorization(
-      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
-      { extensionName: 'ext-f' }
+    const result = await withAmbientOrg(() =>
+      checkOrgAuthorization(
+        { viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+        { extensionName: 'ext-f' }
+      )
     )
 
     expect(result).toEqual({ outcome: 'authorized' })
@@ -263,9 +332,11 @@ describe('checkOrgAuthorization — AC8: structured audit-log entry per call (Ta
     resolveActiveOrgRole.mockResolvedValue('owner')
     const logger = makeLoggerSpy()
 
-    await checkOrgAuthorization(
-      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
-      { extensionName: 'ext-audit-1', logger }
+    await withAmbientOrg(() =>
+      checkOrgAuthorization(
+        { viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+        { extensionName: 'ext-audit-1', logger }
+      )
     )
 
     const auditCalls = logger.info.mock.calls.filter(
@@ -287,9 +358,11 @@ describe('checkOrgAuthorization — AC8: structured audit-log entry per call (Ta
     resolveActiveOrgRole.mockResolvedValue(null)
     const logger = makeLoggerSpy()
 
-    await checkOrgAuthorization(
-      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
-      { extensionName: 'ext-audit-2', logger }
+    await withAmbientOrg(() =>
+      checkOrgAuthorization(
+        { viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
+        { extensionName: 'ext-audit-2', logger }
+      )
     )
 
     const auditCalls = logger.info.mock.calls.filter(
@@ -304,14 +377,15 @@ describe('checkOrgAuthorization — AC8: structured audit-log entry per call (Ta
   it('an errored outcome (invalid minimumRole) produces exactly one audit-log entry with no leaked reasonCode', async () => {
     const logger = makeLoggerSpy()
 
-    await checkOrgAuthorization(
-      {
-        organizationId: ORG_ID,
-        viewerIdentityId: VIEWER_ID,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately outside the compile-time union (AC7)
-        minimumRole: 'super-admin' as any,
-      },
-      { extensionName: 'ext-audit-3', logger }
+    await withAmbientOrg(() =>
+      checkOrgAuthorization(
+        {
+          viewerIdentityId: VIEWER_ID,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately outside the compile-time union (AC7)
+          minimumRole: 'super-admin' as any,
+        },
+        { extensionName: 'ext-audit-3', logger }
+      )
     )
 
     const auditCalls = logger.info.mock.calls.filter(
@@ -334,16 +408,14 @@ describe('checkOrgAuthorization — AC8: structured audit-log entry per call (Ta
     const logger = makeLoggerSpy()
     const hostContext = { extensionName: 'ext-audit-4', logger, maxInFlight: 1 }
 
-    const firstPromise = checkOrgAuthorization(
-      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
-      hostContext
+    const firstPromise = withAmbientOrg(() =>
+      checkOrgAuthorization({ viewerIdentityId: VIEWER_ID, minimumRole: 'owner' }, hostContext)
     )
     await Promise.resolve()
     await Promise.resolve()
 
-    await checkOrgAuthorization(
-      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'owner' },
-      hostContext
+    await withAmbientOrg(() =>
+      checkOrgAuthorization({ viewerIdentityId: VIEWER_ID, minimumRole: 'owner' }, hostContext)
     )
 
     // The first call's own audit entry has not been recorded yet — it is still pending inside
@@ -371,9 +443,11 @@ describe('checkOrgAuthorization — AC8: structured audit-log entry per call (Ta
     resolveActiveOrgRole.mockResolvedValue('viewer')
     const logger = makeLoggerSpy()
 
-    await checkOrgAuthorization(
-      { organizationId: ORG_ID, viewerIdentityId: VIEWER_ID, minimumRole: 'admin' },
-      { extensionName: 'ext-audit-5', logger }
+    await withAmbientOrg(() =>
+      checkOrgAuthorization(
+        { viewerIdentityId: VIEWER_ID, minimumRole: 'admin' },
+        { extensionName: 'ext-audit-5', logger }
+      )
     )
 
     const fields = logger.info.mock.calls[0]?.[0]
@@ -396,11 +470,9 @@ describe('checkOrgAuthorization — authorized path', () => {
   it('returns authorized when the resolved role meets minimumRole', async () => {
     resolveActiveOrgRole.mockResolvedValue('owner')
 
-    const result = await checkOrgAuthorization({
-      organizationId: ORG_ID,
-      viewerIdentityId: VIEWER_ID,
-      minimumRole: 'member',
-    })
+    const result = await withAmbientOrg(() =>
+      checkOrgAuthorization({ viewerIdentityId: VIEWER_ID, minimumRole: 'member' })
+    )
 
     expect(result).toEqual({ outcome: 'authorized' })
   })
@@ -408,11 +480,9 @@ describe('checkOrgAuthorization — authorized path', () => {
   it('returns authorized when the resolved role exactly equals minimumRole', async () => {
     resolveActiveOrgRole.mockResolvedValue('member')
 
-    const result = await checkOrgAuthorization({
-      organizationId: ORG_ID,
-      viewerIdentityId: VIEWER_ID,
-      minimumRole: 'member',
-    })
+    const result = await withAmbientOrg(() =>
+      checkOrgAuthorization({ viewerIdentityId: VIEWER_ID, minimumRole: 'member' })
+    )
 
     expect(result).toEqual({ outcome: 'authorized' })
   })

@@ -81,6 +81,14 @@ describe('Story 9.9 AC-4: filesystem write failures are classified', () => {
   })
 
   it('a permission-denied write throws the sanitized, stable classifier message (not the raw error)', async () => {
+    // Reset the module registry before mocking: the "Story 9.1 AC-5" describe block above
+    // statically imports `backupStorageFor` from `./storage.js` (and transitively
+    // `./atomic-write.js`), so without this reset a subsequent `vi.doMock` + dynamic `import()`
+    // of the same specifier can resolve to the already-loaded, unmocked module instance instead
+    // of a fresh mock-aware one — observed as this test's `storage.write()` silently succeeding
+    // with the real `atomicFileWrite` (which can write for real when run as root, e.g. in the CI
+    // container) instead of rejecting with the mocked EACCES.
+    vi.resetModules()
     vi.doMock('./atomic-write.js', () => ({
       atomicFileWrite: vi.fn(async () => {
         const error = new Error(

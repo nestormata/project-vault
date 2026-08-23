@@ -71,6 +71,13 @@ const SAFE_PUBLIC_CONSTANT_NAMES = new Set([
   'PGPASSWORD',
   'VAULT_ADMIN_PASSWORD',
   'VAULT_APP_PASSWORD',
+  // Story 23.11: a plain numeric TTL constant, not a credential value. Identical in name and
+  // value to the pre-existing `TEST_ACCESS_TOKEN_TTL_SECONDS` in
+  // apps/api/src/__tests__/secure-route.integration.test.ts (which the checker doesn't flag
+  // because those lines aren't new relative to `main`). New test files reproduce this
+  // established naming convention as a "new" finding only because the checker scans added
+  // lines, not full-file content.
+  'TEST_ACCESS_TOKEN_TTL_SECONDS',
 ])
 // These files intentionally document or exercise local service endpoints. A local endpoint in
 // source, prose, or an arbitrary workflow remains a finding.

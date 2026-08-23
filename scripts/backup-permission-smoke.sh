@@ -31,7 +31,14 @@ cleanup() {
 trap cleanup EXIT
 
 echo "[backup-permission-smoke] building apps/api image..."
-docker build -f apps/api/Dockerfile -t "$IMAGE_TAG" . >/tmp/backup-permission-smoke-build.log 2>&1 \
+# --target runner: the Dockerfile's leaf `migrate` stage (a separate, USER-node,
+# no-entrypoint-chown-logic image, kept as its own leaf purely for RELEASE_VERSION build-cache
+# layering — see that stage's own comment) is declared AFTER `runner`, so a plain `docker build`
+# with no --target silently builds `migrate` instead — the last stage in the file is Docker's
+# default build target. That image has no docker-entrypoint.sh at all, so every assertion below
+# about the entrypoint's chown-then-drop-privileges behavior was actually exercising a
+# completely different image with no such behavior to test.
+docker build -f apps/api/Dockerfile --target runner -t "$IMAGE_TAG" . >/tmp/backup-permission-smoke-build.log 2>&1 \
   || { echo "[backup-permission-smoke] build failed:"; cat /tmp/backup-permission-smoke-build.log; exit 1; }
 
 echo "[backup-permission-smoke] scenario 1: fresh named volume gets chowned to 1000:1000..."

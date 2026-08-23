@@ -20,7 +20,9 @@ describe('EXTENSION_API_VERSION', () => {
   })
 
   it('derives the host-owned floor and ceiling range', () => {
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=2.0.0 <=2.2.0')
+    // Story 23.11 AC6 — bumped 2.2.0 -> 3.0.0 as a genuine breaking major (organizationId
+    // removed from OrgAuthorizationCheckContext).
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.0.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {
@@ -65,10 +67,13 @@ describe('defineExtension', () => {
   })
 })
 
-describe('Story 23.3 AC-30/AC-31 — the capability-gate version bump is additive-minor, backward compatible', () => {
-  it('an extension pinned to the exact previous-minor version still loads under the new ceiling (AC-31)', () => {
-    // The published package has crossed a breaking major for the new runtime context contract.
-    expect(isExtensionApiVersionSupported('2.0.0')).toBe(true)
+describe('Story 23.11 AC6 — the ambient-context version bump is a genuine breaking major, not additive-minor', () => {
+  it('an extension pinned to the exact new host version loads (AC6)', () => {
+    expect(isExtensionApiVersionSupported(EXTENSION_API_VERSION)).toBe(true)
+  })
+
+  it('an extension pinned to the PREVIOUS major (pre-bump floor) is now rejected — the breaking-change boundary moved', () => {
+    expect(isExtensionApiVersionSupported('2.0.0')).toBe(false)
   })
 
   it('an extension pinned above the new ceiling is rejected (unchanged, pre-existing floor/ceiling behavior)', () => {

@@ -37,7 +37,12 @@ export type ExtensionManifest = {
  * under `src/**` (enforced by `scripts/check-extension-api-version-skew.ts`, AC7) and kept equal
  * to this package's `package.json` `version` field (see `manifest.test.ts`).
  */
-export const EXTENSION_API_VERSION = '2.2.0'
+// Story 23.11 AC6 — bumped as a genuine BREAKING major (2.2.0 -> 3.0.0), not additive-minor:
+// removing `organizationId` from `OrgAuthorizationCheckContext` is safe at the JS-structural
+// level but not at the TypeScript level for an existing caller that passes an inline object
+// literal (excess-property check rejects the now-unknown field at compile time). See this
+// story's Dev Notes/PR description for the coordinated centralizeme-sass follow-up this requires.
+export const EXTENSION_API_VERSION = '3.0.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built
