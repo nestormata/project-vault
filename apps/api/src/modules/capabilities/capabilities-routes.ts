@@ -2,6 +2,7 @@ import { CapabilitiesResponseSchema, CapabilityId } from '@project-vault/shared'
 import type { CapabilityIdValue } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { assertCapability } from '../../lib/capability-gate.js'
+import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { LIST_RATE_LIMIT } from '../monitoring/routes.js'
 
@@ -25,7 +26,7 @@ export async function capabilitiesRoutes(fastify: FastifyApp): Promise<void> {
     method: 'GET',
     url: '/capabilities',
     schema: {
-      response: { 200: CapabilitiesResponseSchema },
+      response: { 200: CapabilitiesResponseSchema, 401: ApiErrorSchema },
     },
     security: {
       requireOrgScope: false,
