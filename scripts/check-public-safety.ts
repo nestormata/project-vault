@@ -96,12 +96,6 @@ const SAFE_LOCAL_ENDPOINT_FILES = new Set([
   'apps/api/src/modules/audit/quota-gate.test.ts',
   'apps/api/src/modules/audit/quota-config.test.ts',
   'apps/api/src/workers/audit-org-usage-reconcile.test.ts',
-  // Story 23.11 CI fix: generate-spec.ts's pre-existing DATABASE_URL dev fallback
-  // (`postgresql://vault_app@localhost:5432/project_vault`, same file) is already this exact
-  // localhost pattern but was never flagged because it predates this diff's base — the checker
-  // only scans added lines. The new ADMIN_DATABASE_URL fallback added alongside it reproduces
-  // the same already-in-file, inert, no-credential pattern.
-  'apps/api/src/scripts/generate-spec.ts',
 ])
 
 function makeFinding(
