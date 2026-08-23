@@ -261,6 +261,13 @@ describe('isProtectedAppPath', () => {
     expect(isProtectedAppPath('/notifications-archive')).toBe(false)
   })
 
+  it('AC1 (Story 25.1): /extensions/panels and its slot sub-paths are protected', () => {
+    expect(isProtectedAppPath('/extensions/panels')).toBe(true)
+    expect(isProtectedAppPath('/extensions/panels/group')).toBe(true)
+    // Lookalike guard — a path merely starting with the same characters must not match.
+    expect(isProtectedAppPath('/extensions/panels-lookalike')).toBe(false)
+  })
+
   it('recognizes only login and registration as auth paths', () => {
     expect(isAuthPath('/login')).toBe(true)
     expect(isAuthPath('/register')).toBe(true)

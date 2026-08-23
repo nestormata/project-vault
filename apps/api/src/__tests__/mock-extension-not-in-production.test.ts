@@ -19,6 +19,9 @@ const MOCK_CAPABILITY_GATE_EXTENSION_PACKAGE_NAME = '@project-vault/mock-capabil
 // guard as the three above.
 const MOCK_AUDIT_EVENT_SOURCE_EXTENSION_PACKAGE_NAME =
   '@project-vault/mock-audit-event-source-extension'
+// Story 25.1 Task 7: the fifth reference fixture extension (UI-panel mounting) gets the same
+// guard as the four above.
+const MOCK_UI_PANEL_EXTENSION_PACKAGE_NAME = '@project-vault/mock-ui-panel-extension'
 const REPO_ROOT = resolve(process.cwd(), '../..')
 
 const PRODUCTION_CONFIG_FILES = [
@@ -44,6 +47,11 @@ describe.each([
     'mock-audit-event-source-extension',
     MOCK_AUDIT_EVENT_SOURCE_EXTENSION_PACKAGE_NAME,
     'fixtures/mock-audit-event-source-extension/package.json',
+  ],
+  [
+    'mock-ui-panel-extension',
+    MOCK_UI_PANEL_EXTENSION_PACKAGE_NAME,
+    'fixtures/mock-ui-panel-extension/package.json',
   ],
 ])(
   '%s is never referenced by production config (AC-12/Story 23.2 AC-15)',

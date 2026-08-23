@@ -5,6 +5,7 @@ const getOnboardingStatusMock = vi.hoisted(() => vi.fn())
 const listProjectsMock = vi.hoisted(() => vi.fn())
 const getUsersMeMock = vi.hoisted(() => vi.fn())
 const getThemesMock = vi.hoisted(() => vi.fn())
+const getExtensionNavMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/onboarding.js', () => ({
   getOnboardingStatus: getOnboardingStatusMock,
@@ -17,6 +18,9 @@ vi.mock('$lib/api/inbox.js', () => ({
 }))
 vi.mock('$lib/api/themes.js', () => ({
   getThemes: getThemesMock,
+}))
+vi.mock('$lib/api/extension-panel.js', () => ({
+  getExtensionNav: getExtensionNavMock,
 }))
 
 import { load } from './+layout.server.js'
@@ -40,6 +44,8 @@ describe('/(app) +layout.server.ts', () => {
     getUsersMeMock.mockReset()
     getThemesMock.mockReset()
     getThemesMock.mockResolvedValue(noCustomThemes)
+    getExtensionNavMock.mockReset()
+    getExtensionNavMock.mockResolvedValue({ uiPanelSlot: null })
   })
 
   it('redirects to /login when there is no authenticated user', async () => {
@@ -270,6 +276,38 @@ describe('/(app) +layout.server.ts', () => {
       expect(result.appliedTheme).toBeNull()
       expect(result.orphanedNotice).toBe(false)
       expect(result.themeCss).toBe('')
+    })
+  })
+
+  describe('Story 25.1 AC5: hasUiPanelExtension nav-entry flag', () => {
+    it('is false when no extension is loaded (uiPanelSlot: null)', async () => {
+      getOnboardingStatusMock.mockResolvedValue({ completed: true })
+      getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
+      getExtensionNavMock.mockResolvedValue({ uiPanelSlot: null })
+
+      const result = await load(makeEvent(baseUser))
+
+      expect(result.hasUiPanelExtension).toBe(false)
+    })
+
+    it('is true when the loaded extension declares ui-panel (uiPanelSlot: "group")', async () => {
+      getOnboardingStatusMock.mockResolvedValue({ completed: true })
+      getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
+      getExtensionNavMock.mockResolvedValue({ uiPanelSlot: 'group' })
+
+      const result = await load(makeEvent(baseUser))
+
+      expect(result.hasUiPanelExtension).toBe(true)
+    })
+
+    it('fails open to false (never crashes the layout load) when the nav fetch fails', async () => {
+      getOnboardingStatusMock.mockResolvedValue({ completed: true })
+      getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
+      getExtensionNavMock.mockRejectedValue(new Error('boom'))
+
+      const result = await load(makeEvent(baseUser))
+
+      expect(result.hasUiPanelExtension).toBe(false)
     })
   })
 })

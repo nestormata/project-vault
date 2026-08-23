@@ -138,6 +138,10 @@ export function isProtectedAppPath(pathname: string) {
     '/settings',
     '/platform',
     '/notifications',
+    // Story 25.1 AC1: defense in depth alongside the API-side secureRoute() gate — an
+    // unauthenticated browser is redirected to /login before this route even renders
+    // server-side.
+    '/extensions/panels',
   ].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
 }
 

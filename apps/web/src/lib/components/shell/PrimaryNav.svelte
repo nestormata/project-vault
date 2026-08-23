@@ -6,9 +6,14 @@
   let {
     onsearch,
     isPlatformOperator = false,
-  }: { onsearch?: () => void; isPlatformOperator?: boolean } = $props()
+    hasUiPanelExtension = false,
+  }: {
+    onsearch?: () => void
+    isPlatformOperator?: boolean
+    hasUiPanelExtension?: boolean
+  } = $props()
 
-  const navItems = getPrimaryNavItems({ isPlatformOperator })
+  const navItems = getPrimaryNavItems({ isPlatformOperator, hasUiPanelExtension })
 </script>
 
 <nav
