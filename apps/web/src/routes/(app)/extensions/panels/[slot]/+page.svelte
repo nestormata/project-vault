@@ -15,7 +15,7 @@
       set. `srcdoc` content inherits the *embedding page's own origin*, not a neutral/opaque one
       — `allow-scripts` alone keeps the sandboxed document's origin forced-opaque (unique,
       unrelated to PV's), so a bug in the panel's returned HTML cannot read PV's own
-      cookies/localStorage/DOM. Adding `allow-same-origin` on top of `allow-scripts` for `srcdoc`
+      cookies/Web Storage/DOM. Adding `allow-same-origin` on top of `allow-scripts` for `srcdoc`
       content is a well-documented escape class (the two combined let sandboxed script access the
       parent document's real origin) — this is not hypothetical, it is the single most important
       token-choice constraint in this story. A future PR "helpfully" adding `allow-same-origin` to
