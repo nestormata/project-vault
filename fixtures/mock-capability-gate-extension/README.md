@@ -23,14 +23,14 @@ ever standing up a real third-party entitlement/billing system** (e.g. Centraliz
 
 ## Fixture org ids
 
-| Org id                     | `onCheckCapability` result                          | Intended scenario                                    |
-|-----------------------------|-------------------------------------------------------|--------------------------------------------------------|
-| `fixture-org-permitted`     | `{ permitted: true }`                                  | An entitled org — publish succeeds, public page reads.  |
-| `fixture-org-upgraded`      | `{ permitted: true }`                                  | The "post-upgrade" org for the Priya persona journey.   |
-| `fixture-org-throw`         | throws synchronously                                   | Exercises AC-11's fail-closed-on-throw path.            |
-| `fixture-org-hang`          | never resolves                                         | Exercises AC-11's fail-closed-on-timeout path.          |
-| `fixture-org-garbage`       | resolves a malformed decision                          | Exercises AC-12's fail-closed-on-malformed-decision path. |
-| any other org id (or `null`)| `{ permitted: false, reasonCode: 'fixture_not_entitled' }` | An org on a restricted plan — the common denial case.   |
+| Org id                       | `onCheckCapability` result                                 | Intended scenario                                         |
+| ---------------------------- | ---------------------------------------------------------- | --------------------------------------------------------- |
+| `fixture-org-permitted`      | `{ permitted: true }`                                      | An entitled org — publish succeeds, public page reads.    |
+| `fixture-org-upgraded`       | `{ permitted: true }`                                      | The "post-upgrade" org for the Priya persona journey.     |
+| `fixture-org-throw`          | throws synchronously                                       | Exercises AC-11's fail-closed-on-throw path.              |
+| `fixture-org-hang`           | never resolves                                             | Exercises AC-11's fail-closed-on-timeout path.            |
+| `fixture-org-garbage`        | resolves a malformed decision                              | Exercises AC-12's fail-closed-on-malformed-decision path. |
+| any other org id (or `null`) | `{ permitted: false, reasonCode: 'fixture_not_entitled' }` | An org on a restricted plan — the common denial case.     |
 
 ## Loading it
 
@@ -58,12 +58,12 @@ content's interim home until one does, since a real, non-fixture extension imple
   and no waiting period — but it also means your extension owns 100% of its own staleness/caching
   strategy. If your real entitlement source is slow or rate-limited, you must cache on your side of
   the hook, inside `onCheckCapability()`, where you also own the invalidation bound.
-- **The fail-closed rule, verbatim:** *"A registered gate that throws, rejects, times out, or
+- **The fail-closed rule, verbatim:** _"A registered gate that throws, rejects, times out, or
   returns a malformed decision FAILS CLOSED for that capability check —
   `403 capability_denied` with `reasonCode: 'gate_unavailable'` (collapsed to the route's own
-  uniform failure response on unauthenticated surfaces)."* Registering a gate is an explicit
+  uniform failure response on unauthenticated surfaces)."_ Registering a gate is an explicit
   operator declaration that an external policy layer governs the instance; once declared, an
-  unanswerable check is treated as an *unknown*, never as a permission.
+  unanswerable check is treated as an _unknown_, never as a permission.
 - **`message` is not localized, and cannot be:** `CapabilityGateContext` carries no `locale` field
   — a French-locale PV user (Story 15.1) will see whatever single language your extension
   hard-codes into `message`. Do not claim otherwise in your own docs; PV's own fallback message is
@@ -72,18 +72,27 @@ content's interim home until one does, since a real, non-fixture extension imple
   organization use capability X at all?" (entitlement) — never "may this org create its 51st
   secret" (quota). `CapabilityGateContext` carries no resource id, requested count, current usage,
   or HTTP method, so quota enforcement cannot be expressed through this hook shape at all.
+- **Story 23.7 — `GET /api/v1/capabilities` exists, and it is booleans only.** PV's `apps/web`
+  status-page screen (and any future screen that wants to cosmetically gate a control on your
+  entitlement decision) reads your gate's answer through this one authenticated, org-scoped
+  route — never by calling your extension directly. The response shape is
+  `{ capabilities: Record<CapabilityIdValue, boolean> }`: PV's own `.permitted` boolean, per
+  registered `CapabilityId`, and nothing else. Your `message`/`reasonCode` values are **never**
+  surfaced through this endpoint — they only ever reach a user via the existing `403
+capability_denied` response on an actual denied mutating request. Do not rely on this endpoint
+  as a second distribution channel for your extension's own denial text.
 
 ## Recovery runbook (Story 23.3 AC-13)
 
 There is deliberately no break-glass switch for a broken capability gate. To recover from one:
 
-> *"To recover from a broken capability gate, unset `VAULT_EXTENSIONS_PACKAGE` and restart the
+> _"To recover from a broken capability gate, unset `VAULT_EXTENSIONS_PACKAGE` and restart the
 > API. The instance returns to PV's default ungated behavior. There is no partial bypass — this
 > is deliberate. **Understand the cost before doing it:** `ExtensionHooks` is one bag per
 > extension package, so this also disables every other hook that package provides — SSO login,
 > notification channels, UI panels, and audit fanout. Local login is unaffected and cannot be
 > removed, so you will not be locked out. This is a wider outage accepted deliberately during an
-> incident, not a like-for-like swap."*
+> incident, not a like-for-like swap."_
 
 ## Production-safety
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
-  import { buildAbsoluteUrl } from '@project-vault/shared'
+  import { buildAbsoluteUrl, CapabilityId } from '@project-vault/shared'
   import { ApiClientError } from '$lib/api/client.js'
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
   import ConfirmDeleteButton from '$lib/components/forms/ConfirmDeleteButton.svelte'
@@ -14,6 +14,19 @@
   } from '$lib/api/status-page.js'
 
   let { data } = $props()
+
+  // Story 23.7 AC-10: explicit `=== false`, not `!data.capabilities[...]`, so a missing/malformed
+  // key defaults to "not denied" (AC-9's fail-open default), not "denied by omission".
+  //
+  // Both controls below are backend-enforced, not merely hidden: Story 23.3's gate on
+  // POST /api/v1/projects/:projectId/status-page and this story's added gate on
+  // PUT /api/v1/projects/:projectId/status-page are the actual enforcement points. Disabling
+  // either button here prevents an accidental click; it does not substitute for that enforcement
+  // — a direct API call from a denied org still receives 403 from both routes.
+  const statusPageCapabilityDenied = $derived(
+    data.capabilities?.[CapabilityId.MONITORING_PUBLIC_STATUS_PAGE] === false
+  )
+  const CAPABILITY_DENIED_HELP_ID = 'status-page-capability-denied-help'
 
   let enabled = $state(data.config.enabled)
   // Ephemeral fallback for the instant right after enable/regenerate: the POST response still
@@ -249,11 +262,18 @@
         <button
           class="mt-4 rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
           type="button"
-          disabled={isBusy}
+          disabled={isBusy || statusPageCapabilityDenied}
+          aria-describedby={statusPageCapabilityDenied ? CAPABILITY_DENIED_HELP_ID : undefined}
           onclick={() => onEnable()}
         >
           Enable public status page
         </button>
+        {#if statusPageCapabilityDenied}
+          <FormHelpText
+            id={CAPABILITY_DENIED_HELP_ID}
+            text="Your organization's plan doesn't include public status pages. Contact your administrator to upgrade."
+          />
+        {/if}
       </div>
     {:else}
       <div class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -394,11 +414,18 @@
         <button
           class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
           type="button"
-          disabled={isBusy}
+          disabled={isBusy || statusPageCapabilityDenied}
+          aria-describedby={statusPageCapabilityDenied ? CAPABILITY_DENIED_HELP_ID : undefined}
           onclick={() => onSaveServices()}
         >
           Save services
         </button>
+        {#if statusPageCapabilityDenied}
+          <FormHelpText
+            id={CAPABILITY_DENIED_HELP_ID}
+            text="Your organization's plan doesn't include public status pages. Contact your administrator to upgrade."
+          />
+        {/if}
       </div>
     {/if}
   {/if}

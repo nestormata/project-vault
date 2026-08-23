@@ -1,8 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { ApiClientError } from '$lib/api/client.js'
 
 const listProjectMembersMock = vi.hoisted(() => vi.fn())
 const listServiceEndpointsMock = vi.hoisted(() => vi.fn())
 const getStatusPageConfigMock = vi.hoisted(() => vi.fn())
+const getCapabilityMapMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/org-users.js', () => ({
   listProjectMembers: listProjectMembersMock,
@@ -12,6 +14,9 @@ vi.mock('$lib/api/service-endpoints.js', () => ({
 }))
 vi.mock('$lib/api/status-page.js', () => ({
   getStatusPageConfig: getStatusPageConfigMock,
+}))
+vi.mock('$lib/api/capabilities.js', () => ({
+  getCapabilityMap: getCapabilityMapMock,
 }))
 vi.mock('$lib/server/require-user.js', () => ({
   requireUser: (locals: { user: { orgRole: string; userId: string } }) => locals.user,
@@ -38,6 +43,10 @@ describe('project status-page +page.server.ts', () => {
     listProjectMembersMock.mockReset()
     listServiceEndpointsMock.mockReset()
     getStatusPageConfigMock.mockReset()
+    getCapabilityMapMock.mockReset()
+    getCapabilityMapMock.mockResolvedValue({
+      capabilities: { 'monitoring.public-status-page': true },
+    })
   })
 
   it('an org owner can manage even without being a project member (ADR-6.3-07)', async () => {
@@ -102,6 +111,9 @@ describe('project status-page +page.server.ts', () => {
     expect(result.serviceEndpoints).toEqual([])
     expect(getStatusPageConfigMock).not.toHaveBeenCalled()
     expect(listServiceEndpointsMock).not.toHaveBeenCalled()
+    // Story 23.7 AC-7 edge case: the capability fetch is skipped entirely for a !canManage
+    // viewer, same as the other two calls — never triggers the additional call at all.
+    expect(getCapabilityMapMock).not.toHaveBeenCalled()
   })
 
   it('tolerates a failed member lookup by treating the user as not a project member', async () => {
@@ -110,5 +122,87 @@ describe('project status-page +page.server.ts', () => {
     const result = await load(makeEvent({ orgRole: 'member', userId: 'u-1' }))
 
     expect(result.canManage).toBe(false)
+  })
+
+  // Story 23.7 AC-7/Task 5: the SSR load fetches the capability map inside the same
+  // canManage-gated Promise.all as the two pre-existing calls.
+  describe('Story 23.7: capabilities', () => {
+    beforeEach(() => {
+      listProjectMembersMock.mockResolvedValue([])
+      getStatusPageConfigMock.mockResolvedValue({ enabled: true })
+      listServiceEndpointsMock.mockResolvedValue([])
+    })
+
+    it('AC-7: a canManage:true load carries data.capabilities, fully resolved', async () => {
+      getCapabilityMapMock.mockResolvedValue({
+        capabilities: { 'monitoring.public-status-page': false },
+      })
+
+      const result = await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+
+      expect(result.capabilities).toEqual({ 'monitoring.public-status-page': false })
+      expect(getCapabilityMapMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('AC-9: capability-fetch failure (network/throw) fails open — data.capabilities defaults to every id permitted', async () => {
+      getCapabilityMapMock.mockRejectedValue(new Error('capability service unreachable'))
+
+      const result = await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+
+      expect(result.capabilities).toEqual({ 'monitoring.public-status-page': true })
+    })
+
+    it('AC-9 edge case: a malformed capability-map body (non-boolean value) fails open, identically to a network failure', async () => {
+      getCapabilityMapMock.mockResolvedValue({
+        capabilities: { 'monitoring.public-status-page': 'yes' },
+      })
+
+      const result = await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+
+      expect(result.capabilities).toEqual({ 'monitoring.public-status-page': true })
+    })
+
+    it('AC-9 edge case: an array response body fails open, identically to a network failure (code review fix)', async () => {
+      getCapabilityMapMock.mockResolvedValue({
+        capabilities: [true],
+      })
+
+      const result = await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+
+      expect(result.capabilities).toEqual({ 'monitoring.public-status-page': true })
+    })
+
+    it('AC-9 edge case: a response body missing the expected capability key fails open rather than resolving the key to undefined (code review fix)', async () => {
+      getCapabilityMapMock.mockResolvedValue({
+        capabilities: {},
+      })
+
+      const result = await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+
+      expect(result.capabilities).toEqual({ 'monitoring.public-status-page': true })
+    })
+
+    it('AC-9 edge case: a 401 session_revoked on the capabilities call is NOT absorbed by the fail-open path — it propagates, same as any other load-function failure', async () => {
+      getCapabilityMapMock.mockRejectedValue(
+        new ApiClientError(
+          401,
+          { code: 'session_revoked', message: 'Session revoked' },
+          'Session revoked'
+        )
+      )
+
+      await expect(load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))).rejects.toThrow()
+    })
+
+    it('Task 5 pre-mortem guard: a genuine getStatusPageConfig failure is NOT masked by AC-9s fail-open path — it still throws', async () => {
+      getStatusPageConfigMock.mockRejectedValue(new Error('status page config unavailable'))
+      getCapabilityMapMock.mockResolvedValue({
+        capabilities: { 'monitoring.public-status-page': true },
+      })
+
+      await expect(load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))).rejects.toThrow(
+        'status page config unavailable'
+      )
+    })
   })
 })

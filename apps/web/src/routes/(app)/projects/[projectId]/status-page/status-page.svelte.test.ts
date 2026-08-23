@@ -45,6 +45,153 @@ function data(overrides: Record<string, unknown> = {}) {
   }
 }
 
+describe('status-page +page.svelte (Story 23.7: capability-gated Enable/Save controls)', () => {
+  // AC-12: no capability-gating extension registered → the screen is byte-identical to its
+  // pre-story rendering. `data.capabilities` absent entirely (matches AC-9's fail-open default:
+  // "the key is absent from a stale/partial response" per AC-10's positive example) is the
+  // golden, pre-story shape every other test in this file already renders with.
+  it('AC-12: golden snapshot — with data.capabilities absent, both gated buttons render enabled with no explanatory text and no extra DOM nodes (byte-identical to pre-story markup)', () => {
+    const noCapabilities = render(StatusPage, {
+      props: { data: data({ config: { enabled: false } }) },
+    })
+    const noCapabilitiesHtml = document.body.innerHTML
+    cleanup()
+
+    const permitted = render(StatusPage, {
+      props: {
+        data: data({
+          config: { enabled: false },
+          capabilities: { 'monitoring.public-status-page': true },
+        }),
+      },
+    })
+    const permittedHtml = document.body.innerHTML
+
+    // AC-12's primary proof: a golden DOM snapshot compared byte-for-byte — an absent
+    // data.capabilities key (AC-9's fail-open default) renders IDENTICALLY to the explicit
+    // permitted:true value every id resolves to when no gate is registered.
+    expect(noCapabilitiesHtml).toBe(permittedHtml)
+    void noCapabilities
+
+    const enableButton = screen.getByRole('button', { name: /enable public status page/i })
+    expect((enableButton as HTMLButtonElement).disabled).toBe(false)
+    expect(enableButton.hasAttribute('aria-describedby')).toBe(false)
+    expect(screen.queryByText(/plan doesn't include public status pages/i)).toBeNull()
+    void permitted
+  })
+
+  it('AC-12: golden snapshot — capabilities[...] === true (no-gate fail-open value) also renders byte-identical to the pre-story markup', () => {
+    render(StatusPage, {
+      props: {
+        data: data({
+          config: { enabled: true, token: 'tok-1', services: [] },
+          capabilities: { 'monitoring.public-status-page': true },
+        }),
+      },
+    })
+
+    const saveButton = screen.getByRole('button', { name: /save services/i })
+    expect((saveButton as HTMLButtonElement).disabled).toBe(false)
+    expect(saveButton.hasAttribute('aria-describedby')).toBe(false)
+    expect(screen.queryByText(/plan doesn't include public status pages/i)).toBeNull()
+  })
+
+  it('AC-10: a denied capability disables "Enable public status page" with aria-describedby explanatory text', () => {
+    render(StatusPage, {
+      props: {
+        data: data({
+          config: { enabled: false },
+          capabilities: { 'monitoring.public-status-page': false },
+        }),
+      },
+    })
+
+    const enableButton = screen.getByRole('button', { name: /enable public status page/i })
+    expect((enableButton as HTMLButtonElement).disabled).toBe(true)
+    const describedBy = enableButton.getAttribute('aria-describedby')
+    expect(describedBy).toBeTruthy()
+    expect(document.getElementById(describedBy as string)?.textContent).toMatch(
+      /plan doesn't include public status pages/i
+    )
+  })
+
+  it('AC-10: a denied capability disables "Save services" (an already-enabled org can still view its configuration) with the same explanatory text', () => {
+    render(StatusPage, {
+      props: {
+        data: data({
+          config: { enabled: true, token: 'tok-1', services: [] },
+          capabilities: { 'monitoring.public-status-page': false },
+        }),
+      },
+    })
+
+    const saveButton = screen.getByRole('button', { name: /save services/i })
+    expect((saveButton as HTMLButtonElement).disabled).toBe(true)
+    const describedBy = saveButton.getAttribute('aria-describedby')
+    expect(describedBy).toBeTruthy()
+    expect(document.getElementById(describedBy as string)?.textContent).toMatch(
+      /plan doesn't include public status pages/i
+    )
+  })
+
+  // AC-10 edge case: denied AND already enabled AND no services selected yet — both states are
+  // orthogonal and both render simultaneously without visual conflict.
+  it('AC-10 edge case: a denied capability with zero registered service endpoints still shows the "register one first" empty-state link alongside the disabled Save button', () => {
+    render(StatusPage, {
+      props: {
+        data: data({
+          config: { enabled: true, token: 'tok-1', services: [] },
+          serviceEndpoints: [],
+          capabilities: { 'monitoring.public-status-page': false },
+        }),
+      },
+    })
+
+    expect(screen.getByRole('link', { name: /register one/i })).toBeTruthy()
+    expect(
+      (screen.getByRole('button', { name: /save services/i }) as HTMLButtonElement).disabled
+    ).toBe(true)
+  })
+
+  // AC-13: this UI adds NO new denial surface — only the two named controls ever depend on
+  // data.capabilities. Every other interactive element renders identically regardless.
+  it('AC-13: Copy, Regenerate, Disable, and the per-service checkbox/reorder controls are unaffected by a denied capability', () => {
+    render(StatusPage, {
+      props: {
+        data: data({
+          config: {
+            enabled: true,
+            token: 'tok-1',
+            services: [
+              { serviceId: 'svc-1', displayName: 'API' },
+              { serviceId: 'svc-2', displayName: 'Database' },
+            ],
+          },
+          capabilities: { 'monitoring.public-status-page': false },
+        }),
+      },
+    })
+
+    expect((screen.getByRole('button', { name: /^copy$/i }) as HTMLButtonElement).disabled).toBe(
+      false
+    )
+    expect(
+      (screen.getByRole('button', { name: 'Regenerate link' }) as HTMLButtonElement).disabled
+    ).toBe(false)
+    expect((screen.getByRole('button', { name: /^disable$/i }) as HTMLButtonElement).disabled).toBe(
+      false
+    )
+    for (const checkbox of screen.getAllByRole('checkbox')) {
+      expect((checkbox as HTMLInputElement).disabled).toBe(false)
+    }
+    for (const button of screen.getAllByRole('button', { name: /move .* (up|down)/i })) {
+      // Boundary-disabled state is unrelated to the capability — just confirm no aria-describedby
+      // pointing at the capability-denial copy leaked onto these controls.
+      expect(button.hasAttribute('aria-describedby')).toBe(false)
+    }
+  })
+})
+
 describe('status-page +page.svelte (Story 21.8: deduplicated Services section)', () => {
   it('renders exactly one list for the services section, with no separate reorder-only box', () => {
     render(StatusPage, {

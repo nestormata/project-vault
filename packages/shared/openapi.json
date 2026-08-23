@@ -1401,6 +1401,36 @@
           "data"
         ]
       },
+      "CapabilityMapInput": {
+        "type": "object",
+        "properties": {
+          "monitoring.public-status-page": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "monitoring.public-status-page"
+        ]
+      },
+      "CapabilitiesResponseInput": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "capabilities": {
+                "$ref": "#/components/schemas/CapabilityMapInput"
+              }
+            },
+            "required": [
+              "capabilities"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ProjectSummaryInput": {
         "type": "object",
         "properties": {
@@ -11359,6 +11389,39 @@
             },
             "required": [
               "services"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "additionalProperties": false
+      },
+      "CapabilityMap": {
+        "type": "object",
+        "properties": {
+          "monitoring.public-status-page": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "monitoring.public-status-page"
+        ],
+        "additionalProperties": false
+      },
+      "CapabilitiesResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "capabilities": {
+                "$ref": "#/components/schemas/CapabilityMap"
+              }
+            },
+            "required": [
+              "capabilities"
             ],
             "additionalProperties": false
           }
@@ -32384,7 +32447,26 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiError"
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "capability": {
+                      "type": "string"
+                    },
+                    "reasonCode": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -32628,6 +32710,32 @@
             }
           },
           "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/capabilities": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilitiesResponse"
+                }
+              }
+            }
+          },
+          "401": {
             "description": "Default Response",
             "content": {
               "application/json": {

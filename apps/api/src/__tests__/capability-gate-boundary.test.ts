@@ -17,8 +17,14 @@ import { describe, expect, it } from 'vitest'
 const SRC_ROOT = resolve(process.cwd(), 'src')
 const CAPABILITY_GATE_FILE = join(SRC_ROOT, 'lib/capability-gate.ts')
 
-// AC-14's golden inventory of legal assertCapability() callers (relative to src/).
-const LEGAL_ASSERT_CAPABILITY_IMPORTERS = ['modules/monitoring/public-status-page-routes.ts']
+// AC-14's golden inventory of legal assertCapability() callers (relative to src/). Story 23.7
+// adds a second legal importer: GET /api/v1/capabilities, a multi-capability reader (fan-out over
+// Object.values(CapabilityId)), not a single-capability route gate — Story 23.3 AC-16 explicitly
+// reserved this fan-out question for this story.
+const LEGAL_ASSERT_CAPABILITY_IMPORTERS = [
+  'modules/monitoring/public-status-page-routes.ts',
+  'modules/capabilities/capabilities-routes.ts',
+]
 
 // AC-21: role/MFA/platform-operator helper modules capability-gate.ts must never import, and
 // which must never import capability-gate.ts back (no cyclic merge path).

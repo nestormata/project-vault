@@ -32,6 +32,7 @@ import { monitoringRoutes } from './modules/monitoring/routes.js'
 import { healthDashboardRoutes } from './modules/monitoring/health-dashboard-routes.js'
 import { statusPageRoutes } from './modules/monitoring/status-page-routes.js'
 import { publicStatusPageRoutes } from './modules/monitoring/public-status-page-routes.js'
+import { capabilitiesRoutes } from './modules/capabilities/capabilities-routes.js'
 import { onboardingRoutes } from './modules/onboarding/routes.js'
 import { usersRoutes } from './modules/users/routes.js'
 import { searchRoutes } from './modules/search/routes.js'
@@ -313,6 +314,9 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(dashboardRoutes, { prefix: '/api/v1/dashboard' })
   await fastify.register(healthDashboardRoutes, { prefix: '/api/v1/health-dashboard' })
   await fastify.register(publicStatusPageRoutes, { prefix: '/api/v1/status-pages' })
+  // Story 23.7: GET /api/v1/capabilities — the boolean capability map read, designed against its
+  // only consumer (the status-page screen) rather than inherited speculatively from Story 23.3.
+  await fastify.register(capabilitiesRoutes, { prefix: '/api/v1' })
   await fastify.register(onboardingRoutes, { prefix: '/api/v1/users' })
   await fastify.register(usersRoutes, { prefix: '/api/v1/users' })
   await fastify.register(searchRoutes, { prefix: '/api/v1' })
