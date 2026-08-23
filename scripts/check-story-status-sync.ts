@@ -49,8 +49,20 @@ export function loadSprintStatuses(rootDir: string): Map<string, string> | null 
   }
 }
 
+/**
+ * Extracts the status token from the first `Status:` line in a story file. Many story files
+ * follow the plain `Status: done` convention, but an established, equally common convention in
+ * this project puts explanatory prose after the status word on the same line (e.g. `Status:
+ * review — implementation completed 2026-08-19 after...`, `Status: done (targeted review and
+ * quality gate complete; ...)`). The prior regex required the whole line to be nothing but the
+ * status word, so any annotated `Status:` line silently produced no match at all — not a
+ * mismatch, just invisible to this guard (found live on `23-5`, Epic 23's retro, 2026-08-23: a
+ * `Status: review — ...` header sitting undetected against a `done` sprint-status.yaml entry for
+ * 5 days). Capturing only the first non-whitespace token — not requiring end-of-line — catches
+ * both conventions.
+ */
 function extractStoryFileStatus(content: string): string | undefined {
-  return /^Status:\s*(\S+)\s*$/m.exec(content)?.[1]
+  return /^Status:\s*(\S+)/m.exec(content)?.[1]
 }
 
 export function scanStoryStatusSync(rootDir = process.cwd()): StatusMismatch[] {

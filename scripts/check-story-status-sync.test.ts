@@ -6,6 +6,7 @@ const ARTIFACTS_DIR = '_bmad-output/implementation-artifacts'
 const SPRINT_STATUS_PATH = `${ARTIFACTS_DIR}/sprint-status.yaml`
 const SECOND_STORY_KEY = '1-2-second-story'
 const SECOND_STORY_PATH = `${ARTIFACTS_DIR}/${SECOND_STORY_KEY}.md`
+const SECOND_STORY_REVIEW_CONTENT = '# Story 1.2\n\nStatus: review\n'
 
 const makeFixtureRoot = useFixtureRoots('story-status-sync-', [ARTIFACTS_DIR])
 
@@ -43,14 +44,14 @@ describe('scanStoryStatusSync', () => {
     const root = makeFixtureRoot()
     writeFixture(root, SPRINT_STATUS_PATH, SPRINT_STATUS)
     writeFixture(root, `${ARTIFACTS_DIR}/1-1-first-story.md`, '# Story 1.1\n\nStatus: done\n')
-    writeFixture(root, SECOND_STORY_PATH, '# Story 1.2\n\nStatus: review\n')
+    writeFixture(root, SECOND_STORY_PATH, SECOND_STORY_REVIEW_CONTENT)
 
     expect(scanStoryStatusSync(root)).toEqual([])
   })
 
   it('flags a story file whose Status: header disagrees with sprint-status.yaml (the P6-1/P7-1/P8-1 drift)', () => {
     const root = makeFixtureRoot()
-    writeFixture(root, SECOND_STORY_PATH, '# Story 1.2\n\nStatus: review\n')
+    writeFixture(root, SECOND_STORY_PATH, SECOND_STORY_REVIEW_CONTENT)
     // sprint-status.yaml already flipped this one to done, but the story file's header was never synced
     writeFixture(
       root,
@@ -67,6 +68,48 @@ describe('scanStoryStatusSync', () => {
         sprintStatus: 'done',
       },
     ])
+  })
+
+  it('flags a mismatch even when the Status: line carries trailing prose (Epic 23 retro regression, DW-140)', () => {
+    // Established convention: "Status: review — implementation completed ..." / "Status: done
+    // (targeted review complete; ...)" — the annotated form, not just the bare word. The prior
+    // end-of-line-anchored regex silently produced no match at all for lines like this, hiding
+    // real drift (found live on 23-5: a stale `Status: review — ...` header sitting undetected
+    // against a `done` sprint-status.yaml entry).
+    const root = makeFixtureRoot()
+    writeFixture(
+      root,
+      SECOND_STORY_PATH,
+      '# Story 1.2\n\nStatus: review — implementation completed 2026-08-19 after Story 1.1.\n'
+    )
+    writeFixture(
+      root,
+      SPRINT_STATUS_PATH,
+      SPRINT_STATUS.replace(`${SECOND_STORY_KEY}: review`, `${SECOND_STORY_KEY}: done`)
+    )
+
+    const mismatches = scanStoryStatusSync(root)
+    expect(mismatches).toEqual([
+      {
+        storyKey: SECOND_STORY_KEY,
+        storyFile: SECOND_STORY_PATH,
+        storyStatus: 'review',
+        sprintStatus: 'done',
+      },
+    ])
+  })
+
+  it('matches cleanly when an annotated Status: line agrees with sprint-status.yaml', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, SPRINT_STATUS_PATH, SPRINT_STATUS)
+    writeFixture(
+      root,
+      `${ARTIFACTS_DIR}/1-1-first-story.md`,
+      '# Story 1.1\n\nStatus: done (targeted review and quality gate complete; a residual gap remains externally unexercised)\n'
+    )
+    writeFixture(root, SECOND_STORY_PATH, SECOND_STORY_REVIEW_CONTENT)
+
+    expect(scanStoryStatusSync(root)).toEqual([])
   })
 
   it('ignores files with no matching sprint-status.yaml key (adversarial-review docs, retros, deferred-work.md)', () => {
