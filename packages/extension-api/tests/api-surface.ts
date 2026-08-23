@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import ts from 'typescript'
+import semver from 'semver'
 
 const SNAPSHOT_NAME = 'api-surface.snapshot.md'
 
@@ -286,18 +287,15 @@ export function generateSurfaceSnapshot(root: string): string {
   return applySinceAnnotations(generated, previous, packageJson.version)
 }
 
-function validateExportSince(
-  line: string,
-  next: string,
-  version: number[],
-  currentVersion: string
-): string[] {
+function validateExportSince(line: string, next: string, currentVersion: string): string[] {
   const since = SINCE_VALUE_PATTERN.exec(next)?.[1]
   if (!since) return [`${line} is missing since`]
-  return since
-    .split('.')
-    .map(Number)
-    .some((part, i) => part > (version[i] ?? 0))
+  // Story 23.11 finding: a naive per-component comparison (comparing minor/patch positions
+  // independently) false-positives across a MAJOR bump — e.g. `since: 2.2.0` was incorrectly
+  // flagged as "exceeding" a new `3.0.0` current version purely because 2 > 0 at the minor
+  // position, even though 2.2.0 is a genuinely earlier version than 3.0.0. Real semver
+  // precedence (semver.gt) is the only correct comparison here.
+  return semver.gt(since, currentVersion)
     ? [`${line} since ${since} exceeds ${currentVersion}`]
     : []
 }
@@ -307,14 +305,13 @@ function validateMemberSince(line: string, next: string): string[] {
 }
 
 export function validateSinceIndex(snapshot: string, currentVersion = '2.0.0'): string[] {
-  const version = currentVersion.split('.').map(Number)
   const lines = snapshot.split('\n')
   const errors: string[] = []
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? ''
     const next = lines.slice(index + 1).find((candidate) => candidate.trim().length > 0) ?? ''
     if (line.startsWith('## export '))
-      errors.push(...validateExportSince(line, next, version, currentVersion))
+      errors.push(...validateExportSince(line, next, currentVersion))
     const trimmed = line.trimStart()
     if (trimmed.startsWith('- member: ')) errors.push(...validateMemberSince(line, next))
     if (trimmed.startsWith('- index-signature: ')) errors.push(...validateMemberSince(line, next))

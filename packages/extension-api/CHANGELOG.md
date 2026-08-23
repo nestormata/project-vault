@@ -2,6 +2,26 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.0.0 — 2026-08-23
+
+contract-hash: sha256:7d5ca8c29a7fb4d21f40a2328a51cc22d478f8e9f76d6fe1e2ae712523c241aa
+
+### Breaking
+
+- Removed `organizationId` from `OrgAuthorizationCheckContext` (Story 23.11). The org
+  `checkMembership()` checks against is now always the host's own ambient per-request context
+  (the org/identity actually driving the request that triggered the extension's call) — never a
+  caller-supplied value. This closes a cross-tenant membership-enumeration risk found during
+  Story 23.9's code review: a bug or compromise in the single loaded (trusted) extension could
+  previously ask "is identity X a member of org Y" for an arbitrary org Y it had no legitimate
+  involvement in. `viewerIdentityId` is unchanged and remains an explicit, caller-supplied
+  parameter. This is a genuine TypeScript-breaking change for an existing caller that passes an
+  inline object literal (e.g. `centralizeme-sass`'s `createHostBackedPvAuthorizationChecker`) —
+  TypeScript's excess-property check on object-literal call arguments rejects the now-unknown
+  `organizationId` field at compile time, even though the change is JS-runtime-harmless. That
+  call site must drop `organizationId` from its call in a coordinated follow-up on that repo's
+  side.
+
 ## 2.2.0 — 2026-08-22
 
 contract-hash: sha256:31b84105593fc83a384d472a620eb7883622e7d86d24412497ded0480b42f82a

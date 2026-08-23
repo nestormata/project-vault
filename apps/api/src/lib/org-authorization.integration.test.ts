@@ -6,6 +6,7 @@ import { createTestUser, deleteTestUser, withTestOrg } from '@project-vault/db/t
 import { resolveActiveOrgRole } from '../plugins/authenticate.js'
 import { roleRank } from './secure-route.js'
 import { checkOrgAuthorization } from './org-authorization.js'
+import { runWithRequestContext } from './request-context.js'
 
 type OrgRole = 'owner' | 'admin' | 'member' | 'viewer'
 const NOT_A_MEMBER = { outcome: 'denied', reasonCode: 'not-a-member' } as const
@@ -35,7 +36,9 @@ async function assertConsistentWithIndependentResolution(
 ): Promise<void> {
   const [independentRole, outcome] = await Promise.all([
     resolveActiveOrgRole(userId, orgId),
-    checkOrgAuthorization({ organizationId: orgId, viewerIdentityId: userId, minimumRole }),
+    runWithRequestContext({ orgId, userId }, () =>
+      checkOrgAuthorization({ viewerIdentityId: userId, minimumRole })
+    ),
   ])
 
   if (independentRole === null) {
@@ -86,11 +89,9 @@ describe('checkOrgAuthorization — AC2 no-drift (integration, real DB)', () => 
         await insertMembership(orgId, userId, 'admin', 'deactivated')
         await assertConsistentWithIndependentResolution(orgId, userId, 'viewer')
 
-        const outcome = await checkOrgAuthorization({
-          organizationId: orgId,
-          viewerIdentityId: userId,
-          minimumRole: 'viewer',
-        })
+        const outcome = await runWithRequestContext({ orgId, userId }, () =>
+          checkOrgAuthorization({ viewerIdentityId: userId, minimumRole: 'viewer' })
+        )
         expect(outcome).toEqual(NOT_A_MEMBER)
       } finally {
         await deleteTestUser(userId)
@@ -112,11 +113,9 @@ describe('checkOrgAuthorization — AC2 no-drift (integration, real DB)', () => 
   it('AC3: a non-existent organizationId is denied/not-a-member, never an error', async () => {
     const userId = await createTestUser('org-authz-no-org')
     try {
-      const outcome = await checkOrgAuthorization({
-        organizationId: NONEXISTENT_ORG_ID,
-        viewerIdentityId: userId,
-        minimumRole: 'viewer',
-      })
+      const outcome = await runWithRequestContext({ orgId: NONEXISTENT_ORG_ID, userId }, () =>
+        checkOrgAuthorization({ viewerIdentityId: userId, minimumRole: 'viewer' })
+      )
       expect(outcome).toEqual(NOT_A_MEMBER)
     } finally {
       await deleteTestUser(userId)
@@ -128,11 +127,9 @@ describe('checkOrgAuthorization — AC2 no-drift (integration, real DB)', () => 
       const userId = await createTestUser('org-authz-downgrade')
       try {
         await insertMembership(orgId, userId, 'admin')
-        const before = await checkOrgAuthorization({
-          organizationId: orgId,
-          viewerIdentityId: userId,
-          minimumRole: 'admin',
-        })
+        const before = await runWithRequestContext({ orgId, userId }, () =>
+          checkOrgAuthorization({ viewerIdentityId: userId, minimumRole: 'admin' })
+        )
         expect(before).toEqual({ outcome: 'authorized' })
 
         await withOrg(orgId, (tx) =>
@@ -142,11 +139,9 @@ describe('checkOrgAuthorization — AC2 no-drift (integration, real DB)', () => 
             .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.userId, userId)))
         )
 
-        const after = await checkOrgAuthorization({
-          organizationId: orgId,
-          viewerIdentityId: userId,
-          minimumRole: 'admin',
-        })
+        const after = await runWithRequestContext({ orgId, userId }, () =>
+          checkOrgAuthorization({ viewerIdentityId: userId, minimumRole: 'admin' })
+        )
         expect(after).toEqual(NOT_A_MEMBER)
       } finally {
         await deleteTestUser(userId)

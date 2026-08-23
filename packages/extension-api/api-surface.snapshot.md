@@ -135,7 +135,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"2.2.0"`
+- type: `"3.0.0"`
 
 ## export `ExtensionCapability`
 
@@ -337,9 +337,6 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 2.2.0
   - type: `"owner" | "admin" | "member" | "viewer"`
   - union-members: `"owner"`, `"admin"`, `"member"`, `"viewer"`
-- member: `organizationId`
-  - since: 2.2.0
-  - type: `string`
 - member: `viewerIdentityId`
   - since: 2.2.0
   - type: `string`

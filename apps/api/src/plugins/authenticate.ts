@@ -11,6 +11,7 @@ import {
 } from '../modules/auth/session-activity.js'
 import { cleanupExpiredSession } from '../modules/auth/session-revoke.js'
 import { parseAccessTokenClaims } from '../modules/auth/tokens.js'
+import { bindRequestContext, bindRequestContextLifecycle } from '../lib/request-context.js'
 
 const ORG_ROLES = new Set(['owner', 'admin', 'member', 'viewer'])
 
@@ -244,6 +245,14 @@ export async function authenticateRequest(
       orgRole,
       isPlatformOperator,
     }
+
+    // Story 23.11 AC2/AC9 — bind the ambient per-request context immediately after
+    // request.authContext is assigned, using the identical orgId/userId values (never a second,
+    // independent resolution) and strictly before this preHandler returns — i.e. before the
+    // route handler, and therefore before any code that could trigger an extension hook, ever
+    // runs. enterWith() (inside bindRequestContext()) covers the rest of this request's async
+    // execution, including whatever eventually calls into HostServices hooks.
+    bindRequestContext({ orgId: session.orgId, userId: session.userId })
   } catch (error) {
     if (error instanceof AppError) return sendAuthError(reply, error)
     request.log.error({ eventType: 'auth.infrastructure_error', err: error })
@@ -255,6 +264,11 @@ export async function authenticateRequest(
 }
 
 export default fp(async (fastify) => {
+  // Story 23.11 AC2/AC9 — opens the ambient request-context box for every request, before any
+  // preHandler (including `authenticate` itself) ever runs. See request-context.ts's module
+  // docstring for why this two-phase (open-early, mutate-later) shape is required rather than a
+  // single `enterWith()` call made later, inside `authenticateRequest()`.
+  fastify.addHook('onRequest', bindRequestContextLifecycle)
   fastify.decorate('authenticate', (request: FastifyRequest, reply: FastifyReply) =>
     authenticateRequest(fastify as unknown as JwtVerifier, request, reply)
   )

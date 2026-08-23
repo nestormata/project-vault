@@ -8,7 +8,9 @@ import type { ExtensionHooks } from './register-extension.js'
 import type { HostServices } from './host-services.js'
 
 const VALID_NAME = 'com.acme.sso-extension'
-const INCOMPATIBLE_API_VERSION = '3.0.0'
+// Story 23.11 AC6 — the host bumped to EXTENSION_API_VERSION 3.0.0, so this fixture (an
+// out-of-range version for the "generic incompatible-version" cases below) moves to 4.0.0.
+const INCOMPATIBLE_API_VERSION = '4.0.0'
 const INCOMPATIBLE_VERSION_REASON: ExtensionRegistrationErrorReason = 'incompatible-version'
 const INVALID_NAME_REASON: ExtensionRegistrationErrorReason = 'invalid-name'
 const PROJECT_LIFECYCLE_CAPABILITY = 'project-lifecycle' as const
@@ -244,7 +246,7 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each(['2.3.0', '0.9.0', '3.0.0', '3.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '3.3.1'])(
+  it.each(['3.1.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
     'rejects canonical version outside %s',
     (apiVersion) => {
       const hooksFactory = makeHooksFactory()
@@ -279,9 +281,11 @@ describe('registerExtension — concrete canonical version gate', () => {
   })
 
   it('allows only the above-host same-major rollback escape', () => {
-    expect(() => registerExtension(manifest({ apiVersion: '2.3.0' }), makeHooksFactory())).toThrow()
+    // Story 23.11 AC6 — host EXTENSION_API_VERSION is now 3.0.0; '3.1.0' is the above-host,
+    // same-major escape-eligible version, and '4.0.0' is a different major (never escape-eligible).
+    expect(() => registerExtension(manifest({ apiVersion: '3.1.0' }), makeHooksFactory())).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '2.3.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '3.1.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()
@@ -291,7 +295,7 @@ describe('registerExtension — concrete canonical version gate', () => {
       })
     ).toThrow(/not a concrete semver version/)
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.0.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '4.0.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).toThrow(/outside this host's supported range/)
