@@ -223,6 +223,14 @@ describeDatabase('Story 24.5a privilege integration', () => {
       await adminSql.unsafe(
         `CREATE ROLE "${roleName}" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD '${credentialValue}'`
       )
+      // Postgres 15+ no longer grants PUBLIC any privilege (not even USAGE) on the
+      // public schema by default, so a bare throwaway role can't resolve an unqualified
+      // function call at all -- it fails name resolution with 42883 (undefined_function)
+      // before privilege checking ever runs. Grant schema USAGE explicitly so the
+      // assertions below actually isolate what this test verifies: that migration 0080's
+      // per-function EXECUTE revoke -- not schema visibility -- is what denies the call
+      // (SQLSTATE 42501, insufficient_privilege).
+      await adminSql.unsafe(`GRANT USAGE ON SCHEMA public TO "${roleName}"`)
       const roleUrl = new URL(privilegedUrl as string)
       roleUrl.username = roleName
       roleUrl.password = credentialValue
