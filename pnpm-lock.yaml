@@ -190,6 +190,9 @@ importers:
       '@project-vault/mock-sso-extension':
         specifier: workspace:*
         version: link:../../fixtures/mock-sso-extension
+      '@project-vault/mock-ui-panel-extension':
+        specifier: workspace:*
+        version: link:../../fixtures/mock-ui-panel-extension
       '@project-vault/tsconfig':
         specifier: workspace:*
         version: link:../../packages/tsconfig
