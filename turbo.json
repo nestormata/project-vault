@@ -14,7 +14,8 @@
   "globalPassThroughEnv": [
     "VAULT_ALLOW_REMOTE_INIT",
     "VAULT_BOOTSTRAP_TOKEN",
-    "VAULT_ENVELOPE_KEY_HALF"
+    "VAULT_ENVELOPE_KEY_HALF",
+    "VAULT_EXTENSIONS_PACKAGE"
   ],
   "tasks": {
     "build": {
