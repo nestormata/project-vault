@@ -253,6 +253,27 @@ describe('scanFollowupReviewGate', () => {
     expect(flaggedKeys).not.toContain('20-5-pv-deliver-the-approved-scoped-sharing-experience')
   })
 
+  it('real repository state: scanning the whole repo returns no unaccounted violations (Epic 24 retro regression)', () => {
+    // The AC-7 backfill test above only asserts three specific keys are absent from the
+    // violation list, which is exactly the scoping mistake that let 1-19, spec-9-9, and
+    // spec-21-5 sit unswept until Epic 24's retrospective ran a genuinely project-wide
+    // check (DW-137/DW-138/DW-139). Assert the full scan is empty so a future flagged
+    // story with no ledger entry fails this test immediately, rather than only the three
+    // keys anyone happened to think to name.
+    const violations = scanFollowupReviewGate(repositoryRoot)
+    expect(violations).toEqual([])
+  })
+
+  it('finds a flagged story under the spec-<key>.md naming convention (DW-138/DW-139 regression)', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, SPRINT_STATUS_PATH, BASE_SPRINT_STATUS)
+    writeFixture(root, DEFERRED_WORK_PATH, EMPTY_DEFERRED_WORK)
+    writeFixture(root, `${ARTIFACTS_DIR}/spec-9-1-fixture-story.md`, flaggedStorySimple())
+
+    const violations = scanFollowupReviewGate(root)
+    expect(violations.map((v) => v.storyKey)).toContain(STORY_KEY)
+  })
+
   it('the CI script exits non-zero and names the blocked story key on a fixture with no coverage', () => {
     const root = makeFixtureRoot()
     writeFixture(root, SPRINT_STATUS_PATH, BASE_SPRINT_STATUS)
