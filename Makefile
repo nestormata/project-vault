@@ -158,6 +158,14 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_ADMIN) pnpm turbo typecheck
 	pnpm turbo lint
 	$(MAKE) db-migrate
+	# docker-compose.ci.yml's `ci` service only depends on `db` (service_healthy) — it never
+	# brings up the `admin-provision` service that ALTER ROLEs vault_admin's password for
+	# `make docker-up`, so migration 0071's freshly-created vault_admin role is left with no
+	# usable password here. Without this, every ADMIN_DATABASE_URL-backed query (e.g.
+	# findErasedRequestForEmailGlobally at registration) fails with "password authentication
+	# failed for user \"vault_admin\"", cascading into hundreds of unrelated test failures.
+	# Mirrors .github/workflows/ci.yml's "Provision local test admin role credential" step.
+	psql "$(DB_URL_SUPERUSER)" -v ON_ERROR_STOP=1 -c "ALTER ROLE vault_admin PASSWORD 'password'"
 	$(MAKE) check-rls
 	$(MAKE) check-function-executability
 	$(MAKE) check-function-executability-tests

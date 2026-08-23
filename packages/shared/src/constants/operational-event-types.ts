@@ -353,6 +353,17 @@ export const OperationalEvent = {
   // limited to a fixed enum — never the raw payload or exception message.
   EXTENSION_AUDIT_EVENT_WRITE_SUCCEEDED: 'extension_audit_event.write_succeeded',
   EXTENSION_AUDIT_EVENT_WRITE_REJECTED: 'extension_audit_event.write_rejected',
+
+  // Story 23.9 AC8: structured audit-log entry written for EVERY orgAuthorization.checkMembership()
+  // call (authorized, denied, or errored) — bounds blast radius from a bug/compromise in the
+  // trusted extension calling this hook. Fields are `organizationId`/`viewerIdentityId`/
+  // `minimumRole`/`outcome`/`extensionName` only — never `reasonCode` (diagnostic-only, and would
+  // otherwise leak the not-a-member membership-existence oracle Story 23.9's code review flagged).
+  ORG_AUTHORIZATION_CHECK_RECORDED: 'org_authorization.check_recorded',
+  // Story 23.9 AC8: a checkMembership() call was refused before resolution because its extension's
+  // in-flight accounting key was already at its concurrency cap — a distinct rate-limit budget
+  // from capability-gate.ts's own (never shared).
+  ORG_AUTHORIZATION_RATE_LIMITED: 'org_authorization.rate_limited',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

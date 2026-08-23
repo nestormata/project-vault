@@ -2,6 +2,16 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 2.2.0 — 2026-08-22
+
+contract-hash: sha256:31b84105593fc83a384d472a620eb7883622e7d86d24412497ded0480b42f82a
+
+### Added
+
+- Added the host-called `orgAuthorization.checkMembership()` service on `HostServices` (Story
+  23.9) so extensions can ask PV whether an identity currently holds at least a given role in an
+  org, without receiving database access or implementing authorization logic themselves.
+
 ## 2.1.0 — 2026-08-19
 
 contract-hash: sha256:bc6d08f603fe27347788f45495c2d332486110eefab11ee5c5c76ba1dace640d

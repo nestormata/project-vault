@@ -24,6 +24,7 @@ import { operationalLog } from '../lib/logger.js'
 import { raceWithTimeout as sharedRaceWithTimeout } from '../lib/race-with-timeout.js'
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 import { writeExtensionAuditEventForManifest } from '../lib/audit-event-source.js'
+import { checkOrgAuthorization } from '../lib/org-authorization.js'
 import { writePlatformAuditEntryOrFailClosed } from '../lib/audit-or-fail-closed.js'
 import { fetchAllOrgIds } from '../middleware/rls.js'
 import type { Tx } from '@project-vault/db'
@@ -216,12 +217,23 @@ async function logExtensionDbPoolSizing(logger: LoaderLogger): Promise<void> {
  * `registeredGate`/`registeredGateName` in `lib/capability-gate.ts`).
  */
 async function buildHostServices(
-  manifest: ExtensionManifest
+  manifest: ExtensionManifest,
+  logger: LoaderLogger = silentLogger
 ): Promise<ExtensionRuntimeContext & HostServices> {
   const scopeStatus = await readExtensionDbScopeStatus(manifest)
   return {
     auditEventSource: {
       writeAuditEvent: (input) => writeExtensionAuditEventForManifest(manifest, input),
+    },
+    // Story 23.9 AC1/Task 2: bound once at extension-load time, same as auditEventSource above.
+    // Safe to reuse across requests — organizationId/viewerIdentityId are explicit call params
+    // (never resolved ambiently), and checkOrgAuthorization() itself never caches (AC5).
+    // Story 23.9 AC8 (Task 5): `extensionName`/`logger` are host-only accounting/audit context,
+    // bound to this loaded extension's own manifest name — never part of the extension-facing
+    // `checkMembership(context)` call signature the extension itself invokes.
+    orgAuthorization: {
+      checkMembership: (context) =>
+        checkOrgAuthorization(context, { extensionName: manifest.name, logger }),
     },
     getDbHandle: async () => {
       if (!manifest.dbScope || manifest.dbScope.length === 0) {
@@ -365,7 +377,8 @@ async function raceWithTimeout(
   packageName: string,
   importFn: ImportFn,
   timeoutMs: number,
-  allowApiVersionAboveHost: boolean
+  allowApiVersionAboveHost: boolean,
+  logger: LoaderLogger
 ): Promise<RaceResult> {
   const raced = await sharedRaceWithTimeout<LoadOutcome>(async () => {
     const mod = await importFn(packageName)
@@ -373,7 +386,7 @@ async function raceWithTimeout(
       mod.default.manifest,
       mod.default.hooksFactory,
       { allowApiVersionAboveHost },
-      await buildHostServices(mod.default.manifest)
+      await buildHostServices(mod.default.manifest, logger)
     )
   }, timeoutMs)
 
@@ -479,6 +492,12 @@ export async function loadExtension(
   if (!packageName) return
   if (isDoubleInvocation(logger)) return
 
-  const result = await raceWithTimeout(packageName, importFn, timeoutMs, allowApiVersionAboveHost)
+  const result = await raceWithTimeout(
+    packageName,
+    importFn,
+    timeoutMs,
+    allowApiVersionAboveHost,
+    logger
+  )
   await applyOutcome(result, listOrgIds, auditWriter, logger, allowApiVersionAboveHost)
 }

@@ -244,27 +244,22 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each([
-    '2.2.0',
-    '0.9.0',
-    '3.0.0',
-    '3.0.0-beta.1',
-    '1.1.0-beta.1',
-    '1.3.0-beta.1',
-    '3.3.1',
-  ])('rejects canonical version outside %s', (apiVersion) => {
-    const hooksFactory = makeHooksFactory()
-    let caught: unknown
-    try {
-      registerExtension(manifest({ apiVersion }), hooksFactory)
-    } catch (error) {
-      caught = error
+  it.each(['2.3.0', '0.9.0', '3.0.0', '3.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '3.3.1'])(
+    'rejects canonical version outside %s',
+    (apiVersion) => {
+      const hooksFactory = makeHooksFactory()
+      let caught: unknown
+      try {
+        registerExtension(manifest({ apiVersion }), hooksFactory)
+      } catch (error) {
+        caught = error
+      }
+      expect((caught as ExtensionRegistrationError).message).toContain(
+        HOST_SUPPORTED_EXTENSION_API_RANGE
+      )
+      expect(hooksFactory).not.toHaveBeenCalled()
     }
-    expect((caught as ExtensionRegistrationError).message).toContain(
-      HOST_SUPPORTED_EXTENSION_API_RANGE
-    )
-    expect(hooksFactory).not.toHaveBeenCalled()
-  })
+  )
 
   it('reads apiVersion once and records the validated value', () => {
     let reads = 0
@@ -284,9 +279,9 @@ describe('registerExtension — concrete canonical version gate', () => {
   })
 
   it('allows only the above-host same-major rollback escape', () => {
-    expect(() => registerExtension(manifest({ apiVersion: '2.2.0' }), makeHooksFactory())).toThrow()
+    expect(() => registerExtension(manifest({ apiVersion: '2.3.0' }), makeHooksFactory())).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '2.2.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '2.3.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()

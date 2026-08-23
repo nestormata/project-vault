@@ -1,4 +1,5 @@
 import type { AuditEventSourceHost } from './hooks/audit-event-source.js'
+import type { OrgAuthorizationHost } from './hooks/org-authorization.js'
 
 /**
  * Story 23.8 AC-4 — the new injected-context channel `hooksFactory()` receives at load time.
@@ -13,4 +14,5 @@ import type { AuditEventSourceHost } from './hooks/audit-event-source.js'
  */
 export type HostServices = {
   auditEventSource: AuditEventSourceHost
+  orgAuthorization: OrgAuthorizationHost
 }

@@ -23,6 +23,7 @@ describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
   it('hooksFactory(host) returns no hooks — this hook is host-provided, not extension-implemented', () => {
     const hooks = mockAuditEventSourceExtension.hooksFactory({
       auditEventSource: { writeAuditEvent: async () => ({ id: 'x', createdAt: '' }) },
+      orgAuthorization: { checkMembership: async () => ({ outcome: 'authorized' }) },
     })
     expect(hooks).toEqual({})
   })
@@ -38,7 +39,10 @@ describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
       id: `row-for-${input.eventType}`,
       createdAt: '2026-08-17T00:00:00.000Z',
     })
-    mockAuditEventSourceExtension.hooksFactory({ auditEventSource: { writeAuditEvent } })
+    mockAuditEventSourceExtension.hooksFactory({
+      auditEventSource: { writeAuditEvent },
+      orgAuthorization: { checkMembership: async () => ({ outcome: 'authorized' }) },
+    })
 
     const result = await triggerAuditWrite({
       eventType: `ext.${mockAuditEventSourceExtension.manifest.name}.fixture_triggered`,

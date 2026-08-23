@@ -135,7 +135,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"2.1.0"`
+- type: `"2.2.0"`
 
 ## export `ExtensionCapability`
 
@@ -291,6 +291,13 @@ Generated from `src/index.ts`; update this file and classify the change against 
     - since: 1.0.0
     - type: `(input: AuditEventSourceWriteInput) => Promise<AuditEventSourceWriteResult>`
     - call-signature: `(input: AuditEventSourceWriteInput): Promise<AuditEventSourceWriteResult>`
+- member: `orgAuthorization`
+  - since: 2.2.0
+  - type: `OrgAuthorizationHost`
+  - member: `checkMembership`
+    - since: 2.2.0
+    - type: `(context: OrgAuthorizationCheckContext) => Promise<OrgAuthorizationOutcome>`
+    - call-signature: `(context: OrgAuthorizationCheckContext): Promise<OrgAuthorizationOutcome>`
 
 ## export `isExtensionApiVersionSupported`
 
@@ -320,6 +327,39 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - member: `subject`
   - since: 1.0.0
   - type: `string`
+
+## export `OrgAuthorizationCheckContext`
+
+- since: 2.2.0
+- kind: type
+- type: `OrgAuthorizationCheckContext`
+- member: `minimumRole`
+  - since: 2.2.0
+  - type: `"owner" | "admin" | "member" | "viewer"`
+  - union-members: `"owner"`, `"admin"`, `"member"`, `"viewer"`
+- member: `organizationId`
+  - since: 2.2.0
+  - type: `string`
+- member: `viewerIdentityId`
+  - since: 2.2.0
+  - type: `string`
+
+## export `OrgAuthorizationHost`
+
+- since: 2.2.0
+- kind: type
+- type: `OrgAuthorizationHost`
+- member: `checkMembership`
+  - since: 2.2.0
+  - type: `(context: OrgAuthorizationCheckContext) => Promise<OrgAuthorizationOutcome>`
+  - call-signature: `(context: OrgAuthorizationCheckContext): Promise<OrgAuthorizationOutcome>`
+
+## export `OrgAuthorizationOutcome`
+
+- since: 2.2.0
+- kind: type
+- type: `OrgAuthorizationOutcome`
+- union-members: `{ outcome: "authorized"; }`, `{ outcome: "denied"; reasonCode: string; }`, `{ outcome: "error"; reasonCode: string; }`
 
 ## export `ProjectCreateDecision`
 
