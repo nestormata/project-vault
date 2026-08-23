@@ -27,6 +27,32 @@ const DEFERRED_WORK_PATH = '_bmad-output/implementation-artifacts/deferred-work.
 /** Real story keys have the `<epic>-<story>-<slug>` shape — skip epic/retrospective/other keys. */
 const STORY_KEY_PATTERN = /^\d+-\d+-/
 
+type ResolvedStoryFile = { path: string; content: string }
+
+/**
+ * This project has used two story-file naming conventions over time: the plain `<key>.md`
+ * form, and a `spec-<key>.md` form (see e.g. `spec-9-9-...md`, `spec-21-5-...md`). Try both
+ * rather than assuming the plain form — a `spec-`-prefixed story silently skipped here
+ * (DW-138/DW-139) is indistinguishable from a real integrity gap, which is worse than a false
+ * negative: it means this gate can never catch a flagged `spec-`-prefixed story regardless of
+ * whether it's swept. Returns `undefined` when the story key is tracked in `sprint-status.yaml`
+ * but has no matching file on disk under either convention.
+ */
+function resolveStoryFile(root: string, storyKey: string): ResolvedStoryFile | undefined {
+  const candidatePaths = [
+    resolve(root, STORIES_DIR, `${storyKey}.md`),
+    resolve(root, STORIES_DIR, `spec-${storyKey}.md`),
+  ]
+  for (const path of candidatePaths) {
+    try {
+      return { path, content: readFileSync(path, 'utf-8') }
+    } catch {
+      continue
+    }
+  }
+  return undefined
+}
+
 export function scanFollowupReviewGate(rootDir = process.cwd()): FollowupReviewGateViolation[] {
   const root = resolve(rootDir)
 
@@ -47,19 +73,22 @@ export function scanFollowupReviewGate(rootDir = process.cwd()): FollowupReviewG
     if (!STORY_KEY_PATTERN.test(storyKey)) continue
     if (status !== 'done') continue
 
-    const storyFilePath = resolve(root, STORIES_DIR, `${storyKey}.md`)
-    let content: string
-    try {
-      content = readFileSync(storyFilePath, 'utf-8')
-    } catch {
-      // Story key tracked in sprint-status.yaml but no matching file on disk — nothing to
-      // evaluate; skip rather than crash the check over an unrelated integrity gap.
+    const storyFile = resolveStoryFile(root, storyKey)
+    if (!storyFile) {
+      // Story key tracked in sprint-status.yaml but no matching file on disk under either
+      // naming convention — nothing to evaluate; skip rather than crash the check over an
+      // unrelated integrity gap.
       continue
     }
 
-    const verdict = evaluateFollowupReviewGate(storyKey, status, content, deferredWorkContent)
+    const verdict = evaluateFollowupReviewGate(
+      storyKey,
+      status,
+      storyFile.content,
+      deferredWorkContent
+    )
     if (verdict === 'block') {
-      violations.push({ storyKey, storyFile: toRepoPath(root, storyFilePath) })
+      violations.push({ storyKey, storyFile: toRepoPath(root, storyFile.path) })
     }
   }
 
