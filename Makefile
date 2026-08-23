@@ -198,7 +198,7 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	# Non-blocking, matching ci.yml's `continue-on-error: true` on this same command — see
 	# packages/vault-action's accepted transitive undici advisory via @actions/core.
 	pnpm audit --audit-level=high || true
-	pnpm generate-spec
+	DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_ADMIN) pnpm generate-spec
 	git diff --exit-code packages/shared/openapi.json
 
 # --- Docker -----------------------------------------------------------------
