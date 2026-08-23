@@ -5,13 +5,16 @@ import { fileURLToPath } from 'node:url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const outPath = resolve(__dirname, '../../../../packages/shared/openapi.json')
 
-// config/env.ts requires DATABASE_URL with no default (real deployments must set it
-// explicitly), but route registration never opens a connection — @project-vault/db's
-// getDb() only connects lazily on first query, and this script only registers routes and
-// reads their attached schemas. Any well-formed, non-superuser URL satisfies validation
-// without a reachable database — no password is required, so none is included (avoids
-// looking like a credential to secret-scanning tools).
+// config/env.ts requires DATABASE_URL and ADMIN_DATABASE_URL with no default (real
+// deployments must set them explicitly), but route registration never opens a connection —
+// @project-vault/db's getDb() only connects lazily on first query, and this script only
+// registers routes and reads their attached schemas. Any well-formed, non-superuser URL
+// satisfies validation without a reachable database — no password is required, so none is
+// included (avoids looking like a credential to secret-scanning tools). ADMIN_DATABASE_URL
+// must additionally name a role distinct from DATABASE_URL's (env.ts's collision check), so
+// this uses vault_admin rather than repeating vault_app.
 process.env.DATABASE_URL ??= 'postgresql://vault_app@localhost:5432/project_vault'
+process.env.ADMIN_DATABASE_URL ??= 'postgresql://vault_admin@localhost:5432/project_vault'
 
 // Story 9.10: the checked-in artifact must be byte-identical wherever it is regenerated, because
 // CI and `make ci` gate on `git diff --exit-code packages/shared/openapi.json`. `info.version`
