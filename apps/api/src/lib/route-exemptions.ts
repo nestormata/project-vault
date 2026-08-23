@@ -1234,6 +1234,12 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'org_sso_domain.deleted',
     sameTransactionAuditService: 'writeSsoDomainAuditEntry',
   },
+  'GET /api/v1/capabilities': {
+    action: 'read',
+    auditOmissionReason:
+      "Story 23.7: returns a boolean entitlement map (never a reasonCode/message or secret value); any actual denial is separately audited by assertCapability()'s own existing capability.denied predicate (Story 23.3 AC-25), so this read itself is not audit-worthy.",
+    reviewer: SECURITY_OWNER,
+  },
 }
 
 export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = [
