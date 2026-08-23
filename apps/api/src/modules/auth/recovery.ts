@@ -15,6 +15,7 @@ import { env } from '../../config/env.js'
 import { AppError } from '../../lib/errors.js'
 import { stripTrailingSlashes } from '../../lib/url.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
+import { activeMembershipRoleQuery } from '../../plugins/authenticate.js'
 import { normalizeEmail } from './normalize.js'
 import { hashUserPassword } from './password.js'
 import {
@@ -54,17 +55,7 @@ async function activeOrgMembershipsForUser(
   const memberships: { orgId: string; hasReachableAdmin: boolean }[] = []
   for (const { orgId } of orgRows) {
     await tx.execute(sql`SELECT set_config('app.current_org_id', ${orgId}, true)`)
-    const [membership] = await tx
-      .select({ role: orgMemberships.role })
-      .from(orgMemberships)
-      .where(
-        and(
-          eq(orgMemberships.userId, userId),
-          eq(orgMemberships.orgId, orgId),
-          eq(orgMemberships.status, 'active')
-        )
-      )
-      .limit(1)
+    const [membership] = await activeMembershipRoleQuery(tx, userId, orgId)
     if (!membership) continue
     const [adminRow] = await tx
       .select({ userId: orgMemberships.userId })

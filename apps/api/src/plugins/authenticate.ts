@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import fp from 'fastify-plugin'
-import { getDb, withOrg } from '@project-vault/db'
+import { getDb, withOrg, type Tx } from '@project-vault/db'
 import { orgMemberships, revokedTokens, sessions, users } from '@project-vault/db/schema'
 import { env } from '../config/env.js'
 import { AppError } from '../lib/errors.js'
@@ -122,6 +122,27 @@ async function enforceIdleTimeout(session: AuthSessionRow): Promise<void> {
 }
 
 /**
+ * Story 23.9 Task 1 — the single, shared active-membership select, org-scoped via the caller's
+ * `tx`. Reused by `resolveActiveOrgRole()` below (opens its own `withOrg()` transaction) and by
+ * `apps/api/src/modules/auth/recovery.ts`'s `activeOrgMembershipsForUser()` (iterates every org
+ * within one already-open transaction, flipping `app.current_org_id` per row — cannot use
+ * `resolveActiveOrgRole()` directly since that would open a fresh transaction per org).
+ */
+export function activeMembershipRoleQuery(tx: Tx, userId: string, orgId: string) {
+  return tx
+    .select({ role: orgMemberships.role })
+    .from(orgMemberships)
+    .where(
+      and(
+        eq(orgMemberships.userId, userId),
+        eq(orgMemberships.orgId, orgId),
+        eq(orgMemberships.status, 'active')
+      )
+    )
+    .limit(1)
+}
+
+/**
  * Story 23.9 Task 1 — the single, shared active-membership/role resolution query. Reused by
  * `loadOrgRole()` below (session-based, throws on no qualifying row) and by
  * `apps/api/src/lib/org-authorization.ts`'s `checkOrgAuthorization()` (explicit
@@ -133,19 +154,7 @@ export async function resolveActiveOrgRole(
   userId: string,
   orgId: string
 ): Promise<'owner' | 'admin' | 'member' | 'viewer' | null> {
-  const memberships = await withOrg(orgId, (tx) =>
-    tx
-      .select({ role: orgMemberships.role })
-      .from(orgMemberships)
-      .where(
-        and(
-          eq(orgMemberships.userId, userId),
-          eq(orgMemberships.orgId, orgId),
-          eq(orgMemberships.status, 'active')
-        )
-      )
-      .limit(1)
-  )
+  const memberships = await withOrg(orgId, (tx) => activeMembershipRoleQuery(tx, userId, orgId))
   const membership = memberships[0]
   if (!membership || !isOrgRole(membership.role)) return null
   return membership.role
