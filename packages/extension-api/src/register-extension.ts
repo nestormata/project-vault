@@ -49,6 +49,14 @@ const DEFAULT_HOST_SERVICES: HostServices = {
         )
       ),
   },
+  orgAuthorization: {
+    checkMembership: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — orgAuthorization.checkMembership is unavailable'
+        )
+      ),
+  },
 }
 
 /**

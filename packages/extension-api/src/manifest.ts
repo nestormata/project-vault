@@ -6,7 +6,11 @@ import type { ExtensionDbScopeEntry } from './db-access.js'
  * § Extension Manifest Shape.
  */
 export type ExtensionCapability =
-  'auth-provider' | 'notification-channel' | 'ui-panel' | 'capability-gate' | 'audit-event-source'
+  | 'auth-provider'
+  | 'notification-channel'
+  | 'ui-panel'
+  | 'capability-gate'
+  | 'audit-event-source'
   | 'project-lifecycle'
 
 export type ExtensionManifest = {
@@ -33,7 +37,7 @@ export type ExtensionManifest = {
  * under `src/**` (enforced by `scripts/check-extension-api-version-skew.ts`, AC7) and kept equal
  * to this package's `package.json` `version` field (see `manifest.test.ts`).
  */
-export const EXTENSION_API_VERSION = '2.1.0'
+export const EXTENSION_API_VERSION = '2.2.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

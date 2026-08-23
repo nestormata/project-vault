@@ -112,6 +112,35 @@ describe('loadExtension — valid package (AC-2)', () => {
     expect(getExtensionStatus().status).toBe('loaded')
     await expect(getDbHandle?.()).resolves.toEqual({ unavailable: 'no-approved-scope' })
   })
+
+  // Story 23.9 Task 4 (pre-mortem finding) — an auditEventSource-only wiring assertion passing
+  // is not sufficient evidence orgAuthorization was actually wired into buildHostServices()'s
+  // returned object literal, not just added to the HostServices type (Story 20-7's "typed but
+  // not wired" recurring gap shape). Assert the field is actually present on the object handed
+  // to hooksFactory(), and that it is a real, callable function — not merely `in` on the object.
+  it('Story 23.9 AC1/Task 4: buildHostServices() actually wires orgAuthorization.checkMembership alongside auditEventSource', async () => {
+    let capturedHost: Record<string, unknown> | undefined
+    const importFn = vi.fn().mockResolvedValue({
+      default: {
+        manifest: VALID_MANIFEST,
+        hooksFactory: (host: Record<string, unknown>) => {
+          capturedHost = host
+          return NOOP_HOOKS
+        },
+      },
+    })
+
+    await loadExtension(VALID_PACKAGE_NAME, baseDeps({ importFn }))
+
+    expect(getExtensionStatus().status).toBe('loaded')
+    expect(capturedHost).toBeDefined()
+    expect(capturedHost?.auditEventSource).toBeDefined()
+    expect(capturedHost?.orgAuthorization).toBeDefined()
+    const orgAuthorization = capturedHost?.orgAuthorization as {
+      checkMembership?: unknown
+    }
+    expect(typeof orgAuthorization.checkMembership).toBe('function')
+  })
 })
 
 describe('loadExtension — failure reasons (AC-3a/3b/3c)', () => {
@@ -360,7 +389,7 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
 
   it('warns on every load using the explicit above-host rollback escape', async () => {
     const logger = noopLogger()
-    const aboveHostApiVersion = '2.2.0'
+    const aboveHostApiVersion = '2.3.0'
     const importFn = vi.fn().mockResolvedValue({
       default: {
         manifest: { ...VALID_MANIFEST, apiVersion: aboveHostApiVersion },

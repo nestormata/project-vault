@@ -121,25 +121,42 @@ async function enforceIdleTimeout(session: AuthSessionRow): Promise<void> {
   throw new AppError('session_expired', 'Session expired due to inactivity', 401)
 }
 
-async function loadOrgRole(session: AuthSessionRow) {
-  const memberships = await withOrg(session.orgId, (tx) =>
+/**
+ * Story 23.9 Task 1 — the single, shared active-membership/role resolution query. Reused by
+ * `loadOrgRole()` below (session-based, throws on no qualifying row) and by
+ * `apps/api/src/lib/org-authorization.ts`'s `checkOrgAuthorization()` (explicit
+ * `(userId, orgId)` params, never throws — maps "no row" and "row exists but not `'active'`" to
+ * a plain `null` instead). Neither caller duplicates this query or its `status = 'active'`
+ * filter — see AC2/AC3 of Story 23.9.
+ */
+export async function resolveActiveOrgRole(
+  userId: string,
+  orgId: string
+): Promise<'owner' | 'admin' | 'member' | 'viewer' | null> {
+  const memberships = await withOrg(orgId, (tx) =>
     tx
       .select({ role: orgMemberships.role })
       .from(orgMemberships)
       .where(
         and(
-          eq(orgMemberships.userId, session.userId),
-          eq(orgMemberships.orgId, session.orgId),
+          eq(orgMemberships.userId, userId),
+          eq(orgMemberships.orgId, orgId),
           eq(orgMemberships.status, 'active')
         )
       )
       .limit(1)
   )
   const membership = memberships[0]
-  if (!membership || !isOrgRole(membership.role)) {
+  if (!membership || !isOrgRole(membership.role)) return null
+  return membership.role
+}
+
+async function loadOrgRole(session: AuthSessionRow) {
+  const role = await resolveActiveOrgRole(session.userId, session.orgId)
+  if (!role) {
     throw new AppError('account_deactivated', 'Account is deactivated', 403)
   }
-  return membership.role
+  return role
 }
 
 // Story 9.1 D1: users has no org_id column and no RLS policy (identity-scoped, same trust model

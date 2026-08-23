@@ -22,6 +22,11 @@ export type {
   AuditEventSourceWriteResult,
 } from './hooks/audit-event-source.js'
 export type {
+  OrgAuthorizationCheckContext,
+  OrgAuthorizationHost,
+  OrgAuthorizationOutcome,
+} from './hooks/org-authorization.js'
+export type {
   ProjectCreateDecision,
   ProjectCreatePolicy,
   ProjectCreatePolicyContext,
