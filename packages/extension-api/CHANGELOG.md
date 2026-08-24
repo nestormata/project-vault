@@ -2,6 +2,24 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.2.0 — 2026-08-23
+
+contract-hash: sha256:99e2090007f20b7cbb6b4d8e4a0a27d32404598c8d71d6eaa36394e2761132b6
+
+### Added
+
+- Widened `UIPanelContext` (Story 25.3) from `{ slot }` to `{ slot, resourceId?, identity: {
+  userId, orgRole }, orgId, projectId?, locale, theme: { name } }`. All new fields are
+  server-resolved fresh per request by the host, never client-supplied. `resourceId` and
+  `projectId` are both optional — omitting the corresponding query parameter leaves them
+  `undefined`, so an existing extension reading only `context.slot` keeps working unmodified.
+  `identity`/`orgId`/`locale`/`theme` are required (a request that reaches `onRenderPanel()`
+  always has them resolved), which is backward-compatible for existing method-shorthand
+  `onRenderPanel(context) {...}` implementations via TypeScript's bivariant parameter checking
+  for object literals (see this story's Dev Notes Pre-mortem Analysis) — no coordinated
+  consumer-side type change is required to keep compiling. `identity` deliberately carries only
+  `userId`/`orgRole` — never `sessionId`/`jti`/`sessionVersion`/`isPlatformOperator`.
+
 ## 3.1.0 — 2026-08-23
 
 contract-hash: sha256:26d77ba7639f55b02ad97a635fd29943d3f77e884bcd68e5741985e94f3efd55

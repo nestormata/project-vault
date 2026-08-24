@@ -19,6 +19,7 @@ import { EXTENSION_API_VERSION } from '@project-vault/extension-api'
  * | `fixture-throw`      | throws synchronously                                | AC3 fail-closed-on-throw |
  * | `fixture-hang`       | never resolves                                      | AC3 fail-closed-on-timeout |
  * | `fixture-garbage`    | resolves a malformed result                          | AC3 fail-closed-on-malformed |
+ * | `fixture-context-echo` | renders every context field back as visible text | Story 25.3 AC1-AC5 verification |
  *
  * Story 25.2 AC6 — this manifest now declares `uiPanelSlots` explicitly, covering all four slots
  * above. This closes the gap this file's own comment (and the README) used to flag: Story 25.1's
@@ -28,6 +29,12 @@ import { EXTENSION_API_VERSION } from '@project-vault/extension-api'
  * `KNOWN_UI_PANEL_SLOTS` (apps/api/src/lib/extension-panel.ts). Story 25.2's dynamic
  * `resolveKnownUiPanelSlots()` makes that workaround unnecessary: every slot this manifest
  * declares is now reachable via an ordinary `GET /api/v1/extensions/panels/:slot` request.
+ *
+ * Story 25.3 Task 5 — `fixture-context-echo` renders every field of the widened `UIPanelContext`
+ * (`identity.userId`, `identity.orgRole`, `orgId`, `projectId`, `resourceId`, `locale`,
+ * `theme.name`) into its returned HTML as plain visible text, so both this story's own tests and
+ * any later Chrome-driven manual verification can assert against real rendered text instead of
+ * needing to parse opaque HTML.
  */
 export const MOCK_UI_PANEL_PROVIDER_NAME = 'test.mock-ui-panel-extension'
 
@@ -35,6 +42,7 @@ export const HAPPY_SLOT = 'group'
 export const THROW_TRIGGER_SLOT = 'fixture-throw'
 export const HANG_TRIGGER_SLOT = 'fixture-hang'
 export const GARBAGE_TRIGGER_SLOT = 'fixture-garbage'
+export const CONTEXT_ECHO_SLOT = 'fixture-context-echo'
 
 const manifest: ExtensionManifest = {
   name: MOCK_UI_PANEL_PROVIDER_NAME,
@@ -42,7 +50,14 @@ const manifest: ExtensionManifest = {
   capabilities: ['ui-panel'],
   // Story 25.2 AC6 — declares all four fixture slots, making the throw/hang/garbage triggers
   // reachable through the real HTTP route rather than only via a direct hooksFactory() call.
-  uiPanelSlots: [HAPPY_SLOT, THROW_TRIGGER_SLOT, HANG_TRIGGER_SLOT, GARBAGE_TRIGGER_SLOT],
+  // Story 25.3 Task 5 — adds the context-echo slot.
+  uiPanelSlots: [
+    HAPPY_SLOT,
+    THROW_TRIGGER_SLOT,
+    HANG_TRIGGER_SLOT,
+    GARBAGE_TRIGGER_SLOT,
+    CONTEXT_ECHO_SLOT,
+  ],
 }
 
 const uiPanel: UIPanel = {
@@ -57,6 +72,20 @@ const uiPanel: UIPanel = {
     if (context.slot === GARBAGE_TRIGGER_SLOT) {
       // Deliberately malformed — exercises the host's shape-check boundary (AC3).
       return { html: 42 } as unknown as { html: string }
+    }
+    if (context.slot === CONTEXT_ECHO_SLOT) {
+      return {
+        html:
+          '<html><body>' +
+          `<p data-field="userId">userId:${context.identity.userId}</p>` +
+          `<p data-field="orgRole">orgRole:${context.identity.orgRole}</p>` +
+          `<p data-field="orgId">orgId:${context.orgId}</p>` +
+          `<p data-field="projectId">projectId:${context.projectId ?? ''}</p>` +
+          `<p data-field="resourceId">resourceId:${context.resourceId ?? ''}</p>` +
+          `<p data-field="locale">locale:${context.locale}</p>` +
+          `<p data-field="themeName">themeName:${context.theme.name ?? ''}</p>` +
+          '</body></html>',
+      }
     }
     return {
       html: `<html><body><p>Mock panel for slot "${context.slot}"</p></body></html>`,

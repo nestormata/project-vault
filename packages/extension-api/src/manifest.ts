@@ -72,7 +72,14 @@ export const MAX_UI_PANEL_SLOTS = 32
 // manifest (declared exact version "3.0.0") keeps loading with zero coordinated cross-repo
 // change required — confirmed against `isAboveHostButSameMajor`/the range's actual floor/ceiling
 // logic (see this story's Dev Notes Pre-mortem Analysis).
-export const EXTENSION_API_VERSION = '3.1.0'
+// Story 25.3 AC1/Task 1 — bumped again as an additive-minor (3.1.0 -> 3.2.0): `UIPanelContext`
+// gains `resourceId?`, `identity`, `orgId`, `projectId?`, `locale`, `theme` (see
+// `hooks/ui-panel.ts`). TypeScript's bivariant parameter checking for method-shorthand object
+// literals (`onRenderPanel(context) {...}`) means an existing extension's narrower-typed
+// implementation stays structurally assignable to the widened `UIPanel` type without a
+// coordinated update — confirmed during this story's own Pre-mortem Analysis elicitation round —
+// so an additive-minor bump (not a major) remains correct.
+export const EXTENSION_API_VERSION = '3.2.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

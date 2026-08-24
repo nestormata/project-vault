@@ -3,8 +3,13 @@
 A self-contained, in-process mock UI-panel extension, built to exercise Story 25.1's `UIPanel`
 hook end-to-end through the real boot path (`loadExtension()` -> `GET
 /api/v1/extensions/panels/:slot` -> `onRenderPanel()`) — **without ever standing up
-CentralizeMe's real `access-group/ui-panel.ts`**, which cannot render meaningfully until Story
-25.3 adds a `resourceId` field to `UIPanelContext`.
+CentralizeMe's real `access-group/ui-panel.ts`**.
+
+**Story 25.3 update:** `UIPanelContext` now carries `resourceId`, `identity`, `orgId`,
+`projectId`, `locale`, and `theme` (previously just `{ slot }`) — this fixture's own
+`fixture-context-echo` slot (below) exercises the full widened shape; this README's own
+previously-stale note ("cannot render meaningfully until Story 25.3 adds `resourceId`") is now
+closed.
 
 ## What this is (and is not)
 
@@ -22,6 +27,7 @@ CentralizeMe's real `access-group/ui-panel.ts`**, which cannot render meaningful
 | `fixture-throw`        | throws synchronously                              | AC3 fail-closed-on-throw.              |
 | `fixture-hang`         | never resolves                                    | AC3 fail-closed-on-timeout.            |
 | `fixture-garbage`      | resolves `{ html: 42 }` (malformed)               | AC3 fail-closed-on-malformed-result.   |
+| `fixture-context-echo` | renders every field of the received `UIPanelContext` (`identity.userId`/`identity.orgRole`/`orgId`/`projectId`/`resourceId`/`locale`/`theme.name`) as plain visible text | Story 25.3 AC1-AC5 verification. |
 
 **Story 25.2 AC6 update:** this fixture's manifest now declares all four slots above via
 `uiPanelSlots: ['group', 'fixture-throw', 'fixture-hang', 'fixture-garbage']`. The host
