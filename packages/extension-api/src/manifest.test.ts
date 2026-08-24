@@ -20,13 +20,16 @@ describe('EXTENSION_API_VERSION', () => {
   })
 
   it('derives the host-owned floor and ceiling range', () => {
-    // Story 25.3 AC1/Task 1 and Story 25.4 AC4/Task 4 — combined additive-minor bump
-    // 3.1.0 -> 3.2.0: Story 25.3 widens UIPanelContext with new optional/required fields
-    // (backward-compatible per TypeScript's bivariant method-shorthand parameter checking — see
-    // that story's Pre-mortem Analysis), and Story 25.4 adds the new
-    // EXTENSION_THEME_CSS_VARS/ExtensionThemeCssVar theming-contract exports. The major floor is
-    // unchanged from Story 23.11 AC6's 2.2.0 -> 3.0.0 breaking bump.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.2.0')
+    // Story 25.3 widened UIPanelContext with new optional/required fields (backward-compatible
+    // per TypeScript's bivariant method-shorthand parameter checking — see that story's
+    // Pre-mortem Analysis) and merged to main first as the additive-minor 3.1.0 -> 3.2.0. Story
+    // 25.4 independently adds the new EXTENSION_THEME_CSS_VARS/ExtensionThemeCssVar
+    // theming-contract exports, also an additive-minor change developed in parallel; because
+    // 3.2.0 was already claimed on main by the time this branch merged, the forward-only-version
+    // invariant (scripts/check-extension-api-version-skew.ts) requires this merge to move to the
+    // next free number, 3.3.0. The major floor is unchanged from Story 23.11 AC6's
+    // 2.2.0 -> 3.0.0 breaking bump.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.3.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

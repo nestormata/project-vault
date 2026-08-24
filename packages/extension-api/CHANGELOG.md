@@ -2,9 +2,34 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
-## 3.2.0 — 2026-08-24
+## 3.3.0 — 2026-08-24
 
-contract-hash: sha256:79e2d44ec7c7c597073376a7a3c276670125da8284517b73ed5ca300903c1018
+contract-hash: sha256:0eb56255831e227226d81f1f7967617dda8420105f759022cc724aac1ba8562a
+
+### Added
+
+- Added `EXTENSION_THEME_CSS_VARS` (the ordered `--pv-ext-*` property list) and the
+  `ExtensionThemeCssVar` type (Story 25.4 AC4). This is PV's small, versioned "extension theming
+  contract": `--pv-ext-surface`, `--pv-ext-ink`, `--pv-ext-muted`, `--pv-ext-brand`,
+  `--pv-ext-line`. The host (`apps/web`'s panel-document composition function) injects a
+  `:root { ... }` block declaring these, resolved from the requesting user's actually-applied PV
+  theme, into every composed panel document. An extension opts in purely via CSS
+  `var(--pv-ext-ink, #yourFallback)` with its own hardcoded fallback — no existing export changes
+  shape, and no extension is required to consume this to keep working.
+- Documented panel-authoring accessibility expectations directly on `UIPanel`'s `onRenderPanel()`
+  doc comment (Story 25.4 AC5): return semantic HTML (headings, labelled form controls, `aria-live`
+  status regions), and avoid a competing page-level heading role since the host already gives the
+  panel's iframe a slot-derived, host-controlled `title`. Guidance only — not a new/changed type.
+
+Note: Story 25.4 was developed in parallel with Story 25.3 and originally targeted `3.2.0` for
+this same additive change. Story 25.3 merged to `main` first and claimed `3.2.0` for its own,
+different additive change (see below). Per the forward-only-versioning invariant enforced by
+`scripts/check-extension-api-version-skew.ts` (versions are allocated at merge, not at planning —
+Story 23.6), this merge moves to the next free version, `3.3.0`, instead of reusing `3.2.0`.
+
+## 3.2.0 — 2026-08-23
+
+contract-hash: sha256:99e2090007f20b7cbb6b4d8e4a0a27d32404598c8d71d6eaa36394e2761132b6
 
 ### Added
 
@@ -19,18 +44,6 @@ contract-hash: sha256:79e2d44ec7c7c597073376a7a3c276670125da8284517b73ed5ca30090
   for object literals (see this story's Dev Notes Pre-mortem Analysis) — no coordinated
   consumer-side type change is required to keep compiling. `identity` deliberately carries only
   `userId`/`orgRole` — never `sessionId`/`jti`/`sessionVersion`/`isPlatformOperator`.
-- Added `EXTENSION_THEME_CSS_VARS` (the ordered `--pv-ext-*` property list) and the
-  `ExtensionThemeCssVar` type (Story 25.4 AC4). This is PV's small, versioned "extension theming
-  contract": `--pv-ext-surface`, `--pv-ext-ink`, `--pv-ext-muted`, `--pv-ext-brand`,
-  `--pv-ext-line`. The host (`apps/web`'s panel-document composition function) injects a
-  `:root { ... }` block declaring these, resolved from the requesting user's actually-applied PV
-  theme, into every composed panel document. An extension opts in purely via CSS
-  `var(--pv-ext-ink, #yourFallback)` with its own hardcoded fallback — no existing export changes
-  shape, and no extension is required to consume this to keep working.
-- Documented panel-authoring accessibility expectations directly on `UIPanel`'s `onRenderPanel()`
-  doc comment (Story 25.4 AC5): return semantic HTML (headings, labelled form controls, `aria-live`
-  status regions), and avoid a competing page-level heading role since the host already gives the
-  panel's iframe a slot-derived, host-controlled `title`. Guidance only — not a new/changed type.
 
 ## 3.1.0 — 2026-08-23
 

@@ -246,7 +246,7 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each(['3.3.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
+  it.each(['3.4.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
     'rejects canonical version outside %s',
     (apiVersion) => {
       const hooksFactory = makeHooksFactory()
@@ -281,13 +281,14 @@ describe('registerExtension — concrete canonical version gate', () => {
   })
 
   it('allows only the above-host same-major rollback escape', () => {
-    // Story 25.3 AC1/Task 1 and Story 25.4 AC4/Task 4 — host EXTENSION_API_VERSION is now 3.2.0
-    // (combined additive-minor bump from both stories);
-    // '3.3.0' is the above-host, same-major escape-eligible version, and '4.0.0' is a different
+    // Story 25.3 AC1/Task 1 and Story 25.4 AC4/Task 4 — host EXTENSION_API_VERSION is now 3.3.0
+    // (see manifest.ts's EXTENSION_API_VERSION doc comment for why this merge moves past 3.2.0,
+    // which Story 25.3 already claimed on main for a different additive change);
+    // '3.4.0' is the above-host, same-major escape-eligible version, and '4.0.0' is a different
     // major (never escape-eligible).
-    expect(() => registerExtension(manifest({ apiVersion: '3.3.0' }), makeHooksFactory())).toThrow()
+    expect(() => registerExtension(manifest({ apiVersion: '3.4.0' }), makeHooksFactory())).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.3.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '3.4.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()
