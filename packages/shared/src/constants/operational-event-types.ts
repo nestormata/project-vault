@@ -250,6 +250,11 @@ export const OperationalEvent = {
   // uiPanelSlots — the host falls back to the legacy Story 25.1 single-slot ('group') behavior.
   // Fires once per load (not per-request), so an operator sees it without per-request noise.
   EXTENSION_UI_PANEL_SLOTS_FALLBACK: 'extension.ui_panel_slots_fallback',
+  // Story 25.5 AC5: a module-action dispatch call degraded (threw, timed out, returned a
+  // malformed ActionResult, or the extension's own onAction() explicitly reported { outcome:
+  // 'error' }). Never carries the hook's raw exception message/stack — fixed-enum `subReason`
+  // only, same never-leak-internal-detail discipline as EXTENSION_UI_PANEL_UNAVAILABLE.
+  EXTENSION_MODULE_ACTION_FAILED: 'extension.module_action_failed',
 
   // Story 23.2: native-login-exclusion policy (apps/api/src/modules/auth/native-login-policy.ts).
   // AC-4a: fires on EVERY boot while the declared extension has never proven a successful

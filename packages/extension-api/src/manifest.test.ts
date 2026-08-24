@@ -20,11 +20,10 @@ describe('EXTENSION_API_VERSION', () => {
   })
 
   it('derives the host-owned floor and ceiling range', () => {
-    // Story 25.3 AC1/Task 1 — bumped 3.1.0 -> 3.2.0 as an additive-minor (UIPanelContext gains
-    // new optional/required fields, backward-compatible per TypeScript's bivariant
-    // method-shorthand parameter checking — see this story's Pre-mortem Analysis); the major
-    // floor is unchanged from Story 23.11 AC6's 2.2.0 -> 3.0.0 breaking bump.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.2.0')
+    // Story 25.5 AC2/Task 1 — bumped 3.2.0 -> 3.3.0 as an additive-minor (ExtensionManifest gains
+    // moduleActions?, ExtensionHooks gains moduleAction?, UIPanelContext gains actionEndpoint?);
+    // the major floor is unchanged from Story 23.11 AC6's 2.2.0 -> 3.0.0 breaking bump.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.3.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

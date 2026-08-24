@@ -2,6 +2,13 @@
 
 Generated from `src/index.ts`; update this file and classify the change against the policy when the contract changes.
 
+## export `ActionResult`
+
+- since: 3.3.0
+- kind: type
+- type: `ActionResult`
+- union-members: `{ outcome: "ok"; html?: string; message?: string; }`, `{ outcome: "validation_failed"; message: string; }`, `{ outcome: "denied"; message?: string; }`, `{ outcome: "conflict"; message?: string; }`, `{ outcome: "error"; }`
+
 ## export `AuditEventSourceHost`
 
 - since: 1.0.0
@@ -135,7 +142,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.2.0"`
+- type: `"3.3.0"`
 
 ## export `ExtensionCapability`
 
@@ -197,6 +204,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 1.0.0
   - type: `CapabilityGate | undefined`
   - union-members: `undefined`, `CapabilityGate`
+- member: `moduleAction?`
+  - since: 3.3.0
+  - type: `ModuleAction | undefined`
+  - union-members: `undefined`, `ModuleAction`
 - member: `notificationChannel?`
   - since: 1.0.0
   - type: `NotificationChannel | undefined`
@@ -225,6 +236,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 2.0.0
   - type: `ExtensionDbScopeEntry[] | undefined`
   - union-members: `undefined`, `ExtensionDbScopeEntry[]`
+- member: `moduleActions?`
+  - since: 3.3.0
+  - type: `string[] | undefined`
+  - union-members: `undefined`, `string[]`
 - member: `name`
   - since: 1.0.0
   - type: `string`
@@ -310,11 +325,158 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `(declaredApiVersion: string) => boolean`
 - call-signature: `(declaredApiVersion: string): boolean`
 
+## export `MAX_MODULE_ACTIONS`
+
+- since: 3.3.0
+- kind: value
+- type: `32`
+
 ## export `MAX_UI_PANEL_SLOTS`
 
 - since: 3.1.0
 - kind: value
 - type: `32`
+
+## export `MODULE_ACTION_NAME_PATTERN`
+
+- since: 3.3.0
+- kind: value
+- type: `RegExp`
+- member: `__@match@417`
+  - since: 3.3.0
+  - type: `(string: string) => RegExpMatchArray | null`
+  - call-signature: `(string: string): RegExpMatchArray | null`
+- member: `__@matchAll@426`
+  - since: 3.3.0
+  - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
+  - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
+- member: `__@replace@419`
+  - since: 3.3.0
+  - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
+  - call-signature: `(string: string, replaceValue: string): string`
+  - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
+- member: `__@search@422`
+  - since: 3.3.0
+  - type: `(string: string) => number`
+  - call-signature: `(string: string): number`
+- member: `__@split@424`
+  - since: 3.3.0
+  - type: `(string: string, limit?: number) => string[]`
+  - call-signature: `(string: string, limit?: number): string[]`
+- member: `compile`
+  - since: 3.3.0
+  - type: `(pattern: string, flags?: string) => RegExp`
+  - call-signature: `(pattern: string, flags?: string): RegExp`
+- member: `readonly dotAll`
+  - since: 3.3.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `exec`
+  - since: 3.3.0
+  - type: `(string: string) => RegExpExecArray | null`
+  - call-signature: `(string: string): RegExpExecArray | null`
+- member: `readonly flags`
+  - since: 3.3.0
+  - type: `string`
+- member: `readonly global`
+  - since: 3.3.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `readonly hasIndices`
+  - since: 3.3.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `readonly ignoreCase`
+  - since: 3.3.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `lastIndex`
+  - since: 3.3.0
+  - type: `number`
+- member: `readonly multiline`
+  - since: 3.3.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `readonly source`
+  - since: 3.3.0
+  - type: `string`
+- member: `readonly sticky`
+  - since: 3.3.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `test`
+  - since: 3.3.0
+  - type: `(string: string) => boolean`
+  - call-signature: `(string: string): boolean`
+- member: `readonly unicode`
+  - since: 3.3.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+
+## export `ModuleAction`
+
+- since: 3.3.0
+- kind: type
+- type: `ModuleAction`
+- member: `onAction`
+  - since: 3.3.0
+  - type: `(context: ModuleActionContext, request: ModuleActionRequest) => Promise<ActionResult>`
+  - call-signature: `(context: ModuleActionContext, request: ModuleActionRequest): Promise<ActionResult>`
+
+## export `ModuleActionContext`
+
+- since: 3.3.0
+- kind: type
+- type: `UIPanelContext`
+- member: `actionEndpoint?`
+  - since: 3.3.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+- member: `identity`
+  - since: 3.3.0
+  - type: `{ userId: string; orgRole: "owner" | "admin" | "member" | "viewer"; }`
+  - member: `orgRole`
+    - since: 3.3.0
+    - type: `"owner" | "admin" | "member" | "viewer"`
+    - union-members: `"owner"`, `"admin"`, `"member"`, `"viewer"`
+  - member: `userId`
+    - since: 3.3.0
+    - type: `string`
+- member: `locale`
+  - since: 3.3.0
+  - type: `"en" | "es"`
+  - union-members: `"en"`, `"es"`
+- member: `orgId`
+  - since: 3.3.0
+  - type: `string`
+- member: `projectId?`
+  - since: 3.3.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+- member: `resourceId?`
+  - since: 3.3.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+- member: `slot`
+  - since: 3.3.0
+  - type: `string`
+- member: `theme`
+  - since: 3.3.0
+  - type: `{ name: string | null; }`
+  - member: `name`
+    - since: 3.3.0
+    - type: `string | null`
+    - union-members: `null`, `string`
+
+## export `ModuleActionRequest`
+
+- since: 3.3.0
+- kind: type
+- type: `ModuleActionRequest`
+- member: `action`
+  - since: 3.3.0
+  - type: `Record<string, unknown> & { kind: string; }`
+  - intersection-members: `Record<string, unknown>`, `{ kind: string; }`
 
 ## export `NotificationChannel`
 
@@ -418,25 +580,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.1.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@435`
-  - since: 3.1.0
+- member: `__@match@417`
+  - since: 3.3.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@444`
-  - since: 3.1.0
+- member: `__@matchAll@426`
+  - since: 3.3.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@437`
-  - since: 3.1.0
+- member: `__@replace@419`
+  - since: 3.3.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@440`
-  - since: 3.1.0
+- member: `__@search@422`
+  - since: 3.3.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@442`
-  - since: 3.1.0
+- member: `__@split@424`
+  - since: 3.3.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -504,6 +666,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 1.0.0
 - kind: type
 - type: `UIPanelContext`
+- member: `actionEndpoint?`
+  - since: 3.3.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
 - member: `identity`
   - since: 3.2.0
   - type: `{ userId: string; orgRole: "owner" | "admin" | "member" | "viewer"; }`

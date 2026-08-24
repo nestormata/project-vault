@@ -742,6 +742,20 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'Renders extension-declared UI panel HTML for the requesting org member — no PV secret values exposed, no state mutated.',
     reviewer: SECURITY_OWNER,
   },
+  // Story 25.5 AC1-AC6: dispatches a typed action to the loaded extension's own `moduleAction`
+  // hook. This route itself mutates no PV-owned state and stores nothing — whatever the
+  // extension's own handler persists (CM's `handleAccessGroupAction()` -> `store.ts`) is entirely
+  // CM-side, and CM's own handler already writes its own classification-event audit rows (per
+  // this story's Dependencies section, referencing CM's own AC9/CM-E14.6 scope) — duplicating
+  // that here would double-log the same business event under two different audit trails. No
+  // secureCtx.tx exists to audit through regardless (writeAuditEvent: false, matching the GET
+  // panel route's own convention one row above).
+  'POST /api/v1/extensions/panels/:slot/actions': {
+    action: 'mutation',
+    auditOmissionReason:
+      "Dispatches to the extension's own moduleAction hook; the extension's own handler (CM's handleAccessGroupAction()) already writes its own business-event audit trail for whatever it persists. This route never touches PV-owned data directly, so there is no PV-side transition to audit.",
+    reviewer: SECURITY_OWNER,
+  },
   // Story 25.1 AC5: informational-only capability-declaration read, driving whether
   // `(app)/+layout.server.ts` shows the generic panel nav entry.
   'GET /api/v1/extensions/nav': {

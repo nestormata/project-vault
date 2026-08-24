@@ -246,7 +246,7 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each(['3.3.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
+  it.each(['3.4.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
     'rejects canonical version outside %s',
     (apiVersion) => {
       const hooksFactory = makeHooksFactory()
@@ -281,12 +281,12 @@ describe('registerExtension — concrete canonical version gate', () => {
   })
 
   it('allows only the above-host same-major rollback escape', () => {
-    // Story 25.3 AC1/Task 1 — host EXTENSION_API_VERSION is now 3.2.0 (additive-minor bump);
-    // '3.3.0' is the above-host, same-major escape-eligible version, and '4.0.0' is a different
+    // Story 25.5 AC2/Task 1 — host EXTENSION_API_VERSION is now 3.3.0 (additive-minor bump);
+    // '3.4.0' is the above-host, same-major escape-eligible version, and '4.0.0' is a different
     // major (never escape-eligible).
-    expect(() => registerExtension(manifest({ apiVersion: '3.3.0' }), makeHooksFactory())).toThrow()
+    expect(() => registerExtension(manifest({ apiVersion: '3.4.0' }), makeHooksFactory())).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.3.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '3.4.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()
@@ -546,5 +546,150 @@ describe('registerExtension — AC1 (uiPanelSlots)', () => {
       { logger: { warn } }
     )
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('uiPanelSlots'))
+  })
+})
+
+/**
+ * Story 25.5 AC2 — `moduleActions?: string[]` manifest field validation. Mirrors the
+ * `uiPanelSlots` describe block above exactly (separate namespace, identical shape). All
+ * rejections use the `'invalid-manifest-field'` reason.
+ */
+const ADD_MEMBER_ACTION = 'add-member'
+
+describe('registerExtension — AC2 (moduleActions)', () => {
+  const MODULE_ACTION_HOOKS: ExtensionHooks = {
+    moduleAction: { onAction: vi.fn(async () => ({ outcome: 'ok' as const })) },
+  }
+
+  function moduleActionHooksFactory() {
+    return vi.fn(() => MODULE_ACTION_HOOKS)
+  }
+
+  it('happy path: a real multi-action manifest (the CM access-group module pack shape) registers successfully', () => {
+    const hooksFactory = moduleActionHooksFactory()
+    const result = registerExtension(
+      manifest({
+        capabilities: ['ui-panel'],
+        moduleActions: [
+          'create-group',
+          'rename-group',
+          ADD_MEMBER_ACTION,
+          'remove-member',
+          'toggle-group',
+          'classify-document',
+        ],
+      }),
+      hooksFactory
+    )
+    expect(result.manifest.moduleActions).toEqual([
+      'create-group',
+      'rename-group',
+      ADD_MEMBER_ACTION,
+      'remove-member',
+      'toggle-group',
+      'classify-document',
+    ])
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('omitted: parses fine, no moduleActions on the returned manifest', () => {
+    const hooksFactory = makeHooksFactory()
+    const result = registerExtension(manifest(), hooksFactory)
+    expect(result.manifest.moduleActions).toBeUndefined()
+  })
+
+  it('undefined explicitly behaves identically to omitted', () => {
+    const hooksFactory = makeHooksFactory()
+    const result = registerExtension(manifest({ moduleActions: undefined }), hooksFactory)
+    expect(result.manifest.moduleActions).toBeUndefined()
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects an uppercase action name (outside the allowed charset)', () => {
+    expectRejection(
+      { capabilities: ['ui-panel'], moduleActions: ['Add-Member'] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an action name containing structural characters (path-traversal defense)', () => {
+    expectRejection(
+      { capabilities: ['ui-panel'], moduleActions: ['../admin'] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an oversized action name (over 64 chars)', () => {
+    expectRejection(
+      { capabilities: ['ui-panel'], moduleActions: ['a'.repeat(65)] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects duplicate entries within one manifest', () => {
+    expectRejection(
+      { capabilities: ['ui-panel'], moduleActions: [ADD_MEMBER_ACTION, ADD_MEMBER_ACTION] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an empty array (distinct from omitted)', () => {
+    expectRejection({ capabilities: ['ui-panel'], moduleActions: [] }, INVALID_MANIFEST_FIELD)
+  })
+
+  it('rejects moduleActions declared without "ui-panel" in capabilities', () => {
+    expectRejection(
+      { capabilities: ['audit-event-source'], moduleActions: [ADD_MEMBER_ACTION] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an array longer than the 32-entry maximum', () => {
+    const tooMany = Array.from({ length: 33 }, (_, i) => `action-${i}`)
+    expectRejection({ capabilities: ['ui-panel'], moduleActions: tooMany }, INVALID_MANIFEST_FIELD)
+  })
+
+  it('accepts exactly the 32-entry maximum', () => {
+    const exactlyMax = Array.from({ length: 32 }, (_, i) => `action-${i}`)
+    const hooksFactory = moduleActionHooksFactory()
+    expect(() =>
+      registerExtension(
+        manifest({ capabilities: ['ui-panel'], moduleActions: exactlyMax }),
+        hooksFactory
+      )
+    ).not.toThrow()
+  })
+
+  it('rejects a manifest declaring moduleActions whose hooksFactory() has no moduleAction hook (post-hooksFactory check)', () => {
+    const hooksFactory = makeHooksFactory()
+    let caught: unknown
+    try {
+      registerExtension(
+        manifest({ capabilities: ['ui-panel'], moduleActions: [ADD_MEMBER_ACTION] }),
+        hooksFactory
+      )
+    } catch (error) {
+      caught = error
+    }
+    expect((caught as ExtensionRegistrationError).reason).toBe(INVALID_MANIFEST_FIELD)
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT require a moduleAction hook merely for declaring the "ui-panel" capability without moduleActions', () => {
+    const hooksFactory = makeHooksFactory()
+    expect(() =>
+      registerExtension(manifest({ capabilities: ['ui-panel'] }), hooksFactory)
+    ).not.toThrow()
+  })
+
+  it('warns on an unrecognized top-level key still includes moduleActions in KNOWN_MANIFEST_KEYS (no spurious warning)', () => {
+    const hooksFactory = moduleActionHooksFactory()
+    const warn = vi.fn()
+    registerExtension(
+      manifest({ capabilities: ['ui-panel'], moduleActions: [ADD_MEMBER_ACTION] }),
+      hooksFactory,
+      { logger: { warn } }
+    )
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('moduleActions'))
   })
 })

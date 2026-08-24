@@ -56,6 +56,18 @@ export type UIPanelContext = {
   theme: {
     name: string | null
   }
+  /**
+   * Story 25.5 AC4/Task 1 — additive field only, `UIPanelResult` stays untouched (Story 25.5
+   * AC6). The absolute path to this story's new `POST /extensions/panels/:slot/actions` route,
+   * present only when the currently loaded extension declares `moduleActions` for this slot —
+   * `undefined` (never `''`), not populated, when it does not, matching CM's own
+   * `root.dataset.actionEndpoint` truthiness check (`if (endpoint)`) exactly. Wiring this field's
+   * resolution into `resolvePanelContextAndRender()` is Story 25.5's Task 4, gated on Story
+   * 25.4's `EXTENSION_PANEL_CSP`/`composePanelDocument()` landing on `main` first — the field
+   * exists here now (type-level, additive, backward-compatible) but is not yet populated by any
+   * caller until Task 4 lands.
+   */
+  actionEndpoint?: string
 }
 
 export type UIPanelResult = {
