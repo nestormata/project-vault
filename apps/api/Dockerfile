@@ -57,6 +57,15 @@ COPY fixtures/mock-capability-gate-extension/package.json ./fixtures/mock-capabi
 # fixture's dist is also built BEFORE `app-builder`'s `pnpm --filter @project-vault/api build`
 # step, not opt-in-only afterward like mock-sso/mock-envelope.
 COPY fixtures/mock-audit-event-source-extension/package.json ./fixtures/mock-audit-event-source-extension/
+# Story 25.1: @project-vault/mock-ui-panel-extension is a devDependency of apps/api (never a
+# production dep — see fixtures/mock-ui-panel-extension/README.md's "Production-safety" section)
+# but is a real pnpm-workspace member present in pnpm-lock.yaml — same "frozen-lockfile install
+# needs every member's package.json regardless of whether this build ever deploys it" reasoning as
+# mock-sso-extension above. Only referenced by string literal (never statically imported) by
+# apps/api's own tests, so — like mock-sso/mock-envelope, unlike mock-capability-gate/
+# mock-audit-event-source — its dist is not needed before app-builder's `tsc` build and it is
+# built opt-in-only below.
+COPY fixtures/mock-ui-panel-extension/package.json ./fixtures/mock-ui-panel-extension/
 
 RUN pnpm install --frozen-lockfile --ignore-scripts \
  && pnpm rebuild argon2 esbuild
@@ -73,6 +82,7 @@ COPY fixtures/mock-sso-extension ./fixtures/mock-sso-extension
 COPY fixtures/mock-envelope-extension ./fixtures/mock-envelope-extension
 COPY fixtures/mock-capability-gate-extension ./fixtures/mock-capability-gate-extension
 COPY fixtures/mock-audit-event-source-extension ./fixtures/mock-audit-event-source-extension
+COPY fixtures/mock-ui-panel-extension ./fixtures/mock-ui-panel-extension
 
 # Split off from the final `builder` stage (Story 1.13 AC-D1) so the one-shot `migrate` service
 # (docker-compose.yml) doesn't have to build `agent`/`api` just to run a migration. `crypto` is
@@ -127,6 +137,14 @@ RUN if [ "$INCLUDE_MOCK_ENVELOPE_EXTENSION" = "true" ]; then \
       pnpm --filter @project-vault/mock-envelope-extension build; \
     fi
 
+# Story 25.1: same opt-in-only pattern as mock-sso-extension/mock-envelope-extension above, for
+# the UI-panel-hook fixture — never set for the default build, only for a UI-panel-specific
+# manual/e2e build.
+ARG INCLUDE_MOCK_UI_PANEL_EXTENSION=false
+RUN if [ "$INCLUDE_MOCK_UI_PANEL_EXTENSION" = "true" ]; then \
+      pnpm --filter @project-vault/mock-ui-panel-extension build; \
+    fi
+
 # Bundle the api and its production deps into a self-contained directory. This runs in its
 # own stage (not in `app-builder`) because `pnpm deploy` prunes the workspace node_modules to
 # production-only in place — the `migrate` service targets `db-builder` directly (Story 1.13
@@ -140,6 +158,7 @@ ARG INCLUDE_MOCK_SSO_EXTENSION=false
 ARG INCLUDE_MOCK_ENVELOPE_EXTENSION=false
 ARG INCLUDE_MOCK_CAPABILITY_GATE_EXTENSION=false
 ARG INCLUDE_MOCK_AUDIT_EVENT_SOURCE_EXTENSION=false
+ARG INCLUDE_MOCK_UI_PANEL_EXTENSION=false
 RUN pnpm --filter @project-vault/api deploy --prod --legacy /app/deploy
 # `pnpm deploy --legacy` leaves workspace links for injected packages on this pnpm version. Replace
 # the extension-api link with the exact npm pack boundary used for external consumers so the runner
@@ -204,6 +223,11 @@ RUN if [ "$INCLUDE_MOCK_AUDIT_EVENT_SOURCE_EXTENSION" = "true" ]; then \
       mkdir -p /app/deploy/node_modules/@project-vault/mock-audit-event-source-extension && \
       cp -r /app/fixtures/mock-audit-event-source-extension/dist /app/deploy/node_modules/@project-vault/mock-audit-event-source-extension/dist && \
       cp /app/fixtures/mock-audit-event-source-extension/package.json /app/deploy/node_modules/@project-vault/mock-audit-event-source-extension/package.json; \
+    fi
+RUN if [ "$INCLUDE_MOCK_UI_PANEL_EXTENSION" = "true" ]; then \
+      mkdir -p /app/deploy/node_modules/@project-vault/mock-ui-panel-extension && \
+      cp -r /app/fixtures/mock-ui-panel-extension/dist /app/deploy/node_modules/@project-vault/mock-ui-panel-extension/dist && \
+      cp /app/fixtures/mock-ui-panel-extension/package.json /app/deploy/node_modules/@project-vault/mock-ui-panel-extension/package.json; \
     fi
 
 # node:24-alpine, pinned by digest — see builder stage comment above.

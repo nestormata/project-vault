@@ -241,6 +241,11 @@ export const OperationalEvent = {
   // resolved (loaded or load_failed) is ignored rather than re-run — warn-logged so a
   // regression that double-invokes the loader is still visible in monitoring.
   EXTENSION_LOAD_DOUBLE_INVOCATION_IGNORED: 'extension.load_double_invocation_ignored',
+  // Story 25.1 AC3: a UI panel render call degraded (threw, timed out, returned a malformed
+  // result, or the extension/hook was gone at request time). Never carries the hook's raw
+  // exception message/stack — fixed-enum `subReason` only, same never-leak-internal-detail
+  // discipline as EXTENSION_LOAD_FAILED above.
+  EXTENSION_UI_PANEL_UNAVAILABLE: 'extension.ui_panel_unavailable',
 
   // Story 23.2: native-login-exclusion policy (apps/api/src/modules/auth/native-login-policy.ts).
   // AC-4a: fires on EVERY boot while the declared extension has never proven a successful

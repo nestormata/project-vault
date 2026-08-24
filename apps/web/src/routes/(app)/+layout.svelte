@@ -106,6 +106,7 @@
     user={data.user}
     hidePrimaryNav={!onboardingDone}
     {unreadCount}
+    hasUiPanelExtension={data.hasUiPanelExtension}
     onsearch={() => {
       searchOpen = true
     }}

@@ -54,6 +54,7 @@ import { securityAlertActionsRoutes } from './modules/org/security-alert-actions
 import { organizationSettingsRoutes } from './modules/org/organization-settings-routes.js'
 import { erasureRoutes } from './modules/compliance/erasure-routes.js'
 import { extensionStatusRoutes } from './extensions/status-routes.js'
+import { extensionPanelRoutes } from './extensions/panel-routes.js'
 import { loadExtension, getExtensionStatus } from './extensions/loader.js'
 import { themingRoutes } from './modules/theming/routes.js'
 import { themeSelectionRoutes } from './modules/theming/selection-routes.js'
@@ -317,6 +318,9 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // Story 23.7: GET /api/v1/capabilities — the boolean capability map read, designed against its
   // only consumer (the status-page screen) rather than inherited speculatively from Story 23.3.
   await fastify.register(capabilitiesRoutes, { prefix: '/api/v1' })
+  // Story 25.1: authenticated (any active org member) UI-panel mounting routes — deliberately
+  // NOT under ADMIN_PREFIX, unlike Story 14.2's extensionStatusRoutes above (AC1).
+  await fastify.register(extensionPanelRoutes, { prefix: '/api/v1' })
   await fastify.register(onboardingRoutes, { prefix: '/api/v1/users' })
   await fastify.register(usersRoutes, { prefix: '/api/v1/users' })
   await fastify.register(searchRoutes, { prefix: '/api/v1' })

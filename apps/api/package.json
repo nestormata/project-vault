@@ -64,6 +64,7 @@
     "@project-vault/mock-capability-gate-extension": "workspace:*",
     "@project-vault/mock-envelope-extension": "workspace:*",
     "@project-vault/mock-sso-extension": "workspace:*",
+    "@project-vault/mock-ui-panel-extension": "workspace:*",
     "@project-vault/tsconfig": "workspace:*",
     "@types/bcrypt": "^6.0.0",
     "@types/form-data": "^2.5.2",

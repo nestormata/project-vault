@@ -732,6 +732,24 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       'Cross-org aggregate counts only (no secret values, no per-user PII) — instance-wide, no secureCtx.tx to audit through.',
     reviewer: SECURITY_OWNER,
   },
+  // Story 25.1 AC1/AC3: open to any active org member (no allowedRoles restriction, unlike the
+  // admin-only extensions/status route above). Renders extension-supplied HTML, not PV secret
+  // data — no secureCtx.tx (writeAuditEvent: false), and a per-request read has no meaningful
+  // "transition" to audit (unlike a mutation).
+  'GET /api/v1/extensions/panels/:slot': {
+    action: 'read',
+    auditOmissionReason:
+      'Renders extension-declared UI panel HTML for the requesting org member — no PV secret values exposed, no state mutated.',
+    reviewer: SECURITY_OWNER,
+  },
+  // Story 25.1 AC5: informational-only capability-declaration read, driving whether
+  // `(app)/+layout.server.ts` shows the generic panel nav entry.
+  'GET /api/v1/extensions/nav': {
+    action: 'read',
+    auditOmissionReason:
+      'Reports only whether the loaded extension declares the ui-panel capability (boolean-shaped, no secret values) — same booleans-only convention as GET /api/v1/capabilities.',
+    reviewer: SECURITY_OWNER,
+  },
   'GET /api/v1/users/me/notification-preferences': {
     action: 'read',
     auditOmissionReason: 'User reads own notification preferences; no secrets exposed.',
