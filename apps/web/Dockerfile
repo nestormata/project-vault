@@ -41,9 +41,18 @@ COPY apps/web ./apps/web
 COPY packages/tsconfig ./packages/tsconfig
 COPY packages/shared ./packages/shared
 COPY packages/eslint-config ./packages/eslint-config
+# Story 25.4 AC4/Task 4: apps/web now has a genuine runtime (not just type-only) import of
+# @project-vault/extension-api (EXTENSION_THEME_CSS_VARS, consumed by
+# apps/web/src/lib/security/extension-theme-vars.ts) -- previously every apps/web import of this
+# package was `import type`, which Vite/esbuild erase entirely, so the package's own dist/ output
+# was never actually needed to build apps/web. A real value import needs the built dist/ present
+# at bundle time, so its full source must be copied and built here too, not just its package.json
+# (which was already copied above, but only for pnpm deploy's workspace-graph resolution pass).
+COPY packages/extension-api ./packages/extension-api
 
 WORKDIR /app/apps/web
 RUN pnpm --filter @project-vault/shared build \
+ && pnpm --filter @project-vault/extension-api build \
  && pnpm build
 
 # Bundle the web app and its production deps into a self-contained directory.
