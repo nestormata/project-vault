@@ -33,10 +33,13 @@
   // Story 25.4 AC1/AC4 — the extension's raw html fragment is never assigned to `srcdoc` directly
   // any more; it is always wrapped by the host-controlled composition function first (CSP meta +
   // --pv-ext-* theme block + the fragment itself, verbatim — AC2 RESOLVED: no sanitizer).
-  // Story 25.5 AC4/Task 4 — data.hasActions conditionally widens the composed CSP with
-  // connect-src 'self', only when the loaded extension actually declares moduleActions.
+  // Story 25.5 AC4/Task 4 — data.actionsOrigin conditionally widens the composed CSP's
+  // connect-src to the real PV origin, only when the loaded extension actually declares
+  // moduleActions. Bug fix (2026-08-24): must be the real origin, never the 'self' keyword —
+  // see compose-panel-document.ts's bug-fix comment for why 'self' can never resolve inside
+  // this iframe's opaque-origin sandbox.
   const srcdoc = $derived(
-    data.html !== null ? composePanelDocument(data.html, data.themeVars, data.hasActions) : null
+    data.html !== null ? composePanelDocument(data.html, data.themeVars, data.actionsOrigin) : null
   )
 </script>
 

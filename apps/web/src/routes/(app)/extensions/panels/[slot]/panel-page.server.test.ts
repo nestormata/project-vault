@@ -19,6 +19,7 @@ function makeEvent(user: unknown, slot = 'group') {
     params: { slot },
     fetch: vi.fn(),
     locals: { user },
+    url: new URL('http://localhost:5173/extensions/panels/' + slot),
   } as unknown as Parameters<typeof load>[0]
 }
 
@@ -52,12 +53,12 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       slot: 'group',
       html: '<p>hello</p>',
       themeVars: BASE_EXTENSION_THEME_VARS,
-      hasActions: false,
+      actionsOrigin: undefined,
       actionEndpoint: undefined,
     })
   })
 
-  it('Story 25.5 AC4/Task 4: hasActions is true and actionEndpoint is forwarded when the API response includes it', async () => {
+  it('Story 25.5 AC4/Task 4: actionsOrigin is set and actionEndpoint is forwarded when the API response includes it', async () => {
     getExtensionPanelMock.mockResolvedValue({
       ok: true,
       html: '<p>hello</p>',
@@ -70,12 +71,12 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       slot: 'group',
       html: '<p>hello</p>',
       themeVars: BASE_EXTENSION_THEME_VARS,
-      hasActions: true,
+      actionsOrigin: 'http://localhost:5173',
       actionEndpoint: '/api/v1/extensions/panels/group/actions',
     })
   })
 
-  it('Story 25.5 AC4/Task 4: hasActions is false and actionEndpoint is undefined when the API response omits it', async () => {
+  it('Story 25.5 AC4/Task 4: actionsOrigin is undefined and actionEndpoint is undefined when the API response omits it', async () => {
     getExtensionPanelMock.mockResolvedValue({ ok: true, html: '<p>hello</p>' })
 
     const result = await load(makeEvent(baseUser))
@@ -84,7 +85,7 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       slot: 'group',
       html: '<p>hello</p>',
       themeVars: BASE_EXTENSION_THEME_VARS,
-      hasActions: false,
+      actionsOrigin: undefined,
       actionEndpoint: undefined,
     })
   })
@@ -98,7 +99,7 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       slot: 'group',
       html: null,
       themeVars: BASE_EXTENSION_THEME_VARS,
-      hasActions: false,
+      actionsOrigin: undefined,
       actionEndpoint: undefined,
     })
   })
@@ -112,7 +113,7 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       slot: 'group',
       html: null,
       themeVars: BASE_EXTENSION_THEME_VARS,
-      hasActions: false,
+      actionsOrigin: undefined,
       actionEndpoint: undefined,
     })
   })

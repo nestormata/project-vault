@@ -52,19 +52,34 @@ function buildThemeStyleBlock(themeVars: ExtensionThemeVars): string {
  * user's extension output is never accidentally cached and served to another.
  */
 /**
- * Story 25.5 AC4/Task 4 — `hasActions` (default `false`) widens the CSP with exactly
- * `connect-src 'self'` — never a wildcard, never a spelled-out origin — closing the forward
- * obligation Story 25.4 flagged for this story. This is conditional, not unconditional: a panel
- * from an extension declaring no `moduleActions` renders with exactly Story 25.4's original,
- * narrower CSP (no `connect-src` at all), a deliberate Boundary & Edge Case Sweep finding.
+ * Story 25.5 AC4/Task 4 — `actionsOrigin` (default `undefined`) widens the CSP with exactly
+ * `connect-src <actionsOrigin>`, closing the forward obligation Story 25.4 flagged for this
+ * story. This is conditional, not unconditional: a panel from an extension declaring no
+ * `moduleActions` renders with exactly Story 25.4's original, narrower CSP (no `connect-src` at
+ * all), a deliberate Boundary & Edge Case Sweep finding.
+ *
+ * **Bug fix (2026-08-24, found via real Chrome-driven manual verification, not caught by any
+ * unit test):** this originally used the `'self'` keyword, per the story's own AC4 text. That
+ * does not work. The panel iframe is `sandbox="allow-scripts"` with NO `allow-same-origin` (a
+ * deliberate, non-negotiable Story 25.1 requirement), which forces the iframe's document into a
+ * unique, opaque origin. Per the CSP spec, `'self'` resolves to the requesting document's own
+ * origin — an opaque origin never equals any concrete origin, so `connect-src 'self'` silently
+ * blocks every fetch from this iframe before any network activity even starts (confirmed live:
+ * clicking the fixture's action button produced a caught `fetch` rejection, zero network
+ * requests). The fix is to pass the real, concrete PV origin as an explicit source value
+ * instead — still exactly one literal origin (never a wildcard, never multiple), just named
+ * rather than relying on a keyword that can never resolve inside this sandbox configuration.
  */
 export function composePanelDocument(
   extensionHtml: string,
   themeVars: ExtensionThemeVars,
-  hasActions = false
+  actionsOrigin?: string
 ): string {
   const themeStyleBlock = buildThemeStyleBlock(themeVars)
-  const csp = hasActions ? `${EXTENSION_PANEL_CSP}; connect-src 'self'` : EXTENSION_PANEL_CSP
+  const csp =
+    actionsOrigin !== undefined
+      ? `${EXTENSION_PANEL_CSP}; connect-src ${actionsOrigin}`
+      : EXTENSION_PANEL_CSP
   return (
     `<!doctype html><html><head><meta charset="utf-8">` +
     `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
