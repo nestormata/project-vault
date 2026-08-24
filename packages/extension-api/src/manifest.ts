@@ -72,14 +72,24 @@ export const MAX_UI_PANEL_SLOTS = 32
 // manifest (declared exact version "3.0.0") keeps loading with zero coordinated cross-repo
 // change required — confirmed against `isAboveHostButSameMajor`/the range's actual floor/ceiling
 // logic (see this story's Dev Notes Pre-mortem Analysis).
-// Story 25.3 AC1/Task 1 — bumped again as an additive-minor (3.1.0 -> 3.2.0): `UIPanelContext`
-// gains `resourceId?`, `identity`, `orgId`, `projectId?`, `locale`, `theme` (see
+// Story 25.3 AC1/Task 1 — bumped as an additive-minor (3.1.0 -> 3.2.0) and merged to main first:
+// `UIPanelContext` gains `resourceId?`, `identity`, `orgId`, `projectId?`, `locale`, `theme` (see
 // `hooks/ui-panel.ts`). TypeScript's bivariant parameter checking for method-shorthand object
 // literals (`onRenderPanel(context) {...}`) means an existing extension's narrower-typed
 // implementation stays structurally assignable to the widened `UIPanel` type without a
 // coordinated update — confirmed during this story's own Pre-mortem Analysis elicitation round —
 // so an additive-minor bump (not a major) remains correct.
-export const EXTENSION_API_VERSION = '3.2.0'
+// Story 25.4 AC4/Task 4 — this branch independently bumped 3.1.0 -> 3.2.0 too (developed in
+// parallel with 25.3, before either merged), for its own additive-minor change: the new
+// `EXTENSION_THEME_CSS_VARS`/`ExtensionThemeCssVar` theming-contract exports (theme-contract.ts)
+// are a brand-new, purely-additive export set an extension opts into via
+// `var(--pv-ext-*, fallback)` — nothing existing changes shape. Because Story 25.3 already landed
+// on `main` claiming 3.2.0 for a *different* additive change before this branch merged,
+// `scripts/check-extension-api-version-skew.ts`'s forward-only-versioning invariant (versions are
+// allocated at merge, not at planning — Story 23.6) requires this merge to move to the next free
+// number instead of reusing 3.2.0: 3.2.0 -> 3.3.0. The floor stays `>=3.0.0` so every
+// already-shipped extension keeps loading unmodified regardless.
+export const EXTENSION_API_VERSION = '3.3.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

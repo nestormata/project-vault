@@ -45,6 +45,7 @@
   },
   "dependencies": {
     "@inlang/paraglide-js": "^2.24.1",
+    "@project-vault/extension-api": "workspace:*",
     "@project-vault/shared": "workspace:*"
   }
 }

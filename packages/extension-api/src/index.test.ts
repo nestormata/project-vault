@@ -14,6 +14,7 @@ describe('index.ts — root-only export surface (AC1, AC2)', () => {
         'HOST_SUPPORTED_EXTENSION_API_RANGE',
         'MAX_UI_PANEL_SLOTS',
         'UI_PANEL_SLOT_NAME_PATTERN',
+        'EXTENSION_THEME_CSS_VARS',
         'ExtensionRegistrationError',
         'isExtensionApiVersionSupported',
         'registerExtension',

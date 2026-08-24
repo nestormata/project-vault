@@ -51,6 +51,13 @@ describe('mock-ui-panel-extension (Story 25.1 Task 7)', () => {
     expect(result?.html).toContain(HAPPY_SLOT)
   })
 
+  it('Story 25.4 AC4 Task 4: the happy-path html consumes at least one --pv-ext-* custom property with a CM-style fallback', async () => {
+    const hooks = mockUiPanelExtension.hooksFactory()
+    const result = await hooks.uiPanel?.onRenderPanel(context({ slot: HAPPY_SLOT }))
+
+    expect(result?.html).toMatch(/var\(--pv-ext-[a-z]{1,20},[ ]{0,3}#[0-9a-fA-F]{3,8}\)/)
+  })
+
   it('throws for the throw-trigger slot', async () => {
     const hooks = mockUiPanelExtension.hooksFactory()
     await expect(
