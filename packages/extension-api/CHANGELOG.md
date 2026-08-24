@@ -2,6 +2,19 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.1.0 — 2026-08-23
+
+contract-hash: sha256:26d77ba7639f55b02ad97a635fd29943d3f77e884bcd68e5741985e94f3efd55
+
+### Added
+
+- Added the optional `ExtensionManifest.uiPanelSlots?: string[]` field (Story 25.2) so an
+  extension can declare the named panel slots it owns (e.g. `'group'`, `'document'`), validated
+  at `registerExtension()` time against the new `UI_PANEL_SLOT_NAME_PATTERN` and
+  `MAX_UI_PANEL_SLOTS` exports. Omitting `uiPanelSlots` remains fully backward-compatible: the
+  host falls back to the pre-existing single implicit `'group'` slot behavior, so no existing
+  extension is required to change.
+
 ## 3.0.0 — 2026-08-23
 
 contract-hash: sha256:7d5ca8c29a7fb4d21f40a2328a51cc22d478f8e9f76d6fe1e2ae712523c241aa
