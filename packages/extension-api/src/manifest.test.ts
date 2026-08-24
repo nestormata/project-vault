@@ -20,9 +20,10 @@ describe('EXTENSION_API_VERSION', () => {
   })
 
   it('derives the host-owned floor and ceiling range', () => {
-    // Story 23.11 AC6 — bumped 2.2.0 -> 3.0.0 as a genuine breaking major (organizationId
-    // removed from OrgAuthorizationCheckContext).
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.0.0')
+    // Story 25.2 AC1/Task 1 — bumped 3.0.0 -> 3.1.0 as an additive-minor (new optional
+    // `uiPanelSlots` field); the major floor is unchanged from Story 23.11 AC6's 2.2.0 -> 3.0.0
+    // breaking bump.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.1.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

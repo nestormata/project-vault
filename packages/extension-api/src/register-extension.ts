@@ -1,6 +1,11 @@
 import semver from 'semver'
 import { ExtensionRegistrationError } from './errors.js'
-import { EXTENSION_API_VERSION, HOST_SUPPORTED_EXTENSION_API_RANGE } from './manifest.js'
+import {
+  EXTENSION_API_VERSION,
+  HOST_SUPPORTED_EXTENSION_API_RANGE,
+  MAX_UI_PANEL_SLOTS,
+  UI_PANEL_SLOT_NAME_PATTERN,
+} from './manifest.js'
 import type { ExtensionManifest } from './manifest.js'
 import type { AuthStrategy } from './hooks/auth-strategy.js'
 import type { NotificationChannel } from './hooks/notification-channel.js'
@@ -81,7 +86,14 @@ type RegisterExtensionOptions = {
 const noopLogger: RegisterExtensionLogger = { warn: () => undefined }
 
 /** Story 23.2 AC-2 — the complete, fixed set of top-level `ExtensionManifest` keys. */
-const KNOWN_MANIFEST_KEYS = ['name', 'apiVersion', 'capabilities', 'replacesNativeLogin', 'dbScope']
+const KNOWN_MANIFEST_KEYS = [
+  'name',
+  'apiVersion',
+  'capabilities',
+  'replacesNativeLogin',
+  'dbScope',
+  'uiPanelSlots',
+]
 
 const INVALID_MANIFEST_FIELD = 'invalid-manifest-field'
 
@@ -133,6 +145,63 @@ function validateReplacesNativeLoginShape(manifest: ExtensionManifest): void {
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
       `Extension manifest declares "replacesNativeLogin: true" but does not declare "auth-provider" in capabilities[]`
+    )
+  }
+}
+
+/**
+ * Story 25.2 AC1 — validates the optional `uiPanelSlots` field's shape: non-empty array of
+ * unique strings (if present), each matching `UI_PANEL_SLOT_NAME_PATTERN`, capped at
+ * `MAX_UI_PANEL_SLOTS` entries, and only legal alongside `'ui-panel'` in `capabilities[]`.
+ * Mirrors `validateReplacesNativeLoginShape`'s structure exactly. Does NOT check for the
+ * `uiPanel` hook itself — that check needs `hooksFactory()`'s result and runs later, after
+ * `hooksFactory()` is invoked (see `hasCallableUiPanelHook` below).
+ */
+function validateUiPanelSlotsShape(manifest: ExtensionManifest): void {
+  if (manifest.uiPanelSlots === undefined) return
+
+  if (!Array.isArray(manifest.uiPanelSlots)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "uiPanelSlots" must be an array, got ${JSON.stringify(manifest.uiPanelSlots)}`
+    )
+  }
+
+  if (manifest.uiPanelSlots.length === 0) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest field "uiPanelSlots" must not be an empty array — omit the field entirely to declare no slots'
+    )
+  }
+
+  if (manifest.uiPanelSlots.length > MAX_UI_PANEL_SLOTS) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "uiPanelSlots" declares ${manifest.uiPanelSlots.length} entries, exceeding the maximum of ${MAX_UI_PANEL_SLOTS}`
+    )
+  }
+
+  const seen = new Set<string>()
+  for (const slot of manifest.uiPanelSlots) {
+    if (typeof slot !== 'string' || !UI_PANEL_SLOT_NAME_PATTERN.test(slot)) {
+      throw new ExtensionRegistrationError(
+        INVALID_MANIFEST_FIELD,
+        `Extension manifest field "uiPanelSlots" contains an invalid slot name ${JSON.stringify(slot)} (expected to match ${UI_PANEL_SLOT_NAME_PATTERN})`
+      )
+    }
+    if (seen.has(slot)) {
+      throw new ExtensionRegistrationError(
+        INVALID_MANIFEST_FIELD,
+        `Extension manifest field "uiPanelSlots" contains duplicate slot name "${slot}"`
+      )
+    }
+    seen.add(slot)
+  }
+
+  if (!manifest.capabilities.includes('ui-panel')) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest declares "uiPanelSlots" but does not declare "ui-panel" in capabilities[]'
     )
   }
 }
@@ -232,6 +301,18 @@ function hasCallableProjectLifecycleHook(
 }
 
 /**
+ * Story 25.2 AC1 (Boundary & Edge Case Sweep finding) — a manifest declaring `uiPanelSlots`
+ * (implying real slot names exist to serve) whose `hooksFactory()` result has no `uiPanel` hook
+ * at all is rejected, mirroring `hasCallableProjectLifecycleHook` exactly. General `'ui-panel'`
+ * capability declared WITHOUT `uiPanelSlots` is deliberately NOT checked here — AC2's fallback
+ * path depends on that exact combination staying legal.
+ */
+function hasCallableUiPanelHook(manifest: ExtensionManifest, hooks: ExtensionHooks): boolean {
+  if (!manifest.uiPanelSlots) return true
+  return hooks.uiPanel !== undefined && typeof hooks.uiPanel.onRenderPanel === 'function'
+}
+
+/**
  * AC4/AC5/AC6 — validates `manifest.name` (reverse-DNS style) and semver-based capability
  * negotiation, in that order, BEFORE ever invoking `hooksFactory`. Throws a typed
  * `ExtensionRegistrationError` synchronously on either failure, discriminated by `reason`.
@@ -259,6 +340,7 @@ export function registerExtension(
   }
   validateReplacesNativeLoginShape(manifest)
   validateDbScopeShape(manifest.dbScope)
+  validateUiPanelSlotsShape(manifest)
 
   if (!REVERSE_DNS_NAME_PATTERN.test(manifest.name)) {
     throw new ExtensionRegistrationError(
@@ -275,6 +357,17 @@ export function registerExtension(
     throw new ExtensionRegistrationError(
       'invalid-manifest-field',
       'Extension manifest declares "project-lifecycle" but hooksFactory() did not return a callable projectLifecycle hook'
+    )
+  }
+
+  // Story 25.2 AC1 (Boundary & Edge Case Sweep finding) — a manifest promising `uiPanelSlots`
+  // with nothing behind it is the same class of bug `hasCallableProjectLifecycleHook` already
+  // catches above; runs after hooksFactory() per this function's existing lazy-hooksFactory
+  // convention, same as the project-lifecycle check.
+  if (!hasCallableUiPanelHook(manifest, hooks)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest declares "uiPanelSlots" but hooksFactory() did not return a callable uiPanel hook'
     )
   }
 
@@ -297,6 +390,7 @@ export function registerExtension(
       capabilities: manifest.capabilities,
       replacesNativeLogin: manifest.replacesNativeLogin,
       dbScope: manifest.dbScope,
+      uiPanelSlots: manifest.uiPanelSlots,
     },
     hooks,
   }

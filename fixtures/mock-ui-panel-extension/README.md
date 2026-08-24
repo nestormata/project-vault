@@ -18,20 +18,18 @@ CentralizeMe's real `access-group/ui-panel.ts`**, which cannot render meaningful
 
 | Slot value          | `onRenderPanel` result                          | Intended scenario                    |
 | -------------------- | ------------------------------------------------ | -------------------------------------- |
-| `group`               | `{ html: '<html>...Mock panel for slot "group"...' }` | Story 25.1's one hardcoded valid slot — the AC1/AC4 happy path. |
+| `group`               | `{ html: '<html>...Mock panel for slot "group"...' }` | AC1/AC4 happy path. |
 | `fixture-throw`        | throws synchronously                              | AC3 fail-closed-on-throw.              |
 | `fixture-hang`         | never resolves                                    | AC3 fail-closed-on-timeout.            |
 | `fixture-garbage`      | resolves `{ html: 42 }` (malformed)               | AC3 fail-closed-on-malformed-result.   |
 
-**Important caveat:** Story 25.1's own route (`apps/api/src/lib/extension-panel.ts`'s
-`KNOWN_UI_PANEL_SLOTS`) hardcodes exactly one valid slot, `'group'`, and rejects every other slot
-value with a `400` (AC3b) *before this hook is ever invoked*. The `fixture-throw` /
-`fixture-hang` / `fixture-garbage` slots above are therefore not reachable through the real HTTP
-route as it exists today — they exist for this package's own unit tests
-(`src/index.test.ts`) and for a future story that expands the slot allowlist. To manually verify
-AC3's degraded paths against a real running stack (Task 7d), either drive this fixture's
-`hooksFactory()` directly, or temporarily add one of the `fixture-*` slots to
-`KNOWN_UI_PANEL_SLOTS` for the duration of that manual check.
+**Story 25.2 AC6 update:** this fixture's manifest now declares all four slots above via
+`uiPanelSlots: ['group', 'fixture-throw', 'fixture-hang', 'fixture-garbage']`. The host
+(`apps/api/src/lib/extension-panel.ts`'s `resolveKnownUiPanelSlots()`) derives its known-slots
+allowlist from this manifest dynamically, so every slot in the table is reachable through the
+real HTTP route directly — no source-editing workaround needed. To manually verify AC3's
+degraded paths against a real running stack, just request `GET
+/api/v1/extensions/panels/fixture-throw` (or `-hang` / `-garbage`) once this fixture is loaded.
 
 ## Loading it
 

@@ -135,7 +135,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.0.0"`
+- type: `"3.1.0"`
 
 ## export `ExtensionCapability`
 
@@ -232,6 +232,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 1.0.0
   - type: `boolean | undefined`
   - union-members: `undefined`, `false`, `true`
+- member: `uiPanelSlots?`
+  - since: 3.1.0
+  - type: `string[] | undefined`
+  - union-members: `undefined`, `string[]`
 
 ## export `ExtensionRegistrationError`
 
@@ -305,6 +309,12 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - kind: value
 - type: `(declaredApiVersion: string) => boolean`
 - call-signature: `(declaredApiVersion: string): boolean`
+
+## export `MAX_UI_PANEL_SLOTS`
+
+- since: 3.1.0
+- kind: value
+- type: `32`
 
 ## export `NotificationChannel`
 
@@ -402,6 +412,82 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - kind: value
 - type: `(manifest: ExtensionManifest, hooksFactory: (context: ExtensionRuntimeContext & HostServices) => ExtensionHooks, options?: RegisterExtensionOptions, host?: ExtensionRuntimeContext & HostServices) => { manifest: ExtensionManifest; hooks: ExtensionHooks; }`
 - call-signature: `(manifest: ExtensionManifest, hooksFactory: (context: ExtensionRuntimeContext & HostServices) => ExtensionHooks, options?: RegisterExtensionOptions, host?: ExtensionRuntimeContext & HostServices): { manifest: ExtensionManifest; hooks: ExtensionHooks; }`
+
+## export `UI_PANEL_SLOT_NAME_PATTERN`
+
+- since: 3.1.0
+- kind: value
+- type: `RegExp`
+- member: `__@match@435`
+  - since: 3.1.0
+  - type: `(string: string) => RegExpMatchArray | null`
+  - call-signature: `(string: string): RegExpMatchArray | null`
+- member: `__@matchAll@444`
+  - since: 3.1.0
+  - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
+  - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
+- member: `__@replace@437`
+  - since: 3.1.0
+  - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
+  - call-signature: `(string: string, replaceValue: string): string`
+  - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
+- member: `__@search@440`
+  - since: 3.1.0
+  - type: `(string: string) => number`
+  - call-signature: `(string: string): number`
+- member: `__@split@442`
+  - since: 3.1.0
+  - type: `(string: string, limit?: number) => string[]`
+  - call-signature: `(string: string, limit?: number): string[]`
+- member: `compile`
+  - since: 3.1.0
+  - type: `(pattern: string, flags?: string) => RegExp`
+  - call-signature: `(pattern: string, flags?: string): RegExp`
+- member: `readonly dotAll`
+  - since: 3.1.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `exec`
+  - since: 3.1.0
+  - type: `(string: string) => RegExpExecArray | null`
+  - call-signature: `(string: string): RegExpExecArray | null`
+- member: `readonly flags`
+  - since: 3.1.0
+  - type: `string`
+- member: `readonly global`
+  - since: 3.1.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `readonly hasIndices`
+  - since: 3.1.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `readonly ignoreCase`
+  - since: 3.1.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `lastIndex`
+  - since: 3.1.0
+  - type: `number`
+- member: `readonly multiline`
+  - since: 3.1.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `readonly source`
+  - since: 3.1.0
+  - type: `string`
+- member: `readonly sticky`
+  - since: 3.1.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `test`
+  - since: 3.1.0
+  - type: `(string: string) => boolean`
+  - call-signature: `(string: string): boolean`
+- member: `readonly unicode`
+  - since: 3.1.0
+  - type: `boolean`
+  - union-members: `false`, `true`
 
 ## export `UIPanel`
 

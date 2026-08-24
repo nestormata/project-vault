@@ -8,6 +8,8 @@ describe('@project-vault/extension-api public value exports', () => {
       'EXTENSION_API_VERSION',
       'ExtensionRegistrationError',
       'HOST_SUPPORTED_EXTENSION_API_RANGE',
+      'MAX_UI_PANEL_SLOTS',
+      'UI_PANEL_SLOT_NAME_PATTERN',
       'defineExtension',
       'isExtensionApiVersionSupported',
       'registerExtension',

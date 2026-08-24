@@ -14,6 +14,15 @@ describe('mock-ui-panel-extension (Story 25.1 Task 7)', () => {
     expect(mockUiPanelExtension.manifest.capabilities).toEqual(['ui-panel'])
   })
 
+  it('Story 25.2 AC6: declares uiPanelSlots covering the happy-path slot and all three trigger slots', () => {
+    expect(mockUiPanelExtension.manifest.uiPanelSlots).toEqual([
+      HAPPY_SLOT,
+      THROW_TRIGGER_SLOT,
+      HANG_TRIGGER_SLOT,
+      GARBAGE_TRIGGER_SLOT,
+    ])
+  })
+
   it('does not implement any other hook (proves ui-panel alone is a valid manifest)', () => {
     const hooks = mockUiPanelExtension.hooksFactory()
     expect(hooks.authStrategy).toBeUndefined()
