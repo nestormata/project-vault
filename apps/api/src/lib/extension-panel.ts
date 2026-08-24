@@ -226,15 +226,25 @@ type PanelAttemptOutcome =
  * repo's lint budget — behaviorally this is still one atomic attempt, still wrapped in the same
  * timeout.
  */
-async function resolvePanelContextAndRender(
+export type BaseModuleActionContextOutcome =
+  { kind: 'denied'; projectId: string } | { kind: 'ok'; context: UIPanelContext }
+
+/**
+ * Story 25.5 AC1/Task 5 — shared by `resolvePanelContextAndRender()` below (the `uiPanel` hook
+ * call) and `module-action-handler.ts`'s equivalent attempt function (the `moduleAction.onAction`
+ * call): the identical project-authorization gate (AC2/AC3) and locale/theme resolution, building
+ * the identical `UIPanelContext`/`ModuleActionContext` shape (structurally the same type per
+ * Story 25.5 AC1's deliberate re-exported alias). Extracted here so the two call sites can never
+ * silently drift apart.
+ */
+export async function resolveBaseModuleActionContext(
   slot: string,
   identity: PanelIdentity,
   tx: Tx,
   query: PanelQuery,
   deps: RenderExtensionPanelDeps,
-  uiPanel: { onRenderPanel: (context: UIPanelContext) => Promise<{ html: unknown }> },
   actionEndpoint: string | undefined
-): Promise<PanelAttemptOutcome> {
+): Promise<BaseModuleActionContextOutcome> {
   if (query.projectId !== undefined) {
     // AC2: PV-authorized via the existing project-visibility gate — reused, not reinvented.
     // Denial is reported via a distinct discriminant (not a thrown error) so it is not
@@ -266,7 +276,21 @@ async function resolvePanelContextAndRender(
     // `undefined` (never `''`), never present, when it does not.
     ...(actionEndpoint !== undefined ? { actionEndpoint } : {}),
   }
-  const result = await uiPanel.onRenderPanel(context)
+  return { kind: 'ok', context }
+}
+
+async function resolvePanelContextAndRender(
+  slot: string,
+  identity: PanelIdentity,
+  tx: Tx,
+  query: PanelQuery,
+  deps: RenderExtensionPanelDeps,
+  uiPanel: { onRenderPanel: (context: UIPanelContext) => Promise<{ html: unknown }> },
+  actionEndpoint: string | undefined
+): Promise<PanelAttemptOutcome> {
+  const base = await resolveBaseModuleActionContext(slot, identity, tx, query, deps, actionEndpoint)
+  if (base.kind === 'denied') return base
+  const result = await uiPanel.onRenderPanel(base.context)
   return { kind: 'ok', result }
 }
 

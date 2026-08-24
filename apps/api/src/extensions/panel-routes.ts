@@ -1,5 +1,5 @@
 import { z } from 'zod/v4'
-import type { FastifyRequest } from 'fastify'
+import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { FastifyApp } from '../lib/fastify-app.js'
 import { ApiErrorSchema } from '../lib/api-contracts.js'
 import { secureRoute, type SecureRouteContext } from '../lib/secure-route.js'
@@ -40,6 +40,25 @@ function isMalformedQueryValue(query: { projectId?: string; resourceId?: string 
   if (query.projectId !== undefined && !PROJECT_ID_PATTERN.test(query.projectId)) return true
   if (query.resourceId !== undefined && !RESOURCE_ID_PATTERN.test(query.resourceId)) return true
   return false
+}
+
+/**
+ * Shared by both `/extensions/panels/:slot` (GET) and `/extensions/panels/:slot/actions` (POST)
+ * — AC2/AC5's manual shape-validation-before-any-DB-lookup discipline applies identically to
+ * both routes. Returns `undefined` after already sending the 400 itself, so a handler can just
+ * early-return on that.
+ */
+function parsePanelSlotAndQueryOrReject(
+  req: FastifyRequest,
+  reply: FastifyReply
+): { slot: string; projectId?: string; resourceId?: string } | undefined {
+  const { slot } = req.params as { slot: string }
+  const { projectId, resourceId } = req.query as { projectId?: string; resourceId?: string }
+  if (isMalformedQueryValue({ projectId, resourceId })) {
+    reply.status(400).send({ code: 'invalid_query', message: 'Malformed projectId or resourceId' })
+    return undefined
+  }
+  return { slot, projectId, resourceId }
 }
 
 const ExtensionPanelOkSchema = z.object({
@@ -213,15 +232,11 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
     },
     handler: async (ctx, req: FastifyRequest, reply) => {
-      const { slot } = req.params as { slot: string }
-      const { projectId, resourceId } = req.query as { projectId?: string; resourceId?: string }
       // AC2/AC5: shape-validated BEFORE any DB lookup — the exact same pre-hook-call validation
       // position `slot` itself uses.
-      if (isMalformedQueryValue({ projectId, resourceId })) {
-        return reply
-          .status(400)
-          .send({ code: 'invalid_query', message: 'Malformed projectId or resourceId' })
-      }
+      const parsed = parsePanelSlotAndQueryOrReject(req, reply)
+      if (!parsed) return reply
+      const { slot, projectId, resourceId } = parsed
       const secureCtx = ctx as SecureRouteContext
       // Story 25.2 AC3: resolved fresh from getExtensionStatus() on every request, never a
       // module-level constant — a slot the currently loaded extension's manifest doesn't
@@ -294,13 +309,9 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
       rateLimit: { max: 30, timeWindowMs: 60_000, key: 'POST /extensions/panels/:slot/actions' },
     },
     handler: async (ctx, req: FastifyRequest, reply) => {
-      const { slot } = req.params as { slot: string }
-      const { projectId, resourceId } = req.query as { projectId?: string; resourceId?: string }
-      if (isMalformedQueryValue({ projectId, resourceId })) {
-        return reply
-          .status(400)
-          .send({ code: 'invalid_query', message: 'Malformed projectId or resourceId' })
-      }
+      const parsed = parsePanelSlotAndQueryOrReject(req, reply)
+      if (!parsed) return reply
+      const { slot, projectId, resourceId } = parsed
 
       // Task 2/Open Design Question 1 (Option B, resolved 2026-08-24) — defense-in-depth on top
       // of the existing CORS-allowlist + JSON-content-type baseline, checked before any DB

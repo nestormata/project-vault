@@ -5,13 +5,13 @@ import type { Tx } from '@project-vault/db'
 import { getExtensionStatus } from '../extensions/loader.js'
 import {
   defaultRenderExtensionPanelDeps,
+  resolveBaseModuleActionContext,
   type PanelIdentity,
   type PanelQuery,
   type RenderExtensionPanelDeps,
 } from './extension-panel.js'
 import { operationalLog } from './logger.js'
 import { raceWithTimeout } from './race-with-timeout.js'
-import type { SecureRouteContext } from './secure-route.js'
 
 /** Mirrors `extension-panel.ts`'s own (unexported) `PanelLogger` type exactly. */
 type PanelLoggerLike = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>
@@ -109,36 +109,24 @@ async function resolveModuleActionContextAndDispatch(
     return { kind: 'unknown_action' }
   }
 
-  if (query.projectId !== undefined) {
-    // AC3: reuses the identical PV-authorized project-visibility gate `renderExtensionPanel()`
-    // already uses — reused, not reinvented. Denial is reported via a distinct discriminant, not
-    // a thrown error, so it is never conflated with a genuine hook/DB failure.
-    const secureCtx = { auth: identity, tx } as SecureRouteContext
-    const authorized = await deps.callerCanSeeProject(secureCtx, query.projectId)
-    if (!authorized) {
-      return { kind: 'denied_project', projectId: query.projectId }
-    }
-  }
-
-  const locale = await deps.getUserLocale(tx, identity.userId)
-  const theme = await deps.resolveTheme(tx, identity.userId, identity.orgId)
-
+  // AC3: reuses the identical PV-authorized project-visibility gate (and locale/theme
+  // resolution) `renderExtensionPanel()` already uses, via `resolveBaseModuleActionContext()` —
+  // reused, not reinvented. Denial is reported via a distinct discriminant, not a thrown error,
+  // so it is never conflated with a genuine hook/DB failure.
+  //
   // AC3 — Red Team vs Blue Team: this context is built EXCLUSIVELY from `identity` (the caller's
   // own resolved session, forwarded in by the route from its own authenticated context) and DB
   // lookups. The `request` parameter (the parsed action body) is never read here beyond the
   // already-checked `kind` field above — no code path in this function reads an org/user/project
   // claim off of it, even though the body's type would structurally allow a same-named field.
-  const context: ModuleActionContext = {
-    slot,
-    identity: { userId: identity.userId, orgRole: identity.orgRole },
-    orgId: identity.orgId,
-    locale,
-    theme,
-    ...(query.projectId !== undefined ? { projectId: query.projectId } : {}),
-    ...(query.resourceId !== undefined ? { resourceId: query.resourceId } : {}),
+  const base = await resolveBaseModuleActionContext(slot, identity, tx, query, deps, undefined)
+  if (base.kind === 'denied') {
+    return { kind: 'denied_project', projectId: base.projectId }
   }
 
-  const result = await moduleAction.onAction(context, { action: request })
+  const result = await moduleAction.onAction(base.context as ModuleActionContext, {
+    action: request,
+  })
   return { kind: 'dispatched', result }
 }
 
