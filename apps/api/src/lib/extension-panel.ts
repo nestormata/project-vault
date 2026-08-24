@@ -1,7 +1,15 @@
+import { eq } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
-import { OperationalEvent } from '@project-vault/shared'
+import type { UIPanelContext } from '@project-vault/extension-api'
+import { OperationalEvent, resolveAppliedThemeWithOrgDefault } from '@project-vault/shared'
+import type { Tx } from '@project-vault/db'
+import { organizations, users } from '@project-vault/db/schema'
 import { getExtensionStatus } from '../extensions/loader.js'
 import type { ExtensionState } from '../extensions/loader.js'
+import { getCompiledThemes } from '../modules/theming/service.js'
+import { callerCanSeeProject, logVisibilityDenied } from '../modules/projects/project-access.js'
+import type { SecureRouteContext } from './secure-route.js'
+import type { OrgRole } from '../plugins/require-org-role.js'
 import { operationalLog } from './logger.js'
 import { raceWithTimeout } from './race-with-timeout.js'
 
@@ -83,6 +91,85 @@ export type RenderExtensionPanelResult =
 
 type PanelLogger = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>
 
+/**
+ * Story 25.3 AC1 — the caller-identity subset `renderExtensionPanel()` needs to resolve the
+ * request-scoped `UIPanelContext` fields. Deliberately narrower than the full `AuthContext`
+ * (`request.authContext`) the route reads from `secureRoute()`: only `userId`/`orgId`/`orgRole`
+ * are needed here, mirroring AC6's own least-privilege discipline one layer down from the
+ * extension boundary itself.
+ */
+export type PanelIdentity = {
+  userId: string
+  orgId: string
+  orgRole: OrgRole
+}
+
+/** Story 25.3 AC2/AC5 — the two optional, already shape-validated (Task 3's Zod querystring
+ * schema) query values a panel request may carry. */
+export type PanelQuery = {
+  projectId?: string
+  resourceId?: string
+}
+
+/**
+ * Story 25.3 Task 2 — every DB-touching dependency `renderExtensionPanel()` needs to resolve the
+ * new context fields, injectable so this function's own unit tests can mock each one
+ * independently (matching 25.1's own "reusable function, not inline in the route handler"
+ * discipline) without standing up a real Postgres transaction.
+ */
+export type RenderExtensionPanelDeps = {
+  /** AC2 — reused directly from `project-access.ts`, never reinvented. */
+  callerCanSeeProject: (secureCtx: SecureRouteContext, projectId: string) => Promise<boolean>
+  /** AC2 — reused directly from `project-access.ts`, never a new log format. */
+  logVisibilityDenied: (
+    req: { log: Pick<PanelLogger, 'warn'> },
+    input: { projectId: string; callerId: string; orgRole: OrgRole }
+  ) => void
+  /** AC3 — `users.locale ?? 'en'`, mirroring `apps/api/src/modules/users/routes.ts`'s own
+   * existing fallback. */
+  getUserLocale: (tx: Tx, userId: string) => Promise<'en' | 'es'>
+  /** AC4 — the three-tier `personal selection -> org default -> base` resolution, via the same
+   * `resolveAppliedThemeWithOrgDefault()` apps/web calls (now shared via `@project-vault/shared`,
+   * see Task 1). */
+  resolveTheme: (tx: Tx, userId: string, orgId: string) => Promise<{ name: string | null }>
+}
+
+async function defaultGetUserLocale(tx: Tx, userId: string): Promise<'en' | 'es'> {
+  const [row] = await tx.select({ locale: users.locale }).from(users).where(eq(users.id, userId))
+  return (row?.locale ?? 'en') as 'en' | 'es'
+}
+
+async function defaultResolveTheme(
+  tx: Tx,
+  userId: string,
+  orgId: string
+): Promise<{ name: string | null }> {
+  const [userRow] = await tx
+    .select({ selectedThemeName: users.selectedThemeName })
+    .from(users)
+    .where(eq(users.id, userId))
+  const [orgRow] = await tx
+    .select({ defaultThemeName: organizations.defaultThemeName })
+    .from(organizations)
+    .where(eq(organizations.id, orgId))
+  const availableThemeNames = getCompiledThemes().map((theme) => theme.name)
+  const name = resolveAppliedThemeWithOrgDefault(
+    userRow?.selectedThemeName ?? null,
+    orgRow?.defaultThemeName ?? null,
+    availableThemeNames
+  )
+  return { name }
+}
+
+/** Story 25.3 Task 2 — the real, production-wired dependency set; unit tests supply their own
+ * mocked `RenderExtensionPanelDeps` instead of importing this. */
+export const defaultRenderExtensionPanelDeps: RenderExtensionPanelDeps = {
+  callerCanSeeProject,
+  logVisibilityDenied,
+  getUserLocale: defaultGetUserLocale,
+  resolveTheme: defaultResolveTheme,
+}
+
 function logUnavailable(
   logger: PanelLogger,
   slot: string,
@@ -109,10 +196,64 @@ function logUnavailable(
  * check, or a permanently-absent hook all map to the SAME degraded `{ outcome: 'unavailable' }`
  * result (AC3) — callers must never try to recover more detail than this from a non-'ok' result.
  */
+type PanelAttemptOutcome =
+  { kind: 'denied'; projectId: string } | { kind: 'ok'; result: { html: unknown } }
+
+/**
+ * Story 25.3 Task 2 — the single unit of work `raceWithTimeout()` races: projectId
+ * authorization, locale/theme resolution, and the hook call itself. Factored out of
+ * `renderExtensionPanel()` purely to keep that function's own cyclomatic complexity within this
+ * repo's lint budget — behaviorally this is still one atomic attempt, still wrapped in the same
+ * timeout.
+ */
+async function resolvePanelContextAndRender(
+  slot: string,
+  identity: PanelIdentity,
+  tx: Tx,
+  query: PanelQuery,
+  deps: RenderExtensionPanelDeps,
+  uiPanel: { onRenderPanel: (context: UIPanelContext) => Promise<{ html: unknown }> }
+): Promise<PanelAttemptOutcome> {
+  if (query.projectId !== undefined) {
+    // AC2: PV-authorized via the existing project-visibility gate — reused, not reinvented.
+    // Denial is reported via a distinct discriminant (not a thrown error) so it is not
+    // conflated with a genuine hook/DB failure.
+    const secureCtx = { auth: identity, tx } as SecureRouteContext
+    const authorized = await deps.callerCanSeeProject(secureCtx, query.projectId)
+    if (!authorized) {
+      return { kind: 'denied', projectId: query.projectId }
+    }
+  }
+
+  const locale = await deps.getUserLocale(tx, identity.userId)
+  const theme = await deps.resolveTheme(tx, identity.userId, identity.orgId)
+
+  const context: UIPanelContext = {
+    slot,
+    identity: { userId: identity.userId, orgRole: identity.orgRole },
+    orgId: identity.orgId,
+    locale,
+    theme,
+    // AC2/AC5: only included when the caller actually supplied the query value — omitting the
+    // query parameter entirely means the field stays `undefined` in context, not every panel
+    // request is project- or resource-scoped.
+    ...(query.projectId !== undefined ? { projectId: query.projectId } : {}),
+    // AC5: resourceId is passed through verbatim with NO PV-side lookup — see
+    // `RenderExtensionPanelDeps` above, which has no resourceId-related dependency at all.
+    ...(query.resourceId !== undefined ? { resourceId: query.resourceId } : {}),
+  }
+  const result = await uiPanel.onRenderPanel(context)
+  return { kind: 'ok', result }
+}
+
 export async function renderExtensionPanel(
   slot: string,
   knownSlots: readonly string[],
-  logger: PanelLogger
+  logger: PanelLogger,
+  identity: PanelIdentity,
+  tx: Tx,
+  query: PanelQuery = {},
+  deps: RenderExtensionPanelDeps = defaultRenderExtensionPanelDeps
 ): Promise<RenderExtensionPanelResult> {
   // AC3b: validated BEFORE the extension hook is ever invoked with a request-derived value — an
   // exact-match check against the one known slot is sufficient (and correct, per AC3b's own
@@ -130,11 +271,34 @@ export async function renderExtensionPanel(
   }
 
   const uiPanel = status.hooks.uiPanel
+
+  // AC1/AC3 Boundary & Edge Case Sweep: the projectId-authorization check, the locale/theme
+  // lookups, AND the hook call itself are all wrapped in the SAME race-with-timeout attempt, so a
+  // DB failure resolving any of the new context fields degrades to the identical
+  // `panel_unavailable` outcome a hook throw/timeout already produces (Task 2) — never a raw 500.
+  // `identity`/`orgId`/`locale`/`theme` are all read fresh from THIS call's own arguments only,
+  // never from any module-level/shared state, so concurrent requests for different
+  // users/orgs can never cross-contaminate (AC1's Boundary & Edge Case Sweep finding).
   const raced = await raceWithTimeout(
-    () => uiPanel.onRenderPanel({ slot }),
+    () => resolvePanelContextAndRender(slot, identity, tx, query, deps, uiPanel),
     RENDER_PANEL_TIMEOUT_MS
   )
 
+  return finalizePanelResult(raced, logger, slot, identity, deps)
+}
+
+/**
+ * Story 25.3 Task 2 — turns the raced attempt's outcome into the final `RenderExtensionPanelResult`.
+ * Factored out of `renderExtensionPanel()` to keep that function's cyclomatic complexity within
+ * this repo's lint budget.
+ */
+function finalizePanelResult(
+  raced: Awaited<ReturnType<typeof raceWithTimeout<PanelAttemptOutcome>>>,
+  logger: PanelLogger,
+  slot: string,
+  identity: PanelIdentity,
+  deps: RenderExtensionPanelDeps
+): RenderExtensionPanelResult {
   if (raced.status === 'timed_out') {
     logUnavailable(logger, slot, 'timed_out')
     return { outcome: 'unavailable' }
@@ -144,14 +308,27 @@ export async function renderExtensionPanel(
     return { outcome: 'unavailable' }
   }
 
+  const inner = raced.value
+  if (inner.kind === 'denied') {
+    // AC2 Red Team vs Blue Team: the SAME panel_unavailable outcome a transient hook failure
+    // would produce — never a distinguishable 403/404 — so a caller enumerating project IDs
+    // cannot tell "wrong project" apart from "extension is transiently down". The hook is never
+    // invoked for a denied projectId.
+    deps.logVisibilityDenied(
+      { log: logger },
+      { projectId: inner.projectId, callerId: identity.userId, orgRole: identity.orgRole }
+    )
+    return { outcome: 'unavailable' }
+  }
+
   // Minimal shape check — the extension's hook is trusted-but-arbitrary in-process code that
   // could return anything.
-  if (typeof raced.value?.html !== 'string') {
+  if (typeof inner.result?.html !== 'string') {
     logUnavailable(logger, slot, 'malformed')
     return { outcome: 'unavailable' }
   }
 
-  return { outcome: 'ok', html: raced.value.html }
+  return { outcome: 'ok', html: inner.result.html }
 }
 
 /**
