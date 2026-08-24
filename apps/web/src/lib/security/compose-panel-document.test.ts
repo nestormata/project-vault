@@ -38,6 +38,29 @@ describe('composePanelDocument (Story 25.4 AC1)', () => {
     expect(result).toContain('<meta http-equiv="Content-Security-Policy"')
   })
 
+  describe('Story 25.5 AC4/Task 4: conditional connect-src widening', () => {
+    it('has no connect-src directive by default (hasActions omitted)', () => {
+      const result = composePanelDocument('<p>hello</p>', BASE_EXTENSION_THEME_VARS)
+
+      expect(result).not.toContain('connect-src')
+    })
+
+    it('has no connect-src directive when hasActions is explicitly false', () => {
+      const result = composePanelDocument('<p>hello</p>', BASE_EXTENSION_THEME_VARS, false)
+
+      expect(result).not.toContain('connect-src')
+    })
+
+    it("adds exactly connect-src 'self' (not a wildcard, not a spelled-out origin) when hasActions is true", () => {
+      const result = composePanelDocument('<p>hello</p>', BASE_EXTENSION_THEME_VARS, true)
+
+      const meta = /content="([^"]*)"/.exec(result)
+      expect(meta?.[1]).toBe(
+        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; connect-src 'self'"
+      )
+    })
+  })
+
   it('AC1 edge/Red Team finding: an extension-supplied conflicting CSP <meta> or <base> tag never overrides the host head-level policy', () => {
     const hostileFragment =
       '<meta http-equiv="Content-Security-Policy" content="default-src *"><base href="https://evil.example/">' +

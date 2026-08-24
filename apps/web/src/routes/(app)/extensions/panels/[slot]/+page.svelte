@@ -33,8 +33,10 @@
   // Story 25.4 AC1/AC4 — the extension's raw html fragment is never assigned to `srcdoc` directly
   // any more; it is always wrapped by the host-controlled composition function first (CSP meta +
   // --pv-ext-* theme block + the fragment itself, verbatim — AC2 RESOLVED: no sanitizer).
+  // Story 25.5 AC4/Task 4 — data.hasActions conditionally widens the composed CSP with
+  // connect-src 'self', only when the loaded extension actually declares moduleActions.
   const srcdoc = $derived(
-    data.html !== null ? composePanelDocument(data.html, data.themeVars) : null
+    data.html !== null ? composePanelDocument(data.html, data.themeVars, data.hasActions) : null
   )
 </script>
 

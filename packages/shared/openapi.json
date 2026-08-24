@@ -32794,6 +32794,9 @@
                         },
                         "html": {
                           "type": "string"
+                        },
+                        "actionEndpoint": {
+                          "type": "string"
                         }
                       },
                       "required": [

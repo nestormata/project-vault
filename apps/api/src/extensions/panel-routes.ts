@@ -42,7 +42,14 @@ function isMalformedQueryValue(query: { projectId?: string; resourceId?: string 
   return false
 }
 
-const ExtensionPanelOkSchema = z.object({ ok: z.literal(true), html: z.string() })
+const ExtensionPanelOkSchema = z.object({
+  ok: z.literal(true),
+  html: z.string(),
+  // Story 25.5 AC4/Task 4: present only when the loaded extension declares moduleActions for
+  // this slot — omitted entirely (never an empty string) when it does not, so apps/web can
+  // conditionally widen EXTENSION_PANEL_CSP's connect-src only for action-capable panels.
+  actionEndpoint: z.string().optional(),
+})
 const ExtensionPanelUnavailableSchema = z.object({
   ok: z.literal(false),
   reason: z.literal('panel_unavailable'),
@@ -245,7 +252,11 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
       if (result.outcome === 'unavailable') {
         return { ok: false as const, reason: 'panel_unavailable' as const }
       }
-      return { ok: true as const, html: result.html }
+      return {
+        ok: true as const,
+        html: result.html,
+        ...(result.actionEndpoint !== undefined ? { actionEndpoint: result.actionEndpoint } : {}),
+      }
     },
   })
 
@@ -300,12 +311,10 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
 
       const action = extractValidActionBody(req.body)
       if (!action) {
-        return reply
-          .status(400)
-          .send({
-            code: 'invalid_action',
-            message: 'Request body must include a string "kind" field',
-          })
+        return reply.status(400).send({
+          code: 'invalid_action',
+          message: 'Request body must include a string "kind" field',
+        })
       }
 
       const secureCtx = ctx as SecureRouteContext

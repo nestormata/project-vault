@@ -16,6 +16,7 @@ function loadedState(overrides: {
   capabilities?: string[]
   uiPanel?: UIPanel
   uiPanelSlots?: string[]
+  moduleActions?: string[]
   name?: string
   loadedAt?: string
 }): ExtensionState {
@@ -26,6 +27,7 @@ function loadedState(overrides: {
       apiVersion: '1.0.0',
       capabilities: (overrides.capabilities ?? ['ui-panel']) as never,
       ...(overrides.uiPanelSlots ? { uiPanelSlots: overrides.uiPanelSlots } : {}),
+      ...(overrides.moduleActions ? { moduleActions: overrides.moduleActions } : {}),
     },
     loadedAt: overrides.loadedAt ?? new Date().toISOString(),
     hooks: overrides.uiPanel ? { uiPanel: overrides.uiPanel } : {},
@@ -616,6 +618,82 @@ describe('renderExtensionPanel (Story 25.1 AC3/AC3b, Story 25.3 AC1-AC6)', () =>
         fakeDeps()
       )
       expect(captured?.resourceId).toBeUndefined()
+    })
+  })
+
+  describe('Story 25.5 AC4/Task 4: actionEndpoint resolution', () => {
+    it('resolves actionEndpoint to the absolute actions path when the loaded extension declares moduleActions', async () => {
+      let captured: UIPanelContext | undefined
+      __setExtensionStateForTests(
+        loadedState({
+          moduleActions: ['test-action'],
+          uiPanel: {
+            onRenderPanel: async (context) => {
+              captured = context
+              return { html: 'ok' }
+            },
+          },
+        })
+      )
+      await renderExtensionPanel(
+        'group',
+        DEFAULT_UI_PANEL_SLOTS,
+        silentLogger(),
+        IDENTITY_1,
+        FAKE_TX,
+        {},
+        fakeDeps()
+      )
+      expect(captured?.actionEndpoint).toBe('/api/v1/extensions/panels/group/actions')
+    })
+
+    it('leaves actionEndpoint undefined (never empty string) when the loaded extension declares no moduleActions', async () => {
+      let captured: UIPanelContext | undefined
+      __setExtensionStateForTests(
+        loadedState({
+          uiPanel: {
+            onRenderPanel: async (context) => {
+              captured = context
+              return { html: 'ok' }
+            },
+          },
+        })
+      )
+      await renderExtensionPanel(
+        'group',
+        DEFAULT_UI_PANEL_SLOTS,
+        silentLogger(),
+        IDENTITY_1,
+        FAKE_TX,
+        {},
+        fakeDeps()
+      )
+      expect(captured?.actionEndpoint).toBeUndefined()
+    })
+
+    it('leaves actionEndpoint undefined when the loaded extension declares an empty moduleActions array', async () => {
+      let captured: UIPanelContext | undefined
+      __setExtensionStateForTests(
+        loadedState({
+          moduleActions: [],
+          uiPanel: {
+            onRenderPanel: async (context) => {
+              captured = context
+              return { html: 'ok' }
+            },
+          },
+        })
+      )
+      await renderExtensionPanel(
+        'group',
+        DEFAULT_UI_PANEL_SLOTS,
+        silentLogger(),
+        IDENTITY_1,
+        FAKE_TX,
+        {},
+        fakeDeps()
+      )
+      expect(captured?.actionEndpoint).toBeUndefined()
     })
   })
 })

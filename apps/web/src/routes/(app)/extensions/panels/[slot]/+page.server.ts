@@ -16,6 +16,11 @@ export type ExtensionPanelPageData = {
   slot: string
   html: string | null
   themeVars: ExtensionThemeVars
+  // Story 25.5 AC4/Task 4: hasActions drives compose-panel-document.ts's conditional
+  // connect-src widening; actionEndpoint is forwarded through unchanged from the API response
+  // (undefined, never '', when the loaded extension declares no moduleActions).
+  hasActions: boolean
+  actionEndpoint: string | undefined
 }
 
 /**
@@ -50,15 +55,24 @@ export const load: PageServerLoad = async ({ params, fetch, locals }) => {
 
   try {
     const result = await getExtensionPanel(fetch, params.slot)
+    const actionEndpoint = result.ok ? result.actionEndpoint : undefined
     return {
       slot: params.slot,
       html: result.ok ? result.html : null,
       themeVars,
+      hasActions: actionEndpoint !== undefined,
+      actionEndpoint,
     } satisfies ExtensionPanelPageData
   } catch {
     // Covers both a 400 (invalid slot) and any other unexpected non-2xx — same calm placeholder
     // either way; this page has no separate "bad slot" UI (AC3b's 400 is a developer-facing
     // contract, not a state this hand-authored, single-slot page's own nav ever produces).
-    return { slot: params.slot, html: null, themeVars } satisfies ExtensionPanelPageData
+    return {
+      slot: params.slot,
+      html: null,
+      themeVars,
+      hasActions: false,
+      actionEndpoint: undefined,
+    } satisfies ExtensionPanelPageData
   }
 }

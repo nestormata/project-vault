@@ -1,4 +1,9 @@
-import type { ExtensionHooks, ExtensionManifest, UIPanel } from '@project-vault/extension-api'
+import type {
+  ExtensionHooks,
+  ExtensionManifest,
+  ModuleAction,
+  UIPanel,
+} from '@project-vault/extension-api'
 import { EXTENSION_API_VERSION } from '@project-vault/extension-api'
 
 /**
@@ -43,6 +48,7 @@ export const THROW_TRIGGER_SLOT = 'fixture-throw'
 export const HANG_TRIGGER_SLOT = 'fixture-hang'
 export const GARBAGE_TRIGGER_SLOT = 'fixture-garbage'
 export const CONTEXT_ECHO_SLOT = 'fixture-context-echo'
+export const TEST_ACTION_KIND = 'test-action'
 
 const manifest: ExtensionManifest = {
   name: MOCK_UI_PANEL_PROVIDER_NAME,
@@ -58,6 +64,12 @@ const manifest: ExtensionManifest = {
     GARBAGE_TRIGGER_SLOT,
     CONTEXT_ECHO_SLOT,
   ],
+  // Story 25.5 AC4/Task 4 — declaring at least one moduleAction makes apps/api populate
+  // UIPanelContext.actionEndpoint and apps/web widen the composed panel's CSP with
+  // connect-src 'self', so this fixture's own panel can exercise the real end-to-end action
+  // round trip in Chrome-driven manual verification, not just a direct handleModuleAction() unit
+  // test.
+  moduleActions: [TEST_ACTION_KIND],
 }
 
 const uiPanel: UIPanel = {
@@ -93,14 +105,52 @@ const uiPanel: UIPanel = {
     // `var()` reference with a hardcoded fallback, so this fixture still renders sensibly even
     // outside PV's host (e.g. a standalone preview) and visibly picks up PV's real theme colors
     // once composed by `apps/web`'s panel-document composition function.
+    //
+    // Story 25.5 AC4/Task 4 — when `actionEndpoint` is present (declared moduleActions), renders
+    // a real button wired to `fetch(actionEndpoint, ...)`, mirroring CentralizeMe's own
+    // `dispatch()` pattern, so a Chrome-driven manual verification can exercise the actual round
+    // trip (CSP connect-src, Sec-Fetch-Site enforcement, response rendering) end to end.
     return {
-      html: `<html><body><p style="color: var(--pv-ext-ink, #24323b); background: var(--pv-ext-surface, #ffffff);">Mock panel for slot "${context.slot}"</p></body></html>`,
+      html:
+        `<html><body>` +
+        `<p style="color: var(--pv-ext-ink, #24323b); background: var(--pv-ext-surface, #ffffff);">Mock panel for slot "${context.slot}"</p>` +
+        (context.actionEndpoint
+          ? `<button id="test-action-button" type="button">Run test action</button>` +
+            `<p id="test-action-result" aria-live="polite"></p>` +
+            `<script>
+              document.getElementById('test-action-button').addEventListener('click', async () => {
+                const resultEl = document.getElementById('test-action-result');
+                try {
+                  const res = await fetch(${JSON.stringify(context.actionEndpoint)}, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ kind: ${JSON.stringify(TEST_ACTION_KIND)} }),
+                  });
+                  const body = await res.json();
+                  resultEl.textContent = 'status:' + res.status + ' message:' + (body.message || body.html || '');
+                } catch (err) {
+                  resultEl.textContent = 'fetch-failed';
+                }
+              });
+            </script>`
+          : '') +
+        `</body></html>`,
     }
   },
 }
 
+const moduleAction: ModuleAction = {
+  async onAction(context, request) {
+    if (request.action.kind !== TEST_ACTION_KIND) {
+      return { outcome: 'validation_failed', message: 'Unknown action kind' }
+    }
+    return { outcome: 'ok', message: `test-action executed for slot "${context.slot}"` }
+  },
+}
+
 function hooksFactory(): ExtensionHooks {
-  return { uiPanel }
+  return { uiPanel, moduleAction }
 }
 
 export default { manifest, hooksFactory }

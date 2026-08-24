@@ -86,8 +86,28 @@ export function resolveKnownUiPanelSlots(
  */
 const RENDER_PANEL_TIMEOUT_MS = 10_000
 
+/**
+ * Story 25.5 AC4/Task 4 — mirrors `resolveKnownUiPanelSlots`'s own pattern of reading the loaded
+ * extension's manifest fresh on every request. `moduleActions` is a flat, extension-wide list
+ * (not scoped per-slot in the manifest — see `manifest.ts`'s own field doc comment), so any
+ * extension declaring at least one action gets an `actionEndpoint` for every valid `uiPanel`
+ * slot it serves. Returns `undefined` (never `''`) when the extension declares no actions,
+ * matching `UIPanelContext.actionEndpoint`'s own documented `undefined`-vs-`''` contract.
+ */
+function resolveActionEndpoint(
+  status: ExtensionState | undefined,
+  slot: string
+): string | undefined {
+  if (!status || status.status !== 'loaded') return undefined
+  const declared = status.manifest.moduleActions
+  if (!declared || declared.length === 0) return undefined
+  return `/api/v1/extensions/panels/${slot}/actions`
+}
+
 export type RenderExtensionPanelResult =
-  { outcome: 'invalid_slot' } | { outcome: 'unavailable' } | { outcome: 'ok'; html: string }
+  | { outcome: 'invalid_slot' }
+  | { outcome: 'unavailable' }
+  | { outcome: 'ok'; html: string; actionEndpoint: string | undefined }
 
 type PanelLogger = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>
 
@@ -212,7 +232,8 @@ async function resolvePanelContextAndRender(
   tx: Tx,
   query: PanelQuery,
   deps: RenderExtensionPanelDeps,
-  uiPanel: { onRenderPanel: (context: UIPanelContext) => Promise<{ html: unknown }> }
+  uiPanel: { onRenderPanel: (context: UIPanelContext) => Promise<{ html: unknown }> },
+  actionEndpoint: string | undefined
 ): Promise<PanelAttemptOutcome> {
   if (query.projectId !== undefined) {
     // AC2: PV-authorized via the existing project-visibility gate — reused, not reinvented.
@@ -241,6 +262,9 @@ async function resolvePanelContextAndRender(
     // AC5: resourceId is passed through verbatim with NO PV-side lookup — see
     // `RenderExtensionPanelDeps` above, which has no resourceId-related dependency at all.
     ...(query.resourceId !== undefined ? { resourceId: query.resourceId } : {}),
+    // Story 25.5 AC4/Task 4: only included when the loaded extension declares moduleActions —
+    // `undefined` (never `''`), never present, when it does not.
+    ...(actionEndpoint !== undefined ? { actionEndpoint } : {}),
   }
   const result = await uiPanel.onRenderPanel(context)
   return { kind: 'ok', result }
@@ -279,12 +303,13 @@ export async function renderExtensionPanel(
   // `identity`/`orgId`/`locale`/`theme` are all read fresh from THIS call's own arguments only,
   // never from any module-level/shared state, so concurrent requests for different
   // users/orgs can never cross-contaminate (AC1's Boundary & Edge Case Sweep finding).
+  const actionEndpoint = resolveActionEndpoint(status, slot)
   const raced = await raceWithTimeout(
-    () => resolvePanelContextAndRender(slot, identity, tx, query, deps, uiPanel),
+    () => resolvePanelContextAndRender(slot, identity, tx, query, deps, uiPanel, actionEndpoint),
     RENDER_PANEL_TIMEOUT_MS
   )
 
-  return finalizePanelResult(raced, logger, slot, identity, deps)
+  return finalizePanelResult(raced, logger, slot, identity, deps, actionEndpoint)
 }
 
 /**
@@ -297,7 +322,8 @@ function finalizePanelResult(
   logger: PanelLogger,
   slot: string,
   identity: PanelIdentity,
-  deps: RenderExtensionPanelDeps
+  deps: RenderExtensionPanelDeps,
+  actionEndpoint: string | undefined
 ): RenderExtensionPanelResult {
   if (raced.status === 'timed_out') {
     logUnavailable(logger, slot, 'timed_out')
@@ -328,7 +354,7 @@ function finalizePanelResult(
     return { outcome: 'unavailable' }
   }
 
-  return { outcome: 'ok', html: inner.result.html }
+  return { outcome: 'ok', html: inner.result.html, actionEndpoint }
 }
 
 /**

@@ -30,6 +30,7 @@ const TEST_PASSPHRASE = 'extension-panel-route-passphrase'
 const PANEL_URL = (slot: string) => `/api/v1/extensions/panels/${slot}`
 const NAV_URL = '/api/v1/extensions/nav'
 const SHOULD_NOT_RUN_HTML = 'should not run'
+const HELLO_HTML = '<p>hello</p>'
 const ACME_BRAND_THEME = 'acme-brand'
 
 const suite = createUnsealedRouteSuite(initVault, TEST_PASSPHRASE)
@@ -167,14 +168,14 @@ describe.sequential('GET /api/v1/extensions/panels/:slot (Story 25.1)', () => {
 
   it('AC1: any active org member (not just admin) can reach a loaded panel', async () => {
     __setExtensionStateForTests(
-      loadedState({ uiPanel: { onRenderPanel: async () => ({ html: '<p>hello</p>' }) } })
+      loadedState({ uiPanel: { onRenderPanel: async () => ({ html: HELLO_HTML }) } })
     )
     const member = await createDirectAuthenticatedUser(suite.app, 'panel-member', 'member')
 
     const res = await getPanel(suite.app, 'group', member.cookies)
 
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ ok: true, html: '<p>hello</p>' })
+    expect(res.json()).toEqual({ ok: true, html: HELLO_HTML })
   })
 
   it('Story 25.3 AC1: renders using the session-resolved identity/org, never a client-supplied one', async () => {
@@ -228,6 +229,42 @@ describe.sequential('GET /api/v1/extensions/panels/:slot (Story 25.1)', () => {
 
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ ok: false, reason: 'panel_unavailable' })
+  })
+
+  it('Story 25.5 AC4/Task 4: the response includes actionEndpoint when the loaded extension declares moduleActions', async () => {
+    __setExtensionStateForTests(
+      loadedState({
+        moduleActions: ['test-action'],
+        uiPanel: { onRenderPanel: async () => ({ html: HELLO_HTML }) },
+      })
+    )
+    const member = await createDirectAuthenticatedUser(suite.app, 'panel-action-endpoint', 'member')
+
+    const res = await getPanel(suite.app, 'group', member.cookies)
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      ok: true,
+      html: HELLO_HTML,
+      actionEndpoint: '/api/v1/extensions/panels/group/actions',
+    })
+  })
+
+  it('Story 25.5 AC4/Task 4: the response omits actionEndpoint entirely when the loaded extension declares no moduleActions', async () => {
+    __setExtensionStateForTests(
+      loadedState({ uiPanel: { onRenderPanel: async () => ({ html: HELLO_HTML }) } })
+    )
+    const member = await createDirectAuthenticatedUser(
+      suite.app,
+      'panel-no-action-endpoint',
+      'member'
+    )
+
+    const res = await getPanel(suite.app, 'group', member.cookies)
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ ok: true, html: HELLO_HTML })
+    expect(res.json()).not.toHaveProperty('actionEndpoint')
   })
 
   it('AC3 Boundary & Edge Case Sweep: the extension unloading between nav-render and click-through still degrades calmly', async () => {

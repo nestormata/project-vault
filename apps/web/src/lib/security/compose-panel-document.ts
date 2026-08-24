@@ -51,11 +51,23 @@ function buildThemeStyleBlock(themeVars: ExtensionThemeVars): string {
  * Called fresh on every render (no memoized template) — Task 1/Boundary Sweep requirement, so one
  * user's extension output is never accidentally cached and served to another.
  */
-export function composePanelDocument(extensionHtml: string, themeVars: ExtensionThemeVars): string {
+/**
+ * Story 25.5 AC4/Task 4 — `hasActions` (default `false`) widens the CSP with exactly
+ * `connect-src 'self'` — never a wildcard, never a spelled-out origin — closing the forward
+ * obligation Story 25.4 flagged for this story. This is conditional, not unconditional: a panel
+ * from an extension declaring no `moduleActions` renders with exactly Story 25.4's original,
+ * narrower CSP (no `connect-src` at all), a deliberate Boundary & Edge Case Sweep finding.
+ */
+export function composePanelDocument(
+  extensionHtml: string,
+  themeVars: ExtensionThemeVars,
+  hasActions = false
+): string {
   const themeStyleBlock = buildThemeStyleBlock(themeVars)
+  const csp = hasActions ? `${EXTENSION_PANEL_CSP}; connect-src 'self'` : EXTENSION_PANEL_CSP
   return (
     `<!doctype html><html><head><meta charset="utf-8">` +
-    `<meta http-equiv="Content-Security-Policy" content="${EXTENSION_PANEL_CSP}">` +
+    `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
     `${themeStyleBlock}</head><body>${extensionHtml}</body></html>`
   )
 }
