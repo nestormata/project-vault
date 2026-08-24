@@ -94,4 +94,26 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1)', () => {
     const heading = screen.getByRole('heading', { level: 1 })
     expect(document.activeElement).toBe(heading)
   })
+
+  it('AC5 — code-review regression: focus moves to the heading again on a soft (SPA) navigation between slots, not just on initial mount', async () => {
+    // SvelteKit reuses this same component instance across client-side navigations between
+    // different `[slot]` values — unlike the `unmount()`-between-renders test above, this
+    // exercises the real "same instance, props change" shape a soft navigation actually takes.
+    const { rerender } = render(ExtensionPanelPage, {
+      props: { data: { ...baseData, slot: 'group', html: '<p>a</p>' } },
+    })
+    const heading = screen.getByRole('heading', { level: 1 })
+    expect(document.activeElement).toBe(heading)
+
+    // Simulate focus having moved elsewhere (e.g. the user tabbed into the previous panel).
+    heading.blur()
+    expect(document.activeElement).not.toBe(heading)
+
+    await rerender({ data: { ...baseData, slot: 'project-container', html: '<p>b</p>' } })
+
+    expect(document.activeElement).toBe(heading)
+    expect(document.querySelector('iframe')?.getAttribute('title')).toBe(
+      'Extension panel: project-container'
+    )
+  })
 })

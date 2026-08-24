@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
   import { composePanelDocument } from '$lib/security/compose-panel-document.js'
   let { data } = $props()
 
@@ -9,10 +8,19 @@
   // never do a full-page reload on navigation, so nothing moves keyboard focus to the new page's
   // content the way a traditional navigation would. This page is `apps/web`'s first instance of
   // the documented fix: give the page's own <h1> a tabindex="-1" (so it is programmatically
-  // focusable without being in the normal Tab order) and move focus to it once, on mount. A
-  // future page adopting the same convention should mirror this exact
-  // tabindex="-1" + onMount + .focus() shape.
-  onMount(() => {
+  // focusable without being in the normal Tab order) and move focus to it whenever the rendered
+  // panel changes. A future page adopting the same convention should mirror this exact
+  // tabindex="-1" + effect + .focus() shape.
+  //
+  // Code-review hardening (2026-08-24): this was originally an `onMount` that fires only once.
+  // SvelteKit reuses this same component instance across client-side navigations between
+  // different values of the same dynamic `[slot]` route (e.g. navigating from the `group` panel
+  // to the `document` panel via an in-app link never remounts the component) — an `onMount`-only
+  // fix silently fails to move focus on exactly the SPA-navigation case its own comment describes
+  // solving. Keying off `data.slot` via `$effect` re-runs on every slot change, including the
+  // initial mount.
+  $effect(() => {
+    data.slot
     heading?.focus()
   })
 

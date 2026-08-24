@@ -67,4 +67,64 @@ describe('resolveExtensionThemeVars (Story 25.4 AC4)', () => {
 
     expect(result).toEqual(BASE_EXTENSION_THEME_VARS)
   })
+
+  it('resolves rgb()/rgba()/hsl()/hsla() color values, not just hex', () => {
+    const themes = [
+      {
+        name: 'functional',
+        css: `[data-theme="functional"] {\n  --color-background: rgb(15, 23, 42);\n  --color-foreground: rgba(241, 245, 249, 0.9);\n  --color-border: hsl(215, 25%, 27%);\n  --color-primary-600: hsla(199, 89%, 60%, 1);\n}`,
+      },
+    ]
+
+    const result = resolveExtensionThemeVars('functional', themes)
+
+    expect(result['--pv-ext-surface']).toBe('rgb(15, 23, 42)')
+    expect(result['--pv-ext-ink']).toBe('rgba(241, 245, 249, 0.9)')
+    expect(result['--pv-ext-line']).toBe('hsl(215, 25%, 27%)')
+    expect(result['--pv-ext-brand']).toBe('hsla(199, 89%, 60%, 1)')
+  })
+
+  it('resolves a color value that is the last declaration in its rule (no trailing semicolon before the closing brace)', () => {
+    const themes = [
+      {
+        name: 'no-trailing-semi',
+        css: `[data-theme="no-trailing-semi"] {\n  --color-background: #abcdef\n}`,
+      },
+    ]
+
+    const result = resolveExtensionThemeVars('no-trailing-semi', themes)
+
+    expect(result['--pv-ext-surface']).toBe('#abcdef')
+  })
+
+  it('code-review hardening: a theme CSS value that is not a well-formed color is rejected and falls back to the base value, never interpolated verbatim', () => {
+    const themes = [
+      {
+        name: 'malicious',
+        // No `;`/`}` before the injected markup — this is exactly the shape a naive
+        // `[^;]+;`-only extraction regex could run past its intended boundary on. The grammar
+        // check must reject this regardless of where the extraction regex happens to stop.
+        css: `[data-theme="malicious"] {\n  --color-background: red</style><script>alert(1)</script>\n}`,
+      },
+    ]
+
+    const result = resolveExtensionThemeVars('malicious', themes)
+
+    expect(result['--pv-ext-surface']).toBe(BASE_EXTENSION_THEME_VARS['--pv-ext-surface'])
+    expect(result['--pv-ext-surface']).not.toContain('<')
+    expect(result['--pv-ext-surface']).not.toContain('script')
+  })
+
+  it('code-review hardening: a theme CSS value using an unrecognized CSS function is rejected and falls back to the base value', () => {
+    const themes = [
+      {
+        name: 'url-value',
+        css: `[data-theme="url-value"] {\n  --color-background: url("https://evil.example/x");\n}`,
+      },
+    ]
+
+    const result = resolveExtensionThemeVars('url-value', themes)
+
+    expect(result['--pv-ext-surface']).toBe(BASE_EXTENSION_THEME_VARS['--pv-ext-surface'])
+  })
 })

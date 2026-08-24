@@ -64,9 +64,56 @@ function escapeForRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+// Code-review hardening (Story 25.4 post-implementation review, 2026-08-24): the extracted value
+// is interpolated verbatim into the composed document's `<style>:root {}` block
+// (compose-panel-document.ts's `buildThemeStyleBlock`), which lands in `<head>` *before* the
+// extension's own untrusted fragment. `apps/api`'s theming service already constrains compiled
+// theme CSS to a narrow color grammar (hex or a tightly-bounded rgb()/rgba()/hsl()/hsla() form —
+// see `isValidColorGrammar`, `apps/api/src/modules/theming/service.ts`) before it is ever
+// persisted, but that invariant is enforced far away from this interpolation site and this file
+// has no way to prove it still holds for every caller. Re-validating here — rather than trusting
+// the upstream contract implicitly — means a bug in that upstream grammar, a future
+// theme-authoring path that bypasses it, or simply a value this regex mis-extracts (e.g. a
+// value with no trailing `;`, matched past its intended boundary) can never smuggle `</style>`,
+// `<script>`, or a second `<meta http-equiv="Content-Security-Policy">` tag into this
+// story's own host-controlled document. An extracted value that fails this check is treated
+// exactly like a missing token: fall back to the safe, hardcoded base color.
+// Mirrors `apps/api/src/modules/theming/service.ts`'s own `isValidColorGrammar` shape (split the
+// function call into name + component list, validate each component independently) rather than
+// one large regex with nested quantifiers — simpler to reason about and avoids the catastrophic-
+// backtracking shape a single combined pattern would otherwise raise a lint warning for.
+const HEX_COLOR = /^#[0-9a-fA-F]{3,8}$/
+const COLOR_FUNCTION = /^(rgb|rgba|hsl|hsla)\(([^()]*)\)$/
+const NUMERIC_COMPONENT = /^[0-9]{1,3}(?:\.[0-9]+)?%?$/
+const COLOR_FUNCTION_ARITY: Record<string, [number, number]> = {
+  rgb: [3, 3],
+  rgba: [3, 4],
+  hsl: [3, 3],
+  hsla: [3, 4],
+}
+
+function isSafeThemeColorValue(value: string): boolean {
+  if (HEX_COLOR.test(value)) return true
+
+  const match = COLOR_FUNCTION.exec(value)
+  if (!match) return false
+  const [, fnName, body] = match
+  if (!fnName || body === undefined) return false
+
+  const components = body.split(',').map((component) => component.trim())
+  const [min, max] = COLOR_FUNCTION_ARITY[fnName] ?? [0, 0]
+  if (components.length < min || components.length > max) return false
+
+  return components.every((component) => NUMERIC_COMPONENT.test(component))
+}
+
 function extractCssCustomProperty(css: string, cssName: string): string | null {
-  const pattern = new RegExp(`${escapeForRegExp(cssName)}:\\s*([^;]+);`)
-  return pattern.exec(css)?.[1]?.trim() ?? null
+  // Bounded at `;` or `}` (not just `;`) so a value that happens to be the last declaration in a
+  // block (no trailing semicolon) never runs past the rule's closing brace.
+  const pattern = new RegExp(`${escapeForRegExp(cssName)}:\\s*([^;}]+)[;}]`)
+  const extracted = pattern.exec(css)?.[1]?.trim() ?? null
+  if (extracted === null || !isSafeThemeColorValue(extracted)) return null
+  return extracted
 }
 
 /**
