@@ -2,7 +2,7 @@ import { z } from 'zod/v4'
 import type { FastifyRequest } from 'fastify'
 import type { FastifyApp } from '../lib/fastify-app.js'
 import { ApiErrorSchema } from '../lib/api-contracts.js'
-import { secureRoute } from '../lib/secure-route.js'
+import { secureRoute, type SecureRouteContext } from '../lib/secure-route.js'
 import {
   isUiPanelCapabilityDeclared,
   renderExtensionPanel,
@@ -11,6 +11,31 @@ import {
 import { getExtensionStatus } from './loader.js'
 
 const ExtensionPanelParamsSchema = z.object({ slot: z.string() })
+
+/**
+ * Story 25.3 AC2/AC5/Task 3 — the OpenAPI-facing shape (regenerated into
+ * `packages/shared/openapi.json`). Deliberately permissive (plain optional strings, no
+ * regex/format constraint) rather than encoding AC2/AC5's bounded patterns here: this app's
+ * global Fastify/Zod validator rejects a schema-level format failure with an opaque 500
+ * ("Unhandled request error"), not the `400` AC2/AC5 both specify. Actual shape enforcement is
+ * the MANUAL `isMalformedQueryValue()` check below, mirroring `slot`'s own existing
+ * pre-hook-call validation discipline (a manual check inside the handler, not a framework-level
+ * one) — that is what produces the real `400` before any DB lookup.
+ */
+const ExtensionPanelQuerySchema = z.object({
+  projectId: z.string().optional(),
+  resourceId: z.string().optional(),
+})
+
+const PROJECT_ID_PATTERN =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+const RESOURCE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
+
+function isMalformedQueryValue(query: { projectId?: string; resourceId?: string }): boolean {
+  if (query.projectId !== undefined && !PROJECT_ID_PATTERN.test(query.projectId)) return true
+  if (query.resourceId !== undefined && !RESOURCE_ID_PATTERN.test(query.resourceId)) return true
+  return false
+}
 
 const ExtensionPanelOkSchema = z.object({ ok: z.literal(true), html: z.string() })
 const ExtensionPanelUnavailableSchema = z.object({
@@ -50,6 +75,7 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
     url: '/extensions/panels/:slot',
     schema: {
       params: ExtensionPanelParamsSchema,
+      querystring: ExtensionPanelQuerySchema,
       response: {
         200: z.union([ExtensionPanelOkSchema, ExtensionPanelUnavailableSchema]),
         400: ApiErrorSchema,
@@ -64,13 +90,37 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
       requireAuth: true,
       writeAuditEvent: false,
     },
-    handler: async (_ctx, req: FastifyRequest, reply) => {
+    handler: async (ctx, req: FastifyRequest, reply) => {
       const { slot } = req.params as { slot: string }
+      const { projectId, resourceId } = req.query as { projectId?: string; resourceId?: string }
+      // AC2/AC5: shape-validated BEFORE any DB lookup — the exact same pre-hook-call validation
+      // position `slot` itself uses.
+      if (isMalformedQueryValue({ projectId, resourceId })) {
+        return reply
+          .status(400)
+          .send({ code: 'invalid_query', message: 'Malformed projectId or resourceId' })
+      }
+      const secureCtx = ctx as SecureRouteContext
       // Story 25.2 AC3: resolved fresh from getExtensionStatus() on every request, never a
       // module-level constant — a slot the currently loaded extension's manifest doesn't
       // declare 400s here even if the hook itself would have handled it gracefully.
       const knownSlots = resolveKnownUiPanelSlots(getExtensionStatus(), req.log)
-      const result = await renderExtensionPanel(slot, knownSlots, req.log)
+      // Story 25.3 AC1: identity/orgId are read directly from THIS request's own resolved
+      // `secureCtx.auth` — never from a client body/query/header, never memoized from an earlier
+      // call. AC2/AC5: `projectId`/`resourceId` are already shape-validated above by the time
+      // they reach here.
+      const result = await renderExtensionPanel(
+        slot,
+        knownSlots,
+        req.log,
+        {
+          userId: secureCtx.auth.userId,
+          orgId: secureCtx.auth.orgId,
+          orgRole: secureCtx.auth.orgRole,
+        },
+        secureCtx.tx,
+        { projectId, resourceId }
+      )
 
       if (result.outcome === 'invalid_slot') {
         return reply

@@ -281,7 +281,8 @@ describe('registerExtension — concrete canonical version gate', () => {
   })
 
   it('allows only the above-host same-major rollback escape', () => {
-    // Story 25.4 AC4/Task 4 — host EXTENSION_API_VERSION is now 3.2.0 (additive-minor bump);
+    // Story 25.3 AC1/Task 1 and Story 25.4 AC4/Task 4 — host EXTENSION_API_VERSION is now 3.2.0
+    // (combined additive-minor bump from both stories);
     // '3.3.0' is the above-host, same-major escape-eligible version, and '4.0.0' is a different
     // major (never escape-eligible).
     expect(() => registerExtension(manifest({ apiVersion: '3.3.0' }), makeHooksFactory())).toThrow()

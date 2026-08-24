@@ -389,7 +389,8 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
 
   it('warns on every load using the explicit above-host rollback escape', async () => {
     const logger = noopLogger()
-    // Story 25.4 AC4/Task 4 — host EXTENSION_API_VERSION is now 3.2.0 (additive-minor bump);
+    // Story 25.3 AC1/Task 1 and Story 25.4 AC4/Task 4 — host EXTENSION_API_VERSION is now 3.2.0
+    // (combined additive-minor bump from both stories);
     // '3.3.0' is the above-host, same-major escape-eligible version.
     const aboveHostApiVersion = '3.3.0'
     const importFn = vi.fn().mockResolvedValue({

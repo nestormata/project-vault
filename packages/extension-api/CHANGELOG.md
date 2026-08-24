@@ -4,10 +4,21 @@ The contract hash covers the checked-in public API surface and contract-behaviou
 
 ## 3.2.0 — 2026-08-24
 
-contract-hash: sha256:b6188cc1aa7d6c2d1912c04038d62765e5d69fcf6ae8f7c14f617da51f6ffeab
+contract-hash: sha256:79e2d44ec7c7c597073376a7a3c276670125da8284517b73ed5ca300903c1018
 
 ### Added
 
+- Widened `UIPanelContext` (Story 25.3) from `{ slot }` to `{ slot, resourceId?, identity: {
+  userId, orgRole }, orgId, projectId?, locale, theme: { name } }`. All new fields are
+  server-resolved fresh per request by the host, never client-supplied. `resourceId` and
+  `projectId` are both optional — omitting the corresponding query parameter leaves them
+  `undefined`, so an existing extension reading only `context.slot` keeps working unmodified.
+  `identity`/`orgId`/`locale`/`theme` are required (a request that reaches `onRenderPanel()`
+  always has them resolved), which is backward-compatible for existing method-shorthand
+  `onRenderPanel(context) {...}` implementations via TypeScript's bivariant parameter checking
+  for object literals (see this story's Dev Notes Pre-mortem Analysis) — no coordinated
+  consumer-side type change is required to keep compiling. `identity` deliberately carries only
+  `userId`/`orgRole` — never `sessionId`/`jti`/`sessionVersion`/`isPlatformOperator`.
 - Added `EXTENSION_THEME_CSS_VARS` (the ordered `--pv-ext-*` property list) and the
   `ExtensionThemeCssVar` type (Story 25.4 AC4). This is PV's small, versioned "extension theming
   contract": `--pv-ext-surface`, `--pv-ext-ink`, `--pv-ext-muted`, `--pv-ext-brand`,

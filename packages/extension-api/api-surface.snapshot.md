@@ -517,9 +517,41 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 1.0.0
 - kind: type
 - type: `UIPanelContext`
+- member: `identity`
+  - since: 3.2.0
+  - type: `{ userId: string; orgRole: "owner" | "admin" | "member" | "viewer"; }`
+  - member: `orgRole`
+    - since: 3.2.0
+    - type: `"owner" | "admin" | "member" | "viewer"`
+    - union-members: `"owner"`, `"admin"`, `"member"`, `"viewer"`
+  - member: `userId`
+    - since: 3.2.0
+    - type: `string`
+- member: `locale`
+  - since: 3.2.0
+  - type: `"en" | "es"`
+  - union-members: `"en"`, `"es"`
+- member: `orgId`
+  - since: 3.2.0
+  - type: `string`
+- member: `projectId?`
+  - since: 3.2.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+- member: `resourceId?`
+  - since: 3.2.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
 - member: `slot`
   - since: 1.0.0
   - type: `string`
+- member: `theme`
+  - since: 3.2.0
+  - type: `{ name: string | null; }`
+  - member: `name`
+    - since: 3.2.0
+    - type: `string | null`
+    - union-members: `null`, `string`
 
 ## export `UIPanelResult`
 

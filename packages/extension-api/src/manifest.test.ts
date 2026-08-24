@@ -20,8 +20,11 @@ describe('EXTENSION_API_VERSION', () => {
   })
 
   it('derives the host-owned floor and ceiling range', () => {
-    // Story 25.4 AC4/Task 4 — bumped 3.1.0 -> 3.2.0 as another additive-minor (new
-    // EXTENSION_THEME_CSS_VARS/ExtensionThemeCssVar theming-contract exports); the major floor is
+    // Story 25.3 AC1/Task 1 and Story 25.4 AC4/Task 4 — combined additive-minor bump
+    // 3.1.0 -> 3.2.0: Story 25.3 widens UIPanelContext with new optional/required fields
+    // (backward-compatible per TypeScript's bivariant method-shorthand parameter checking — see
+    // that story's Pre-mortem Analysis), and Story 25.4 adds the new
+    // EXTENSION_THEME_CSS_VARS/ExtensionThemeCssVar theming-contract exports. The major floor is
     // unchanged from Story 23.11 AC6's 2.2.0 -> 3.0.0 breaking bump.
     expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.2.0')
   })
