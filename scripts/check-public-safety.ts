@@ -78,6 +78,11 @@ const SAFE_PUBLIC_CONSTANT_NAMES = new Set([
   // established naming convention as a "new" finding only because the checker scans added
   // lines, not full-file content.
   'TEST_ACCESS_TOKEN_TTL_SECONDS',
+  // Story 25.4: `THEME_TOKENS` (packages/shared/src/constants/theme-tokens.ts) is the
+  // pre-existing public theme-token registry name (colors/lengths/enum tokens, no credential
+  // material) — it only trips this checker because a new file's doc comment references it by
+  // name and the checker scans added lines, not full-file content.
+  'THEME_TOKENS',
 ])
 // These files intentionally document or exercise local service endpoints. A local endpoint in
 // source, prose, or an arbitrary workflow remains a finding.

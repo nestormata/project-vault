@@ -32,6 +32,13 @@ function baseContext(overrides: Partial<UIPanelContext> = {}): UIPanelContext {
   }
 }
 
+// Story 25.4 AC6 scope-boundary regression: `UIPanelResult` must stay exactly `{ html: string }`
+// — this story changes how `html` is *consumed* by the host, never its type (no `actionEndpoint`/
+// `csrfToken` field, no shape change of any kind). Compile-time guard mirrors the one above.
+type OnlyHtmlField = keyof UIPanelResult extends 'html' ? true : false
+const _assertUIPanelResultHasOnlyHtmlField: OnlyHtmlField = true
+void _assertUIPanelResultHasOnlyHtmlField
+
 describe('UIPanel', () => {
   it('AC6: UIPanelContext has exactly the expected required field set at runtime (no projectId/resourceId when omitted)', () => {
     const context = baseContext()
@@ -62,6 +69,11 @@ describe('UIPanel', () => {
   it('AC4: theme.name is null for the base theme, or a resolved custom theme name string', () => {
     expect(baseContext({ theme: { name: null } }).theme.name).toBeNull()
     expect(baseContext({ theme: { name: 'midnight' } }).theme.name).toBe('midnight')
+  })
+
+  it('Story 25.4 AC6: UIPanelResult has exactly one field, "html" — runtime mirror of the compile-time guard above', () => {
+    const result: UIPanelResult = { html: '<p>x</p>' }
+    expect(Object.keys(result)).toEqual(['html'])
   })
 
   it('onRenderPanel resolves a serializable UIPanelResult', async () => {

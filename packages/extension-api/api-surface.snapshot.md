@@ -142,7 +142,13 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.3.0"`
+- type: `"3.4.0"`
+
+## export `EXTENSION_THEME_CSS_VARS`
+
+- since: 3.3.0
+- kind: value
+- type: `readonly ["--pv-ext-surface", "--pv-ext-ink", "--pv-ext-muted", "--pv-ext-brand", "--pv-ext-line"]`
 
 ## export `ExtensionCapability`
 
@@ -292,6 +298,13 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - type: `() => Promise<ExtensionDbHandle | { unavailable: ExtensionDbUnavailableReason; }>`
   - call-signature: `(): Promise<ExtensionDbHandle | { unavailable: ExtensionDbUnavailableReason; }>`
 
+## export `ExtensionThemeCssVar`
+
+- since: 3.3.0
+- kind: type
+- type: `"--pv-ext-surface" | "--pv-ext-ink" | "--pv-ext-muted" | "--pv-ext-brand" | "--pv-ext-line"`
+- union-members: `"--pv-ext-surface"`, `"--pv-ext-ink"`, `"--pv-ext-muted"`, `"--pv-ext-brand"`, `"--pv-ext-line"`
+
 ## export `HOST_SUPPORTED_EXTENSION_API_RANGE`
 
 - since: 1.0.0
@@ -342,25 +355,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.3.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@417`
-  - since: 3.3.0
+- member: `__@match@447`
+  - since: 3.4.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@426`
-  - since: 3.3.0
+- member: `__@matchAll@456`
+  - since: 3.4.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@419`
-  - since: 3.3.0
+- member: `__@replace@449`
+  - since: 3.4.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@422`
-  - since: 3.3.0
+- member: `__@search@452`
+  - since: 3.4.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@424`
-  - since: 3.3.0
+- member: `__@split@454`
+  - since: 3.4.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -580,25 +593,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.1.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@417`
-  - since: 3.3.0
+- member: `__@match@447`
+  - since: 3.4.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@426`
-  - since: 3.3.0
+- member: `__@matchAll@456`
+  - since: 3.4.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@419`
-  - since: 3.3.0
+- member: `__@replace@449`
+  - since: 3.4.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@422`
-  - since: 3.3.0
+- member: `__@search@452`
+  - since: 3.4.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@424`
-  - since: 3.3.0
+- member: `__@split@454`
+  - since: 3.4.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`

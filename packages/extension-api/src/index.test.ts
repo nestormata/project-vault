@@ -16,6 +16,7 @@ describe('index.ts — root-only export surface (AC1, AC2)', () => {
         'UI_PANEL_SLOT_NAME_PATTERN',
         'MAX_MODULE_ACTIONS',
         'MODULE_ACTION_NAME_PATTERN',
+        'EXTENSION_THEME_CSS_VARS',
         'ExtensionRegistrationError',
         'isExtensionApiVersionSupported',
         'registerExtension',
