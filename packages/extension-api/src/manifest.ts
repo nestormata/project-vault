@@ -30,7 +30,31 @@ export type ExtensionManifest = {
   replacesNativeLogin?: boolean
   /** Optional, operator-approved request for a separate least-privilege DB handle. */
   dbScope?: ExtensionDbScopeEntry[]
+  /**
+   * Story 25.2 AC1 — optional declaration of the named panel slots this extension owns/serves.
+   * Omitted (or `undefined`) is fully backward-compatible: the host falls back to the exact
+   * single-slot ('group') behavior Story 25.1 shipped (see AC2 and
+   * `apps/api/src/lib/extension-panel.ts`'s `resolveKnownUiPanelSlots`). When present, must be a
+   * non-empty array of unique strings each matching `UI_PANEL_SLOT_NAME_PATTERN`, capped at
+   * `MAX_UI_PANEL_SLOTS` entries, and only legal alongside `'ui-panel'` in `capabilities[]` —
+   * validated by `registerExtension()`'s `validateUiPanelSlotsShape`.
+   */
+  uiPanelSlots?: string[]
 }
+
+/**
+ * Story 25.2 AC1 — the charset a declared `uiPanelSlots` entry must match. Lowercase
+ * alphanumerics and hyphens only, 1-64 chars: excludes `/`, `.`, and every other structural
+ * character by construction, closing the path-traversal/route-confusion angle considered during
+ * this story's own Red Team vs Blue Team elicitation round without any extra code. This is new
+ * code (see AC1's Assumption Audit correction) — Story 25.1's request-side `slot` check is a
+ * plain exact-match against `knownSlots`, not a standalone regex.
+ */
+export const UI_PANEL_SLOT_NAME_PATTERN = /^[a-z0-9-]{1,64}$/
+
+/** Story 25.2 AC1 — generous for any real extension, small enough to bound a hostile/broken
+ * manifest from declaring an unbounded `uiPanelSlots` list. */
+export const MAX_UI_PANEL_SLOTS = 32
 
 /**
  * AC1/AC7 — this package's own contract version. Must be bumped in lockstep with any change
@@ -42,7 +66,13 @@ export type ExtensionManifest = {
 // level but not at the TypeScript level for an existing caller that passes an inline object
 // literal (excess-property check rejects the now-unknown field at compile time). See this
 // story's Dev Notes/PR description for the coordinated centralizeme-sass follow-up this requires.
-export const EXTENSION_API_VERSION = '3.0.0'
+// Story 25.2 AC1/Task 1 — bumped as an additive-minor (3.0.0 -> 3.1.0), not a major: the new
+// optional `uiPanelSlots` field is backward-compatible by construction (AC2's fallback), and
+// `HOST_SUPPORTED_EXTENSION_API_RANGE`'s floor stays `>=3.0.0`, so CM's real, currently-shipped
+// manifest (declared exact version "3.0.0") keeps loading with zero coordinated cross-repo
+// change required — confirmed against `isAboveHostButSameMajor`/the range's actual floor/ceiling
+// logic (see this story's Dev Notes Pre-mortem Analysis).
+export const EXTENSION_API_VERSION = '3.1.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

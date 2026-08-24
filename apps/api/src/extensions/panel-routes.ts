@@ -4,10 +4,11 @@ import type { FastifyApp } from '../lib/fastify-app.js'
 import { ApiErrorSchema } from '../lib/api-contracts.js'
 import { secureRoute } from '../lib/secure-route.js'
 import {
-  KNOWN_UI_PANEL_SLOTS,
   isUiPanelCapabilityDeclared,
   renderExtensionPanel,
+  resolveKnownUiPanelSlots,
 } from '../lib/extension-panel.js'
+import { getExtensionStatus } from './loader.js'
 
 const ExtensionPanelParamsSchema = z.object({ slot: z.string() })
 
@@ -20,8 +21,9 @@ const ExtensionPanelUnavailableSchema = z.object({
 const ExtensionNavSchema = z.object({
   // Story 25.1 AC5: `null` when no nav entry should be shown at all (no extension loaded, or the
   // loaded extension does not declare the `'ui-panel'` capability) — never a dead link by
-  // default. A non-null value is the fixed slot this story hardcodes ('group'); Story 25.2 is
-  // what introduces real named-slot enumeration.
+  // default. Story 25.2 AC5: a non-null value is the FIRST entry of the dynamically resolved
+  // known-slots list (`resolveKnownUiPanelSlots(status)[0]`) — still exactly one slot reported;
+  // enumerating multiple nav entries per declared slot is deferred to Story 25.8.
   uiPanelSlot: z.string().nullable(),
 })
 
@@ -64,7 +66,11 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
     },
     handler: async (_ctx, req: FastifyRequest, reply) => {
       const { slot } = req.params as { slot: string }
-      const result = await renderExtensionPanel(slot, KNOWN_UI_PANEL_SLOTS, req.log)
+      // Story 25.2 AC3: resolved fresh from getExtensionStatus() on every request, never a
+      // module-level constant — a slot the currently loaded extension's manifest doesn't
+      // declare 400s here even if the hook itself would have handled it gracefully.
+      const knownSlots = resolveKnownUiPanelSlots(getExtensionStatus(), req.log)
+      const result = await renderExtensionPanel(slot, knownSlots, req.log)
 
       if (result.outcome === 'invalid_slot') {
         return reply
@@ -91,8 +97,12 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
       requireAuth: true,
       writeAuditEvent: false,
     },
-    handler: async () => {
-      return { uiPanelSlot: isUiPanelCapabilityDeclared() ? KNOWN_UI_PANEL_SLOTS[0] : null }
+    handler: async (_ctx, req: FastifyRequest) => {
+      // Story 25.2 AC5: derives the single reported slot from the dynamic known-slots list's
+      // first entry, instead of the old KNOWN_UI_PANEL_SLOTS[0] constant reference. Still
+      // exactly one slot reported — no per-declared-slot nav enumeration (deferred to 25.8).
+      const knownSlots = resolveKnownUiPanelSlots(getExtensionStatus(), req.log)
+      return { uiPanelSlot: isUiPanelCapabilityDeclared() ? knownSlots[0] : null }
     },
   })
 }

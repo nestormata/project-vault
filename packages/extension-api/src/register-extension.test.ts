@@ -246,7 +246,7 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each(['3.1.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
+  it.each(['3.2.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
     'rejects canonical version outside %s',
     (apiVersion) => {
       const hooksFactory = makeHooksFactory()
@@ -281,11 +281,12 @@ describe('registerExtension — concrete canonical version gate', () => {
   })
 
   it('allows only the above-host same-major rollback escape', () => {
-    // Story 23.11 AC6 — host EXTENSION_API_VERSION is now 3.0.0; '3.1.0' is the above-host,
-    // same-major escape-eligible version, and '4.0.0' is a different major (never escape-eligible).
-    expect(() => registerExtension(manifest({ apiVersion: '3.1.0' }), makeHooksFactory())).toThrow()
+    // Story 25.2 AC1/Task 1 — host EXTENSION_API_VERSION is now 3.1.0 (additive-minor bump);
+    // '3.2.0' is the above-host, same-major escape-eligible version, and '4.0.0' is a different
+    // major (never escape-eligible).
+    expect(() => registerExtension(manifest({ apiVersion: '3.2.0' }), makeHooksFactory())).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.1.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '3.2.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()
@@ -413,5 +414,137 @@ describe('registerExtension — AC2 (replacesNativeLogin)', () => {
     )
     expect(result).toBeDefined()
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('replacesNativeLoginn'))
+  })
+})
+
+/**
+ * Story 25.2 AC1 — `uiPanelSlots?: string[]` manifest field validation. All rejections use the
+ * `'invalid-manifest-field'` reason, following `validateReplacesNativeLoginShape`'s pattern
+ * exactly.
+ */
+describe('registerExtension — AC1 (uiPanelSlots)', () => {
+  const UI_PANEL_HOOKS: ExtensionHooks = {
+    uiPanel: { onRenderPanel: vi.fn(async () => ({ html: '' })) },
+  }
+
+  function uiPanelHooksFactory() {
+    return vi.fn(() => UI_PANEL_HOOKS)
+  }
+
+  it('happy path: a real multi-slot manifest (the CM module pack shape) registers successfully', () => {
+    const hooksFactory = uiPanelHooksFactory()
+    const result = registerExtension(
+      manifest({
+        capabilities: ['ui-panel'],
+        uiPanelSlots: ['group', 'groups', 'document', 'classification', 'project-container'],
+      }),
+      hooksFactory
+    )
+    expect(result.manifest.uiPanelSlots).toEqual([
+      'group',
+      'groups',
+      'document',
+      'classification',
+      'project-container',
+    ])
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('omitted: parses fine, no uiPanelSlots on the returned manifest', () => {
+    const hooksFactory = makeHooksFactory()
+    const result = registerExtension(manifest(), hooksFactory)
+    expect(result.manifest.uiPanelSlots).toBeUndefined()
+  })
+
+  it('undefined explicitly behaves identically to omitted', () => {
+    const hooksFactory = makeHooksFactory()
+    const result = registerExtension(manifest({ uiPanelSlots: undefined }), hooksFactory)
+    expect(result.manifest.uiPanelSlots).toBeUndefined()
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects an uppercase slot name (outside the allowed charset)', () => {
+    expectRejection({ capabilities: ['ui-panel'], uiPanelSlots: ['Group'] }, INVALID_MANIFEST_FIELD)
+  })
+
+  it('rejects a slot name containing structural characters (path-traversal defense)', () => {
+    expectRejection(
+      { capabilities: ['ui-panel'], uiPanelSlots: ['../admin'] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an oversized slot name (over 64 chars)', () => {
+    expectRejection(
+      { capabilities: ['ui-panel'], uiPanelSlots: ['a'.repeat(65)] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects duplicate entries within one manifest', () => {
+    expectRejection(
+      { capabilities: ['ui-panel'], uiPanelSlots: ['group', 'group'] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an empty array (distinct from omitted)', () => {
+    expectRejection({ capabilities: ['ui-panel'], uiPanelSlots: [] }, INVALID_MANIFEST_FIELD)
+  })
+
+  it('rejects uiPanelSlots declared without "ui-panel" in capabilities', () => {
+    expectRejection(
+      { capabilities: ['audit-event-source'], uiPanelSlots: ['group'] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an array longer than the 32-entry maximum', () => {
+    const tooMany = Array.from({ length: 33 }, (_, i) => `slot-${i}`)
+    expectRejection({ capabilities: ['ui-panel'], uiPanelSlots: tooMany }, INVALID_MANIFEST_FIELD)
+  })
+
+  it('accepts exactly the 32-entry maximum', () => {
+    const exactlyMax = Array.from({ length: 32 }, (_, i) => `slot-${i}`)
+    const hooksFactory = uiPanelHooksFactory()
+    expect(() =>
+      registerExtension(
+        manifest({ capabilities: ['ui-panel'], uiPanelSlots: exactlyMax }),
+        hooksFactory
+      )
+    ).not.toThrow()
+  })
+
+  it('rejects a manifest declaring uiPanelSlots whose hooksFactory() has no uiPanel hook (post-hooksFactory check)', () => {
+    const hooksFactory = makeHooksFactory()
+    let caught: unknown
+    try {
+      registerExtension(
+        manifest({ capabilities: ['ui-panel'], uiPanelSlots: ['group'] }),
+        hooksFactory
+      )
+    } catch (error) {
+      caught = error
+    }
+    expect((caught as ExtensionRegistrationError).reason).toBe(INVALID_MANIFEST_FIELD)
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT require a uiPanel hook merely for declaring the "ui-panel" capability without uiPanelSlots', () => {
+    const hooksFactory = makeHooksFactory()
+    expect(() =>
+      registerExtension(manifest({ capabilities: ['ui-panel'] }), hooksFactory)
+    ).not.toThrow()
+  })
+
+  it('warns on an unrecognized top-level key still includes uiPanelSlots in KNOWN_MANIFEST_KEYS (no spurious warning)', () => {
+    const hooksFactory = uiPanelHooksFactory()
+    const warn = vi.fn()
+    registerExtension(
+      manifest({ capabilities: ['ui-panel'], uiPanelSlots: ['group'] }),
+      hooksFactory,
+      { logger: { warn } }
+    )
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('uiPanelSlots'))
   })
 })

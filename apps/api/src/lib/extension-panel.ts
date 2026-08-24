@@ -1,17 +1,75 @@
 import type { FastifyBaseLogger } from 'fastify'
 import { OperationalEvent } from '@project-vault/shared'
 import { getExtensionStatus } from '../extensions/loader.js'
+import type { ExtensionState } from '../extensions/loader.js'
 import { operationalLog } from './logger.js'
 import { raceWithTimeout } from './race-with-timeout.js'
 
 /**
- * Story 25.1 AC5/Dev Notes: this story hardcodes exactly one supported slot, matching a real
- * slot name CentralizeMe's own `access-group/ui-panel.ts` consumer already expects ('group', not
- * a generic placeholder like 'default'). Story 25.2 is what introduces real named slots — this
- * array grows there, not here (AC6 scope boundary).
+ * Story 25.1 AC5/Dev Notes: the legacy fixed single-slot list, matching a real slot name
+ * CentralizeMe's own `access-group/ui-panel.ts` consumer already expects ('group', not a
+ * generic placeholder like 'default'). Story 25.2 AC2 turns this into the backward-compatible
+ * fallback used when a loaded extension's manifest omits `uiPanelSlots` — never mutated, never
+ * grown; `resolveKnownUiPanelSlots` below is what derives the real, extension-declared list.
  */
-export const KNOWN_UI_PANEL_SLOTS = ['group'] as const
-export type KnownUiPanelSlot = (typeof KNOWN_UI_PANEL_SLOTS)[number]
+export const DEFAULT_UI_PANEL_SLOTS = ['group'] as const
+export type KnownUiPanelSlot = (typeof DEFAULT_UI_PANEL_SLOTS)[number]
+
+type LoadedExtensionState = Extract<ExtensionState, { status: 'loaded' }>
+
+/**
+ * Story 25.2 AC2 — tracks the identity (`name:loadedAt`) of the extension load this module has
+ * already warned about, so the fallback log fires exactly once per load, never once per request.
+ * `loadedAt` is part of the identity so a mid-process reload (a genuinely new load, AC3's
+ * Boundary & Edge Case Sweep finding) re-warns rather than staying silent forever after the
+ * first-ever load.
+ */
+let lastFallbackWarnedLoadIdentity: string | undefined
+
+/** Test-only reset of this module's one-time-warning state — never called from production code. */
+export function __resetUiPanelSlotsFallbackWarningForTests(): void {
+  lastFallbackWarnedLoadIdentity = undefined
+}
+
+function warnUiPanelSlotsFallbackOnce(status: LoadedExtensionState, logger: PanelLogger): void {
+  const loadIdentity = `${status.manifest.name}:${status.loadedAt}`
+  if (lastFallbackWarnedLoadIdentity === loadIdentity) return
+  lastFallbackWarnedLoadIdentity = loadIdentity
+  operationalLog(
+    logger,
+    'warn',
+    OperationalEvent.EXTENSION_UI_PANEL_SLOTS_FALLBACK,
+    'Extension declares ui-panel without an explicit uiPanelSlots list — running on the legacy single-slot ("group") fallback',
+    { extensionName: status.manifest.name }
+  )
+}
+
+/**
+ * Story 25.2 AC3/Task 2 — derives the effective known-slots list for `renderExtensionPanel()`'s
+ * `knownSlots` allowlist parameter, freshly on every call (never memoized/cached at module
+ * scope — a mid-process reload with a different declared list must resolve against the new list
+ * on the very next call, per AC3's Boundary & Edge Case Sweep finding).
+ *
+ * Story 25.2 AC4 — reads `getExtensionStatus()`'s single loaded-extension value directly; there
+ * is no multi-extension registry here and none is in scope for this story (PV loads at most one
+ * extension package at a time — see `apps/api/src/extensions/loader.ts`'s `ExtensionState`).
+ *
+ * When no extension is loaded, or the loaded extension omits `uiPanelSlots` (AC2), returns the
+ * exact same fixed `DEFAULT_UI_PANEL_SLOTS` Story 25.1 shipped — zero behavior change for any
+ * pre-25.2 extension package, with a one-time warn log on the fallback path.
+ */
+export function resolveKnownUiPanelSlots(
+  status: ExtensionState | undefined,
+  logger: PanelLogger
+): readonly string[] {
+  if (!status || status.status !== 'loaded') return DEFAULT_UI_PANEL_SLOTS
+
+  const declared = status.manifest.uiPanelSlots
+  if (declared && declared.length > 0) return declared
+
+  warnUiPanelSlotsFallbackOnce(status, logger)
+  return DEFAULT_UI_PANEL_SLOTS
+}
 
 /**
  * AC3: generous enough for a synchronous-shaped render call, short enough not to hang a page

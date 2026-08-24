@@ -246,6 +246,10 @@ export const OperationalEvent = {
   // exception message/stack — fixed-enum `subReason` only, same never-leak-internal-detail
   // discipline as EXTENSION_LOAD_FAILED above.
   EXTENSION_UI_PANEL_UNAVAILABLE: 'extension.ui_panel_unavailable',
+  // Story 25.2 AC2: a loaded extension declares 'ui-panel' in capabilities but omits
+  // uiPanelSlots — the host falls back to the legacy Story 25.1 single-slot ('group') behavior.
+  // Fires once per load (not per-request), so an operator sees it without per-request noise.
+  EXTENSION_UI_PANEL_SLOTS_FALLBACK: 'extension.ui_panel_slots_fallback',
 
   // Story 23.2: native-login-exclusion policy (apps/api/src/modules/auth/native-login-policy.ts).
   // AC-4a: fires on EVERY boot while the declared extension has never proven a successful

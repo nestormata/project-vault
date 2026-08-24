@@ -16,16 +16,18 @@ import { EXTENSION_API_VERSION } from '@project-vault/extension-api'
  * | slot value        | `onRenderPanel` behavior                          | Exercises              |
  * | ------------------ | -------------------------------------------------- | ----------------------- |
  * | `group`             | resolves a small static HTML fragment              | AC1/AC4 happy path      |
- * | `fixture-throw`      | throws synchronously                                | AC3 fail-closed-on-throw (unreachable via this story's own route — its own slot-allowlist rejects any value other than `group` with a 400 before the hook is ever called; kept here for a future story's own slot enumeration and for direct hooksFactory()-level testing) |
- * | `fixture-hang`       | never resolves                                      | AC3 fail-closed-on-timeout (same allowlist caveat as above) |
- * | `fixture-garbage`    | resolves a malformed result                          | AC3 fail-closed-on-malformed (same allowlist caveat as above) |
+ * | `fixture-throw`      | throws synchronously                                | AC3 fail-closed-on-throw |
+ * | `fixture-hang`       | never resolves                                      | AC3 fail-closed-on-timeout |
+ * | `fixture-garbage`    | resolves a malformed result                          | AC3 fail-closed-on-malformed |
  *
- * Story 25.1's own route hardcodes exactly one valid slot (`'group'`) and rejects every other
- * value with a 400 before ever invoking this hook (AC3b) — so a manual verifier driving Task 7's
- * "simulate a hook failure" step should temporarily point `KNOWN_UI_PANEL_SLOTS`
- * (apps/api/src/lib/extension-panel.ts) at one of the `fixture-*` slots above, or drive this
- * fixture's `hooksFactory()` directly in a unit test, rather than expecting the real HTTP route to
- * reach them with today's single-slot allowlist.
+ * Story 25.2 AC6 — this manifest now declares `uiPanelSlots` explicitly, covering all four slots
+ * above. This closes the gap this file's own comment (and the README) used to flag: Story 25.1's
+ * route hardcoded exactly one valid slot (`'group'`) and rejected every other value with a 400
+ * before ever invoking this hook — so exercising the `fixture-*` trigger slots required either
+ * driving `hooksFactory()` directly in a unit test, or temporarily editing
+ * `KNOWN_UI_PANEL_SLOTS` (apps/api/src/lib/extension-panel.ts). Story 25.2's dynamic
+ * `resolveKnownUiPanelSlots()` makes that workaround unnecessary: every slot this manifest
+ * declares is now reachable via an ordinary `GET /api/v1/extensions/panels/:slot` request.
  */
 export const MOCK_UI_PANEL_PROVIDER_NAME = 'test.mock-ui-panel-extension'
 
@@ -38,6 +40,9 @@ const manifest: ExtensionManifest = {
   name: MOCK_UI_PANEL_PROVIDER_NAME,
   apiVersion: EXTENSION_API_VERSION,
   capabilities: ['ui-panel'],
+  // Story 25.2 AC6 — declares all four fixture slots, making the throw/hang/garbage triggers
+  // reachable through the real HTTP route rather than only via a direct hooksFactory() call.
+  uiPanelSlots: [HAPPY_SLOT, THROW_TRIGGER_SLOT, HANG_TRIGGER_SLOT, GARBAGE_TRIGGER_SLOT],
 }
 
 const uiPanel: UIPanel = {
