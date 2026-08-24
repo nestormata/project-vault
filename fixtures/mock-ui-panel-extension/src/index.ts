@@ -58,8 +58,14 @@ const uiPanel: UIPanel = {
       // Deliberately malformed — exercises the host's shape-check boundary (AC3).
       return { html: 42 } as unknown as { html: string }
     }
+    // Story 25.4 AC4 Task 4 — consumes PV's small, published `--pv-ext-*` theming contract
+    // (`EXTENSION_THEME_CSS_VARS`, `@project-vault/extension-api`) the same way CentralizeMe's
+    // real `access-group/ui-panel.ts` already does for its own `--cm-*` custom properties: a CSS
+    // `var()` reference with a hardcoded fallback, so this fixture still renders sensibly even
+    // outside PV's host (e.g. a standalone preview) and visibly picks up PV's real theme colors
+    // once composed by `apps/web`'s panel-document composition function.
     return {
-      html: `<html><body><p>Mock panel for slot "${context.slot}"</p></body></html>`,
+      html: `<html><body><p style="color: var(--pv-ext-ink, #24323b); background: var(--pv-ext-surface, #ffffff);">Mock panel for slot "${context.slot}"</p></body></html>`,
     }
   },
 }

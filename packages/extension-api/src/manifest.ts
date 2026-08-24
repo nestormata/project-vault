@@ -72,7 +72,12 @@ export const MAX_UI_PANEL_SLOTS = 32
 // manifest (declared exact version "3.0.0") keeps loading with zero coordinated cross-repo
 // change required — confirmed against `isAboveHostButSameMajor`/the range's actual floor/ceiling
 // logic (see this story's Dev Notes Pre-mortem Analysis).
-export const EXTENSION_API_VERSION = '3.1.0'
+// Story 25.4 AC4/Task 4 — bumped as another additive-minor (3.1.0 -> 3.2.0): the new
+// `EXTENSION_THEME_CSS_VARS`/`ExtensionThemeCssVar` theming-contract exports (theme-contract.ts)
+// are a brand-new, purely-additive export set an extension opts into via `var(--pv-ext-*, fallback)`
+// — nothing existing changes shape, and the floor stays `>=3.0.0` so every already-shipped
+// extension keeps loading unmodified.
+export const EXTENSION_API_VERSION = '3.2.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

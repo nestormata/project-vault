@@ -41,6 +41,9 @@ export type {
   ExtensionRuntimeContext,
 } from './db-access.js'
 
+export type { ExtensionThemeCssVar } from './theme-contract.js'
+export { EXTENSION_THEME_CSS_VARS } from './theme-contract.js'
+
 export type { ExtensionCapability, ExtensionManifest } from './manifest.js'
 export {
   EXTENSION_API_VERSION,

@@ -44,9 +44,28 @@ Exported types are `AuthResult`, `AuthStrategy`, `NotificationChannel`, `Notific
 `UIPanel`, `UIPanelContext`, `UIPanelResult`, `CapabilityDecision`, `CapabilityGate`,
 `CapabilityGateContext`, `AuditEventSourceHost`, `AuditEventSourceWriteInput`,
 `AuditEventSourceWriteResult`, `HostServices`, `ExtensionCapability`, `ExtensionManifest`,
-`ExtensionHooks`, and `ExtensionRegistrationErrorReason`. Exported runtime values are
-`EXTENSION_API_VERSION`, `HOST_SUPPORTED_EXTENSION_API_RANGE`, `defineExtension`,
-`registerExtension`, `isExtensionApiVersionSupported`, and `ExtensionRegistrationError`.
+`ExtensionHooks`, `ExtensionThemeCssVar`, and `ExtensionRegistrationErrorReason`. Exported runtime
+values are `EXTENSION_API_VERSION`, `HOST_SUPPORTED_EXTENSION_API_RANGE`, `defineExtension`,
+`registerExtension`, `isExtensionApiVersionSupported`, `EXTENSION_THEME_CSS_VARS`, and
+`ExtensionRegistrationError`.
+
+### Panel theming contract (`ui-panel` capability)
+
+Story 25.4 AC4 — PV's host injects a `:root { ... }` `<style>` block declaring
+`EXTENSION_THEME_CSS_VARS` (`--pv-ext-surface`, `--pv-ext-ink`, `--pv-ext-muted`, `--pv-ext-brand`,
+`--pv-ext-line`) into every composed panel document, resolved from the requesting user's
+actually-applied PV theme (base/default chrome colors when no theme is applied). A panel consumes
+these purely via CSS `var()` with its own hardcoded fallback:
+
+```css
+.cm-access-ink {
+  color: var(--pv-ext-ink, #24323b);
+}
+```
+
+This is a one-way, read-only contract — consuming it is optional, and PV never reads anything back
+from the extension's own CSS. See `UIPanel`'s doc comment (`src/hooks/ui-panel.ts`) for the full
+panel-authoring accessibility guidance this same story adds.
 
 Story 23.8 adds the first **inverted** hook: `AuditEventSourceHost` is implemented by the host
 (Project Vault), not the extension. `hooksFactory` therefore takes a `host: HostServices` argument

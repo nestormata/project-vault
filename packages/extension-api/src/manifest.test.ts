@@ -20,10 +20,10 @@ describe('EXTENSION_API_VERSION', () => {
   })
 
   it('derives the host-owned floor and ceiling range', () => {
-    // Story 25.2 AC1/Task 1 — bumped 3.0.0 -> 3.1.0 as an additive-minor (new optional
-    // `uiPanelSlots` field); the major floor is unchanged from Story 23.11 AC6's 2.2.0 -> 3.0.0
-    // breaking bump.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.1.0')
+    // Story 25.4 AC4/Task 4 — bumped 3.1.0 -> 3.2.0 as another additive-minor (new
+    // EXTENSION_THEME_CSS_VARS/ExtensionThemeCssVar theming-contract exports); the major floor is
+    // unchanged from Story 23.11 AC6's 2.2.0 -> 3.0.0 breaking bump.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.2.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {
