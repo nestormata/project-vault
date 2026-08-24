@@ -50,7 +50,7 @@ export const BASE_EXTENSION_THEME_VARS: ExtensionThemeVars = {
   '--pv-ext-line': BASE_LINE,
 }
 
-const SOURCE_TOKEN_BY_VAR: Record<
+const SOURCE_CSS_VAR_BY_EXT_VAR: Record<
   Exclude<ExtensionThemeCssVar, '--pv-ext-muted'>,
   { cssName: string; base: string }
 > = {
@@ -133,12 +133,14 @@ export function resolveExtensionThemeVars(
   const css = matchedTheme?.css ?? ''
 
   const surface =
-    extractCssCustomProperty(css, SOURCE_TOKEN_BY_VAR['--pv-ext-surface'].cssName) ?? BASE_SURFACE
-  const ink = extractCssCustomProperty(css, SOURCE_TOKEN_BY_VAR['--pv-ext-ink'].cssName) ?? BASE_INK
+    extractCssCustomProperty(css, SOURCE_CSS_VAR_BY_EXT_VAR['--pv-ext-surface'].cssName) ??
+    BASE_SURFACE
+  const ink =
+    extractCssCustomProperty(css, SOURCE_CSS_VAR_BY_EXT_VAR['--pv-ext-ink'].cssName) ?? BASE_INK
   const brand =
-    extractCssCustomProperty(css, SOURCE_TOKEN_BY_VAR['--pv-ext-brand'].cssName) ?? BASE_BRAND
+    extractCssCustomProperty(css, SOURCE_CSS_VAR_BY_EXT_VAR['--pv-ext-brand'].cssName) ?? BASE_BRAND
   const line =
-    extractCssCustomProperty(css, SOURCE_TOKEN_BY_VAR['--pv-ext-line'].cssName) ?? BASE_LINE
+    extractCssCustomProperty(css, SOURCE_CSS_VAR_BY_EXT_VAR['--pv-ext-line'].cssName) ?? BASE_LINE
 
   return {
     '--pv-ext-surface': surface,
