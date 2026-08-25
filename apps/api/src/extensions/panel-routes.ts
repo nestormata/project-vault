@@ -1,8 +1,12 @@
 import { z } from 'zod/v4'
 import type { FastifyReply, FastifyRequest } from 'fastify'
+import { OperationalEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../lib/fastify-app.js'
 import { ApiErrorSchema } from '../lib/api-contracts.js'
+import { CSRF_HEADER_NAME, isRejectedByCsrfToken } from '../lib/csrf.js'
+import { operationalLog } from '../lib/logger.js'
 import { secureRoute, type SecureRouteContext } from '../lib/secure-route.js'
+import { env } from '../config/env.js'
 import {
   isUiPanelCapabilityDeclared,
   renderExtensionPanel,
@@ -318,6 +322,25 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
       // lookup or hook invocation.
       if (isRejectedBySecFetchSite(req.headers['sec-fetch-site'])) {
         return reply.status(403).send({ code: 'denied', message: 'Request rejected' })
+      }
+
+      // Story 25.6 AC1/AC2/AC4 — the real CSRF token check, at the exact same early position as
+      // the Sec-Fetch-Site check above (Dev Notes cross-reference): before any DB lookup or
+      // `handleModuleAction()`/`onAction()` call. Double-submit-cookie pattern (Task 1) — the
+      // client (`+page.svelte`'s postMessage-relay fetch, AC5) must echo the CSRF cookie's own
+      // value back as the `x-csrf-token` header. Detail is never leaked to the client (AC4) —
+      // only a fixed generic message, with the real failure logged server-side only via the same
+      // fixed-enum `EXTENSION_MODULE_ACTION_FAILED`/subReason discipline
+      // `logModuleActionFailed()` already established for every other action-route failure path.
+      if (isRejectedByCsrfToken(req.cookies, req.headers[CSRF_HEADER_NAME], env.COOKIE_SECURE)) {
+        operationalLog(
+          req.log,
+          'error',
+          OperationalEvent.EXTENSION_MODULE_ACTION_FAILED,
+          'Extension module action failed',
+          { slot, actionKind: 'unknown', subReason: 'csrf_rejected' }
+        )
+        return reply.status(403).send({ code: 'csrf_rejected', message: 'Request rejected' })
       }
 
       const action = extractValidActionBody(req.body)

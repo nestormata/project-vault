@@ -19,6 +19,9 @@ import {
 import { createDirectAuthenticatedUser } from '../__tests__/helpers/org-role-test-helpers.js'
 import { createUnsealedRouteSuite } from '../__tests__/helpers/unsealed-route-suite-test-helpers.js'
 import { __resetThemeStateForTests, reloadThemes } from '../modules/theming/service.js'
+import { env } from '../config/env.js'
+import { CSRF_HEADER_NAME } from '../lib/csrf.js'
+import { csrfCookieName } from '../modules/auth/tokens.js'
 import { __resetExtensionStateForTests, __setExtensionStateForTests } from './loader.js'
 import type { ExtensionState } from './loader.js'
 
@@ -76,18 +79,37 @@ async function getPanel(
 
 const ACTION_URL = (slot: string) => `/api/v1/extensions/panels/${slot}/actions`
 
+// Story 25.6 AC1/AC6 — every existing (Story 25.5) test below dispatches through this same helper,
+// so it defaults to attaching a MATCHING CSRF cookie/header pair (the double-submit-cookie
+// pattern's own "valid token" case) — otherwise every one of those pre-existing happy-path tests
+// would now 403 on the new check this story adds, for a reason unrelated to what they're actually
+// testing. `'omit'` (no cookie, no header) and an explicit `{ cookieValue, headerValue }` mismatch
+// are how this story's own new CSRF-specific tests below exercise the rejection paths.
+const DEFAULT_CSRF_TOKEN = 'test-csrf-token-0123456789abcdef'
+const CSRF_COOKIE_NAME = csrfCookieName(env.COOKIE_SECURE)
+
+type CsrfOverride = 'omit' | { cookieValue?: string; headerValue?: string }
+
 async function postAction(
   app: TestApp,
   slot: string,
   body: Record<string, unknown>,
   cookies?: CookieJar,
-  extraHeaders?: Record<string, string>
+  extraHeaders?: Record<string, string>,
+  csrf: CsrfOverride = {}
 ) {
+  const cookieValue = csrf === 'omit' ? undefined : (csrf.cookieValue ?? DEFAULT_CSRF_TOKEN)
+  const headerValue = csrf === 'omit' ? undefined : (csrf.headerValue ?? DEFAULT_CSRF_TOKEN)
+  const mergedCookies: CookieJar = {
+    ...(cookies ?? {}),
+    ...(cookieValue !== undefined ? { [CSRF_COOKIE_NAME]: cookieValue } : {}),
+  }
   return app.inject({
     method: 'POST',
     url: ACTION_URL(slot),
     headers: {
-      ...(cookies ? { cookie: cookieHeader(cookies) } : {}),
+      ...(Object.keys(mergedCookies).length > 0 ? { cookie: cookieHeader(mergedCookies) } : {}),
+      ...(headerValue !== undefined ? { [CSRF_HEADER_NAME]: headerValue } : {}),
       ...extraHeaders,
     },
     payload: body,
@@ -737,6 +759,7 @@ describe.sequential('GET /api/v1/extensions/nav (Story 25.1 AC5)', () => {
 
 const ACTION_SLOT = 'group'
 const RENAME_ACTION_KIND = 'rename-group'
+const CSRF_REJECTED_BODY = { code: 'csrf_rejected', message: 'Request rejected' }
 
 function actionState(
   onAction: ModuleAction['onAction'],
@@ -1044,6 +1067,168 @@ describe.sequential('POST /api/v1/extensions/panels/:slot/actions (Story 25.5)',
         member.cookies
       )
       expect(res.statusCode).toBe(200)
+    })
+  })
+
+  describe('Story 25.6 AC3/AC6: every action-route outcome pins its exact {code, message} shape (never incidental)', () => {
+    it('invalid_slot: exactly { code: "invalid_slot", message: "Unknown or malformed panel slot" }', async () => {
+      __setExtensionStateForTests(actionState(async () => ({ outcome: 'ok' })))
+      const member = await createDirectAuthenticatedUser(suite.app, 'shape-invalid-slot', 'member')
+      const res = await postAction(
+        suite.app,
+        'not-a-real-slot',
+        { kind: RENAME_ACTION_KIND },
+        member.cookies
+      )
+      expect(res.json()).toEqual({
+        code: 'invalid_slot',
+        message: 'Unknown or malformed panel slot',
+      })
+    })
+
+    it('invalid_action: exactly { code: "invalid_action", message: ... }', async () => {
+      __setExtensionStateForTests(actionState(async () => ({ outcome: 'ok' })))
+      const member = await createDirectAuthenticatedUser(
+        suite.app,
+        'shape-invalid-action',
+        'member'
+      )
+      const res = await postAction(suite.app, ACTION_SLOT, {}, member.cookies)
+      expect(res.json()).toEqual({
+        code: 'invalid_action',
+        message: 'Request body must include a string "kind" field',
+      })
+    })
+
+    it('not_found (action_not_found): exactly { code: "action_not_found", message: "Action not found" }', async () => {
+      __setExtensionStateForTests(actionState(async () => ({ outcome: 'ok' }), ['other-action']))
+      const member = await createDirectAuthenticatedUser(suite.app, 'shape-not-found', 'member')
+      const res = await postAction(
+        suite.app,
+        ACTION_SLOT,
+        { kind: RENAME_ACTION_KIND },
+        member.cookies
+      )
+      expect(res.json()).toEqual({ code: 'action_not_found', message: 'Action not found' })
+    })
+
+    it('denied: exactly { code: "denied", message: "Request denied" } — never the extension-supplied message', async () => {
+      __setExtensionStateForTests(
+        actionState(async () => ({ outcome: 'denied', message: 'secret internal reason' }))
+      )
+      const member = await createDirectAuthenticatedUser(suite.app, 'shape-denied', 'member')
+      const res = await postAction(
+        suite.app,
+        ACTION_SLOT,
+        { kind: RENAME_ACTION_KIND },
+        member.cookies
+      )
+      expect(res.json()).toEqual({ code: 'denied', message: 'Request denied' })
+    })
+
+    it('error: exactly { code: "internal_error", message: "Request failed" }', async () => {
+      __setExtensionStateForTests(actionState(async () => ({ outcome: 'error' })))
+      const member = await createDirectAuthenticatedUser(suite.app, 'shape-error', 'member')
+      const res = await postAction(
+        suite.app,
+        ACTION_SLOT,
+        { kind: RENAME_ACTION_KIND },
+        member.cookies
+      )
+      expect(res.json()).toEqual({ code: 'internal_error', message: 'Request failed' })
+    })
+
+    it('csrf_rejected: exactly { code: "csrf_rejected", message: "Request rejected" }', async () => {
+      __setExtensionStateForTests(actionState(async () => ({ outcome: 'ok' })))
+      const member = await createDirectAuthenticatedUser(suite.app, 'shape-csrf', 'member')
+      const res = await postAction(
+        suite.app,
+        ACTION_SLOT,
+        { kind: RENAME_ACTION_KIND },
+        member.cookies,
+        undefined,
+        'omit'
+      )
+      expect(res.json()).toEqual(CSRF_REJECTED_BODY)
+    })
+  })
+
+  describe('Story 25.6 AC1/AC2/AC3/AC4/AC6: real CSRF token defense', () => {
+    it('AC1/AC6: a request with a valid (matching) CSRF cookie/header pair succeeds', async () => {
+      __setExtensionStateForTests(actionState(async () => ({ outcome: 'ok', message: 'done' })))
+      const member = await createDirectAuthenticatedUser(suite.app, 'csrf-valid', 'member')
+      const res = await postAction(
+        suite.app,
+        ACTION_SLOT,
+        { kind: RENAME_ACTION_KIND },
+        member.cookies
+      )
+      expect(res.statusCode).toBe(200)
+    })
+
+    it('AC1/AC2/AC3/AC6: a request with NO CSRF cookie/header at all is rejected (403) before the hook is invoked, with the normalized ApiErrorSchema envelope', async () => {
+      const onAction = vi.fn(async () => ({ outcome: 'ok' as const }))
+      __setExtensionStateForTests(actionState(onAction))
+      const member = await createDirectAuthenticatedUser(suite.app, 'csrf-missing', 'member')
+      const res = await postAction(
+        suite.app,
+        ACTION_SLOT,
+        { kind: RENAME_ACTION_KIND },
+        member.cookies,
+        undefined,
+        'omit'
+      )
+      expect(res.statusCode).toBe(403)
+      expect(res.json()).toEqual(CSRF_REJECTED_BODY)
+      expect(onAction).not.toHaveBeenCalled()
+    })
+
+    it('AC1/AC2/AC6: a request whose header does not match the CSRF cookie value is rejected (403), hook never invoked', async () => {
+      const onAction = vi.fn(async () => ({ outcome: 'ok' as const }))
+      __setExtensionStateForTests(actionState(onAction))
+      const member = await createDirectAuthenticatedUser(suite.app, 'csrf-mismatch', 'member')
+      const res = await postAction(
+        suite.app,
+        ACTION_SLOT,
+        { kind: RENAME_ACTION_KIND },
+        member.cookies,
+        undefined,
+        { cookieValue: 'cookie-value', headerValue: 'a-different-header-value' }
+      )
+      expect(res.statusCode).toBe(403)
+      expect(res.json()).toEqual(CSRF_REJECTED_BODY)
+      expect(onAction).not.toHaveBeenCalled()
+    })
+
+    it('AC2: a request with the CSRF cookie but no header at all is rejected, hook never invoked', async () => {
+      const onAction = vi.fn(async () => ({ outcome: 'ok' as const }))
+      __setExtensionStateForTests(actionState(onAction))
+      const member = await createDirectAuthenticatedUser(suite.app, 'csrf-no-header', 'member')
+      const res = await postAction(
+        suite.app,
+        ACTION_SLOT,
+        { kind: RENAME_ACTION_KIND },
+        member.cookies,
+        undefined,
+        { cookieValue: 'cookie-only-value', headerValue: undefined }
+      )
+      expect(res.statusCode).toBe(403)
+      expect(onAction).not.toHaveBeenCalled()
+    })
+
+    it('AC2: rejection happens before any DB lookup or onAction() call — a structural check, the source rejects before extractValidActionBody is reached', async () => {
+      const source = await readFile(
+        fileURLToPath(new URL('./panel-routes.ts', import.meta.url)),
+        'utf-8'
+      )
+      const csrfCheckIndex = source.indexOf('isRejectedByCsrfToken(')
+      const bodyExtractIndex = source.indexOf('extractValidActionBody(req.body)')
+      const dispatchCallIndex = source.indexOf('await handleModuleAction(')
+      expect(csrfCheckIndex).toBeGreaterThan(-1)
+      expect(bodyExtractIndex).toBeGreaterThan(-1)
+      expect(dispatchCallIndex).toBeGreaterThan(-1)
+      expect(csrfCheckIndex).toBeLessThan(bodyExtractIndex)
+      expect(csrfCheckIndex).toBeLessThan(dispatchCallIndex)
     })
   })
 
