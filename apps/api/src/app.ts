@@ -17,6 +17,7 @@ import { metricsRoutes } from './routes/metrics.js'
 import { openapiRoutes } from './routes/openapi.js'
 import { docsEnabled } from './lib/docs-gating.js'
 import { vaultRoutes } from './modules/vault/routes.js'
+import { serviceProvisioningRoutes } from './modules/service-provisioning/routes.js'
 import { authRoutes } from './modules/auth/routes.js'
 import { orgRoutes } from './modules/org/routes.js'
 import { auditRoutes } from './modules/audit/routes.js'
@@ -283,6 +284,9 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   })
   // Registered always (regardless of guard) so vault endpoints appear in the OpenAPI spec.
   await fastify.register(vaultRoutes)
+  // Story 26.1: static-service-token-gated, unauthenticated-by-session route (own auth mechanism,
+  // no secureRoute()) — registered alongside vaultRoutes, another static-token-gated route.
+  await fastify.register(serviceProvisioningRoutes)
   await fastify.register(authRoutes, { prefix: '/api/v1/auth' })
   await fastify.register(machineTokenExchangeRoutes, { prefix: '/api/v1/auth' })
   // Story 14.3: start/callback are public (unauthenticated) SSO routes, mounted alongside local
