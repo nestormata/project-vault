@@ -1,9 +1,16 @@
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
 import { organizations, projectMemberships, projects, users } from '@project-vault/db/schema'
-import type { UIPanel, UIPanelContext } from '@project-vault/extension-api'
+import type {
+  ModuleAction,
+  ModuleActionContext,
+  UIPanel,
+  UIPanelContext,
+} from '@project-vault/extension-api'
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
@@ -23,6 +30,7 @@ const TEST_PASSPHRASE = 'extension-panel-route-passphrase'
 const PANEL_URL = (slot: string) => `/api/v1/extensions/panels/${slot}`
 const NAV_URL = '/api/v1/extensions/nav'
 const SHOULD_NOT_RUN_HTML = 'should not run'
+const HELLO_HTML = '<p>hello</p>'
 const ACME_BRAND_THEME = 'acme-brand'
 
 const suite = createUnsealedRouteSuite(initVault, TEST_PASSPHRASE)
@@ -31,6 +39,8 @@ function loadedState(overrides: {
   capabilities?: string[]
   uiPanel?: UIPanel
   uiPanelSlots?: string[]
+  moduleAction?: ModuleAction
+  moduleActions?: string[]
   loadedAt?: string
 }): ExtensionState {
   return {
@@ -40,9 +50,13 @@ function loadedState(overrides: {
       apiVersion: '1.0.0',
       capabilities: (overrides.capabilities ?? ['ui-panel']) as never,
       ...(overrides.uiPanelSlots ? { uiPanelSlots: overrides.uiPanelSlots } : {}),
+      ...(overrides.moduleActions ? { moduleActions: overrides.moduleActions } : {}),
     },
     loadedAt: overrides.loadedAt ?? new Date().toISOString(),
-    hooks: overrides.uiPanel ? { uiPanel: overrides.uiPanel } : {},
+    hooks: {
+      ...(overrides.uiPanel ? { uiPanel: overrides.uiPanel } : {}),
+      ...(overrides.moduleAction ? { moduleAction: overrides.moduleAction } : {}),
+    },
   }
 }
 
@@ -57,6 +71,26 @@ async function getPanel(
     method: 'GET',
     url: `${PANEL_URL(slot)}${qs}`,
     headers: cookies ? { cookie: cookieHeader(cookies) } : {},
+  })
+}
+
+const ACTION_URL = (slot: string) => `/api/v1/extensions/panels/${slot}/actions`
+
+async function postAction(
+  app: TestApp,
+  slot: string,
+  body: Record<string, unknown>,
+  cookies?: CookieJar,
+  extraHeaders?: Record<string, string>
+) {
+  return app.inject({
+    method: 'POST',
+    url: ACTION_URL(slot),
+    headers: {
+      ...(cookies ? { cookie: cookieHeader(cookies) } : {}),
+      ...extraHeaders,
+    },
+    payload: body,
   })
 }
 
@@ -134,14 +168,14 @@ describe.sequential('GET /api/v1/extensions/panels/:slot (Story 25.1)', () => {
 
   it('AC1: any active org member (not just admin) can reach a loaded panel', async () => {
     __setExtensionStateForTests(
-      loadedState({ uiPanel: { onRenderPanel: async () => ({ html: '<p>hello</p>' }) } })
+      loadedState({ uiPanel: { onRenderPanel: async () => ({ html: HELLO_HTML }) } })
     )
     const member = await createDirectAuthenticatedUser(suite.app, 'panel-member', 'member')
 
     const res = await getPanel(suite.app, 'group', member.cookies)
 
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ ok: true, html: '<p>hello</p>' })
+    expect(res.json()).toEqual({ ok: true, html: HELLO_HTML })
   })
 
   it('Story 25.3 AC1: renders using the session-resolved identity/org, never a client-supplied one', async () => {
@@ -195,6 +229,42 @@ describe.sequential('GET /api/v1/extensions/panels/:slot (Story 25.1)', () => {
 
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ ok: false, reason: 'panel_unavailable' })
+  })
+
+  it('Story 25.5 AC4/Task 4: the response includes actionEndpoint when the loaded extension declares moduleActions', async () => {
+    __setExtensionStateForTests(
+      loadedState({
+        moduleActions: ['test-action'],
+        uiPanel: { onRenderPanel: async () => ({ html: HELLO_HTML }) },
+      })
+    )
+    const member = await createDirectAuthenticatedUser(suite.app, 'panel-action-endpoint', 'member')
+
+    const res = await getPanel(suite.app, 'group', member.cookies)
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      ok: true,
+      html: HELLO_HTML,
+      actionEndpoint: '/api/v1/extensions/panels/group/actions',
+    })
+  })
+
+  it('Story 25.5 AC4/Task 4: the response omits actionEndpoint entirely when the loaded extension declares no moduleActions', async () => {
+    __setExtensionStateForTests(
+      loadedState({ uiPanel: { onRenderPanel: async () => ({ html: HELLO_HTML }) } })
+    )
+    const member = await createDirectAuthenticatedUser(
+      suite.app,
+      'panel-no-action-endpoint',
+      'member'
+    )
+
+    const res = await getPanel(suite.app, 'group', member.cookies)
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ ok: true, html: HELLO_HTML })
+    expect(res.json()).not.toHaveProperty('actionEndpoint')
   })
 
   it('AC3 Boundary & Edge Case Sweep: the extension unloading between nav-render and click-through still degrades calmly', async () => {
@@ -662,5 +732,367 @@ describe.sequential('GET /api/v1/extensions/nav (Story 25.1 AC5)', () => {
     const res = await getNav(suite.app, member.cookies)
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ uiPanelSlot: 'document' })
+  })
+})
+
+const ACTION_SLOT = 'group'
+const RENAME_ACTION_KIND = 'rename-group'
+
+function actionState(
+  onAction: ModuleAction['onAction'],
+  moduleActions: string[] = [RENAME_ACTION_KIND]
+): ExtensionState {
+  return loadedState({
+    capabilities: ['ui-panel'],
+    moduleActions,
+    moduleAction: { onAction },
+  })
+}
+
+describe.sequential('POST /api/v1/extensions/panels/:slot/actions (Story 25.5)', () => {
+  suite.registerLifecycle()
+
+  beforeEach(() => {
+    __resetExtensionStateForTests()
+  })
+
+  it('AC3: an unauthenticated request is rejected before the hook is ever invoked', async () => {
+    const onAction = vi.fn(async () => ({ outcome: 'ok' as const }))
+    __setExtensionStateForTests(actionState(onAction))
+    const res = await postAction(suite.app, ACTION_SLOT, { kind: RENAME_ACTION_KIND })
+    expect(res.statusCode).toBe(401)
+    expect(onAction).not.toHaveBeenCalled()
+  })
+
+  it('AC1/AC5: happy path — an authenticated member dispatches a declared action and gets back { html }', async () => {
+    __setExtensionStateForTests(
+      actionState(async () => ({ outcome: 'ok', html: '<section>renamed</section>' }))
+    )
+    const member = await createDirectAuthenticatedUser(suite.app, 'action-happy', 'member')
+    const res = await postAction(
+      suite.app,
+      ACTION_SLOT,
+      { kind: RENAME_ACTION_KIND, accessGroupId: 'grp_1' },
+      member.cookies
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ html: '<section>renamed</section>' })
+  })
+
+  it('AC1: happy path with a message-only success response', async () => {
+    __setExtensionStateForTests(actionState(async () => ({ outcome: 'ok', message: 'Saved' })))
+    const member = await createDirectAuthenticatedUser(suite.app, 'action-msg', 'member')
+    const res = await postAction(
+      suite.app,
+      ACTION_SLOT,
+      { kind: RENAME_ACTION_KIND },
+      member.cookies
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ message: 'Saved' })
+  })
+
+  it('Task 3: an invalid slot 400s before touching extension state', async () => {
+    const onAction = vi.fn(async () => ({ outcome: 'ok' as const }))
+    __setExtensionStateForTests(actionState(onAction))
+    const member = await createDirectAuthenticatedUser(suite.app, 'action-badslot', 'member')
+    const res = await postAction(
+      suite.app,
+      'not-a-real-slot',
+      { kind: RENAME_ACTION_KIND },
+      member.cookies
+    )
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toMatchObject({ code: 'invalid_slot' })
+    expect(onAction).not.toHaveBeenCalled()
+  })
+
+  it('Task 3: a missing kind field 400s before any DB lookup or hook invocation', async () => {
+    const onAction = vi.fn(async () => ({ outcome: 'ok' as const }))
+    __setExtensionStateForTests(actionState(onAction))
+    const member = await createDirectAuthenticatedUser(suite.app, 'action-nokind', 'member')
+    const res = await postAction(suite.app, ACTION_SLOT, { accessGroupId: 'grp_1' }, member.cookies)
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toMatchObject({ code: 'invalid_action' })
+    expect(onAction).not.toHaveBeenCalled()
+  })
+
+  it('AC2: an action.kind not in the declared moduleActions list 404s, and the hook is never invoked', async () => {
+    const onAction = vi.fn(async () => ({ outcome: 'ok' as const }))
+    __setExtensionStateForTests(actionState(onAction, ['add-member']))
+    const member = await createDirectAuthenticatedUser(suite.app, 'action-unknown', 'member')
+    const res = await postAction(
+      suite.app,
+      ACTION_SLOT,
+      { kind: 'delete-everything' },
+      member.cookies
+    )
+    expect(res.statusCode).toBe(404)
+    expect(res.json()).toMatchObject({ code: 'action_not_found' })
+    expect(onAction).not.toHaveBeenCalled()
+  })
+
+  it('AC2: an extension declaring no moduleActions at all (omitted field) 404s every action request', async () => {
+    const onAction = vi.fn(async () => ({ outcome: 'ok' as const }))
+    __setExtensionStateForTests(
+      loadedState({ capabilities: ['ui-panel'], moduleAction: { onAction } })
+    )
+    const member = await createDirectAuthenticatedUser(suite.app, 'action-none-declared', 'member')
+    const res = await postAction(
+      suite.app,
+      ACTION_SLOT,
+      { kind: RENAME_ACTION_KIND },
+      member.cookies
+    )
+    expect(res.statusCode).toBe(404)
+    expect(onAction).not.toHaveBeenCalled()
+  })
+
+  it('AC5: validation_failed maps to 400 and forwards the extension-supplied message', async () => {
+    __setExtensionStateForTests(
+      actionState(async () => ({ outcome: 'validation_failed', message: 'Name is required' }))
+    )
+    const member = await createDirectAuthenticatedUser(suite.app, 'action-validation', 'member')
+    const res = await postAction(
+      suite.app,
+      ACTION_SLOT,
+      { kind: RENAME_ACTION_KIND },
+      member.cookies
+    )
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toMatchObject({ message: 'Name is required' })
+  })
+
+  it('AC5: denied maps to 403 with a fixed generic message — the extension-supplied message never leaks', async () => {
+    __setExtensionStateForTests(
+      actionState(async () => ({ outcome: 'denied', message: 'user is not a group owner' }))
+    )
+    const member = await createDirectAuthenticatedUser(suite.app, 'action-denied', 'member')
+    const res = await postAction(
+      suite.app,
+      ACTION_SLOT,
+      { kind: RENAME_ACTION_KIND },
+      member.cookies
+    )
+    expect(res.statusCode).toBe(403)
+    expect(JSON.stringify(res.json())).not.toContain('group owner')
+  })
+
+  it('AC5: conflict maps to 409 and forwards the extension-supplied message', async () => {
+    __setExtensionStateForTests(
+      actionState(async () => ({ outcome: 'conflict', message: 'already renamed' }))
+    )
+    const member = await createDirectAuthenticatedUser(suite.app, 'action-conflict', 'member')
+    const res = await postAction(
+      suite.app,
+      ACTION_SLOT,
+      { kind: RENAME_ACTION_KIND },
+      member.cookies
+    )
+    expect(res.statusCode).toBe(409)
+    expect(res.json()).toMatchObject({ message: 'already renamed' })
+  })
+
+  it('AC5: a thrown error degrades to a fixed 500, never the raw exception text', async () => {
+    __setExtensionStateForTests(
+      actionState(async () => {
+        throw new Error('permission denied: row-level policy violation on access_groups')
+      })
+    )
+    const member = await createDirectAuthenticatedUser(suite.app, 'action-throws', 'member')
+    const res = await postAction(
+      suite.app,
+      ACTION_SLOT,
+      { kind: RENAME_ACTION_KIND },
+      member.cookies
+    )
+    expect(res.statusCode).toBe(500)
+    expect(JSON.stringify(res.json())).not.toContain('row-level policy')
+  })
+
+  it('AC5: onAction explicitly returning { outcome: "error" } also degrades to a fixed 500', async () => {
+    __setExtensionStateForTests(actionState(async () => ({ outcome: 'error' })))
+    const member = await createDirectAuthenticatedUser(suite.app, 'action-error', 'member')
+    const res = await postAction(
+      suite.app,
+      ACTION_SLOT,
+      { kind: RENAME_ACTION_KIND },
+      member.cookies
+    )
+    expect(res.statusCode).toBe(500)
+  })
+
+  describe('AC3: never trusts identity/org claims embedded in the action body', () => {
+    it("the context passed to onAction carries the caller's real session orgId/userId regardless of a smuggled body", async () => {
+      let seen: ModuleActionContext | undefined
+      __setExtensionStateForTests(
+        actionState(async (context) => {
+          seen = context
+          return { outcome: 'ok' }
+        })
+      )
+      const member = await createDirectAuthenticatedUser(suite.app, 'action-smuggle', 'viewer')
+      const res = await postAction(
+        suite.app,
+        ACTION_SLOT,
+        { kind: RENAME_ACTION_KIND, orgId: 'org-b', userId: 'user-b', projectId: 'proj-b' },
+        member.cookies
+      )
+      expect(res.statusCode).toBe(200)
+      expect(seen?.orgId).toBe(member.orgId)
+      expect(seen?.identity.userId).toBe(member.userId)
+      expect(seen?.identity.orgRole).toBe('viewer')
+    })
+
+    it('a structural check: the route handler source never references body.orgId/body.userId/body.projectId', async () => {
+      const source = await readFile(
+        fileURLToPath(new URL('./panel-routes.ts', import.meta.url)),
+        'utf-8'
+      )
+      expect(source).not.toMatch(/\baction\.orgId\b/)
+      expect(source).not.toMatch(/\baction\.userId\b/)
+      expect(source).not.toMatch(/\baction\.projectId\b/)
+      expect(source).not.toMatch(/\bbody\.orgId\b/)
+      expect(source).not.toMatch(/\bbody\.userId\b/)
+      expect(source).not.toMatch(/\bbody\.projectId\b/)
+    })
+
+    it('a structural check: the module-action handler source never references request.orgId/request.userId/request.projectId', async () => {
+      const source = await readFile(
+        fileURLToPath(new URL('../lib/module-action-handler.ts', import.meta.url)),
+        'utf-8'
+      )
+      expect(source).not.toMatch(/\brequest\.orgId\b/)
+      expect(source).not.toMatch(/\brequest\.userId\b/)
+      expect(source).not.toMatch(/\brequest\.projectId\b/)
+    })
+  })
+
+  describe('Task 2/Open Design Question 1 (Option B, resolved 2026-08-24): Sec-Fetch-Site check', () => {
+    it('rejects a request with Sec-Fetch-Site: cross-site', async () => {
+      const onAction = vi.fn(async () => ({ outcome: 'ok' as const }))
+      __setExtensionStateForTests(actionState(onAction))
+      const member = await createDirectAuthenticatedUser(
+        suite.app,
+        'action-secfetch-cross',
+        'member'
+      )
+      const res = await postAction(
+        suite.app,
+        ACTION_SLOT,
+        { kind: RENAME_ACTION_KIND },
+        member.cookies,
+        {
+          'sec-fetch-site': 'cross-site',
+        }
+      )
+      expect(res.statusCode).toBe(403)
+      expect(onAction).not.toHaveBeenCalled()
+    })
+
+    it('rejects a request with Sec-Fetch-Site: same-site (not same-origin)', async () => {
+      const onAction = vi.fn(async () => ({ outcome: 'ok' as const }))
+      __setExtensionStateForTests(actionState(onAction))
+      const member = await createDirectAuthenticatedUser(
+        suite.app,
+        'action-secfetch-samesite',
+        'member'
+      )
+      const res = await postAction(
+        suite.app,
+        ACTION_SLOT,
+        { kind: RENAME_ACTION_KIND },
+        member.cookies,
+        {
+          'sec-fetch-site': 'same-site',
+        }
+      )
+      expect(res.statusCode).toBe(403)
+      expect(onAction).not.toHaveBeenCalled()
+    })
+
+    it('accepts a request with Sec-Fetch-Site: same-origin', async () => {
+      __setExtensionStateForTests(actionState(async () => ({ outcome: 'ok' })))
+      const member = await createDirectAuthenticatedUser(
+        suite.app,
+        'action-secfetch-same',
+        'member'
+      )
+      const res = await postAction(
+        suite.app,
+        ACTION_SLOT,
+        { kind: RENAME_ACTION_KIND },
+        member.cookies,
+        {
+          'sec-fetch-site': 'same-origin',
+        }
+      )
+      expect(res.statusCode).toBe(200)
+    })
+
+    it('treats a MISSING Sec-Fetch-Site header as pass-through, not rejection (older browsers)', async () => {
+      __setExtensionStateForTests(actionState(async () => ({ outcome: 'ok' })))
+      const member = await createDirectAuthenticatedUser(
+        suite.app,
+        'action-secfetch-missing',
+        'member'
+      )
+      const res = await postAction(
+        suite.app,
+        ACTION_SLOT,
+        { kind: RENAME_ACTION_KIND },
+        member.cookies
+      )
+      expect(res.statusCode).toBe(200)
+    })
+  })
+
+  it('AC6/Task 3: rate-limits after 30 requests from the same user (429)', async () => {
+    process.env['RATE_LIMIT_TEST_BYPASS'] = 'false'
+    try {
+      __setExtensionStateForTests(actionState(async () => ({ outcome: 'ok' })))
+      const member = await createDirectAuthenticatedUser(suite.app, 'action-ratelimit', 'member')
+
+      const statuses: number[] = []
+      for (let i = 0; i < 31; i += 1) {
+        const res = await postAction(
+          suite.app,
+          ACTION_SLOT,
+          { kind: RENAME_ACTION_KIND },
+          member.cookies
+        )
+        statuses.push(res.statusCode)
+      }
+
+      expect(statuses.slice(0, 30).every((code) => code === 200)).toBe(true)
+      expect(statuses[30]).toBe(429)
+    } finally {
+      process.env['RATE_LIMIT_TEST_BYPASS'] = 'true'
+    }
+  }, 30_000)
+
+  it('Boundary & Edge Case Sweep: two concurrent requests for two different users/orgs never cross-contaminate context', async () => {
+    const captured: ModuleActionContext[] = []
+    __setExtensionStateForTests(
+      actionState(async (context) => {
+        await Promise.resolve()
+        captured.push(context)
+        return { outcome: 'ok', message: `ok:${context.identity.userId}` }
+      })
+    )
+    const memberA = await createDirectAuthenticatedUser(suite.app, 'action-concurrent-a', 'member')
+    const memberB = await createDirectAuthenticatedUser(suite.app, 'action-concurrent-b', 'owner')
+
+    const [resA, resB] = await Promise.all([
+      postAction(suite.app, ACTION_SLOT, { kind: RENAME_ACTION_KIND }, memberA.cookies),
+      postAction(suite.app, ACTION_SLOT, { kind: RENAME_ACTION_KIND }, memberB.cookies),
+    ])
+
+    expect(resA.statusCode).toBe(200)
+    expect(resB.statusCode).toBe(200)
+    const forA = captured.find((c) => c.identity.userId === memberA.userId)
+    const forB = captured.find((c) => c.identity.userId === memberB.userId)
+    expect(forA?.orgId).toBe(memberA.orgId)
+    expect(forB?.orgId).toBe(memberB.orgId)
   })
 })

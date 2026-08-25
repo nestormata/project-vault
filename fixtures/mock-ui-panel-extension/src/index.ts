@@ -1,4 +1,9 @@
-import type { ExtensionHooks, ExtensionManifest, UIPanel } from '@project-vault/extension-api'
+import type {
+  ExtensionHooks,
+  ExtensionManifest,
+  ModuleAction,
+  UIPanel,
+} from '@project-vault/extension-api'
 import { EXTENSION_API_VERSION } from '@project-vault/extension-api'
 
 /**
@@ -43,6 +48,7 @@ export const THROW_TRIGGER_SLOT = 'fixture-throw'
 export const HANG_TRIGGER_SLOT = 'fixture-hang'
 export const GARBAGE_TRIGGER_SLOT = 'fixture-garbage'
 export const CONTEXT_ECHO_SLOT = 'fixture-context-echo'
+export const TEST_ACTION_KIND = 'test-action'
 
 const manifest: ExtensionManifest = {
   name: MOCK_UI_PANEL_PROVIDER_NAME,
@@ -58,6 +64,12 @@ const manifest: ExtensionManifest = {
     GARBAGE_TRIGGER_SLOT,
     CONTEXT_ECHO_SLOT,
   ],
+  // Story 25.5 AC4/Task 4 — declaring at least one moduleAction makes apps/api populate
+  // UIPanelContext.actionEndpoint, which this fixture's panel uses to gate rendering its action
+  // button, so this fixture's own panel can exercise the real end-to-end action round trip (via
+  // the postMessage relay to the host — see onRenderPanel's own comment) in Chrome-driven manual
+  // verification, not just a direct handleModuleAction() unit test.
+  moduleActions: [TEST_ACTION_KIND],
 }
 
 const uiPanel: UIPanel = {
@@ -93,14 +105,64 @@ const uiPanel: UIPanel = {
     // `var()` reference with a hardcoded fallback, so this fixture still renders sensibly even
     // outside PV's host (e.g. a standalone preview) and visibly picks up PV's real theme colors
     // once composed by `apps/web`'s panel-document composition function.
+    //
+    // Story 25.5 AC4/Task 4 — when `actionEndpoint` is present (declared moduleActions), renders
+    // a real button that dispatches the action via `postMessage` to the host page, which relays
+    // the real, authenticated fetch on this panel's behalf and posts the result back.
+    //
+    // Bug fix (2026-08-24, found via real Chrome-driven manual verification): this originally
+    // had the button `fetch(actionEndpoint, ...)` directly from inside the panel iframe. That
+    // can never work — the iframe's `sandbox="allow-scripts"` (no `allow-same-origin`, a
+    // non-negotiable Story 25.1 requirement) forces it into an opaque origin, so any fetch it
+    // issues is cross-origin by definition and `credentials: 'same-origin'` never attaches the
+    // session cookie, regardless of CSP. The panel no longer knows or needs `actionEndpoint`'s
+    // URL at all — it only needs to know actions are available (this fixture still gates the
+    // button's existence on that), and sends the action `kind` to the host via `postMessage`;
+    // the host owns resolving and fetching the real endpoint. See `+page.svelte`'s message-relay
+    // handler for the host side of this exchange.
     return {
-      html: `<html><body><p style="color: var(--pv-ext-ink, #24323b); background: var(--pv-ext-surface, #ffffff);">Mock panel for slot "${context.slot}"</p></body></html>`,
+      html:
+        `<html><body>` +
+        `<p style="color: var(--pv-ext-ink, #24323b); background: var(--pv-ext-surface, #ffffff);">Mock panel for slot "${context.slot}"</p>` +
+        (context.actionEndpoint
+          ? `<button id="test-action-button" type="button">Run test action</button>` +
+            `<p id="test-action-result" aria-live="polite"></p>` +
+            `<script>
+              document.getElementById('test-action-button').addEventListener('click', () => {
+                const resultEl = document.getElementById('test-action-result');
+                const requestId = Math.random().toString(36).slice(2);
+                function handleResult(event) {
+                  const data = event.data;
+                  if (!data || data.source !== 'pv-extension-panel-action-result' || data.requestId !== requestId) return;
+                  window.removeEventListener('message', handleResult);
+                  resultEl.textContent = data.ok
+                    ? 'status:' + data.status + ' message:' + (data.message || '')
+                    : 'fetch-failed';
+                }
+                window.addEventListener('message', handleResult);
+                parent.postMessage(
+                  { source: 'pv-extension-panel-action', requestId: requestId, kind: ${JSON.stringify(TEST_ACTION_KIND)} },
+                  '*'
+                );
+              });
+            </script>`
+          : '') +
+        `</body></html>`,
     }
   },
 }
 
+const moduleAction: ModuleAction = {
+  async onAction(context, request) {
+    if (request.action.kind !== TEST_ACTION_KIND) {
+      return { outcome: 'validation_failed', message: 'Unknown action kind' }
+    }
+    return { outcome: 'ok', message: `test-action executed for slot "${context.slot}"` }
+  },
+}
+
 function hooksFactory(): ExtensionHooks {
-  return { uiPanel }
+  return { uiPanel, moduleAction }
 }
 
 export default { manifest, hooksFactory }

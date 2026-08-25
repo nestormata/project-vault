@@ -38,6 +38,28 @@ describe('composePanelDocument (Story 25.4 AC1)', () => {
     expect(result).toContain('<meta http-equiv="Content-Security-Policy"')
   })
 
+  /**
+   * Story 25.5 AC4/Task 4 — Design history (2026-08-24): this composed document originally tried
+   * to widen its CSP with `connect-src 'self'`, then (a first bug fix) `connect-src <real
+   * origin>`, so the panel iframe could fetch the host's action endpoint directly. Both attempts
+   * were wrong for the same reason — the panel iframe's opaque origin (from
+   * `sandbox="allow-scripts"` with no `allow-same-origin`, a non-negotiable Story 25.1
+   * requirement) means ANY fetch it issues is cross-origin by definition, so
+   * `credentials: 'same-origin'` never attaches the session cookie regardless of what
+   * `connect-src` permits — confirmed live by comparing the identical request issued from inside
+   * the iframe (blocked, `TypeError: Failed to fetch`) versus from the parent page (200, real
+   * session). The real fix is architectural, not a CSP value: the panel now dispatches actions
+   * via `postMessage` to the parent, which performs the real authenticated fetch on its behalf
+   * (see `+page.svelte`). The panel iframe itself never needs outbound network access, so this
+   * composed document's CSP is unconditionally Story 25.4's original, narrower policy again — no
+   * `connect-src` directive, ever, regardless of whether the extension declares moduleActions.
+   */
+  it('never emits a connect-src directive — the panel iframe never fetches directly (postMessage relay owns network access)', () => {
+    const result = composePanelDocument('<p>hello</p>', BASE_EXTENSION_THEME_VARS)
+
+    expect(result).not.toContain('connect-src')
+  })
+
   it('AC1 edge/Red Team finding: an extension-supplied conflicting CSP <meta> or <base> tag never overrides the host head-level policy', () => {
     const hostileFragment =
       '<meta http-equiv="Content-Security-Policy" content="default-src *"><base href="https://evil.example/">' +

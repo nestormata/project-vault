@@ -2,6 +2,33 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.4.0 — 2026-08-24
+
+contract-hash: sha256:fd52653a519aba96b2338f552edd89758f78473cde1e5422714f3245f81dde4b
+
+### Added
+
+- Added the optional `ExtensionManifest.moduleActions?: string[]` field (Story 25.5 AC2), mirroring
+  `uiPanelSlots`' exact validation shape (non-empty array of unique strings, `MODULE_ACTION_NAME_PATTERN`
+  charset, capped at `MAX_MODULE_ACTIONS` entries) but in a separate, differently-named namespace —
+  action names and slot names must never be conflated even though their validation shape is
+  identical. Omitting `moduleActions` remains fully backward-compatible: the host serves zero
+  declared actions and every action request 404s.
+- Added the `ExtensionHooks.moduleAction?: ModuleAction` hook (Story 25.5 AC2/AC3), the `ModuleAction`,
+  `ModuleActionContext`, `ModuleActionRequest`, and `ActionResult` types, and the new
+  `POST /extensions/panels/:slot/actions` host route that re-derives identity/org/project context
+  fresh per request (never trusting the request body) before invoking `onAction()`.
+- Widened `UIPanelContext` with an optional `actionEndpoint?` field (Story 25.5) pointing panel
+  authors at the new action route when their extension declares `moduleActions`. Omitted when the
+  extension declares no `moduleActions`, so an existing extension reading only the pre-existing
+  fields keeps working unmodified.
+
+Note: Story 25.5 was developed in parallel with Story 25.4 and originally targeted `3.3.0` for this
+same additive change. Story 25.4 merged to `main` first and claimed `3.3.0` for its own, different
+additive change (see below). Per the forward-only-versioning invariant enforced by
+`scripts/check-extension-api-version-skew.ts` (versions are allocated at merge, not at planning —
+Story 23.6), this merge moves to the next free version, `3.4.0`, instead of reusing `3.3.0`.
+
 ## 3.3.0 — 2026-08-24
 
 contract-hash: sha256:0eb56255831e227226d81f1f7967617dda8420105f759022cc724aac1ba8562a

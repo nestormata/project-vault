@@ -7,7 +7,7 @@ import type { UIPanel, UIPanelContext, UIPanelResult } from './ui-panel.js'
 // typecheck if a new top-level key is ever added, since `keyof UIPanelContext` would then no
 // longer extend this literal union.
 type OnlyExpectedFields = keyof UIPanelContext extends
-  'slot' | 'resourceId' | 'identity' | 'orgId' | 'projectId' | 'locale' | 'theme'
+  'slot' | 'resourceId' | 'identity' | 'orgId' | 'projectId' | 'locale' | 'theme' | 'actionEndpoint'
   ? true
   : false
 const _assertUIPanelContextHasOnlyExpectedFields: OnlyExpectedFields = true
@@ -52,6 +52,13 @@ describe('UIPanel', () => {
     const context = baseContext({ resourceId: 'grp_42', projectId: 'proj_1' })
     expect(context.resourceId).toBe('grp_42')
     expect(context.projectId).toBe('proj_1')
+  })
+
+  it('Story 25.5 AC4/Task 1: accepts the optional actionEndpoint field when present, absent by default', () => {
+    expect(baseContext().actionEndpoint).toBeUndefined()
+    expect(
+      baseContext({ actionEndpoint: '/api/v1/extensions/panels/group/actions' }).actionEndpoint
+    ).toBe('/api/v1/extensions/panels/group/actions')
   })
 
   it('AC3: locale is restricted to the supported-locale union', () => {

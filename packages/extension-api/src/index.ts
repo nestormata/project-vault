@@ -12,6 +12,12 @@ export type { AuthResult, AuthStrategy } from './hooks/auth-strategy.js'
 export type { NotificationChannel, NotificationPayload } from './hooks/notification-channel.js'
 export type { UIPanel, UIPanelContext, UIPanelResult } from './hooks/ui-panel.js'
 export type {
+  ActionResult,
+  ModuleAction,
+  ModuleActionContext,
+  ModuleActionRequest,
+} from './hooks/module-action.js'
+export type {
   CapabilityDecision,
   CapabilityGate,
   CapabilityGateContext,
@@ -48,7 +54,9 @@ export type { ExtensionCapability, ExtensionManifest } from './manifest.js'
 export {
   EXTENSION_API_VERSION,
   HOST_SUPPORTED_EXTENSION_API_RANGE,
+  MAX_MODULE_ACTIONS,
   MAX_UI_PANEL_SLOTS,
+  MODULE_ACTION_NAME_PATTERN,
   UI_PANEL_SLOT_NAME_PATTERN,
   defineExtension,
 } from './manifest.js'

@@ -52,6 +52,37 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       slot: 'group',
       html: '<p>hello</p>',
       themeVars: BASE_EXTENSION_THEME_VARS,
+      actionEndpoint: undefined,
+    })
+  })
+
+  it('Story 25.5 AC4/Task 4: actionEndpoint is forwarded when the API response includes it', async () => {
+    getExtensionPanelMock.mockResolvedValue({
+      ok: true,
+      html: '<p>hello</p>',
+      actionEndpoint: '/api/v1/extensions/panels/group/actions',
+    })
+
+    const result = await load(makeEvent(baseUser))
+
+    expect(result).toEqual({
+      slot: 'group',
+      html: '<p>hello</p>',
+      themeVars: BASE_EXTENSION_THEME_VARS,
+      actionEndpoint: '/api/v1/extensions/panels/group/actions',
+    })
+  })
+
+  it('Story 25.5 AC4/Task 4: actionEndpoint is undefined when the API response omits it', async () => {
+    getExtensionPanelMock.mockResolvedValue({ ok: true, html: '<p>hello</p>' })
+
+    const result = await load(makeEvent(baseUser))
+
+    expect(result).toEqual({
+      slot: 'group',
+      html: '<p>hello</p>',
+      themeVars: BASE_EXTENSION_THEME_VARS,
+      actionEndpoint: undefined,
     })
   })
 
@@ -60,7 +91,12 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
 
     const result = await load(makeEvent(baseUser))
 
-    expect(result).toEqual({ slot: 'group', html: null, themeVars: BASE_EXTENSION_THEME_VARS })
+    expect(result).toEqual({
+      slot: 'group',
+      html: null,
+      themeVars: BASE_EXTENSION_THEME_VARS,
+      actionEndpoint: undefined,
+    })
   })
 
   it('AC3/AC3b: degrades to html: null when the API fetch itself throws (e.g. a 400 for an invalid slot)', async () => {
@@ -68,7 +104,12 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
 
     const result = await load(makeEvent(baseUser))
 
-    expect(result).toEqual({ slot: 'group', html: null, themeVars: BASE_EXTENSION_THEME_VARS })
+    expect(result).toEqual({
+      slot: 'group',
+      html: null,
+      themeVars: BASE_EXTENSION_THEME_VARS,
+      actionEndpoint: undefined,
+    })
   })
 
   it('AC4: resolves --pv-ext-* theme vars from the applied custom theme when one is selected', async () => {

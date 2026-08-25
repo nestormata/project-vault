@@ -3,13 +3,16 @@ import { ExtensionRegistrationError } from './errors.js'
 import {
   EXTENSION_API_VERSION,
   HOST_SUPPORTED_EXTENSION_API_RANGE,
+  MAX_MODULE_ACTIONS,
   MAX_UI_PANEL_SLOTS,
+  MODULE_ACTION_NAME_PATTERN,
   UI_PANEL_SLOT_NAME_PATTERN,
 } from './manifest.js'
 import type { ExtensionManifest } from './manifest.js'
 import type { AuthStrategy } from './hooks/auth-strategy.js'
 import type { NotificationChannel } from './hooks/notification-channel.js'
 import type { UIPanel } from './hooks/ui-panel.js'
+import type { ModuleAction } from './hooks/module-action.js'
 import type { CapabilityGate } from './hooks/capability-gate.js'
 import type { HostServices } from './host-services.js'
 import type { ExtensionDbScopeEntry, ExtensionRuntimeContext } from './db-access.js'
@@ -40,6 +43,9 @@ export type ExtensionHooks = {
   uiPanel?: UIPanel
   capabilityGate?: CapabilityGate
   projectLifecycle?: ProjectCreatePolicy
+  /** Story 25.5 AC1 — dispatch target for `POST /extensions/panels/:slot/actions`. Only legal
+   * (checked by `hasCallableModuleActionHook()`) when the manifest declares `moduleActions`. */
+  moduleAction?: ModuleAction
 }
 
 /** Default `HostServices` used when a caller (typically a test) invokes `registerExtension()`
@@ -93,6 +99,7 @@ const KNOWN_MANIFEST_KEYS = [
   'replacesNativeLogin',
   'dbScope',
   'uiPanelSlots',
+  'moduleActions',
 ]
 
 const INVALID_MANIFEST_FIELD = 'invalid-manifest-field'
@@ -206,6 +213,64 @@ function validateUiPanelSlotsShape(manifest: ExtensionManifest): void {
   }
 }
 
+/**
+ * Story 25.5 AC2 — validates the optional `moduleActions` field's shape: non-empty array of
+ * unique strings (if present), each matching `MODULE_ACTION_NAME_PATTERN`, capped at
+ * `MAX_MODULE_ACTIONS` entries, and only legal alongside `'ui-panel'` in `capabilities[]`.
+ * Mirrors `validateUiPanelSlotsShape` exactly (separate constants, identical shape — action names
+ * and slot names are different namespaces). Does NOT check for the `moduleAction` hook itself —
+ * that check needs `hooksFactory()`'s result and runs later (see `hasCallableModuleActionHook`
+ * below).
+ */
+function validateModuleActionsShape(manifest: ExtensionManifest): void {
+  if (manifest.moduleActions === undefined) return
+
+  if (!Array.isArray(manifest.moduleActions)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "moduleActions" must be an array, got ${JSON.stringify(manifest.moduleActions)}`
+    )
+  }
+
+  if (manifest.moduleActions.length === 0) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest field "moduleActions" must not be an empty array — omit the field entirely to declare no actions'
+    )
+  }
+
+  if (manifest.moduleActions.length > MAX_MODULE_ACTIONS) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "moduleActions" declares ${manifest.moduleActions.length} entries, exceeding the maximum of ${MAX_MODULE_ACTIONS}`
+    )
+  }
+
+  const seen = new Set<string>()
+  for (const action of manifest.moduleActions) {
+    if (typeof action !== 'string' || !MODULE_ACTION_NAME_PATTERN.test(action)) {
+      throw new ExtensionRegistrationError(
+        INVALID_MANIFEST_FIELD,
+        `Extension manifest field "moduleActions" contains an invalid action name ${JSON.stringify(action)} (expected to match ${MODULE_ACTION_NAME_PATTERN})`
+      )
+    }
+    if (seen.has(action)) {
+      throw new ExtensionRegistrationError(
+        INVALID_MANIFEST_FIELD,
+        `Extension manifest field "moduleActions" contains duplicate action name "${action}"`
+      )
+    }
+    seen.add(action)
+  }
+
+  if (!manifest.capabilities.includes('ui-panel')) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest declares "moduleActions" but does not declare "ui-panel" in capabilities[]'
+    )
+  }
+}
+
 const DB_SCOPE_TABLE_PATTERN = /^[a-z][a-z0-9_]*$/
 const DB_SCOPE_OPERATIONS = new Set(['select', 'insert', 'update', 'delete'])
 const INVALID_DB_SCOPE = 'invalid-db-scope' as const
@@ -313,6 +378,65 @@ function hasCallableUiPanelHook(manifest: ExtensionManifest, hooks: ExtensionHoo
 }
 
 /**
+ * Story 25.5 AC2 — a manifest declaring `moduleActions` (implying real action kinds exist to
+ * dispatch) whose `hooksFactory()` result has no `moduleAction` hook at all is rejected — a
+ * load-time registration error, not a silent per-request degradation. Mirrors
+ * `hasCallableUiPanelHook` exactly.
+ */
+function hasCallableModuleActionHook(manifest: ExtensionManifest, hooks: ExtensionHooks): boolean {
+  if (!manifest.moduleActions) return true
+  return hooks.moduleAction !== undefined && typeof hooks.moduleAction.onAction === 'function'
+}
+
+/**
+ * Post-`hooksFactory()` callability checks, grouped into one function purely to keep
+ * `registerExtension`'s own cyclomatic complexity within this repo's lint budget — behaviorally
+ * these are four independent gates, each throwing its own typed error, checked in the same order
+ * they were checked inline before this extraction.
+ */
+function assertCallableHooksAfterFactory(manifest: ExtensionManifest, hooks: ExtensionHooks): void {
+  if (!hasCallableProjectLifecycleHook(manifest, hooks)) {
+    throw new ExtensionRegistrationError(
+      'invalid-manifest-field',
+      'Extension manifest declares "project-lifecycle" but hooksFactory() did not return a callable projectLifecycle hook'
+    )
+  }
+
+  // Story 25.2 AC1 (Boundary & Edge Case Sweep finding) — a manifest promising `uiPanelSlots`
+  // with nothing behind it is the same class of bug `hasCallableProjectLifecycleHook` already
+  // catches above; runs after hooksFactory() per this function's existing lazy-hooksFactory
+  // convention, same as the project-lifecycle check.
+  if (!hasCallableUiPanelHook(manifest, hooks)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest declares "uiPanelSlots" but hooksFactory() did not return a callable uiPanel hook'
+    )
+  }
+
+  // Story 25.5 AC2 — same class of bug hasCallableUiPanelHook already catches above: a manifest
+  // promising moduleActions with nothing behind it. Runs after hooksFactory() per this function's
+  // existing lazy-hooksFactory convention.
+  if (!hasCallableModuleActionHook(manifest, hooks)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest declares "moduleActions" but hooksFactory() did not return a callable moduleAction hook'
+    )
+  }
+
+  // Story 23.2 AC-2 — a manifest declaring `replacesNativeLogin: true` whose hooksFactory()
+  // yields no authStrategy would disable the only working login path with nothing to replace
+  // it. Rejected here, after hooksFactory() has already been invoked per this function's
+  // existing lazy-hooksFactory convention (register-extension.ts:73-74 in the pre-23.2 code) —
+  // no restructuring needed, this is a post-factory assertion.
+  if (manifest.replacesNativeLogin === true && typeof hooks.authStrategy !== 'object') {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest declares "replacesNativeLogin: true" but hooksFactory() did not return an authStrategy hook'
+    )
+  }
+}
+
+/**
  * AC4/AC5/AC6 — validates `manifest.name` (reverse-DNS style) and semver-based capability
  * negotiation, in that order, BEFORE ever invoking `hooksFactory`. Throws a typed
  * `ExtensionRegistrationError` synchronously on either failure, discriminated by `reason`.
@@ -341,6 +465,7 @@ export function registerExtension(
   validateReplacesNativeLoginShape(manifest)
   validateDbScopeShape(manifest.dbScope)
   validateUiPanelSlotsShape(manifest)
+  validateModuleActionsShape(manifest)
 
   if (!REVERSE_DNS_NAME_PATTERN.test(manifest.name)) {
     throw new ExtensionRegistrationError(
@@ -353,35 +478,7 @@ export function registerExtension(
 
   const hooks = hooksFactory(host)
 
-  if (!hasCallableProjectLifecycleHook(manifest, hooks)) {
-    throw new ExtensionRegistrationError(
-      'invalid-manifest-field',
-      'Extension manifest declares "project-lifecycle" but hooksFactory() did not return a callable projectLifecycle hook'
-    )
-  }
-
-  // Story 25.2 AC1 (Boundary & Edge Case Sweep finding) — a manifest promising `uiPanelSlots`
-  // with nothing behind it is the same class of bug `hasCallableProjectLifecycleHook` already
-  // catches above; runs after hooksFactory() per this function's existing lazy-hooksFactory
-  // convention, same as the project-lifecycle check.
-  if (!hasCallableUiPanelHook(manifest, hooks)) {
-    throw new ExtensionRegistrationError(
-      INVALID_MANIFEST_FIELD,
-      'Extension manifest declares "uiPanelSlots" but hooksFactory() did not return a callable uiPanel hook'
-    )
-  }
-
-  // Story 23.2 AC-2 — a manifest declaring `replacesNativeLogin: true` whose hooksFactory()
-  // yields no authStrategy would disable the only working login path with nothing to replace
-  // it. Rejected here, after hooksFactory() has already been invoked per this function's
-  // existing lazy-hooksFactory convention (register-extension.ts:73-74 in the pre-23.2 code) —
-  // no restructuring needed, this is a post-factory assertion.
-  if (manifest.replacesNativeLogin === true && typeof hooks.authStrategy !== 'object') {
-    throw new ExtensionRegistrationError(
-      INVALID_MANIFEST_FIELD,
-      'Extension manifest declares "replacesNativeLogin: true" but hooksFactory() did not return an authStrategy hook'
-    )
-  }
+  assertCallableHooksAfterFactory(manifest, hooks)
 
   return {
     manifest: {
@@ -391,6 +488,7 @@ export function registerExtension(
       replacesNativeLogin: manifest.replacesNativeLogin,
       dbScope: manifest.dbScope,
       uiPanelSlots: manifest.uiPanelSlots,
+      moduleActions: manifest.moduleActions,
     },
     hooks,
   }

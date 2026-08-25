@@ -16,6 +16,11 @@ export type ExtensionPanelPageData = {
   slot: string
   html: string | null
   themeVars: ExtensionThemeVars
+  // Story 25.5 AC4/Task 4: forwarded through unchanged from the API response (undefined, never
+  // '', when the loaded extension declares no moduleActions). The client-side postMessage relay
+  // (+page.svelte) uses this as the real, authenticated fetch target when relaying an action
+  // request from the panel iframe — the iframe itself never sees or needs this URL.
+  actionEndpoint: string | undefined
 }
 
 /**
@@ -54,11 +59,17 @@ export const load: PageServerLoad = async ({ params, fetch, locals }) => {
       slot: params.slot,
       html: result.ok ? result.html : null,
       themeVars,
+      actionEndpoint: result.ok ? result.actionEndpoint : undefined,
     } satisfies ExtensionPanelPageData
   } catch {
     // Covers both a 400 (invalid slot) and any other unexpected non-2xx — same calm placeholder
     // either way; this page has no separate "bad slot" UI (AC3b's 400 is a developer-facing
     // contract, not a state this hand-authored, single-slot page's own nav ever produces).
-    return { slot: params.slot, html: null, themeVars } satisfies ExtensionPanelPageData
+    return {
+      slot: params.slot,
+      html: null,
+      themeVars,
+      actionEndpoint: undefined,
+    } satisfies ExtensionPanelPageData
   }
 }

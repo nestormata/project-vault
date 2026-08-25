@@ -40,6 +40,18 @@ export type ExtensionManifest = {
    * validated by `registerExtension()`'s `validateUiPanelSlotsShape`.
    */
   uiPanelSlots?: string[]
+  /**
+   * Story 25.5 AC2 — optional declaration of the action `kind`s this extension's `moduleAction`
+   * hook accepts via `POST /extensions/panels/:slot/actions`. Mirrors `uiPanelSlots`' exact
+   * validation shape (non-empty array of unique strings, charset-bounded, capped length) but is a
+   * separate, differently-named namespace (`MODULE_ACTION_NAME_PATTERN`, not
+   * `UI_PANEL_SLOT_NAME_PATTERN`) — action names and slot names must never be conflated even
+   * though their validation shape is identical. Omitted (or `undefined`) is fully
+   * backward-compatible: the host serves zero declared actions, every action request 404s.
+   * Only legal alongside `'ui-panel'` in `capabilities[]` — validated by `registerExtension()`'s
+   * `validateModuleActionsShape()`.
+   */
+  moduleActions?: string[]
 }
 
 /**
@@ -55,6 +67,18 @@ export const UI_PANEL_SLOT_NAME_PATTERN = /^[a-z0-9-]{1,64}$/
 /** Story 25.2 AC1 — generous for any real extension, small enough to bound a hostile/broken
  * manifest from declaring an unbounded `uiPanelSlots` list. */
 export const MAX_UI_PANEL_SLOTS = 32
+
+/**
+ * Story 25.5 AC2 — the charset a declared `moduleActions` entry must match. Identical shape to
+ * `UI_PANEL_SLOT_NAME_PATTERN` (lowercase alphanumerics and hyphens only, 1-64 chars) but a
+ * separately-named constant — action names and slot names are different namespaces and must not
+ * be conflated even though the validation shape is identical.
+ */
+export const MODULE_ACTION_NAME_PATTERN = /^[a-z0-9-]{1,64}$/
+
+/** Story 25.5 AC2 — generous for any real extension, small enough to bound a hostile/broken
+ * manifest from declaring an unbounded `moduleActions` list. */
+export const MAX_MODULE_ACTIONS = 32
 
 /**
  * AC1/AC7 — this package's own contract version. Must be bumped in lockstep with any change
@@ -88,8 +112,17 @@ export const MAX_UI_PANEL_SLOTS = 32
 // `scripts/check-extension-api-version-skew.ts`'s forward-only-versioning invariant (versions are
 // allocated at merge, not at planning — Story 23.6) requires this merge to move to the next free
 // number instead of reusing 3.2.0: 3.2.0 -> 3.3.0. The floor stays `>=3.0.0` so every
-// already-shipped extension keeps loading unmodified regardless.
-export const EXTENSION_API_VERSION = '3.3.0'
+// already-shipped extension keeps loading unmodified regardless. This landed on `main` first.
+// Story 25.5 AC2/Task 1 — this branch independently bumped 3.2.0 -> 3.3.0 too (developed in
+// parallel with 25.4, before either merged), for its own additive-minor change: `ExtensionManifest`
+// gains `moduleActions?: string[]`, `ExtensionHooks` gains `moduleAction?`, and `UIPanelContext`
+// gains `actionEndpoint?` (see `hooks/module-action.ts`, `hooks/ui-panel.ts`) — all
+// backward-compatible optional additions, no existing extension's manifest or hook shape changes.
+// Because Story 25.4 already landed on `main` claiming 3.3.0 first (see above), merging this
+// branch's independent 3.3.0 claim requires moving to the next free number instead of reusing it:
+// 3.3.0 -> 3.4.0. The floor stays `>=3.0.0` so every already-shipped extension keeps loading
+// unmodified regardless.
+export const EXTENSION_API_VERSION = '3.4.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

@@ -6,6 +6,7 @@ import mockUiPanelExtension, {
   GARBAGE_TRIGGER_SLOT,
   HANG_TRIGGER_SLOT,
   HAPPY_SLOT,
+  TEST_ACTION_KIND,
   THROW_TRIGGER_SLOT,
 } from './index.js'
 
@@ -109,6 +110,32 @@ describe('mock-ui-panel-extension (Story 25.1 Task 7)', () => {
       expect(result?.html).toContain('projectId:</p>')
       expect(result?.html).toContain('resourceId:</p>')
       expect(result?.html).toContain('themeName:</p>')
+    })
+  })
+
+  describe('moduleAction (Story 25.5 AC1/AC2)', () => {
+    it('does not implement any other hook (proves module-action alone still declares uiPanel)', () => {
+      const hooks = mockUiPanelExtension.hooksFactory()
+      expect(hooks.moduleAction).toBeDefined()
+    })
+
+    it('resolves ok for the declared TEST_ACTION_KIND', async () => {
+      const hooks = mockUiPanelExtension.hooksFactory()
+      const result = await hooks.moduleAction?.onAction(context(), {
+        action: { kind: TEST_ACTION_KIND },
+      })
+      expect(result).toEqual({
+        outcome: 'ok',
+        message: `test-action executed for slot "${HAPPY_SLOT}"`,
+      })
+    })
+
+    it('resolves validation_failed for an unrecognized action kind', async () => {
+      const hooks = mockUiPanelExtension.hooksFactory()
+      const result = await hooks.moduleAction?.onAction(context(), {
+        action: { kind: 'not-a-real-kind' },
+      })
+      expect(result).toEqual({ outcome: 'validation_failed', message: 'Unknown action kind' })
     })
   })
 })

@@ -1,5 +1,5 @@
 import { z } from 'zod/v4'
-import type { FastifyRequest } from 'fastify'
+import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { FastifyApp } from '../lib/fastify-app.js'
 import { ApiErrorSchema } from '../lib/api-contracts.js'
 import { secureRoute, type SecureRouteContext } from '../lib/secure-route.js'
@@ -8,6 +8,11 @@ import {
   renderExtensionPanel,
   resolveKnownUiPanelSlots,
 } from '../lib/extension-panel.js'
+import {
+  handleModuleAction,
+  type ModuleActionOutcome,
+  type ModuleActionRequestBody,
+} from '../lib/module-action-handler.js'
 import { getExtensionStatus } from './loader.js'
 
 const ExtensionPanelParamsSchema = z.object({ slot: z.string() })
@@ -37,11 +42,147 @@ function isMalformedQueryValue(query: { projectId?: string; resourceId?: string 
   return false
 }
 
-const ExtensionPanelOkSchema = z.object({ ok: z.literal(true), html: z.string() })
+/**
+ * Shared by both `/extensions/panels/:slot` (GET) and `/extensions/panels/:slot/actions` (POST)
+ * — AC2/AC5's manual shape-validation-before-any-DB-lookup discipline applies identically to
+ * both routes. Returns `undefined` after already sending the 400 itself, so a handler can just
+ * early-return on that.
+ */
+function parsePanelSlotAndQueryOrReject(
+  req: FastifyRequest,
+  reply: FastifyReply
+): { slot: string; projectId?: string; resourceId?: string } | undefined {
+  const { slot } = req.params as { slot: string }
+  const { projectId, resourceId } = req.query as { projectId?: string; resourceId?: string }
+  if (isMalformedQueryValue({ projectId, resourceId })) {
+    reply.status(400).send({ code: 'invalid_query', message: 'Malformed projectId or resourceId' })
+    return undefined
+  }
+  return { slot, projectId, resourceId }
+}
+
+const ExtensionPanelOkSchema = z.object({
+  ok: z.literal(true),
+  html: z.string(),
+  // Story 25.5 AC4/Task 4: present only when the loaded extension declares moduleActions for
+  // this slot — omitted entirely (never an empty string) when it does not, so apps/web can
+  // conditionally widen EXTENSION_PANEL_CSP's connect-src only for action-capable panels.
+  actionEndpoint: z.string().optional(),
+})
 const ExtensionPanelUnavailableSchema = z.object({
   ok: z.literal(false),
   reason: z.literal('panel_unavailable'),
 })
+
+/**
+ * Story 25.5 AC1/AC5/Task 5 — the OpenAPI-facing shapes for `POST /extensions/panels/:slot/actions`
+ * (regenerated into `packages/shared/openapi.json`). Mirrors `ExtensionPanelOkSchema`/
+ * `ExtensionPanelUnavailableSchema`'s existing pattern, but the success shape is deliberately NOT
+ * wrapped in `{ ok: true, ... }` the way the GET panel route is — CM's real, already-shipped
+ * `replaceWithResponse(root, payload)` (see this story's Finding) reads the JSON body directly as
+ * `{ html }` or `{ message }`, not through an `ok`/`reason` envelope; PV conforms to that existing
+ * wire shape rather than inventing its own (matching Elicitation Log #4's own precedent).
+ */
+const ExtensionActionOkSchema = z.object({
+  html: z.string().optional(),
+  message: z.string().optional(),
+})
+
+const ExtensionActionQuerySchema = z.object({
+  projectId: z.string().optional(),
+  resourceId: z.string().optional(),
+})
+
+/**
+ * Story 25.5 Task 3 — shape-validated BEFORE any DB lookup or `onAction()` call: a JSON object
+ * with a non-empty, length-bounded string `kind` field. Anything else 400s here, mirroring
+ * `isMalformedQueryValue`'s own pre-hook-call validation position (a manual check, not a
+ * framework-level `schema.body`, since this app's global Zod validator would otherwise reject a
+ * shape failure with an opaque 500 rather than this route's own controlled 400 — same rationale
+ * `ExtensionPanelQuerySchema`'s own comment documents).
+ */
+const MAX_ACTION_KIND_LENGTH = 128
+
+function extractValidActionBody(body: unknown): ModuleActionRequestBody | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const candidate = body as Record<string, unknown>
+  if (
+    typeof candidate['kind'] !== 'string' ||
+    candidate['kind'].length === 0 ||
+    candidate['kind'].length > MAX_ACTION_KIND_LENGTH
+  ) {
+    return undefined
+  }
+  return candidate as ModuleActionRequestBody
+}
+
+/**
+ * Story 25.5 Task 2/Open Design Question 1 (Option B, human sign-off 2026-08-24) — defense-in-depth
+ * on top of the existing CORS-allowlist + JSON-content-type baseline, NOT a replacement for Story
+ * 25.6's real CSRF token. `Sec-Fetch-Site` is browser-supplied and unspoofable by page JS; any
+ * value other than `'same-origin'` is rejected. A REQUEST MISSING THE HEADER ENTIRELY (older
+ * browsers that predate the Fetch Metadata spec) is treated as a pass-through, not a rejection —
+ * per the resolved decision, this must never break a non-Fetch-Metadata-capable browser outright.
+ */
+function isRejectedBySecFetchSite(header: string | string[] | undefined): boolean {
+  if (header === undefined) return false
+  const value = Array.isArray(header) ? header[0] : header
+  return value !== 'same-origin'
+}
+
+/**
+ * Story 25.5 AC5 — the fixed `ActionResult`/host-precheck outcome → HTTP-status mapping. No
+ * outcome ever forwards the extension's own thrown error text, DB error detail, or stack trace —
+ * `handleModuleAction()` has already reduced any such detail to a fixed-enum operational log
+ * entry (`EXTENSION_MODULE_ACTION_FAILED`) before this function is ever called. `denied`'s own
+ * `message` (if the extension supplied one) is deliberately NEVER forwarded here, unlike
+ * `validation_failed`/`conflict` — a denial reason is exactly the kind of detail this codebase's
+ * existing discipline says must not leak (mirrors `renderExtensionPanel()`'s own
+ * `panel_unavailable` non-distinguishing convention for a project-visibility denial).
+ */
+function moduleActionOkResponse(result: Extract<ModuleActionOutcome, { outcome: 'ok' }>): {
+  status: number
+  body: Record<string, unknown>
+} {
+  return {
+    status: 200,
+    body: {
+      ...(result.html !== undefined ? { html: result.html } : {}),
+      ...(result.message !== undefined ? { message: result.message } : {}),
+    },
+  }
+}
+
+/** Fixed, non-`ok` host-precheck/`ActionResult` outcomes — table lookup, not a branching
+ * function, to keep `mapModuleActionOutcomeToResponse`'s cyclomatic complexity within this
+ * repo's lint budget while preserving the exact same AC5 status mapping. */
+const FIXED_STATUS_BY_OUTCOME = {
+  invalid_slot: { status: 400, code: 'invalid_slot', message: 'Unknown or malformed panel slot' },
+  not_found: { status: 404, code: 'action_not_found', message: 'Action not found' },
+  denied: { status: 403, code: 'denied', message: 'Request denied' },
+  error: { status: 500, code: 'internal_error', message: 'Request failed' },
+} as const
+
+function mapModuleActionOutcomeToResponse(result: ModuleActionOutcome): {
+  status: number
+  body: Record<string, unknown>
+} {
+  if (result.outcome === 'ok') return moduleActionOkResponse(result)
+
+  // AC5: `validation_failed`/`conflict` forward the extension's own `message` verbatim
+  // (deliberately — CM's real `dispatch()` displays it in its `aria-live` region, and it is
+  // by construction meant to be user-facing). Every other outcome uses a fixed generic message
+  // that never depends on anything extension-supplied.
+  if (result.outcome === 'validation_failed') {
+    return { status: 400, body: { code: 'validation_failed', message: result.message } }
+  }
+  if (result.outcome === 'conflict') {
+    return { status: 409, body: { code: 'conflict', message: result.message ?? 'Conflict' } }
+  }
+
+  const fixed = FIXED_STATUS_BY_OUTCOME[result.outcome]
+  return { status: fixed.status, body: { code: fixed.code, message: fixed.message } }
+}
 
 const ExtensionNavSchema = z.object({
   // Story 25.1 AC5: `null` when no nav entry should be shown at all (no extension loaded, or the
@@ -91,15 +232,11 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
     },
     handler: async (ctx, req: FastifyRequest, reply) => {
-      const { slot } = req.params as { slot: string }
-      const { projectId, resourceId } = req.query as { projectId?: string; resourceId?: string }
       // AC2/AC5: shape-validated BEFORE any DB lookup — the exact same pre-hook-call validation
       // position `slot` itself uses.
-      if (isMalformedQueryValue({ projectId, resourceId })) {
-        return reply
-          .status(400)
-          .send({ code: 'invalid_query', message: 'Malformed projectId or resourceId' })
-      }
+      const parsed = parsePanelSlotAndQueryOrReject(req, reply)
+      if (!parsed) return reply
+      const { slot, projectId, resourceId } = parsed
       const secureCtx = ctx as SecureRouteContext
       // Story 25.2 AC3: resolved fresh from getExtensionStatus() on every request, never a
       // module-level constant — a slot the currently loaded extension's manifest doesn't
@@ -130,7 +267,86 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
       if (result.outcome === 'unavailable') {
         return { ok: false as const, reason: 'panel_unavailable' as const }
       }
-      return { ok: true as const, html: result.html }
+      return {
+        ok: true as const,
+        html: result.html,
+        ...(result.actionEndpoint !== undefined ? { actionEndpoint: result.actionEndpoint } : {}),
+      }
+    },
+  })
+
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/extensions/panels/:slot/actions',
+    schema: {
+      params: ExtensionPanelParamsSchema,
+      querystring: ExtensionActionQuerySchema,
+      response: {
+        200: ExtensionActionOkSchema,
+        400: ApiErrorSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        429: ApiErrorSchema,
+        500: ApiErrorSchema,
+      },
+    },
+    security: {
+      // AC1/AC3: same any-active-org-member security profile as the GET panel route — identity/
+      // org come from `request.authContext` (resolved by secureRoute() from the session cookie),
+      // never from the request body, query, or headers.
+      requireAuth: true,
+      writeAuditEvent: false,
+      // Story 25.5 AC6/Task 3 — 30 actions/minute/user. This route is a genuinely new,
+      // authenticated MUTATION surface with no purpose-built CSRF defense yet (Story 25.6, not
+      // this story's job — see Open Design Question 1); the Security Audit Personas elicitation
+      // round's own finding was that an authenticated user hammering a mutation route with ZERO
+      // rate limiting is a materially worse gap than an imperfectly-tuned limit. 30/min is
+      // generous for legitimate interactive use (a human clicking buttons in a panel) while
+      // bounding the cost of a compromised/malicious same-origin caller looping requests — an
+      // interim, conservative default per AC6, not Story 25.7's eventual formalized policy.
+      rateLimit: { max: 30, timeWindowMs: 60_000, key: 'POST /extensions/panels/:slot/actions' },
+    },
+    handler: async (ctx, req: FastifyRequest, reply) => {
+      const parsed = parsePanelSlotAndQueryOrReject(req, reply)
+      if (!parsed) return reply
+      const { slot, projectId, resourceId } = parsed
+
+      // Task 2/Open Design Question 1 (Option B, resolved 2026-08-24) — defense-in-depth on top
+      // of the existing CORS-allowlist + JSON-content-type baseline, checked before any DB
+      // lookup or hook invocation.
+      if (isRejectedBySecFetchSite(req.headers['sec-fetch-site'])) {
+        return reply.status(403).send({ code: 'denied', message: 'Request rejected' })
+      }
+
+      const action = extractValidActionBody(req.body)
+      if (!action) {
+        return reply.status(400).send({
+          code: 'invalid_action',
+          message: 'Request body must include a string "kind" field',
+        })
+      }
+
+      const secureCtx = ctx as SecureRouteContext
+      const knownSlots = resolveKnownUiPanelSlots(getExtensionStatus(), req.log)
+      // AC3: identity/orgId are read directly from THIS request's own resolved `secureCtx.auth`
+      // — never from `action` (the client-supplied body), never memoized from an earlier call.
+      const result = await handleModuleAction(
+        { slot, knownSlots },
+        req.log,
+        {
+          userId: secureCtx.auth.userId,
+          orgId: secureCtx.auth.orgId,
+          orgRole: secureCtx.auth.orgRole,
+        },
+        secureCtx.tx,
+        action,
+        { projectId, resourceId }
+      )
+
+      const { status, body } = mapModuleActionOutcomeToResponse(result)
+      return reply.status(status).send(body)
     },
   })
 
