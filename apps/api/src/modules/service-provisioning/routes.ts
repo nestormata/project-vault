@@ -1,16 +1,17 @@
-import { timingSafeEqual } from 'node:crypto'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
 import { validationError } from '../../lib/route-helpers.js'
+import { timingSafeHeaderTokenMatches } from '../../lib/timing-safe-header-token.js'
 import { provisionServiceOrganization, ServiceProvisioningForbiddenError } from './service.js'
 import { ProvisionServiceOrganizationRequestSchema } from './schema.js'
 
 /**
- * Story 26.1 AC-2/AC-7/AC-8: mirrors apps/api/src/modules/vault/key-service.ts's
- * assertBootstrapAuthorized() exactly — a static, timing-safe-compared shared secret, never a
- * human session, never secureRoute()'s org-authenticated path. Fail-closed when
+ * Story 26.1 AC-2/AC-7/AC-8: a static, timing-safe-compared shared secret, never a human session,
+ * never secureRoute()'s org-authenticated path — same convention as
+ * apps/api/src/modules/vault/key-service.ts's assertBootstrapAuthorized(), which shares this
+ * check's constant-time comparison via lib/timing-safe-header-token.js. Fail-closed when
  * SERVICE_PROVISIONING_TOKEN is unset (route is unreachable for every request, same 403 as an
  * invalid token — never distinguishable from "missing vs wrong").
  */
@@ -20,13 +21,7 @@ function assertServiceProvisioningAuthorized(
   const token = env.SERVICE_PROVISIONING_TOKEN
   if (!token) throw new ServiceProvisioningForbiddenError()
 
-  const header = headers['x-service-provisioning-token']
-  const supplied = Array.isArray(header) ? header[0] : header
-  if (
-    !supplied ||
-    supplied.length !== token.length ||
-    !timingSafeEqual(Buffer.from(supplied), Buffer.from(token))
-  ) {
+  if (!timingSafeHeaderTokenMatches(headers, 'x-service-provisioning-token', token)) {
     throw new ServiceProvisioningForbiddenError()
   }
 }
