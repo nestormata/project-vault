@@ -87,6 +87,14 @@ type ModuleActionAttemptOutcome =
   | { kind: 'dispatched'; result: unknown }
 
 /**
+ * Story 25.5 Task 3/Sonar S107 — `moduleAction`/`knownActions` are both derived from the same
+ * loaded-extension state and always passed together (the AC2 allowlist check below, then the
+ * `onAction()` call itself), so they're bundled into one parameter, the same rationale as
+ * `ModuleActionPanelTarget` above.
+ */
+type ModuleActionCapability = { moduleAction: ModuleAction; knownActions: readonly string[] }
+
+/**
  * Story 25.5 Task 3 — the single unit of work `raceWithTimeout()` races: the AC2 action-kind
  * allowlist check, projectId authorization, locale/theme resolution, and the `onAction()` call
  * itself. Mirrors `extension-panel.ts`'s own `resolvePanelContextAndRender()` factoring, for the
@@ -99,10 +107,10 @@ async function resolveModuleActionContextAndDispatch(
   tx: Tx,
   query: PanelQuery,
   deps: RenderExtensionPanelDeps,
-  moduleAction: ModuleAction,
-  knownActions: readonly string[],
+  capability: ModuleActionCapability,
   request: ModuleActionRequestBody
 ): Promise<ModuleActionAttemptOutcome> {
+  const { moduleAction, knownActions } = capability
   // AC2: checked BEFORE onAction() is ever invoked — a request naming an action.kind the
   // currently-loaded extension does not declare never reaches the hook.
   if (!knownActions.includes(request.kind)) {
@@ -177,6 +185,14 @@ function finalizeModuleActionResult(
 }
 
 /**
+ * Story 25.5 Task 3/Sonar S107 — `slot`/`knownSlots` are always passed and consumed together (the
+ * single `invalid_slot` pre-check below), so they're bundled into one parameter to keep
+ * `handleModuleAction()`'s own parameter count within this repo's lint budget rather than
+ * splitting an otherwise-cohesive routing concern across two positional arguments.
+ */
+export type ModuleActionPanelTarget = { slot: string; knownSlots: readonly string[] }
+
+/**
  * Story 25.5 Task 3 — `POST /extensions/panels/:slot/actions`'s reusable dispatch function,
  * sibling to `renderExtensionPanel()` (same file's dependency-injection discipline). Re-derives
  * the caller's identity/org/project/locale/theme context fresh per call, reusing
@@ -184,8 +200,7 @@ function finalizeModuleActionResult(
  * identity/org claim (AC3).
  */
 export async function handleModuleAction(
-  slot: string,
-  knownSlots: readonly string[],
+  panelTarget: ModuleActionPanelTarget,
   logger: PanelLoggerLike,
   identity: PanelIdentity,
   tx: Tx,
@@ -193,6 +208,7 @@ export async function handleModuleAction(
   query: PanelQuery = {},
   deps: RenderExtensionPanelDeps = defaultRenderExtensionPanelDeps
 ): Promise<ModuleActionOutcome> {
+  const { slot, knownSlots } = panelTarget
   if (!knownSlots.includes(slot)) {
     return { outcome: 'invalid_slot' }
   }
@@ -217,8 +233,7 @@ export async function handleModuleAction(
         tx,
         query,
         deps,
-        moduleAction,
-        knownActions,
+        { moduleAction, knownActions },
         request
       ),
     MODULE_ACTION_TIMEOUT_MS

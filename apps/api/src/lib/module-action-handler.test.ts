@@ -60,8 +60,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
 
   it('rejects a well-formed but not-the-one-known-slot value before touching extension state', async () => {
     const result = await handleModuleAction(
-      'document',
-      DEFAULT_UI_PANEL_SLOTS,
+      { slot: 'document', knownSlots: DEFAULT_UI_PANEL_SLOTS },
       silentLogger(),
       IDENTITY_1,
       FAKE_TX,
@@ -74,8 +73,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
 
   it('returns not_found when no extension is loaded — hook is never invoked (there is no hook to invoke)', async () => {
     const result = await handleModuleAction(
-      GROUP_SLOT,
-      DEFAULT_UI_PANEL_SLOTS,
+      { slot: GROUP_SLOT, knownSlots: DEFAULT_UI_PANEL_SLOTS },
       silentLogger(),
       IDENTITY_1,
       FAKE_TX,
@@ -92,8 +90,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
       loadedState({ moduleActions: [ADD_MEMBER_KIND], moduleAction: { onAction } })
     )
     const result = await handleModuleAction(
-      GROUP_SLOT,
-      DEFAULT_UI_PANEL_SLOTS,
+      { slot: GROUP_SLOT, knownSlots: DEFAULT_UI_PANEL_SLOTS },
       silentLogger(),
       IDENTITY_1,
       FAKE_TX,
@@ -109,8 +106,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
     const onAction = vi.fn(async () => ({ outcome: 'ok' as const }))
     __setExtensionStateForTests(loadedState({ moduleAction: { onAction } }))
     const result = await handleModuleAction(
-      GROUP_SLOT,
-      DEFAULT_UI_PANEL_SLOTS,
+      { slot: GROUP_SLOT, knownSlots: DEFAULT_UI_PANEL_SLOTS },
       silentLogger(),
       IDENTITY_1,
       FAKE_TX,
@@ -132,8 +128,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
       })
     )
     const result = await handleModuleAction(
-      GROUP_SLOT,
-      DEFAULT_UI_PANEL_SLOTS,
+      { slot: GROUP_SLOT, knownSlots: DEFAULT_UI_PANEL_SLOTS },
       silentLogger(),
       IDENTITY_1,
       FAKE_TX,
@@ -157,8 +152,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
       })
     )
     const result = await handleModuleAction(
-      GROUP_SLOT,
-      DEFAULT_UI_PANEL_SLOTS,
+      { slot: GROUP_SLOT, knownSlots: DEFAULT_UI_PANEL_SLOTS },
       silentLogger(),
       IDENTITY_1,
       FAKE_TX,
@@ -182,8 +176,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
     )
     const logger = silentLogger()
     const result = await handleModuleAction(
-      GROUP_SLOT,
-      DEFAULT_UI_PANEL_SLOTS,
+      { slot: GROUP_SLOT, knownSlots: DEFAULT_UI_PANEL_SLOTS },
       logger,
       IDENTITY_1,
       FAKE_TX,
@@ -206,8 +199,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
     )
     const logger = silentLogger()
     const result = await handleModuleAction(
-      GROUP_SLOT,
-      DEFAULT_UI_PANEL_SLOTS,
+      { slot: GROUP_SLOT, knownSlots: DEFAULT_UI_PANEL_SLOTS },
       logger,
       IDENTITY_1,
       FAKE_TX,
@@ -227,8 +219,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
       })
     )
     const result = await handleModuleAction(
-      GROUP_SLOT,
-      DEFAULT_UI_PANEL_SLOTS,
+      { slot: GROUP_SLOT, knownSlots: DEFAULT_UI_PANEL_SLOTS },
       silentLogger(),
       IDENTITY_1,
       FAKE_TX,
@@ -248,8 +239,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
       })
     )
     const promise = handleModuleAction(
-      GROUP_SLOT,
-      DEFAULT_UI_PANEL_SLOTS,
+      { slot: GROUP_SLOT, knownSlots: DEFAULT_UI_PANEL_SLOTS },
       silentLogger(),
       IDENTITY_1,
       FAKE_TX,
@@ -277,8 +267,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
         })
       )
       await handleModuleAction(
-        GROUP_SLOT,
-        DEFAULT_UI_PANEL_SLOTS,
+        { slot: GROUP_SLOT, knownSlots: DEFAULT_UI_PANEL_SLOTS },
         silentLogger(),
         IDENTITY_1,
         FAKE_TX,
@@ -297,8 +286,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
       )
       const deps = fakeDeps({ callerCanSeeProject: vi.fn(async () => false) })
       const result = await handleModuleAction(
-        GROUP_SLOT,
-        DEFAULT_UI_PANEL_SLOTS,
+        { slot: GROUP_SLOT, knownSlots: DEFAULT_UI_PANEL_SLOTS },
         silentLogger(),
         IDENTITY_1,
         FAKE_TX,
@@ -329,8 +317,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
 
     const [resultA, resultB] = await Promise.all([
       handleModuleAction(
-        GROUP_SLOT,
-        DEFAULT_UI_PANEL_SLOTS,
+        { slot: GROUP_SLOT, knownSlots: DEFAULT_UI_PANEL_SLOTS },
         silentLogger(),
         IDENTITY_1,
         FAKE_TX,
@@ -339,8 +326,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
         fakeDeps({ getUserLocale: vi.fn(async () => 'en' as const) })
       ),
       handleModuleAction(
-        GROUP_SLOT,
-        DEFAULT_UI_PANEL_SLOTS,
+        { slot: GROUP_SLOT, knownSlots: DEFAULT_UI_PANEL_SLOTS },
         silentLogger(),
         IDENTITY_2,
         FAKE_TX,

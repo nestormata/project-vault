@@ -333,8 +333,7 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
       // AC3: identity/orgId are read directly from THIS request's own resolved `secureCtx.auth`
       // — never from `action` (the client-supplied body), never memoized from an earlier call.
       const result = await handleModuleAction(
-        slot,
-        knownSlots,
+        { slot, knownSlots },
         req.log,
         {
           userId: secureCtx.auth.userId,

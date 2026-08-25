@@ -98,7 +98,7 @@ function resolveActionEndpoint(
   status: ExtensionState | undefined,
   slot: string
 ): string | undefined {
-  if (!status || status.status !== 'loaded') return undefined
+  if (status?.status !== 'loaded') return undefined
   const declared = status.manifest.moduleActions
   if (!declared || declared.length === 0) return undefined
   return `/api/v1/extensions/panels/${slot}/actions`
