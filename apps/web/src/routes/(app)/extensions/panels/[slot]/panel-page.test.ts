@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
 import { routeExists } from '$lib/test/route-exists.js'
 import { BASE_EXTENSION_THEME_VARS } from '$lib/security/extension-theme-vars.js'
@@ -115,5 +115,84 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1)', () => {
     expect(document.querySelector('iframe')?.getAttribute('title')).toBe(
       'Extension panel: project-container'
     )
+  })
+
+  describe('Story 25.6 AC5: the message-relay fetch attaches the CSRF token', () => {
+    afterEach(() => {
+      // Clear every cookie this describe block may have set, so no value leaks between tests.
+      document.cookie = 'csrf-token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+      document.cookie = '__Host-csrf-token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+      vi.unstubAllGlobals()
+    })
+
+    function dispatchPanelActionMessage(iframe: HTMLIFrameElement, kind = 'test-action') {
+      const event = new MessageEvent('message', {
+        data: { source: 'pv-extension-panel-action', requestId: 'req-1', kind },
+      })
+      Object.defineProperty(event, 'source', { value: iframe.contentWindow })
+      window.dispatchEvent(event)
+    }
+
+    it('reads the CSRF cookie value and echoes it as the x-csrf-token request header', async () => {
+      document.cookie = 'csrf-token=cookie-csrf-value; path=/'
+      const fetchMock = vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ message: 'ok' }),
+      }))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const { container } = render(ExtensionPanelPage, {
+        props: {
+          data: {
+            ...baseData,
+            html: '<p>x</p>',
+            actionEndpoint: '/api/v1/extensions/panels/group/actions',
+          },
+        },
+      })
+      const iframe = container.querySelector('iframe') as HTMLIFrameElement
+      dispatchPanelActionMessage(iframe)
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      const [, options] = fetchMock.mock.calls[0] as [string, RequestInit]
+      const headers = options.headers as Record<string, string>
+      expect(headers['x-csrf-token']).toBe('cookie-csrf-value')
+    })
+
+    it('prefers the __Host- prefixed cookie name when both are present (production naming)', async () => {
+      // jsdom (like a real browser) refuses to actually SET a `__Host-`-prefixed cookie from a
+      // plain `http://localhost` origin (no Secure context) — this test stubs the `document.cookie`
+      // getter directly instead, to exercise the preference-order logic independent of that
+      // browser-enforced constraint (the constraint itself is exactly why tokens.ts only uses the
+      // `__Host-` name when COOKIE_SECURE/HTTPS is actually on — see its own comment).
+      const cookieGetter = vi
+        .spyOn(document, 'cookie', 'get')
+        .mockReturnValue('csrf-token=bare-value; __Host-csrf-token=host-prefixed-value')
+      const fetchMock = vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ message: 'ok' }),
+      }))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const { container } = render(ExtensionPanelPage, {
+        props: {
+          data: {
+            ...baseData,
+            html: '<p>x</p>',
+            actionEndpoint: '/api/v1/extensions/panels/group/actions',
+          },
+        },
+      })
+      const iframe = container.querySelector('iframe') as HTMLIFrameElement
+      dispatchPanelActionMessage(iframe)
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      const [, options] = fetchMock.mock.calls[0] as [string, RequestInit]
+      const headers = options.headers as Record<string, string>
+      expect(headers['x-csrf-token']).toBe('host-prefixed-value')
+      cookieGetter.mockRestore()
+    })
   })
 })

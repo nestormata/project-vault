@@ -12,6 +12,36 @@
   const PANEL_ACTION_REQUEST_SOURCE = 'pv-extension-panel-action'
   const PANEL_ACTION_RESULT_SOURCE = 'pv-extension-panel-action-result'
 
+  // Story 25.6 AC5 — the double-submit-cookie CSRF token's request-header name. Kept as a literal
+  // string, not an import, since this route never imports server-package code; it is
+  // cross-referenced against `apps/api/src/lib/csrf.ts`'s own `CSRF_HEADER_NAME` export (that
+  // file's own comment points back here) so the two names don't silently drift apart.
+  const CSRF_HEADER_NAME = 'x-csrf-token'
+  // Story 25.6 AC7 — `setAuthCookies()` (apps/api's tokens.ts) names the cookie `__Host-csrf-token`
+  // in production (COOKIE_SECURE/HTTPS) and the bare `csrf-token` otherwise (dev/test, plain HTTP,
+  // where a `__Host-`-prefixed cookie can never even be set) — this reads whichever one is
+  // actually present rather than hardcoding one name, so this relay works unmodified in both
+  // environments.
+  const CSRF_COOKIE_NAMES = ['__Host-csrf-token', 'csrf-token']
+
+  /**
+   * Story 25.6 AC5 — reads the CSRF cookie's own value back out of `document.cookie` (the cookie
+   * is deliberately NOT httpOnly — see tokens.ts's own comment — specifically so this relay can
+   * do this) so it can be echoed as the `x-csrf-token` request header the server's
+   * `isRejectedByCsrfToken()` check (apps/api/src/lib/csrf.ts) requires. Returns `undefined` (never
+   * throws) if the cookie is missing — the server-side check fails closed on that, matching this
+   * page's existing fail-closed conventions elsewhere.
+   */
+  function readCsrfCookie(): string | undefined {
+    const cookies = document.cookie.split(';').map((entry) => entry.trim())
+    for (const cookieName of CSRF_COOKIE_NAMES) {
+      const prefix = `${cookieName}=`
+      const match = cookies.find((entry) => entry.startsWith(prefix))
+      if (match) return decodeURIComponent(match.slice(prefix.length))
+    }
+    return undefined
+  }
+
   /**
    * Story 25.5 AC4/Task 4 — Bug fix (2026-08-24, found via real Chrome-driven manual
    * verification): the panel iframe can never fetch the host's action endpoint directly, no
@@ -56,10 +86,18 @@
       if (data.actionEndpoint === undefined) return
 
       const targetWindow = panelIframe?.contentWindow
+      // Story 25.6 AC5 — attaches the CSRF token this page's own session cookie carries, the
+      // client-side half of the double-submit-cookie pattern the server now requires (AC1/AC2).
+      // Without this, the server's `isRejectedByCsrfToken()` check would reject every legitimate
+      // relayed request too, not just cross-site forgeries.
+      const csrfToken = readCsrfCookie()
       fetch(data.actionEndpoint, {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          ...(csrfToken !== undefined ? { [CSRF_HEADER_NAME]: csrfToken } : {}),
+        },
         body: JSON.stringify({ kind }),
       })
         .then(async (res) => {
