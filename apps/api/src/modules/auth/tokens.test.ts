@@ -117,6 +117,18 @@ describe('Story 25.6 AC1/AC5/AC7: CSRF double-submit-cookie token helpers', () =
     const csrfClear = clearCookie.get(csrfCookieName(env.COOKIE_SECURE))
     expect(csrfClear).toBeDefined()
     expect(csrfClear?.['path']).toBe('/')
+    // Code review fix: a `__Host-`-prefixed cookie can only ever be cleared with a `Secure`
+    // Set-Cookie header — the browser silently drops the clearing header otherwise, leaving the
+    // CSRF cookie alive past logout. Pin that the clear call always carries the matching `secure`
+    // attribute the cookie itself was originally set with.
+    expect(csrfClear?.['secure']).toBe(env.COOKIE_SECURE)
+    // Invariant regardless of the current environment's COOKIE_SECURE value: whenever the cookie
+    // being cleared carries the `__Host-` prefix, the clearing Set-Cookie MUST also be `secure`,
+    // since a `__Host-`-prefixed Set-Cookie header without `Secure` is invalid and browsers
+    // silently drop it — meaning logout would never actually clear the cookie.
+    if (csrfCookieName(env.COOKIE_SECURE).startsWith('__Host-')) {
+      expect(csrfClear?.['secure']).toBe(true)
+    }
   })
 })
 

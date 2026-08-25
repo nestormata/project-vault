@@ -133,7 +133,15 @@ export function clearAuthCookies(reply: CookieReply): void {
   // Story 25.6 AC1 — cleared alongside the session cookies so a CSRF token never outlives the
   // session it was issued for (Dev Notes "Testing requirements": must be invalidated/rotated
   // consistently with the session's own lifecycle).
-  reply.clearCookie(csrfCookieName(env.COOKIE_SECURE), { path: '/' })
+  // Code review fix: the clearing Set-Cookie MUST also carry `secure: true` whenever the cookie
+  // itself was set with the `__Host-` prefix (i.e. env.COOKIE_SECURE) — a `__Host-`-prefixed
+  // Set-Cookie header without the `Secure` attribute is invalid per the `__Host-` prefix rules and
+  // compliant browsers silently ignore it entirely, so omitting `secure` here would mean logout
+  // never actually clears the CSRF cookie in production.
+  reply.clearCookie(csrfCookieName(env.COOKIE_SECURE), {
+    path: '/',
+    secure: env.COOKIE_SECURE,
+  })
 }
 
 /** Minimal shape `buildCookieTokens` needs from the fastify instance — just the jwt plugin's `sign`. */
