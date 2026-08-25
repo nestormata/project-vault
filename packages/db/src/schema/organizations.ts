@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { check, integer, pgTable, uuid, text, timestamp } from 'drizzle-orm/pg-core'
+import { check, integer, pgTable, uniqueIndex, uuid, text, timestamp } from 'drizzle-orm/pg-core'
 
 export const organizations = pgTable(
   'organizations',
@@ -33,6 +33,11 @@ export const organizations = pgTable(
     // `PATCH /themes/selection` already validates `users.selectedThemeName`. This is a deliberate
     // omission, not an oversight — do not add a CHECK constraint here.
     defaultThemeName: text('default_theme_name'),
+    // Story 26.1 (CM-E14.14 Task 1): idempotency key for POST /api/v1/service/organizations —
+    // nullable, set only on organizations created through that service-provisioning endpoint.
+    // Mirrors projects.creationRequestId's exact shape (migration 0082): a nullable UUID column
+    // backed by a partial unique index, never an application-level check alone.
+    serviceProvisioningRequestId: uuid('service_provisioning_request_id'),
   },
   (t) => ({
     dormancyThresholdCheck: check(
@@ -47,5 +52,12 @@ export const organizations = pgTable(
       'organizations_default_locale_check',
       sql`${t.defaultLocale} IN ('en', 'es')`
     ),
+    // Story 26.1: partial unique index — WHERE ... IS NOT NULL means pre-existing organizations
+    // (which never went through this endpoint) never collide with each other.
+    serviceProvisioningRequestIdIdx: uniqueIndex(
+      'idx_organizations_service_provisioning_request_id'
+    )
+      .on(t.serviceProvisioningRequestId)
+      .where(sql`${t.serviceProvisioningRequestId} IS NOT NULL`),
   })
 )

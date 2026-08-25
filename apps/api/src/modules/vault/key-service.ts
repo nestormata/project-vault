@@ -1,6 +1,5 @@
 import { lstatSync, openSync, readSync, closeSync, constants, type Stats } from 'node:fs'
 import { resolve } from 'node:path'
-import { timingSafeEqual } from 'node:crypto'
 import { getDb } from '@project-vault/db'
 import { vaultState } from '@project-vault/db/schema'
 import {
@@ -19,6 +18,7 @@ import {
 import type { EncryptedValue, KeyDerivationParams } from '@project-vault/crypto'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
+import { timingSafeHeaderTokenMatches } from '../../lib/timing-safe-header-token.js'
 import type { VaultInitRequest, VaultUnsealRequest } from './schema.js'
 import { AwsKmsProvider, KmsProviderError, type KmsKeyProvider } from './kms-provider.js'
 
@@ -198,13 +198,7 @@ function assertBootstrapAuthorized(headers: Record<string, string | string[] | u
       403
     )
   }
-  const header = headers['x-vault-bootstrap-token']
-  const supplied = Array.isArray(header) ? header[0] : header
-  if (
-    !supplied ||
-    supplied.length !== token.length ||
-    !timingSafeEqual(Buffer.from(supplied), Buffer.from(token))
-  ) {
+  if (!timingSafeHeaderTokenMatches(headers, 'x-vault-bootstrap-token', token)) {
     throw new AppError(
       'BOOTSTRAP_FORBIDDEN',
       'Vault bootstrap requires valid bootstrap credentials',

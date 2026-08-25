@@ -21123,6 +21123,15 @@
         }
       }
     },
+    "/api/v1/service/organizations": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/api/v1/auth/register": {
       "get": {
         "responses": {
