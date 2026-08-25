@@ -13,6 +13,19 @@ const HOP_BY_HOP_HEADERS = new Set([
   'upgrade',
 ])
 
+// DW-237: `Origin`/`Referer` are browser-attached security headers describing the *browser's*
+// same-origin/cross-origin relationship to this SvelteKit app — they say nothing about, and were
+// never meant to describe, this app's own separate server-to-server hop to the real API. Forwarding
+// them verbatim makes a same-origin browser POST (which Chromium legitimately tags with an `Origin`
+// header) get rejected by `apps/api`'s CORS allowlist (`apps/api/src/app.ts`'s `cors.origin`
+// validator), because that allowlist is checking `env.CORS_ALLOWED_ORIGINS` against a value that
+// only ever made sense for a direct browser->API call, not this app's own trusted server-to-server
+// fetch. CORS is a browser-enforced policy; this hop is never browser-enforced, so these headers are
+// dropped rather than forwarded or rewritten to a synthetic value — there is no existing
+// internal-service-identity header apps/api's CORS check trusts, and inventing one would be a wider
+// change than this narrow proxy hop needs.
+const BROWSER_ONLY_HEADERS = new Set(['origin', 'referer'])
+
 type ProxyOptions = {
   fetchFn: typeof fetch
   request: Request
@@ -32,7 +45,9 @@ function targetUrl(request: Request, apiBaseUrl: string | undefined, pathname: s
 function forwardedHeaders(request: Request) {
   const headers = new Headers()
   for (const [name, value] of request.headers) {
-    if (!HOP_BY_HOP_HEADERS.has(name.toLowerCase())) headers.set(name, value)
+    const lowerName = name.toLowerCase()
+    if (HOP_BY_HOP_HEADERS.has(lowerName) || BROWSER_ONLY_HEADERS.has(lowerName)) continue
+    headers.set(name, value)
   }
   return headers
 }
