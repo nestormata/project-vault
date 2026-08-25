@@ -65,10 +65,10 @@ const manifest: ExtensionManifest = {
     CONTEXT_ECHO_SLOT,
   ],
   // Story 25.5 AC4/Task 4 — declaring at least one moduleAction makes apps/api populate
-  // UIPanelContext.actionEndpoint and apps/web widen the composed panel's CSP with
-  // connect-src 'self', so this fixture's own panel can exercise the real end-to-end action
-  // round trip in Chrome-driven manual verification, not just a direct handleModuleAction() unit
-  // test.
+  // UIPanelContext.actionEndpoint, which this fixture's panel uses to gate rendering its action
+  // button, so this fixture's own panel can exercise the real end-to-end action round trip (via
+  // the postMessage relay to the host — see onRenderPanel's own comment) in Chrome-driven manual
+  // verification, not just a direct handleModuleAction() unit test.
   moduleActions: [TEST_ACTION_KIND],
 }
 
@@ -107,9 +107,19 @@ const uiPanel: UIPanel = {
     // once composed by `apps/web`'s panel-document composition function.
     //
     // Story 25.5 AC4/Task 4 — when `actionEndpoint` is present (declared moduleActions), renders
-    // a real button wired to `fetch(actionEndpoint, ...)`, mirroring CentralizeMe's own
-    // `dispatch()` pattern, so a Chrome-driven manual verification can exercise the actual round
-    // trip (CSP connect-src, Sec-Fetch-Site enforcement, response rendering) end to end.
+    // a real button that dispatches the action via `postMessage` to the host page, which relays
+    // the real, authenticated fetch on this panel's behalf and posts the result back.
+    //
+    // Bug fix (2026-08-24, found via real Chrome-driven manual verification): this originally
+    // had the button `fetch(actionEndpoint, ...)` directly from inside the panel iframe. That
+    // can never work — the iframe's `sandbox="allow-scripts"` (no `allow-same-origin`, a
+    // non-negotiable Story 25.1 requirement) forces it into an opaque origin, so any fetch it
+    // issues is cross-origin by definition and `credentials: 'same-origin'` never attaches the
+    // session cookie, regardless of CSP. The panel no longer knows or needs `actionEndpoint`'s
+    // URL at all — it only needs to know actions are available (this fixture still gates the
+    // button's existence on that), and sends the action `kind` to the host via `postMessage`;
+    // the host owns resolving and fetching the real endpoint. See `+page.svelte`'s message-relay
+    // handler for the host side of this exchange.
     return {
       html:
         `<html><body>` +
@@ -118,20 +128,22 @@ const uiPanel: UIPanel = {
           ? `<button id="test-action-button" type="button">Run test action</button>` +
             `<p id="test-action-result" aria-live="polite"></p>` +
             `<script>
-              document.getElementById('test-action-button').addEventListener('click', async () => {
+              document.getElementById('test-action-button').addEventListener('click', () => {
                 const resultEl = document.getElementById('test-action-result');
-                try {
-                  const res = await fetch(${JSON.stringify(context.actionEndpoint)}, {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: { 'content-type': 'application/json' },
-                    body: JSON.stringify({ kind: ${JSON.stringify(TEST_ACTION_KIND)} }),
-                  });
-                  const body = await res.json();
-                  resultEl.textContent = 'status:' + res.status + ' message:' + (body.message || body.html || '');
-                } catch (err) {
-                  resultEl.textContent = 'fetch-failed';
+                const requestId = Math.random().toString(36).slice(2);
+                function handleResult(event) {
+                  const data = event.data;
+                  if (!data || data.source !== 'pv-extension-panel-action-result' || data.requestId !== requestId) return;
+                  window.removeEventListener('message', handleResult);
+                  resultEl.textContent = data.ok
+                    ? 'status:' + data.status + ' message:' + (data.message || '')
+                    : 'fetch-failed';
                 }
+                window.addEventListener('message', handleResult);
+                parent.postMessage(
+                  { source: 'pv-extension-panel-action', requestId: requestId, kind: ${JSON.stringify(TEST_ACTION_KIND)} },
+                  '*'
+                );
               });
             </script>`
           : '') +

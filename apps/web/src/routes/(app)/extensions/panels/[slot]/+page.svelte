@@ -3,6 +3,93 @@
   let { data } = $props()
 
   let heading: HTMLHeadingElement | undefined
+  // $state (unlike `heading` above) because the message-relay handler below reads this from
+  // inside an event-listener closure, not directly in a reactive ($effect) scope — Svelte can't
+  // otherwise guarantee that closure observes reassignment (e.g. a later slot navigation
+  // re-binding the iframe element).
+  let panelIframe: HTMLIFrameElement | undefined = $state(undefined)
+
+  const PANEL_ACTION_REQUEST_SOURCE = 'pv-extension-panel-action'
+  const PANEL_ACTION_RESULT_SOURCE = 'pv-extension-panel-action-result'
+
+  /**
+   * Story 25.5 AC4/Task 4 — Bug fix (2026-08-24, found via real Chrome-driven manual
+   * verification): the panel iframe can never fetch the host's action endpoint directly, no
+   * matter what its CSP allows. `sandbox="allow-scripts"` without `allow-same-origin` (Story
+   * 25.1's non-negotiable requirement) forces the iframe's document into an opaque origin, so
+   * ANY fetch it issues is cross-origin by definition — `credentials: 'same-origin'` never
+   * attaches the session cookie, and the browser blocks the request outright
+   * (`TypeError: Failed to fetch`) regardless of `connect-src`. Confirmed live: the identical
+   * request succeeds (200, real session) when issued from this parent page, but fails when
+   * issued from inside the iframe.
+   *
+   * The fix: the panel now dispatches actions via `postMessage` instead of fetching directly.
+   * This parent page — which has the real PV origin and the real session cookie — relays the
+   * request to `data.actionEndpoint` on the panel's behalf and posts the result back. This is
+   * also a net security improvement over the original direct-fetch design: the host mediates
+   * every action request rather than granting the sandboxed extension its own network access,
+   * consistent with `renderExtensionPanel()`'s existing "host decides, extension never touches
+   * the network directly" posture.
+   *
+   * `event.source === panelIframe?.contentWindow` is the load-bearing check here — it identifies
+   * WHICH window sent the message by object identity, which is reliable even though the iframe's
+   * own origin is opaque (so `event.origin` is always the literal string `"null"` and can't be
+   * used to distinguish this iframe from any other opaque-origin content on the page). Every
+   * other field in the incoming message is untrusted extension-influenced input and is validated
+   * before use; `data.actionEndpoint` — the actual fetch target — always comes from this page's
+   * own server-resolved data, never from the message, so a compromised or malicious extension
+   * can never redirect this relay to an arbitrary URL.
+   */
+  $effect(() => {
+    function handlePanelMessage(event: MessageEvent) {
+      if (event.source !== panelIframe?.contentWindow) return
+      const message = event.data as unknown
+      if (
+        typeof message !== 'object' ||
+        message === null ||
+        (message as Record<string, unknown>)['source'] !== PANEL_ACTION_REQUEST_SOURCE
+      ) {
+        return
+      }
+      const { requestId, kind } = message as Record<string, unknown>
+      if (typeof requestId !== 'string' || typeof kind !== 'string') return
+      if (data.actionEndpoint === undefined) return
+
+      const targetWindow = panelIframe?.contentWindow
+      fetch(data.actionEndpoint, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind }),
+      })
+        .then(async (res) => {
+          const body: unknown = await res.json().catch(() => null)
+          const message =
+            body !== null && typeof body === 'object' && 'message' in body
+              ? String((body as Record<string, unknown>)['message'])
+              : undefined
+          targetWindow?.postMessage(
+            {
+              source: PANEL_ACTION_RESULT_SOURCE,
+              requestId,
+              ok: true,
+              status: res.status,
+              message,
+            },
+            '*'
+          )
+        })
+        .catch(() => {
+          targetWindow?.postMessage(
+            { source: PANEL_ACTION_RESULT_SOURCE, requestId, ok: false },
+            '*'
+          )
+        })
+    }
+
+    window.addEventListener('message', handlePanelMessage)
+    return () => window.removeEventListener('message', handlePanelMessage)
+  })
 
   // Story 25.4 AC5 — WAI-ARIA APG SPA-navigation focus-management pattern: PV's Svelte routes
   // never do a full-page reload on navigation, so nothing moves keyboard focus to the new page's
@@ -33,13 +120,12 @@
   // Story 25.4 AC1/AC4 — the extension's raw html fragment is never assigned to `srcdoc` directly
   // any more; it is always wrapped by the host-controlled composition function first (CSP meta +
   // --pv-ext-* theme block + the fragment itself, verbatim — AC2 RESOLVED: no sanitizer).
-  // Story 25.5 AC4/Task 4 — data.actionsOrigin conditionally widens the composed CSP's
-  // connect-src to the real PV origin, only when the loaded extension actually declares
-  // moduleActions. Bug fix (2026-08-24): must be the real origin, never the 'self' keyword —
-  // see compose-panel-document.ts's bug-fix comment for why 'self' can never resolve inside
-  // this iframe's opaque-origin sandbox.
+  // Story 25.5 AC4/Task 4 — module actions no longer widen this composed CSP (see
+  // compose-panel-document.ts's design-history comment): the panel dispatches actions via the
+  // postMessage relay above instead of fetching directly, so it never needs outbound network
+  // access at all.
   const srcdoc = $derived(
-    data.html !== null ? composePanelDocument(data.html, data.themeVars, data.actionsOrigin) : null
+    data.html !== null ? composePanelDocument(data.html, data.themeVars) : null
   )
 </script>
 
@@ -68,7 +154,12 @@
       own Dev Notes explicitly flagged this as future scope — this is that story).
     -->
     <div class="mt-6 overflow-hidden rounded-2xl border border-slate-200">
-      <iframe title={iframeTitle} sandbox="allow-scripts" {srcdoc} class="h-[70vh] w-full border-0"
+      <iframe
+        bind:this={panelIframe}
+        title={iframeTitle}
+        sandbox="allow-scripts"
+        {srcdoc}
+        class="h-[70vh] w-full border-0"
       ></iframe>
     </div>
   {:else}

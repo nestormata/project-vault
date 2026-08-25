@@ -101,14 +101,6 @@ const SAFE_LOCAL_ENDPOINT_FILES = new Set([
   'apps/api/src/modules/audit/quota-gate.test.ts',
   'apps/api/src/modules/audit/quota-config.test.ts',
   'apps/api/src/workers/audit-org-usage-reconcile.test.ts',
-  // Story 25.5: CSP connect-src bug fix (2026-08-24) -- these tests assert against a literal
-  // dev-origin string (e.g. 'http://localhost:3000') to pin that composePanelDocument() emits the
-  // real, concrete origin rather than the unusable 'self' keyword inside the panel iframe's
-  // opaque-origin sandbox. The literal string IS the thing under test, not an operational detail
-  // being leaked -- same class of false positive as the pre-existing DATABASE_URL dev-default
-  // entries above.
-  'apps/web/src/lib/security/compose-panel-document.test.ts',
-  'apps/web/src/routes/(app)/extensions/panels/[slot]/panel-page.server.test.ts',
 ])
 
 function makeFinding(

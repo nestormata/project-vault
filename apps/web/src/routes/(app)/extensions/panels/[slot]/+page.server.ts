@@ -7,7 +7,6 @@ import {
   resolveExtensionThemeVars,
 } from '$lib/security/extension-theme-vars.js'
 import type { ExtensionThemeVars } from '$lib/security/extension-theme-vars.js'
-import { assertTrustedOrigin } from '@project-vault/shared'
 import type { PageServerLoad } from './$types.js'
 
 // Story 25.1 AC3: every degraded cause (throw, timeout, malformed result, permanently-absent
@@ -17,14 +16,10 @@ export type ExtensionPanelPageData = {
   slot: string
   html: string | null
   themeVars: ExtensionThemeVars
-  // Story 25.5 AC4/Task 4: actionsOrigin drives compose-panel-document.ts's conditional
-  // connect-src widening (undefined = no widening); actionEndpoint is forwarded through
-  // unchanged from the API response (undefined, never '', when the loaded extension declares no
-  // moduleActions). actionsOrigin is this request's own trusted origin (never the literal
-  // 'self' keyword — see compose-panel-document.ts's bug-fix comment for why that keyword can
-  // never work inside this iframe's opaque-origin sandbox), populated only alongside
-  // actionEndpoint.
-  actionsOrigin: string | undefined
+  // Story 25.5 AC4/Task 4: forwarded through unchanged from the API response (undefined, never
+  // '', when the loaded extension declares no moduleActions). The client-side postMessage relay
+  // (+page.svelte) uses this as the real, authenticated fetch target when relaying an action
+  // request from the panel iframe — the iframe itself never sees or needs this URL.
   actionEndpoint: string | undefined
 }
 
@@ -51,7 +46,7 @@ async function resolveThemeVars(fetchFn: typeof fetch): Promise<ExtensionThemeVa
   }
 }
 
-export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
+export const load: PageServerLoad = async ({ params, fetch, locals }) => {
   // Defense in depth alongside auth-guard.ts's isProtectedAppPath redirect-to-login (AC1) — this
   // page is unreachable server-side without a resolved session either way.
   requireUser(locals)
@@ -60,19 +55,11 @@ export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
 
   try {
     const result = await getExtensionPanel(fetch, params.slot)
-    const actionEndpoint = result.ok ? result.actionEndpoint : undefined
-    // Bug fix (2026-08-24, found via Chrome-driven manual verification): the composed panel's
-    // CSP needs the real, concrete PV origin here — not the 'self' keyword, which can never
-    // match inside the panel iframe's opaque-origin sandbox (see compose-panel-document.ts).
-    // Only resolved when actually needed (an extension declaring actions), same as
-    // resolveTrustedOrigin()'s existing credential-detail/status-page precedent.
-    const actionsOrigin = actionEndpoint !== undefined ? assertTrustedOrigin(url.origin) : undefined
     return {
       slot: params.slot,
       html: result.ok ? result.html : null,
       themeVars,
-      actionsOrigin,
-      actionEndpoint,
+      actionEndpoint: result.ok ? result.actionEndpoint : undefined,
     } satisfies ExtensionPanelPageData
   } catch {
     // Covers both a 400 (invalid slot) and any other unexpected non-2xx — same calm placeholder
@@ -82,7 +69,6 @@ export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
       slot: params.slot,
       html: null,
       themeVars,
-      actionsOrigin: undefined,
       actionEndpoint: undefined,
     } satisfies ExtensionPanelPageData
   }

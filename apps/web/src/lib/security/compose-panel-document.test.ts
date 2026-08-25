@@ -38,56 +38,26 @@ describe('composePanelDocument (Story 25.4 AC1)', () => {
     expect(result).toContain('<meta http-equiv="Content-Security-Policy"')
   })
 
-  describe('Story 25.5 AC4/Task 4: conditional connect-src widening', () => {
-    it('has no connect-src directive by default (actionsOrigin omitted)', () => {
-      const result = composePanelDocument('<p>hello</p>', BASE_EXTENSION_THEME_VARS)
+  /**
+   * Story 25.5 AC4/Task 4 — Design history (2026-08-24): this composed document originally tried
+   * to widen its CSP with `connect-src 'self'`, then (a first bug fix) `connect-src <real
+   * origin>`, so the panel iframe could fetch the host's action endpoint directly. Both attempts
+   * were wrong for the same reason — the panel iframe's opaque origin (from
+   * `sandbox="allow-scripts"` with no `allow-same-origin`, a non-negotiable Story 25.1
+   * requirement) means ANY fetch it issues is cross-origin by definition, so
+   * `credentials: 'same-origin'` never attaches the session cookie regardless of what
+   * `connect-src` permits — confirmed live by comparing the identical request issued from inside
+   * the iframe (blocked, `TypeError: Failed to fetch`) versus from the parent page (200, real
+   * session). The real fix is architectural, not a CSP value: the panel now dispatches actions
+   * via `postMessage` to the parent, which performs the real authenticated fetch on its behalf
+   * (see `+page.svelte`). The panel iframe itself never needs outbound network access, so this
+   * composed document's CSP is unconditionally Story 25.4's original, narrower policy again — no
+   * `connect-src` directive, ever, regardless of whether the extension declares moduleActions.
+   */
+  it('never emits a connect-src directive — the panel iframe never fetches directly (postMessage relay owns network access)', () => {
+    const result = composePanelDocument('<p>hello</p>', BASE_EXTENSION_THEME_VARS)
 
-      expect(result).not.toContain('connect-src')
-    })
-
-    it('has no connect-src directive when actionsOrigin is explicitly undefined', () => {
-      const result = composePanelDocument('<p>hello</p>', BASE_EXTENSION_THEME_VARS, undefined)
-
-      expect(result).not.toContain('connect-src')
-    })
-
-    /**
-     * Code-review-caught, Chrome-verification-confirmed bug fix (2026-08-24): `connect-src
-     * 'self'` was the ORIGINALLY implemented value, per the story's own AC4 text. Live testing
-     * in a real browser found it does NOT work — the panel iframe has `sandbox="allow-scripts"`
-     * WITHOUT `allow-same-origin` (a deliberate, non-negotiable security requirement — see
-     * Story 25.1 AC4), which forces the iframe's document into a unique, opaque origin. Per the
-     * CSP spec, the `'self'` keyword resolves to the requesting document's OWN origin — an opaque
-     * origin can never equal any concrete, serializable origin, so `connect-src 'self'` silently
-     * blocks every fetch from this iframe, including the intended same-PV-origin action request.
-     * The fix: pass the actual PV origin as an explicit source value instead of the `'self'`
-     * keyword. This is still narrow (exactly one literal origin, never a wildcard) and still
-     * only appears when the extension actually declares actions (AC4's own scoping requirement),
-     * it just names the origin explicitly rather than relying on a keyword that can never
-     * resolve inside this specific sandbox configuration.
-     */
-    it("adds exactly connect-src <the real PV origin> (not a wildcard, not the unusable 'self' keyword) when actionsOrigin is provided", () => {
-      const result = composePanelDocument(
-        '<p>hello</p>',
-        BASE_EXTENSION_THEME_VARS,
-        'http://localhost:3000'
-      )
-
-      const meta = /content="([^"]*)"/.exec(result)
-      expect(meta?.[1]).toBe(
-        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; connect-src http://localhost:3000"
-      )
-    })
-
-    it("never emits the literal connect-src 'self' directive, even when actions are enabled (regression pin for the opaque-origin bug)", () => {
-      const result = composePanelDocument(
-        '<p>hello</p>',
-        BASE_EXTENSION_THEME_VARS,
-        'https://vault.example.com'
-      )
-
-      expect(result).not.toContain("connect-src 'self'")
-    })
+    expect(result).not.toContain('connect-src')
   })
 
   it('AC1 edge/Red Team finding: an extension-supplied conflicting CSP <meta> or <base> tag never overrides the host head-level policy', () => {

@@ -52,37 +52,33 @@ function buildThemeStyleBlock(themeVars: ExtensionThemeVars): string {
  * user's extension output is never accidentally cached and served to another.
  */
 /**
- * Story 25.5 AC4/Task 4 — `actionsOrigin` (default `undefined`) widens the CSP with exactly
- * `connect-src <actionsOrigin>`, closing the forward obligation Story 25.4 flagged for this
- * story. This is conditional, not unconditional: a panel from an extension declaring no
- * `moduleActions` renders with exactly Story 25.4's original, narrower CSP (no `connect-src` at
- * all), a deliberate Boundary & Edge Case Sweep finding.
- *
- * **Bug fix (2026-08-24, found via real Chrome-driven manual verification, not caught by any
- * unit test):** this originally used the `'self'` keyword, per the story's own AC4 text. That
- * does not work. The panel iframe is `sandbox="allow-scripts"` with NO `allow-same-origin` (a
+ * Story 25.5 AC4/Task 4 — Design history: this originally tried to widen the CSP with
+ * `connect-src 'self'` (then, after a first bug fix, `connect-src <real-origin>`) so the panel
+ * iframe could `fetch()` the host's action endpoint directly. **Both attempts were wrong for the
+ * same underlying reason, found via real Chrome-driven manual verification, not caught by any
+ * unit test:** the panel iframe is `sandbox="allow-scripts"` with NO `allow-same-origin` (a
  * deliberate, non-negotiable Story 25.1 requirement), which forces the iframe's document into a
- * unique, opaque origin. Per the CSP spec, `'self'` resolves to the requesting document's own
- * origin — an opaque origin never equals any concrete origin, so `connect-src 'self'` silently
- * blocks every fetch from this iframe before any network activity even starts (confirmed live:
- * clicking the fixture's action button produced a caught `fetch` rejection, zero network
- * requests). The fix is to pass the real, concrete PV origin as an explicit source value
- * instead — still exactly one literal origin (never a wildcard, never multiple), just named
- * rather than relying on a keyword that can never resolve inside this sandbox configuration.
+ * unique, opaque origin. `'self'` can never resolve to a concrete origin from an opaque one (that
+ * was the first bug). Fixing the CSP source to the real, concrete origin closed that specific
+ * hole but exposed a deeper one: ANY fetch issued by an opaque-origin document is a cross-origin
+ * request by definition, so `credentials: 'same-origin'` never actually attaches the user's
+ * session cookies, and the browser blocks the request outright with `TypeError: Failed to fetch`
+ * before any CORS-permitting response could even matter — confirmed live by comparing the exact
+ * same request issued from the iframe (fails) versus from the parent page itself (200, real
+ * session). No CSP `connect-src` value fixes that; it isn't a CSP problem.
+ *
+ * The actual fix (2026-08-24) is architectural, not a CSP tweak: the extension panel now
+ * dispatches module actions via `postMessage` to the parent page (see `+page.svelte`), and the
+ * PARENT — which has the real PV origin and the real session — performs the authenticated fetch
+ * on the panel's behalf, then posts the result back. The panel iframe itself never needs outbound
+ * network access at all, so this composed document's CSP goes back to Story 25.4's original,
+ * unconditional, narrower policy — no `connect-src` directive, ever.
  */
-export function composePanelDocument(
-  extensionHtml: string,
-  themeVars: ExtensionThemeVars,
-  actionsOrigin?: string
-): string {
+export function composePanelDocument(extensionHtml: string, themeVars: ExtensionThemeVars): string {
   const themeStyleBlock = buildThemeStyleBlock(themeVars)
-  const csp =
-    actionsOrigin !== undefined
-      ? `${EXTENSION_PANEL_CSP}; connect-src ${actionsOrigin}`
-      : EXTENSION_PANEL_CSP
   return (
     `<!doctype html><html><head><meta charset="utf-8">` +
-    `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
+    `<meta http-equiv="Content-Security-Policy" content="${EXTENSION_PANEL_CSP}">` +
     `${themeStyleBlock}</head><body>${extensionHtml}</body></html>`
   )
 }
