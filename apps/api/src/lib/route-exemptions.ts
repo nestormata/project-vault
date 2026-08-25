@@ -155,6 +155,18 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     expiresAfterStory: null,
   },
   {
+    route: 'POST /api/v1/service/organizations',
+    reason:
+      "Story 26.1 (CM-E14.14 Task 1) -- service/admin org+user provisioning endpoint for a trusted platform partner (CentralizeMe). The caller has no PV session and cannot have one (it is bootstrapping a brand-new org/user from zero) -- SecureRoute's org-authenticated path structurally cannot apply here, mirroring /vault/init's 'auth stack not yet available' shape.",
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      'static-service-token-timing-safe-compare',
+      'fail-closed-when-unconfigured',
+      'idempotency-key-unique-constraint',
+    ],
+    expiresAfterStory: null,
+  },
+  {
     route: 'POST /api/v1/auth/machine-token',
     reason:
       'Story 7.2 D2/D4 — pre-auth machine-user API key exchange endpoint; the caller has no session and no org context is resolvable until the key is looked up by hash via the admin connection.',

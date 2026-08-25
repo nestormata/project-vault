@@ -878,6 +878,15 @@ const envSchema = z
       .default('false')
       .transform((v) => v === 'true'),
 
+    // Story 26.1 (CM-E14.14 Task 1): static shared-secret gate for
+    // POST /api/v1/service/organizations, mirroring VAULT_BOOTSTRAP_TOKEN's exact shape/threat
+    // model — a dedicated secret, never shared with VAULT_BOOTSTRAP_TOKEN or any other secret.
+    // Unset means the route is unreachable (fail-closed default). Generate: openssl rand -base64 32
+    SERVICE_PROVISIONING_TOKEN: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.string().min(32).optional()
+    ),
+
     // Story 1.14 AC-22: LocalStack/test-only KMSClient endpoint override — never consulted for
     // anything except constructing the KMSClient's `endpoint` option. Production never sets
     // this; the AWS SDK talks to the real regional KMS endpoint by default (mirrors
