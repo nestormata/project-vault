@@ -1,5 +1,5 @@
 import { randomBytes, createHmac } from 'node:crypto'
-import type { FastifyReply, FastifyRequest } from 'fastify'
+import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from 'fastify'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
 import {
@@ -13,11 +13,13 @@ import {
   users,
   type ProjectInvitation,
 } from '@project-vault/db/schema'
-import { AuditEvent } from '@project-vault/shared'
+import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { AppError } from '../../lib/errors.js'
 import { env } from '../../config/env.js'
 import { secureRoute } from '../../lib/secure-route.js'
+import { operationalLog } from '../../lib/logger.js'
+import { raceWithTimeout } from '../../lib/race-with-timeout.js'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
@@ -246,9 +248,34 @@ async function rejectInvalidState(reply: FastifyReply, meta: RequestMeta): Promi
 
 // ---------------------------------------------------------------------------
 // AC-9: bounded timeout around onAuthenticate()
+// Story 25.7 AC5: migrated from a bespoke hand-rolled Promise.race (duplicating
+// `race-with-timeout.ts`'s exact eager-no-op-`.catch()`/`clearTimeout`-in-`finally` shape) to the
+// shared `raceWithTimeout()` primitive every other wrapped hook call site already uses. This
+// thin adapter preserves `AuthenticateTimeoutError` and its exact throw-on-timeout,
+// rethrow-on-throw externally-observable behavior for `handleCallback()`'s existing bare `catch`
+// — callers cannot tell the difference.
 // ---------------------------------------------------------------------------
 
 class AuthenticateTimeoutError extends Error {}
+
+type AuthenticateLogger = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>
+
+function logAuthenticateFailed(
+  logger: AuthenticateLogger,
+  providerName: string,
+  subReason: 'timed_out' | 'threw'
+): void {
+  // AC4: the strategy's own thrown error text/stack is never included here — logged server-side
+  // only, as a fixed-enum subReason, mirroring extension-panel.ts's/module-action-handler.ts's/
+  // routes.ts's own never-leak-internal-detail discipline for their equivalent failure logs.
+  operationalLog(
+    logger,
+    'error',
+    OperationalEvent.EXTENSION_AUTHENTICATE_FAILED,
+    'Extension onAuthenticate failed',
+    { providerName, subReason }
+  )
+}
 
 async function invokeOnAuthenticateWithTimeout(
   strategy: {
@@ -259,22 +286,21 @@ async function invokeOnAuthenticateWithTimeout(
       displayName?: string
     }>
   },
-  credential: string
+  credential: string,
+  providerName: string,
+  logger: AuthenticateLogger
 ) {
-  const attempt = strategy.onAuthenticate(credential)
-  attempt.catch(() => undefined)
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(
-      () => reject(new AuthenticateTimeoutError('onAuthenticate timed out')),
-      AUTHENTICATE_TIMEOUT_MS
-    )
-  })
-  try {
-    return await Promise.race([attempt, timeoutPromise])
-  } finally {
-    clearTimeout(timeoutHandle)
+  const raced = await raceWithTimeout(
+    () => strategy.onAuthenticate(credential),
+    AUTHENTICATE_TIMEOUT_MS
+  )
+  if (raced.status === 'resolved') return raced.value
+  if (raced.status === 'timed_out') {
+    logAuthenticateFailed(logger, providerName, 'timed_out')
+    throw new AuthenticateTimeoutError('onAuthenticate timed out')
   }
+  logAuthenticateFailed(logger, providerName, 'threw')
+  throw raced.error
 }
 
 // ---------------------------------------------------------------------------
@@ -643,7 +669,12 @@ async function handleCallback(
     displayName?: string
   }
   try {
-    authResult = await invokeOnAuthenticateWithTimeout(entry.strategy, credential ?? '')
+    authResult = await invokeOnAuthenticateWithTimeout(
+      entry.strategy,
+      credential ?? '',
+      providerName,
+      request.log
+    )
   } catch {
     return handleProviderError(reply, meta)
   }

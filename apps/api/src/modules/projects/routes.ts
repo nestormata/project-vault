@@ -1,11 +1,12 @@
 import { and, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { randomUUID } from 'node:crypto'
-import type { FastifyReply, FastifyRequest } from 'fastify'
+import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod/v4'
 import {
   ActiveMachineUserKeysErrorSchema,
   ActiveSharesErrorSchema,
   AuditEvent,
+  OperationalEvent,
   type ProjectRole,
 } from '@project-vault/shared'
 import type { ProjectCreatePolicy } from '@project-vault/extension-api'
@@ -62,6 +63,8 @@ import {
 } from './archive-guards.js'
 import { activeMachineUserKeysQuery } from '../machine-users/archival-check.js'
 import { getExtensionStatus } from '../../extensions/loader.js'
+import { operationalLog } from '../../lib/logger.js'
+import { raceWithTimeout } from '../../lib/race-with-timeout.js'
 
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
 const CREATION_REQUEST_CONFLICT = {
@@ -349,25 +352,75 @@ async function readProjectCount(secureCtx: SecureRouteContext): Promise<number> 
   return Number(countRow?.count ?? 0)
 }
 
+// Story 25.7 AC1: the one confirmed gap in extension hook timeout wrapping, closed here — reuses
+// `extension-panel.ts`'s own RENDER_PANEL_TIMEOUT_MS value (10_000ms) verbatim, matching
+// `module-action-handler.ts`'s own MODULE_ACTION_TIMEOUT_MS choice to reuse that same interim
+// numeric default rather than invent a new one. Project creation is a user-initiated, not
+// high-frequency, hot path — the same rationale that justified reusing it for onAction().
+const PROJECT_CREATE_POLICY_TIMEOUT_MS = 10_000
+
+const PROJECT_CREATION_NOT_PERMITTED = {
+  code: 'project_creation_not_permitted',
+  message: 'Project creation is not available for this organization',
+} as const
+
+type ProjectLifecycleLogger = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>
+
+function logProjectLifecycleFailed(
+  logger: ProjectLifecycleLogger,
+  subReason: 'timed_out' | 'threw'
+): void {
+  // AC4: the hook's own thrown error text/stack is never included here — logged server-side
+  // only, as a fixed-enum subReason, mirroring `extension-panel.ts`'s `logUnavailable()` and
+  // `module-action-handler.ts`'s `logModuleActionFailed()` never-leak-internal-detail discipline.
+  operationalLog(
+    logger,
+    'error',
+    OperationalEvent.EXTENSION_PROJECT_LIFECYCLE_FAILED,
+    'Extension project-lifecycle policy failed',
+    { subReason }
+  )
+}
+
 async function evaluateProjectCreatePolicy(
   secureCtx: SecureRouteContext,
   body: CreateProjectBody,
-  creationRequestId: string
+  creationRequestId: string,
+  logger: ProjectLifecycleLogger
 ): Promise<{ code: string; message: string } | undefined> {
   const projectCreatePolicy = getProjectCreatePolicy()
   if (!projectCreatePolicy) return undefined
-  const decision = await projectCreatePolicy.onBeforeCreateProject({
-    organizationId: secureCtx.auth.orgId,
-    actorUserId: secureCtx.auth.userId,
-    projectName: body.name,
-    currentProjectCount: await readProjectCount(secureCtx),
-    creationRequestId,
-  })
-  if (decision.permitted) return undefined
-  return {
-    code: 'project_creation_not_permitted',
-    message: 'Project creation is not available for this organization',
+
+  // Story 25.7 AC1/AC2: the current-project-count read and the hook call itself are both wrapped
+  // in the SAME race-with-timeout attempt (mirroring `resolvePanelContextAndRender()`'s and
+  // `resolveModuleActionContextAndDispatch()`'s own "one atomic attempt" convention) — a DB
+  // failure resolving the count degrades to the identical fail-closed denial a hook throw/timeout
+  // already produces, never a raw 500.
+  const raced = await raceWithTimeout(
+    async () =>
+      projectCreatePolicy.onBeforeCreateProject({
+        organizationId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        projectName: body.name,
+        currentProjectCount: await readProjectCount(secureCtx),
+        creationRequestId,
+      }),
+    PROJECT_CREATE_POLICY_TIMEOUT_MS
+  )
+
+  if (raced.status === 'timed_out') {
+    logProjectLifecycleFailed(logger, 'timed_out')
+    return PROJECT_CREATION_NOT_PERMITTED
   }
+  if (raced.status === 'rejected') {
+    logProjectLifecycleFailed(logger, 'threw')
+    return PROJECT_CREATION_NOT_PERMITTED
+  }
+
+  if (raced.value.permitted) return undefined
+  // AC2/Failure Mode Analysis: the SAME denial shape a timeout/throw produces — the hook's own
+  // explicit denial is never distinguished from a degraded-state denial on the wire.
+  return PROJECT_CREATION_NOT_PERMITTED
 }
 
 async function resolveProjectSlug(
@@ -402,7 +455,11 @@ async function resolveProjectInsertConflict(
   return { error: sameOrgSlug ? PROJECT_SLUG_TAKEN : CREATION_REQUEST_CONFLICT }
 }
 
-async function createProject(secureCtx: SecureRouteContext, body: CreateProjectBody) {
+async function createProject(
+  secureCtx: SecureRouteContext,
+  body: CreateProjectBody,
+  logger: ProjectLifecycleLogger
+) {
   try {
     const creationRequestId = body.creationRequestId ?? randomUUID()
 
@@ -415,7 +472,12 @@ async function createProject(secureCtx: SecureRouteContext, body: CreateProjectB
 
     const replay = await findReplayedProject(secureCtx, creationRequestId)
     if (replay) return replay
-    const policyError = await evaluateProjectCreatePolicy(secureCtx, body, creationRequestId)
+    const policyError = await evaluateProjectCreatePolicy(
+      secureCtx,
+      body,
+      creationRequestId,
+      logger
+    )
     if (policyError) return { error: policyError }
     const slug = await resolveProjectSlug(secureCtx, body)
 
@@ -478,7 +540,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       const parsed = parseBody(CreateProjectBodySchema, req, reply)
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
-      const result = await createProject(secureCtx, parsed.data)
+      const result = await createProject(secureCtx, parsed.data, req.log)
       if ('error' in result) return reply.status(409).send(result.error)
       if (!result.replayed) {
         await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {

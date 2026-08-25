@@ -54,6 +54,13 @@ const PROJECT_POLICY_MANIFEST: ExtensionManifest = {
   apiVersion: '1.5.0',
   capabilities: ['project-lifecycle'],
 }
+// Story 25.7 AC2: the same fail-closed denial body a hook's own explicit permitted:false
+// decision, a throw, and a timeout all resolve to — asserted identically by all three call
+// sites below.
+const PROJECT_CREATION_NOT_PERMITTED_BODY = {
+  code: 'project_creation_not_permitted',
+  message: 'Project creation is not available for this organization',
+}
 
 function uniqueEmail(label: string): string {
   return `projects-${label}-${randomUUID()}@example.com`
@@ -262,10 +269,7 @@ describe.sequential('project routes', () => {
       })
 
       expect(response.statusCode).toBe(409)
-      expect(response.json()).toEqual({
-        code: 'project_creation_not_permitted',
-        message: 'Project creation is not available for this organization',
-      })
+      expect(response.json()).toEqual(PROJECT_CREATION_NOT_PERMITTED_BODY)
       expect(onBeforeCreateProject).toHaveBeenCalledWith({
         organizationId: user.orgId,
         actorUserId: user.userId,
@@ -282,7 +286,7 @@ describe.sequential('project routes', () => {
     }
   }, 60_000)
 
-  it('fails closed when a loaded project policy throws without committing project state', async () => {
+  it('Story 25.7 AC1/AC2: fails closed (denial, never a raw 500) when a loaded project policy throws, without committing project state', async () => {
     const user = await registerUser(app, 'policy-throws')
     const onBeforeCreateProject = vi.fn().mockRejectedValue(new Error('policy unavailable'))
     __setExtensionStateForTests({
@@ -300,7 +304,11 @@ describe.sequential('project routes', () => {
         payload: { name: 'Throwing Policy', creationRequestId: randomUUID() },
       })
 
-      expect(response.statusCode).toBe(500)
+      // AC2/Failure Mode Analysis finding: a throw from onBeforeCreateProject() must be treated
+      // IDENTICALLY to the hook's own explicit permitted:false denial — never a raw 500, and
+      // never silently permitted.
+      expect(response.statusCode).toBe(409)
+      expect(response.json()).toEqual(PROJECT_CREATION_NOT_PERMITTED_BODY)
       const projectsAfterThrow = await withOrg(user.orgId, (tx) =>
         tx.select({ id: projects.id }).from(projects).where(eq(projects.createdBy, user.userId))
       )
@@ -309,6 +317,38 @@ describe.sequential('project routes', () => {
       __resetExtensionStateForTests()
     }
   }, 60_000)
+
+  it('Story 25.7 AC1/AC2/AC3: fails closed (denial, never a raw 500) when a loaded project policy times out, without committing project state', async () => {
+    const user = await registerUser(app, 'policy-times-out')
+    const onBeforeCreateProject = vi.fn(() => new Promise<never>(() => undefined))
+    __setExtensionStateForTests({
+      status: 'loaded',
+      manifest: PROJECT_POLICY_MANIFEST,
+      loadedAt: new Date().toISOString(),
+      hooks: { projectLifecycle: { onBeforeCreateProject } },
+    })
+
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: PROJECTS_URL,
+        headers: { cookie: cookieHeader(user.cookies) },
+        payload: { name: 'Timing Out Policy', creationRequestId: randomUUID() },
+      })
+
+      // AC1: wrapped in the same raceWithTimeout() primitive/timeout value the other four call
+      // sites already use (10_000ms) — a genuine hang degrades to the same fail-closed denial a
+      // throw or an explicit permitted:false decision produces.
+      expect(response.statusCode).toBe(409)
+      expect(response.json()).toEqual(PROJECT_CREATION_NOT_PERMITTED_BODY)
+      const projectsAfterTimeout = await withOrg(user.orgId, (tx) =>
+        tx.select({ id: projects.id }).from(projects).where(eq(projects.createdBy, user.userId))
+      )
+      expect(projectsAfterTimeout).toHaveLength(0)
+    } finally {
+      __resetExtensionStateForTests()
+    }
+  }, 20_000)
 
   it('POST serializes same-organization derived-slug collisions without duplicating a slug', async () => {
     const user = await registerUser(app, 'concurrent-derived-slug')

@@ -255,6 +255,16 @@ export const OperationalEvent = {
   // 'error' }). Never carries the hook's raw exception message/stack — fixed-enum `subReason`
   // only, same never-leak-internal-detail discipline as EXTENSION_UI_PANEL_UNAVAILABLE.
   EXTENSION_MODULE_ACTION_FAILED: 'extension.module_action_failed',
+  // Story 25.7 AC1/AC2/AC4: `onBeforeCreateProject()` degraded (threw or timed out) — the one
+  // hook call site this story adds timeout wrapping to. Never carries the hook's raw exception
+  // message/stack — fixed-enum `subReason` only, same never-leak-internal-detail discipline as
+  // EXTENSION_UI_PANEL_UNAVAILABLE/EXTENSION_MODULE_ACTION_FAILED above.
+  EXTENSION_PROJECT_LIFECYCLE_FAILED: 'extension.project_lifecycle_failed',
+  // Story 25.7 AC4/AC5: `onAuthenticate()` degraded (threw or timed out) — sso-routes.ts's own
+  // call site previously logged nothing on failure beyond the generic platform_security_events
+  // `sso.login_rejected` audit row (which does not distinguish threw vs. timed_out). Same
+  // never-leak-internal-detail discipline as the other EXTENSION_*_FAILED events above.
+  EXTENSION_AUTHENTICATE_FAILED: 'extension.authenticate_failed',
 
   // Story 23.2: native-login-exclusion policy (apps/api/src/modules/auth/native-login-policy.ts).
   // AC-4a: fires on EVERY boot while the declared extension has never proven a successful
