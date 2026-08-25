@@ -417,7 +417,17 @@ async function evaluateProjectCreatePolicy(
     return PROJECT_CREATION_NOT_PERMITTED
   }
 
-  if (raced.value.permitted) return undefined
+  // AC2 code-review fix: a buggy/malicious extension can return `undefined`/`null`/anything at
+  // runtime regardless of the `ProjectCreateDecision` compile-time type — optional chaining here
+  // (rather than `raced.value.permitted`) keeps a malformed resolved value from throwing a raw
+  // TypeError that would otherwise escape createProject()'s catch (which only handles specific
+  // unique-constraint errors) and surface as an uncaught 500, contradicting AC2's explicit
+  // "malformed result... not surfaced as a raw 500" requirement. Mirrors capability-gate.ts's own
+  // fail-closed handling of a malformed decision from `onCheckCapability()`.
+  if (raced.value?.permitted === true) return undefined
+  if (raced.value == null || typeof raced.value !== 'object') {
+    logProjectLifecycleFailed(logger, 'threw')
+  }
   // AC2/Failure Mode Analysis: the SAME denial shape a timeout/throw produces — the hook's own
   // explicit denial is never distinguished from a degraded-state denial on the wire.
   return PROJECT_CREATION_NOT_PERMITTED

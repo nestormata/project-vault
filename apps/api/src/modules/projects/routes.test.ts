@@ -350,6 +350,39 @@ describe.sequential('project routes', () => {
     }
   }, 20_000)
 
+  it('Story 25.7 AC2 code-review fix: fails closed (denial, never a raw 500) when a loaded project policy resolves with a malformed (undefined) decision', async () => {
+    const user = await registerUser(app, 'policy-malformed')
+    // A buggy extension: onBeforeCreateProject resolves successfully but returns no decision at
+    // all, defeating the compile-time ProjectCreateDecision type. Accessing `.permitted` on this
+    // without a guard would throw a raw TypeError that escapes to a 500 rather than the fail-
+    // closed denial AC2 requires for "a malformed result".
+    const onBeforeCreateProject = vi.fn(async () => undefined as never)
+    __setExtensionStateForTests({
+      status: 'loaded',
+      manifest: PROJECT_POLICY_MANIFEST,
+      loadedAt: new Date().toISOString(),
+      hooks: { projectLifecycle: { onBeforeCreateProject } },
+    })
+
+    try {
+      const response = await app.inject({
+        method: 'POST',
+        url: PROJECTS_URL,
+        headers: { cookie: cookieHeader(user.cookies) },
+        payload: { name: 'Malformed Policy', creationRequestId: randomUUID() },
+      })
+
+      expect(response.statusCode).toBe(409)
+      expect(response.json()).toEqual(PROJECT_CREATION_NOT_PERMITTED_BODY)
+      const projectsAfterMalformed = await withOrg(user.orgId, (tx) =>
+        tx.select({ id: projects.id }).from(projects).where(eq(projects.createdBy, user.userId))
+      )
+      expect(projectsAfterMalformed).toHaveLength(0)
+    } finally {
+      __resetExtensionStateForTests()
+    }
+  }, 60_000)
+
   it('POST serializes same-organization derived-slug collisions without duplicating a slug', async () => {
     const user = await registerUser(app, 'concurrent-derived-slug')
     const responses = await Promise.all(
