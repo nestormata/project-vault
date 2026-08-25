@@ -83,6 +83,13 @@ const SAFE_PUBLIC_CONSTANT_NAMES = new Set([
   // material) — it only trips this checker because a new file's doc comment references it by
   // name and the checker scans added lines, not full-file content.
   'THEME_TOKENS',
+  // Story 25.6: local test-fixture constant names, not real secret values. `DEFAULT_CSRF_TOKEN`
+  // is a literal test string asserting the CSRF double-submit-cookie check's own behavior;
+  // `OPAQUE_REFRESH_TOKEN` is `tokens.test.ts`'s existing fixture name for a fake refresh-token
+  // value, unrelated to this story's own change (only trips this checker because the new CSRF
+  // assertions in that file made the surrounding lines "added" relative to `main`).
+  'DEFAULT_CSRF_TOKEN',
+  'OPAQUE_REFRESH_TOKEN',
 ])
 // These files intentionally document or exercise local service endpoints. A local endpoint in
 // source, prose, or an arbitrary workflow remains a finding.
