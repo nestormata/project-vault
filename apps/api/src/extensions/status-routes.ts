@@ -27,6 +27,11 @@ const ExtensionManifestSchema = z.object({
     ])
   ),
   loadedAt: z.string(),
+  // Story 25.9 AC4: the loaded package's own release version (its `package.json` `version`
+  // field), distinct from `apiVersion` above (the extension-API *contract* version). `null` — not
+  // omitted — whenever the loader could not determine it (missing/unreadable/malformed
+  // `package.json`, or a non-string `version` field); never a load-failure mode.
+  packageVersion: z.string().nullable(),
 })
 
 // Story 23.2 AC-12: "the active policy is observable." Deliberately BREAKS the pre-existing bare
@@ -128,6 +133,7 @@ export async function extensionStatusRoutes(fastify: FastifyApp): Promise<void> 
                 apiVersion: status.manifest.apiVersion,
                 capabilities: status.manifest.capabilities,
                 loadedAt: status.loadedAt,
+                packageVersion: status.packageVersion ?? null,
               }
             : null,
         nativeLoginPolicy: {

@@ -497,6 +497,23 @@ DESC` for the affected credential) before proceeding, not a reason to roll back 
 
 ---
 
+## Module Pack Lifecycle
+
+<!-- Source: Story 25.9; full procedure in docs/runbooks/module-pack-lifecycle.md -->
+
+Installing, deploying a new version of, and rolling back a **module pack** (an npm package this
+instance loads at boot via `VAULT_EXTENSIONS_PACKAGE` — see ADR-0005) are all the same
+restart-based operation: resolve `VAULT_EXTENSIONS_PACKAGE` to the version you want, then restart.
+**Zero-downtime upgrade of the loaded module pack is explicitly out of scope.** See
+[`docs/runbooks/module-pack-lifecycle.md`](runbooks/module-pack-lifecycle.md) for: the pre-flight
+checks `loadExtension()` already performs (API-version compatibility, manifest validation, a
+bounded load timeout), confirming success via `/health`'s `extensions_status` field, the
+symmetric rollback procedure, and reading the loaded module pack's own release version — distinct
+from the extension-API contract version — via the admin-only `GET /extensions/status` endpoint and
+its `Settings → Extensions` UI page.
+
+---
+
 ## Backup & Recovery
 
 All four endpoints below are instance-wide (not org-scoped) and require platform operator status

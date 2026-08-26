@@ -10,6 +10,7 @@ const SAMPLE_MANIFEST = {
   apiVersion: '1.2.0',
   capabilities: ['auth-provider'] as const,
   loadedAt: '2026-07-20T10:00:00.000Z',
+  packageVersion: '3.4.5',
 }
 
 describe('/settings/extensions +page.svelte', () => {
@@ -48,6 +49,59 @@ describe('/settings/extensions +page.svelte', () => {
     expect(screen.getByText('auth-provider')).toBeTruthy()
     // Not the raw ISO string — a locale-formatted rendering of it.
     expect(screen.queryByText('2026-07-20T10:00:00.000Z')).toBeNull()
+  })
+
+  it('Story 25.9 AC4: labels apiVersion as "API version", not the ambiguous bare "Version"', () => {
+    render(ExtensionsPage, {
+      props: {
+        data: {
+          allowed: true,
+          orgRole: 'admin',
+          mfaRequired: false,
+          manifest: SAMPLE_MANIFEST,
+          healthStatus: 'loaded',
+          errorMessage: null,
+        },
+      },
+    })
+
+    expect(screen.getByText(/api version 1\.2\.0/i)).toBeTruthy()
+    // The old, ambiguous "Version 1.2.0" label (with no "API" qualifier) must be gone.
+    expect(screen.queryByText(/^Version 1\.2\.0/)).toBeNull()
+  })
+
+  it('Story 25.9 AC4: renders the loaded package\'s own release version under a distinct "Package version" label', () => {
+    render(ExtensionsPage, {
+      props: {
+        data: {
+          allowed: true,
+          orgRole: 'admin',
+          mfaRequired: false,
+          manifest: SAMPLE_MANIFEST,
+          healthStatus: 'loaded',
+          errorMessage: null,
+        },
+      },
+    })
+
+    expect(screen.getByText(/package version 3\.4\.5/i)).toBeTruthy()
+  })
+
+  it('Story 25.9 AC4: a null packageVersion (loader could not determine it) renders an honest placeholder, not a crash', () => {
+    render(ExtensionsPage, {
+      props: {
+        data: {
+          allowed: true,
+          orgRole: 'admin',
+          mfaRequired: false,
+          manifest: { ...SAMPLE_MANIFEST, packageVersion: null },
+          healthStatus: 'loaded',
+          errorMessage: null,
+        },
+      },
+    })
+
+    expect(screen.getByText(/package version unknown/i)).toBeTruthy()
   })
 
   it('AC-2 edge: empty capabilities array shows "No capabilities declared", not a blank row', () => {
