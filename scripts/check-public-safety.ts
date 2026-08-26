@@ -108,6 +108,11 @@ const SAFE_LOCAL_ENDPOINT_FILES = new Set([
   'apps/api/src/modules/audit/quota-gate.test.ts',
   'apps/api/src/modules/audit/quota-config.test.ts',
   'apps/api/src/workers/audit-org-usage-reconcile.test.ts',
+  // Story 25.7: new test file mirroring routes/health.test.ts's own existing env mock verbatim
+  // (same DATABASE_URL/CORS_ALLOWED_ORIGINS/METRICS_BIND_HOST dev-only values) so createApp() can
+  // boot far enough to serve GET /health as the concurrent, unrelated request in the hang test.
+  // Trips this rule only because the checker scans added LINES and the whole file is new.
+  'apps/api/src/lib/extension-hook-concurrency.test.ts',
 ])
 
 function makeFinding(

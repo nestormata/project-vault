@@ -711,6 +711,98 @@ describe('SSO routes (Story 14.3)', () => {
       await app.close()
     }, 15_000)
 
+    it('Story 25.7 AC4/AC5: logs a structured extension.authenticate_failed event (subReason threw) via the migrated shared raceWithTimeout() primitive', async () => {
+      const { createLoggerConfig } = await import('../../lib/logger.js')
+      const { createLogCaptureStream, flushCapturedLogger, parseCapturedLogLines } =
+        await import('../../__tests__/helpers/capture-logs.js')
+      registerAuthStrategy(PROVIDER, {
+        onAuthenticate: async () => {
+          throw new Error('simulated IdP network failure — never-leak-detail check')
+        },
+      })
+      const { stream, lines } = createLogCaptureStream()
+      const app = await createApp({
+        logger: {
+          ...createLoggerConfig({
+            NODE_ENV: 'development',
+            LOG_LEVEL: 'info',
+            SERVICE_NAME: 'api',
+          }),
+          stream,
+        },
+      })
+      const start = await app.inject({ method: 'POST', url: `/api/v1/auth/sso/start/${PROVIDER}` })
+      const cookies = parseSetCookies(start.headers['set-cookie'])
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/auth/sso/callback/${PROVIDER}`,
+        payload: {},
+        headers: { cookie: `sso-state=${cookies['sso-state']}` },
+      })
+      await flushCapturedLogger(app.log)
+      expect(res.statusCode).toBe(502)
+
+      const failureLogs = parseCapturedLogLines(lines).filter(
+        (line) => line.eventType === 'extension.authenticate_failed'
+      )
+      expect(failureLogs).toHaveLength(1)
+      expect(failureLogs[0]).toMatchObject({
+        level: 'error',
+        providerName: PROVIDER,
+        subReason: 'threw',
+      })
+      // Never leaks the raw exception message/stack into the log payload.
+      expect(JSON.stringify(failureLogs[0])).not.toContain(
+        'simulated IdP network failure — never-leak-detail check'
+      )
+
+      await app.close()
+    })
+
+    it('Story 25.7 AC4/AC5: logs a structured extension.authenticate_failed event (subReason timed_out) via the migrated shared raceWithTimeout() primitive', async () => {
+      const { createLoggerConfig } = await import('../../lib/logger.js')
+      const { createLogCaptureStream, flushCapturedLogger, parseCapturedLogLines } =
+        await import('../../__tests__/helpers/capture-logs.js')
+      registerAuthStrategy(PROVIDER, {
+        onAuthenticate: () => new Promise(() => undefined),
+      })
+      const { stream, lines } = createLogCaptureStream()
+      const app = await createApp({
+        logger: {
+          ...createLoggerConfig({
+            NODE_ENV: 'development',
+            LOG_LEVEL: 'info',
+            SERVICE_NAME: 'api',
+          }),
+          stream,
+        },
+      })
+      const start = await app.inject({ method: 'POST', url: `/api/v1/auth/sso/start/${PROVIDER}` })
+      const cookies = parseSetCookies(start.headers['set-cookie'])
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/auth/sso/callback/${PROVIDER}`,
+        payload: {},
+        headers: { cookie: `sso-state=${cookies['sso-state']}` },
+      })
+      await flushCapturedLogger(app.log)
+      expect(res.statusCode).toBe(502)
+
+      const failureLogs = parseCapturedLogLines(lines).filter(
+        (line) => line.eventType === 'extension.authenticate_failed'
+      )
+      expect(failureLogs).toHaveLength(1)
+      expect(failureLogs[0]).toMatchObject({
+        level: 'error',
+        providerName: PROVIDER,
+        subReason: 'timed_out',
+      })
+
+      await app.close()
+    }, 15_000)
+
     it('Story 23.2 AC-7: a declared extension whose strategy always throws never proves the latch — native login stays enabled (the single largest safety improvement over the original design)', async () => {
       const { readReplacementLatch } = await import('./native-login-latch.js')
       const { __resetNativeLoginPolicyForTests, resolveNativeLoginPolicy, isNativeLoginEnabled } =
