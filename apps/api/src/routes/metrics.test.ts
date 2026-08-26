@@ -141,7 +141,9 @@ describe('GET /metrics', () => {
   })
 
   it('does not trust X-Forwarded-For for loopback authorization', async () => {
-    const app = Fastify({ trustProxy: 1 })
+    // Equivalent to `trustProxy: 1` (trust one hop) without relying on fastify's `number`
+    // overload, which fastify 5.12.1 dropped from its trustProxy type union — see app.ts.
+    const app = Fastify({ trustProxy: (_address: string, hop: number) => hop < 1 })
     await metricsRoutes(app as never, { metricsBindHost: '127.0.0.1' })
 
     const response = await app.inject({

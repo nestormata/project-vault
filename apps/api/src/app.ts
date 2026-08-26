@@ -143,7 +143,13 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
     },
     disableRequestLogging: true,
     routerOptions: { ignoreTrailingSlash: true },
-    trustProxy: env.TRUST_PROXY ? env.TRUST_PROXY_HOPS : false,
+    // fastify's TrustProxyFunction — passing the hop count directly stopped typechecking
+    // when fastify 5.12.1 narrowed its `trustProxy` type union to drop `number`, even though
+    // the runtime behavior (lib/request.js's getTrustProxyFn) is unchanged: a bare number is
+    // internally turned into exactly this `(address, hop) => hop < n` function.
+    trustProxy: env.TRUST_PROXY
+      ? (_address: string, hop: number) => hop < env.TRUST_PROXY_HOPS
+      : false,
   }) as unknown as FastifyApp
 
   fastify.setValidatorCompiler(validatorCompiler)
