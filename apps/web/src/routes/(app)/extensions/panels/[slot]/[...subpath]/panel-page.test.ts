@@ -486,7 +486,7 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1)', () => {
       expect(document.querySelector('iframe')?.getAttribute('srcdoc')).not.toContain('state-c')
 
       // No stuck stale iframe, no missing iframe, no thrown error anywhere above.
-      expect(document.querySelectorAll('iframe').length).toBe(1)
+      expect(document.querySelectorAll('iframe')).toHaveLength(1)
     })
 
     it('a back-navigation to the degraded (html: null) state removes the iframe cleanly, no stale content left behind', async () => {
