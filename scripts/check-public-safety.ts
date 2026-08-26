@@ -113,6 +113,11 @@ const SAFE_LOCAL_ENDPOINT_FILES = new Set([
   // boot far enough to serve GET /health as the concurrent, unrelated request in the hang test.
   // Trips this rule only because the checker scans added LINES and the whole file is new.
   'apps/api/src/lib/extension-hook-concurrency.test.ts',
+  // Story 25.9: new operator runbook document following docs/runbook.md's own established
+  // convention of `curl http://localhost:3000/...` local-dev-verification examples (that file
+  // has 21 such lines and is not itself flagged, since the checker only scans added lines).
+  // Trips this rule only because the whole file is new, reproducing an already-repo-wide pattern.
+  'docs/runbooks/module-pack-lifecycle.md',
 ])
 
 function makeFinding(
