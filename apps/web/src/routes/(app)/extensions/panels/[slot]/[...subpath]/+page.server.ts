@@ -14,6 +14,12 @@ import type { PageServerLoad } from './$types.js'
 // never tries to distinguish them, matching the API route's own uniform degraded response.
 export type ExtensionPanelPageData = {
   slot: string
+  // Story 25.8 AC1/Task 1 — the deep-linkable URL sub-path this `[...subpath]` rest route
+  // matched, forwarded verbatim to `+page.svelte`. `undefined` (never `''`) when the URL has no
+  // sub-path segment at all — SvelteKit's rest param is `''` in that case, normalized here so
+  // downstream code (this route's own `getExtensionPanel()` call, `UIPanelContext.subpath`) all
+  // share the same undefined-vs-empty-string contract `resourceId`/`actionEndpoint` already use.
+  subpath: string | undefined
   html: string | null
   themeVars: ExtensionThemeVars
   // Story 25.5 AC4/Task 4: forwarded through unchanged from the API response (undefined, never
@@ -53,10 +59,16 @@ export const load: PageServerLoad = async ({ params, fetch, locals }) => {
 
   const themeVars = await resolveThemeVars(fetch)
 
+  // Story 25.8 AC1/Task 1 — SvelteKit's `[...subpath]` rest param is `''` (never undefined) when
+  // the matched URL has no sub-path segment at all; normalized here to `undefined` so it's never
+  // forwarded as an empty string to `getExtensionPanel()`/`UIPanelContext.subpath`.
+  const subpath = params.subpath.length > 0 ? params.subpath : undefined
+
   try {
-    const result = await getExtensionPanel(fetch, params.slot)
+    const result = await getExtensionPanel(fetch, params.slot, subpath)
     return {
       slot: params.slot,
+      subpath,
       html: result.ok ? result.html : null,
       themeVars,
       actionEndpoint: result.ok ? result.actionEndpoint : undefined,
@@ -67,6 +79,7 @@ export const load: PageServerLoad = async ({ params, fetch, locals }) => {
     // contract, not a state this hand-authored, single-slot page's own nav ever produces).
     return {
       slot: params.slot,
+      subpath,
       html: null,
       themeVars,
       actionEndpoint: undefined,

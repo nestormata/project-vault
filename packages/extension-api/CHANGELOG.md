@@ -2,6 +2,20 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.5.0 — 2026-08-26
+
+contract-hash: sha256:3f6861634bb70045af8440c262ed2028c096b2c734428348a6fd39ebb921cb17
+
+### Added
+
+- Widened `UIPanelContext` with an optional `subpath?` field (Story 25.8 AC1), carrying the
+  deep-linkable URL sub-path `apps/web`'s new `extensions/panels/[slot]/[...subpath]` route
+  matched for the current request, so a panel can render its own internal sub-state on load.
+  This field is purely routing state owned by `apps/web` — the host performs no lookup or
+  authorization on its contents (same posture as `resourceId`) and it is never concatenated into
+  the `GET /api/v1/extensions/panels/:slot` route's own `:slot` path parameter. Omitted (never
+  `''`) when the matched URL has no sub-path.
+
 ## 3.4.0 — 2026-08-24
 
 contract-hash: sha256:fd52653a519aba96b2338f552edd89758f78473cde1e5422714f3245f81dde4b

@@ -10,10 +10,15 @@ import { apiFetch } from './client.js'
 export type ExtensionPanelResult =
   { ok: true; html: string; actionEndpoint?: string } | { ok: false; reason: 'panel_unavailable' }
 
-export function getExtensionPanel(fetchFn: typeof fetch, slot: string) {
+// Story 25.8 AC1/Task 1 — `subpath` is forwarded as a query parameter on this SAME existing
+// call, matching `projectId`/`resourceId`'s own convention (apps/api's PanelQuery) — it is
+// NEVER concatenated into the `:slot` path segment itself, so that route's own
+// `knownSlots.includes(slot)` exact-match validation stays untouched.
+export function getExtensionPanel(fetchFn: typeof fetch, slot: string, subpath?: string) {
+  const query = subpath !== undefined ? `?${new URLSearchParams({ subpath }).toString()}` : ''
   return apiFetch<ExtensionPanelResult>(
     fetchFn,
-    `/api/v1/extensions/panels/${encodeURIComponent(slot)}`
+    `/api/v1/extensions/panels/${encodeURIComponent(slot)}${query}`
   )
 }
 

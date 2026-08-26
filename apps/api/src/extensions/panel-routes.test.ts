@@ -663,6 +663,82 @@ describe.sequential('GET /api/v1/extensions/panels/:slot (Story 25.3 context)', 
     })
   })
 
+  describe('Story 25.8 AC1: subpath shape validation and pass-through, never widens the :slot match', () => {
+    it('a shape-valid multi-segment subpath is passed through verbatim into context', async () => {
+      __setExtensionStateForTests(contextEchoState())
+      const member = await createDirectAuthenticatedUser(suite.app, 'panel-subpath-valid', 'member')
+
+      const res = await getPanel(suite.app, 'group', member.cookies, {
+        subpath: 'groups/123/detail',
+      })
+
+      expect(res.statusCode).toBe(200)
+      const context = JSON.parse(res.json<{ html: string }>().html) as UIPanelContext
+      expect(context.subpath).toBe('groups/123/detail')
+    })
+
+    it('omitted subpath leaves it undefined in context', async () => {
+      __setExtensionStateForTests(contextEchoState())
+      const member = await createDirectAuthenticatedUser(
+        suite.app,
+        'panel-subpath-omitted',
+        'member'
+      )
+
+      const res = await getPanel(suite.app, 'group', member.cookies)
+
+      expect(res.statusCode).toBe(200)
+      const context = JSON.parse(res.json<{ html: string }>().html) as UIPanelContext
+      expect(context.subpath).toBeUndefined()
+    })
+
+    it.each([
+      ['overlong', 'a'.repeat(257)],
+      ['path-traversal-shaped', '../../etc/passwd'],
+      ['leading-slash', '/groups/123'],
+      ['trailing-slash', 'groups/123/'],
+      ['empty-segment', 'groups//123'],
+    ])('a %s subpath 400s before the hook is ever called', async (_label, subpath) => {
+      const onRenderPanel = vi.fn(async () => ({ html: SHOULD_NOT_RUN_HTML }))
+      __setExtensionStateForTests(
+        loadedState({
+          capabilities: ['ui-panel'],
+          uiPanelSlots: ['group'],
+          uiPanel: { onRenderPanel },
+        })
+      )
+      const member = await createDirectAuthenticatedUser(
+        suite.app,
+        `panel-subpath-${_label}`,
+        'member'
+      )
+
+      const res = await getPanel(suite.app, 'group', member.cookies, { subpath })
+
+      expect(res.statusCode).toBe(400)
+      expect(onRenderPanel).not.toHaveBeenCalled()
+    })
+
+    it('a subpath value is NEVER concatenated into the :slot allowlist match — an unknown slot still 400s even with a subpath supplied', async () => {
+      const onRenderPanel = vi.fn(async () => ({ html: SHOULD_NOT_RUN_HTML }))
+      __setExtensionStateForTests(
+        loadedState({ capabilities: ['ui-panel'], uiPanel: { onRenderPanel } })
+      )
+      const member = await createDirectAuthenticatedUser(
+        suite.app,
+        'panel-subpath-unknown-slot',
+        'member'
+      )
+
+      const res = await getPanel(suite.app, 'not-a-known-slot', member.cookies, {
+        subpath: 'detail',
+      })
+
+      expect(res.statusCode).toBe(400)
+      expect(onRenderPanel).not.toHaveBeenCalled()
+    })
+  })
+
   describe('AC6: identity minimality', () => {
     it('the response never contains sessionId/jti/isPlatformOperator', async () => {
       __setExtensionStateForTests(contextEchoState())
@@ -968,6 +1044,7 @@ describe.sequential('POST /api/v1/extensions/panels/:slot/actions (Story 25.5)',
     })
 
     it('a structural check: the route handler source never references body.orgId/body.userId/body.projectId', async () => {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- import.meta.url-relative path to this test file's own sibling source, never user input.
       const source = await readFile(
         fileURLToPath(new URL('./panel-routes.ts', import.meta.url)),
         'utf-8'
@@ -981,6 +1058,7 @@ describe.sequential('POST /api/v1/extensions/panels/:slot/actions (Story 25.5)',
     })
 
     it('a structural check: the module-action handler source never references request.orgId/request.userId/request.projectId', async () => {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- import.meta.url-relative path to a fixed sibling source file, never user input.
       const source = await readFile(
         fileURLToPath(new URL('../lib/module-action-handler.ts', import.meta.url)),
         'utf-8'
@@ -1217,6 +1295,7 @@ describe.sequential('POST /api/v1/extensions/panels/:slot/actions (Story 25.5)',
     })
 
     it('AC2: rejection happens before any DB lookup or onAction() call — a structural check, the source rejects before extractValidActionBody is reached', async () => {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- import.meta.url-relative path to this test file's own sibling source, never user input.
       const source = await readFile(
         fileURLToPath(new URL('./panel-routes.ts', import.meta.url)),
         'utf-8'

@@ -122,7 +122,13 @@ export const MAX_MODULE_ACTIONS = 32
 // branch's independent 3.3.0 claim requires moving to the next free number instead of reusing it:
 // 3.3.0 -> 3.4.0. The floor stays `>=3.0.0` so every already-shipped extension keeps loading
 // unmodified regardless.
-export const EXTENSION_API_VERSION = '3.4.0'
+// Story 25.8 AC1/Task 1 — bumped as an additive-minor (3.4.0 -> 3.5.0): `UIPanelContext` gains
+// an optional `subpath?: string` field (see `hooks/ui-panel.ts`) carrying the deep-linkable URL
+// sub-path `apps/web`'s new `extensions/panels/[slot]/[...subpath]` route matched, so a panel can
+// render its own internal sub-state on load. Purely additive and backward-compatible: an
+// existing extension reading only the pre-existing fields keeps working unmodified, and the
+// field is never populated (stays `undefined`) for a request with no sub-path.
+export const EXTENSION_API_VERSION = '3.5.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built
