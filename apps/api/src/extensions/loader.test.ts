@@ -398,11 +398,11 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
     // AC1/Task 1 — host EXTENSION_API_VERSION is now 3.5.0 (see manifest.ts's
     // EXTENSION_API_VERSION doc comment for why this merge moves past 3.2.0/3.3.0/3.4.0, which
     // Story 25.3/25.4/25.5 respectively already claimed on main for different additive changes);
-    // '3.6.0' is the above-host, same-major escape-eligible version. Kept one minor version above
+    // '3.7.0' is the above-host, same-major escape-eligible version. Kept one minor version above
     // whatever EXTENSION_API_VERSION currently is — a future bump must move this value forward
     // again the same way this story just did, or this test silently stops exercising the
     // above-host path once EXTENSION_API_VERSION catches up to a stale hardcoded value.
-    const aboveHostApiVersion = '3.6.0'
+    const aboveHostApiVersion = '3.7.0'
     const importFn = vi.fn().mockResolvedValue({
       default: {
         manifest: { ...VALID_MANIFEST, apiVersion: aboveHostApiVersion },
