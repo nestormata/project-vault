@@ -56,9 +56,9 @@
     "@project-vault/db": "workspace:*",
     "audit-ci": "^7.1.0",
     "drizzle-orm": "^0.45.0",
-    "eslint": "^10.8.1",
+    "eslint": "^10.9.0",
     "husky": "^9.1.7",
-    "jscpd": "^5.0.15",
+    "jscpd": "^5.0.16",
     "lint-staged": "^17.3.0",
     "postgres": "^3.4.5",
     "prettier": "3.9.6",
@@ -67,6 +67,6 @@
     "tsx": "4.23.12",
     "turbo": "latest",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   }
 }

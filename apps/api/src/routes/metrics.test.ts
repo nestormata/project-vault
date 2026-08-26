@@ -3,6 +3,7 @@ import Fastify from 'fastify'
 import { describe, it, expect, vi } from 'vitest'
 import { createApp } from '../app.js'
 import { metricsRoutes } from './metrics.js'
+import { resolveTrustProxy } from '../lib/trust-proxy.js'
 
 vi.mock('../config/env.js', () => ({
   env: {
@@ -141,7 +142,7 @@ describe('GET /metrics', () => {
   })
 
   it('does not trust X-Forwarded-For for loopback authorization', async () => {
-    const app = Fastify({ trustProxy: 1 })
+    const app = Fastify({ trustProxy: resolveTrustProxy(true, 1) })
     await metricsRoutes(app as never, { metricsBindHost: '127.0.0.1' })
 
     const response = await app.inject({

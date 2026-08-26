@@ -76,6 +76,7 @@ import { httpMetricsPlugin } from './plugins/http-metrics.js'
 import { createLoggerConfig, serializeLogError } from './lib/logger.js'
 import { env } from './config/env.js'
 import { AppError } from './lib/errors.js'
+import { resolveTrustProxy } from './lib/trust-proxy.js'
 import type { FastifyApp } from './lib/fastify-app.js'
 import { getReleaseVersion } from './lib/package-version.js'
 import { OperationalEvent } from '@project-vault/shared'
@@ -143,7 +144,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
     },
     disableRequestLogging: true,
     routerOptions: { ignoreTrailingSlash: true },
-    trustProxy: env.TRUST_PROXY ? env.TRUST_PROXY_HOPS : false,
+    trustProxy: resolveTrustProxy(env.TRUST_PROXY, env.TRUST_PROXY_HOPS),
   }) as unknown as FastifyApp
 
   fastify.setValidatorCompiler(validatorCompiler)

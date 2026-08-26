@@ -12,13 +12,13 @@
     "test": "vitest run --coverage"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^4.1.10",
-    "vitest": "^4.1.10"
+    "@vitest/coverage-v8": "^4.1.11",
+    "vitest": "^4.1.11"
   },
   "dependencies": {
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript-eslint/parser": "^8.67.0",
-    "eslint": "^10.8.1",
+    "eslint": "^10.9.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-security": "^4.0.1",
     "eslint-plugin-sonarjs": "^4.2.0",
@@ -26,7 +26,7 @@
     "eslint-plugin-svelte": "^3.23.0"
   },
   "peerDependencies": {
-    "eslint": "^10.8.1",
+    "eslint": "^10.9.0",
     "typescript": "^5.0.0"
   }
 }
