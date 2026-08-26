@@ -3,6 +3,7 @@ import Fastify from 'fastify'
 import { describe, it, expect, vi } from 'vitest'
 import { createApp } from '../app.js'
 import { metricsRoutes } from './metrics.js'
+import { resolveTrustProxy } from '../lib/trust-proxy.js'
 
 vi.mock('../config/env.js', () => ({
   env: {
@@ -141,9 +142,7 @@ describe('GET /metrics', () => {
   })
 
   it('does not trust X-Forwarded-For for loopback authorization', async () => {
-    // Equivalent to `trustProxy: 1` (trust one hop) without relying on fastify's `number`
-    // overload, which fastify 5.12.1 dropped from its trustProxy type union — see app.ts.
-    const app = Fastify({ trustProxy: (_address: string, hop: number) => hop < 1 })
+    const app = Fastify({ trustProxy: resolveTrustProxy(true, 1) })
     await metricsRoutes(app as never, { metricsBindHost: '127.0.0.1' })
 
     const response = await app.inject({
