@@ -23,6 +23,7 @@ type TestApp = Awaited<ReturnType<typeof import('../app.js').createApp>>
 
 const TEST_PASSPHRASE = 'extensions-status-route-passphrase'
 const STATUS_URL = '/api/v1/admin/extensions/status'
+const VALID_PACKAGE_NAME = '@acme/extension'
 
 const VALID_MANIFEST: ExtensionManifest = {
   name: 'com.acme.sso-extension',
@@ -80,7 +81,7 @@ describe.sequential('GET /api/v1/admin/extensions/status', () => {
   })
 
   it('AC-2/AC-12: returns the manifest under extension when an extension is loaded', async () => {
-    await loadExtension('@acme/extension', {
+    await loadExtension(VALID_PACKAGE_NAME, {
       importFn: async () => ({
         default: { manifest: VALID_MANIFEST, hooksFactory: () => ({}) },
       }),
@@ -108,6 +109,62 @@ describe.sequential('GET /api/v1/admin/extensions/status', () => {
     expect(body.extension?.capabilities).toEqual(VALID_MANIFEST.capabilities)
     expect(typeof body.extension?.loadedAt).toBe('string')
     expect(body.nativeLoginPolicy.extensionStatus).toBe('loaded')
+  })
+
+  it(
+    "AC4 (Story 25.9): returns the loaded package's own release version under packageVersion, " +
+      'distinct from apiVersion — and null (not omitted) when the loader could not determine it',
+    async () => {
+      await loadExtension(VALID_PACKAGE_NAME, {
+        importFn: async () => ({
+          default: { manifest: VALID_MANIFEST, hooksFactory: () => ({}) },
+        }),
+        listOrgIds: async () => [],
+        readPackageVersion: () => '9.9.9',
+      })
+      __resetNativeLoginPolicyForTests()
+      await resolveNativeLoginPolicy(getExtensionStatus())
+      const admin = await createDirectAuthenticatedUser(
+        suite.app,
+        'status-package-version',
+        'admin'
+      )
+      await enrollMfa(admin.userId)
+
+      const res = await getStatus(suite.app, admin.cookies)
+
+      expect(res.statusCode).toBe(200)
+      const body = res.json<{
+        extension: { apiVersion: string; packageVersion: string | null } | null
+      }>()
+      expect(body.extension?.apiVersion).toBe(VALID_MANIFEST.apiVersion)
+      expect(body.extension?.packageVersion).toBe('9.9.9')
+      expect(body.extension?.packageVersion).not.toBe(body.extension?.apiVersion)
+    }
+  )
+
+  it('AC4 (Story 25.9): packageVersion is null, not omitted, when the loader could not determine it', async () => {
+    await loadExtension(VALID_PACKAGE_NAME, {
+      importFn: async () => ({
+        default: { manifest: VALID_MANIFEST, hooksFactory: () => ({}) },
+      }),
+      listOrgIds: async () => [],
+      readPackageVersion: () => undefined,
+    })
+    __resetNativeLoginPolicyForTests()
+    await resolveNativeLoginPolicy(getExtensionStatus())
+    const admin = await createDirectAuthenticatedUser(
+      suite.app,
+      'status-package-version-null',
+      'admin'
+    )
+    await enrollMfa(admin.userId)
+
+    const res = await getStatus(suite.app, admin.cookies)
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json<{ extension: { packageVersion: string | null } | null }>()
+    expect(body.extension?.packageVersion).toBeNull()
   })
 
   it('AC-4: returns extension: null when a load failed, with extensionFailureReason set', async () => {

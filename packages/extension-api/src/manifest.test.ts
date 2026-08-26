@@ -33,8 +33,11 @@ describe('EXTENSION_API_VERSION', () => {
     // this branch merged, the same forward-only-version invariant requires moving to the next
     // free number again, 3.4.0. The major floor is unchanged from Story 23.11 AC6's
     // 2.2.0 -> 3.0.0 breaking bump. Story 25.8 independently adds UIPanelContext's optional
-    // `subpath?` field (also additive-minor), the next free number: 3.4.0 -> 3.5.0.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.5.0')
+    // `subpath?` field (also additive-minor), the next free number: 3.4.0 -> 3.5.0. Story 25.9
+    // touches the CONTRACT_FILES-listed loader.ts (packageVersion surfacing is host-observable
+    // load_failed-adjacent behavior, per check-extension-api-version-skew.ts's own file list),
+    // requiring a version bump despite no packages/extension-api schema change: 3.5.0 -> 3.6.0.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.6.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

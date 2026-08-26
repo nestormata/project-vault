@@ -12,6 +12,9 @@ export type ExtensionStatus = {
   apiVersion: string
   capabilities: ExtensionCapability[]
   loadedAt: string
+  // Story 25.9 AC4: the loaded package's own release version, distinct from `apiVersion` (the
+  // extension-API *contract* version). `null` when the loader could not determine it.
+  packageVersion: string | null
 }
 
 export type NativeLoginPolicyState =

@@ -1,4 +1,7 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { EXTENSION_API_VERSION, ExtensionRegistrationError } from '@project-vault/extension-api'
 import type { ExtensionHooks, ExtensionManifest } from '@project-vault/extension-api'
 import {
@@ -6,6 +9,7 @@ import {
   getExtensionStatus,
   getExtensionsHealthField,
   loadExtension,
+  readVersionFromPackageDir,
 } from './loader.js'
 import type { LoadExtensionDeps } from './loader.js'
 
@@ -17,6 +21,7 @@ const VALID_MANIFEST: ExtensionManifest = {
 
 const NOOP_HOOKS: ExtensionHooks = {}
 const VALID_PACKAGE_NAME = '@acme/extension'
+const PACKAGE_JSON_FILENAME = 'package.json'
 const BAD_PACKAGE_NAME = 'bad-package'
 
 function noopLogger(): LoadExtensionDeps['logger'] {
@@ -393,11 +398,11 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
     // AC1/Task 1 — host EXTENSION_API_VERSION is now 3.5.0 (see manifest.ts's
     // EXTENSION_API_VERSION doc comment for why this merge moves past 3.2.0/3.3.0/3.4.0, which
     // Story 25.3/25.4/25.5 respectively already claimed on main for different additive changes);
-    // '3.6.0' is the above-host, same-major escape-eligible version. Kept one minor version above
+    // '3.7.0' is the above-host, same-major escape-eligible version. Kept one minor version above
     // whatever EXTENSION_API_VERSION currently is — a future bump must move this value forward
     // again the same way this story just did, or this test silently stops exercising the
     // above-host path once EXTENSION_API_VERSION catches up to a stale hardcoded value.
-    const aboveHostApiVersion = '3.6.0'
+    const aboveHostApiVersion = '3.7.0'
     const importFn = vi.fn().mockResolvedValue({
       default: {
         manifest: { ...VALID_MANIFEST, apiVersion: aboveHostApiVersion },
@@ -426,5 +431,135 @@ describe('getExtensionStatus / getExtensionsHealthField', () => {
   it('default state is not_configured', () => {
     expect(getExtensionStatus()).toEqual({ status: 'not_configured' })
     expect(getExtensionsHealthField()).toBe('not_configured')
+  })
+})
+
+// Story 25.9 AC4/Task 1: the loader reads the loaded package's own `package.json` `version`
+// field (distinct from `manifest.apiVersion`, the extension-API *contract* version) and threads
+// it through ExtensionState. `readPackageVersion` is an injectable dep (mirrors `importFn`) so
+// these tests can exercise both the real on-disk resolution (against this project's own
+// workspace-symlinked fixture — Elicitation Log #1) and synthetic failure modes (Elicitation Log
+// #4) without needing a real npm-installed package.
+describe('loadExtension — package version read (AC4)', () => {
+  it('happy path: threads a well-formed readPackageVersion() result into ExtensionState', async () => {
+    const importFn = validImportFn()
+    const readPackageVersion = vi.fn().mockReturnValue('2.4.1')
+
+    await loadExtension(VALID_PACKAGE_NAME, baseDeps({ importFn, readPackageVersion }))
+
+    expect(readPackageVersion).toHaveBeenCalledWith(VALID_PACKAGE_NAME)
+    const status = getExtensionStatus()
+    expect(status.status).toBe('loaded')
+    if (status.status === 'loaded') {
+      expect(status.packageVersion).toBe('2.4.1')
+    }
+  })
+
+  it('missing/unreadable package.json: readPackageVersion() returning undefined never fails the load', async () => {
+    const importFn = validImportFn()
+    const readPackageVersion = vi.fn().mockReturnValue(undefined)
+
+    await loadExtension(VALID_PACKAGE_NAME, baseDeps({ importFn, readPackageVersion }))
+
+    const status = getExtensionStatus()
+    expect(status.status).toBe('loaded')
+    if (status.status === 'loaded') {
+      expect(status.packageVersion).toBeUndefined()
+    }
+  })
+
+  it('a rejecting readPackageVersion() implementation still resolves the load (defensive, never throws)', async () => {
+    const importFn = validImportFn()
+    const readPackageVersion = vi.fn().mockImplementation(() => {
+      throw new Error('boom')
+    })
+
+    await expect(
+      loadExtension(VALID_PACKAGE_NAME, baseDeps({ importFn, readPackageVersion }))
+    ).resolves.toBeUndefined()
+    expect(getExtensionStatus().status).toBe('loaded')
+  })
+
+  it('defaults to the real on-disk resolver, which never throws when given a package name that cannot resolve', async () => {
+    const importFn = validImportFn()
+
+    // No readPackageVersion override — exercises the real default implementation. A synthetic
+    // package name unrelated to any real dependency must resolve to `undefined`, never throw and
+    // never crash the load (Dev Notes: "this must never become a new load-failure mode").
+    await loadExtension('@definitely-not-a-real-package/does-not-exist', baseDeps({ importFn }))
+
+    const status = getExtensionStatus()
+    expect(status.status).toBe('loaded')
+    if (status.status === 'loaded') {
+      expect(status.packageVersion).toBeUndefined()
+    }
+  })
+
+  it(
+    'workspace-symlinked fixture (Elicitation Log #1): the real default resolver reads this ' +
+      "project's own pnpm-workspace-symlinked mock-ui-panel-extension fixture's package.json " +
+      'version, following the symlink rather than assuming a flat node_modules/<pkg>/package.json layout',
+    async () => {
+      const importFn = validImportFn()
+
+      await loadExtension('@project-vault/mock-ui-panel-extension', baseDeps({ importFn }))
+
+      const status = getExtensionStatus()
+      expect(status.status).toBe('loaded')
+      if (status.status === 'loaded') {
+        // fixtures/mock-ui-panel-extension/package.json declares "version": "0.0.1" — resolved via
+        // the pnpm workspace symlink at node_modules/@project-vault/mock-ui-panel-extension, not a
+        // flat install.
+        expect(status.packageVersion).toBe('0.0.1')
+      }
+    }
+  )
+})
+
+// Story 25.9 AC4/Task 1, Elicitation Log #4 (Failure Mode Analysis): the walk-up-and-parse core
+// of the default `readPackageVersion()` implementation, exercised directly against real
+// temp-directory fixtures so the missing/malformed-package.json edge cases don't depend on
+// contriving an actual resolvable npm specifier.
+describe('readVersionFromPackageDir (AC4 — pure walk-up/parse/validate helper)', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'pv-loader-pkgver-'))
+  })
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('happy path: reads a well-formed string version field', () => {
+    writeFileSync(join(dir, PACKAGE_JSON_FILENAME), JSON.stringify({ name: 'x', version: '3.2.1' }))
+    expect(readVersionFromPackageDir(dir)).toBe('3.2.1')
+  })
+
+  it('missing package.json: returns undefined, never throws', () => {
+    expect(readVersionFromPackageDir(join(dir, 'does-not-exist'))).toBeUndefined()
+  })
+
+  it('malformed JSON: returns undefined, never throws', () => {
+    writeFileSync(join(dir, PACKAGE_JSON_FILENAME), '{ not valid json')
+    expect(readVersionFromPackageDir(dir)).toBeUndefined()
+  })
+
+  it('non-string version field (a number): coerces to undefined rather than a non-string value', () => {
+    writeFileSync(join(dir, PACKAGE_JSON_FILENAME), JSON.stringify({ name: 'x', version: 123 }))
+    expect(readVersionFromPackageDir(dir)).toBeUndefined()
+  })
+
+  it('non-string version field (an object): coerces to undefined rather than "[object Object]"', () => {
+    writeFileSync(
+      join(dir, PACKAGE_JSON_FILENAME),
+      JSON.stringify({ name: 'x', version: { major: 1 } })
+    )
+    expect(readVersionFromPackageDir(dir)).toBeUndefined()
+  })
+
+  it('version field entirely absent: returns undefined', () => {
+    writeFileSync(join(dir, PACKAGE_JSON_FILENAME), JSON.stringify({ name: 'x' }))
+    expect(readVersionFromPackageDir(dir)).toBeUndefined()
   })
 })

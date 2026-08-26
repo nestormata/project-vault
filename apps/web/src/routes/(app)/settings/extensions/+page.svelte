@@ -64,7 +64,18 @@
     <div class="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <p class="text-sm font-medium text-emerald-700">Loaded</p>
       <p class="mt-2 text-lg font-semibold text-slate-900">{data.manifest.name}</p>
-      <p class="mt-1 text-sm text-slate-600">Version {data.manifest.apiVersion}</p>
+      <!-- Story 25.9 AC4: "Version" was ambiguous — it rendered `manifest.apiVersion` (the
+           extension-API *contract* version) under a label an operator could easily mistake for
+           the module pack's own release. Relabeled "API version", with a separately-labeled
+           "Package version" line below for the pack's own release (new in this story). -->
+      <p class="mt-1 text-sm text-slate-600">API version {data.manifest.apiVersion}</p>
+      <p class="mt-1 text-sm text-slate-600">
+        {#if data.manifest.packageVersion}
+          Package version {data.manifest.packageVersion}
+        {:else}
+          Package version unknown
+        {/if}
+      </p>
 
       <div class="mt-4">
         {#if data.manifest.capabilities.length === 0}

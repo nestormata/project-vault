@@ -128,7 +128,7 @@ export const MAX_MODULE_ACTIONS = 32
 // render its own internal sub-state on load. Purely additive and backward-compatible: an
 // existing extension reading only the pre-existing fields keeps working unmodified, and the
 // field is never populated (stays `undefined`) for a request with no sub-path.
-export const EXTENSION_API_VERSION = '3.5.0'
+export const EXTENSION_API_VERSION = '3.6.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

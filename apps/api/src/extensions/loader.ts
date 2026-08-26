@@ -1,4 +1,7 @@
 import type { FastifyBaseLogger } from 'fastify'
+import { existsSync, readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
 import { sql } from 'drizzle-orm'
 import {
   getDb,
@@ -40,7 +43,21 @@ export type ExtensionLoadFailureReason = 'import_error' | 'manifest_invalid' | '
 
 export type ExtensionState =
   | { status: 'not_configured' }
-  | { status: 'loaded'; manifest: ExtensionManifest; loadedAt: string; hooks: ExtensionHooks }
+  | {
+      status: 'loaded'
+      manifest: ExtensionManifest
+      loadedAt: string
+      hooks: ExtensionHooks
+      /**
+       * Story 25.9 AC4: the loaded package's own release version, read from its `package.json`
+       * `version` field — distinct from `manifest.apiVersion` (the extension-API *contract*
+       * version). `undefined`/omitted whenever the field is missing, unreadable, or not a string;
+       * never a load-failure mode (Dev Notes). Optional (not required) so the many pre-existing
+       * `__setExtensionStateForTests()` call sites across this codebase that construct a 'loaded'
+       * state directly for unrelated test scenarios are not forced to supply it.
+       */
+      packageVersion?: string
+    }
   | { status: 'load_failed'; reason: ExtensionLoadFailureReason }
 
 type ExtensionModuleShape = {
@@ -246,6 +263,74 @@ async function buildHostServices(
   }
 }
 
+/**
+ * Story 25.9 AC4 (Dev Notes / Elicitation Log #2 — "worth verifying directly before writing to
+ * the story as fact"): verified directly during implementation (not merely assumed) that neither
+ * of the two "obvious" resolution primitives works everywhere this loader actually runs:
+ *
+ * - `import.meta.resolve('<pkg>/package.json')` throws `ERR_PACKAGE_PATH_NOT_EXPORTED` for any
+ *   package (including this project's own fixtures) whose `package.json` declares an `exports`
+ *   map without an explicit `"./package.json"` entry.
+ * - `import.meta.resolve('<pkg>')` (main entry, no subpath) resolves fine under plain `node`/`tsx`
+ *   (this loader's real runtime — apps/api's `dev`/`start` scripts), but throws
+ *   `"import.meta.resolve" is not supported` inside Vite's module runner, which is what
+ *   `vitest` uses to execute this very test file — so a test asserting against the real resolver
+ *   could never pass in this project's own test runner despite working correctly in production.
+ *
+ * `createRequire(import.meta.url).resolve(packageName)` (Node's CJS resolution algorithm,
+ * callable from ESM) resolves correctly under `node`, `tsx`, AND vitest's module runner, and —
+ * unlike `import.meta.resolve` in this environment — it follows a pnpm workspace symlink through
+ * to the real source directory rather than leaving the `node_modules/<scope>/<pkg>` path in place
+ * (Elicitation Log #1), which only *simplifies* the walk-up below (fewer directories to search,
+ * not a different code path). Once the main entry file is resolved, walk up from its directory to
+ * find the nearest `package.json` — symlink-safe either way, since `fs.existsSync`/
+ * `fs.readFileSync` follow symlinks transparently regardless of which path shape the resolver
+ * returned.
+ */
+const PACKAGE_JSON_SEARCH_DEPTH = 6
+
+const resolveRequire = createRequire(import.meta.url)
+
+/**
+ * Pure, synchronous walk-up/parse/validate core — exported for direct unit testing against real
+ * temp-directory fixtures (Elicitation Log #4: missing/malformed/non-string `version` must never
+ * throw or become a load-failure mode, only ever resolve to `undefined`).
+ */
+export function readVersionFromPackageDir(startDir: string): string | undefined {
+  try {
+    let dir = startDir
+    for (let i = 0; i < PACKAGE_JSON_SEARCH_DEPTH; i++) {
+      const candidate = join(dir, 'package.json')
+      if (existsSync(candidate)) {
+        const parsed = JSON.parse(readFileSync(candidate, 'utf8')) as { version?: unknown }
+        return typeof parsed.version === 'string' ? parsed.version : undefined
+      }
+      const parent = dirname(dir)
+      if (parent === dir) return undefined
+      dir = parent
+    }
+    return undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Default real implementation of the `readPackageVersion` dep below — resolves `packageName`'s
+ * main entry via Node's CJS resolution algorithm (see the doc comment above `PACKAGE_JSON_SEARCH_DEPTH`
+ * for why this is used instead of `import()`'s own ESM resolution), then walks up from it. Never
+ * throws: a package name that fails to resolve at all (e.g. genuinely not installed) is caught
+ * and reported as `undefined`, same as every other failure mode here.
+ */
+function defaultReadPackageVersion(packageName: string): string | undefined {
+  try {
+    const resolvedMain = resolveRequire.resolve(packageName)
+    return readVersionFromPackageDir(dirname(resolvedMain))
+  } catch {
+    return undefined
+  }
+}
+
 type ImportFn = (specifier: string) => Promise<ExtensionModuleShape>
 type ListOrgIdsFn = () => Promise<string[]>
 type AuditWriterFn = (
@@ -268,6 +353,13 @@ export type LoadExtensionDeps = {
   timeoutMs?: number
   /** Incident-only rollback escape; relaxes the host-version ceiling, never shape or major. */
   allowApiVersionAboveHost?: boolean
+  /**
+   * Story 25.9 AC4: injectable seam for reading the loaded package's own `package.json` version
+   * — defaults to `defaultReadPackageVersion` (real on-disk resolution). Synchronous and never
+   * throws in its default implementation; tests may inject a throwing mock to confirm the loader
+   * stays defensive regardless.
+   */
+  readPackageVersion?: (packageName: string) => string | undefined
 }
 
 const DEFAULT_TIMEOUT_MS = 5000
@@ -415,15 +507,32 @@ function isDoubleInvocation(logger: LoaderLogger): boolean {
 }
 
 async function applyOutcome(
+  packageName: string,
   result: RaceResult,
   listOrgIds: ListOrgIdsFn,
   auditWriter: AuditWriterFn,
   logger: LoaderLogger,
-  allowApiVersionAboveHost: boolean
+  allowApiVersionAboveHost: boolean,
+  readPackageVersion: (packageName: string) => string | undefined
 ): Promise<void> {
   if (result.outcome) {
     const { manifest, hooks } = result.outcome
-    state = { status: 'loaded', manifest, loadedAt: new Date().toISOString(), hooks }
+    // Story 25.9 AC4: never let a throwing readPackageVersion() implementation (defensive test
+    // coverage, or a genuinely misbehaving injected dep) fail the load itself — this data point
+    // is best-effort, same posture as every other failure mode in this function.
+    let packageVersion: string | undefined
+    try {
+      packageVersion = readPackageVersion(packageName)
+    } catch {
+      packageVersion = undefined
+    }
+    state = {
+      status: 'loaded',
+      manifest,
+      loadedAt: new Date().toISOString(),
+      hooks,
+      packageVersion,
+    }
     const dbScopeSnapshot = await readExtensionDbScopeSnapshot(manifest)
     logExtensionDbScopeStatus(logger, dbScopeSnapshot)
     await writeExtensionDbScopePlatformAudit(logger, dbScopeSnapshot)
@@ -477,18 +586,46 @@ async function applyOutcome(
  * capability mismatch, a crash inside hooksFactory, or a hang/timeout) is caught and recorded
  * as module-level state instead, so a misconfigured extension can never crash `createApp()`.
  */
+type ResolvedLoadExtensionDeps = Required<
+  Pick<
+    LoadExtensionDeps,
+    | 'logger'
+    | 'importFn'
+    | 'timeoutMs'
+    | 'listOrgIds'
+    | 'auditWriter'
+    | 'allowApiVersionAboveHost'
+    | 'readPackageVersion'
+  >
+>
+
+/** Extracted from loadExtension() purely to keep its own cyclomatic complexity under the
+ * project's lint ceiling — each `= default` in a destructure counts as a branch. */
+function resolveLoadExtensionDeps(deps: LoadExtensionDeps): ResolvedLoadExtensionDeps {
+  return {
+    logger: deps.logger ?? silentLogger,
+    importFn: deps.importFn ?? defaultImportFn,
+    timeoutMs: deps.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    listOrgIds: deps.listOrgIds ?? fetchAllOrgIds,
+    auditWriter: deps.auditWriter ?? defaultAuditWriter,
+    allowApiVersionAboveHost: deps.allowApiVersionAboveHost ?? false,
+    readPackageVersion: deps.readPackageVersion ?? defaultReadPackageVersion,
+  }
+}
+
 export async function loadExtension(
   packageName: string | undefined,
   deps: LoadExtensionDeps = {}
 ): Promise<void> {
   const {
-    logger = silentLogger,
-    importFn = defaultImportFn,
-    timeoutMs = DEFAULT_TIMEOUT_MS,
-    listOrgIds = fetchAllOrgIds,
-    auditWriter = defaultAuditWriter,
-    allowApiVersionAboveHost = false,
-  } = deps
+    logger,
+    importFn,
+    timeoutMs,
+    listOrgIds,
+    auditWriter,
+    allowApiVersionAboveHost,
+    readPackageVersion,
+  } = resolveLoadExtensionDeps(deps)
   if (!packageName) return
   if (isDoubleInvocation(logger)) return
 
@@ -499,5 +636,13 @@ export async function loadExtension(
     allowApiVersionAboveHost,
     logger
   )
-  await applyOutcome(result, listOrgIds, auditWriter, logger, allowApiVersionAboveHost)
+  await applyOutcome(
+    packageName,
+    result,
+    listOrgIds,
+    auditWriter,
+    logger,
+    allowApiVersionAboveHost,
+    readPackageVersion
+  )
 }

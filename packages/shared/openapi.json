@@ -35827,13 +35827,18 @@
                         },
                         "loadedAt": {
                           "type": "string"
+                        },
+                        "packageVersion": {
+                          "nullable": true,
+                          "type": "string"
                         }
                       },
                       "required": [
                         "name",
                         "apiVersion",
                         "capabilities",
-                        "loadedAt"
+                        "loadedAt",
+                        "packageVersion"
                       ],
                       "additionalProperties": false
                     },

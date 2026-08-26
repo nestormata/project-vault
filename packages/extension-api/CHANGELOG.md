@@ -2,6 +2,20 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.6.0 — 2026-08-26
+
+contract-hash: sha256:e51cc51d0b3183cf8efe1298e345973b11ef6af3a74338d80b808033539d87b1
+
+### Changed
+
+- No public type/schema change. `apps/api/src/extensions/loader.ts` is one of this contract's
+  listed `CONTRACT_FILES` (its load/`load_failed` behaviour is observable to extensions), and
+  Story 25.9 added a new, purely host-side capability to it — reading the loaded module pack's own
+  `package.json` `version` field and surfacing it via the admin-only `GET /extensions/status`
+  response — so `scripts/check-extension-api-version-skew.ts`'s forward-only-versioning invariant
+  requires this version bump even though no exported type or hook signature changed. The bump only
+  updates the `EXTENSION_API_VERSION` literal itself in the surface snapshot.
+
 ## 3.5.0 — 2026-08-26
 
 contract-hash: sha256:3f6861634bb70045af8440c262ed2028c096b2c734428348a6fd39ebb921cb17
