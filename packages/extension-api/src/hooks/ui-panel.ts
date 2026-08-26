@@ -86,6 +86,19 @@ export type UIPanelContext = {
    * caller until Task 4 lands.
    */
   actionEndpoint?: string
+  /**
+   * Story 25.8 AC1/Task 1 — the URL sub-path (if any) `apps/web`'s deep-linkable
+   * `extensions/panels/[slot]/[...subpath]` route matched for this request, forwarded so the
+   * extension can render the corresponding internal sub-state on initial load. This is PURELY
+   * routing state owned by `apps/web` — the host never validates, looks up, or authorizes
+   * anything about its contents (identical posture to `resourceId` above), and it is NEVER
+   * concatenated into the `GET /api/v1/extensions/panels/:slot` route's own `:slot` path
+   * parameter (that parameter's `knownSlots.includes(slot)` exact-match validation stays
+   * untouched — see this story's Dev Notes). Present only when the matched URL actually has a
+   * non-empty sub-path segment; `undefined` (never `''`) otherwise, matching `resourceId`'s own
+   * documented `undefined`-vs-`''` contract.
+   */
+  subpath?: string
 }
 
 export type UIPanelResult = {

@@ -32780,6 +32780,14 @@
             "schema": {
               "type": "string"
             },
+            "in": "query",
+            "name": "subpath",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
             "in": "path",
             "name": "slot",
             "required": true

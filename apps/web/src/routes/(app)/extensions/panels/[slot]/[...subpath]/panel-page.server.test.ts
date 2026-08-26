@@ -14,9 +14,9 @@ vi.mock('$lib/api/themes.js', () => ({
 
 import { load } from './+page.server.js'
 
-function makeEvent(user: unknown, slot = 'group') {
+function makeEvent(user: unknown, slot = 'group', subpath = '') {
   return {
-    params: { slot },
+    params: { slot, subpath },
     fetch: vi.fn(),
     locals: { user },
   } as unknown as Parameters<typeof load>[0]
@@ -50,6 +50,7 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
 
     expect(result).toEqual({
       slot: 'group',
+      subpath: undefined,
       html: '<p>hello</p>',
       themeVars: BASE_EXTENSION_THEME_VARS,
       actionEndpoint: undefined,
@@ -67,6 +68,7 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
 
     expect(result).toEqual({
       slot: 'group',
+      subpath: undefined,
       html: '<p>hello</p>',
       themeVars: BASE_EXTENSION_THEME_VARS,
       actionEndpoint: '/api/v1/extensions/panels/group/actions',
@@ -80,6 +82,7 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
 
     expect(result).toEqual({
       slot: 'group',
+      subpath: undefined,
       html: '<p>hello</p>',
       themeVars: BASE_EXTENSION_THEME_VARS,
       actionEndpoint: undefined,
@@ -93,6 +96,7 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
 
     expect(result).toEqual({
       slot: 'group',
+      subpath: undefined,
       html: null,
       themeVars: BASE_EXTENSION_THEME_VARS,
       actionEndpoint: undefined,
@@ -106,6 +110,7 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
 
     expect(result).toEqual({
       slot: 'group',
+      subpath: undefined,
       html: null,
       themeVars: BASE_EXTENSION_THEME_VARS,
       actionEndpoint: undefined,
@@ -139,5 +144,29 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
     const result = await load(makeEvent(baseUser))
 
     expect(result.themeVars).toEqual(BASE_EXTENSION_THEME_VARS)
+  })
+
+  describe('Story 25.8 AC1: sub-path forwarding', () => {
+    it('a non-empty subpath route param is forwarded to getExtensionPanel and echoed in page data', async () => {
+      getExtensionPanelMock.mockResolvedValue({ ok: true, html: '<p>x</p>' })
+
+      const result = await load(makeEvent(baseUser, 'group', 'groups/123/detail'))
+
+      expect(getExtensionPanelMock).toHaveBeenCalledWith(
+        expect.anything(),
+        'group',
+        'groups/123/detail'
+      )
+      expect(result.subpath).toBe('groups/123/detail')
+    })
+
+    it('an empty subpath route param (no sub-path in the URL) stays undefined, never an empty string', async () => {
+      getExtensionPanelMock.mockResolvedValue({ ok: true, html: '<p>x</p>' })
+
+      const result = await load(makeEvent(baseUser, 'group', ''))
+
+      expect(getExtensionPanelMock).toHaveBeenCalledWith(expect.anything(), 'group', undefined)
+      expect(result.subpath).toBeUndefined()
+    })
   })
 })

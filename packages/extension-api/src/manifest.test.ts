@@ -32,8 +32,9 @@ describe('EXTENSION_API_VERSION', () => {
     // also developed in parallel); because 3.3.0 was already claimed on main by Story 25.4 when
     // this branch merged, the same forward-only-version invariant requires moving to the next
     // free number again, 3.4.0. The major floor is unchanged from Story 23.11 AC6's
-    // 2.2.0 -> 3.0.0 breaking bump.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.4.0')
+    // 2.2.0 -> 3.0.0 breaking bump. Story 25.8 independently adds UIPanelContext's optional
+    // `subpath?` field (also additive-minor), the next free number: 3.4.0 -> 3.5.0.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.5.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

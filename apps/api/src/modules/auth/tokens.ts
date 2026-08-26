@@ -116,7 +116,7 @@ export function setAuthCookies(reply: CookieReply, tokens: AuthCookieTokens): vo
   // "Token issuance timing": avoids a GET-then-POST bootstrap gap, since the CSRF cookie is now
   // always present alongside a fresh/rotated session and rotates with it). Deliberately NOT
   // httpOnly, unlike the two cookies above — apps/web's postMessage-relay fetch
-  // (extensions/panels/[slot]/+page.svelte) must read this value back via `document.cookie` to
+  // (extensions/panels/[slot]/[...subpath]/+page.svelte) must read this value back via `document.cookie` to
   // echo it as a request header.
   reply.setCookie(csrfCookieName(secure), generateCsrfToken(), {
     httpOnly: false,

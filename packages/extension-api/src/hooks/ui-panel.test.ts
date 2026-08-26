@@ -7,7 +7,15 @@ import type { UIPanel, UIPanelContext, UIPanelResult } from './ui-panel.js'
 // typecheck if a new top-level key is ever added, since `keyof UIPanelContext` would then no
 // longer extend this literal union.
 type OnlyExpectedFields = keyof UIPanelContext extends
-  'slot' | 'resourceId' | 'identity' | 'orgId' | 'projectId' | 'locale' | 'theme' | 'actionEndpoint'
+  | 'slot'
+  | 'resourceId'
+  | 'identity'
+  | 'orgId'
+  | 'projectId'
+  | 'locale'
+  | 'theme'
+  | 'actionEndpoint'
+  | 'subpath'
   ? true
   : false
 const _assertUIPanelContextHasOnlyExpectedFields: OnlyExpectedFields = true
@@ -59,6 +67,11 @@ describe('UIPanel', () => {
     expect(
       baseContext({ actionEndpoint: '/api/v1/extensions/panels/group/actions' }).actionEndpoint
     ).toBe('/api/v1/extensions/panels/group/actions')
+  })
+
+  it('Story 25.8 AC1/Task 1: accepts the optional subpath field when present, absent by default', () => {
+    expect(baseContext().subpath).toBeUndefined()
+    expect(baseContext({ subpath: 'groups/123' }).subpath).toBe('groups/123')
   })
 
   it('AC3: locale is restricted to the supported-locale union', () => {

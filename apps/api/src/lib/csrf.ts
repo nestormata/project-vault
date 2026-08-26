@@ -3,7 +3,7 @@ import { csrfCookieName } from '../modules/auth/tokens.js'
 
 /**
  * Story 25.6 AC5 — the request header the client's postMessage-relay fetch
- * (`apps/web/src/routes/(app)/extensions/panels/[slot]/+page.svelte`) echoes the CSRF cookie
+ * (`apps/web/src/routes/(app)/extensions/panels/[slot]/[...subpath]/+page.svelte`) echoes the CSRF cookie
  * value back as. Kept as a named export (not duplicated as a string literal on both sides of the
  * wire) so the two never silently drift — `+page.svelte` imports nothing from this backend
  * package, so its own copy of this exact string is cross-referenced in a comment there instead.

@@ -34,15 +34,36 @@ const ExtensionPanelParamsSchema = z.object({ slot: z.string() })
 const ExtensionPanelQuerySchema = z.object({
   projectId: z.string().optional(),
   resourceId: z.string().optional(),
+  // Story 25.8 AC1/Task 1 — same OpenAPI-permissive-shape rationale as projectId/resourceId
+  // above: actual shape enforcement is `isMalformedQueryValue()`'s manual `SUBPATH_PATTERN`
+  // check below (a 400, not the global validator's opaque 500).
+  subpath: z.string().optional(),
 })
 
 const PROJECT_ID_PATTERN =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
 const RESOURCE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
+// Story 25.8 AC1/Task 1 — mirrors RESOURCE_ID_PATTERN's charset per path segment (bounded,
+// alphanumeric/dash/underscore only — never `.`/`..`, which rules out a path-traversal-shaped
+// value by construction) but allows `/`-separated segments, since a sub-path is inherently
+// multi-segment (e.g. `groups/123/detail`). No leading/trailing/doubled slash (each of those
+// would otherwise produce an empty segment). Bounded to 256 chars total — generous for a
+// sub-path, short enough not to be a DoS vector.
+// eslint-disable-next-line security/detect-unsafe-regex -- no catastrophic-backtracking risk: the per-segment charset ([A-Za-z0-9_-]) never overlaps with the `/` separator, so there is no ambiguous match to backtrack over; length is also bounded to SUBPATH_MAX_LENGTH before this pattern ever runs (isMalformedQueryValue below).
+const SUBPATH_PATTERN = /^[A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)*$/
+const SUBPATH_MAX_LENGTH = 256
 
-function isMalformedQueryValue(query: { projectId?: string; resourceId?: string }): boolean {
+function isMalformedQueryValue(query: {
+  projectId?: string
+  resourceId?: string
+  subpath?: string
+}): boolean {
   if (query.projectId !== undefined && !PROJECT_ID_PATTERN.test(query.projectId)) return true
   if (query.resourceId !== undefined && !RESOURCE_ID_PATTERN.test(query.resourceId)) return true
+  if (query.subpath !== undefined) {
+    if (query.subpath.length > SUBPATH_MAX_LENGTH) return true
+    if (!SUBPATH_PATTERN.test(query.subpath)) return true
+  }
   return false
 }
 
@@ -55,14 +76,20 @@ function isMalformedQueryValue(query: { projectId?: string; resourceId?: string 
 function parsePanelSlotAndQueryOrReject(
   req: FastifyRequest,
   reply: FastifyReply
-): { slot: string; projectId?: string; resourceId?: string } | undefined {
+): { slot: string; projectId?: string; resourceId?: string; subpath?: string } | undefined {
   const { slot } = req.params as { slot: string }
-  const { projectId, resourceId } = req.query as { projectId?: string; resourceId?: string }
-  if (isMalformedQueryValue({ projectId, resourceId })) {
-    reply.status(400).send({ code: 'invalid_query', message: 'Malformed projectId or resourceId' })
+  const { projectId, resourceId, subpath } = req.query as {
+    projectId?: string
+    resourceId?: string
+    subpath?: string
+  }
+  if (isMalformedQueryValue({ projectId, resourceId, subpath })) {
+    reply
+      .status(400)
+      .send({ code: 'invalid_query', message: 'Malformed projectId, resourceId, or subpath' })
     return undefined
   }
-  return { slot, projectId, resourceId }
+  return { slot, projectId, resourceId, subpath }
 }
 
 const ExtensionPanelOkSchema = z.object({
@@ -240,7 +267,7 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
       // position `slot` itself uses.
       const parsed = parsePanelSlotAndQueryOrReject(req, reply)
       if (!parsed) return reply
-      const { slot, projectId, resourceId } = parsed
+      const { slot, projectId, resourceId, subpath } = parsed
       const secureCtx = ctx as SecureRouteContext
       // Story 25.2 AC3: resolved fresh from getExtensionStatus() on every request, never a
       // module-level constant — a slot the currently loaded extension's manifest doesn't
@@ -260,7 +287,7 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
           orgRole: secureCtx.auth.orgRole,
         },
         secureCtx.tx,
-        { projectId, resourceId }
+        { projectId, resourceId, subpath }
       )
 
       if (result.outcome === 'invalid_slot') {
@@ -332,6 +359,7 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
       // only a fixed generic message, with the real failure logged server-side only via the same
       // fixed-enum `EXTENSION_MODULE_ACTION_FAILED`/subReason discipline
       // `logModuleActionFailed()` already established for every other action-route failure path.
+      // eslint-disable-next-line security/detect-object-injection -- CSRF_HEADER_NAME is a fixed, hardcoded string constant ('x-csrf-token'), never user input.
       if (isRejectedByCsrfToken(req.cookies, req.headers[CSRF_HEADER_NAME], env.COOKIE_SECURE)) {
         operationalLog(
           req.log,

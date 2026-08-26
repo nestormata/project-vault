@@ -621,6 +621,72 @@ describe('renderExtensionPanel (Story 25.1 AC3/AC3b, Story 25.3 AC1-AC6)', () =>
     })
   })
 
+  describe('Story 25.8 AC1: subpath pass-through, never concatenated into :slot, never authorized', () => {
+    it('a subpath value is passed through verbatim into context', async () => {
+      let captured: UIPanelContext | undefined
+      __setExtensionStateForTests(
+        loadedState({
+          uiPanel: {
+            onRenderPanel: async (context) => {
+              captured = context
+              return { html: 'ok' }
+            },
+          },
+        })
+      )
+      await renderExtensionPanel(
+        'group',
+        DEFAULT_UI_PANEL_SLOTS,
+        silentLogger(),
+        IDENTITY_1,
+        FAKE_TX,
+        { subpath: 'groups/123/detail' },
+        fakeDeps()
+      )
+      expect(captured?.subpath).toBe('groups/123/detail')
+    })
+
+    it('omitted subpath stays undefined in context (never an empty string)', async () => {
+      let captured: UIPanelContext | undefined
+      __setExtensionStateForTests(
+        loadedState({
+          uiPanel: {
+            onRenderPanel: async (context) => {
+              captured = context
+              return { html: 'ok' }
+            },
+          },
+        })
+      )
+      await renderExtensionPanel(
+        'group',
+        DEFAULT_UI_PANEL_SLOTS,
+        silentLogger(),
+        IDENTITY_1,
+        FAKE_TX,
+        {},
+        fakeDeps()
+      )
+      expect(captured?.subpath).toBeUndefined()
+    })
+
+    it('a subpath is never used to widen the knownSlots match — an invalid slot still rejects even with a subpath supplied', async () => {
+      __setExtensionStateForTests(
+        loadedState({ uiPanel: { onRenderPanel: async () => ({ html: SHOULD_NOT_RUN_HTML }) } })
+      )
+      const result = await renderExtensionPanel(
+        'not-a-known-slot',
+        DEFAULT_UI_PANEL_SLOTS,
+        silentLogger(),
+        IDENTITY_1,
+        FAKE_TX,
+        { subpath: 'anything' },
+        fakeDeps()
+      )
+      expect(result).toEqual({ outcome: 'invalid_slot' })
+    })
+  })
+
   describe('Story 25.5 AC4/Task 4: actionEndpoint resolution', () => {
     it('resolves actionEndpoint to the absolute actions path when the loaded extension declares moduleActions', async () => {
       let captured: UIPanelContext | undefined

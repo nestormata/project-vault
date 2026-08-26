@@ -2,9 +2,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
 import { routeExists } from '$lib/test/route-exists.js'
 import { BASE_EXTENSION_THEME_VARS } from '$lib/security/extension-theme-vars.js'
+
+const gotoMock = vi.hoisted(() => vi.fn())
+vi.mock('$app/navigation', () => ({ goto: gotoMock }))
+
 import ExtensionPanelPage from './+page.svelte'
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  gotoMock.mockReset()
+})
 
 const baseData = {
   slot: 'group',
@@ -13,8 +20,14 @@ const baseData = {
 }
 
 describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1)', () => {
+  function dispatchPanelDataRequest(iframe: HTMLIFrameElement, message: Record<string, unknown>) {
+    window.dispatchEvent(
+      new MessageEvent('message', { data: message, source: iframe.contentWindow as WindowProxy })
+    )
+  }
+
   it('is a real, existing route', () => {
-    expect(routeExists('/extensions/panels/[slot]')).toBe(true)
+    expect(routeExists('/extensions/panels/[slot]/[...subpath]')).toBe(true)
   })
 
   it('AC3: renders the calm "temporarily unavailable" message when html is null, never a raw error', () => {
@@ -118,12 +131,6 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1)', () => {
   })
 
   describe('Story 14-11/DW-236 — panel data relay (CentralizeMe project-container panel)', () => {
-    function dispatchPanelDataRequest(iframe: HTMLIFrameElement, message: Record<string, unknown>) {
-      window.dispatchEvent(
-        new MessageEvent('message', { data: message, source: iframe.contentWindow as WindowProxy })
-      )
-    }
-
     it('relays an allowed GET path to fetch with credentials, and posts the JSON result back', async () => {
       const fetchMock = vi.fn().mockResolvedValue({
         status: 200,
@@ -281,6 +288,217 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1)', () => {
       const headers = options.headers as Record<string, string>
       expect(headers['x-csrf-token']).toBe('host-prefixed-value')
       cookieGetter.mockRestore()
+    })
+  })
+
+  describe('Story 25.8 AC3: navigation-request postMessage type', () => {
+    afterEach(() => vi.unstubAllGlobals())
+
+    it('an allowed, authorized intent posts ok:true and navigates via goto()', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) })
+      vi.stubGlobal('fetch', fetchMock)
+
+      render(ExtensionPanelPage, {
+        props: { data: { ...baseData, html: '<p>x</p>' } },
+      })
+      const iframe = document.querySelector('iframe') as HTMLIFrameElement
+      const posted: unknown[] = []
+      const contentWindow = iframe.contentWindow as unknown as {
+        postMessage: typeof window.postMessage
+      }
+      vi.spyOn(contentWindow, 'postMessage').mockImplementation((data: unknown) => {
+        posted.push(data)
+      })
+
+      dispatchPanelDataRequest(iframe, {
+        source: 'pv-extension-panel-navigation-request',
+        requestId: 'nav-1',
+        kind: 'pv-project-detail',
+        projectId: 'proj_123',
+      })
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/projects/proj_123',
+        expect.objectContaining({ method: 'GET', credentials: 'same-origin' })
+      )
+      await vi.waitFor(() =>
+        expect(posted).toContainEqual(
+          expect.objectContaining({
+            source: 'pv-extension-panel-navigation-result',
+            requestId: 'nav-1',
+            ok: true,
+          })
+        )
+      )
+      await vi.waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/projects/proj_123'))
+    })
+
+    it('a shape-invalid intent (unknown kind) is rejected without ever calling the authorization fetch or goto()', async () => {
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
+
+      render(ExtensionPanelPage, {
+        props: { data: { ...baseData, html: '<p>x</p>' } },
+      })
+      const iframe = document.querySelector('iframe') as HTMLIFrameElement
+      const posted: unknown[] = []
+      const contentWindow = iframe.contentWindow as unknown as {
+        postMessage: typeof window.postMessage
+      }
+      vi.spyOn(contentWindow, 'postMessage').mockImplementation((data: unknown) => {
+        posted.push(data)
+      })
+
+      dispatchPanelDataRequest(iframe, {
+        source: 'pv-extension-panel-navigation-request',
+        requestId: 'nav-2',
+        kind: 'pv-attacker-controlled-destination',
+        projectId: 'proj_123',
+      })
+
+      await vi.waitFor(() =>
+        expect(posted).toContainEqual(
+          expect.objectContaining({
+            source: 'pv-extension-panel-navigation-result',
+            requestId: 'nav-2',
+            ok: false,
+          })
+        )
+      )
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(gotoMock).not.toHaveBeenCalled()
+    })
+
+    it('Security Audit Personas (Elicitation Log #1): a shape-valid but cross-org/unauthorized projectId is rejected, never navigated to', async () => {
+      // The real authorization check — GET /api/v1/projects/:projectId — 404s for a project this
+      // session cannot see (org visibility gate), same non-leaking-existence shape as a genuinely
+      // nonexistent project. A shape-valid `kind`/`projectId` alone must NOT be sufficient.
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue({ ok: false, status: 404, json: async () => ({}) })
+      vi.stubGlobal('fetch', fetchMock)
+
+      render(ExtensionPanelPage, {
+        props: { data: { ...baseData, html: '<p>x</p>' } },
+      })
+      const iframe = document.querySelector('iframe') as HTMLIFrameElement
+      const posted: unknown[] = []
+      const contentWindow = iframe.contentWindow as unknown as {
+        postMessage: typeof window.postMessage
+      }
+      vi.spyOn(contentWindow, 'postMessage').mockImplementation((data: unknown) => {
+        posted.push(data)
+      })
+
+      dispatchPanelDataRequest(iframe, {
+        source: 'pv-extension-panel-navigation-request',
+        requestId: 'nav-3',
+        kind: 'pv-project-detail',
+        projectId: 'proj_not_mine',
+      })
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      await vi.waitFor(() =>
+        expect(posted).toContainEqual(
+          expect.objectContaining({
+            source: 'pv-extension-panel-navigation-result',
+            requestId: 'nav-3',
+            ok: false,
+          })
+        )
+      )
+      expect(gotoMock).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('Story 25.8 Task 2a: in-flight requests are invalidated when a navigation swaps srcdoc', () => {
+    afterEach(() => vi.unstubAllGlobals())
+
+    it('a data-request still in flight when the panel navigates never has its response posted', async () => {
+      let resolveFetch: (value: { status: number; json: () => Promise<unknown> }) => void = () => {}
+      const fetchMock = vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveFetch = resolve
+          })
+      )
+      vi.stubGlobal('fetch', fetchMock)
+
+      const { rerender } = render(ExtensionPanelPage, {
+        props: { data: { ...baseData, slot: 'group', html: '<p>a</p>' } },
+      })
+      const iframe = document.querySelector('iframe') as HTMLIFrameElement
+      const posted: unknown[] = []
+      const contentWindow = iframe.contentWindow as unknown as {
+        postMessage: typeof window.postMessage
+      }
+      vi.spyOn(contentWindow, 'postMessage').mockImplementation((data: unknown) => {
+        posted.push(data)
+      })
+
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            source: 'pv-extension-panel-data-request',
+            requestId: 'stale-req',
+            method: 'GET',
+            path: '/api/v1/projects',
+          },
+          source: iframe.contentWindow as WindowProxy,
+        })
+      )
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+
+      // A navigation swaps the composed srcdoc (different html) BEFORE the in-flight fetch above
+      // resolves — this is the exact race the Boundary & Edge Case Sweep finding (Elicitation
+      // Log #3) describes.
+      await rerender({ data: { ...baseData, slot: 'group', html: '<p>b</p>' } })
+
+      // Now let the stale fetch resolve.
+      resolveFetch({ status: 200, json: () => Promise.resolve({ data: {} }) })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      expect(posted).not.toContainEqual(expect.objectContaining({ requestId: 'stale-req' }))
+    })
+  })
+
+  describe('Story 25.8 AC2: back/forward across panel sub-states', () => {
+    it('drives two sequential sub-state navigations plus a back-navigation, restoring correct content each time with no error', async () => {
+      const { rerender } = render(ExtensionPanelPage, {
+        props: { data: { ...baseData, html: '<p>state-a</p>' } },
+      })
+      expect(document.querySelector('iframe')?.getAttribute('srcdoc')).toContain('state-a')
+
+      // First forward sub-state navigation.
+      await rerender({ data: { ...baseData, html: '<p>state-b</p>' } })
+      expect(document.querySelector('iframe')?.getAttribute('srcdoc')).toContain('state-b')
+      expect(document.querySelector('iframe')?.getAttribute('srcdoc')).not.toContain('state-a')
+
+      // Second forward sub-state navigation.
+      await rerender({ data: { ...baseData, html: '<p>state-c</p>' } })
+      expect(document.querySelector('iframe')?.getAttribute('srcdoc')).toContain('state-c')
+
+      // Browser back-navigation returns to the FIRST sub-state (SvelteKit resyncs `data` via its
+      // own afterNavigate/load cycle on a popstate; this simulates the resulting prop update).
+      await rerender({ data: { ...baseData, html: '<p>state-a</p>' } })
+      expect(document.querySelector('iframe')?.getAttribute('srcdoc')).toContain('state-a')
+      expect(document.querySelector('iframe')?.getAttribute('srcdoc')).not.toContain('state-c')
+
+      // No stuck stale iframe, no missing iframe, no thrown error anywhere above.
+      expect(document.querySelectorAll('iframe')).toHaveLength(1)
+    })
+
+    it('a back-navigation to the degraded (html: null) state removes the iframe cleanly, no stale content left behind', async () => {
+      const { rerender } = render(ExtensionPanelPage, {
+        props: { data: { ...baseData, html: '<p>state-a</p>' } },
+      })
+      expect(document.querySelector('iframe')).toBeTruthy()
+
+      await rerender({ data: { ...baseData, html: null } })
+
+      expect(document.querySelector('iframe')).toBeNull()
+      expect(screen.getByText(/temporarily unavailable/i)).toBeTruthy()
     })
   })
 })

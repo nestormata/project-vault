@@ -129,6 +129,14 @@ export type PanelIdentity = {
 export type PanelQuery = {
   projectId?: string
   resourceId?: string
+  /**
+   * Story 25.8 AC1/Task 1 — the URL sub-path `apps/web`'s deep-linkable
+   * `extensions/panels/[slot]/[...subpath]` route matched, forwarded on the SAME existing
+   * `GET /api/v1/extensions/panels/:slot` call as a separate query field (never concatenated
+   * into `:slot` itself — see this story's Dev Notes). Passed through verbatim with no PV-side
+   * lookup or authorization, identical posture to `resourceId` above.
+   */
+  subpath?: string
 }
 
 /**
@@ -272,6 +280,10 @@ export async function resolveBaseModuleActionContext(
     // AC5: resourceId is passed through verbatim with NO PV-side lookup — see
     // `RenderExtensionPanelDeps` above, which has no resourceId-related dependency at all.
     ...(query.resourceId !== undefined ? { resourceId: query.resourceId } : {}),
+    // Story 25.8 AC1: subpath is passed through verbatim with NO PV-side lookup or
+    // authorization, identical posture to resourceId above — purely apps/web-owned routing
+    // state the extension may use to render its own internal sub-state.
+    ...(query.subpath !== undefined ? { subpath: query.subpath } : {}),
     // Story 25.5 AC4/Task 4: only included when the loaded extension declares moduleActions —
     // `undefined` (never `''`), never present, when it does not.
     ...(actionEndpoint !== undefined ? { actionEndpoint } : {}),
