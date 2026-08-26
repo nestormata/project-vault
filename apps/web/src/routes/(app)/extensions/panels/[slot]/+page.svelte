@@ -43,6 +43,37 @@
   }
 
   /**
+   * Story 14-11/DW-236 (CentralizeMe) — a second, narrower relay alongside the action relay
+   * above, for panels that need to read/write PV-native REST data the panel itself doesn't own
+   * (e.g. CM's project-container panel listing/creating PV's own native `projects`). Same
+   * underlying reason as the action relay: the panel iframe is `sandbox="allow-scripts"` with no
+   * `allow-same-origin`, so it has a forced-opaque origin and its own CSP
+   * (`compose-panel-document.ts`, `default-src 'none'`, no `connect-src`) blocks any `fetch()` it
+   * issues directly. This page — real PV origin, real session cookie — performs the fetch on the
+   * panel's behalf and posts the JSON result back.
+   *
+   * Deliberately NOT a general-purpose proxy: `isAllowedPanelDataPath()` is a host-owned
+   * allowlist the panel cannot influence (method + path pattern only), matching the action
+   * relay's own "host decides, extension never touches the network directly" posture. Extending
+   * this to another PV-native resource means adding another host-owned pattern here, not
+   * widening what an extension can request.
+   */
+  const PANEL_DATA_REQUEST_SOURCE = 'pv-extension-panel-data-request'
+  const PANEL_DATA_RESULT_SOURCE = 'pv-extension-panel-data-result'
+  const ALLOWED_PANEL_DATA_METHODS = new Set(['GET', 'POST'])
+  const ALLOWED_PANEL_DATA_PATH_PATTERNS = [/^\/api\/v1\/projects$/, /^\/api\/v1\/projects\/[^/]+$/]
+
+  function validatePanelDataRequest(
+    method: unknown,
+    path: unknown
+  ): { method: 'GET' | 'POST'; path: string } | undefined {
+    if (typeof method !== 'string' || !ALLOWED_PANEL_DATA_METHODS.has(method)) return undefined
+    if (typeof path !== 'string') return undefined
+    if (!ALLOWED_PANEL_DATA_PATH_PATTERNS.some((pattern) => pattern.test(path))) return undefined
+    return { method: method as 'GET' | 'POST', path }
+  }
+
+  /**
    * Story 25.5 AC4/Task 4 — Bug fix (2026-08-24, found via real Chrome-driven manual
    * verification): the panel iframe can never fetch the host's action endpoint directly, no
    * matter what its CSP allows. `sandbox="allow-scripts"` without `allow-same-origin` (Story
@@ -71,14 +102,53 @@
    * can never redirect this relay to an arbitrary URL.
    */
   $effect(() => {
+    function handlePanelDataMessage(
+      event: MessageEvent,
+      message: Record<string, unknown>
+    ): boolean {
+      if (message['source'] !== PANEL_DATA_REQUEST_SOURCE) return false
+      const { requestId, method, path, body } = message
+      if (typeof requestId !== 'string') return true
+      const targetWindow = (event.source as Window | null) ?? panelIframe?.contentWindow
+      const validated = validatePanelDataRequest(method, path)
+      if (!validated) {
+        targetWindow?.postMessage({ source: PANEL_DATA_RESULT_SOURCE, requestId, ok: false }, '*')
+        return true
+      }
+      fetch(validated.path, {
+        method: validated.method,
+        credentials: 'same-origin',
+        headers:
+          validated.method === 'GET'
+            ? { accept: 'application/json' }
+            : { 'content-type': 'application/json', accept: 'application/json' },
+        body: validated.method === 'GET' ? undefined : JSON.stringify(body ?? {}),
+      })
+        .then(async (res) => {
+          const parsedBody: unknown = await res.json().catch(() => null)
+          targetWindow?.postMessage(
+            {
+              source: PANEL_DATA_RESULT_SOURCE,
+              requestId,
+              ok: true,
+              status: res.status,
+              body: parsedBody,
+            },
+            '*'
+          )
+        })
+        .catch(() => {
+          targetWindow?.postMessage({ source: PANEL_DATA_RESULT_SOURCE, requestId, ok: false }, '*')
+        })
+      return true
+    }
+
     function handlePanelMessage(event: MessageEvent) {
       if (event.source !== panelIframe?.contentWindow) return
       const message = event.data as unknown
-      if (
-        typeof message !== 'object' ||
-        message === null ||
-        (message as Record<string, unknown>)['source'] !== PANEL_ACTION_REQUEST_SOURCE
-      ) {
+      if (typeof message !== 'object' || message === null) return
+      if (handlePanelDataMessage(event, message as Record<string, unknown>)) return
+      if ((message as Record<string, unknown>)['source'] !== PANEL_ACTION_REQUEST_SOURCE) {
         return
       }
       const { requestId, kind } = message as Record<string, unknown>

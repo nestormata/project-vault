@@ -117,6 +117,94 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1)', () => {
     )
   })
 
+  describe('Story 14-11/DW-236 — panel data relay (CentralizeMe project-container panel)', () => {
+    function dispatchPanelDataRequest(iframe: HTMLIFrameElement, message: Record<string, unknown>) {
+      window.dispatchEvent(
+        new MessageEvent('message', { data: message, source: iframe.contentWindow as WindowProxy })
+      )
+    }
+
+    it('relays an allowed GET path to fetch with credentials, and posts the JSON result back', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        status: 200,
+        json: () => Promise.resolve({ data: { items: [] } }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      render(ExtensionPanelPage, {
+        props: { data: { ...baseData, slot: 'project-container', html: '<p>x</p>' } },
+      })
+      const iframe = document.querySelector('iframe') as HTMLIFrameElement
+      const posted: unknown[] = []
+      const contentWindow = iframe.contentWindow as unknown as {
+        postMessage: typeof window.postMessage
+      }
+      vi.spyOn(contentWindow, 'postMessage').mockImplementation((data: unknown) => {
+        posted.push(data)
+      })
+
+      dispatchPanelDataRequest(iframe, {
+        source: 'pv-extension-panel-data-request',
+        requestId: 'req-1',
+        method: 'GET',
+        path: '/api/v1/projects',
+      })
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/projects',
+        expect.objectContaining({ method: 'GET', credentials: 'same-origin' })
+      )
+      await vi.waitFor(() =>
+        expect(posted).toContainEqual(
+          expect.objectContaining({
+            source: 'pv-extension-panel-data-result',
+            requestId: 'req-1',
+            ok: true,
+            status: 200,
+          })
+        )
+      )
+      vi.unstubAllGlobals()
+    })
+
+    it('rejects a path outside the host-owned allowlist without ever calling fetch', async () => {
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
+
+      render(ExtensionPanelPage, {
+        props: { data: { ...baseData, slot: 'project-container', html: '<p>x</p>' } },
+      })
+      const iframe = document.querySelector('iframe') as HTMLIFrameElement
+      const posted: unknown[] = []
+      const contentWindow = iframe.contentWindow as unknown as {
+        postMessage: typeof window.postMessage
+      }
+      vi.spyOn(contentWindow, 'postMessage').mockImplementation((data: unknown) => {
+        posted.push(data)
+      })
+
+      dispatchPanelDataRequest(iframe, {
+        source: 'pv-extension-panel-data-request',
+        requestId: 'req-2',
+        method: 'DELETE',
+        path: '/api/v1/settings',
+      })
+
+      await vi.waitFor(() =>
+        expect(posted).toContainEqual(
+          expect.objectContaining({
+            source: 'pv-extension-panel-data-result',
+            requestId: 'req-2',
+            ok: false,
+          })
+        )
+      )
+      expect(fetchMock).not.toHaveBeenCalled()
+      vi.unstubAllGlobals()
+    })
+  })
+
   describe('Story 25.6 AC5: the message-relay fetch attaches the CSRF token', () => {
     afterEach(() => {
       // Clear every cookie this describe block may have set, so no value leaks between tests.

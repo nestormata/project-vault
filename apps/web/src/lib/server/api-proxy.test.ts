@@ -85,6 +85,35 @@ describe('server API proxy', () => {
     })
   })
 
+  it('DW-237: strips the browser Origin/Referer headers before the server-to-server hop', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ data: { ok: true } }))
+    await proxyApiRequest({
+      fetchFn,
+      request: new Request('http://web.local/api/v1/projects', {
+        method: 'POST',
+        headers: {
+          cookie: 'refresh-token=opaque',
+          'content-type': 'application/json',
+          // A same-origin browser POST legitimately attaches Origin/Referer — this is standard
+          // Chromium behavior, not an attacker-controlled value. `apps/api`'s CORS allowlist only
+          // trusts browser-facing origins, so echoing these onto this app's own separate
+          // server-to-server fetch to the real API gets it rejected with "Not allowed by CORS"
+          // (apps/api/src/app.ts:261), even though the underlying request is legitimate.
+          origin: 'http://web.local',
+          referer: 'http://web.local/extensions/panels/project-container',
+        },
+        body: JSON.stringify({ name: 'New Project' }),
+      }),
+      apiBaseUrl: 'http://api.local:3000',
+      path: 'projects',
+    })
+
+    const forwarded = fetchFn.mock.calls[0]?.[0] as Request
+    expect(forwarded.headers.get('origin')).toBeNull()
+    expect(forwarded.headers.get('referer')).toBeNull()
+    expect(forwarded.headers.get('cookie')).toBe('refresh-token=opaque')
+  })
+
   it('proxies /api/health to the API origin, not this app own /health page route', async () => {
     const fetchFn = vi
       .fn()
