@@ -2,6 +2,24 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.7.0 — 2026-08-26
+
+contract-hash: sha256:e12c8c32651f6ed4d9a812061449779d200575bf1a1863b681d4db33324a69cf
+
+### Added
+
+- Added `HostServices.ephemeralState: EphemeralStateHost` (Story 20.8 AC-1), the delivery of the
+  "Ephemeral Extension State Store & Cleanup Hook Contract" decision approved in `architecture.md`
+  by Story 20-7. `EphemeralStateHost` exposes `get`/`set`/`delete`/`compareAndSwap` plus a new
+  `compareAndDelete(key, expectedValue): Promise<boolean>` (Story 20.8 AC-2 — resolves 20-7 AC-3's
+  explicitly deferred gap: an atomic, race-free conditional discard). Backed by a dedicated,
+  RLS-isolated, TTL-bounded (`(0, 3600]` seconds) Postgres table, encrypted at rest, with a
+  per-org cap of 1,000 live entries and a 5-minute cleanup sweep. Bound once at extension-load
+  time (like `auditEventSource`/`orgAuthorization`); its methods resolve `orgId` ambiently per
+  call via the host's request-scoped context. An existing extension whose `hooksFactory`
+  destructures only `{ auditEventSource }` or `{ auditEventSource, orgAuthorization }` continues
+  to work unmodified.
+
 ## 3.6.0 — 2026-08-26
 
 contract-hash: sha256:e51cc51d0b3183cf8efe1298e345973b11ef6af3a74338d80b808033539d87b1
@@ -89,7 +107,7 @@ contract-hash: sha256:99e2090007f20b7cbb6b4d8e4a0a27d32404598c8d71d6eaa36394e276
 ### Added
 
 - Widened `UIPanelContext` (Story 25.3) from `{ slot }` to `{ slot, resourceId?, identity: {
-  userId, orgRole }, orgId, projectId?, locale, theme: { name } }`. All new fields are
+userId, orgRole }, orgId, projectId?, locale, theme: { name } }`. All new fields are
   server-resolved fresh per request by the host, never client-supplied. `resourceId` and
   `projectId` are both optional — omitting the corresponding query parameter leaves them
   `undefined`, so an existing extension reading only `context.slot` keeps working unmodified.

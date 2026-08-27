@@ -25,7 +25,7 @@ const PACKAGE_JSON_FILENAME = 'package.json'
 const BAD_PACKAGE_NAME = 'bad-package'
 
 function noopLogger(): LoadExtensionDeps['logger'] {
-  return { warn: vi.fn(), fatal: vi.fn() }
+  return { warn: vi.fn(), fatal: vi.fn(), error: vi.fn() }
 }
 
 function baseDeps(overrides: LoadExtensionDeps = {}): LoadExtensionDeps {
@@ -145,6 +145,41 @@ describe('loadExtension — valid package (AC-2)', () => {
       checkMembership?: unknown
     }
     expect(typeof orgAuthorization.checkMembership).toBe('function')
+  })
+
+  // Story 20.8 AC-1/AC-13/Task 4 — same "actually wired, not just typed" precedent as the
+  // orgAuthorization assertion above (20-7's recurring "typed but not wired" gap shape).
+  it('Story 20.8 AC-1: buildHostServices() actually wires ephemeralState alongside auditEventSource/orgAuthorization', async () => {
+    let capturedHost: Record<string, unknown> | undefined
+    const importFn = vi.fn().mockResolvedValue({
+      default: {
+        manifest: VALID_MANIFEST,
+        hooksFactory: (host: Record<string, unknown>) => {
+          capturedHost = host
+          return NOOP_HOOKS
+        },
+      },
+    })
+
+    await loadExtension(VALID_PACKAGE_NAME, baseDeps({ importFn }))
+
+    expect(getExtensionStatus().status).toBe('loaded')
+    expect(capturedHost).toBeDefined()
+    expect(capturedHost?.auditEventSource).toBeDefined()
+    expect(capturedHost?.orgAuthorization).toBeDefined()
+    expect(capturedHost?.ephemeralState).toBeDefined()
+    const ephemeralState = capturedHost?.ephemeralState as {
+      get?: unknown
+      set?: unknown
+      delete?: unknown
+      compareAndSwap?: unknown
+      compareAndDelete?: unknown
+    }
+    expect(typeof ephemeralState.get).toBe('function')
+    expect(typeof ephemeralState.set).toBe('function')
+    expect(typeof ephemeralState.delete).toBe('function')
+    expect(typeof ephemeralState.compareAndSwap).toBe('function')
+    expect(typeof ephemeralState.compareAndDelete).toBe('function')
   })
 })
 
@@ -359,7 +394,7 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
   it('logs at fatal severity with only eventType/reason — never err/stack/message', async () => {
     const importFn = vi.fn().mockRejectedValue(new Error('/secret/internal/path leaked here'))
     const fatal = vi.fn()
-    const logger = { warn: vi.fn(), fatal }
+    const logger = { warn: vi.fn(), fatal, error: vi.fn() }
 
     await loadExtension(BAD_PACKAGE_NAME, baseDeps({ importFn, logger }))
 
@@ -394,15 +429,16 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
 
   it('warns on every load using the explicit above-host rollback escape', async () => {
     const logger = noopLogger()
-    // Story 25.3 AC1/Task 1, Story 25.4 AC4/Task 4, Story 25.5 AC2/Task 1, and Story 25.8
-    // AC1/Task 1 — host EXTENSION_API_VERSION is now 3.5.0 (see manifest.ts's
-    // EXTENSION_API_VERSION doc comment for why this merge moves past 3.2.0/3.3.0/3.4.0, which
-    // Story 25.3/25.4/25.5 respectively already claimed on main for different additive changes);
-    // '3.7.0' is the above-host, same-major escape-eligible version. Kept one minor version above
-    // whatever EXTENSION_API_VERSION currently is — a future bump must move this value forward
-    // again the same way this story just did, or this test silently stops exercising the
-    // above-host path once EXTENSION_API_VERSION catches up to a stale hardcoded value.
-    const aboveHostApiVersion = '3.7.0'
+    // Story 25.3 AC1/Task 1, Story 25.4 AC4/Task 4, Story 25.5 AC2/Task 1, Story 25.8 AC1/Task 1,
+    // and Story 20.8 — host EXTENSION_API_VERSION is now 3.7.0 (see manifest.ts's
+    // EXTENSION_API_VERSION doc comment for why this merge moves past 3.2.0/3.3.0/3.4.0/3.6.0,
+    // which Story 25.3/25.4/25.5/25.9 respectively already claimed on main for different
+    // additive changes); '3.8.0' is the above-host, same-major escape-eligible version. Kept one
+    // minor version above whatever EXTENSION_API_VERSION currently is — a future bump must move
+    // this value forward again the same way this story just did, or this test silently stops
+    // exercising the above-host path once EXTENSION_API_VERSION catches up to a stale
+    // hardcoded value.
+    const aboveHostApiVersion = '3.8.0'
     const importFn = vi.fn().mockResolvedValue({
       default: {
         manifest: { ...VALID_MANIFEST, apiVersion: aboveHostApiVersion },

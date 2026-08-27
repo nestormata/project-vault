@@ -68,6 +68,38 @@ const DEFAULT_HOST_SERVICES: HostServices = {
         )
       ),
   },
+  ephemeralState: {
+    set: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — ephemeralState.set is unavailable'
+        )
+      ),
+    get: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — ephemeralState.get is unavailable'
+        )
+      ),
+    delete: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — ephemeralState.delete is unavailable'
+        )
+      ),
+    compareAndSwap: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — ephemeralState.compareAndSwap is unavailable'
+        )
+      ),
+    compareAndDelete: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — ephemeralState.compareAndDelete is unavailable'
+        )
+      ),
+  },
 }
 
 /**

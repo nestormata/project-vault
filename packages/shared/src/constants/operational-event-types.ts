@@ -246,6 +246,12 @@ export const OperationalEvent = {
   // exception message/stack — fixed-enum `subReason` only, same never-leak-internal-detail
   // discipline as EXTENSION_LOAD_FAILED above.
   EXTENSION_UI_PANEL_UNAVAILABLE: 'extension.ui_panel_unavailable',
+  // Story 20.8 AC-7: the extension-state/cleanup pg-boss job's count-only sweep-completion log
+  // — never a key, value, or per-org breakdown, only { purgedCount }.
+  EXTENSION_STATE_CLEANUP_RUN: 'extension_state.cleanup_run',
+  // Story 20.8 AC-8: HostServices.ephemeralState's fail-closed rejection path — logs
+  // { extensionNamespace, orgId } only, never a key or value.
+  EXTENSION_EPHEMERAL_STATE_FAILED: 'extension_state.ephemeral_state_failed',
   // Story 25.2 AC2: a loaded extension declares 'ui-panel' in capabilities but omits
   // uiPanelSlots — the host falls back to the legacy Story 25.1 single-slot ('group') behavior.
   // Fires once per load (not per-request), so an operator sees it without per-request noise.

@@ -122,13 +122,17 @@ export const MAX_MODULE_ACTIONS = 32
 // branch's independent 3.3.0 claim requires moving to the next free number instead of reusing it:
 // 3.3.0 -> 3.4.0. The floor stays `>=3.0.0` so every already-shipped extension keeps loading
 // unmodified regardless.
-// Story 25.8 AC1/Task 1 — bumped as an additive-minor (3.4.0 -> 3.5.0): `UIPanelContext` gains
-// an optional `subpath?: string` field (see `hooks/ui-panel.ts`) carrying the deep-linkable URL
-// sub-path `apps/web`'s new `extensions/panels/[slot]/[...subpath]` route matched, so a panel can
-// render its own internal sub-state on load. Purely additive and backward-compatible: an
-// existing extension reading only the pre-existing fields keeps working unmodified, and the
-// field is never populated (stays `undefined`) for a request with no sub-path.
-export const EXTENSION_API_VERSION = '3.6.0'
+// Story 20.8 AC-13 — bumped as an additive-minor (3.6.0 -> 3.7.0): `HostServices` gains a new
+// required `ephemeralState: EphemeralStateHost` field (see `hooks/ephemeral-state.ts`). Per
+// docs/extension-api-versioning-policy.md's classification table, a new field PV *passes to* the
+// extension (never one the extension itself must implement) is non-breaking even though the field
+// is required on the type — an existing `hooksFactory` that destructures only
+// `{ auditEventSource }` (or `{ auditEventSource, orgAuthorization }`) from the widened
+// `HostServices` object it's handed at runtime remains structurally compatible and continues to
+// run unmodified (TypeScript's structural typing simply ignores the extra field it never reads).
+// Still bumped per this codebase's forward-only-versioning invariant, matching the 3.6.0
+// precedent (Story 25.9) for a host-side-only, no-extension-code-change addition.
+export const EXTENSION_API_VERSION = '3.7.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

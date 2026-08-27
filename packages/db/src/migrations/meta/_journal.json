@@ -589,6 +589,20 @@
       "when": 1787256000000,
       "tag": "0083_service_provisioning_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1787797184196,
+      "tag": "0084_extension_ephemeral_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1787797184197,
+      "tag": "0085_extension_ephemeral_state_admin_grant",
+      "breakpoints": true
     }
   ]
 }

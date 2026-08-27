@@ -24,6 +24,16 @@ describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
     const hooks = mockAuditEventSourceExtension.hooksFactory({
       auditEventSource: { writeAuditEvent: async () => ({ id: 'x', createdAt: '' }) },
       orgAuthorization: { checkMembership: async () => ({ outcome: 'authorized' }) },
+      // Story 20.8 — HostServices widened to a third, required field. This fixture never reads
+      // it (only auditEventSource/orgAuthorization matter to this extension), so a stub with
+      // never-invoked rejects is sufficient here.
+      ephemeralState: {
+        set: async () => undefined,
+        get: async () => undefined,
+        delete: async () => undefined,
+        compareAndSwap: async () => false,
+        compareAndDelete: async () => false,
+      },
     })
     expect(hooks).toEqual({})
   })
@@ -42,6 +52,16 @@ describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
     mockAuditEventSourceExtension.hooksFactory({
       auditEventSource: { writeAuditEvent },
       orgAuthorization: { checkMembership: async () => ({ outcome: 'authorized' }) },
+      // Story 20.8 — HostServices widened to a third, required field. This fixture never reads
+      // it (only auditEventSource/orgAuthorization matter to this extension), so a stub with
+      // never-invoked rejects is sufficient here.
+      ephemeralState: {
+        set: async () => undefined,
+        get: async () => undefined,
+        delete: async () => undefined,
+        compareAndSwap: async () => false,
+        compareAndDelete: async () => false,
+      },
     })
 
     const result = await triggerAuditWrite({

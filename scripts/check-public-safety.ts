@@ -90,6 +90,11 @@ const SAFE_PUBLIC_CONSTANT_NAMES = new Set([
   // assertions in that file made the surrounding lines "added" relative to `main`).
   'DEFAULT_CSRF_TOKEN',
   'OPAQUE_REFRESH_TOKEN',
+  // Story 20.8: `ephemeral-state.integration.test.ts` fixture key names used to exercise
+  // `HostServices.ephemeralState`'s per-org isolation and compare-and-swap/delete semantics —
+  // they name the *test's own arbitrary storage key*, not a real credential value.
+  'PAIRING_TOKEN_KEY',
+  'PENDING_TOKEN_KEY',
 ])
 // These files intentionally document or exercise local service endpoints. A local endpoint in
 // source, prose, or an arbitrary workflow remains a finding.

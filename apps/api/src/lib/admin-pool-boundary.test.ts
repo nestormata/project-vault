@@ -31,6 +31,7 @@ const importerAllowlist = new Set([
   'modules/status/token-store.ts',
   'workers/audit-org-usage-reconcile.ts',
   'workers/audit-storage-check.ts',
+  'workers/extension-state-cleanup.ts',
   'workers/import-cleanup.ts',
   'workers/notification-inbox-purge.ts',
 ])
