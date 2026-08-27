@@ -37,7 +37,9 @@ describe('EXTENSION_API_VERSION', () => {
     // touches the CONTRACT_FILES-listed loader.ts (packageVersion surfacing is host-observable
     // load_failed-adjacent behavior, per check-extension-api-version-skew.ts's own file list),
     // requiring a version bump despite no packages/extension-api schema change: 3.5.0 -> 3.6.0.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.6.0')
+    // Story 20.8 adds HostServices.ephemeralState (get/set/delete/compareAndSwap/compareAndDelete),
+    // an additive-minor schema change: 3.6.0 -> 3.7.0.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.7.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {
