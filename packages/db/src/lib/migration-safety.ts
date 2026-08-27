@@ -375,4 +375,16 @@ export const KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS: Record<string, string> = {
     'Historical audit-usage ACL setup reviewed before the privilege scanner existed.',
   '0079_audit_storage_quota_config_admin_grant':
     'Historical audit-quota-config ACL setup reviewed before the privilege scanner existed.',
+  // Story 20.8 AC-5: brand-new, RLS-isolated `extension_ephemeral_state` table's own
+  // vault_app CRUD grant — same reviewed pattern as 0081's table-creation-time ACL. The paired
+  // migration-0084-safety.test.ts proves this migration creates exactly one new table, adds no
+  // ALTER on any pre-existing table, and contains no DROP/RENAME/TRUNCATE/DELETE.
+  '0084_extension_ephemeral_state':
+    'Story 20.8 reviewed table-creation-time vault_app CRUD grant on the new extension_ephemeral_state table; paired migration safety test proves it is a single additive CREATE TABLE with no destructive statement riding along.',
+  // Story 20.8 AC-11: vault_admin's cleanup-worker least-privilege ACL on the same table —
+  // narrow SELECT(id, expires_at)/DELETE only, same reviewed pattern as 0076/0079's admin grants.
+  // The paired migration-0085-safety.test.ts proves this file contains no schema/column change,
+  // only the two documented GRANT statements.
+  '0085_extension_ephemeral_state_admin_grant':
+    'Story 20.8 reviewed vault_admin least-privilege grant (SELECT id/expires_at + DELETE) for the ephemeral-state cleanup worker; paired migration safety test proves it is grant-only with no schema/column change.',
 }
