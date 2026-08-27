@@ -28,6 +28,7 @@ import { raceWithTimeout as sharedRaceWithTimeout } from '../lib/race-with-timeo
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 import { writeExtensionAuditEventForManifest } from '../lib/audit-event-source.js'
 import { checkOrgAuthorization } from '../lib/org-authorization.js'
+import { createEphemeralStateHost } from '../lib/ephemeral-state.js'
 import { writePlatformAuditEntryOrFailClosed } from '../lib/audit-or-fail-closed.js'
 import { fetchAllOrgIds } from '../middleware/rls.js'
 import type { Tx } from '@project-vault/db'
@@ -252,6 +253,12 @@ async function buildHostServices(
       checkMembership: (context) =>
         checkOrgAuthorization(context, { extensionName: manifest.name, logger }),
     },
+    // Story 20.8 — bound once at extension-load time, same as auditEventSource/orgAuthorization
+    // above (see this story's Dev Notes "Construction Lifecycle" section: Story 23.11 shipped an
+    // ambient per-request context, closing 20-7's assumption that this needed per-request
+    // rebinding). Its methods internally call getRequestContext() at invocation time for the
+    // current request's orgId.
+    ephemeralState: createEphemeralStateHost(manifest.name, logger),
     getDbHandle: async () => {
       if (!manifest.dbScope || manifest.dbScope.length === 0) {
         return { unavailable: 'no-approved-scope' }
@@ -338,7 +345,9 @@ type AuditWriterFn = (
   eventType: string,
   payload: Record<string, unknown>
 ) => Promise<void>
-type LoaderLogger = Pick<FastifyBaseLogger, 'warn' | 'fatal'>
+// Story 20.8: widened to include 'error' — createEphemeralStateHost()'s fail-closed logging
+// (AC-8) needs it, and every real caller (fastify.log) already has it.
+type LoaderLogger = Pick<FastifyBaseLogger, 'warn' | 'fatal' | 'error'>
 
 export type LoadExtensionDeps = {
   /** Injectable dynamic-import seam — defaults to native ESM `import()`. Tests supply a fixture. */
@@ -373,6 +382,7 @@ const defaultAuditWriter: AuditWriterFn = (orgId, eventType, payload) =>
 const silentLogger: LoaderLogger = {
   warn: () => undefined,
   fatal: () => undefined,
+  error: () => undefined,
 } as unknown as LoaderLogger
 
 let state: ExtensionState = { status: 'not_configured' }

@@ -22,6 +22,10 @@ import { runStaleRotationRecoveryJob } from './workers/rotation-recover.js'
 import { runStaleStagedAlertJob } from './workers/rotation-stale-staged-alert.js'
 import { runCredentialShareExpireJob } from './workers/credential-share-expire.js'
 import { importCleanupExpired } from './workers/import-cleanup.js'
+import {
+  EXTENSION_STATE_CLEANUP_JOB,
+  runExtensionStateCleanup,
+} from './workers/extension-state-cleanup.js'
 import { runPaymentExpiryAlertJob } from './workers/payment-expiry-alert.js'
 import { runCertExpiryAlertJob } from './workers/cert-expiry-alert.js'
 import { runDomainExpiryAlertJob } from './workers/domain-expiry-alert.js'
@@ -74,6 +78,10 @@ import type { FastifyBaseLogger } from 'fastify'
 import postgres from 'postgres'
 
 const NOTIFICATION_CATCHUP_CRON = '*/10 * * * *'
+// Story 20.8: shared by every 5-minute-cadence cleanup job (this constant's introduction fixed a
+// pre-existing sonarjs/no-duplicate-string threshold this story's own extension-state/cleanup
+// registration tipped over, by consolidating the pre-existing bare '*/5 * * * *' literals too).
+const EVERY_FIVE_MINUTES_CRON = '*/5 * * * *'
 // Story 5.3 AC-8/AC-9 job names, referenced at multiple registration sites below.
 const ROTATION_BREAK_GLASS_EXPIRE_JOB = 'rotation/break-glass-expire'
 const ROTATION_RECOVER_JOB = 'rotation/recover'
@@ -180,7 +188,8 @@ async function main(): Promise<void> {
       [ROTATION_RECOVER_JOB]: { cron: '*/15 * * * *' },
       [ROTATION_STALE_STAGED_ALERT_JOB]: { cron: '0 8 * * *' },
       [CREDENTIAL_SHARE_EXPIRE_JOB]: { cron: '0 * * * *' },
-      'import/cleanup-expired': { cron: '*/5 * * * *' },
+      'import/cleanup-expired': { cron: EVERY_FIVE_MINUTES_CRON },
+      [EXTENSION_STATE_CLEANUP_JOB]: { cron: EVERY_FIVE_MINUTES_CRON },
       'payment/expiry-alert': { cron: '0 8 * * *' },
       'cert/expiry-alert': { cron: '0 8 * * *' },
       'domain/expiry-alert': { cron: '0 8 * * *' },
@@ -189,7 +198,7 @@ async function main(): Promise<void> {
       // AC-18: split cadence — 5-minute revoke check bounds cron-granularity overshoot to at
       // most 5 minutes even for the shortest permitted overlapMinutes (1); the pre-revocation
       // alert only needs to fire "around" 1 hour ahead, so hourly is sufficient there.
-      'machine-key/overlap-revoke': { cron: '*/5 * * * *' },
+      'machine-key/overlap-revoke': { cron: EVERY_FIVE_MINUTES_CRON },
       'machine-key/overlap-alert': { cron: '0 * * * *' },
       // AC-21: daily dormancy detection job.
       'machine-key/dormancy-check': { cron: '0 9 * * *' },
@@ -268,6 +277,10 @@ async function main(): Promise<void> {
       'import/cleanup-expired': (job) =>
         withJobLogging(fastify.log, 'import/cleanup-expired', job.id ?? 'unknown', () =>
           importCleanupExpired(fastify.log)
+        ),
+      [EXTENSION_STATE_CLEANUP_JOB]: (job) =>
+        withJobLogging(fastify.log, EXTENSION_STATE_CLEANUP_JOB, job.id ?? 'unknown', () =>
+          runExtensionStateCleanup(fastify.log)
         ),
       'payment/expiry-alert': (job) =>
         withJobLogging(fastify.log, 'payment/expiry-alert', job.id ?? 'unknown', () =>

@@ -32,6 +32,7 @@ export type {
   OrgAuthorizationHost,
   OrgAuthorizationOutcome,
 } from './hooks/org-authorization.js'
+export type { EphemeralStateHost } from './hooks/ephemeral-state.js'
 export type {
   ProjectCreateDecision,
   ProjectCreatePolicy,

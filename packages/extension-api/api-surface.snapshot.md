@@ -138,11 +138,37 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `(manifest: ExtensionManifest) => ExtensionManifest`
 - call-signature: `(manifest: ExtensionManifest): ExtensionManifest`
 
+## export `EphemeralStateHost`
+
+- since: 3.7.0
+- kind: type
+- type: `EphemeralStateHost`
+- member: `compareAndDelete`
+  - since: 3.7.0
+  - type: `(key: string, expectedValue: string) => Promise<boolean>`
+  - call-signature: `(key: string, expectedValue: string): Promise<boolean>`
+- member: `compareAndSwap`
+  - since: 3.7.0
+  - type: `(key: string, expectedValue: string | null, newValue: string, ttlSeconds: number) => Promise<boolean>`
+  - call-signature: `(key: string, expectedValue: string | null, newValue: string, ttlSeconds: number): Promise<boolean>`
+- member: `delete`
+  - since: 3.7.0
+  - type: `(key: string) => Promise<void>`
+  - call-signature: `(key: string): Promise<void>`
+- member: `get`
+  - since: 3.7.0
+  - type: `(key: string) => Promise<string | undefined>`
+  - call-signature: `(key: string): Promise<string | undefined>`
+- member: `set`
+  - since: 3.7.0
+  - type: `(key: string, value: string, ttlSeconds: number) => Promise<void>`
+  - call-signature: `(key: string, value: string, ttlSeconds: number): Promise<void>`
+
 ## export `EXTENSION_API_VERSION`
 
 - since: 1.0.0
 - kind: value
-- type: `"3.6.0"`
+- type: `"3.7.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 
@@ -323,6 +349,29 @@ Generated from `src/index.ts`; update this file and classify the change against 
     - since: 1.0.0
     - type: `(input: AuditEventSourceWriteInput) => Promise<AuditEventSourceWriteResult>`
     - call-signature: `(input: AuditEventSourceWriteInput): Promise<AuditEventSourceWriteResult>`
+- member: `ephemeralState`
+  - since: 3.7.0
+  - type: `EphemeralStateHost`
+  - member: `compareAndDelete`
+    - since: 3.7.0
+    - type: `(key: string, expectedValue: string) => Promise<boolean>`
+    - call-signature: `(key: string, expectedValue: string): Promise<boolean>`
+  - member: `compareAndSwap`
+    - since: 3.7.0
+    - type: `(key: string, expectedValue: string | null, newValue: string, ttlSeconds: number) => Promise<boolean>`
+    - call-signature: `(key: string, expectedValue: string | null, newValue: string, ttlSeconds: number): Promise<boolean>`
+  - member: `delete`
+    - since: 3.7.0
+    - type: `(key: string) => Promise<void>`
+    - call-signature: `(key: string): Promise<void>`
+  - member: `get`
+    - since: 3.7.0
+    - type: `(key: string) => Promise<string | undefined>`
+    - call-signature: `(key: string): Promise<string | undefined>`
+  - member: `set`
+    - since: 3.7.0
+    - type: `(key: string, value: string, ttlSeconds: number) => Promise<void>`
+    - call-signature: `(key: string, value: string, ttlSeconds: number): Promise<void>`
 - member: `orgAuthorization`
   - since: 2.2.0
   - type: `OrgAuthorizationHost`
@@ -355,25 +404,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.3.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@447`
-  - since: 3.5.0
+- member: `__@match@469`
+  - since: 3.6.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@456`
-  - since: 3.5.0
+- member: `__@matchAll@478`
+  - since: 3.6.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@449`
-  - since: 3.5.0
+- member: `__@replace@471`
+  - since: 3.6.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@452`
-  - since: 3.5.0
+- member: `__@search@474`
+  - since: 3.6.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@454`
-  - since: 3.5.0
+- member: `__@split@476`
+  - since: 3.6.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -597,25 +646,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.1.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@447`
-  - since: 3.5.0
+- member: `__@match@469`
+  - since: 3.6.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@456`
-  - since: 3.5.0
+- member: `__@matchAll@478`
+  - since: 3.6.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@449`
-  - since: 3.5.0
+- member: `__@replace@471`
+  - since: 3.6.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@452`
-  - since: 3.5.0
+- member: `__@search@474`
+  - since: 3.6.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@454`
-  - since: 3.5.0
+- member: `__@split@476`
+  - since: 3.6.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
