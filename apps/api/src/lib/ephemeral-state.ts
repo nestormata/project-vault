@@ -128,23 +128,30 @@ function rowMatch(namespace: string, key: string) {
   )
 }
 
-type ExistingRow = { id: string; expiresAt: Date }
+type ExistingRow = { id: string; isLive: boolean }
 
-async function selectExistingRow(
+/**
+ * Locks the candidate row (`SELECT ... FOR UPDATE`) so a concurrent transaction cannot delete or
+ * expire-and-revive it out from under our overwrite-vs-count-increasing decision (closes a TOCTOU
+ * race the earlier unlocked-`SELECT` version had between this check and the final upsert), and
+ * determines liveness via Postgres's own `now()` rather than the app server's clock — the same
+ * clock the `setWhere: expires_at <= now()` revival guard uses — so the two can never disagree
+ * under app/DB clock skew.
+ */
+async function selectExistingRowForUpdate(
   tx: Tx,
   namespace: string,
   key: string
 ): Promise<ExistingRow | undefined> {
   const rows = await tx
-    .select({ id: extensionEphemeralState.id, expiresAt: extensionEphemeralState.expiresAt })
+    .select({
+      id: extensionEphemeralState.id,
+      isLive: sql<boolean>`${extensionEphemeralState.expiresAt} > now()`,
+    })
     .from(extensionEphemeralState)
     .where(rowMatch(namespace, key))
-    .limit(1)
+    .for('update')
   return rows[0]
-}
-
-function isLive(row: ExistingRow | undefined, now: Date): boolean {
-  return Boolean(row) && (row as ExistingRow).expiresAt.getTime() > now.getTime()
 }
 
 /**
@@ -159,9 +166,8 @@ async function ensureCapacityForCountIncreasingWrite(
   namespace: string,
   key: string
 ): Promise<void> {
-  const now = new Date()
-  const existing = await selectExistingRow(tx, namespace, key)
-  if (isLive(existing, now)) return // overwrite of an already-live key — never count-increasing
+  const existing = await selectExistingRowForUpdate(tx, namespace, key)
+  if (existing?.isLive) return // overwrite of an already-live key — never count-increasing
 
   // AC-11 — pg_advisory_xact_lock, same call shape as external-service.ts's
   // 'external-share-cap:' lock: serializes concurrent count-increasing writes for this org so two
@@ -171,9 +177,9 @@ async function ensureCapacityForCountIncreasingWrite(
   )
 
   // Re-check under the lock: a concurrent transaction may have created/revived this same key
-  // between our unlocked pre-check above and acquiring the lock.
-  const recheck = await selectExistingRow(tx, namespace, key)
-  if (isLive(recheck, now)) return
+  // between our pre-check above and acquiring the lock.
+  const recheck = await selectExistingRowForUpdate(tx, namespace, key)
+  if (recheck?.isLive) return
 
   const countRows = await tx
     .select({ count: sql<number>`count(*)::int` })
