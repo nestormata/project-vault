@@ -106,7 +106,7 @@ export function resolvePanelDataPaths(
   status: ExtensionState | undefined,
   logger: PanelLogger
 ): readonly string[] {
-  if (!status || status.status !== 'loaded') return DEFAULT_PANEL_DATA_PATHS
+  if (status?.status !== 'loaded') return DEFAULT_PANEL_DATA_PATHS
 
   const declared = status.manifest.panelDataPaths
   if (declared?.length) return declared
@@ -133,7 +133,7 @@ export function resolveKnownUiPanelSlots(
   status: ExtensionState | undefined,
   logger: PanelLogger
 ): readonly string[] {
-  if (!status || status.status !== 'loaded') return DEFAULT_UI_PANEL_SLOTS
+  if (status?.status !== 'loaded') return DEFAULT_UI_PANEL_SLOTS
 
   const declared = status.manifest.uiPanelSlots
   if (declared?.length) return declared
