@@ -28,6 +28,7 @@
     "check-story-review-deferrals": "tsx scripts/check-story-review-deferrals.ts",
     "check-alert-pending-epic3": "tsx scripts/check-alert-pending-epic3.ts",
     "check-followup-review-gate": "tsx scripts/check-followup-review-gate.ts",
+    "check-implementation-artifacts-symlinks": "tsx scripts/check-implementation-artifacts-symlinks.ts",
     "check-post-merge-status-drift": "tsx scripts/check-post-merge-status-drift.ts",
     "check-search-index": "tsx scripts/check-search-index.ts",
     "check-vault-action-dist": "tsx scripts/check-vault-action-dist-fresh.ts",
