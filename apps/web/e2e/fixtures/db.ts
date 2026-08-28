@@ -28,6 +28,24 @@ export function appDatabaseUrl(): string {
 }
 
 /**
+ * Marks a user MFA-enrolled directly against the DB, bypassing real TOTP enrollment — used by
+ * journeys that need an MFA-gated code path exercised (e.g. a login flow) without needing a real
+ * TOTP secret to answer a challenge with. Callers must log the user in BEFORE calling this:
+ * enrolling first would make that login demand a TOTP challenge this helper cannot answer, since
+ * it never generates a real secret. Shared by J20 and J25 (originally duplicated per-file; jscpd
+ * flagged the clone).
+ */
+export async function enrollMfaDirect(userId: string, dbName: string): Promise<void> {
+  const dbUrl = superuserDatabaseUrl().replace(/\/[^/]+$/, `/${dbName}`)
+  const sql = postgres(dbUrl, { max: 1 })
+  try {
+    await sql`update users set mfa_enrolled_at = now() where id = ${userId}`
+  } finally {
+    await sql.end({ timeout: 5 })
+  }
+}
+
+/**
  * Reads the most recently queued invitation notification for the given recipient email and
  * extracts the accept-invitation token from its payload's `acceptUrl`. Connects as the superuser
  * — `notification_queue` is `orgScoped` and RLS-protected, and a plain `vault_app` connection with

@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
-import postgres from 'postgres'
 import { expect, test } from '@playwright/test'
-import { superuserDatabaseUrl } from '../fixtures/db.js'
+import { enrollMfaDirect } from '../fixtures/db.js'
 import {
   createIsolatedDatabase,
   initIsolatedVault,
@@ -44,19 +43,6 @@ const API_BASE = `http://localhost:${API_PORT}`
 let apiProcess: ChildProcess | undefined
 let webHandle: WebHandle | undefined
 
-/** Mirrors J20's own `enrollMfa` helper exactly — sets `mfa_enrolled_at` directly against the
- * isolated database rather than driving the real enrollment UI, since MFA enrollment itself is
- * already covered elsewhere (J3) and is not this journey's subject under test. */
-async function enrollMfa(userId: string): Promise<void> {
-  const dbUrl = superuserDatabaseUrl().replace(/\/[^/]+$/, `/${DB_NAME}`)
-  const sql = postgres(dbUrl, { max: 1 })
-  try {
-    await sql`update users set mfa_enrolled_at = now() where id = ${userId}`
-  } finally {
-    await sql.end({ timeout: 5 })
-  }
-}
-
 /**
  * Vite dev mode serves an unbundled module graph (mirrors J20's own documented rationale for
  * the same class of race): the extension panel's `srcdoc` iframe (and the button/script inside
@@ -83,7 +69,7 @@ async function registerLoggedInMember(
     password: PASSWORD,
     orgName: `J25 ${label} Org ${randomUUID()}`,
   })
-  await enrollMfa(identity.userId)
+  await enrollMfaDirect(identity.userId, DB_NAME)
   return identity
 }
 
