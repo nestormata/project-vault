@@ -109,7 +109,7 @@ export function resolvePanelDataPaths(
   if (!status || status.status !== 'loaded') return DEFAULT_PANEL_DATA_PATHS
 
   const declared = status.manifest.panelDataPaths
-  if (declared && declared.length > 0) return declared
+  if (declared?.length) return declared
 
   warnPanelDataPathsFallbackOnce(status, logger)
   return DEFAULT_PANEL_DATA_PATHS

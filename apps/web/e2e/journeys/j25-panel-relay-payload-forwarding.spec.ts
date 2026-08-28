@@ -203,23 +203,38 @@ test.describe
     const frame = await iframeHandle.contentFrame()
     if (!frame) throw new Error('extension panel iframe content frame unavailable')
 
-    await frame.evaluate(() => {
-      window.parent.postMessage(
-        {
-          source: 'pv-extension-panel-data-request',
-          requestId: 'e2e-data-reject',
-          method: 'GET',
-          // Plausible-but-undeclared, same /api/v1/ prefix as the legal paths — isolates "not in
-          // the declared list" from "wrong prefix" as this story's own AC2 spec requires.
-          path: '/api/v1/admin/users',
-        },
-        '*'
-      )
-    })
-    // Give the relay a real moment to (not) issue the fetch — there is no positive event to
-    // await here, since the whole point is that nothing happens.
-    await page.waitForTimeout(750)
+    // There is no positive network event to await for a rejection (the whole point is that no
+    // fetch is ever issued) — but the relay DOES synchronously post an `ok: false` result message
+    // straight back to this same frame before returning, so awaiting THAT is a real observable
+    // condition instead of a fixed sleep (SonarQube typescript:S2925).
+    const rejectionAcknowledged = frame.evaluate(
+      () =>
+        new Promise<boolean>((resolve) => {
+          window.addEventListener('message', function handler(event) {
+            const message = event.data as Record<string, unknown>
+            if (
+              message?.['source'] === 'pv-extension-panel-data-result' &&
+              message?.['requestId'] === 'e2e-data-reject'
+            ) {
+              window.removeEventListener('message', handler)
+              resolve(message['ok'] === false)
+            }
+          })
+          window.parent.postMessage(
+            {
+              source: 'pv-extension-panel-data-request',
+              requestId: 'e2e-data-reject',
+              method: 'GET',
+              // Plausible-but-undeclared, same /api/v1/ prefix as the legal paths — isolates "not
+              // in the declared list" from "wrong prefix" as this story's own AC2 spec requires.
+              path: '/api/v1/admin/users',
+            },
+            '*'
+          )
+        })
+    )
 
+    expect(await rejectionAcknowledged).toBe(true)
     expect(sawUndeclaredRequest).toBe(false)
     expect(pageErrors).toEqual([])
     // The page itself is still fully intact — no broken/blank state, same calm degradation this
