@@ -136,7 +136,7 @@ export function resolveKnownUiPanelSlots(
   if (!status || status.status !== 'loaded') return DEFAULT_UI_PANEL_SLOTS
 
   const declared = status.manifest.uiPanelSlots
-  if (declared && declared.length > 0) return declared
+  if (declared?.length) return declared
 
   warnUiPanelSlotsFallbackOnce(status, logger)
   return DEFAULT_UI_PANEL_SLOTS
