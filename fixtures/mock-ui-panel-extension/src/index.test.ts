@@ -7,6 +7,8 @@ import mockUiPanelExtension, {
   HANG_TRIGGER_SLOT,
   HAPPY_SLOT,
   TEST_ACTION_KIND,
+  TEST_ACTION_NOTE,
+  TEST_DATA_PATH,
   THROW_TRIGGER_SLOT,
 } from './index.js'
 
@@ -35,6 +37,14 @@ describe('mock-ui-panel-extension (Story 25.1 Task 7)', () => {
       HANG_TRIGGER_SLOT,
       GARBAGE_TRIGGER_SLOT,
       CONTEXT_ECHO_SLOT,
+    ])
+  })
+
+  it('Story 25.12 AC2/Task 6: declares panelDataPaths covering the legacy pair plus a new declared path', () => {
+    expect(mockUiPanelExtension.manifest.panelDataPaths).toEqual([
+      '/api/v1/projects',
+      '/api/v1/projects/:id',
+      TEST_DATA_PATH,
     ])
   })
 
@@ -136,6 +146,26 @@ describe('mock-ui-panel-extension (Story 25.1 Task 7)', () => {
         action: { kind: 'not-a-real-kind' },
       })
       expect(result).toEqual({ outcome: 'validation_failed', message: 'Unknown action kind' })
+    })
+
+    it('Story 25.12 AC1/Task 6: echoes a field beyond kind (note) in the result message when present', async () => {
+      const hooks = mockUiPanelExtension.hooksFactory()
+      const result = await hooks.moduleAction?.onAction(context(), {
+        action: { kind: TEST_ACTION_KIND, note: TEST_ACTION_NOTE },
+      })
+      expect(result).toEqual({
+        outcome: 'ok',
+        message: `test-action executed for slot "${HAPPY_SLOT}" with note "${TEST_ACTION_NOTE}"`,
+      })
+    })
+
+    it('Story 25.12 AC1: the fixture panel html posts a multi-field action message including note', async () => {
+      const hooks = mockUiPanelExtension.hooksFactory()
+      const result = await hooks.uiPanel?.onRenderPanel(
+        context({ slot: HAPPY_SLOT, actionEndpoint: '/api/v1/extensions/panels/group/actions' })
+      )
+      expect(result?.html).toContain(`kind: ${JSON.stringify(TEST_ACTION_KIND)}`)
+      expect(result?.html).toContain(`note: ${JSON.stringify(TEST_ACTION_NOTE)}`)
     })
   })
 })

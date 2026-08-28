@@ -38,8 +38,9 @@ describe('EXTENSION_API_VERSION', () => {
     // load_failed-adjacent behavior, per check-extension-api-version-skew.ts's own file list),
     // requiring a version bump despite no packages/extension-api schema change: 3.5.0 -> 3.6.0.
     // Story 20.8 adds HostServices.ephemeralState (get/set/delete/compareAndSwap/compareAndDelete),
-    // an additive-minor schema change: 3.6.0 -> 3.7.0.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.7.0')
+    // an additive-minor schema change: 3.6.0 -> 3.7.0. Story 25.12 adds ExtensionManifest's
+    // panelDataPaths? (also additive-minor): 3.7.0 -> 3.8.0.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.8.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

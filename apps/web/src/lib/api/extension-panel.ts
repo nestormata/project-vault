@@ -1,5 +1,16 @@
 import { apiFetch } from './client.js'
 
+/**
+ * Story 25.12 AC2 — this client's own mirror of `apps/api/src/lib/extension-panel.ts`'s
+ * `DEFAULT_PANEL_DATA_PATHS` (the exact pre-existing hardcoded pair). Lives here (not
+ * `+page.server.ts`) because SvelteKit's page-server module only permits a fixed, known set of
+ * exports (`load`, `prerender`, etc., or anything `_`-prefixed) — re-exporting an arbitrary named
+ * constant from `+page.server.ts` fails at request time with "Invalid export". Used as the
+ * degraded-path default for `ExtensionPanelPageData.allowedDataPaths` when the API call itself
+ * failed, matching `actionEndpoint: undefined`'s existing degraded-branch convention.
+ */
+export const DEFAULT_PANEL_DATA_PATHS = ['/api/v1/projects', '/api/v1/projects/:id'] as const
+
 // Story 25.1 AC1/AC3/AC3b: mirrors apps/api/src/extensions/panel-routes.ts's response shapes
 // exactly. `ok: false` is the SAME shape for every degraded cause (throw, timeout, malformed
 // result, or a permanently-absent hook) — callers must never try to distinguish these from the
@@ -7,8 +18,11 @@ import { apiFetch } from './client.js'
 // Story 25.5 AC4/Task 4: actionEndpoint is present only when the loaded extension declares
 // moduleActions for this slot — undefined (never '') when it does not, matching
 // apps/api's own actionEndpoint contract.
+// Story 25.12 AC2: allowedDataPaths is ALWAYS present on the ok branch (never undefined) —
+// mirrors apps/api's ExtensionPanelOkSchema exactly (at minimum the two-entry legacy default).
 export type ExtensionPanelResult =
-  { ok: true; html: string; actionEndpoint?: string } | { ok: false; reason: 'panel_unavailable' }
+  | { ok: true; html: string; actionEndpoint?: string; allowedDataPaths: string[] }
+  | { ok: false; reason: 'panel_unavailable' }
 
 // Story 25.8 AC1/Task 1 — `subpath` is forwarded as a query parameter on this SAME existing
 // call, matching `projectId`/`resourceId`'s own convention (apps/api's PanelQuery) — it is

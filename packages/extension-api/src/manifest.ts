@@ -52,6 +52,21 @@ export type ExtensionManifest = {
    * `validateModuleActionsShape()`.
    */
   moduleActions?: string[]
+  /**
+   * Story 25.12 AC2 — optional declaration of the PV-native REST path templates the DATA relay
+   * (`+page.svelte`'s `PANEL_DATA_REQUEST_SOURCE` handler) will forward on this extension's
+   * behalf. Omitted (or `undefined`) is fully backward-compatible: the host falls back to the
+   * exact pre-existing hardcoded pair (`DEFAULT_PANEL_DATA_PATHS`,
+   * `apps/api/src/lib/extension-panel.ts`) — `/api/v1/projects` and `/api/v1/projects/:id` — with
+   * a one-time warn log (mirroring `uiPanelSlots`' own fallback discipline). Each entry is a path
+   * TEMPLATE, not a regex: `/`-separated segments, each either a literal `[a-z0-9-]+` token or a
+   * `:param` placeholder, the whole template required to start with the literal prefix
+   * `/api/v1/` — validated by `registerExtension()`'s `validatePanelDataPathsShape()`. Only legal
+   * alongside `'ui-panel'` in `capabilities[]`. Unlike `uiPanelSlots`/`moduleActions`, this field
+   * has NO `hooksFactory()`-callability cross-check — it gates a client-relay allowlist, not a
+   * hook's existence (Story 25.12 AC3).
+   */
+  panelDataPaths?: string[]
 }
 
 /**
@@ -79,6 +94,25 @@ export const MODULE_ACTION_NAME_PATTERN = /^[a-z0-9-]{1,64}$/
 /** Story 25.5 AC2 — generous for any real extension, small enough to bound a hostile/broken
  * manifest from declaring an unbounded `moduleActions` list. */
 export const MAX_MODULE_ACTIONS = 32
+
+/**
+ * Story 25.12 AC2 — validates an entire `panelDataPaths` entry (a path TEMPLATE, not a bare
+ * name) in one pass: must start with the literal prefix `/api/v1/`, followed by one or more
+ * `/`-separated segments, each either a literal token matching `[a-z0-9-]+` or a parameter
+ * placeholder matching `:[a-zA-Z][a-zA-Z0-9]*`. The literal-segment charset excludes `.`/`/`,
+ * closing the same path-traversal/route-confusion angle `UI_PANEL_SLOT_NAME_PATTERN` already
+ * closes for slot names — a template segment can never contain `..` or an embedded `/`. The two
+ * quantified alternatives inside each segment group match disjoint character sets (`[a-z0-9-]`
+ * vs. a leading `:`), and segments themselves are separated by a literal `/`, so there is no
+ * ambiguous overlap for catastrophic backtracking.
+ */
+// eslint-disable-next-line security/detect-unsafe-regex -- see rationale in the comment above; charset is bounded and non-overlapping across each segment's two alternatives
+export const PANEL_DATA_PATH_PATTERN = /^\/api\/v1(?:\/(?:[a-z0-9-]+|:[a-zA-Z][a-zA-Z0-9]*))+$/
+
+/** Story 25.12 AC2 — generous for any real extension, small enough to bound a hostile/broken
+ * manifest from declaring an unbounded `panelDataPaths` list. Matches `MAX_UI_PANEL_SLOTS`/
+ * `MAX_MODULE_ACTIONS`'s precedent exactly. */
+export const MAX_PANEL_DATA_PATHS = 32
 
 /**
  * AC1/AC7 — this package's own contract version. Must be bumped in lockstep with any change
@@ -132,7 +166,12 @@ export const MAX_MODULE_ACTIONS = 32
 // run unmodified (TypeScript's structural typing simply ignores the extra field it never reads).
 // Still bumped per this codebase's forward-only-versioning invariant, matching the 3.6.0
 // precedent (Story 25.9) for a host-side-only, no-extension-code-change addition.
-export const EXTENSION_API_VERSION = '3.7.0'
+// Story 25.12 AC2/Task 2 — bumped as an additive-minor (3.7.0 -> 3.8.0): `ExtensionManifest`
+// gains `panelDataPaths?: string[]`, a purely-additive optional field with a documented
+// backward-compatible fallback (`DEFAULT_PANEL_DATA_PATHS`) when omitted — no existing
+// extension's manifest shape changes, and the floor stays `>=3.0.0` so every already-shipped
+// extension keeps loading unmodified regardless.
+export const EXTENSION_API_VERSION = '3.8.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

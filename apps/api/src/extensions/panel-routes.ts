@@ -99,6 +99,12 @@ const ExtensionPanelOkSchema = z.object({
   // this slot — omitted entirely (never an empty string) when it does not, so apps/web can
   // conditionally widen EXTENSION_PANEL_CSP's connect-src only for action-capable panels.
   actionEndpoint: z.string().optional(),
+  // Story 25.12 AC2: the resolved DATA-relay path allowlist (`resolvePanelDataPaths()`'s
+  // result) — ALWAYS present, unlike `actionEndpoint`'s undefined-vs-omitted contract, since it
+  // always has at least the two-entry legacy default (`DEFAULT_PANEL_DATA_PATHS`), never
+  // nothing. `+page.svelte`'s DATA relay uses this (never a hardcoded client-side constant) to
+  // validate an incoming data-request message's `path` by structural segment comparison.
+  allowedDataPaths: z.array(z.string()),
 })
 const ExtensionPanelUnavailableSchema = z.object({
   ok: z.literal(false),
@@ -302,6 +308,7 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
         ok: true as const,
         html: result.html,
         ...(result.actionEndpoint !== undefined ? { actionEndpoint: result.actionEndpoint } : {}),
+        allowedDataPaths: result.allowedDataPaths,
       }
     },
   })

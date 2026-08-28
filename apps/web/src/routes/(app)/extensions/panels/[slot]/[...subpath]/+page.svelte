@@ -78,15 +78,44 @@
   const PANEL_DATA_REQUEST_SOURCE = 'pv-extension-panel-data-request'
   const PANEL_DATA_RESULT_SOURCE = 'pv-extension-panel-data-result'
   const ALLOWED_PANEL_DATA_METHODS = new Set(['GET', 'POST'])
-  const ALLOWED_PANEL_DATA_PATH_PATTERNS = [/^\/api\/v1\/projects$/, /^\/api\/v1\/projects\/[^/]+$/]
+
+  /**
+   * Story 25.12 AC2 — matches `path` against one manifest-declared template (`data.allowedDataPaths`
+   * entries, e.g. `/api/v1/org/users/:id`) by STRUCTURAL SEGMENT COMPARISON, never by constructing
+   * a `RegExp` from the template: split both on `/`, require the same segment count, each literal
+   * template segment must exact-match its corresponding path segment, and each `:param` template
+   * segment matches any single non-empty, `/`-free path segment. Deliberately not regex-based (see
+   * this story's Dev Notes "Key Design Decisions") — a template is validated, bounded-charset,
+   * manifest-declared data (packages/extension-api's `PANEL_DATA_PATH_PATTERN`), so a `RegExp`
+   * approach isn't defending against untrusted input the way segment comparison already sidesteps
+   * for free — no escaping logic, no catastrophic-backtracking surface to reason about.
+   */
+  function matchesPanelDataPathTemplate(template: string, path: string): boolean {
+    const templateSegments = template.split('/')
+    const pathSegments = path.split('/')
+    if (templateSegments.length !== pathSegments.length) return false
+    return templateSegments.every((templateSegment, index) => {
+      const pathSegment = pathSegments[index]
+      if (pathSegment === undefined) return false
+      // A `:param` segment matches any single non-empty, `/`-free path segment — `/`-freedom is
+      // structural (splitting on `/` already guarantees no segment itself contains a `/`), so
+      // only non-emptiness needs checking here. A literal segment (including the leading empty
+      // segment every absolute path/template produces before its first `/`) is an exact match.
+      if (templateSegment.startsWith(':')) return pathSegment.length > 0
+      return templateSegment === pathSegment
+    })
+  }
 
   function validatePanelDataRequest(
     method: unknown,
-    path: unknown
+    path: unknown,
+    allowedPaths: readonly string[]
   ): { method: 'GET' | 'POST'; path: string } | undefined {
     if (typeof method !== 'string' || !ALLOWED_PANEL_DATA_METHODS.has(method)) return undefined
     if (typeof path !== 'string') return undefined
-    if (!ALLOWED_PANEL_DATA_PATH_PATTERNS.some((pattern) => pattern.test(path))) return undefined
+    if (!allowedPaths.some((template) => matchesPanelDataPathTemplate(template, path))) {
+      return undefined
+    }
     return { method: method as 'GET' | 'POST', path }
   }
 
@@ -198,7 +227,7 @@
       // in flight explicitly drops the stale response instead of posting it to a detached window.
       const requestGeneration = panelGeneration
       pendingRequestIds.add(requestId)
-      const validated = validatePanelDataRequest(method, path)
+      const validated = validatePanelDataRequest(method, path, data.allowedDataPaths)
       if (!validated) {
         targetWindow?.postMessage({ source: PANEL_DATA_RESULT_SOURCE, requestId, ok: false }, '*')
         pendingRequestIds.delete(requestId)
@@ -291,6 +320,19 @@
       if (typeof requestId !== 'string' || typeof kind !== 'string') return
       if (data.actionEndpoint === undefined) return
 
+      // Story 25.12 AC1 — forward the ENTIRE incoming message as the POST body, minus the two
+      // envelope fields this relay itself owns (`source`/`requestId` — relay-internal
+      // correlation fields the server has no use for and must never receive). A plain
+      // object-rest destructure (not `Object.assign` onto a shared/reused object, never a
+      // `JSON.parse`/re-stringify round trip) is deliberate: it produces a fresh plain object
+      // whose own prototype is always `Object.prototype`, so a message field literally named
+      // `__proto__` becomes an own, enumerable "__proto__" property of `action` rather than
+      // reassigning `action`'s prototype — no prototype-pollution surface even though this
+      // relay now forwards arbitrary extension-supplied keys. The server-side route (Story 25.5
+      // AC1) already accepts a full `Record<string, unknown> & { kind: string }` action object
+      // verbatim, so this requires zero server-side or wire-shape change.
+      const { source: _source, requestId: _requestId, ...action } = typedMessage
+
       const targetWindow = panelIframe?.contentWindow
       // Story 25.8 Task 2a — see `handlePanelDataMessage`'s own identical comment above.
       const requestGeneration = panelGeneration
@@ -307,7 +349,7 @@
           'content-type': 'application/json',
           ...(csrfToken !== undefined ? { [CSRF_HEADER_NAME]: csrfToken } : {}),
         },
-        body: JSON.stringify({ kind }),
+        body: JSON.stringify(action),
       })
         .then(async (res) => {
           if (requestGeneration !== panelGeneration) return

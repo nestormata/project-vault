@@ -14,6 +14,12 @@ const INCOMPATIBLE_API_VERSION = '4.0.0'
 const INCOMPATIBLE_VERSION_REASON: ExtensionRegistrationErrorReason = 'incompatible-version'
 const INVALID_NAME_REASON: ExtensionRegistrationErrorReason = 'invalid-name'
 const PROJECT_LIFECYCLE_CAPABILITY = 'project-lifecycle' as const
+// Story 25.12 — used by the "declared without ui-panel in capabilities" rejection test in each
+// of the uiPanelSlots/moduleActions/panelDataPaths describe blocks below; a shared constant
+// avoids sonarjs/no-duplicate-string tripping on this literal repeated a 3rd time.
+const AUDIT_EVENT_SOURCE_CAPABILITY = 'audit-event-source' as const
+// Story 25.12 AC2 — the panelDataPaths describe block's own recurring example path template.
+const ORG_USERS_DATA_PATH = '/api/v1/org/users'
 
 function manifest(overrides: Partial<ExtensionManifest> = {}): ExtensionManifest {
   return {
@@ -246,7 +252,7 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each(['3.8.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
+  it.each(['3.9.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
     'rejects canonical version outside %s',
     (apiVersion) => {
       const hooksFactory = makeHooksFactory()
@@ -282,15 +288,16 @@ describe('registerExtension — concrete canonical version gate', () => {
 
   it('allows only the above-host same-major rollback escape', () => {
     // Story 25.3 AC1/Task 1, Story 25.4 AC4/Task 4, Story 25.5 AC2/Task 1, Story 25.8 AC1/Task 1,
-    // and Story 20.8 — host EXTENSION_API_VERSION is now 3.7.0 (see manifest.ts's
-    // EXTENSION_API_VERSION doc comment for why this merge moves past 3.2.0/3.3.0/3.4.0/3.6.0,
-    // which Story 25.3/25.4/25.5/25.9 respectively already claimed on main for different
-    // additive changes); '3.8.0' is the above-host, same-major escape-eligible version, and
-    // '4.0.0' is a different major (never escape-eligible). Kept one minor version above
-    // whatever EXTENSION_API_VERSION currently is — see loader.test.ts's identical comment.
-    expect(() => registerExtension(manifest({ apiVersion: '3.8.0' }), makeHooksFactory())).toThrow()
+    // Story 20.8, and Story 25.12 AC2/Task 2 — host EXTENSION_API_VERSION is now 3.8.0 (see
+    // manifest.ts's EXTENSION_API_VERSION doc comment for why this merge moves past
+    // 3.2.0/3.3.0/3.4.0/3.6.0/3.7.0, which Story 25.3/25.4/25.5/25.9/20.8 respectively already
+    // claimed on main for different additive changes); '3.9.0' is the above-host, same-major
+    // escape-eligible version, and '4.0.0' is a different major (never escape-eligible). Kept one
+    // minor version above whatever EXTENSION_API_VERSION currently is — see loader.test.ts's
+    // identical comment.
+    expect(() => registerExtension(manifest({ apiVersion: '3.9.0' }), makeHooksFactory())).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.8.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '3.9.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()
@@ -498,7 +505,7 @@ describe('registerExtension — AC1 (uiPanelSlots)', () => {
 
   it('rejects uiPanelSlots declared without "ui-panel" in capabilities', () => {
     expectRejection(
-      { capabilities: ['audit-event-source'], uiPanelSlots: ['group'] },
+      { capabilities: [AUDIT_EVENT_SOURCE_CAPABILITY], uiPanelSlots: ['group'] },
       INVALID_MANIFEST_FIELD
     )
   })
@@ -643,7 +650,7 @@ describe('registerExtension — AC2 (moduleActions)', () => {
 
   it('rejects moduleActions declared without "ui-panel" in capabilities', () => {
     expectRejection(
-      { capabilities: ['audit-event-source'], moduleActions: [ADD_MEMBER_ACTION] },
+      { capabilities: [AUDIT_EVENT_SOURCE_CAPABILITY], moduleActions: [ADD_MEMBER_ACTION] },
       INVALID_MANIFEST_FIELD
     )
   })
@@ -695,5 +702,140 @@ describe('registerExtension — AC2 (moduleActions)', () => {
       { logger: { warn } }
     )
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('moduleActions'))
+  })
+})
+
+/**
+ * Story 25.12 AC2 — `panelDataPaths?: string[]` manifest field validation. Mirrors the
+ * `uiPanelSlots`/`moduleActions` describe blocks above exactly (separate namespace, near-
+ * identical shape), except: (1) each entry is a PATH TEMPLATE (may contain `/`-separated
+ * segments and `:param` placeholders), not a bare name, and must start with the literal prefix
+ * `/api/v1/`; (2) there is no post-hooksFactory callability check (AC3) — `panelDataPaths` gates
+ * a client-relay allowlist, not a hook's existence, so a manifest declaring it registers
+ * successfully even when `hooksFactory()` returns no hooks at all.
+ */
+describe('registerExtension — AC2 (panelDataPaths, Story 25.12)', () => {
+  it('happy path: a real multi-path manifest (legacy pair + a new declared path) registers successfully', () => {
+    const hooksFactory = makeHooksFactory()
+    const result = registerExtension(
+      manifest({
+        capabilities: ['ui-panel'],
+        panelDataPaths: ['/api/v1/projects', '/api/v1/projects/:id', ORG_USERS_DATA_PATH],
+      }),
+      hooksFactory
+    )
+    expect(result.manifest.panelDataPaths).toEqual([
+      '/api/v1/projects',
+      '/api/v1/projects/:id',
+      ORG_USERS_DATA_PATH,
+    ])
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('accepts a template containing a :param placeholder segment', () => {
+    const hooksFactory = makeHooksFactory()
+    expect(() =>
+      registerExtension(
+        manifest({ capabilities: ['ui-panel'], panelDataPaths: ['/api/v1/org/users/:id'] }),
+        hooksFactory
+      )
+    ).not.toThrow()
+  })
+
+  it('omitted: parses fine, no panelDataPaths on the returned manifest', () => {
+    const hooksFactory = makeHooksFactory()
+    const result = registerExtension(manifest(), hooksFactory)
+    expect(result.manifest.panelDataPaths).toBeUndefined()
+  })
+
+  it('panelDataPaths: undefined explicitly behaves identically to omitted', () => {
+    const hooksFactory = makeHooksFactory()
+    const result = registerExtension(manifest({ panelDataPaths: undefined }), hooksFactory)
+    expect(result.manifest.panelDataPaths).toBeUndefined()
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects a template missing the required /api/v1/ prefix', () => {
+    expectRejection(
+      { capabilities: ['ui-panel'], panelDataPaths: ['org/users'] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects a template with an out-of-charset literal segment', () => {
+    expectRejection(
+      { capabilities: ['ui-panel'], panelDataPaths: ['/api/v1/Org/Users'] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects a template containing a path-traversal segment', () => {
+    expectRejection(
+      { capabilities: ['ui-panel'], panelDataPaths: ['/api/v1/../admin'] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects duplicate panelDataPaths entries within one manifest', () => {
+    expectRejection(
+      { capabilities: ['ui-panel'], panelDataPaths: [ORG_USERS_DATA_PATH, ORG_USERS_DATA_PATH] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an empty panelDataPaths array (distinct from omitted)', () => {
+    expectRejection({ capabilities: ['ui-panel'], panelDataPaths: [] }, INVALID_MANIFEST_FIELD)
+  })
+
+  it('rejects panelDataPaths declared without "ui-panel" in capabilities', () => {
+    expectRejection(
+      { capabilities: [AUDIT_EVENT_SOURCE_CAPABILITY], panelDataPaths: [ORG_USERS_DATA_PATH] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects a panelDataPaths array longer than the 32-entry maximum', () => {
+    const tooMany = Array.from({ length: 33 }, (_, i) => `/api/v1/resource-${i}`)
+    expectRejection({ capabilities: ['ui-panel'], panelDataPaths: tooMany }, INVALID_MANIFEST_FIELD)
+  })
+
+  it('accepts exactly the 32-entry panelDataPaths maximum', () => {
+    const exactlyMax = Array.from({ length: 32 }, (_, i) => `/api/v1/resource-${i}`)
+    const hooksFactory = makeHooksFactory()
+    expect(() =>
+      registerExtension(
+        manifest({ capabilities: ['ui-panel'], panelDataPaths: exactlyMax }),
+        hooksFactory
+      )
+    ).not.toThrow()
+  })
+
+  it('AC3: no post-hooksFactory callability check — registers fine even though hooksFactory() returns no hooks at all', () => {
+    const hooksFactory = makeHooksFactory()
+    expect(() =>
+      registerExtension(
+        manifest({ capabilities: ['ui-panel'], panelDataPaths: [ORG_USERS_DATA_PATH] }),
+        hooksFactory
+      )
+    ).not.toThrow()
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT require panelDataPaths merely for declaring the "ui-panel" capability', () => {
+    const hooksFactory = makeHooksFactory()
+    expect(() =>
+      registerExtension(manifest({ capabilities: ['ui-panel'] }), hooksFactory)
+    ).not.toThrow()
+  })
+
+  it('warns on an unrecognized top-level key still includes panelDataPaths in KNOWN_MANIFEST_KEYS (no spurious warning)', () => {
+    const hooksFactory = makeHooksFactory()
+    const warn = vi.fn()
+    registerExtension(
+      manifest({ capabilities: ['ui-panel'], panelDataPaths: [ORG_USERS_DATA_PATH] }),
+      hooksFactory,
+      { logger: { warn } }
+    )
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('panelDataPaths'))
   })
 })
