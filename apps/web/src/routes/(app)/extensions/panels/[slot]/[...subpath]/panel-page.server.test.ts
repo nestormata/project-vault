@@ -1,12 +1,14 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { isRedirect } from '@sveltejs/kit'
 import { BASE_EXTENSION_THEME_VARS } from '$lib/security/extension-theme-vars.js'
+import { DEFAULT_PANEL_DATA_PATHS } from '$lib/api/extension-panel.js'
 
 const getExtensionPanelMock = vi.hoisted(() => vi.fn())
 const getThemesMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/extension-panel.js', () => ({
   getExtensionPanel: getExtensionPanelMock,
+  DEFAULT_PANEL_DATA_PATHS: ['/api/v1/projects', '/api/v1/projects/:id'],
 }))
 vi.mock('$lib/api/themes.js', () => ({
   getThemes: getThemesMock,
@@ -44,7 +46,11 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
   })
 
   it('happy path: renders the html and base theme vars on a successful, ok:true fetch, no theme applied', async () => {
-    getExtensionPanelMock.mockResolvedValue({ ok: true, html: '<p>hello</p>' })
+    getExtensionPanelMock.mockResolvedValue({
+      ok: true,
+      html: '<p>hello</p>',
+      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
+    })
 
     const result = await load(makeEvent(baseUser))
 
@@ -54,6 +60,7 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       html: '<p>hello</p>',
       themeVars: BASE_EXTENSION_THEME_VARS,
       actionEndpoint: undefined,
+      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     })
   })
 
@@ -62,6 +69,7 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       ok: true,
       html: '<p>hello</p>',
       actionEndpoint: '/api/v1/extensions/panels/group/actions',
+      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     })
 
     const result = await load(makeEvent(baseUser))
@@ -72,11 +80,16 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       html: '<p>hello</p>',
       themeVars: BASE_EXTENSION_THEME_VARS,
       actionEndpoint: '/api/v1/extensions/panels/group/actions',
+      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     })
   })
 
   it('Story 25.5 AC4/Task 4: actionEndpoint is undefined when the API response omits it', async () => {
-    getExtensionPanelMock.mockResolvedValue({ ok: true, html: '<p>hello</p>' })
+    getExtensionPanelMock.mockResolvedValue({
+      ok: true,
+      html: '<p>hello</p>',
+      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
+    })
 
     const result = await load(makeEvent(baseUser))
 
@@ -86,6 +99,7 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       html: '<p>hello</p>',
       themeVars: BASE_EXTENSION_THEME_VARS,
       actionEndpoint: undefined,
+      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     })
   })
 
@@ -100,6 +114,7 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       html: null,
       themeVars: BASE_EXTENSION_THEME_VARS,
       actionEndpoint: undefined,
+      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     })
   })
 
@@ -114,11 +129,16 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       html: null,
       themeVars: BASE_EXTENSION_THEME_VARS,
       actionEndpoint: undefined,
+      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     })
   })
 
   it('AC4: resolves --pv-ext-* theme vars from the applied custom theme when one is selected', async () => {
-    getExtensionPanelMock.mockResolvedValue({ ok: true, html: '<p>x</p>' })
+    getExtensionPanelMock.mockResolvedValue({
+      ok: true,
+      html: '<p>x</p>',
+      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
+    })
     getThemesMock.mockResolvedValue({
       themes: [
         {
@@ -138,7 +158,11 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
   })
 
   it('AC4: fails open to base theme vars when the themes fetch itself throws', async () => {
-    getExtensionPanelMock.mockResolvedValue({ ok: true, html: '<p>x</p>' })
+    getExtensionPanelMock.mockResolvedValue({
+      ok: true,
+      html: '<p>x</p>',
+      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
+    })
     getThemesMock.mockRejectedValue(new Error('themes API down'))
 
     const result = await load(makeEvent(baseUser))
@@ -148,7 +172,11 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
 
   describe('Story 25.8 AC1: sub-path forwarding', () => {
     it('a non-empty subpath route param is forwarded to getExtensionPanel and echoed in page data', async () => {
-      getExtensionPanelMock.mockResolvedValue({ ok: true, html: '<p>x</p>' })
+      getExtensionPanelMock.mockResolvedValue({
+        ok: true,
+        html: '<p>x</p>',
+        allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
+      })
 
       const result = await load(makeEvent(baseUser, 'group', 'groups/123/detail'))
 
@@ -161,7 +189,11 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
     })
 
     it('an empty subpath route param (no sub-path in the URL) stays undefined, never an empty string', async () => {
-      getExtensionPanelMock.mockResolvedValue({ ok: true, html: '<p>x</p>' })
+      getExtensionPanelMock.mockResolvedValue({
+        ok: true,
+        html: '<p>x</p>',
+        allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
+      })
 
       const result = await load(makeEvent(baseUser, 'group', ''))
 

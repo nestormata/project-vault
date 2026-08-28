@@ -49,6 +49,20 @@ export const HANG_TRIGGER_SLOT = 'fixture-hang'
 export const GARBAGE_TRIGGER_SLOT = 'fixture-garbage'
 export const CONTEXT_ECHO_SLOT = 'fixture-context-echo'
 export const TEST_ACTION_KIND = 'test-action'
+/**
+ * Story 25.12 AC1/Task 6 — a real field beyond `kind`, so this fixture's own action postMessage
+ * exercises the widened ACTION relay's full-payload-forwarding fix end to end (rather than only
+ * a synthetic multi-field message constructed in a test file). `onAction` below echoes it back in
+ * its `message`, giving both unit tests and Chrome-driven manual verification something visible
+ * to assert the field actually reached the server intact.
+ */
+export const TEST_ACTION_NOTE = 'fixture-note'
+/**
+ * Story 25.12 AC2/Task 6 — a new DATA-relay path declared beyond the legacy
+ * `/api/v1/projects`/`/api/v1/projects/:id` default, giving this story's own AC2 happy-path test
+ * (and Chrome-driven manual verification) a real, manifest-declared end-to-end target.
+ */
+export const TEST_DATA_PATH = '/api/v1/org/users'
 
 const manifest: ExtensionManifest = {
   name: MOCK_UI_PANEL_PROVIDER_NAME,
@@ -70,6 +84,10 @@ const manifest: ExtensionManifest = {
   // the postMessage relay to the host — see onRenderPanel's own comment) in Chrome-driven manual
   // verification, not just a direct handleModuleAction() unit test.
   moduleActions: [TEST_ACTION_KIND],
+  // Story 25.12 AC2/Task 6 — declares the legacy default pair explicitly (so this fixture's
+  // behavior for those two paths is unchanged) plus TEST_DATA_PATH, a real end-to-end target for
+  // this story's AC2 happy-path test and Chrome-driven manual verification.
+  panelDataPaths: ['/api/v1/projects', '/api/v1/projects/:id', TEST_DATA_PATH],
 }
 
 const uiPanel: UIPanel = {
@@ -140,8 +158,17 @@ const uiPanel: UIPanel = {
                     : 'fetch-failed';
                 }
                 window.addEventListener('message', handleResult);
+                // Story 25.12 AC1/Task 6 — includes a real field beyond \`kind\` (\`note\`), so
+                // this fixture exercises the widened ACTION relay's full-payload-forwarding fix
+                // end to end: before this story, the relay would have silently dropped \`note\`
+                // before the request ever left the host page.
                 parent.postMessage(
-                  { source: 'pv-extension-panel-action', requestId: requestId, kind: ${JSON.stringify(TEST_ACTION_KIND)} },
+                  {
+                    source: 'pv-extension-panel-action',
+                    requestId: requestId,
+                    kind: ${JSON.stringify(TEST_ACTION_KIND)},
+                    note: ${JSON.stringify(TEST_ACTION_NOTE)},
+                  },
                   '*'
                 );
               });
@@ -157,7 +184,16 @@ const moduleAction: ModuleAction = {
     if (request.action.kind !== TEST_ACTION_KIND) {
       return { outcome: 'validation_failed', message: 'Unknown action kind' }
     }
-    return { outcome: 'ok', message: `test-action executed for slot "${context.slot}"` }
+    // Story 25.12 AC1/Task 6 — echoes the `note` field back in the message so both this
+    // fixture's own tests and Chrome-driven manual verification (Task 8) can assert the widened
+    // ACTION relay actually forwarded this field beyond `kind` — before this story, `note` never
+    // reached this handler at all, since the relay dropped every field but `kind`.
+    const note = request.action['note']
+    const noteSuffix = typeof note === 'string' ? ` with note "${note}"` : ''
+    return {
+      outcome: 'ok',
+      message: `test-action executed for slot "${context.slot}"${noteSuffix}`,
+    }
   },
 }
 

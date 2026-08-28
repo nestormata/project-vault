@@ -4,8 +4,10 @@ import {
   EXTENSION_API_VERSION,
   HOST_SUPPORTED_EXTENSION_API_RANGE,
   MAX_MODULE_ACTIONS,
+  MAX_PANEL_DATA_PATHS,
   MAX_UI_PANEL_SLOTS,
   MODULE_ACTION_NAME_PATTERN,
+  PANEL_DATA_PATH_PATTERN,
   UI_PANEL_SLOT_NAME_PATTERN,
 } from './manifest.js'
 import type { ExtensionManifest } from './manifest.js'
@@ -132,6 +134,7 @@ const KNOWN_MANIFEST_KEYS = [
   'dbScope',
   'uiPanelSlots',
   'moduleActions',
+  'panelDataPaths',
 ]
 
 const INVALID_MANIFEST_FIELD = 'invalid-manifest-field'
@@ -299,6 +302,64 @@ function validateModuleActionsShape(manifest: ExtensionManifest): void {
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
       'Extension manifest declares "moduleActions" but does not declare "ui-panel" in capabilities[]'
+    )
+  }
+}
+
+/**
+ * Story 25.12 AC2 — validates the optional `panelDataPaths` field's shape: non-empty array of
+ * unique strings (if present), each matching `PANEL_DATA_PATH_PATTERN` (a full path template
+ * starting with `/api/v1/`), capped at `MAX_PANEL_DATA_PATHS` entries, and only legal alongside
+ * `'ui-panel'` in `capabilities[]`. Mirrors `validateUiPanelSlotsShape`/`validateModuleActionsShape`
+ * structurally. Unlike those two, this field has NO corresponding post-`hooksFactory()`
+ * callability check (AC3) — it gates a client-relay allowlist, not a hook's existence, so there
+ * is nothing analogous to `hasCallableUiPanelHook`/`hasCallableModuleActionHook` to add.
+ */
+function validatePanelDataPathsShape(manifest: ExtensionManifest): void {
+  if (manifest.panelDataPaths === undefined) return
+
+  if (!Array.isArray(manifest.panelDataPaths)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "panelDataPaths" must be an array, got ${JSON.stringify(manifest.panelDataPaths)}`
+    )
+  }
+
+  if (manifest.panelDataPaths.length === 0) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest field "panelDataPaths" must not be an empty array — omit the field entirely to declare no additional data paths'
+    )
+  }
+
+  if (manifest.panelDataPaths.length > MAX_PANEL_DATA_PATHS) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "panelDataPaths" declares ${manifest.panelDataPaths.length} entries, exceeding the maximum of ${MAX_PANEL_DATA_PATHS}`
+    )
+  }
+
+  const seen = new Set<string>()
+  for (const path of manifest.panelDataPaths) {
+    if (typeof path !== 'string' || !PANEL_DATA_PATH_PATTERN.test(path)) {
+      throw new ExtensionRegistrationError(
+        INVALID_MANIFEST_FIELD,
+        `Extension manifest field "panelDataPaths" contains an invalid path template ${JSON.stringify(path)} (expected to match ${PANEL_DATA_PATH_PATTERN})`
+      )
+    }
+    if (seen.has(path)) {
+      throw new ExtensionRegistrationError(
+        INVALID_MANIFEST_FIELD,
+        `Extension manifest field "panelDataPaths" contains duplicate path template "${path}"`
+      )
+    }
+    seen.add(path)
+  }
+
+  if (!manifest.capabilities.includes('ui-panel')) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest declares "panelDataPaths" but does not declare "ui-panel" in capabilities[]'
     )
   }
 }
@@ -498,6 +559,7 @@ export function registerExtension(
   validateDbScopeShape(manifest.dbScope)
   validateUiPanelSlotsShape(manifest)
   validateModuleActionsShape(manifest)
+  validatePanelDataPathsShape(manifest)
 
   if (!REVERSE_DNS_NAME_PATTERN.test(manifest.name)) {
     throw new ExtensionRegistrationError(
@@ -521,6 +583,7 @@ export function registerExtension(
       dbScope: manifest.dbScope,
       uiPanelSlots: manifest.uiPanelSlots,
       moduleActions: manifest.moduleActions,
+      panelDataPaths: manifest.panelDataPaths,
     },
     hooks,
   }

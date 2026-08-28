@@ -1,4 +1,4 @@
-import { getExtensionPanel } from '$lib/api/extension-panel.js'
+import { DEFAULT_PANEL_DATA_PATHS, getExtensionPanel } from '$lib/api/extension-panel.js'
 import { getThemes } from '$lib/api/themes.js'
 import { requireUser } from '$lib/server/require-user.js'
 import { resolveAppliedThemeWithOrgDefault } from '$lib/theme/apply-theme.js'
@@ -27,6 +27,14 @@ export type ExtensionPanelPageData = {
   // (+page.svelte) uses this as the real, authenticated fetch target when relaying an action
   // request from the panel iframe — the iframe itself never sees or needs this URL.
   actionEndpoint: string | undefined
+  /**
+   * Story 25.12 AC2 — the resolved DATA-relay path allowlist, forwarded verbatim from the API
+   * response on success. ALWAYS present (unlike `actionEndpoint`'s undefined-vs-omitted
+   * contract) — the degraded/catch-block branch below falls back to this page's own
+   * `DEFAULT_PANEL_DATA_PATHS` mirror constant, matching how `actionEndpoint: undefined` is
+   * already the degraded-branch default for that field.
+   */
+  allowedDataPaths: string[]
 }
 
 /**
@@ -72,6 +80,7 @@ export const load: PageServerLoad = async ({ params, fetch, locals }) => {
       html: result.ok ? result.html : null,
       themeVars,
       actionEndpoint: result.ok ? result.actionEndpoint : undefined,
+      allowedDataPaths: result.ok ? result.allowedDataPaths : [...DEFAULT_PANEL_DATA_PATHS],
     } satisfies ExtensionPanelPageData
   } catch {
     // Covers both a 400 (invalid slot) and any other unexpected non-2xx — same calm placeholder
@@ -83,6 +92,7 @@ export const load: PageServerLoad = async ({ params, fetch, locals }) => {
       html: null,
       themeVars,
       actionEndpoint: undefined,
+      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     } satisfies ExtensionPanelPageData
   }
 }

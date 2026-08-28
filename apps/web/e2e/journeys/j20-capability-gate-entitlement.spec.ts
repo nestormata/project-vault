@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import postgres from 'postgres'
 import { expect, test, type BrowserContext } from '@playwright/test'
-import { superuserDatabaseUrl } from '../fixtures/db.js'
+import { enrollMfaDirect } from '../fixtures/db.js'
 import {
   createIsolatedDatabase,
   initIsolatedVault,
@@ -43,16 +42,6 @@ const BASE_URL = `http://localhost:${WEB_PORT}`
 let apiHandle: ApiHandle
 let webHandle: WebHandle
 
-async function enrollMfa(userId: string): Promise<void> {
-  const dbUrl = superuserDatabaseUrl().replace(/\/[^/]+$/, `/${DB_NAME}`)
-  const sql = postgres(dbUrl, { max: 1 })
-  try {
-    await sql`update users set mfa_enrolled_at = now() where id = ${userId}`
-  } finally {
-    await sql.end({ timeout: 5 })
-  }
-}
-
 async function registerAndLogin(
   context: BrowserContext,
   label: string
@@ -72,7 +61,7 @@ async function registerAndLogin(
   })
   expect(login.ok(), await login.text()).toBeTruthy()
 
-  await enrollMfa(registerBody.data.userId)
+  await enrollMfaDirect(registerBody.data.userId, DB_NAME)
 
   return registerBody.data
 }

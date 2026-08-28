@@ -23,6 +23,7 @@ import { env } from '../config/env.js'
 import { CSRF_HEADER_NAME } from '../lib/csrf.js'
 import { csrfCookieName } from '../modules/auth/tokens.js'
 import { __resetExtensionStateForTests, __setExtensionStateForTests } from './loader.js'
+import { DEFAULT_PANEL_DATA_PATHS } from '../lib/extension-panel.js'
 import type { ExtensionState } from './loader.js'
 
 const { initVault } = await bootstrapRouteIntegrationTest()
@@ -44,6 +45,7 @@ function loadedState(overrides: {
   uiPanelSlots?: string[]
   moduleAction?: ModuleAction
   moduleActions?: string[]
+  panelDataPaths?: string[]
   loadedAt?: string
 }): ExtensionState {
   return {
@@ -54,6 +56,7 @@ function loadedState(overrides: {
       capabilities: (overrides.capabilities ?? ['ui-panel']) as never,
       ...(overrides.uiPanelSlots ? { uiPanelSlots: overrides.uiPanelSlots } : {}),
       ...(overrides.moduleActions ? { moduleActions: overrides.moduleActions } : {}),
+      ...(overrides.panelDataPaths ? { panelDataPaths: overrides.panelDataPaths } : {}),
     },
     loadedAt: overrides.loadedAt ?? new Date().toISOString(),
     hooks: {
@@ -197,7 +200,11 @@ describe.sequential('GET /api/v1/extensions/panels/:slot (Story 25.1)', () => {
     const res = await getPanel(suite.app, 'group', member.cookies)
 
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ ok: true, html: HELLO_HTML })
+    expect(res.json()).toEqual({
+      ok: true,
+      html: HELLO_HTML,
+      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
+    })
   })
 
   it('Story 25.3 AC1: renders using the session-resolved identity/org, never a client-supplied one', async () => {
@@ -269,6 +276,7 @@ describe.sequential('GET /api/v1/extensions/panels/:slot (Story 25.1)', () => {
       ok: true,
       html: HELLO_HTML,
       actionEndpoint: '/api/v1/extensions/panels/group/actions',
+      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     })
   })
 
@@ -285,8 +293,53 @@ describe.sequential('GET /api/v1/extensions/panels/:slot (Story 25.1)', () => {
     const res = await getPanel(suite.app, 'group', member.cookies)
 
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ ok: true, html: HELLO_HTML })
+    expect(res.json()).toEqual({
+      ok: true,
+      html: HELLO_HTML,
+      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
+    })
     expect(res.json()).not.toHaveProperty('actionEndpoint')
+  })
+
+  it('Story 25.12 AC2: allowedDataPaths carries the manifest-declared panelDataPaths list, end to end', async () => {
+    __setExtensionStateForTests(
+      loadedState({
+        panelDataPaths: ['/api/v1/projects', '/api/v1/projects/:id', '/api/v1/org/users'],
+        uiPanel: { onRenderPanel: async () => ({ html: HELLO_HTML }) },
+      })
+    )
+    const member = await createDirectAuthenticatedUser(
+      suite.app,
+      'panel-declared-data-paths',
+      'member'
+    )
+
+    const res = await getPanel(suite.app, 'group', member.cookies)
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      ok: true,
+      html: HELLO_HTML,
+      allowedDataPaths: ['/api/v1/projects', '/api/v1/projects/:id', '/api/v1/org/users'],
+    })
+  })
+
+  it('Story 25.12 AC2: allowedDataPaths falls back to the legacy default pair when the extension omits panelDataPaths', async () => {
+    __setExtensionStateForTests(
+      loadedState({ uiPanel: { onRenderPanel: async () => ({ html: HELLO_HTML }) } })
+    )
+    const member = await createDirectAuthenticatedUser(
+      suite.app,
+      'panel-fallback-data-paths',
+      'member'
+    )
+
+    const res = await getPanel(suite.app, 'group', member.cookies)
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json<{ allowedDataPaths: string[] }>().allowedDataPaths).toEqual([
+      ...DEFAULT_PANEL_DATA_PATHS,
+    ])
   })
 
   it('AC3 Boundary & Edge Case Sweep: the extension unloading between nav-render and click-through still degrades calmly', async () => {
@@ -345,7 +398,11 @@ describe.sequential('GET /api/v1/extensions/panels/:slot (Story 25.1)', () => {
     const res = await getPanel(suite.app, 'document', member.cookies)
 
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ ok: true, html: 'rendered:document' })
+    expect(res.json()).toEqual({
+      ok: true,
+      html: 'rendered:document',
+      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
+    })
   })
 
   it('AC3: a real slot owned by a DIFFERENT panel feature but not declared by this extension still 400s, never reaching the hook', async () => {

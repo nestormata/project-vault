@@ -13,10 +13,14 @@ afterEach(() => {
   gotoMock.mockReset()
 })
 
+// Story 25.12 AC2 — matches the legacy DEFAULT_PANEL_DATA_PATHS pair every test not exercising
+// the new manifest-declared-list behavior expects, so pre-existing project-container data-relay
+// tests below keep exercising the exact same effective allowlist they always have.
 const baseData = {
   slot: 'group',
   html: null as string | null,
   themeVars: BASE_EXTENSION_THEME_VARS,
+  allowedDataPaths: ['/api/v1/projects', '/api/v1/projects/:id'],
 }
 
 describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1)', () => {
@@ -212,6 +216,219 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1)', () => {
     })
   })
 
+  describe('Story 25.12 AC2: the data relay validates against data.allowedDataPaths via structural segment matching', () => {
+    afterEach(() => vi.unstubAllGlobals())
+
+    it('a request to a newly-declared path (beyond the legacy default) succeeds', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        status: 200,
+        json: () => Promise.resolve({ data: { items: [] } }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      render(ExtensionPanelPage, {
+        props: {
+          data: {
+            ...baseData,
+            html: '<p>x</p>',
+            allowedDataPaths: ['/api/v1/projects', '/api/v1/projects/:id', '/api/v1/org/users'],
+          },
+        },
+      })
+      const iframe = document.querySelector('iframe') as HTMLIFrameElement
+      const posted: unknown[] = []
+      const contentWindow = iframe.contentWindow as unknown as {
+        postMessage: typeof window.postMessage
+      }
+      vi.spyOn(contentWindow, 'postMessage').mockImplementation((data: unknown) => {
+        posted.push(data)
+      })
+
+      dispatchPanelDataRequest(iframe, {
+        source: 'pv-extension-panel-data-request',
+        requestId: 'req-org-users',
+        method: 'GET',
+        path: '/api/v1/org/users',
+      })
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/org/users',
+        expect.objectContaining({ method: 'GET', credentials: 'same-origin' })
+      )
+      await vi.waitFor(() =>
+        expect(posted).toContainEqual(
+          expect.objectContaining({
+            source: 'pv-extension-panel-data-result',
+            requestId: 'req-org-users',
+            ok: true,
+          })
+        )
+      )
+    })
+
+    it('a request to an undeclared-but-/api/v1/-prefixed path is rejected with zero fetch calls', async () => {
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
+
+      render(ExtensionPanelPage, {
+        props: {
+          data: {
+            ...baseData,
+            html: '<p>x</p>',
+            allowedDataPaths: ['/api/v1/projects', '/api/v1/projects/:id', '/api/v1/org/users'],
+          },
+        },
+      })
+      const iframe = document.querySelector('iframe') as HTMLIFrameElement
+      const posted: unknown[] = []
+      const contentWindow = iframe.contentWindow as unknown as {
+        postMessage: typeof window.postMessage
+      }
+      vi.spyOn(contentWindow, 'postMessage').mockImplementation((data: unknown) => {
+        posted.push(data)
+      })
+
+      dispatchPanelDataRequest(iframe, {
+        source: 'pv-extension-panel-data-request',
+        requestId: 'req-undeclared',
+        method: 'POST',
+        path: '/api/v1/admin/users',
+      })
+
+      await vi.waitFor(() =>
+        expect(posted).toContainEqual(
+          expect.objectContaining({
+            source: 'pv-extension-panel-data-result',
+            requestId: 'req-undeclared',
+            ok: false,
+          })
+        )
+      )
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('a request whose path matches a template segment count but has a literal mismatch is rejected', async () => {
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
+
+      render(ExtensionPanelPage, {
+        props: {
+          data: {
+            ...baseData,
+            html: '<p>x</p>',
+            allowedDataPaths: ['/api/v1/org/users'],
+          },
+        },
+      })
+      const iframe = document.querySelector('iframe') as HTMLIFrameElement
+      const posted: unknown[] = []
+      const contentWindow = iframe.contentWindow as unknown as {
+        postMessage: typeof window.postMessage
+      }
+      vi.spyOn(contentWindow, 'postMessage').mockImplementation((data: unknown) => {
+        posted.push(data)
+      })
+
+      dispatchPanelDataRequest(iframe, {
+        source: 'pv-extension-panel-data-request',
+        requestId: 'req-literal-mismatch',
+        method: 'GET',
+        path: '/api/v1/org/groups',
+      })
+
+      await vi.waitFor(() =>
+        expect(posted).toContainEqual(
+          expect.objectContaining({
+            source: 'pv-extension-panel-data-result',
+            requestId: 'req-literal-mismatch',
+            ok: false,
+          })
+        )
+      )
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('a :param template segment matches any single non-empty, /-free path segment', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        status: 200,
+        json: () => Promise.resolve({ data: {} }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      render(ExtensionPanelPage, {
+        props: {
+          data: {
+            ...baseData,
+            html: '<p>x</p>',
+            allowedDataPaths: ['/api/v1/org/users/:id'],
+          },
+        },
+      })
+      const iframe = document.querySelector('iframe') as HTMLIFrameElement
+      const posted: unknown[] = []
+      const contentWindow = iframe.contentWindow as unknown as {
+        postMessage: typeof window.postMessage
+      }
+      vi.spyOn(contentWindow, 'postMessage').mockImplementation((data: unknown) => {
+        posted.push(data)
+      })
+
+      dispatchPanelDataRequest(iframe, {
+        source: 'pv-extension-panel-data-request',
+        requestId: 'req-param',
+        method: 'GET',
+        path: '/api/v1/org/users/user_42',
+      })
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/org/users/user_42',
+        expect.objectContaining({ method: 'GET' })
+      )
+      await vi.waitFor(() =>
+        expect(posted).toContainEqual(expect.objectContaining({ requestId: 'req-param', ok: true }))
+      )
+    })
+
+    it('a mismatched segment count (extra trailing segment) is rejected', async () => {
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
+
+      render(ExtensionPanelPage, {
+        props: {
+          data: {
+            ...baseData,
+            html: '<p>x</p>',
+            allowedDataPaths: ['/api/v1/org/users'],
+          },
+        },
+      })
+      const iframe = document.querySelector('iframe') as HTMLIFrameElement
+      const posted: unknown[] = []
+      const contentWindow = iframe.contentWindow as unknown as {
+        postMessage: typeof window.postMessage
+      }
+      vi.spyOn(contentWindow, 'postMessage').mockImplementation((data: unknown) => {
+        posted.push(data)
+      })
+
+      dispatchPanelDataRequest(iframe, {
+        source: 'pv-extension-panel-data-request',
+        requestId: 'req-extra-segment',
+        method: 'GET',
+        path: '/api/v1/org/users/extra',
+      })
+
+      await vi.waitFor(() =>
+        expect(posted).toContainEqual(
+          expect.objectContaining({ requestId: 'req-extra-segment', ok: false })
+        )
+      )
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+  })
+
   describe('Story 25.6 AC5: the message-relay fetch attaches the CSRF token', () => {
     afterEach(() => {
       // Clear every cookie this describe block may have set, so no value leaks between tests.
@@ -288,6 +505,148 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1)', () => {
       const headers = options.headers as Record<string, string>
       expect(headers['x-csrf-token']).toBe('host-prefixed-value')
       cookieGetter.mockRestore()
+    })
+  })
+
+  describe('Story 25.12 AC1: the action relay forwards the full payload, not just kind', () => {
+    afterEach(() => vi.unstubAllGlobals())
+
+    it('happy path: every field beyond source/requestId reaches the POST body verbatim', async () => {
+      const fetchMock = vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ message: 'ok' }),
+      }))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const { container } = render(ExtensionPanelPage, {
+        props: {
+          data: {
+            ...baseData,
+            html: '<p>x</p>',
+            actionEndpoint: '/api/v1/extensions/panels/group/actions',
+          },
+        },
+      })
+      const iframe = container.querySelector('iframe') as HTMLIFrameElement
+      const event = new MessageEvent('message', {
+        data: {
+          source: 'pv-extension-panel-action',
+          requestId: 'r1',
+          kind: 'add-member',
+          accessGroupId: 'g1',
+          identityId: 'u2',
+        },
+      })
+      Object.defineProperty(event, 'source', { value: iframe.contentWindow })
+      window.dispatchEvent(event)
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      const [, options] = fetchMock.mock.calls[0] as [string, RequestInit]
+      expect(JSON.parse(options.body as string)).toEqual({
+        kind: 'add-member',
+        accessGroupId: 'g1',
+        identityId: 'u2',
+      })
+    })
+
+    it('a bare-kind message continues to send a byte-identical { kind } body (backward compat)', async () => {
+      const fetchMock = vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ message: 'ok' }),
+      }))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const { container } = render(ExtensionPanelPage, {
+        props: {
+          data: {
+            ...baseData,
+            html: '<p>x</p>',
+            actionEndpoint: '/api/v1/extensions/panels/group/actions',
+          },
+        },
+      })
+      const iframe = container.querySelector('iframe') as HTMLIFrameElement
+      const event = new MessageEvent('message', {
+        data: { source: 'pv-extension-panel-action', requestId: 'r1', kind: 'bare-action' },
+      })
+      Object.defineProperty(event, 'source', { value: iframe.contentWindow })
+      window.dispatchEvent(event)
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      const [, options] = fetchMock.mock.calls[0] as [string, RequestInit]
+      expect(JSON.parse(options.body as string)).toEqual({ kind: 'bare-action' })
+    })
+
+    it('a __proto__-keyed field is spread as an own property, never pollutes Object.prototype', async () => {
+      const fetchMock = vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ message: 'ok' }),
+      }))
+      vi.stubGlobal('fetch', fetchMock)
+
+      const { container } = render(ExtensionPanelPage, {
+        props: {
+          data: {
+            ...baseData,
+            html: '<p>x</p>',
+            actionEndpoint: '/api/v1/extensions/panels/group/actions',
+          },
+        },
+      })
+      const iframe = container.querySelector('iframe') as HTMLIFrameElement
+      const maliciousData = JSON.parse(
+        '{"source":"pv-extension-panel-action","requestId":"r1","kind":"create-group","name":"Ops","__proto__":{"polluted":true}}'
+      ) as Record<string, unknown>
+      const event = new MessageEvent('message', { data: maliciousData })
+      Object.defineProperty(event, 'source', { value: iframe.contentWindow })
+      window.dispatchEvent(event)
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      const [, options] = fetchMock.mock.calls[0] as [string, RequestInit]
+      const parsedBody = JSON.parse(options.body as string) as Record<string, unknown>
+      // The relay's own prototype is unaffected — a spread-based destructure never reassigns
+      // `action`'s prototype, even when the source message carries a field literally named
+      // "__proto__": it becomes an ordinary own, enumerable property (visible in
+      // Object.keys/JSON.stringify), never a prototype reassignment. `toEqual` can't express
+      // this directly, since an object-literal `{ __proto__: ... }` sets a prototype rather than
+      // an own property — asserted field-by-field instead.
+      expect(Object.getPrototypeOf(parsedBody)).toBe(Object.prototype)
+      expect(Object.keys(parsedBody).sort()).toEqual(['__proto__', 'kind', 'name'])
+      expect(Object.prototype.hasOwnProperty.call(parsedBody, '__proto__')).toBe(true)
+      expect(parsedBody['kind']).toBe('create-group')
+      expect(parsedBody['name']).toBe('Ops')
+      expect(parsedBody['__proto__']).toEqual({ polluted: true })
+      // Deliberately asserting the AMBIENT Object.prototype is unaffected, not the parsed
+      // object's own "__proto__" data property above.
+      expect(Object.prototype.hasOwnProperty.call(Object.prototype, 'polluted')).toBe(false)
+      expect(({} as Record<string, unknown>)['polluted']).toBeUndefined()
+    })
+
+    it('a message missing kind entirely still early-returns with no fetch (unchanged behavior)', async () => {
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
+
+      const { container } = render(ExtensionPanelPage, {
+        props: {
+          data: {
+            ...baseData,
+            html: '<p>x</p>',
+            actionEndpoint: '/api/v1/extensions/panels/group/actions',
+          },
+        },
+      })
+      const iframe = container.querySelector('iframe') as HTMLIFrameElement
+      const event = new MessageEvent('message', {
+        data: { source: 'pv-extension-panel-action', requestId: 'r1', accessGroupId: 'g1' },
+      })
+      Object.defineProperty(event, 'source', { value: iframe.contentWindow })
+      window.dispatchEvent(event)
+
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(fetchMock).not.toHaveBeenCalled()
     })
   })
 
