@@ -2,6 +2,29 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.8.0 — 2026-08-27
+
+contract-hash: sha256:7e79ffc8b1bd3df87b42a5823869c66be576da8d1ebf57f50f1c868b27b0c0e5
+
+### Added
+
+- Added `ExtensionManifest.panelDataPaths?: string[]` (Story 25.12 AC2), an optional
+  declaration of the PV-native REST path templates the DATA relay (`+page.svelte`'s
+  `PANEL_DATA_REQUEST_SOURCE` handler) will forward on this extension's behalf. Omitted (or
+  `undefined`) is fully backward-compatible: the host falls back to the exact pre-existing
+  hardcoded pair (`DEFAULT_PANEL_DATA_PATHS`, `apps/api/src/lib/extension-panel.ts`) —
+  `/api/v1/projects` and `/api/v1/projects/:id` — with a one-time warn log, mirroring
+  `uiPanelSlots`'s own fallback discipline. Only legal alongside `'ui-panel'` in
+  `capabilities[]`, with no `hooksFactory()`-callability cross-check (it gates a client-relay
+  allowlist, not a hook's existence).
+- Added `PANEL_DATA_PATH_PATTERN` (Story 25.12 AC2), the regex validating each `panelDataPaths`
+  entry as a path TEMPLATE (not a bare name): the literal prefix `/api/v1/` followed by one or
+  more `/`-separated segments, each either a literal `[a-z0-9-]+` token or a `:param`
+  placeholder, closing the same path-traversal/route-confusion angle `UI_PANEL_SLOT_NAME_PATTERN`
+  already closes for slot names.
+- Added `MAX_PANEL_DATA_PATHS` (Story 25.12 AC2), bounding a manifest's `panelDataPaths` list to
+  32 entries, matching `MAX_UI_PANEL_SLOTS`/`MAX_MODULE_ACTIONS`'s precedent.
+
 ## 3.7.0 — 2026-08-26
 
 contract-hash: sha256:e12c8c32651f6ed4d9a812061449779d200575bf1a1863b681d4db33324a69cf
