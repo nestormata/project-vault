@@ -150,15 +150,22 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1, rewired inli
     expect(screen.getByText(/temporarily unavailable/i)).toBeTruthy()
   })
 
-  // Story 29.1 AC8 — the three postMessage relays below (`PANEL_ACTION_REQUEST_SOURCE`,
-  // `PANEL_DATA_REQUEST_SOURCE`, `PANEL_NAV_REQUEST_SOURCE`) are left in the component's source,
-  // untouched and not deleted, pending Stories 29.2/29.4/29.6 replacing them with direct
-  // same-origin calls against the new inline DOM. They are now provably INERT: the relay's
+  // Story 29.1 AC8 — the DATA and NAVIGATION postMessage relays below
+  // (`PANEL_DATA_REQUEST_SOURCE`, `PANEL_NAV_REQUEST_SOURCE`) are left in the component's source,
+  // untouched and not deleted, pending Stories 29.4/29.6 replacing them with direct same-origin
+  // calls against the new inline DOM. They are now provably INERT: the relay's
   // `event.source !== panelIframe?.contentWindow` identity check can never match any more, since
   // there is no iframe to bind `panelIframe`, so no `postMessage` this test dispatches can ever
   // reach the relay's fetch/goto logic. This is a regression test for that inertness, not a
   // resurrection of the old iframe-sourced relay tests (which asserted the relay's now-removed
   // active behavior).
+  //
+  // Story 29.2 AC4/AC12 — the ACTION relay's own inertness sub-test (which lived here) is removed
+  // outright, not left inert: Task 3 deletes `PANEL_ACTION_REQUEST_SOURCE`/
+  // `PANEL_ACTION_RESULT_SOURCE` and the action branch of `handlePanelMessage` entirely, so there
+  // is no code path left to prove inert. See the new
+  // "Story 29.2: click-delegation action dispatch" describe block below for the real replacement
+  // coverage.
   describe('Story 29.1 AC8: the postMessage relays are inert (no iframe exists to originate a message from)', () => {
     afterEach(() => vi.unstubAllGlobals())
 
@@ -178,30 +185,6 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1, rewired inli
             method: 'GET',
             path: '/api/v1/projects',
           },
-        })
-      )
-
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      expect(fetchMock).not.toHaveBeenCalled()
-    })
-
-    it('an action-request-shaped message never triggers a fetch to actionEndpoint', async () => {
-      const fetchMock = vi.fn()
-      vi.stubGlobal('fetch', fetchMock)
-
-      render(ExtensionPanelPage, {
-        props: {
-          data: {
-            ...baseData,
-            html: '<p>x</p>',
-            actionEndpoint: '/api/v1/extensions/panels/group/actions',
-          },
-        },
-      })
-
-      window.dispatchEvent(
-        new MessageEvent('message', {
-          data: { source: 'pv-extension-panel-action', requestId: 'r1', kind: 'test-action' },
         })
       )
 
@@ -231,6 +214,220 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1, rewired inli
       await new Promise((resolve) => setTimeout(resolve, 0))
       expect(fetchMock).not.toHaveBeenCalled()
       expect(gotoMock).not.toHaveBeenCalled()
+    })
+  })
+
+  // Story 29.2 — the real replacement for the retired postMessage ACTION relay: a single
+  // delegated click handler on the panel container, resolving `[data-pv-action]` elements and
+  // issuing a direct same-origin fetch. AC2/AC3/AC5/AC6/AC7/AC8/AC9.
+  describe('Story 29.2: click-delegation action dispatch', () => {
+    afterEach(() => vi.unstubAllGlobals())
+
+    const actionHtml =
+      '<button type="button" data-pv-action="test-action" data-pv-action-note="hi"><span>Run</span></button>'
+    const actionData = {
+      ...baseData,
+      html: actionHtml,
+      actionEndpoint: '/api/v1/extensions/panels/group/actions',
+    }
+
+    function jsonResponse(status: number, body: unknown) {
+      return {
+        ok: status >= 200 && status < 300,
+        status,
+        json: () => Promise.resolve(body),
+      }
+    }
+
+    function flush() {
+      return new Promise((resolve) => setTimeout(resolve, 0))
+    }
+
+    it('AC2: a click on a nested element (icon/text inside the action element) still resolves via closest()', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { message: 'done' }))
+      vi.stubGlobal('fetch', fetchMock)
+      render(ExtensionPanelPage, { props: { data: actionData } })
+
+      screen.getByText('Run').click()
+      await flush()
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('AC3: no data-pv-action element clicked, or no actionEndpoint declared, is a silent no-op', async () => {
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
+      const { rerender } = render(ExtensionPanelPage, {
+        props: { data: { ...baseData, html: '<p>no actions here</p>' } },
+      })
+      panelContainer()?.click()
+      await flush()
+      expect(fetchMock).not.toHaveBeenCalled()
+
+      // data-pv-action present, but no actionEndpoint declared (no moduleActions) — still a no-op.
+      await rerender({ data: { ...baseData, html: actionHtml } })
+      screen.getByText('Run').click()
+      await flush()
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('AC3: the request body is built from kind + every data-pv-action-<field> attribute via a safe accumulation pattern', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { message: 'done' }))
+      vi.stubGlobal('fetch', fetchMock)
+      render(ExtensionPanelPage, { props: { data: actionData } })
+
+      screen.getByText('Run').click()
+      await flush()
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/extensions/panels/group/actions',
+        expect.objectContaining({
+          method: 'POST',
+          credentials: 'same-origin',
+          body: JSON.stringify({ kind: 'test-action', note: 'hi' }),
+        })
+      )
+    })
+
+    it('AC3: a panel-declared data-pv-action-__proto__ field cannot pollute the request body object prototype', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { message: 'done' }))
+      vi.stubGlobal('fetch', fetchMock)
+      render(ExtensionPanelPage, {
+        props: {
+          data: {
+            ...actionData,
+            html: '<button type="button" data-pv-action="test-action" data-pv-action-__proto__="hi">Run</button>',
+          },
+        },
+      })
+
+      screen.getByText('Run').click()
+      await flush()
+
+      const sentBody = JSON.parse(
+        (fetchMock.mock.calls[0]?.[1] as { body: string }).body
+      ) as Record<string, unknown>
+      expect(Object.getPrototypeOf(sentBody)).toBe(Object.prototype)
+      expect(({} as Record<string, unknown>)['polluted']).toBeUndefined()
+    })
+
+    it('AC5: a 2xx html result re-renders the container through the same sanitize pipeline, replacing prior content', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(jsonResponse(200, { html: '<p>updated by action</p>' }))
+      vi.stubGlobal('fetch', fetchMock)
+      render(ExtensionPanelPage, { props: { data: actionData } })
+
+      screen.getByText('Run').click()
+      await flush()
+
+      const container = panelContainer()
+      expect(container?.innerHTML).toContain('updated by action')
+      expect(container?.querySelector('[data-pv-action]')).toBeNull()
+    })
+
+    it('AC6: a message-only 2xx result renders in a host-owned status region outside the panel container, container untouched', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { message: 'Action done' }))
+      vi.stubGlobal('fetch', fetchMock)
+      render(ExtensionPanelPage, { props: { data: actionData } })
+
+      screen.getByText('Run').click()
+      await flush()
+
+      const status = screen.getByText('Action done')
+      expect(status.getAttribute('aria-live')).toBe('polite')
+      expect(panelContainer()?.contains(status)).toBe(false)
+      expect(panelContainer()?.querySelector('[data-pv-action]')).not.toBeNull()
+    })
+
+    it.each([
+      ['validation_failed', 400, 'validation_failed', 'That input was invalid', true],
+      ['conflict', 409, 'conflict', 'Already in progress', true],
+      ['denied', 403, 'denied', 'Request denied', false],
+      ['a generic non-2xx outcome', 500, 'internal_error', 'Request failed', false],
+    ] as const)(
+      'AC7: %s renders in the AC6 status region (server message shown verbatim: %s)',
+      async (_label, status, code, serverMessage, showsServerMessageVerbatim) => {
+        const fetchMock = vi
+          .fn()
+          .mockResolvedValue(jsonResponse(status, { code, message: serverMessage }))
+        vi.stubGlobal('fetch', fetchMock)
+        render(ExtensionPanelPage, { props: { data: actionData } })
+
+        screen.getByText('Run').click()
+        await flush()
+
+        if (showsServerMessageVerbatim) {
+          expect(screen.getByText(serverMessage)).toBeTruthy()
+        } else {
+          expect(screen.queryByText(serverMessage)).toBeNull()
+        }
+      }
+    )
+
+    it('AC7: a network-level fetch rejection renders a fixed, non-leaking message in the status region', async () => {
+      const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))
+      vi.stubGlobal('fetch', fetchMock)
+      render(ExtensionPanelPage, { props: { data: actionData } })
+
+      screen.getByText('Run').click()
+      await flush()
+
+      expect(screen.queryByText(/Failed to fetch/)).toBeNull()
+      const container = document.querySelector('[aria-live="polite"]')
+      expect(container?.textContent).toBeTruthy()
+    })
+
+    it('AC8: a rapid repeat click before the first request settles does not issue a second concurrent request; the element is disabled/aria-busy while in flight and re-enabled once it settles', async () => {
+      let resolveFetch: (value: unknown) => void = () => undefined
+      const fetchMock = vi.fn().mockReturnValue(
+        new Promise((resolve) => {
+          resolveFetch = resolve
+        })
+      )
+      vi.stubGlobal('fetch', fetchMock)
+      render(ExtensionPanelPage, { props: { data: actionData } })
+
+      const button = screen.getByText('Run').closest('button') as HTMLButtonElement
+      button.click()
+      button.click()
+      button.click()
+      await flush()
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(button.disabled).toBe(true)
+      expect(button.getAttribute('aria-busy')).toBe('true')
+
+      resolveFetch(jsonResponse(200, { message: 'done' }))
+      await flush()
+
+      expect(button.disabled).toBe(false)
+      expect(button.getAttribute('aria-busy')).toBeNull()
+    })
+
+    it('AC9: a stale in-flight response is dropped when data.html changes (navigation) before it resolves', async () => {
+      let resolveFetch: (value: unknown) => void = () => undefined
+      const fetchMock = vi.fn().mockReturnValue(
+        new Promise((resolve) => {
+          resolveFetch = resolve
+        })
+      )
+      vi.stubGlobal('fetch', fetchMock)
+      const { rerender } = render(ExtensionPanelPage, { props: { data: actionData } })
+
+      screen.getByText('Run').click()
+      await flush()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+
+      await rerender({
+        data: { ...actionData, slot: 'other-slot', html: '<p>navigated away</p>' },
+      })
+
+      resolveFetch(jsonResponse(200, { message: 'stale message, must be dropped' }))
+      await flush()
+
+      expect(screen.queryByText('stale message, must be dropped')).toBeNull()
+      expect(panelContainer()?.innerHTML).toContain('navigated away')
     })
   })
 })

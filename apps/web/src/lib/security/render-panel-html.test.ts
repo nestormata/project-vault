@@ -139,30 +139,26 @@ describe('renderPanelHtml action (Story 29.1)', () => {
 
   it('(k) a realistic fixture of CM panel HTML survives sanitization with its legitimate content intact', () => {
     const el = makeContainer()
-    // Modeled on fixtures/mock-ui-panel-extension/src/index.ts's real onRenderPanel() output
-    // shape: inline style using a --pv-ext-* CSS var with a fallback, a button wired up via an
-    // inline <script> that posts a message to the host, and an aria-live status region.
+    // Story 29.2 — modeled on fixtures/mock-ui-panel-extension/src/index.ts's real
+    // onRenderPanel() output shape: inline style using a --pv-ext-* CSS var with a fallback, and
+    // a declaratively-wired action button using the data-pv-action/data-pv-action-<field>
+    // convention (no inline <script> any more — DOMPurify strips every <script> unconditionally,
+    // and the host now discovers/dispatches actions via these plain data-* attributes instead).
     const realisticFixture =
       `<html><body>` +
       `<p style="color: var(--pv-ext-ink, #24323b); background: var(--pv-ext-surface, #ffffff);">Mock panel for slot "group"</p>` +
-      `<button id="test-action-button" type="button">Run test action</button>` +
-      `<p id="test-action-result" aria-live="polite"></p>` +
-      `<script>
-        document.getElementById('test-action-button').addEventListener('click', () => {
-          parent.postMessage({ source: 'pv-extension-panel-action', requestId: '1', kind: 'test-action' }, '*');
-        });
-      </script>` +
+      `<button type="button" data-pv-action="test-action" data-pv-action-note="fixture-note">Run test action</button>` +
       `</body></html>`
 
     renderPanelHtml(el, realisticFixture)
 
     expect(el.querySelector('script')).toBeNull()
     expect(el.textContent).toContain('Mock panel for slot "group"')
-    const button = el.querySelector('#test-action-button')
+    const button = el.querySelector('[data-pv-action]')
     expect(button).not.toBeNull()
     expect(button?.textContent).toBe('Run test action')
-    const result = el.querySelector('#test-action-result')
-    expect(result?.getAttribute('aria-live')).toBe('polite')
+    expect(button?.getAttribute('data-pv-action')).toBe('test-action')
+    expect(button?.getAttribute('data-pv-action-note')).toBe('fixture-note')
     const p = el.querySelector('p[style]')
     expect(p?.getAttribute('style')).toContain('--pv-ext-ink')
   })
