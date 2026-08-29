@@ -113,7 +113,7 @@ export async function stopProcess(child: ChildProcess): Promise<void> {
 
 /** Pipes a spawned child's stdout/stderr to the console with a `[label:port]` prefix — a
  * diagnostic aid for when a journey fails locally. Shared by both spawn helpers below. */
-function pipeChildDiagnostics(child: ChildProcess, label: string, port: number): void {
+export function pipeChildDiagnostics(child: ChildProcess, label: string, port: number): void {
   // eslint-disable-next-line no-console -- diagnostic aid when this journey fails locally
   child.stdout?.on('data', (chunk) => console.log(`[${label}:${port}]`, String(chunk)))
   child.stderr?.on('data', (chunk) => {
