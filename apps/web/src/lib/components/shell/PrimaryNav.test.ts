@@ -60,7 +60,7 @@ describe('PrimaryNav.svelte', () => {
     await setLocale('es', { reload: false })
     await rerender({})
 
-    expect(screen.queryAllByText('Dashboard').length).toBe(0)
+    expect(screen.queryAllByText('Dashboard')).toHaveLength(0)
     expect(screen.getAllByText('Panel').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Proyectos').length).toBeGreaterThan(0)
   })
