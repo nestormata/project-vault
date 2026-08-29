@@ -1,5 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
+  import { goto } from '$app/navigation'
   import { canCreateCredential } from '$lib/components/onboarding/onboarding-logic.js'
   import { canImportCredentials } from '$lib/credentials/permissions.js'
   import DataTable from '$lib/components/tables/DataTable.svelte'
@@ -50,6 +51,20 @@
     const query = params.toString()
     return resolve(`/projects/${data.projectId}/credentials${query ? `?${query}` : ''}`)
   }
+
+  // Story 28.1 AC1/AC2: the form's implicit method="GET" submission relies on SvelteKit's
+  // fire-and-forget client-side navigation, which can silently fail (see story Finding). Drive
+  // the navigation explicitly instead, reusing filterHref() as the single source of truth for
+  // query-string construction, and always reset to page 1 on a fresh filter submission.
+  function handleFilterSubmit(event: SubmitEvent): void {
+    event.preventDefault()
+    const form = event.currentTarget as HTMLFormElement
+    const formData = new FormData(form)
+    const q = String(formData.get('q') ?? '')
+    const status = String(formData.get('status') ?? '')
+    const tags = String(formData.get('tags') ?? '')
+    void goto(resolve(filterHref({ q, status, tags, page: 1 })))
+  }
 </script>
 
 <svelte:head>
@@ -94,6 +109,7 @@
       class="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-[1fr_auto_auto_auto_auto] sm:grid-rows-[auto_auto_auto] sm:items-start sm:gap-x-4 sm:gap-y-2"
       method="GET"
       action={resolve(`/projects/${data.projectId}/credentials`)}
+      onsubmit={handleFilterSubmit}
     >
       <label
         class="block text-sm font-medium text-slate-800 sm:col-start-1 sm:row-start-1"

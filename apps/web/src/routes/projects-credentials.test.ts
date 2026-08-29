@@ -195,6 +195,112 @@ describe('project credential routes', () => {
     expect(clearLink.getAttribute('href')).toBe(`/projects/${projectId}/credentials`)
   })
 
+  describe('Apply filters submit behavior (Story 28.1)', () => {
+    function renderFilterForm(filters: { q: string; status: string; tags: string; page: number }) {
+      return render(CredentialsListPage, {
+        props: {
+          data: {
+            projectId,
+            orgRole: 'member' as const,
+            credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+            filters,
+          },
+        },
+      })
+    }
+
+    it('AC1 happy path: clicking Apply filters with a Search value navigates via goto() to a q-filtered URL, page reset', async () => {
+      renderFilterForm({ q: '', status: '', tags: '', page: 1 })
+
+      await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'Database' } })
+      await fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }))
+
+      expect(gotoMock).toHaveBeenCalledWith(`/projects/${projectId}/credentials?q=Database`)
+    })
+
+    it('AC1: submitting the form via Enter (dispatching submit directly) is handled identically to a button click', async () => {
+      renderFilterForm({ q: '', status: '', tags: '', page: 1 })
+
+      const searchInput = screen.getByLabelText('Search') as HTMLInputElement
+      await fireEvent.input(searchInput, { target: { value: 'Database' } })
+      await fireEvent.submit(searchInput.closest('form') as HTMLFormElement)
+
+      expect(gotoMock).toHaveBeenCalledWith(`/projects/${projectId}/credentials?q=Database`)
+    })
+
+    it('AC1 edge/failure: submitting with all three fields empty calls goto() with no query params at all', async () => {
+      renderFilterForm({ q: '', status: '', tags: '', page: 1 })
+
+      await fireEvent.submit(screen.getByLabelText('Search').closest('form') as HTMLFormElement)
+
+      expect(gotoMock).toHaveBeenCalledWith(`/projects/${projectId}/credentials`)
+    })
+
+    it('AC2 happy path: a Status-only submit produces a goto() URL with only status set', async () => {
+      renderFilterForm({ q: '', status: '', tags: '', page: 1 })
+
+      await fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'expiring' } })
+      await fireEvent.submit(screen.getByLabelText('Search').closest('form') as HTMLFormElement)
+
+      expect(gotoMock).toHaveBeenCalledWith(`/projects/${projectId}/credentials?status=expiring`)
+    })
+
+    it('AC2 happy path: a Tags-only submit produces a goto() URL with only tags set, comma+space preserved', async () => {
+      renderFilterForm({ q: '', status: '', tags: '', page: 1 })
+
+      await fireEvent.input(screen.getByLabelText('Tags'), { target: { value: 'db, prod' } })
+      await fireEvent.submit(screen.getByLabelText('Search').closest('form') as HTMLFormElement)
+
+      const [url] = gotoMock.mock.calls.at(-1) as [string]
+      const parsed = new URL(url, 'http://localhost')
+      expect(parsed.pathname).toBe(`/projects/${projectId}/credentials`)
+      expect(parsed.searchParams.get('tags')).toBe('db, prod')
+      expect(parsed.searchParams.has('q')).toBe(false)
+      expect(parsed.searchParams.has('status')).toBe(false)
+    })
+
+    it('AC2 happy path: a combined Search+Status+Tags submit produces a goto() URL with all three set', async () => {
+      renderFilterForm({ q: '', status: '', tags: '', page: 1 })
+
+      await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'Database' } })
+      await fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'expiring' } })
+      await fireEvent.input(screen.getByLabelText('Tags'), { target: { value: 'db, prod' } })
+      await fireEvent.submit(screen.getByLabelText('Search').closest('form') as HTMLFormElement)
+
+      const [url] = gotoMock.mock.calls.at(-1) as [string]
+      const parsed = new URL(url, 'http://localhost')
+      expect(parsed.searchParams.get('q')).toBe('Database')
+      expect(parsed.searchParams.get('status')).toBe('expiring')
+      expect(parsed.searchParams.get('tags')).toBe('db, prod')
+    })
+
+    it('AC2 edge/failure: submitting from a paginated state (page 2) resets to page 1 (no page param)', async () => {
+      renderFilterForm({ q: 'nope', status: '', tags: '', page: 2 })
+
+      await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'Database' } })
+      await fireEvent.submit(screen.getByLabelText('Search').closest('form') as HTMLFormElement)
+
+      const [url] = gotoMock.mock.calls.at(-1) as [string]
+      const parsed = new URL(url, 'http://localhost')
+      expect(parsed.searchParams.has('page')).toBe(false)
+      expect(parsed.searchParams.get('q')).toBe('Database')
+    })
+
+    it('AC2 boundary/encoding: a Tags value with comma, space, and ampersand round-trips through goto() without mis-parsing', async () => {
+      renderFilterForm({ q: '', status: '', tags: '', page: 1 })
+
+      const original = 'db, prod & staging'
+      await fireEvent.input(screen.getByLabelText('Tags'), { target: { value: original } })
+      await fireEvent.submit(screen.getByLabelText('Search').closest('form') as HTMLFormElement)
+
+      const [url] = gotoMock.mock.calls.at(-1) as [string]
+      const parsed = new URL(url, 'http://localhost')
+      expect(parsed.searchParams.get('tags')).toBe(original)
+      // Exactly one query param present (tags) - the ampersand must not be parsed as a second one.
+      expect(Array.from(parsed.searchParams.keys())).toEqual(['tags'])
+    })
+  })
+
   it('regression: q/status-only empty-state and Clear-link behavior is unchanged', () => {
     render(CredentialsListPage, {
       props: {
