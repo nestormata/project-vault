@@ -145,12 +145,22 @@ async function fireRawImmediateClick(
   let timing: HydrationTiming | null = null
   try {
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
-    // Synchronize on network activity actually settling (a real observable condition) rather
-    // than a blind sleep — SonarCloud (S2925) correctly flagged the original `waitForTimeout(300)`
-    // here. `networkidle` still lets any request the click DID dispatch (the no-race case) finish
-    // before we read `requests` below; the 300ms cap keeps the swallow case (no request ever
-    // fires) from waiting needlessly, matching this measurement's original bound.
-    await page.waitForLoadState('networkidle', { timeout: 300 }).catch(() => {})
+    // Wait for the actual, specific readiness condition this measurement needs: the instrumented
+    // flag (set by `instrumentHydrationTiming` above) telling us a click/submit listener has
+    // attached. SonarCloud (S9332) flagged an earlier `networkidle` wait here as still not
+    // specific enough — and it was right: network activity is incidental to what this test cares
+    // about (listener-attachment timing), so polling the actual flag is both more correct *and*
+    // satisfies "synchronize on a specific readiness condition." Bounded to 300ms so the swallow
+    // case (listener never attaches before the window closes) doesn't hang.
+    await page
+      .waitForFunction(
+        () =>
+          (window as unknown as { __hydrationRace: HydrationTiming }).__hydrationRace
+            .firstListenerAt !== null,
+        undefined,
+        { timeout: 300 }
+      )
+      .catch(() => {})
     timing = await readHydrationTiming(page)
   } catch (error) {
     // A raw click landing on a `type="submit"` button before `use:enhance`'s `submit` listener
