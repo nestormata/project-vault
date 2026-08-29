@@ -87,7 +87,16 @@
         <div
           class="flex flex-col gap-1 py-1 md:absolute md:z-10 md:min-w-40 md:rounded-xl md:border md:border-slate-200 md:bg-white md:p-1 md:shadow-lg"
         >
-          {#each item.children as child (child.href)}
+          <!--
+            Code-review fix (2026-08-29): keyed by array index, for the same reason as the
+            top-level {#each} above. validateNavItemsShape() only enforces `id` uniqueness across
+            a manifest's navItems, not `href` uniqueness — two children declared under the same
+            parent (or a child sharing an href with a sibling) can legally share an `href`, which
+            would reintroduce the exact each_key_duplicate production crash the top-level fix
+            addressed, one nesting level down. `item.children` is rebuilt fresh, in a stable
+            order, on every render, so an index key loses no real reconciliation behavior here.
+          -->
+          {#each item.children as child, childIndex (childIndex)}
             {@const childActive = isActiveNavItem(child.href, page.url.pathname)}
             <a
               class={`rounded-lg px-3 py-2 text-sm font-medium ${childActive ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}

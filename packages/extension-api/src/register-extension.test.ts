@@ -951,6 +951,17 @@ describe('registerExtension — AC1-AC3/AC6/AC7 (navItems, Story 29.3)', () => {
     )
   })
 
+  // Code-review regression test (2026-08-29): the case above (`//evil.example.com`) was
+  // previously rejected only because `.` is outside NAV_ITEM_HREF_PATTERN's charset, not because
+  // the pattern actually enforced "no protocol-relative prefix" — a dot-free, single-label
+  // hostname bypassed it entirely. This exercises the real rule.
+  it('rejects a dot-free protocol-relative // href (single-label hostname bypass)', () => {
+    expectRejection(
+      { navItems: [{ id: 'evil', label: 'Evil', href: '//evilhost' }] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
   it('rejects an href not starting with /', () => {
     expectRejection(
       { navItems: [{ id: 'relative', label: 'Relative', href: 'settings' }] },

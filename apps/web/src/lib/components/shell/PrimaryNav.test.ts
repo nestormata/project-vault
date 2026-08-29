@@ -206,4 +206,37 @@ describe('Story 29.3 AC12: manifest-declared navItems rendering (icon + disclosu
     expect(screen.getByRole('link', { name: /^dashboard/i })).toBeTruthy()
     expect(screen.getByRole('link', { name: /mock extension settings/i })).toBeTruthy()
   })
+
+  // Code-review regression test (2026-08-29): `validateNavItemsShape()` only enforces `id`
+  // uniqueness across a manifest's navItems, never `href` uniqueness — two sibling children
+  // declared under the same parent (or a child sharing an href with any other item) are legal.
+  // The child-level {#each} block previously keyed by `child.href` (not index), which would
+  // reintroduce the exact each_key_duplicate crash the fix above addressed for top-level items,
+  // one nesting level down.
+  it('does not crash when two sibling children under the same parent declare the same href', () => {
+    expect(() =>
+      render(PrimaryNav, {
+        props: {
+          extensionNavItems: [
+            { id: 'settings-page', label: 'Extension Settings', href: '/ext/settings' },
+            {
+              id: 'settings-child-a',
+              label: 'Child A',
+              href: '/ext/settings/child',
+              parentId: 'settings-page',
+            },
+            {
+              id: 'settings-child-b',
+              label: 'Child B',
+              href: '/ext/settings/child',
+              parentId: 'settings-page',
+            },
+          ],
+        },
+      })
+    ).not.toThrow()
+
+    expect(screen.getByRole('link', { name: 'Child A' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Child B' })).toBeTruthy()
+  })
 })

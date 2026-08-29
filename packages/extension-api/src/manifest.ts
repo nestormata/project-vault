@@ -172,8 +172,16 @@ export const NAV_ITEM_ID_PATTERN = /^[a-z0-9-]{1,64}$/
  * `<a href>` attribute with zero sanitization step in between (unlike DOMPurify-sanitized panel
  * HTML) — a typo'd `javascript:`/`data:` scheme or an absolute URL would otherwise be a real,
  * clickable link the browser executes/navigates on click.
+ *
+ * Code-review fix (2026-08-29): the leading `(?!\/)` negative lookahead is load-bearing, not
+ * decorative — without it, `[a-zA-Z0-9/_-]*` after the first `/` happily matches a SECOND `/`,
+ * so a dot-free protocol-relative href like `//evilhost` (a single-label hostname, resolvable via
+ * DNS search suffix/`/etc/hosts` on plenty of networks) previously passed this pattern despite
+ * AC5's explicit "no `//` protocol-relative prefix" requirement. The existing regression test only
+ * ever exercised `//evil.example.com`, which happened to be rejected for an unrelated reason (`.`
+ * is not in the allowed charset) and never verified the actual protocol-relative-prefix rule.
  */
-export const NAV_ITEM_HREF_PATTERN = /^\/[a-zA-Z0-9/_-]*$/
+export const NAV_ITEM_HREF_PATTERN = /^\/(?!\/)[a-zA-Z0-9/_-]*$/
 
 /** Story 29.3 AC2 — generous for any real extension, small enough to bound a hostile/broken
  * manifest from declaring an unbounded `navItems` list. Matches `MAX_UI_PANEL_SLOTS`/
