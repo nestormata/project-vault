@@ -33,6 +33,9 @@ type TestApp = Awaited<ReturnType<typeof import('../app.js').createApp>>
 const TEST_PASSPHRASE = 'extension-panel-route-passphrase'
 const PANEL_URL = (slot: string) => `/api/v1/extensions/panels/${slot}`
 const NAV_URL = '/api/v1/extensions/nav'
+// Story 29.3 — shared id literal for the nav describe block's own navItems fixture, avoiding
+// sonarjs/no-duplicate-string tripping on this literal repeated across the test.
+const NAV_SETTINGS_ITEM_ID = 'settings-page'
 const SHOULD_NOT_RUN_HTML = 'should not run'
 const HELLO_HTML = '<p>hello</p>'
 const ACME_BRAND_THEME = 'acme-brand'
@@ -46,6 +49,13 @@ function loadedState(overrides: {
   moduleAction?: ModuleAction
   moduleActions?: string[]
   panelDataPaths?: string[]
+  navItems?: Array<{
+    id: string
+    label: string
+    href: string
+    icon?: string
+    parentId?: string
+  }>
   loadedAt?: string
 }): ExtensionState {
   return {
@@ -57,6 +67,7 @@ function loadedState(overrides: {
       ...(overrides.uiPanelSlots ? { uiPanelSlots: overrides.uiPanelSlots } : {}),
       ...(overrides.moduleActions ? { moduleActions: overrides.moduleActions } : {}),
       ...(overrides.panelDataPaths ? { panelDataPaths: overrides.panelDataPaths } : {}),
+      ...(overrides.navItems ? { navItems: overrides.navItems as never } : {}),
     },
     loadedAt: overrides.loadedAt ?? new Date().toISOString(),
     hooks: {
@@ -857,7 +868,7 @@ describe.sequential('GET /api/v1/extensions/nav (Story 25.1 AC5)', () => {
     const member = await createDirectAuthenticatedUser(suite.app, 'nav-not-loaded', 'member')
     const res = await getNav(suite.app, member.cookies)
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ uiPanelSlot: null })
+    expect(res.json()).toEqual({ uiPanelSlot: null, navItems: [] })
   })
 
   it('AC5: uiPanelSlot is null when the loaded extension does not declare ui-panel', async () => {
@@ -865,7 +876,7 @@ describe.sequential('GET /api/v1/extensions/nav (Story 25.1 AC5)', () => {
     const member = await createDirectAuthenticatedUser(suite.app, 'nav-no-uipanel', 'member')
     const res = await getNav(suite.app, member.cookies)
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ uiPanelSlot: null })
+    expect(res.json()).toEqual({ uiPanelSlot: null, navItems: [] })
   })
 
   it('AC5: uiPanelSlot is the legacy "group" slot when the loaded extension declares ui-panel without uiPanelSlots (AC2 fallback)', async () => {
@@ -873,7 +884,7 @@ describe.sequential('GET /api/v1/extensions/nav (Story 25.1 AC5)', () => {
     const member = await createDirectAuthenticatedUser(suite.app, 'nav-uipanel', 'member')
     const res = await getNav(suite.app, member.cookies)
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ uiPanelSlot: 'group' })
+    expect(res.json()).toEqual({ uiPanelSlot: 'group', navItems: [] })
   })
 
   it('AC5 (Story 25.2 regression): uiPanelSlot is the FIRST entry of the dynamic manifest-declared list, still exactly one slot reported', async () => {
@@ -886,7 +897,52 @@ describe.sequential('GET /api/v1/extensions/nav (Story 25.1 AC5)', () => {
     const member = await createDirectAuthenticatedUser(suite.app, 'nav-uipanel-dynamic', 'member')
     const res = await getNav(suite.app, member.cookies)
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ uiPanelSlot: 'document' })
+    expect(res.json()).toEqual({ uiPanelSlot: 'document', navItems: [] })
+  })
+
+  it('Story 29.3 AC9: navItems is [] when the loaded extension declares no navItems', async () => {
+    __setExtensionStateForTests(loadedState({ capabilities: ['ui-panel'] }))
+    const member = await createDirectAuthenticatedUser(suite.app, 'nav-no-navitems', 'member')
+    const res = await getNav(suite.app, member.cookies)
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ uiPanelSlot: 'group', navItems: [] })
+  })
+
+  it('Story 29.3 AC9: navItems includes the declared list, resolved independently of the ui-panel capability/uiPanelSlot value', async () => {
+    const settingsPageNavItem = {
+      id: NAV_SETTINGS_ITEM_ID,
+      label: 'Extension Settings',
+      href: '/ext/settings',
+    }
+    __setExtensionStateForTests(
+      loadedState({
+        capabilities: ['notification-channel'],
+        navItems: [
+          settingsPageNavItem,
+          {
+            id: 'settings-child',
+            label: 'Child',
+            href: '/ext/settings/child',
+            parentId: NAV_SETTINGS_ITEM_ID,
+          },
+        ],
+      })
+    )
+    const member = await createDirectAuthenticatedUser(suite.app, 'nav-navitems', 'member')
+    const res = await getNav(suite.app, member.cookies)
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      uiPanelSlot: null,
+      navItems: [
+        settingsPageNavItem,
+        {
+          id: 'settings-child',
+          label: 'Child',
+          href: '/ext/settings/child',
+          parentId: NAV_SETTINGS_ITEM_ID,
+        },
+      ],
+    })
   })
 })
 

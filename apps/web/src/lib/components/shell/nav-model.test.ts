@@ -53,6 +53,87 @@ describe('Story 28.4 AC1/AC2: nav item labels route through m.nav_*() and transl
   })
 })
 
+describe('Story 29.3 AC10: manifest-declared extensionNavItems merge', () => {
+  it('does not add any items when extensionNavItems is omitted', () => {
+    const items = getPrimaryNavItems()
+    expect(items).toHaveLength(6)
+  })
+
+  it('does not add any items when extensionNavItems is an empty array (identical to omitted)', () => {
+    const withEmpty = getPrimaryNavItems({ isPlatformOperator: false, extensionNavItems: [] })
+    const omitted = getPrimaryNavItems()
+    expect(withEmpty).toEqual(omitted)
+  })
+
+  it('appends a top-level manifest-declared item AFTER the existing hardcoded items, unchanged', () => {
+    const items = getPrimaryNavItems({
+      isPlatformOperator: false,
+      extensionNavItems: [
+        { id: 'settings-page', label: 'Extension Settings', href: '/ext/settings' },
+      ],
+    })
+
+    expect(items.map((i) => i.href)).toEqual([
+      '/dashboard',
+      '/projects',
+      '/credentials',
+      '/notifications',
+      '/health',
+      '/settings',
+      '/ext/settings',
+    ])
+    const appended = items.find((i) => i.href === '/ext/settings')
+    expect(appended?.label).toBe('Extension Settings')
+    expect(appended?.mobileLabel).toBe('Extension Settings')
+  })
+
+  it('nests a child item under its parent as `children`, not as a separate top-level entry', () => {
+    const items = getPrimaryNavItems({
+      isPlatformOperator: false,
+      extensionNavItems: [
+        { id: 'settings-page', label: 'Extension Settings', href: '/ext/settings' },
+        {
+          id: 'settings-child',
+          label: 'Child Page',
+          href: '/ext/settings/child',
+          parentId: 'settings-page',
+        },
+      ],
+    })
+
+    expect(items.find((i) => i.href === '/ext/settings/child')).toBeUndefined()
+    const parent = items.find((i) => i.href === '/ext/settings')
+    expect(parent?.children).toEqual([
+      expect.objectContaining({ label: 'Child Page', href: '/ext/settings/child' }),
+    ])
+  })
+
+  it('carries the icon token through onto the top-level PrimaryNavItem', () => {
+    const items = getPrimaryNavItems({
+      isPlatformOperator: false,
+      extensionNavItems: [
+        { id: 'settings-page', label: 'Extension Settings', href: '/ext/settings', icon: 'grid' },
+      ],
+    })
+
+    expect(items.find((i) => i.href === '/ext/settings')?.icon).toBe('grid')
+  })
+
+  it('composes independently of isPlatformOperator/hasUiPanelExtension — all three append points coexist', () => {
+    const items = getPrimaryNavItems({
+      isPlatformOperator: true,
+      hasUiPanelExtension: true,
+      extensionNavItems: [
+        { id: 'settings-page', label: 'Extension Settings', href: '/ext/settings' },
+      ],
+    })
+
+    expect(items.find((i) => i.href === '/platform')).toBeDefined()
+    expect(items.find((i) => i.href === '/extensions/panels/group')).toBeDefined()
+    expect(items.find((i) => i.href === '/ext/settings')).toBeDefined()
+  })
+})
+
 describe('Story 25.1 AC5: generic extension UI-panel nav entry', () => {
   it('is absent by default (no options passed)', () => {
     const items = getPrimaryNavItems()

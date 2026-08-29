@@ -252,7 +252,7 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each(['3.9.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
+  it.each(['3.10.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
     'rejects canonical version outside %s',
     (apiVersion) => {
       const hooksFactory = makeHooksFactory()
@@ -288,16 +288,18 @@ describe('registerExtension — concrete canonical version gate', () => {
 
   it('allows only the above-host same-major rollback escape', () => {
     // Story 25.3 AC1/Task 1, Story 25.4 AC4/Task 4, Story 25.5 AC2/Task 1, Story 25.8 AC1/Task 1,
-    // Story 20.8, and Story 25.12 AC2/Task 2 — host EXTENSION_API_VERSION is now 3.8.0 (see
-    // manifest.ts's EXTENSION_API_VERSION doc comment for why this merge moves past
-    // 3.2.0/3.3.0/3.4.0/3.6.0/3.7.0, which Story 25.3/25.4/25.5/25.9/20.8 respectively already
-    // claimed on main for different additive changes); '3.9.0' is the above-host, same-major
-    // escape-eligible version, and '4.0.0' is a different major (never escape-eligible). Kept one
-    // minor version above whatever EXTENSION_API_VERSION currently is — see loader.test.ts's
-    // identical comment.
-    expect(() => registerExtension(manifest({ apiVersion: '3.9.0' }), makeHooksFactory())).toThrow()
+    // Story 20.8, Story 25.12 AC2/Task 2, and Story 29.3 AC8/Task 1 — host EXTENSION_API_VERSION
+    // is now 3.9.0 (see manifest.ts's EXTENSION_API_VERSION doc comment for why this merge moves
+    // past 3.2.0/3.3.0/3.4.0/3.6.0/3.7.0/3.8.0, which Story 25.3/25.4/25.5/25.9/20.8/25.12
+    // respectively already claimed on main for different additive changes); '3.10.0' is the
+    // above-host, same-major escape-eligible version, and '4.0.0' is a different major (never
+    // escape-eligible). Kept one minor version above whatever EXTENSION_API_VERSION currently is
+    // — see loader.test.ts's identical comment.
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.9.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '3.10.0' }), makeHooksFactory())
+    ).toThrow()
+    expect(() =>
+      registerExtension(manifest({ apiVersion: '3.10.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()
@@ -837,5 +839,184 @@ describe('registerExtension — AC2 (panelDataPaths, Story 25.12)', () => {
       { logger: { warn } }
     )
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('panelDataPaths'))
+  })
+})
+
+/**
+ * Story 29.3 AC1-AC3/AC7 — `navItems?: ExtensionNavItem[]` manifest field validation. Mirrors
+ * `validateUiPanelSlotsShape`'s exact structure, EXCEPT `navItems` is deliberately NOT gated
+ * behind the `'ui-panel'` capability (AC1) — this describe block's own happy-path tests
+ * intentionally declare only `'auth-provider'` to prove that independence, unlike every other
+ * optional-array-field describe block above.
+ */
+describe('registerExtension — AC1-AC3/AC6/AC7 (navItems, Story 29.3)', () => {
+  const TOP_ITEM = { id: 'settings-page', label: 'Extension Settings', href: '/ext/settings' }
+  const CHILD_ITEM = {
+    id: 'settings-child',
+    label: 'Child',
+    href: '/ext/settings/child',
+    parentId: 'settings-page',
+  }
+
+  it('happy path: a real navItems list (with icon, no capability gate) registers successfully', () => {
+    const hooksFactory = makeHooksFactory()
+    const result = registerExtension(
+      manifest({
+        capabilities: ['auth-provider'],
+        navItems: [{ ...TOP_ITEM, icon: 'puzzle-piece' }, CHILD_ITEM],
+      }),
+      hooksFactory
+    )
+    expect(result.manifest.navItems).toEqual([{ ...TOP_ITEM, icon: 'puzzle-piece' }, CHILD_ITEM])
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('omitted: parses fine, no navItems on the returned manifest', () => {
+    const hooksFactory = makeHooksFactory()
+    const result = registerExtension(manifest(), hooksFactory)
+    expect(result.manifest.navItems).toBeUndefined()
+  })
+
+  it('navItems: undefined explicitly behaves identically to omitted', () => {
+    const hooksFactory = makeHooksFactory()
+    const result = registerExtension(manifest({ navItems: undefined }), hooksFactory)
+    expect(result.manifest.navItems).toBeUndefined()
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects an empty navItems array (distinct from omitted)', () => {
+    expectRejection({ navItems: [] }, INVALID_MANIFEST_FIELD)
+  })
+
+  it('rejects a navItems array longer than the 32-entry maximum', () => {
+    const tooMany = Array.from({ length: 33 }, (_, i) => ({
+      id: `item-${i}`,
+      label: `Item ${i}`,
+      href: `/ext/item-${i}`,
+    }))
+    expectRejection({ navItems: tooMany }, INVALID_MANIFEST_FIELD)
+  })
+
+  it('accepts exactly the 32-entry navItems maximum', () => {
+    const exactlyMax = Array.from({ length: 32 }, (_, i) => ({
+      id: `item-${i}`,
+      label: `Item ${i}`,
+      href: `/ext/item-${i}`,
+    }))
+    const hooksFactory = makeHooksFactory()
+    expect(() => registerExtension(manifest({ navItems: exactlyMax }), hooksFactory)).not.toThrow()
+  })
+
+  it('rejects a duplicate id within one manifest', () => {
+    expectRejection(
+      { navItems: [TOP_ITEM, { ...TOP_ITEM, label: 'Duplicate' }] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an id with an invalid charset', () => {
+    expectRejection(
+      { navItems: [{ id: 'Bad_Id!', label: 'Bad', href: '/ext/bad' }] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects a label longer than MAX_NAV_ITEM_LABEL_LENGTH', () => {
+    expectRejection(
+      { navItems: [{ id: 'long-label', label: 'x'.repeat(129), href: '/ext/x' }] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an empty label', () => {
+    expectRejection(
+      { navItems: [{ id: 'empty-label', label: '', href: '/ext/x' }] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an href with a scheme prefix', () => {
+    expectRejection(
+      {
+        navItems: [{ id: 'evil', label: 'Evil', href: 'javascript:alert(1)' as unknown as string }],
+      },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an href with a protocol-relative // prefix', () => {
+    expectRejection(
+      { navItems: [{ id: 'evil', label: 'Evil', href: '//evil.example.com' }] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an href not starting with /', () => {
+    expectRejection(
+      { navItems: [{ id: 'relative', label: 'Relative', href: 'settings' }] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an unrecognized icon token', () => {
+    expectRejection(
+      {
+        navItems: [{ id: 'bad-icon', label: 'Bad Icon', href: '/ext/x', icon: 'rocket' as never }],
+      },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects a parentId referencing a non-existent id', () => {
+    expectRejection(
+      {
+        navItems: [{ id: 'child', label: 'Child', href: '/ext/child', parentId: 'no-such-parent' }],
+      },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects a parentId referencing itself', () => {
+    expectRejection(
+      { navItems: [{ id: 'self', label: 'Self', href: '/ext/self', parentId: 'self' }] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects grandchild nesting: an item that is both a parentId target AND itself has a parentId', () => {
+    expectRejection(
+      {
+        navItems: [
+          { id: 'grandparent', label: 'Grandparent', href: '/ext/gp' },
+          { id: 'parent', label: 'Parent', href: '/ext/p', parentId: 'grandparent' },
+          { id: 'grandchild', label: 'Grandchild', href: '/ext/gc', parentId: 'parent' },
+        ],
+      },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('accepts exactly one level of nesting (parent + children, no grandchildren)', () => {
+    const hooksFactory = makeHooksFactory()
+    expect(() =>
+      registerExtension(manifest({ navItems: [TOP_ITEM, CHILD_ITEM] }), hooksFactory)
+    ).not.toThrow()
+  })
+
+  it('does NOT require "ui-panel" in capabilities (AC1: deliberate divergence)', () => {
+    const hooksFactory = makeHooksFactory()
+    expect(() =>
+      registerExtension(
+        manifest({ capabilities: ['notification-channel'], navItems: [TOP_ITEM] }),
+        hooksFactory
+      )
+    ).not.toThrow()
+  })
+
+  it('warns on an unrecognized top-level key still includes navItems in KNOWN_MANIFEST_KEYS (no spurious warning)', () => {
+    const hooksFactory = makeHooksFactory()
+    const warn = vi.fn()
+    registerExtension(manifest({ navItems: [TOP_ITEM] }), hooksFactory, { logger: { warn } })
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('navItems'))
   })
 })

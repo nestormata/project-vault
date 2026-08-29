@@ -1,4 +1,14 @@
+import type { ExtensionNavItem } from '@project-vault/extension-api'
 import { apiFetch } from './client.js'
+
+/**
+ * Story 29.3 AC11 — the client's own mirror of the resolved, extension-declared `navItems`
+ * entries `apps/api`'s `GET /extensions/nav` returns. Structurally identical to
+ * `ExtensionNavItem`, kept as its own alias (like `ExtensionNav` below) so this file's public
+ * surface reads self-contained without requiring every caller to know the underlying manifest
+ * type.
+ */
+export type ResolvedExtensionNavItem = ExtensionNavItem
 
 /**
  * Story 25.12 AC2 — this client's own mirror of `apps/api/src/lib/extension-panel.ts`'s
@@ -39,7 +49,10 @@ export function getExtensionPanel(fetchFn: typeof fetch, slot: string, subpath?:
 // Story 25.1 AC5: drives (app)/+layout.server.ts's generic nav-entry decision. `null` means "no
 // nav entry" (no extension loaded, or the loaded extension does not declare the `'ui-panel'`
 // capability) — a non-null value is the fixed slot this story hardcodes ('group').
-export type ExtensionNav = { uiPanelSlot: string | null }
+// Story 29.3 AC11: navItems is ALWAYS present ([] when none declared or no extension loaded,
+// never undefined), matching apps/api's own ExtensionNavSchema contract exactly — resolved
+// independently of uiPanelSlot/the 'ui-panel' capability (AC1's independence decision).
+export type ExtensionNav = { uiPanelSlot: string | null; navItems: ResolvedExtensionNavItem[] }
 
 export function getExtensionNav(fetchFn: typeof fetch) {
   return apiFetch<ExtensionNav>(fetchFn, '/api/v1/extensions/nav')

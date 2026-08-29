@@ -4,9 +4,14 @@ import {
   EXTENSION_API_VERSION,
   HOST_SUPPORTED_EXTENSION_API_RANGE,
   MAX_MODULE_ACTIONS,
+  MAX_NAV_ITEM_LABEL_LENGTH,
+  MAX_NAV_ITEMS,
   MAX_PANEL_DATA_PATHS,
   MAX_UI_PANEL_SLOTS,
   MODULE_ACTION_NAME_PATTERN,
+  NAV_ITEM_HREF_PATTERN,
+  NAV_ITEM_ID_PATTERN,
+  NAV_ITEM_ICON_TOKENS,
   PANEL_DATA_PATH_PATTERN,
   UI_PANEL_SLOT_NAME_PATTERN,
 } from './manifest.js'
@@ -135,6 +140,7 @@ const KNOWN_MANIFEST_KEYS = [
   'uiPanelSlots',
   'moduleActions',
   'panelDataPaths',
+  'navItems',
 ]
 
 const INVALID_MANIFEST_FIELD = 'invalid-manifest-field'
@@ -364,6 +370,154 @@ function validatePanelDataPathsShape(manifest: ExtensionManifest): void {
   }
 }
 
+const NAV_ITEM_ICON_TOKEN_SET = new Set<string>(NAV_ITEM_ICON_TOKENS)
+
+type NavItemCandidate = {
+  id: string
+  label: string
+  href: string
+  icon?: string
+  parentId?: string
+}
+
+/**
+ * Story 29.3 AC2/AC4/AC5/AC6 — validates one `navItems` entry's own fields (id charset/uniqueness,
+ * label shape, href shape, icon token) in isolation, adding its `id` to `seenIds` as a side effect
+ * so the caller's loop can detect duplicates across entries. Extracted from
+ * `validateNavItemsShape()` purely to keep that function's cyclomatic/cognitive complexity within
+ * this repo's lint budget.
+ */
+function validateNavItemIdAndTrackDuplicates(item: NavItemCandidate, seenIds: Set<string>): void {
+  if (typeof item.id !== 'string' || !NAV_ITEM_ID_PATTERN.test(item.id)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "navItems" contains an invalid item id ${JSON.stringify(item.id)} (expected to match ${NAV_ITEM_ID_PATTERN})`
+    )
+  }
+  if (seenIds.has(item.id)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "navItems" contains duplicate item id "${item.id}"`
+    )
+  }
+  seenIds.add(item.id)
+}
+
+function validateNavItemLabelAndHref(item: NavItemCandidate): void {
+  if (
+    typeof item.label !== 'string' ||
+    item.label.length === 0 ||
+    item.label.length > MAX_NAV_ITEM_LABEL_LENGTH
+  ) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "navItems" item "${item.id}" has an invalid label (must be a non-empty string of at most ${MAX_NAV_ITEM_LABEL_LENGTH} characters)`
+    )
+  }
+
+  if (typeof item.href !== 'string' || !NAV_ITEM_HREF_PATTERN.test(item.href)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "navItems" item "${item.id}" has an invalid href ${JSON.stringify(item.href)} (expected a same-origin relative path matching ${NAV_ITEM_HREF_PATTERN})`
+    )
+  }
+}
+
+/**
+ * Story 29.3 AC2/AC4/AC5/AC6 — validates one `navItems` entry's own fields (id charset/
+ * uniqueness, label shape, href shape, icon token), delegating to
+ * `validateNavItemIdAndTrackDuplicates`/`validateNavItemLabelAndHref` to keep this function's own
+ * complexity within this repo's lint budget.
+ */
+function validateSingleNavItemFields(item: NavItemCandidate, seenIds: Set<string>): void {
+  validateNavItemIdAndTrackDuplicates(item, seenIds)
+  validateNavItemLabelAndHref(item)
+
+  if (item.icon !== undefined && !NAV_ITEM_ICON_TOKEN_SET.has(item.icon)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "navItems" item "${item.id}" declares an unrecognized icon token ${JSON.stringify(item.icon)}`
+    )
+  }
+}
+
+/**
+ * Story 29.3 AC2/AC3 — validates every `parentId` resolves to another `id` present in the SAME
+ * array (never itself), and that nesting stops at exactly one level (an item that is both a
+ * `parentId` target AND itself carries a `parentId` is a rejected "grandchild" attempt). Extracted
+ * from `validateNavItemsShape()` for the same complexity-budget reason as
+ * `validateSingleNavItemFields` above.
+ */
+function validateNavItemParentIds(items: NavItemCandidate[], seenIds: Set<string>): void {
+  const idsWithChildren = new Set<string>()
+  for (const item of items) {
+    if (item.parentId === undefined) continue
+    if (item.parentId === item.id) {
+      throw new ExtensionRegistrationError(
+        INVALID_MANIFEST_FIELD,
+        `Extension manifest field "navItems" item "${item.id}" declares "parentId" referencing itself`
+      )
+    }
+    if (!seenIds.has(item.parentId)) {
+      throw new ExtensionRegistrationError(
+        INVALID_MANIFEST_FIELD,
+        `Extension manifest field "navItems" item "${item.id}" declares "parentId" ${JSON.stringify(item.parentId)}, which does not match any item id in the same array`
+      )
+    }
+    idsWithChildren.add(item.parentId)
+  }
+
+  // AC3: exactly one level of nesting — a child's own id may not itself be a parentId target.
+  for (const item of items) {
+    if (item.parentId !== undefined && idsWithChildren.has(item.id)) {
+      throw new ExtensionRegistrationError(
+        INVALID_MANIFEST_FIELD,
+        `Extension manifest field "navItems" item "${item.id}" is both a parent and a child — only one level of nesting is allowed`
+      )
+    }
+  }
+}
+
+/**
+ * Story 29.3 AC1-AC3/AC6 — validates the optional `navItems` field's shape: non-empty array (if
+ * present), capped at `MAX_NAV_ITEMS`, each entry's own fields (`validateSingleNavItemFields`),
+ * and every `parentId` reference/nesting-depth rule (`validateNavItemParentIds`). Deliberately NOT
+ * gated behind `'ui-panel'` in `capabilities[]` — see `manifest.ts`'s own `navItems` doc comment
+ * for why this is an intentional divergence from `validateUiPanelSlotsShape`/
+ * `validateModuleActionsShape`/`validatePanelDataPathsShape`'s shared capability-gate pattern.
+ */
+function validateNavItemsShape(manifest: ExtensionManifest): void {
+  if (manifest.navItems === undefined) return
+
+  if (!Array.isArray(manifest.navItems)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "navItems" must be an array, got ${JSON.stringify(manifest.navItems)}`
+    )
+  }
+
+  if (manifest.navItems.length === 0) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest field "navItems" must not be an empty array — omit the field entirely to declare no nav items'
+    )
+  }
+
+  if (manifest.navItems.length > MAX_NAV_ITEMS) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "navItems" declares ${manifest.navItems.length} entries, exceeding the maximum of ${MAX_NAV_ITEMS}`
+    )
+  }
+
+  const seenIds = new Set<string>()
+  for (const item of manifest.navItems) {
+    validateSingleNavItemFields(item, seenIds)
+  }
+
+  validateNavItemParentIds(manifest.navItems, seenIds)
+}
+
 const DB_SCOPE_TABLE_PATTERN = /^[a-z][a-z0-9_]*$/
 const DB_SCOPE_OPERATIONS = new Set(['select', 'insert', 'update', 'delete'])
 const INVALID_DB_SCOPE = 'invalid-db-scope' as const
@@ -560,6 +714,7 @@ export function registerExtension(
   validateUiPanelSlotsShape(manifest)
   validateModuleActionsShape(manifest)
   validatePanelDataPathsShape(manifest)
+  validateNavItemsShape(manifest)
 
   if (!REVERSE_DNS_NAME_PATTERN.test(manifest.name)) {
     throw new ExtensionRegistrationError(
@@ -584,6 +739,7 @@ export function registerExtension(
       uiPanelSlots: manifest.uiPanelSlots,
       moduleActions: manifest.moduleActions,
       panelDataPaths: manifest.panelDataPaths,
+      navItems: manifest.navItems,
     },
     hooks,
   }

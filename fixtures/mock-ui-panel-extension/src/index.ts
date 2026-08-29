@@ -63,6 +63,15 @@ export const TEST_ACTION_NOTE = 'fixture-note'
  * (and Chrome-driven manual verification) a real, manifest-declared end-to-end target.
  */
 export const TEST_DATA_PATH = '/api/v1/org/users'
+/**
+ * Story 29.3 AC13 — a real, manifest-declared `navItems` target: one top-level item plus one
+ * child, giving this story's own new tests (nav-model.test.ts's merge logic, PrimaryNav.test.ts's
+ * icon/disclosure rendering) — and any later Chrome-driven manual verification — a real
+ * end-to-end fixture, following this fixture's own established pattern of exporting named
+ * constants for tests to reference.
+ */
+export const TEST_NAV_ITEM_ID = 'mock-ext-settings'
+export const TEST_NAV_CHILD_ITEM_ID = 'mock-ext-settings-child'
 
 const manifest: ExtensionManifest = {
   name: MOCK_UI_PANEL_PROVIDER_NAME,
@@ -88,6 +97,19 @@ const manifest: ExtensionManifest = {
   // behavior for those two paths is unchanged) plus TEST_DATA_PATH, a real end-to-end target for
   // this story's AC2 happy-path test and Chrome-driven manual verification.
   panelDataPaths: ['/api/v1/projects', '/api/v1/projects/:id', TEST_DATA_PATH],
+  // Story 29.3 AC1/AC13 — declared alongside 'ui-panel' purely because this fixture already
+  // declares it (navItems is NOT gated behind 'ui-panel' — a fixture declaring only
+  // 'notification-channel' would be equally valid). One top-level item plus one child, exercising
+  // both the flat top-level merge and the one-level-nesting disclosure end to end.
+  navItems: [
+    { id: TEST_NAV_ITEM_ID, label: 'Mock Extension Settings', href: '/dashboard', icon: 'grid' },
+    {
+      id: TEST_NAV_CHILD_ITEM_ID,
+      label: 'Mock Child Page',
+      href: '/health',
+      parentId: TEST_NAV_ITEM_ID,
+    },
+  ],
 }
 
 const uiPanel: UIPanel = {

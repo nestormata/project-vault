@@ -3,6 +3,7 @@
   import { resolve } from '$app/paths'
   import { m } from '$lib/paraglide/messages.js'
   import { logout } from '$lib/api/auth.js'
+  import type { ResolvedExtensionNavItem } from '$lib/api/extension-panel.js'
   import Footer from './Footer.svelte'
   import PrimaryNav from './PrimaryNav.svelte'
 
@@ -13,6 +14,7 @@
     unreadCount = 0,
     onsearch,
     hasUiPanelExtension = false,
+    extensionNavItems = [],
   }: {
     user: import('$lib/api/auth.js').AuthUser
     children: import('svelte').Snippet
@@ -20,6 +22,7 @@
     unreadCount?: number
     onsearch?: () => void
     hasUiPanelExtension?: boolean
+    extensionNavItems?: ResolvedExtensionNavItem[]
   } = $props()
   let logoutError = $state(null)
   const MFA_SETTINGS_PATH = '/settings/security'
@@ -70,7 +73,12 @@
         <p class="text-sm text-slate-600">Run complex projects. Miss nothing.</p>
       </div>
       {#if !hidePrimaryNav}
-        <PrimaryNav {onsearch} isPlatformOperator={user.isPlatformOperator} {hasUiPanelExtension} />
+        <PrimaryNav
+          {onsearch}
+          isPlatformOperator={user.isPlatformOperator}
+          {hasUiPanelExtension}
+          {extensionNavItems}
+        />
       {/if}
       <div class="flex flex-wrap items-center gap-3 text-sm text-slate-600">
         {#if !hidePrimaryNav}
