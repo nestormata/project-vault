@@ -54,6 +54,14 @@ const SANITIZE_CONFIG = {
   // scoped via a `<style>`/`<link>` tag specifically).
   FORBID_TAGS: ['iframe', 'object', 'embed', 'style', 'link'],
   SANITIZE_DOM: true,
+  // Code-review hardening (2026-08-29) — DOMPurify's bare default `ALLOWED_TAGS` spans HTML, SVG,
+  // and MathML. No real panel (see `fixtures/mock-ui-panel-extension`) emits SVG/MathML markup;
+  // leaving those namespaces open is unnecessary attack surface for exactly the class of bug
+  // DOMPurify itself has repeatedly had to patch (namespace-confusion / mutation-XSS via
+  // `<svg><foreignObject>`, `<use>`, `<animate>`, etc. — see DOMPurify's own CVE history). Scoping
+  // to the `html` profile removes that surface entirely without affecting any legitimate panel,
+  // all of which are plain HTML.
+  USE_PROFILES: { html: true },
   // DOMPurify's default ALLOWED_ATTR list does not include `target` — added explicitly so a
   // legitimate `target="_blank"` link survives sanitization at all, which the
   // `afterSanitizeAttributes` hook below then requires in order to enforce
@@ -62,7 +70,19 @@ const SANITIZE_CONFIG = {
 }
 
 function forceNoopenerNoreferrerOnBlankLinks(node: Element): void {
-  if (node.tagName === 'A' && node.getAttribute('target') === '_blank') {
+  // Code-review hardening (2026-08-29) — `ADD_ATTR: ['target']` above adds `target` to the
+  // allowed-attribute set for EVERY allowed tag, not just `<a>` (DOMPurify's `ADD_ATTR` is not
+  // per-tag-scoped). Left unchecked, `<area href="..." target="_blank">` or
+  // `<form action="..." target="_blank">` would retain a working `target="_blank"` after
+  // sanitization with no `rel="noopener noreferrer"` ever applied, since this hook previously
+  // only acted on `<a>` — a reverse-tabnabbing bypass via non-anchor elements. Any surviving
+  // `target` on a non-`<a>` element is stripped outright instead: no non-anchor element in a real
+  // panel legitimately needs `target="_blank"`.
+  if (node.tagName !== 'A') {
+    if (node.hasAttribute('target')) node.removeAttribute('target')
+    return
+  }
+  if (node.getAttribute('target') === '_blank') {
     node.setAttribute('rel', 'noopener noreferrer')
   }
 }
@@ -83,9 +103,17 @@ function sanitizeAndAssign(element: HTMLElement, html: string | null): void {
     }
     const sanitized = html === null || html === '' ? '' : DOMPurify.sanitize(html, SANITIZE_CONFIG)
     element.innerHTML = sanitized
-  } catch {
+  } catch (error) {
     // AC14 — fail safe: never let a sanitizer/DOM-assignment exception propagate through
     // Svelte's render tree. Clear whatever the container held rather than leaving stale content.
+    //
+    // Code-review hardening (2026-08-29) — logged (not silently swallowed): without this, a
+    // persistently-throwing sanitizer would render every panel on every slot blank forever with
+    // zero operator-visible signal, indistinguishable from the ordinary `html === null` degraded
+    // state. `console.error` (not a throw) preserves the fail-safe contract — this can never
+    // itself cause the exception to propagate.
+    // eslint-disable-next-line no-console -- intentional developer diagnostic, not app logging
+    console.error('renderPanelHtml: sanitize/assign failed, clearing panel content', error)
     try {
       element.innerHTML = ''
     } catch {

@@ -435,8 +435,18 @@
   // block inside the composed `srcdoc` document (`compose-panel-document.ts`); now that the panel
   // shares PV's own document, an inline custom-property declaration on the container is the
   // same-document equivalent — no document-level `<style>` block is needed or reintroduced.
+  // Code-review hardening (2026-08-29) — `contain: layout` establishes this container as the
+  // containing block for any `position: fixed`/`position: absolute` descendant (CSS Containment
+  // spec), so it clips such descendants to this container's own box instead of the viewport. The
+  // old iframe boundary made this a structural non-issue (a `position: fixed` element inside the
+  // iframe's own document could only ever cover the iframe's box, never the host page); sharing
+  // PV's own document removes that for free, and `DOMPurify.sanitize()` does not restrict CSS
+  // property VALUES (only which elements/attributes survive) — a panel emitting
+  // `style="position:fixed;inset:0;z-index:99999"` would otherwise be able to cover the entire
+  // host page. This is a real containing-block change (not merely visual), and is required in
+  // addition to sanitization, not instead of it.
   const panelThemeStyle = $derived(
-    EXTENSION_THEME_CSS_VARS.map((name) => `${name}: ${data.themeVars[name]}`).join('; ')
+    `contain: layout; ${EXTENSION_THEME_CSS_VARS.map((name) => `${name}: ${data.themeVars[name]}`).join('; ')}`
   )
 </script>
 
@@ -474,6 +484,8 @@
     <div
       class="mt-6 overflow-hidden rounded-2xl border border-slate-200 p-4"
       style={panelThemeStyle}
+      role="region"
+      aria-label={`Extension panel: ${data.slot}`}
       use:renderPanelHtml={data.html}
     ></div>
   {:else}
