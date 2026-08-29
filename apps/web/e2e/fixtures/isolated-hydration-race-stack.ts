@@ -4,6 +4,7 @@ import {
   REPO_ROOT,
   spawnIsolatedApiProcess,
   spawnIsolatedWebProcess,
+  stopProcess,
   waitForHttp,
   type WebHandle,
 } from './isolated-stack-shared.js'
@@ -108,6 +109,16 @@ export async function startHydrationRaceWebBuild(options: {
   })
   pipeDiagnostics(child, 'web-hydration-race-build', options.port)
 
-  await waitForHttp(`http://localhost:${options.port}/login`)
+  // Code-review finding (critical): if `/login` never comes up, `waitForHttp` throws and this
+  // function never returns — the caller's handle variable is never assigned, so a plain
+  // `if (buildWebHandle) await stopProcess(...)` in `afterAll` could never reach this already
+  // -spawned, detached process-group leader, leaking it (and its held port) for the rest of the
+  // run. Kill it here, on the only code path that still has a reference, before rethrowing.
+  try {
+    await waitForHttp(`http://localhost:${options.port}/login`)
+  } catch (error) {
+    await stopProcess(child)
+    throw error
+  }
   return { process: child, port: options.port }
 }

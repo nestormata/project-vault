@@ -264,12 +264,10 @@ test.describe.serial('J26 — first-click hydration race reproduction (Story 28.
     )
 
     if (nativeFormFallbackFired) {
-      test
-        .info()
-        .annotations.push({
-          type: 'j26-build-full-load-outcome',
-          description: NATIVE_FORM_FALLBACK,
-        })
+      test.info().annotations.push({
+        type: 'j26-build-full-load-outcome',
+        description: NATIVE_FORM_FALLBACK,
+      })
       // eslint-disable-next-line no-console -- AC1 requires this recorded, not just asserted
       console.log(
         `[J26][build][full-load] click dispatched at ${dispatchedAt.toFixed(2)}ms — RACE CONFIRMED ` +
@@ -277,6 +275,16 @@ test.describe.serial('J26 — first-click hydration race reproduction (Story 28.
           `requests=${JSON.stringify(requests)}`
       )
       await page.close()
+      // Code-review finding (high): AC1's own measurement established a production build is
+      // consistently NOT raced (a consistently-negative gap over 5 runs — see Dev Agent Record).
+      // Fail loudly here rather than merely logging, so a future regression (build tooling
+      // change, dependency bump) that reopens this race in production is caught by CI instead of
+      // silently passing.
+      expect(
+        nativeFormFallbackFired,
+        'production-style build unexpectedly reproduced the hydration race — this contradicts ' +
+          "this story's own AC1 measurement and needs re-investigation, not a silent pass"
+      ).toBe(false)
       return
     }
 
@@ -333,6 +341,14 @@ test.describe.serial('J26 — first-click hydration race reproduction (Story 28.
           `in-app client-side navigation too. requests=${JSON.stringify(requests)}`
       )
       await page.close()
+      // Code-review finding (high): AC1's own measurement established in-app navigation is
+      // consistently NOT raced (see Dev Agent Record). Fail loudly rather than merely logging, so
+      // a future regression is caught by CI instead of silently passing.
+      expect(
+        nativeFormFallbackFired,
+        'in-app navigation unexpectedly reproduced the hydration race — this contradicts this ' +
+          "story's own AC1 measurement and needs re-investigation, not a silent pass"
+      ).toBe(false)
       return
     }
 
