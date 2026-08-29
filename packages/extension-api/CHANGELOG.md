@@ -2,6 +2,27 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.9.0 — 2026-08-29
+
+contract-hash: sha256:8ac794facfb1229f7ca08f722537e533c3a1693c813050ea6d12e977bf76d69c
+
+### Added
+
+- Added `ExtensionManifest.navItems?: ExtensionNavItem[]` (Story 29.3 AC1), an optional
+  declaration of navigation entries (`id`/`label`/`href`/optional `icon`/optional `parentId`, one
+  level of submenu nesting) that PV's own primary nav merges in as new top-level entries alongside
+  the existing hardcoded items. Deliberately NOT gated behind `'ui-panel'` in `capabilities[]`,
+  unlike every other optional manifest array field to date — a nav entry is a general-purpose
+  capability, not intrinsically tied to the UI-panel rendering mechanism. Validated at
+  `registerExtension()` time: `id` uniqueness/charset, `href` same-origin-relative-path charset
+  (defense-in-depth — it renders as a live, unsanitized `<a href>`, unlike sanitized panel HTML),
+  a closed `icon` token set, and `parentId` resolution (rejecting an unresolvable reference or a
+  grandchild-nesting attempt) — all load-time-fail, not request-time-fail. Omitted (or
+  `undefined`) is fully backward-compatible: no nav entries are added.
+- Added `NAV_ITEM_ID_PATTERN`, `NAV_ITEM_HREF_PATTERN`, `MAX_NAV_ITEMS`,
+  `MAX_NAV_ITEM_LABEL_LENGTH`, and `NAV_ITEM_ICON_TOKENS` (Story 29.3 AC2/AC5/AC6), the shape/
+  charset/cap constants validating `navItems` entries.
+
 ## 3.8.0 — 2026-08-27
 
 contract-hash: sha256:7e79ffc8b1bd3df87b42a5823869c66be576da8d1ebf57f50f1c868b27b0c0e5
