@@ -167,7 +167,12 @@ test.describe
     await expect(runButton).not.toHaveAttribute('aria-busy', 'true')
   })
 
-  test.skip("AC2 happy path: a data request to a newly-declared panelDataPaths entry succeeds — SKIPPED: Story 29.1 removed the panel iframe this test drives via `frame.evaluate`/`page.waitForSelector('iframe')`, leaving this dead. The DATA relay itself (`handlePanelDataMessage` in +page.svelte) is unchanged and still postMessage-based — Story 29.2 only replaced the ACTION relay (see this file's top-of-file doc comment). Fixing/replacing this coverage is Story 29.4's job (the story that will replace the DATA relay the same way Story 29.2 replaced the ACTION relay), not Story 29.2's.", async ({
+  // Skipped: Story 29.1 removed the panel iframe this test drives via `frame.evaluate`/
+  // `page.waitForSelector('iframe')`, leaving this dead. The DATA relay itself
+  // (`handlePanelDataMessage` in +page.svelte) is unchanged and still postMessage-based — Story
+  // 29.2 only replaced the ACTION relay (see this file's top-of-file doc comment). Fixing/
+  // replacing this coverage is Story 29.4's job, not Story 29.2's.
+  test.skip('AC2 happy path: a data request to a newly-declared panelDataPaths entry succeeds', async ({
     page,
     context,
   }) => {
@@ -197,7 +202,9 @@ test.describe
     expect(response?.status()).toBe(200)
   })
 
-  test.skip("AC2 edge case: a request to an undeclared (but /api/v1/-prefixed) path is rejected calmly — no thrown error, no broken page — SKIPPED: same dead-iframe reason as the AC2 happy-path test above; see that test's skip reason and this file's top-of-file doc comment. Pending Story 29.4.", async ({
+  // Skipped: same dead-iframe reason as the AC2 happy-path test above; see that test's skip
+  // comment and this file's top-of-file doc comment. Pending Story 29.4.
+  test.skip('AC2 edge case: a request to an undeclared (but /api/v1/-prefixed) path is rejected calmly — no thrown error, no broken page', async ({
     page,
     context,
   }) => {
