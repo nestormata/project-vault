@@ -56,6 +56,42 @@ describe('hooks.server handle', () => {
     })
   })
 
+  it('sets a tighter, route-scoped CSP on the extension panel route instead of the general frame-protection headers (Story 29.1 code-review hardening)', async () => {
+    const event = makeEvent('/extensions/panels/group')
+    resolveAuthContextMock.mockResolvedValue({
+      status: 'authenticated',
+      user: { id: 'u1' },
+    })
+
+    await handle({ event, resolve: resolveMock } as never)
+
+    expect(event.setHeaders).toHaveBeenCalledWith({
+      'content-security-policy':
+        "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      'x-frame-options': 'DENY',
+    })
+    expect(event.setHeaders).not.toHaveBeenCalledWith({
+      'content-security-policy': "frame-ancestors 'none'",
+      'x-frame-options': 'DENY',
+    })
+  })
+
+  it('applies the extension panel CSP for a nested subpath too, not just the bare slot', async () => {
+    const event = makeEvent('/extensions/panels/group/some/nested/subpath')
+    resolveAuthContextMock.mockResolvedValue({
+      status: 'authenticated',
+      user: { id: 'u1' },
+    })
+
+    await handle({ event, resolve: resolveMock } as never)
+
+    expect(event.setHeaders).toHaveBeenCalledWith(
+      expect.objectContaining({
+        'content-security-policy': expect.stringContaining("img-src 'none'"),
+      })
+    )
+  })
+
   it('redirects to /vault when vault readiness is not ready on a checked path', async () => {
     getVaultReadinessMock.mockResolvedValue({ state: 'sealed', message: 'sealed' })
     const event = makeEvent('/login')
