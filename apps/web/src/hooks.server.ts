@@ -2,7 +2,7 @@ import type { Handle } from '@sveltejs/kit'
 import { env } from '$env/dynamic/private'
 import { isAuthPath, isProtectedAppPath, resolveAuthContext } from '$lib/server/auth-guard.js'
 import { getVaultReadiness } from '$lib/api/vault.js'
-import { getFrameProtectionHeaders } from '$lib/security/hardening.js'
+import { getExtensionPanelCspHeaders, getFrameProtectionHeaders } from '$lib/security/hardening.js'
 import { createServerApiFetch } from '$lib/server/server-api-fetch.js'
 import { paraglideMiddleware } from '$lib/paraglide/server.js'
 
@@ -13,6 +13,16 @@ function appendSetCookies(response: Response, setCookies: string[]) {
 
 function redirectWithCookies(location: string, setCookies: string[]) {
   return appendSetCookies(new Response(null, { status: 303, headers: { location } }), setCookies)
+}
+
+// Story 29.1 — code-review hardening (2026-08-29). The extension-panel route renders sanitized,
+// but not network-egress-restricted, third-party HTML inline into this same document/session
+// (see `hardening.ts`'s `getExtensionPanelCspHeaders` doc comment for the full rationale) — a
+// tighter, route-scoped CSP replaces the `<meta>`-based one the now-deleted `srcdoc` iframe used
+// to carry. `event.setHeaders` throws on a duplicate header name, so this must be exclusive with
+// the general `getFrameProtectionHeaders()` call below, not additive to it.
+function isExtensionPanelPath(pathname: string) {
+  return pathname.startsWith('/extensions/panels/')
 }
 
 function shouldCheckVaultReadiness(pathname: string) {
@@ -31,7 +41,11 @@ async function redirectIfVaultUnavailable(fetchFn: typeof fetch, pathname: strin
 }
 
 const appHandle: Handle = async ({ event, resolve }) => {
-  event.setHeaders(getFrameProtectionHeaders())
+  event.setHeaders(
+    isExtensionPanelPath(event.url.pathname)
+      ? getExtensionPanelCspHeaders()
+      : getFrameProtectionHeaders()
+  )
   const forwardedSetCookies: string[] = []
   const pathname = event.url.pathname
   const apiFetch = createServerApiFetch({ apiBaseUrl: env.API_BASE_URL })

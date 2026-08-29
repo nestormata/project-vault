@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { getLoginReasonMessage, getTrustedApiBase, safeRedirectPath } from './hardening.js'
+import {
+  getExtensionPanelCspHeaders,
+  getLoginReasonMessage,
+  getTrustedApiBase,
+  safeRedirectPath,
+} from './hardening.js'
+
+describe('getExtensionPanelCspHeaders', () => {
+  it('forbids script execution, image loads, and network egress, while still allowing inline styles panels rely on', () => {
+    const headers = getExtensionPanelCspHeaders()
+
+    expect(headers['content-security-policy']).toContain("script-src 'none'")
+    expect(headers['content-security-policy']).toContain("img-src 'none'")
+    expect(headers['content-security-policy']).toContain("connect-src 'none'")
+    expect(headers['content-security-policy']).toContain("style-src 'unsafe-inline'")
+    expect(headers['content-security-policy']).toContain("frame-ancestors 'none'")
+    expect(headers['x-frame-options']).toBe('DENY')
+  })
+})
 
 describe('frontend hardening helpers', () => {
   it('allows only same-origin path redirects', () => {
