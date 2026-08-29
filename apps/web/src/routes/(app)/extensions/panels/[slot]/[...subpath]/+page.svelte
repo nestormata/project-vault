@@ -2,27 +2,39 @@
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { SvelteSet } from 'svelte/reactivity'
-  import { composePanelDocument } from '$lib/security/compose-panel-document.js'
+  import { renderPanelHtml } from '$lib/security/render-panel-html.js'
+  import { EXTENSION_THEME_CSS_VARS } from '$lib/security/extension-theme-vars.js'
   let { data } = $props()
 
   let heading: HTMLHeadingElement | undefined
-  // $state (unlike `heading` above) because the message-relay handler below reads this from
-  // inside an event-listener closure, not directly in a reactive ($effect) scope — Svelte can't
-  // otherwise guarantee that closure observes reassignment (e.g. a later slot navigation
-  // re-binding the iframe element).
+
+  // Story 29.1 AC1/AC9 — the panel's HTML now renders directly into a real, same-origin,
+  // same-document `<div>` (via the `renderPanelHtml` action below) instead of into a sandboxed
+  // `srcdoc` iframe. `panelIframe` below is a misnomer carried over from Story 25.x — no iframe
+  // exists any more, but the postMessage relay code (AC8) still references it (see that code's
+  // own comment) pending Stories 29.2/29.4/29.6, which is why the `$state`/type is kept as-is
+  // rather than renamed here (a rename would touch every line of that inert relay code for no
+  // functional reason, ahead of the stories that are actually replacing it).
   let panelIframe: HTMLIFrameElement | undefined = $state(undefined)
 
   // Story 25.8 Task 2a — Boundary & Edge Case Sweep finding (Elicitation Log #3): a
   // navigation-triggered `srcdoc` swap tears down the old iframe document and creates a NEW
   // `contentWindow`. Without this, an in-flight action/data-request/navigation-request's
   // response would silently resolve into a stale/detached window with no error ever surfaced —
-  // dropped forever, unnoticed. `panelGeneration` is bumped every time the composed `srcdoc`
-  // actually changes (see the `$effect` keyed on it below); every request handler captures the
-  // generation at issue time and EXPLICITLY checks it before ever posting a response back or
-  // acting on one, so a stale in-flight request is deliberately dropped, not silently left to
-  // resolve into nothing. `pendingRequestIds` mirrors which requestIds are currently in flight
-  // (added on issue, removed on settle) — cleared on every generation bump, so it also always
-  // reflects only the CURRENT panel instance's own in-flight requests.
+  // dropped forever, unnoticed. `panelGeneration` is bumped every time the panel's resolved HTML
+  // actually changes (see the `$effect` keyed on `data.html` below); every request handler
+  // captures the generation at issue time and EXPLICITLY checks it before ever posting a response
+  // back or acting on one, so a stale in-flight request is deliberately dropped, not silently
+  // left to resolve into nothing. `pendingRequestIds` mirrors which requestIds are currently in
+  // flight (added on issue, removed on settle) — cleared on every generation bump, so it also
+  // always reflects only the CURRENT panel instance's own in-flight requests.
+  //
+  // Story 29.1 AC8 — this relay code (this variable included) is now INERT: `postMessage` events
+  // can no longer arrive from a same-document `<div>` the way they could from a cross-origin
+  // sandboxed iframe's `contentWindow`. Left in place, untouched, pending Stories 29.2 (action
+  // relay), 29.4 (data relay), and 29.6 (navigation relay), each of which owns retiring/replacing
+  // one of these three relays with a direct same-origin call. Do not delete or "fix" this code
+  // here — that is explicitly out of this story's scope.
   let panelGeneration = 0
   const pendingRequestIds = new SvelteSet<string>()
 
@@ -403,35 +415,29 @@
     heading?.focus()
   })
 
-  // Story 25.4 AC5 — Pre-mortem finding: a screen-reader user with several panel tabs open across
-  // different slots would otherwise hear the identical generic "Extension panel" title for every
-  // one of them. Falls back to the generic title only if `slot` is somehow empty, which the
-  // existing slot-validation already prevents from reaching this far.
-  const iframeTitle = $derived(data.slot ? `Extension panel: ${data.slot}` : 'Extension panel')
-
-  // Story 25.4 AC1/AC4 — the extension's raw html fragment is never assigned to `srcdoc` directly
-  // any more; it is always wrapped by the host-controlled composition function first (CSP meta +
-  // --pv-ext-* theme block + the fragment itself, verbatim — AC2 RESOLVED: no sanitizer).
-  // Story 25.5 AC4/Task 4 — module actions no longer widen this composed CSP (see
-  // compose-panel-document.ts's design-history comment): the panel dispatches actions via the
-  // postMessage relay above instead of fetching directly, so it never needs outbound network
-  // access at all.
-  const srcdoc = $derived(
-    data.html !== null ? composePanelDocument(data.html, data.themeVars) : null
-  )
-
-  // Story 25.8 AC2/Task 2a — a change in the composed `srcdoc` value is exactly when the browser
-  // actually reloads the iframe document (a `srcdoc` attribute change that doesn't change value
-  // never triggers a reload) — including both a sub-state navigation swapping which HTML is
-  // rendered AND a browser-initiated back/forward that resyncs `data` to an earlier/later
-  // sub-state. Bumping the generation counter here (never inside the message handlers
-  // themselves) ties invalidation to the real DOM event that actually tears down the old
-  // `contentWindow`, not merely to "a navigation was requested".
+  // Story 29.1 AC1/AC9 — a change in `data.html` is exactly when the panel's actual rendered
+  // content changes (mirrors the old `srcdoc`-keyed effect this replaces — Story 25.8 AC2/Task
+  // 2a). Bumping the generation counter here (never inside the message handlers themselves) ties
+  // invalidation to the real content swap, not merely to "a navigation was requested". Still
+  // relevant even though the relay code this feeds is now inert (AC8) — a future story
+  // (29.2/29.4/29.6) building the replacement will need the same generation-tracking discipline
+  // against the new same-origin call sites, and removing it now would be pure churn.
   $effect(() => {
-    srcdoc
+    data.html
     panelGeneration++
     pendingRequestIds.clear()
   })
+
+  // Story 29.1 AC6 — resolves `data.themeVars` (already computed server-side by
+  // `+page.server.ts` via `resolveExtensionThemeVars`/`extension-theme-vars.ts` — reused
+  // verbatim, not reimplemented) into an inline `style` attribute string, applied on the panel's
+  // own container element. Previously these vars were delivered via a `<style>:root{}</style>`
+  // block inside the composed `srcdoc` document (`compose-panel-document.ts`); now that the panel
+  // shares PV's own document, an inline custom-property declaration on the container is the
+  // same-document equivalent — no document-level `<style>` block is needed or reintroduced.
+  const panelThemeStyle = $derived(
+    EXTENSION_THEME_CSS_VARS.map((name) => `${name}: ${data.themeVars[name]}`).join('; ')
+  )
 </script>
 
 <svelte:head>
@@ -441,35 +447,39 @@
 <div class="mx-auto max-w-3xl px-4 py-8">
   <h1 bind:this={heading} tabindex="-1" class="text-2xl font-bold text-gray-900">Extension</h1>
 
-  {#if srcdoc !== null}
+  {#if data.html !== null}
     <!--
-      Story 25.1 AC4 — SECURITY: `allow-same-origin` must NEVER be added to this sandbox token
-      set. `srcdoc` content inherits the *embedding page's own origin*, not a neutral/opaque one
-      — `allow-scripts` alone keeps the sandboxed document's origin forced-opaque (unique,
-      unrelated to PV's), so a bug in the panel's returned HTML cannot read PV's own
-      cookies/Web Storage/DOM. Adding `allow-same-origin` on top of `allow-scripts` for `srcdoc`
-      content is a well-documented escape class (the two combined let sandboxed script access the
-      parent document's real origin) — this is not hypothetical, it is the single most important
-      token-choice constraint in this story. A future PR "helpfully" adding `allow-same-origin` to
-      fix a panel-compatibility complaint would silently reopen this exact hole.
+      Story 29.1 AC1/AC2/AC3/AC9 — the panel's HTML now renders directly into this real,
+      same-origin, same-document container via the `renderPanelHtml` Svelte action (an imperative
+      `element.innerHTML = sanitized` assignment inside a `use:` action), never through a Svelte
+      template at-html directive — `svelte/no-at-html-tags` genuinely does not trigger on
+      this syntax (see render-panel-html.ts's own doc comment). `DOMPurify.sanitize()` (explicitly
+      configured — AC13) is now the real, primary control: there is no iframe sandbox boundary
+      absorbing an XSS-shaped bug in the extension's HTML-generation code any more.
 
-      Story 25.4 AC1 — the composed document (see `composePanelDocument` above) now also carries a
-      restrictive Content-Security-Policy delivered via a head-level `<meta http-equiv>` tag,
-      closing the network/resource-loading gap `allow-scripts` alone never covered (Story 25.1's
-      own Dev Notes explicitly flagged this as future scope — this is that story).
+      Story 29.1 AC15 — SSR/hydration trade-off, decided and documented (not accidental): a
+      `use:` action only runs client-side, after hydration — unlike the old `srcdoc` attribute
+      (SSR-rendered directly into the initial HTML response), this container is visibly empty
+      until client-side JS hydrates and the action runs. ACCEPTED, not mitigated with a loading
+      skeleton: CentralizeMe panels already require an authenticated client-side app shell (this
+      whole route is behind `requireUser()` in `+page.server.ts`) and are not indexed/SEO-relevant,
+      so the brief flash-of-empty-content window this introduces has no meaningful user-facing or
+      SEO cost worth the added complexity of a skeleton state.
+
+      Story 29.1 AC9 — a plain `<div>`, not wrapped in any construct that would reintroduce an
+      isolation boundary (no nested iframe, no closed-mode shadow DOM) — a stable, real,
+      same-origin DOM mount point for Stories 29.2/29.6 to attach event handlers/anchors to
+      directly.
     -->
-    <div class="mt-6 overflow-hidden rounded-2xl border border-slate-200">
-      <iframe
-        bind:this={panelIframe}
-        title={iframeTitle}
-        sandbox="allow-scripts"
-        {srcdoc}
-        class="h-[70vh] w-full border-0"
-      ></iframe>
-    </div>
+    <div
+      class="mt-6 overflow-hidden rounded-2xl border border-slate-200 p-4"
+      style={panelThemeStyle}
+      use:renderPanelHtml={data.html}
+    ></div>
   {:else}
-    <!-- AC3: the same calm placeholder for every degraded cause — throw, timeout, malformed
-         result, or the extension/hook simply being gone by request time. -->
+    <!-- AC5: the same calm placeholder for every degraded cause — throw, timeout, malformed
+         result, or the extension/hook simply being gone by request time. Unchanged by this
+         story. -->
     <div class="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-6">
       <p class="text-slate-600">This panel is temporarily unavailable.</p>
     </div>
