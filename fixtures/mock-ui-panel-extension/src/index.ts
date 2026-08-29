@@ -124,55 +124,29 @@ const uiPanel: UIPanel = {
     // outside PV's host (e.g. a standalone preview) and visibly picks up PV's real theme colors
     // once composed by `apps/web`'s panel-document composition function.
     //
-    // Story 25.5 AC4/Task 4 — when `actionEndpoint` is present (declared moduleActions), renders
-    // a real button that dispatches the action via `postMessage` to the host page, which relays
-    // the real, authenticated fetch on this panel's behalf and posts the result back.
+    // Story 29.2 AC1/AC13 — when `actionEndpoint` is present (declared `moduleActions`), renders
+    // a real button declared purely declaratively via `data-pv-action`/`data-pv-action-<field>`
+    // attributes — no `id`, no inline `<script>`, no manual `postMessage` wiring. The host
+    // (`+page.svelte`'s single delegated click handler) discovers this button, resolves it via
+    // `.closest('[data-pv-action]')`, extracts `kind` plus every `data-pv-action-<field>`
+    // attribute into the request body, and dispatches the real same-origin fetch directly —
+    // the panel no longer knows or needs `actionEndpoint`'s URL at all, exactly as before, but
+    // now via a data-attribute contract Story 29.1's DOMPurify sanitizer actually lets survive
+    // (unlike the inline `<script>` this markup used to require, which that sanitizer strips
+    // unconditionally — see this fixture's own git history / Story 29.1's Dev Notes "AC7
+    // disposition" for the interim regression this story fixes). The host also owns rendering the
+    // action's result generically (a status message, or a replaced panel `html`) — this fixture
+    // needs no result-echoing markup of its own any more.
     //
-    // Bug fix (2026-08-24, found via real Chrome-driven manual verification): this originally
-    // had the button `fetch(actionEndpoint, ...)` directly from inside the panel iframe. That
-    // can never work — the iframe's `sandbox="allow-scripts"` (no `allow-same-origin`, a
-    // non-negotiable Story 25.1 requirement) forces it into an opaque origin, so any fetch it
-    // issues is cross-origin by definition and `credentials: 'same-origin'` never attaches the
-    // session cookie, regardless of CSP. The panel no longer knows or needs `actionEndpoint`'s
-    // URL at all — it only needs to know actions are available (this fixture still gates the
-    // button's existence on that), and sends the action `kind` to the host via `postMessage`;
-    // the host owns resolving and fetching the real endpoint. See `+page.svelte`'s message-relay
-    // handler for the host side of this exchange.
+    // `data-pv-action-note` carries a real field beyond `kind` (`TEST_ACTION_NOTE`), so this
+    // fixture's own action button exercises the full request-body-assembly path end to end
+    // (Story 25.12 AC1's original forwarding-fix precedent, now reused by the new mechanism).
     return {
       html:
         `<html><body>` +
         `<p style="color: var(--pv-ext-ink, #24323b); background: var(--pv-ext-surface, #ffffff);">Mock panel for slot "${context.slot}"</p>` +
         (context.actionEndpoint
-          ? `<button id="test-action-button" type="button">Run test action</button>` +
-            `<p id="test-action-result" aria-live="polite"></p>` +
-            `<script>
-              document.getElementById('test-action-button').addEventListener('click', () => {
-                const resultEl = document.getElementById('test-action-result');
-                const requestId = Math.random().toString(36).slice(2);
-                function handleResult(event) {
-                  const data = event.data;
-                  if (!data || data.source !== 'pv-extension-panel-action-result' || data.requestId !== requestId) return;
-                  window.removeEventListener('message', handleResult);
-                  resultEl.textContent = data.ok
-                    ? 'status:' + data.status + ' message:' + (data.message || '')
-                    : 'fetch-failed';
-                }
-                window.addEventListener('message', handleResult);
-                // Story 25.12 AC1/Task 6 — includes a real field beyond \`kind\` (\`note\`), so
-                // this fixture exercises the widened ACTION relay's full-payload-forwarding fix
-                // end to end: before this story, the relay would have silently dropped \`note\`
-                // before the request ever left the host page.
-                parent.postMessage(
-                  {
-                    source: 'pv-extension-panel-action',
-                    requestId: requestId,
-                    kind: ${JSON.stringify(TEST_ACTION_KIND)},
-                    note: ${JSON.stringify(TEST_ACTION_NOTE)},
-                  },
-                  '*'
-                );
-              });
-            </script>`
+          ? `<button type="button" data-pv-action="${TEST_ACTION_KIND}" data-pv-action-note="${TEST_ACTION_NOTE}">Run test action</button>`
           : '') +
         `</body></html>`,
     }

@@ -159,13 +159,15 @@ describe('mock-ui-panel-extension (Story 25.1 Task 7)', () => {
       })
     })
 
-    it('Story 25.12 AC1: the fixture panel html posts a multi-field action message including note', async () => {
+    it('Story 29.2 AC13: the fixture panel html declares the action button via data-pv-action/data-pv-action-note attributes, no inline <script>', async () => {
       const hooks = mockUiPanelExtension.hooksFactory()
       const result = await hooks.uiPanel?.onRenderPanel(
         context({ slot: HAPPY_SLOT, actionEndpoint: '/api/v1/extensions/panels/group/actions' })
       )
-      expect(result?.html).toContain(`kind: ${JSON.stringify(TEST_ACTION_KIND)}`)
-      expect(result?.html).toContain(`note: ${JSON.stringify(TEST_ACTION_NOTE)}`)
+      expect(result?.html).toContain(`data-pv-action="${TEST_ACTION_KIND}"`)
+      expect(result?.html).toContain(`data-pv-action-note="${TEST_ACTION_NOTE}"`)
+      expect(result?.html).not.toContain('<script>')
+      expect(result?.html).not.toContain('postMessage')
     })
   })
 })

@@ -67,7 +67,7 @@ describe('hooks.server handle', () => {
 
     expect(event.setHeaders).toHaveBeenCalledWith({
       'content-security-policy':
-        "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       'x-frame-options': 'DENY',
     })
     expect(event.setHeaders).not.toHaveBeenCalledWith({
