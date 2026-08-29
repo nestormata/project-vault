@@ -206,6 +206,24 @@ describe.sequential('credential archival routes (28.5)', () => {
       expect(second.statusCode).toBe(409)
       expect(second.json<{ code: string }>().code).toBe('already_archived')
     })
+
+    it("410 project_archived when the secret's own project is archived (matches every other project-child mutation route)", async () => {
+      const owner = await registerOwner(app, 'archive-proj-archived')
+      const projectId = await createCredentialTestProject(
+        app,
+        owner.cookies,
+        'archive-proj-archived'
+      )
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId)
+      await withOrg(owner.orgId, (tx) =>
+        tx.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, projectId))
+      )
+
+      const res = await archiveCredential(app, owner.cookies, projectId, credential.id)
+      expect(res.statusCode).toBe(410)
+      expect(res.json<{ code: string }>().code).toBe('project_archived')
+      expect(await currentArchivedAt(owner.orgId, credential.id)).toBeNull()
+    })
   })
 
   describe('POST .../unarchive', () => {

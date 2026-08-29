@@ -608,6 +608,12 @@ async function loadCredentialForArchiveToggle(
   )
     return { ok: false }
 
+  // Story 28.5 AC2/AC4: a secret inside an already-archived project must 410, matching every
+  // other project-child mutation route in this module. Checked after visibility (consistent with
+  // this file's own convention elsewhere) but before the credential-level ownership/idempotency
+  // checks, so archiving inside an archived project can never proceed.
+  if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return { ok: false }
+
   const [credential] = await secureCtx.tx
     .select({ id: credentials.id, name: credentials.name, archivedAt: credentials.archivedAt })
     .from(credentials)
@@ -1808,6 +1814,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         403: ApiErrorSchema,
         404: ApiErrorSchema,
         409: z.union([ActiveRotationsErrorSchema, ActiveSharesErrorSchema, ApiErrorSchema]),
+        410: ApiErrorSchema,
         422: ApiErrorSchema,
       },
     },
@@ -1931,17 +1938,12 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
     },
     handler: async (ctx, req, reply) => {
       // AC3 edge case: unarchiving a secret whose PROJECT is itself archived must still 410 —
-      // the existing rejectIfProjectArchived() check applies first (that project's own unarchive
-      // must happen first), so this checks project-archived before the credential-level preflight.
-      const params = parseParams(CredentialParamsSchema, req, reply)
-      if (!params) return reply
-      const secureCtxForProjectCheck = ctx as SecureRouteContext
-      if (await rejectIfProjectArchived(secureCtxForProjectCheck.tx, params.projectId, reply))
-        return reply
-
+      // loadCredentialForArchiveToggle() now checks rejectIfProjectArchived() for both archive
+      // and unarchive (that project's own unarchive must happen first), before either route's
+      // credential-level ownership/idempotency checks.
       const preflight = await loadCredentialForArchiveToggle(ctx, req, reply, 'unarchive')
       if (!preflight.ok) return reply
-      const { secureCtx, credential, authorizedVia } = preflight
+      const { params, secureCtx, credential, authorizedVia } = preflight
 
       if (credential.archivedAt === null) {
         logCredentialArchiveDenied(req, {
