@@ -1,5 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
+  import { m } from '$lib/paraglide/messages.js'
 
   type DashboardProject = {
     id: string
@@ -18,8 +19,12 @@
   } = $props()
 </script>
 
-<p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Project dashboard</p>
-<p class="mt-2 text-sm text-slate-600">Showing data for {project.name}</p>
+<p class="text-sm font-semibold uppercase tracking-wide text-slate-500">
+  {m.dashboard_project_heading_label()}
+</p>
+<p class="mt-2 text-sm text-slate-600">
+  {m.dashboard_project_heading_showing_data({ name: project.name })}
+</p>
 <h1 class="mt-2 text-3xl font-bold text-slate-950">
   {#if linked}
     <a class="hover:underline" href={resolve(`/projects/${project.id}`)}>{project.name}</a>

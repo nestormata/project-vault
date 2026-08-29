@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte'
 import { createRawSnippet } from 'svelte'
+import { setLocale } from '$lib/paraglide/runtime.js'
 
 const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
 const logoutMock = vi.hoisted(() => vi.fn(async () => undefined))
@@ -19,11 +20,12 @@ vi.mock('$app/state', () => ({
 
 import AppShell from './AppShell.svelte'
 
-afterEach(() => {
+afterEach(async () => {
   cleanup()
   gotoMock.mockClear()
   logoutMock.mockReset()
   logoutMock.mockResolvedValue(undefined)
+  await setLocale('en', { reload: false })
 })
 
 function childrenSnippet(text = 'page body') {
@@ -229,5 +231,37 @@ describe('AppShell.svelte', () => {
     })
 
     expect(screen.getByText('unique child content')).toBeTruthy()
+  })
+
+  // Story 28.4 AC2: the sign-out button text now resolves via m.shell_sign_out() instead of a
+  // hardcoded "Sign out" literal.
+  it('AC2: renders "Cerrar sesión" for the sign-out button under the Spanish locale', async () => {
+    await setLocale('es', { reload: false })
+    render(AppShell, { props: { user: baseUser(), children: childrenSnippet() } })
+
+    expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull()
+  })
+
+  // Story 28.4 AC2/Task 11: a real Chrome-driven manual walkthrough of this exact story found that
+  // a bare `{m.shell_sign_out()}` template call (no tracked Svelte dependency) stayed English
+  // immediately after a same-page, no-reload locale switch — even though PrimaryNav's own
+  // `$derived`-wrapped nav labels updated correctly in the very same click. The fix reads `user`
+  // (this component's own reactive prop, refreshed with a new object reference by SvelteKit's
+  // `update()` after every no-reload setLocale() call) inside the derived, giving it a genuine
+  // tracked dependency. This test proves that reactivity: it passes a NEW `user` object (same
+  // values, new reference — simulating what a real `update()` call produces) via `rerender`,
+  // mirroring the real production trigger, not just an initial-locale render.
+  it('AC2: the sign-out label updates to Spanish after a locale switch, given a fresh `user` reference (no remount)', async () => {
+    const { rerender } = render(AppShell, {
+      props: { user: baseUser(), children: childrenSnippet() },
+    })
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeTruthy()
+
+    await setLocale('es', { reload: false })
+    await rerender({ user: baseUser(), children: childrenSnippet() })
+
+    expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull()
   })
 })

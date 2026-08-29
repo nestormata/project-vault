@@ -1,21 +1,22 @@
 import { describe, expect, it, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/svelte'
 import {
-  dashboardEmptyStateCopy,
   forbiddenDashboardClaims,
-  recentAccessEventLabels,
-  suggestedActionLabels,
+  getDashboardEmptyStateCopy,
+  getRecentAccessEventLabels,
+  getSuggestedActionLabels,
 } from '$lib/components/dashboard/dashboard-copy.js'
+import { m } from '$lib/paraglide/messages.js'
 import { formatDateTime } from '$lib/datetime.js'
-import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
 import { EMPTY_PROJECT_DASHBOARD } from '@project-vault/shared'
 import DashboardPage from './(app)/dashboard/+page.svelte'
 
 describe('dashboard empty state', () => {
   it('renders project-centric explanation and preview-only warning', () => {
-    expect(dashboardEmptyStateCopy.projectModel).toContain('Projects are the home')
-    expect(dashboardEmptyStateCopy.organizingPrinciple).toContain('organizes by project')
-    expect(dashboardEmptyStateCopy.previewWarning).toBe(
+    const copy = getDashboardEmptyStateCopy()
+    expect(copy.projectModel).toContain('Projects are the home')
+    expect(copy.organizingPrinciple).toContain('organizes by project')
+    expect(copy.previewWarning).toBe(
       'Preview only. Use Create project for saved project dashboards.'
     )
   })
@@ -24,12 +25,13 @@ describe('dashboard empty state', () => {
     expect(forbiddenDashboardClaims).toEqual(
       expect.arrayContaining(['All systems healthy', '100% coverage'])
     )
-    expect(JSON.stringify(dashboardEmptyStateCopy)).not.toContain('All systems healthy')
-    expect(JSON.stringify(dashboardEmptyStateCopy)).not.toContain('100% coverage')
+    const copy = getDashboardEmptyStateCopy()
+    expect(JSON.stringify(copy)).not.toContain('All systems healthy')
+    expect(JSON.stringify(copy)).not.toContain('100% coverage')
   })
 
   it('labels suggested actions without story deferrals', () => {
-    expect(suggestedActionLabels).toEqual({
+    expect(getSuggestedActionLabels()).toEqual({
       add_credential: 'Add first secret',
       add_service: 'Add first service',
       import_credentials: 'Import .env or JSON',
@@ -41,17 +43,19 @@ describe('dashboard empty state', () => {
   // 6.4 ships the services/certificates/domains/service-endpoints UI. No residual "Epic 6" or
   // "coming soon" language should remain anywhere in this copy file after the fix.
   it('AC-H1: no residual "Epic 6" or "coming soon" language remains in dashboard-copy.ts', () => {
-    const allCopy = JSON.stringify({ dashboardEmptyStateCopy, suggestedActionLabels })
+    const allCopy = JSON.stringify({
+      dashboardEmptyStateCopy: getDashboardEmptyStateCopy(),
+      suggestedActionLabels: getSuggestedActionLabels(),
+    })
     expect(allCopy).not.toContain('Epic 6')
     expect(allCopy).not.toContain('coming soon')
   })
 
   // AC-H2: pre-existing honest empty-state copy is explicitly left unchanged by this story.
   it('AC-H2: noCertificates/noServices empty-state copy is unchanged (already honest, not a "coming soon" claim)', () => {
-    expect(dashboardEmptyStateCopy.noCertificates).toBe(
-      'No certificate or domain records added yet.'
-    )
-    expect(dashboardEmptyStateCopy.noServices).toBe('No monitored services configured yet.')
+    const copy = getDashboardEmptyStateCopy()
+    expect(copy.noCertificates).toBe('No certificate or domain records added yet.')
+    expect(copy.noServices).toBe('No monitored services configured yet.')
   })
 })
 
@@ -252,12 +256,12 @@ describe('/dashboard +page.svelte — Recent activity widget (AC-A1, A2)', () =>
     expect(screen.getByText('Recent activity')).toBeTruthy()
     expect(screen.getByText('sk_stripe_live')).toBeTruthy()
     expect(screen.getByText('Nestor')).toBeTruthy()
-    expect(screen.getByText(recentAccessEventLabels['credential.value_revealed'])).toBeTruthy()
+    expect(screen.getByText(getRecentAccessEventLabels()['credential.value_revealed'])).toBeTruthy()
     expect(screen.getByText(formatDateTime('2026-07-01T12:00:00.000Z'))).toBeTruthy()
 
     expect(screen.getByText('db_password_prod')).toBeTruthy()
     expect(screen.getByText('user_a1b2c3d4')).toBeTruthy()
-    expect(screen.getByText(recentAccessEventLabels['credential.tags_updated'])).toBeTruthy()
+    expect(screen.getByText(getRecentAccessEventLabels()['credential.tags_updated'])).toBeTruthy()
   })
 
   it('AC-A2: renders an honest empty state rather than omitting the section', () => {
@@ -452,7 +456,7 @@ describe('/dashboard +page.svelte — sealed vault on page load (AC-4)', () => {
       },
     })
 
-    expect(screen.getByRole('alert').textContent).toContain(onboardingCopy.vaultSealedMessage)
+    expect(screen.getByRole('alert').textContent).toContain(m.dashboard_vault_sealed_message())
     // A sealed vault means none of the dashboard's other data is trustworthy either — nothing
     // else should render, not even the empty-state grid.
     expect(screen.queryByText('Upcoming rotations')).toBeNull()

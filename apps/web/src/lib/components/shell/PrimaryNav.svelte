@@ -13,7 +13,11 @@
     hasUiPanelExtension?: boolean
   } = $props()
 
-  const navItems = getPrimaryNavItems({ isPlatformOperator, hasUiPanelExtension })
+  // Story 28.4 AC2: $derived (not a plain const) so navItems re-reads the current locale on every
+  // reactive update, including immediately after a setLocale(..., { reload: false }) call
+  // elsewhere in the app — a plain const would only ever resolve getPrimaryNavItems() once, at
+  // whatever locale was active when this component first mounted.
+  const navItems = $derived(getPrimaryNavItems({ isPlatformOperator, hasUiPanelExtension }))
 </script>
 
 <nav

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { suggestedActionLabels } from './dashboard-copy.js'
+  import { getSuggestedActionLabels } from './dashboard-copy.js'
   import DashboardPlaceholderGrid from './DashboardPlaceholderGrid.svelte'
 
   let { project } = $props()
@@ -18,7 +18,7 @@
     <h2 class="font-semibold">Suggested next actions</h2>
     <ul class="mt-3 space-y-2 text-sm text-slate-600">
       {#each project.dashboard.suggestedActions as action (action)}
-        <li>{suggestedActionLabels[action]}</li>
+        <li>{getSuggestedActionLabels()[action]}</li>
       {/each}
     </ul>
   </section>

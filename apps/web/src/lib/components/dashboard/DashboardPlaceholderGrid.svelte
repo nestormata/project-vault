@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { dashboardEmptyStateCopy } from './dashboard-copy.js'
+  import { m } from '$lib/paraglide/messages.js'
+  import { getDashboardEmptyStateCopy } from './dashboard-copy.js'
 
   type CardStatus = 'loading' | 'ready' | 'error'
   type MonitoringCard = { status: CardStatus; count: number }
@@ -19,6 +20,9 @@
     domains?: MonitoringCardInput
   } = $props()
 
+  // Story 28.4 Dev Notes "Pluralization approach": no ICU/CLDR plural-selector machinery exists
+  // in this codebase — two translated message keys per countable noun (singular/plural), selected
+  // by the existing count === 1 ? singular : plural branching, matching current sophistication.
   function countLabel(count: number, singular: string, plural: string): string {
     return `${count} ${count === 1 ? singular : plural}`
   }
@@ -31,89 +35,95 @@
 <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Project coverage gaps">
   {#if !hasCredentials}
     <article class="rounded-2xl border border-slate-200 bg-white p-4">
-      <h2 class="font-semibold">Secrets</h2>
-      <p class="mt-2 text-sm text-slate-600">{dashboardEmptyStateCopy.noCredentials}</p>
+      <h2 class="font-semibold">{m.dashboard_secrets_label()}</h2>
+      <p class="mt-2 text-sm text-slate-600">{getDashboardEmptyStateCopy().noCredentials}</p>
       <p class="mt-2 text-sm text-slate-600">
-        Secrets will live inside a project with descriptions, tags, expiry dates, and dependent
-        systems.
+        {m.dashboard_placeholder_secrets_description()}
       </p>
     </article>
   {/if}
   <article class="rounded-2xl border border-slate-200 bg-white p-4">
-    <h2 class="font-semibold">Certificates and domains</h2>
+    <h2 class="font-semibold">{m.dashboard_placeholder_certs_heading()}</h2>
     {#await certificates}
       <p
         class="mt-2 h-5 animate-pulse rounded bg-slate-100 text-sm text-transparent"
-        aria-label="Loading certificates"
+        aria-label={m.dashboard_placeholder_loading_certificates()}
       >
-        Loading certificates
+        {m.dashboard_placeholder_loading_certificates()}
       </p>
     {:then certificateState}
       {#if certificateState.status === 'loading'}
         <p
           class="mt-2 h-5 animate-pulse rounded bg-slate-100 text-sm text-transparent"
-          aria-label="Loading certificates"
+          aria-label={m.dashboard_placeholder_loading_certificates()}
         >
-          Loading certificates
+          {m.dashboard_placeholder_loading_certificates()}
         </p>
       {:else if certificateState.status === 'error'}
-        <p class="mt-2 text-sm text-amber-700">Certificates unavailable right now.</p>
+        <p class="mt-2 text-sm text-amber-700">{m.dashboard_placeholder_certs_unavailable()}</p>
       {:else}
         <p class="mt-2 text-sm text-slate-600">
-          {countLabel(certificateState.count, 'certificate', 'certificates')}
+          {countLabel(
+            certificateState.count,
+            m.dashboard_certificate_singular(),
+            m.dashboard_certificate_plural()
+          )}
         </p>
       {/if}
     {:catch}
-      <p class="mt-2 text-sm text-amber-700">Certificates unavailable right now.</p>
+      <p class="mt-2 text-sm text-amber-700">{m.dashboard_placeholder_certs_unavailable()}</p>
     {/await}
     {#await domains}
       <p
         class="mt-2 h-5 animate-pulse rounded bg-slate-100 text-sm text-transparent"
-        aria-label="Loading domains"
+        aria-label={m.dashboard_placeholder_loading_domains()}
       >
-        Loading domains
+        {m.dashboard_placeholder_loading_domains()}
       </p>
     {:then domainState}
       {#if domainState.status === 'loading'}
         <p
           class="mt-2 h-5 animate-pulse rounded bg-slate-100 text-sm text-transparent"
-          aria-label="Loading domains"
+          aria-label={m.dashboard_placeholder_loading_domains()}
         >
-          Loading domains
+          {m.dashboard_placeholder_loading_domains()}
         </p>
       {:else if domainState.status === 'error'}
-        <p class="mt-2 text-sm text-amber-700">Domains unavailable right now.</p>
+        <p class="mt-2 text-sm text-amber-700">{m.dashboard_placeholder_domains_unavailable()}</p>
       {:else}
         <p class="mt-2 text-sm text-slate-600">
-          {countLabel(domainState.count, 'domain', 'domains')}
+          {countLabel(
+            domainState.count,
+            m.dashboard_domain_singular(),
+            m.dashboard_domain_plural()
+          )}
         </p>
       {/if}
     {:catch}
-      <p class="mt-2 text-sm text-amber-700">Domains unavailable right now.</p>
+      <p class="mt-2 text-sm text-amber-700">{m.dashboard_placeholder_domains_unavailable()}</p>
     {/await}
     {#if !isPromiseLike(certificates) && !isPromiseLike(domains) && certificates.status === 'ready' && domains.status === 'ready' && certificates.count === 0 && domains.count === 0}
-      <p class="mt-2 text-sm text-slate-600">{dashboardEmptyStateCopy.noCertificates}</p>
+      <p class="mt-2 text-sm text-slate-600">{getDashboardEmptyStateCopy().noCertificates}</p>
     {/if}
     {#await Promise.all([certificates, domains]) then states}
       {#if (isPromiseLike(certificates) || isPromiseLike(domains)) && states[0].status === 'ready' && states[1].status === 'ready' && states[0].count === 0 && states[1].count === 0}
-        <p class="mt-2 text-sm text-slate-600">{dashboardEmptyStateCopy.noCertificates}</p>
+        <p class="mt-2 text-sm text-slate-600">{getDashboardEmptyStateCopy().noCertificates}</p>
       {/if}
     {/await}
   </article>
   {#if !hasServices}
     <article class="rounded-2xl border border-slate-200 bg-white p-4">
-      <h2 class="font-semibold">Services and health</h2>
-      <p class="mt-2 text-sm text-slate-600">{dashboardEmptyStateCopy.noServices}</p>
+      <h2 class="font-semibold">{m.dashboard_placeholder_services_heading()}</h2>
+      <p class="mt-2 text-sm text-slate-600">{getDashboardEmptyStateCopy().noServices}</p>
       <p class="mt-2 text-sm text-slate-600">
-        When service monitoring arrives, this area will show availability and incident signals for
-        this project.
+        {m.dashboard_placeholder_services_description()}
       </p>
     </article>
   {/if}
   <article class="rounded-2xl border border-slate-200 bg-white p-4 md:col-span-2">
-    <h2 class="font-semibold">Coverage gaps</h2>
+    <h2 class="font-semibold">{m.dashboard_placeholder_coverage_gaps_heading()}</h2>
     <p class="mt-2 text-sm text-slate-600">
-      Live certificate and domain counts are shown above for this project.
+      {m.dashboard_placeholder_coverage_gaps_description()}
     </p>
   </article>
 </section>
