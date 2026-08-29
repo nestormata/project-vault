@@ -67,10 +67,20 @@ function forceNoopenerNoreferrerOnBlankLinks(node: Element): void {
   }
 }
 
-DOMPurify.addHook('afterSanitizeAttributes', forceNoopenerNoreferrerOnBlankLinks)
+// Registering the hook at module scope (rather than guarding it) crashes SSR: SvelteKit's server
+// bundle imports this module too — even though `renderPanelHtml` itself is a `use:` action that
+// never executes server-side — and Node's `dompurify` export (no `window`) has no `addHook`
+// method at all, unlike the browser bundle's window-bound instance. Registering lazily, on first
+// real (client-side, browser) sanitize call, keeps this a true no-op during SSR while still
+// guaranteeing the hook is present before any sanitize() call ever runs client-side.
+let hookRegistered = false
 
 function sanitizeAndAssign(element: HTMLElement, html: string | null): void {
   try {
+    if (!hookRegistered) {
+      DOMPurify.addHook('afterSanitizeAttributes', forceNoopenerNoreferrerOnBlankLinks)
+      hookRegistered = true
+    }
     const sanitized = html === null || html === '' ? '' : DOMPurify.sanitize(html, SANITIZE_CONFIG)
     element.innerHTML = sanitized
   } catch {

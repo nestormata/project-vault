@@ -183,4 +183,32 @@ describe('renderPanelHtml action (Story 29.1)', () => {
     expect(el.innerHTML).toContain('second')
     expect(el.innerHTML).not.toContain('first')
   })
+
+  // Regression (found via manual Chrome verification, not caught by any jsdom-based test above,
+  // since jsdom always provides a `window`): `DOMPurify.addHook()` used to be called at MODULE
+  // scope, unconditionally, on import. SvelteKit's SSR bundle imports this module too — even
+  // though `renderPanelHtml` itself, a `use:` action, never executes server-side — and Node's
+  // `dompurify` export (no real DOM) has no `addHook` method at all, unlike the browser bundle's
+  // window-bound instance. That crashed every server-rendered request to the panel route with
+  // `TypeError: DOMPurify.addHook is not a function`. The fix defers hook registration to inside
+  // `sanitizeAndAssign` (first real, client-side sanitize call) rather than module scope. This
+  // test asserts `addHook` is not called merely by importing the module — only when a sanitize
+  // call actually happens.
+  it('does not call DOMPurify.addHook merely on import (regression: crashed SSR, no window there)', async () => {
+    // Isolated via vi.doMock + vi.resetModules rather than spying on the real, shared `dompurify`
+    // singleton — other tests in this file already trigger sanitize calls (and therefore hook
+    // registration) on that shared instance, so a spy on it here could never observe a clean
+    // "not called on import" state. A fake purify stub sidesteps that entirely.
+    vi.resetModules()
+    const addHook = vi.fn()
+    const sanitize = vi.fn().mockReturnValue('')
+    vi.doMock('dompurify', () => ({ default: { addHook, sanitize } }))
+
+    await import('./render-panel-html.js')
+
+    expect(addHook).not.toHaveBeenCalled()
+
+    vi.doUnmock('dompurify')
+    vi.resetModules()
+  })
 })
