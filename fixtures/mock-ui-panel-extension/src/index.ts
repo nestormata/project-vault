@@ -2,6 +2,7 @@ import type {
   ExtensionHooks,
   ExtensionManifest,
   ModuleAction,
+  ModuleDataRouteHandler,
   UIPanel,
 } from '@project-vault/extension-api'
 import { EXTENSION_API_VERSION } from '@project-vault/extension-api'
@@ -72,6 +73,13 @@ export const TEST_DATA_PATH = '/api/v1/org/users'
  */
 export const TEST_NAV_ITEM_ID = 'mock-ext-settings'
 export const TEST_NAV_CHILD_ITEM_ID = 'mock-ext-settings-child'
+/**
+ * Story 29.4 AC10/Task 5 — a real, manifest-declared `moduleDataRoutes` target: the mounted route
+ * (per AC2) is `GET /api/v1/extensions/data/fixture-echo`, giving this story's own tests — and any
+ * later Chrome-driven manual verification — a real end-to-end fixture, following this fixture's
+ * own established named-constant-export pattern.
+ */
+export const TEST_MODULE_DATA_PATH = '/fixture-echo'
 
 const manifest: ExtensionManifest = {
   name: MOCK_UI_PANEL_PROVIDER_NAME,
@@ -96,7 +104,13 @@ const manifest: ExtensionManifest = {
   // Story 25.12 AC2/Task 6 — declares the legacy default pair explicitly (so this fixture's
   // behavior for those two paths is unchanged) plus TEST_DATA_PATH, a real end-to-end target for
   // this story's AC2 happy-path test and Chrome-driven manual verification.
+  // @deprecated Story 29.4 — superseded by moduleDataRoutes below; kept so this fixture still
+  // exercises the deprecated-but-still-validatable field per AC8's deprecate-in-place decision.
   panelDataPaths: ['/api/v1/projects', '/api/v1/projects/:id', TEST_DATA_PATH],
+  // Story 29.4 AC1/AC10/Task 5 — the real replacement mechanism: a single declared GET route,
+  // mounted at GET /api/v1/extensions/data/fixture-echo (AC2), with a matching `moduleData`
+  // handler below returning a fixed, deterministic body.
+  moduleDataRoutes: [{ method: 'GET', path: TEST_MODULE_DATA_PATH }],
   // Story 29.3 AC1/AC13 — declared alongside 'ui-panel' purely because this fixture already
   // declares it (navItems is NOT gated behind 'ui-panel' — a fixture declaring only
   // 'notification-channel' would be equally valid). One top-level item plus one child, exercising
@@ -193,8 +207,23 @@ const moduleAction: ModuleAction = {
   },
 }
 
+/**
+ * Story 29.4 AC3/AC10/Task 5 — the matching handler for TEST_MODULE_DATA_PATH's `moduleDataRoutes`
+ * declaration, keyed by the exact `"GET <path>"` string `registerExtension()` cross-checks at load
+ * time. Returns a fixed, deterministic body echoing the caller's own `orgId` (proving the real
+ * per-request context — never a shared/memoized value — reaches the module's handler), giving this
+ * story's own end-to-end tests a real target beyond "it compiles".
+ */
+const fixtureEchoModuleData: ModuleDataRouteHandler = async (context) => ({
+  body: { ok: true, orgId: context.orgId, userId: context.identity.userId },
+})
+
 function hooksFactory(): ExtensionHooks {
-  return { uiPanel, moduleAction }
+  return {
+    uiPanel,
+    moduleAction,
+    moduleData: { [`GET ${TEST_MODULE_DATA_PATH}`]: fixtureEchoModuleData },
+  }
 }
 
 export default { manifest, hooksFactory }

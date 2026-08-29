@@ -65,6 +65,12 @@ export type ExtensionManifest = {
    * alongside `'ui-panel'` in `capabilities[]`. Unlike `uiPanelSlots`/`moduleActions`, this field
    * has NO `hooksFactory()`-callability cross-check — it gates a client-relay allowlist, not a
    * hook's existence (Story 25.12 AC3).
+   *
+   * @deprecated Story 29.4 — superseded by `moduleDataRoutes`, which mounts real Fastify routes
+   * directly on PV's own API router instead of relaying through the (now-deleted) DATA relay.
+   * Kept, unused, purely to avoid an unplanned MAJOR `EXTENSION_API_VERSION` bump for removing a
+   * public type field (see Story 29.4 AC8's Dev Notes) — every consumer of this field has been
+   * deleted; only the type/validator survive.
    */
   panelDataPaths?: string[]
   /**
@@ -82,6 +88,31 @@ export type ExtensionManifest = {
    * exact id/href/icon/label/parentId rules (AC2-AC6).
    */
   navItems?: ExtensionNavItem[]
+  /**
+   * Story 29.4 AC1 — optional declaration of real `GET` routes this extension wants mounted
+   * directly on PV's own Fastify API router, under the fixed host-owned prefix
+   * `/api/v1/extensions/data` (AC2). Replaces the retired `panelDataPaths`/DATA-relay mechanism:
+   * an undeclared path simply doesn't exist as a route (a `404`, not a relay-level rejection).
+   * Each entry's `path` does NOT require the `/api/v1/` prefix `panelDataPaths` templates
+   * required — the host itself chooses and owns the full mount point, so there is nothing for
+   * the manifest-declared path to escape or collide with. Omitted (or `undefined`) is fully
+   * backward-compatible: zero module-data routes are mounted. Validated by `registerExtension()`'s
+   * `validateModuleDataRoutesShape()`, and cross-checked against `ExtensionHooks.moduleData` post-
+   * `hooksFactory()` (AC3) — every declared route must have a matching callable handler.
+   */
+  moduleDataRoutes?: ModuleDataRouteDeclaration[]
+}
+
+/**
+ * Story 29.4 AC1 — a single manifest-declared module-data route. `method` is currently always the
+ * literal `'GET'` (not a union) — this story is scoped to the data-fetch half of ADR 0005's
+ * addendum item 3; a future story may widen this to other read-shaped methods. `path` is a
+ * `/`-separated route path (Fastify-native `:param` syntax, no translation needed) matching
+ * `MODULE_DATA_ROUTE_PATH_PATTERN`.
+ */
+export type ModuleDataRouteDeclaration = {
+  method: 'GET'
+  path: string
 }
 
 /**
@@ -188,6 +219,23 @@ export const NAV_ITEM_HREF_PATTERN = /^\/(?!\/)[a-zA-Z0-9/_-]*$/
  * `MAX_MODULE_ACTIONS`/`MAX_PANEL_DATA_PATHS`'s identical cap precedent. */
 export const MAX_NAV_ITEMS = 32
 
+/**
+ * Story 29.4 AC1 — validates a declared `moduleDataRoutes[].path`: identical per-segment grammar
+ * to `PANEL_DATA_PATH_PATTERN` (each segment either a literal `[a-z0-9-]+` token or a `:param`
+ * placeholder matching `:[a-zA-Z][a-zA-Z0-9]*`), but WITHOUT that pattern's `/api/v1/` prefix
+ * requirement (AC2 — the host itself owns the full mount point via a fixed prefix it prepends,
+ * never something the manifest can influence). The closed charset structurally cannot express a
+ * traversal segment, mirroring `UI_PANEL_SLOT_NAME_PATTERN`/`PANEL_DATA_PATH_PATTERN`'s own
+ * already-established "closed charset closes the traversal angle for free" precedent.
+ */
+// eslint-disable-next-line security/detect-unsafe-regex -- see PANEL_DATA_PATH_PATTERN's identical rationale above; charset is bounded and non-overlapping across each segment's two alternatives
+export const MODULE_DATA_ROUTE_PATH_PATTERN = /^(?:\/(?:[a-z0-9-]+|:[a-zA-Z][a-zA-Z0-9]*))+$/
+
+/** Story 29.4 AC1 — generous for any real extension, small enough to bound a hostile/broken
+ * manifest from declaring an unbounded `moduleDataRoutes` list. Matches `MAX_UI_PANEL_SLOTS`/
+ * `MAX_MODULE_ACTIONS`/`MAX_PANEL_DATA_PATHS`/`MAX_NAV_ITEMS`'s identical cap precedent. */
+export const MAX_MODULE_DATA_ROUTES = 32
+
 /** Story 29.3 AC4 — `label` is raw, host-rendered display text (auto-escaped by Svelte's ordinary
  * text interpolation, never `{@html}`); this cap bounds a hostile/broken manifest from declaring
  * an unreasonably long nav label, not a security control in itself. */
@@ -256,7 +304,17 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // `>=3.0.0` so every already-shipped extension (including any real, currently-deployed
 // CentralizeMe build) keeps loading unmodified regardless. Confirmed against `main` at
 // implementation time: 3.8.0 was still the latest claimed version, so 3.9.0 was free.
-export const EXTENSION_API_VERSION = '3.9.0'
+// Story 29.4 AC6/Task 1 — bumped as an additive-minor (3.9.0 -> 3.10.0): `ExtensionManifest`
+// gains `moduleDataRoutes?: ModuleDataRouteDeclaration[]` and `ExtensionHooks` gains
+// `moduleData?: Record<string, ModuleDataRouteHandler>`, both purely-additive optional fields
+// with zero effect on any manifest/hooksFactory that omits them — no existing extension's
+// manifest or hook shape changes, and the floor stays `>=3.0.0` so every already-shipped
+// extension (including any real, currently-deployed CentralizeMe build) keeps loading unmodified
+// regardless. `panelDataPaths` is deprecated-in-place (every consumer deleted, the type field
+// itself kept) specifically to avoid an unplanned MAJOR bump for removing a public type field
+// (Story 23.11 AC6 precedent). Confirmed against `main` at implementation time: 3.9.0 was still
+// the latest claimed version, so 3.10.0 was free.
+export const EXTENSION_API_VERSION = '3.10.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

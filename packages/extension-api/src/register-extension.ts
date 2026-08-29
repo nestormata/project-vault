@@ -4,18 +4,20 @@ import {
   EXTENSION_API_VERSION,
   HOST_SUPPORTED_EXTENSION_API_RANGE,
   MAX_MODULE_ACTIONS,
+  MAX_MODULE_DATA_ROUTES,
   MAX_NAV_ITEM_LABEL_LENGTH,
   MAX_NAV_ITEMS,
   MAX_PANEL_DATA_PATHS,
   MAX_UI_PANEL_SLOTS,
   MODULE_ACTION_NAME_PATTERN,
+  MODULE_DATA_ROUTE_PATH_PATTERN,
   NAV_ITEM_HREF_PATTERN,
   NAV_ITEM_ID_PATTERN,
   NAV_ITEM_ICON_TOKENS,
   PANEL_DATA_PATH_PATTERN,
   UI_PANEL_SLOT_NAME_PATTERN,
 } from './manifest.js'
-import type { ExtensionManifest } from './manifest.js'
+import type { ExtensionManifest, ModuleDataRouteDeclaration } from './manifest.js'
 import type { AuthStrategy } from './hooks/auth-strategy.js'
 import type { NotificationChannel } from './hooks/notification-channel.js'
 import type { UIPanel } from './hooks/ui-panel.js'
@@ -24,6 +26,7 @@ import type { CapabilityGate } from './hooks/capability-gate.js'
 import type { HostServices } from './host-services.js'
 import type { ExtensionDbScopeEntry, ExtensionRuntimeContext } from './db-access.js'
 import type { ProjectCreatePolicy } from './hooks/project-lifecycle.js'
+import type { ModuleDataRouteHandler } from './hooks/module-data.js'
 
 /**
  * AC6 — reverse-DNS-style manifest name, e.g. "com.acme.sso-extension". The two quantified
@@ -53,6 +56,14 @@ export type ExtensionHooks = {
   /** Story 25.5 AC1 — dispatch target for `POST /extensions/panels/:slot/actions`. Only legal
    * (checked by `hasCallableModuleActionHook()`) when the manifest declares `moduleActions`. */
   moduleAction?: ModuleAction
+  /**
+   * Story 29.4 AC3 — keyed by the exact `"GET <path>"` string of each `moduleDataRoutes`-declared
+   * route, whose values are the real per-route handler functions mounted on PV's own Fastify API
+   * router. Cross-checked against `moduleDataRoutes` at `registerExtension()` time (checked by
+   * `hasCallableModuleDataHooks()`) — every declared route must have exactly one matching
+   * handler.
+   */
+  moduleData?: Record<string, ModuleDataRouteHandler>
 }
 
 /** Default `HostServices` used when a caller (typically a test) invokes `registerExtension()`
@@ -141,6 +152,7 @@ const KNOWN_MANIFEST_KEYS = [
   'moduleActions',
   'panelDataPaths',
   'navItems',
+  'moduleDataRoutes',
 ]
 
 const INVALID_MANIFEST_FIELD = 'invalid-manifest-field'
@@ -367,6 +379,79 @@ function validatePanelDataPathsShape(manifest: ExtensionManifest): void {
       INVALID_MANIFEST_FIELD,
       'Extension manifest declares "panelDataPaths" but does not declare "ui-panel" in capabilities[]'
     )
+  }
+}
+
+/**
+ * Story 29.4 AC1 — validates the optional `moduleDataRoutes` field's shape: non-empty array (if
+ * present) of `{ method: 'GET'; path: string }` entries, each `path` matching
+ * `MODULE_DATA_ROUTE_PATH_PATTERN`, each `(method, path)` pair unique within the array, capped at
+ * `MAX_MODULE_DATA_ROUTES` entries. Deliberately NOT gated behind the `'ui-panel'` capability
+ * (mirrors `navItems`' own intentional divergence — a module-data route is a general-purpose
+ * REST endpoint, not specifically a UI-panel-rendering concern). Does NOT check for the
+ * `moduleData` hooks map itself — that check needs `hooksFactory()`'s result and runs later (see
+ * `hasCallableModuleDataHooks` below).
+ */
+/**
+ * Story 29.4 AC1 — validates one `moduleDataRoutes` entry's own shape (method/path charset) and
+ * tracks `(method, path)` uniqueness across the array, as a side effect adding this entry's key
+ * to `seen`. Extracted from `validateModuleDataRoutesShape()` purely to keep that function's
+ * cyclomatic complexity within this repo's lint budget, mirroring
+ * `validateNavItemIdAndTrackDuplicates`'s own identical extraction precedent.
+ */
+function validateSingleModuleDataRoute(route: unknown, seen: Set<string>): void {
+  const candidate = route as ModuleDataRouteDeclaration
+  const isValidShape =
+    !!route &&
+    typeof route === 'object' &&
+    candidate.method === 'GET' &&
+    typeof candidate.path === 'string' &&
+    MODULE_DATA_ROUTE_PATH_PATTERN.test(candidate.path)
+
+  if (!isValidShape) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "moduleDataRoutes" contains an invalid entry ${JSON.stringify(route)} (expected { method: 'GET', path } where path matches ${MODULE_DATA_ROUTE_PATH_PATTERN})`
+    )
+  }
+
+  const key = `${candidate.method} ${candidate.path}`
+  if (seen.has(key)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "moduleDataRoutes" contains duplicate route "${key}"`
+    )
+  }
+  seen.add(key)
+}
+
+function validateModuleDataRoutesShape(manifest: ExtensionManifest): void {
+  if (manifest.moduleDataRoutes === undefined) return
+
+  if (!Array.isArray(manifest.moduleDataRoutes)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "moduleDataRoutes" must be an array, got ${JSON.stringify(manifest.moduleDataRoutes)}`
+    )
+  }
+
+  if (manifest.moduleDataRoutes.length === 0) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest field "moduleDataRoutes" must not be an empty array — omit the field entirely to declare no module-data routes'
+    )
+  }
+
+  if (manifest.moduleDataRoutes.length > MAX_MODULE_DATA_ROUTES) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "moduleDataRoutes" declares ${manifest.moduleDataRoutes.length} entries, exceeding the maximum of ${MAX_MODULE_DATA_ROUTES}`
+    )
+  }
+
+  const seen = new Set<string>()
+  for (const route of manifest.moduleDataRoutes) {
+    validateSingleModuleDataRoute(route, seen)
   }
 }
 
@@ -636,6 +721,26 @@ function hasCallableModuleActionHook(manifest: ExtensionManifest, hooks: Extensi
 }
 
 /**
+ * Story 29.4 AC3 — a manifest declaring `moduleDataRoutes` whose `hooksFactory()` result has no
+ * `moduleData` map at all, or a `moduleData` map missing the exact `"GET <path>"` key for one of
+ * the declared routes, is rejected — every declared route must have exactly one matching handler,
+ * checked individually (returns the first missing route key found, not a boolean, so the caller
+ * can build a precise error message naming it).
+ */
+function findMissingModuleDataRoute(
+  manifest: ExtensionManifest,
+  hooks: ExtensionHooks
+): string | undefined {
+  if (!manifest.moduleDataRoutes) return undefined
+  for (const route of manifest.moduleDataRoutes) {
+    const key = `${route.method} ${route.path}`
+    // eslint-disable-next-line security/detect-object-injection -- key is derived from this same manifest's own moduleDataRoutes entries (already charset/shape-validated by validateModuleDataRoutesShape), never from untrusted input.
+    if (typeof hooks.moduleData?.[key] !== 'function') return key
+  }
+  return undefined
+}
+
+/**
  * Post-`hooksFactory()` callability checks, grouped into one function purely to keep
  * `registerExtension`'s own cyclomatic complexity within this repo's lint budget — behaviorally
  * these are four independent gates, each throwing its own typed error, checked in the same order
@@ -667,6 +772,18 @@ function assertCallableHooksAfterFactory(manifest: ExtensionManifest, hooks: Ext
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
       'Extension manifest declares "moduleActions" but hooksFactory() did not return a callable moduleAction hook'
+    )
+  }
+
+  // Story 29.4 AC3 — same class of bug hasCallableUiPanelHook/hasCallableModuleActionHook
+  // already catch above: a manifest promising moduleDataRoutes with no matching handler behind
+  // one (or more) of them. Runs after hooksFactory() per this function's existing
+  // lazy-hooksFactory convention.
+  const missingModuleDataRoute = findMissingModuleDataRoute(manifest, hooks)
+  if (missingModuleDataRoute !== undefined) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest declares "moduleDataRoutes" entry "${missingModuleDataRoute}" but hooksFactory() did not return a callable handler for it`
     )
   }
 
@@ -715,6 +832,7 @@ export function registerExtension(
   validateModuleActionsShape(manifest)
   validatePanelDataPathsShape(manifest)
   validateNavItemsShape(manifest)
+  validateModuleDataRoutesShape(manifest)
 
   if (!REVERSE_DNS_NAME_PATTERN.test(manifest.name)) {
     throw new ExtensionRegistrationError(
@@ -740,6 +858,7 @@ export function registerExtension(
       moduleActions: manifest.moduleActions,
       panelDataPaths: manifest.panelDataPaths,
       navItems: manifest.navItems,
+      moduleDataRoutes: manifest.moduleDataRoutes,
     },
     hooks,
   }

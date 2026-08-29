@@ -4,28 +4,21 @@ import { __resetExtensionStateForTests, __setExtensionStateForTests } from '../e
 import type { ExtensionState } from '../extensions/loader.js'
 import type { Tx } from '@project-vault/db'
 import {
-  DEFAULT_PANEL_DATA_PATHS,
   DEFAULT_UI_PANEL_SLOTS,
-  __resetPanelDataPathsFallbackWarningForTests,
   __resetUiPanelSlotsFallbackWarningForTests,
   isUiPanelCapabilityDeclared,
   renderExtensionPanel,
   resolveExtensionNavItems,
   resolveKnownUiPanelSlots,
-  resolvePanelDataPaths,
   type RenderExtensionPanelDeps,
 } from './extension-panel.js'
 
-// Story 25.12 — shared fixture literals for the mid-lifetime-reload tests below (both
-// resolveKnownUiPanelSlots' pre-existing block and resolvePanelDataPaths' new one use the exact
-// same two timestamps and example path templates); named constants avoid
-// sonarjs/no-duplicate-string tripping on a literal repeated across both blocks.
+// Story 25.2/29.3 — shared fixture literals for the mid-lifetime-reload tests below
+// (resolveKnownUiPanelSlots' block and resolveExtensionNavItems' block use the exact same two
+// timestamps); named constants avoid sonarjs/no-duplicate-string tripping on a literal repeated
+// across both blocks.
 const RELOAD_FIRST_LOADED_AT = '2026-01-01T00:00:00.000Z'
 const RELOAD_SECOND_LOADED_AT = '2026-01-01T00:05:00.000Z'
-const DEFAULT_PROJECTS_PATH = '/api/v1/projects'
-const DEFAULT_PROJECT_ID_PATH = '/api/v1/projects/:id'
-const ORG_USERS_PATH = '/api/v1/org/users'
-const ORG_GROUPS_PATH = '/api/v1/org/groups'
 
 function loadedState(overrides: {
   capabilities?: string[]
@@ -184,7 +177,6 @@ describe('renderExtensionPanel (Story 25.1 AC3/AC3b, Story 25.3 AC1-AC6)', () =>
     expect(result).toEqual({
       outcome: 'ok',
       html: '<p>hi</p>',
-      allowedDataPaths: DEFAULT_PANEL_DATA_PATHS,
     })
   })
 
@@ -272,7 +264,6 @@ describe('renderExtensionPanel (Story 25.1 AC3/AC3b, Story 25.3 AC1-AC6)', () =>
     expect(first).toEqual({
       outcome: 'ok',
       html: 'ok',
-      allowedDataPaths: DEFAULT_PANEL_DATA_PATHS,
     })
 
     __resetExtensionStateForTests()
@@ -357,12 +348,10 @@ describe('renderExtensionPanel (Story 25.1 AC3/AC3b, Story 25.3 AC1-AC6)', () =>
       expect(resultA).toEqual({
         outcome: 'ok',
         html: 'ok:user_1',
-        allowedDataPaths: DEFAULT_PANEL_DATA_PATHS,
       })
       expect(resultB).toEqual({
         outcome: 'ok',
         html: 'ok:user_2',
-        allowedDataPaths: DEFAULT_PANEL_DATA_PATHS,
       })
 
       const forUser1 = captured.find((c) => c.identity.userId === 'user_1')
@@ -406,7 +395,6 @@ describe('renderExtensionPanel (Story 25.1 AC3/AC3b, Story 25.3 AC1-AC6)', () =>
       expect(result).toEqual({
         outcome: 'ok',
         html: 'ok',
-        allowedDataPaths: DEFAULT_PANEL_DATA_PATHS,
       })
       expect(captured?.projectId).toBe('proj_1')
       expect(callerCanSeeProject).toHaveBeenCalledWith(
@@ -922,95 +910,6 @@ describe('resolveKnownUiPanelSlots (Story 25.2 AC2/AC3)', () => {
   })
 })
 
-describe('resolvePanelDataPaths (Story 25.12 AC2)', () => {
-  beforeEach(() => {
-    __resetExtensionStateForTests()
-    __resetPanelDataPathsFallbackWarningForTests()
-  })
-
-  afterEach(() => {
-    __resetExtensionStateForTests()
-    __resetPanelDataPathsFallbackWarningForTests()
-  })
-
-  it('falls back to the legacy default pair when no extension is loaded', () => {
-    const logger = silentLogger()
-    expect(resolvePanelDataPaths(undefined, logger)).toEqual(DEFAULT_PANEL_DATA_PATHS)
-    expect(logger.warn).not.toHaveBeenCalled()
-  })
-
-  it('falls back to the legacy default pair when panelDataPaths is omitted, warning once', () => {
-    const status = loadedState({ capabilities: ['ui-panel'] })
-    const logger = silentLogger()
-
-    expect(resolvePanelDataPaths(status, logger)).toEqual(DEFAULT_PANEL_DATA_PATHS)
-    expect(resolvePanelDataPaths(status, logger)).toEqual(DEFAULT_PANEL_DATA_PATHS)
-    expect(resolvePanelDataPaths(status, logger)).toEqual(DEFAULT_PANEL_DATA_PATHS)
-
-    // AC2: assert call count, not just presence — must fire once at load, never per-request.
-    expect(logger.warn).toHaveBeenCalledTimes(1)
-  })
-
-  it('panelDataPaths: undefined explicitly behaves identically to omitted (also warns once)', () => {
-    const status = loadedState({ capabilities: ['ui-panel'] })
-    ;(status as { manifest: { panelDataPaths?: string[] } }).manifest.panelDataPaths = undefined
-    const logger = silentLogger()
-
-    expect(resolvePanelDataPaths(status, logger)).toEqual(DEFAULT_PANEL_DATA_PATHS)
-    expect(logger.warn).toHaveBeenCalledTimes(1)
-  })
-
-  it('returns the manifest-declared list when present, never warning', () => {
-    const status = loadedState({
-      capabilities: ['ui-panel'],
-      panelDataPaths: [DEFAULT_PROJECTS_PATH, DEFAULT_PROJECT_ID_PATH, ORG_USERS_PATH],
-    })
-    const logger = silentLogger()
-
-    expect(resolvePanelDataPaths(status, logger)).toEqual([
-      DEFAULT_PROJECTS_PATH,
-      DEFAULT_PROJECT_ID_PATH,
-      ORG_USERS_PATH,
-    ])
-    expect(logger.warn).not.toHaveBeenCalled()
-  })
-
-  it('a reload with a different declared list resolves fresh on the very next call, not memoized', () => {
-    const logger = silentLogger()
-    const first = loadedState({
-      capabilities: ['ui-panel'],
-      panelDataPaths: [ORG_USERS_PATH],
-      loadedAt: RELOAD_FIRST_LOADED_AT,
-    })
-    expect(resolvePanelDataPaths(first, logger)).toEqual([ORG_USERS_PATH])
-
-    const second = loadedState({
-      capabilities: ['ui-panel'],
-      panelDataPaths: [ORG_USERS_PATH, ORG_GROUPS_PATH],
-      loadedAt: RELOAD_SECOND_LOADED_AT,
-    })
-    expect(resolvePanelDataPaths(second, logger)).toEqual([ORG_USERS_PATH, ORG_GROUPS_PATH])
-  })
-
-  it('fallback-warning identity is per-load: reloading (new loadedAt) re-warns even for the same extension name', () => {
-    const logger = silentLogger()
-    const firstLoad = loadedState({
-      capabilities: ['ui-panel'],
-      loadedAt: RELOAD_FIRST_LOADED_AT,
-    })
-    resolvePanelDataPaths(firstLoad, logger)
-    resolvePanelDataPaths(firstLoad, logger)
-    expect(logger.warn).toHaveBeenCalledTimes(1)
-
-    const reloaded = loadedState({
-      capabilities: ['ui-panel'],
-      loadedAt: RELOAD_SECOND_LOADED_AT,
-    })
-    resolvePanelDataPaths(reloaded, logger)
-    expect(logger.warn).toHaveBeenCalledTimes(2)
-  })
-})
-
 describe('resolveExtensionNavItems (Story 29.3 AC9)', () => {
   beforeEach(() => {
     __resetExtensionStateForTests()
@@ -1067,101 +966,5 @@ describe('resolveExtensionNavItems (Story 29.3 AC9)', () => {
     resolveExtensionNavItems(undefined, logger)
     resolveExtensionNavItems(loadedState({ capabilities: ['ui-panel'] }), logger)
     expect(logger.warn).not.toHaveBeenCalled()
-  })
-})
-
-describe("renderExtensionPanel's allowedDataPaths wiring (Story 25.12 AC2)", () => {
-  beforeEach(() => {
-    __resetExtensionStateForTests()
-    __resetPanelDataPathsFallbackWarningForTests()
-  })
-
-  afterEach(() => {
-    __resetExtensionStateForTests()
-    __resetPanelDataPathsFallbackWarningForTests()
-  })
-
-  it('the ok outcome carries the legacy default pair when the loaded extension omits panelDataPaths', async () => {
-    __setExtensionStateForTests(
-      loadedState({ uiPanel: { onRenderPanel: async () => ({ html: 'ok' }) } })
-    )
-    const result = await renderExtensionPanel(
-      'group',
-      DEFAULT_UI_PANEL_SLOTS,
-      silentLogger(),
-      IDENTITY_1,
-      FAKE_TX,
-      {},
-      fakeDeps()
-    )
-    expect(result).toEqual({
-      outcome: 'ok',
-      html: 'ok',
-      allowedDataPaths: DEFAULT_PANEL_DATA_PATHS,
-    })
-  })
-
-  it('the ok outcome carries the manifest-declared panelDataPaths list when present', async () => {
-    __setExtensionStateForTests(
-      loadedState({
-        panelDataPaths: [DEFAULT_PROJECTS_PATH, DEFAULT_PROJECT_ID_PATH, ORG_USERS_PATH],
-        uiPanel: { onRenderPanel: async () => ({ html: 'ok' }) },
-      })
-    )
-    const result = await renderExtensionPanel(
-      'group',
-      DEFAULT_UI_PANEL_SLOTS,
-      silentLogger(),
-      IDENTITY_1,
-      FAKE_TX,
-      {},
-      fakeDeps()
-    )
-    expect(result).toEqual({
-      outcome: 'ok',
-      html: 'ok',
-      allowedDataPaths: [DEFAULT_PROJECTS_PATH, DEFAULT_PROJECT_ID_PATH, ORG_USERS_PATH],
-    })
-  })
-
-  it('a mid-lifetime reload with a changed panelDataPaths list resolves against the new list on the next call', async () => {
-    __setExtensionStateForTests(
-      loadedState({
-        panelDataPaths: [ORG_USERS_PATH],
-        loadedAt: RELOAD_FIRST_LOADED_AT,
-        uiPanel: { onRenderPanel: async () => ({ html: 'ok' }) },
-      })
-    )
-    const first = await renderExtensionPanel(
-      'group',
-      DEFAULT_UI_PANEL_SLOTS,
-      silentLogger(),
-      IDENTITY_1,
-      FAKE_TX,
-      {},
-      fakeDeps()
-    )
-    expect(first).toMatchObject({ allowedDataPaths: [ORG_USERS_PATH] })
-
-    __resetExtensionStateForTests()
-    __setExtensionStateForTests(
-      loadedState({
-        panelDataPaths: [ORG_USERS_PATH, ORG_GROUPS_PATH],
-        loadedAt: RELOAD_SECOND_LOADED_AT,
-        uiPanel: { onRenderPanel: async () => ({ html: 'ok' }) },
-      })
-    )
-    const second = await renderExtensionPanel(
-      'group',
-      DEFAULT_UI_PANEL_SLOTS,
-      silentLogger(),
-      IDENTITY_1,
-      FAKE_TX,
-      {},
-      fakeDeps()
-    )
-    expect(second).toMatchObject({
-      allowedDataPaths: [ORG_USERS_PATH, ORG_GROUPS_PATH],
-    })
   })
 })

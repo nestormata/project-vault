@@ -9,6 +9,7 @@ import mockUiPanelExtension, {
   TEST_ACTION_KIND,
   TEST_ACTION_NOTE,
   TEST_DATA_PATH,
+  TEST_MODULE_DATA_PATH,
   TEST_NAV_CHILD_ITEM_ID,
   TEST_NAV_ITEM_ID,
   THROW_TRIGGER_SLOT,
@@ -60,6 +61,24 @@ describe('mock-ui-panel-extension (Story 25.1 Task 7)', () => {
         parentId: TEST_NAV_ITEM_ID,
       },
     ])
+  })
+
+  it('Story 29.4 AC1/AC10/Task 5: declares moduleDataRoutes with a real, matching moduleData handler', async () => {
+    expect(mockUiPanelExtension.manifest.moduleDataRoutes).toEqual([
+      { method: 'GET', path: TEST_MODULE_DATA_PATH },
+    ])
+    const hooks = mockUiPanelExtension.hooksFactory()
+    const handler = hooks.moduleData?.[`GET ${TEST_MODULE_DATA_PATH}`]
+    expect(typeof handler).toBe('function')
+    const result = await handler?.({
+      identity: { userId: 'user_1', orgRole: 'member' },
+      orgId: 'org_1',
+      params: {},
+      query: {},
+    })
+    expect(result).toEqual({
+      body: { ok: true, orgId: 'org_1', userId: 'user_1' },
+    })
   })
 
   it('does not implement any other hook (proves ui-panel alone is a valid manifest)', () => {

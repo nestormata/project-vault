@@ -38,6 +38,11 @@ export type {
   ProjectCreatePolicy,
   ProjectCreatePolicyContext,
 } from './hooks/project-lifecycle.js'
+export type {
+  ModuleDataRequestContext,
+  ModuleDataResult,
+  ModuleDataRouteHandler,
+} from './hooks/module-data.js'
 
 export type { HostServices } from './host-services.js'
 export type {
@@ -51,17 +56,24 @@ export type {
 export type { ExtensionThemeCssVar } from './theme-contract.js'
 export { EXTENSION_THEME_CSS_VARS } from './theme-contract.js'
 
-export type { ExtensionCapability, ExtensionManifest, ExtensionNavItem } from './manifest.js'
+export type {
+  ExtensionCapability,
+  ExtensionManifest,
+  ExtensionNavItem,
+  ModuleDataRouteDeclaration,
+} from './manifest.js'
 export type { NavItemIconToken } from './manifest.js'
 export {
   EXTENSION_API_VERSION,
   HOST_SUPPORTED_EXTENSION_API_RANGE,
   MAX_MODULE_ACTIONS,
+  MAX_MODULE_DATA_ROUTES,
   MAX_NAV_ITEM_LABEL_LENGTH,
   MAX_NAV_ITEMS,
   MAX_PANEL_DATA_PATHS,
   MAX_UI_PANEL_SLOTS,
   MODULE_ACTION_NAME_PATTERN,
+  MODULE_DATA_ROUTE_PATH_PATTERN,
   NAV_ITEM_HREF_PATTERN,
   NAV_ITEM_ID_PATTERN,
   NAV_ITEM_ICON_TOKENS,

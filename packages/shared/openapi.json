@@ -32814,18 +32814,11 @@
                         },
                         "actionEndpoint": {
                           "type": "string"
-                        },
-                        "allowedDataPaths": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
                         }
                       },
                       "required": [
                         "ok",
-                        "html",
-                        "allowedDataPaths"
+                        "html"
                       ],
                       "additionalProperties": false
                     },
