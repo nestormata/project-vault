@@ -3,11 +3,8 @@ import type { ChildProcess } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import { enrollMfaDirect } from '../fixtures/db.js'
 import {
-  createIsolatedDatabase,
-  initIsolatedVault,
   registerAndLoginIsolated,
-  spawnIsolatedApiProcess,
-  spawnIsolatedWebProcess,
+  setupMockExtensionIsolatedStack,
   teardownIsolatedStack,
   type WebHandle,
 } from '../fixtures/isolated-stack-shared.js'
@@ -85,21 +82,15 @@ test.describe
   .serial('J25 — Story 29.2 panel action dispatch, Story 25.12 data relay (mock-ui-panel-extension)', () => {
   test.beforeAll(async () => {
     test.setTimeout(120_000)
-    await createIsolatedDatabase(DB_NAME)
-    apiProcess = await spawnIsolatedApiProcess({
-      port: API_PORT,
-      dbName: DB_NAME,
-      webPort: WEB_PORT,
-      logLabel: 'api-panel-relay',
-      logLevelEnvVar: 'J25_DEBUG_LOG_LEVEL',
-      extraEnv: { VAULT_EXTENSIONS_PACKAGE: '@project-vault/mock-ui-panel-extension' },
-    })
-    await initIsolatedVault(API_PORT, 'j25-panel-relay-e2e-passphrase')
-    webHandle = await spawnIsolatedWebProcess({
-      port: WEB_PORT,
+    ;({ apiProcess, webHandle } = await setupMockExtensionIsolatedStack({
       apiPort: API_PORT,
-      logLabel: 'web-panel-relay',
-    })
+      webPort: WEB_PORT,
+      dbName: DB_NAME,
+      apiLogLabel: 'api-panel-relay',
+      webLogLabel: 'web-panel-relay',
+      vaultPassphrase: 'j25-panel-relay-e2e-passphrase',
+      debugLogLevelEnvVar: 'J25_DEBUG_LOG_LEVEL',
+    }))
   })
 
   test.afterAll(async () => {

@@ -3,11 +3,8 @@ import type { ChildProcess } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import { enrollMfaDirect } from '../fixtures/db.js'
 import {
-  createIsolatedDatabase,
-  initIsolatedVault,
   registerAndLoginIsolated,
-  spawnIsolatedApiProcess,
-  spawnIsolatedWebProcess,
+  setupMockExtensionIsolatedStack,
   teardownIsolatedStack,
   type WebHandle,
 } from '../fixtures/isolated-stack-shared.js'
@@ -45,21 +42,15 @@ let webHandle: WebHandle | undefined
 test.describe.serial('J27 — Story 29.3 nav/menu manifest merge (mock-ui-panel-extension)', () => {
   test.beforeAll(async () => {
     test.setTimeout(120_000)
-    await createIsolatedDatabase(DB_NAME)
-    apiProcess = await spawnIsolatedApiProcess({
-      port: API_PORT,
-      dbName: DB_NAME,
-      webPort: WEB_PORT,
-      logLabel: 'api-nav-items',
-      logLevelEnvVar: 'J27_DEBUG_LOG_LEVEL',
-      extraEnv: { VAULT_EXTENSIONS_PACKAGE: '@project-vault/mock-ui-panel-extension' },
-    })
-    await initIsolatedVault(API_PORT, 'j27-extension-nav-items-e2e-passphrase')
-    webHandle = await spawnIsolatedWebProcess({
-      port: WEB_PORT,
+    ;({ apiProcess, webHandle } = await setupMockExtensionIsolatedStack({
       apiPort: API_PORT,
-      logLabel: 'web-nav-items',
-    })
+      webPort: WEB_PORT,
+      dbName: DB_NAME,
+      apiLogLabel: 'api-nav-items',
+      webLogLabel: 'web-nav-items',
+      vaultPassphrase: 'j27-extension-nav-items-e2e-passphrase',
+      debugLogLevelEnvVar: 'J27_DEBUG_LOG_LEVEL',
+    }))
   })
 
   test.afterAll(async () => {
