@@ -33013,10 +33013,40 @@
                     "uiPanelSlot": {
                       "nullable": true,
                       "type": "string"
+                    },
+                    "navItems": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "href": {
+                            "type": "string"
+                          },
+                          "icon": {
+                            "type": "string"
+                          },
+                          "parentId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label",
+                          "href"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
-                    "uiPanelSlot"
+                    "uiPanelSlot",
+                    "navItems"
                   ],
                   "additionalProperties": false
                 }
