@@ -49,6 +49,23 @@ export async function startHydrationRaceWebDev(options: {
   })
 }
 
+/** Resolves an absolute path to the currently-running `pnpm` CLI script rather than letting
+ * `execFileSync` search `PATH` for a bare `'pnpm'` (a SonarCloud security hotspot — S4036 — since
+ * an untrusted, writable directory earlier on `PATH` could shadow it). `npm_execpath` is set by
+ * pnpm itself for any script it invokes (this journey only ever runs via `pnpm --filter ... test:e2e`
+ * or `pnpm run e2e`), matching this file's own `tsxExecutable()`-style resolve-don't-search
+ * precedent in `isolated-stack-shared.ts`. */
+function pnpmExecutable(): string {
+  const execPath = process.env['npm_execpath']
+  if (!execPath) {
+    throw new Error(
+      'J26: npm_execpath is not set — this journey must be run via `pnpm` (e.g. `pnpm --filter ' +
+        '@project-vault/web test:e2e` or `make e2e`), not a bare `node`/`playwright` invocation.'
+    )
+  }
+  return execPath
+}
+
 /**
  * Builds `apps/web` (and its two workspace deps whose compiled `dist/` it imports at build time)
  * exactly once per test run — real `vite build` + `@sveltejs/adapter-node`, not a mock. Mirrors
@@ -58,17 +75,18 @@ export async function startHydrationRaceWebDev(options: {
  */
 export function buildHydrationRaceWeb(): void {
   const env = { ...process.env }
-  execFileSync('pnpm', ['--filter', '@project-vault/shared', 'build'], {
+  const pnpmCli = pnpmExecutable()
+  execFileSync(process.execPath, [pnpmCli, '--filter', '@project-vault/shared', 'build'], {
     cwd: REPO_ROOT,
     env,
     stdio: 'inherit',
   })
-  execFileSync('pnpm', ['--filter', '@project-vault/extension-api', 'build'], {
+  execFileSync(process.execPath, [pnpmCli, '--filter', '@project-vault/extension-api', 'build'], {
     cwd: REPO_ROOT,
     env,
     stdio: 'inherit',
   })
-  execFileSync('pnpm', ['--filter', '@project-vault/web', 'build'], {
+  execFileSync(process.execPath, [pnpmCli, '--filter', '@project-vault/web', 'build'], {
     cwd: REPO_ROOT,
     env,
     stdio: 'inherit',
