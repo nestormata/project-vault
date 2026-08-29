@@ -16,6 +16,7 @@
     "apps/web/src/lib/components/settings/SettingsFormGate.svelte",
     "apps/web/e2e/journeys/j21-audit-quota-enforcement.spec.ts",
     "apps/web/e2e/journeys/j22-audit-rate-limit-enforcement.spec.ts",
+    "apps/web/e2e/journeys/j27-extension-nav-items.spec.ts",
     "**/node_modules/**",
     "**/dist/**",
     "**/build/**",

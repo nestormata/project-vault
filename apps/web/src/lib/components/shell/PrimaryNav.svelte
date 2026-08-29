@@ -66,6 +66,18 @@
     rendering entirely. `navItems` is rebuilt fresh, in a stable order, on every render (no
     reordering/dragging), so an index key loses no real reconciliation behavior here.
   -->
+  <!--
+    Extracted (code-review fix, 2026-08-29): the icon+label markup was duplicated verbatim between
+    the <summary> branch (a parent item) and the <a> branch (a leaf item) below — jscpd flagged the
+    clone. A snippet keeps both branches rendering identical icon/label markup from one definition.
+  -->
+  {#snippet itemLabel(item: { icon?: string; label: string; mobileLabel: string })}
+    {#if item.icon && NAV_ICON_GLYPHS[item.icon]}
+      <span data-nav-icon={item.icon} aria-hidden="true">{NAV_ICON_GLYPHS[item.icon]}</span>
+    {/if}
+    <span class="hidden sm:inline">{item.label}</span>
+    <span class="sm:hidden">{item.mobileLabel}</span>
+  {/snippet}
   {#each navItems as item, itemIndex (itemIndex)}
     {@const active = isActiveNavItem(item.href, page.url.pathname)}
     {#if item.children && item.children.length > 0}
@@ -78,11 +90,7 @@
         <summary
           class={`flex cursor-pointer list-none items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium ${active ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
         >
-          {#if item.icon && NAV_ICON_GLYPHS[item.icon]}
-            <span data-nav-icon={item.icon} aria-hidden="true">{NAV_ICON_GLYPHS[item.icon]}</span>
-          {/if}
-          <span class="hidden sm:inline">{item.label}</span>
-          <span class="sm:hidden">{item.mobileLabel}</span>
+          {@render itemLabel(item)}
         </summary>
         <div
           class="flex flex-col gap-1 py-1 md:absolute md:z-10 md:min-w-40 md:rounded-xl md:border md:border-slate-200 md:bg-white md:p-1 md:shadow-lg"
@@ -114,11 +122,7 @@
         aria-current={active ? 'page' : undefined}
         href={resolve(item.href)}
       >
-        {#if item.icon && NAV_ICON_GLYPHS[item.icon]}
-          <span data-nav-icon={item.icon} aria-hidden="true">{NAV_ICON_GLYPHS[item.icon]}</span>
-        {/if}
-        <span class="hidden sm:inline">{item.label}</span>
-        <span class="sm:hidden">{item.mobileLabel}</span>
+        {@render itemLabel(item)}
       </a>
     {/if}
   {/each}
