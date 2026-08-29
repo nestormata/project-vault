@@ -2,6 +2,7 @@ import { spawn, execFileSync, type ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import {
   REPO_ROOT,
+  pipeChildDiagnostics,
   spawnIsolatedApiProcess,
   spawnIsolatedWebProcess,
   stopProcess,
@@ -74,15 +75,6 @@ export function buildHydrationRaceWeb(): void {
   })
 }
 
-function pipeDiagnostics(child: ChildProcess, label: string, port: number): void {
-  // eslint-disable-next-line no-console -- diagnostic aid when this journey fails locally
-  child.stdout?.on('data', (chunk) => console.log(`[${label}:${port}]`, String(chunk)))
-  child.stderr?.on('data', (chunk) => {
-    // eslint-disable-next-line no-console -- diagnostic aid when this journey fails locally
-    console.error(`[${label}:${port}]`, String(chunk))
-  })
-}
-
 /** Serves the already-built `apps/web/build/index.js` (adapter-node) — a real production-style
  * process, same entrypoint `apps/web/Dockerfile`'s runtime stage runs (`CMD ["node", "build"]`),
  * just started directly instead of inside a container. Caller must have already called
@@ -107,7 +99,7 @@ export async function startHydrationRaceWebBuild(options: {
     stdio: 'pipe',
     detached: true,
   })
-  pipeDiagnostics(child, 'web-hydration-race-build', options.port)
+  pipeChildDiagnostics(child, 'web-hydration-race-build', options.port)
 
   // Code-review finding (critical): if `/login` never comes up, `waitForHttp` throws and this
   // function never returns — the caller's handle variable is never assigned, so a plain

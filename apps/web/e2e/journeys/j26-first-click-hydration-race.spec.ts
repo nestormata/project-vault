@@ -168,6 +168,57 @@ async function fireRawImmediateClick(
   return { dispatchedAt, requests, nativeFormFallbackFired, timing }
 }
 
+/** Records AC1's measurement (annotation + console log) for one test's click outcome, and returns
+ * `true` when the native-form-fallback branch fired (race confirmed) so the caller knows to close
+ * the page and return early. Centralizes the outcome-handling shared by all three AC1 measurement
+ * tests below — only the log prefix and whether a race finding is expected-and-benign (Vite dev)
+ * vs. an unexpected regression (production build / in-app nav, per AC1's own measurement) differ
+ * between them. */
+async function reportClickOutcome(options: {
+  label: string
+  logPrefix: string
+  outcome: ClickOutcome
+  /** When true, a native-form-fallback outcome fails the test instead of only being logged —
+   * used for the two modes AC1's own measurement established should NOT reproduce the race. */
+  expectNoRace: boolean
+}): Promise<boolean> {
+  const { label, logPrefix, outcome, expectNoRace } = options
+  const { dispatchedAt, requests, nativeFormFallbackFired, timing } = outcome
+
+  if (nativeFormFallbackFired) {
+    test
+      .info()
+      .annotations.push({ type: `j26-${label}-outcome`, description: NATIVE_FORM_FALLBACK })
+    // eslint-disable-next-line no-console -- AC1 requires this recorded, not just asserted
+    console.log(
+      `${logPrefix} click dispatched at ${dispatchedAt.toFixed(2)}ms — RACE CONFIRMED: raw click ` +
+        `fell through to the native, JS-free form submission. requests=${JSON.stringify(requests)}`
+    )
+    if (expectNoRace) {
+      // Code-review finding (high): AC1's own measurement established this mode is consistently
+      // NOT raced (a consistently-negative gap over 5+ runs — see Dev Agent Record). Fail loudly
+      // here rather than merely logging, so a future regression is caught by CI instead of
+      // silently passing.
+      expect(
+        nativeFormFallbackFired,
+        `${label} unexpectedly reproduced the hydration race — this contradicts this story's own ` +
+          'AC1 measurement and needs re-investigation, not a silent pass'
+      ).toBe(false)
+    }
+    return true
+  }
+
+  const gapMs = timing?.firstListenerAt == null ? null : timing.firstListenerAt - dispatchedAt
+  test.info().annotations.push({ type: `j26-${label}-gap-ms`, description: String(gapMs) })
+  // eslint-disable-next-line no-console -- AC1 requires this recorded, not just asserted
+  console.log(
+    `${logPrefix} click dispatched at ${dispatchedAt.toFixed(2)}ms, first click/submit listener ` +
+      `attached at ${timing?.firstListenerAt?.toFixed(2) ?? 'never'}ms, ` +
+      `gap=${gapMs?.toFixed(2) ?? 'n/a'}ms, requests-in-300ms-window=${JSON.stringify(requests)}`
+  )
+  return false
+}
+
 function languageSelectButton(page: Page) {
   // The Spanish option's "Select" button — English is the default current locale in a fresh
   // registration, so this is guaranteed to be a non-disabled `type="submit"` button.
@@ -207,41 +258,25 @@ test.describe.serial('J26 — first-click hydration race reproduction (Story 28.
     await instrumentHydrationTiming(page)
 
     await page.goto(`${webBase}/settings/language`)
-    const { dispatchedAt, requests, nativeFormFallbackFired, timing } = await fireRawImmediateClick(
-      page,
-      languageSelectButton(page)
-    )
-
-    if (nativeFormFallbackFired) {
-      // AC1's own instrumented-and-confirmed finding for THIS page (which has a real `<form
-      // method="POST">` fallback, unlike the other 3 reported buttons): under Vite dev, a raw
-      // click fired the instant `page.goto()` resolves lands before `use:enhance`'s `submit`
-      // listener attaches, and falls through to a real, full native form submission — a genuine
-      // network request, distinct from the silent zero-request swallow the other 3 (plain
-      // `onclick`, no enclosing `<form>`) buttons would produce under the identical race, since a
-      // bare button has no native fallback to fall through to.
-      test
-        .info()
-        .annotations.push({ type: 'j26-dev-full-load-outcome', description: NATIVE_FORM_FALLBACK })
-      // eslint-disable-next-line no-console -- AC1 requires this recorded, not just asserted
-      console.log(
-        `[J26][dev][full-load] click dispatched at ${dispatchedAt.toFixed(2)}ms — RACE CONFIRMED: ` +
-          `raw click fell through to the native, JS-free form submission (use:enhance had not yet ` +
-          `attached). requests=${JSON.stringify(requests)}`
-      )
+    // AC1's own instrumented-and-confirmed finding for THIS page (which has a real `<form
+    // method="POST">` fallback, unlike the other 3 reported buttons): under Vite dev, a raw click
+    // fired the instant `page.goto()` resolves can land before `use:enhance`'s `submit` listener
+    // attaches, falling through to a real, full native form submission — a genuine network
+    // request, distinct from the silent zero-request swallow the other 3 (plain `onclick`, no
+    // enclosing `<form>`) buttons would produce under the identical race, since a bare button has
+    // no native fallback to fall through to. This mode IS expected to (intermittently) race under
+    // Vite dev, so a race here is benign, not asserted against.
+    const outcome = await fireRawImmediateClick(page, languageSelectButton(page))
+    const raceHit = await reportClickOutcome({
+      label: 'dev-full-load',
+      logPrefix: '[J26][dev][full-load]',
+      outcome,
+      expectNoRace: false,
+    })
+    if (raceHit) {
       await page.close()
       return
     }
-
-    const gapMs = timing?.firstListenerAt == null ? null : timing.firstListenerAt - dispatchedAt
-
-    test.info().annotations.push({ type: 'j26-dev-full-load-gap-ms', description: String(gapMs) })
-    // eslint-disable-next-line no-console -- AC1 requires this recorded, not just asserted
-    console.log(
-      `[J26][dev][full-load] click dispatched at ${dispatchedAt.toFixed(2)}ms, first click/submit ` +
-        `listener attached at ${timing?.firstListenerAt?.toFixed(2) ?? 'never'}ms, ` +
-        `gap=${gapMs?.toFixed(2) ?? 'n/a'}ms, requests-in-300ms-window=${JSON.stringify(requests)}`
-    )
 
     // Listener attached before the click landed — no race this run, so the click worked
     // normally: no native full-page navigation (URL unchanged).
@@ -258,45 +293,18 @@ test.describe.serial('J26 — first-click hydration race reproduction (Story 28.
     await instrumentHydrationTiming(page)
 
     await page.goto(`${webBase}/settings/language`)
-    const { dispatchedAt, requests, nativeFormFallbackFired, timing } = await fireRawImmediateClick(
-      page,
-      languageSelectButton(page)
-    )
-
-    if (nativeFormFallbackFired) {
-      test.info().annotations.push({
-        type: 'j26-build-full-load-outcome',
-        description: NATIVE_FORM_FALLBACK,
-      })
-      // eslint-disable-next-line no-console -- AC1 requires this recorded, not just asserted
-      console.log(
-        `[J26][build][full-load] click dispatched at ${dispatchedAt.toFixed(2)}ms — RACE CONFIRMED ` +
-          `even under a production-style build: raw click fell through to the native form submission. ` +
-          `requests=${JSON.stringify(requests)}`
-      )
+    const outcome = await fireRawImmediateClick(page, languageSelectButton(page))
+    const raceHit = await reportClickOutcome({
+      label: 'build-full-load',
+      logPrefix: '[J26][build][full-load]',
+      outcome,
+      expectNoRace: true,
+    })
+    if (raceHit) {
       await page.close()
-      // Code-review finding (high): AC1's own measurement established a production build is
-      // consistently NOT raced (a consistently-negative gap over 5 runs — see Dev Agent Record).
-      // Fail loudly here rather than merely logging, so a future regression (build tooling
-      // change, dependency bump) that reopens this race in production is caught by CI instead of
-      // silently passing.
-      expect(
-        nativeFormFallbackFired,
-        'production-style build unexpectedly reproduced the hydration race — this contradicts ' +
-          "this story's own AC1 measurement and needs re-investigation, not a silent pass"
-      ).toBe(false)
       return
     }
 
-    const gapMs = timing?.firstListenerAt == null ? null : timing.firstListenerAt - dispatchedAt
-
-    test.info().annotations.push({ type: 'j26-build-full-load-gap-ms', description: String(gapMs) })
-    // eslint-disable-next-line no-console -- AC1 requires this recorded, not just asserted
-    console.log(
-      `[J26][build][full-load] click dispatched at ${dispatchedAt.toFixed(2)}ms, first click/submit ` +
-        `listener attached at ${timing?.firstListenerAt?.toFixed(2) ?? 'never'}ms, ` +
-        `gap=${gapMs?.toFixed(2) ?? 'n/a'}ms, requests-in-300ms-window=${JSON.stringify(requests)}`
-    )
     expect(page.url()).toBe(`${webBase}/settings/language`)
     await page.close()
   })
@@ -326,42 +334,15 @@ test.describe.serial('J26 — first-click hydration race reproduction (Story 28.
     // under test for the in-app-navigation branch of AC1.
     await page.getByRole('link', { name: /language/i }).click()
 
-    const { dispatchedAt, requests, nativeFormFallbackFired, timing } = await fireRawImmediateClick(
-      page,
-      languageSelectButton(page)
-    )
-
-    if (nativeFormFallbackFired) {
-      test
-        .info()
-        .annotations.push({ type: 'j26-in-app-nav-outcome', description: NATIVE_FORM_FALLBACK })
-      // eslint-disable-next-line no-console -- AC1 requires this recorded, not just asserted
-      console.log(
-        `[J26][build][in-app-nav] click dispatched at ${dispatchedAt.toFixed(2)}ms — RACE CONFIRMED on ` +
-          `in-app client-side navigation too. requests=${JSON.stringify(requests)}`
-      )
-      await page.close()
-      // Code-review finding (high): AC1's own measurement established in-app navigation is
-      // consistently NOT raced (see Dev Agent Record). Fail loudly rather than merely logging, so
-      // a future regression is caught by CI instead of silently passing.
-      expect(
-        nativeFormFallbackFired,
-        'in-app navigation unexpectedly reproduced the hydration race — this contradicts this ' +
-          "story's own AC1 measurement and needs re-investigation, not a silent pass"
-      ).toBe(false)
-      return
-    }
-
-    const gapMs = timing?.firstListenerAt == null ? null : timing.firstListenerAt - dispatchedAt
-
-    test.info().annotations.push({ type: 'j26-in-app-nav-gap-ms', description: String(gapMs) })
-    // eslint-disable-next-line no-console -- AC1 requires this recorded, not just asserted
-    console.log(
-      `[J26][build][in-app-nav] click dispatched at ${dispatchedAt.toFixed(2)}ms, first click/submit ` +
-        `listener attached at ${timing?.firstListenerAt?.toFixed(2) ?? 'never (already attached pre-nav or delegated root listener persisted)'}ms, ` +
-        `gap=${gapMs?.toFixed(2) ?? 'n/a'}ms, requests-in-300ms-window=${JSON.stringify(requests)}`
-    )
+    const outcome = await fireRawImmediateClick(page, languageSelectButton(page))
+    const raceHit = await reportClickOutcome({
+      label: 'in-app-nav',
+      logPrefix: '[J26][build][in-app-nav]',
+      outcome,
+      expectNoRace: true,
+    })
     await page.close()
+    if (raceHit) return
   })
 
   test('AC2 (branch 1 regression): the shared waitForHydration helper reliably avoids the race under Vite dev, no app-code fix needed', async ({
