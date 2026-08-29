@@ -226,11 +226,13 @@ jobs:
       matrix:
         shard: [1, 2]
     runs-on: ubuntu-latest
-    # Halving the suite per shard should land well under 25 min; this leaves generous headroom
-    # above that estimate rather than the previous single-job 45-minute ceiling that still got
-    # hit on a loaded runner. If it is cancelled before uploading LCOV, the Sonar job analyzes
-    # partial coverage and reports a misleading gate failure.
-    timeout-minutes: 30
+    # Observed ~15 min per shard after splitting (vs. 35-45+ min single-job before). Raised to
+    # 60 rather than lowered, on top of the split, for headroom against a loaded runner —
+    # apps/api/src/__tests__/deployment-hardening.test.ts enforces a >=45 floor here specifically
+    # so this can't be quietly dropped back down in a future edit; keep any change to this value
+    # in sync with that test. If cancelled before uploading LCOV, the Sonar job analyzes partial
+    # coverage and reports a misleading gate failure.
+    timeout-minutes: 60
     env:
       SUPERUSER_DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
       VAULT_APP_DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
