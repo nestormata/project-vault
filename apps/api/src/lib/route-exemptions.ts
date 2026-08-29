@@ -431,6 +431,18 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'credential.value_revealed',
     sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
   },
+  // Story 28.5 AC2/AC3 — mirrors project archive/unarchive's SECURITY_ACTION classification
+  // exactly (MFA-gated, blast-radius-bearing lifecycle action on the secret itself).
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/archive': {
+    action: SECURITY_ACTION,
+    auditEvent: 'credential.archived',
+    sameTransactionAuditService: WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED,
+  },
+  'POST /api/v1/projects/:projectId/credentials/:credentialId/unarchive': {
+    action: SECURITY_ACTION,
+    auditEvent: 'credential.unarchived',
+    sameTransactionAuditService: WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED,
+  },
   'GET /api/v1/projects/:projectId/credentials/:credentialId/versions': {
     action: 'read',
     auditOmissionReason: 'Version history returns metadata only; never any credential value.',
