@@ -1,6 +1,7 @@
 import { browser } from '$app/environment'
 import { goto } from '$app/navigation'
 import { resolve } from '$app/paths'
+import { redirect } from '@sveltejs/kit'
 
 export type ApiSuccess<T> = { data: T }
 export type ApiFailure = {
@@ -78,10 +79,8 @@ function redirectToSessionExpired(): void {
   void goto(`${resolve('/login', {})}?reason=session-expired`).then(reset, reset)
 }
 
-function refreshAccessSession(fetchFn: typeof fetch, signal?: AbortSignal): Promise<boolean> {
-  if (refreshInFlight) return refreshInFlight
-
-  const refreshPromise = (async () => {
+function performRefreshRequest(fetchFn: typeof fetch, signal?: AbortSignal): Promise<boolean> {
+  return (async () => {
     try {
       const response = await fetchFn('/api/v1/auth/refresh', {
         method: 'POST',
@@ -96,6 +95,23 @@ function refreshAccessSession(fetchFn: typeof fetch, signal?: AbortSignal): Prom
       return false
     }
   })()
+}
+
+function refreshAccessSession(fetchFn: typeof fetch, signal?: AbortSignal): Promise<boolean> {
+  // `refreshInFlight`'s single-flight de-dup is deliberately browser-only. In a browser tab the
+  // module instance is scoped to that one session, so sharing it across concurrent apiFetch calls
+  // is safe. During SSR, one Node process module instance serves many different users' concurrent
+  // requests — sharing this state would let one user's in-flight refresh (and its resulting
+  // tokens) leak into a different, concurrently in-flight user's request. So every SSR call
+  // performs its own independent refresh instead of joining a shared promise. The extra redundant
+  // `/api/v1/auth/refresh` calls this can cause within a single request are safe, thanks to the
+  // server's 30-second rotation grace window (architecture.md:353) — a second refresh call just
+  // re-issues the same already-rotated tokens idempotently.
+  if (!browser) return performRefreshRequest(fetchFn, signal)
+
+  if (refreshInFlight) return refreshInFlight
+
+  const refreshPromise = performRefreshRequest(fetchFn, signal)
 
   refreshInFlight = refreshPromise
   void refreshPromise.then(
@@ -144,8 +160,10 @@ export async function apiFetch<T>(
     return await parseApiEnvelope<T>(response)
   } catch (error) {
     // Access tokens are short-lived while the refresh token remains HttpOnly. Retry only this
-    // explicit auth failure, once, and only when the request body can be replayed safely.
-    if (!browser || !isRefreshableAccessError(error)) {
+    // explicit auth failure, once, and only when the request body can be replayed safely. This
+    // applies during SSR too — a server-side `load` function hitting this same race deserves the
+    // same self-healing retry a browser request already gets, not an unhandled rethrow into a 500.
+    if (!isRefreshableAccessError(error)) {
       throw error
     }
     if (!canReplayRequestBody(init.body)) {
@@ -157,8 +175,14 @@ export async function apiFetch<T>(
       // The refresh token itself is gone/expired — this is a genuinely dead session, not a
       // rotation race (see isRefreshableAccessError). Nothing short of a fresh login can recover
       // it, so send the user there instead of leaving the page stuck on a swallowed/opaque error.
-      redirectToSessionExpired()
-      throw error
+      if (browser) {
+        redirectToSessionExpired()
+        throw error
+      }
+      // `goto()` (used by redirectToSessionExpired above) is a client-side-only API and would
+      // throw if called here. SvelteKit's own `redirect()` is the SSR-safe equivalent — it throws
+      // a special value SvelteKit's routing understands and turns into a real 303 response.
+      redirect(303, `${resolve('/login', {})}?reason=session-expired`)
     }
     response = await fetchFn(path, requestInit)
     return parseApiEnvelope<T>(response)
