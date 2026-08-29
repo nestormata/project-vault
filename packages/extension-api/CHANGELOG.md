@@ -2,6 +2,43 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.10.0 — 2026-08-29
+
+contract-hash: sha256:ee971b28e6d7678640588edca361890559baa317a726e70f06cba4a992c548d6
+
+### Added
+
+- Added `ExtensionManifest.moduleDataRoutes?: ModuleDataRouteDeclaration[]` (Story 29.4 AC1/AC2),
+  an optional declaration of real `GET` routes a module wants mounted directly on PV's own
+  Fastify API router under a fixed, host-owned `/api/v1/extensions/data` prefix — sharing PV's
+  own `secureRoute()` auth/session/rate-limit middleware, unlike the postMessage relay it
+  replaces. Each declared route is cross-checked at `registerExtension()` time against
+  `ExtensionHooks.moduleData` for hooksFactory()-callability, mirroring `moduleActions`'/
+  `uiPanelSlots`' existing discipline. Omitted (or `undefined`) is fully backward-compatible: no
+  data routes are mounted.
+- Added `ExtensionHooks.moduleData?: Record<string, ModuleDataRouteHandler>` (Story 29.4 AC3), the
+  per-route handler map a module's `hooksFactory()` returns; a handler's failure degrades via the
+  same `raceWithTimeout()`/`RENDER_PANEL_TIMEOUT_MS` primitive `renderExtensionPanel()` already
+  uses, to a fixed non-leaking 502 plus a new `EXTENSION_MODULE_DATA_ROUTE_FAILED` operational-log
+  event (Story 29.4 AC5).
+- Added `MODULE_DATA_ROUTE_PATH_PATTERN` and `MAX_MODULE_DATA_ROUTES` (Story 29.4 AC1/AC2), the
+  path-template charset validation and 32-entry cap for `moduleDataRoutes`, matching
+  `PANEL_DATA_PATH_PATTERN`/`MAX_PANEL_DATA_PATHS`'s precedent.
+
+### Deprecated
+
+- Deprecated `ExtensionManifest.panelDataPaths?: string[]` (Story 25.12, added in 3.8.0) —
+  superseded by `moduleDataRoutes`, which mounts real Fastify routes instead of relying on a
+  postMessage-relayed hardcoded path allowlist. Every server- and client-side consumer of
+  `panelDataPaths`/`allowedDataPaths` (the DATA relay in `+page.svelte`, `resolvePanelDataPaths`,
+  `DEFAULT_PANEL_DATA_PATHS`) has been deleted; the manifest type field itself is kept
+  deprecated-in-place (not removed) specifically to avoid an unplanned MAJOR
+  `EXTENSION_API_VERSION` bump for a field no manifest currently declares.
+  - Notified: 2026-08-29, this CHANGELOG entry, all `extension-api` consumers
+  - earliest-removal: 2026-11-29 (90-day minimum notice window, matching this package's own
+    established deprecation precedent)
+  - notice-window-ends: 2026-11-29
+
 ## 3.9.0 — 2026-08-29
 
 contract-hash: sha256:8ac794facfb1229f7ca08f722537e533c3a1693c813050ea6d12e977bf76d69c
