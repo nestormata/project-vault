@@ -147,6 +147,9 @@ async function fireRawImmediateClick(
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
     // Give any request that WAS dispatched a moment to actually fire — this is observing outcome,
     // not waiting for readiness, so it does not defeat the race the way `page.click()` would.
+    // A fixed wait is unavoidable here (not a smell to fix): the outcome under test is the
+    // ABSENCE of network activity, which has no observable condition to synchronize on instead —
+    // any event-based wait would need to be bounded by a timeout anyway. NOSONAR(typescript:S2925)
     await page.waitForTimeout(300)
     timing = await readHydrationTiming(page)
   } catch (error) {
