@@ -93,6 +93,9 @@ export const CredentialDetailSchema = z
     createdBy: z.uuid().nullable(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
+    // Story 28.5 AC5/AC6 — null when active; non-null once the secret itself is archived. Lets
+    // the web detail page decide Archive-vs-Unarchive button state without a second round-trip.
+    archivedAt: z.iso.datetime().nullable(),
   })
   .meta({ id: 'CredentialDetail' })
 
@@ -227,9 +230,24 @@ export const CredentialSummarySchema = z
     // OR a latest rotation that's already terminal (retired/completed/abandoned), even if an
     // older historical rotation was once active.
     activeRotation: ActiveRotationBadgeSchema.nullable(),
+    // Story 28.5 AC5 — mirrors DependencyResponseSchema's/the project list row's own
+    // archivedAt/isArchived field precedent, so the web list can render an "Archived" badge.
+    archivedAt: z.iso.datetime().nullable(),
   })
   .meta({ id: 'CredentialSummary' })
 
+// Story 28.5 AC2/AC3 — the archive/unarchive route's response shape, structurally mirroring
+// ProjectArchiveStateSchema (no `slug` on a credential).
+export const CredentialArchiveStateSchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    archivedAt: z.iso.datetime().nullable(),
+    isArchived: z.boolean(),
+  })
+  .meta({ id: 'CredentialArchiveState' })
+
+export type CredentialArchiveState = z.infer<typeof CredentialArchiveStateSchema>
 export type CredentialDetail = z.infer<typeof CredentialDetailSchema>
 export type CredentialValue = z.infer<typeof CredentialValueSchema>
 export type CredentialFieldsValue = z.infer<typeof CredentialFieldsValueSchema>

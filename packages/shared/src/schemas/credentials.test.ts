@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CredentialArchiveStateSchema,
   CredentialDetailSchema,
   CredentialStatusSchema,
   CredentialSummarySchema,
@@ -35,6 +36,7 @@ describe('credential response schemas', () => {
         createdBy: USER_ID,
         createdAt: CREATED_AT,
         updatedAt: CREATED_AT,
+        archivedAt: null,
       })
     ).toMatchObject({ name: CREDENTIAL_NAME, currentVersionNumber: 1 })
   })
@@ -54,6 +56,7 @@ describe('credential response schemas', () => {
       createdAt: CREATED_AT,
       updatedAt: CREATED_AT,
       activeRotation: null,
+      archivedAt: null,
     })
 
     expect(parsed).toMatchObject({ name: CREDENTIAL_NAME, status: 'expiring' })
@@ -139,5 +142,26 @@ describe('credential response schemas', () => {
         schemaVersion: 2,
       })
     ).toMatchObject({ isCurrent: false, abandonedAt: CREATED_AT })
+  })
+
+  // Story 28.5 AC2/AC3.
+  it('parses an archived and an active CredentialArchiveState', () => {
+    expect(
+      CredentialArchiveStateSchema.parse({
+        id: CREDENTIAL_ID,
+        name: CREDENTIAL_NAME,
+        archivedAt: CREATED_AT,
+        isArchived: true,
+      })
+    ).toMatchObject({ isArchived: true })
+
+    expect(
+      CredentialArchiveStateSchema.parse({
+        id: CREDENTIAL_ID,
+        name: CREDENTIAL_NAME,
+        archivedAt: null,
+        isArchived: false,
+      })
+    ).toMatchObject({ isArchived: false })
   })
 })

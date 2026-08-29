@@ -8,7 +8,22 @@ function makeUrl(query: string): URL {
 describe('parseCredentialListFilters', () => {
   it('parses q/status/page as before (regression)', () => {
     const filters = parseCredentialListFilters(makeUrl('?q=stripe&status=active&page=2'))
-    expect(filters).toEqual({ q: 'stripe', status: 'active', tags: undefined, page: 2 })
+    expect(filters).toEqual({
+      q: 'stripe',
+      status: 'active',
+      tags: undefined,
+      page: 2,
+      includeArchived: false,
+    })
+  })
+
+  // Story 28.5 AC5/AC6: mirrors the project list's own includeArchived query-param precedent.
+  it('AC5: parses includeArchived=true', () => {
+    expect(parseCredentialListFilters(makeUrl('?includeArchived=true')).includeArchived).toBe(true)
+  })
+
+  it('AC5: defaults includeArchived to false when absent', () => {
+    expect(parseCredentialListFilters(makeUrl('')).includeArchived).toBe(false)
   })
 
   it('AC-F1: parses a tags query param, trimmed', () => {
@@ -37,5 +52,10 @@ describe('credentialListFilterView', () => {
   it('AC-F1: echoes a set tags value back verbatim', () => {
     const view = credentialListFilterView({ tags: 'db, prod', page: 1 })
     expect(view.tags).toBe('db, prod')
+  })
+
+  it('AC5: echoes includeArchived back verbatim', () => {
+    expect(credentialListFilterView({ page: 1, includeArchived: true }).includeArchived).toBe(true)
+    expect(credentialListFilterView({ page: 1 }).includeArchived).toBe(false)
   })
 })

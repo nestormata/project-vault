@@ -603,6 +603,13 @@
       "when": 1787797184197,
       "tag": "0085_extension_ephemeral_state_admin_grant",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1788021822452,
+      "tag": "0086_credentials_archive",
+      "breakpoints": true
     }
   ]
 }

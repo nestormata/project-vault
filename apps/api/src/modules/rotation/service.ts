@@ -126,6 +126,9 @@ export async function getActiveRotationBadgesByCredential(
 export type InitiateRotationResult =
   | { status: 'credential_not_found' }
   | { status: 'project_archived' }
+  // Story 28.5 AC4 — parallel branch next to project_archived: the credential ITSELF is
+  // archived. Distinct status so a client/UI can tell which resource needs unarchiving.
+  | { status: 'credential_archived' }
   // Story 13.4 AC-3: a targetFields entry that doesn't exist on the credential's current
   // field_meta. Returned before any write.
   | { status: 'unknown_field_key'; field: string }
@@ -450,6 +453,7 @@ function dependencyChecklistFilter(
 type LoadRotationTargetResult =
   | { status: 'credential_not_found' }
   | { status: 'project_archived' }
+  | { status: 'credential_archived' }
   | { status: 'ok'; previousVersion: PreviousVersionRow & { id: string; versionNumber: number } }
 
 // Story 13.4 — shared by both call sites that need to lock "the current version to supersede"
@@ -523,6 +527,16 @@ async function loadRotationTargetForUpdate(
     projectId: input.projectId,
   })
   if (!credential) return { status: 'credential_not_found' }
+
+  // Story 28.5 AC4: the credential row is already locked FOR UPDATE by lockCredentialInProject
+  // above (Story 5.5 AC-1's TOCTOU-closing pattern) — this reads its archivedAt within that same
+  // lock rather than taking a second one.
+  const [archivedRow] = await trx
+    .select({ archivedAt: credentials.archivedAt })
+    .from(credentials)
+    .where(eq(credentials.id, credential.id))
+    .limit(1)
+  if (archivedRow?.archivedAt != null) return { status: 'credential_archived' }
 
   const previousVersion = await lockCurrentNonPurgedVersion(
     trx,

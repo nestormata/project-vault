@@ -38,18 +38,34 @@
     status?: string
     tags?: string
     page?: number
+    includeArchived?: boolean
   }): string {
     const params = new URLSearchParams()
     const q = overrides.q ?? data.filters.q
     const status = overrides.status ?? data.filters.status
     const tags = overrides.tags ?? data.filters.tags
     const page = overrides.page ?? data.filters.page
+    const includeArchived = overrides.includeArchived ?? data.filters.includeArchived
     if (q) params.set('q', q)
     if (status) params.set('status', status)
     if (tags) params.set('tags', tags)
     if (page > 1) params.set('page', String(page))
+    if (includeArchived) params.set('includeArchived', 'true')
     const query = params.toString()
     return resolve(`/projects/${data.projectId}/credentials${query ? `?${query}` : ''}`)
+  }
+
+  // Story 28.5 AC6: mirrors the project list's togglingArchived re-entrancy guard exactly.
+  let togglingArchived = $state(false)
+
+  async function toggleShowArchived(): Promise<void> {
+    if (togglingArchived) return
+    togglingArchived = true
+    try {
+      await goto(resolve(filterHref({ includeArchived: !data.filters.includeArchived, page: 1 })))
+    } finally {
+      togglingArchived = false
+    }
   }
 
   // Story 28.1 AC1/AC2: the form's implicit method="GET" submission relies on SvelteKit's
@@ -182,6 +198,27 @@
       {/if}
     </form>
 
+    <!-- Story 28.5 AC5/AC6: mirrors the project list's "Show archived" toggle exactly. G5 requires
+         visible, localized guidance text wired through aria-describedby for this user-facing
+         control. -->
+    <div class="flex items-center gap-2">
+      <input
+        id="credentials-include-archived"
+        type="checkbox"
+        checked={data.filters.includeArchived}
+        disabled={togglingArchived}
+        aria-describedby="credentials-include-archived-help"
+        onchange={() => void toggleShowArchived()}
+      />
+      <label for="credentials-include-archived" class="text-sm font-medium text-slate-800">
+        Include archived secrets
+      </label>
+    </div>
+    <p id="credentials-include-archived-help" class="text-xs text-slate-500">
+      Archived secrets are hidden from this list by default. Their data, versions, and history
+      remain intact and can be viewed or unarchived from the secret's own page.
+    </p>
+
     {#if data.credentials.items.length === 0}
       <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6">
         <h2 class="text-xl font-semibold text-slate-950">No secrets found</h2>
@@ -206,6 +243,13 @@
               >
                 {credential.name}
               </a>
+              {#if credential.archivedAt}
+                <span
+                  class="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-normal text-slate-700"
+                >
+                  Archived
+                </span>
+              {/if}
             </td>
             <td class="px-4 py-3">
               <span

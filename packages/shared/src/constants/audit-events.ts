@@ -21,6 +21,10 @@ export const AuditEvent = {
   CREDENTIAL_DEPENDENCY_ARCHIVED: 'credential.dependency_archived',
   CREDENTIAL_DEPENDENCY_UPDATED: 'credential.dependency_updated',
   CREDENTIAL_LIFECYCLE_UPDATED: 'credential.lifecycle_updated',
+  // Story 28.5 AC2/AC3 — soft-archive/unarchive of a secret itself (distinct from
+  // CREDENTIAL_DEPENDENCY_ARCHIVED, which archives one dependency row).
+  CREDENTIAL_ARCHIVED: 'credential.archived',
+  CREDENTIAL_UNARCHIVED: 'credential.unarchived',
   CREDENTIAL_BULK_IMPORT_INITIATED: 'credential.bulk_import_initiated',
   CREDENTIAL_BULK_IMPORT_CONFIRMED: 'credential.bulk_import_confirmed',
   ONBOARDING_COMPLETED: 'onboarding.completed',

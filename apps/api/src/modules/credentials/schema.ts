@@ -1,5 +1,6 @@
 import {
   CredentialAccessEntrySchema,
+  CredentialArchiveStateSchema,
   CredentialDependencySchema,
   CredentialDetailSchema,
   CredentialFieldsValueSchema,
@@ -16,6 +17,10 @@ import {
 } from '@project-vault/shared'
 import { z } from 'zod/v4'
 import { paginatedListMetaFields } from '../../lib/api-contracts.js'
+// Story 28.5 AC2/AC3: shared 409 block-response shapes — reused verbatim from the project
+// archival precedent (17.1 AC-19/4.4 ADR-4.4-04) so both stub call sites return the exact same
+// shape.
+export { ActiveRotationsErrorSchema, ActiveSharesErrorSchema } from '@project-vault/shared'
 
 function rotationScheduleRefine(val: { rotationSchedule?: string | null }, ctx: z.RefinementCtx) {
   if (typeof val.rotationSchedule === 'string') {
@@ -146,8 +151,13 @@ export const ListCredentialsQuerySchema = z
     expiresWithin: z.coerce.number().int().min(1).max(3650).default(30),
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(20),
+    // Story 28.5 AC5: mirrors GET /projects' own includeArchived precedent (optional, coerced
+    // boolean, defaults to false via the same post-parse transform shape as
+    // ListDependenciesQuerySchema below).
+    includeArchived: z.coerce.boolean().optional(),
   })
   .strict()
+  .transform((val) => ({ ...val, includeArchived: val.includeArchived ?? false }))
   .meta({ id: 'ListCredentialsQuery' })
 export const MAX_CREDENTIAL_LIST_OFFSET = 10_000
 
@@ -320,6 +330,11 @@ export const CredentialLifecycleResponseSchema = z
     }),
   })
   .meta({ id: 'CredentialLifecycleResponse' })
+
+// Story 28.5 AC2/AC3: archive/unarchive response.
+export const CredentialArchiveResponseSchema = z
+  .object({ data: CredentialArchiveStateSchema })
+  .meta({ id: 'CredentialArchiveResponse' })
 
 export const CredentialAccessListResponseSchema = z
   .object({

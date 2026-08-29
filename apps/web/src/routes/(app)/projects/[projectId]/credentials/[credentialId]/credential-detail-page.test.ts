@@ -15,6 +15,9 @@ const createExternalCredentialShareMock = vi.hoisted(() => vi.fn())
 const revokeCredentialShareMock = vi.hoisted(() => vi.fn())
 const dismissRotationRecommendedNudgeMock = vi.hoisted(() => vi.fn())
 const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
+// Story 28.5 AC6.
+const archiveCredentialMock = vi.hoisted(() => vi.fn())
+const unarchiveCredentialMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$app/navigation', () => ({ invalidateAll: invalidateAllMock }))
 
@@ -37,6 +40,8 @@ vi.mock('$lib/api/credentials.js', async () => {
     parseRevealedFields: actual.parseRevealedFields,
     isFieldsValue: actual.isFieldsValue,
     listCredentialDependencies: listCredentialDependenciesMock,
+    archiveCredential: archiveCredentialMock,
+    unarchiveCredential: unarchiveCredentialMock,
   }
 })
 
@@ -67,6 +72,7 @@ const CREDENTIAL = {
   cacheable: true,
   currentVersionNumber: 3,
   updatedAt: '2026-07-01T00:00:00.000Z',
+  archivedAt: null as string | null,
 }
 
 function baseData(overrides: Record<string, unknown> = {}) {
@@ -88,6 +94,128 @@ function baseData(overrides: Record<string, unknown> = {}) {
     ...overrides,
   }
 }
+
+describe('credential detail +page.svelte — archive/unarchive (Story 28.5 AC6)', () => {
+  afterEach(() => {
+    cleanup()
+    vi.clearAllMocks()
+    vi.restoreAllMocks()
+  })
+
+  it('a project-owner sees the Archive button; a member does not', () => {
+    render(CredentialDetailPage, {
+      props: { data: baseData({ project: { role: 'owner' } }) },
+    })
+    expect(screen.getByRole('button', { name: /archive secret/i })).toBeTruthy()
+
+    cleanup()
+    render(CredentialDetailPage, {
+      props: { data: baseData({ project: { role: 'member' } }) },
+    })
+    expect(screen.queryByRole('button', { name: /archive secret/i })).toBeNull()
+  })
+
+  it('an org-owner (not project owner) also sees the Archive button', () => {
+    render(CredentialDetailPage, {
+      props: { data: baseData({ orgRole: 'owner', project: { role: 'member' } }) },
+    })
+    expect(screen.getByRole('button', { name: /archive secret/i })).toBeTruthy()
+  })
+
+  it('archives the secret after confirmation and refreshes', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    archiveCredentialMock.mockResolvedValue({
+      id: credentialId,
+      name: CREDENTIAL.name,
+      archivedAt: '2026-08-29T00:00:00.000Z',
+      isArchived: true,
+    })
+    render(CredentialDetailPage, {
+      props: { data: baseData({ project: { role: 'owner' } }) },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: /archive secret/i }))
+
+    expect(archiveCredentialMock).toHaveBeenCalledWith(expect.anything(), projectId, credentialId)
+    expect(invalidateAllMock).toHaveBeenCalled()
+  })
+
+  it('does not archive when the confirm dialog is dismissed', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(CredentialDetailPage, {
+      props: { data: baseData({ project: { role: 'owner' } }) },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: /archive secret/i }))
+
+    expect(archiveCredentialMock).not.toHaveBeenCalled()
+  })
+
+  it('shows an inline active_shares error and does not treat the secret as archived', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    archiveCredentialMock.mockRejectedValue(
+      new ApiClientError(
+        409,
+        { error: 'active_shares', shareIds: ['dddddddd-dddd-4ddd-8ddd-dddddddddddd'] },
+        'active_shares'
+      )
+    )
+    render(CredentialDetailPage, {
+      props: { data: baseData({ project: { role: 'owner' } }) },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: /archive secret/i }))
+
+    expect(screen.getByText(/1 active share/i)).toBeTruthy()
+    expect(invalidateAllMock).not.toHaveBeenCalled()
+    // The button must stay clickable, not stuck disabled (edge/failure case).
+    const archiveButton = screen.getByRole('button', {
+      name: /archive secret/i,
+    }) as HTMLButtonElement
+    expect(archiveButton.disabled).toBe(false)
+  })
+
+  it('shows the archived banner and an Unarchive button for an already-archived secret, and disables mutating controls', () => {
+    render(CredentialDetailPage, {
+      props: {
+        data: baseData({
+          project: { role: 'owner' },
+          credential: { ...CREDENTIAL, archivedAt: '2026-08-29T00:00:00.000Z' },
+        }),
+      },
+    })
+
+    expect(screen.getByText(/this secret is archived/i)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /unarchive/i })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^archive secret$/i })).toBeNull()
+    const saveLifecycleButton = screen.getByRole('button', {
+      name: /save lifecycle/i,
+    }) as HTMLButtonElement
+    expect(saveLifecycleButton.disabled).toBe(true)
+  })
+
+  it('unarchives the secret and refreshes', async () => {
+    unarchiveCredentialMock.mockResolvedValue({
+      id: credentialId,
+      name: CREDENTIAL.name,
+      archivedAt: null,
+      isArchived: false,
+    })
+    render(CredentialDetailPage, {
+      props: {
+        data: baseData({
+          project: { role: 'owner' },
+          credential: { ...CREDENTIAL, archivedAt: '2026-08-29T00:00:00.000Z' },
+        }),
+      },
+    })
+
+    await fireEvent.click(screen.getByRole('button', { name: /unarchive/i }))
+
+    expect(unarchiveCredentialMock).toHaveBeenCalledWith(expect.anything(), projectId, credentialId)
+    expect(invalidateAllMock).toHaveBeenCalled()
+  })
+})
 
 describe('credential detail +page.svelte', () => {
   it('renders accessible, always-visible contextual help for lifecycle and dependency fields', async () => {

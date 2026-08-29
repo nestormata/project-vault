@@ -6,6 +6,7 @@ import { AuditEvent, normalizeFieldKey } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { credentialExistsInProject } from '../credentials/db-helpers.js'
+import { isCredentialArchived } from '../credentials/archive-guards.js'
 import {
   attributeKeys as declaredAdapterAttributeKeys,
   formatBoundedRevealValue,
@@ -108,6 +109,10 @@ export type CreateShareInput = {
 
 export type CreateShareResult =
   | { status: 'credential_not_found' }
+  // Story 28.5 AC4: the credential itself is archived — a distinct 410, checked after existence
+  // but before any other business validation, so no share can ever be created against an
+  // archived secret.
+  | { status: 'credential_archived' }
   | { status: 'self_share' }
   | { status: 'recipient_not_found' }
   | { status: 'recipient_inactive' }
@@ -279,6 +284,10 @@ export async function createCredentialShare(
     projectId: input.projectId,
   })
   if (!exists) return { status: 'credential_not_found' }
+
+  // Story 28.5 AC4: share creation is a mutation of the credential's own state — an archived
+  // secret must reject with 410 before any other business validation runs.
+  if (await isCredentialArchived(tx, input.credentialId)) return { status: 'credential_archived' }
 
   // AC-2: self-share is rejected — sharing with yourself has no purpose.
   if (input.recipientUserId === input.sharedByUserId) return { status: 'self_share' }

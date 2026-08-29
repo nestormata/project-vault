@@ -16,6 +16,7 @@ import {
   rejectIfProjectNotVisible,
 } from '../credentials/routes.js'
 import { credentialExistsInProject } from '../credentials/db-helpers.js'
+import { CREDENTIAL_ARCHIVED_ERROR } from '../credentials/archive-guards.js'
 import {
   createOrgAdminNotificationEntries,
   dispatchDirectEmailNotification,
@@ -181,6 +182,10 @@ function createShareErrorResponse(
   if (result.status === 'credential_not_found') {
     return reply.status(404).send(CREDENTIAL_NOT_FOUND)
   }
+  // Story 28.5 AC4: the credential itself is archived.
+  if (result.status === 'credential_archived') {
+    return reply.status(410).send(CREDENTIAL_ARCHIVED_ERROR)
+  }
   if (result.status === 'self_share') {
     return reply
       .status(400)
@@ -218,6 +223,10 @@ function createExternalShareErrorResponse(
 ): unknown {
   if (result.status === 'credential_not_found') {
     return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+  }
+  // Story 28.5 AC4: the credential itself is archived.
+  if (result.status === 'credential_archived') {
+    return reply.status(410).send(CREDENTIAL_ARCHIVED_ERROR)
   }
   if (
     result.status === 'unknown_field_key' ||
@@ -525,6 +534,7 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
+        410: ApiErrorSchema,
         422: ApiErrorSchema,
         429: ApiErrorSchema,
       },
