@@ -225,6 +225,24 @@ describe('AppShell.svelte', () => {
     expect(gotoMock).toHaveBeenCalledWith('/login?reason=logged-out')
   })
 
+  // Story 29.3 AC11: extensionNavItems threading, mirroring hasUiPanelExtension's existing prop
+  // path exactly — AppShell forwards it straight to PrimaryNav with no transformation.
+  it('forwards extensionNavItems through to PrimaryNav, rendering the manifest-declared link', () => {
+    render(AppShell, {
+      props: {
+        user: baseUser(),
+        children: childrenSnippet(),
+        hidePrimaryNav: false,
+        extensionNavItems: [
+          { id: 'settings-page', label: 'Extension Settings', href: '/ext/settings' },
+        ],
+      },
+    })
+
+    const link = screen.getByRole('link', { name: /extension settings/i })
+    expect(link.getAttribute('href')).toBe('/ext/settings')
+  })
+
   it('renders children in the main content area', () => {
     render(AppShell, {
       props: { user: baseUser(), children: childrenSnippet('unique child content') },

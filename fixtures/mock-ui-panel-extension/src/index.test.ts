@@ -9,6 +9,8 @@ import mockUiPanelExtension, {
   TEST_ACTION_KIND,
   TEST_ACTION_NOTE,
   TEST_DATA_PATH,
+  TEST_NAV_CHILD_ITEM_ID,
+  TEST_NAV_ITEM_ID,
   THROW_TRIGGER_SLOT,
 } from './index.js'
 
@@ -45,6 +47,18 @@ describe('mock-ui-panel-extension (Story 25.1 Task 7)', () => {
       '/api/v1/projects',
       '/api/v1/projects/:id',
       TEST_DATA_PATH,
+    ])
+  })
+
+  it('Story 29.3 AC13: declares a top-level navItems entry plus one nested child', () => {
+    expect(mockUiPanelExtension.manifest.navItems).toEqual([
+      { id: TEST_NAV_ITEM_ID, label: 'Mock Extension Settings', href: '/dashboard', icon: 'grid' },
+      {
+        id: TEST_NAV_CHILD_ITEM_ID,
+        label: 'Mock Child Page',
+        href: '/health',
+        parentId: TEST_NAV_ITEM_ID,
+      },
     ])
   })
 

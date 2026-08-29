@@ -67,7 +67,50 @@ export type ExtensionManifest = {
    * hook's existence (Story 25.12 AC3).
    */
   panelDataPaths?: string[]
+  /**
+   * Story 29.3 AC1 — optional declaration of top-level (and one-level-nested) navigation entries
+   * this extension contributes to PV's own primary nav. Deliberately NOT gated behind the
+   * `'ui-panel'` capability, unlike every other optional array field above (`uiPanelSlots`/
+   * `moduleActions`/`panelDataPaths`): those fields are specifically about the UI-panel
+   * *rendering* mechanism, while a nav entry is a general-purpose capability — a link to anywhere
+   * in PV, potentially contributed by an extension that only implements `'auth-provider'` or
+   * `'notification-channel'`. Do not "fix" this into matching the other fields' capability gate;
+   * this divergence is intentional (see this story's Dev Notes). Omitted (or `undefined`) is
+   * fully backward-compatible: the host renders zero extension-contributed nav entries. When
+   * present, must be a non-empty array of unique-`id` items, capped at `MAX_NAV_ITEMS`, each
+   * validated by `registerExtension()`'s `validateNavItemsShape()` — see that function for the
+   * exact id/href/icon/label/parentId rules (AC2-AC6).
+   */
+  navItems?: ExtensionNavItem[]
 }
+
+/**
+ * Story 29.3 AC1 — a single manifest-declared nav entry. `parentId`, when present, must reference
+ * another `id` in the SAME `navItems` array (exactly one level of nesting — a child may not itself
+ * be a parent, AC3). `label` renders via ordinary Svelte text interpolation (auto-escaped, never
+ * `{@html}`) and is never routed through Paraglide — it is the extension author's own text, not
+ * the host's to translate (AC4). `href` is validated as a same-origin relative path (AC5) because
+ * it is rendered as a live, unsanitized `<a href>` attribute. `icon`, when present, must be one of
+ * `NAV_ITEM_ICON_TOKENS` — a closed set the host owns and maps to its own glyphs, never freeform
+ * markup or a URL (AC6).
+ */
+export type ExtensionNavItem = {
+  id: string
+  label: string
+  href: string
+  icon?: NavItemIconToken
+  parentId?: string
+}
+
+/**
+ * Story 29.3 AC6 — the closed set of icon tokens a manifest-declared `navItems` entry's `icon`
+ * field may use. The host maps each token to one of its own pre-existing icon glyphs at render
+ * time; no SVG, image URL, or other extension-supplied visual content is ever accepted. Extending
+ * this set is a deliberate, additive-minor `EXTENSION_API_VERSION` change — never a freeform
+ * string, even for a "just this once" new extension request (see this story's Dev Notes).
+ */
+export const NAV_ITEM_ICON_TOKENS = ['puzzle-piece', 'link', 'grid'] as const
+export type NavItemIconToken = (typeof NAV_ITEM_ICON_TOKENS)[number]
 
 /**
  * Story 25.2 AC1 — the charset a declared `uiPanelSlots` entry must match. Lowercase
@@ -113,6 +156,42 @@ export const PANEL_DATA_PATH_PATTERN = /^\/api\/v1(?:\/(?:[a-z0-9-]+|:[a-zA-Z][a
  * manifest from declaring an unbounded `panelDataPaths` list. Matches `MAX_UI_PANEL_SLOTS`/
  * `MAX_MODULE_ACTIONS`'s precedent exactly. */
 export const MAX_PANEL_DATA_PATHS = 32
+
+/**
+ * Story 29.3 AC2 — the charset a declared `navItems[].id` entry must match. Identical shape to
+ * `UI_PANEL_SLOT_NAME_PATTERN`/`MODULE_ACTION_NAME_PATTERN` (lowercase alphanumerics and hyphens
+ * only, 1-64 chars) but a separately-named constant — a different namespace, same shape, never
+ * conflated with slot/action names.
+ */
+export const NAV_ITEM_ID_PATTERN = /^[a-z0-9-]{1,64}$/
+
+/**
+ * Story 29.3 AC5 — `href` must be a same-origin relative path: starts with exactly one `/`, no
+ * scheme, no `//` protocol-relative prefix, no whitespace/control characters. This is a real
+ * security control, not decoration: an extension-declared `href` renders as a live, unsanitized
+ * `<a href>` attribute with zero sanitization step in between (unlike DOMPurify-sanitized panel
+ * HTML) — a typo'd `javascript:`/`data:` scheme or an absolute URL would otherwise be a real,
+ * clickable link the browser executes/navigates on click.
+ *
+ * Code-review fix (2026-08-29): the leading `(?!\/)` negative lookahead is load-bearing, not
+ * decorative — without it, `[a-zA-Z0-9/_-]*` after the first `/` happily matches a SECOND `/`,
+ * so a dot-free protocol-relative href like `//evilhost` (a single-label hostname, resolvable via
+ * DNS search suffix/`/etc/hosts` on plenty of networks) previously passed this pattern despite
+ * AC5's explicit "no `//` protocol-relative prefix" requirement. The existing regression test only
+ * ever exercised `//evil.example.com`, which happened to be rejected for an unrelated reason (`.`
+ * is not in the allowed charset) and never verified the actual protocol-relative-prefix rule.
+ */
+export const NAV_ITEM_HREF_PATTERN = /^\/(?!\/)[a-zA-Z0-9/_-]*$/
+
+/** Story 29.3 AC2 — generous for any real extension, small enough to bound a hostile/broken
+ * manifest from declaring an unbounded `navItems` list. Matches `MAX_UI_PANEL_SLOTS`/
+ * `MAX_MODULE_ACTIONS`/`MAX_PANEL_DATA_PATHS`'s identical cap precedent. */
+export const MAX_NAV_ITEMS = 32
+
+/** Story 29.3 AC4 — `label` is raw, host-rendered display text (auto-escaped by Svelte's ordinary
+ * text interpolation, never `{@html}`); this cap bounds a hostile/broken manifest from declaring
+ * an unreasonably long nav label, not a security control in itself. */
+export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 
 /**
  * AC1/AC7 — this package's own contract version. Must be bumped in lockstep with any change
@@ -171,7 +250,13 @@ export const MAX_PANEL_DATA_PATHS = 32
 // backward-compatible fallback (`DEFAULT_PANEL_DATA_PATHS`) when omitted — no existing
 // extension's manifest shape changes, and the floor stays `>=3.0.0` so every already-shipped
 // extension keeps loading unmodified regardless.
-export const EXTENSION_API_VERSION = '3.8.0'
+// Story 29.3 AC8/Task 1 — bumped as an additive-minor (3.8.0 -> 3.9.0): `ExtensionManifest`
+// gains `navItems?: ExtensionNavItem[]`, a purely-additive optional field with no effect on any
+// manifest that omits it — no existing extension's manifest shape changes, and the floor stays
+// `>=3.0.0` so every already-shipped extension (including any real, currently-deployed
+// CentralizeMe build) keeps loading unmodified regardless. Confirmed against `main` at
+// implementation time: 3.8.0 was still the latest claimed version, so 3.9.0 was free.
+export const EXTENSION_API_VERSION = '3.9.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

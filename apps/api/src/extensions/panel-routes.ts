@@ -10,6 +10,7 @@ import { env } from '../config/env.js'
 import {
   isUiPanelCapabilityDeclared,
   renderExtensionPanel,
+  resolveExtensionNavItems,
   resolveKnownUiPanelSlots,
 } from '../lib/extension-panel.js'
 import {
@@ -221,6 +222,23 @@ function mapModuleActionOutcomeToResponse(result: ModuleActionOutcome): {
   return { status: fixed.status, body: { code: fixed.code, message: fixed.message } }
 }
 
+/**
+ * Story 29.3 AC1/AC9 — the OpenAPI-facing shape for one manifest-declared `navItems` entry.
+ * Mirrors `ExtensionNavItem` (`@project-vault/extension-api`) exactly; `icon` is deliberately a
+ * plain optional string here (not a literal-union enum) for the same reason
+ * `ExtensionPanelQuerySchema`'s own comment documents — this app's global Zod validator rejects a
+ * schema-level format failure with an opaque 500, not a controlled 400/response-shape mismatch;
+ * actual token validation already happened at `registerExtension()` time (AC6), so by the time a
+ * value reaches this schema it is trusted.
+ */
+const ExtensionNavItemSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  href: z.string(),
+  icon: z.string().optional(),
+  parentId: z.string().optional(),
+})
+
 const ExtensionNavSchema = z.object({
   // Story 25.1 AC5: `null` when no nav entry should be shown at all (no extension loaded, or the
   // loaded extension does not declare the `'ui-panel'` capability) — never a dead link by
@@ -228,6 +246,12 @@ const ExtensionNavSchema = z.object({
   // known-slots list (`resolveKnownUiPanelSlots(status)[0]`) — still exactly one slot reported;
   // enumerating multiple nav entries per declared slot is deferred to Story 25.8.
   uiPanelSlot: z.string().nullable(),
+  // Story 29.3 AC9 — ALWAYS present ([] when none declared or no extension loaded, never
+  // undefined), matching `allowedDataPaths`'s own "always present" convention rather than
+  // `actionEndpoint`'s "present only when applicable" one — an empty nav-items list is a
+  // completely ordinary, non-degraded state. Resolved independently of `uiPanelSlot`/the
+  // `'ui-panel'` capability (AC1's independence decision) — never gated behind either.
+  navItems: z.array(ExtensionNavItemSchema),
 })
 
 /**
@@ -426,7 +450,10 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
       // first entry, instead of the old KNOWN_UI_PANEL_SLOTS[0] constant reference. Still
       // exactly one slot reported — no per-declared-slot nav enumeration (deferred to 25.8).
       const knownSlots = resolveKnownUiPanelSlots(getExtensionStatus(), req.log)
-      return { uiPanelSlot: isUiPanelCapabilityDeclared() ? knownSlots[0] : null }
+      // Story 29.3 AC9: resolved unconditionally, independent of isUiPanelCapabilityDeclared() —
+      // navItems is never gated behind the 'ui-panel' capability (AC1).
+      const navItems = resolveExtensionNavItems(getExtensionStatus(), req.log)
+      return { uiPanelSlot: isUiPanelCapabilityDeclared() ? knownSlots[0] : null, navItems }
     },
   })
 }

@@ -267,3 +267,40 @@ export async function spawnIsolatedWebProcess(options: {
   await waitForHttp(`http://localhost:${options.port}/login`)
   return { process: child, port: options.port }
 }
+
+/**
+ * Story 29.3 (jscpd fix) — the full-stack, mock-extension-loaded isolated-stack setup shared by
+ * J25 (Story 29.2 action dispatch) and J27 (Story 29.3 nav items): create the isolated DB, spawn
+ * `apps/api` with `VAULT_EXTENSIONS_PACKAGE` pointed at `@project-vault/mock-ui-panel-extension`,
+ * init the vault, then spawn `apps/web`. Previously each journey duplicated this exact 5-call
+ * sequence verbatim (jscpd flagged the clone when J27 was added) — extracted here rather than
+ * whitelisted, since (unlike J21/J22's genuinely-irreducible Playwright `beforeAll`/`afterAll`
+ * scaffolding) every one of these calls was already a shared helper, so only the glue sequencing
+ * them was duplicated.
+ */
+export async function setupMockExtensionIsolatedStack(options: {
+  apiPort: number
+  webPort: number
+  dbName: string
+  apiLogLabel: string
+  webLogLabel: string
+  vaultPassphrase: string
+  debugLogLevelEnvVar: string
+}): Promise<{ apiProcess: ChildProcess; webHandle: WebHandle }> {
+  await createIsolatedDatabase(options.dbName)
+  const apiProcess = await spawnIsolatedApiProcess({
+    port: options.apiPort,
+    dbName: options.dbName,
+    webPort: options.webPort,
+    logLabel: options.apiLogLabel,
+    logLevelEnvVar: options.debugLogLevelEnvVar,
+    extraEnv: { VAULT_EXTENSIONS_PACKAGE: '@project-vault/mock-ui-panel-extension' },
+  })
+  await initIsolatedVault(options.apiPort, options.vaultPassphrase)
+  const webHandle = await spawnIsolatedWebProcess({
+    port: options.webPort,
+    apiPort: options.apiPort,
+    logLabel: options.webLogLabel,
+  })
+  return { apiProcess, webHandle }
+}

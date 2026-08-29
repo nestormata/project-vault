@@ -10,6 +10,7 @@ import {
   __resetUiPanelSlotsFallbackWarningForTests,
   isUiPanelCapabilityDeclared,
   renderExtensionPanel,
+  resolveExtensionNavItems,
   resolveKnownUiPanelSlots,
   resolvePanelDataPaths,
   type RenderExtensionPanelDeps,
@@ -32,6 +33,13 @@ function loadedState(overrides: {
   uiPanelSlots?: string[]
   moduleActions?: string[]
   panelDataPaths?: string[]
+  navItems?: Array<{
+    id: string
+    label: string
+    href: string
+    icon?: string
+    parentId?: string
+  }>
   name?: string
   loadedAt?: string
 }): ExtensionState {
@@ -44,6 +52,7 @@ function loadedState(overrides: {
       ...(overrides.uiPanelSlots ? { uiPanelSlots: overrides.uiPanelSlots } : {}),
       ...(overrides.moduleActions ? { moduleActions: overrides.moduleActions } : {}),
       ...(overrides.panelDataPaths ? { panelDataPaths: overrides.panelDataPaths } : {}),
+      ...(overrides.navItems ? { navItems: overrides.navItems as never } : {}),
     },
     loadedAt: overrides.loadedAt ?? new Date().toISOString(),
     hooks: overrides.uiPanel ? { uiPanel: overrides.uiPanel } : {},
@@ -999,6 +1008,65 @@ describe('resolvePanelDataPaths (Story 25.12 AC2)', () => {
     })
     resolvePanelDataPaths(reloaded, logger)
     expect(logger.warn).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('resolveExtensionNavItems (Story 29.3 AC9)', () => {
+  beforeEach(() => {
+    __resetExtensionStateForTests()
+  })
+
+  afterEach(() => {
+    __resetExtensionStateForTests()
+  })
+
+  it('returns [] when no extension is loaded', () => {
+    const logger = silentLogger()
+    expect(resolveExtensionNavItems(undefined, logger)).toEqual([])
+  })
+
+  it('returns [] when the loaded extension omits navItems', () => {
+    const status = loadedState({ capabilities: ['ui-panel'] })
+    const logger = silentLogger()
+    expect(resolveExtensionNavItems(status, logger)).toEqual([])
+  })
+
+  it('returns the exact declared list when present, regardless of ui-panel capability', () => {
+    const navItems = [
+      { id: 'settings-page', label: 'Settings', href: '/ext/settings' },
+      { id: 'child', label: 'Child', href: '/ext/settings/child', parentId: 'settings-page' },
+    ]
+    const status = loadedState({ capabilities: ['notification-channel'], navItems })
+    const logger = silentLogger()
+    expect(resolveExtensionNavItems(status, logger)).toEqual(navItems)
+  })
+
+  it('resolves fresh per call — a mid-lifetime reload with a different declared list is reflected on the very next call, not memoized', () => {
+    const logger = silentLogger()
+    const first = loadedState({
+      capabilities: ['ui-panel'],
+      navItems: [{ id: 'a', label: 'A', href: '/ext/a' }],
+      loadedAt: RELOAD_FIRST_LOADED_AT,
+    })
+    expect(resolveExtensionNavItems(first, logger)).toEqual([
+      { id: 'a', label: 'A', href: '/ext/a' },
+    ])
+
+    const second = loadedState({
+      capabilities: ['ui-panel'],
+      navItems: [{ id: 'b', label: 'B', href: '/ext/b' }],
+      loadedAt: RELOAD_SECOND_LOADED_AT,
+    })
+    expect(resolveExtensionNavItems(second, logger)).toEqual([
+      { id: 'b', label: 'B', href: '/ext/b' },
+    ])
+  })
+
+  it('never warns — there is no fallback-default state to log (AC9)', () => {
+    const logger = silentLogger()
+    resolveExtensionNavItems(undefined, logger)
+    resolveExtensionNavItems(loadedState({ capabilities: ['ui-panel'] }), logger)
+    expect(logger.warn).not.toHaveBeenCalled()
   })
 })
 

@@ -3,6 +3,7 @@ import { getOnboardingStatus } from '$lib/api/onboarding.js'
 import { listProjects } from '$lib/api/projects.js'
 import { getUsersMe } from '$lib/api/inbox.js'
 import { getExtensionNav } from '$lib/api/extension-panel.js'
+import type { ResolvedExtensionNavItem } from '$lib/api/extension-panel.js'
 import { getThemes } from '$lib/api/themes.js'
 import { isOrphaned, resolveAppliedThemeWithOrgDefault } from '$lib/theme/apply-theme.js'
 import type { LayoutServerLoad } from './$types.js'
@@ -53,6 +54,32 @@ async function resolveThemeLoad(fetchFn: typeof fetch): Promise<ThemeLoadResult>
   }
 }
 
+type ExtensionNavLoadResult = {
+  hasUiPanelExtension: boolean
+  extensionNavItems: ResolvedExtensionNavItem[]
+}
+
+const FAILED_EXTENSION_NAV_LOAD: ExtensionNavLoadResult = {
+  hasUiPanelExtension: false,
+  extensionNavItems: [],
+}
+
+// Story 25.1 AC5: the nav entry does not appear at all if no extension is loaded, or the loaded
+// extension's hooks have no uiPanel — fails open to "no nav entry" (never a dead link) on a fetch
+// failure, same fail-open convention as onboarding/projects/unreadCount in `load` below.
+// Story 29.3 AC11: extended to also resolve extensionNavItems from the SAME fetch/try-catch — not
+// a second network call — defaulting to [] on failure, identical fail-open convention. Extracted
+// into its own function (mirroring `resolveThemeLoad` above) purely to keep `load`'s own
+// cyclomatic complexity within this repo's lint budget.
+async function resolveExtensionNavLoad(fetchFn: typeof fetch): Promise<ExtensionNavLoadResult> {
+  try {
+    const nav = await getExtensionNav(fetchFn)
+    return { hasUiPanelExtension: nav.uiPanelSlot !== null, extensionNavItems: nav.navItems ?? [] }
+  } catch {
+    return FAILED_EXTENSION_NAV_LOAD
+  }
+}
+
 export const load: LayoutServerLoad = async ({ locals, fetch }) => {
   if (!locals.user) throw redirect(303, '/login')
 
@@ -88,17 +115,7 @@ export const load: LayoutServerLoad = async ({ locals, fetch }) => {
   }
 
   const themeLoad = await resolveThemeLoad(fetch)
-
-  // Story 25.1 AC5: the nav entry does not appear at all if no extension is loaded, or the
-  // loaded extension's hooks have no uiPanel — fails open to "no nav entry" (never a dead link)
-  // on a fetch failure, same fail-open convention as onboarding/projects/unreadCount above.
-  let hasUiPanelExtension = false
-  try {
-    const nav = await getExtensionNav(fetch)
-    hasUiPanelExtension = nav.uiPanelSlot !== null
-  } catch {
-    hasUiPanelExtension = false
-  }
+  const extensionNavLoad = await resolveExtensionNavLoad(fetch)
 
   return {
     user: locals.user,
@@ -106,7 +123,7 @@ export const load: LayoutServerLoad = async ({ locals, fetch }) => {
     projects: projects.items,
     importRouteLive: ['owner', 'admin'].includes(locals.user.orgRole),
     unreadCount,
-    hasUiPanelExtension,
+    ...extensionNavLoad,
     ...themeLoad,
   }
 }

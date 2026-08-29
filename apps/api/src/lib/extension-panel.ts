@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
-import type { UIPanelContext } from '@project-vault/extension-api'
+import type { ExtensionNavItem, UIPanelContext } from '@project-vault/extension-api'
 import { OperationalEvent, resolveAppliedThemeWithOrgDefault } from '@project-vault/shared'
 import type { Tx } from '@project-vault/db'
 import { organizations, users } from '@project-vault/db/schema'
@@ -140,6 +140,29 @@ export function resolveKnownUiPanelSlots(
 
   warnUiPanelSlotsFallbackOnce(status, logger)
   return DEFAULT_UI_PANEL_SLOTS
+}
+
+/**
+ * Story 29.3 AC9 — derives the effective `navItems` list for `GET /extensions/nav`'s widened
+ * response, freshly on every call (never memoized/cached at module scope — mirrors
+ * `resolveKnownUiPanelSlots`/`resolvePanelDataPaths`'s own freshness discipline exactly, so a
+ * mid-process extension reload's new `navItems` list is reflected on the very next request).
+ *
+ * Unlike `resolveKnownUiPanelSlots`/`resolvePanelDataPaths`, there is NO fallback-to-legacy-
+ * default branch to warn about: there is no pre-existing hardcoded nav-items list this field
+ * replaces, so "declared or empty" are the only two states — no separate "fallback" state to log.
+ * Also unlike every other `resolve*` helper in this file, this one is deliberately independent of
+ * `isUiPanelCapabilityDeclared()`/the `'ui-panel'` capability (AC1's independence decision) — a
+ * loaded extension's `navItems` are resolved regardless of which capabilities it declares.
+ */
+export function resolveExtensionNavItems(
+  status: ExtensionState | undefined,
+  // Story 29.3 AC9 — logger accepted to mirror resolveKnownUiPanelSlots/resolvePanelDataPaths's
+  // own signature exactly (uniform call-site shape), even though this function never logs.
+  _logger: PanelLogger
+): ExtensionNavItem[] {
+  if (status?.status !== 'loaded') return []
+  return status.manifest.navItems ?? []
 }
 
 /**

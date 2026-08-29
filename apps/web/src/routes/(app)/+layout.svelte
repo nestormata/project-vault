@@ -107,6 +107,7 @@
     hidePrimaryNav={!onboardingDone}
     {unreadCount}
     hasUiPanelExtension={data.hasUiPanelExtension}
+    extensionNavItems={data.extensionNavItems}
     onsearch={() => {
       searchOpen = true
     }}

@@ -310,4 +310,45 @@ describe('/(app) +layout.server.ts', () => {
       expect(result.hasUiPanelExtension).toBe(false)
     })
   })
+
+  describe('Story 29.3 AC11: extensionNavItems threading', () => {
+    it('defaults to [] when the nav response omits navItems (degraded/legacy shape)', async () => {
+      getOnboardingStatusMock.mockResolvedValue({ completed: true })
+      getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
+      getExtensionNavMock.mockResolvedValue({ uiPanelSlot: null })
+
+      const result = await load(makeEvent(baseUser))
+
+      expect(result.extensionNavItems).toEqual([])
+    })
+
+    it('returns the resolved navItems list from the same nav fetch used for hasUiPanelExtension', async () => {
+      getOnboardingStatusMock.mockResolvedValue({ completed: true })
+      getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
+      const navItems = [
+        { id: 'settings-page', label: 'Extension Settings', href: '/ext/settings' },
+        {
+          id: 'settings-child',
+          label: 'Child',
+          href: '/ext/settings/child',
+          parentId: 'settings-page',
+        },
+      ]
+      getExtensionNavMock.mockResolvedValue({ uiPanelSlot: null, navItems })
+
+      const result = await load(makeEvent(baseUser))
+
+      expect(result.extensionNavItems).toEqual(navItems)
+    })
+
+    it('fails open to [] (never crashes the layout load) when the nav fetch fails — same try/catch as hasUiPanelExtension', async () => {
+      getOnboardingStatusMock.mockResolvedValue({ completed: true })
+      getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
+      getExtensionNavMock.mockRejectedValue(new Error('boom'))
+
+      const result = await load(makeEvent(baseUser))
+
+      expect(result.extensionNavItems).toEqual([])
+    })
+  })
 })

@@ -81,3 +81,162 @@ describe('PrimaryNav.svelte', () => {
     expect(screen.getByRole('link', { name: /^extensión/i })).toBeTruthy()
   })
 })
+
+describe('Story 29.3 AC12: manifest-declared navItems rendering (icon + disclosure)', () => {
+  it('renders a top-level item with no children as a plain link, with no icon element when none is declared', () => {
+    render(PrimaryNav, {
+      props: {
+        extensionNavItems: [
+          { id: 'settings-page', label: 'Extension Settings', href: '/ext/settings' },
+        ],
+      },
+    })
+
+    const link = screen.getByRole('link', { name: /extension settings/i })
+    expect(link.getAttribute('href')).toBe('/ext/settings')
+  })
+
+  it('renders a known icon token for a top-level item that declares one', () => {
+    render(PrimaryNav, {
+      props: {
+        extensionNavItems: [
+          {
+            id: 'settings-page',
+            label: 'Extension Settings',
+            href: '/ext/settings',
+            icon: 'grid',
+          },
+        ],
+      },
+    })
+
+    expect(document.querySelector('[data-nav-icon="grid"]')).toBeTruthy()
+  })
+
+  it('renders no icon element for an item with an unrecognized icon token (render layer must not assume the load-time invariant holds forever)', () => {
+    render(PrimaryNav, {
+      props: {
+        extensionNavItems: [
+          {
+            id: 'settings-page',
+            label: 'Extension Settings',
+            href: '/ext/settings',
+            icon: 'not-a-real-token',
+          },
+        ],
+      },
+    })
+
+    expect(document.querySelector('[data-nav-icon]')).toBeNull()
+  })
+
+  it('renders a keyboard-accessible <details>/<summary> disclosure for an item with children, closed by default', () => {
+    render(PrimaryNav, {
+      props: {
+        extensionNavItems: [
+          { id: 'settings-page', label: 'Extension Settings', href: '/ext/settings' },
+          {
+            id: 'settings-child',
+            label: 'Child Page',
+            href: '/ext/settings/child',
+            parentId: 'settings-page',
+          },
+        ],
+      },
+    })
+
+    const details = document.querySelector('details')
+    expect(details).toBeTruthy()
+    expect(details?.hasAttribute('open')).toBe(false)
+    expect(screen.getAllByText('Extension Settings').length).toBeGreaterThan(0)
+    expect(screen.getByRole('link', { name: 'Child Page' }).getAttribute('href')).toBe(
+      '/ext/settings/child'
+    )
+  })
+
+  it('opens the disclosure and exposes the child link on click', async () => {
+    render(PrimaryNav, {
+      props: {
+        extensionNavItems: [
+          { id: 'settings-page', label: 'Extension Settings', href: '/ext/settings' },
+          {
+            id: 'settings-child',
+            label: 'Child Page',
+            href: '/ext/settings/child',
+            parentId: 'settings-page',
+          },
+        ],
+      },
+    })
+
+    const summary = document.querySelector('summary')
+    expect(summary).toBeTruthy()
+    await fireEvent.click(summary as Element)
+
+    const details = document.querySelector('details')
+    expect(details?.hasAttribute('open')).toBe(true)
+  })
+
+  // Chrome-driven manual verification (2026-08-29) found this is a real, live-reproducible crash:
+  // the mock fixture's own real navItems declaration (`fixtures/mock-ui-panel-extension/src/
+  // index.ts`) deliberately reuses an existing PV route (`/dashboard`) as its top-level item's
+  // href — nothing in AC2/AC5/AC10 forbids a manifest-declared href from matching one of PV's own
+  // hardcoded nav routes, and it is a plausible real use case (an extension linking to a page PV
+  // itself already has a nav entry for). Before this fix, `PrimaryNav.svelte`'s
+  // `{#each navItems as item (item.href)}` used the item's own `href` as its keyed-each key,
+  // which is only unique by accident — a colliding href threw Svelte's `each_key_duplicate`
+  // exception in a real browser and broke primary-nav rendering (and everything else on the page)
+  // entirely. jsdom's own render path didn't previously exercise this because every prior test's
+  // fixture hrefs were deliberately non-colliding (`/ext/settings`-style).
+  it("does not crash when a manifest-declared top-level item reuses an existing native nav item's href (AC10 does not forbid this)", () => {
+    expect(() =>
+      render(PrimaryNav, {
+        props: {
+          extensionNavItems: [
+            { id: 'mock-ext-settings', label: 'Mock Extension Settings', href: '/dashboard' },
+          ],
+        },
+      })
+    ).not.toThrow()
+
+    // Both the native Dashboard link and the manifest-declared item render distinctly, despite
+    // sharing the same href. (Each link's accessible name concatenates its `hidden sm:inline` +
+    // `sm:hidden` label spans — mirrors this file's other tests' own `/dashboard/i`-style
+    // pattern matching rather than an exact string.)
+    expect(screen.getByRole('link', { name: /^dashboard/i })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /mock extension settings/i })).toBeTruthy()
+  })
+
+  // Code-review regression test (2026-08-29): `validateNavItemsShape()` only enforces `id`
+  // uniqueness across a manifest's navItems, never `href` uniqueness — two sibling children
+  // declared under the same parent (or a child sharing an href with any other item) are legal.
+  // The child-level {#each} block previously keyed by `child.href` (not index), which would
+  // reintroduce the exact each_key_duplicate crash the fix above addressed for top-level items,
+  // one nesting level down.
+  it('does not crash when two sibling children under the same parent declare the same href', () => {
+    expect(() =>
+      render(PrimaryNav, {
+        props: {
+          extensionNavItems: [
+            { id: 'settings-page', label: 'Extension Settings', href: '/ext/settings' },
+            {
+              id: 'settings-child-a',
+              label: 'Child A',
+              href: '/ext/settings/child',
+              parentId: 'settings-page',
+            },
+            {
+              id: 'settings-child-b',
+              label: 'Child B',
+              href: '/ext/settings/child',
+              parentId: 'settings-page',
+            },
+          ],
+        },
+      })
+    ).not.toThrow()
+
+    expect(screen.getByRole('link', { name: 'Child A' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Child B' })).toBeTruthy()
+  })
+})
