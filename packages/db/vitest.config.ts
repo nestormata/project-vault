@@ -31,12 +31,19 @@ export default mergeConfig(baseVitestConfig, {
         'src/extension-db.ts',
         'src/scripts/extension-grants.ts',
       ],
-      thresholds: {
-        lines: 80,
-        branches: 80,
-        functions: 80,
-        statements: 80,
-      },
+      // See apps/api/vitest.config.ts for why this is conditional: CI splits this package's
+      // suite across 2 parallel shards (ci.yml's test-api-db matrix), and each shard's own
+      // coverage percentage is meaningless in isolation. CI_COVERAGE_SHARDED is set only for
+      // that sharded CI step; a local `pnpm test` run always gets the real threshold.
+      // SonarCloud's Quality Gate is the true, merged-coverage enforcement point.
+      thresholds: process.env.CI_COVERAGE_SHARDED
+        ? undefined
+        : {
+            lines: 80,
+            branches: 80,
+            functions: 80,
+            statements: 80,
+          },
     },
   },
 })

@@ -201,21 +201,36 @@ jobs:
         run: pnpm check-vault-action-dist
 
   # Shard 1 of 2 for the slow `pnpm turbo test` workload: apps/api + packages/db.
-  # These two are kept together (not split further) because turbo.json declares an explicit
-  # task dependency (`@project-vault/api#test` dependsOn `@project-vault/db#test`), and because
-  # they're the only packages under test that need a live Postgres connection — packages/agent,
-  # packages/crypto, packages/shared and packages/vault-action reference the literal string
-  # "DATABASE_URL" only in test fixtures (parse-secrets classification), never a real connection.
-  # By test-file count this shard is apps/api (228) + packages/db (40) = 268 files, vs. 212 in
-  # the other shard — not exactly even, but close, and splitting apps/api's own suite further
-  # would mean either two Postgres services racing against the same migrated schema or extra
-  # machinery to shard within a single vitest project, which isn't worth it for this margin.
+  # These two are kept together (not split from each other) because turbo.json declares an
+  # explicit task dependency (`@project-vault/api#test` dependsOn `@project-vault/db#test`), and
+  # because they're the only packages under test that need a live Postgres connection —
+  # packages/agent, packages/crypto, packages/shared and packages/vault-action reference the
+  # literal string "DATABASE_URL" only in test fixtures (parse-secrets classification), never a
+  # real connection. By test-file count this shard is apps/api (228) + packages/db (40) = 268
+  # files, vs. 212 in the other shard — not exactly even, but close.
+  #
+  # Within this shard, the combined apps/api + packages/db suite is further split 2-way via
+  # vitest's own `--shard` flag (matrix below), each leg getting its own isolated Postgres
+  # service so there's no risk of two shards racing against the same migrated schema. This
+  # roughly halves this job's wall-clock time (previously observed running 35-45+ min and
+  # occasionally getting cancelled by the timeout). Coverage thresholds are disabled for this
+  # sharded run (see CI_COVERAGE_SHARDED in apps/api/vitest.config.ts and
+  # packages/db/vitest.config.ts) since each shard only exercises half the suite and would
+  # otherwise fail on an artificially low per-shard coverage number; the `sonar` job below merges
+  # both shards' lcov.info via `lcov --add-tracefile` and SonarCloud's Quality Gate is the real
+  # coverage enforcement point.
   test-api-db:
     name: Test (api + db)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     runs-on: ubuntu-latest
-    # This shard can exceed 35 minutes on a loaded GitHub runner. If it is cancelled before
-    # uploading LCOV, the Sonar job analyzes partial coverage and reports a misleading gate failure.
-    timeout-minutes: 45
+    # Halving the suite per shard should land well under 25 min; this leaves generous headroom
+    # above that estimate rather than the previous single-job 45-minute ceiling that still got
+    # hit on a loaded runner. If it is cancelled before uploading LCOV, the Sonar job analyzes
+    # partial coverage and reports a misleading gate failure.
+    timeout-minutes: 30
     env:
       SUPERUSER_DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
       VAULT_APP_DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
@@ -264,9 +279,13 @@ jobs:
         uses: actions/cache@v6
         with:
           path: .turbo
-          key: ${{ runner.os }}-turbo-${{ github.job }}-${{ github.sha }}
+          # matrix.shard is part of the key: this job id ("test-api-db") is shared by both
+          # matrix legs, and each leg passes a different --shard flag to vitest, so a cache
+          # entry from one shard must never be restored into the other (it would make one leg
+          # silently reuse the wrong half's turbo output).
+          key: ${{ runner.os }}-turbo-${{ github.job }}-${{ matrix.shard }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-turbo-${{ github.job }}-
+            ${{ runner.os }}-turbo-${{ github.job }}-${{ matrix.shard }}-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -288,8 +307,16 @@ jobs:
       - name: Provision local test admin role credential
         run: psql "$SUPERUSER_DATABASE_URL" -v ON_ERROR_STOP=1 -c "ALTER ROLE vault_admin PASSWORD 'password'"
 
+      # --shard=<matrix.shard>/2 splits each package's own test-file list in half (vitest
+      # shards per-project, so apps/api and packages/db are each split independently, not as one
+      # combined pool). Each matrix leg has its own isolated Postgres service (see `services:`
+      # above), so there's no risk of the two shards racing against the same schema.
       - name: Test (with coverage) - api, db
-        run: pnpm turbo test --filter=@project-vault/api --filter=@project-vault/db
+        run: >-
+          pnpm turbo test --filter=@project-vault/api --filter=@project-vault/db --
+          --shard=${{ matrix.shard }}/2
+          --coverage.thresholds.lines=0 --coverage.thresholds.branches=0
+          --coverage.thresholds.functions=0 --coverage.thresholds.statements=0
         env:
           # Must use vault_app, not postgres — the postgres superuser bypasses RLS
           # entirely, which would make the RLS isolation tests pass even if policies
@@ -300,24 +327,30 @@ jobs:
           # function-grant denial test uses the same SUPERUSER_DATABASE_URL wiring for its
           # randomized throwaway role lifecycle; no additional CI credential is needed.
           ADMIN_DATABASE_URL: postgresql://vault_admin:password@localhost:5432/project_vault
+          # Belt-and-suspenders alongside the CLI --coverage.thresholds.* overrides above: also
+          # tells each vitest.config.ts to omit `thresholds` entirely for this sharded run (see
+          # those files for why a per-shard threshold is a false signal, not a real regression).
+          CI_COVERAGE_SHARDED: 'true'
 
       - name: Upload RLS isolation coverage (SOC2 Type II evidence)
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: db-coverage-${{ github.run_id }}
+          name: db-coverage-${{ github.run_id }}-shard-${{ matrix.shard }}
           path: packages/db/coverage/
           retention-days: 90
 
-      # Feeds the sonar job below, which needs coverage from both shards to report accurate
-      # project-wide numbers. Uploaded even on failure — vitest writes LCOV to disk before
-      # evaluating coverage thresholds, so a local threshold miss shouldn't blank out the
-      # SonarCloud dashboard for this shard's packages.
+      # Feeds the sonar job below, which needs coverage from both api-db shards (and the
+      # web-other shard) to report accurate project-wide numbers. Uploaded even on failure —
+      # vitest writes LCOV to disk before evaluating coverage thresholds, so a local threshold
+      # miss shouldn't blank out the SonarCloud dashboard for this shard's packages. Named per
+      # matrix.shard since both legs share this job id and upload-artifact rejects duplicate
+      # names within one run; the sonar job merges the two via `lcov --add-tracefile`.
       - name: Upload coverage for SonarCloud (api, db)
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: coverage-shard-api-db
+          name: coverage-shard-api-db-${{ matrix.shard }}
           path: |
             apps/api/coverage/
             packages/db/coverage/
@@ -448,17 +481,46 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download coverage (api, db)
+      # test-api-db now runs as a 2-way matrix (see that job), each leg uploading its own
+      # partial lcov.info under a shard-numbered artifact name. Downloaded into separate
+      # directories here, then merged below — sonar.javascript.lcov.reportPaths expects exactly
+      # one lcov.info at apps/api/coverage/lcov.info and packages/db/coverage/lcov.info, so the
+      # two shards' partial reports must be combined into a single file at each of those paths
+      # before the scan step runs.
+      - name: Download coverage (api, db) - shard 1
         uses: actions/download-artifact@v8
         with:
-          name: coverage-shard-api-db
-          path: .
+          name: coverage-shard-api-db-1
+          path: coverage-parts/shard-1
+
+      - name: Download coverage (api, db) - shard 2
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-shard-api-db-2
+          path: coverage-parts/shard-2
 
       - name: Download coverage (web, agent, crypto, shared, vault-action)
         uses: actions/download-artifact@v8
         with:
           name: coverage-shard-web-other
           path: .
+
+      # Merges via hit-count union (not concatenation/overwrite) since a shared library file
+      # can legitimately be exercised by tests in BOTH shards — simple concatenation would
+      # produce duplicate SF: records for such files, which most LCOV consumers resolve by
+      # silently taking the last one rather than combining them correctly.
+      - name: Merge api/db coverage from both shards
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq lcov
+          mkdir -p apps/api/coverage packages/db/coverage
+          lcov --add-tracefile coverage-parts/shard-1/apps/api/coverage/lcov.info \
+               --add-tracefile coverage-parts/shard-2/apps/api/coverage/lcov.info \
+               --output-file apps/api/coverage/lcov.info \
+               --ignore-errors empty,unused
+          lcov --add-tracefile coverage-parts/shard-1/packages/db/coverage/lcov.info \
+               --add-tracefile coverage-parts/shard-2/packages/db/coverage/lcov.info \
+               --output-file packages/db/coverage/lcov.info \
+               --ignore-errors empty,unused
 
       # Runs even if a test shard failed (e.g. a local coverage-threshold miss) — vitest writes
       # its full LCOV/coverage output to disk before evaluating thresholds, so the data

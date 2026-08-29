@@ -31,12 +31,22 @@ export default mergeConfig(baseVitestConfig, {
         'src/**/*-test-helpers.ts',
         'src/**/*-test-bootstrap.ts',
       ],
-      thresholds: {
-        lines: 80,
-        branches: 80,
-        functions: 80,
-        statements: 80,
-      },
+      // CI splits this package's suite across 2 parallel shards (see ci.yml's test-api-db
+      // matrix) to cut wall-clock time. Each shard's vitest process only ever exercises half
+      // the test files, so its own coverage percentage is meaningless in isolation (a file
+      // exclusively touched by the *other* shard's tests reports 0% here) — enforcing the
+      // threshold per-shard would fail CI on a false signal, not a real coverage regression.
+      // CI_COVERAGE_SHARDED is set only for that sharded CI step; a local `pnpm test` run
+      // (single process, full suite) always gets the real threshold. The true, merged-coverage
+      // gate is SonarCloud's Quality Gate, which combines both shards' lcov.info downstream.
+      thresholds: process.env.CI_COVERAGE_SHARDED
+        ? undefined
+        : {
+            lines: 80,
+            branches: 80,
+            functions: 80,
+            statements: 80,
+          },
     },
   },
 })
