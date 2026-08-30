@@ -307,10 +307,10 @@ async function invokeOnAuthenticateWithTimeout(
 // AC-5/AC-7/AC-8: post-authentication identity resolution + session issuance
 // ---------------------------------------------------------------------------
 
-type LinkedIdentityLookup =
+export type LinkedIdentityLookup =
   { kind: 'none' } | { kind: 'found'; orgId: string; userId: string } | { kind: 'ambiguous' }
 
-async function findLinkedIdentity(
+export async function findLinkedIdentity(
   providerName: string,
   externalSubject: string
 ): Promise<LinkedIdentityLookup> {
@@ -353,7 +353,7 @@ async function findCandidateInvitations(email: string): Promise<ProjectInvitatio
     )
 }
 
-async function issueSessionForUser(
+export async function issueSessionForUser(
   tx: Tx,
   orgId: string,
   userId: string,
@@ -363,7 +363,7 @@ async function issueSessionForUser(
   return createLoginSessionInTx(tx, { id: userId, identityTokenId }, orgId, meta)
 }
 
-async function findUserMfaEnrolledAndMembership(
+export async function findUserMfaEnrolledAndMembership(
   orgId: string,
   userId: string
 ): Promise<{ mfaEnrolledAt: Date | null; membershipStatus: string | null } | null> {

@@ -41,6 +41,10 @@ export const BODY_SENSITIVE_LOG_FIELDS = [
   // `exportKey`; both must be redacted the same as any other bearer secret if a future logger
   // ever captures either surface wholesale.
   'exportKey',
+  // Story 30.2 AC6.22: /auth/handoff/prepare's request body carries the raw compact JWS under
+  // `token` — this must never appear in a log line, matching the same never-leak-the-secret-body
+  // discipline as every other field in this registry.
+  'token',
 ] as const
 
 const requestHeaderRedactPaths = HEADER_SENSITIVE_LOG_FIELDS.map((field) => `req.headers.${field}`)

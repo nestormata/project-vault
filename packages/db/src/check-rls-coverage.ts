@@ -16,6 +16,12 @@ export const EXCLUDED_TABLES = new Set([
   'failed_auth_attempts',
   'pending_mfa_sessions',
   'platform_security_events',
+  // Story 30.2 (DW-128): instance-level replay-burn ledger / pending-handoff state — no tenant is
+  // known/trusted at ingestion time (handoff_pending_states.organization_id is untrusted claimed
+  // input until the confirm route's org cross-check runs). Same reasoning as
+  // sso_login_states/platform_security_events above.
+  'handoff_token_jti',
+  'handoff_pending_states',
   // user_onboarding: no RLS — access gated in application layer by auth.userId == userId; org_id is a FK for cascade, not for multi-tenant row filtering.
   'user_onboarding',
   // account_recovery_tokens: identity-scoped (AC-1) — the row has no org_id column (only an

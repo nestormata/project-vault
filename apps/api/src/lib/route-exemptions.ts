@@ -227,6 +227,31 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     expiresAfterStory: null,
   },
   {
+    route: 'POST /api/v1/auth/handoff/prepare',
+    reason:
+      "Story 30.2 AC3 — pre-auth CM->PV handoff-token landing. The caller has no session yet; SecureRoute's requireAuth:false public path is used (mirroring /sso/start's own unauthenticated pattern), with its own independent rate limit and a 16 KiB request-body cap. The handler verifies the EdDSA-signed token fully (signature, structural claims, time, audience) before ever writing a pending-state row or minting anything.",
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      IP_RATE_LIMIT,
+      'eddsa-signature-verification',
+      'hashed-single-use-pending-state-cookie',
+    ],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'POST /api/v1/auth/handoff/confirm',
+    reason:
+      'Story 30.2 AC4 — pre-auth handoff confirmation. The caller has no session yet (that is exactly what this endpoint issues on success); the handler performs an insert-first JTI burn before any org/membership check, and validates Origin/Sec-Fetch-Site as defense-in-depth on top of the same-site httpOnly pending-state cookie.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      IP_RATE_LIMIT,
+      'insert-first-jti-replay-burn',
+      'same-site-httponly-pending-state-cookie',
+      'origin-and-sec-fetch-site-check',
+    ],
+    expiresAfterStory: null,
+  },
+  {
     route: 'GET /api/v1/openapi.json',
     reason:
       'Story 9.3 D5/AC-6 — public live OpenAPI spec endpoint; only registered at all when docsEnabled() is true (ENABLE_API_DOCS=true, or NODE_ENV is development/test), defaulting closed in production. Exposes route/schema metadata only, no tenant data, and must remain reachable while the vault is sealed for operator diagnostics (AC-16).',
@@ -1268,6 +1293,18 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       "Story 14.3 AC-4/AC-5/AC-7/AC-8/AC-9 — pre-auth SSO callback route; org context is not resolvable until state validation + identity/invitation lookup runs inside the handler's own transactions, so it does not use SecureRoute's declarative writeAuditEvent path. SSO_LOGIN_SUCCEEDED/SSO_LOGIN_REJECTED (platform-level or org-scoped, depending on whether an org was resolved) and EXTERNAL_IDENTITY_LINKED (AC-8) are all still written fail-closed-adjacent inside those transactions via writeHumanAuditEntry()/the platform_security_events writer.",
     reviewer: SECURITY_OWNER,
   },
+  'POST /api/v1/auth/handoff/prepare': {
+    action: 'mutation',
+    auditOmissionReason:
+      "Story 30.2 AC3 — pre-auth handoff-token verification/pending-state-mint route; no org/user context is resolvable yet (org resolution happens at /confirm, inside the JTI-burn transaction). Every rejection along the rejection-matrix rows 1-6 is still written fail-closed-adjacent to platform_security_events via writeHandoffSecurityEvent() (AC6.23), just not through SecureRoute's declarative writeAuditEvent path.",
+    reviewer: SECURITY_OWNER,
+  },
+  'POST /api/v1/auth/handoff/confirm': {
+    action: SECURITY_ACTION,
+    auditOmissionReason:
+      "Story 30.2 AC4 — pre-auth handoff confirm route; org context is not resolvable until the insert-first JTI burn + external_identities lookup runs inside the handler's own transactions, so it does not use SecureRoute's declarative writeAuditEvent path. handoff_login_succeeded/handoff_mfa_required (org-scoped, once org+membership are known) and every pre-org rejection (platform_security_events, via writeHandoffSecurityEvent()) are all still written fail-closed-adjacent inside those transactions.",
+    reviewer: SECURITY_OWNER,
+  },
   'POST /api/v1/auth/sso/domain-lookup': {
     action: 'read',
     auditOmissionReason:
@@ -1337,6 +1374,13 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
     classification: PLATFORM_JOB,
     reason:
       'Runs a platform-scoped SELECT now() to measure clock skew; no org-scoped data touched.',
+    reviewer: SECURITY_OWNER,
+  },
+  {
+    path: 'workers/prune-handoff-token-jti.ts',
+    classification: PLATFORM_JOB,
+    reason:
+      'Story 30.2 AC5 — prunes the instance-level handoff_token_jti replay-burn ledger and handoff_pending_states by expires_at; both tables are deliberately no-FK/no-RLS (no tenant known at ingestion time), so no org-scoped data is touched.',
     reviewer: SECURITY_OWNER,
   },
   {

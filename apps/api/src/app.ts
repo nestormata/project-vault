@@ -65,7 +65,9 @@ import { reloadThemesWithFanout } from './modules/theming/service.js'
 import { wireExtensionAuthStrategy } from './modules/auth/strategies.js'
 import { wireExtensionCapabilityGate } from './lib/capability-gate.js'
 import { resolveNativeLoginPolicy } from './modules/auth/native-login-policy.js'
+import { resolveHandoffAuthStrategy } from './modules/auth/handoff-boot.js'
 import { ssoRoutes } from './modules/auth/sso-routes.js'
+import { handoffRoutes } from './modules/auth/handoff-routes.js'
 import { domainLookupRoutes } from './modules/auth/domain-lookup-routes.js'
 import { orgSsoDomainsRoutes } from './modules/auth/org-sso-domains-routes.js'
 import { externalIdentityRoutes } from './modules/auth/external-identity-routes.js'
@@ -295,6 +297,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // Story 14.3: start/callback are public (unauthenticated) SSO routes, mounted alongside local
   // auth at the same public prefix — see Dev Notes judgment call #6 on file/module placement.
   await fastify.register(ssoRoutes, { prefix: '/api/v1/auth/sso' })
+  // Story 30.2 (DW-128): dedicated CM->PV handoff-token landing routes — public/pre-auth like
+  // ssoRoutes above, but a separate module/prefix (not reusing sso-routes.ts's generic
+  // start/callback dispatch — see handoff-boot.ts's doc comment on why).
+  await fastify.register(handoffRoutes, { prefix: '/api/v1/auth/handoff' })
   // Story 14.4: domain-lookup is also public/pre-auth (the caller has no session yet) — mounted
   // at the same prefix as start/callback, in its own module (Dev Notes Project Structure Notes).
   await fastify.register(domainLookupRoutes, { prefix: '/api/v1/auth/sso' })
@@ -418,6 +424,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // fire-and-forget) so the policy is fully resolved before createApp() returns to any caller —
   // e.g. the very first `/health` response already reflects it.
   await resolveNativeLoginPolicy(getExtensionStatus(), fastify.log)
+
+  // Story 30.2 AC2: resolved immediately after native-login policy (this function calls
+  // isNativeLoginEnabled(), which requires that resolution to have already completed).
+  await resolveHandoffAuthStrategy(fastify.log)
 
   return fastify
 }

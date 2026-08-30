@@ -181,3 +181,48 @@ export type AuditEvent = {
   metadata?: Record<string, unknown>
   timestamp: string
 }
+
+/**
+ * Story 30.2 (DW-128) AC6.21: the full `handoff_*` rejection-matrix/lifecycle event taxonomy for
+ * the CentralizeMe->PV handoff-token landing flow. A new dedicated grouping (not folded into
+ * `AuditEvent` above) because these are 22 distinctly-named events, not one event with a `reason`
+ * payload field (unlike `SSO_LOGIN_REJECTED`'s single-event-plus-reason convention) — the claim
+ * contract's rejection matrix names each one individually and AC6.21 requires each to exist as
+ * its own named constant.
+ *
+ * Routing (AC6.23): every rejection occurring before org resolution (rejection-matrix rows 1-8 —
+ * everything through `HANDOFF_ORG_MISMATCH`/`HANDOFF_AMBIGUOUS_ORG`) is written to the no-RLS,
+ * no-org `platform_security_events` table via `writeHandoffSecurityEvent()`
+ * (apps/api/src/modules/auth/handoff-security-events.ts), mirroring sso-routes.ts's
+ * `writePlatformSsoRejected()` precedent. `HANDOFF_MFA_COMPLETED`/`HANDOFF_LOGIN_SUCCEEDED` (org
+ * and membership already known) use the existing org-scoped `writeHumanAuditEntry()` audit-log
+ * path instead — never mixed, and never fabricated org_id for a pre-resolution event.
+ * `HANDOFF_SESSION_CLAIMS_UNAVAILABLE` is defined here for the future session-claims sidecar
+ * (DW-131, explicitly out of this story's scope) to use — this story does not itself write it.
+ */
+export const HandoffEvent = {
+  HANDOFF_MALFORMED_CLAIM: 'handoff_malformed_claim',
+  HANDOFF_CLAIMS_OVERSIZED: 'handoff_claims_oversized',
+  HANDOFF_UNEXPECTED_ALG: 'handoff_unexpected_alg',
+  HANDOFF_UNKNOWN_KID: 'handoff_unknown_kid',
+  HANDOFF_SIGNATURE_INVALID: 'handoff_signature_invalid',
+  HANDOFF_MISSING_CLAIM: 'handoff_missing_claim',
+  HANDOFF_CLOCK_SKEW: 'handoff_clock_skew',
+  HANDOFF_NOT_YET_VALID: 'handoff_not_yet_valid',
+  HANDOFF_EXPIRED: 'handoff_expired',
+  HANDOFF_AUDIENCE_MISMATCH: 'handoff_audience_mismatch',
+  HANDOFF_REPLAY: 'handoff_replay',
+  HANDOFF_REPLAY_STORE_UNAVAILABLE: 'handoff_replay_store_unavailable',
+  HANDOFF_ORG_MISMATCH: 'handoff_org_mismatch',
+  HANDOFF_AMBIGUOUS_ORG: 'handoff_ambiguous_org',
+  HANDOFF_UNKNOWN_CLAIMS_VERSION: 'handoff_unknown_claims_version',
+  HANDOFF_UNKNOWN_CAPABILITY: 'handoff_unknown_capability',
+  HANDOFF_UNKNOWN_ASSURANCE: 'handoff_unknown_assurance',
+  HANDOFF_MEMBERSHIP_INACTIVE: 'handoff_membership_inactive',
+  HANDOFF_MFA_REQUIRED: 'handoff_mfa_required',
+  HANDOFF_SESSION_CLAIMS_UNAVAILABLE: 'handoff_session_claims_unavailable',
+  HANDOFF_MFA_COMPLETED: 'handoff_mfa_completed',
+  HANDOFF_LOGIN_SUCCEEDED: 'handoff_login_succeeded',
+} as const
+
+export type HandoffEventType = (typeof HandoffEvent)[keyof typeof HandoffEvent]

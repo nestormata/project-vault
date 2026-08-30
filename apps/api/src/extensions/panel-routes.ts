@@ -156,7 +156,7 @@ function extractValidActionBody(body: unknown): ModuleActionRequestBody | undefi
  * browsers that predate the Fetch Metadata spec) is treated as a pass-through, not a rejection —
  * per the resolved decision, this must never break a non-Fetch-Metadata-capable browser outright.
  */
-function isRejectedBySecFetchSite(header: string | string[] | undefined): boolean {
+export function isRejectedBySecFetchSite(header: string | string[] | undefined): boolean {
   if (header === undefined) return false
   const value = Array.isArray(header) ? header[0] : header
   return value !== 'same-origin'
