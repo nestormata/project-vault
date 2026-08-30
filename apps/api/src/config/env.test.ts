@@ -1572,4 +1572,158 @@ describe('env', () => {
       expect(exitSpy).not.toHaveBeenCalled()
     })
   })
+
+  // Story 30.1 (DW-129) AC1: VAULT_HANDOFF_INSTANCE_ID strict-format boot validation.
+  describe('Story 30.1: VAULT_HANDOFF_INSTANCE_ID', () => {
+    it('AC1.3: is unset by default and boot succeeds', async () => {
+      process.env = { ...BASE_ENV, DATABASE_URL: VAULT_APP_DATABASE_URL }
+      const { env } = await import('./env.js')
+      expect(env.VAULT_HANDOFF_INSTANCE_ID).toBeUndefined()
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('AC1.1: accepts the claim contract worked example "app001"', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_HANDOFF_INSTANCE_ID: 'app001',
+      }
+      const { env } = await import('./env.js')
+      expect(env.VAULT_HANDOFF_INSTANCE_ID).toBe('app001')
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['App_001', 'uppercase and underscore'],
+      ['ab', 'under 3 characters'],
+      ['a', 'a single character'],
+      ['-app001', 'starts with a hyphen'],
+      ['app001-', 'ends with a hyphen'],
+      ['a'.repeat(64), 'over 63 characters'],
+    ])('AC1.2: rejects %j (%s) at boot', async (value) => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_HANDOFF_INSTANCE_ID: value,
+      }
+      await expectInvalidEnv(exitSpy)
+    })
+  })
+
+  // Story 30.1 (DW-129) AC2: VAULT_HANDOFF_VERIFY_KEYS shape/format boot validation (parsing
+  // only — no crypto use, see parseHandoffVerifyKeys's own unit tests for the pure-function
+  // contract).
+  describe('Story 30.1: VAULT_HANDOFF_VERIFY_KEYS', () => {
+    const VALID_PEM = [
+      '-----BEGIN PUBLIC KEY-----',
+      // base64 test-fixture bytes, not a credential — an arbitrary well-formed-PEM shape fixture.
+      // eslint-disable-next-line no-secrets/no-secrets
+      'MCowBQYDK2VwAyEAGb9ECWmEzf6FQbrBZ9w7lshQhqowtrbLDFw4rXAxZuE=',
+      '-----END PUBLIC KEY-----',
+    ].join('\n')
+
+    it('AC2.6: is unset by default and boot succeeds', async () => {
+      process.env = { ...BASE_ENV, DATABASE_URL: VAULT_APP_DATABASE_URL }
+      const { env } = await import('./env.js')
+      expect(env.VAULT_HANDOFF_VERIFY_KEYS).toBeUndefined()
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('AC2.7: an empty array "[]" passes and parses to an empty list', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_HANDOFF_VERIFY_KEYS: '[]',
+      }
+      const { env, handoffVerifyKeys } = await import('./env.js')
+      expect(env.VAULT_HANDOFF_VERIFY_KEYS).toBe('[]')
+      expect(handoffVerifyKeys).toEqual([])
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('AC2.4: a valid single-key array parses successfully', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_HANDOFF_VERIFY_KEYS: JSON.stringify([{ kid: 'key-1', publicKeyPem: VALID_PEM }]),
+      }
+      const { handoffVerifyKeys } = await import('./env.js')
+      expect(handoffVerifyKeys).toEqual([{ kid: 'key-1', publicKeyPem: VALID_PEM }])
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('AC2.4: a valid multi-key array parses successfully', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_HANDOFF_VERIFY_KEYS: JSON.stringify([
+          { kid: 'key-1', publicKeyPem: VALID_PEM },
+          { kid: 'key-2', publicKeyPem: VALID_PEM },
+        ]),
+      }
+      const { handoffVerifyKeys } = await import('./env.js')
+      expect(handoffVerifyKeys).toHaveLength(2)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('AC2.5: rejects malformed JSON at boot', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_HANDOFF_VERIFY_KEYS: '{not valid json',
+      }
+      await expectInvalidEnv(exitSpy)
+    })
+
+    it('AC2.5: rejects a non-array JSON value at boot', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_HANDOFF_VERIFY_KEYS: JSON.stringify({ kid: 'key-1', publicKeyPem: VALID_PEM }),
+      }
+      await expectInvalidEnv(exitSpy)
+    })
+
+    it('AC2.5: rejects a duplicate kid across two entries at boot', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_HANDOFF_VERIFY_KEYS: JSON.stringify([
+          { kid: 'key-1', publicKeyPem: VALID_PEM },
+          { kid: 'key-1', publicKeyPem: VALID_PEM },
+        ]),
+      }
+      await expectInvalidEnv(exitSpy)
+    })
+
+    it('AC2.5: rejects a publicKeyPem missing its PEM header/footer at boot', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_HANDOFF_VERIFY_KEYS: JSON.stringify([{ kid: 'key-1', publicKeyPem: 'not-a-pem' }]),
+      }
+      await expectInvalidEnv(exitSpy)
+    })
+  })
+
+  // Story 30.1 (DW-129) AC3: clock-skew warn-threshold config.
+  describe('Story 30.1: VAULT_HANDOFF_CLOCK_SKEW_WARN_MS', () => {
+    it('defaults to 20000ms', async () => {
+      process.env = { ...BASE_ENV, DATABASE_URL: VAULT_APP_DATABASE_URL }
+      const { env } = await import('./env.js')
+      expect(env.VAULT_HANDOFF_CLOCK_SKEW_WARN_MS).toBe(20000)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('accepts an explicit override', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        VAULT_HANDOFF_CLOCK_SKEW_WARN_MS: '5000',
+      }
+      const { env } = await import('./env.js')
+      expect(env.VAULT_HANDOFF_CLOCK_SKEW_WARN_MS).toBe(5000)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+  })
 })
