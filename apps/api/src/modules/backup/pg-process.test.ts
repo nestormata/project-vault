@@ -24,6 +24,11 @@ function createFakeChild(): FakeChildProcess {
 }
 
 const CONNECTION_STRING = 'postgresql://user:pass@localhost:5432/db'
+const EXIT_CODE_1_MESSAGE = 'psql restore exited with code 1'
+
+function createEpipeError(): Error {
+  return Object.assign(new Error('write EPIPE'), { code: 'EPIPE', errno: -32 })
+}
 
 const spawnMock = vi.fn()
 
@@ -48,7 +53,7 @@ describe('Story 28.8: runPgRestore stdin error handling', () => {
       const promise = runPgRestore(CONNECTION_STRING, Buffer.from('SELECT 1;'))
 
       // Simulate the EPIPE firing on the stdin stream itself, right as .end(sql) is invoked.
-      const epipe = Object.assign(new Error('write EPIPE'), { code: 'EPIPE', errno: -32 })
+      const epipe = createEpipeError()
       fakeChild.stdin.emit('error', epipe)
 
       await expect(promise).rejects.toBeInstanceOf(PgProcessError)
@@ -85,9 +90,77 @@ describe('Story 28.8: runPgRestore stdin error handling', () => {
 
       await expect(promise).rejects.toBeInstanceOf(PgProcessError)
       await expect(promise).rejects.toMatchObject({
-        message: 'psql restore exited with code 1',
+        message: EXIT_CODE_1_MESSAGE,
         stderrTail: expect.stringContaining('relation "foo" does not exist'),
       })
+    }
+  )
+
+  it(
+    "rejects with a PgProcessError when the child process itself emits 'error' (e.g. spawn " +
+      'failure) — the pre-existing child-level handler, now sharing the settled guard',
+    async () => {
+      const { runPgRestore, PgProcessError } = await import('./pg-process.js')
+      const fakeChild = createFakeChild()
+      spawnMock.mockReturnValue(fakeChild)
+
+      const promise = runPgRestore(CONNECTION_STRING, Buffer.from('SELECT 1;'))
+
+      fakeChild.emit('error', new Error('spawn psql ENOENT'))
+
+      await expect(promise).rejects.toBeInstanceOf(PgProcessError)
+      await expect(promise).rejects.toMatchObject({
+        message: expect.stringContaining('spawn psql ENOENT'),
+      })
+    }
+  )
+
+  it(
+    "does not re-settle when the child process emits 'error' after 'close' already settled " +
+      "the promise (AC6, other direction) — child.on('error')'s own settled guard",
+    async () => {
+      const { runPgRestore, PgProcessError } = await import('./pg-process.js')
+      const fakeChild = createFakeChild()
+      spawnMock.mockReturnValue(fakeChild)
+
+      let settleCount = 0
+      const promise = runPgRestore(CONNECTION_STRING, Buffer.from('SELECT 1;')).catch((err) => {
+        settleCount += 1
+        return err
+      })
+
+      fakeChild.emit('close', 1)
+      fakeChild.emit('error', new Error('late spawn error after close'))
+
+      const result = await promise
+      expect(result).toBeInstanceOf(PgProcessError)
+      expect(result.message).toBe(EXIT_CODE_1_MESSAGE)
+      expect(settleCount).toBe(1)
+    }
+  )
+
+  it(
+    "does not re-settle when child.stdin emits 'error' after 'close' already settled the " +
+      "promise (AC6, other direction) — child.stdin.on('error')'s own settled guard",
+    async () => {
+      const { runPgRestore, PgProcessError } = await import('./pg-process.js')
+      const fakeChild = createFakeChild()
+      spawnMock.mockReturnValue(fakeChild)
+
+      let settleCount = 0
+      const promise = runPgRestore(CONNECTION_STRING, Buffer.from('SELECT 1;')).catch((err) => {
+        settleCount += 1
+        return err
+      })
+
+      fakeChild.emit('close', 1)
+      const epipe = createEpipeError()
+      fakeChild.stdin.emit('error', epipe)
+
+      const result = await promise
+      expect(result).toBeInstanceOf(PgProcessError)
+      expect(result.message).toBe(EXIT_CODE_1_MESSAGE)
+      expect(settleCount).toBe(1)
     }
   )
 
@@ -105,7 +178,7 @@ describe('Story 28.8: runPgRestore stdin error handling', () => {
         return err
       })
 
-      const epipe = Object.assign(new Error('write EPIPE'), { code: 'EPIPE', errno: -32 })
+      const epipe = createEpipeError()
       fakeChild.stdin.emit('error', epipe)
       // Race: the child process also exits non-zero for the same underlying failure.
       fakeChild.emit('close', 1)
