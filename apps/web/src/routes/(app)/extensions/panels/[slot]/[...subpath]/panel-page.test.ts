@@ -593,12 +593,16 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1, rewired inli
           },
         })
 
-        screen.getByText('First').click()
+        const firstButton = screen.getByText('First')
+        firstButton.click()
         await flush()
         screen.getByText('Second').click()
         await flush()
 
         expect(fetchMock).toHaveBeenCalledTimes(2)
+        // AC8 — both elements are marked in-flight independently; the first click's own guard
+        // never blocked the second click on a different element.
+        expect(firstButton.hasAttribute('disabled')).toBe(true)
 
         // Faster (second) click resolves first, applying its result.
         resolveSecond(jsonResponse(200, { message: 'second result' }))
@@ -611,6 +615,13 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1, rewired inli
         await flush()
         expect(screen.queryByText('first result, must be dropped')).toBeNull()
         expect(screen.getByText('second result')).toBeTruthy()
+
+        // Code-review hardening (2026-08-30) — dropping the stale (first) click's *result* must
+        // not also permanently strand its own button in a disabled/aria-busy state: it settled,
+        // its response was superseded but real, and there is no other trigger left that will ever
+        // re-enable it.
+        expect(firstButton.hasAttribute('disabled')).toBe(false)
+        expect(firstButton.hasAttribute('aria-busy')).toBe(false)
       })
     })
   })

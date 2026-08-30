@@ -221,7 +221,17 @@
       body: JSON.stringify(requestBody),
     })
       .then(async (res) => {
-        if (requestGeneration !== panelGeneration) return
+        // Code-review hardening (2026-08-30) — the generation check below must gate only the
+        // shared, single-slot UI state (`actionResultHtml`/`statusMessage`), never
+        // `reenableActionElement(actionEl)`. `panelGeneration` is bumped both by a real
+        // content swap (the `data.html`-keyed `$effect` above, where `actionEl` genuinely no
+        // longer exists) and by this same click handler accepting a *different* element's click
+        // (AC3, where `actionEl` is still live and valid, merely superseded). Gating the re-enable
+        // call the same way as the shared state left a superseded-but-still-valid element's own
+        // button permanently `disabled`/`aria-busy` once its response arrived, with no recovery —
+        // calling `removeAttribute` on a since-detached element (the real content-swap case) is a
+        // harmless no-op, so it is always safe to re-enable unconditionally here.
+        const isCurrent = requestGeneration === panelGeneration
         const parsed: unknown = await res.json().catch(() => null)
         const parsedBody: Record<string, unknown> =
           parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {}
@@ -229,14 +239,20 @@
         if (res.ok) {
           const html = parsedBody['html']
           if (typeof html === 'string' && html.length > 0) {
-            // AC5 — the clicked element no longer exists once this replaces the container's
-            // entire content, so there is nothing left to re-enable (AC8).
-            actionResultHtml = html
-            statusMessage = undefined
+            if (isCurrent) {
+              // AC5 — the clicked element no longer exists once this replaces the container's
+              // entire content, so there is nothing left to re-enable (AC8).
+              actionResultHtml = html
+              statusMessage = undefined
+            } else {
+              reenableActionElement(actionEl)
+            }
             return
           }
           const message = parsedBody['message']
-          statusMessage = typeof message === 'string' ? message : undefined
+          if (isCurrent) {
+            statusMessage = typeof message === 'string' ? message : undefined
+          }
           reenableActionElement(actionEl)
           return
         }
@@ -245,18 +261,24 @@
         // `conflict` (the two outcomes `panel-routes.ts` documents as user-facing); every other
         // outcome (`denied`/`invalid_slot`/`action_not_found`/`internal_error`/anything
         // unrecognized) gets a fixed, generic, non-leaking message.
-        const code = parsedBody['code']
-        const serverMessage = parsedBody['message']
-        statusMessage =
-          (code === 'validation_failed' || code === 'conflict') && typeof serverMessage === 'string'
-            ? serverMessage
-            : GENERIC_ACTION_ERROR_MESSAGE
+        if (isCurrent) {
+          const code = parsedBody['code']
+          const serverMessage = parsedBody['message']
+          statusMessage =
+            (code === 'validation_failed' || code === 'conflict') &&
+            typeof serverMessage === 'string'
+              ? serverMessage
+              : GENERIC_ACTION_ERROR_MESSAGE
+        }
         reenableActionElement(actionEl)
       })
       .catch(() => {
-        if (requestGeneration !== panelGeneration) return
-        // AC7 — a network-level fetch rejection never surfaces raw exception text.
-        statusMessage = GENERIC_ACTION_ERROR_MESSAGE
+        // Code-review hardening (2026-08-30) — see the `.then()` handler's comment above: the
+        // re-enable call must never be gated behind the generation check.
+        if (requestGeneration === panelGeneration) {
+          // AC7 — a network-level fetch rejection never surfaces raw exception text.
+          statusMessage = GENERIC_ACTION_ERROR_MESSAGE
+        }
         reenableActionElement(actionEl)
       })
   }
