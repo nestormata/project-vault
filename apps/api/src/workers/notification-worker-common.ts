@@ -6,18 +6,13 @@ import type { FastifyBaseLogger } from 'fastify'
 
 export const NOTIFICATION_MAX_ATTEMPTS = 5
 
+type WorkerLogger = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
+
 export function createNotificationJobHandler(
   jobName: string,
-  sendFn: (
-    notificationQueueId: string,
-    orgId: string,
-    logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
-  ) => Promise<void>
+  sendFn: (notificationQueueId: string, orgId: string, logger: WorkerLogger) => Promise<void>
 ) {
-  return async function notificationJobHandler(
-    job: BossJob,
-    logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
-  ): Promise<void> {
+  return async function notificationJobHandler(job: BossJob, logger: WorkerLogger): Promise<void> {
     const notificationQueueId = job.data?.notificationQueueId
     const orgId = job.data?.orgId
     if (typeof notificationQueueId !== 'string' || typeof orgId !== 'string') {
@@ -40,7 +35,7 @@ export async function runNotificationCatchup(
     deliverAtAware?: boolean
     logMessage: string
   },
-  logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
+  logger: WorkerLogger
 ): Promise<void> {
   const { fetchAllOrgIds } = await import('../middleware/rls.js')
   const orgIds = await fetchAllOrgIds()
