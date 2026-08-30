@@ -1,5 +1,5 @@
 import { generateKeyPairSync, sign as cryptoSign, createPrivateKey, randomUUID } from 'node:crypto'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { getDb } from '@project-vault/db'
 import { handoffTokenJti } from '@project-vault/db/schema'
 import { eq } from 'drizzle-orm'
@@ -16,6 +16,7 @@ const { publicKey, privateKey } = generateKeyPairSync('ed25519')
 const publicKeyPem = publicKey.export({ format: 'pem', type: 'spki' }).toString()
 const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
 
+process.env['VAULT_HANDOFF_ENABLED'] = 'true'
 process.env['VAULT_HANDOFF_INSTANCE_ID'] = 'pv-handoff-route-test'
 process.env['VAULT_HANDOFF_VERIFY_KEYS'] = JSON.stringify([{ kid: 'kid-1', publicKeyPem }])
 
@@ -80,14 +81,16 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
       await app.close()
     })
 
-    it('AC3.8: rejects an oversized token body', async () => {
+    it('AC3.8: rejects an oversized token body generically (parser-level 413 normalized to the route contract)', async () => {
       const app = await createApp({ logger: false })
       const res = await app.inject({
         method: 'POST',
         url: PREPARE_URL,
         payload: { token: 'a'.repeat(20 * 1024) },
       })
-      expect([401, 413]).toContain(res.statusCode)
+      expect(res.statusCode).toBe(401)
+      expect(res.json<{ message: string }>().message).toBe(GENERIC_REJECTION_MESSAGE)
+      expect(res.headers['set-cookie']).toBeUndefined()
       await app.close()
     })
 
@@ -133,6 +136,37 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
       // Just confirm the route responds normally under rate-limit registration (not exhausted).
       expect(res.statusCode).toBe(401)
       await app.close()
+    })
+
+    it('AC2.5: VAULT_HANDOFF_ENABLED=false rejects an otherwise-valid token, no pending cookie', async () => {
+      // env.ts parses process.env once at module load, so flipping the toggle for a single test
+      // requires a fresh module graph (vi.resetModules) rather than just mutating process.env.
+      // prom-client's default registry is a real external-package singleton that vi.resetModules
+      // does not tear down, so it must be cleared explicitly or the re-imported status.ts module
+      // throws on its Counter re-registration.
+      const { register } = await import('prom-client')
+      const original = process.env['VAULT_HANDOFF_ENABLED']
+      process.env['VAULT_HANDOFF_ENABLED'] = 'false'
+      vi.resetModules()
+      register.clear()
+      try {
+        const { createApp: createDisabledApp } = await import('../../app.js')
+        const app = await createDisabledApp({ logger: false })
+        const token = signToken()
+        const res = await app.inject({
+          method: 'POST',
+          url: PREPARE_URL,
+          payload: { token },
+        })
+        expect(res.statusCode).toBe(401)
+        expect(res.json<{ message: string }>().message).toBe(GENERIC_REJECTION_MESSAGE)
+        expect(res.headers['set-cookie']).toBeUndefined()
+        await app.close()
+      } finally {
+        process.env['VAULT_HANDOFF_ENABLED'] = original
+        vi.resetModules()
+        register.clear()
+      }
     })
   })
 

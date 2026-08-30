@@ -132,6 +132,14 @@ async function resolveDisplayNames(
 }
 
 async function handlePrepare(request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  // AC2.5: VAULT_HANDOFF_ENABLED is the explicit operator-controlled enablement toggle — its
+  // absence must make the whole feature a no-op regardless of whether verify keys/instance id are
+  // otherwise provisioned (e.g. staged ahead of a rollout per Story 30.1 AC2.6/AC2.7). Routes are
+  // still registered unconditionally (Fastify plugin registration happens at boot, before env can
+  // be re-checked per request), so the toggle must be enforced here, not just in handoff-boot.ts's
+  // AuthStrategy marker registration.
+  if (!env.VAULT_HANDOFF_ENABLED) return sendGenericRejection(reply)
+
   const meta = metaFromRequest(request)
   const body = request.body as { token?: unknown } | undefined
 
@@ -255,20 +263,27 @@ async function burnAndResolveOrg(pending: PendingRow): Promise<OrgResolution> {
     }
   }
 
-  const linked = await findLinkedIdentity(pending.providerName, pending.externalSubject)
-  if (linked.kind === 'ambiguous') {
-    return { ok: false, eventType: HandoffEvent.HANDOFF_AMBIGUOUS_ORG }
+  // The JTI is already burned above — everything past this point must still fail closed into the
+  // single generic-rejection contract (never an unhandled exception reaching Fastify's default
+  // error handler) even though the burn's own try/catch no longer covers it.
+  try {
+    const linked = await findLinkedIdentity(pending.providerName, pending.externalSubject)
+    if (linked.kind === 'ambiguous') {
+      return { ok: false, eventType: HandoffEvent.HANDOFF_AMBIGUOUS_ORG }
+    }
+    if (linked.kind === 'none') {
+      return { ok: false, eventType: HandoffEvent.HANDOFF_ORG_MISMATCH }
+    }
+    // Design decision (documented — see Dev Notes): the token's `organizationId` claim is CM's
+    // reference to the PV organization, and this codebase has no separate CM-org-id mapping
+    // table, so it is compared directly against PV's own org UUID.
+    if (linked.orgId !== pending.organizationId) {
+      return { ok: false, eventType: HandoffEvent.HANDOFF_ORG_MISMATCH }
+    }
+    return { ok: true, orgId: linked.orgId, userId: linked.userId }
+  } catch {
+    return { ok: false, eventType: HandoffEvent.HANDOFF_REPLAY_STORE_UNAVAILABLE }
   }
-  if (linked.kind === 'none') {
-    return { ok: false, eventType: HandoffEvent.HANDOFF_ORG_MISMATCH }
-  }
-  // Design decision (documented — see Dev Notes): the token's `organizationId` claim is CM's
-  // reference to the PV organization, and this codebase has no separate CM-org-id mapping table,
-  // so it is compared directly against PV's own org UUID.
-  if (linked.orgId !== pending.organizationId) {
-    return { ok: false, eventType: HandoffEvent.HANDOFF_ORG_MISMATCH }
-  }
-  return { ok: true, orgId: linked.orgId, userId: linked.userId }
 }
 
 /**
@@ -284,7 +299,21 @@ async function mintSessionOrMfaChallenge(
 ): Promise<unknown> {
   const membership = await findUserMfaEnrolledAndMembership(orgId, userId)
   if (membership?.membershipStatus !== 'active') {
-    return rejectHandoff(reply, HandoffEvent.HANDOFF_MEMBERSHIP_INACTIVE, meta)
+    // Unlike the pre-org-resolution rejections (which go through rejectHandoff's org-less
+    // platform_security_events write), orgId/userId are already known here — record this as an
+    // org-scoped human audit entry (matching HANDOFF_MFA_REQUIRED/HANDOFF_LOGIN_SUCCEEDED below)
+    // rather than discarding the known org context into the pre-resolution event table.
+    await withOrg(orgId, async (tx) => {
+      const identityTokenId = await firstActorTokenIdForUser(tx as Tx, userId)
+      await writeHumanAuditEntry(tx as Tx, {
+        orgId,
+        actorTokenId: identityTokenId,
+        eventType: HandoffEvent.HANDOFF_MEMBERSHIP_INACTIVE,
+        payload: {},
+        meta,
+      })
+    }).catch(() => undefined)
+    return sendGenericRejection(reply)
   }
 
   if (membership.mfaEnrolledAt) {
@@ -329,6 +358,10 @@ async function handleConfirm(
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<unknown> {
+  // See handlePrepare's matching guard: the enablement toggle must gate the actual route
+  // behavior, not just the boot-time AuthStrategy marker.
+  if (!env.VAULT_HANDOFF_ENABLED) return sendGenericRejection(reply)
+
   const meta = metaFromRequest(request)
 
   // AC4.16: defense-in-depth only — never the primary CSRF boundary.

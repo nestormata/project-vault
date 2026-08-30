@@ -34,16 +34,23 @@ export async function resolveHandoffAuthStrategy(
   const hasKeys = handoffVerifyKeys.length > 0
 
   if (hasInstanceId && hasKeys) {
-    registerAuthStrategy('centralizeme-handoff', {
-      onAuthenticate: () =>
-        Promise.reject(
-          new Error(
-            'centralizeme-handoff AuthStrategy.onAuthenticate must never be invoked — ' +
-              'Story 30.2 dispatches through dedicated /auth/handoff/prepare and ' +
-              '/auth/handoff/confirm routes, never through findAuthStrategy() generic dispatch.'
-          )
-        ),
-    })
+    try {
+      registerAuthStrategy('centralizeme-handoff', {
+        onAuthenticate: () =>
+          Promise.reject(
+            new Error(
+              'centralizeme-handoff AuthStrategy.onAuthenticate must never be invoked — ' +
+                'Story 30.2 dispatches through dedicated /auth/handoff/prepare and ' +
+                '/auth/handoff/confirm routes, never through findAuthStrategy() generic dispatch.'
+            )
+          ),
+      })
+    } catch {
+      // Already registered (double-invocation) — no-op, matching wireExtensionAuthStrategy's
+      // precedent: a second createApp()-driven call in the same process is a caller bug (e.g.
+      // repeated createApp() calls across integration tests), not a request-time error worth
+      // surfacing.
+    }
     operationalLog(
       logger,
       'info',
