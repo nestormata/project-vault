@@ -12,6 +12,7 @@ import mockUiPanelExtension, {
   TEST_MODULE_DATA_PATH,
   TEST_NAV_CHILD_ITEM_ID,
   TEST_NAV_ITEM_ID,
+  TEST_NAV_LINK_SUBPATH,
   THROW_TRIGGER_SLOT,
 } from './index.js'
 
@@ -93,6 +94,15 @@ describe('mock-ui-panel-extension (Story 25.1 Task 7)', () => {
     const result = await hooks.uiPanel?.onRenderPanel(context({ slot: HAPPY_SLOT }))
     expect(typeof result?.html).toBe('string')
     expect(result?.html).toContain(HAPPY_SLOT)
+  })
+
+  it('Story 29.6 AC12: the happy-path html renders a plain <a href> navigation link, with no data-pv-action anywhere in its subtree', async () => {
+    const hooks = mockUiPanelExtension.hooksFactory()
+    const result = await hooks.uiPanel?.onRenderPanel(context({ slot: HAPPY_SLOT }))
+
+    expect(result?.html).toContain(`<a href="${TEST_NAV_LINK_SUBPATH}">Open detail</a>`)
+    const navLinkMarkup = result?.html?.match(/<a href="[^"]*">Open detail<\/a>/)?.[0] ?? ''
+    expect(navLinkMarkup).not.toContain('data-pv-action')
   })
 
   it('Story 25.4 AC4 Task 4: the happy-path html consumes at least one --pv-ext-* custom property with a CM-style fallback', async () => {

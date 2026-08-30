@@ -179,25 +179,34 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1, rewired inli
     })
   })
 
-  // Story 29.1 AC8 — the NAVIGATION postMessage relay below (`PANEL_NAV_REQUEST_SOURCE`) is left
-  // in the component's source, untouched and not deleted, pending Story 29.6 replacing it with a
-  // direct same-origin call against the new inline DOM. It is now provably INERT: the relay's
-  // `event.source !== panelIframe?.contentWindow` identity check can never match any more, since
-  // there is no iframe to bind `panelIframe`, so no `postMessage` this test dispatches can ever
-  // reach the relay's fetch/goto logic. This is a regression test for that inertness, not a
-  // resurrection of the old iframe-sourced relay tests (which asserted the relay's now-removed
-  // active behavior).
-  //
-  // Story 29.2 AC4/AC12 — the ACTION relay's own inertness sub-test (which lived here) is removed
-  // outright, not left inert: Task 3 deletes `PANEL_ACTION_REQUEST_SOURCE`/
-  // `PANEL_ACTION_RESULT_SOURCE` and the action branch of `handlePanelMessage` entirely, so there
-  // is no code path left to prove inert. See the new
-  // "Story 29.2: click-delegation action dispatch" describe block below for the real replacement
-  // coverage.
-  describe('Story 29.1 AC8: the NAVIGATION postMessage relay is inert (no iframe exists to originate a message from)', () => {
+  // Story 29.6 AC2/AC3/AC11 — the NAVIGATION postMessage relay (and the entire postMessage
+  // listener infrastructure it was the last live branch of — `handlePanelMessage`, `panelIframe`,
+  // `pendingRequestIds`) is DELETED outright, not merely left inert a fourth time (matching Story
+  // 29.2's ACTION-relay and Story 29.4's DATA-relay own "provably removed" precedent — see those
+  // stories' own AC12/AC7). The old `describe('Story 29.1 AC8: ... is inert ...')` block that
+  // lived here asserted only that the *handler* couldn't fire (an identity check on a
+  // `panelIframe` that could never exist) — it is replaced below with a stronger proof: no
+  // `window` `'message'` listener capable of reacting to this shape exists AT ALL any more, by
+  // construction of this story's deletion, not merely by an identity-check that always fails.
+  describe('Story 29.6 AC2/AC3/AC11: the NAVIGATION postMessage relay and its listener infrastructure are provably removed', () => {
     afterEach(() => vi.unstubAllGlobals())
 
-    it('a navigation-request-shaped message never triggers the authorization fetch or goto()', async () => {
+    it('mounting the page never registers a window "message" event listener at all', () => {
+      const addEventListenerSpy = vi.spyOn(window, 'addEventListener')
+
+      render(ExtensionPanelPage, {
+        props: { data: { ...baseData, html: '<p>x</p>' } },
+      })
+
+      const messageListenerCalls = addEventListenerSpy.mock.calls.filter(
+        ([eventName]) => eventName === 'message'
+      )
+      expect(messageListenerCalls).toHaveLength(0)
+
+      addEventListenerSpy.mockRestore()
+    })
+
+    it('a navigation-request-shaped message never triggers a fetch or goto() — there is no listener left to react to it', async () => {
       const fetchMock = vi.fn()
       vi.stubGlobal('fetch', fetchMock)
 
@@ -219,6 +228,48 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1, rewired inli
       await new Promise((resolve) => setTimeout(resolve, 0))
       expect(fetchMock).not.toHaveBeenCalled()
       expect(gotoMock).not.toHaveBeenCalled()
+    })
+  })
+
+  // Story 29.6 AC1/AC11 — a panel now triggers navigation via an ordinary `<a href>` rendered
+  // directly in its own HTML, sanitized and injected exactly like any other panel content
+  // (Story 29.1's `renderPanelHtml` pipeline) — no postMessage, no host-side intent negotiation.
+  describe('Story 29.6 AC1/AC8/AC11: a panel-rendered <a href> survives sanitization intact', () => {
+    it('AC1: a PV-native project-detail link renders with its href attribute intact in the live sanitized DOM', () => {
+      render(ExtensionPanelPage, {
+        props: {
+          data: { ...baseData, html: '<a href="/projects/proj_abc123">View project</a>' },
+        },
+      })
+
+      const link = screen.getByRole('link', { name: 'View project' })
+      expect(link.getAttribute('href')).toBe('/projects/proj_abc123')
+    })
+
+    it('AC1: a same-route panel-subpath navigation link renders with its href attribute intact', () => {
+      render(ExtensionPanelPage, {
+        props: {
+          data: {
+            ...baseData,
+            html: '<a href="/extensions/panels/group/detail/proj_abc123">Open detail</a>',
+          },
+        },
+      })
+
+      const link = screen.getByRole('link', { name: 'Open detail' })
+      expect(link.getAttribute('href')).toBe('/extensions/panels/group/detail/proj_abc123')
+    })
+
+    it('AC9: a javascript:-scheme href is stripped by DOMPurify — the surviving anchor carries no href attribute', () => {
+      render(ExtensionPanelPage, {
+        props: {
+          data: { ...baseData, html: '<a href="javascript:alert(1)">bad</a>' },
+        },
+      })
+
+      const link = screen.getByText('bad')
+      expect(link.tagName).toBe('A')
+      expect(link.getAttribute('href')).toBeNull()
     })
   })
 

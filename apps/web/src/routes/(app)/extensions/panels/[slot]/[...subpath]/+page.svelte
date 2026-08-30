@@ -1,42 +1,25 @@
 <script lang="ts">
-  import { goto } from '$app/navigation'
-  import { resolve } from '$app/paths'
-  import { SvelteSet } from 'svelte/reactivity'
   import { renderPanelHtml } from '$lib/security/render-panel-html.js'
   import { EXTENSION_THEME_CSS_VARS } from '$lib/security/extension-theme-vars.js'
   let { data } = $props()
 
   let heading: HTMLHeadingElement | undefined
 
-  // Story 29.1 AC1/AC9 — the panel's HTML now renders directly into a real, same-origin,
-  // same-document `<div>` (via the `renderPanelHtml` action below) instead of into a sandboxed
-  // `srcdoc` iframe. `panelIframe` below is a misnomer carried over from Story 25.x — no iframe
-  // exists any more, but the remaining NAVIGATION postMessage relay code (AC8) still references
-  // it (see that code's own comment) pending Story 29.6, which is why the `$state`/type is kept
-  // as-is rather than renamed here (a rename would touch every line of that inert relay code for
-  // no functional reason, ahead of the story that is actually replacing it).
-  let panelIframe: HTMLIFrameElement | undefined = $state(undefined)
-
   // Story 25.8 Task 2a — Boundary & Edge Case Sweep finding (Elicitation Log #3): a
-  // navigation-triggered `srcdoc` swap tears down the old iframe document and creates a NEW
-  // `contentWindow`. Without this, an in-flight action/data-request/navigation-request's
-  // response would silently resolve into a stale/detached window with no error ever surfaced —
-  // dropped forever, unnoticed. `panelGeneration` is bumped every time the panel's resolved HTML
-  // actually changes (see the `$effect` keyed on `data.html` below); every request handler
-  // captures the generation at issue time and EXPLICITLY checks it before ever posting a response
-  // back or acting on one, so a stale in-flight request is deliberately dropped, not silently
-  // left to resolve into nothing. `pendingRequestIds` mirrors which requestIds are currently in
-  // flight (added on issue, removed on settle) — cleared on every generation bump, so it also
-  // always reflects only the CURRENT panel instance's own in-flight requests.
+  // navigation-triggered content swap could resolve a stale in-flight response into content that
+  // no longer belongs on screen. `panelGeneration` is bumped every time the panel's resolved HTML
+  // actually changes (see the `$effect` keyed on `data.html` below); Story 29.2's
+  // `handleActionClick` captures the generation at click time and explicitly checks it before
+  // ever acting on its own fetch's response, so a stale in-flight action result is deliberately
+  // dropped rather than silently applied to the wrong panel instance.
   //
-  // Story 29.1 AC8 — this relay code (this variable included) is now INERT: `postMessage` events
-  // can no longer arrive from a same-document `<div>` the way they could from a cross-origin
-  // sandboxed iframe's `contentWindow`. The ACTION relay (Story 29.2) and DATA relay (Story 29.4)
-  // have both since been retired outright, replaced by direct same-origin calls; only the
-  // NAVIGATION relay below remains, pending Story 29.6. Do not delete or "fix" this remaining
-  // code here — that is explicitly out of this story's scope.
+  // Story 29.6 AC3/AC4/AC5 — this counter's former sibling, `pendingRequestIds` (a
+  // `SvelteSet<string>` tracking in-flight postMessage `requestId`s), is deleted: it had exactly
+  // one remaining consumer, the now-deleted NAVIGATION postMessage relay. `panelGeneration`
+  // itself is kept, unchanged, because it has a second, unrelated, still-live consumer —
+  // `handleActionClick`'s own stale-response guard below — that has nothing to do with the
+  // postMessage relay infrastructure this story removes.
   let panelGeneration = 0
-  const pendingRequestIds = new SvelteSet<string>()
 
   // Story 25.6 AC5 — the double-submit-cookie CSRF token's request-header name. Kept as a literal
   // string, not an import, since this route never imports server-package code; it is
@@ -68,143 +51,19 @@
     return undefined
   }
 
-  /**
-   * Story 25.8 AC3 — a typed, `requestId`-correlated postMessage type (mirroring the now-deleted
-   * DATA relay's own shape — Story 29.4 — and the now-retired ACTION relay's own original shape
-   * — see Story 29.2): the panel asks the host to navigate to a PV-native destination outside its
-   * own slot. Following those two message types' own "host decides, panel names an intent, never
-   * a destination" posture (Story 25.5/25.6): the panel sends a structured intent (`kind` +
-   * whatever identifiers that kind needs), NEVER a raw URL — `goto()` is only ever called with a
-   * target THIS page's own code constructs, never anything panel-supplied.
-   */
-  const PANEL_NAV_REQUEST_SOURCE = 'pv-extension-panel-navigation-request'
-  const PANEL_NAV_RESULT_SOURCE = 'pv-extension-panel-navigation-result'
-
-  /**
-   * Story 25.8 AC3/Dev Notes "Security posture" — the host-owned allowlist of navigation
-   * destinations a panel may request. Exactly one intent kind for this story's scope:
-   * `pv-project-detail` (navigate to a PV-native project's own detail page). Adding a new
-   * destination means adding a new `kind` here, never widening what a panel can supply directly.
-   */
-  type NavigationIntentKind = 'pv-project-detail'
-  const ALLOWED_NAVIGATION_INTENT_KINDS = new Set<NavigationIntentKind>(['pv-project-detail'])
-
-  function validateNavigationIntentShape(
-    kind: unknown,
-    projectId: unknown
-  ): { kind: NavigationIntentKind; projectId: string } | undefined {
-    if (
-      typeof kind !== 'string' ||
-      !ALLOWED_NAVIGATION_INTENT_KINDS.has(kind as NavigationIntentKind)
-    ) {
-      return undefined
-    }
-    if (typeof projectId !== 'string' || projectId.length === 0) return undefined
-    return { kind: kind as NavigationIntentKind, projectId }
-  }
-
-  /**
-   * Story 25.8 AC3 — Security Audit Personas finding (Elicitation Log #1): a message whose
-   * `kind`/`projectId` are shape-valid is NOT by itself sufficient authorization to navigate —
-   * the allowlist check must be a REAL check against the CURRENT session's own accessible
-   * resources, not merely a shape/pattern match on `kind`. This reuses the exact same
-   * host-mediated, real-session-cookie `fetch()` the data-request relay above already uses
-   * (`credentials: 'same-origin'`), hitting `GET /api/v1/projects/:projectId` — a route already
-   * gated by PV's own project-visibility check (org owner/admin, or a real `project_memberships`
-   * row; see `apps/api`'s `parseVisibleProjectParams`/`callerCanSeeProject`). A non-2xx there
-   * (403/404, deliberately indistinguishable — that route's own non-leaking-existence
-   * convention) means "not authorized for THIS session", and this function returns `undefined`
-   * rather than ever producing a `goto()` target — a shape-valid-but-cross-org request is
-   * rejected here, not just a malformed one.
-   */
-  async function authorizeAndResolveNavigationTarget(intent: {
-    kind: NavigationIntentKind
-    projectId: string
-  }): Promise<string | undefined> {
-    try {
-      const res = await fetch(`/api/v1/projects/${encodeURIComponent(intent.projectId)}`, {
-        method: 'GET',
-        credentials: 'same-origin',
-        headers: { accept: 'application/json' },
-      })
-      if (!res.ok) return undefined
-      return `/projects/${encodeURIComponent(intent.projectId)}`
-    } catch {
-      return undefined
-    }
-  }
-
-  /**
-   * Story 25.5 AC4/Task 4 (original scope: the ACTION relay retired by Story 29.2 — see
-   * `handleActionClick` below for its direct-fetch replacement) — the NAVIGATION relay below
-   * still relies on the same `event.source === panelIframe?.contentWindow` identity check: it
-   * identifies WHICH window sent the message by object identity, which is reliable even though
-   * the iframe's own origin is opaque (so `event.origin` is always the literal string `"null"`
-   * and can't be used to distinguish this iframe from any other opaque-origin content on the
-   * page). Every other field in an incoming message is untrusted extension-influenced input and
-   * is validated before use.
-   */
-  $effect(() => {
-    /**
-     * Story 25.8 AC3/Task 2a — decides synchronously whether this message is a navigation
-     * request, then kicks off the (async) authorization check without blocking the outer message
-     * handler.
-     */
-    function handlePanelNavigationMessage(
-      event: MessageEvent,
-      message: Record<string, unknown>
-    ): boolean {
-      if (message['source'] !== PANEL_NAV_REQUEST_SOURCE) return false
-      const { requestId, kind, projectId } = message
-      if (typeof requestId !== 'string') return true
-      const targetWindow = (event.source as Window | null) ?? panelIframe?.contentWindow
-      const requestGeneration = panelGeneration
-      pendingRequestIds.add(requestId)
-
-      const intent = validateNavigationIntentShape(kind, projectId)
-      if (!intent) {
-        targetWindow?.postMessage({ source: PANEL_NAV_RESULT_SOURCE, requestId, ok: false }, '*')
-        pendingRequestIds.delete(requestId)
-        return true
-      }
-
-      void authorizeAndResolveNavigationTarget(intent)
-        .then(async (target) => {
-          // Task 2a: the authorization check may still resolve after a navigation has already
-          // swapped the panel's srcdoc — dropped explicitly, never silently posted/navigated.
-          if (requestGeneration !== panelGeneration) return
-          if (!target) {
-            targetWindow?.postMessage(
-              { source: PANEL_NAV_RESULT_SOURCE, requestId, ok: false },
-              '*'
-            )
-            return
-          }
-          targetWindow?.postMessage({ source: PANEL_NAV_RESULT_SOURCE, requestId, ok: true }, '*')
-          await goto(resolve(target))
-        })
-        .finally(() => pendingRequestIds.delete(requestId))
-      return true
-    }
-
-    // Story 29.2 AC4 — the ACTION relay branch that used to live here (dispatching to
-    // `PANEL_ACTION_REQUEST_SOURCE`/`PANEL_ACTION_RESULT_SOURCE`) is retired outright, replaced
-    // by the host-owned click-delegation handler below (`handleActionClick`). Story 29.4 AC7 —
-    // the DATA relay branch that used to live here (dispatching to `PANEL_DATA_REQUEST_SOURCE`)
-    // is likewise retired outright, replaced by `apps/api`'s own directly-mounted module-data
-    // routes under `/api/v1/extensions/data` — a manifest-declared route needs no client-side
-    // relay at all. The NAVIGATION relay below is unchanged and untouched, pending Story 29.6.
-    function handlePanelMessage(event: MessageEvent) {
-      if (event.source !== panelIframe?.contentWindow) return
-      const message = event.data as unknown
-      if (typeof message !== 'object' || message === null) return
-      const typedMessage = message as Record<string, unknown>
-      handlePanelNavigationMessage(event, typedMessage)
-    }
-
-    window.addEventListener('message', handlePanelMessage)
-    return () => window.removeEventListener('message', handlePanelMessage)
-  })
+  // Story 29.6 AC1/AC2/AC3 — a panel now triggers navigation by rendering a real `<a href>`
+  // element directly in its own HTML (sanitized and injected via `renderPanelHtml`, same as any
+  // other panel content) — an ordinary browser-native/SvelteKit-router click, not a `postMessage`
+  // round trip. The `PANEL_NAV_REQUEST_SOURCE`/`PANEL_NAV_RESULT_SOURCE` message types, the
+  // `NavigationIntentKind` allowlist, `validateNavigationIntentShape()`,
+  // `authorizeAndResolveNavigationTarget()`, `handlePanelNavigationMessage()`, and the
+  // `window.addEventListener('message', handlePanelMessage)` `$effect` that dispatched to it are
+  // all deleted outright (matching the ACTION relay's Story 29.2 and DATA relay's Story 29.4
+  // "delete outright, don't leave inert" precedent) — `handlePanelNavigationMessage` was the last
+  // live branch of `handlePanelMessage`, so nothing calls it any more once this deletion lands.
+  // No host-side authorization check replaces it: both destination routes a panel-rendered link
+  // can reach (`/projects/[projectId]`, this same `[...subpath]` route) already perform their own
+  // independent, pre-existing authorization on every request, regardless of how it arrived (AC7).
 
   // Story 25.4 AC5 — WAI-ARIA APG SPA-navigation focus-management pattern: PV's Svelte routes
   // never do a full-page reload on navigation, so nothing moves keyboard focus to the new page's
@@ -228,16 +87,15 @@
 
   // Story 29.1 AC1/AC9 — a change in `data.html` is exactly when the panel's actual rendered
   // content changes (mirrors the old `srcdoc`-keyed effect this replaces — Story 25.8 AC2/Task
-  // 2a). Bumping the generation counter here (never inside the message handlers themselves) ties
-  // invalidation to the real content swap, not merely to "a navigation was requested". Still
-  // relevant for the remaining NAVIGATION relay (the ACTION relay this fed was retired by Story
-  // 29.2, the DATA relay by Story 29.4) — Story 29.6 building that relay's replacement will need
-  // the same generation-tracking discipline against the new same-origin call site, and removing
-  // it now would be pure churn.
+  // 2a). Bumping the generation counter here (never inside a request handler itself) ties
+  // invalidation to the real content swap, not merely to "a request was issued". Story 29.6
+  // deletes this effect's own `pendingRequestIds.clear()` call — that `SvelteSet` was the
+  // NAVIGATION relay's own in-flight-requestId bookkeeping, now gone along with the relay itself
+  // — `panelGeneration`'s increment below stays, unchanged, since `handleActionClick`'s own
+  // stale-response guard (Story 29.2 AC9) is still a live consumer.
   $effect(() => {
     data.html
     panelGeneration++
-    pendingRequestIds.clear()
     // Story 29.2 Task 2 — a new `data.html` (real navigation, not an action result) always wins
     // over any action-result override still showing from a previous slot; reset both the
     // override and the AC6/AC7 status message so neither leaks across a slot change.
