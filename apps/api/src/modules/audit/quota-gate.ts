@@ -1,23 +1,10 @@
 import { sql } from 'drizzle-orm'
-import { Counter, register } from 'prom-client'
 import { withOrg, type Tx } from '@project-vault/db'
 import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import { env } from '../../config/env.js'
+import { getOrCreateCounter } from '../../lib/prom-client-registry.js'
 import { SameTransactionAuditWriteError } from '../../lib/secure-route.js'
 import { isSecurityCriticalAuditEventType } from './maintenance-mode.js'
-
-/** Some test files (e.g. session-revoke.test.ts) call `vi.resetModules()` and dynamically
- * re-import a module in this file's transitive import chain per test, which would otherwise
- * re-run `new Counter(...)` against prom-client's process-wide singleton `register` and throw
- * "already registered". Registration is idempotent instead: reuse the existing metric of the
- * same name if the module graph has already registered one. */
-function getOrCreateCounter<T extends string = string>(
-  config: ConstructorParameters<typeof Counter<T>>[0]
-): Counter<T> {
-  const existing = register.getSingleMetric(config.name)
-  if (existing instanceof Counter) return existing as Counter<T>
-  return new Counter(config)
-}
 
 // Story 22.1 AC-19: per-org audit-storage-quota gate outcomes, registered directly on
 // prom-client's shared default registry (picked up by GET /metrics automatically). `reason` is

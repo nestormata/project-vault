@@ -1,4 +1,4 @@
-import { Counter, register } from 'prom-client'
+import { getOrCreateCounter } from '../lib/prom-client-registry.js'
 
 // Story 28.6 AC4 — architecture.md's existing pg-boss DLQ-monitoring rule ("pg-boss DLQ entries
 // for security-sensitive job types must trigger an operational alert — pino error-level log +
@@ -8,17 +8,6 @@ import { Counter, register } from 'prom-client'
 // time, scoped to job_type: 'notification' only; rotation:*/audit:* remain unwired (a separate,
 // pre-existing architecture-compliance gap this story surfaces but does not fix).
 export const PGBOSS_DLQ_ENTRIES_TOTAL_METRIC_NAME = 'pgboss_dlq_entries_total'
-
-// Idempotent registration, following apps/api/src/modules/audit/quota-gate.ts's
-// getOrCreateCounter() pattern: some test files vi.resetModules() and re-import this module,
-// which would otherwise trigger prom-client's "already registered" throw on re-construction.
-function getOrCreateCounter<T extends string = string>(
-  config: ConstructorParameters<typeof Counter<T>>[0]
-): Counter<T> {
-  const existing = register.getSingleMetric(config.name)
-  if (existing instanceof Counter) return existing as Counter<T>
-  return new Counter(config)
-}
 
 export const pgbossDlqEntriesTotal = getOrCreateCounter<'job_type'>({
   name: PGBOSS_DLQ_ENTRIES_TOTAL_METRIC_NAME,

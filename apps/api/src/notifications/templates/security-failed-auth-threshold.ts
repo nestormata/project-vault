@@ -1,3 +1,5 @@
+import { escapeHtml } from './html-safety.js'
+
 export type FailedAuthThresholdPayload = {
   thresholdType: 'ip' | 'account'
   thresholdCount: number
@@ -9,18 +11,10 @@ export type FailedAuthThresholdPayload = {
   userId?: string
 }
 
-// notification_queue.payload is stored as untyped JSON — a malformed or missing string field
-// must not silently throw (Story 28.6 AC1). Hardened to accept string | undefined | null (and
-// coerce any other non-string shape safely) rather than trusting the caller's type-asserted
-// signature, since every render call site blind-casts `raw as <Payload>` with no re-validation.
-function escapeHtml(str: string | undefined | null): string {
-  const safe = typeof str === 'string' ? str : ''
-  return safe
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-}
+// escapeHtml (see html-safety.ts) is hardened to accept string | undefined | null (and coerce
+// any other non-string shape safely) rather than trusting the caller's type-asserted signature,
+// since every render call site blind-casts `raw as <Payload>` with no re-validation — a
+// malformed or missing string field must not silently throw (Story 28.6 AC1).
 
 // Story 28.6 AC1 — windowStart/windowEnd are declared as required strings, but an untyped
 // notification_queue.payload row can arrive missing them (or with the wrong type) at render

@@ -1,3 +1,5 @@
+import { escapeHtml, safeHref } from './html-safety.js'
+
 export type ProjectInvitationCreatedPayload = {
   projectId: string
   projectName: string
@@ -6,30 +8,9 @@ export type ProjectInvitationCreatedPayload = {
   acceptUrl: string
 }
 
-// notification_queue.payload is stored as untyped JSON — projectName/role/acceptUrl are
-// required strings in the type, but a malformed/missing row must not crash render (Story 28.6
-// AC2, same class of bug as security-failed-auth-threshold.ts's AC1 fix).
-function escapeHtml(str: string | undefined | null): string {
-  const safe = typeof str === 'string' ? str : ''
-  return safe
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-}
-
-// Code-review fix (post-28.6) — escapeHtml only neutralizes markup characters, it does not
-// restrict the URL scheme. Since acceptUrl comes from an untyped, unrevalidated
-// notification_queue.payload row, a malformed/tampered row containing a `javascript:`/`data:`
-// URI must not be allowed to render as a clickable href in this invitation email.
-function safeHref(url: string): string {
-  try {
-    const parsed = new URL(url)
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? url : ''
-  } catch {
-    return ''
-  }
-}
+// acceptUrl comes from an untyped, unrevalidated notification_queue.payload row — safeHref (see
+// html-safety.ts) makes sure a malformed/tampered `javascript:`/`data:` URI can never render as
+// a clickable href in this invitation email.
 
 export function renderProjectInvitationCreated(raw: Record<string, unknown>): {
   subject: string
