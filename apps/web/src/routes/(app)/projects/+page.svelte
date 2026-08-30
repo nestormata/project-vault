@@ -178,6 +178,12 @@
       >
         Create project
       </a>
+      <a
+        class="rounded-xl border border-slate-300 px-4 py-3 text-center font-semibold text-slate-800"
+        href={resolve('/projects/import')}
+      >
+        Import project
+      </a>
       <button
         type="button"
         class="text-sm font-medium text-slate-600 underline disabled:cursor-not-allowed disabled:opacity-60"

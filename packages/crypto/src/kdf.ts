@@ -8,6 +8,7 @@ export const HKDF_INFO = {
   AUDIT_LOG: 'project-vault-audit-log-v1',
   BACKUP: 'project-vault-backup-v1', // Story 9.1 uses this
   PLATFORM_AUDIT: 'project-vault-platform-audit-v1', // Story 9.4 uses this
+  EXPORT: 'project-vault-export-v1', // Story 28.9 uses this
 } as const
 
 /**

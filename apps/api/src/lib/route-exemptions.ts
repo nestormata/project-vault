@@ -393,6 +393,21 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'credential.created',
     sameTransactionAuditService: WRITE_CREDENTIAL_AUDIT_OR_FAIL_CLOSED,
   },
+  // Story 28.9 AC-1/AC-2: exports the whole project as an encrypted file — audited with entity
+  // counts only (never the export key or a decrypted secret value).
+  'POST /api/v1/projects/:projectId/export': {
+    action: 'mutation',
+    auditEvent: 'project.export_created',
+    sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
+  },
+  // Story 28.9 AC-3/AC-4/D4: creates a brand-new project from an uploaded export file — reuses
+  // `createProject()`'s own audit-omission posture is not applicable here (import writes its own
+  // `project.import_completed`/`project.import_failed` audit entries directly).
+  'POST /api/v1/projects/import': {
+    action: 'mutation',
+    auditEvent: 'project.import_completed',
+    sameTransactionAuditService: 'writeHumanAuditEntryOrFailClosed',
+  },
   'GET /api/v1/projects/:projectId/credentials': {
     action: 'read',
     auditOmissionReason:

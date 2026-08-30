@@ -16,6 +16,8 @@ const RAW_REFRESH_TOKEN = 'raw-refresh-token'
 const RAW_ACCESS_TOKEN = 'raw-access-token'
 const RAW_CURRENT_PASSWORD = 'raw-current-password'
 const RAW_NEW_PASSWORD = 'raw-new-password'
+const TEST_REDACTION_EVENT_TYPE = 'test.redaction'
+const REDACTION_TEST_MESSAGE = 'redaction test'
 
 function capturedLogger() {
   const { stream, lines } = createLogCaptureStream()
@@ -32,7 +34,7 @@ describe('structured log redaction', () => {
 
     logger.info(
       {
-        eventType: 'test.redaction',
+        eventType: TEST_REDACTION_EVENT_TYPE,
         req: {
           headers: {
             authorization: 'Bearer raw-jwt-token',
@@ -49,7 +51,7 @@ describe('structured log redaction', () => {
           },
         },
       },
-      'redaction test'
+      REDACTION_TEST_MESSAGE
     )
 
     const combined = lines.join('')
@@ -74,7 +76,7 @@ describe('structured log redaction', () => {
 
     logger.info(
       {
-        eventType: 'test.redaction',
+        eventType: TEST_REDACTION_EVENT_TYPE,
         body: {
           password: RAW_PASSWORD,
           passphrase: RAW_PASSPHRASE,
@@ -86,7 +88,7 @@ describe('structured log redaction', () => {
           value: RAW_CREDENTIAL_VALUE,
         },
       },
-      'redaction test'
+      REDACTION_TEST_MESSAGE
     )
 
     const combined = lines.join('')
@@ -154,4 +156,32 @@ describe('structured log redaction', () => {
       expect(manual).toContain(REDACTED_VALUE)
     }
   )
+
+  // Story 28.9 AC-2 regression guard: a live request/response line carrying the export-key
+  // response header must show [REDACTED], not the raw key. redact-paths.test.ts only asserts
+  // `res.headers["x-export-key"]` is registered in `PINO_REDACT_PATHS` (static membership) —
+  // this exercises the real Pino logger config the way the other cases above exercise
+  // `req.body`/`req.headers`, so a future change to how response headers are constructed (this
+  // app does not currently log them at all) can't silently reintroduce a live key leak with no
+  // test to catch it.
+  it('redacts X-Export-Key in a logged response-header-shaped line', () => {
+    const { logger, lines } = capturedLogger()
+    const RAW_EXPORT_KEY = 'raw-export-key-should-never-appear-in-logs'
+
+    logger.info(
+      {
+        eventType: TEST_REDACTION_EVENT_TYPE,
+        res: {
+          headers: {
+            'x-export-key': RAW_EXPORT_KEY,
+          },
+        },
+      },
+      REDACTION_TEST_MESSAGE
+    )
+
+    const combined = lines.join('')
+    expect(combined).not.toContain(RAW_EXPORT_KEY)
+    expect(combined).toContain(REDACTED_VALUE)
+  })
 })

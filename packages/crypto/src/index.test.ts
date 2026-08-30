@@ -113,6 +113,17 @@ describe('HKDF-SHA256 key derivation', () => {
     expect(primary.equals(audit)).toBe(false)
   })
 
+  // Story 28.9 D2: a sibling HKDF_INFO entry for the project-export feature — domain-separated
+  // from every other key purpose so the export key's derived AES key can never collide with the
+  // primary/audit/backup/platform-audit keys even if the same raw bytes were somehow reused.
+  it('HKDF_INFO.EXPORT is domain-separated from PRIMARY and BACKUP', () => {
+    const ikm = randomBytes(32)
+    const exportKey = deriveKey(ikm, HKDF_INFO.EXPORT)
+    expect(exportKey).toHaveLength(32)
+    expect(exportKey.equals(deriveKey(ikm, HKDF_INFO.PRIMARY))).toBe(false)
+    expect(exportKey.equals(deriveKey(ikm, HKDF_INFO.BACKUP))).toBe(false)
+  })
+
   it('produces distinct keys for different IKM', () => {
     const ikm1 = randomBytes(32)
     const ikm2 = randomBytes(32)

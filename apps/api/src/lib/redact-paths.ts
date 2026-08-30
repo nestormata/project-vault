@@ -35,6 +35,12 @@ export const BODY_SENSITIVE_LOG_FIELDS = [
   // wholesale on the step-up path), but the durable safeguard was missing. Added here rather than
   // left as a one-off inline redaction so any future logging change is covered automatically.
   'totpCode',
+  // Story 28.9 D2: the one-time project-export decryption key. Never persisted server-side, and
+  // never logged either — the create-export response header carries it (see the dedicated
+  // `res.headers` redact path below) and the import request's multipart form carries it as
+  // `exportKey`; both must be redacted the same as any other bearer secret if a future logger
+  // ever captures either surface wholesale.
+  'exportKey',
 ] as const
 
 const requestHeaderRedactPaths = HEADER_SENSITIVE_LOG_FIELDS.map((field) => `req.headers.${field}`)
@@ -45,6 +51,11 @@ export const PINO_REDACT_PATHS = [
   // Epic AC literal paths
   ...requestHeaderRedactPaths,
   ...requestBodyRedactPaths,
+  // Story 28.9 AC-2: the create-export response returns the raw one-time key in the
+  // `X-Export-Key` response header (never the body) — redacted defensively in case a future
+  // request/response logger middleware ever captures response headers wholesale (this app's
+  // current structured-logging plugin does not, by design, but this closes the gap either way).
+  'res.headers["x-export-key"]',
   'res.body.data.secret',
   'res.body.data.otpauthUrl',
   'res.body.data.qrCodeSvg',
