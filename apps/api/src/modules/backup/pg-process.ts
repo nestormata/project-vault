@@ -123,9 +123,21 @@ export async function runPgRestore(connectionString: string, sql: Buffer): Promi
       { env: { ...process.env, PGPASSWORD: conn.password } }
     )
     const stderrChunks: Buffer[] = []
+    // Story 28.8: `settled` guards against double-settlement (AC6) when the stdin 'error' below
+    // races with the child's own 'close'/'error' events for the same failed restore attempt —
+    // Promise resolve/reject is a silent no-op after the first settlement anyway, but this guard
+    // makes that explicit rather than relying on it by accident, and prevents duplicate side
+    // effects if this function's shape ever grows any (logging, etc.).
+    let settled = false
     child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk))
-    child.on('error', (err) => reject(new PgProcessError(`psql restore: ${err.message}`, '')))
+    child.on('error', (err) => {
+      if (settled) return
+      settled = true
+      reject(new PgProcessError(`psql restore: ${err.message}`, ''))
+    })
     child.on('close', (code) => {
+      if (settled) return
+      settled = true
       if (code !== 0) {
         reject(
           new PgProcessError(
@@ -136,6 +148,18 @@ export async function runPgRestore(connectionString: string, sql: Buffer): Promi
         return
       }
       resolve()
+    })
+    // Story 28.8: `child.stdin` is itself a Writable stream — an independent EventEmitter from
+    // the `child` process object above. If `psql` exits early (auth failure, unreachable host,
+    // etc.) before consuming all of stdin, the OS closes the pipe and the write below fails with
+    // EPIPE, delivered as an 'error' event ON THE STDIN STREAM, not on `child`. Without a listener
+    // here, Node treats that as unhandled and throws it synchronously, crashing the whole process
+    // — this listener must be attached BEFORE `.end(sql)` is called so it's guaranteed to catch
+    // an error that could in principle fire on the same tick.
+    child.stdin.on('error', (err) => {
+      if (settled) return
+      settled = true
+      reject(new PgProcessError(`psql restore: stdin write failed: ${err.message}`, ''))
     })
     child.stdin.end(sql)
   })
