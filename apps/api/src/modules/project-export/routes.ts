@@ -19,6 +19,14 @@ import {
 import { buildExportBundle, encryptBundleUnderExportKey, generateExportKey } from './service.js'
 import { ExportProjectParamsSchema, ImportProjectResponseSchema } from './schema.js'
 
+// Code review fix (28.9): the multipart `projectName` override previously reached
+// `createProject()` (via `importProjectBundle`) as a bare string, bypassing the
+// `min(1).max(128)` trimmed constraint every other project-creation caller goes through
+// (`CreateProjectBodySchema.name` in ../projects/schema.ts) — the only project-creation path in
+// the codebase that skipped it. Mirrored here rather than imported to avoid a cross-module
+// schema dependency for one field.
+const ImportProjectNameOverrideSchema = z.string().trim().min(1).max(128)
+
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
 const EXPORT_REQUIRES_ADMIN = {
   code: 'project_export_requires_admin',
@@ -93,7 +101,15 @@ async function applyImportUploadPart(
     return true
   }
   if (part.fieldname === 'projectName' && typeof part.value === 'string') {
-    acc.projectName = part.value
+    const validated = ImportProjectNameOverrideSchema.safeParse(part.value)
+    if (!validated.success) {
+      reply.status(422).send({
+        code: 'invalid_project_name',
+        message: 'projectName must be 1-128 characters after trimming.',
+      })
+      return false
+    }
+    acc.projectName = validated.data
     return true
   }
   sendUnknownFieldError(reply)
@@ -195,6 +211,11 @@ export async function projectExportRoutes(fastify: FastifyApp): Promise<void> {
 
       reply.header('Content-Type', 'application/octet-stream')
       reply.header('Content-Disposition', `attachment; filename="${filename}"`)
+      // Code review fix (28.9): this response carries the one-time X-Export-Key header
+      // (real secret key material) alongside the encrypted bundle — explicitly ruling out any
+      // intermediary (browser disk cache, corporate proxy, CDN) from persisting it, rather than
+      // relying on "POST responses aren't usually cached" as the only protection.
+      reply.header('Cache-Control', 'no-store')
       // D2: the ONLY place the raw key ever appears — the server holds no reference to it after
       // this response is sent.
       reply.header('X-Export-Key', rawExportKey)
@@ -221,20 +242,29 @@ export async function projectExportRoutes(fastify: FastifyApp): Promise<void> {
     },
     handler: async (ctx, req, reply) => {
       const secureCtx = ctx as SecureRouteContext
-      const upload = await readImportUpload(req, reply)
-      if (!upload) return reply
 
-      const decrypted = await decryptExportFile(upload.fileBuffer, upload.exportKey)
-      if (decrypted.status === 'decrypt_failed') {
-        await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+      // Code review fix (28.9): every rejected import — not just a bad decryption key — is
+      // audited. This is precisely the AC-3 Red Team scenario (an attacker who already holds
+      // the real export key probing with a malformed/oversized/corrupted payload) that AC-2's
+      // audit trail exists to catch; the other failure branches previously returned an error
+      // with no audit entry at all.
+      const auditImportFailed = (reason: string): Promise<void> =>
+        writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
           resourceType: 'project',
           orgId: secureCtx.auth.orgId,
           actorUserId: secureCtx.auth.userId,
           eventType: AuditEvent.PROJECT_IMPORT_FAILED,
           resourceId: secureCtx.auth.userId,
-          payload: { reason: 'decrypt_failed' },
+          payload: { reason },
           request: req,
         })
+
+      const upload = await readImportUpload(req, reply)
+      if (!upload) return reply
+
+      const decrypted = await decryptExportFile(upload.fileBuffer, upload.exportKey)
+      if (decrypted.status === 'decrypt_failed') {
+        await auditImportFailed('decrypt_failed')
         return reply.status(401).send({
           code: 'import_decrypt_failed',
           message: 'The export file could not be decrypted with the supplied key.',
@@ -245,6 +275,7 @@ export async function projectExportRoutes(fastify: FastifyApp): Promise<void> {
       try {
         json = JSON.parse(decrypted.plaintext)
       } catch {
+        await auditImportFailed('invalid_json')
         return reply.status(422).send({
           code: 'invalid_export_payload',
           message: 'The decrypted export file is not valid JSON.',
@@ -253,6 +284,7 @@ export async function projectExportRoutes(fastify: FastifyApp): Promise<void> {
 
       const versionCheck = checkExportFormatVersion(json)
       if (versionCheck.status === 'unsupported') {
+        await auditImportFailed('unsupported_export_format')
         return reply.status(422).send({
           code: 'unsupported_export_format',
           message: `This export file was created with an incompatible version of Project Vault (format v${versionCheck.found}, this instance supports v1).`,
@@ -261,6 +293,7 @@ export async function projectExportRoutes(fastify: FastifyApp): Promise<void> {
 
       const parsed = parseExportBundle(json)
       if (parsed.status === 'invalid_payload') {
+        await auditImportFailed('invalid_export_payload')
         return reply.status(422).send({
           code: 'invalid_export_payload',
           message: 'The decrypted export file does not match the expected project export shape.',
@@ -273,6 +306,7 @@ export async function projectExportRoutes(fastify: FastifyApp): Promise<void> {
         logger: req.log,
       })
       if (result.status === 'create_project_failed') {
+        await auditImportFailed(`create_project_failed:${result.error.code}`)
         return reply.status(409).send(result.error)
       }
 

@@ -65,7 +65,11 @@ const ExportDependencySchema = z
     // Index into the top-level `credentials` array — never a raw source-instance UUID (D1).
     credentialIndex: z.number().int().min(0),
     systemName: z.string().min(1).max(256),
-    systemType: z.string().max(64),
+    // Code review fix (28.9): must match `credential_dependencies_system_type_check`
+    // (packages/db/src/schema/credential-dependencies.ts) exactly — a bare `z.string()` let a
+    // malformed-but-validly-encrypted file pass this gate and throw a raw DB CHECK-constraint
+    // error deep inside the import transaction instead of a clean 422 at the schema boundary.
+    systemType: z.enum(['service', 'ci_pipeline', 'database', 'third_party', 'other']),
     notes: z.string().max(2048).nullable(),
     linkUrl: z.string().max(2048).nullable(),
     fieldKey: z.string().max(256).nullable(),
@@ -75,7 +79,9 @@ const ExportDependencySchema = z
 const ExportChecklistItemSchema = z
   .object({
     systemName: z.string().max(256),
-    status: z.string().max(64),
+    // Code review fix (28.9): matches `rotation_checklist_items_status_check` exactly — see
+    // `systemType`'s comment above for why a bare string here is a schema-boundary gap.
+    status: z.enum(['unconfirmed', 'confirmed', 'failed', 'max_retries_exceeded']),
     confirmedAt: nullableIsoString,
     notes: z.string().max(2048).nullable(),
     retryCount: z.number().int().min(0).max(100_000),
@@ -94,7 +100,20 @@ const ExportRotationSchema = z
     // written — see service.ts's `coerceRotationStatusForExport`. No live rotation state machine
     // is ever running for an imported project, so no imported row is ever allowed to read as one
     // of those non-terminal values.
-    status: z.string().max(64),
+    // Code review fix (28.9): matches `rotations_status_check` exactly (full state-machine list,
+    // not just the terminal values D5 coerces to on export) — a bare string here let a
+    // malformed-but-validly-encrypted file pass the schema gate and throw a raw DB CHECK-
+    // constraint error mid-transaction instead of a clean 422.
+    status: z.enum([
+      'in_progress',
+      'staged',
+      'promoted',
+      'retired',
+      'completed',
+      'abandoned',
+      'stale_recovery',
+      'break_glass_complete',
+    ]),
     initiatedAt: nullableIsoString,
     completedAt: nullableIsoString,
     promotedAt: nullableIsoString,
@@ -151,7 +170,10 @@ const ExportMachineUserSchema = z
   .object({
     name: z.string().min(1).max(128),
     description: z.string().max(2048).nullable(),
-    role: z.string().max(32),
+    // Code review fix (28.9): matches `machine_users_role_check` exactly — see the
+    // `credentialDependencies.systemType` comment above for why a bare string here is a
+    // schema-boundary gap.
+    role: z.enum(['member', 'viewer']),
   })
   .strict()
 

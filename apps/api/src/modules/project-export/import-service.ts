@@ -210,8 +210,19 @@ async function insertDependencies(
   newCredentialIds: string[]
 ): Promise<void> {
   if (bundle.credentialDependencies.length === 0) return
+  // Code review fix (28.9): `credentialIndex` is schema-validated only as `>= 0`, not bounded
+  // against `credentials.length` (a whole-array cross-field constraint Zod can't express here).
+  // A tampered-but-validly-encrypted file (attacker already has the key, per this story's own
+  // threat model) with an out-of-range index previously produced `newCredentialIds[i] === undefined`
+  // cast to `string`, throwing a raw NOT-NULL/FK violation instead of failing cleanly. Filtered out
+  // here, mirroring `insertOneRotation`'s and `insertServiceEndpointsAndStatusPage`'s existing
+  // skip-rather-than-throw handling of the same class of dangling index.
+  const inRange = bundle.credentialDependencies.filter(
+    (dep) => newCredentialIds[dep.credentialIndex] !== undefined
+  )
+  if (inRange.length === 0) return
   await target.tx.insert(credentialDependencies).values(
-    bundle.credentialDependencies.map((dep) => ({
+    inRange.map((dep) => ({
       orgId: target.auth.orgId,
       credentialId: newCredentialIds[dep.credentialIndex] as string,
       systemName: dep.systemName,

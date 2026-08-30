@@ -50,9 +50,44 @@ const TERMINAL_ROTATION_STATUSES = new Set([
  *  time) — documented here as the single place this decision is made. A rotation that was
  *  genuinely in_progress/staged/stale_recovery at export time becomes a plain historical
  *  'completed' record; every already-terminal status passes through unchanged. */
-export function coerceRotationStatusForExport(status: string): string {
-  return TERMINAL_ROTATION_STATUSES.has(status) ? status : 'completed'
+export function coerceRotationStatusForExport(
+  status: string
+): ExportBundle['rotations'][number]['status'] {
+  return TERMINAL_ROTATION_STATUSES.has(status)
+    ? (status as ExportBundle['rotations'][number]['status'])
+    : 'completed'
 }
+
+/** Code review fix (28.9): the DB columns backing `role`/`systemType`/checklist `status` are
+ *  plain `text` with a CHECK constraint, not a typed enum — the schema.ts export schemas were
+ *  tightened from `z.string()` to `z.enum()` (matching each CHECK exactly) so a malformed import
+ *  file fails at the Zod gate instead of a raw DB constraint error. On the EXPORT side, the row's
+ *  value is already guaranteed valid by that same CHECK constraint (defense in depth: the
+ *  constraint is the actual guarantee, this is just what lets TypeScript see it) — narrowed here
+ *  rather than blindly cast, falling back to the CHECK's own default value in the
+ *  should-be-unreachable case where a row somehow holds something outside the constraint. */
+function asEnumOrDefault<const T extends readonly string[]>(
+  allowed: T,
+  value: string,
+  fallback: T[number]
+): T[number] {
+  return (allowed as readonly string[]).includes(value) ? (value as T[number]) : fallback
+}
+
+const MACHINE_USER_ROLES = ['member', 'viewer'] as const
+const DEPENDENCY_SYSTEM_TYPES = [
+  'service',
+  'ci_pipeline',
+  'database',
+  'third_party',
+  'other',
+] as const
+const CHECKLIST_ITEM_STATUSES = [
+  'unconfirmed',
+  'confirmed',
+  'failed',
+  'max_retries_exceeded',
+] as const
 
 type CredentialRow = typeof credentials.$inferSelect
 type CredentialVersionRow = typeof credentialVersions.$inferSelect
@@ -74,7 +109,7 @@ function buildExportChecklistItems(
 ): ExportBundle['rotations'][number]['checklistItems'] {
   return items.map((item) => ({
     systemName: item.systemName,
-    status: item.status,
+    status: asEnumOrDefault(CHECKLIST_ITEM_STATUSES, item.status, 'unconfirmed'),
     confirmedAt: toIsoOrNull(item.confirmedAt),
     notes: item.notes,
     retryCount: item.retryCount,
@@ -205,7 +240,7 @@ export async function buildExportBundle(
   const exportDependencies = dependencyRows.map((dep) => ({
     credentialIndex: credentialIndexById.get(dep.credentialId) ?? 0,
     systemName: dep.systemName,
-    systemType: dep.systemType,
+    systemType: asEnumOrDefault(DEPENDENCY_SYSTEM_TYPES, dep.systemType, 'other'),
     notes: dep.notes,
     linkUrl: dep.linkUrl,
     fieldKey: dep.fieldKey,
@@ -315,7 +350,7 @@ export async function buildExportBundle(
   const exportMachineUsers = machineUserRows.map((m) => ({
     name: m.name,
     description: m.description,
-    role: m.role,
+    role: asEnumOrDefault(MACHINE_USER_ROLES, m.role, 'member'),
   }))
 
   const bundle: ExportBundle = {
