@@ -65,7 +65,10 @@ import { reloadThemesWithFanout } from './modules/theming/service.js'
 import { wireExtensionAuthStrategy } from './modules/auth/strategies.js'
 import { wireExtensionCapabilityGate } from './lib/capability-gate.js'
 import { resolveNativeLoginPolicy } from './modules/auth/native-login-policy.js'
+import { resolveHandoffAuthStrategy } from './modules/auth/handoff-boot.js'
+import { writeHandoffSecurityEvent } from './modules/auth/handoff-security-events.js'
 import { ssoRoutes } from './modules/auth/sso-routes.js'
+import { handoffRoutes } from './modules/auth/handoff-routes.js'
 import { domainLookupRoutes } from './modules/auth/domain-lookup-routes.js'
 import { orgSsoDomainsRoutes } from './modules/auth/org-sso-domains-routes.js'
 import { externalIdentityRoutes } from './modules/auth/external-identity-routes.js'
@@ -81,7 +84,7 @@ import { AppError } from './lib/errors.js'
 import { resolveTrustProxy } from './lib/trust-proxy.js'
 import type { FastifyApp } from './lib/fastify-app.js'
 import { getReleaseVersion } from './lib/package-version.js'
-import { OperationalEvent } from '@project-vault/shared'
+import { HandoffEvent, OperationalEvent } from '@project-vault/shared'
 import type { FastifyRequest } from 'fastify'
 
 // RFC 4122 UUID v4: version nibble = 4, variant nibble ∈ {8,9,a,b}. Do NOT loosen
@@ -112,6 +115,26 @@ function shouldNormalizeMfaParserError(
       statusCode === 415 ||
       parserErrorCode === 'FST_ERR_CTP_BODY_TOO_LARGE' ||
       parserErrorCode === 'FST_ERR_CTP_INVALID_MEDIA_TYPE')
+  )
+}
+
+const HANDOFF_GENERIC_REJECTION_MESSAGE = 'Sign-in could not be verified. Please start again.'
+
+// Story 30.2 AC3.8: an oversized /auth/handoff/prepare body is rejected by Fastify's body
+// parser (the route's own `bodyLimit: 16 * 1024`) BEFORE handlePrepare ever runs, so
+// verifyHandoffToken's own MAX_HANDOFF_TOKEN_BYTES branch (which would emit
+// handoff_claims_oversized) is unreachable for this case. Mirrors shouldNormalizeMfaParserError's
+// precedent: normalize the parser-level 413 to the route's own generic rejection contract and
+// still record the required security event.
+function shouldNormalizeHandoffParserError(
+  url: string,
+  statusCode: number | undefined,
+  parserErrorCode: string | undefined
+): boolean {
+  const path = url.split('?')[0]
+  return (
+    path === '/api/v1/auth/handoff/prepare' &&
+    (statusCode === 413 || parserErrorCode === 'FST_ERR_CTP_BODY_TOO_LARGE')
   )
 }
 
@@ -153,7 +176,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   fastify.setSerializerCompiler(serializerCompiler)
 
   fastify.setErrorHandler(
-    (
+    async (
       error: Error & { statusCode?: number },
       req: FastifyRequest,
       reply: { status: (code: number) => { send: (body: unknown) => unknown } }
@@ -189,6 +212,19 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
           code: 'validation_error',
           message: 'Request validation failed',
         })
+      }
+      if (shouldNormalizeHandoffParserError(req.url, error.statusCode, parserErrorCode)) {
+        await writeHandoffSecurityEvent({
+          eventType: HandoffEvent.HANDOFF_CLAIMS_OVERSIZED,
+          meta: {
+            ipAddress: req.ip,
+            userAgent:
+              typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+          },
+        })
+        return reply
+          .status(401)
+          .send({ code: 'handoff_rejected', message: HANDOFF_GENERIC_REJECTION_MESSAGE })
       }
       // Preserve Fastify/Zod validation errors (statusCode already set)
       if (typeof error.statusCode === 'number') {
@@ -295,6 +331,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // Story 14.3: start/callback are public (unauthenticated) SSO routes, mounted alongside local
   // auth at the same public prefix — see Dev Notes judgment call #6 on file/module placement.
   await fastify.register(ssoRoutes, { prefix: '/api/v1/auth/sso' })
+  // Story 30.2 (DW-128): dedicated CM->PV handoff-token landing routes — public/pre-auth like
+  // ssoRoutes above, but a separate module/prefix (not reusing sso-routes.ts's generic
+  // start/callback dispatch — see handoff-boot.ts's doc comment on why).
+  await fastify.register(handoffRoutes, { prefix: '/api/v1/auth/handoff' })
   // Story 14.4: domain-lookup is also public/pre-auth (the caller has no session yet) — mounted
   // at the same prefix as start/callback, in its own module (Dev Notes Project Structure Notes).
   await fastify.register(domainLookupRoutes, { prefix: '/api/v1/auth/sso' })
@@ -418,6 +458,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // fire-and-forget) so the policy is fully resolved before createApp() returns to any caller —
   // e.g. the very first `/health` response already reflects it.
   await resolveNativeLoginPolicy(getExtensionStatus(), fastify.log)
+
+  // Story 30.2 AC2: resolved immediately after native-login policy (this function calls
+  // isNativeLoginEnabled(), which requires that resolution to have already completed).
+  await resolveHandoffAuthStrategy(fastify.log)
 
   return fastify
 }

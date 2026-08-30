@@ -10,6 +10,10 @@ import {
 } from './modules/vault/key-service.js'
 import { pruneMfaPendingEnrollments } from './workers/prune-mfa-pending.js'
 import { pruneRevokedTokens } from './workers/prune-revoked-tokens.js'
+import {
+  pruneHandoffPendingStates,
+  pruneHandoffTokenJti,
+} from './workers/prune-handoff-token-jti.js'
 import { pruneTotpUsedCodes } from './workers/prune-totp-used-codes.js'
 import { prunePendingMfaSessions } from './workers/prune-pending-mfa-sessions.js'
 import { checkFailedAuthThresholdHandler } from './workers/check-failed-auth-threshold.js'
@@ -177,6 +181,11 @@ async function main(): Promise<void> {
     }
     await boss.registerSchedules({
       'prune-revoked-tokens': { cron: '0 * * * *' },
+      // Story 30.2 AC5: a short (120s) replay window means expired rows accumulate fast relative
+      // to the hourly revoked-tokens sweep — same 5-minute cadence as the sibling
+      // handoff/clock-skew-check job registered alongside it.
+      'prune-handoff-token-jti': { cron: EVERY_FIVE_MINUTES_CRON },
+      'prune-handoff-pending-states': { cron: EVERY_FIVE_MINUTES_CRON },
       'mfa/prune-totp-used-codes': { cron: '0 * * * *' },
       'mfa/prune-pending-mfa-sessions': { cron: '0 * * * *' },
       'mfa/prune-pending': { cron: '0 0 * * *' },
@@ -247,6 +256,8 @@ async function main(): Promise<void> {
     })
     await boss.registerWorkers({
       'prune-revoked-tokens': () => pruneRevokedTokens(),
+      'prune-handoff-token-jti': () => pruneHandoffTokenJti(),
+      'prune-handoff-pending-states': () => pruneHandoffPendingStates(),
       'mfa/prune-totp-used-codes': () => pruneTotpUsedCodes(),
       'mfa/prune-pending-mfa-sessions': () => prunePendingMfaSessions(),
       'mfa/prune-pending': () => pruneMfaPendingEnrollments(),

@@ -38,6 +38,15 @@ export const organizations = pgTable(
     // Mirrors projects.creationRequestId's exact shape (migration 0082): a nullable UUID column
     // backed by a partial unique index, never an application-level check alone.
     serviceProvisioningRequestId: uuid('service_provisioning_request_id'),
+    // Story 30.2 (org-mismatch critical-bug fix): CM's own organizationId claim — a
+    // WorkOS-directory-shaped identifier (e.g. "org_synthetic_acme"), NEVER PV's own org UUID.
+    // Nullable because pre-existing organizations, and any organization provisioned before CM's
+    // provisioning client is updated to send this field (deferred — see deferred-work.md), have
+    // no value here. A handoff token's `organizationId` claim must be compared against THIS
+    // stored value, never against `organizations.id` directly. Mirrors
+    // serviceProvisioningRequestId's exact shape: a nullable column backed by a partial unique
+    // index, never an application-level check alone.
+    centralizemeOrganizationId: text('centralizeme_organization_id'),
   },
   (t) => ({
     dormancyThresholdCheck: check(
@@ -59,5 +68,10 @@ export const organizations = pgTable(
     )
       .on(t.serviceProvisioningRequestId)
       .where(sql`${t.serviceProvisioningRequestId} IS NOT NULL`),
+    // Story 30.2: partial unique index mirroring serviceProvisioningRequestIdIdx above — WHERE
+    // ... IS NOT NULL means pre-existing/non-CM-provisioned organizations never collide.
+    centralizemeOrganizationIdIdx: uniqueIndex('idx_organizations_centralizeme_organization_id')
+      .on(t.centralizemeOrganizationId)
+      .where(sql`${t.centralizemeOrganizationId} IS NOT NULL`),
   })
 )

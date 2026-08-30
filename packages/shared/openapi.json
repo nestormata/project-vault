@@ -23790,6 +23790,24 @@
         }
       }
     },
+    "/api/v1/auth/handoff/prepare": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/handoff/confirm": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/api/v1/auth/sso/domain-lookup": {
       "post": {
         "requestBody": {

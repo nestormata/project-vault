@@ -1212,6 +1212,17 @@ const envSchema = z
     // verifier tolerance so this diagnostic warning fires before Story 30.2's verifier would
     // actually start rejecting handoff tokens on clock-skew grounds.
     VAULT_HANDOFF_CLOCK_SKEW_WARN_MS: z.coerce.number().int().positive().default(20000),
+    // Story 30.2 AC2.5: the explicit enablement toggle this story defines (the claim contract
+    // does not name one). An operator sets this to signal "handoff auth should be active on this
+    // instance" — inferring "enabled" from key-set presence alone would be ambiguous with Story
+    // 30.1's AC2.6/AC2.7 "an empty key set is allowed to exist without enabling anything" case.
+    // Defaults false: a fresh instance never boot-fails or registers the strategy just because
+    // this repo shipped with the config keys documented in .env.example.
+    VAULT_HANDOFF_ENABLED: booleanEnvDefault(false),
+    // Story 30.2: the exact configured CM router issuer (claim contract "Instance identity
+    // decision" table row `iss`) — a mismatch rejects `handoff_malformed_claim`. Defaults to the
+    // production router identifier the contract cites; overridable for staging/test issuers.
+    VAULT_HANDOFF_ISSUER: z.string().min(1).default('https://app.centralizeme.com'),
   })
   .superRefine((env, ctx) => {
     if (env.SESSION_SECRET === env.REFRESH_TOKEN_HMAC_SECRET) {

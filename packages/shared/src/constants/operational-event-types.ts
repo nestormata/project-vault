@@ -414,6 +414,15 @@ export const OperationalEvent = {
   // in-flight accounting key was already at its concurrency cap — a distinct rate-limit budget
   // from capability-gate.ts's own (never shared).
   ORG_AUTHORIZATION_RATE_LIMITED: 'org_authorization.rate_limited',
+
+  // Story 30.2 (DW-128) AC2.5: boot-time handoff AuthStrategy registration gate
+  // (apps/api/src/modules/auth/handoff-boot.ts). Mirrors native-login-policy.ts's exact
+  // two-branch fail-safe (native login still enabled — log fatal, keep serving local login) /
+  // fail-loud (native login excluded — refuse to boot) pattern for the case where
+  // VAULT_HANDOFF_ENABLED is set but VAULT_HANDOFF_INSTANCE_ID or the parsed
+  // VAULT_HANDOFF_VERIFY_KEYS key set is missing/empty.
+  HANDOFF_BOOT_MISCONFIGURED_FAIL_SAFE: 'handoff_boot.misconfigured_fail_safe',
+  HANDOFF_STRATEGY_REGISTERED: 'handoff_boot.strategy_registered',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

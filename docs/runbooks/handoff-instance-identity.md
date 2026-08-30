@@ -140,6 +140,7 @@ different instance.
 
 ## Cross-link
 
-Story 30.2 will add a key-rotation and compromise-response runbook alongside this one, covering
-what to do when a `VAULT_HANDOFF_VERIFY_KEYS` entry needs to be rotated or revoked. That runbook
-does not exist yet at the time this document was written — this is a forward-reference only.
+Story 30.2 added `docs/runbooks/handoff-key-rotation.md`, covering key rotation and
+compromise-response procedures for `VAULT_HANDOFF_VERIFY_KEYS`, and the actual
+`/auth/handoff/prepare`/`/auth/handoff/confirm` routes and EdDSA verifier that consume the config
+documented above.

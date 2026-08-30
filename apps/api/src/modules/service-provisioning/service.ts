@@ -81,6 +81,10 @@ async function insertNewProvisioning(
       .set({
         name: input.organizationName,
         serviceProvisioningRequestId: input.requestId,
+        // Story 30.2: only set when the caller sends it — CM's provisioning client doesn't send
+        // it yet (deferred follow-up, see deferred-work.md), so this stays `undefined` (Drizzle
+        // leaves the column untouched) for today's unmodified caller.
+        centralizemeOrganizationId: input.centralizemeOrganizationId,
       })
       .where(eq(organizations.id, allocated.id))
       .returning({ id: organizations.id })

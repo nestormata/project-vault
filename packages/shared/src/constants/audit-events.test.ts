@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AuditEvent } from './audit-events.js'
+import { AuditEvent, HandoffEvent } from './audit-events.js'
 import type { AuthAuditEventType } from './audit-events.js'
 
 function assertValidAuditEventType(value: AuthAuditEventType): AuthAuditEventType {
@@ -167,5 +167,46 @@ describe('AuditEvent', () => {
   it('no longer carries the dead user.login/user.logout literals in the object (AC-J2)', () => {
     expect(Object.values(AuditEvent)).not.toContain('user.login')
     expect(Object.values(AuditEvent)).not.toContain('user.logout')
+  })
+})
+
+describe('HandoffEvent (Story 30.2 AC6.21)', () => {
+  // AC6.21's prose says "21 named events" but its own enumerated list (repeated verbatim as
+  // `expected` below) contains 22 distinct names — the concrete list is authoritative over the
+  // summary count.
+  it('exposes exactly the 22 named handoff_* rejection-matrix/lifecycle events', () => {
+    const expected = [
+      'handoff_malformed_claim',
+      'handoff_claims_oversized',
+      'handoff_unexpected_alg',
+      'handoff_unknown_kid',
+      'handoff_signature_invalid',
+      'handoff_missing_claim',
+      'handoff_clock_skew',
+      'handoff_not_yet_valid',
+      'handoff_expired',
+      'handoff_audience_mismatch',
+      'handoff_replay',
+      'handoff_replay_store_unavailable',
+      'handoff_org_mismatch',
+      'handoff_ambiguous_org',
+      'handoff_unknown_claims_version',
+      'handoff_unknown_capability',
+      'handoff_unknown_assurance',
+      'handoff_membership_inactive',
+      'handoff_mfa_required',
+      'handoff_session_claims_unavailable',
+      'handoff_mfa_completed',
+      'handoff_login_succeeded',
+    ]
+    const actual = Object.values(HandoffEvent)
+    expect(actual).toHaveLength(22)
+    expect(actual.sort()).toEqual(expected.sort())
+  })
+
+  it('every value is prefixed handoff_ (never a raw claim value embedded in the constant)', () => {
+    for (const value of Object.values(HandoffEvent)) {
+      expect(value.startsWith('handoff_')).toBe(true)
+    }
   })
 })

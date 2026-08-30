@@ -307,10 +307,16 @@ async function invokeOnAuthenticateWithTimeout(
 // AC-5/AC-7/AC-8: post-authentication identity resolution + session issuance
 // ---------------------------------------------------------------------------
 
-type LinkedIdentityLookup =
-  { kind: 'none' } | { kind: 'found'; orgId: string; userId: string } | { kind: 'ambiguous' }
+export type LinkedIdentityLookup =
+  | { kind: 'none' }
+  | { kind: 'found'; orgId: string; userId: string }
+  // Story 30.2: `candidates` carries the full multi-org match list so a caller with an
+  // independent way to disambiguate (e.g. handoff-routes.ts's CM-organizationId cross-check) can
+  // narrow it down itself, rather than this being a dead end. SSO's own caller only checks
+  // `kind === 'ambiguous'` and never reads this field — adding it changes nothing for SSO.
+  | { kind: 'ambiguous'; candidates: { orgId: string; userId: string }[] }
 
-async function findLinkedIdentity(
+export async function findLinkedIdentity(
   providerName: string,
   externalSubject: string
 ): Promise<LinkedIdentityLookup> {
@@ -334,7 +340,7 @@ async function findLinkedIdentity(
     )
   if (rows.length === 0) return { kind: 'none' }
   const distinctOrgs = new Set(rows.map((row) => row.orgId))
-  if (distinctOrgs.size > 1) return { kind: 'ambiguous' }
+  if (distinctOrgs.size > 1) return { kind: 'ambiguous', candidates: rows }
   const [row] = rows as [{ orgId: string; userId: string }]
   return { kind: 'found', orgId: row.orgId, userId: row.userId }
 }
@@ -353,7 +359,7 @@ async function findCandidateInvitations(email: string): Promise<ProjectInvitatio
     )
 }
 
-async function issueSessionForUser(
+export async function issueSessionForUser(
   tx: Tx,
   orgId: string,
   userId: string,
@@ -363,7 +369,7 @@ async function issueSessionForUser(
   return createLoginSessionInTx(tx, { id: userId, identityTokenId }, orgId, meta)
 }
 
-async function findUserMfaEnrolledAndMembership(
+export async function findUserMfaEnrolledAndMembership(
   orgId: string,
   userId: string
 ): Promise<{ mfaEnrolledAt: Date | null; membershipStatus: string | null } | null> {
