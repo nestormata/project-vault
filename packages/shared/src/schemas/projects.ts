@@ -1,4 +1,5 @@
 import { z } from 'zod/v4'
+import { archivableEntityAuditFields } from './audit-fields.js'
 
 export const ProjectRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer'])
 
@@ -45,10 +46,7 @@ export const ProjectDetailSchema = z
     slug: z.string(),
     description: z.string().nullable(),
     role: ProjectRoleSchema,
-    createdBy: z.uuid().nullable(),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime(),
-    archivedAt: z.iso.datetime().nullable(),
+    ...archivableEntityAuditFields,
   })
   .meta({ id: 'ProjectDetail' })
 

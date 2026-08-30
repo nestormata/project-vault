@@ -4,9 +4,8 @@ import { credentialShares } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { getAdminDb } from '../../lib/db.js'
 import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
-import { credentialExistsInProject } from '../credentials/db-helpers.js'
-import { isCredentialArchived } from '../credentials/archive-guards.js'
 import { serializeBounded } from '../credentials/bounded-share-adapter.js'
+import { preflightCredentialForShareCreation } from './service.js'
 import {
   baseShareInsertValues,
   buildShareRevealResult,
@@ -127,14 +126,8 @@ export async function createExternalCredentialShare(
   tx: Tx,
   input: CreateExternalShareInput
 ): Promise<CreateExternalShareResult> {
-  const exists = await credentialExistsInProject(tx, {
-    credentialId: input.credentialId,
-    projectId: input.projectId,
-  })
-  if (!exists) return { status: 'credential_not_found' }
-
-  // Story 28.5 AC4: external share creation is also a mutation of the credential's own state.
-  if (await isCredentialArchived(tx, input.credentialId)) return { status: 'credential_archived' }
+  const preflight = await preflightCredentialForShareCreation(tx, input)
+  if (preflight.status !== 'ok') return preflight
 
   const validation = await validateShareFieldAndExpiry(
     tx,

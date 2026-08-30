@@ -107,7 +107,7 @@ import {
   detectImportFileType,
   stageCredentialImport,
 } from './import-service.js'
-import { rejectIfProjectArchived } from '../projects/archive-guards.js'
+import { rejectIfProjectArchived, resolveArchiveAuthorization } from '../projects/archive-guards.js'
 import { callerProjectRole } from '../projects/routes.js'
 import { credentialRevealAbandonedVersionExcludedTotal } from '../rotation/metrics.js'
 import {
@@ -556,9 +556,7 @@ async function callerCredentialArchiveAuthorization(
   projectId: string
 ): Promise<'project_owner' | 'org_owner' | null> {
   const callerRole = await callerProjectRole(secureCtx, projectId)
-  if (callerRole === 'owner') return 'project_owner'
-  if (secureCtx.auth.orgRole === 'owner') return 'org_owner'
-  return null
+  return resolveArchiveAuthorization(callerRole, secureCtx.auth.orgRole)
 }
 
 // Story 28.5 AC2 "Audit gap (denied/blocked attempts)": mirrors project archival's

@@ -442,7 +442,7 @@ export async function archiveCredential(
     .set({ archivedAt: new Date(), archivedBy: params.userId, updatedAt: new Date() })
     .where(and(eq(credentials.id, params.credentialId), isNull(credentials.archivedAt)))
     .returning({ id: credentials.id, name: credentials.name, archivedAt: credentials.archivedAt })
-  if (!archived || !archived.archivedAt) return null
+  if (!archived?.archivedAt) return null
   return { id: archived.id, name: archived.name, archivedAt: archived.archivedAt }
 }
 

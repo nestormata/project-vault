@@ -60,6 +60,7 @@ import {
   findBlockingShareIds,
   PROJECT_ARCHIVED_ERROR,
   rejectIfProjectArchived,
+  resolveArchiveAuthorization,
 } from './archive-guards.js'
 import { activeMachineUserKeysQuery } from '../machine-users/archival-check.js'
 import { getExtensionStatus } from '../../extensions/loader.js'
@@ -130,9 +131,7 @@ async function callerArchiveAuthorization(
   projectId: string
 ): Promise<'project_owner' | 'org_owner' | null> {
   const callerRole = await callerProjectRole(secureCtx, projectId)
-  if (callerRole === 'owner') return 'project_owner'
-  if (secureCtx.auth.orgRole === 'owner') return 'org_owner'
-  return null
+  return resolveArchiveAuthorization(callerRole, secureCtx.auth.orgRole)
 }
 
 // 4.4 AC-12 "Audit gap (denied/blocked attempts)": SecureRoute's same-tx audit writer only fires

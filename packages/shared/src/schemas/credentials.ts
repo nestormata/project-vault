@@ -8,6 +8,7 @@ import {
 } from '../credential-templates.js'
 import { ActiveRotationBadgeSchema, RotationStatusSchema } from './rotations.js'
 import { SystemTypeSchema } from './credential-dependencies.js'
+import { archivableEntityAuditFields } from './audit-fields.js'
 
 // Story 13.2 — structured multi-field secrets.
 export const CredentialTemplateSchema = z
@@ -90,12 +91,10 @@ export const CredentialDetailSchema = z
     // data alongside it. Empty object (not omitted) when there are no non-sensitive fields, or
     // when the eager decrypt failed (graceful degradation — that field renders masked instead).
     visibleFieldValues: z.record(z.string(), z.string()),
-    createdBy: z.uuid().nullable(),
-    createdAt: z.iso.datetime(),
-    updatedAt: z.iso.datetime(),
-    // Story 28.5 AC5/AC6 — null when active; non-null once the secret itself is archived. Lets
-    // the web detail page decide Archive-vs-Unarchive button state without a second round-trip.
-    archivedAt: z.iso.datetime().nullable(),
+    // Story 28.5 AC5/AC6 — `archivedAt` here is null when active, non-null once the secret itself
+    // is archived; lets the web detail page decide Archive-vs-Unarchive button state without a
+    // second round-trip.
+    ...archivableEntityAuditFields,
   })
   .meta({ id: 'CredentialDetail' })
 
