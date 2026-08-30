@@ -37,3 +37,27 @@ export function formatCheckedAt(value: string | null): string {
     minute: '2-digit',
   })
 }
+
+// Story 28.7 AC5/AC6/AC7: the shared badge label, gated on `lastCheckedAt` — a never-checked
+// endpoint (`lastCheckedAt === null`) must not assert a real `healthy`/`degraded`/`down` outcome
+// it hasn't earned yet. This is a display-only gate: the underlying `status` value itself is
+// untouched (still correctly `'healthy'` per ADR-6.2-03's consecutiveFailures=0 default), so no
+// schema/data-model change is involved.
+export const PENDING_CHECK_LABEL = 'Pending first check'
+
+export function statusBadgeLabel(
+  status: ServiceHealthStatus,
+  lastCheckedAt: string | null
+): string {
+  return lastCheckedAt === null ? PENDING_CHECK_LABEL : status
+}
+
+// Story 28.7 AC5/AC6: same `lastCheckedAt` gate applied to the badge's styling — reuses the
+// existing off-contract-status fallback (`NEUTRAL_BADGE_CLASS`, via `statusClass`) rather than
+// inventing new styling for the pending state.
+export function statusBadgeClass(
+  status: ServiceHealthStatus,
+  lastCheckedAt: string | null
+): string {
+  return lastCheckedAt === null ? NEUTRAL_BADGE_CLASS : statusClass(status)
+}

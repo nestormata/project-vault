@@ -2082,6 +2082,193 @@ describe('credential detail +page.svelte', () => {
       expect(await within(shareListItem).findByText(/revoked/i)).toBeTruthy()
       expect(screen.queryByRole('button', { name: /revoke/i })).toBeNull()
     })
+
+    // Story 28.7 AC1/AC2/AC3/AC4: the "Showing X of Y" summary must track a real local counter
+    // that onCreateShare/onRevokeShare keep in sync — not the stale SSR-load `data.sharesTotal`
+    // value, which never updates after an optimistic client-side mutation.
+    describe('Story 28.7: share-count summary stays accurate after create/revoke', () => {
+      it('AC1: creating the first share on a credential with zero prior shares shows "Showing 1 of 1"', async () => {
+        createCredentialShareMock.mockResolvedValue({
+          id: 'share-1',
+          credentialId,
+          fieldKey: null,
+          sharedBy: 'sharer-1',
+          recipientUserId: 'recipient-1',
+          singleUse: true,
+          createdAt: '2026-07-28T00:00:00.000Z',
+          expiresAt: '2026-07-29T00:00:00.000Z',
+          revokedAt: null,
+          firstViewedAt: null,
+          viewCount: 0,
+          status: 'active',
+          token: 'raw-one-time-token',
+        })
+        render(CredentialDetailPage, {
+          props: { data: baseData({ shares: [], sharesTotal: 0 }) },
+        })
+
+        expect(screen.getByText(/no shares yet for this secret/i)).toBeTruthy()
+
+        await fireEvent.change(screen.getByLabelText(/recipient/i), {
+          target: { value: 'recipient-1' },
+        })
+        await fireEvent.click(screen.getByRole('checkbox', { name: /value/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+
+        expect(await screen.findByText(/showing 1 of 1/i)).toBeTruthy()
+      })
+
+      it('AC2: creating a share when N shares already exist shows "Showing N+1 of N+1"', async () => {
+        const existingShare = {
+          id: 'share-existing',
+          credentialId,
+          fieldKey: null,
+          sharedBy: 'sharer-1',
+          recipientUserId: 'recipient-1',
+          singleUse: true,
+          createdAt: '2026-07-27T00:00:00.000Z',
+          expiresAt: '2026-07-29T00:00:00.000Z',
+          revokedAt: null,
+          firstViewedAt: null,
+          viewCount: 0,
+          status: 'active',
+        }
+        createCredentialShareMock.mockResolvedValue({
+          id: 'share-new',
+          credentialId,
+          fieldKey: null,
+          sharedBy: 'sharer-1',
+          recipientUserId: 'recipient-1',
+          singleUse: true,
+          createdAt: '2026-07-28T00:00:00.000Z',
+          expiresAt: '2026-07-29T00:00:00.000Z',
+          revokedAt: null,
+          firstViewedAt: null,
+          viewCount: 0,
+          status: 'active',
+          token: 'raw-one-time-token',
+        })
+        render(CredentialDetailPage, {
+          props: { data: baseData({ shares: [existingShare], sharesTotal: 1 }) },
+        })
+
+        expect(screen.getByText(/showing 1 of 1/i)).toBeTruthy()
+
+        await fireEvent.change(screen.getByLabelText(/recipient/i), {
+          target: { value: 'recipient-1' },
+        })
+        await fireEvent.click(screen.getByRole('checkbox', { name: /value/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+
+        expect(await screen.findByText(/showing 2 of 2/i)).toBeTruthy()
+      })
+
+      it('AC3: creating a share while a non-matching status filter is active does not splice it into the list or bump the total', async () => {
+        const revokedShare = {
+          id: 'share-revoked',
+          credentialId,
+          fieldKey: null,
+          sharedBy: 'sharer-1',
+          recipientUserId: 'recipient-1',
+          singleUse: true,
+          createdAt: '2026-07-27T00:00:00.000Z',
+          expiresAt: '2026-07-29T00:00:00.000Z',
+          revokedAt: '2026-07-27T01:00:00.000Z',
+          firstViewedAt: null,
+          viewCount: 0,
+          status: 'revoked',
+        }
+        // A new share is always created with status 'active', which never matches a 'revoked'
+        // filter — mirrors what a full reload against the same filtered URL would return.
+        createCredentialShareMock.mockResolvedValue({
+          id: 'share-new',
+          credentialId,
+          fieldKey: null,
+          sharedBy: 'sharer-1',
+          recipientUserId: 'recipient-1',
+          singleUse: true,
+          createdAt: '2026-07-28T00:00:00.000Z',
+          expiresAt: '2026-07-29T00:00:00.000Z',
+          revokedAt: null,
+          firstViewedAt: null,
+          viewCount: 0,
+          status: 'active',
+          token: 'raw-one-time-token',
+        })
+        render(CredentialDetailPage, {
+          props: {
+            data: baseData({
+              shares: [revokedShare],
+              sharesTotal: 1,
+              sharesStatus: 'revoked',
+            }),
+          },
+        })
+
+        expect(screen.getByText(/showing 1 of 1/i)).toBeTruthy()
+
+        await fireEvent.change(screen.getByLabelText(/recipient/i), {
+          target: { value: 'recipient-1' },
+        })
+        await fireEvent.click(screen.getByRole('checkbox', { name: /value/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+
+        // Creation still succeeds (the token banner still renders)...
+        expect(await screen.findByText(/raw-one-time-token/)).toBeTruthy()
+        // ...but the filtered list/count are unaffected: still only the one revoked share.
+        expect(screen.getByText(/showing 1 of 1/i)).toBeTruthy()
+        expect(screen.queryByText('share-new')).toBeNull()
+      })
+
+      it('AC4: revoking a share leaves the total count unchanged', async () => {
+        revokeCredentialShareMock.mockResolvedValue({
+          id: 'share-1',
+          credentialId,
+          fieldKey: null,
+          sharedBy: 'sharer-1',
+          recipientUserId: 'recipient-1',
+          singleUse: true,
+          createdAt: '2026-07-28T00:00:00.000Z',
+          expiresAt: '2026-07-29T00:00:00.000Z',
+          revokedAt: '2026-07-28T01:00:00.000Z',
+          firstViewedAt: null,
+          viewCount: 0,
+          status: 'revoked',
+        })
+        render(CredentialDetailPage, {
+          props: {
+            data: baseData({
+              shares: [
+                {
+                  id: 'share-1',
+                  credentialId,
+                  fieldKey: null,
+                  sharedBy: 'sharer-1',
+                  recipientUserId: 'recipient-1',
+                  singleUse: true,
+                  createdAt: '2026-07-28T00:00:00.000Z',
+                  expiresAt: '2026-07-29T00:00:00.000Z',
+                  revokedAt: null,
+                  firstViewedAt: null,
+                  viewCount: 0,
+                  status: 'active',
+                },
+              ],
+              sharesTotal: 1,
+            }),
+          },
+        })
+
+        expect(screen.getByText(/showing 1 of 1/i)).toBeTruthy()
+
+        const revokeButton = screen.getByRole('button', { name: /revoke/i })
+        const shareListItem = revokeButton.closest('li') as HTMLElement
+        await fireEvent.click(revokeButton)
+
+        expect(await within(shareListItem).findByText(/revoked/i)).toBeTruthy()
+        expect(screen.getByText(/showing 1 of 1/i)).toBeTruthy()
+      })
+    })
   })
 
   // Story 17.3 AC-16: rotation-recommended nudge badge on the credential detail header.

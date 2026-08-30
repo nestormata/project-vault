@@ -30,6 +30,7 @@
     createExternalCredentialShare,
     dismissRotationRecommendedNudge,
     revokeCredentialShare,
+    type CredentialShareStatus,
     type CredentialShareSummary,
     type RotationRecommendedBucket,
   } from '$lib/api/credential-shares.js'
@@ -263,6 +264,11 @@
   // section above uses — updated in place on create/revoke so the Shares tab reflects a mutation
   // immediately without a full reload.
   let shareItems = $state<CredentialShareSummary[]>(data.shares ?? [])
+  // Story 28.7 AC1/AC2: a real local counter, seeded from the SSR-load `data.sharesTotal`, kept
+  // in sync by onCreateShare/onRevokeShare alongside `shareItems` above — replaces rendering
+  // `data.sharesTotal ?? shareItems.length` directly, whose `??` fallback never fires for a
+  // legitimate `0` (the exact "Showing 1 of 0" bug this fixes).
+  let sharesTotalCount = $state(data.sharesTotal ?? shareItems.length)
   // Story 17.2 AC-21: recipient-type toggle — swaps the org-member typeahead for a plain email
   // input, and surfaces the tighter 1h default/72h cap plus the step-up prompt when 'external'.
   let shareRecipientType = $state<'user' | 'external'>('user')
@@ -323,6 +329,12 @@
     if (data.sharesStatus) params.set('sharesStatus', data.sharesStatus)
     params.set('sharesPage', String(targetPage))
     return params.toString()
+  }
+
+  // Story 28.7 AC3: whether a share with the given status belongs in the currently-visible
+  // (optionally filtered) Shares-tab list — no active filter means everything matches.
+  function matchesActiveSharesFilter(status: CredentialShareStatus): boolean {
+    return !data.sharesStatus || status === data.sharesStatus
   }
 
   function nudgeBadgeLabel(bucket: RotationRecommendedBucket): string {
@@ -467,7 +479,13 @@
           }
         )
         const { token, ...summary } = created
-        shareItems = [summary, ...shareItems]
+        // Story 28.7 AC3: a newly created share is never 'revoked' — if an active status filter
+        // wouldn't match it, splicing it into `shareItems` (and bumping the total) would show
+        // something a full reload against the same filtered URL never would.
+        if (matchesActiveSharesFilter(summary.status)) {
+          shareItems = [summary, ...shareItems]
+          sharesTotalCount += 1
+        }
         lastCreatedShareToken = token
         lastCreatedShareIsExternal = true
         shareRecipientEmail = ''
@@ -479,7 +497,10 @@
           singleUse: shareSingleUse,
         })
         const { token, ...summary } = created
-        shareItems = [summary, ...shareItems]
+        if (matchesActiveSharesFilter(summary.status)) {
+          shareItems = [summary, ...shareItems]
+          sharesTotalCount += 1
+        }
         lastCreatedShareToken = token
         lastCreatedShareIsExternal = false
         shareRecipientUserId = ''
@@ -2121,7 +2142,7 @@
         <p class="mt-3 text-sm text-slate-600">No shares yet for this secret.</p>
       {:else}
         <p class="mt-2 text-xs text-slate-500">
-          Showing {shareItems.length} of {data.sharesTotal ?? shareItems.length}
+          Showing {shareItems.length} of {sharesTotalCount}
         </p>
         <ul class="mt-2 space-y-2">
           {#each shareItems as share (share.id)}
