@@ -39,12 +39,15 @@ import {
  * SvelteKit/browser navigation occurred — coverage `panel-page.test.ts`'s jsdom-based component
  * tests structurally cannot provide, since jsdom has no SvelteKit router to intercept the click.
  *
- * AC2 below (data-relay payload forwarding) is UNCHANGED, out of Story 29.2's scope (it does not
- * touch the DATA relay — see `handlePanelDataMessage` in `+page.svelte`, still driven by
- * `postMessage`, still pending replacement by Story 29.4) and is currently ALSO broken by the
- * same dead iframe-wait Story 29.1 introduced. It is marked `test.skip(...)` rather than deleted
- * or fixed, since fixing/replacing the DATA relay's own E2E coverage is Story 29.4's job, not
- * this story's — see the skip reason on each test below.
+ * The old `postMessage`-based DATA relay (`handlePanelDataMessage` in `+page.svelte`) that this
+ * file's AC2 tests used to drive is now fully removed — Story 29.4 replaced it outright with
+ * `moduleDataRoutes()`, a direct, manifest-declared `GET /api/v1/extensions/data/:path` mount (no
+ * relay, no postMessage, no iframe involved at all). Story 30.3 adds real e2e coverage for that
+ * replacement mechanism below (`GET /api/v1/extensions/data/fixture-echo`, the mock fixture's own
+ * `TEST_MODULE_DATA_PATH`), mirroring this file's existing AC1 division of labor: fast API-level
+ * coverage already lives in `apps/api/src/extensions/module-data-routes.test.ts`, so this e2e
+ * addition is deliberately narrow — happy path plus one 404 — proving the same contract holds
+ * through the real browser/login/HTTP path that `fastify.inject()` cannot exercise.
  */
 
 const API_PORT = 34840
@@ -193,91 +196,48 @@ test.describe
     await expect(page.getByText('Mock panel for slot "group"')).toBeVisible()
   })
 
-  // Skipped: Story 29.1 removed the panel iframe this test drives via `frame.evaluate`/
-  // `page.waitForSelector('iframe')`, leaving this dead. The DATA relay itself
-  // (`handlePanelDataMessage` in +page.svelte) is unchanged and still postMessage-based — Story
-  // 29.2 only replaced the ACTION relay (see this file's top-of-file doc comment). Fixing/
-  // replacing this coverage is Story 29.4's job, not Story 29.2's.
-  test.skip('AC2 happy path: a data request to a newly-declared panelDataPaths entry succeeds', async ({
-    page,
+  // Story 30.3 AC5 — real e2e coverage for `moduleDataRoutes()`, the Story 29.4 mechanism that
+  // replaced the old postMessage DATA relay outright. `TEST_MODULE_DATA_PATH` is not currently
+  // importable from `apps/web/e2e` (the `@project-vault/mock-ui-panel-extension` fixture package
+  // is not a dependency of `apps/web`), so the literal path is hardcoded here — cross-referenced
+  // against its source of truth: `fixtures/mock-ui-panel-extension/src/index.ts`'s
+  // `TEST_MODULE_DATA_PATH` export (`'/fixture-echo'`).
+  test("AC5 (Story 30.3) happy path: GET /api/v1/extensions/data/fixture-echo reaches the real moduleDataRoutes handler and echoes the registered member's own orgId/userId", async ({
     context,
   }) => {
-    await registerLoggedInMember(context.request, 'data-ok')
+    const { userId, orgId } = await registerLoggedInMember(context.request, 'module-data-ok')
 
-    await page.goto(`${BASE_URL}/extensions/panels/group`)
-    await waitForPanelHydration(page)
-    const iframeHandle = await page.waitForSelector('iframe')
-    const frame = await iframeHandle.contentFrame()
-    if (!frame) throw new Error('extension panel iframe content frame unavailable')
-
-    const requestPromise = page.waitForRequest((req) => req.url().includes('/api/v1/org/users'))
-    await frame.evaluate(() => {
-      window.parent.postMessage(
-        {
-          source: 'pv-extension-panel-data-request',
-          requestId: 'e2e-data-ok',
-          method: 'GET',
-          path: '/api/v1/org/users',
-        },
-        '*'
-      )
+    // Authenticated via the shared browser context's own session cookie (set by
+    // `registerAndLoginIsolated` above) — mirrors this file's existing `page.request.get(...)`
+    // pattern in the "fixture extension is genuinely loaded" test, just via `context.request`
+    // since no page navigation is needed for this assertion.
+    const res = await context.request.get(`${API_BASE}/api/v1/extensions/data/fixture-echo`, {
+      failOnStatusCode: false,
     })
 
-    const request = await requestPromise
-    const response = await request.response()
-    expect(response?.status()).toBe(200)
+    expect(res.status()).toBe(200)
+    // Proves the route is reachable through the real HTTP path (not a mocked handler) and that
+    // `buildModuleDataRequestContext()` resolves genuine per-request identity — this registered
+    // member's own orgId/userId — not a shared or memoized value.
+    expect(await res.json()).toEqual({ ok: true, orgId, userId })
   })
 
-  // Skipped: same dead-iframe reason as the AC2 happy-path test above; see that test's skip
-  // comment and this file's top-of-file doc comment. Pending Story 29.4.
-  test.skip('AC2 edge case: a request to an undeclared (but /api/v1/-prefixed) path is rejected calmly — no thrown error, no broken page', async ({
-    page,
+  // Story 30.3 AC5 — an undeclared moduleData path is an ordinary Fastify 404, not a `502`
+  // `MODULE_DATA_UNAVAILABLE_BODY` degraded-panel response: `moduleDataRoutes()` registers routes
+  // once, at boot, from the manifest, so an undeclared path was never mounted as a route at all
+  // (mirrors `module-data-routes.ts`'s own AC4 "Edge/failure" contract). This deliberately does
+  // NOT re-test the `threw`/`timed_out`/`malformed_result` failure-degradation branches, the 401
+  // case, or per-org context isolation — `apps/api/src/extensions/module-data-routes.test.ts`
+  // already covers all of those exhaustively at the API layer.
+  test('AC5 (Story 30.3) edge case: GET to an undeclared moduleData path returns a plain 404', async ({
     context,
   }) => {
-    await registerLoggedInMember(context.request, 'data-reject')
+    await registerLoggedInMember(context.request, 'module-data-404')
 
-    const pageErrors: string[] = []
-    page.on('pageerror', (err) => pageErrors.push(String(err)))
-    let sawUndeclaredRequest = false
-    page.on('request', (req) => {
-      if (req.url().includes('/api/v1/admin/users')) sawUndeclaredRequest = true
+    const res = await context.request.get(`${API_BASE}/api/v1/extensions/data/not-a-real-route`, {
+      failOnStatusCode: false,
     })
 
-    await page.goto(`${BASE_URL}/extensions/panels/group`)
-    await waitForPanelHydration(page)
-    const iframeHandle = await page.waitForSelector('iframe')
-    const frame = await iframeHandle.contentFrame()
-    if (!frame) throw new Error('extension panel iframe content frame unavailable')
-
-    const rejectionAcknowledged = frame.evaluate(
-      () =>
-        new Promise<boolean>((resolve) => {
-          window.addEventListener('message', function handler(event) {
-            const message = event.data as Record<string, unknown>
-            if (
-              message?.['source'] === 'pv-extension-panel-data-result' &&
-              message?.['requestId'] === 'e2e-data-reject'
-            ) {
-              window.removeEventListener('message', handler)
-              resolve(message['ok'] === false)
-            }
-          })
-          window.parent.postMessage(
-            {
-              source: 'pv-extension-panel-data-request',
-              requestId: 'e2e-data-reject',
-              method: 'GET',
-              path: '/api/v1/admin/users',
-            },
-            '*'
-          )
-        })
-    )
-
-    expect(await rejectionAcknowledged).toBe(true)
-    expect(sawUndeclaredRequest).toBe(false)
-    expect(pageErrors).toEqual([])
-    await expect(page.getByRole('heading', { name: 'Extension' })).toBeVisible()
-    await expect(page.locator('iframe')).toBeVisible()
+    expect(res.status()).toBe(404)
   })
 })

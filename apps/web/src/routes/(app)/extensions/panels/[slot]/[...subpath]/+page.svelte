@@ -160,24 +160,52 @@
     const kind = actionEl.getAttribute('data-pv-action')
     if (!kind) return
 
+    // Story 30.3 AC2 — the click is now resolved to a real, accepted `data-pv-action` element that
+    // is actually going to be dispatched (every earlier no-op guard above has already returned).
+    // Suppress the click's native default behavior here — before the fetch is issued — so a panel
+    // element that is or nests a link (`<a href>`) or a submit control (`<button type="submit">`
+    // inside a `<form>`) never also triggers native navigation/form-submit alongside the action
+    // dispatch. `render-panel-html.ts`'s `SANITIZE_CONFIG` allows `a`/`form`/`button` through
+    // unmodified, so this is a real, reachable input shape, not a hypothetical.
+    event.preventDefault()
+
+    // Story 30.3 AC3 — bump `panelGeneration` at the same point an accepted click commits to
+    // dispatch (immediately after `preventDefault()`, above, before the fetch is issued). This
+    // gives every accepted click its own unique generation number, so an earlier click that is
+    // still in flight when a later click is accepted is unambiguously stale by the time the later
+    // one is issued — even though each element has its own independent `disabled` guard (AC8) and
+    // a second click on a *different* action element is not blocked by that guard. Reuses the
+    // single existing `panelGeneration` counter (also bumped by the `data.html`-keyed `$effect`
+    // above); both increment sites only ever increment, never reset, the same counter.
+    panelGeneration++
+
     // AC3 — a safe accumulation pattern (`Object.fromEntries`, never `Object.assign` onto a
     // shared/reused object — mirrors Story 25.12's own prototype-pollution-safe precedent): a
     // panel-declared `data-pv-action-__proto__` field becomes an own, enumerable "__proto__"
     // property of the resulting plain object (whose own prototype is always `Object.prototype`)
     // rather than reassigning that object's prototype.
+    //
+    // Story 30.3 AC1 — a panel element may also happen to carry a literal `data-pv-action-kind`
+    // attribute (attribute-name collision noise, not a real field, since `kind` itself is always
+    // resolved from the `data-pv-action` attribute above, never from a `data-pv-action-<field>`
+    // entry). Filter out any `fieldEntries` entry whose extracted field name is `'kind'` before
+    // building the request body, so the real `kind` value can never be silently overridden by it —
+    // the attacker/collision value is dropped entirely, not renamed or included under another key.
     const fieldEntries = Array.from(actionEl.attributes)
       .filter((attr) => attr.name.startsWith('data-pv-action-'))
       .map((attr) => [attr.name.slice('data-pv-action-'.length), attr.value] as [string, string])
+      .filter(([fieldName]) => fieldName !== 'kind')
     const requestBody = Object.fromEntries([['kind', kind], ...fieldEntries])
 
     // AC8 — mark the element in-flight before issuing the request.
     actionEl.setAttribute('disabled', '')
     actionEl.setAttribute('aria-busy', 'true')
 
-    // Story 25.8 Task 2a — captured at click time; checked before this request's async result is
-    // ever acted on (AC9), exactly like the DATA/NAVIGATION relay handlers above do for their own
-    // in-flight requests — a slot navigation that swaps `data.html` while this fetch is still in
-    // flight causes that stale result to be silently dropped.
+    // Story 25.8 Task 2a — captured at click time (after Story 30.3 AC3's increment above), checked
+    // before this request's async result is ever acted on (AC9), exactly like the DATA/NAVIGATION
+    // relay handlers above do for their own in-flight requests — a slot navigation, or a later
+    // accepted click, that bumps `panelGeneration` while this fetch is still in flight causes that
+    // stale result to be silently dropped.
     const requestGeneration = panelGeneration
     // Story 25.6 AC5 — reuses `readCsrfCookie()`/`CSRF_HEADER_NAME` completely unchanged; only the
     // trigger moves from an incoming `postMessage` event to this resolved DOM click (AC3).
@@ -193,7 +221,17 @@
       body: JSON.stringify(requestBody),
     })
       .then(async (res) => {
-        if (requestGeneration !== panelGeneration) return
+        // Code-review hardening (2026-08-30) — the generation check below must gate only the
+        // shared, single-slot UI state (`actionResultHtml`/`statusMessage`), never
+        // `reenableActionElement(actionEl)`. `panelGeneration` is bumped both by a real
+        // content swap (the `data.html`-keyed `$effect` above, where `actionEl` genuinely no
+        // longer exists) and by this same click handler accepting a *different* element's click
+        // (AC3, where `actionEl` is still live and valid, merely superseded). Gating the re-enable
+        // call the same way as the shared state left a superseded-but-still-valid element's own
+        // button permanently `disabled`/`aria-busy` once its response arrived, with no recovery —
+        // calling `removeAttribute` on a since-detached element (the real content-swap case) is a
+        // harmless no-op, so it is always safe to re-enable unconditionally here.
+        const isCurrent = requestGeneration === panelGeneration
         const parsed: unknown = await res.json().catch(() => null)
         const parsedBody: Record<string, unknown> =
           parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {}
@@ -201,14 +239,20 @@
         if (res.ok) {
           const html = parsedBody['html']
           if (typeof html === 'string' && html.length > 0) {
-            // AC5 — the clicked element no longer exists once this replaces the container's
-            // entire content, so there is nothing left to re-enable (AC8).
-            actionResultHtml = html
-            statusMessage = undefined
+            if (isCurrent) {
+              // AC5 — the clicked element no longer exists once this replaces the container's
+              // entire content, so there is nothing left to re-enable (AC8).
+              actionResultHtml = html
+              statusMessage = undefined
+            } else {
+              reenableActionElement(actionEl)
+            }
             return
           }
           const message = parsedBody['message']
-          statusMessage = typeof message === 'string' ? message : undefined
+          if (isCurrent) {
+            statusMessage = typeof message === 'string' ? message : undefined
+          }
           reenableActionElement(actionEl)
           return
         }
@@ -217,18 +261,24 @@
         // `conflict` (the two outcomes `panel-routes.ts` documents as user-facing); every other
         // outcome (`denied`/`invalid_slot`/`action_not_found`/`internal_error`/anything
         // unrecognized) gets a fixed, generic, non-leaking message.
-        const code = parsedBody['code']
-        const serverMessage = parsedBody['message']
-        statusMessage =
-          (code === 'validation_failed' || code === 'conflict') && typeof serverMessage === 'string'
-            ? serverMessage
-            : GENERIC_ACTION_ERROR_MESSAGE
+        if (isCurrent) {
+          const code = parsedBody['code']
+          const serverMessage = parsedBody['message']
+          statusMessage =
+            (code === 'validation_failed' || code === 'conflict') &&
+            typeof serverMessage === 'string'
+              ? serverMessage
+              : GENERIC_ACTION_ERROR_MESSAGE
+        }
         reenableActionElement(actionEl)
       })
       .catch(() => {
-        if (requestGeneration !== panelGeneration) return
-        // AC7 — a network-level fetch rejection never surfaces raw exception text.
-        statusMessage = GENERIC_ACTION_ERROR_MESSAGE
+        // Code-review hardening (2026-08-30) — see the `.then()` handler's comment above: the
+        // re-enable call must never be gated behind the generation check.
+        if (requestGeneration === panelGeneration) {
+          // AC7 — a network-level fetch rejection never surfaces raw exception text.
+          statusMessage = GENERIC_ACTION_ERROR_MESSAGE
+        }
         reenableActionElement(actionEl)
       })
   }
