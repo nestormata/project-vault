@@ -208,31 +208,44 @@ function hslToRgb(
   }
 }
 
-/** `rgb()`/`rgba()` — components clamp to [0,255] (the grammar permits up to 3 digits, i.e. up to
- * 999, unclamped) per AC1.2. */
-function parseRgbFunction(components: string[]): RgbaColor {
+/**
+ * `rgb()`/`rgba()` — components clamp to [0,255] (the grammar permits up to 3 digits, i.e. up to
+ * 999, unclamped) per AC1.2. Code-review fix: a non-numeric component (reachable only if a future
+ * caller passes a string that was never run through `isValidColorGrammar()` first) must not
+ * silently propagate `NaN` into the final ratio — `clamp(NaN, ...)` is itself `NaN`, and
+ * `NaN < threshold` is `false` in JS, which would make an indeterminate color read as "passes the
+ * contrast bar" instead of failing closed like the 5/7-digit-hex case. Return `null` (contrast-
+ * indeterminate, same as an unparseable hex) instead.
+ */
+function parseRgbFunction(components: string[]): RgbaColor | null {
   const [rRaw, gRaw, bRaw, aRaw] = components
-  const r = clamp(Number(rRaw ?? 0), 0, 255)
-  const g = clamp(Number(gRaw ?? 0), 0, 255)
-  const b = clamp(Number(bRaw ?? 0), 0, 255)
-  const a = aRaw === undefined ? 1 : Number(aRaw)
-  return { r, g, b, a }
+  const rNum = Number(rRaw ?? 0)
+  const gNum = Number(gRaw ?? 0)
+  const bNum = Number(bRaw ?? 0)
+  const aNum = aRaw === undefined ? 1 : Number(aRaw)
+  if (![rNum, gNum, bNum, aNum].every(Number.isFinite)) return null
+  return { r: clamp(rNum, 0, 255), g: clamp(gNum, 0, 255), b: clamp(bNum, 0, 255), a: aNum }
 }
 
-/** `hsl()`/`hsla()` — hue wraps `mod 360`, saturation/lightness clamp to [0,100]%, per AC1.2. */
-function parseHslFunction(components: string[]): RgbaColor {
+/** `hsl()`/`hsla()` — hue wraps `mod 360`, saturation/lightness clamp to [0,100]%, per AC1.2.
+ * Same non-numeric-component fail-closed handling as `parseRgbFunction()` above. */
+function parseHslFunction(components: string[]): RgbaColor | null {
   const [hRaw, sRaw, lRaw, aRaw] = components
-  const hue = ((Number(hRaw ?? 0) % 360) + 360) % 360
-  const saturation = clamp(Number((sRaw ?? '0%').replace('%', '')), 0, 100) / 100
-  const lightness = clamp(Number((lRaw ?? '0%').replace('%', '')), 0, 100) / 100
+  const hNum = Number(hRaw ?? 0)
+  const sNum = Number((sRaw ?? '0%').replace('%', ''))
+  const lNum = Number((lRaw ?? '0%').replace('%', ''))
+  const aNum = aRaw === undefined ? 1 : Number(aRaw)
+  if (![hNum, sNum, lNum, aNum].every(Number.isFinite)) return null
+  const hue = ((hNum % 360) + 360) % 360
+  const saturation = clamp(sNum, 0, 100) / 100
+  const lightness = clamp(lNum, 0, 100) / 100
   const { r, g, b } = hslToRgb(hue, saturation, lightness)
-  const a = aRaw === undefined ? 1 : Number(aRaw)
-  return { r, g, b, a }
+  return { r, g, b, a: aNum }
 }
 
 /**
  * Parses an `rgb()`/`rgba()`/`hsl()`/`hsla()` functional color into an `{r,g,b,a}` quad. Returns
- * `null` if the value isn't a recognized color-function form.
+ * `null` if the value isn't a recognized color-function form, or if a component isn't numeric.
  */
 function parseFunctionalColor(value: string): RgbaColor | null {
   const match = COLOR_FUNCTION_GRAMMAR.exec(value)
@@ -285,8 +298,14 @@ export function contrastRatio(colorA: string, colorB: string): number {
  * `contrastRatio()` for `colorPrimary600`/`colorPrimary700` — a translucent value's effective
  * contrast depends on an arbitrary page backdrop the compiled CSS never fixes, so it is rejected
  * rather than guessed at. Hex alpha comparison is case-insensitive; a color function with no
- * alpha component at all (including a grammar-valid `rgba()`/`hsla()` with the alpha omitted) is
- * treated as opaque, matching CSS's own default-alpha-of-1 behavior.
+ * alpha component at all is treated as opaque, matching CSS's own default-alpha-of-1 behavior.
+ *
+ * Code-review fix: `isValidColorGrammar()`'s `hasValidAlphaComponent()` accepts a 4th (alpha)
+ * component regardless of function name — `COLOR_FUNCTION_COMPONENT_GRAMMARS` maps `rgb`/`rgba`
+ * (and `hsl`/`hsla`) to the identical 3-component grammar array, so e.g. `rgb(30, 58, 138, 0.5)`
+ * is grammar-valid, not just `rgba(30, 58, 138, 0.5)`. Gating this check on the function name
+ * (`functionName === 'rgba' || 'hsla'`) let a translucent `rgb(...)`/`hsl(...)` value bypass the
+ * opacity gate entirely. Branch on whether a 4th component is actually present instead.
  */
 function isFullyOpaqueColor(value: string): boolean {
   if (value.startsWith('#')) {
@@ -297,10 +316,8 @@ function isFullyOpaqueColor(value: string): boolean {
   }
   const match = COLOR_FUNCTION_GRAMMAR.exec(value)
   if (!match) return true
-  const functionName = match[1]
   const body = match[2]
-  if (!functionName || body === undefined) return true
-  if (functionName !== 'rgba' && functionName !== 'hsla') return true
+  if (body === undefined) return true
   const components = body.split(',').map((component) => component.trim())
   const alpha = components[3]
   return alpha === undefined || alpha === '1'

@@ -515,6 +515,24 @@ describe('contrastRatio() — Story 30.4 AC1 direct unit coverage', () => {
     expect(() => contrastRatio('#1e3a8ab', '#ffffff')).not.toThrow()
     expect(Number.isFinite(contrastRatio('#1e3a8ab', '#ffffff'))).toBe(true)
   })
+
+  // Code-review fix: a non-numeric `rgb()`/`hsl()` component (unreachable through
+  // `validateAndCompileTokens()` in production, since `isValidColorGrammar()` always runs first
+  // and rejects it — but `contrastRatio` is exported and its own doc comment promises no
+  // NaN/Infinity for anything it "cannot parse") must resolve to the same contrast-indeterminate
+  // `0`, not a `NaN` that would read as "passes" a `< threshold` comparison.
+  it.each([
+    ['rgb(a, b, c)'],
+    ['rgb(30, 58, nope)'],
+    ['hsl(a, 50%, 30%)'],
+    ['hsla(210, 50%, 30%, x)'],
+  ])(
+    'AC1 (Story 30.4): a non-numeric color-function component (%s) is contrast-indeterminate (0), never NaN',
+    (value) => {
+      expect(contrastRatio(value, '#ffffff')).toBe(0)
+      expect(Number.isNaN(contrastRatio(value, '#ffffff'))).toBe(false)
+    }
+  )
 })
 
 describe('reloadThemes — Story 30.4 AC2/AC3 contrast + opacity validation', () => {
@@ -588,6 +606,13 @@ describe('reloadThemes — Story 30.4 AC2/AC3 contrast + opacity validation', ()
     ['colorPrimary700', 'hsla(210, 50%, 30%, 0.75)'],
     ['colorPrimary600', '#7c3aedcc'],
     ['colorPrimary700', '#fff8'],
+    // Code-review fix: a translucent value spelled with the non-"a" function name (`rgb()`/
+    // `hsl()`) is just as grammar-valid as its `rgba()`/`hsla()` counterpart (the grammar's
+    // component check doesn't key off the function name), and must be rejected identically —
+    // not silently treated as opaque.
+    ['colorPrimary600', 'rgb(30, 58, 138, 0.5)'],
+    ['colorPrimary700', 'hsl(210, 50%, 30%, 0.75)'],
+    ['colorPrimary600', 'rgb(30, 58, 138, 0)'],
   ])(
     'AC3 (Story 30.4): rejects a translucent %s value (%s) — contrast is not computable against an unknown backdrop',
     async (key, value) => {
