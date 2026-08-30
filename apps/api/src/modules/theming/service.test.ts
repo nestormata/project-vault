@@ -6,6 +6,7 @@ import {
   getCompiledThemes,
   __resetThemeStateForTests,
   isValidColorGrammar,
+  contrastRatio,
   MAX_THEME_FILE_BYTES,
 } from './service.js'
 import { UnsafeForwardingUrlError } from '../../lib/safe-fetch.js'
@@ -231,7 +232,7 @@ describe('reloadThemes — AC-4 canonical token registry / CSS-injection safety'
           name: 'color-functions',
           tokens: {
             colorPrimary600: 'rgb(30, 58, 138)',
-            colorPrimary700: 'rgba(30, 58, 138, 0.5)',
+            colorPrimary700: 'rgba(30, 58, 138, 1)',
             colorBackground: 'hsl(220, 64%, 33%)',
             colorForeground: 'hsla(220, 64%, 33%, 0.75)',
           },
@@ -470,6 +471,156 @@ describe('reloadThemes — AC-6 validation failure falls back to base theme', ()
     const result = await reloadThemes(THEMES_DIR, { ...badDeps, logger: silentLogger })
     expect(result.failed).toHaveLength(1)
     expect(getCompiledThemes()).toEqual([])
+  })
+})
+
+describe('contrastRatio() — Story 30.4 AC1 direct unit coverage', () => {
+  it('AC1 (Story 30.4): black-on-white contrast ratio is exactly 21', () => {
+    expect(contrastRatio('#000000', '#ffffff')).toBe(21)
+  })
+
+  it('AC1 (Story 30.4): white-on-white contrast ratio is exactly 1', () => {
+    expect(contrastRatio('#ffffff', '#ffffff')).toBe(1)
+  })
+
+  it('AC1 (Story 30.4): argument order does not change the ratio (symmetric formula)', () => {
+    expect(contrastRatio('#7c3aed', '#ffffff')).toBe(contrastRatio('#ffffff', '#7c3aed'))
+  })
+
+  it.each([
+    ['#abc', '#aabbcc'],
+    ['#abcd', '#aabbccdd'],
+  ])(
+    'AC1 (Story 30.4): 3/4-digit hex shorthand %s normalizes the same as its 6/8-digit expansion %s',
+    (short, long) => {
+      expect(contrastRatio(short, '#ffffff')).toBeCloseTo(contrastRatio(long, '#ffffff'), 10)
+    }
+  )
+
+  it.each([['rgb(999, 999, 999)'], ['hsl(999, 999%, 999%)']])(
+    'AC1 (Story 30.4): out-of-grammar-range-but-shape-valid boundary values do not produce NaN/Infinity (%s)',
+    (value) => {
+      const ratio = contrastRatio(value, '#ffffff')
+      expect(Number.isFinite(ratio)).toBe(true)
+      expect(Number.isNaN(ratio)).toBe(false)
+    }
+  )
+
+  it('AC1 (Story 30.4): a 5-digit hex (out of {3,4,6,8} enumeration) is contrast-indeterminate, never throws', () => {
+    expect(() => contrastRatio('#1e3a8', '#ffffff')).not.toThrow()
+    expect(Number.isFinite(contrastRatio('#1e3a8', '#ffffff'))).toBe(true)
+  })
+
+  it('AC1 (Story 30.4): a 7-digit hex (out of {3,4,6,8} enumeration) is contrast-indeterminate, never throws', () => {
+    expect(() => contrastRatio('#1e3a8ab', '#ffffff')).not.toThrow()
+    expect(Number.isFinite(contrastRatio('#1e3a8ab', '#ffffff'))).toBe(true)
+  })
+})
+
+describe('reloadThemes — Story 30.4 AC2/AC3 contrast + opacity validation', () => {
+  it('AC2 (Story 30.4): happy path — the shipped app.css base defaults pass the contrast bar', async () => {
+    const deps = fixtureDeps({
+      'acme.json': {
+        content: JSON.stringify({
+          name: 'acme',
+          tokens: { colorPrimary600: '#7c3aed', colorPrimary700: '#6d28d9' },
+        }),
+      },
+    })
+    const result = await reloadThemes(THEMES_DIR, { ...deps, logger: silentLogger })
+    expect(result).toEqual({ loaded: ['acme.json'], failed: [] })
+  })
+
+  it('AC2 (Story 30.4): rejects a low-contrast colorPrimary600 value (grammar-valid, contrast-invalid)', async () => {
+    const deps = fixtureDeps({
+      'acme.json': {
+        content: JSON.stringify({
+          name: 'acme',
+          tokens: { colorPrimary600: '#f5f3ff' },
+        }),
+      },
+    })
+    const result = await reloadThemes(THEMES_DIR, { ...deps, logger: silentLogger })
+    expect(result.failed).toEqual([
+      {
+        file: 'acme.json',
+        reason:
+          'token `colorPrimary600`: insufficient contrast against white button text (needs >= 4.5:1)',
+      },
+    ])
+  })
+
+  it('AC2 (Story 30.4): a 5-digit hex colorPrimary600 is rejected as contrast-indeterminate, not silently accepted', async () => {
+    const deps = fixtureDeps({
+      'acme.json': {
+        content: JSON.stringify({
+          name: 'acme',
+          tokens: { colorPrimary600: '#1e3a8' },
+        }),
+      },
+    })
+    const result = await reloadThemes(THEMES_DIR, { ...deps, logger: silentLogger })
+    expect(result.failed).toEqual([
+      {
+        file: 'acme.json',
+        reason:
+          'token `colorPrimary600`: insufficient contrast against white button text (needs >= 4.5:1)',
+      },
+    ])
+    expect(getCompiledThemes()).toEqual([])
+  })
+
+  it('AC3 (Story 30.4): a fully-opaque rgba alpha of exactly "1" passes through to the contrast check normally', async () => {
+    const deps = fixtureDeps({
+      'acme.json': {
+        content: JSON.stringify({
+          name: 'acme',
+          tokens: { colorPrimary700: 'rgba(30, 58, 138, 1)' },
+        }),
+      },
+    })
+    const result = await reloadThemes(THEMES_DIR, { ...deps, logger: silentLogger })
+    expect(result).toEqual({ loaded: ['acme.json'], failed: [] })
+  })
+
+  it.each([
+    ['colorPrimary600', 'rgba(30, 58, 138, 0.5)'],
+    ['colorPrimary700', 'hsla(210, 50%, 30%, 0.75)'],
+    ['colorPrimary600', '#7c3aedcc'],
+    ['colorPrimary700', '#fff8'],
+  ])(
+    'AC3 (Story 30.4): rejects a translucent %s value (%s) — contrast is not computable against an unknown backdrop',
+    async (key, value) => {
+      const deps = fixtureDeps({
+        'acme.json': {
+          content: JSON.stringify({ name: 'acme', tokens: { [key]: value } }),
+        },
+      })
+      const result = await reloadThemes(THEMES_DIR, { ...deps, logger: silentLogger })
+      expect(result.failed).toEqual([
+        {
+          file: 'acme.json',
+          reason: `token \`${key}\`: must be fully opaque to validate button-text contrast`,
+        },
+      ])
+    }
+  )
+
+  it('AC2.5 (Story 30.4): colorBackground/colorForeground/colorBorder remain grammar-checked only, no contrast gate', async () => {
+    const deps = fixtureDeps({
+      'acme.json': {
+        content: JSON.stringify({
+          name: 'acme',
+          tokens: {
+            colorBackground: 'rgba(255, 255, 255, 0.1)',
+            colorForeground: '#ffffff',
+            colorBorder: '#ffffff',
+          },
+        }),
+      },
+    })
+    const result = await reloadThemes(THEMES_DIR, { ...deps, logger: silentLogger })
+    expect(result).toEqual({ loaded: ['acme.json'], failed: [] })
   })
 })
 

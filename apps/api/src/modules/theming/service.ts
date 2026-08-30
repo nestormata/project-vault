@@ -125,6 +125,186 @@ export function isValidColorGrammar(value: string): boolean {
 
   return hasValidAlphaComponent(components)
 }
+
+// --- Story 30.4 AC1: hand-rolled WCAG 2.1 contrast-ratio helper -----------------------------
+//
+// No new dependency, consistent with `isValidColorGrammar`'s own hand-rolled-over-npm-package
+// convention. Accepts any string that already passes `isValidColorGrammar()` above.
+
+type RgbaColor = { r: number; g: number; b: number; a: number }
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+function hexPairToByte(pair: string): number {
+  return parseInt(pair, 16)
+}
+
+/**
+ * Parses a hex color string (leading `#` included) into an `{r,g,b,a}` 0–255/0–1 quad.
+ * `HEX_COLOR_GRAMMAR` accepts any length 3–8 (a range, not an enumeration) — a 5- or 7-digit
+ * hex is grammar-valid but has no well-defined RGB decomposition. Returns `null` for any length
+ * other than exactly 3, 4, 6, or 8 — "contrast-indeterminate", per AC1.2's boundary-sweep finding.
+ */
+/** 3-digit (`#abc`) or 4-digit (`#abcd`, 4th nibble is alpha) shorthand hex — each nibble doubled. */
+function parseShorthandHexColor(digits: string, hasAlpha: boolean): RgbaColor {
+  const doubled = digits.split('').map((nibble) => nibble + nibble)
+  const r = hexPairToByte(doubled[0] ?? '00')
+  const g = hexPairToByte(doubled[1] ?? '00')
+  const b = hexPairToByte(doubled[2] ?? '00')
+  const a = hasAlpha ? hexPairToByte(doubled[3] ?? 'ff') / 255 : 1
+  return { r, g, b, a }
+}
+
+/** 6-digit (`#aabbcc`) or 8-digit (`#aabbccdd`, last byte is alpha) full-form hex. */
+function parseFullHexColor(digits: string, hasAlpha: boolean): RgbaColor {
+  const r = hexPairToByte(digits.slice(0, 2))
+  const g = hexPairToByte(digits.slice(2, 4))
+  const b = hexPairToByte(digits.slice(4, 6))
+  const a = hasAlpha ? hexPairToByte(digits.slice(6, 8)) / 255 : 1
+  return { r, g, b, a }
+}
+
+function parseHexColor(value: string): RgbaColor | null {
+  const digits = value.slice(1)
+  switch (digits.length) {
+    case 3:
+      return parseShorthandHexColor(digits, false)
+    case 4:
+      return parseShorthandHexColor(digits, true)
+    case 6:
+      return parseFullHexColor(digits, false)
+    case 8:
+      return parseFullHexColor(digits, true)
+    default:
+      return null
+  }
+}
+
+/** Standard HSL (0–360 hue, 0–1 saturation/lightness) → 0–255 RGB conversion. */
+function hslToRgb(
+  hue: number,
+  saturation: number,
+  lightness: number
+): { r: number; g: number; b: number } {
+  const c = (1 - Math.abs(2 * lightness - 1)) * saturation
+  const hp = hue / 60
+  const x = c * (1 - Math.abs((hp % 2) - 1))
+  let r1 = 0
+  let g1 = 0
+  let b1 = 0
+  if (hp < 1) [r1, g1, b1] = [c, x, 0]
+  else if (hp < 2) [r1, g1, b1] = [x, c, 0]
+  else if (hp < 3) [r1, g1, b1] = [0, c, x]
+  else if (hp < 4) [r1, g1, b1] = [0, x, c]
+  else if (hp < 5) [r1, g1, b1] = [x, 0, c]
+  else [r1, g1, b1] = [c, 0, x]
+  const m = lightness - c / 2
+  return {
+    r: Math.round((r1 + m) * 255),
+    g: Math.round((g1 + m) * 255),
+    b: Math.round((b1 + m) * 255),
+  }
+}
+
+/** `rgb()`/`rgba()` — components clamp to [0,255] (the grammar permits up to 3 digits, i.e. up to
+ * 999, unclamped) per AC1.2. */
+function parseRgbFunction(components: string[]): RgbaColor {
+  const [rRaw, gRaw, bRaw, aRaw] = components
+  const r = clamp(Number(rRaw ?? 0), 0, 255)
+  const g = clamp(Number(gRaw ?? 0), 0, 255)
+  const b = clamp(Number(bRaw ?? 0), 0, 255)
+  const a = aRaw === undefined ? 1 : Number(aRaw)
+  return { r, g, b, a }
+}
+
+/** `hsl()`/`hsla()` — hue wraps `mod 360`, saturation/lightness clamp to [0,100]%, per AC1.2. */
+function parseHslFunction(components: string[]): RgbaColor {
+  const [hRaw, sRaw, lRaw, aRaw] = components
+  const hue = ((Number(hRaw ?? 0) % 360) + 360) % 360
+  const saturation = clamp(Number((sRaw ?? '0%').replace('%', '')), 0, 100) / 100
+  const lightness = clamp(Number((lRaw ?? '0%').replace('%', '')), 0, 100) / 100
+  const { r, g, b } = hslToRgb(hue, saturation, lightness)
+  const a = aRaw === undefined ? 1 : Number(aRaw)
+  return { r, g, b, a }
+}
+
+/**
+ * Parses an `rgb()`/`rgba()`/`hsl()`/`hsla()` functional color into an `{r,g,b,a}` quad. Returns
+ * `null` if the value isn't a recognized color-function form.
+ */
+function parseFunctionalColor(value: string): RgbaColor | null {
+  const match = COLOR_FUNCTION_GRAMMAR.exec(value)
+  if (!match) return null
+  const functionName = match[1]
+  const body = match[2]
+  if (!functionName || body === undefined) return null
+  const components = body.split(',').map((component) => component.trim())
+
+  if (functionName === 'rgb' || functionName === 'rgba') return parseRgbFunction(components)
+  if (functionName === 'hsl' || functionName === 'hsla') return parseHslFunction(components)
+  return null
+}
+
+function parseColorToRgba(value: string): RgbaColor | null {
+  return value.startsWith('#') ? parseHexColor(value) : parseFunctionalColor(value)
+}
+
+function linearizeChannel(channel255: number): number {
+  const c = channel255 / 255
+  return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+}
+
+function relativeLuminance({ r, g, b }: { r: number; g: number; b: number }): number {
+  return 0.2126 * linearizeChannel(r) + 0.7152 * linearizeChannel(g) + 0.0722 * linearizeChannel(b)
+}
+
+/**
+ * Story 30.4 AC1: WCAG 2.1 relative-luminance contrast ratio between two colors, each accepted
+ * in any form `isValidColorGrammar()` allows (hex 3/4/6/8-digit, `rgb()`/`rgba()`/`hsl()`/`hsla()`).
+ * A color this function cannot parse into a well-defined RGB triple (e.g. a 5/7-digit hex — see
+ * `parseHexColor`) is "contrast-indeterminate": rather than throw, this returns `0`, which always
+ * fails any real contrast threshold and lets the caller (`validateAndCompileTokens`) reject it via
+ * the same `< threshold` comparison used for a genuinely low-contrast color, with no separate
+ * indeterminate-vs-failed branch needed.
+ */
+export function contrastRatio(colorA: string, colorB: string): number {
+  const a = parseColorToRgba(colorA)
+  const b = parseColorToRgba(colorB)
+  if (!a || !b) return 0
+  const l1 = relativeLuminance(a)
+  const l2 = relativeLuminance(b)
+  const lighter = Math.max(l1, l2)
+  const darker = Math.min(l1, l2)
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+/**
+ * Story 30.4 AC3: whether a grammar-valid color value is fully opaque, checked ahead of
+ * `contrastRatio()` for `colorPrimary600`/`colorPrimary700` — a translucent value's effective
+ * contrast depends on an arbitrary page backdrop the compiled CSS never fixes, so it is rejected
+ * rather than guessed at. Hex alpha comparison is case-insensitive; a color function with no
+ * alpha component at all (including a grammar-valid `rgba()`/`hsla()` with the alpha omitted) is
+ * treated as opaque, matching CSS's own default-alpha-of-1 behavior.
+ */
+function isFullyOpaqueColor(value: string): boolean {
+  if (value.startsWith('#')) {
+    const digits = value.slice(1)
+    if (digits.length === 4) return digits.slice(3, 4).toLowerCase() === 'f'
+    if (digits.length === 8) return digits.slice(6, 8).toLowerCase() === 'ff'
+    return true
+  }
+  const match = COLOR_FUNCTION_GRAMMAR.exec(value)
+  if (!match) return true
+  const functionName = match[1]
+  const body = match[2]
+  if (!functionName || body === undefined) return true
+  if (functionName !== 'rgba' && functionName !== 'hsla') return true
+  const components = body.split(',').map((component) => component.trim())
+  const alpha = components[3]
+  return alpha === undefined || alpha === '1'
+}
 // AC-4: strict numeric+unit pattern — rejects calc(), custom units, and any embedded expression.
 // Exported (Story 29.5 AC7) for reuse by the `apps/web` base-theme-defaults grammar-validity test.
 export const LENGTH_GRAMMAR = /^-?\d+(\.\d+)?(px|rem|em|%)$/
@@ -202,6 +382,54 @@ function validateThemeSchema(parsed: unknown): ThemeSchema | { reason: string } 
 
 const THEME_TOKEN_REGISTRY = THEME_TOKENS as Record<string, ThemeTokenDefinition>
 
+// Story 30.4 AC2/AC3: `colorPrimary600`/`colorPrimary700` are the only two tokens actually
+// rendered as a button *background* behind fixed `text-white` app-wide (Story 29.5 AC3's
+// `--color-brand-600`/`-700` indirection) — see this story's Background section for the full
+// scoping rationale. No other token (`colorBackground`, `colorForeground`, `colorBorder`) is
+// contrast- or opacity-checked by this story.
+const BUTTON_BACKGROUND_CONTRAST_KEYS = new Set(['colorPrimary600', 'colorPrimary700'])
+const FIXED_BUTTON_TEXT_COLOR = '#ffffff'
+const MIN_BUTTON_TEXT_CONTRAST_RATIO = 4.5
+
+/**
+ * Story 30.4 AC2/AC3 gate, scoped to `colorPrimary600`/`colorPrimary700` only: opacity is checked
+ * before contrast (a translucent value's contrast against an unknown backdrop isn't well-defined),
+ * then the value must reach >= 4.5:1 contrast against the fixed white button text. Returns `null`
+ * when the gate doesn't apply to this key, or passes.
+ */
+function checkButtonBackgroundContrast(key: string, rawValue: string): { reason: string } | null {
+  if (!BUTTON_BACKGROUND_CONTRAST_KEYS.has(key)) return null
+  if (!isFullyOpaqueColor(rawValue)) {
+    return { reason: `token \`${key}\`: must be fully opaque to validate button-text contrast` }
+  }
+  if (contrastRatio(rawValue, FIXED_BUTTON_TEXT_COLOR) < MIN_BUTTON_TEXT_CONTRAST_RATIO) {
+    return {
+      reason: `token \`${key}\`: insufficient contrast against white button text (needs >= 4.5:1)`,
+    }
+  }
+  return null
+}
+
+/** Per-key type-grammar + (for `colorPrimary600`/`700`) contrast/opacity validation, factored out
+ * of `validateAndCompileTokens()`'s loop body to keep its cyclomatic/cognitive complexity down. */
+function validateTokenValue(
+  key: string,
+  rawValue: string,
+  def: ThemeTokenDefinition
+): { reason: string } | null {
+  if (def.type === 'color') {
+    if (!isValidColorGrammar(rawValue)) return { reason: `token \`${key}\`: invalid color value` }
+    return checkButtonBackgroundContrast(key, rawValue)
+  }
+  if (def.type === 'length' && !LENGTH_GRAMMAR.test(rawValue)) {
+    return { reason: `token \`${key}\`: invalid length value` }
+  }
+  if (def.type === 'enum' && !def.values.includes(rawValue)) {
+    return { reason: `token \`${key}\`: invalid value` }
+  }
+  return null
+}
+
 function validateAndCompileTokens(
   tokens: Record<string, unknown>
 ): { declarations: string[] } | { reason: string } {
@@ -210,15 +438,8 @@ function validateAndCompileTokens(
     const def = THEME_TOKEN_REGISTRY[key]
     if (!def) return { reason: `unregistered token \`${key}\`` }
     if (typeof rawValue !== 'string') return { reason: `token \`${key}\`: invalid value` }
-    if (def.type === 'color' && !isValidColorGrammar(rawValue)) {
-      return { reason: `token \`${key}\`: invalid color value` }
-    }
-    if (def.type === 'length' && !LENGTH_GRAMMAR.test(rawValue)) {
-      return { reason: `token \`${key}\`: invalid length value` }
-    }
-    if (def.type === 'enum' && !def.values.includes(rawValue)) {
-      return { reason: `token \`${key}\`: invalid value` }
-    }
+    const failure = validateTokenValue(key, rawValue, def)
+    if (failure) return failure
     declarations.push(`  --${kebabCase(key)}: ${rawValue};`)
   }
   return { declarations }
