@@ -146,7 +146,7 @@ describe('createNotificationJobHandler wired through BossService.registerWorker'
       { id: 'job-1', data: { notificationQueueId: 'nq-1', orgId: 'org-1' } },
     ])
 
-    expect(sendFn).toHaveBeenCalledWith('nq-1', 'org-1')
+    expect(sendFn).toHaveBeenCalledWith('nq-1', 'org-1', logger)
     expect(logger.error).not.toHaveBeenCalled()
   })
 

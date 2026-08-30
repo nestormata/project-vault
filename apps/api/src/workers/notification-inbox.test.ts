@@ -77,6 +77,33 @@ describe('inbox delivery worker', () => {
     })
   })
 
+  // Story 28.6 Task 6 — end-to-end verification matching the QA-observed crash's exact call
+  // path (deliverInboxNotification -> renderTemplate -> renderEmailTemplate ->
+  // renderSecurityFailedAuthThreshold). A real notification_queue row with a malformed
+  // security.failed_auth_threshold payload (windowStart/windowEnd/windowSeconds all missing —
+  // the literal notification_queue.payload column default `{}`) must flow through delivery
+  // without throwing, instead of crash-looping every ~15s the way the original incident did.
+  it('delivers successfully when the payload is missing windowStart/windowEnd/windowSeconds (malformed row)', async () => {
+    await withInboxTestUser('inbox-malformed-payload', async ({ orgId, userId }) => {
+      const queueId = await insertInboxQueueEntry(orgId, userId, {
+        payload: { severity: 'warning' },
+      })
+      const { emitter, emittedEvents } = createMockEventEmitter()
+      setEmitterForTesting(emitter)
+
+      await expect(deliverInboxNotification(queueId, orgId, emitter)).resolves.toBeUndefined()
+
+      const inboxEntries = await listInboxEntriesForTest(orgId, userId)
+      expect(inboxEntries).toHaveLength(1)
+
+      const [updated] = await withOrg(orgId, (tx) =>
+        tx.select().from(notificationQueue).where(eq(notificationQueue.id, queueId))
+      )
+      expect(updated?.status).toBe('delivered')
+      expect(emittedEvents).toContainEqual(expect.objectContaining({ event: 'notification.inbox' }))
+    })
+  })
+
   it('is idempotent: skips if queue entry already delivered', async () => {
     await withInboxTestUser('inbox-idempotent', async ({ orgId, userId }) => {
       const queueId = await insertInboxQueueEntry(orgId, userId, { status: 'delivered' })

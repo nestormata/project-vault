@@ -6,6 +6,7 @@ import { fetchAllOrgIds } from '../middleware/rls.js'
 import { operationalLog } from '../lib/logger.js'
 import { markNotificationFailed } from './notification-queue-ops.js'
 import { NOTIFICATION_MAX_ATTEMPTS } from './notification-worker-common.js'
+import { pgbossDlqEntriesTotal } from './notification-metrics.js'
 
 type DlqCleanupLogger = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
 
@@ -15,8 +16,8 @@ export async function runNotificationDlqCleanup(logger?: DlqCleanupLogger): Prom
 
   for (const orgId of orgIds) {
     const rows = await withOrg(orgId, (tx) =>
-      tx.execute<{ id: string }>(sql`
-        SELECT id::text AS id
+      tx.execute<{ id: string; template_id: string }>(sql`
+        SELECT id::text AS id, template_id
         FROM notification_queue
         WHERE org_id = ${orgId}::uuid
           AND status = 'pending'
@@ -28,6 +29,19 @@ export async function runNotificationDlqCleanup(logger?: DlqCleanupLogger): Prom
     for (const row of rows) {
       if (await markNotificationFailed(row.id, orgId)) {
         count++
+        // Story 28.6 AC4 — per-row operational visibility (counter + error log) on top of, not
+        // instead of, the existing count-only summary below, so a permanently-undeliverable
+        // notification is traceable back to its poison payload without a manual DB query.
+        pgbossDlqEntriesTotal.inc({ job_type: 'notification' })
+        if (logger) {
+          operationalLog(
+            logger,
+            'error',
+            OperationalEvent.NOTIFICATION_DLQ_ENTRY_FAILED,
+            'Notification permanently dead-lettered after exhausting retry attempts',
+            { templateId: row.template_id, notificationQueueId: row.id }
+          )
+        }
       }
     }
   }

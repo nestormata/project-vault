@@ -6,21 +6,23 @@ import type { FastifyBaseLogger } from 'fastify'
 
 export const NOTIFICATION_MAX_ATTEMPTS = 5
 
+type WorkerLogger = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
+
 export function createNotificationJobHandler(
   jobName: string,
-  sendFn: (notificationQueueId: string, orgId: string) => Promise<void>
+  sendFn: (notificationQueueId: string, orgId: string, logger: WorkerLogger) => Promise<void>
 ) {
-  return async function notificationJobHandler(
-    job: BossJob,
-    logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
-  ): Promise<void> {
+  return async function notificationJobHandler(job: BossJob, logger: WorkerLogger): Promise<void> {
     const notificationQueueId = job.data?.notificationQueueId
     const orgId = job.data?.orgId
     if (typeof notificationQueueId !== 'string' || typeof orgId !== 'string') {
       throw new TypeError(`${jobName} job missing notificationQueueId or orgId`)
     }
+    // Story 28.6 AC3 — thread the job's logger down to the render call sites so a caught
+    // template-render failure's error log (templateId + payload) actually fires in production,
+    // not just when a test passes a logger in manually.
     await withJobLogging(logger, jobName, job.id ?? 'unknown', () =>
-      sendFn(notificationQueueId, orgId)
+      sendFn(notificationQueueId, orgId, logger)
     )
   }
 }
@@ -33,7 +35,7 @@ export async function runNotificationCatchup(
     deliverAtAware?: boolean
     logMessage: string
   },
-  logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
+  logger: WorkerLogger
 ): Promise<void> {
   const { fetchAllOrgIds } = await import('../middleware/rls.js')
   const orgIds = await fetchAllOrgIds()

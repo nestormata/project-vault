@@ -6,6 +6,7 @@ import {
 
 const RECOVERY_URL_XYZ = 'https://vault.example.com/recover?token=xyz'
 const RECOVERY_URL_ABC = 'https://vault.example.com/recover?token=abc'
+const ADMIN_EMAIL = 'admin@example.com'
 
 describe('renderAccountRecoveryLinkCreated (AC-9, self-requested)', () => {
   it('renders subject/text/html including the recovery URL', () => {
@@ -29,18 +30,26 @@ describe('renderAccountRecoveryLinkCreated (AC-9, self-requested)', () => {
     expect(result.html).toContain('&amp;b=&lt;script&gt;')
     expect(result.html).not.toContain('<script>')
   })
+
+  // Story 28.6 AC2 — recoveryUrl is a required string in the payload type, but
+  // notification_queue.payload is untyped jsonb; a missing recoveryUrl must not crash render.
+  it('does not throw when recoveryUrl is missing', () => {
+    expect(() =>
+      renderAccountRecoveryLinkCreated({ initiatorEmail: null } as Record<string, unknown>)
+    ).not.toThrow()
+  })
 })
 
 describe('renderAccountRecoveryLinkSent (AC-10, admin-initiated)', () => {
   it('names the initiating admin when initiatorEmail is present', () => {
     const result = renderAccountRecoveryLinkSent({
       recoveryUrl: RECOVERY_URL_XYZ,
-      initiatorEmail: 'admin@example.com',
+      initiatorEmail: ADMIN_EMAIL,
     })
 
     expect(result.subject).toBe('[Project Vault] Your admin sent you a password reset link')
-    expect(result.text).toContain('admin@example.com sent you a link')
-    expect(result.html).toContain('admin@example.com')
+    expect(result.text).toContain(`${ADMIN_EMAIL} sent you a link`)
+    expect(result.html).toContain(ADMIN_EMAIL)
   })
 
   it('falls back to a generic phrase when initiatorEmail is null', () => {
@@ -61,5 +70,11 @@ describe('renderAccountRecoveryLinkSent (AC-10, admin-initiated)', () => {
 
     expect(result.html).toContain('&lt;b&gt;admin&lt;/b&gt;@example.com')
     expect(result.html).not.toContain('<b>admin</b>@example.com')
+  })
+
+  it('does not throw when recoveryUrl is missing', () => {
+    expect(() =>
+      renderAccountRecoveryLinkSent({ initiatorEmail: ADMIN_EMAIL } as Record<string, unknown>)
+    ).not.toThrow()
   })
 })

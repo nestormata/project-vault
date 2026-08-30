@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { renderEmailTemplate, renderSlackTemplate } from './index.js'
 import { renderSecurityFailedAuthThreshold } from './security-failed-auth-threshold.js'
 
@@ -14,6 +14,8 @@ const SAMPLE_PAYLOAD = {
 
 const UNKNOWN_TEMPLATE = 'unknown.template'
 const XSS_SAMPLE = '<script>alert(1)</script>'
+const FAILED_AUTH_TEMPLATE_ID = 'security.failed_auth_threshold'
+const FAILED_LOGIN_SUBJECT_FRAGMENT = 'Failed login threshold exceeded'
 
 describe('notification templates', () => {
   it('renders failed auth threshold email with escaped HTML payload values', () => {
@@ -22,7 +24,7 @@ describe('notification templates', () => {
       ipAddress: XSS_SAMPLE,
     })
 
-    expect(subject).toContain('Failed login threshold exceeded')
+    expect(subject).toContain(FAILED_LOGIN_SUBJECT_FRAGMENT)
     expect(text).toContain(XSS_SAMPLE)
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
     expect(html).not.toContain(XSS_SAMPLE)
@@ -37,8 +39,8 @@ describe('notification templates', () => {
   })
 
   it('renderTemplate exposes inbox fields for failed auth threshold', () => {
-    const rendered = renderEmailTemplate('security.failed_auth_threshold', SAMPLE_PAYLOAD)
-    expect(rendered.inboxTitle).toContain('Failed login threshold exceeded')
+    const rendered = renderEmailTemplate(FAILED_AUTH_TEMPLATE_ID, SAMPLE_PAYLOAD)
+    expect(rendered.inboxTitle).toContain(FAILED_LOGIN_SUBJECT_FRAGMENT)
     expect(rendered.inboxBody.length).toBeLessThanOrEqual(500)
   })
 
@@ -87,5 +89,95 @@ describe('notification templates', () => {
       initiatorEmail: 'admin@example.com',
     })
     expect(sent.inboxTitle).toContain('password reset link')
+  })
+
+  // Story 28.6 AC3 — a registered renderer that throws for any reason must degrade to the same
+  // generic passthrough shape used for an unregistered templateId, rather than propagating and
+  // poisoning the delivery pipeline. Forces a real registered renderer to throw via a payload
+  // whose getter throws on its FIRST access only (the renderer's own read) and returns a normal
+  // value thereafter (the fallback's JSON.stringify(payload) and this test's own deep-equality
+  // assertion), so this simulates "a future bug in this file or another" without the fallback's
+  // own payload-logging re-triggering the same throw.
+  function makeThrowOnceOnAccessPayload(): Record<string, unknown> {
+    let accessed = false
+    return {
+      get thresholdType(): string {
+        if (!accessed) {
+          accessed = true
+          throw new Error('boom')
+        }
+        return 'ip'
+      },
+    }
+  }
+
+  it('renderEmailTemplate degrades to the generic fallback and logs when a registered renderer throws', () => {
+    const logger = { error: vi.fn() }
+    const throwingPayload = makeThrowOnceOnAccessPayload()
+
+    const rendered = renderEmailTemplate(FAILED_AUTH_TEMPLATE_ID, throwingPayload, logger)
+
+    expect(rendered.subject).toContain(FAILED_AUTH_TEMPLATE_ID)
+    expect(rendered.text).toContain(FAILED_AUTH_TEMPLATE_ID)
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'notification.template_render_failed',
+        templateId: FAILED_AUTH_TEMPLATE_ID,
+        payload: throwingPayload,
+      }),
+      expect.any(String)
+    )
+  })
+
+  it('renderSlackTemplate degrades to the generic fallback and logs when a registered renderer throws', () => {
+    const logger = { error: vi.fn() }
+    const throwingPayload = makeThrowOnceOnAccessPayload()
+
+    const rendered = renderSlackTemplate(FAILED_AUTH_TEMPLATE_ID, throwingPayload, logger)
+
+    expect(rendered.text).toContain(FAILED_AUTH_TEMPLATE_ID)
+    expect(rendered.blocks).toEqual([])
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'notification.template_render_failed',
+        templateId: FAILED_AUTH_TEMPLATE_ID,
+        payload: throwingPayload,
+      }),
+      expect.any(String)
+    )
+  })
+
+  it('renderEmailTemplate/renderSlackTemplate do not throw when no logger is provided', () => {
+    expect(() =>
+      renderEmailTemplate(FAILED_AUTH_TEMPLATE_ID, makeThrowOnceOnAccessPayload())
+    ).not.toThrow()
+    expect(() =>
+      renderSlackTemplate(FAILED_AUTH_TEMPLATE_ID, makeThrowOnceOnAccessPayload())
+    ).not.toThrow()
+  })
+
+  it('a working renderer is unaffected by the try/catch (happy path unchanged)', () => {
+    const rendered = renderEmailTemplate(FAILED_AUTH_TEMPLATE_ID, SAMPLE_PAYLOAD, {
+      error: vi.fn(),
+    })
+    expect(rendered.subject).toContain(FAILED_LOGIN_SUBJECT_FRAGMENT)
+  })
+
+  // Code-review fix (post-28.6): a renderer throwing for a template whose payload carries a
+  // live secret (e.g. account-recovery's recoveryUrl reset token) must not leak that secret into
+  // the outbound email/inbox content via the AC3 fallback path — the raw payload belongs only in
+  // the internal error log, never in what actually gets delivered.
+  it('renderEmailTemplate fallback for a thrown renderer never embeds the raw payload in outbound content', () => {
+    const secretPayload = {
+      get recoveryUrl(): string {
+        throw new Error('boom')
+      },
+    }
+    const rendered = renderEmailTemplate('auth.recovery_link_created', secretPayload, {
+      error: vi.fn(),
+    })
+    expect(rendered.text).not.toContain('boom')
+    expect(rendered.html).not.toContain('recoveryUrl')
+    expect(JSON.stringify(rendered)).not.toContain('recoveryUrl')
   })
 })

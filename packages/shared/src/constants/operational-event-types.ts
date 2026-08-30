@@ -157,6 +157,12 @@ export const OperationalEvent = {
 
   // Notification queue DLQ cleanup (Story 3.5)
   NOTIFICATION_DLQ_CLEANUP_SUMMARY: 'notification.dlq_cleanup.summary',
+  // Per-row DLQ dead-letter visibility (Story 28.6 AC4) — alongside, not replacing, the
+  // count-only summary above; carries templateId/notificationQueueId for traceability.
+  NOTIFICATION_DLQ_ENTRY_FAILED: 'notification.dlq_cleanup.entry_failed',
+
+  // Notification template render failure fallback (Story 28.6 AC3)
+  NOTIFICATION_TEMPLATE_RENDER_FAILED: 'notification.template_render_failed',
 
   // HTTP endpoint monitoring health-check scheduler (Story 6.2, ADR-6.2-09)
   MONITORING_HEALTH_CHECK_TICK_SKIPPED_OVERLAP: 'monitoring.health_check_tick_skipped_overlap',

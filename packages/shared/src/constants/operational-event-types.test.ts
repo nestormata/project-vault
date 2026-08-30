@@ -96,6 +96,15 @@ describe('OperationalEvent', () => {
     )
   })
 
+  it('exposes the Story 28.6 per-row DLQ entry-failed and template-render-failed event types', () => {
+    expect(OperationalEvent.NOTIFICATION_DLQ_ENTRY_FAILED).toBe(
+      'notification.dlq_cleanup.entry_failed'
+    )
+    expect(OperationalEvent.NOTIFICATION_TEMPLATE_RENDER_FAILED).toBe(
+      'notification.template_render_failed'
+    )
+  })
+
   it('exposes the Story 6.2 health-check scheduler/row event types', () => {
     expect(OperationalEvent.MONITORING_HEALTH_CHECK_TICK_SKIPPED_OVERLAP).toBe(
       'monitoring.health_check_tick_skipped_overlap'
