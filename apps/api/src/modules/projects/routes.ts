@@ -109,10 +109,11 @@ export async function callerProjectRole(
   })
 }
 
-// Shared member-management authorization: a project admin/owner OR an org admin/owner may view and
-// mutate a project's member list (D1). Dedupes the identical check across the GET-members and
-// DELETE-member handlers; each call site keeps its own 403 message.
-async function callerCanManageMembers(
+// Shared "project admin/owner OR org admin/owner" authorization (D1): originally the
+// GET-members/DELETE-member checks, and reused by project-export's export route (Story 28.9
+// AC-10) since it needs the identical admin-or-owner gate. Each call site keeps its own 403
+// message.
+export async function callerCanManageMembers(
   secureCtx: SecureRouteContext,
   projectId: string
 ): Promise<boolean> {
@@ -120,6 +121,21 @@ async function callerCanManageMembers(
   const isProjectAdminOrOwner = callerRole === 'admin' || callerRole === 'owner'
   const isOrgAdminOrOwner = secureCtx.auth.orgRole === 'admin' || secureCtx.auth.orgRole === 'owner'
   return isProjectAdminOrOwner || isOrgAdminOrOwner
+}
+
+// Wraps `callerCanManageMembers` with the 404-then-403 reply shape every gated call site needs
+// (GET-members, DELETE-member, project-export's export route). Sends the 403 itself and returns
+// `false` when the caller isn't authorized, so handlers can `if (!(await authorize(...))) return
+// reply` with each call site still supplying its own error body.
+export async function requireCallerCanManageProject(
+  secureCtx: SecureRouteContext,
+  reply: FastifyReply,
+  projectId: string,
+  forbiddenBody: { code: string; message: string }
+): Promise<boolean> {
+  if (await callerCanManageMembers(secureCtx, projectId)) return true
+  reply.status(403).send(forbiddenBody)
+  return false
 }
 
 // 4.4 AC-2/AC-6/ADR-4.4-05: archive/unarchive is restricted to the project owner OR an org owner
@@ -918,11 +934,13 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         .limit(1)
       if (!project) return reply.status(404).send(PROJECT_NOT_FOUND)
 
-      if (!(await callerCanManageMembers(secureCtx, params.projectId))) {
-        return reply.status(403).send({
+      if (
+        !(await requireCallerCanManageProject(secureCtx, reply, params.projectId, {
           code: 'insufficient_role',
           message: 'Only project admins/owners or org admins/owners can view the member list',
-        })
+        }))
+      ) {
+        return reply
       }
 
       const rows = await secureCtx.tx
@@ -987,11 +1005,13 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
           .send({ code: 'membership_not_found', message: 'User is not a member of this project' })
       }
 
-      if (!(await callerCanManageMembers(secureCtx, params.projectId))) {
-        return reply.status(403).send({
+      if (
+        !(await requireCallerCanManageProject(secureCtx, reply, params.projectId, {
           code: 'insufficient_role',
           message: 'Only project admins/owners or org admins/owners can remove project members',
-        })
+        }))
+      ) {
+        return reply
       }
 
       // D5 item 1: never remove the last owner of a project (self-removal is no exception).

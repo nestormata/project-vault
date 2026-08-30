@@ -1,4 +1,5 @@
 import { ApiClientError, parseApiEnvelope } from './client.js'
+import { triggerBlobDownload } from '../download.js'
 
 export type ExportProjectResult = { blob: Blob; filename: string; exportKey: string }
 
@@ -39,16 +40,10 @@ export async function exportProject(
 
 /** Triggers a real browser file download for a Blob obtained from `exportProject()` — no
  *  server-side storage of the export file exists (D3), so this is the only place the bytes ever
- *  land outside the response itself. */
+ *  land outside the response itself. Delegates to the shared `triggerBlobDownload` helper (same
+ *  anchor-click mechanism already used by the erasure-report/access-report downloads). */
 export function downloadExportBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
+  triggerBlobDownload(filename, blob)
 }
 
 export type ImportProjectResult = {

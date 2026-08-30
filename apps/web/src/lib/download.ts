@@ -3,7 +3,7 @@
 // no helper here at all). These two utilities cover the two response shapes that don't come with
 // a server-provided filename/header: the erasure compliance report (JSON) and the access-report
 // CSV (a POST response body, so it can't be linked to directly).
-function triggerBlobDownload(filename: string, blob: Blob): void {
+export function triggerBlobDownload(filename: string, blob: Blob): void {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url

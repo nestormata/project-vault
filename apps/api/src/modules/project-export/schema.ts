@@ -124,12 +124,16 @@ const ExportRotationSchema = z
   })
   .strict()
 
+// Shared by cert/domain export records: both track the same alert-lead-day bookkeeping alongside
+// their own identity/expiry fields.
+const leadDaysArraySchema = z.array(z.number().int()).max(16)
+
 const ExportCertRecordSchema = z
   .object({
     domain: z.string().min(1).max(256),
     expiresAt: nullableIsoString,
-    alertLeadDays: z.array(z.number().int()).max(16),
-    notifiedLeadDays: z.array(z.number().int()).max(16),
+    alertLeadDays: leadDaysArraySchema,
+    notifiedLeadDays: leadDaysArraySchema,
   })
   .strict()
 
@@ -137,8 +141,8 @@ const ExportDomainRecordSchema = z
   .object({
     domainName: z.string().min(1).max(256),
     renewalDate: nullableIsoString,
-    alertLeadDays: z.array(z.number().int()).max(16),
-    notifiedLeadDays: z.array(z.number().int()).max(16),
+    alertLeadDays: leadDaysArraySchema,
+    notifiedLeadDays: leadDaysArraySchema,
   })
   .strict()
 

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { downloadExportBlob, exportProject } from '$lib/api/project-export.js'
   import { ApiClientError } from '$lib/api/client.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   let { data } = $props()
 
@@ -108,9 +109,18 @@
             {revealedExportKey}
           </code>
           <label class="mt-3 flex items-center gap-2 text-xs text-amber-900">
-            <input type="checkbox" bind:checked={exportKeyAcknowledged} />
+            <input
+              type="checkbox"
+              bind:checked={exportKeyAcknowledged}
+              aria-describedby="export-key-ack-help"
+            />
             I have saved this key — it cannot be retrieved again.
           </label>
+          <FormHelpText
+            id="export-key-ack-help"
+            kind="checkbox"
+            text="Confirms you copied the export key shown above. The server never stores it, so once you leave this page without saving it, the export file can never be decrypted again."
+          />
           <button
             type="button"
             class="mt-3 rounded-lg bg-amber-900 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"

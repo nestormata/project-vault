@@ -9,7 +9,7 @@ import { defaultErrorResponses, ApiErrorSchema } from '../../lib/api-contracts.j
 import { parseParams } from '../../lib/route-helpers.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
-import { callerProjectRole } from '../projects/routes.js'
+import { requireCallerCanManageProject } from '../projects/routes.js'
 import {
   checkExportFormatVersion,
   decryptExportFile,
@@ -49,16 +49,6 @@ const IMPORT_RATE_LIMIT = {
 // D3: a generous but bounded override of the app-wide 1 MB multipart default — a whole-project
 // export (full secret-version history included) can legitimately exceed that.
 const IMPORT_FILE_SIZE_LIMIT_BYTES = 25 * 1024 * 1024
-
-async function callerCanExportProject(
-  secureCtx: SecureRouteContext,
-  projectId: string
-): Promise<boolean> {
-  const callerRole = await callerProjectRole(secureCtx, projectId)
-  const isProjectAdminOrOwner = callerRole === 'admin' || callerRole === 'owner'
-  const isOrgAdminOrOwner = secureCtx.auth.orgRole === 'admin' || secureCtx.auth.orgRole === 'owner'
-  return isProjectAdminOrOwner || isOrgAdminOrOwner
-}
 
 function slugifyForFilename(name: string): string {
   const slug = name
@@ -182,8 +172,15 @@ export async function projectExportRoutes(fastify: FastifyApp): Promise<void> {
 
       // AC-1 negative example: no key generated, no data read from credentials, when the caller
       // lacks authorization — checked before any export work begins.
-      if (!(await callerCanExportProject(secureCtx, params.projectId))) {
-        return reply.status(403).send(EXPORT_REQUIRES_ADMIN)
+      if (
+        !(await requireCallerCanManageProject(
+          secureCtx,
+          reply,
+          params.projectId,
+          EXPORT_REQUIRES_ADMIN
+        ))
+      ) {
+        return reply
       }
 
       const rawExportKey = generateExportKey()

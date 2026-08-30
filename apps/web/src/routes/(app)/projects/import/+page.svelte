@@ -3,6 +3,7 @@
   import { resolve } from '$app/paths'
   import { ApiClientError } from '$lib/api/client.js'
   import { importProject, type ImportProjectResult } from '$lib/api/project-export.js'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
 
   let selectedFile = $state<File | null>(null)
   let exportKey = $state('')
@@ -113,6 +114,11 @@
           class="mt-1 block w-full text-sm"
           onchange={handleFileSelect}
           required
+          aria-describedby="pvexport-file-help"
+        />
+        <FormHelpText
+          id="pvexport-file-help"
+          text="The encrypted .pvexport file you downloaded when exporting a project. It is never uploaded anywhere else."
         />
       </div>
 
@@ -125,6 +131,12 @@
           bind:value={exportKey}
           placeholder="The one-time key shown when this file was exported"
           required
+          aria-describedby="export-key-help"
+        />
+        <FormHelpText
+          id="export-key-help"
+          kind="secret"
+          text="The one-time decryption key you were shown when this export was created. It was never stored on the server, so it can't be recovered here — you must have saved it yourself."
         />
       </div>
 
@@ -138,6 +150,11 @@
           class="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           bind:value={projectName}
           placeholder="Defaults to the exported project's own name"
+          aria-describedby="project-name-help"
+        />
+        <FormHelpText
+          id="project-name-help"
+          text="Leave blank to keep the exported project's original name. Importing always creates a brand-new project — it never overwrites or merges into an existing one."
         />
       </div>
 
