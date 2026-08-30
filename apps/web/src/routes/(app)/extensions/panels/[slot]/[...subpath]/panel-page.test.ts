@@ -485,5 +485,133 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1, rewired inli
       expect(screen.queryByText('stale message, must be dropped')).toBeNull()
       expect(panelContainer()?.innerHTML).toContain('navigated away')
     })
+
+    // Story 30.3 — DW-141 non-security edge-case hardening for handleActionClick.
+    describe('Story 30.3: action-dispatch edge-case hardening', () => {
+      it('AC1 (Story 30.3): a data-pv-action-kind attribute cannot override the real action kind', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { message: 'done' }))
+        vi.stubGlobal('fetch', fetchMock)
+        render(ExtensionPanelPage, {
+          props: {
+            data: {
+              ...actionData,
+              html: '<button type="button" data-pv-action="test-action" data-pv-action-kind="attacker-controlled-kind">Run</button>',
+            },
+          },
+        })
+
+        screen.getByText('Run').click()
+        await flush()
+
+        expect(fetchMock).toHaveBeenCalledWith(
+          '/api/v1/extensions/panels/group/actions',
+          expect.objectContaining({ body: JSON.stringify({ kind: 'test-action' }) })
+        )
+      })
+
+      it('AC1 (Story 30.3, regression): kind + data-pv-action-note still round-trips unaffected', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { message: 'done' }))
+        vi.stubGlobal('fetch', fetchMock)
+        render(ExtensionPanelPage, { props: { data: actionData } })
+
+        screen.getByText('Run').click()
+        await flush()
+
+        expect(fetchMock).toHaveBeenCalledWith(
+          '/api/v1/extensions/panels/group/actions',
+          expect.objectContaining({ body: JSON.stringify({ kind: 'test-action', note: 'hi' }) })
+        )
+      })
+
+      it('AC2 (Story 30.3): preventDefault() is called for an accepted click, suppressing native navigation/form-submit', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { message: 'done' }))
+        vi.stubGlobal('fetch', fetchMock)
+        render(ExtensionPanelPage, {
+          props: {
+            data: {
+              ...actionData,
+              html: '<a href="/some/other/route" data-pv-action="test-action">Run</a>',
+            },
+          },
+        })
+
+        const link = screen.getByText('Run').closest('a') as HTMLAnchorElement
+        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true })
+        const preventDefaultSpy = vi.spyOn(clickEvent, 'preventDefault')
+        link.dispatchEvent(clickEvent)
+        await flush()
+
+        expect(preventDefaultSpy).toHaveBeenCalledTimes(1)
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+      })
+
+      it('AC2 (Story 30.3): preventDefault() is NOT called for a no-op click (no matching data-pv-action element)', () => {
+        const fetchMock = vi.fn()
+        vi.stubGlobal('fetch', fetchMock)
+        render(ExtensionPanelPage, {
+          props: { data: { ...baseData, html: '<p>no actions here</p>' } },
+        })
+
+        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true })
+        const preventDefaultSpy = vi.spyOn(clickEvent, 'preventDefault')
+        panelContainer()?.dispatchEvent(clickEvent)
+
+        expect(preventDefaultSpy).not.toHaveBeenCalled()
+        expect(fetchMock).not.toHaveBeenCalled()
+      })
+
+      it('AC2 (Story 30.3): preventDefault() is NOT called for a data-pv-action element with no actionEndpoint declared', () => {
+        const fetchMock = vi.fn()
+        vi.stubGlobal('fetch', fetchMock)
+        render(ExtensionPanelPage, { props: { data: { ...baseData, html: actionHtml } } })
+
+        const button = screen.getByText('Run').closest('button') as HTMLButtonElement
+        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true })
+        const preventDefaultSpy = vi.spyOn(clickEvent, 'preventDefault')
+        button.dispatchEvent(clickEvent)
+
+        expect(preventDefaultSpy).not.toHaveBeenCalled()
+        expect(fetchMock).not.toHaveBeenCalled()
+      })
+
+      it('AC3 (Story 30.3): a slower-resolving click on one element does not clobber a faster click already applied on another element', async () => {
+        let resolveFirst: (value: unknown) => void = () => undefined
+        let resolveSecond: (value: unknown) => void = () => undefined
+        const fetchMock = vi
+          .fn()
+          .mockReturnValueOnce(new Promise((resolve) => (resolveFirst = resolve)))
+          .mockReturnValueOnce(new Promise((resolve) => (resolveSecond = resolve)))
+        vi.stubGlobal('fetch', fetchMock)
+        render(ExtensionPanelPage, {
+          props: {
+            data: {
+              ...actionData,
+              html:
+                '<button type="button" data-pv-action="first-action">First</button>' +
+                '<button type="button" data-pv-action="second-action">Second</button>',
+            },
+          },
+        })
+
+        screen.getByText('First').click()
+        await flush()
+        screen.getByText('Second').click()
+        await flush()
+
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+
+        // Faster (second) click resolves first, applying its result.
+        resolveSecond(jsonResponse(200, { message: 'second result' }))
+        await flush()
+        expect(screen.getByText('second result')).toBeTruthy()
+
+        // Slower (first) click's response arrives after — must be dropped, not overwrite the
+        // second click's already-applied result.
+        resolveFirst(jsonResponse(200, { message: 'first result, must be dropped' }))
+        await flush()
+        expect(screen.queryByText('first result, must be dropped')).toBeNull()
+        expect(screen.getByText('second result')).toBeTruthy()
+      })
+    })
   })
 })
