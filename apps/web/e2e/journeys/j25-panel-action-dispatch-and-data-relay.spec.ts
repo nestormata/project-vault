@@ -33,6 +33,12 @@ import {
  * "full payload reaches the route unmodified" property this file has always tested, just via the
  * new transport.
  *
+ * Story 29.6 adds a further "AC13" test below, driving a genuine browser click on the mock
+ * extension's own panel-rendered `<a href>` navigation link (Story 29.6's real `<a href>`
+ * mechanism, replacing the retired NAVIGATION postMessage relay) and asserting a real
+ * SvelteKit/browser navigation occurred — coverage `panel-page.test.ts`'s jsdom-based component
+ * tests structurally cannot provide, since jsdom has no SvelteKit router to intercept the click.
+ *
  * AC2 below (data-relay payload forwarding) is UNCHANGED, out of Story 29.2's scope (it does not
  * touch the DATA relay — see `handlePanelDataMessage` in `+page.svelte`, still driven by
  * `postMessage`, still pending replacement by Story 29.4) and is currently ALSO broken by the
@@ -156,6 +162,35 @@ test.describe
     // replaces the container).
     await expect(runButton).not.toHaveAttribute('disabled', '')
     await expect(runButton).not.toHaveAttribute('aria-busy', 'true')
+  })
+
+  // Story 29.6 AC13 — real Playwright e2e coverage that a genuine click on a panel-rendered
+  // `<a href>` produces a real SvelteKit client-side navigation: `panel-page.test.ts`'s jsdom-based
+  // component tests have no SvelteKit router to intercept the click, so only a real browser proves
+  // this. Drives the mock extension's own AC12 fixture link (`TEST_NAV_LINK_SUBPATH`, rendered as
+  // `Open detail`) and asserts the URL actually changes AND the target route's own real content
+  // renders — not merely that `click()` didn't throw.
+  test('AC13 (Story 29.6): clicking the panel-rendered navigation link performs a real browser navigation to the target route', async ({
+    page,
+    context,
+  }) => {
+    await registerLoggedInMember(context.request, 'nav-link')
+
+    await page.goto(`${BASE_URL}/extensions/panels/group`)
+    await waitForPanelHydration(page)
+
+    const navLink = page.getByRole('link', { name: 'Open detail' })
+    await expect(navLink).toBeVisible()
+    await expect(navLink).toHaveAttribute('href', '/extensions/panels/group/detail')
+
+    await navLink.click()
+
+    // A real navigation: the URL changed, and the target route's own real content rendered
+    // (still the `group` slot's own panel — the `[...subpath]` rest segment is this route's own
+    // deep-link mechanism, Story 25.8 AC1, unaffected by this story).
+    await expect(page).toHaveURL(`${BASE_URL}/extensions/panels/group/detail`)
+    await expect(page.getByRole('heading', { name: 'Extension' })).toBeVisible()
+    await expect(page.getByText('Mock panel for slot "group"')).toBeVisible()
   })
 
   // Skipped: Story 29.1 removed the panel iframe this test drives via `frame.evaluate`/

@@ -80,6 +80,16 @@ export const TEST_NAV_CHILD_ITEM_ID = 'mock-ext-settings-child'
  * own established named-constant-export pattern.
  */
 export const TEST_MODULE_DATA_PATH = '/fixture-echo'
+/**
+ * Story 29.6 AC12/Task 3 — a real, concrete panel-subpath navigation link, giving Chrome-driven
+ * manual verification and the new Playwright e2e coverage (AC13) something real to click.
+ * Rendered from the `group` slot's own panel HTML as a plain `<a href="...">` pointing at this
+ * same route's own `[...subpath]` shape (Story 25.8 AC1) — deliberately a bare `<a href>` with no
+ * `data-pv-action` attribute anywhere in its subtree (pre-dev elicitation finding, Failure Mode
+ * Analysis): combining the two on one element races the delegated action-click fetch against a
+ * real navigation, with neither handler calling `preventDefault()` on the other's behalf.
+ */
+export const TEST_NAV_LINK_SUBPATH = '/extensions/panels/group/detail'
 
 const manifest: ExtensionManifest = {
   name: MOCK_UI_PANEL_PROVIDER_NAME,
@@ -184,6 +194,11 @@ const uiPanel: UIPanel = {
         (context.actionEndpoint
           ? `<button type="button" data-pv-action="${TEST_ACTION_KIND}" data-pv-action-note="${TEST_ACTION_NOTE}">Run test action</button>`
           : '') +
+        // Story 29.6 AC1/AC12 — a plain, ordinary `<a href>` navigation link, intentionally never
+        // combined with `data-pv-action` on itself or nested inside its subtree. Clicking it is a
+        // genuine same-origin browser navigation into this same route's own `[...subpath]` shape
+        // — no postMessage, no host-side intent negotiation.
+        `<a href="${TEST_NAV_LINK_SUBPATH}">Open detail</a>` +
         `</body></html>`,
     }
   },
