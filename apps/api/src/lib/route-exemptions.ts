@@ -1318,6 +1318,13 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
     reviewer: SECURITY_OWNER,
   },
   {
+    path: 'workers/clock-skew-check.ts',
+    classification: PLATFORM_JOB,
+    reason:
+      'Runs a platform-scoped SELECT now() to measure clock skew; no org-scoped data touched.',
+    reviewer: SECURITY_OWNER,
+  },
+  {
     path: 'workers/prune-credential-versions.ts',
     classification: PLATFORM_JOB,
     reason:

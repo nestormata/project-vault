@@ -36213,11 +36213,43 @@
                         "sessionsLive"
                       ],
                       "additionalProperties": false
+                    },
+                    "clockSkew": {
+                      "type": "object",
+                      "properties": {
+                        "lastMeasuredMs": {
+                          "nullable": true,
+                          "type": "number"
+                        },
+                        "measuredAt": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "warnThresholdMs": {
+                          "type": "number"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "warn",
+                            "unknown"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "lastMeasuredMs",
+                        "measuredAt",
+                        "warnThresholdMs",
+                        "status"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
                     "extension",
-                    "nativeLoginPolicy"
+                    "nativeLoginPolicy",
+                    "clockSkew"
                   ],
                   "additionalProperties": false
                 }

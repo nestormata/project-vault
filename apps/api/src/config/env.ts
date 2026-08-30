@@ -442,6 +442,92 @@ function validateBackupEnv(
   }
 }
 
+// Story 30.1 AC2/AC4/AC5: shape/format-only validation — no crypto (no
+// crypto.createPublicKey()/createVerify()), that is Story 30.2's request-time job.
+export type HandoffVerifyKey = { kid: string; publicKeyPem: string }
+
+export class HandoffVerifyKeysParseError extends Error {}
+
+const HANDOFF_PEM_HEADER = '-----BEGIN PUBLIC KEY-----'
+const HANDOFF_PEM_FOOTER = '-----END PUBLIC KEY-----'
+
+function parseHandoffVerifyKeysJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    throw new HandoffVerifyKeysParseError('VAULT_HANDOFF_VERIFY_KEYS must be valid JSON')
+  }
+}
+
+// Code-review finding (Blind Hunter/Edge Case Hunter): a bare `includes()` check on both the
+// header and footer accepts a reversed or duplicated-marker string (e.g. footer before header) as
+// "well-formed" — it only checked that both substrings appeared *somewhere*, not that the footer
+// actually closes a block opened by the header. Require the footer to start strictly after the
+// header ends, which also rejects an empty/overlapping header+footer pair. Split out of
+// toHandoffVerifyKey to keep it under the repo's eslint cyclomatic-complexity threshold.
+function isWellFormedHandoffPem(publicKeyPem: unknown): publicKeyPem is string {
+  if (typeof publicKeyPem !== 'string') return false
+  const headerIndex = publicKeyPem.indexOf(HANDOFF_PEM_HEADER)
+  const footerIndex = publicKeyPem.indexOf(HANDOFF_PEM_FOOTER)
+  return (
+    headerIndex !== -1 &&
+    footerIndex !== -1 &&
+    footerIndex >= headerIndex + HANDOFF_PEM_HEADER.length
+  )
+}
+
+// Split out of parseHandoffVerifyKeys to keep both functions under the repo's eslint
+// cyclomatic-complexity threshold — this validates and normalizes a single array element.
+function toHandoffVerifyKey(item: unknown, seenKids: Set<string>): HandoffVerifyKey {
+  if (!item || typeof item !== 'object') {
+    throw new HandoffVerifyKeysParseError(
+      'VAULT_HANDOFF_VERIFY_KEYS entries must be objects with kid/publicKeyPem'
+    )
+  }
+  const kid = (item as Record<string, unknown>)['kid']
+  const publicKeyPem = (item as Record<string, unknown>)['publicKeyPem']
+  if (typeof kid !== 'string' || kid.length < 1 || kid.length > 128) {
+    throw new HandoffVerifyKeysParseError(
+      'VAULT_HANDOFF_VERIFY_KEYS kid must be a non-empty string of at most 128 characters'
+    )
+  }
+  if (!isWellFormedHandoffPem(publicKeyPem)) {
+    throw new HandoffVerifyKeysParseError(
+      'VAULT_HANDOFF_VERIFY_KEYS publicKeyPem must be a well-formed PEM public key block'
+    )
+  }
+  if (seenKids.has(kid)) {
+    throw new HandoffVerifyKeysParseError('VAULT_HANDOFF_VERIFY_KEYS kid values must be unique')
+  }
+  seenKids.add(kid)
+  return { kid, publicKeyPem }
+}
+
+// Story 30.1 Task 2: the single, shared parse implementation — both the boot-time superRefine
+// below and the module's cached `handoffVerifyKeys` export (for Story 30.2 to import) call this
+// same function, so the parse logic never lives twice. Throws HandoffVerifyKeysParseError on any
+// shape violation; callers decide how to surface that (a FATAL env issue at boot here, or a
+// pre-validated call after boot for 30.2).
+export function parseHandoffVerifyKeys(raw: string | undefined): HandoffVerifyKey[] {
+  if (!raw) return []
+  const parsed = parseHandoffVerifyKeysJson(raw)
+  if (!Array.isArray(parsed)) {
+    throw new HandoffVerifyKeysParseError('VAULT_HANDOFF_VERIFY_KEYS must be a JSON array')
+  }
+  const seenKids = new Set<string>()
+  return parsed.map((item) => toHandoffVerifyKey(item, seenKids))
+}
+
+function validateHandoffVerifyKeys(raw: string | undefined, ctx: z.RefinementCtx): void {
+  if (!raw) return
+  try {
+    parseHandoffVerifyKeys(raw)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'VAULT_HANDOFF_VERIFY_KEYS is invalid'
+    addEnvIssue(ctx, 'VAULT_HANDOFF_VERIFY_KEYS', `FATAL: ${message}`)
+  }
+}
+
 function validateProductionEnv(env: ProductionEnv, ctx: z.RefinementCtx): void {
   validateProductionBasics(env, ctx)
   validateTotpReplayProductionSecret(env, ctx)
@@ -1096,6 +1182,36 @@ const envSchema = z
     // 0 = unlimited (same "safety default" reasoning as AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB).
     AUDIT_ORG_DEFAULT_WRITE_RATE_PER_MIN: z.coerce.number().min(0).default(0),
     AUDIT_ORG_WRITE_RATE_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
+
+    // Story 30.1 (DW-129): handoff instance identity, key-set, and clock-skew config group —
+    // Story 30.2 (DW-128) extends this same grouping with its own VAULT_HANDOFF_*-prefixed
+    // request-time verification config. See claim contract
+    // (_bmad-output/planning-artifacts/handoff-token-claim-contract.md) "Instance identity
+    // decision" / "Key provisioning, rotation, and compromise response". Optional at this stage
+    // (AC1.3/AC2.6) — no route or strategy in this repo consumes these yet; Story 30.2 owns
+    // registering the handoff AuthStrategy and refusing to register it when unset.
+    VAULT_HANDOFF_INSTANCE_ID: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z
+        .string()
+        .regex(
+          /^[a-z][a-z0-9-]{1,61}[a-z0-9]$/,
+          'FATAL: VAULT_HANDOFF_INSTANCE_ID must be 3-63 lowercase DNS-label characters'
+        )
+        .optional()
+    ),
+    // Raw JSON string, following the EXTENSION_DATABASE_URL-style optional pattern above — shape
+    // is validated (JSON/array/object/PEM-envelope only, no crypto) by validateHandoffVerifyKeys
+    // in the superRefine block below, and parsed into a stable typed shape by the exported
+    // parseHandoffVerifyKeys()/handoffVerifyKeys below for Story 30.2 to consume.
+    VAULT_HANDOFF_VERIFY_KEYS: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.string().optional()
+    ),
+    // AC3/AC9: default 20000ms — deliberately tighter than JWT_MAX_CLOCK_SKEW_SECONDS's 30s
+    // verifier tolerance so this diagnostic warning fires before Story 30.2's verifier would
+    // actually start rejecting handoff tokens on clock-skew grounds.
+    VAULT_HANDOFF_CLOCK_SKEW_WARN_MS: z.coerce.number().int().positive().default(20000),
   })
   .superRefine((env, ctx) => {
     if (env.SESSION_SECRET === env.REFRESH_TOKEN_HMAC_SECRET) {
@@ -1144,6 +1260,7 @@ const envSchema = z
       }
     }
     validateBackupEnv(env, ctx)
+    validateHandoffVerifyKeys(env.VAULT_HANDOFF_VERIFY_KEYS, ctx)
   })
 
 type RawEnv = z.infer<typeof envSchema>
@@ -1233,3 +1350,11 @@ function loadEnv(): Env {
 }
 
 export const env = loadEnv()
+
+// Story 30.1 Task 2: cached at module load, same lifecycle as `env` above — by this point
+// VAULT_HANDOFF_VERIFY_KEYS has already passed validateHandoffVerifyKeys() (or loadEnv() would
+// have exited the process), so this parse is expected to succeed. Story 30.2 imports this
+// directly rather than re-parsing raw env text per request.
+export const handoffVerifyKeys: HandoffVerifyKey[] = parseHandoffVerifyKeys(
+  env.VAULT_HANDOFF_VERIFY_KEYS
+)

@@ -67,6 +67,7 @@ import { runAuditStorageCheck } from './workers/audit-storage-check.js'
 import { runAuditOrgUsageReconcile } from './workers/audit-org-usage-reconcile.js'
 import { runKeyCustodyCheck } from './workers/key-custody-check.js'
 import { runResourceUsageCheck } from './workers/resource-usage-check.js'
+import { runClockSkewCheck } from './workers/clock-skew-check.js'
 import { env } from './config/env.js'
 import { instrumentDbPool } from './lib/db-pool-metrics.js'
 import { withJobLogging } from './lib/job-logging.js'
@@ -238,6 +239,11 @@ async function main(): Promise<void> {
       // Story 9.4 AC-17: daily platform-audit-log retention prune (independent of the org-scoped
       // audit/retention-prune schedule above — the two logs have unrelated retention policies).
       'platform-audit/retention': { cron: '0 2 * * *' },
+      // Story 30.1 (DW-129) AC8/AC11: clock-drift magnitude signal — a lightweight `SELECT
+      // now()` round-trip, reusing the shared 5-minute cadence (also run once at boot below, so
+      // the diagnostics signal is available immediately rather than only after the first
+      // interval elapses).
+      'handoff/clock-skew-check': { cron: EVERY_FIVE_MINUTES_CRON },
     })
     await boss.registerWorkers({
       'prune-revoked-tokens': () => pruneRevokedTokens(),
@@ -387,6 +393,10 @@ async function main(): Promise<void> {
         withJobLogging(fastify.log, 'platform-audit/retention', job.id ?? 'unknown', () =>
           prunePlatformAuditEvents(fastify.log)
         ),
+      'handoff/clock-skew-check': (job) =>
+        withJobLogging(fastify.log, 'handoff/clock-skew-check', job.id ?? 'unknown', () =>
+          runClockSkewCheck(fastify.log)
+        ),
     })
     await boss.send('notification/backfill-pending-delivery', {})
     // Story 5.3 AC-9: startup-once enqueue, deduplicated via singletonKey so a hot-reload/
@@ -395,6 +405,14 @@ async function main(): Promise<void> {
     // Story 9.2 AC-19: key-custody risk is also checked at every vault-unseal event (startup),
     // not just on the weekly cron — singletonKey dedups a hot-reload/restart the same way.
     await boss.send('key-custody/check', {}, { singletonKey: 'key-custody/check/startup' })
+    // Story 30.1 AC8: one-shot boot measurement so the clock-skew diagnostics signal is
+    // available immediately, not only after the first 5-minute interval elapses. singletonKey
+    // dedups a hot-reload/restart the same way as the jobs above.
+    await boss.send(
+      'handoff/clock-skew-check',
+      {},
+      { singletonKey: 'handoff/clock-skew-check/startup' }
+    )
     bossRegistered = true
   }
   setOnVaultUnsealed(startBossAndRegisterWorkers)

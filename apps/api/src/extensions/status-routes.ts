@@ -10,6 +10,7 @@ import {
   readReplacementLatch,
 } from '../modules/auth/native-login-latch.js'
 import { countLiveSessionsAcrossInstance } from './sessions-live-count.js'
+import { getClockSkewDiagnostics } from '../workers/clock-skew-check.js'
 
 // AC-2/AC-4: OrgAdmin sees the loaded manifest, or a real `null` (not 404, not `{}`) when
 // nothing is loaded — a future admin UI page's honest empty state (Product Surface Contract).
@@ -58,9 +59,22 @@ const NativeLoginPolicySchema = z.object({
   sessionsLive: z.number().int().nonnegative(),
 })
 
+// Story 30.1 (DW-129) AC9: additive extension of this existing diagnostics envelope — the
+// clock-skew magnitude signal, following the nativeLoginPolicy.state precedent above. `status`
+// stays 'unknown' until the first measurement completes (boot runs one immediately — see
+// main.ts); a failed measurement (DB unreachable) leaves the previous snapshot in place rather
+// than resetting to a false 'ok'.
+const ClockSkewSchema = z.object({
+  lastMeasuredMs: z.number().nullable(),
+  measuredAt: z.string().nullable(),
+  warnThresholdMs: z.number(),
+  status: z.enum(['ok', 'warn', 'unknown']),
+})
+
 const ExtensionStatusEnvelopeSchema = z.object({
   extension: ExtensionManifestSchema.nullable(),
   nativeLoginPolicy: NativeLoginPolicySchema,
+  clockSkew: ClockSkewSchema,
 })
 
 export async function extensionStatusRoutes(fastify: FastifyApp): Promise<void> {
@@ -145,6 +159,7 @@ export async function extensionStatusRoutes(fastify: FastifyApp): Promise<void> 
           appliedAtBoot: !pendingRestart,
           sessionsLive,
         },
+        clockSkew: getClockSkewDiagnostics(),
       }
     },
   })

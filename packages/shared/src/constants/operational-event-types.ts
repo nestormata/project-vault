@@ -13,6 +13,12 @@ export const OperationalEvent = {
   ADMIN_POOL_IDENTITY_VERIFIED: 'admin_pool.identity_verified',
   ADMIN_POOL_IDENTITY_DRIFTED: 'admin_pool.identity_drifted',
   STARTUP_METRICS_EXPOSED: 'startup.metrics_exposed',
+  // Story 30.1 (DW-129) AC3: clock-drift magnitude signal (W2 mitigation) — measured at boot and
+  // on a periodic interval by comparing this process's Date.now() against Postgres's own
+  // SELECT now(). CLOCK_SKEW_CHECK_FAILED fires when the round-trip itself fails (DB
+  // unreachable/pool exhausted) — a diagnostic-signal failure, never fatal.
+  CLOCK_SKEW_MEASURED: 'clock_skew.measured',
+  CLOCK_SKEW_CHECK_FAILED: 'clock_skew.check_failed',
   SHUTDOWN_SIGNAL: 'shutdown.signal_received',
   SHUTDOWN_COMPLETE: 'shutdown.complete',
   SHUTDOWN_FAILED: 'shutdown.failed',
