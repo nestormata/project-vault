@@ -3,8 +3,12 @@ export type AccountRecoveryPayload = {
   initiatorEmail: string | null
 }
 
-function escapeHtml(str: string): string {
-  return str
+// notification_queue.payload is stored as untyped JSON — recoveryUrl is a required string in
+// the type, but a malformed/missing row must not crash render (Story 28.6 AC2, same class of
+// bug as security-failed-auth-threshold.ts's AC1 fix).
+function escapeHtml(str: string | undefined | null): string {
+  const safe = typeof str === 'string' ? str : ''
+  return safe
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
@@ -22,12 +26,13 @@ export function renderAccountRecoveryLinkCreated(raw: Record<string, unknown>): 
   html: string
 } {
   const p = raw as AccountRecoveryPayload
+  const recoveryUrl = p.recoveryUrl ?? ''
   const subject = `[Project Vault] Reset your password`
 
   const text = [
     'You requested a password reset for your Project Vault account.',
     '',
-    `Reset your password: ${p.recoveryUrl}`,
+    `Reset your password: ${recoveryUrl}`,
     '',
     'This link expires in 15 minutes and can only be used once.',
     "If you didn't request this, you can safely ignore this email.",
@@ -39,7 +44,7 @@ export function renderAccountRecoveryLinkCreated(raw: Record<string, unknown>): 
 <body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;">
   <h2>Reset your password</h2>
   <p>You requested a password reset for your Project Vault account.</p>
-  <p><a href="${escapeHtml(p.recoveryUrl)}" style="display:inline-block;padding:10px 20px;background:#0f172a;color:#fff;text-decoration:none;border-radius:8px;">Reset password</a></p>
+  <p><a href="${escapeHtml(recoveryUrl)}" style="display:inline-block;padding:10px 20px;background:#0f172a;color:#fff;text-decoration:none;border-radius:8px;">Reset password</a></p>
   <p style="color:#6b7280;font-size:12px;">This link expires in 15 minutes and can only be used once. If you didn't request this, you can safely ignore this email.</p>
 </body>
 </html>`
@@ -58,12 +63,13 @@ export function renderAccountRecoveryLinkSent(raw: Record<string, unknown>): {
 } {
   const p = raw as AccountRecoveryPayload
   const initiator = p.initiatorEmail ?? 'An organization admin'
+  const recoveryUrl = p.recoveryUrl ?? ''
   const subject = `[Project Vault] Your admin sent you a password reset link`
 
   const text = [
     `${initiator} sent you a link to reset your Project Vault password.`,
     '',
-    `Reset your password: ${p.recoveryUrl}`,
+    `Reset your password: ${recoveryUrl}`,
     '',
     'This link expires in 15 minutes and can only be used once.',
     "If you weren't expecting this, contact your organization admin before using the link.",
@@ -75,7 +81,7 @@ export function renderAccountRecoveryLinkSent(raw: Record<string, unknown>): {
 <body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;">
   <h2>Your admin sent you a password reset link</h2>
   <p>${escapeHtml(initiator)} sent you a link to reset your Project Vault password.</p>
-  <p><a href="${escapeHtml(p.recoveryUrl)}" style="display:inline-block;padding:10px 20px;background:#0f172a;color:#fff;text-decoration:none;border-radius:8px;">Reset password</a></p>
+  <p><a href="${escapeHtml(recoveryUrl)}" style="display:inline-block;padding:10px 20px;background:#0f172a;color:#fff;text-decoration:none;border-radius:8px;">Reset password</a></p>
   <p style="color:#6b7280;font-size:12px;">This link expires in 15 minutes and can only be used once. If you weren't expecting this, contact your organization admin before using the link.</p>
 </body>
 </html>`

@@ -38,4 +38,27 @@ describe('renderProjectInvitationCreated', () => {
     expect(result.html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
     expect(result.html).toContain('&amp;b=2')
   })
+
+  // Story 28.6 AC2 — projectName/role/acceptUrl are required strings in the payload type, but
+  // notification_queue.payload is untyped jsonb; a missing field must not crash render.
+  it('does not throw when projectName is missing', () => {
+    const { projectName: _pn, ...withoutProjectName } = BASE_PAYLOAD
+    expect(() =>
+      renderProjectInvitationCreated({ ...withoutProjectName, inviterEmail: null })
+    ).not.toThrow()
+  })
+
+  it('does not throw when role is missing', () => {
+    const { role: _role, ...withoutRole } = BASE_PAYLOAD
+    expect(() =>
+      renderProjectInvitationCreated({ ...withoutRole, inviterEmail: null })
+    ).not.toThrow()
+  })
+
+  it('does not throw when acceptUrl is missing', () => {
+    const { acceptUrl: _url, ...withoutAcceptUrl } = BASE_PAYLOAD
+    expect(() =>
+      renderProjectInvitationCreated({ ...withoutAcceptUrl, inviterEmail: null })
+    ).not.toThrow()
+  })
 })
