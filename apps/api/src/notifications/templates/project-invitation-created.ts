@@ -18,6 +18,19 @@ function escapeHtml(str: string | undefined | null): string {
     .replaceAll('"', '&quot;')
 }
 
+// Code-review fix (post-28.6) — escapeHtml only neutralizes markup characters, it does not
+// restrict the URL scheme. Since acceptUrl comes from an untyped, unrevalidated
+// notification_queue.payload row, a malformed/tampered row containing a `javascript:`/`data:`
+// URI must not be allowed to render as a clickable href in this invitation email.
+function safeHref(url: string): string {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? url : ''
+  } catch {
+    return ''
+  }
+}
+
 export function renderProjectInvitationCreated(raw: Record<string, unknown>): {
   subject: string
   text: string
@@ -45,7 +58,7 @@ export function renderProjectInvitationCreated(raw: Record<string, unknown>): {
 <body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;">
   <h2>You've been invited to ${escapeHtml(projectName)}</h2>
   <p>${escapeHtml(inviter)} invited you to join <strong>${escapeHtml(projectName)}</strong> on Project Vault as <strong>${escapeHtml(role)}</strong>.</p>
-  <p><a href="${escapeHtml(acceptUrl)}" style="display:inline-block;padding:10px 20px;background:#0f172a;color:#fff;text-decoration:none;border-radius:8px;">Accept Invitation</a></p>
+  <p><a href="${escapeHtml(safeHref(acceptUrl))}" style="display:inline-block;padding:10px 20px;background:#0f172a;color:#fff;text-decoration:none;border-radius:8px;">Accept Invitation</a></p>
   <p style="color:#6b7280;font-size:12px;">This invite expires in 72 hours.</p>
 </body>
 </html>`

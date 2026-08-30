@@ -162,4 +162,22 @@ describe('notification templates', () => {
     })
     expect(rendered.subject).toContain(FAILED_LOGIN_SUBJECT_FRAGMENT)
   })
+
+  // Code-review fix (post-28.6): a renderer throwing for a template whose payload carries a
+  // live secret (e.g. account-recovery's recoveryUrl reset token) must not leak that secret into
+  // the outbound email/inbox content via the AC3 fallback path — the raw payload belongs only in
+  // the internal error log, never in what actually gets delivered.
+  it('renderEmailTemplate fallback for a thrown renderer never embeds the raw payload in outbound content', () => {
+    const secretPayload = {
+      get recoveryUrl(): string {
+        throw new Error('boom')
+      },
+    }
+    const rendered = renderEmailTemplate('auth.recovery_link_created', secretPayload, {
+      error: vi.fn(),
+    })
+    expect(rendered.text).not.toContain('boom')
+    expect(rendered.html).not.toContain('recoveryUrl')
+    expect(JSON.stringify(rendered)).not.toContain('recoveryUrl')
+  })
 })

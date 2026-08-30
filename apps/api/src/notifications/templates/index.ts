@@ -116,6 +116,29 @@ function genericEmailFallback(templateId: string, payload: Record<string, unknow
   }
 }
 
+// Story 28.6 code-review fix — the AC3 "renderer threw" degrade path must NOT reuse
+// genericEmailFallback's raw-payload dump. Unlike the "no renderer registered for this
+// templateId" case (a dev/ops-only situation where templateId always comes from a fixed,
+// trusted set of internal constants — this path can't be reached with a real producer payload
+// carrying secrets), a *registered* renderer throwing is reachable for ANY templateId, including
+// account-recovery/project-invitation-created, whose payloads carry live secrets
+// (recoveryUrl reset tokens, acceptUrl invite tokens). Dumping the raw payload into the actual
+// outbound email/inbox content on this path would leak those secrets to the recipient on any
+// future rendering bug — worse than the crash it replaces. The raw payload is still captured for
+// operators via the `operationalLog` call below (an internal log, not an outbound message), which
+// is where AC3's traceability requirement is actually meant to land.
+function renderFailureEmailFallback(templateId: string): EmailRender {
+  const subject = `[Project Vault] Notification (${templateId})`
+  const text = `A vault notification was triggered (template: ${templateId}) but could not be fully rendered. Check the security alerts / activity dashboard for details.`
+  return {
+    subject,
+    text,
+    html: `<p>A vault notification was triggered (template: <code>${templateId}</code>) but could not be fully rendered. Check the dashboard for details.</p>`,
+    inboxTitle: `Alert: ${templateId}`,
+    inboxBody: `A vault event occurred: ${templateId}`,
+  }
+}
+
 function genericSlackFallback(templateId: string): SlackRender {
   return {
     text: `[Project Vault] Notification: ${templateId}`,
@@ -152,7 +175,7 @@ export function renderEmailTemplate(
         { templateId, payload, err: serializeLogError(err) }
       )
     }
-    return genericEmailFallback(templateId, payload)
+    return renderFailureEmailFallback(templateId)
   }
 }
 

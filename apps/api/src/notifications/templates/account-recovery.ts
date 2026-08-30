@@ -15,6 +15,20 @@ function escapeHtml(str: string | undefined | null): string {
     .replaceAll('"', '&quot;')
 }
 
+// Code-review fix (post-28.6) — escapeHtml only neutralizes markup characters, it does not
+// restrict the URL scheme. Since recoveryUrl comes from an untyped, unrevalidated
+// notification_queue.payload row, a malformed/tampered row containing a `javascript:`/`data:`
+// URI must not be allowed to render as a clickable href in a password-reset email — a
+// self-XSS/phishing vector for exactly the kind of security-sensitive email this template sends.
+function safeHref(url: string): string {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? url : ''
+  } catch {
+    return ''
+  }
+}
+
 /**
  * Self-requested recovery link (AC-9, templateId 'auth.recovery_link_created'). Copy is framed
  * as "you asked for this" — distinct from the admin-sent variant below, so a recipient who did
@@ -44,7 +58,7 @@ export function renderAccountRecoveryLinkCreated(raw: Record<string, unknown>): 
 <body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;">
   <h2>Reset your password</h2>
   <p>You requested a password reset for your Project Vault account.</p>
-  <p><a href="${escapeHtml(recoveryUrl)}" style="display:inline-block;padding:10px 20px;background:#0f172a;color:#fff;text-decoration:none;border-radius:8px;">Reset password</a></p>
+  <p><a href="${escapeHtml(safeHref(recoveryUrl))}" style="display:inline-block;padding:10px 20px;background:#0f172a;color:#fff;text-decoration:none;border-radius:8px;">Reset password</a></p>
   <p style="color:#6b7280;font-size:12px;">This link expires in 15 minutes and can only be used once. If you didn't request this, you can safely ignore this email.</p>
 </body>
 </html>`
@@ -81,7 +95,7 @@ export function renderAccountRecoveryLinkSent(raw: Record<string, unknown>): {
 <body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;">
   <h2>Your admin sent you a password reset link</h2>
   <p>${escapeHtml(initiator)} sent you a link to reset your Project Vault password.</p>
-  <p><a href="${escapeHtml(recoveryUrl)}" style="display:inline-block;padding:10px 20px;background:#0f172a;color:#fff;text-decoration:none;border-radius:8px;">Reset password</a></p>
+  <p><a href="${escapeHtml(safeHref(recoveryUrl))}" style="display:inline-block;padding:10px 20px;background:#0f172a;color:#fff;text-decoration:none;border-radius:8px;">Reset password</a></p>
   <p style="color:#6b7280;font-size:12px;">This link expires in 15 minutes and can only be used once. If you weren't expecting this, contact your organization admin before using the link.</p>
 </body>
 </html>`

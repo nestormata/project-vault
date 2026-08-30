@@ -14,7 +14,8 @@ import {
 
 export async function sendSlackNotification(
   notificationQueueId: string,
-  orgId: string
+  orgId: string,
+  logger?: Pick<FastifyBaseLogger, 'error'>
 ): Promise<void> {
   const webhookUrl = env.SLACK_WEBHOOK_URL
   if (!webhookUrl) {
@@ -27,7 +28,8 @@ export async function sendSlackNotification(
 
   const { text, blocks } = renderSlackTemplate(
     entry.templateId,
-    entry.payload as Record<string, unknown>
+    entry.payload as Record<string, unknown>,
+    logger
   )
 
   const response = await fetch(webhookUrl, {

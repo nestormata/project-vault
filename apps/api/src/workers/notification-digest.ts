@@ -15,7 +15,10 @@ type DigestEntry = {
   payload: Record<string, unknown>
 }
 
-function renderDigestEmail(entries: DigestEntry[]): {
+function renderDigestEmail(
+  entries: DigestEntry[],
+  logger?: Pick<FastifyBaseLogger, 'error'>
+): {
   subject: string
   text: string
   html: string
@@ -23,7 +26,7 @@ function renderDigestEmail(entries: DigestEntry[]): {
   const count = entries.length
   const subject = `[Project Vault] Daily digest: ${count} notification${count === 1 ? '' : 's'}`
   const items = entries.map((e) =>
-    renderEmailTemplate(e.templateId, e.payload as Record<string, unknown>)
+    renderEmailTemplate(e.templateId, e.payload as Record<string, unknown>, logger)
   )
 
   const text = [

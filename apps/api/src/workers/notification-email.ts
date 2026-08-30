@@ -60,7 +60,8 @@ export function resetEmailTransportForTesting(): void {
 
 export async function sendEmailNotification(
   notificationQueueId: string,
-  orgId: string
+  orgId: string,
+  logger?: Pick<FastifyBaseLogger, 'error'>
 ): Promise<void> {
   const transport = await getEmailTransport()
   const entry = await claimPendingNotificationEntry(notificationQueueId, orgId)
@@ -88,7 +89,8 @@ export async function sendEmailNotification(
 
   const { subject, text, html } = renderEmailTemplate(
     entry.templateId,
-    entry.payload as Record<string, unknown>
+    entry.payload as Record<string, unknown>,
+    logger
   )
 
   // D3 precedence: the "from" address honors a system_settings override the same way host/port

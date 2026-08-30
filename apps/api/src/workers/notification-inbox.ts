@@ -1,5 +1,6 @@
 import { and, count, eq, isNull } from 'drizzle-orm'
 import type { EventEmitter } from 'node:events'
+import type { FastifyBaseLogger } from 'fastify'
 import { withOrg, withOrgAndUser } from '@project-vault/db'
 import { notificationInbox, notificationQueue } from '@project-vault/db/schema'
 import { emitSseEvent } from '../lib/events.js'
@@ -20,7 +21,8 @@ export function resetEmitterForTesting(): void {
 export async function deliverInboxNotification(
   notificationQueueId: string,
   orgId: string,
-  emitter: EventEmitter
+  emitter: EventEmitter,
+  logger?: Pick<FastifyBaseLogger, 'error'>
 ): Promise<void> {
   const activeEmitter = _emitterOverride === undefined ? emitter : _emitterOverride
   if (!activeEmitter) return
@@ -30,7 +32,11 @@ export async function deliverInboxNotification(
   if (!entry.recipientUserId) return
   const recipientUserId = entry.recipientUserId
 
-  const rendered = renderTemplate(entry.templateId, entry.payload as Record<string, unknown>)
+  const rendered = renderTemplate(
+    entry.templateId,
+    entry.payload as Record<string, unknown>,
+    logger
+  )
   const payload = entry.payload as Record<string, unknown>
   const expiresAt = new Date(Date.now() + env.INBOX_RETENTION_DAYS * 24 * 60 * 60 * 1000)
 

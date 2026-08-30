@@ -12,7 +12,8 @@ import type { BossJob } from '../lib/boss.js'
 export async function deliverNotification(
   notificationQueueId: string,
   orgId: string,
-  emitter?: EventEmitter
+  emitter?: EventEmitter,
+  logger?: Pick<FastifyBaseLogger, 'error'>
 ): Promise<void> {
   const [entry] = await withOrg(orgId, (tx) =>
     tx
@@ -31,16 +32,16 @@ export async function deliverNotification(
 
   switch (entry.channel) {
     case 'email':
-      await sendEmailNotification(notificationQueueId, orgId)
+      await sendEmailNotification(notificationQueueId, orgId, logger)
       break
     case 'slack':
-      await sendSlackNotification(notificationQueueId, orgId)
+      await sendSlackNotification(notificationQueueId, orgId, logger)
       break
     case 'inbox':
       if (!emitter) {
         throw new Error('notification/deliver inbox channel requires EventEmitter')
       }
-      await deliverInboxNotification(notificationQueueId, orgId, emitter)
+      await deliverInboxNotification(notificationQueueId, orgId, emitter, logger)
       break
     default:
       process.stderr.write(
