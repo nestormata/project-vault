@@ -56,6 +56,7 @@ import { organizationSettingsRoutes } from './modules/org/organization-settings-
 import { erasureRoutes } from './modules/compliance/erasure-routes.js'
 import { extensionStatusRoutes } from './extensions/status-routes.js'
 import { extensionPanelRoutes } from './extensions/panel-routes.js'
+import { moduleDataRoutes } from './extensions/module-data-routes.js'
 import { loadExtension, getExtensionStatus } from './extensions/loader.js'
 import { themingRoutes } from './modules/theming/routes.js'
 import { themeSelectionRoutes } from './modules/theming/selection-routes.js'
@@ -385,6 +386,14 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
     logger: fastify.log,
     allowApiVersionAboveHost: env.VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST,
   })
+
+  // Story 29.4 AC4 — MUST register AFTER loadExtension() resolves, unlike every other
+  // extension-related route in this file (extensionPanelRoutes/extensionStatusRoutes register
+  // BEFORE loadExtension() and re-check getExtensionStatus() fresh inside each request handler
+  // instead). This mechanism's route EXISTENCE (which URLs respond at all) is manifest-declared,
+  // so the manifest must already be loaded before the routes can be registered — see
+  // module-data-routes.ts's own doc comment for the full rationale.
+  await fastify.register(moduleDataRoutes, { prefix: '/api/v1/extensions/data' })
 
   // Story 16.1 AC-1/Task 5: startup automatic reload pass for VAULT_THEMES_DIR — identical code
   // path to the manual POST /admin/themes/reload endpoint, just invoked here so a fresh

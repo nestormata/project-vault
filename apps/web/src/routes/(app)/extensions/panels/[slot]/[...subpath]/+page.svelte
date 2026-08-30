@@ -11,10 +11,10 @@
   // Story 29.1 AC1/AC9 — the panel's HTML now renders directly into a real, same-origin,
   // same-document `<div>` (via the `renderPanelHtml` action below) instead of into a sandboxed
   // `srcdoc` iframe. `panelIframe` below is a misnomer carried over from Story 25.x — no iframe
-  // exists any more, but the postMessage relay code (AC8) still references it (see that code's
-  // own comment) pending Stories 29.2/29.4/29.6, which is why the `$state`/type is kept as-is
-  // rather than renamed here (a rename would touch every line of that inert relay code for no
-  // functional reason, ahead of the stories that are actually replacing it).
+  // exists any more, but the remaining NAVIGATION postMessage relay code (AC8) still references
+  // it (see that code's own comment) pending Story 29.6, which is why the `$state`/type is kept
+  // as-is rather than renamed here (a rename would touch every line of that inert relay code for
+  // no functional reason, ahead of the story that is actually replacing it).
   let panelIframe: HTMLIFrameElement | undefined = $state(undefined)
 
   // Story 25.8 Task 2a — Boundary & Edge Case Sweep finding (Elicitation Log #3): a
@@ -31,10 +31,10 @@
   //
   // Story 29.1 AC8 — this relay code (this variable included) is now INERT: `postMessage` events
   // can no longer arrive from a same-document `<div>` the way they could from a cross-origin
-  // sandboxed iframe's `contentWindow`. Left in place, untouched, pending Stories 29.2 (action
-  // relay), 29.4 (data relay), and 29.6 (navigation relay), each of which owns retiring/replacing
-  // one of these three relays with a direct same-origin call. Do not delete or "fix" this code
-  // here — that is explicitly out of this story's scope.
+  // sandboxed iframe's `contentWindow`. The ACTION relay (Story 29.2) and DATA relay (Story 29.4)
+  // have both since been retired outright, replaced by direct same-origin calls; only the
+  // NAVIGATION relay below remains, pending Story 29.6. Do not delete or "fix" this remaining
+  // code here — that is explicitly out of this story's scope.
   let panelGeneration = 0
   const pendingRequestIds = new SvelteSet<string>()
 
@@ -69,74 +69,13 @@
   }
 
   /**
-   * Story 14-11/DW-236 (CentralizeMe) — a second, narrower relay alongside the action relay
-   * above, for panels that need to read/write PV-native REST data the panel itself doesn't own
-   * (e.g. CM's project-container panel listing/creating PV's own native `projects`). Same
-   * underlying reason as the action relay: the panel iframe is `sandbox="allow-scripts"` with no
-   * `allow-same-origin`, so it has a forced-opaque origin and its own CSP
-   * (`compose-panel-document.ts`, `default-src 'none'`, no `connect-src`) blocks any `fetch()` it
-   * issues directly. This page — real PV origin, real session cookie — performs the fetch on the
-   * panel's behalf and posts the JSON result back.
-   *
-   * Deliberately NOT a general-purpose proxy: `isAllowedPanelDataPath()` is a host-owned
-   * allowlist the panel cannot influence (method + path pattern only), matching the action
-   * relay's own "host decides, extension never touches the network directly" posture. Extending
-   * this to another PV-native resource means adding another host-owned pattern here, not
-   * widening what an extension can request.
-   */
-  const PANEL_DATA_REQUEST_SOURCE = 'pv-extension-panel-data-request'
-  const PANEL_DATA_RESULT_SOURCE = 'pv-extension-panel-data-result'
-  const ALLOWED_PANEL_DATA_METHODS = new Set(['GET', 'POST'])
-
-  /**
-   * Story 25.12 AC2 — matches `path` against one manifest-declared template (`data.allowedDataPaths`
-   * entries, e.g. `/api/v1/org/users/:id`) by STRUCTURAL SEGMENT COMPARISON, never by constructing
-   * a `RegExp` from the template: split both on `/`, require the same segment count, each literal
-   * template segment must exact-match its corresponding path segment, and each `:param` template
-   * segment matches any single non-empty, `/`-free path segment. Deliberately not regex-based (see
-   * this story's Dev Notes "Key Design Decisions") — a template is validated, bounded-charset,
-   * manifest-declared data (packages/extension-api's `PANEL_DATA_PATH_PATTERN`), so a `RegExp`
-   * approach isn't defending against untrusted input the way segment comparison already sidesteps
-   * for free — no escaping logic, no catastrophic-backtracking surface to reason about.
-   */
-  function matchesPanelDataPathTemplate(template: string, path: string): boolean {
-    const templateSegments = template.split('/')
-    const pathSegments = path.split('/')
-    if (templateSegments.length !== pathSegments.length) return false
-    return templateSegments.every((templateSegment, index) => {
-      const pathSegment = pathSegments[index]
-      if (pathSegment === undefined) return false
-      // A `:param` segment matches any single non-empty, `/`-free path segment — `/`-freedom is
-      // structural (splitting on `/` already guarantees no segment itself contains a `/`), so
-      // only non-emptiness needs checking here. A literal segment (including the leading empty
-      // segment every absolute path/template produces before its first `/`) is an exact match.
-      if (templateSegment.startsWith(':')) return pathSegment.length > 0
-      return templateSegment === pathSegment
-    })
-  }
-
-  function validatePanelDataRequest(
-    method: unknown,
-    path: unknown,
-    allowedPaths: readonly string[]
-  ): { method: 'GET' | 'POST'; path: string } | undefined {
-    if (typeof method !== 'string' || !ALLOWED_PANEL_DATA_METHODS.has(method)) return undefined
-    if (typeof path !== 'string') return undefined
-    if (!allowedPaths.some((template) => matchesPanelDataPathTemplate(template, path))) {
-      return undefined
-    }
-    return { method: method as 'GET' | 'POST', path }
-  }
-
-  /**
-   * Story 25.8 AC3 — a new, typed, `requestId`-correlated postMessage type mirroring
-   * `PANEL_DATA_REQUEST_SOURCE` above's exact shape (and the now-retired ACTION relay's own
-   * original shape — see Story 29.2): the panel
-   * asks the host to navigate to a PV-native destination outside its own slot. Following those
-   * two message types' own "host decides, panel names an intent, never a destination" posture
-   * (Story 25.5/25.6): the panel sends a structured intent (`kind` + whatever identifiers that
-   * kind needs), NEVER a raw URL — `goto()` is only ever called with a target THIS page's own
-   * code constructs, never anything panel-supplied.
+   * Story 25.8 AC3 — a typed, `requestId`-correlated postMessage type (mirroring the now-deleted
+   * DATA relay's own shape — Story 29.4 — and the now-retired ACTION relay's own original shape
+   * — see Story 29.2): the panel asks the host to navigate to a PV-native destination outside its
+   * own slot. Following those two message types' own "host decides, panel names an intent, never
+   * a destination" posture (Story 25.5/25.6): the panel sends a structured intent (`kind` +
+   * whatever identifiers that kind needs), NEVER a raw URL — `goto()` is only ever called with a
+   * target THIS page's own code constructs, never anything panel-supplied.
    */
   const PANEL_NAV_REQUEST_SOURCE = 'pv-extension-panel-navigation-request'
   const PANEL_NAV_RESULT_SOURCE = 'pv-extension-panel-navigation-result'
@@ -197,69 +136,19 @@
 
   /**
    * Story 25.5 AC4/Task 4 (original scope: the ACTION relay retired by Story 29.2 — see
-   * `handleActionClick` below for its direct-fetch replacement) — the DATA and NAVIGATION relays
-   * below still rely on the same `event.source === panelIframe?.contentWindow` identity check:
-   * it identifies WHICH window sent the message by object identity, which is reliable even though
+   * `handleActionClick` below for its direct-fetch replacement) — the NAVIGATION relay below
+   * still relies on the same `event.source === panelIframe?.contentWindow` identity check: it
+   * identifies WHICH window sent the message by object identity, which is reliable even though
    * the iframe's own origin is opaque (so `event.origin` is always the literal string `"null"`
    * and can't be used to distinguish this iframe from any other opaque-origin content on the
    * page). Every other field in an incoming message is untrusted extension-influenced input and
    * is validated before use.
    */
   $effect(() => {
-    function handlePanelDataMessage(
-      event: MessageEvent,
-      message: Record<string, unknown>
-    ): boolean {
-      if (message['source'] !== PANEL_DATA_REQUEST_SOURCE) return false
-      const { requestId, method, path, body } = message
-      if (typeof requestId !== 'string') return true
-      const targetWindow = (event.source as Window | null) ?? panelIframe?.contentWindow
-      // Story 25.8 Task 2a — captured at issue time; checked before this request's async result
-      // is ever acted on, so a navigation-triggered srcdoc swap that happens while this fetch is
-      // in flight explicitly drops the stale response instead of posting it to a detached window.
-      const requestGeneration = panelGeneration
-      pendingRequestIds.add(requestId)
-      const validated = validatePanelDataRequest(method, path, data.allowedDataPaths)
-      if (!validated) {
-        targetWindow?.postMessage({ source: PANEL_DATA_RESULT_SOURCE, requestId, ok: false }, '*')
-        pendingRequestIds.delete(requestId)
-        return true
-      }
-      fetch(validated.path, {
-        method: validated.method,
-        credentials: 'same-origin',
-        headers:
-          validated.method === 'GET'
-            ? { accept: 'application/json' }
-            : { 'content-type': 'application/json', accept: 'application/json' },
-        body: validated.method === 'GET' ? undefined : JSON.stringify(body ?? {}),
-      })
-        .then(async (res) => {
-          if (requestGeneration !== panelGeneration) return
-          const parsedBody: unknown = await res.json().catch(() => null)
-          targetWindow?.postMessage(
-            {
-              source: PANEL_DATA_RESULT_SOURCE,
-              requestId,
-              ok: true,
-              status: res.status,
-              body: parsedBody,
-            },
-            '*'
-          )
-        })
-        .catch(() => {
-          if (requestGeneration !== panelGeneration) return
-          targetWindow?.postMessage({ source: PANEL_DATA_RESULT_SOURCE, requestId, ok: false }, '*')
-        })
-        .finally(() => pendingRequestIds.delete(requestId))
-      return true
-    }
-
     /**
-     * Story 25.8 AC3/Task 2a — mirrors `handlePanelDataMessage`'s own sync-return/async-inner
-     * shape: decides synchronously whether this message is a navigation request, then kicks off
-     * the (async) authorization check without blocking the outer message handler.
+     * Story 25.8 AC3/Task 2a — decides synchronously whether this message is a navigation
+     * request, then kicks off the (async) authorization check without blocking the outer message
+     * handler.
      */
     function handlePanelNavigationMessage(
       event: MessageEvent,
@@ -300,14 +189,16 @@
 
     // Story 29.2 AC4 — the ACTION relay branch that used to live here (dispatching to
     // `PANEL_ACTION_REQUEST_SOURCE`/`PANEL_ACTION_RESULT_SOURCE`) is retired outright, replaced
-    // by the host-owned click-delegation handler below (`handleActionClick`). The DATA and
-    // NAVIGATION relays above are unchanged and untouched, pending Stories 29.4/29.6.
+    // by the host-owned click-delegation handler below (`handleActionClick`). Story 29.4 AC7 —
+    // the DATA relay branch that used to live here (dispatching to `PANEL_DATA_REQUEST_SOURCE`)
+    // is likewise retired outright, replaced by `apps/api`'s own directly-mounted module-data
+    // routes under `/api/v1/extensions/data` — a manifest-declared route needs no client-side
+    // relay at all. The NAVIGATION relay below is unchanged and untouched, pending Story 29.6.
     function handlePanelMessage(event: MessageEvent) {
       if (event.source !== panelIframe?.contentWindow) return
       const message = event.data as unknown
       if (typeof message !== 'object' || message === null) return
       const typedMessage = message as Record<string, unknown>
-      if (handlePanelDataMessage(event, typedMessage)) return
       handlePanelNavigationMessage(event, typedMessage)
     }
 
@@ -339,9 +230,10 @@
   // content changes (mirrors the old `srcdoc`-keyed effect this replaces — Story 25.8 AC2/Task
   // 2a). Bumping the generation counter here (never inside the message handlers themselves) ties
   // invalidation to the real content swap, not merely to "a navigation was requested". Still
-  // relevant even though the relay code this feeds is now inert (AC8) — a future story
-  // (29.2/29.4/29.6) building the replacement will need the same generation-tracking discipline
-  // against the new same-origin call sites, and removing it now would be pure churn.
+  // relevant for the remaining NAVIGATION relay (the ACTION relay this fed was retired by Story
+  // 29.2, the DATA relay by Story 29.4) — Story 29.6 building that relay's replacement will need
+  // the same generation-tracking discipline against the new same-origin call site, and removing
+  // it now would be pure churn.
   $effect(() => {
     data.html
     panelGeneration++

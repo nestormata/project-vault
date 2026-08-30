@@ -53,69 +53,6 @@ function warnUiPanelSlotsFallbackOnce(status: LoadedExtensionState, logger: Pane
 }
 
 /**
- * Story 25.12 AC2 — the legacy DATA-relay path allowlist, matching the exact pair
- * `+page.svelte`'s `ALLOWED_PANEL_DATA_PATH_PATTERNS` hardcoded before this story. This is now
- * the backward-compatible fallback used when a loaded extension's manifest omits
- * `panelDataPaths` — never mutated, never grown; `resolvePanelDataPaths` below is what derives
- * the real, extension-declared list.
- */
-export const DEFAULT_PANEL_DATA_PATHS = ['/api/v1/projects', '/api/v1/projects/:id'] as const
-
-/**
- * Story 25.12 AC2 — tracks the identity (`name:loadedAt`) of the extension load this module has
- * already warned about for the `panelDataPaths` fallback, mirroring
- * `lastFallbackWarnedLoadIdentity`'s own per-load, not per-request, warning discipline. A
- * separate variable from the `uiPanelSlots` one above — the two fallbacks are independent and
- * must not suppress each other's warning.
- */
-let lastPanelDataPathsFallbackWarnedLoadIdentity: string | undefined
-
-/** Test-only reset of this module's one-time-warning state — never called from production code. */
-export function __resetPanelDataPathsFallbackWarningForTests(): void {
-  lastPanelDataPathsFallbackWarnedLoadIdentity = undefined
-}
-
-function warnPanelDataPathsFallbackOnce(status: LoadedExtensionState, logger: PanelLogger): void {
-  const loadIdentity = `${status.manifest.name}:${status.loadedAt}`
-  if (lastPanelDataPathsFallbackWarnedLoadIdentity === loadIdentity) return
-  lastPanelDataPathsFallbackWarnedLoadIdentity = loadIdentity
-  // Story 25.12 AC2/Dependencies — reuses the SAME OperationalEvent enum value Story 25.2 AC2
-  // established for its own manifest-fallback case (no new enum value introduced), only a second
-  // call site with its own distinct message/metadata for this DATA-relay-specific fallback.
-  operationalLog(
-    logger,
-    'warn',
-    OperationalEvent.EXTENSION_UI_PANEL_SLOTS_FALLBACK,
-    'Extension declares ui-panel without an explicit panelDataPaths list — running on the legacy project-only data-relay allowlist',
-    { extensionName: status.manifest.name }
-  )
-}
-
-/**
- * Story 25.12 AC2/Task 3 — derives the effective DATA-relay path allowlist for
- * `renderExtensionPanel()`'s `allowedDataPaths` response field, freshly on every call (never
- * memoized/cached at module scope — mirrors `resolveKnownUiPanelSlots`'s own freshness
- * discipline exactly, per Story 25.2 AC3's mid-process-reload finding).
- *
- * When no extension is loaded, or the loaded extension omits `panelDataPaths`, returns the exact
- * same fixed `DEFAULT_PANEL_DATA_PATHS` pair `+page.svelte` hardcoded before this story — zero
- * behavior change for any pre-25.12 extension package, with a one-time warn log on the fallback
- * path.
- */
-export function resolvePanelDataPaths(
-  status: ExtensionState | undefined,
-  logger: PanelLogger
-): readonly string[] {
-  if (status?.status !== 'loaded') return DEFAULT_PANEL_DATA_PATHS
-
-  const declared = status.manifest.panelDataPaths
-  if (declared?.length) return declared
-
-  warnPanelDataPathsFallbackOnce(status, logger)
-  return DEFAULT_PANEL_DATA_PATHS
-}
-
-/**
  * Story 25.2 AC3/Task 2 — derives the effective known-slots list for `renderExtensionPanel()`'s
  * `knownSlots` allowlist parameter, freshly on every call (never memoized/cached at module
  * scope — a mid-process reload with a different declared list must resolve against the new list
@@ -145,20 +82,20 @@ export function resolveKnownUiPanelSlots(
 /**
  * Story 29.3 AC9 — derives the effective `navItems` list for `GET /extensions/nav`'s widened
  * response, freshly on every call (never memoized/cached at module scope — mirrors
- * `resolveKnownUiPanelSlots`/`resolvePanelDataPaths`'s own freshness discipline exactly, so a
- * mid-process extension reload's new `navItems` list is reflected on the very next request).
+ * `resolveKnownUiPanelSlots`'s own freshness discipline exactly, so a mid-process extension
+ * reload's new `navItems` list is reflected on the very next request).
  *
- * Unlike `resolveKnownUiPanelSlots`/`resolvePanelDataPaths`, there is NO fallback-to-legacy-
- * default branch to warn about: there is no pre-existing hardcoded nav-items list this field
- * replaces, so "declared or empty" are the only two states — no separate "fallback" state to log.
- * Also unlike every other `resolve*` helper in this file, this one is deliberately independent of
+ * Unlike `resolveKnownUiPanelSlots`, there is NO fallback-to-legacy-default branch to warn
+ * about: there is no pre-existing hardcoded nav-items list this field replaces, so "declared or
+ * empty" are the only two states — no separate "fallback" state to log. Also unlike every other
+ * `resolve*` helper in this file, this one is deliberately independent of
  * `isUiPanelCapabilityDeclared()`/the `'ui-panel'` capability (AC1's independence decision) — a
  * loaded extension's `navItems` are resolved regardless of which capabilities it declares.
  */
 export function resolveExtensionNavItems(
   status: ExtensionState | undefined,
-  // Story 29.3 AC9 — logger accepted to mirror resolveKnownUiPanelSlots/resolvePanelDataPaths's
-  // own signature exactly (uniform call-site shape), even though this function never logs.
+  // Story 29.3 AC9 — logger accepted to mirror resolveKnownUiPanelSlots's own signature exactly
+  // (uniform call-site shape), even though this function never logs.
   _logger: PanelLogger
 ): ExtensionNavItem[] {
   if (status?.status !== 'loaded') return []
@@ -197,12 +134,6 @@ export type RenderExtensionPanelResult =
       outcome: 'ok'
       html: string
       actionEndpoint: string | undefined
-      /**
-       * Story 25.12 AC2 — the resolved DATA-relay path allowlist (`resolvePanelDataPaths()`'s
-       * result), always present (unlike `actionEndpoint`'s `undefined`-vs-omitted contract) —
-       * at minimum the two-entry legacy `DEFAULT_PANEL_DATA_PATHS` default, never empty/nothing.
-       */
-      allowedDataPaths: string[]
     }
 
 type PanelLogger = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>
@@ -436,15 +367,12 @@ export async function renderExtensionPanel(
   // never from any module-level/shared state, so concurrent requests for different
   // users/orgs can never cross-contaminate (AC1's Boundary & Edge Case Sweep finding).
   const actionEndpoint = resolveActionEndpoint(status, slot)
-  // Story 25.12 AC2/Task 3 — resolved fresh on every request, mirroring `knownSlots`' own
-  // freshness discipline above; never cached from an earlier render.
-  const allowedDataPaths = [...resolvePanelDataPaths(status, logger)]
   const raced = await raceWithTimeout(
     () => resolvePanelContextAndRender(slot, identity, tx, query, deps, uiPanel, actionEndpoint),
     RENDER_PANEL_TIMEOUT_MS
   )
 
-  return finalizePanelResult(raced, logger, slot, identity, deps, actionEndpoint, allowedDataPaths)
+  return finalizePanelResult(raced, logger, slot, identity, deps, actionEndpoint)
 }
 
 /**
@@ -458,8 +386,7 @@ function finalizePanelResult(
   slot: string,
   identity: PanelIdentity,
   deps: RenderExtensionPanelDeps,
-  actionEndpoint: string | undefined,
-  allowedDataPaths: string[]
+  actionEndpoint: string | undefined
 ): RenderExtensionPanelResult {
   if (raced.status === 'timed_out') {
     logUnavailable(logger, slot, 'timed_out')
@@ -490,7 +417,7 @@ function finalizePanelResult(
     return { outcome: 'unavailable' }
   }
 
-  return { outcome: 'ok', html: inner.result.html, actionEndpoint, allowedDataPaths }
+  return { outcome: 'ok', html: inner.result.html, actionEndpoint }
 }
 
 /**

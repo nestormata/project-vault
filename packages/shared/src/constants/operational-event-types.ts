@@ -271,6 +271,11 @@ export const OperationalEvent = {
   // `sso.login_rejected` audit row (which does not distinguish threw vs. timed_out). Same
   // never-leak-internal-detail discipline as the other EXTENSION_*_FAILED events above.
   EXTENSION_AUTHENTICATE_FAILED: 'extension.authenticate_failed',
+  // Story 29.4 AC5: a module-data route call degraded (threw, timed out, or returned a
+  // malformed ModuleDataResult). Never carries the hook's raw exception message/stack —
+  // fixed-enum `subReason` only, same never-leak-internal-detail discipline as
+  // EXTENSION_UI_PANEL_UNAVAILABLE/EXTENSION_MODULE_ACTION_FAILED above.
+  EXTENSION_MODULE_DATA_ROUTE_FAILED: 'extension.module_data_route_failed',
 
   // Story 23.2: native-login-exclusion policy (apps/api/src/modules/auth/native-login-policy.ts).
   // AC-4a: fires on EVERY boot while the declared extension has never proven a successful

@@ -168,7 +168,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.9.0"`
+- type: `"3.10.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 
@@ -240,6 +240,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.3.0
   - type: `ModuleAction | undefined`
   - union-members: `undefined`, `ModuleAction`
+- member: `moduleData?`
+  - since: 3.10.0
+  - type: `Record<string, ModuleDataRouteHandler> | undefined`
+  - union-members: `undefined`, `Record<string, ModuleDataRouteHandler>`
 - member: `notificationChannel?`
   - since: 1.0.0
   - type: `NotificationChannel | undefined`
@@ -272,6 +276,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.3.0
   - type: `string[] | undefined`
   - union-members: `undefined`, `string[]`
+- member: `moduleDataRoutes?`
+  - since: 3.10.0
+  - type: `ModuleDataRouteDeclaration[] | undefined`
+  - union-members: `undefined`, `ModuleDataRouteDeclaration[]`
 - member: `name`
   - since: 1.0.0
   - type: `string`
@@ -424,6 +432,12 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - kind: value
 - type: `32`
 
+## export `MAX_MODULE_DATA_ROUTES`
+
+- since: 3.10.0
+- kind: value
+- type: `32`
+
 ## export `MAX_NAV_ITEM_LABEL_LENGTH`
 
 - since: 3.9.0
@@ -453,25 +467,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.3.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@497`
-  - since: 3.9.0
+- member: `__@match@511`
+  - since: 3.10.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@506`
-  - since: 3.9.0
+- member: `__@matchAll@520`
+  - since: 3.10.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@499`
-  - since: 3.9.0
+- member: `__@replace@513`
+  - since: 3.10.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@502`
-  - since: 3.9.0
+- member: `__@search@516`
+  - since: 3.10.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@504`
-  - since: 3.9.0
+- member: `__@split@518`
+  - since: 3.10.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -521,6 +535,82 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - call-signature: `(string: string): boolean`
 - member: `readonly unicode`
   - since: 3.3.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+
+## export `MODULE_DATA_ROUTE_PATH_PATTERN`
+
+- since: 3.10.0
+- kind: value
+- type: `RegExp`
+- member: `__@match@511`
+  - since: 3.10.0
+  - type: `(string: string) => RegExpMatchArray | null`
+  - call-signature: `(string: string): RegExpMatchArray | null`
+- member: `__@matchAll@520`
+  - since: 3.10.0
+  - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
+  - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
+- member: `__@replace@513`
+  - since: 3.10.0
+  - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
+  - call-signature: `(string: string, replaceValue: string): string`
+  - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
+- member: `__@search@516`
+  - since: 3.10.0
+  - type: `(string: string) => number`
+  - call-signature: `(string: string): number`
+- member: `__@split@518`
+  - since: 3.10.0
+  - type: `(string: string, limit?: number) => string[]`
+  - call-signature: `(string: string, limit?: number): string[]`
+- member: `compile`
+  - since: 3.10.0
+  - type: `(pattern: string, flags?: string) => RegExp`
+  - call-signature: `(pattern: string, flags?: string): RegExp`
+- member: `readonly dotAll`
+  - since: 3.10.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `exec`
+  - since: 3.10.0
+  - type: `(string: string) => RegExpExecArray | null`
+  - call-signature: `(string: string): RegExpExecArray | null`
+- member: `readonly flags`
+  - since: 3.10.0
+  - type: `string`
+- member: `readonly global`
+  - since: 3.10.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `readonly hasIndices`
+  - since: 3.10.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `readonly ignoreCase`
+  - since: 3.10.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `lastIndex`
+  - since: 3.10.0
+  - type: `number`
+- member: `readonly multiline`
+  - since: 3.10.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `readonly source`
+  - since: 3.10.0
+  - type: `string`
+- member: `readonly sticky`
+  - since: 3.10.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `test`
+  - since: 3.10.0
+  - type: `(string: string) => boolean`
+  - call-signature: `(string: string): boolean`
+- member: `readonly unicode`
+  - since: 3.10.0
   - type: `boolean`
   - union-members: `false`, `true`
 
@@ -593,30 +683,89 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - type: `Record<string, unknown> & { kind: string; }`
   - intersection-members: `Record<string, unknown>`, `{ kind: string; }`
 
+## export `ModuleDataRequestContext`
+
+- since: 3.10.0
+- kind: type
+- type: `ModuleDataRequestContext`
+- member: `identity`
+  - since: 3.10.0
+  - type: `{ userId: string; orgRole: "owner" | "admin" | "member" | "viewer"; }`
+  - member: `orgRole`
+    - since: 3.10.0
+    - type: `"owner" | "admin" | "member" | "viewer"`
+    - union-members: `"owner"`, `"admin"`, `"member"`, `"viewer"`
+  - member: `userId`
+    - since: 3.10.0
+    - type: `string`
+- member: `orgId`
+  - since: 3.10.0
+  - type: `string`
+- member: `params`
+  - since: 3.10.0
+  - type: `Record<string, string>`
+  - index-signature: `[string]: string`
+    - since: 3.10.0
+- member: `query`
+  - since: 3.10.0
+  - type: `Record<string, string>`
+
+## export `ModuleDataResult`
+
+- since: 3.10.0
+- kind: type
+- type: `ModuleDataResult`
+- member: `body`
+  - since: 3.10.0
+  - type: `unknown`
+- member: `status?`
+  - since: 3.10.0
+  - type: `number | undefined`
+  - union-members: `undefined`, `number`
+
+## export `ModuleDataRouteDeclaration`
+
+- since: 3.10.0
+- kind: type
+- type: `ModuleDataRouteDeclaration`
+- member: `method`
+  - since: 3.10.0
+  - type: `"GET"`
+- member: `path`
+  - since: 3.10.0
+  - type: `string`
+
+## export `ModuleDataRouteHandler`
+
+- since: 3.10.0
+- kind: type
+- type: `ModuleDataRouteHandler`
+- call-signature: `(context: ModuleDataRequestContext): Promise<ModuleDataResult>`
+
 ## export `NAV_ITEM_HREF_PATTERN`
 
 - since: 3.9.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@497`
-  - since: 3.9.0
+- member: `__@match@511`
+  - since: 3.10.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@506`
-  - since: 3.9.0
+- member: `__@matchAll@520`
+  - since: 3.10.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@499`
-  - since: 3.9.0
+- member: `__@replace@513`
+  - since: 3.10.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@502`
-  - since: 3.9.0
+- member: `__@search@516`
+  - since: 3.10.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@504`
-  - since: 3.9.0
+- member: `__@split@518`
+  - since: 3.10.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -680,25 +829,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.9.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@497`
-  - since: 3.9.0
+- member: `__@match@511`
+  - since: 3.10.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@506`
-  - since: 3.9.0
+- member: `__@matchAll@520`
+  - since: 3.10.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@499`
-  - since: 3.9.0
+- member: `__@replace@513`
+  - since: 3.10.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@502`
-  - since: 3.9.0
+- member: `__@search@516`
+  - since: 3.10.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@504`
-  - since: 3.9.0
+- member: `__@split@518`
+  - since: 3.10.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -815,25 +964,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.8.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@497`
-  - since: 3.9.0
+- member: `__@match@511`
+  - since: 3.10.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@506`
-  - since: 3.9.0
+- member: `__@matchAll@520`
+  - since: 3.10.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@499`
-  - since: 3.9.0
+- member: `__@replace@513`
+  - since: 3.10.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@502`
-  - since: 3.9.0
+- member: `__@search@516`
+  - since: 3.10.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@504`
-  - since: 3.9.0
+- member: `__@split@518`
+  - since: 3.10.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -936,25 +1085,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.1.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@497`
-  - since: 3.9.0
+- member: `__@match@511`
+  - since: 3.10.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@506`
-  - since: 3.9.0
+- member: `__@matchAll@520`
+  - since: 3.10.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@499`
-  - since: 3.9.0
+- member: `__@replace@513`
+  - since: 3.10.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@502`
-  - since: 3.9.0
+- member: `__@search@516`
+  - since: 3.10.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@504`
-  - since: 3.9.0
+- member: `__@split@518`
+  - since: 3.10.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`

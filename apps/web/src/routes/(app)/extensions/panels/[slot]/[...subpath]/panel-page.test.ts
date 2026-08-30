@@ -13,14 +13,10 @@ afterEach(() => {
   gotoMock.mockReset()
 })
 
-// Story 25.12 AC2 — matches the legacy DEFAULT_PANEL_DATA_PATHS pair every test not exercising
-// the new manifest-declared-list behavior expects, so pre-existing project-container data-relay
-// tests below keep exercising the exact same effective allowlist they always have.
 const baseData = {
   slot: 'group',
   html: null as string | null,
   themeVars: BASE_EXTENSION_THEME_VARS,
-  allowedDataPaths: ['/api/v1/projects', '/api/v1/projects/:id'],
 }
 
 // Story 29.1 — the panel's HTML now renders into this plain, same-origin `<div>` (the
@@ -150,23 +146,13 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1, rewired inli
     expect(screen.getByText(/temporarily unavailable/i)).toBeTruthy()
   })
 
-  // Story 29.1 AC8 — the DATA and NAVIGATION postMessage relays below
-  // (`PANEL_DATA_REQUEST_SOURCE`, `PANEL_NAV_REQUEST_SOURCE`) are left in the component's source,
-  // untouched and not deleted, pending Stories 29.4/29.6 replacing them with direct same-origin
-  // calls against the new inline DOM. They are now provably INERT: the relay's
-  // `event.source !== panelIframe?.contentWindow` identity check can never match any more, since
-  // there is no iframe to bind `panelIframe`, so no `postMessage` this test dispatches can ever
-  // reach the relay's fetch/goto logic. This is a regression test for that inertness, not a
-  // resurrection of the old iframe-sourced relay tests (which asserted the relay's now-removed
-  // active behavior).
-  //
-  // Story 29.2 AC4/AC12 — the ACTION relay's own inertness sub-test (which lived here) is removed
-  // outright, not left inert: Task 3 deletes `PANEL_ACTION_REQUEST_SOURCE`/
-  // `PANEL_ACTION_RESULT_SOURCE` and the action branch of `handlePanelMessage` entirely, so there
-  // is no code path left to prove inert. See the new
-  // "Story 29.2: click-delegation action dispatch" describe block below for the real replacement
-  // coverage.
-  describe('Story 29.1 AC8: the postMessage relays are inert (no iframe exists to originate a message from)', () => {
+  // Story 29.4 AC7/AC10 — the DATA relay (`PANEL_DATA_REQUEST_SOURCE`/`handlePanelDataMessage`
+  // and friends) is now DELETED outright from this component's source, not merely inert — this
+  // is a regression test proving a DATA-request-shaped `postMessage` (the exact shape the old
+  // relay used to handle) is simply unhandled now: `handlePanelMessage`'s single remaining branch
+  // dispatches only to `handlePanelNavigationMessage`, so no code path exists any more that could
+  // ever call `fetch()` in response to this message shape.
+  describe('Story 29.4 AC7: the DATA relay is provably removed (no code path handles it any more)', () => {
     afterEach(() => vi.unstubAllGlobals())
 
     it('a data-request-shaped message from window itself never triggers a fetch or a postMessage reply', async () => {
@@ -191,6 +177,25 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1, rewired inli
       await new Promise((resolve) => setTimeout(resolve, 0))
       expect(fetchMock).not.toHaveBeenCalled()
     })
+  })
+
+  // Story 29.1 AC8 — the NAVIGATION postMessage relay below (`PANEL_NAV_REQUEST_SOURCE`) is left
+  // in the component's source, untouched and not deleted, pending Story 29.6 replacing it with a
+  // direct same-origin call against the new inline DOM. It is now provably INERT: the relay's
+  // `event.source !== panelIframe?.contentWindow` identity check can never match any more, since
+  // there is no iframe to bind `panelIframe`, so no `postMessage` this test dispatches can ever
+  // reach the relay's fetch/goto logic. This is a regression test for that inertness, not a
+  // resurrection of the old iframe-sourced relay tests (which asserted the relay's now-removed
+  // active behavior).
+  //
+  // Story 29.2 AC4/AC12 — the ACTION relay's own inertness sub-test (which lived here) is removed
+  // outright, not left inert: Task 3 deletes `PANEL_ACTION_REQUEST_SOURCE`/
+  // `PANEL_ACTION_RESULT_SOURCE` and the action branch of `handlePanelMessage` entirely, so there
+  // is no code path left to prove inert. See the new
+  // "Story 29.2: click-delegation action dispatch" describe block below for the real replacement
+  // coverage.
+  describe('Story 29.1 AC8: the NAVIGATION postMessage relay is inert (no iframe exists to originate a message from)', () => {
+    afterEach(() => vi.unstubAllGlobals())
 
     it('a navigation-request-shaped message never triggers the authorization fetch or goto()', async () => {
       const fetchMock = vi.fn()

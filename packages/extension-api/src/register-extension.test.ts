@@ -252,7 +252,7 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each(['3.10.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
+  it.each(['3.11.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
     'rejects canonical version outside %s',
     (apiVersion) => {
       const hooksFactory = makeHooksFactory()
@@ -288,18 +288,18 @@ describe('registerExtension — concrete canonical version gate', () => {
 
   it('allows only the above-host same-major rollback escape', () => {
     // Story 25.3 AC1/Task 1, Story 25.4 AC4/Task 4, Story 25.5 AC2/Task 1, Story 25.8 AC1/Task 1,
-    // Story 20.8, Story 25.12 AC2/Task 2, and Story 29.3 AC8/Task 1 — host EXTENSION_API_VERSION
-    // is now 3.9.0 (see manifest.ts's EXTENSION_API_VERSION doc comment for why this merge moves
-    // past 3.2.0/3.3.0/3.4.0/3.6.0/3.7.0/3.8.0, which Story 25.3/25.4/25.5/25.9/20.8/25.12
-    // respectively already claimed on main for different additive changes); '3.10.0' is the
-    // above-host, same-major escape-eligible version, and '4.0.0' is a different major (never
-    // escape-eligible). Kept one minor version above whatever EXTENSION_API_VERSION currently is
-    // — see loader.test.ts's identical comment.
+    // Story 20.8, Story 25.12 AC2/Task 2, Story 29.3 AC8/Task 1, and Story 29.4 AC6/Task 1 — host
+    // EXTENSION_API_VERSION is now 3.10.0 (see manifest.ts's EXTENSION_API_VERSION doc comment
+    // for why this merge moves past 3.2.0/3.3.0/3.4.0/3.6.0/3.7.0/3.8.0/3.9.0, which Story
+    // 25.3/25.4/25.5/25.9/20.8/25.12/29.3 respectively already claimed on main for different
+    // additive changes); '3.11.0' is the above-host, same-major escape-eligible version, and
+    // '4.0.0' is a different major (never escape-eligible). Kept one minor version above whatever
+    // EXTENSION_API_VERSION currently is — see loader.test.ts's identical comment.
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.10.0' }), makeHooksFactory())
+      registerExtension(manifest({ apiVersion: '3.11.0' }), makeHooksFactory())
     ).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.10.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '3.11.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()
@@ -1029,5 +1029,157 @@ describe('registerExtension — AC1-AC3/AC6/AC7 (navItems, Story 29.3)', () => {
     const warn = vi.fn()
     registerExtension(manifest({ navItems: [TOP_ITEM] }), hooksFactory, { logger: { warn } })
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('navItems'))
+  })
+})
+
+/**
+ * Story 29.4 AC1/AC3 — `moduleDataRoutes?: ModuleDataRouteDeclaration[]` manifest field
+ * validation. Mirrors `panelDataPaths`' path-template shape closely, EXCEPT: (1) entries are
+ * `{ method: 'GET'; path: string }` objects, not bare strings, and the `path` does NOT require
+ * the `/api/v1/` prefix (AC2 — the host itself owns the full mount point); (2) unlike
+ * `panelDataPaths`, this field DOES have a post-hooksFactory callability check (AC3) — every
+ * declared route must have a matching `moduleData["GET <path>"]` handler.
+ */
+const ORG_USERS_ROUTE = { method: 'GET', path: '/org/users' } as const
+
+describe('registerExtension — AC1 (moduleDataRoutes, Story 29.4)', () => {
+  function moduleDataHooksFactory(routes: { method: 'GET'; path: string }[]) {
+    const moduleData: Record<string, () => Promise<{ body: unknown }>> = {}
+    for (const route of routes) {
+      moduleData[`${route.method} ${route.path}`] = vi.fn(async () => ({ body: {} }))
+    }
+    return vi.fn(() => ({ moduleData }) as ExtensionHooks)
+  }
+
+  it('happy path: a real multi-route manifest registers successfully', () => {
+    const routes = [ORG_USERS_ROUTE, { method: 'GET', path: '/org/users/:id' } as const]
+    const hooksFactory = moduleDataHooksFactory(routes)
+    const result = registerExtension(
+      manifest({ capabilities: ['ui-panel'], moduleDataRoutes: routes }),
+      hooksFactory
+    )
+    expect(result.manifest.moduleDataRoutes).toEqual(routes)
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('omitted: parses fine, no moduleDataRoutes on the returned manifest', () => {
+    const hooksFactory = makeHooksFactory()
+    const result = registerExtension(manifest(), hooksFactory)
+    expect(result.manifest.moduleDataRoutes).toBeUndefined()
+  })
+
+  it('moduleDataRoutes: undefined explicitly behaves identically to omitted', () => {
+    const hooksFactory = makeHooksFactory()
+    const result = registerExtension(manifest({ moduleDataRoutes: undefined }), hooksFactory)
+    expect(result.manifest.moduleDataRoutes).toBeUndefined()
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects an empty moduleDataRoutes array (distinct from omitted)', () => {
+    expectRejection({ moduleDataRoutes: [] }, INVALID_MANIFEST_FIELD)
+  })
+
+  it('rejects a path missing its leading slash', () => {
+    expectRejection(
+      { moduleDataRoutes: [{ method: 'GET', path: 'org/users' }] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects a path containing a .. segment', () => {
+    expectRejection(
+      { moduleDataRoutes: [{ method: 'GET', path: '/../admin/users' }] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects a path containing an uppercase letter', () => {
+    expectRejection(
+      { moduleDataRoutes: [{ method: 'GET', path: '/Org/Users' }] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects a path containing a literal dot', () => {
+    expectRejection(
+      { moduleDataRoutes: [{ method: 'GET', path: '/org.users' }] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('accepts a path with a :param placeholder segment', () => {
+    const routes = [{ method: 'GET', path: '/org/users/:id' } as const]
+    const hooksFactory = moduleDataHooksFactory(routes)
+    expect(() =>
+      registerExtension(manifest({ moduleDataRoutes: routes }), hooksFactory)
+    ).not.toThrow()
+  })
+
+  it('rejects duplicate (method, path) pairs within one manifest', () => {
+    expectRejection(
+      { moduleDataRoutes: [ORG_USERS_ROUTE, ORG_USERS_ROUTE] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects a moduleDataRoutes array longer than the 32-entry maximum', () => {
+    const tooMany = Array.from({ length: 33 }, (_, i) => ({
+      method: 'GET' as const,
+      path: `/resource-${i}`,
+    }))
+    expectRejection({ moduleDataRoutes: tooMany }, INVALID_MANIFEST_FIELD)
+  })
+
+  it('accepts exactly the 32-entry moduleDataRoutes maximum', () => {
+    const exactlyMax = Array.from({ length: 32 }, (_, i) => ({
+      method: 'GET' as const,
+      path: `/resource-${i}`,
+    }))
+    const hooksFactory = moduleDataHooksFactory(exactlyMax)
+    expect(() =>
+      registerExtension(manifest({ moduleDataRoutes: exactlyMax }), hooksFactory)
+    ).not.toThrow()
+  })
+
+  it('rejects a manifest declaring moduleDataRoutes whose hooksFactory() result has no moduleData map at all (post-hooksFactory check, AC3)', () => {
+    const hooksFactory = makeHooksFactory()
+    let caught: unknown
+    try {
+      registerExtension(manifest({ moduleDataRoutes: [ORG_USERS_ROUTE] }), hooksFactory)
+    } catch (error) {
+      caught = error
+    }
+    expect((caught as ExtensionRegistrationError).reason).toBe(INVALID_MANIFEST_FIELD)
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects a moduleData map missing the exact "GET <path>" key (AC3)', () => {
+    const hooksFactory = vi.fn(
+      () => ({ moduleData: { 'GET /org/other': vi.fn() } }) as unknown as ExtensionHooks
+    )
+    let caught: unknown
+    try {
+      registerExtension(manifest({ moduleDataRoutes: [ORG_USERS_ROUTE] }), hooksFactory)
+    } catch (error) {
+      caught = error
+    }
+    expect((caught as ExtensionRegistrationError).reason).toBe(INVALID_MANIFEST_FIELD)
+    expect((caught as ExtensionRegistrationError).message).toContain('GET /org/users')
+  })
+
+  it('does NOT require moduleDataRoutes merely for declaring the "ui-panel" capability', () => {
+    const hooksFactory = makeHooksFactory()
+    expect(() =>
+      registerExtension(manifest({ capabilities: ['ui-panel'] }), hooksFactory)
+    ).not.toThrow()
+  })
+
+  it('warns on an unrecognized top-level key still includes moduleDataRoutes in KNOWN_MANIFEST_KEYS (no spurious warning)', () => {
+    const hooksFactory = moduleDataHooksFactory([ORG_USERS_ROUTE])
+    const warn = vi.fn()
+    registerExtension(manifest({ moduleDataRoutes: [ORG_USERS_ROUTE] }), hooksFactory, {
+      logger: { warn },
+    })
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('moduleDataRoutes'))
   })
 })

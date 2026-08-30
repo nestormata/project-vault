@@ -23,6 +23,8 @@ describe('index.ts — root-only export surface (AC1, AC2)', () => {
         'NAV_ITEM_ID_PATTERN',
         'NAV_ITEM_HREF_PATTERN',
         'NAV_ITEM_ICON_TOKENS',
+        'MAX_MODULE_DATA_ROUTES',
+        'MODULE_DATA_ROUTE_PATH_PATTERN',
         'EXTENSION_THEME_CSS_VARS',
         'ExtensionRegistrationError',
         'isExtensionApiVersionSupported',

@@ -1,14 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { isRedirect } from '@sveltejs/kit'
 import { BASE_EXTENSION_THEME_VARS } from '$lib/security/extension-theme-vars.js'
-import { DEFAULT_PANEL_DATA_PATHS } from '$lib/api/extension-panel.js'
 
 const getExtensionPanelMock = vi.hoisted(() => vi.fn())
 const getThemesMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/extension-panel.js', () => ({
   getExtensionPanel: getExtensionPanelMock,
-  DEFAULT_PANEL_DATA_PATHS: ['/api/v1/projects', '/api/v1/projects/:id'],
 }))
 vi.mock('$lib/api/themes.js', () => ({
   getThemes: getThemesMock,
@@ -49,7 +47,6 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
     getExtensionPanelMock.mockResolvedValue({
       ok: true,
       html: '<p>hello</p>',
-      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     })
 
     const result = await load(makeEvent(baseUser))
@@ -60,7 +57,6 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       html: '<p>hello</p>',
       themeVars: BASE_EXTENSION_THEME_VARS,
       actionEndpoint: undefined,
-      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     })
   })
 
@@ -69,7 +65,6 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       ok: true,
       html: '<p>hello</p>',
       actionEndpoint: '/api/v1/extensions/panels/group/actions',
-      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     })
 
     const result = await load(makeEvent(baseUser))
@@ -80,7 +75,6 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       html: '<p>hello</p>',
       themeVars: BASE_EXTENSION_THEME_VARS,
       actionEndpoint: '/api/v1/extensions/panels/group/actions',
-      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     })
   })
 
@@ -88,7 +82,6 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
     getExtensionPanelMock.mockResolvedValue({
       ok: true,
       html: '<p>hello</p>',
-      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     })
 
     const result = await load(makeEvent(baseUser))
@@ -99,7 +92,6 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       html: '<p>hello</p>',
       themeVars: BASE_EXTENSION_THEME_VARS,
       actionEndpoint: undefined,
-      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     })
   })
 
@@ -114,7 +106,6 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       html: null,
       themeVars: BASE_EXTENSION_THEME_VARS,
       actionEndpoint: undefined,
-      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     })
   })
 
@@ -129,7 +120,6 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       html: null,
       themeVars: BASE_EXTENSION_THEME_VARS,
       actionEndpoint: undefined,
-      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     })
   })
 
@@ -137,7 +127,6 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
     getExtensionPanelMock.mockResolvedValue({
       ok: true,
       html: '<p>x</p>',
-      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     })
     getThemesMock.mockResolvedValue({
       themes: [
@@ -161,7 +150,6 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
     getExtensionPanelMock.mockResolvedValue({
       ok: true,
       html: '<p>x</p>',
-      allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
     })
     getThemesMock.mockRejectedValue(new Error('themes API down'))
 
@@ -175,7 +163,6 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       getExtensionPanelMock.mockResolvedValue({
         ok: true,
         html: '<p>x</p>',
-        allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
       })
 
       const result = await load(makeEvent(baseUser, 'group', 'groups/123/detail'))
@@ -192,7 +179,6 @@ describe('/(app)/extensions/panels/[slot] +page.server.ts (Story 25.1, Story 25.
       getExtensionPanelMock.mockResolvedValue({
         ok: true,
         html: '<p>x</p>',
-        allowedDataPaths: [...DEFAULT_PANEL_DATA_PATHS],
       })
 
       const result = await load(makeEvent(baseUser, 'group', ''))

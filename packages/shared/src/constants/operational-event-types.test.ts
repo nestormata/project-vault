@@ -140,6 +140,12 @@ describe('OperationalEvent', () => {
     expect(OperationalEvent.EXTENSION_MODULE_ACTION_FAILED).toBe('extension.module_action_failed')
   })
 
+  it('exposes the Story 29.4 module-data-route-failed event type (AC5)', () => {
+    expect(OperationalEvent.EXTENSION_MODULE_DATA_ROUTE_FAILED).toBe(
+      'extension.module_data_route_failed'
+    )
+  })
+
   it('exposes the Story 16.1 theme-reload event types (AC-2, AC-7 fanout)', () => {
     expect(OperationalEvent.THEME_DIRECTORY_UNREADABLE).toBe('theme.directory_unreadable')
     expect(OperationalEvent.THEME_RELOAD_SUMMARY).toBe('theme.reload_summary')
