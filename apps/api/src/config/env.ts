@@ -459,6 +459,23 @@ function parseHandoffVerifyKeysJson(raw: string): unknown {
   }
 }
 
+// Code-review finding (Blind Hunter/Edge Case Hunter): a bare `includes()` check on both the
+// header and footer accepts a reversed or duplicated-marker string (e.g. footer before header) as
+// "well-formed" — it only checked that both substrings appeared *somewhere*, not that the footer
+// actually closes a block opened by the header. Require the footer to start strictly after the
+// header ends, which also rejects an empty/overlapping header+footer pair. Split out of
+// toHandoffVerifyKey to keep it under the repo's eslint cyclomatic-complexity threshold.
+function isWellFormedHandoffPem(publicKeyPem: unknown): publicKeyPem is string {
+  if (typeof publicKeyPem !== 'string') return false
+  const headerIndex = publicKeyPem.indexOf(HANDOFF_PEM_HEADER)
+  const footerIndex = publicKeyPem.indexOf(HANDOFF_PEM_FOOTER)
+  return (
+    headerIndex !== -1 &&
+    footerIndex !== -1 &&
+    footerIndex >= headerIndex + HANDOFF_PEM_HEADER.length
+  )
+}
+
 // Split out of parseHandoffVerifyKeys to keep both functions under the repo's eslint
 // cyclomatic-complexity threshold — this validates and normalizes a single array element.
 function toHandoffVerifyKey(item: unknown, seenKids: Set<string>): HandoffVerifyKey {
@@ -474,11 +491,7 @@ function toHandoffVerifyKey(item: unknown, seenKids: Set<string>): HandoffVerify
       'VAULT_HANDOFF_VERIFY_KEYS kid must be a non-empty string of at most 128 characters'
     )
   }
-  if (
-    typeof publicKeyPem !== 'string' ||
-    !publicKeyPem.includes(HANDOFF_PEM_HEADER) ||
-    !publicKeyPem.includes(HANDOFF_PEM_FOOTER)
-  ) {
+  if (!isWellFormedHandoffPem(publicKeyPem)) {
     throw new HandoffVerifyKeysParseError(
       'VAULT_HANDOFF_VERIFY_KEYS publicKeyPem must be a well-formed PEM public key block'
     )
