@@ -1,4 +1,5 @@
 import type {
+  CredentialArchiveState,
   CredentialDependency,
   CredentialDetail,
   CredentialFieldsValue,
@@ -35,6 +36,8 @@ export type ListCredentialsQuery = {
   status?: 'active' | 'expiring' | 'expired'
   page?: number
   limit?: number
+  // Story 28.5 AC5: mirrors the project list's own includeArchived query param.
+  includeArchived?: boolean
 }
 
 export type ListCredentialsResponse = {
@@ -72,6 +75,7 @@ function buildListQuery(query: ListCredentialsQuery = {}): string {
   if (query.status) params.set('status', query.status)
   if (query.page !== undefined) params.set('page', String(query.page))
   if (query.limit !== undefined) params.set('limit', String(query.limit))
+  if (query.includeArchived) params.set('includeArchived', 'true')
   const serialized = params.toString()
   return serialized ? `?${serialized}` : ''
 }
@@ -91,6 +95,31 @@ export function getCredential(fetchFn: typeof fetch, projectId: string, credenti
   return apiFetch<CredentialDetail>(
     fetchFn,
     `/api/v1/projects/${projectId}/credentials/${credentialId}`
+  )
+}
+
+// Story 28.5 AC2/AC3 — mirrors archiveProject/unarchiveProject's exact shape (projects.ts).
+export function archiveCredential(
+  fetchFn: typeof fetch,
+  projectId: string,
+  credentialId: string
+): Promise<CredentialArchiveState> {
+  return apiFetch<CredentialArchiveState>(
+    fetchFn,
+    `/api/v1/projects/${projectId}/credentials/${credentialId}/archive`,
+    { method: 'POST' }
+  )
+}
+
+export function unarchiveCredential(
+  fetchFn: typeof fetch,
+  projectId: string,
+  credentialId: string
+): Promise<CredentialArchiveState> {
+  return apiFetch<CredentialArchiveState>(
+    fetchFn,
+    `/api/v1/projects/${projectId}/credentials/${credentialId}/unarchive`,
+    { method: 'POST' }
   )
 }
 

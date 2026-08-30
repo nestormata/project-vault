@@ -122,6 +122,8 @@ export function serializeCredentialDetail(
     createdBy: credential.createdBy,
     createdAt: credential.createdAt.toISOString(),
     updatedAt: credential.updatedAt.toISOString(),
+    // Story 28.5 AC5/AC6.
+    archivedAt: credential.archivedAt?.toISOString() ?? null,
   }
 }
 
@@ -148,6 +150,11 @@ function parseTagFilter(rawTags: string | undefined): string[] {
 
 function credentialListWhere(params: { projectId: string; query: ListCredentialsQuery }) {
   const filters = [eq(credentials.projectId, params.projectId)]
+  // Story 28.5 AC5: default excludes archived secrets; `?includeArchived=true` includes them —
+  // mirrors GET /projects' own `listWhere` construction exactly.
+  if (!params.query.includeArchived) {
+    filters.push(isNull(credentials.archivedAt))
+  }
   const q = params.query.q?.trim()
   if (q) {
     const like = `%${escapeLikeTerm(q)}%`
@@ -196,6 +203,7 @@ export async function listCredentials(tx: Tx, params: CredentialListParams) {
       rotationSchedule: credentials.rotationSchedule,
       createdAt: credentials.createdAt,
       updatedAt: credentials.updatedAt,
+      archivedAt: credentials.archivedAt,
     })
     .from(credentials)
     .where(where)
@@ -260,6 +268,7 @@ export async function listCredentials(tx: Tx, params: CredentialListParams) {
       expiresAt: row.expiresAt?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
+      archivedAt: row.archivedAt?.toISOString() ?? null,
     })),
   }
 }
@@ -409,6 +418,45 @@ export async function findCredentialInProject(
     )
     .limit(1)
   return credential ?? null
+}
+
+export type ArchiveCredentialResult = {
+  id: string
+  name: string
+  archivedAt: Date
+}
+
+/**
+ * Story 28.5 AC2 — commits the archive UPDATE with the same atomic conditional-update/race-check
+ * shape as project archival: `WHERE id = $credentialId AND archived_at IS NULL RETURNING`. Zero
+ * rows means either the credential doesn't exist or a racing request archived it first between
+ * the caller's own pre-check and this UPDATE — the route treats both as `already_archived`.
+ * Thin-routes convention: this is the only place that writes `archived_at`/`archived_by`.
+ */
+export async function archiveCredential(
+  tx: Tx,
+  params: { credentialId: string; userId: string }
+): Promise<ArchiveCredentialResult | null> {
+  const [archived] = await tx
+    .update(credentials)
+    .set({ archivedAt: new Date(), archivedBy: params.userId, updatedAt: new Date() })
+    .where(and(eq(credentials.id, params.credentialId), isNull(credentials.archivedAt)))
+    .returning({ id: credentials.id, name: credentials.name, archivedAt: credentials.archivedAt })
+  if (!archived?.archivedAt) return null
+  return { id: archived.id, name: archived.name, archivedAt: archived.archivedAt }
+}
+
+/** Story 28.5 AC3 — the symmetric reverse of `archiveCredential`. */
+export async function unarchiveCredential(
+  tx: Tx,
+  params: { credentialId: string }
+): Promise<{ id: string; name: string } | null> {
+  const [restored] = await tx
+    .update(credentials)
+    .set({ archivedAt: null, archivedBy: null, updatedAt: new Date() })
+    .where(and(eq(credentials.id, params.credentialId), isNotNull(credentials.archivedAt)))
+    .returning({ id: credentials.id, name: credentials.name })
+  return restored ?? null
 }
 
 /**

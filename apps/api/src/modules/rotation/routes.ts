@@ -17,6 +17,7 @@ import {
 } from '../../notifications/dispatcher.js'
 import { env } from '../../config/env.js'
 import { PROJECT_ARCHIVED_ERROR } from '../projects/archive-guards.js'
+import { CREDENTIAL_ARCHIVED_ERROR } from '../credentials/archive-guards.js'
 import { effectiveProjectRole } from '../projects/project-access.js'
 import { supersedeOutstandingSharesForRotation } from '../credential-shares/service.js'
 import { writeShareAuditEntry } from '../credential-shares/audit.js'
@@ -284,6 +285,20 @@ function resolveInitiateRotationEarlyExit(
       'Rotation initiation rejected — project is archived'
     )
     return reply.status(410).send(PROJECT_ARCHIVED_ERROR)
+  }
+  // Story 28.5 AC4 — parallel branch: the credential itself (not its project) is archived.
+  if (result.status === 'credential_archived') {
+    rotationInitiationsTotal.inc({ outcome: 'credential_archived' })
+    req.log.info(
+      {
+        eventType: OperationalEvent.CREDENTIAL_ARCHIVED,
+        orgId,
+        credentialId: params.credentialId,
+        projectId: params.projectId,
+      },
+      'Rotation initiation rejected — credential is archived'
+    )
+    return reply.status(410).send(CREDENTIAL_ARCHIVED_ERROR)
   }
   if (result.status === 'unknown_field_key') {
     return sendUnknownFieldKeyResponse(reply, req, orgId, params.credentialId, result.field)

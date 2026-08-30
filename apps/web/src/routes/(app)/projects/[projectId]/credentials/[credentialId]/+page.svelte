@@ -14,11 +14,13 @@
   import {
     addCredentialDependency,
     addCredentialVersion,
+    archiveCredential,
     archiveCredentialDependency,
     isFieldsValue,
     listCredentialDependencies,
     parseRevealedFields,
     revealCredentialValue,
+    unarchiveCredential,
     updateCredentialLifecycle,
     type CredentialDependencyWithChecklistStatus,
   } from '$lib/api/credentials.js'
@@ -62,6 +64,19 @@
   // archived, so every mutation on this page reacts to the real 410 the same way, with the same
   // copy, rather than each section growing its own bespoke banner text.
   const ARCHIVED_PROJECT_BANNER = 'This project is archived — unarchive it to make changes.'
+  // Story 28.5 AC6: mirrors ARCHIVED_PROJECT_BANNER's precedent for the credential's OWN archival
+  // state — distinct copy so a caller can tell which resource needs unarchiving.
+  const CREDENTIAL_ARCHIVED_BANNER = 'This secret is archived — unarchive it to make changes.'
+
+  // Story 28.5 AC6 Task 3: every existing ARCHIVED_PROJECT_BANNER call site on this page gets a
+  // parallel credential-archived branch — centralized here so the two 410 causes (project vs.
+  // credential) can never drift out of sync with the codes the API actually returns.
+  function archivedBannerFor(error: unknown): string | null {
+    if (!(error instanceof ApiClientError) || error.status !== 410) return null
+    return error.code === 'credential_archived'
+      ? CREDENTIAL_ARCHIVED_BANNER
+      : ARCHIVED_PROJECT_BANNER
+  }
 
   let revealedValue = $state<string | null>(null)
   let revealVersion = $state<number | null>(null)
@@ -114,6 +129,75 @@
     canCreateCredential(data.orgRole) && data.project != null && data.project.role !== 'viewer'
   )
   const canManageRotation = $derived(canManageRotations(data.orgRole))
+  // Story 28.5 AC4/AC6: gates every mutating control on this page once the secret itself
+  // (distinct from its project) is archived.
+  const isCredentialArchived = $derived(data.credential?.archivedAt != null)
+
+  // Story 28.5 AC6: authorization mirrors AC2/AC3 exactly (project-owner-or-org-owner) — checked
+  // via the page-load role/ownership data already available, no new API call needed to decide
+  // button visibility (mirroring the dependent-system Archive button's own canReveal-gated
+  // visibility convention).
+  const canArchiveCredential = $derived(
+    data.project != null && (data.project.role === 'owner' || data.orgRole === 'owner')
+  )
+
+  let archiveBusy = $state(false)
+  let archiveError = $state<string | null>(null)
+
+  async function onArchiveCredential(): Promise<void> {
+    if (archiveBusy || !data.credential) return
+    const confirmed = confirm(
+      `Archive "${data.credential.name}"? Its versions, dependent-system records, rotation ` +
+        'history, and past shares are all preserved. You can unarchive it later.'
+    )
+    if (!confirmed) return
+    archiveBusy = true
+    archiveError = null
+    try {
+      await archiveCredential(fetch, data.projectId, data.credentialId)
+    } catch (error) {
+      if (error instanceof ApiClientError && error.code === 'active_rotations') {
+        archiveError =
+          'This secret has an in-progress rotation — complete or abandon it before archiving.'
+      } else if (error instanceof ApiClientError && error.code === 'active_shares') {
+        const shareIds = (error.body as { shareIds?: string[] } | null)?.shareIds ?? []
+        archiveError = `This secret has ${shareIds.length} active share${shareIds.length === 1 ? '' : 's'} — revoke ${shareIds.length === 1 ? 'it' : 'them'} before archiving.`
+      } else {
+        archiveError =
+          error instanceof ApiClientError
+            ? (error.message ?? 'Failed to archive secret.')
+            : 'Failed to archive secret.'
+      }
+      archiveBusy = false
+      return
+    }
+    try {
+      await invalidateAll()
+    } finally {
+      archiveBusy = false
+    }
+  }
+
+  async function onUnarchiveCredential(): Promise<void> {
+    if (archiveBusy || !data.credential) return
+    archiveBusy = true
+    archiveError = null
+    try {
+      await unarchiveCredential(fetch, data.projectId, data.credentialId)
+    } catch (error) {
+      archiveError =
+        error instanceof ApiClientError
+          ? (error.message ?? 'Failed to unarchive secret.')
+          : 'Failed to unarchive secret.'
+      archiveBusy = false
+      return
+    }
+    try {
+      await invalidateAll()
+    } finally {
+      archiveBusy = false
+    }
+  }
   const displayExpiresAt = $derived(
     lifecycleOverride ? lifecycleOverride.expiresAt : (data.credential?.expiresAt ?? null)
   )
@@ -132,10 +216,11 @@
       })
       lifecycleOverride = { expiresAt: result.expiresAt, rotationSchedule: result.rotationSchedule }
     } catch (error) {
+      const archivedBanner = archivedBannerFor(error)
       if (error instanceof ApiClientError && error.code === 'invalid_cron') {
         lifecycleFieldError = error.message
-      } else if (error instanceof ApiClientError && error.status === 410) {
-        lifecycleBanner = ARCHIVED_PROJECT_BANNER
+      } else if (archivedBanner) {
+        lifecycleBanner = archivedBanner
       } else {
         lifecycleFieldError =
           error instanceof Error ? error.message : 'Could not update lifecycle fields.'
@@ -401,7 +486,10 @@
       }
       shareAttributeOverrides = {}
     } catch (error) {
-      shareError = error instanceof Error ? error.message : 'Could not create share.'
+      // Story 28.5 AC4/AC6: share creation now rejects with 410 against an archived secret.
+      const archivedBanner = archivedBannerFor(error)
+      shareError =
+        archivedBanner ?? (error instanceof Error ? error.message : 'Could not create share.')
     } finally {
       // Cleared after every attempt, success or failure — never retained beyond the single
       // submit, including when step-up itself is what failed.
@@ -453,8 +541,9 @@
       depLinkUrl = ''
       depFieldKey = ''
     } catch (error) {
-      if (error instanceof ApiClientError && error.status === 410) {
-        depBanner = ARCHIVED_PROJECT_BANNER
+      const archivedBanner = archivedBannerFor(error)
+      if (archivedBanner) {
+        depBanner = archivedBanner
       } else if (
         error instanceof ApiClientError &&
         (error.code === 'too_many_dependencies' ||
@@ -478,8 +567,9 @@
       await archiveCredentialDependency(fetch, data.projectId, data.credentialId, dependencyId)
       dependencyItems = dependencyItems.filter((item) => item.id !== dependencyId)
     } catch (error) {
-      if (error instanceof ApiClientError && error.status === 410) {
-        depBanner = ARCHIVED_PROJECT_BANNER
+      const archivedBanner = archivedBannerFor(error)
+      if (archivedBanner) {
+        depBanner = archivedBanner
       } else {
         depError = error instanceof Error ? error.message : 'Could not archive dependent system.'
       }
@@ -834,8 +924,9 @@
       newVersionValue = ''
       await invalidateAll()
     } catch (error) {
-      if (error instanceof ApiClientError && error.status === 410) {
-        addVersionBanner = ARCHIVED_PROJECT_BANNER
+      const archivedBanner = archivedBannerFor(error)
+      if (archivedBanner) {
+        addVersionBanner = archivedBanner
       } else if (error instanceof ApiClientError && error.code === 'version_conflict') {
         addVersionError = 'Someone just added a version — refresh and try again.'
       } else {
@@ -933,8 +1024,9 @@
       editFields = []
       await invalidateAll()
     } catch (error) {
-      if (error instanceof ApiClientError && error.status === 410) {
-        fieldSetFormError = ARCHIVED_PROJECT_BANNER
+      const archivedBanner = archivedBannerFor(error)
+      if (archivedBanner) {
+        fieldSetFormError = archivedBanner
       } else {
         const mapped = mapCredentialSubmitError(error)
         fieldSetFormError = mapped.errorMessage
@@ -967,10 +1059,66 @@
     />
   {:else}
     <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Secret</p>
-      <h1 class="mt-2 text-3xl font-bold text-slate-950">{data.credential.name}</h1>
-      {#if data.credential.description}
-        <p class="mt-2 text-slate-600">{data.credential.description}</p>
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Secret</p>
+          <div class="mt-2 flex items-center gap-2">
+            <h1 class="text-3xl font-bold text-slate-950">{data.credential.name}</h1>
+            {#if isCredentialArchived}
+              <span
+                class="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-normal text-slate-700"
+              >
+                Archived
+              </span>
+            {/if}
+          </div>
+          {#if data.credential.description}
+            <p class="mt-2 text-slate-600">{data.credential.description}</p>
+          {/if}
+        </div>
+        {#if canArchiveCredential}
+          {#if isCredentialArchived}
+            <button
+              type="button"
+              class="cursor-pointer text-sm font-medium text-slate-700 underline hover:text-slate-950 focus-visible:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+              title="Unarchive this secret"
+              disabled={archiveBusy}
+              onclick={() => onUnarchiveCredential()}
+            >
+              Unarchive
+            </button>
+          {:else}
+            <button
+              type="button"
+              class="cursor-pointer text-sm font-medium text-amber-700 underline hover:text-amber-900 focus-visible:text-amber-900 disabled:cursor-not-allowed disabled:opacity-60"
+              title="Archive this secret"
+              disabled={archiveBusy}
+              onclick={() => onArchiveCredential()}
+            >
+              Archive secret
+            </button>
+          {/if}
+        {/if}
+      </div>
+
+      {#if archiveError}
+        <p
+          class="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+          role="alert"
+        >
+          {archiveError}
+        </p>
+      {/if}
+
+      {#if isCredentialArchived}
+        <!-- Story 28.5 AC6: persistent banner in the same visual/copy family as
+             ARCHIVED_PROJECT_BANNER. -->
+        <p
+          class="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+          role="status"
+        >
+          {CREDENTIAL_ARCHIVED_BANNER}
+        </p>
       {/if}
 
       <!-- Story 17.3 AC-16: a credential that has never been shared shows no badge at all — the
@@ -1140,7 +1288,7 @@
             <button
               class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               type="submit"
-              disabled={lifecycleSubmitting}
+              disabled={lifecycleSubmitting || isCredentialArchived}
             >
               {lifecycleSubmitting ? 'Saving…' : 'Save lifecycle'}
             </button>
@@ -1357,7 +1505,7 @@
                   <button
                     class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                     type="submit"
-                    disabled={addingVersion}
+                    disabled={addingVersion || isCredentialArchived}
                   >
                     {addingVersion ? 'Saving…' : 'Save fields'}
                   </button>
@@ -1403,7 +1551,7 @@
               <button
                 class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                 type="submit"
-                disabled={addingVersion}
+                disabled={addingVersion || isCredentialArchived}
               >
                 {addingVersion ? 'Adding…' : 'Add version'}
               </button>
@@ -1657,7 +1805,7 @@
             <button
               class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               type="submit"
-              disabled={depSubmitting}
+              disabled={depSubmitting || isCredentialArchived}
             >
               {depSubmitting ? 'Adding…' : 'Add dependent system'}
             </button>
@@ -1678,6 +1826,19 @@
         >
           View active rotation
         </a>
+      {:else if canManageRotation && isCredentialArchived}
+        <!-- Story 28.5 AC4/AC6: rotation initiation 410s (credential_archived) once the secret
+             itself is archived — disabled here rather than linking through to a page that would
+             immediately fail. -->
+        <button
+          type="button"
+          class="mt-4 inline-block cursor-not-allowed rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white opacity-50"
+          disabled
+          title={CREDENTIAL_ARCHIVED_BANNER}
+        >
+          Start rotation
+        </button>
+        <p class="mt-2 text-sm text-amber-800">{CREDENTIAL_ARCHIVED_BANNER}</p>
       {:else if canManageRotation}
         <a
           class="mt-4 inline-block rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white"
@@ -1919,6 +2080,7 @@
           type="button"
           class="mt-4 inline-block rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
           disabled={shareSubmitting ||
+            isCredentialArchived ||
             (shareRecipientType === 'user' ? !shareRecipientUserId : !shareRecipientEmail)}
           onclick={onCreateShare}
         >

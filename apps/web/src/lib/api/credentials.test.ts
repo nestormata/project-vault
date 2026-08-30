@@ -4,6 +4,7 @@ import { ApiClientError } from './client.js'
 import {
   addCredentialDependency,
   addCredentialVersion,
+  archiveCredential,
   archiveCredentialDependency,
   confirmCredentialImport,
   createCredential,
@@ -13,6 +14,7 @@ import {
   listCredentials,
   previewCredentialImport,
   revealCredentialValue,
+  unarchiveCredential,
   updateCredentialDependencyLink,
   updateCredentialLifecycle,
 } from './credentials.js'
@@ -34,6 +36,8 @@ const sampleSummary: CredentialSummary = {
   hasDependencies: false,
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-06-01T00:00:00.000Z',
+  activeRotation: null,
+  archivedAt: null,
 }
 
 const sampleDetail: CredentialDetail = {
@@ -54,6 +58,7 @@ const sampleDetail: CredentialDetail = {
   createdBy: null,
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-06-01T00:00:00.000Z',
+  archivedAt: null,
 }
 
 describe('credential API helpers', () => {
@@ -81,6 +86,90 @@ describe('credential API helpers', () => {
     expect(init).toMatchObject({ credentials: 'include' })
     expect(result.items).toHaveLength(1)
     expect(result.items[0]?.name).toBe('Stripe Secret Key')
+  })
+
+  it('listCredentials({ includeArchived: true }) appends the query param', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+      })
+    )
+
+    await listCredentials(fetchFn, projectId, { includeArchived: true })
+
+    const [url] = fetchFn.mock.calls[0] ?? []
+    expect(url).toContain('includeArchived=true')
+  })
+
+  it('listCredentials({ includeArchived: false }) omits the query param', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+      })
+    )
+
+    await listCredentials(fetchFn, projectId)
+
+    const [url] = fetchFn.mock.calls[0] ?? []
+    expect(url).not.toContain('includeArchived')
+  })
+
+  // Story 28.5 AC2/AC3.
+  it('archiveCredential posts to the archive URL and returns archive state', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: {
+          id: credentialId,
+          name: 'Stripe Secret Key',
+          archivedAt: '2026-07-01T00:00:00.000Z',
+          isArchived: true,
+        },
+      })
+    )
+
+    const result = await archiveCredential(fetchFn, projectId, credentialId)
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      `/api/v1/projects/${projectId}/credentials/${credentialId}/archive`,
+      expect.objectContaining({ method: 'POST' })
+    )
+    expect(result.isArchived).toBe(true)
+  })
+
+  it('unarchiveCredential posts to the unarchive URL and returns archive state', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        data: { id: credentialId, name: 'Stripe Secret Key', archivedAt: null, isArchived: false },
+      })
+    )
+
+    const result = await unarchiveCredential(fetchFn, projectId, credentialId)
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      `/api/v1/projects/${projectId}/credentials/${credentialId}/unarchive`,
+      expect.objectContaining({ method: 'POST' })
+    )
+    expect(result.isArchived).toBe(false)
+  })
+
+  it('archiveCredential surfaces 409 active_shares as a catchable ApiClientError carrying shareIds', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(
+          { error: 'active_shares', shareIds: ['dddddddd-dddd-4ddd-8ddd-dddddddddddd'] },
+          { status: 409 }
+        )
+      )
+
+    try {
+      await archiveCredential(fetchFn, projectId, credentialId)
+      throw new Error('expected archiveCredential to reject')
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiClientError)
+      expect((error as ApiClientError).status).toBe(409)
+      expect((error as ApiClientError).code).toBe('active_shares')
+    }
   })
 
   it('getCredential fetches metadata without value field', async () => {

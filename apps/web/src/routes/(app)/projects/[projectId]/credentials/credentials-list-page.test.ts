@@ -169,4 +169,45 @@ describe('project credentials list +page.svelte', () => {
       expect(screen.queryByText(/rotation in progress/i)).toBeNull()
     })
   })
+
+  // Story 28.5 AC5/AC6.
+  describe('include-archived toggle and Archived badge', () => {
+    it('renders the toggle checkbox with visible, aria-describedby-wired guidance text (G5)', () => {
+      render(CredentialsListPage, { props: { data: baseData() } })
+      const toggle = screen.getByLabelText(/include archived secrets/i)
+      expect(toggle.getAttribute('aria-describedby')).toBe('credentials-include-archived-help')
+      expect(document.getElementById('credentials-include-archived-help')?.textContent).toBeTruthy()
+    })
+
+    it('reflects includeArchived=true as checked', () => {
+      render(CredentialsListPage, {
+        props: {
+          data: baseData({
+            filters: { q: '', status: '', tags: '', page: 1, includeArchived: true },
+          }),
+        },
+      })
+      const toggle = screen.getByLabelText(/include archived secrets/i) as HTMLInputElement
+      expect(toggle.checked).toBe(true)
+    })
+
+    it('renders an "Archived" badge next to an archived secret, not an active one', () => {
+      const archived = { ...CREDENTIAL, id: 'cred-2', archivedAt: '2026-08-01T00:00:00.000Z' }
+      render(CredentialsListPage, {
+        props: {
+          data: baseData({
+            filters: { q: '', status: '', tags: '', page: 1, includeArchived: true },
+            credentials: {
+              items: [CREDENTIAL, archived],
+              total: 2,
+              page: 1,
+              limit: 20,
+              hasNext: false,
+            },
+          }),
+        },
+      })
+      expect(screen.getAllByText('Archived')).toHaveLength(1)
+    })
+  })
 })

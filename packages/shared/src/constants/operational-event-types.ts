@@ -61,6 +61,9 @@ export const OperationalEvent = {
   CREDENTIAL_DEPENDENCY_UPDATED: 'credential.dependency.updated',
   CREDENTIAL_LIFECYCLE_UPDATED: 'credential.lifecycle.updated',
   CREDENTIAL_LIFECYCLE_INVALID_CRON: 'credential.lifecycle.invalid_cron',
+  // Story 28.5 AC2/AC3 — mirrors CREDENTIAL_DEPENDENCY_ARCHIVED's naming convention exactly.
+  CREDENTIAL_ARCHIVED: 'credential.archived',
+  CREDENTIAL_UNARCHIVED: 'credential.unarchived',
   CREDENTIAL_IMPORT_PARSE_COMPLETED: 'credential.import.parse_completed',
   CREDENTIAL_IMPORT_ENCRYPTED: 'credential.import.encrypted',
   CREDENTIAL_IMPORT_CONFIRMED: 'credential.import.confirmed',

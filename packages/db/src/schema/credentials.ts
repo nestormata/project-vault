@@ -56,11 +56,21 @@ export const credentials = pgTable(
     currentVersionId: uuid('current_version_id').references(
       (): AnyPgColumn => credentialVersions.id
     ),
+    // Story 28.5 AC1 — soft-archive-with-recovery, mirroring credential_dependencies' own
+    // archivedAt/archivedBy shape exactly. Nullable; NULL means active. No DELETE path is added
+    // anywhere for this table (see the story's Key Design Decisions — rotations/credential_shares
+    // both cascade-delete on a hard DELETE, which would violate this codebase's own "rotations
+    // permanently retained" invariant and silently orphan active share links).
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    archivedBy: uuid('archived_by').references(() => users.id, { onDelete: 'set null' }),
   },
   (t) => ({
     projectCreatedIdx: index('idx_credentials_project_created').on(t.projectId, t.createdAt.desc()),
     projectExpiresIdx: index('idx_credentials_project_expires').on(t.projectId, t.expiresAt),
     orgIdx: index('idx_credentials_org').on(t.orgId),
     retentionCheck: check('credentials_retention_count_check', sql`${t.retentionCount} >= 1`),
+    // Story 28.5 AC1 — mirrors idx_credential_dependencies_cred_active's intent: keeps the default
+    // "active secrets" list query (WHERE project_id = $1 AND archived_at IS NULL) index-backed.
+    projectActiveIdx: index('idx_credentials_project_active').on(t.projectId, t.archivedAt),
   })
 )

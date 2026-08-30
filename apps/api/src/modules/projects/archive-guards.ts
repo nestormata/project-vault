@@ -70,6 +70,20 @@ export async function hasActiveMachineUserKeys(tx: Tx, projectId: string): Promi
   return rows.length > 0
 }
 
+// Story 28.5 — the caller-authorization decision behind both project and credential archival
+// (4.4 AC-2/AC-6/ADR-4.4-05) is identical: project owner OR org owner, nothing else. Factored out
+// as a pure function so `projects/routes.ts` and `credentials/routes.ts` share one implementation
+// instead of two verbatim copies drifting apart; each call site still does its own
+// `callerProjectRole` lookup since that part legitimately differs by module.
+export function resolveArchiveAuthorization(
+  callerRole: string | undefined,
+  orgRole: string
+): 'project_owner' | 'org_owner' | null {
+  if (callerRole === 'owner') return 'project_owner'
+  if (orgRole === 'owner') return 'org_owner'
+  return null
+}
+
 /** Returns true if the project is archived (caller should reject the mutation with 410). */
 export async function isProjectArchived(tx: Tx, projectId: string): Promise<boolean> {
   const [row] = await tx

@@ -16,6 +16,7 @@ import {
   rejectIfProjectNotVisible,
 } from '../credentials/routes.js'
 import { credentialExistsInProject } from '../credentials/db-helpers.js'
+import { CREDENTIAL_ARCHIVED_ERROR } from '../credentials/archive-guards.js'
 import {
   createOrgAdminNotificationEntries,
   dispatchDirectEmailNotification,
@@ -174,12 +175,49 @@ function shareScopeErrorResponse(
   })
 }
 
+type CommonCredentialShareErrorResult =
+  | { status: 'credential_not_found' }
+  | { status: 'credential_archived' }
+  | { status: 'unknown_field_key'; field: string }
+  | { status: 'ambiguous_share_scope' }
+  | { status: 'too_many_attribute_keys' }
+
+// Story 28.5 AC4: shared across both share-creation flows (member + external) since both result
+// unions carry the same credential_not_found/credential_archived/scope-error branches. A type
+// predicate (not a boolean) so TypeScript keeps narrowing `result` to each caller's own remaining
+// variants afterward — dedupes what would otherwise be two verbatim copies of both this three-way
+// check AND the guard condition selecting it.
+function isCommonCredentialShareError(result: {
+  status: string
+}): result is CommonCredentialShareErrorResult {
+  return (
+    result.status === 'credential_not_found' ||
+    result.status === 'credential_archived' ||
+    result.status === 'unknown_field_key' ||
+    result.status === 'ambiguous_share_scope' ||
+    result.status === 'too_many_attribute_keys'
+  )
+}
+
+function commonCredentialShareErrorResponse(
+  reply: FastifyReply,
+  result: CommonCredentialShareErrorResult
+): unknown {
+  if (result.status === 'credential_not_found') {
+    return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+  }
+  if (result.status === 'credential_archived') {
+    return reply.status(410).send(CREDENTIAL_ARCHIVED_ERROR)
+  }
+  return shareScopeErrorResponse(reply, result)
+}
+
 function createShareErrorResponse(
   reply: FastifyReply,
   result: Exclude<Awaited<ReturnType<typeof createCredentialShare>>, { status: 'ok' }>
 ): unknown {
-  if (result.status === 'credential_not_found') {
-    return reply.status(404).send(CREDENTIAL_NOT_FOUND)
+  if (isCommonCredentialShareError(result)) {
+    return commonCredentialShareErrorResponse(reply, result)
   }
   if (result.status === 'self_share') {
     return reply
@@ -196,13 +234,6 @@ function createShareErrorResponse(
       .status(400)
       .send({ code: 'recipient_inactive', message: 'Recipient is a deactivated org user.' })
   }
-  if (
-    result.status === 'unknown_field_key' ||
-    result.status === 'ambiguous_share_scope' ||
-    result.status === 'too_many_attribute_keys'
-  ) {
-    return shareScopeErrorResponse(reply, result)
-  }
   return reply.status(400).send({
     code: 'expires_at_invalid',
     message:
@@ -216,15 +247,8 @@ function createExternalShareErrorResponse(
   reply: FastifyReply,
   result: Exclude<CreateExternalShareResult, { status: 'ok' }>
 ): unknown {
-  if (result.status === 'credential_not_found') {
-    return reply.status(404).send(CREDENTIAL_NOT_FOUND)
-  }
-  if (
-    result.status === 'unknown_field_key' ||
-    result.status === 'ambiguous_share_scope' ||
-    result.status === 'too_many_attribute_keys'
-  ) {
-    return shareScopeErrorResponse(reply, result)
+  if (isCommonCredentialShareError(result)) {
+    return commonCredentialShareErrorResponse(reply, result)
   }
   if (result.status === 'cap_exceeded') {
     return reply.status(429).send({
@@ -525,6 +549,7 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
+        410: ApiErrorSchema,
         422: ApiErrorSchema,
         429: ApiErrorSchema,
       },

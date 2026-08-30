@@ -6,6 +6,7 @@ import { AuditEvent, normalizeFieldKey } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { credentialExistsInProject } from '../credentials/db-helpers.js'
+import { isCredentialArchived } from '../credentials/archive-guards.js'
 import {
   attributeKeys as declaredAdapterAttributeKeys,
   formatBoundedRevealValue,
@@ -108,6 +109,10 @@ export type CreateShareInput = {
 
 export type CreateShareResult =
   | { status: 'credential_not_found' }
+  // Story 28.5 AC4: the credential itself is archived — a distinct 410, checked after existence
+  // but before any other business validation, so no share can ever be created against an
+  // archived secret.
+  | { status: 'credential_archived' }
   | { status: 'self_share' }
   | { status: 'recipient_not_found' }
   | { status: 'recipient_inactive' }
@@ -267,6 +272,29 @@ async function findActiveOrgMembership(
   return row ?? null
 }
 
+/**
+ * Story 28.5 AC4 — shared entry-point preflight for both member and external share creation:
+ * confirms the credential exists in the given project, then that it isn't archived (an archived
+ * secret must reject with 410 before any other business validation runs). Exported so
+ * `external-service.ts` reuses this exact check rather than re-deriving it.
+ */
+export async function preflightCredentialForShareCreation(
+  tx: Tx,
+  input: { credentialId: string; projectId: string }
+): Promise<
+  { status: 'credential_not_found' } | { status: 'credential_archived' } | { status: 'ok' }
+> {
+  const exists = await credentialExistsInProject(tx, {
+    credentialId: input.credentialId,
+    projectId: input.projectId,
+  })
+  if (!exists) return { status: 'credential_not_found' }
+
+  if (await isCredentialArchived(tx, input.credentialId)) return { status: 'credential_archived' }
+
+  return { status: 'ok' }
+}
+
 /** AC-1/AC-2/AC-3/AC-4/AC-18/AC-19: creates a `recipient_type = 'user'` share. Eligibility
  *  (AC-1) is enforced by the route via `rejectIfInsufficientProjectRoleForReveal` BEFORE this is
  *  called — this function only validates the share-specific business rules (AC-2/AC-3/AC-4). */
@@ -274,11 +302,8 @@ export async function createCredentialShare(
   tx: Tx,
   input: CreateShareInput
 ): Promise<CreateShareResult> {
-  const exists = await credentialExistsInProject(tx, {
-    credentialId: input.credentialId,
-    projectId: input.projectId,
-  })
-  if (!exists) return { status: 'credential_not_found' }
+  const preflight = await preflightCredentialForShareCreation(tx, input)
+  if (preflight.status !== 'ok') return preflight
 
   // AC-2: self-share is rejected — sharing with yourself has no purpose.
   if (input.recipientUserId === input.sharedByUserId) return { status: 'self_share' }

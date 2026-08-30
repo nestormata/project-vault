@@ -5,6 +5,8 @@ export type CredentialListFilters = {
   status?: CredentialStatus
   tags?: string
   page: number
+  // Story 28.5 AC5/AC6: mirrors the project list's own includeArchived query-param precedent.
+  includeArchived?: boolean
 }
 
 export function parseCredentialListFilters(url: URL): CredentialListFilters {
@@ -16,7 +18,8 @@ export function parseCredentialListFilters(url: URL): CredentialListFilters {
   const q = url.searchParams.get('q')?.trim() || undefined
   const tags = url.searchParams.get('tags')?.trim() || undefined
   const page = Math.max(1, Number(url.searchParams.get('page') ?? '1') || 1)
-  return { q, status, tags, page }
+  const includeArchived = url.searchParams.get('includeArchived') === 'true'
+  return { q, status, tags, page, includeArchived }
 }
 
 export function credentialListFilterView(filters: CredentialListFilters) {
@@ -25,5 +28,6 @@ export function credentialListFilterView(filters: CredentialListFilters) {
     status: filters.status ?? '',
     tags: filters.tags ?? '',
     page: filters.page,
+    includeArchived: filters.includeArchived ?? false,
   }
 }

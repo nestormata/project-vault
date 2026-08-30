@@ -207,6 +207,9 @@ describe('credential list and tag schemas', () => {
       expiresWithin: 45,
       page: 2,
       limit: 50,
+      // Story 28.5 AC5: defaults to false via the same post-parse transform shape as
+      // ListDependenciesQuerySchema.
+      includeArchived: false,
     })
 
     expect(ListCredentialsQuerySchema.parse({})).toMatchObject({

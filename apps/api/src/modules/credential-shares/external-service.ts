@@ -4,8 +4,8 @@ import { credentialShares } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { getAdminDb } from '../../lib/db.js'
 import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
-import { credentialExistsInProject } from '../credentials/db-helpers.js'
 import { serializeBounded } from '../credentials/bounded-share-adapter.js'
+import { preflightCredentialForShareCreation } from './service.js'
 import {
   baseShareInsertValues,
   buildShareRevealResult,
@@ -107,6 +107,8 @@ export type CreateExternalShareInput = {
 
 export type CreateExternalShareResult =
   | { status: 'credential_not_found' }
+  // Story 28.5 AC4: the credential itself is archived.
+  | { status: 'credential_archived' }
   | { status: 'unknown_field_key'; field: string }
   | { status: 'ambiguous_share_scope' }
   // Bugfix (review patch): see `ShareFieldAndExpiryValidation`'s matching variant in service.ts.
@@ -124,11 +126,8 @@ export async function createExternalCredentialShare(
   tx: Tx,
   input: CreateExternalShareInput
 ): Promise<CreateExternalShareResult> {
-  const exists = await credentialExistsInProject(tx, {
-    credentialId: input.credentialId,
-    projectId: input.projectId,
-  })
-  if (!exists) return { status: 'credential_not_found' }
+  const preflight = await preflightCredentialForShareCreation(tx, input)
+  if (preflight.status !== 'ok') return preflight
 
   const validation = await validateShareFieldAndExpiry(
     tx,

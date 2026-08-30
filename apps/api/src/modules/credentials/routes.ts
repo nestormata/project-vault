@@ -1,4 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
+import { and, eq } from 'drizzle-orm'
+import { z } from 'zod/v4'
 import {
   OperationalEvent,
   ImportValidationError,
@@ -6,6 +8,7 @@ import {
   validateRotationCron,
 } from '@project-vault/shared'
 import type { Tx } from '@project-vault/db'
+import { credentials } from '@project-vault/db/schema'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseBody, parseParams, parseQuery, validationError } from '../../lib/route-helpers.js'
@@ -34,8 +37,11 @@ import {
   AddVersionBodySchema,
   AddVersionResponseSchema,
   AddDependencyBodySchema,
+  ActiveRotationsErrorSchema,
+  ActiveSharesErrorSchema,
   CreateCredentialBodySchema,
   CredentialAccessListResponseSchema,
+  CredentialArchiveResponseSchema,
   CredentialDetailResponseSchema,
   CredentialLifecycleResponseSchema,
   CredentialParamsSchema,
@@ -72,12 +78,14 @@ import {
 import {
   VersionConflictError,
   addCredentialVersion,
+  archiveCredential,
   createCredentialWithFirstVersion,
   findProjectInOrg,
   getCredentialDetail,
   listCredentials,
   listVersionHistory,
   revealCurrentValue,
+  unarchiveCredential,
   updateCredentialTags,
 } from './service.js'
 import {
@@ -99,8 +107,14 @@ import {
   detectImportFileType,
   stageCredentialImport,
 } from './import-service.js'
-import { rejectIfProjectArchived } from '../projects/archive-guards.js'
+import { rejectIfProjectArchived, resolveArchiveAuthorization } from '../projects/archive-guards.js'
+import { callerProjectRole } from '../projects/routes.js'
 import { credentialRevealAbandonedVersionExcludedTotal } from '../rotation/metrics.js'
+import {
+  findBlockingRotationIdsForCredential,
+  findBlockingShareIdsForCredential,
+  rejectIfCredentialArchived,
+} from './archive-guards.js'
 
 type CredentialAuditInput = Omit<SameTransactionAuditInput, 'resourceType'> & {
   eventType:
@@ -112,6 +126,8 @@ type CredentialAuditInput = Omit<SameTransactionAuditInput, 'resourceType'> & {
     | 'credential.dependency_archived'
     | 'credential.dependency_updated'
     | 'credential.lifecycle_updated'
+    | 'credential.archived'
+    | 'credential.unarchived'
 }
 
 type ImportAuditRequest = FastifyRequest & {
@@ -331,16 +347,23 @@ export async function rejectIfInsufficientProjectRoleForReveal(
 /**
  * Story 4.5 AC-V4: combines the visibility gate with the existing archived-project guard for
  * mutation routes, keeping each individual handler's own branching count low.
+ *
+ * Story 28.5 AC4: also rejects if the credential ITSELF is archived — checked AFTER the
+ * project-archived check, so an archived project surfaces as `project_archived`, not
+ * `credential_archived`, when both are true (this codebase's "most specific applicable error
+ * for nested guards" convention).
  */
 async function rejectIfCredentialLifecycleUpdateBlocked(
   secureCtx: SecureRouteContext,
   req: FastifyRequest,
   reply: FastifyReply,
-  projectId: string
+  projectId: string,
+  credentialId: string
 ): Promise<boolean> {
   if (await rejectIfProjectNotVisible(secureCtx, req, reply, projectId, CREDENTIAL_NOT_FOUND))
     return true
-  return rejectIfProjectArchived(secureCtx.tx, projectId, reply)
+  if (await rejectIfProjectArchived(secureCtx.tx, projectId, reply)) return true
+  return rejectIfCredentialArchived(secureCtx.tx, credentialId, reply)
 }
 // Story 13.2 AC-3 — a field-key collision (case-insensitive) is surfaced with the conflicting key
 // so the web can attach an inline error to the specific field being renamed/added.
@@ -474,6 +497,8 @@ async function handleCredentialTagUpdate(
 
   // 4.4 AC-5: credential tags are a mutation of an existing resource within the project.
   if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
+  // Story 28.5 AC4: tagging a secret is a mutation of the secret itself.
+  if (await rejectIfCredentialArchived(secureCtx.tx, params.credentialId, reply)) return reply
 
   const result = await updateCredentialTags(secureCtx.tx, {
     ...params,
@@ -520,6 +545,113 @@ async function withCredentialParams<T>(
   if (result === null) return reply.status(404).send(CREDENTIAL_NOT_FOUND)
   return result
 }
+
+// Story 28.5 AC2/AC3/ADR-mirror-4.4-05: archive/unarchive is restricted to the secret's project
+// owner OR an org owner — the identical authorization floor as project archival, reused rather
+// than redefined so the two can never drift apart. Returns which path authorized the caller (or
+// null if neither) so the audit row can record "acted as project owner" vs. "acted via org-owner
+// override".
+async function callerCredentialArchiveAuthorization(
+  secureCtx: SecureRouteContext,
+  projectId: string
+): Promise<'project_owner' | 'org_owner' | null> {
+  const callerRole = await callerProjectRole(secureCtx, projectId)
+  return resolveArchiveAuthorization(callerRole, secureCtx.auth.orgRole)
+}
+
+// Story 28.5 AC2 "Audit gap (denied/blocked attempts)": mirrors project archival's
+// logArchiveDenied — SecureRoute's same-tx audit writer only fires on the success path, so a
+// 403/409 rejection on this MFA-gated lifecycle action is never written to the audit log. Emit a
+// structured application log line instead.
+function logCredentialArchiveDenied(
+  req: { log: { warn: (payload: Record<string, unknown>, msg?: string) => void } },
+  input: { credentialId: string; callerId: string; reason: string }
+): void {
+  req.log.warn(
+    { event: 'credential.archive_denied', ...input },
+    'Credential archive/unarchive request denied'
+  )
+}
+
+type CredentialArchiveTogglePreflight =
+  | {
+      ok: true
+      params: { projectId: string; credentialId: string }
+      secureCtx: SecureRouteContext
+      credential: { id: string; name: string; archivedAt: Date | null }
+      authorizedVia: 'project_owner' | 'org_owner'
+    }
+  | { ok: false }
+
+/**
+ * Story 28.5 AC2/AC3 — shared preflight for POST .../archive and .../unarchive: validates params,
+ * confirms project visibility, locks the credential row FOR UPDATE (closes the same TOCTOU window
+ * project archival's own preflight closes — between the blocking-guard checks and the archive
+ * commit), and enforces the project-owner-or-org-owner check. Ownership MUST be checked before
+ * either route's idempotency check (AC2 ordering rationale), or a non-owner could distinguish
+ * archival state from a 403 for an arbitrary in-org secret id.
+ */
+async function loadCredentialForArchiveToggle(
+  ctx: SecureRouteContext | PublicRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  actionVerb: 'archive' | 'unarchive'
+): Promise<CredentialArchiveTogglePreflight> {
+  const params = parseParams(CredentialParamsSchema, req, reply)
+  if (!params) return { ok: false }
+  const secureCtx = ctx as SecureRouteContext
+
+  if (
+    await rejectIfProjectNotVisible(secureCtx, req, reply, params.projectId, CREDENTIAL_NOT_FOUND)
+  )
+    return { ok: false }
+
+  // Story 28.5 AC2/AC4: a secret inside an already-archived project must 410, matching every
+  // other project-child mutation route in this module. Checked after visibility (consistent with
+  // this file's own convention elsewhere) but before the credential-level ownership/idempotency
+  // checks, so archiving inside an archived project can never proceed.
+  if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return { ok: false }
+
+  const [credential] = await secureCtx.tx
+    .select({ id: credentials.id, name: credentials.name, archivedAt: credentials.archivedAt })
+    .from(credentials)
+    .where(
+      and(eq(credentials.id, params.credentialId), eq(credentials.projectId, params.projectId))
+    )
+    .for('update')
+    .limit(1)
+  if (!credential) {
+    logCredentialArchiveDenied(req, {
+      credentialId: params.credentialId,
+      callerId: secureCtx.auth.userId,
+      reason: 'credential_not_found',
+    })
+    reply.status(404).send(CREDENTIAL_NOT_FOUND)
+    return { ok: false }
+  }
+
+  const authorizedVia = await callerCredentialArchiveAuthorization(secureCtx, params.projectId)
+  if (!authorizedVia) {
+    logCredentialArchiveDenied(req, {
+      credentialId: params.credentialId,
+      callerId: secureCtx.auth.userId,
+      reason: 'insufficient_role',
+    })
+    reply.status(403).send({
+      code: 'insufficient_role',
+      message: `Only the project owner can ${actionVerb} a secret`,
+    })
+    return { ok: false }
+  }
+
+  return { ok: true, params, secureCtx, credential, authorizedVia }
+}
+
+const ALREADY_ARCHIVED_ERROR = {
+  code: 'already_archived',
+  message: 'Secret is already archived',
+} as const
+const NOT_ARCHIVED_ERROR = { code: 'not_archived', message: 'Secret is not archived' } as const
 
 export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
@@ -1011,6 +1143,8 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       // 4.4 AC-5: rotating a credential mutates an existing resource — "read-only" covers this,
       // not just creation of brand-new credentials.
       if (await rejectIfProjectArchived(secureCtx.tx, params.projectId, reply)) return reply
+      // Story 28.5 AC4: adding a version mutates the secret itself.
+      if (await rejectIfCredentialArchived(secureCtx.tx, params.credentialId, reply)) return reply
 
       const outcome = await runCredentialFieldSetWrite(reply, () =>
         addCredentialVersion(secureCtx.tx, {
@@ -1269,7 +1403,15 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const parsed = parseBody<AddDependencyBody>(AddDependencyBodySchema, req, reply)
       if (!parsed.success) return reply
       const secureCtx = ctx as SecureRouteContext
-      if (await rejectIfCredentialLifecycleUpdateBlocked(secureCtx, req, reply, params.projectId))
+      if (
+        await rejectIfCredentialLifecycleUpdateBlocked(
+          secureCtx,
+          req,
+          reply,
+          params.projectId,
+          params.credentialId
+        )
+      )
         return reply
 
       const result = await addCredentialDependency(secureCtx.tx, {
@@ -1396,7 +1538,15 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const params = parseParams(DependencyParamsSchema, req, reply)
       if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
-      if (await rejectIfCredentialLifecycleUpdateBlocked(secureCtx, req, reply, params.projectId))
+      if (
+        await rejectIfCredentialLifecycleUpdateBlocked(
+          secureCtx,
+          req,
+          reply,
+          params.projectId,
+          params.credentialId
+        )
+      )
         return reply
 
       const result = await archiveCredentialDependency(secureCtx.tx, {
@@ -1473,7 +1623,15 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         })
       }
       const secureCtx = ctx as SecureRouteContext
-      if (await rejectIfCredentialLifecycleUpdateBlocked(secureCtx, req, reply, params.projectId))
+      if (
+        await rejectIfCredentialLifecycleUpdateBlocked(
+          secureCtx,
+          req,
+          reply,
+          params.projectId,
+          params.credentialId
+        )
+      )
         return reply
 
       const parsed = parseBody<PatchDependencyBody>(PatchDependencyBodySchema, req, reply)
@@ -1550,7 +1708,15 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       const secureCtx = ctx as SecureRouteContext
       // 4.4 AC-5: editing a credential's lifecycle fields mutates an existing resource — the same
       // rationale used to guard the versions/rotate route applies here.
-      if (await rejectIfCredentialLifecycleUpdateBlocked(secureCtx, req, reply, params.projectId))
+      if (
+        await rejectIfCredentialLifecycleUpdateBlocked(
+          secureCtx,
+          req,
+          reply,
+          params.projectId,
+          params.credentialId
+        )
+      )
         return reply
 
       if (
@@ -1631,6 +1797,193 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       if (!items) return reply.status(404).send(CREDENTIAL_NOT_FOUND)
 
       return { data: { items } }
+    },
+  })
+
+  // Story 28.5 AC2: archive a secret (project-owner-or-org-owner only). Non-destructive — sets
+  // archived_at, deletes nothing. Blocks on active rotations/shares for THIS credential.
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/:projectId/credentials/:credentialId/archive',
+    schema: {
+      response: {
+        200: CredentialArchiveResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: z.union([ActiveRotationsErrorSchema, ActiveSharesErrorSchema, ApiErrorSchema]),
+        410: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'admin', // org-level floor; in-handler project-owner check is stricter.
+      requireMfa: true,
+      rateLimit: {
+        max: 10,
+        timeWindowMs: 60_000,
+        key: 'POST /api/v1/projects/:projectId/credentials/:credentialId/archive',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      const preflight = await loadCredentialForArchiveToggle(ctx, req, reply, 'archive')
+      if (!preflight.ok) return reply
+      const { params, secureCtx, credential, authorizedVia } = preflight
+
+      // Idempotency check runs after ownership (AC2 ordering rationale): a non-owner must always
+      // get 403 regardless of archival state, never distinguishable from "already archived" for
+      // an arbitrary in-org secret id.
+      if (credential.archivedAt !== null) {
+        logCredentialArchiveDenied(req, {
+          credentialId: params.credentialId,
+          callerId: secureCtx.auth.userId,
+          reason: 'already_archived',
+        })
+        return reply.status(409).send(ALREADY_ARCHIVED_ERROR)
+      }
+
+      const blockingRotationIds = await findBlockingRotationIdsForCredential(
+        secureCtx.tx,
+        params.credentialId
+      )
+      if (blockingRotationIds.length > 0) {
+        logCredentialArchiveDenied(req, {
+          credentialId: params.credentialId,
+          callerId: secureCtx.auth.userId,
+          reason: 'active_rotations',
+        })
+        return reply
+          .status(409)
+          .send({ error: 'active_rotations', rotationIds: blockingRotationIds })
+      }
+
+      const blockingShareIds = await findBlockingShareIdsForCredential(
+        secureCtx.tx,
+        params.credentialId
+      )
+      if (blockingShareIds.length > 0) {
+        logCredentialArchiveDenied(req, {
+          credentialId: params.credentialId,
+          callerId: secureCtx.auth.userId,
+          reason: 'active_shares',
+        })
+        return reply.status(409).send({ error: 'active_shares', shareIds: blockingShareIds })
+      }
+
+      const archived = await archiveCredential(secureCtx.tx, {
+        credentialId: params.credentialId,
+        userId: secureCtx.auth.userId,
+      })
+      if (!archived) {
+        // 0 rows means a racing request archived it first between our load and this UPDATE.
+        return reply.status(409).send(ALREADY_ARCHIVED_ERROR)
+      }
+
+      await writeCredentialAuditOrFailClosed(req, secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: 'credential.archived',
+        resourceId: archived.id,
+        // Records which path authorized this action, same field name/shape as project archival's.
+        payload: { authorizedVia },
+        request: req,
+      })
+      req.log.info(
+        {
+          eventType: OperationalEvent.CREDENTIAL_ARCHIVED,
+          orgId: secureCtx.auth.orgId,
+          credentialId: archived.id,
+        },
+        'Credential archived'
+      )
+
+      return {
+        data: {
+          id: archived.id,
+          name: archived.name,
+          archivedAt: archived.archivedAt.toISOString(),
+          isArchived: true,
+        },
+      }
+    },
+  })
+
+  // Story 28.5 AC3: unarchive (restore) a secret (project-owner-or-org-owner only).
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/:projectId/credentials/:credentialId/unarchive',
+    schema: {
+      response: {
+        200: CredentialArchiveResponseSchema,
+        401: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        410: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    security: {
+      minimumRole: 'admin',
+      requireMfa: true,
+      rateLimit: {
+        max: 10,
+        timeWindowMs: 60_000,
+        key: 'POST /api/v1/projects/:projectId/credentials/:credentialId/unarchive',
+      },
+      writeAuditEvent: false,
+    },
+    handler: async (ctx, req, reply) => {
+      // AC3 edge case: unarchiving a secret whose PROJECT is itself archived must still 410 —
+      // loadCredentialForArchiveToggle() now checks rejectIfProjectArchived() for both archive
+      // and unarchive (that project's own unarchive must happen first), before either route's
+      // credential-level ownership/idempotency checks.
+      const preflight = await loadCredentialForArchiveToggle(ctx, req, reply, 'unarchive')
+      if (!preflight.ok) return reply
+      const { params, secureCtx, credential, authorizedVia } = preflight
+
+      if (credential.archivedAt === null) {
+        logCredentialArchiveDenied(req, {
+          credentialId: params.credentialId,
+          callerId: secureCtx.auth.userId,
+          reason: 'not_archived',
+        })
+        return reply.status(409).send(NOT_ARCHIVED_ERROR)
+      }
+
+      const restored = await unarchiveCredential(secureCtx.tx, {
+        credentialId: params.credentialId,
+      })
+      if (!restored) {
+        return reply.status(409).send(NOT_ARCHIVED_ERROR)
+      }
+
+      await writeCredentialAuditOrFailClosed(req, secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        actorUserId: secureCtx.auth.userId,
+        eventType: 'credential.unarchived',
+        resourceId: restored.id,
+        payload: { authorizedVia },
+        request: req,
+      })
+      req.log.info(
+        {
+          eventType: OperationalEvent.CREDENTIAL_UNARCHIVED,
+          orgId: secureCtx.auth.orgId,
+          credentialId: restored.id,
+        },
+        'Credential unarchived'
+      )
+
+      return {
+        data: {
+          id: restored.id,
+          name: restored.name,
+          archivedAt: null,
+          isArchived: false,
+        },
+      }
     },
   })
 }
