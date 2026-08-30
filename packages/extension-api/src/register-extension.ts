@@ -333,39 +333,36 @@ function validateModuleActionsShape(manifest: ExtensionManifest): void {
  * callability check (AC3) — it gates a client-relay allowlist, not a hook's existence, so there
  * is nothing analogous to `hasCallableUiPanelHook`/`hasCallableModuleActionHook` to add.
  */
-// This validator's sole purpose is validating the deprecated `panelDataPaths` field itself,
-// kept deprecated-in-place per Story 29.4 — every `manifest.panelDataPaths` reference in its
-// body is NOSONAR(typescript:S1874) for that reason.
 function validatePanelDataPathsShape(manifest: ExtensionManifest): void {
-  if (manifest.panelDataPaths === undefined) return // NOSONAR(typescript:S1874)
+  // Read the deprecated field exactly once here (kept deprecated-in-place per Story 29.4) so the
+  // rest of this validator narrows/reuses a plain local instead of repeatedly re-flagging a
+  // deprecated property access.
+  const panelDataPaths = manifest.panelDataPaths // NOSONAR(typescript:S1874)
+  if (panelDataPaths === undefined) return
 
-  if (!Array.isArray(manifest.panelDataPaths)) {
-    // NOSONAR(typescript:S1874)
+  if (!Array.isArray(panelDataPaths)) {
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
-      `Extension manifest field "panelDataPaths" must be an array, got ${JSON.stringify(manifest.panelDataPaths)}` // NOSONAR(typescript:S1874)
+      `Extension manifest field "panelDataPaths" must be an array, got ${JSON.stringify(panelDataPaths)}`
     )
   }
 
-  if (manifest.panelDataPaths.length === 0) {
-    // NOSONAR(typescript:S1874)
+  if (panelDataPaths.length === 0) {
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
       'Extension manifest field "panelDataPaths" must not be an empty array — omit the field entirely to declare no additional data paths'
     )
   }
 
-  if (manifest.panelDataPaths.length > MAX_PANEL_DATA_PATHS) {
-    // NOSONAR(typescript:S1874)
+  if (panelDataPaths.length > MAX_PANEL_DATA_PATHS) {
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
-      `Extension manifest field "panelDataPaths" declares ${manifest.panelDataPaths.length} entries, exceeding the maximum of ${MAX_PANEL_DATA_PATHS}` // NOSONAR(typescript:S1874)
+      `Extension manifest field "panelDataPaths" declares ${panelDataPaths.length} entries, exceeding the maximum of ${MAX_PANEL_DATA_PATHS}`
     )
   }
 
   const seen = new Set<string>()
-  for (const path of manifest.panelDataPaths) {
-    // NOSONAR(typescript:S1874)
+  for (const path of panelDataPaths) {
     if (typeof path !== 'string' || !PANEL_DATA_PATH_PATTERN.test(path)) {
       throw new ExtensionRegistrationError(
         INVALID_MANIFEST_FIELD,
