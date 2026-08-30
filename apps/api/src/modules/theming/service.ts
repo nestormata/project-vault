@@ -126,7 +126,8 @@ export function isValidColorGrammar(value: string): boolean {
   return hasValidAlphaComponent(components)
 }
 // AC-4: strict numeric+unit pattern — rejects calc(), custom units, and any embedded expression.
-const LENGTH_GRAMMAR = /^-?\d+(\.\d+)?(px|rem|em|%)$/
+// Exported (Story 29.5 AC7) for reuse by the `apps/web` base-theme-defaults grammar-validity test.
+export const LENGTH_GRAMMAR = /^-?\d+(\.\d+)?(px|rem|em|%)$/
 // AC-5/AC-4 crossover (found via adversarial code review): asset URLs are compiled into
 // `--asset-x: url("<rawValue>");` by direct string interpolation, exactly like a `color` token's
 // raw value would be if it weren't grammar-checked. Without an equivalent character-safety check
@@ -165,8 +166,12 @@ function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
 
 /** Converts a registry token key (e.g. `colorPrimary600`) into its CSS custom-property name
  * suffix (e.g. `color-primary-600`) — splits before every uppercase letter or digit run that
- * follows a lowercase letter. */
-function kebabCase(key: string): string {
+ * follows a lowercase letter.
+ *
+ * Exported (Story 29.5 AC7) so the `apps/web` base-theme-defaults registry-completeness test can
+ * derive the exact same custom-property name this service compiles into `[data-theme]` blocks,
+ * instead of re-implementing the same splitting rule a second time and risking drift. */
+export function kebabCase(key: string): string {
   return key
     .replace(/([a-z])([A-Z])/g, '$1-$2')
     .replace(/([a-zA-Z])(\d)/g, '$1-$2')
