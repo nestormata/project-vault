@@ -24,6 +24,43 @@ describe('public status page (Story 6.3 AC 12/15)', () => {
     expect(container.querySelector('script')).toBeNull()
   })
 
+  // Story 28.7 AC5/AC6: this fixture ({ status: 'healthy', lastCheckedAt: null }) is the exact
+  // combination Finding 6's QA walkthrough hit — a never-checked endpoint must render one honest
+  // "not checked yet" state, not that plus a contradictory "healthy" badge.
+  it('Story 28.7 AC5: a never-checked service (status healthy, lastCheckedAt null) shows one honest pending state, not a contradictory healthy badge', () => {
+    const { getByText, queryByText } = render(PublicStatusPage, {
+      props: {
+        data: {
+          statusPage: {
+            services: [{ displayName: 'API', status: 'healthy', lastCheckedAt: null }],
+          },
+        },
+      },
+    })
+
+    expect(getByText('Not checked yet')).toBeTruthy()
+    expect(queryByText('healthy')).toBeNull()
+  })
+
+  // Story 28.7 AC8: regression guard — once a real check has run, the row must render exactly as
+  // it does today (real "checked at" time + the real status badge).
+  it('Story 28.7 AC8: a service with a real lastCheckedAt renders the real checked-at time and the real status badge', () => {
+    const { getByText, queryByText } = render(PublicStatusPage, {
+      props: {
+        data: {
+          statusPage: {
+            services: [
+              { displayName: 'API', status: 'degraded', lastCheckedAt: '2026-08-28T00:00:00.000Z' },
+            ],
+          },
+        },
+      },
+    })
+
+    expect(queryByText('Not checked yet')).toBeNull()
+    expect(getByText('degraded')).toBeTruthy()
+  })
+
   it('shows the not-available state when the token is invalid/disabled', () => {
     const { getByText } = render(PublicStatusPage, { props: { data: { statusPage: null } } })
     expect(getByText('Status page not available')).toBeTruthy()
