@@ -235,6 +235,20 @@ describe('project-export routes (Story 28.9)', () => {
     expect(response.json<{ code: string }>().code).toBe('import_decrypt_failed')
   })
 
+  it('AC-3 negative: a non-multipart request body is rejected with a documented 400, not a raw 406', async () => {
+    const importer = await registerOwner(app, 'nonmultipart-importer')
+
+    const response = await app.inject({
+      method: 'POST',
+      url: IMPORT_URL,
+      headers: { cookie: cookieHeader(importer.cookies), 'content-type': 'application/json' },
+      payload: { exportKey: 'irrelevant' },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json<{ code: string }>().code).toBe('invalid_content_type')
+  })
+
   it('AC-3 negative: unsupported exportFormatVersion is rejected before any other field is read (422)', async () => {
     const importer = await registerOwner(app, 'badversion-importer')
     const { encryptBundleUnderExportKey, generateExportKey } = await import('./service.js')
