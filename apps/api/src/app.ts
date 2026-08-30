@@ -22,6 +22,7 @@ import { authRoutes } from './modules/auth/routes.js'
 import { orgRoutes } from './modules/org/routes.js'
 import { auditRoutes } from './modules/audit/routes.js'
 import { projectRoutes } from './modules/projects/routes.js'
+import { projectExportRoutes } from './modules/project-export/routes.js'
 import { projectInvitationRoutes } from './modules/invitations/routes.js'
 import { invitationTokenRoutes } from './modules/invitations/token-routes.js'
 import { credentialRoutes } from './modules/credentials/routes.js'
@@ -306,6 +307,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(auditRoutes, { prefix: '/api/v1/org' })
   await fastify.register(erasureRoutes, { prefix: '/api/v1/org' })
   await fastify.register(projectRoutes, { prefix: '/api/v1/projects' })
+  await fastify.register(projectExportRoutes, { prefix: '/api/v1/projects' })
   await fastify.register(projectInvitationRoutes, { prefix: '/api/v1/projects' })
   await fastify.register(invitationTokenRoutes, { prefix: '/api/v1/invitations' })
   await fastify.register(credentialRoutes, { prefix: '/api/v1/projects' })

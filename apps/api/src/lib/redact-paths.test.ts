@@ -36,4 +36,16 @@ describe('sensitive log field registry coverage', () => {
       expect(pinoCoversField(field), `${field} missing from PINO_REDACT_PATHS`).toBe(true)
     }
   })
+
+  // Story 28.9 AC-2: the export key is never carried in a request body — it's a response header
+  // (create-export) or a multipart form field (import) — so it needs its own explicit path
+  // rather than relying on the generic req.body.* coverage above.
+  it('redacts the X-Export-Key response header via a dedicated pino path', () => {
+    expect(PINO_REDACT_PATHS).toContain('res.headers["x-export-key"]')
+  })
+
+  it('redacts exportKey via the generic body/wildcard registry too (multipart import field)', () => {
+    expect(BODY_SENSITIVE_LOG_FIELDS).toContain('exportKey')
+    expect(REDACTED_BODY_FIELDS.has('exportKey')).toBe(true)
+  })
 })

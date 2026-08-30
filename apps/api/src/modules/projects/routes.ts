@@ -464,7 +464,11 @@ async function resolveProjectInsertConflict(
   return { error: sameOrgSlug ? PROJECT_SLUG_TAKEN : CREATION_REQUEST_CONFLICT }
 }
 
-async function createProject(
+// Exported (Story 28.9 D4) so project-export's import handler reuses this exact
+// slug-resolution/policy-hook/owner-membership sequence rather than re-deriving a second,
+// parallel "create a project" implementation — import is, from an authorization/data-model
+// standpoint, "create a project, then populate it," per D4.
+export async function createProject(
   secureCtx: SecureRouteContext,
   body: CreateProjectBody,
   logger: ProjectLifecycleLogger

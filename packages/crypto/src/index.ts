@@ -50,3 +50,7 @@ export {
   BackupDecryptError,
 } from './workers/backup-crypto.js'
 export { runBackupCrypto } from './workers/run-backup-worker.js'
+
+// Story 28.9 D2/D3: project export/import envelope — see export-envelope.ts's own header
+// comment for why this wraps (rather than re-exports) aes.ts's encrypt()/decrypt().
+export { encryptExportBundle, decryptExportBundle } from './export-envelope.js'

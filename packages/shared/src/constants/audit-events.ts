@@ -12,6 +12,11 @@ export const AuditEvent = {
   PROJECT_CREATED: 'project.created',
   PROJECT_UPDATED: 'project.updated',
   PROJECT_TAGS_UPDATED: 'project.tags_updated',
+  // Story 28.9: secure project export/import — entity-count payload only, never the export key
+  // or a decrypted secret value (D2/AC-2).
+  PROJECT_EXPORT_CREATED: 'project.export_created',
+  PROJECT_IMPORT_COMPLETED: 'project.import_completed',
+  PROJECT_IMPORT_FAILED: 'project.import_failed',
   CREDENTIAL_CREATED: 'credential.created',
   CREDENTIAL_VERSION_CREATED: 'credential.version_created',
   CREDENTIAL_VALUE_REVEALED: 'credential.value_revealed',
