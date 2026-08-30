@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { THEME_TOKENS } from '@project-vault/shared'
-import { isValidColorGrammar, kebabCase, LENGTH_GRAMMAR } from './service.js'
+import { contrastRatio, isValidColorGrammar, kebabCase, LENGTH_GRAMMAR } from './service.js'
 
 /**
  * Story 29.5 AC7 — registry-completeness AND grammar-validity test for `apps/web/src/app.css`'s
@@ -79,6 +79,19 @@ describe('apps/web base theme defaults (Story 29.5 AC7)', () => {
           `--${cssName}: \`${value}\` is not one of ${allowedValues.join(', ')}`
         ).toBe(true)
       }
+    }
+  })
+
+  it('AC4 (Story 30.4): colorPrimary600/colorPrimary700 base defaults satisfy the >= 4.5:1 WCAG contrast bar against white button text', () => {
+    for (const key of ['colorPrimary600', 'colorPrimary700']) {
+      const cssName = kebabCase(key)
+      const value = declared.get(cssName)
+      expect(value, `--${cssName} must be declared`).toBeDefined()
+      if (!value) continue
+      expect(
+        contrastRatio(value, '#ffffff'),
+        `--${cssName}: \`${value}\` must have >= 4.5:1 contrast against white button text`
+      ).toBeGreaterThanOrEqual(4.5)
     }
   })
 })
