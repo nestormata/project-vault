@@ -125,6 +125,16 @@ async function readImportUpload(
       })
       return null
     }
+    // @fastify/multipart throws FST_INVALID_MULTIPART_CONTENT_TYPE (raw statusCode 406) when the
+    // request isn't multipart/form-data at all — 406 isn't a documented status for this route,
+    // so translate it into the same 400 a caller gets for any other malformed request body.
+    if (code === 'FST_INVALID_MULTIPART_CONTENT_TYPE') {
+      reply.status(400).send({
+        code: 'invalid_content_type',
+        message: 'The request must be multipart/form-data.',
+      })
+      return null
+    }
     throw error
   }
 
