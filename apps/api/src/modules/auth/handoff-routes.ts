@@ -1,6 +1,6 @@
 import { randomBytes, createHmac } from 'node:crypto'
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
 import {
   handoffPendingStates,
@@ -268,22 +268,58 @@ async function burnAndResolveOrg(pending: PendingRow): Promise<OrgResolution> {
   // error handler) even though the burn's own try/catch no longer covers it.
   try {
     const linked = await findLinkedIdentity(pending.providerName, pending.externalSubject)
-    if (linked.kind === 'ambiguous') {
-      return { ok: false, eventType: HandoffEvent.HANDOFF_AMBIGUOUS_ORG }
-    }
     if (linked.kind === 'none') {
       return { ok: false, eventType: HandoffEvent.HANDOFF_ORG_MISMATCH }
     }
-    // Design decision (documented — see Dev Notes): the token's `organizationId` claim is CM's
-    // reference to the PV organization, and this codebase has no separate CM-org-id mapping
-    // table, so it is compared directly against PV's own org UUID.
-    if (linked.orgId !== pending.organizationId) {
+    // Design decision (documented in Dev Notes): the token's `organizationId` claim is CM's own
+    // WorkOS-directory-shaped org identifier (e.g. "org_synthetic_acme") — NEVER PV's own org
+    // UUID. It is compared against `organizations.centralizeme_organization_id`, the value PV
+    // stores for that org at service-provisioning time (see
+    // service-provisioning/service.ts:insertNewProvisioning), never against `linked.orgId`
+    // directly. A `null` stored value (org provisioned before this field existed, or via a
+    // non-CM path) never matches any claim — fail closed.
+    const candidates = linked.kind === 'found' ? [linked] : linked.candidates
+    const matches = await filterOrgsByCentralizemeOrgId(candidates, pending.organizationId)
+    if (matches.length === 0) {
       return { ok: false, eventType: HandoffEvent.HANDOFF_ORG_MISMATCH }
     }
-    return { ok: true, orgId: linked.orgId, userId: linked.userId }
+    if (matches.length > 1) {
+      // Defensive only — the partial unique index on centralizeme_organization_id means this
+      // should never actually happen.
+      return { ok: false, eventType: HandoffEvent.HANDOFF_AMBIGUOUS_ORG }
+    }
+    const [match] = matches as [{ orgId: string; userId: string }]
+    return { ok: true, orgId: match.orgId, userId: match.userId }
   } catch {
     return { ok: false, eventType: HandoffEvent.HANDOFF_REPLAY_STORE_UNAVAILABLE }
   }
+}
+
+/**
+ * Story 30.2: looks up each candidate org's stored `centralizemeOrganizationId` and returns only
+ * the candidates whose stored value matches the token's `organizationId` claim. Used for both the
+ * single-candidate ('found') and multi-candidate ('ambiguous') cases so the comparison logic — and
+ * its null-never-matches behavior — lives in exactly one place.
+ */
+async function filterOrgsByCentralizemeOrgId(
+  candidates: { orgId: string; userId: string }[],
+  claimOrganizationId: string
+): Promise<{ orgId: string; userId: string }[]> {
+  if (candidates.length === 0) return []
+  const orgIds = candidates.map((c) => c.orgId)
+  const rows = await getDb()
+    .select({
+      id: organizations.id,
+      centralizemeOrganizationId: organizations.centralizemeOrganizationId,
+    })
+    .from(organizations)
+    .where(inArray(organizations.id, orgIds))
+  const matchingOrgIds = new Set(
+    rows
+      .filter((row) => row.centralizemeOrganizationId === claimOrganizationId)
+      .map((row) => row.id)
+  )
+  return candidates.filter((c) => matchingOrgIds.has(c.orgId))
 }
 
 /**

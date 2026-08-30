@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { eq } from 'drizzle-orm'
+import { getDb } from '@project-vault/db'
+import { organizations } from '@project-vault/db/schema'
 import { createApp } from '../../app.js'
 
 const TOKEN = 'test-only-service-provisioning-token-32-bytes-min'
@@ -60,6 +63,58 @@ describe('POST /api/v1/service/organizations', () => {
     expect(body.data.organizationId).toBeTruthy()
     expect(body.data.userId).toBeTruthy()
     expect(body.data.externalIdentityId).toBeTruthy()
+    await app.close()
+  })
+
+  it('Story 30.2: an optional centralizemeOrganizationId is persisted on the organization row', async () => {
+    const app = await freshApp()
+    const requestId = randomUUID()
+    const centralizemeOrganizationId = `org_synthetic_${requestId}`
+
+    const res = await app.inject({
+      method: 'POST',
+      url: ROUTE_URL,
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: {
+        requestId,
+        organizationName: `CM Org ${requestId}`,
+        workosUserId: `user_${requestId}`,
+        centralizemeOrganizationId,
+      },
+    })
+
+    expect(res.statusCode).toBe(201)
+    const body = successBody(res)
+    const [row] = await getDb()
+      .select({ centralizemeOrganizationId: organizations.centralizemeOrganizationId })
+      .from(organizations)
+      .where(eq(organizations.id, body.data.organizationId))
+    expect(row?.centralizemeOrganizationId).toBe(centralizemeOrganizationId)
+    await app.close()
+  })
+
+  it('Story 30.2: omitting centralizemeOrganizationId (CM caller not yet updated) leaves it null', async () => {
+    const app = await freshApp()
+    const requestId = randomUUID()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: ROUTE_URL,
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: {
+        requestId,
+        organizationName: `No CM Org ${requestId}`,
+        workosUserId: `user_${requestId}`,
+      },
+    })
+
+    expect(res.statusCode).toBe(201)
+    const body = successBody(res)
+    const [row] = await getDb()
+      .select({ centralizemeOrganizationId: organizations.centralizemeOrganizationId })
+      .from(organizations)
+      .where(eq(organizations.id, body.data.organizationId))
+    expect(row?.centralizemeOrganizationId).toBeNull()
     await app.close()
   })
 

@@ -18,6 +18,7 @@ import {
   parseSetCookies,
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import { registerAuthStrategy, __resetAuthStrategiesForTests } from './strategies.js'
+import { findLinkedIdentity } from './sso-routes.js'
 import * as serviceModule from './service.js'
 
 process.env['DATABASE_URL'] ??=
@@ -865,6 +866,33 @@ describe('SSO routes (Story 14.3)', () => {
         __resetNativeLoginPolicyForTests()
         await resolveNativeLoginPolicy({ status: 'not_configured' })
       }
+    })
+  })
+
+  describe('findLinkedIdentity (Story 30.2: ambiguous candidates field)', () => {
+    it('an ambiguous match (same subject linked in 2+ orgs) includes the full candidate list', async () => {
+      const subject = `ambiguous-subject-${randomUUID()}`
+      const first = await createTestOrgWithUser('ambig-a')
+      const second = await createTestOrgWithUser('ambig-b')
+      await linkExternalIdentity(first.orgId, first.userId, subject)
+      await linkExternalIdentity(second.orgId, second.userId, subject)
+
+      const linked = await findLinkedIdentity(PROVIDER, subject)
+
+      expect(linked.kind).toBe('ambiguous')
+      if (linked.kind !== 'ambiguous') throw new Error('expected ambiguous')
+      const candidateOrgIds = linked.candidates.map((c) => c.orgId).sort()
+      expect(candidateOrgIds).toEqual([first.orgId, second.orgId].sort())
+    })
+
+    it('a single match still resolves to found, not ambiguous', async () => {
+      const subject = `single-subject-${randomUUID()}`
+      const { orgId, userId } = await createTestOrgWithUser('single')
+      await linkExternalIdentity(orgId, userId, subject)
+
+      const linked = await findLinkedIdentity(PROVIDER, subject)
+
+      expect(linked).toEqual({ kind: 'found', orgId, userId })
     })
   })
 })
