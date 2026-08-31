@@ -19,6 +19,7 @@ const importerAllowlist = new Set([
   'modules/auth/domain-lookup-routes.ts',
   'modules/auth/recovery-lookup.ts',
   'modules/auth/sso-routes.ts',
+  'modules/backup/alerts.ts',
   'modules/compliance/erasure-lookup.ts',
   'modules/compliance/erasure-service.ts',
   'modules/credential-shares/external-service.ts',
