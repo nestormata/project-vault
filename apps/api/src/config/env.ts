@@ -265,22 +265,12 @@ function statusPageTokenSharesAnotherAuthSecret(env: ProductionEnv): boolean {
 // secret (including each other) — a shared secret means a leak of one immediately compromises
 // the other. Each function below only runs its checks when its own token is actually set.
 //
-// An OR-chain mirroring the other validate*ProductionSecret functions' exact style would push
-// these two functions' cyclomatic complexity past the repo's eslint threshold (same reasoning as
-// statusPageTokenSharesAnotherAuthSecret above) — array-membership instead of one branch per
-// secret keeps the same comparison set.
+// Reuses priorAuthSecrets (defined below, hoisted) plus the two secrets it predates — the same
+// "base list + tail" composition operationalStatusTokenSharesAnotherAuthSecret already uses below,
+// rather than re-listing the same 10 fields as a second literal (jscpd-flagged duplication).
 function otherAuthSecrets(env: ProductionEnv): (string | undefined)[] {
   return [
-    env.SESSION_SECRET,
-    env.REFRESH_TOKEN_HMAC_SECRET,
-    env.TOTP_REPLAY_HMAC_SECRET,
-    env.MFA_PENDING_SESSION_HMAC_SECRET,
-    env.INVITATION_TOKEN_HMAC_SECRET,
-    env.RECOVERY_TOKEN_HMAC_SECRET,
-    env.API_KEY_HMAC_SECRET,
-    env.MACHINE_JWT_SECRET,
-    env.STATUS_PAGE_TOKEN_HMAC_SECRET,
-    env.ERASURE_EMAIL_HASH_SECRET,
+    ...priorAuthSecrets(env),
     env.SSO_STATE_HMAC_SECRET,
     env.OPERATIONAL_STATUS_TOKEN_HMAC_SECRET,
   ]
