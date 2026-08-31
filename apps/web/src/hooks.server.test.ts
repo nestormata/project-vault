@@ -56,6 +56,21 @@ describe('hooks.server handle', () => {
     })
   })
 
+  // AC5.20 (Story 30.5): the handoff confirmation page is the first (auth)-group page whose sole
+  // purpose is a single consent click, making UI-redress (iframe overlay) attacks a relevant
+  // threat class. Confirms by test, rather than assuming, that it inherits the same app-wide
+  // frame-protection headers as any other route -- no per-route opt-out exists for it.
+  it('sets frame protection headers on the handoff confirmation route (AC5.20)', async () => {
+    const event = makeEvent('/handoff')
+
+    await handle({ event, resolve: resolveMock } as never)
+
+    expect(event.setHeaders).toHaveBeenCalledWith({
+      'content-security-policy': "frame-ancestors 'none'",
+      'x-frame-options': 'DENY',
+    })
+  })
+
   it('sets a tighter, route-scoped CSP on the extension panel route instead of the general frame-protection headers (Story 29.1 code-review hardening)', async () => {
     const event = makeEvent('/extensions/panels/group')
     resolveAuthContextMock.mockResolvedValue({
