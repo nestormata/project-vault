@@ -514,6 +514,24 @@ its `Settings → Extensions` UI page.
 
 ---
 
+## CentralizeMe Browser Handoff SSO
+
+<!-- Source: Stories 30.1/30.2/30.5; full procedures in docs/runbooks/handoff-instance-identity.md and docs/runbooks/handoff-key-rotation.md -->
+
+An opt-in (`VAULT_HANDOFF_ENABLED`) authenticated browser handoff from CentralizeMe (CM) into this
+Project Vault instance: CM's interstitial posts a signed, single-use token to this instance's
+`/handoff` confirmation page, which proxies to `POST /api/v1/auth/handoff/prepare` and
+`/api/v1/auth/handoff/confirm`, verifies the token with a hand-rolled EdDSA compact-JWS verifier,
+and burns the token's `jti` on first use (insert-first replay burn) so it can never be replayed.
+See [`docs/runbooks/handoff-instance-identity.md`](runbooks/handoff-instance-identity.md) for the
+`VAULT_HANDOFF_INSTANCE_ID` / `VAULT_HANDOFF_VERIFY_KEYS` config, boot validation, and the
+clock-skew diagnostic signal, and
+[`docs/runbooks/handoff-key-rotation.md`](runbooks/handoff-key-rotation.md) for routine key
+rotation (5 steps), compromise response, and why a restart (not a hot reload) is mandatory after
+either.
+
+---
+
 ## Backup & Recovery
 
 All four endpoints below are instance-wide (not org-scoped) and require platform operator status

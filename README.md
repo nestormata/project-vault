@@ -51,6 +51,8 @@ Key differentiators:
 | 📋 **Immutable audit logs**                      | Append-only, HMAC row-level integrity, search/export/external forwarding, access reports, dormant-user detection, GDPR erasure, full web UI                                                                                       |
 | 🔑 **Vault unsealing**                           | Master password, envelope encryption with split-key default, or external KMS (AWS KMS)                                                                                                                                            |
 | 🌐 **REST API**                                  | Nearly all capabilities available via versioned API; no privileged UI-only operations besides onboarding/vault-init. Generated OpenAPI spec, live Swagger UI (`ENABLE_API_DOCS=true`), and an independent contract-test suite     |
+| 🔀 **CentralizeMe browser handoff SSO**          | Authenticated CM → PV browser handoff (`/handoff`), EdDSA-verified single-use tokens with replay burn, MFA-challenge support, opt-in via `VAULT_HANDOFF_ENABLED`                                                                  |
+| 📦 **Project export/import**                     | Encrypted, portable project export (reveal-once key) and import into a brand-new project with secrets re-encrypted under the destination vault's own master key                                                                  |
 | 🐳 **Self-hosted Docker**                        | `docker compose up` deployment (dev + prod compose files)                                                                                                                                                                         |
 | 💾 **Built-in backup**                           | Scheduled encrypted snapshots, retention, restore verification, admin web UI, concurrency guard, missed-backup alerts, S3-failure handling                                                                                        |
 | ⚙️ **System settings & platform administration** | SMTP/backup/policy config UI, multi-org resource monitoring                                                                                                                                                                       |
@@ -61,7 +63,7 @@ Key differentiators:
 
 ## Capabilities
 
-A closer look at what's implemented in each area, current as of 2026-07-28:
+A closer look at what's implemented in each area, current as of 2026-08-31:
 
 ### Authentication & Security
 
@@ -71,6 +73,11 @@ A closer look at what's implemented in each area, current as of 2026-07-28:
 - Vault unsealing via master password, envelope encryption (split-key default), or external KMS (AWS KMS)
 - Self-hosted, org-configured SSO: email-domain-based login routing to a registered external identity
   provider, with an admin UI (`/settings/sso-domains`) for managing domain-to-provider mappings
+- Authenticated CentralizeMe (CM) → Project Vault browser handoff: a hand-rolled EdDSA compact-JWS
+  verifier, single-use tokens with insert-first replay burn, a two-step prepare/confirm flow, and a
+  PV-side confirmation page (`/handoff`) that supports MFA-challenge and rejection outcomes. Opt-in
+  via `VAULT_HANDOFF_ENABLED`; see [`docs/runbooks/handoff-instance-identity.md`](docs/runbooks/handoff-instance-identity.md)
+  and [`docs/runbooks/handoff-key-rotation.md`](docs/runbooks/handoff-key-rotation.md)
 
 ### Extension Architecture & Pluggable Authentication
 
@@ -87,6 +94,10 @@ A closer look at what's implemented in each area, current as of 2026-07-28:
 - Search/filter/tags, dependent-system records, expiry/rotation schedules
 - Bulk import from `.env` / JSON, onboarding wizard, cross-project search
 - Manual rotation workflow — initiation + checklist, stale-recovery, break-glass emergency rotation, full web UI
+- Encrypted, portable project export (reveal-once one-time key, full entity graph — credentials,
+  rotation history, certificates/domains, service endpoints, status page, machine users, never
+  credential shares) and import into a brand-new project, re-encrypted under the destination's own
+  live master key
 
 ### Teams & Organizations
 
@@ -254,8 +265,9 @@ docker compose ps
 docker compose logs -f api
 ```
 
-Stop the stack with `docker compose down`. Keep the named volumes to preserve the database; use
-`docker compose down -v` only when you intentionally want to destroy local data.
+Stop the stack with `docker compose down` (or `make docker-down`). Keep the named volumes to
+preserve the database; use `docker compose down -v` (or `make docker-down-v`) only when you
+intentionally want to destroy local data.
 
 Optional vault init/unseal via API (requires `jq`):
 
