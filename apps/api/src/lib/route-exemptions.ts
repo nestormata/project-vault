@@ -167,6 +167,18 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     expiresAfterStory: null,
   },
   {
+    route: 'POST /api/v1/service/organizations/:centralizemeOrganizationId/revoke-sessions',
+    reason:
+      "Story 31.1 (DW-130) -- machine-authenticated, org-wide handoff-session (and machine-user API key) revocation endpoint for a trusted platform partner (CentralizeMe), used when CM deprovisions/deletes an organization. The caller has no PV session and cannot have one -- SecureRoute's org-authenticated path structurally cannot apply here, exactly like POST /api/v1/service/organizations above.",
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      'static-service-token-timing-safe-compare',
+      'fail-closed-when-unconfigured',
+      'org-lookup-by-unique-index',
+    ],
+    expiresAfterStory: null,
+  },
+  {
     route: 'POST /api/v1/auth/machine-token',
     reason:
       'Story 7.2 D2/D4 — pre-auth machine-user API key exchange endpoint; the caller has no session and no org context is resolvable until the key is looked up by hash via the admin connection.',
@@ -297,6 +309,11 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: SECURITY_ACTION,
     auditEvent: SESSION_REVOKED,
     sameTransactionAuditService: 'revokeAllOtherSessions',
+  },
+  'POST /api/v1/service/organizations/:centralizemeOrganizationId/revoke-sessions': {
+    action: SECURITY_ACTION,
+    auditEvent: 'org.sessions_revoked_by_service',
+    sameTransactionAuditService: 'revokeAllSessionsForOrg',
   },
   'DELETE /api/v1/auth/sessions/:sessionId': {
     action: SECURITY_ACTION,

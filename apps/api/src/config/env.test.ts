@@ -1355,6 +1355,26 @@ describe('env', () => {
       expect(exitSpy).not.toHaveBeenCalled()
     })
 
+    it('treats an empty-string SERVICE_REVOCATION_TOKEN as unset, and accepts a value >=32 chars', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SERVICE_REVOCATION_TOKEN: '',
+      }
+      const unset = await import('./env.js')
+      expect(unset.env.SERVICE_REVOCATION_TOKEN).toBeUndefined()
+
+      resetEnvImport(exitSpy)
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SERVICE_REVOCATION_TOKEN: 'x'.repeat(32),
+      }
+      const { env } = await import('./env.js')
+      expect(env.SERVICE_REVOCATION_TOKEN).toBe('x'.repeat(32))
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
     it('treats an empty-string VAULT_KMS_ENDPOINT as unset, and accepts a valid URL', async () => {
       process.env = {
         ...BASE_ENV,
@@ -1724,6 +1744,76 @@ describe('env', () => {
       const { env } = await import('./env.js')
       expect(env.VAULT_HANDOFF_CLOCK_SKEW_WARN_MS).toBe(5000)
       expect(exitSpy).not.toHaveBeenCalled()
+    })
+  })
+
+  // Story 31.1 AC2: SERVICE_REVOCATION_TOKEN — a dedicated, optional (fail-closed-when-unset)
+  // static shared secret for the machine-authenticated org-wide revocation route, mirroring
+  // SERVICE_PROVISIONING_TOKEN's shape exactly but never reused from it or any other secret.
+  describe('Story 31.1: SERVICE_REVOCATION_TOKEN', () => {
+    it('AC2.9: is not required in production — unset is a valid fail-closed default', async () => {
+      process.env = productionEnv({
+        ...priorSecretsSatisfiedWithSsoState,
+        SERVICE_REVOCATION_TOKEN: undefined,
+      })
+      const { env } = await import('./env.js')
+      expect(env.SERVICE_REVOCATION_TOKEN).toBeUndefined()
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('AC2.7: rejects SERVICE_REVOCATION_TOKEN reused from SERVICE_PROVISIONING_TOKEN or any other production secret', async () => {
+      const base = productionEnv({
+        ...priorSecretsSatisfiedWithSsoState,
+        SERVICE_PROVISIONING_TOKEN: 'p'.repeat(32),
+      })
+      for (const SERVICE_REVOCATION_TOKEN of [
+        'p'.repeat(32), // reused from SERVICE_PROVISIONING_TOKEN
+        'a'.repeat(64), // reused from SESSION_SECRET
+        'b'.repeat(64), // reused from REFRESH_TOKEN_HMAC_SECRET
+        'f'.repeat(64), // reused from RECOVERY_TOKEN_HMAC_SECRET
+        'g'.repeat(64), // reused from API_KEY_HMAC_SECRET
+        'h'.repeat(64), // reused from MACHINE_JWT_SECRET
+      ]) {
+        resetEnvImport(exitSpy)
+        process.env = { ...base, SERVICE_REVOCATION_TOKEN }
+        await expectInvalidEnv(exitSpy)
+      }
+    })
+
+    it('AC2.8: rejects a placeholder SERVICE_REVOCATION_TOKEN in production', async () => {
+      process.env = productionEnv({
+        ...priorSecretsSatisfiedWithSsoState,
+        SERVICE_REVOCATION_TOKEN: 'change-me'.repeat(4),
+      })
+      await expectInvalidEnv(exitSpy)
+    })
+
+    it('accepts a distinct, non-placeholder SERVICE_REVOCATION_TOKEN in production', async () => {
+      process.env = productionEnv({
+        ...priorSecretsSatisfiedWithSsoState,
+        SERVICE_PROVISIONING_TOKEN: 'p'.repeat(32),
+        SERVICE_REVOCATION_TOKEN: 'r'.repeat(32),
+      })
+      const { env } = await import('./env.js')
+      expect(env.SERVICE_REVOCATION_TOKEN).toBe('r'.repeat(32))
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('AC2.7 (companion): rejects SERVICE_PROVISIONING_TOKEN reused from SERVICE_REVOCATION_TOKEN in production', async () => {
+      process.env = productionEnv({
+        ...priorSecretsSatisfiedWithSsoState,
+        SERVICE_REVOCATION_TOKEN: 'r'.repeat(32),
+        SERVICE_PROVISIONING_TOKEN: 'r'.repeat(32),
+      })
+      await expectInvalidEnv(exitSpy)
+    })
+
+    it('AC2.8 (companion): rejects a placeholder SERVICE_PROVISIONING_TOKEN in production', async () => {
+      process.env = productionEnv({
+        ...priorSecretsSatisfiedWithSsoState,
+        SERVICE_PROVISIONING_TOKEN: 'change-me'.repeat(4),
+      })
+      await expectInvalidEnv(exitSpy)
     })
   })
 })

@@ -1,4 +1,13 @@
-export const HEADER_SENSITIVE_LOG_FIELDS = ['authorization', 'cookie'] as const
+// Story 31.1 (DW-130) AC7.26: the machine-authenticated org-wide revocation route's static
+// shared-secret header — never logged, on the same header-redaction surface as authorization/
+// cookie, even though (unlike them) no existing request-logging call currently dumps req.headers
+// wholesale; this closes the gap defensively, exactly as Story 28.9's res.headers['x-export-key']
+// entry below does for its own one-time-secret header.
+export const HEADER_SENSITIVE_LOG_FIELDS = [
+  'authorization',
+  'cookie',
+  'x-service-revocation-token',
+] as const
 
 export const BODY_SENSITIVE_LOG_FIELDS = [
   'password',

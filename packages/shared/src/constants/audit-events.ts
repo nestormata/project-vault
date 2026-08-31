@@ -38,6 +38,13 @@ export const AuditEvent = {
   PROJECT_INVITATION_ACCEPTED: 'project.invitation_accepted',
   PROJECT_INVITATION_REVOKED: 'project.invitation_revoked',
   ORG_USER_REMOVED: 'org.user_removed',
+  // Story 31.1 (DW-130) AC7.24: written once per call to the machine-authenticated org-wide
+  // handoff-session-revocation route (revokeAllSessionsForOrg), inside the SAME transaction as
+  // the bulk session/refresh-token/revoked-token/api-key revoke statements, always — even at
+  // zero counts (AC7.25). actorType is 'system' (writeSystemAuditEntry), never 'human'/
+  // 'machine_user': the caller (CentralizeMe) authenticates with a static shared secret, not a
+  // resolvable human actor token or PV machine-user key.
+  ORG_SESSIONS_REVOKED_BY_SERVICE: 'org.sessions_revoked_by_service',
   PROJECT_MEMBER_ROLE_CHANGED: 'project.member_role_changed',
   PROJECT_MEMBER_REMOVED: 'project.member_removed',
   PROJECT_OWNERSHIP_TRANSFERRED: 'project.ownership_transferred',

@@ -168,7 +168,14 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
       return randomUUID()
     },
     disableRequestLogging: true,
-    routerOptions: { ignoreTrailingSlash: true },
+    // Story 31.1 (DW-130) AC3.13: find-my-way's default maxParamLength (100) is shorter than
+    // this story's own :centralizemeOrganizationId param's documented max (256, matching
+    // ProvisionServiceOrganizationRequestSchema's existing centralizemeOrganizationId body-field
+    // bound) — a 257+ char value must be rejected by THIS route's own Zod validation (422), never
+    // 414'd by the router before the schema ever runs. Every existing route's own params are
+    // UUIDs/short slugs, all well under 100 chars, so raising this bound app-wide changes no
+    // existing route's behavior.
+    routerOptions: { ignoreTrailingSlash: true, maxParamLength: 300 },
     trustProxy: resolveTrustProxy(env.TRUST_PROXY, env.TRUST_PROXY_HOPS),
   }) as unknown as FastifyApp
 

@@ -423,6 +423,12 @@ export const OperationalEvent = {
   // VAULT_HANDOFF_VERIFY_KEYS key set is missing/empty.
   HANDOFF_BOOT_MISCONFIGURED_FAIL_SAFE: 'handoff_boot.misconfigured_fail_safe',
   HANDOFF_STRATEGY_REGISTERED: 'handoff_boot.strategy_registered',
+
+  // Story 31.1 (DW-130) AC14.47: dispatch failure for the real-time operator-facing alert fired
+  // on every successful call to the machine-authenticated org-wide revocation route (AC14.46) —
+  // logged, never allowed to fail or roll back an otherwise-successful revocation (the alert is a
+  // detection aid, not a correctness gate, unlike the audit write in AC7.27).
+  ORG_SESSIONS_REVOKED_ALERT_DISPATCH_FAILED: 'org_sessions_revoked.alert_dispatch_failed',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]
