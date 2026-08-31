@@ -24,7 +24,7 @@ import {
   RevokeOrgSessionsRequestSchema,
   RevokeOrgSessionsResponseSchema,
 } from './schema.js'
-import { createAdminAlert, deliverAdminAlertAcrossOrgs } from '../backup/alerts.js'
+import { createAdminAlert, deliverAdminAlertToPlatformOperator } from '../backup/alerts.js'
 
 type BossFastify = FastifyApp & { boss?: BossService }
 
@@ -77,11 +77,18 @@ function sendAppError(reply: FastifyReply, err: unknown): FastifyReply {
 /**
  * Story 31.1 (DW-130) Decision 5/AC14.46/AC14.47 — fires a real-time operator-facing alert on
  * EVERY successful call to the revocation route (even at zero counts), reusing this codebase's
- * existing operational-event/notification mechanism (createAdminAlert + deliverAdminAlertAcrossOrgs
- * — Story 9.1's backup-failure-alert precedent, apps/api/src/modules/backup/routes.ts's
- * reportBackupFailureAlert) rather than inventing a new delivery path. Deliberately NOT deduped
- * (createAdminAlert, not createAdminAlertIfNotActive) — every call is its own forensically
+ * existing operational-event/notification mechanism (createAdminAlert +
+ * deliverAdminAlertToPlatformOperator) rather than inventing a new delivery path. Deliberately NOT
+ * deduped (createAdminAlert, not createAdminAlertIfNotActive) — every call is its own forensically
  * significant event, mirroring AC7.25's audit-write-always-even-at-zero-counts convention.
+ *
+ * AC14.46 requires this alert be "addressed to platform operators (not the org's own admins —
+ * this is a machine-to-machine platform action, not a user-facing one)". `deliverAdminAlertAcrossOrgs`
+ * (Story 9.1's backup-failure/FR109 key-custody precedent) is the wrong tool here: it delivers to
+ * EVERY org's own admin group, which for this org-specific event would leak one tenant's
+ * orgId/centralizemeOrganizationId/counts/requestId to every unrelated org's admins.
+ * `deliverAdminAlertToPlatformOperator` instead targets only the instance's single platform
+ * operator (apps/api/src/modules/backup/alerts.ts).
  *
  * AC14.47: a dispatch failure here must NEVER fail the response or roll back an otherwise-
  * successful revocation — the alert is a detection aid, not a correctness gate (deliberate
@@ -105,7 +112,12 @@ async function dispatchOrgSessionsRevokedAlert(
       payload: { ...input, alertInstanceId: randomUUID() },
     })
     if (boss) {
-      await deliverAdminAlertAcrossOrgs(boss, ORG_SESSIONS_REVOKED_ALERT_TYPE, input, 'warning')
+      await deliverAdminAlertToPlatformOperator(
+        boss,
+        ORG_SESSIONS_REVOKED_ALERT_TYPE,
+        input,
+        'warning'
+      )
     }
   } catch (error) {
     operationalLog(

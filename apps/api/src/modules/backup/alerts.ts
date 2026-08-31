@@ -1,11 +1,13 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
-import { adminAlerts } from '@project-vault/db/schema'
+import { adminAlerts, orgMemberships, users } from '@project-vault/db/schema'
 import type { NotificationSeverity } from '@project-vault/shared'
 import type { BossService } from '../../lib/boss.js'
 import { fetchAllOrgIds } from '../../middleware/rls.js'
+import { getAdminDb } from '../../lib/db.js'
 import {
   createOrgAdminNotificationEntries,
+  dispatchDirectUserNotification,
   sendNotificationJobs,
 } from '../../notifications/dispatcher.js'
 
@@ -82,4 +84,57 @@ export async function deliverAdminAlertAcrossOrgs(
     allJobs.push(...jobs)
   }
   await sendNotificationJobs(boss, allJobs)
+}
+
+/**
+ * Story 31.1 (DW-130) Decision 5/AC14.46: unlike `deliverAdminAlertAcrossOrgs` above (correct for
+ * whole-instance-affecting events like key-custody risk), this route's alert is about ONE specific
+ * org's revocation — broadcasting it via `deliverAdminAlertAcrossOrgs` would notify every OTHER
+ * org's own admins of a tenant-specific event they have no business seeing (org id, CM org id,
+ * counts, requestId), a cross-tenant information disclosure and a direct contradiction of AC14.46's
+ * explicit "addressed to platform operators (not the org's own admins)" requirement.
+ *
+ * Delivers instead to the single instance-wide platform operator (`users.is_platform_operator` —
+ * a unique partial index guarantees at most one, see packages/db/src/schema/users.ts), resolved via
+ * `getAdminDb()` (the non-superuser BYPASSRLS pool) since the operator's own org membership is not
+ * knowable from any single org's RLS-scoped connection. Reuses `dispatchDirectUserNotification`
+ * (the same self-alert path used by MFA recovery events) scoped to that operator's own org and
+ * preferences, rather than `createOrgAdminNotificationEntries`, which would resolve to every admin
+ * in that org instead of the operator specifically.
+ *
+ * A missing platform operator row (corrupted instance — see operator-recovery-link.ts's identical
+ * defensive check) or missing org membership is logged and swallowed here, not thrown: this
+ * delivery path must never fail the caller's response (AC14.47's dispatch-failure-tolerant
+ * guarantee applies equally to this function).
+ */
+export async function deliverAdminAlertToPlatformOperator(
+  boss: BossService,
+  alertType: string,
+  payload: Record<string, unknown>,
+  severity: NotificationSeverity = 'warning'
+): Promise<void> {
+  const admin = getAdminDb()
+  const [operator] = await admin
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.isPlatformOperator, true))
+    .limit(1)
+  if (!operator) return
+
+  const [membership] = await admin
+    .select({ orgId: orgMemberships.orgId })
+    .from(orgMemberships)
+    .where(eq(orgMemberships.userId, operator.id))
+    .limit(1)
+  if (!membership) return
+
+  const jobs = await withOrg(membership.orgId, (tx) =>
+    dispatchDirectUserNotification({
+      orgId: membership.orgId,
+      userId: operator.id,
+      template: { templateId: alertType, payload, severity },
+      tx,
+    })
+  )
+  await sendNotificationJobs(boss, jobs)
 }

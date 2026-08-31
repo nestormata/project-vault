@@ -6,6 +6,7 @@ import { adminAlerts, organizations } from '@project-vault/db/schema'
 import { createApp } from '../../app.js'
 import {
   configureAuthIntegrationEnv,
+  cookieHeader,
   parseSetCookies,
   registerAndLoginViaApi,
 } from '../../__tests__/helpers/auth-test-helpers.js'
@@ -273,6 +274,73 @@ describe.sequential(
       })
       expect(after.statusCode).toBe(401)
       expect(errorBody(after).code).toBe('session_revoked')
+      await app.close()
+    })
+
+    it('AC12.44: a live machine-user API key dies on its very next request after the route commits', async () => {
+      const app = await freshApp()
+      const owner = await registerOrgWithCmId(app, 'machine-key')
+
+      const projectRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/projects',
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { name: 'AC12.44 project', slug: `ac12-44-${randomUUID().slice(0, 8)}` },
+      })
+      expect(projectRes.statusCode).toBe(201)
+      const projectId = projectRes.json<{ data: { id: string } }>().data.id
+
+      const machineUserRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/machine-users`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { name: `bot-${randomUUID().slice(0, 8)}`, role: 'member' },
+      })
+      expect(machineUserRes.statusCode).toBe(201)
+      const machineUserId = machineUserRes.json<{ data: { id: string } }>().data.id
+
+      const apiKeyRes = await app.inject({
+        method: 'POST',
+        url: `/api/v1/machine-users/${machineUserId}/api-keys`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: { name: 'ac12-44-key' },
+      })
+      expect(apiKeyRes.statusCode).toBe(201)
+      const rawKey = apiKeyRes.json<{ data: { key: string } }>().data.key
+
+      const exchangeRes = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/machine-token',
+        headers: { authorization: `Bearer ${rawKey}` },
+      })
+      expect(exchangeRes.statusCode).toBe(200)
+      const machineJwt = exchangeRes.json<{ data: { accessToken: string } }>().data.accessToken
+
+      // Not-yet-revoked: a bogus credential name still authenticates (404 credential_not_found,
+      // never a 401) — proves the machine JWT is live before the revocation route runs.
+      const before = await app.inject({
+        method: 'GET',
+        url: `/api/v1/machine/projects/${projectId}/credentials/does-not-exist/value`,
+        headers: { authorization: `Bearer ${machineJwt}` },
+      })
+      expect(before.statusCode).toBe(404)
+
+      const revokeRes = await app.inject({
+        method: 'POST',
+        url: revokeUrl(owner.centralizemeOrganizationId),
+        headers: { [TOKEN_HEADER]: TOKEN },
+        payload: { requestId: randomUUID() },
+      })
+      expect(revokeRes.statusCode).toBe(200)
+      expect(successBody(revokeRes).data.apiKeysRevokedCount).toBeGreaterThanOrEqual(1)
+
+      const after = await app.inject({
+        method: 'GET',
+        url: `/api/v1/machine/projects/${projectId}/credentials/does-not-exist/value`,
+        headers: { authorization: `Bearer ${machineJwt}` },
+      })
+      expect(after.statusCode).toBe(401)
+      expect(errorBody(after).code).toBe('invalid_machine_token')
       await app.close()
     })
 
