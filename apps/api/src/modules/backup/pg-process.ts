@@ -68,6 +68,33 @@ function attachStreamErrorReject(
   stream.on('error', (err: Error) => guardedReject(guard, reject, `${label}: ${err.message}`))
 }
 
+/** Attaches the shared `child.on('close', ...)` settlement handler both `runPgDump` and
+ * `runPgRestore` use: reject with a PgProcessError on a non-zero exit code, otherwise call
+ * `onSuccess` (each function resolves its own Promise value differently). */
+function attachCloseHandler(
+  child: NodeJS.EventEmitter,
+  guard: SettleGuard,
+  reject: (err: PgProcessError) => void,
+  onSuccess: () => void,
+  exitedMessagePrefix: string,
+  stderrChunks: Buffer[]
+): void {
+  child.on('close', (code: number | null) => {
+    if (guard.settled) return
+    guard.settled = true
+    if (code !== 0) {
+      reject(
+        new PgProcessError(
+          `${exitedMessagePrefix} exited with code ${code}`,
+          tailBuffer(stderrChunks, MAX_STDERR_TAIL_BYTES)
+        )
+      )
+      return
+    }
+    onSuccess()
+  })
+}
+
 /**
  * Story 9.1 D4/AC-5: spawns `pg_dump` against `BACKUP_DATABASE_URL` (the RLS-bypassing
  * superuser/BYPASSRLS connection — never the API's own DATABASE_URL, which is RLS-restricted by
@@ -115,20 +142,14 @@ export async function runPgDump(connectionString: string): Promise<Buffer> {
     attachStreamErrorReject(child.stdout, guard, reject, 'pg_dump: stdout read failed')
     attachStreamErrorReject(child.stderr, guard, reject, 'pg_dump: stderr read failed')
     child.on('error', (err) => guardedReject(guard, reject, `pg_dump: ${err.message}`))
-    child.on('close', (code) => {
-      if (guard.settled) return
-      guard.settled = true
-      if (code !== 0) {
-        reject(
-          new PgProcessError(
-            `pg_dump exited with code ${code}`,
-            tailBuffer(stderrChunks, MAX_STDERR_TAIL_BYTES)
-          )
-        )
-        return
-      }
-      resolve(Buffer.concat(stdoutChunks))
-    })
+    attachCloseHandler(
+      child,
+      guard,
+      reject,
+      () => resolve(Buffer.concat(stdoutChunks)),
+      'pg_dump',
+      stderrChunks
+    )
   })
 }
 
@@ -173,20 +194,7 @@ export async function runPgRestore(connectionString: string, sql: Buffer): Promi
     attachStreamErrorReject(child.stdout, guard, reject, 'psql restore: stdout read failed')
     attachStreamErrorReject(child.stderr, guard, reject, 'psql restore: stderr read failed')
     child.on('error', (err) => guardedReject(guard, reject, `psql restore: ${err.message}`))
-    child.on('close', (code) => {
-      if (guard.settled) return
-      guard.settled = true
-      if (code !== 0) {
-        reject(
-          new PgProcessError(
-            `psql restore exited with code ${code}`,
-            tailBuffer(stderrChunks, MAX_STDERR_TAIL_BYTES)
-          )
-        )
-        return
-      }
-      resolve()
-    })
+    attachCloseHandler(child, guard, reject, resolve, 'psql restore', stderrChunks)
     // Story 28.8: `child.stdin` is itself a Writable stream — an independent EventEmitter from
     // the `child` process object above. If `psql` exits early (auth failure, unreachable host,
     // etc.) before consuming all of stdin, the OS closes the pipe and the write below fails with
