@@ -198,8 +198,29 @@ describe('Story 28.8: runPgRestore stdin error handling', () => {
 // not cover a stream-level 'error' event. An unfixed version of this code crashes the whole
 // Vitest worker process on these tests, not just fails an assertion.
 
-function createFakeDumpChild(): FakeChildProcess {
-  return createFakeChild()
+/** Shared assertion for the four stdout/stderr-'error' rejection tests below (2 streams x 2
+ * functions) — each drives the same "emit 'error' on one stream, assert PgProcessError with the
+ * function/stream-specific message fragment" shape, differing only in which function is invoked
+ * and which stream/message pair is exercised. */
+async function expectStreamErrorRejection(
+  invokeWithMockedChild: (fakeChild: FakeChildProcess) => Promise<unknown>,
+  pickStream: (fakeChild: FakeChildProcess) => EventEmitter,
+  expectedMessageFragment: string
+): Promise<void> {
+  const { PgProcessError } = await import('./pg-process.js')
+  const fakeChild = createFakeChild()
+  spawnMock.mockReturnValue(fakeChild)
+
+  const promise = invokeWithMockedChild(fakeChild)
+  pickStream(fakeChild).emit('error', createEpipeError())
+
+  await expect(promise).rejects.toBeInstanceOf(PgProcessError)
+  await expect(promise).rejects.toMatchObject({
+    message: expect.stringContaining(expectedMessageFragment),
+  })
+  await expect(promise).rejects.toMatchObject({
+    message: expect.stringContaining('EPIPE'),
+  })
 }
 
 describe('Story 28.11: runPgDump stdout/stderr error handling', () => {
@@ -211,22 +232,12 @@ describe('Story 28.11: runPgDump stdout/stderr error handling', () => {
     'rejects with a PgProcessError instead of throwing unhandled when child.stdout emits an ' +
       "EPIPE-shaped 'error' (AC1/AC2/AC3/AC4)",
     async () => {
-      const { runPgDump, PgProcessError } = await import('./pg-process.js')
-      const fakeChild = createFakeDumpChild()
-      spawnMock.mockReturnValue(fakeChild)
-
-      const promise = runPgDump(CONNECTION_STRING)
-
-      const epipe = createEpipeError()
-      fakeChild.stdout.emit('error', epipe)
-
-      await expect(promise).rejects.toBeInstanceOf(PgProcessError)
-      await expect(promise).rejects.toMatchObject({
-        message: expect.stringContaining('pg_dump: stdout read failed'),
-      })
-      await expect(promise).rejects.toMatchObject({
-        message: expect.stringContaining('EPIPE'),
-      })
+      const { runPgDump } = await import('./pg-process.js')
+      await expectStreamErrorRejection(
+        () => runPgDump(CONNECTION_STRING),
+        (fakeChild) => fakeChild.stdout,
+        'pg_dump: stdout read failed'
+      )
     }
   )
 
@@ -234,28 +245,18 @@ describe('Story 28.11: runPgDump stdout/stderr error handling', () => {
     'rejects with a PgProcessError instead of throwing unhandled when child.stderr emits an ' +
       "EPIPE-shaped 'error' (AC1/AC2/AC3/AC4)",
     async () => {
-      const { runPgDump, PgProcessError } = await import('./pg-process.js')
-      const fakeChild = createFakeDumpChild()
-      spawnMock.mockReturnValue(fakeChild)
-
-      const promise = runPgDump(CONNECTION_STRING)
-
-      const epipe = createEpipeError()
-      fakeChild.stderr.emit('error', epipe)
-
-      await expect(promise).rejects.toBeInstanceOf(PgProcessError)
-      await expect(promise).rejects.toMatchObject({
-        message: expect.stringContaining('pg_dump: stderr read failed'),
-      })
-      await expect(promise).rejects.toMatchObject({
-        message: expect.stringContaining('EPIPE'),
-      })
+      const { runPgDump } = await import('./pg-process.js')
+      await expectStreamErrorRejection(
+        () => runPgDump(CONNECTION_STRING),
+        (fakeChild) => fakeChild.stderr,
+        'pg_dump: stderr read failed'
+      )
     }
   )
 
   it('resolves with the buffered stdout when pg_dump exits 0 (AC5 happy path, no regression)', async () => {
     const { runPgDump } = await import('./pg-process.js')
-    const fakeChild = createFakeDumpChild()
+    const fakeChild = createFakeChild()
     spawnMock.mockReturnValue(fakeChild)
 
     const promise = runPgDump(CONNECTION_STRING)
@@ -273,7 +274,7 @@ describe('Story 28.11: runPgDump stdout/stderr error handling', () => {
       'non-zero (AC6, pre-existing behavior must not regress)',
     async () => {
       const { runPgDump, PgProcessError } = await import('./pg-process.js')
-      const fakeChild = createFakeDumpChild()
+      const fakeChild = createFakeChild()
       spawnMock.mockReturnValue(fakeChild)
 
       const promise = runPgDump(CONNECTION_STRING)
@@ -294,7 +295,7 @@ describe('Story 28.11: runPgDump stdout/stderr error handling', () => {
       'promise (AC4 — exercises the new settled guard introduced for runPgDump)',
     async () => {
       const { runPgDump } = await import('./pg-process.js')
-      const fakeChild = createFakeDumpChild()
+      const fakeChild = createFakeChild()
       spawnMock.mockReturnValue(fakeChild)
 
       let settleCount = 0
@@ -322,22 +323,12 @@ describe('Story 28.11: runPgRestore stdout/stderr error handling', () => {
     'rejects with a PgProcessError instead of throwing unhandled when child.stdout emits an ' +
       "EPIPE-shaped 'error' (AC1/AC2/AC3/AC4/AC7 — runPgRestore has no other stdout listener)",
     async () => {
-      const { runPgRestore, PgProcessError } = await import('./pg-process.js')
-      const fakeChild = createFakeChild()
-      spawnMock.mockReturnValue(fakeChild)
-
-      const promise = runPgRestore(CONNECTION_STRING, Buffer.from('SELECT 1;'))
-
-      const epipe = createEpipeError()
-      fakeChild.stdout.emit('error', epipe)
-
-      await expect(promise).rejects.toBeInstanceOf(PgProcessError)
-      await expect(promise).rejects.toMatchObject({
-        message: expect.stringContaining('psql restore: stdout read failed'),
-      })
-      await expect(promise).rejects.toMatchObject({
-        message: expect.stringContaining('EPIPE'),
-      })
+      const { runPgRestore } = await import('./pg-process.js')
+      await expectStreamErrorRejection(
+        () => runPgRestore(CONNECTION_STRING, Buffer.from('SELECT 1;')),
+        (fakeChild) => fakeChild.stdout,
+        'psql restore: stdout read failed'
+      )
     }
   )
 
@@ -345,22 +336,12 @@ describe('Story 28.11: runPgRestore stdout/stderr error handling', () => {
     'rejects with a PgProcessError instead of throwing unhandled when child.stderr emits an ' +
       "EPIPE-shaped 'error' (AC1/AC2/AC3/AC4/AC7)",
     async () => {
-      const { runPgRestore, PgProcessError } = await import('./pg-process.js')
-      const fakeChild = createFakeChild()
-      spawnMock.mockReturnValue(fakeChild)
-
-      const promise = runPgRestore(CONNECTION_STRING, Buffer.from('SELECT 1;'))
-
-      const epipe = createEpipeError()
-      fakeChild.stderr.emit('error', epipe)
-
-      await expect(promise).rejects.toBeInstanceOf(PgProcessError)
-      await expect(promise).rejects.toMatchObject({
-        message: expect.stringContaining('psql restore: stderr read failed'),
-      })
-      await expect(promise).rejects.toMatchObject({
-        message: expect.stringContaining('EPIPE'),
-      })
+      const { runPgRestore } = await import('./pg-process.js')
+      await expectStreamErrorRejection(
+        () => runPgRestore(CONNECTION_STRING, Buffer.from('SELECT 1;')),
+        (fakeChild) => fakeChild.stderr,
+        'psql restore: stderr read failed'
+      )
     }
   )
 
