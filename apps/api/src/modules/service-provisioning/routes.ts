@@ -30,6 +30,8 @@ type BossFastify = FastifyApp & { boss?: BossService }
 
 const ORG_SESSIONS_REVOKED_ALERT_TYPE = 'org.sessions_revoked_by_service'
 
+type FastifyRequestHeaders = Record<string, string | string[] | undefined>
+
 /**
  * Story 26.1 AC-2/AC-7/AC-8: a static, timing-safe-compared shared secret, never a human session,
  * never secureRoute()'s org-authenticated path — same convention as
@@ -38,9 +40,7 @@ const ORG_SESSIONS_REVOKED_ALERT_TYPE = 'org.sessions_revoked_by_service'
  * SERVICE_PROVISIONING_TOKEN is unset (route is unreachable for every request, same 403 as an
  * invalid token — never distinguishable from "missing vs wrong").
  */
-function assertServiceProvisioningAuthorized(
-  headers: Record<string, string | string[] | undefined>
-): void {
+function assertServiceProvisioningAuthorized(headers: FastifyRequestHeaders): void {
   const token = env.SERVICE_PROVISIONING_TOKEN
   if (!token) throw new ServiceProvisioningForbiddenError()
 
@@ -56,9 +56,7 @@ function assertServiceProvisioningAuthorized(
  * closed when unset; timingSafeHeaderTokenMatches already handles the length-mismatch case
  * before ever calling timingSafeEqual (AC1.5) — no second length check is added here.
  */
-function assertServiceRevocationAuthorized(
-  headers: Record<string, string | string[] | undefined>
-): void {
+function assertServiceRevocationAuthorized(headers: FastifyRequestHeaders): void {
   const token = env.SERVICE_REVOCATION_TOKEN
   if (!token) throw new ServiceRevocationForbiddenError()
 
@@ -158,9 +156,7 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
     config: { rateLimit: false },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
       try {
-        assertServiceProvisioningAuthorized(
-          req.headers as Record<string, string | string[] | undefined>
-        )
+        assertServiceProvisioningAuthorized(req.headers as FastifyRequestHeaders)
       } catch (err) {
         if (err instanceof AppError) {
           return reply.status(err.statusCode).send({ code: err.code, message: err.message })
@@ -223,9 +219,7 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
     },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
       try {
-        assertServiceRevocationAuthorized(
-          req.headers as Record<string, string | string[] | undefined>
-        )
+        assertServiceRevocationAuthorized(req.headers as FastifyRequestHeaders)
       } catch (err) {
         return sendAppError(reply, err)
       }

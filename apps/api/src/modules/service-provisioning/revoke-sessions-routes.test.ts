@@ -390,7 +390,7 @@ describe.sequential(
         .select({ id: adminAlerts.id })
         .from(adminAlerts)
         .where(eq(adminAlerts.alertType, 'org.sessions_revoked_by_service'))
-      expect(after.length).toBe(before.length + 1)
+      expect(after).toHaveLength(before.length + 1)
       await app.close()
     })
   }

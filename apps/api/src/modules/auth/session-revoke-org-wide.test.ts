@@ -132,7 +132,7 @@ describe.sequential('revokeAllSessionsForOrg (Story 31.1 AC4/AC5/AC9/AC11/AC12)'
     await loginAgain(app, owner.email)
 
     const before = await activeSessionRows(owner.orgId)
-    expect(before.length).toBe(5)
+    expect(before).toHaveLength(5)
 
     const result = await revokeAllSessionsForOrg({
       orgId: owner.orgId,
