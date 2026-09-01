@@ -708,6 +708,16 @@ export async function createLoginSessionInTx(
   orgId: string,
   meta: RequestMeta
 ): Promise<LoginResult> {
+  // Story 31.1 (DW-130) Decision 4/AC11.37-38: acquires the identical
+  // pg_advisory_xact_lock(hashtext(orgId)) that revokeAllSessionsForOrg()
+  // (session-revoke.ts) takes as its own first statement — as this function's first statement
+  // too, before its own sessions insert. This creates real mutual exclusion with no
+  // cross-cutting behavior change for any existing caller: whichever transaction (a login via
+  // this function, or an org-wide revocation) acquires the lock first proceeds to completion and
+  // releases it at commit; the other blocks until then. Every existing caller (native login,
+  // MFA login/verification, SSO/handoff login) already opens its own fresh transaction before
+  // reaching here, so no caller can already be holding a conflicting lock.
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`)
   await enforceMaxSessionsForUser(tx, user.id, orgId)
   const jti = randomUUID()
   const expiresAt = new Date(Date.now() + env.JWT_ACCESS_TTL_SECONDS * 1000)

@@ -40,6 +40,8 @@ type ProductionEnv = {
   RECOVERY_TOKEN_HMAC_SECRET?: string
   API_KEY_HMAC_SECRET?: string
   MACHINE_JWT_SECRET?: string
+  SERVICE_PROVISIONING_TOKEN?: string
+  SERVICE_REVOCATION_TOKEN?: string
   STATUS_PAGE_TOKEN_HMAC_SECRET?: string
   ERASURE_EMAIL_HASH_SECRET?: string
   SSO_STATE_HMAC_SECRET?: string
@@ -252,6 +254,76 @@ function statusPageTokenSharesAnotherAuthSecret(env: ProductionEnv): boolean {
     env.MACHINE_JWT_SECRET,
   ]
   return otherSecrets.includes(env.STATUS_PAGE_TOKEN_HMAC_SECRET)
+}
+
+// Story 31.1 AC2.7/AC2.8/AC2.9: unlike the 8 "dedicated secret required in production" checks
+// above, SERVICE_PROVISIONING_TOKEN and SERVICE_REVOCATION_TOKEN are both deliberately OPTIONAL
+// in production — leaving either unset simply makes its route fail-closed (403 for every
+// request), which is a valid, supported production posture (a self-hosted deployment that never
+// calls CentralizeMe's service routes need not configure either). What production must never
+// allow is a *set* value that is a placeholder, or that collides with any other configured
+// secret (including each other) — a shared secret means a leak of one immediately compromises
+// the other. Each function below only runs its checks when its own token is actually set.
+//
+// Reuses priorAuthSecrets (defined below, hoisted) plus the two secrets it predates — the same
+// "base list + tail" composition operationalStatusTokenSharesAnotherAuthSecret already uses below,
+// rather than re-listing the same 10 fields as a second literal (jscpd-flagged duplication).
+function otherAuthSecrets(env: ProductionEnv): (string | undefined)[] {
+  return [
+    ...priorAuthSecrets(env),
+    env.SSO_STATE_HMAC_SECRET,
+    env.OPERATIONAL_STATUS_TOKEN_HMAC_SECRET,
+  ]
+}
+
+function validateServiceProvisioningTokenProductionSecret(
+  env: ProductionEnv,
+  ctx: z.RefinementCtx
+): void {
+  if (!env.SERVICE_PROVISIONING_TOKEN) return
+  const reused = [...otherAuthSecrets(env), env.SERVICE_REVOCATION_TOKEN].includes(
+    env.SERVICE_PROVISIONING_TOKEN
+  )
+  if (reused) {
+    addEnvIssue(
+      ctx,
+      'SERVICE_PROVISIONING_TOKEN',
+      'SERVICE_PROVISIONING_TOKEN must differ from other auth secrets in production'
+    )
+  } else if (PLACEHOLDER_SECRET_PATTERN.test(env.SERVICE_PROVISIONING_TOKEN)) {
+    addEnvIssue(
+      ctx,
+      'SERVICE_PROVISIONING_TOKEN',
+      'SERVICE_PROVISIONING_TOKEN must not be a placeholder secret in production'
+    )
+  }
+}
+
+// Story 31.1 (DW-130) AC2.7/AC2.8: SERVICE_REVOCATION_TOKEN's own dedicated cross-secret-reuse
+// and placeholder rejection, mirroring MACHINE_JWT_SECRET's validateMachineJwtProductionSecret
+// shape exactly, plus the SERVICE_PROVISIONING_TOKEN comparison Decision 1 requires (a leak of
+// one must never compromise the other).
+function validateServiceRevocationTokenProductionSecret(
+  env: ProductionEnv,
+  ctx: z.RefinementCtx
+): void {
+  if (!env.SERVICE_REVOCATION_TOKEN) return
+  const reused = [...otherAuthSecrets(env), env.SERVICE_PROVISIONING_TOKEN].includes(
+    env.SERVICE_REVOCATION_TOKEN
+  )
+  if (reused) {
+    addEnvIssue(
+      ctx,
+      'SERVICE_REVOCATION_TOKEN',
+      'SERVICE_REVOCATION_TOKEN must differ from other auth secrets in production'
+    )
+  } else if (PLACEHOLDER_SECRET_PATTERN.test(env.SERVICE_REVOCATION_TOKEN)) {
+    addEnvIssue(
+      ctx,
+      'SERVICE_REVOCATION_TOKEN',
+      'SERVICE_REVOCATION_TOKEN must not be a placeholder secret in production'
+    )
+  }
 }
 
 function validateStatusPageTokenProductionSecret(env: ProductionEnv, ctx: z.RefinementCtx): void {
@@ -536,6 +608,8 @@ function validateProductionEnv(env: ProductionEnv, ctx: z.RefinementCtx): void {
   validateRecoveryTokenProductionSecret(env, ctx)
   validateApiKeyProductionSecret(env, ctx)
   validateMachineJwtProductionSecret(env, ctx)
+  validateServiceProvisioningTokenProductionSecret(env, ctx)
+  validateServiceRevocationTokenProductionSecret(env, ctx)
   validateStatusPageTokenProductionSecret(env, ctx)
   validateErasureEmailHashProductionSecret(env, ctx)
   validateSsoStateProductionSecret(env, ctx)
@@ -969,6 +1043,18 @@ const envSchema = z
     // model — a dedicated secret, never shared with VAULT_BOOTSTRAP_TOKEN or any other secret.
     // Unset means the route is unreachable (fail-closed default). Generate: openssl rand -base64 32
     SERVICE_PROVISIONING_TOKEN: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.string().min(32).optional()
+    ),
+
+    // Story 31.1 (DW-130) Decision 1/AC2: static shared-secret gate for
+    // POST /api/v1/service/organizations/:centralizemeOrganizationId/revoke-sessions, mirroring
+    // SERVICE_PROVISIONING_TOKEN's exact shape/threat model — but a DEDICATED, never-shared
+    // secret (see validateServiceRevocationTokenProductionSecret above): a leak of one must never
+    // compromise the other, since this route can silently terminate live access across every org
+    // on the platform (Decision 5). Unset means the route is unreachable (fail-closed default;
+    // AC2.9 — no dev-secret fallback either). Generate: openssl rand -base64 32
+    SERVICE_REVOCATION_TOKEN: z.preprocess(
       (v) => (v === '' ? undefined : v),
       z.string().min(32).optional()
     ),

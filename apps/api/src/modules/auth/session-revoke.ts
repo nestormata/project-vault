@@ -1,6 +1,12 @@
-import { and, eq, isNull, ne, sql, type SQL } from 'drizzle-orm'
+import { and, eq, inArray, isNull, ne, sql, type SQL } from 'drizzle-orm'
 import { getDb, type Tx } from '@project-vault/db'
-import { auditLogEntries, refreshTokens, revokedTokens, sessions } from '@project-vault/db/schema'
+import {
+  apiKeys,
+  auditLogEntries,
+  refreshTokens,
+  revokedTokens,
+  sessions,
+} from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { AppError } from '../../lib/errors.js'
@@ -8,6 +14,7 @@ import { firstActorTokenIdForUser } from '../audit/actor-token.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
 import { assertOrgMayWriteAuditGates, estimateAuditEntrySizeBytes } from '../audit/quota-gate.js'
+import { writeSystemAuditEntry } from '../audit/machine-entry.js'
 import { getAuditKey } from '../vault/key-service.js'
 import { deletePendingEnrollmentForUser } from './recovery-codes.js'
 import { evictSessionActivityDebounce } from './session-activity.js'
@@ -349,6 +356,141 @@ export async function revokeAllOtherSessions({
       })
     }
     return result
+  })
+}
+
+export type RevokeAllSessionsForOrgResult = {
+  sessionsRevokedCount: number
+  apiKeysRevokedCount: number
+}
+
+/**
+ * Story 31.1 (DW-130) Decision 4/Decision 6 — the org-wide fan-out for the
+ * machine-authenticated CentralizeMe revocation route. Deliberately NOT a wrapper around
+ * `revokeSessionById()`/`revokeTargetSessions()` (see Decision 2's original, since-amended
+ * framing): a per-session application loop means N round-trips for a large org, each paying full
+ * transaction-lock-duration latency. Instead this runs three bulk SQL statements — sessions,
+ * refresh tokens, revoked-token inserts — plus a fourth bulk `api_keys` update (Decision 6), all
+ * inside exactly ONE `getDb().transaction()`, with a Postgres advisory transaction lock
+ * (AC11.37) as the very first statement and the audit write (AC7.24) as the last, before commit.
+ * A single COMMIT for the whole call (AC11.35) — any failure anywhere (including the audit-quota
+ * gate, AC7.27) rolls back everything (AC11.36): no partially-revoked org state is possible.
+ */
+export async function revokeAllSessionsForOrg({
+  orgId,
+  requestId,
+  tx,
+}: {
+  orgId: string
+  requestId: string
+  tx?: Tx
+}): Promise<RevokeAllSessionsForOrgResult> {
+  return runInTx(tx, async (innerTx) => {
+    // AC11.37: the advisory lock is the transaction's FIRST statement — acquired before the
+    // org-scoped RLS context below, since pg_advisory_xact_lock is a session-level Postgres
+    // builtin that never touches an RLS-protected table and needs no org context to run. This
+    // creates real mutual exclusion with createLoginSessionInTx()'s matching
+    // pg_advisory_xact_lock(hashtext(orgId)) acquisition (service.ts) — whichever transaction
+    // (a login, or this revocation) acquires the lock first proceeds to completion and releases
+    // it at commit; the other blocks until then. No session created concurrently with a call to
+    // this route is ever missed (Decision 4).
+    await innerTx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`)
+    await applyExpectedOrgContext(innerTx, orgId)
+
+    const now = new Date()
+
+    // 1. Bulk-revoke sessions, RETURNING what was touched — already-revoked sessions are
+    // excluded by the WHERE predicate up front (AC4.16), so they can never appear here or
+    // generate a second revoked_tokens insert attempt. Filters on sessions.org_id directly —
+    // never joins through org_memberships or checks membership status (AC4.17), so an orphaned
+    // session for an already-deactivated/removed member is still caught.
+    const revokedSessionRows = await innerTx
+      .update(sessions)
+      .set({
+        revokedAt: now,
+        sessionVersion: sql`${sessions.sessionVersion} + 1`,
+        updatedAt: now,
+      })
+      .where(and(eq(sessions.orgId, orgId), isNull(sessions.revokedAt)))
+      .returning({ id: sessions.id, userId: sessions.userId, jti: sessions.jti })
+
+    const sessionIds = revokedSessionRows.map((row) => row.id)
+
+    if (sessionIds.length > 0) {
+      // 2. Bulk-revoke their refresh tokens.
+      await innerTx
+        .update(refreshTokens)
+        .set({ revokedAt: now })
+        .where(and(inArray(refreshTokens.sessionId, sessionIds), isNull(refreshTokens.revokedAt)))
+
+      // 3. Bulk-insert revoked_tokens rows, one per revoked session's jti. There is no single
+      // caller-supplied accessTokenExp for a bulk org-wide call (unlike the single-session path),
+      // so this deliberately deviates from computeRevokedTokenExpiresAt()'s per-call
+      // accessTokenExp precedent: every row uses the same fixed
+      // now + JWT_ACCESS_TTL_SECONDS expiry, computed once via computeRevokedTokenExpiresAt with
+      // no accessTokenExp/refreshTokenExpiresAt override. This is an accepted simplification
+      // (Decision 4) — documented here, not silently assumed.
+      const revokedTokenExpiresAt = computeRevokedTokenExpiresAt({ now })
+      await innerTx
+        .insert(revokedTokens)
+        .values(
+          revokedSessionRows.map((row) => ({
+            jti: row.jti,
+            userId: row.userId,
+            expiresAt: revokedTokenExpiresAt,
+          }))
+        )
+        .onConflictDoNothing()
+
+      // In-process cache eviction, not a DB statement — a cheap in-memory loop over the
+      // RETURNING id list, not a per-session round-trip.
+      for (const row of revokedSessionRows) evictSessionActivityDebounce(row.id)
+
+      // deletePendingEnrollmentForUser operates per-user, not per-session — called once per
+      // distinct user_id from the returned rows (its own idempotency makes calling it twice for
+      // the same user across two sessions a safe no-op).
+      const distinctUserIds = [...new Set(revokedSessionRows.map((row) => row.userId))]
+      for (const userId of distinctUserIds) {
+        await deletePendingEnrollmentForUser(userId, innerTx)
+      }
+    }
+
+    // Decision 6/AC12: bulk-revoke every active machine-user API key for the org, in the SAME
+    // transaction. api_keys already carries org_id directly (orgScoped()) — no join through
+    // machine_users/projects needed. Only api_keys.revoked_at is set (AC12.43) —
+    // machine_users.deactivated_at is left untouched, and no rows are deleted, consistent with
+    // the session-revocation precedent.
+    const revokedApiKeyRows = await innerTx
+      .update(apiKeys)
+      .set({ revokedAt: now })
+      .where(and(eq(apiKeys.orgId, orgId), isNull(apiKeys.revokedAt)))
+      .returning({ id: apiKeys.id })
+
+    const sessionsRevokedCount = sessionIds.length
+    const apiKeysRevokedCount = revokedApiKeyRows.length
+
+    // AC7.24/AC7.25: exactly one audit row per call, written with the SAME innerTx, BEFORE
+    // commit — always, even at zero counts (unlike revokeAllOtherSessions's
+    // `if (result.revokedCount > 0)` convention above). An external service invoking an
+    // org-deprovisioning-adjacent action is itself forensically significant regardless of
+    // outcome. actorType is 'system' (writeSystemAuditEntry), never 'human'/'machine_user' — this
+    // caller has no resolvable human actor token or PV machine-user key. Because
+    // assertOrgMayWriteAuditGates (inside writeSystemAuditEntry) runs inside this same
+    // transaction, an exhausted audit quota throws here and rolls back the whole transaction —
+    // no sessions, no API keys, nothing revoked (AC7.27) — this route does not get an
+    // audit-quota bypass.
+    await writeSystemAuditEntry(innerTx, {
+      orgId,
+      eventType: AuditEvent.ORG_SESSIONS_REVOKED_BY_SERVICE,
+      payload: {
+        sessionsRevokedCount,
+        apiKeysRevokedCount,
+        requestId,
+        triggeredBy: 'centralizeme',
+      },
+    })
+
+    return { sessionsRevokedCount, apiKeysRevokedCount }
   })
 }
 

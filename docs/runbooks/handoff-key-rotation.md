@@ -87,11 +87,13 @@ leaked:
    - `handoff_replay` clusters, which can indicate an attacker racing captured tokens.
 5. **Revoke every affected session** via the existing per-user path — call
    `revokeAllUserSessionsInOrg` (`apps/api/src/modules/auth/session-revoke.ts`) for each user/org pair
-   identified in step 4. **There is no machine-authenticated, org-wide (let alone fleet-wide)
-   revocation fan-out today** — that mechanism is tracked separately as DW-130 and is explicitly
-   out of this story's scope. A full-fleet compromise therefore requires walking every affected
-   user/org pair by hand (or via a future DW-130 mechanism once it ships) — do not describe this
-   runbook as providing fleet-wide automatic revocation; it does not.
+   identified in step 4, OR, for a per-org (not per-user) revocation, use Story 31.1's
+   `POST /api/v1/service/organizations/:centralizemeOrganizationId/revoke-sessions` route
+   (`revokeAllSessionsForOrg` — see `docs/runbooks/service-revocation-token-rotation.md`), which
+   closes DW-130. Neither mechanism is fleet-wide: the former is per-user, the latter is per-org
+   (one CM organization at a time, driven by CM's own deprovisioning decisions) — a full-fleet
+   compromise still requires walking every affected org (or user) by hand; do not describe this
+   runbook as providing fleet-wide automatic revocation.
 
 ## Overlap-window correctness (AC8.28)
 

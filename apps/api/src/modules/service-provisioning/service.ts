@@ -162,3 +162,50 @@ export class ServiceProvisioningForbiddenError extends AppError {
     )
   }
 }
+
+/**
+ * Story 31.1 (DW-130) AC1.2/AC1.3/AC1.4: mirrors ServiceProvisioningForbiddenError exactly —
+ * same shape/status for every failure mode (missing header, wrong token, unset env var), never
+ * distinguishable which case occurred.
+ */
+export class ServiceRevocationForbiddenError extends AppError {
+  constructor() {
+    super(
+      'service_revocation_forbidden',
+      'Service revocation requires a valid service credential',
+      403
+    )
+  }
+}
+
+/**
+ * Story 31.1 AC3.11/AC3.12: zero rows match (no such CM org, or a real org with a still-null
+ * centralizeme_organization_id per DW-153) — and a defensive fail-closed guard for the
+ * structurally-impossible-today case of the unique index returning more than one row. Never
+ * leaks whether the org exists in PV under a different/unset CM id.
+ */
+export function serviceOrgNotFound(): AppError {
+  return new AppError('org_not_found', 'Organization not found', 404)
+}
+
+/**
+ * Story 31.1 (DW-130) AC3.10: resolves the CM-supplied :centralizemeOrganizationId URL param to
+ * PV's internal organizations.id via the existing partial unique index (migration 0088, Story
+ * 30-2) — no new migration. `organizations` carries no RLS policy (it is the tenant root, not
+ * tenant-scoped), so this is a plain, unscoped lookup — mirroring findExistingProvisioning's own
+ * pre-org-context organizations SELECT above. Returns null on zero matches (AC3.11) and also on
+ * more than one match (AC3.12) — the unique index makes multi-match structurally impossible today,
+ * but this fails closed instead of picking the first row if a future migration ever weakens the
+ * constraint.
+ */
+export async function resolveOrgByCentralizemeId(
+  centralizemeOrganizationId: string
+): Promise<string | null> {
+  const rows = await getDb()
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(eq(organizations.centralizemeOrganizationId, centralizemeOrganizationId))
+    .limit(2)
+  if (rows.length !== 1) return null
+  return rows[0]?.id ?? null
+}
