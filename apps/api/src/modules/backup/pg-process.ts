@@ -76,10 +76,38 @@ export async function runPgDump(connectionString: string): Promise<Buffer> {
     )
     const stdoutChunks: Buffer[] = []
     const stderrChunks: Buffer[] = []
+    // Story 28.11: `settled` guards against double-settlement when a stdout/stderr stream
+    // 'error' (new below) races with the child's own 'close'/'error' events for the same failed
+    // dump attempt. `runPgDump` never needed this before — its two previous settlement points
+    // (child 'error', child 'close') were mutually exclusive by construction — but the two new
+    // stream-level sources below break that, exactly like Story 28.8's guard in runPgRestore.
+    let settled = false
     child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk))
     child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk))
-    child.on('error', (err) => reject(new PgProcessError(`pg_dump: ${err.message}`, '')))
+    // Story 28.11: `child.stdout`/`child.stderr` are themselves independent Readable-stream
+    // EventEmitters from the `child` process object — a stream-level 'error' (e.g. the child
+    // being killed out-of-band while data is still in-flight on the pipe) is delivered ON THE
+    // STREAM, not on `child`, so `child.on('error', ...)` below does not cover it. Without a
+    // listener here, Node treats that as unhandled and crashes the whole process — the same
+    // hazard class Story 28.8 fixed for `runPgRestore`'s stdin.
+    child.stdout.on('error', (err) => {
+      if (settled) return
+      settled = true
+      reject(new PgProcessError(`pg_dump: stdout read failed: ${err.message}`, ''))
+    })
+    child.stderr.on('error', (err) => {
+      if (settled) return
+      settled = true
+      reject(new PgProcessError(`pg_dump: stderr read failed: ${err.message}`, ''))
+    })
+    child.on('error', (err) => {
+      if (settled) return
+      settled = true
+      reject(new PgProcessError(`pg_dump: ${err.message}`, ''))
+    })
     child.on('close', (code) => {
+      if (settled) return
+      settled = true
       if (code !== 0) {
         reject(
           new PgProcessError(
@@ -130,6 +158,21 @@ export async function runPgRestore(connectionString: string, sql: Buffer): Promi
     // effects if this function's shape ever grows any (logging, etc.).
     let settled = false
     child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk))
+    // Story 28.11: `child.stdout`/`child.stderr` are themselves independent Readable-stream
+    // EventEmitters from the `child` process object, exactly like `child.stdin` below — a
+    // stream-level 'error' is delivered ON THE STREAM, not on `child`. `runPgRestore` never reads
+    // `psql`'s stdout (see Dev Notes' scope note), so no '.on(\'data\', ...)' is added here, only
+    // the 'error' listener needed to close the crash hazard.
+    child.stdout.on('error', (err) => {
+      if (settled) return
+      settled = true
+      reject(new PgProcessError(`psql restore: stdout read failed: ${err.message}`, ''))
+    })
+    child.stderr.on('error', (err) => {
+      if (settled) return
+      settled = true
+      reject(new PgProcessError(`psql restore: stderr read failed: ${err.message}`, ''))
+    })
     child.on('error', (err) => {
       if (settled) return
       settled = true
