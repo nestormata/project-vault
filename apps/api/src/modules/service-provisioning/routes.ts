@@ -13,6 +13,7 @@ import { operationalLog, serializeLogError } from '../../lib/logger.js'
 import { revokeAllSessionsForOrg } from '../auth/session-revoke.js'
 import {
   provisionServiceOrganization,
+  provisionServiceOrgMember,
   resolveOrgByCentralizemeId,
   ServiceProvisioningForbiddenError,
   serviceOrgNotFound,
@@ -20,6 +21,9 @@ import {
 } from './service.js'
 import {
   ProvisionServiceOrganizationRequestSchema,
+  ProvisionServiceOrgMemberParamsSchema,
+  ProvisionServiceOrgMemberRequestSchema,
+  ProvisionServiceOrgMemberResponseSchema,
   RevokeOrgSessionsParamsSchema,
   RevokeOrgSessionsRequestSchema,
   RevokeOrgSessionsResponseSchema,
@@ -177,6 +181,59 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
           externalIdentityId: result.externalIdentityId,
         },
       })
+    },
+  })
+
+  // Story 32.1: machine-authenticated per-member provisioning on an EXISTING organization —
+  // extends the org-bootstrap route above with a second, per-member route in the same module
+  // (Decision 1). Registered via fastify.route() directly, same auth mechanism
+  // (assertServiceProvisioningAuthorized, Decision 3: reuse SERVICE_PROVISIONING_TOKEN, no new
+  // secret), same "never rate-limited via the human-facing limiter" convention as the org route.
+  fastify.route({
+    method: 'POST',
+    url: '/api/v1/service/organizations/:organizationId/members',
+    config: { rateLimit: false },
+    attachValidation: true,
+    schema: {
+      params: ProvisionServiceOrgMemberParamsSchema,
+      body: ProvisionServiceOrgMemberRequestSchema,
+      response: {
+        200: ProvisionServiceOrgMemberResponseSchema,
+        201: ProvisionServiceOrgMemberResponseSchema,
+        400: ApiErrorSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      try {
+        assertServiceProvisioningAuthorized(req.headers as FastifyRequestHeaders)
+      } catch (err) {
+        return sendAppError(reply, err)
+      }
+
+      const parsedParams = ProvisionServiceOrgMemberParamsSchema.safeParse(req.params)
+      if (!parsedParams.success) {
+        return reply.status(422).send(validationError(parsedParams.error, 'params'))
+      }
+
+      const parsedBody = ProvisionServiceOrgMemberRequestSchema.safeParse(req.body)
+      if (!parsedBody.success) {
+        return reply.status(422).send(validationError(parsedBody.error, 'body'))
+      }
+
+      try {
+        const result = await provisionServiceOrgMember(
+          parsedParams.data.organizationId,
+          parsedBody.data
+        )
+        return reply.status(result.created ? 201 : 200).send({
+          data: { userId: result.userId, externalIdentityId: result.externalIdentityId },
+        })
+      } catch (err) {
+        return sendAppError(reply, err)
+      }
     },
   })
 

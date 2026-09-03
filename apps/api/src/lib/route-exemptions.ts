@@ -37,6 +37,12 @@ const PLATFORM_JOB = 'platform-job'
 const PUBLIC_ROUTE_SUPPORT = 'public-route-support'
 const TOKEN_IS_CREDENTIAL = 'token-is-the-credential'
 const NO_DATA_ACCESS = 'no-data-access'
+// Shared across the three /api/v1/service/* machine-authenticated routes (26.1's org-bootstrap,
+// 31.1's revoke-sessions, 32.1's per-member provisioning) — sonarjs/no-duplicate-string flags the
+// raw literal past 2 occurrences.
+const STATIC_SERVICE_TOKEN_TIMING_SAFE_COMPARE = 'static-service-token-timing-safe-compare'
+const FAIL_CLOSED_WHEN_UNCONFIGURED = 'fail-closed-when-unconfigured'
+const IDEMPOTENCY_KEY_UNIQUE_CONSTRAINT = 'idempotency-key-unique-constraint'
 const MONITORING_LIST_READ_OMISSION_REASON =
   'List read returns operational metadata only; no secret values.'
 const MONITORING_READ_CLASSIFICATION: RouteActionClassification = {
@@ -160,9 +166,9 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
       "Story 26.1 (CM-E14.14 Task 1) -- service/admin org+user provisioning endpoint for a trusted platform partner (CentralizeMe). The caller has no PV session and cannot have one (it is bootstrapping a brand-new org/user from zero) -- SecureRoute's org-authenticated path structurally cannot apply here, mirroring /vault/init's 'auth stack not yet available' shape.",
     securityOwner: SECURITY_OWNER,
     compensatingControls: [
-      'static-service-token-timing-safe-compare',
-      'fail-closed-when-unconfigured',
-      'idempotency-key-unique-constraint',
+      STATIC_SERVICE_TOKEN_TIMING_SAFE_COMPARE,
+      FAIL_CLOSED_WHEN_UNCONFIGURED,
+      IDEMPOTENCY_KEY_UNIQUE_CONSTRAINT,
     ],
     expiresAfterStory: null,
   },
@@ -172,9 +178,21 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
       "Story 31.1 (DW-130) -- machine-authenticated, org-wide handoff-session (and machine-user API key) revocation endpoint for a trusted platform partner (CentralizeMe), used when CM deprovisions/deletes an organization. The caller has no PV session and cannot have one -- SecureRoute's org-authenticated path structurally cannot apply here, exactly like POST /api/v1/service/organizations above.",
     securityOwner: SECURITY_OWNER,
     compensatingControls: [
-      'static-service-token-timing-safe-compare',
-      'fail-closed-when-unconfigured',
+      STATIC_SERVICE_TOKEN_TIMING_SAFE_COMPARE,
+      FAIL_CLOSED_WHEN_UNCONFIGURED,
       'org-lookup-by-unique-index',
+    ],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'POST /api/v1/service/organizations/:organizationId/members',
+    reason:
+      "Story 32.1 -- machine-authenticated per-member provisioning endpoint for a trusted platform partner (CentralizeMe), attaching a new PV user+membership+external-identity to an ALREADY-EXISTING organization for a non-owner CM member. The caller has no PV session and cannot have one -- SecureRoute's org-authenticated path structurally cannot apply here, exactly like POST /api/v1/service/organizations above (Decision 3: reuses SERVICE_PROVISIONING_TOKEN, same action class as that route's own identity-record creation, not a divergent blast radius -- see the story's accepted-risk note on role:'admin' grants).",
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      STATIC_SERVICE_TOKEN_TIMING_SAFE_COMPARE,
+      FAIL_CLOSED_WHEN_UNCONFIGURED,
+      IDEMPOTENCY_KEY_UNIQUE_CONSTRAINT,
     ],
     expiresAfterStory: null,
   },
@@ -314,6 +332,11 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: SECURITY_ACTION,
     auditEvent: 'org.sessions_revoked_by_service',
     sameTransactionAuditService: 'revokeAllSessionsForOrg',
+  },
+  'POST /api/v1/service/organizations/:organizationId/members': {
+    action: SECURITY_ACTION,
+    auditEvent: 'org.member_provisioned',
+    sameTransactionAuditService: 'provisionServiceOrgMember',
   },
   'DELETE /api/v1/auth/sessions/:sessionId': {
     action: SECURITY_ACTION,
