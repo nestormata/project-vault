@@ -21320,7 +21320,8 @@
                 "required": [
                   "requestId",
                   "workosUserId"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
