@@ -262,8 +262,9 @@ async function insertNewOrgMember(
  */
 async function findExistingOrgMemberAndReactivate(
   organizationId: string,
-  workosUserId: string
+  input: ProvisionServiceOrgMemberRequest
 ): Promise<ProvisionServiceOrgMemberResult> {
+  const { workosUserId, requestId } = input
   return getDb().transaction(async (tx) => {
     const typedTx = tx as Tx
     await typedTx.execute(sql`SELECT set_config('app.current_org_id', ${organizationId}, true)`)
@@ -287,7 +288,7 @@ async function findExistingOrgMemberAndReactivate(
     }
 
     const [membership] = await typedTx
-      .select({ status: orgMemberships.status })
+      .select({ role: orgMemberships.role, status: orgMemberships.status })
       .from(orgMemberships)
       .where(
         and(eq(orgMemberships.orgId, organizationId), eq(orgMemberships.userId, identity.userId))
@@ -308,12 +309,15 @@ async function findExistingOrgMemberAndReactivate(
           and(eq(orgMemberships.orgId, organizationId), eq(orgMemberships.userId, identity.userId))
         )
 
+      // Code-review finding (Story 32.1): mirror insertNewOrgMember's audit payload shape
+      // (role + requestId) here too, so a reactivation's forensic trail can answer "what role
+      // was this member reactivated with, and under what request?" — not just that it happened.
       await writeSystemAuditEntry(typedTx, {
         orgId: organizationId,
         eventType: AuditEvent.ORG_MEMBER_PROVISIONED,
         resourceId: identity.userId,
         resourceType: 'user',
-        payload: { reactivated: true, workosUserId },
+        payload: { reactivated: true, role: membership.role, workosUserId, requestId },
       })
     }
 
@@ -341,7 +345,7 @@ export async function provisionServiceOrgMember(
     return await insertNewOrgMember(organizationId, input, role)
   } catch (error) {
     if (isUniqueViolation(error, 'idx_external_identities_org_provider_subject')) {
-      return findExistingOrgMemberAndReactivate(organizationId, input.workosUserId)
+      return findExistingOrgMemberAndReactivate(organizationId, input)
     }
     throw error
   }

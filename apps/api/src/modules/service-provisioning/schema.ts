@@ -90,11 +90,13 @@ export const ProvisionServiceOrgMemberParamsSchema = z.object({
 
 export type ProvisionServiceOrgMemberParams = z.infer<typeof ProvisionServiceOrgMemberParamsSchema>
 
-export const ProvisionServiceOrgMemberRequestSchema = z.object({
-  requestId: z.uuid(),
-  workosUserId: z.string().trim().min(1).max(256),
-  role: z.string().trim().min(1).max(32).optional(),
-})
+export const ProvisionServiceOrgMemberRequestSchema = z
+  .object({
+    requestId: z.uuid(),
+    workosUserId: z.string().trim().min(1).max(256),
+    role: z.string().trim().min(1).max(32).optional(),
+  })
+  .strict()
 
 export type ProvisionServiceOrgMemberRequest = z.infer<
   typeof ProvisionServiceOrgMemberRequestSchema
