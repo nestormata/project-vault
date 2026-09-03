@@ -181,6 +181,25 @@ export function organizationNotFoundError(): AppError {
   return new AppError('organization_not_found', 'Organization not found', 404)
 }
 
+// Story 32.1 code-review finding (High): the org-existence check above only confirmed the
+// organizationId is a real PV org — ANY real PV org, including a self-registered customer
+// unrelated to CentralizeMe entirely. A leaked SERVICE_PROVISIONING_TOKEN could otherwise inject
+// an admin-role member into any org in the system. Nestor's explicit decision after review:
+// require organizations.centralizeme_organization_id to be non-null before allowing provisioning
+// via this route — a materially larger blast radius than sibling Story 26.1's route (which only
+// ever creates brand-new, empty orgs) justifies the stricter check, even though it means CM's
+// real current caller (which may not yet send centralizemeOrganizationId on every org — Story
+// 30.2 deferred follow-up) could get blocked until CM's own side is updated. See story Dev Notes
+// for the 403-vs-404 status code rationale (distinct from Decision 4, which is about
+// CM-membership/role trust, not PV-side org scope).
+export function organizationNotCentralizemeManagedError(): AppError {
+  return new AppError(
+    'organization_not_centralizeme_managed',
+    'Organization is not CentralizeMe-managed and cannot be provisioned via this route',
+    403
+  )
+}
+
 function validateRequestedRole(role: string | undefined): ServiceOrgMemberRole {
   if (role === undefined) return 'member'
   if (!(SERVICE_ORG_MEMBER_ROLES as readonly string[]).includes(role)) throw invalidRoleError()
@@ -195,6 +214,14 @@ function validateRequestedRole(role: string | undefined): ServiceOrgMemberRole {
  * existing org instead of a freshly-allocated one. A unique-violation on the
  * externalIdentities insert aborts the whole transaction, by design — the caller
  * (provisionServiceOrgMember) resolves that race via a fresh read afterward.
+ *
+ * Story 32.1 code-review finding: existence alone isn't enough — the org must also be
+ * CentralizeMe-managed (organizations.centralizeme_organization_id non-null), or this throws 403
+ * organizationNotCentralizemeManagedError (see that function's comment for the full rationale).
+ * This check runs before the org-scoped identity/membership inserts and therefore also applies to
+ * a would-be idempotent replay reaching this function (a repeat call only skips this path once an
+ * externalIdentities row already exists, via the unique-violation catch below) — an accepted
+ * consequence of the same fail-closed decision, not a separate one.
  */
 async function insertNewOrgMember(
   organizationId: string,
@@ -205,11 +232,15 @@ async function insertNewOrgMember(
     const typedTx = tx as Tx
 
     const [org] = await typedTx
-      .select({ id: organizations.id })
+      .select({
+        id: organizations.id,
+        centralizemeOrganizationId: organizations.centralizemeOrganizationId,
+      })
       .from(organizations)
       .where(eq(organizations.id, organizationId))
       .limit(1)
     if (!org) throw organizationNotFoundError()
+    if (org.centralizemeOrganizationId === null) throw organizationNotCentralizemeManagedError()
 
     const passwordHash = await generateUnusablePasswordHash()
     const [user] = await typedTx

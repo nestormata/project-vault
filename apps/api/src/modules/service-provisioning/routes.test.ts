@@ -338,6 +338,10 @@ describe.sequential('POST /api/v1/service/organizations/:organizationId/members'
     return `${ROUTE_URL}/${organizationId}/members`
   }
 
+  // Story 32.1 code-review finding: the /members route now requires the target org to be
+  // CentralizeMe-managed (organizations.centralizeme_organization_id non-null) — every fixture
+  // org in this describe block must carry one so the pre-existing AC1-AC8 tests keep exercising
+  // the "allowed" path, not the new fail-closed check.
   async function createOrg(app: Awaited<ReturnType<typeof createApp>>): Promise<string> {
     const requestId = randomUUID()
     const res = await app.inject({
@@ -347,6 +351,26 @@ describe.sequential('POST /api/v1/service/organizations/:organizationId/members'
       payload: {
         requestId,
         organizationName: `Member Test Org ${requestId}`,
+        workosUserId: `owner_${requestId}`,
+        centralizemeOrganizationId: `org_synthetic_${requestId}`,
+      },
+    })
+    return successBody(res).data.organizationId
+  }
+
+  // Story 32.1 code-review finding: a PV org that exists but was never linked to CentralizeMe
+  // (centralizeme_organization_id left null) — e.g. a self-registered customer org, or a
+  // 26.1-provisioned org from before Story 30.2 shipped. Used to exercise the new fail-closed
+  // check that blocks provisioning via this route for such an org.
+  async function createNonCmOrg(app: Awaited<ReturnType<typeof createApp>>): Promise<string> {
+    const requestId = randomUUID()
+    const res = await app.inject({
+      method: 'POST',
+      url: ROUTE_URL,
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: {
+        requestId,
+        organizationName: `Non-CM Member Test Org ${requestId}`,
         workosUserId: `owner_${requestId}`,
       },
     })
@@ -670,6 +694,58 @@ describe.sequential('POST /api/v1/service/organizations/:organizationId/members'
     })
     expect(res.statusCode).toBe(404)
     expect(errorBody(res).code).toBe('organization_not_found')
+    await app.close()
+  })
+
+  // Story 32.1 code-review finding (High): the org-existence check above only confirmed the
+  // organizationId is a real PV org — ANY real PV org, not necessarily one CentralizeMe manages.
+  // A leaked SERVICE_PROVISIONING_TOKEN could otherwise inject an admin-role member into any org
+  // in the system, including self-registered customers unrelated to CM. Nestor's explicit
+  // decision after review: require centralizeme_organization_id to be non-null before allowing
+  // provisioning via this route.
+  it('code-review fix: an org that exists but is not CentralizeMe-managed is rejected with 403 organization_not_centralizeme_managed, no partial write', async () => {
+    const app = await freshApp()
+    const organizationId = await createNonCmOrg(app)
+    const workosUserId = `user_${randomUUID()}`
+
+    const res = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId },
+    })
+
+    expect(res.statusCode).toBe(403)
+    expect(errorBody(res).code).toBe('organization_not_centralizeme_managed')
+
+    const rows = await withOrg(organizationId, (tx) =>
+      tx
+        .select({ id: externalIdentities.id })
+        .from(externalIdentities)
+        .where(
+          and(
+            eq(externalIdentities.orgId, organizationId),
+            eq(externalIdentities.externalSubject, workosUserId)
+          )
+        )
+    )
+    expect(rows).toHaveLength(0)
+    await app.close()
+  })
+
+  it('code-review fix: an org with a centralizemeOrganizationId set is allowed (control case)', async () => {
+    const app = await freshApp()
+    const organizationId = await createOrg(app)
+    const workosUserId = `user_${randomUUID()}`
+
+    const res = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId },
+    })
+
+    expect(res.statusCode).toBe(201)
     await app.close()
   })
 
