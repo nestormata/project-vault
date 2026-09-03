@@ -13,7 +13,45 @@ const DEV_STATUS_PAGE_TOKEN_HMAC_SECRET = 'i'.repeat(64)
 const DEV_ERASURE_EMAIL_HASH_SECRET = 'j'.repeat(64)
 const DEV_SSO_STATE_HMAC_SECRET = 'k'.repeat(64)
 const DEV_OPERATIONAL_STATUS_TOKEN_HMAC_SECRET = 'l'.repeat(64)
+// Story 1.24: TOTP_REPLAY_HMAC_SECRET has no DEV_* constant of its own — its in-app dev fallback
+// (loadEnv(), below) silently reuses REFRESH_TOKEN_HMAC_SECRET's value instead. But
+// docker-compose.yml sets a THIRD, independent literal fallback for this same var ('c'.repeat(64))
+// that exists nowhere as a named export. This constant exists solely so that literal can be
+// enumerated in KNOWN_DEV_SECRET_VALUES below and rejected in production like the other 11.
+const DEV_TOTP_REPLAY_HMAC_SECRET = 'c'.repeat(64)
 const PLACEHOLDER_SECRET_PATTERN = /change-me|dev-only|placeholder/i
+
+// Story 1.24: the production placeholder guard above only matches strings containing
+// "change-me"/"dev-only"/"placeholder" — it does not match any of the single-repeated-character
+// DEV_* literals this file exports for local-dev convenience (docker-compose.yml uses these exact
+// values as its own `${VAR:-<fallback>}` defaults). A self-hosted operator who forgets to
+// override even one of these in a NODE_ENV=production deployment silently ends up running on a
+// publicly-known, repo-committed secret. This set is additive to PLACEHOLDER_SECRET_PATTERN, not
+// a replacement, and is intentionally a single shared set (not a per-field lookup table) so that
+// pasting one field's dev value into a *different* field is still caught (AC-1 cross-field case).
+const KNOWN_DEV_SECRET_VALUES: ReadonlySet<string> = new Set([
+  DEV_SESSION_SECRET,
+  DEV_REFRESH_TOKEN_HMAC_SECRET,
+  DEV_TOTP_REPLAY_HMAC_SECRET,
+  DEV_MFA_PENDING_SESSION_HMAC_SECRET,
+  DEV_INVITATION_TOKEN_HMAC_SECRET,
+  DEV_RECOVERY_TOKEN_HMAC_SECRET,
+  DEV_API_KEY_HMAC_SECRET,
+  DEV_MACHINE_JWT_SECRET,
+  DEV_STATUS_PAGE_TOKEN_HMAC_SECRET,
+  DEV_ERASURE_EMAIL_HASH_SECRET,
+  DEV_SSO_STATE_HMAC_SECRET,
+  DEV_OPERATIONAL_STATUS_TOKEN_HMAC_SECRET,
+])
+
+// Trimmed before comparison: an operator's `.env` file or shell export can carry an incidental
+// trailing newline/space on a copy-pasted value (this file's zod schema does not normalize
+// secret fields elsewhere), and a naive `===` check would treat that as a "different" value from
+// the known dev literal — silently defeating this guard rather than tripping it.
+function isKnownDevSecretValue(value: string | undefined): boolean {
+  if (!value) return false
+  return KNOWN_DEV_SECRET_VALUES.has(value.trim())
+}
 // Story 9.1 AC-14: syntactic-only 5-field cron validation (no minimum-interval constraint, unlike
 // packages/shared/src/validation/rotation-cron.ts's validateRotationCron — backup scheduling has
 // no analogous "too frequent" concern, just "is this parseable at all").
@@ -70,12 +108,24 @@ function validateProductionBasics(env: ProductionEnv, ctx: z.RefinementCtx): voi
       'SESSION_SECRET',
       'SESSION_SECRET must not be a placeholder secret in production'
     )
+  } else if (isKnownDevSecretValue(env.SESSION_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'SESSION_SECRET',
+      'SESSION_SECRET must not be a known dev-only secret value in production'
+    )
   }
   if (PLACEHOLDER_SECRET_PATTERN.test(env.REFRESH_TOKEN_HMAC_SECRET)) {
     addEnvIssue(
       ctx,
       'REFRESH_TOKEN_HMAC_SECRET',
       'REFRESH_TOKEN_HMAC_SECRET must not be a placeholder secret in production'
+    )
+  } else if (isKnownDevSecretValue(env.REFRESH_TOKEN_HMAC_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'REFRESH_TOKEN_HMAC_SECRET',
+      'REFRESH_TOKEN_HMAC_SECRET must not be a known dev-only secret value in production'
     )
   }
   if (!env.FAILED_AUTH_RECORD_ENABLED) {
@@ -101,6 +151,12 @@ function validateTotpReplayProductionSecret(env: ProductionEnv, ctx: z.Refinemen
       ctx,
       'TOTP_REPLAY_HMAC_SECRET',
       'TOTP_REPLAY_HMAC_SECRET must not be a placeholder secret in production'
+    )
+  } else if (isKnownDevSecretValue(env.TOTP_REPLAY_HMAC_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'TOTP_REPLAY_HMAC_SECRET',
+      'TOTP_REPLAY_HMAC_SECRET must not be a known dev-only secret value in production'
     )
   }
 }
@@ -128,6 +184,12 @@ function validatePendingMfaProductionSecret(env: ProductionEnv, ctx: z.Refinemen
       'MFA_PENDING_SESSION_HMAC_SECRET',
       'MFA_PENDING_SESSION_HMAC_SECRET must not be a placeholder secret in production'
     )
+  } else if (isKnownDevSecretValue(env.MFA_PENDING_SESSION_HMAC_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'MFA_PENDING_SESSION_HMAC_SECRET',
+      'MFA_PENDING_SESSION_HMAC_SECRET must not be a known dev-only secret value in production'
+    )
   }
 }
 
@@ -154,6 +216,12 @@ function validateInvitationTokenProductionSecret(env: ProductionEnv, ctx: z.Refi
       ctx,
       'INVITATION_TOKEN_HMAC_SECRET',
       'INVITATION_TOKEN_HMAC_SECRET must not be a placeholder secret in production'
+    )
+  } else if (isKnownDevSecretValue(env.INVITATION_TOKEN_HMAC_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'INVITATION_TOKEN_HMAC_SECRET',
+      'INVITATION_TOKEN_HMAC_SECRET must not be a known dev-only secret value in production'
     )
   }
 }
@@ -183,6 +251,12 @@ function validateRecoveryTokenProductionSecret(env: ProductionEnv, ctx: z.Refine
       'RECOVERY_TOKEN_HMAC_SECRET',
       'RECOVERY_TOKEN_HMAC_SECRET must not be a placeholder secret in production'
     )
+  } else if (isKnownDevSecretValue(env.RECOVERY_TOKEN_HMAC_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'RECOVERY_TOKEN_HMAC_SECRET',
+      'RECOVERY_TOKEN_HMAC_SECRET must not be a known dev-only secret value in production'
+    )
   }
 }
 
@@ -208,21 +282,36 @@ function validateApiKeyProductionSecret(env: ProductionEnv, ctx: z.RefinementCtx
       'API_KEY_HMAC_SECRET',
       'API_KEY_HMAC_SECRET must not be a placeholder secret in production'
     )
+  } else if (isKnownDevSecretValue(env.API_KEY_HMAC_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'API_KEY_HMAC_SECRET',
+      'API_KEY_HMAC_SECRET must not be a known dev-only secret value in production'
+    )
   }
+}
+
+// Story 1.24: converted from an inline 7-way OR-chain to this array-based membership check (same
+// precedent as statusPageTokenSharesAnotherAuthSecret below) — adding the new dev-secret-value
+// branch to validateMachineJwtProductionSecret's OR-chain pushed its cyclomatic complexity to 11,
+// past the repo's eslint threshold of 10.
+function machineJwtSharesAnotherAuthSecret(env: ProductionEnv): boolean {
+  const otherSecrets = [
+    env.SESSION_SECRET,
+    env.REFRESH_TOKEN_HMAC_SECRET,
+    env.TOTP_REPLAY_HMAC_SECRET,
+    env.MFA_PENDING_SESSION_HMAC_SECRET,
+    env.INVITATION_TOKEN_HMAC_SECRET,
+    env.RECOVERY_TOKEN_HMAC_SECRET,
+    env.API_KEY_HMAC_SECRET,
+  ]
+  return otherSecrets.includes(env.MACHINE_JWT_SECRET)
 }
 
 function validateMachineJwtProductionSecret(env: ProductionEnv, ctx: z.RefinementCtx): void {
   if (!env.MACHINE_JWT_SECRET) {
     addEnvIssue(ctx, 'MACHINE_JWT_SECRET', 'MACHINE_JWT_SECRET is required in production')
-  } else if (
-    env.MACHINE_JWT_SECRET === env.SESSION_SECRET ||
-    env.MACHINE_JWT_SECRET === env.REFRESH_TOKEN_HMAC_SECRET ||
-    env.MACHINE_JWT_SECRET === env.TOTP_REPLAY_HMAC_SECRET ||
-    env.MACHINE_JWT_SECRET === env.MFA_PENDING_SESSION_HMAC_SECRET ||
-    env.MACHINE_JWT_SECRET === env.INVITATION_TOKEN_HMAC_SECRET ||
-    env.MACHINE_JWT_SECRET === env.RECOVERY_TOKEN_HMAC_SECRET ||
-    env.MACHINE_JWT_SECRET === env.API_KEY_HMAC_SECRET
-  ) {
+  } else if (machineJwtSharesAnotherAuthSecret(env)) {
     addEnvIssue(
       ctx,
       'MACHINE_JWT_SECRET',
@@ -233,6 +322,12 @@ function validateMachineJwtProductionSecret(env: ProductionEnv, ctx: z.Refinemen
       ctx,
       'MACHINE_JWT_SECRET',
       'MACHINE_JWT_SECRET must not be a placeholder secret in production'
+    )
+  } else if (isKnownDevSecretValue(env.MACHINE_JWT_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'MACHINE_JWT_SECRET',
+      'MACHINE_JWT_SECRET must not be a known dev-only secret value in production'
     )
   }
 }
@@ -345,6 +440,12 @@ function validateStatusPageTokenProductionSecret(env: ProductionEnv, ctx: z.Refi
       'STATUS_PAGE_TOKEN_HMAC_SECRET',
       'STATUS_PAGE_TOKEN_HMAC_SECRET must not be a placeholder secret in production'
     )
+  } else if (isKnownDevSecretValue(env.STATUS_PAGE_TOKEN_HMAC_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'STATUS_PAGE_TOKEN_HMAC_SECRET',
+      'STATUS_PAGE_TOKEN_HMAC_SECRET must not be a known dev-only secret value in production'
+    )
   }
 }
 
@@ -387,6 +488,12 @@ function validateErasureEmailHashProductionSecret(env: ProductionEnv, ctx: z.Ref
       'ERASURE_EMAIL_HASH_SECRET',
       'ERASURE_EMAIL_HASH_SECRET must not be a placeholder secret in production'
     )
+  } else if (isKnownDevSecretValue(env.ERASURE_EMAIL_HASH_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'ERASURE_EMAIL_HASH_SECRET',
+      'ERASURE_EMAIL_HASH_SECRET must not be a known dev-only secret value in production'
+    )
   }
 }
 
@@ -428,6 +535,12 @@ function validateSsoStateProductionSecret(env: ProductionEnv, ctx: z.RefinementC
       'SSO_STATE_HMAC_SECRET',
       'SSO_STATE_HMAC_SECRET must not be a placeholder secret in production'
     )
+  } else if (isKnownDevSecretValue(env.SSO_STATE_HMAC_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'SSO_STATE_HMAC_SECRET',
+      'SSO_STATE_HMAC_SECRET must not be a known dev-only secret value in production'
+    )
   }
 }
 
@@ -462,6 +575,12 @@ function validateOperationalStatusTokenProductionSecret(
       ctx,
       'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET',
       'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET must not be a placeholder secret in production'
+    )
+  } else if (isKnownDevSecretValue(env.OPERATIONAL_STATUS_TOKEN_HMAC_SECRET)) {
+    addEnvIssue(
+      ctx,
+      'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET',
+      'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET must not be a known dev-only secret value in production'
     )
   }
 }

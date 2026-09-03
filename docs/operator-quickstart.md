@@ -170,12 +170,15 @@ dev data in that volume.
 ### Docker api container boots with `X is required in production` for HMAC secrets
 
 `docker-compose.yml`'s `api` service runs `NODE_ENV=production`, which enables the app's strict
-secret validation (see "Production hardening" below) even for local testing. All ~10 required
+secret validation (see "Production hardening" below) even for local testing. All 12 required
 secrets have dev-only fallback defaults baked into `docker-compose.yml` (`${VAR:-<64-char dev
 value>}`), so a fresh checkout should boot with no `.env` secrets set at all. If you see this
 error, either you've set one of these vars to an empty string in `.env` (which overrides the
 compose default with nothing) or a new required secret was added to `apps/api/src/config/env.ts`
-without a matching default wired into `docker-compose.yml`.
+without a matching default wired into `docker-compose.yml`. Note: only the base
+`docker-compose.yml` ships dev fallbacks — if you're running with `-f docker-compose.prod.yml`
+layered on top (see "Production hardening" below), that overlay intentionally makes every one of
+these 12 vars hard-required with no fallback at all.
 
 ---
 
@@ -183,15 +186,29 @@ without a matching default wired into `docker-compose.yml`.
 
 1. Change `vault_app` password: `ALTER ROLE vault_app PASSWORD '…'` after migrate.
 2. Set distinct 32+ byte secrets for every HMAC/session secret the app validates in production —
-   `SESSION_SECRET`, `REFRESH_TOKEN_HMAC_SECRET`, `TOTP_REPLAY_HMAC_SECRET`,
+   all 12 of: `SESSION_SECRET`, `REFRESH_TOKEN_HMAC_SECRET`, `TOTP_REPLAY_HMAC_SECRET`,
    `MFA_PENDING_SESSION_HMAC_SECRET`, `INVITATION_TOKEN_HMAC_SECRET`, `RECOVERY_TOKEN_HMAC_SECRET`,
    `API_KEY_HMAC_SECRET`, `MACHINE_JWT_SECRET`, `STATUS_PAGE_TOKEN_HMAC_SECRET`,
-   `ERASURE_EMAIL_HASH_SECRET`. `docker-compose.yml` ships dev-only repeated-character defaults
-   for local testing only — never reuse them, and never reuse a value across two of these vars
-   (the app rejects both placeholder-looking and duplicate secrets at startup).
+   `ERASURE_EMAIL_HASH_SECRET`, `SSO_STATE_HMAC_SECRET`, `OPERATIONAL_STATUS_TOKEN_HMAC_SECRET`.
+   `docker-compose.yml` ships dev-only repeated-character defaults for local testing only — never
+   reuse them, and never reuse a value across two of these vars (the app rejects both
+   placeholder-looking, exact-dev-value, and duplicate secrets at startup — Story 1.24).
 3. Set `VAULT_BOOTSTRAP_TOKEN`; never set `VAULT_ALLOW_REMOTE_INIT=true`.
-4. Use `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` (Postgres not exposed on public interface).
-5. Full runbook: [docs/runbook.md](runbook.md).
+4. Use `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` (Postgres not
+   exposed on public interface). **`docker-compose.prod.yml` must be the *last* `-f` argument** —
+   it overrides all 12 secrets above (plus `VAULT_ENVELOPE_KEY_HALF`) from `${VAR:-<dev
+   fallback>}` to `${VAR:?<message>}`, so `up`/`config` fails fast with a clear per-variable error
+   if any is left unset, instead of silently falling back to `docker-compose.yml`'s public,
+   repo-committed dev value.
+5. **Upgrading an already-deployed self-hosted instance?** This validation only makes a *missing*
+   secret loud on the *next* restart — it does nothing to rotate a secret your instance may
+   already be running on. If any of the 12 vars above was ever left unset before this upgrade
+   (i.e. your deployment was silently running on the public `docker-compose.yml` dev value),
+   generate a fresh random value for **every one of the 12** (e.g. `openssl rand -hex 32`) and set
+   them explicitly before restarting — pulling the new image/compose file alone does not rotate an
+   already-compromised secret, and every existing session/token signed with the old value should be
+   treated as forgeable until rotated.
+6. Full runbook: [docs/runbook.md](runbook.md).
 
 ---
 

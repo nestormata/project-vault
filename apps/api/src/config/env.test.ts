@@ -28,29 +28,29 @@ function productionEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
     NODE_ENV: 'production',
     DATABASE_URL: VAULT_APP_DATABASE_URL,
     ADMIN_DATABASE_URL,
-    SESSION_SECRET: 'a'.repeat(64),
-    REFRESH_TOKEN_HMAC_SECRET: 'b'.repeat(64),
+    SESSION_SECRET: 'A'.repeat(64),
+    REFRESH_TOKEN_HMAC_SECRET: 'B'.repeat(64),
     // Story 4.3: required in production since RECOVERY_TOKEN_HMAC_SECRET's own validation
     // block landed; baked into the base fixture like SESSION_SECRET/REFRESH_TOKEN_HMAC_SECRET so
     // every other secret's dedicated-requirement test isn't also tripped by this one being unset.
-    RECOVERY_TOKEN_HMAC_SECRET: 'f'.repeat(64),
+    RECOVERY_TOKEN_HMAC_SECRET: 'F'.repeat(64),
     // Story 7.1: same reasoning as RECOVERY_TOKEN_HMAC_SECRET above.
-    API_KEY_HMAC_SECRET: 'g'.repeat(64),
+    API_KEY_HMAC_SECRET: 'G'.repeat(64),
     // Story 7.2 D3: same reasoning — baked into the base fixture so unrelated production tests
     // aren't also tripped by this newest dedicated secret being unset.
-    MACHINE_JWT_SECRET: 'h'.repeat(64),
+    MACHINE_JWT_SECRET: 'H'.repeat(64),
     // Story 6.3 ADR-6.3-06: same reasoning — baked into the base fixture so unrelated production
     // tests aren't also tripped by this newest dedicated secret being unset.
-    STATUS_PAGE_TOKEN_HMAC_SECRET: 'i'.repeat(64),
+    STATUS_PAGE_TOKEN_HMAC_SECRET: 'I'.repeat(64),
     // Story 8.4 D6: same reasoning — baked into the base fixture so unrelated production tests
     // aren't also tripped by this newest dedicated secret being unset.
-    ERASURE_EMAIL_HASH_SECRET: 'j'.repeat(64),
+    ERASURE_EMAIL_HASH_SECRET: 'J'.repeat(64),
     // Story 14.3: same reasoning — baked into the base fixture so unrelated production tests
     // aren't also tripped by this newest dedicated secret being unset.
-    SSO_STATE_HMAC_SECRET: 'k'.repeat(64),
+    SSO_STATE_HMAC_SECRET: 'K'.repeat(64),
     // Story 1.19 D6: same reasoning — baked into the base fixture so unrelated production tests
     // aren't also tripped by this newest dedicated secret being unset.
-    OPERATIONAL_STATUS_TOKEN_HMAC_SECRET: 'l'.repeat(64),
+    OPERATIONAL_STATUS_TOKEN_HMAC_SECRET: 'L'.repeat(64),
     AUTH_DUMMY_PASSWORD_HASH,
     ...overrides,
   }
@@ -340,8 +340,8 @@ describe('env', () => {
     process.env = {
       ...BASE_ENV,
       DATABASE_URL: VAULT_APP_DATABASE_URL,
-      SESSION_SECRET: 'a'.repeat(64),
-      REFRESH_TOKEN_HMAC_SECRET: 'a'.repeat(64),
+      SESSION_SECRET: 'A'.repeat(64),
+      REFRESH_TOKEN_HMAC_SECRET: 'A'.repeat(64),
     }
     await expect(import('./env.js')).rejects.toThrow(/Invalid environment/)
     expect(exitSpy).toHaveBeenCalledWith(1)
@@ -418,9 +418,9 @@ describe('env', () => {
 
     resetEnvImport(exitSpy)
     process.env = productionEnv({
-      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
-      MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
-      INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
+      TOTP_REPLAY_HMAC_SECRET: 'C'.repeat(64),
+      MFA_PENDING_SESSION_HMAC_SECRET: 'D'.repeat(64),
+      INVITATION_TOKEN_HMAC_SECRET: 'E'.repeat(64),
     })
     const { env } = await import('./env.js')
     expect(env.COOKIE_SECURE).toBe(true)
@@ -442,13 +442,13 @@ describe('env', () => {
 
     resetEnvImport(exitSpy)
     process.env = productionEnv({
-      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
-      MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
-      INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
+      TOTP_REPLAY_HMAC_SECRET: 'C'.repeat(64),
+      MFA_PENDING_SESSION_HMAC_SECRET: 'D'.repeat(64),
+      INVITATION_TOKEN_HMAC_SECRET: 'E'.repeat(64),
       COOKIE_SECURE: 'true',
     })
     const { env } = await import('./env.js')
-    expect(env.TOTP_REPLAY_HMAC_SECRET).toBe('c'.repeat(64))
+    expect(env.TOTP_REPLAY_HMAC_SECRET).toBe('C'.repeat(64))
     expect(exitSpy).not.toHaveBeenCalled()
   })
 
@@ -457,25 +457,25 @@ describe('env', () => {
       exitSpy,
       {
         COOKIE_SECURE: 'true',
-        TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
-        INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
+        TOTP_REPLAY_HMAC_SECRET: 'C'.repeat(64),
+        INVITATION_TOKEN_HMAC_SECRET: 'E'.repeat(64),
       },
       'MFA_PENDING_SESSION_HMAC_SECRET',
-      'd'.repeat(64)
+      'D'.repeat(64)
     )
   })
 
   it('rejects placeholder or reused pending MFA session secrets in production', async () => {
     for (const MFA_PENDING_SESSION_HMAC_SECRET of [
       'change-me'.repeat(8),
-      'a'.repeat(64),
-      'b'.repeat(64),
-      'c'.repeat(64),
+      'A'.repeat(64),
+      'B'.repeat(64),
+      'C'.repeat(64),
     ]) {
       resetEnvImport(exitSpy)
       process.env = productionEnv({
         COOKIE_SECURE: 'true',
-        TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+        TOTP_REPLAY_HMAC_SECRET: 'C'.repeat(64),
         MFA_PENDING_SESSION_HMAC_SECRET,
       })
       await expectInvalidEnv(exitSpy)
@@ -487,27 +487,27 @@ describe('env', () => {
       exitSpy,
       {
         COOKIE_SECURE: 'true',
-        TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
-        MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
+        TOTP_REPLAY_HMAC_SECRET: 'C'.repeat(64),
+        MFA_PENDING_SESSION_HMAC_SECRET: 'D'.repeat(64),
       },
       'INVITATION_TOKEN_HMAC_SECRET',
-      'e'.repeat(64)
+      'E'.repeat(64)
     )
   })
 
   it('rejects placeholder or reused invitation token secrets in production', async () => {
     for (const INVITATION_TOKEN_HMAC_SECRET of [
       'change-me'.repeat(8),
-      'a'.repeat(64),
-      'b'.repeat(64),
-      'c'.repeat(64),
-      'd'.repeat(64),
+      'A'.repeat(64),
+      'B'.repeat(64),
+      'C'.repeat(64),
+      'D'.repeat(64),
     ]) {
       resetEnvImport(exitSpy)
       process.env = productionEnv({
         COOKIE_SECURE: 'true',
-        TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
-        MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
+        TOTP_REPLAY_HMAC_SECRET: 'C'.repeat(64),
+        MFA_PENDING_SESSION_HMAC_SECRET: 'D'.repeat(64),
         INVITATION_TOKEN_HMAC_SECRET,
       })
       await expectInvalidEnv(exitSpy)
@@ -519,31 +519,31 @@ describe('env', () => {
       exitSpy,
       {
         COOKIE_SECURE: 'true',
-        TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
-        MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
-        INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
+        TOTP_REPLAY_HMAC_SECRET: 'C'.repeat(64),
+        MFA_PENDING_SESSION_HMAC_SECRET: 'D'.repeat(64),
+        INVITATION_TOKEN_HMAC_SECRET: 'E'.repeat(64),
         RECOVERY_TOKEN_HMAC_SECRET: undefined,
       },
       'RECOVERY_TOKEN_HMAC_SECRET',
-      'f'.repeat(64)
+      'F'.repeat(64)
     )
   })
 
   it('rejects placeholder or reused recovery token secrets in production', async () => {
     for (const RECOVERY_TOKEN_HMAC_SECRET of [
       'change-me'.repeat(8),
-      'a'.repeat(64),
-      'b'.repeat(64),
-      'c'.repeat(64),
-      'd'.repeat(64),
-      'e'.repeat(64),
+      'A'.repeat(64),
+      'B'.repeat(64),
+      'C'.repeat(64),
+      'D'.repeat(64),
+      'E'.repeat(64),
     ]) {
       resetEnvImport(exitSpy)
       process.env = productionEnv({
         COOKIE_SECURE: 'true',
-        TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
-        MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
-        INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
+        TOTP_REPLAY_HMAC_SECRET: 'C'.repeat(64),
+        MFA_PENDING_SESSION_HMAC_SECRET: 'D'.repeat(64),
+        INVITATION_TOKEN_HMAC_SECRET: 'E'.repeat(64),
         RECOVERY_TOKEN_HMAC_SECRET,
       })
       await expectInvalidEnv(exitSpy)
@@ -556,10 +556,10 @@ describe('env', () => {
   // multi-line context the recovery-token block above already contains (jscpd).
   const priorSecretsSatisfied = {
     COOKIE_SECURE: 'true',
-    TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
-    MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
-    INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
-    RECOVERY_TOKEN_HMAC_SECRET: 'f'.repeat(64),
+    TOTP_REPLAY_HMAC_SECRET: 'C'.repeat(64),
+    MFA_PENDING_SESSION_HMAC_SECRET: 'D'.repeat(64),
+    INVITATION_TOKEN_HMAC_SECRET: 'E'.repeat(64),
+    RECOVERY_TOKEN_HMAC_SECRET: 'F'.repeat(64),
   }
 
   it('requires a dedicated API key secret in production (Story 7.1, D3)', async () => {
@@ -567,19 +567,19 @@ describe('env', () => {
       exitSpy,
       { ...priorSecretsSatisfied, API_KEY_HMAC_SECRET: undefined },
       'API_KEY_HMAC_SECRET',
-      'g'.repeat(64)
+      'G'.repeat(64)
     )
   })
 
   it('rejects placeholder or reused API key secrets in production', async () => {
     for (const API_KEY_HMAC_SECRET of [
       'change-me'.repeat(8),
-      'a'.repeat(64),
-      'b'.repeat(64),
-      'c'.repeat(64),
-      'd'.repeat(64),
-      'e'.repeat(64),
-      'f'.repeat(64),
+      'A'.repeat(64),
+      'B'.repeat(64),
+      'C'.repeat(64),
+      'D'.repeat(64),
+      'E'.repeat(64),
+      'F'.repeat(64),
     ]) {
       resetEnvImport(exitSpy)
       process.env = productionEnv({ ...priorSecretsSatisfied, API_KEY_HMAC_SECRET })
@@ -590,7 +590,7 @@ describe('env', () => {
   // Story 7.2 D3: MACHINE_JWT_SECRET is the 6th dedicated-secret requirement.
   const priorSecretsSatisfiedWithApiKey = {
     ...priorSecretsSatisfied,
-    API_KEY_HMAC_SECRET: 'g'.repeat(64),
+    API_KEY_HMAC_SECRET: 'G'.repeat(64),
   }
 
   it('requires a dedicated machine JWT secret in production (Story 7.2, D3)', async () => {
@@ -598,20 +598,20 @@ describe('env', () => {
       exitSpy,
       { ...priorSecretsSatisfiedWithApiKey, MACHINE_JWT_SECRET: undefined },
       'MACHINE_JWT_SECRET',
-      'h'.repeat(64)
+      'H'.repeat(64)
     )
   })
 
   it('rejects placeholder or reused machine JWT secrets in production', async () => {
     for (const MACHINE_JWT_SECRET of [
       'change-me'.repeat(8),
-      'a'.repeat(64),
-      'b'.repeat(64),
-      'c'.repeat(64),
-      'd'.repeat(64),
-      'e'.repeat(64),
-      'f'.repeat(64),
-      'g'.repeat(64),
+      'A'.repeat(64),
+      'B'.repeat(64),
+      'C'.repeat(64),
+      'D'.repeat(64),
+      'E'.repeat(64),
+      'F'.repeat(64),
+      'G'.repeat(64),
     ]) {
       resetEnvImport(exitSpy)
       process.env = productionEnv({ ...priorSecretsSatisfiedWithApiKey, MACHINE_JWT_SECRET })
@@ -622,7 +622,7 @@ describe('env', () => {
   // Story 6.3 ADR-6.3-06: STATUS_PAGE_TOKEN_HMAC_SECRET is the 7th dedicated-secret requirement.
   const priorSecretsSatisfiedWithMachineJwt = {
     ...priorSecretsSatisfiedWithApiKey,
-    MACHINE_JWT_SECRET: 'h'.repeat(64),
+    MACHINE_JWT_SECRET: 'H'.repeat(64),
   }
 
   it('requires a dedicated status page token secret in production (Story 6.3, ADR-6.3-06)', async () => {
@@ -630,21 +630,21 @@ describe('env', () => {
       exitSpy,
       { ...priorSecretsSatisfiedWithMachineJwt, STATUS_PAGE_TOKEN_HMAC_SECRET: undefined },
       'STATUS_PAGE_TOKEN_HMAC_SECRET',
-      'i'.repeat(64)
+      'I'.repeat(64)
     )
   })
 
   it('rejects placeholder or reused status page token secrets in production', async () => {
     for (const STATUS_PAGE_TOKEN_HMAC_SECRET of [
       'change-me'.repeat(8),
-      'a'.repeat(64),
-      'b'.repeat(64),
-      'c'.repeat(64),
-      'd'.repeat(64),
-      'e'.repeat(64),
-      'f'.repeat(64),
-      'g'.repeat(64),
-      'h'.repeat(64),
+      'A'.repeat(64),
+      'B'.repeat(64),
+      'C'.repeat(64),
+      'D'.repeat(64),
+      'E'.repeat(64),
+      'F'.repeat(64),
+      'G'.repeat(64),
+      'H'.repeat(64),
     ]) {
       resetEnvImport(exitSpy)
       process.env = productionEnv({
@@ -658,7 +658,7 @@ describe('env', () => {
   // Story 8.4 D6: ERASURE_EMAIL_HASH_SECRET is the 8th dedicated-secret requirement.
   const priorSecretsSatisfiedWithStatusPageToken = {
     ...priorSecretsSatisfiedWithMachineJwt,
-    STATUS_PAGE_TOKEN_HMAC_SECRET: 'i'.repeat(64),
+    STATUS_PAGE_TOKEN_HMAC_SECRET: 'I'.repeat(64),
   }
 
   it('requires a dedicated erasure email hash secret in production (Story 8.4, D6)', async () => {
@@ -666,22 +666,22 @@ describe('env', () => {
       exitSpy,
       { ...priorSecretsSatisfiedWithStatusPageToken, ERASURE_EMAIL_HASH_SECRET: undefined },
       'ERASURE_EMAIL_HASH_SECRET',
-      'j'.repeat(64)
+      'J'.repeat(64)
     )
   })
 
   it('rejects placeholder or reused erasure email hash secrets in production', async () => {
     for (const ERASURE_EMAIL_HASH_SECRET of [
       'change-me'.repeat(8),
-      'a'.repeat(64),
-      'b'.repeat(64),
-      'c'.repeat(64),
-      'd'.repeat(64),
-      'e'.repeat(64),
-      'f'.repeat(64),
-      'g'.repeat(64),
-      'h'.repeat(64),
-      'i'.repeat(64),
+      'A'.repeat(64),
+      'B'.repeat(64),
+      'C'.repeat(64),
+      'D'.repeat(64),
+      'E'.repeat(64),
+      'F'.repeat(64),
+      'G'.repeat(64),
+      'H'.repeat(64),
+      'I'.repeat(64),
     ]) {
       resetEnvImport(exitSpy)
       process.env = productionEnv({
@@ -694,7 +694,7 @@ describe('env', () => {
 
   const priorSecretsSatisfiedWithErasureEmailHash = {
     ...priorSecretsSatisfiedWithStatusPageToken,
-    ERASURE_EMAIL_HASH_SECRET: 'j'.repeat(64),
+    ERASURE_EMAIL_HASH_SECRET: 'J'.repeat(64),
   }
 
   it('requires a dedicated SSO state secret in production (Story 14.3)', async () => {
@@ -702,23 +702,23 @@ describe('env', () => {
       exitSpy,
       { ...priorSecretsSatisfiedWithErasureEmailHash, SSO_STATE_HMAC_SECRET: undefined },
       'SSO_STATE_HMAC_SECRET',
-      'k'.repeat(64)
+      'K'.repeat(64)
     )
   })
 
   it('rejects placeholder or reused SSO state secrets in production', async () => {
     for (const SSO_STATE_HMAC_SECRET of [
       'change-me'.repeat(8),
-      'a'.repeat(64),
-      'b'.repeat(64),
-      'c'.repeat(64),
-      'd'.repeat(64),
-      'e'.repeat(64),
-      'f'.repeat(64),
-      'g'.repeat(64),
-      'h'.repeat(64),
-      'i'.repeat(64),
-      'j'.repeat(64),
+      'A'.repeat(64),
+      'B'.repeat(64),
+      'C'.repeat(64),
+      'D'.repeat(64),
+      'E'.repeat(64),
+      'F'.repeat(64),
+      'G'.repeat(64),
+      'H'.repeat(64),
+      'I'.repeat(64),
+      'J'.repeat(64),
     ]) {
       resetEnvImport(exitSpy)
       process.env = productionEnv({
@@ -731,7 +731,7 @@ describe('env', () => {
 
   const priorSecretsSatisfiedWithSsoState = {
     ...priorSecretsSatisfiedWithErasureEmailHash,
-    SSO_STATE_HMAC_SECRET: 'k'.repeat(64),
+    SSO_STATE_HMAC_SECRET: 'K'.repeat(64),
   }
 
   it('requires a dedicated operational status token secret in production (Story 1.19 D6)', async () => {
@@ -739,24 +739,24 @@ describe('env', () => {
       exitSpy,
       { ...priorSecretsSatisfiedWithSsoState, OPERATIONAL_STATUS_TOKEN_HMAC_SECRET: undefined },
       'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET',
-      'l'.repeat(64)
+      'L'.repeat(64)
     )
   })
 
   it('rejects placeholder or reused operational status token secrets in production', async () => {
     for (const OPERATIONAL_STATUS_TOKEN_HMAC_SECRET of [
       'change-me'.repeat(8),
-      'a'.repeat(64),
-      'b'.repeat(64),
-      'c'.repeat(64),
-      'd'.repeat(64),
-      'e'.repeat(64),
-      'f'.repeat(64),
-      'g'.repeat(64),
-      'h'.repeat(64),
-      'i'.repeat(64),
-      'j'.repeat(64),
-      'k'.repeat(64),
+      'A'.repeat(64),
+      'B'.repeat(64),
+      'C'.repeat(64),
+      'D'.repeat(64),
+      'E'.repeat(64),
+      'F'.repeat(64),
+      'G'.repeat(64),
+      'H'.repeat(64),
+      'I'.repeat(64),
+      'J'.repeat(64),
+      'K'.repeat(64),
     ]) {
       resetEnvImport(exitSpy)
       process.env = productionEnv({
@@ -789,12 +789,12 @@ describe('env', () => {
       DATABASE_URL: VAULT_APP_DATABASE_URL,
       MFA_PENDING_SESSION_TTL_SECONDS: '900',
       MFA_LOGIN_MAX_ATTEMPTS: '10',
-      MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
+      MFA_PENDING_SESSION_HMAC_SECRET: 'D'.repeat(64),
     }
     const { env } = await import('./env.js')
     expect(env.MFA_PENDING_SESSION_TTL_SECONDS).toBe(900)
     expect(env.MFA_LOGIN_MAX_ATTEMPTS).toBe(10)
-    expect(env.MFA_PENDING_SESSION_HMAC_SECRET).toBe('d'.repeat(64))
+    expect(env.MFA_PENDING_SESSION_HMAC_SECRET).toBe('D'.repeat(64))
     expect(exitSpy).not.toHaveBeenCalled()
   })
 
@@ -868,7 +868,7 @@ describe('env', () => {
   it('rejects FAILED_AUTH_RECORD_ENABLED=false in production', async () => {
     process.env = productionEnv({
       COOKIE_SECURE: 'true',
-      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+      TOTP_REPLAY_HMAC_SECRET: 'C'.repeat(64),
       FAILED_AUTH_RECORD_ENABLED: 'false',
     })
     await expectInvalidEnv(exitSpy)
@@ -919,7 +919,7 @@ describe('env', () => {
   it('rejects LOG_LEVEL=debug or trace in production', async () => {
     process.env = productionEnv({
       COOKIE_SECURE: 'true',
-      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+      TOTP_REPLAY_HMAC_SECRET: 'C'.repeat(64),
       LOG_LEVEL: 'debug',
     })
     await expectInvalidEnv(exitSpy)
@@ -927,7 +927,7 @@ describe('env', () => {
     resetEnvImport(exitSpy)
     process.env = productionEnv({
       COOKIE_SECURE: 'true',
-      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
+      TOTP_REPLAY_HMAC_SECRET: 'C'.repeat(64),
       LOG_LEVEL: 'trace',
     })
     await expectInvalidEnv(exitSpy)
@@ -1420,9 +1420,9 @@ describe('env', () => {
     // key) to an operator- or attacker-controlled endpoint.
     const FULL_VALID_PRODUCTION_SECRETS = {
       COOKIE_SECURE: 'true',
-      TOTP_REPLAY_HMAC_SECRET: 'c'.repeat(64),
-      MFA_PENDING_SESSION_HMAC_SECRET: 'd'.repeat(64),
-      INVITATION_TOKEN_HMAC_SECRET: 'e'.repeat(64),
+      TOTP_REPLAY_HMAC_SECRET: 'C'.repeat(64),
+      MFA_PENDING_SESSION_HMAC_SECRET: 'D'.repeat(64),
+      INVITATION_TOKEN_HMAC_SECRET: 'E'.repeat(64),
     }
 
     it('rejects VAULT_KMS_ENDPOINT set in production', async () => {
@@ -1768,11 +1768,11 @@ describe('env', () => {
       })
       for (const SERVICE_REVOCATION_TOKEN of [
         'p'.repeat(32), // reused from SERVICE_PROVISIONING_TOKEN
-        'a'.repeat(64), // reused from SESSION_SECRET
-        'b'.repeat(64), // reused from REFRESH_TOKEN_HMAC_SECRET
-        'f'.repeat(64), // reused from RECOVERY_TOKEN_HMAC_SECRET
-        'g'.repeat(64), // reused from API_KEY_HMAC_SECRET
-        'h'.repeat(64), // reused from MACHINE_JWT_SECRET
+        'A'.repeat(64), // reused from SESSION_SECRET
+        'B'.repeat(64), // reused from REFRESH_TOKEN_HMAC_SECRET
+        'F'.repeat(64), // reused from RECOVERY_TOKEN_HMAC_SECRET
+        'G'.repeat(64), // reused from API_KEY_HMAC_SECRET
+        'H'.repeat(64), // reused from MACHINE_JWT_SECRET
       ]) {
         resetEnvImport(exitSpy)
         process.env = { ...base, SERVICE_REVOCATION_TOKEN }
@@ -1813,6 +1813,74 @@ describe('env', () => {
         ...priorSecretsSatisfiedWithSsoState,
         SERVICE_PROVISIONING_TOKEN: 'change-me'.repeat(4),
       })
+      await expectInvalidEnv(exitSpy)
+    })
+  })
+
+  // Story 1.24: env.ts's production placeholder guard only matched
+  // /change-me|dev-only|placeholder/i, which does not match the single-repeated-character
+  // DEV_* constants this file exports for local-dev convenience (and docker-compose.yml sets as
+  // its own fallback default). This left a real auth-bypass gap for self-hosted deployments that
+  // forget to override even one of these vars. These tests lock in the additive exact-value
+  // rejection for all 12 known dev-secret literals (11 named DEV_* constants plus
+  // TOTP_REPLAY_HMAC_SECRET's unnamed docker-compose.yml literal).
+  describe('Story 1.24: rejects exact repo-committed dev-secret values in production', () => {
+    function fullyValidProductionEnv(): NodeJS.ProcessEnv {
+      return productionEnv({
+        ...priorSecretsSatisfiedWithSsoState,
+        OPERATIONAL_STATUS_TOKEN_HMAC_SECRET: 'L'.repeat(64),
+      })
+    }
+
+    it('accepts all 12 secrets when none matches a known dev-secret value (no regression)', async () => {
+      process.env = fullyValidProductionEnv()
+      const { env } = await import('./env.js')
+      expect(env.SESSION_SECRET).toBe('A'.repeat(64))
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['SESSION_SECRET', 'a'.repeat(64)],
+      ['REFRESH_TOKEN_HMAC_SECRET', 'b'.repeat(64)],
+      ['TOTP_REPLAY_HMAC_SECRET', 'c'.repeat(64)],
+      ['MFA_PENDING_SESSION_HMAC_SECRET', 'd'.repeat(64)],
+      ['INVITATION_TOKEN_HMAC_SECRET', 'e'.repeat(64)],
+      ['RECOVERY_TOKEN_HMAC_SECRET', 'f'.repeat(64)],
+      ['API_KEY_HMAC_SECRET', 'g'.repeat(64)],
+      ['MACHINE_JWT_SECRET', 'h'.repeat(64)],
+      ['STATUS_PAGE_TOKEN_HMAC_SECRET', 'i'.repeat(64)],
+      ['ERASURE_EMAIL_HASH_SECRET', 'j'.repeat(64)],
+      ['SSO_STATE_HMAC_SECRET', 'k'.repeat(64)],
+      ['OPERATIONAL_STATUS_TOKEN_HMAC_SECRET', 'l'.repeat(64)],
+    ])(
+      'AC-1: rejects %s set to its own exact repo-committed dev value, naming the field',
+      async (field, devValue) => {
+        process.env = { ...fullyValidProductionEnv(), [field]: devValue }
+        await expectInvalidEnv(exitSpy)
+        expect((process.stderr.write as unknown as MockInstance).mock.calls.join('\n')).toContain(
+          field
+        )
+      }
+    )
+
+    it('AC-1 cross-field check: rejects a secret set to a DIFFERENT field’s dev value', async () => {
+      // SESSION_SECRET set to DEV_REFRESH_TOKEN_HMAC_SECRET's value ('b'.repeat(64)) — the shared
+      // rejection set (not a per-field lookup) must still catch this, since it asks "is this
+      // string any known dev secret value," not "is this string *this field's* dev secret value."
+      process.env = { ...fullyValidProductionEnv(), SESSION_SECRET: 'b'.repeat(64) }
+      await expectInvalidEnv(exitSpy)
+    })
+
+    it('AC edge case: trims incidental trailing whitespace before comparing to known dev values', async () => {
+      process.env = { ...fullyValidProductionEnv(), SESSION_SECRET: `${'a'.repeat(64)}\n` }
+      await expectInvalidEnv(exitSpy)
+    })
+
+    it('AC edge case: trims incidental leading/trailing whitespace on the TOTP dev literal too', async () => {
+      process.env = {
+        ...fullyValidProductionEnv(),
+        TOTP_REPLAY_HMAC_SECRET: `  ${'c'.repeat(64)}  `,
+      }
       await expectInvalidEnv(exitSpy)
     })
   })
