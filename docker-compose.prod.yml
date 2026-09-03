@@ -27,6 +27,28 @@ services:
     environment:
       VAULT_KEY_DIR: /run/secrets
       VAULT_ENVELOPE_KEY_HALF: ${VAULT_ENVELOPE_KEY_HALF:?VAULT_ENVELOPE_KEY_HALF required for envelope mode}
+      # Story 1.24: docker-compose.yml sets these 12 secrets via `${VAR:-<dev fallback>}`, whose
+      # fallback values are the literal repo-committed DEV_* constants in apps/api/src/config/env.ts
+      # (e.g. SESSION_SECRET's fallback is 'a'.repeat(64), matching DEV_SESSION_SECRET). That's the
+      # documented zero-.env local-dev convenience and docker-compose.yml itself is NOT changed by
+      # this story. Here in the prod overlay, `${VAR:?message}` overrides each of those same keys so
+      # a self-hosted `docker compose -f docker-compose.yml -f docker-compose.prod.yml up` refuses to
+      # start if an operator forgets to set any of them, instead of silently running on a
+      # publicly-known secret. Compose merges the `environment:` map key-by-key with the LAST -f file
+      # winning per key, so docker-compose.prod.yml MUST be passed after docker-compose.yml on the
+      # command line for this to take effect (see README/AGENTS.md self-host docs).
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET required in production}
+      REFRESH_TOKEN_HMAC_SECRET: ${REFRESH_TOKEN_HMAC_SECRET:?REFRESH_TOKEN_HMAC_SECRET required in production}
+      TOTP_REPLAY_HMAC_SECRET: ${TOTP_REPLAY_HMAC_SECRET:?TOTP_REPLAY_HMAC_SECRET required in production}
+      MFA_PENDING_SESSION_HMAC_SECRET: ${MFA_PENDING_SESSION_HMAC_SECRET:?MFA_PENDING_SESSION_HMAC_SECRET required in production}
+      INVITATION_TOKEN_HMAC_SECRET: ${INVITATION_TOKEN_HMAC_SECRET:?INVITATION_TOKEN_HMAC_SECRET required in production}
+      RECOVERY_TOKEN_HMAC_SECRET: ${RECOVERY_TOKEN_HMAC_SECRET:?RECOVERY_TOKEN_HMAC_SECRET required in production}
+      API_KEY_HMAC_SECRET: ${API_KEY_HMAC_SECRET:?API_KEY_HMAC_SECRET required in production}
+      MACHINE_JWT_SECRET: ${MACHINE_JWT_SECRET:?MACHINE_JWT_SECRET required in production}
+      STATUS_PAGE_TOKEN_HMAC_SECRET: ${STATUS_PAGE_TOKEN_HMAC_SECRET:?STATUS_PAGE_TOKEN_HMAC_SECRET required in production}
+      ERASURE_EMAIL_HASH_SECRET: ${ERASURE_EMAIL_HASH_SECRET:?ERASURE_EMAIL_HASH_SECRET required in production}
+      SSO_STATE_HMAC_SECRET: ${SSO_STATE_HMAC_SECRET:?SSO_STATE_HMAC_SECRET required in production}
+      OPERATIONAL_STATUS_TOKEN_HMAC_SECRET: ${OPERATIONAL_STATUS_TOKEN_HMAC_SECRET:?OPERATIONAL_STATUS_TOKEN_HMAC_SECRET required in production}
 
   web:
     mem_limit: 256m
