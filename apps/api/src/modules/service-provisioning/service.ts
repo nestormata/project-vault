@@ -182,6 +182,34 @@ export function organizationNotFoundError(): AppError {
   return new AppError('organization_not_found', 'Organization not found', 404)
 }
 
+type OrgCentralizemeLinkRow = { id: string; centralizemeOrganizationId: string | null }
+
+/**
+ * Shared `SELECT id, centralizeme_organization_id FROM organizations WHERE id = :organizationId`
+ * lookup used by every function in this module that needs to confirm an organization exists
+ * before acting on it (insertNewOrgMember's CM-managed gate, Story 33.1's backfill real/dry-run
+ * paths) — factored out after a jscpd duplication finding on this exact block. `forUpdate` row-locks
+ * the target inside a transaction (Story 33.1 AC17's same-org concurrent-write race); omit it for a
+ * read-only (dry-run) lookup, which never mutates and therefore never needs the lock.
+ */
+async function selectOrgForCentralizemeLink(
+  typedTx: Tx,
+  organizationId: string,
+  options: { forUpdate?: boolean } = {}
+): Promise<OrgCentralizemeLinkRow> {
+  const query = typedTx
+    .select({
+      id: organizations.id,
+      centralizemeOrganizationId: organizations.centralizemeOrganizationId,
+    })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
+
+  const [org] = options.forUpdate ? await query.for('update').limit(1) : await query.limit(1)
+  if (!org) throw organizationNotFoundError()
+  return org
+}
+
 // Story 32.1 code-review finding (High): the org-existence check above only confirmed the
 // organizationId is a real PV org — ANY real PV org, including a self-registered customer
 // unrelated to CentralizeMe entirely. A leaked SERVICE_PROVISIONING_TOKEN could otherwise inject
@@ -232,15 +260,7 @@ async function insertNewOrgMember(
   return getDb().transaction(async (tx) => {
     const typedTx = tx as Tx
 
-    const [org] = await typedTx
-      .select({
-        id: organizations.id,
-        centralizemeOrganizationId: organizations.centralizemeOrganizationId,
-      })
-      .from(organizations)
-      .where(eq(organizations.id, organizationId))
-      .limit(1)
-    if (!org) throw organizationNotFoundError()
+    const org = await selectOrgForCentralizemeLink(typedTx, organizationId)
     if (org.centralizemeOrganizationId === null) throw organizationNotCentralizemeManagedError()
 
     const passwordHash = await generateUnusablePasswordHash()
@@ -529,16 +549,8 @@ async function backfillCentralizemeOrgLinkDryRun(
   organizationId: string,
   input: BackfillCentralizemeOrgLinkRequest
 ): Promise<BackfillCentralizemeOrgLinkResult> {
-  const db = getDb()
-  const [org] = await db
-    .select({
-      id: organizations.id,
-      centralizemeOrganizationId: organizations.centralizemeOrganizationId,
-    })
-    .from(organizations)
-    .where(eq(organizations.id, organizationId))
-    .limit(1)
-  if (!org) throw organizationNotFoundError()
+  const db = getDb() as unknown as Tx
+  const org = await selectOrgForCentralizemeLink(db, organizationId)
 
   const decision = evaluateStoredLink(org, input)
   if (decision.outcome === 'noop') {
@@ -550,13 +562,7 @@ async function backfillCentralizemeOrgLinkDryRun(
     }
   }
 
-  if (
-    await findDifferentOrgClaimingId(
-      db as unknown as Tx,
-      organizationId,
-      input.centralizemeOrganizationId
-    )
-  ) {
+  if (await findDifferentOrgClaimingId(db, organizationId, input.centralizemeOrganizationId)) {
     throw centralizemeIdAlreadyLinkedError()
   }
 
@@ -588,16 +594,7 @@ async function backfillCentralizemeOrgLinkReal(
   return getDb().transaction(async (tx) => {
     const typedTx = tx as Tx
 
-    const [org] = await typedTx
-      .select({
-        id: organizations.id,
-        centralizemeOrganizationId: organizations.centralizemeOrganizationId,
-      })
-      .from(organizations)
-      .where(eq(organizations.id, organizationId))
-      .for('update')
-      .limit(1)
-    if (!org) throw organizationNotFoundError()
+    const org = await selectOrgForCentralizemeLink(typedTx, organizationId, { forUpdate: true })
 
     const decision = evaluateStoredLink(org, input)
     if (decision.outcome === 'noop') {
