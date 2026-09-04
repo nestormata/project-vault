@@ -43,6 +43,14 @@ const NO_DATA_ACCESS = 'no-data-access'
 const STATIC_SERVICE_TOKEN_TIMING_SAFE_COMPARE = 'static-service-token-timing-safe-compare'
 const FAIL_CLOSED_WHEN_UNCONFIGURED = 'fail-closed-when-unconfigured'
 const IDEMPOTENCY_KEY_UNIQUE_CONSTRAINT = 'idempotency-key-unique-constraint'
+// Code-review finding (Story 33.1): the centralizeme-link route's requestId is explicitly NOT an
+// idempotency key backed by its own unique index (see schema.ts's own doc comment on
+// BackfillCentralizemeOrgLinkRequestSchema) -- copying IDEMPOTENCY_KEY_UNIQUE_CONSTRAINT from
+// 26.1/32.1's entries above mislabeled this route's real compensating control. The actual
+// backstop is the pre-existing partial unique index on organizations.centralizeme_organization_id
+// (idx_organizations_centralizeme_organization_id), which prevents a different PV organization
+// from claiming an already-linked CM id -- a distinct guarantee from request-replay idempotency.
+const CENTRALIZEME_ID_UNIQUENESS_CONSTRAINT = 'centralizeme-id-uniqueness-constraint'
 const MONITORING_LIST_READ_OMISSION_REASON =
   'List read returns operational metadata only; no secret values.'
 const MONITORING_READ_CLASSIFICATION: RouteActionClassification = {
@@ -204,7 +212,7 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     compensatingControls: [
       STATIC_SERVICE_TOKEN_TIMING_SAFE_COMPARE,
       FAIL_CLOSED_WHEN_UNCONFIGURED,
-      IDEMPOTENCY_KEY_UNIQUE_CONSTRAINT,
+      CENTRALIZEME_ID_UNIQUENESS_CONSTRAINT,
     ],
     expiresAfterStory: null,
   },
