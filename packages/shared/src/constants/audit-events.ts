@@ -51,6 +51,19 @@ export const AuditEvent = {
   PROJECT_ARCHIVED: 'project.archived',
   PROJECT_UNARCHIVED: 'project.unarchived',
   ORG_USER_DEACTIVATED: 'org.user_deactivated',
+  // Story 32.1 Task 6: written once per successful call to the machine-authenticated per-member
+  // provisioning route (POST /api/v1/service/organizations/:organizationId/members), inside the
+  // SAME transaction as the user/membership/external-identity writes (first creation) or the
+  // reactivation write (idempotent replay of a deactivated member, AC8) — never on the plain
+  // idempotent-replay-with-no-change path, since that path performs no write to audit. Distinct
+  // from EXTERNAL_IDENTITY_LINKED (that event is reserved for the human-admin, MFA'd
+  // POST /external-identities path). actorType is 'system' (writeSystemAuditEntry), never
+  // 'human'/'machine_user' — this caller authenticates with a static shared secret
+  // (SERVICE_PROVISIONING_TOKEN), not a resolvable human actor token or PV machine-user key. The
+  // granted `role` is included explicitly in the payload (Security Audit Personas finding: an
+  // `'admin'` grant via this route must be reviewable later, not folded into an undifferentiated
+  // event).
+  ORG_MEMBER_PROVISIONED: 'org.member_provisioned',
   ACCOUNT_RECOVERY_REQUESTED: 'auth.recovery_requested',
   ACCOUNT_RECOVERY_LINK_SENT: 'auth.recovery_link_sent',
   ACCOUNT_RECOVERY_COMPLETED: 'auth.recovery_completed',

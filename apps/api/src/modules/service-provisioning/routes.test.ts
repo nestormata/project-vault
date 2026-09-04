@@ -1,9 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { eq } from 'drizzle-orm'
-import { getDb } from '@project-vault/db'
-import { organizations } from '@project-vault/db/schema'
+import { and, eq } from 'drizzle-orm'
+import { getDb, withOrg } from '@project-vault/db'
+import { externalIdentities, organizations, orgMemberships } from '@project-vault/db/schema'
 import { createApp } from '../../app.js'
+import {
+  configureAuthIntegrationEnv,
+  initVaultForTest,
+} from '../../__tests__/helpers/auth-test-helpers.js'
+import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 
 const TOKEN = 'test-only-service-provisioning-token-32-bytes-min'
 const TOKEN_HEADER = 'x-service-provisioning-token'
@@ -292,6 +297,502 @@ describe('POST /api/v1/service/organizations', () => {
       payload: { requestId: randomUUID(), organizationName: 'Some Org', workosUserId: '' },
     })
     expect(res.statusCode).toBe(422)
+    await app.close()
+  })
+})
+
+describe.sequential('POST /api/v1/service/organizations/:organizationId/members', () => {
+  // Story 32.1 Task 6: this route writes a real system-actor audit entry
+  // (AuditEvent.ORG_MEMBER_PROVISIONED) inside the same transaction as its user/membership/
+  // external-identity writes — unlike the plain org-bootstrap route above (26.1), which writes no
+  // audit entry at all. writeSystemAuditEntry needs a real (unsealed) vault to fetch the audit
+  // HMAC key, so this describe block boots the app against an initialized vault, mirroring
+  // revoke-sessions-routes.test.ts's own convention (31.1, the other route in this module that
+  // audits). describe.sequential because vault init/reset is process-global state, same
+  // rationale as that file's own describe.sequential.
+  const VAULT_SECRET = 'service-provisioning-member-routes-vault-secret'
+  let originalToken: string | undefined
+
+  beforeEach(async () => {
+    configureAuthIntegrationEnv()
+    const { env } = await import('../../config/env.js')
+    originalToken = (env as unknown as Record<string, unknown>)['SERVICE_PROVISIONING_TOKEN'] as
+      string | undefined
+    ;(env as unknown as Record<string, unknown>)['SERVICE_PROVISIONING_TOKEN'] = TOKEN
+  })
+
+  afterEach(async () => {
+    const { env } = await import('../../config/env.js')
+    ;(env as unknown as Record<string, unknown>)['SERVICE_PROVISIONING_TOKEN'] = originalToken
+    await resetVaultForTest()
+  })
+
+  async function freshApp() {
+    await resetVaultForTest()
+    const { initVault } = await import('../../modules/vault/key-service.js')
+    await initVaultForTest(initVault, VAULT_SECRET)
+    return createApp({ logger: false, vaultGuardEnabled: true })
+  }
+
+  function membersUrl(organizationId: string): string {
+    return `${ROUTE_URL}/${organizationId}/members`
+  }
+
+  // Story 32.1 code-review finding: the /members route now requires the target org to be
+  // CentralizeMe-managed (organizations.centralizeme_organization_id non-null) — every fixture
+  // org in this describe block must carry one so the pre-existing AC1-AC8 tests keep exercising
+  // the "allowed" path, not the new fail-closed check.
+  async function createOrg(app: Awaited<ReturnType<typeof createApp>>): Promise<string> {
+    const requestId = randomUUID()
+    const res = await app.inject({
+      method: 'POST',
+      url: ROUTE_URL,
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: {
+        requestId,
+        organizationName: `Member Test Org ${requestId}`,
+        workosUserId: `owner_${requestId}`,
+        centralizemeOrganizationId: `org_synthetic_${requestId}`,
+      },
+    })
+    return successBody(res).data.organizationId
+  }
+
+  // Story 32.1 code-review finding: a PV org that exists but was never linked to CentralizeMe
+  // (centralizeme_organization_id left null) — e.g. a self-registered customer org, or a
+  // 26.1-provisioned org from before Story 30.2 shipped. Used to exercise the new fail-closed
+  // check that blocks provisioning via this route for such an org.
+  async function createNonCmOrg(app: Awaited<ReturnType<typeof createApp>>): Promise<string> {
+    const requestId = randomUUID()
+    const res = await app.inject({
+      method: 'POST',
+      url: ROUTE_URL,
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: {
+        requestId,
+        organizationName: `Non-CM Member Test Org ${requestId}`,
+        workosUserId: `owner_${requestId}`,
+      },
+    })
+    return successBody(res).data.organizationId
+  }
+
+  // A. Atomic user + membership + external-identity creation on an existing org
+  it('AC1/AC3/AC4: atomically creates a user, membership, and external identity on an existing org, returning 201', async () => {
+    const app = await freshApp()
+    const organizationId = await createOrg(app)
+    const workosUserId = `user_${randomUUID()}`
+
+    const res = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId },
+    })
+
+    expect(res.statusCode).toBe(201)
+    const body = successBody(res)
+    expect(body.data.userId).toBeTruthy()
+    expect(body.data.externalIdentityId).toBeTruthy()
+
+    const [membership] = await withOrg(organizationId, (tx) =>
+      tx
+        .select({ role: orgMemberships.role, status: orgMemberships.status })
+        .from(orgMemberships)
+        .where(
+          and(eq(orgMemberships.orgId, organizationId), eq(orgMemberships.userId, body.data.userId))
+        )
+    )
+    expect(membership?.role).toBe('member')
+    expect(membership?.status).toBe('active')
+
+    const [identity] = await withOrg(organizationId, (tx) =>
+      tx
+        .select({
+          providerName: externalIdentities.providerName,
+          subject: externalIdentities.externalSubject,
+        })
+        .from(externalIdentities)
+        .where(eq(externalIdentities.id, body.data.externalIdentityId))
+    )
+    expect(identity?.providerName).toBe('workos')
+    expect(identity?.subject).toBe(workosUserId)
+    await app.close()
+  })
+
+  it('AC1: an explicit role is honored', async () => {
+    const app = await freshApp()
+    const organizationId = await createOrg(app)
+    const workosUserId = `user_${randomUUID()}`
+
+    const res = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId, role: 'admin' },
+    })
+
+    expect(res.statusCode).toBe(201)
+    const body = successBody(res)
+    const [membership] = await withOrg(organizationId, (tx) =>
+      tx
+        .select({ role: orgMemberships.role })
+        .from(orgMemberships)
+        .where(
+          and(eq(orgMemberships.orgId, organizationId), eq(orgMemberships.userId, body.data.userId))
+        )
+    )
+    expect(membership?.role).toBe('admin')
+    await app.close()
+  })
+
+  it('AC2: role "owner" is rejected with 400 invalid_role before any write', async () => {
+    const app = await freshApp()
+    const organizationId = await createOrg(app)
+    const workosUserId = `user_${randomUUID()}`
+
+    const res = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId, role: 'owner' },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(errorBody(res).code).toBe('invalid_role')
+
+    const rows = await withOrg(organizationId, (tx) =>
+      tx
+        .select({ id: externalIdentities.id })
+        .from(externalIdentities)
+        .where(
+          and(
+            eq(externalIdentities.orgId, organizationId),
+            eq(externalIdentities.externalSubject, workosUserId)
+          )
+        )
+    )
+    expect(rows).toHaveLength(0)
+    await app.close()
+  })
+
+  it('AC2: an unrecognized role value is rejected with 400 invalid_role', async () => {
+    const app = await freshApp()
+    const organizationId = await createOrg(app)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId: `user_${randomUUID()}`, role: 'bogus' },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(errorBody(res).code).toBe('invalid_role')
+    await app.close()
+  })
+
+  // B. Idempotent on the existing (organizationId, workosUserId) external-identity key
+  it('AC5: a repeated call for the same organizationId+workosUserId returns the SAME result with 200', async () => {
+    const app = await freshApp()
+    const organizationId = await createOrg(app)
+    const payload = { requestId: randomUUID(), workosUserId: `user_${randomUUID()}` }
+
+    const first = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload,
+    })
+    const second = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { ...payload, requestId: randomUUID() },
+    })
+
+    expect(first.statusCode).toBe(201)
+    expect(second.statusCode).toBe(200)
+    expect(successBody(second).data).toEqual(successBody(first).data)
+    await app.close()
+  })
+
+  it('AC5: genuine concurrency — two simultaneous requests for the same pair create exactly one user', async () => {
+    const app = await freshApp()
+    const organizationId = await createOrg(app)
+    const workosUserId = `user_${randomUUID()}`
+
+    const [a, b] = await Promise.all([
+      app.inject({
+        method: 'POST',
+        url: membersUrl(organizationId),
+        headers: { [TOKEN_HEADER]: TOKEN },
+        payload: { requestId: randomUUID(), workosUserId },
+      }),
+      app.inject({
+        method: 'POST',
+        url: membersUrl(organizationId),
+        headers: { [TOKEN_HEADER]: TOKEN },
+        payload: { requestId: randomUUID(), workosUserId },
+      }),
+    ])
+
+    expect([a.statusCode, b.statusCode].sort()).toEqual([200, 201])
+    expect(successBody(a).data).toEqual(successBody(b).data)
+
+    const rows = await withOrg(organizationId, (tx) =>
+      tx
+        .select({ id: externalIdentities.id })
+        .from(externalIdentities)
+        .where(
+          and(
+            eq(externalIdentities.orgId, organizationId),
+            eq(externalIdentities.externalSubject, workosUserId)
+          )
+        )
+    )
+    expect(rows).toHaveLength(1)
+    await app.close()
+  })
+
+  it('AC6: a different workosUserId against the same org creates a genuinely new member', async () => {
+    const app = await freshApp()
+    const organizationId = await createOrg(app)
+
+    const first = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId: `user_${randomUUID()}` },
+    })
+    const second = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId: `user_${randomUUID()}` },
+    })
+
+    expect(first.statusCode).toBe(201)
+    expect(second.statusCode).toBe(201)
+    expect(successBody(second).data.userId).not.toBe(successBody(first).data.userId)
+    await app.close()
+  })
+
+  it('AC7: the same workosUserId against two different orgs creates two independent users with no cross-org leakage', async () => {
+    const app = await freshApp()
+    const orgA = await createOrg(app)
+    const orgB = await createOrg(app)
+    const workosUserId = `user_${randomUUID()}`
+
+    const resA = await app.inject({
+      method: 'POST',
+      url: membersUrl(orgA),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId },
+    })
+    const resB = await app.inject({
+      method: 'POST',
+      url: membersUrl(orgB),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId },
+    })
+
+    expect(resA.statusCode).toBe(201)
+    expect(resB.statusCode).toBe(201)
+    expect(successBody(resB).data.userId).not.toBe(successBody(resA).data.userId)
+    await app.close()
+  })
+
+  it('AC8: a since-deactivated member is reactivated on idempotent replay', async () => {
+    const app = await freshApp()
+    const organizationId = await createOrg(app)
+    const workosUserId = `user_${randomUUID()}`
+
+    const first = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId },
+    })
+    expect(first.statusCode).toBe(201)
+    const { userId, externalIdentityId } = successBody(first).data
+
+    await withOrg(organizationId, (tx) =>
+      tx
+        .update(orgMemberships)
+        .set({ status: 'deactivated' })
+        .where(and(eq(orgMemberships.orgId, organizationId), eq(orgMemberships.userId, userId)))
+    )
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId },
+    })
+
+    expect(replay.statusCode).toBe(200)
+    expect(successBody(replay).data).toEqual({ userId, externalIdentityId })
+
+    const [membership] = await withOrg(organizationId, (tx) =>
+      tx
+        .select({ status: orgMemberships.status })
+        .from(orgMemberships)
+        .where(and(eq(orgMemberships.orgId, organizationId), eq(orgMemberships.userId, userId)))
+    )
+    expect(membership?.status).toBe('active')
+    await app.close()
+  })
+
+  // C. Fail-closed input and auth handling
+  it('AC9: missing requestId is a 422 validation error, no partial write', async () => {
+    const app = await freshApp()
+    const organizationId = await createOrg(app)
+    const res = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { workosUserId: `user_${randomUUID()}` },
+    })
+    expect(res.statusCode).toBe(422)
+    await app.close()
+  })
+
+  it('AC9: whitespace-only workosUserId is a 422 validation error (post-trim)', async () => {
+    const app = await freshApp()
+    const organizationId = await createOrg(app)
+    const res = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId: '   ' },
+    })
+    expect(res.statusCode).toBe(422)
+    await app.close()
+  })
+
+  it('AC9: a malformed (non-UUID) organizationId path param is rejected with 422, never a raw DB error', async () => {
+    const app = await freshApp()
+    const res = await app.inject({
+      method: 'POST',
+      url: membersUrl('not-a-uuid'),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId: `user_${randomUUID()}` },
+    })
+    expect(res.statusCode).toBe(422)
+    await app.close()
+  })
+
+  it('AC9: a nonexistent organizationId is rejected with 404 organization_not_found, no partial write', async () => {
+    const app = await freshApp()
+    const workosUserId = `user_${randomUUID()}`
+    const res = await app.inject({
+      method: 'POST',
+      url: membersUrl(randomUUID()),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId },
+    })
+    expect(res.statusCode).toBe(404)
+    expect(errorBody(res).code).toBe('organization_not_found')
+    await app.close()
+  })
+
+  // Story 32.1 code-review finding (High): the org-existence check above only confirmed the
+  // organizationId is a real PV org — ANY real PV org, not necessarily one CentralizeMe manages.
+  // A leaked SERVICE_PROVISIONING_TOKEN could otherwise inject an admin-role member into any org
+  // in the system, including self-registered customers unrelated to CM. Nestor's explicit
+  // decision after review: require centralizeme_organization_id to be non-null before allowing
+  // provisioning via this route.
+  it('code-review fix: an org that exists but is not CentralizeMe-managed is rejected with 403 organization_not_centralizeme_managed, no partial write', async () => {
+    const app = await freshApp()
+    const organizationId = await createNonCmOrg(app)
+    const workosUserId = `user_${randomUUID()}`
+
+    const res = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId },
+    })
+
+    expect(res.statusCode).toBe(403)
+    expect(errorBody(res).code).toBe('organization_not_centralizeme_managed')
+
+    const rows = await withOrg(organizationId, (tx) =>
+      tx
+        .select({ id: externalIdentities.id })
+        .from(externalIdentities)
+        .where(
+          and(
+            eq(externalIdentities.orgId, organizationId),
+            eq(externalIdentities.externalSubject, workosUserId)
+          )
+        )
+    )
+    expect(rows).toHaveLength(0)
+    await app.close()
+  })
+
+  it('code-review fix: an org with a centralizemeOrganizationId set is allowed (control case)', async () => {
+    const app = await freshApp()
+    const organizationId = await createOrg(app)
+    const workosUserId = `user_${randomUUID()}`
+
+    const res = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId },
+    })
+
+    expect(res.statusCode).toBe(201)
+    await app.close()
+  })
+
+  it('AC10: missing token is rejected with 403', async () => {
+    const app = await freshApp()
+    const organizationId = await createOrg(app)
+    const res = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      payload: { requestId: randomUUID(), workosUserId: `user_${randomUUID()}` },
+    })
+    expect(res.statusCode).toBe(403)
+    expect(errorBody(res).code).toBe('service_provisioning_forbidden')
+    await app.close()
+  })
+
+  it('AC10: wrong token is rejected with the SAME 403 body as a missing token', async () => {
+    const app = await freshApp()
+    const organizationId = await createOrg(app)
+    const res = await app.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: 'definitely-wrong-token-value-000000' },
+      payload: { requestId: randomUUID(), workosUserId: `user_${randomUUID()}` },
+    })
+    expect(res.statusCode).toBe(403)
+    expect(errorBody(res).code).toBe('service_provisioning_forbidden')
+    await app.close()
+  })
+
+  it('AC11: unset SERVICE_PROVISIONING_TOKEN makes this route unreachable (403) even with the right-shaped header', async () => {
+    const app = await freshApp()
+    const organizationId = await createOrg(app)
+
+    const { env } = await import('../../config/env.js')
+    delete (env as unknown as Record<string, unknown>)['SERVICE_PROVISIONING_TOKEN']
+    const unsetApp = await createApp({ logger: false })
+
+    const res = await unsetApp.inject({
+      method: 'POST',
+      url: membersUrl(organizationId),
+      headers: { [TOKEN_HEADER]: TOKEN },
+      payload: { requestId: randomUUID(), workosUserId: `user_${randomUUID()}` },
+    })
+    expect(res.statusCode).toBe(403)
+    expect(errorBody(res).code).toBe('service_provisioning_forbidden')
+    await unsetApp.close()
     await app.close()
   })
 })

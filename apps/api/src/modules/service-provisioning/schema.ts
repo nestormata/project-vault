@@ -73,3 +73,42 @@ export const RevokeOrgSessionsResponseSchema = z.object({
 })
 
 export type RevokeOrgSessionsResponse = z.infer<typeof RevokeOrgSessionsResponseSchema>
+
+/**
+ * Story 32.1 Decision 4: `role` is deliberately NOT a zod `.enum()` here — an invalid value
+ * (including `'owner'`, AC2) must be rejected with a distinct `400 invalid_role` response, not
+ * folded into this route's generic `422` validation-error group (AC9's missing/malformed
+ * `requestId`/`workosUserId` cases). Accepting any non-empty string at the schema level and
+ * validating membership against `SERVICE_ORG_MEMBER_ROLES` in the service layer (service.ts)
+ * keeps those two failure classes distinguishable. `:organizationId` is PV's own organization
+ * UUID (Decision 1) — already known to CM post-26-1-bootstrap, unlike 31-1's
+ * `:centralizemeOrganizationId`.
+ */
+export const ProvisionServiceOrgMemberParamsSchema = z.object({
+  organizationId: z.uuid(),
+})
+
+export type ProvisionServiceOrgMemberParams = z.infer<typeof ProvisionServiceOrgMemberParamsSchema>
+
+export const ProvisionServiceOrgMemberRequestSchema = z
+  .object({
+    requestId: z.uuid(),
+    workosUserId: z.string().trim().min(1).max(256),
+    role: z.string().trim().min(1).max(32).optional(),
+  })
+  .strict()
+
+export type ProvisionServiceOrgMemberRequest = z.infer<
+  typeof ProvisionServiceOrgMemberRequestSchema
+>
+
+export const ProvisionServiceOrgMemberResponseSchema = z.object({
+  data: z.object({
+    userId: z.uuid(),
+    externalIdentityId: z.uuid(),
+  }),
+})
+
+export type ProvisionServiceOrgMemberResponse = z.infer<
+  typeof ProvisionServiceOrgMemberResponseSchema
+>
