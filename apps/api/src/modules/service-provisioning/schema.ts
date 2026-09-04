@@ -112,3 +112,52 @@ export const ProvisionServiceOrgMemberResponseSchema = z.object({
 export type ProvisionServiceOrgMemberResponse = z.infer<
   typeof ProvisionServiceOrgMemberResponseSchema
 >
+
+/**
+ * Story 33.1 AC1/AC11: `:organizationId` is PV's own organization UUID (Decision 2 — same
+ * direction as ProvisionServiceOrgMemberParamsSchema above, never CM's own id in the URL).
+ */
+export const BackfillCentralizemeOrgLinkParamsSchema = z.object({
+  organizationId: z.uuid(),
+})
+
+export type BackfillCentralizemeOrgLinkParams = z.infer<
+  typeof BackfillCentralizemeOrgLinkParamsSchema
+>
+
+/**
+ * Story 33.1 AC1/AC11/AC18: `requestId` is a correlation/audit-payload id (AC4), NOT an
+ * idempotency key backed by its own unique index — idempotency here is set-if-null exact-match
+ * comparison against `organizations.centralizeme_organization_id` (Decision 3), not a
+ * `requestId`-keyed replay table. `centralizemeOrganizationId` mirrors
+ * ProvisionServiceOrganizationRequestSchema's own field constraints exactly (trim, min 1, max
+ * 256) — post-`.trim()` validation (AC11) so a whitespace-only value is rejected the same way
+ * 32.1's `workosUserId` boundary-sweep finding was. `dryRun` is optional and defaults to a
+ * real (mutating) call when omitted (Decision 3). `.strict()` rejects any unrecognized extra
+ * body field with 422, same convention as RevokeOrgSessionsRequestSchema/
+ * ProvisionServiceOrgMemberRequestSchema.
+ */
+export const BackfillCentralizemeOrgLinkRequestSchema = z
+  .object({
+    requestId: z.uuid(),
+    centralizemeOrganizationId: z.string().trim().min(1).max(256),
+    dryRun: z.boolean().optional(),
+  })
+  .strict()
+
+export type BackfillCentralizemeOrgLinkRequest = z.infer<
+  typeof BackfillCentralizemeOrgLinkRequestSchema
+>
+
+export const BackfillCentralizemeOrgLinkResponseSchema = z.object({
+  data: z.object({
+    organizationId: z.uuid(),
+    centralizemeOrganizationId: z.string(),
+    alreadyLinked: z.boolean(),
+    dryRun: z.boolean(),
+  }),
+})
+
+export type BackfillCentralizemeOrgLinkResponse = z.infer<
+  typeof BackfillCentralizemeOrgLinkResponseSchema
+>

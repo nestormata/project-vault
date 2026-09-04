@@ -64,6 +64,16 @@ export const AuditEvent = {
   // `'admin'` grant via this route must be reviewable later, not folded into an undifferentiated
   // event).
   ORG_MEMBER_PROVISIONED: 'org.member_provisioned',
+  // Story 33.1 (DW-256) AC4: written by the backfill route
+  // (PATCH /api/v1/service/organizations/:organizationId/centralizeme-link), inside the SAME
+  // transaction as the `organizations.centralizeme_organization_id` UPDATE, on a genuine
+  // first-time link only — never on an idempotent no-op replay (AC5) or a `dryRun: true` call
+  // (AC10), both of which return before any write happens. Distinct from ORG_MEMBER_PROVISIONED
+  // above and from the (unaudited) bootstrap-time link set inside 26.1's own
+  // insertNewProvisioning — this event exists only for the retroactive backfill write path.
+  // actorType is 'system' (writeSystemAuditEntry), same convention as ORG_MEMBER_PROVISIONED —
+  // this caller authenticates with the same static shared secret (SERVICE_PROVISIONING_TOKEN).
+  ORG_CENTRALIZEME_LINK_BACKFILLED: 'org.centralizeme_link_backfilled',
   ACCOUNT_RECOVERY_REQUESTED: 'auth.recovery_requested',
   ACCOUNT_RECOVERY_LINK_SENT: 'auth.recovery_link_sent',
   ACCOUNT_RECOVERY_COMPLETED: 'auth.recovery_completed',

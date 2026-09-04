@@ -8,6 +8,7 @@ import { generateUnusablePasswordHash } from '../auth/password.js'
 import { writeSystemAuditEntry } from '../audit/machine-entry.js'
 import { AuditEvent } from '@project-vault/shared'
 import type {
+  BackfillCentralizemeOrgLinkRequest,
   ProvisionServiceOrganizationRequest,
   ProvisionServiceOrgMemberRequest,
 } from './schema.js'
@@ -437,4 +438,234 @@ export async function resolveOrgByCentralizemeId(
     .limit(2)
   if (rows.length !== 1) return null
   return rows[0]?.id ?? null
+}
+
+// Story 33.1 AC6: a genuine, differing prior link — CM's own data error, never silently
+// overwritten (see AC19's accepted-swapped-id-risk note for why PV cannot detect every CM-side
+// mistake, only this one).
+export function centralizemeLinkMismatchError(): AppError {
+  return new AppError(
+    'centralizeme_link_mismatch',
+    'Organization is already linked to a different centralizemeOrganizationId',
+    409
+  )
+}
+
+// Story 33.1 AC7: the requested centralizemeOrganizationId already belongs to a DIFFERENT PV
+// organization (would violate idx_organizations_centralizeme_organization_id) — distinct
+// remediation from centralizemeLinkMismatchError above (AC6 is "this org already has a
+// different link"; this is "that CM id belongs to someone else").
+export function centralizemeIdAlreadyLinkedError(): AppError {
+  return new AppError(
+    'centralizeme_id_already_linked',
+    'centralizemeOrganizationId is already linked to a different organization',
+    409
+  )
+}
+
+export type BackfillCentralizemeOrgLinkResult = {
+  organizationId: string
+  centralizemeOrganizationId: string
+  alreadyLinked: boolean
+  dryRun: boolean
+}
+
+type OrgLinkRow = { id: string; centralizemeOrganizationId: string | null }
+
+/**
+ * Story 33.1 Task 2: the shared check logic both the dry-run and real paths call, so they cannot
+ * drift (AC8-10 must return exactly what the real call would). Given the current stored value:
+ *  - exact match (AC18: case-sensitive, post-.trim() byte equality) -> returns `{ outcome: 'noop' }`
+ *  - a different, non-null value -> throws centralizemeLinkMismatchError() (AC6)
+ *  - null -> returns `{ outcome: 'proceed' }`, meaning the caller must still run the
+ *    claimed-elsewhere check (AC7) before it may write.
+ * Never queries or mutates anything itself — pure decision logic over an already-read row.
+ */
+function evaluateStoredLink(
+  org: OrgLinkRow,
+  input: BackfillCentralizemeOrgLinkRequest
+): { outcome: 'noop' } | { outcome: 'proceed' } {
+  if (org.centralizemeOrganizationId === null) return { outcome: 'proceed' }
+  if (org.centralizemeOrganizationId === input.centralizemeOrganizationId) {
+    return { outcome: 'noop' }
+  }
+  throw centralizemeLinkMismatchError()
+}
+
+/**
+ * Story 33.1 AC7: fast-path pre-check for "this centralizemeOrganizationId is already claimed by
+ * a DIFFERENT PV organization" — shared by both the dry-run and real paths. Always run against
+ * `getDb()` directly (never inside the real path's row-locked transaction) is deliberately NOT
+ * the case here: the real path passes its own `tx` so the check sees the same
+ * transaction-consistent snapshot as the row lock it is holding.
+ */
+async function findDifferentOrgClaimingId(
+  tx: Tx,
+  organizationId: string,
+  centralizemeOrganizationId: string
+): Promise<boolean> {
+  const [claimant] = await tx
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(
+      and(
+        eq(organizations.centralizemeOrganizationId, centralizemeOrganizationId),
+        sql`${organizations.id} != ${organizationId}`
+      )
+    )
+    .limit(1)
+  return Boolean(claimant)
+}
+
+/**
+ * Story 33.1 AC8/AC9: dry-run preview — runs every check the real call would (existence, exact-
+ * match no-op, mismatch, claimed-elsewhere) but never writes, never takes the row lock (AC17 only
+ * protects the real, mutating path), and never writes an audit entry (AC10). Documented as a
+ * best-effort preview only (Decision 3) — a concurrent write between this read and a later real
+ * call is possible and is resolved by the real call's own fail-closed/race-safe checks, not by
+ * this function.
+ */
+async function backfillCentralizemeOrgLinkDryRun(
+  organizationId: string,
+  input: BackfillCentralizemeOrgLinkRequest
+): Promise<BackfillCentralizemeOrgLinkResult> {
+  const db = getDb()
+  const [org] = await db
+    .select({
+      id: organizations.id,
+      centralizemeOrganizationId: organizations.centralizemeOrganizationId,
+    })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
+    .limit(1)
+  if (!org) throw organizationNotFoundError()
+
+  const decision = evaluateStoredLink(org, input)
+  if (decision.outcome === 'noop') {
+    return {
+      organizationId,
+      centralizemeOrganizationId: input.centralizemeOrganizationId,
+      alreadyLinked: true,
+      dryRun: true,
+    }
+  }
+
+  if (
+    await findDifferentOrgClaimingId(
+      db as unknown as Tx,
+      organizationId,
+      input.centralizemeOrganizationId
+    )
+  ) {
+    throw centralizemeIdAlreadyLinkedError()
+  }
+
+  return {
+    organizationId,
+    centralizemeOrganizationId: input.centralizemeOrganizationId,
+    alreadyLinked: false,
+    dryRun: true,
+  }
+}
+
+/**
+ * Story 33.1 AC1/AC4/AC5/AC6/AC7/AC13/AC17: the real (mutating) backfill transaction. Row-locks
+ * the target organization (`SELECT ... FOR UPDATE`) for the whole transaction to close the
+ * same-organization concurrent-write race (AC17, distinct from AC7's different-org race): two
+ * concurrent callers targeting the SAME :organizationId with two different
+ * centralizemeOrganizationId values cannot both observe a `null` stored value and both write —
+ * the second transaction blocks on the lock until the first commits, then re-reads the now-set
+ * value and returns the same 409 centralizeme_link_mismatch (AC6) a sequential mismatch would.
+ * The claimed-elsewhere fast-path check (AC7) runs inside this same locked transaction so it sees
+ * a transaction-consistent snapshot; the UPDATE's own unique-violation catch (outside this
+ * function, in backfillCentralizemeOrgLink) is the race-safe backstop for the different-org case
+ * the fast-path SELECT cannot fully close.
+ */
+async function backfillCentralizemeOrgLinkReal(
+  organizationId: string,
+  input: BackfillCentralizemeOrgLinkRequest
+): Promise<BackfillCentralizemeOrgLinkResult> {
+  return getDb().transaction(async (tx) => {
+    const typedTx = tx as Tx
+
+    const [org] = await typedTx
+      .select({
+        id: organizations.id,
+        centralizemeOrganizationId: organizations.centralizemeOrganizationId,
+      })
+      .from(organizations)
+      .where(eq(organizations.id, organizationId))
+      .for('update')
+      .limit(1)
+    if (!org) throw organizationNotFoundError()
+
+    const decision = evaluateStoredLink(org, input)
+    if (decision.outcome === 'noop') {
+      return {
+        organizationId,
+        centralizemeOrganizationId: input.centralizemeOrganizationId,
+        alreadyLinked: true,
+        dryRun: false,
+      }
+    }
+
+    if (
+      await findDifferentOrgClaimingId(typedTx, organizationId, input.centralizemeOrganizationId)
+    ) {
+      throw centralizemeIdAlreadyLinkedError()
+    }
+
+    await typedTx
+      .update(organizations)
+      .set({ centralizemeOrganizationId: input.centralizemeOrganizationId })
+      .where(eq(organizations.id, organizationId))
+
+    // AC4: only a genuine, first-time link is audited — never the no-op (AC5) or dry-run (AC10)
+    // branches, both of which return before this point.
+    await writeSystemAuditEntry(typedTx, {
+      orgId: organizationId,
+      eventType: AuditEvent.ORG_CENTRALIZEME_LINK_BACKFILLED,
+      resourceId: organizationId,
+      resourceType: 'organization',
+      payload: {
+        centralizemeOrganizationId: input.centralizemeOrganizationId,
+        requestId: input.requestId,
+      },
+    })
+
+    return {
+      organizationId,
+      centralizemeOrganizationId: input.centralizemeOrganizationId,
+      alreadyLinked: false,
+      dryRun: false,
+    }
+  })
+}
+
+/**
+ * Story 33.1 (DW-256) AC1-AC19: backfills `organizations.centralizeme_organization_id` for a
+ * pre-existing organization whose value is still `null` (Decision 1-3) — set-if-null, idempotent
+ * on an exact-match replay (AC5), fail-closed 409 on any mismatch (AC6) or an id claimed by a
+ * different org (AC7), with an optional `dryRun` preview that never mutates (AC8-10). The
+ * `isUniqueViolation` catch here checks the SPECIFIC index name (AC13) — the fast-path SELECT
+ * inside backfillCentralizemeOrgLinkReal already catches the common case; this catch is the
+ * race-safe backstop for the narrow window between that SELECT and the UPDATE, mirroring
+ * 26.1/32.1's own catch-and-resolve convention exactly.
+ */
+export async function backfillCentralizemeOrgLink(
+  organizationId: string,
+  input: BackfillCentralizemeOrgLinkRequest
+): Promise<BackfillCentralizemeOrgLinkResult> {
+  if (input.dryRun === true) {
+    return backfillCentralizemeOrgLinkDryRun(organizationId, input)
+  }
+
+  try {
+    return await backfillCentralizemeOrgLinkReal(organizationId, input)
+  } catch (error) {
+    if (isUniqueViolation(error, 'idx_organizations_centralizeme_organization_id')) {
+      throw centralizemeIdAlreadyLinkedError()
+    }
+    throw error
+  }
 }

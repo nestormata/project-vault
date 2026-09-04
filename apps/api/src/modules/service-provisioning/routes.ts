@@ -12,6 +12,7 @@ import { timingSafeHeaderTokenMatches } from '../../lib/timing-safe-header-token
 import { operationalLog, serializeLogError } from '../../lib/logger.js'
 import { revokeAllSessionsForOrg } from '../auth/session-revoke.js'
 import {
+  backfillCentralizemeOrgLink,
   provisionServiceOrganization,
   provisionServiceOrgMember,
   resolveOrgByCentralizemeId,
@@ -20,6 +21,9 @@ import {
   ServiceRevocationForbiddenError,
 } from './service.js'
 import {
+  BackfillCentralizemeOrgLinkParamsSchema,
+  BackfillCentralizemeOrgLinkRequestSchema,
+  BackfillCentralizemeOrgLinkResponseSchema,
   ProvisionServiceOrganizationRequestSchema,
   ProvisionServiceOrgMemberParamsSchema,
   ProvisionServiceOrgMemberRequestSchema,
@@ -323,6 +327,64 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
           requestId: parsedBody.data.requestId,
         },
       })
+    },
+  })
+
+  // Story 33.1 (DW-256): machine-authenticated backfill of
+  // organizations.centralizeme_organization_id for a pre-existing organization — extends this
+  // same module with a fourth route (Decision 1). Same auth mechanism/no-new-secret convention
+  // (assertServiceProvisioningAuthorized, SERVICE_PROVISIONING_TOKEN) and same
+  // `rateLimit: false` provisioning-class convention as the org-bootstrap/per-member routes above
+  // (not 31.1's rate-limited revocation route) — see the story's Security section for why.
+  fastify.route({
+    method: 'PATCH',
+    url: '/api/v1/service/organizations/:organizationId/centralizeme-link',
+    config: { rateLimit: false },
+    attachValidation: true,
+    schema: {
+      params: BackfillCentralizemeOrgLinkParamsSchema,
+      body: BackfillCentralizemeOrgLinkRequestSchema,
+      response: {
+        200: BackfillCentralizemeOrgLinkResponseSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      try {
+        assertServiceProvisioningAuthorized(req.headers as FastifyRequestHeaders)
+      } catch (err) {
+        return sendAppError(reply, err)
+      }
+
+      const parsedParams = BackfillCentralizemeOrgLinkParamsSchema.safeParse(req.params)
+      if (!parsedParams.success) {
+        return reply.status(422).send(validationError(parsedParams.error, 'params'))
+      }
+
+      const parsedBody = BackfillCentralizemeOrgLinkRequestSchema.safeParse(req.body)
+      if (!parsedBody.success) {
+        return reply.status(422).send(validationError(parsedBody.error, 'body'))
+      }
+
+      try {
+        const result = await backfillCentralizemeOrgLink(
+          parsedParams.data.organizationId,
+          parsedBody.data
+        )
+        return reply.status(200).send({
+          data: {
+            organizationId: result.organizationId,
+            centralizemeOrganizationId: result.centralizemeOrganizationId,
+            alreadyLinked: result.alreadyLinked,
+            dryRun: result.dryRun,
+          },
+        })
+      } catch (err) {
+        return sendAppError(reply, err)
+      }
     },
   })
 }
