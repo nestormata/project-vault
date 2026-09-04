@@ -43,6 +43,14 @@ const NO_DATA_ACCESS = 'no-data-access'
 const STATIC_SERVICE_TOKEN_TIMING_SAFE_COMPARE = 'static-service-token-timing-safe-compare'
 const FAIL_CLOSED_WHEN_UNCONFIGURED = 'fail-closed-when-unconfigured'
 const IDEMPOTENCY_KEY_UNIQUE_CONSTRAINT = 'idempotency-key-unique-constraint'
+// Code-review finding (Story 33.1): the centralizeme-link route's requestId is explicitly NOT an
+// idempotency key backed by its own unique index (see schema.ts's own doc comment on
+// BackfillCentralizemeOrgLinkRequestSchema) -- copying IDEMPOTENCY_KEY_UNIQUE_CONSTRAINT from
+// 26.1/32.1's entries above mislabeled this route's real compensating control. The actual
+// backstop is the pre-existing partial unique index on organizations.centralizeme_organization_id
+// (idx_organizations_centralizeme_organization_id), which prevents a different PV organization
+// from claiming an already-linked CM id -- a distinct guarantee from request-replay idempotency.
+const CENTRALIZEME_ID_UNIQUENESS_CONSTRAINT = 'centralizeme-id-uniqueness-constraint'
 const MONITORING_LIST_READ_OMISSION_REASON =
   'List read returns operational metadata only; no secret values.'
 const MONITORING_READ_CLASSIFICATION: RouteActionClassification = {
@@ -197,6 +205,18 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     expiresAfterStory: null,
   },
   {
+    route: 'PATCH /api/v1/service/organizations/:organizationId/centralizeme-link',
+    reason:
+      "Story 33.1 (DW-256) -- machine-authenticated backfill of organizations.centralizeme_organization_id for a pre-existing organization, for a trusted platform partner (CentralizeMe). The caller has no PV session and cannot have one -- SecureRoute's org-authenticated path structurally cannot apply here, exactly like POST /api/v1/service/organizations above (Decision 3: reuses SERVICE_PROVISIONING_TOKEN, a strictly SMALLER blast radius than that route's own org+user+membership creation and than 32.1's own admin-role-member grant -- see the story's Security section).",
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      STATIC_SERVICE_TOKEN_TIMING_SAFE_COMPARE,
+      FAIL_CLOSED_WHEN_UNCONFIGURED,
+      CENTRALIZEME_ID_UNIQUENESS_CONSTRAINT,
+    ],
+    expiresAfterStory: null,
+  },
+  {
     route: 'POST /api/v1/auth/machine-token',
     reason:
       'Story 7.2 D2/D4 — pre-auth machine-user API key exchange endpoint; the caller has no session and no org context is resolvable until the key is looked up by hash via the admin connection.',
@@ -337,6 +357,11 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: SECURITY_ACTION,
     auditEvent: 'org.member_provisioned',
     sameTransactionAuditService: 'provisionServiceOrgMember',
+  },
+  'PATCH /api/v1/service/organizations/:organizationId/centralizeme-link': {
+    action: SECURITY_ACTION,
+    auditEvent: 'org.centralizeme_link_backfilled',
+    sameTransactionAuditService: 'backfillCentralizemeOrgLink',
   },
   'DELETE /api/v1/auth/sessions/:sessionId': {
     action: SECURITY_ACTION,

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { ZodType } from 'zod/v4'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import rateLimit from '@fastify/rate-limit'
 import { OperationalEvent } from '@project-vault/shared'
@@ -12,6 +13,7 @@ import { timingSafeHeaderTokenMatches } from '../../lib/timing-safe-header-token
 import { operationalLog, serializeLogError } from '../../lib/logger.js'
 import { revokeAllSessionsForOrg } from '../auth/session-revoke.js'
 import {
+  backfillCentralizemeOrgLink,
   provisionServiceOrganization,
   provisionServiceOrgMember,
   resolveOrgByCentralizemeId,
@@ -20,6 +22,9 @@ import {
   ServiceRevocationForbiddenError,
 } from './service.js'
 import {
+  BackfillCentralizemeOrgLinkParamsSchema,
+  BackfillCentralizemeOrgLinkRequestSchema,
+  BackfillCentralizemeOrgLinkResponseSchema,
   ProvisionServiceOrganizationRequestSchema,
   ProvisionServiceOrgMemberParamsSchema,
   ProvisionServiceOrgMemberRequestSchema,
@@ -74,6 +79,47 @@ function sendAppError(reply: FastifyReply, err: unknown): FastifyReply {
     return reply.status(err.statusCode).send({ code: err.code, message: err.message })
   }
   throw err
+}
+
+/**
+ * Shared "check the static service token, 403 via sendAppError otherwise" guard used by every
+ * route handler in this module — factored out after a jscpd duplication finding on this exact
+ * try/catch across the per-member and backfill routes. Returns true iff authorized (caller should
+ * `return` immediately when false; the 403 reply has already been sent).
+ */
+function authorizeOrReply(
+  reply: FastifyReply,
+  headers: FastifyRequestHeaders,
+  assertAuthorized: (headers: FastifyRequestHeaders) => void
+): boolean {
+  try {
+    assertAuthorized(headers)
+    return true
+  } catch (err) {
+    sendAppError(reply, err)
+    return false
+  }
+}
+
+/**
+ * Shared "safeParse or reply 422" helper used by every route handler in this module that
+ * schema-validates params/body itself (attachValidation: true routes) — factored out after a
+ * jscpd duplication finding on this exact pattern across the per-member and backfill routes.
+ * Returns the parsed data, or `undefined` when validation failed (the 422 reply has already been
+ * sent; caller should `return` immediately).
+ */
+function parseOrReply<T>(
+  reply: FastifyReply,
+  schema: ZodType<T>,
+  data: unknown,
+  part: 'params' | 'body'
+): T | undefined {
+  const parsed = schema.safeParse(data)
+  if (!parsed.success) {
+    reply.status(422).send(validationError(parsed.error, part))
+    return undefined
+  }
+  return parsed.data
 }
 
 /**
@@ -159,21 +205,24 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
     // its own auth mechanism entirely (static token), not subject to per-IP registration limits.
     config: { rateLimit: false },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
-      try {
-        assertServiceProvisioningAuthorized(req.headers as FastifyRequestHeaders)
-      } catch (err) {
-        if (err instanceof AppError) {
-          return reply.status(err.statusCode).send({ code: err.code, message: err.message })
-        }
-        throw err
-      }
+      if (
+        !authorizeOrReply(
+          reply,
+          req.headers as FastifyRequestHeaders,
+          assertServiceProvisioningAuthorized
+        )
+      )
+        return
 
-      const parsed = ProvisionServiceOrganizationRequestSchema.safeParse(req.body)
-      if (!parsed.success) {
-        return reply.status(422).send(validationError(parsed.error, 'body'))
-      }
+      const parsed = parseOrReply(
+        reply,
+        ProvisionServiceOrganizationRequestSchema,
+        req.body,
+        'body'
+      )
+      if (!parsed) return
 
-      const result = await provisionServiceOrganization(parsed.data)
+      const result = await provisionServiceOrganization(parsed)
       return reply.status(201).send({
         data: {
           organizationId: result.organizationId,
@@ -207,27 +256,33 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
       },
     },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
-      try {
-        assertServiceProvisioningAuthorized(req.headers as FastifyRequestHeaders)
-      } catch (err) {
-        return sendAppError(reply, err)
-      }
-
-      const parsedParams = ProvisionServiceOrgMemberParamsSchema.safeParse(req.params)
-      if (!parsedParams.success) {
-        return reply.status(422).send(validationError(parsedParams.error, 'params'))
-      }
-
-      const parsedBody = ProvisionServiceOrgMemberRequestSchema.safeParse(req.body)
-      if (!parsedBody.success) {
-        return reply.status(422).send(validationError(parsedBody.error, 'body'))
-      }
-
-      try {
-        const result = await provisionServiceOrgMember(
-          parsedParams.data.organizationId,
-          parsedBody.data
+      if (
+        !authorizeOrReply(
+          reply,
+          req.headers as FastifyRequestHeaders,
+          assertServiceProvisioningAuthorized
         )
+      )
+        return
+
+      const parsedParams = parseOrReply(
+        reply,
+        ProvisionServiceOrgMemberParamsSchema,
+        req.params,
+        'params'
+      )
+      if (!parsedParams) return
+
+      const parsedBody = parseOrReply(
+        reply,
+        ProvisionServiceOrgMemberRequestSchema,
+        req.body,
+        'body'
+      )
+      if (!parsedBody) return
+
+      try {
+        const result = await provisionServiceOrgMember(parsedParams.organizationId, parsedBody)
         return reply.status(result.created ? 201 : 200).send({
           data: { userId: result.userId, externalIdentityId: result.externalIdentityId },
         })
@@ -275,25 +330,24 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
       },
     },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
-      try {
-        assertServiceRevocationAuthorized(req.headers as FastifyRequestHeaders)
-      } catch (err) {
-        return sendAppError(reply, err)
-      }
+      if (
+        !authorizeOrReply(
+          reply,
+          req.headers as FastifyRequestHeaders,
+          assertServiceRevocationAuthorized
+        )
+      )
+        return
 
-      const parsedParams = RevokeOrgSessionsParamsSchema.safeParse(req.params)
-      if (!parsedParams.success) {
-        return reply.status(422).send(validationError(parsedParams.error, 'params'))
-      }
+      const parsedParams = parseOrReply(reply, RevokeOrgSessionsParamsSchema, req.params, 'params')
+      if (!parsedParams) return
 
       // AC5.19: `.strict()` on RevokeOrgSessionsRequestSchema rejects any unexpected body field
       // (e.g. a caller-supplied `orgId` attempting to widen scope) with 422.
-      const parsedBody = RevokeOrgSessionsRequestSchema.safeParse(req.body)
-      if (!parsedBody.success) {
-        return reply.status(422).send(validationError(parsedBody.error, 'body'))
-      }
+      const parsedBody = parseOrReply(reply, RevokeOrgSessionsRequestSchema, req.body, 'body')
+      if (!parsedBody) return
 
-      const orgId = await resolveOrgByCentralizemeId(parsedParams.data.centralizemeOrganizationId)
+      const orgId = await resolveOrgByCentralizemeId(parsedParams.centralizemeOrganizationId)
       if (!orgId) {
         const notFound = serviceOrgNotFound()
         return reply.status(notFound.statusCode).send({
@@ -304,15 +358,15 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
 
       const result = await revokeAllSessionsForOrg({
         orgId,
-        requestId: parsedBody.data.requestId,
+        requestId: parsedBody.requestId,
       })
 
       await dispatchOrgSessionsRevokedAlert((fastify as BossFastify).boss, req.log, {
         organizationId: orgId,
-        centralizemeOrganizationId: parsedParams.data.centralizemeOrganizationId,
+        centralizemeOrganizationId: parsedParams.centralizemeOrganizationId,
         sessionsRevokedCount: result.sessionsRevokedCount,
         apiKeysRevokedCount: result.apiKeysRevokedCount,
-        requestId: parsedBody.data.requestId,
+        requestId: parsedBody.requestId,
       })
 
       return reply.status(200).send({
@@ -320,9 +374,73 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
           organizationId: orgId,
           sessionsRevokedCount: result.sessionsRevokedCount,
           apiKeysRevokedCount: result.apiKeysRevokedCount,
-          requestId: parsedBody.data.requestId,
+          requestId: parsedBody.requestId,
         },
       })
+    },
+  })
+
+  // Story 33.1 (DW-256): machine-authenticated backfill of
+  // organizations.centralizeme_organization_id for a pre-existing organization — extends this
+  // same module with a fourth route (Decision 1). Same auth mechanism/no-new-secret convention
+  // (assertServiceProvisioningAuthorized, SERVICE_PROVISIONING_TOKEN) and same
+  // `rateLimit: false` provisioning-class convention as the org-bootstrap/per-member routes above
+  // (not 31.1's rate-limited revocation route) — see the story's Security section for why.
+  fastify.route({
+    method: 'PATCH',
+    url: '/api/v1/service/organizations/:organizationId/centralizeme-link',
+    config: { rateLimit: false },
+    attachValidation: true,
+    schema: {
+      params: BackfillCentralizemeOrgLinkParamsSchema,
+      body: BackfillCentralizemeOrgLinkRequestSchema,
+      response: {
+        200: BackfillCentralizemeOrgLinkResponseSchema,
+        403: ApiErrorSchema,
+        404: ApiErrorSchema,
+        409: ApiErrorSchema,
+        422: ApiErrorSchema,
+      },
+    },
+    handler: async (req: FastifyRequest, reply: FastifyReply) => {
+      if (
+        !authorizeOrReply(
+          reply,
+          req.headers as FastifyRequestHeaders,
+          assertServiceProvisioningAuthorized
+        )
+      )
+        return
+
+      const parsedParams = parseOrReply(
+        reply,
+        BackfillCentralizemeOrgLinkParamsSchema,
+        req.params,
+        'params'
+      )
+      if (!parsedParams) return
+
+      const parsedBody = parseOrReply(
+        reply,
+        BackfillCentralizemeOrgLinkRequestSchema,
+        req.body,
+        'body'
+      )
+      if (!parsedBody) return
+
+      try {
+        const result = await backfillCentralizemeOrgLink(parsedParams.organizationId, parsedBody)
+        return reply.status(200).send({
+          data: {
+            organizationId: result.organizationId,
+            centralizemeOrganizationId: result.centralizemeOrganizationId,
+            alreadyLinked: result.alreadyLinked,
+            dryRun: result.dryRun,
+          },
+        })
+      } catch (err) {
+        return sendAppError(reply, err)
+      }
     },
   })
 }
