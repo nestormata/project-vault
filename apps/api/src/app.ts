@@ -67,7 +67,7 @@ import { wireExtensionAuthStrategy } from './modules/auth/strategies.js'
 import { wireExtensionCapabilityGate } from './lib/capability-gate.js'
 import {
   wireExtensionDeliveryProvider,
-  auditDeliveryProviderRegistration,
+  auditDeliveryProviderRegistrationOrFailClosed,
   getRegisteredDeliveryProviderChannels,
 } from './lib/delivery-provider.js'
 import { resolveNativeLoginPolicy } from './modules/auth/native-login-policy.js'
@@ -466,14 +466,19 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // for every state except loaded-with-a-capabilityGate-hook, and never throws.
   wireExtensionCapabilityGate(getExtensionStatus(), fastify.log)
 
-  // Story 20.11 AC1: sibling wiring step, mirroring wireExtensionCapabilityGate() exactly —
+  // Story 20.11 AC1/AC5: sibling wiring step, mirroring wireExtensionCapabilityGate() exactly —
   // no-ops for every state except loaded-with-a-deliveryProvider-hook. Throws
   // DeliveryProviderConflictError (never silently swallowed) if the loaded extension's own
   // manifest declares the same channel more than once inside one hooks bag — a load-time
-  // configuration bug in the extension itself, not a recoverable runtime condition, so this is
-  // deliberately NOT wrapped in a try/catch the way the best-effort audit fanout below is.
+  // configuration bug in the extension itself, not a recoverable runtime condition. The audit
+  // fanout below is fail-closed (AC5): unlike wireExtensionCapabilityGate()'s sibling, a failure
+  // here rolls back the registration and throws, failing boot rather than leaving a live,
+  // unaudited provider registered.
   wireExtensionDeliveryProvider(getExtensionStatus())
-  await auditDeliveryProviderRegistration(getRegisteredDeliveryProviderChannels(), fastify.log)
+  await auditDeliveryProviderRegistrationOrFailClosed(
+    getRegisteredDeliveryProviderChannels(),
+    fastify.log
+  )
 
   // Story 23.2 AC-4: resolved once, immediately after the auth-strategy wiring above, from
   // server-side state only (the loaded extension's manifest + the host-set break-glass /

@@ -63,6 +63,14 @@ export function wireExtensionDeliveryProvider(state: ExtensionState): void {
   registeredExtensionName = state.manifest.name
 }
 
+/** Un-registers the given channels, restoring the pre-registration state. Used only by
+ * `auditDeliveryProviderRegistrationOrFailClosed()` to roll back a registration whose required
+ * audit trail could not be established (AC5 fail-closed). */
+function unregisterDeliveryProviderChannels(channels: string[]): void {
+  for (const channel of channels) registeredProviders.delete(channel)
+  if (registeredProviders.size === 0) registeredExtensionName = null
+}
+
 /** Test-only reset of module-level state — never called from production code. */
 export function __resetDeliveryProvidersForTests(): void {
   registeredProviders.clear()
@@ -72,16 +80,28 @@ export function __resetDeliveryProvidersForTests(): void {
 type ListOrgIdsFn = () => Promise<string[]>
 type LoaderLogger = Pick<FastifyBaseLogger, 'warn' | 'fatal'>
 
+/** Story 20.11 AC5 — thrown by `auditDeliveryProviderRegistrationOrFailClosed()` when the
+ * required audit trail for a provider registration could not be established for every org. The
+ * registration is rolled back (the channel is un-registered) before this is thrown, so the
+ * registry never holds a channel PV cannot prove was audited. */
+export class DeliveryProviderRegistrationAuditError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'DeliveryProviderRegistrationAuditError'
+  }
+}
+
 /**
  * Story 20.11 AC5 — writes `notification.delivery_provider_registered` per newly-registered
- * channel. Boot-time process-wide registration has no natural single org — same problem
- * `apps/api/src/extensions/loader.ts`'s `EXTENSION_LOADED` audit event faces — so this fans out to
- * every existing org (system actor), isolating each org's write failure (log-and-continue) so
- * neither a single bad org nor a wholesale enumeration failure can affect boot. Best-effort by
- * construction (mirrors `EXTENSION_LOADED`'s own fanout precisely) — call this AFTER
- * `wireExtensionDeliveryProvider()` has already thrown or succeeded, never in place of it.
+ * channel, fail-closed: unlike `apps/api/src/extensions/loader.ts`'s best-effort `EXTENSION_LOADED`
+ * fanout (an informational event with no compliance requirement attached), AC5 explicitly requires
+ * "no code path applies ... provider registration without its audit write succeeding" — so a
+ * failure to enumerate orgs, or any single org's audit write failing, rolls back the registration
+ * (un-registers the channels) and throws, failing `createApp()`/boot loud rather than leaving a
+ * live, unaudited provider registered. Call this AFTER `wireExtensionDeliveryProvider()` has
+ * already thrown or succeeded, never in place of it.
  */
-export async function auditDeliveryProviderRegistration(
+export async function auditDeliveryProviderRegistrationOrFailClosed(
   channels: string[],
   logger: LoaderLogger,
   listOrgIds: ListOrgIdsFn = fetchAllOrgIds
@@ -90,7 +110,8 @@ export async function auditDeliveryProviderRegistration(
   let orgIds: string[]
   try {
     orgIds = await listOrgIds()
-  } catch {
+  } catch (error) {
+    unregisterDeliveryProviderChannels(channels)
     operationalLog(
       logger,
       'fatal',
@@ -98,7 +119,11 @@ export async function auditDeliveryProviderRegistration(
       'delivery-provider registration audit fanout: failed to enumerate organizations',
       { channels }
     )
-    return
+    throw new DeliveryProviderRegistrationAuditError(
+      `Failed to enumerate organizations for delivery-provider registration audit: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    )
   }
 
   for (const orgId of orgIds) {
@@ -111,13 +136,19 @@ export async function auditDeliveryProviderRegistration(
             payload: { channel, extensionName: registeredExtensionName },
           })
         )
-      } catch {
+      } catch (error) {
+        unregisterDeliveryProviderChannels(channels)
         operationalLog(
           logger,
           'fatal',
           'notification.delivery_provider_audit_fanout_row_failed',
           'delivery-provider registration audit fanout: per-org audit write failed',
           { orgId, channel }
+        )
+        throw new DeliveryProviderRegistrationAuditError(
+          `Failed to write delivery-provider registration audit for org ${orgId}, channel ${channel}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
         )
       }
     }

@@ -41,6 +41,32 @@ async function adminLookupByProviderMessageId(
   return row ?? null
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** Story 20.11 AC3 edge case — a provider's webhook call can genuinely race the send-time
+ * transaction that persists `providerMessageId` (the provider accepts the send and fires its
+ * webhook before PV's own commit lands). Without a retry, that race permanently loses the event:
+ * an unresolved lookup is folded into the non-enumerating 202 no-op (AC3/AC6), and the provider
+ * has no reason to redeliver a webhook it believes already succeeded. A few short, bounded
+ * retries close all but the most pathological races (typical send-then-webhook gaps are single-
+ * digit milliseconds) while adding at most ~90ms to the rare case that's still genuinely unknown
+ * (an actually-unknown identifier pays this same small cost — AC6 requires it not be
+ * distinguishable from a found-but-slow-to-commit one). */
+async function adminLookupByProviderMessageIdWithRetry(
+  providerId: string,
+  providerMessageId: string,
+  { attempts = 4, delayMs = 30 }: { attempts?: number; delayMs?: number } = {}
+): Promise<{ id: string; orgId: string } | null> {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const row = await adminLookupByProviderMessageId(providerId, providerMessageId)
+    if (row) return row
+    if (attempt < attempts) await sleep(delayMs)
+  }
+  return null
+}
+
 /**
  * Story 20.11 AC3/AC6 — `POST /api/v1/notifications/delivery-webhook/:providerId`'s real logic
  * (the route handler itself stays thin, per this codebase's route-audit convention).
@@ -94,7 +120,10 @@ export async function handleDeliveryWebhook(
     // outcomes, so a per-event failure is swallowed here and the loop continues to the next event
     // rather than aborting the whole batch.
     try {
-      const row = await adminLookupByProviderMessageId(input.providerId, event.providerMessageId)
+      const row = await adminLookupByProviderMessageIdWithRetry(
+        input.providerId,
+        event.providerMessageId
+      )
       if (!row) continue // AC3 edge: non-enumerating no-op, folded into the overall 202 accepted.
 
       await applyDeliveryStatusUpdate({

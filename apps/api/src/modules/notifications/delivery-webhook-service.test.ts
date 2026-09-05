@@ -136,4 +136,37 @@ describe('handleDeliveryWebhook', () => {
       expect(queueId).toBeTruthy()
     })
   })
+
+  // Story 20.11 AC3 edge case — a provider's webhook call can race the send-time transaction
+  // that persists providerMessageId. Without a retry, this event would be permanently lost
+  // (folded into the non-enumerating 202 no-op with no way for the provider to know to redeliver).
+  it('AC3 race: a webhook arriving just before the send-time commit lands is still applied, not lost', async () => {
+    await withTestOrg(async ({ orgId }) => {
+      const providerMessageId = `race-${orgId}`
+      const provider: DeliveryProvider = {
+        send: () => Promise.resolve({ providerMessageId: 'x' }),
+        verifyWebhookSignature: () => true,
+        parseWebhookEvents: () => [{ providerMessageId, status: 'delivered' }],
+      }
+      wireExtensionDeliveryProvider(loadedStateWith({ email: provider }))
+
+      // Fire the webhook BEFORE the row (with its providerMessageId) is committed, then commit
+      // it shortly after — simulating the provider's webhook beating PV's own send-time commit.
+      const webhookPromise = handleDeliveryWebhook({
+        providerId: 'email',
+        rawBody: '{}',
+        headers: {},
+      })
+      await new Promise((resolve) => setTimeout(resolve, 15))
+      const queueId = await seedSentQueueEntry(orgId, providerMessageId)
+
+      const result = await webhookPromise
+      expect(result).toEqual({ outcome: 'accepted' })
+
+      const [updated] = await withOrg(orgId, (tx) =>
+        tx.select().from(notificationQueue).where(eq(notificationQueue.id, queueId))
+      )
+      expect(updated?.status).toBe('delivered')
+    })
+  })
 })
