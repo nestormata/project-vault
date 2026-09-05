@@ -29,7 +29,9 @@ function buildTx() {
     select: () => ({
       from: () => ({
         where: () => ({
-          limit: () => Promise.resolve(currentRow ? [currentRow] : []),
+          for: () => ({
+            limit: () => Promise.resolve(currentRow ? [currentRow] : []),
+          }),
         }),
       }),
     }),

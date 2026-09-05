@@ -63,23 +63,49 @@ export async function handleDeliveryWebhook(
   const provider = getDeliveryProviderForChannel(input.providerId)
   if (!provider) return { outcome: 'rejected', status: 404 }
 
-  const verified = provider.verifyWebhookSignature({
-    rawBody: input.rawBody,
-    headers: input.headers,
-  })
+  // AC6: every rejection reason must be indistinguishable from the HTTP response alone. A
+  // third-party extension's `verifyWebhookSignature()`/`parseWebhookEvents()` throwing on a
+  // malformed/adversarial body (or a downstream fail-closed audit write) must not be allowed to
+  // propagate to the route handler uncaught — an uncaught exception would surface as a generic
+  // framework 500, a response shape distinguishable from this route's deliberate 404 rejection
+  // shape, undermining the very guarantee this route exists to provide.
+  let verified: boolean
+  try {
+    verified = provider.verifyWebhookSignature({
+      rawBody: input.rawBody,
+      headers: input.headers,
+    })
+  } catch {
+    return { outcome: 'rejected', status: 404 }
+  }
   if (!verified) return { outcome: 'rejected', status: 404 }
 
-  const events = provider.parseWebhookEvents(input.rawBody)
-  for (const event of events) {
-    const row = await adminLookupByProviderMessageId(input.providerId, event.providerMessageId)
-    if (!row) continue // AC3 edge: non-enumerating no-op, folded into the overall 202 accepted.
+  let events: ReturnType<typeof provider.parseWebhookEvents>
+  try {
+    events = provider.parseWebhookEvents(input.rawBody)
+  } catch {
+    return { outcome: 'rejected', status: 404 }
+  }
 
-    await applyDeliveryStatusUpdate({
-      notificationQueueId: row.id,
-      orgId: row.orgId,
-      newStatus: event.status,
-      providerId: input.providerId,
-    })
+  for (const event of events) {
+    // Each event is applied independently: one bad/unresolvable event in a multi-event payload
+    // must not silently drop every later event in the same delivery — the provider only knows
+    // whether ITS request as a whole was accepted (202) or rejected (404/401), never per-event
+    // outcomes, so a per-event failure is swallowed here and the loop continues to the next event
+    // rather than aborting the whole batch.
+    try {
+      const row = await adminLookupByProviderMessageId(input.providerId, event.providerMessageId)
+      if (!row) continue // AC3 edge: non-enumerating no-op, folded into the overall 202 accepted.
+
+      await applyDeliveryStatusUpdate({
+        notificationQueueId: row.id,
+        orgId: row.orgId,
+        newStatus: event.status,
+        providerId: input.providerId,
+      })
+    } catch {
+      continue
+    }
   }
 
   return { outcome: 'accepted' }

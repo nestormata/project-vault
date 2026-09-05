@@ -67,10 +67,18 @@ export async function applyDeliveryStatusUpdate(
   logger: Logger = {}
 ): Promise<ApplyDeliveryStatusUpdateResult> {
   return withOrg(input.orgId, async (tx) => {
+    // Row-level lock for the duration of this transaction: two concurrent calls for the SAME
+    // queue row (e.g. a `bounced` and a `delivered` webhook event delivered near-simultaneously)
+    // must be serialized, otherwise both can read the same stale `currentStatus` under READ
+    // COMMITTED, both independently pass the forward-progress check, and whichever commits last
+    // wins regardless of rank — silently defeating the AC2/AC4 forward-progress guarantee this
+    // function exists to enforce. `FOR UPDATE` makes the second transaction block until the first
+    // commits, so it re-reads the already-updated row before making its own decision.
     const [row] = await tx
       .select()
       .from(notificationQueue)
       .where(eq(notificationQueue.id, input.notificationQueueId))
+      .for('update')
       .limit(1)
     if (!row) return { outcome: 'not_found' }
 
@@ -81,7 +89,26 @@ export async function applyDeliveryStatusUpdate(
     // lookup.
     // eslint-disable-next-line security/detect-object-injection
     const currentRank = DELIVERY_STATUS_RANK[currentStatus]
+    // input.newStatus is NOT DB-constrained: for a webhook-sourced call it comes straight from a
+    // third-party extension's own `parseWebhookEvents()` return value, which is only a TypeScript
+    // type, not a runtime guarantee. An out-of-union value must be rejected here rather than
+    // silently bypassing the backward-progress guard (`undefined < currentRank` is always
+    // `false` in JS) and then failing the status CHECK constraint mid-transaction.
     const newRank = DELIVERY_STATUS_RANK[input.newStatus]
+    if (newRank === undefined) {
+      operationalLog(
+        logger,
+        'warn',
+        'notification.delivery_status_invalid',
+        'Delivery-status update discarded: unrecognized status value',
+        {
+          notificationQueueId: row.id,
+          currentStatus,
+          rejectedStatus: input.newStatus,
+        }
+      )
+      return { outcome: 'discarded_backward', currentStatus }
+    }
 
     if (newRank < currentRank) {
       operationalLog(
