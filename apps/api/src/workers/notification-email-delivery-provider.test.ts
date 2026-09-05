@@ -6,7 +6,10 @@ import { notificationQueue } from '@project-vault/db/schema'
 import { createTestUser, withTestOrg } from '@project-vault/db/test-helpers'
 import type { DeliveryProvider } from '@project-vault/extension-api'
 import { getNotificationQueueEntry } from '../__tests__/helpers/notification-test-helpers.js'
-import { initVaultForTest } from '../__tests__/helpers/auth-test-helpers.js'
+import {
+  configureAuthIntegrationEnv,
+  initVaultForTest,
+} from '../__tests__/helpers/auth-test-helpers.js'
 import { resetVaultForTest } from '../__tests__/helpers/vault-test-cleanup.js'
 import {
   __resetDeliveryProvidersForTests,
@@ -19,8 +22,7 @@ import {
   setEmailTransportForTesting,
 } from './notification-email.js'
 
-process.env['DATABASE_URL'] ??=
-  'postgresql://vault_app:dev-only-change-in-prod@localhost:21628/project_vault'
+configureAuthIntegrationEnv()
 
 function loadedStateWith(deliveryProvider: Record<string, DeliveryProvider>): ExtensionState {
   return {

@@ -3,9 +3,14 @@ import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { notificationQueue } from '@project-vault/db/schema'
 import { withTestOrg, withTwoTestOrgs } from '@project-vault/db/test-helpers'
-import { initVaultForTest } from '../__tests__/helpers/auth-test-helpers.js'
+import {
+  configureAuthIntegrationEnv,
+  initVaultForTest,
+} from '../__tests__/helpers/auth-test-helpers.js'
 import { resetVaultForTest } from '../__tests__/helpers/vault-test-cleanup.js'
 import { applyDeliveryStatusUpdate, type NotificationQueueStatus } from './delivery-status.js'
+
+configureAuthIntegrationEnv()
 
 // applyDeliveryStatusUpdate() writes a same-transaction audit entry (AC5) via
 // writeSystemAuditEntryOrFailClosed, which needs a real (unsealed) vault to fetch the audit HMAC

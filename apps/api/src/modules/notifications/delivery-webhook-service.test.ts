@@ -9,12 +9,14 @@ import {
   wireExtensionDeliveryProvider,
 } from '../../lib/delivery-provider.js'
 import type { ExtensionState } from '../../extensions/loader.js'
-import { initVaultForTest } from '../../__tests__/helpers/auth-test-helpers.js'
+import {
+  configureAuthIntegrationEnv,
+  initVaultForTest,
+} from '../../__tests__/helpers/auth-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 import { handleDeliveryWebhook } from './delivery-webhook-service.js'
 
-process.env['DATABASE_URL'] ??=
-  'postgresql://vault_app:dev-only-change-in-prod@localhost:21628/project_vault'
+configureAuthIntegrationEnv()
 
 function loadedStateWith(deliveryProvider: Record<string, DeliveryProvider>): ExtensionState {
   return {
