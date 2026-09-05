@@ -26,6 +26,7 @@ const importerAllowlist = new Set([
   'modules/invitations/lookup.ts',
   'modules/machine-users/token-exchange-lookup.ts',
   'modules/monitoring/status-page-service.ts',
+  'modules/notifications/delivery-webhook-service.ts',
   'modules/org/pseudonymize.ts',
   'modules/platform-admin/service.ts',
   'modules/rotation/metrics.ts',
