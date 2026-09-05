@@ -28,6 +28,11 @@ export const AuditVerifyResponseSchema = z
           id: z.uuid(),
           eventType: z.string(),
           timestamp: z.iso.datetime(),
+          // Story 1.25 AC-3: additive field — confirmed via grep (apps/web/src) that the only
+          // existing consumers (lib/api/audit.ts's AuditVerifyResult, AuditVerifyPanel.svelte)
+          // are hand-typed structural types reading JSON, not `.strict()`-validated against this
+          // schema — widening it here changes no runtime behavior for them.
+          reason: z.enum(['hmac_mismatch', 'key_version_mismatch', 'chain_break']),
         })
       ),
       failedCount: z.number().int().nonnegative(),

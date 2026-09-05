@@ -3,7 +3,7 @@ import type { Tx } from '@project-vault/db'
 import { auditLogEntries } from '@project-vault/db/schema'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from './key-version.js'
-import { computeAuditHmac } from './write-entry.js'
+import { computeAuditHmac, getPreviousEntryHmac, GENESIS_SENTINEL } from './write-entry.js'
 import { assertOrgMayWriteAuditGates, estimateAuditEntrySizeBytes } from './quota-gate.js'
 
 export type ExtensionAuditFields = {
@@ -51,6 +51,10 @@ export async function writeExtensionAuditEntry(
   })
   await tx.execute(sql`SELECT set_config('app.current_org_id', ${fields.orgId}, true)`)
   const keyVersion = await currentAuditKeyVersion(tx)
+  const previousHmac = await getPreviousEntryHmac(tx, {
+    table: 'audit_log_entries',
+    orgId: fields.orgId,
+  })
   const hmac = computeAuditHmac(
     {
       orgId: fields.orgId,
@@ -61,6 +65,7 @@ export async function writeExtensionAuditEntry(
       resourceType: fields.resourceType,
       payload,
       keyVersion,
+      previousEntryHmac: previousHmac ?? GENESIS_SENTINEL,
     },
     getAuditKey()
   )
@@ -77,6 +82,7 @@ export async function writeExtensionAuditEntry(
       payload,
       keyVersion,
       hmac,
+      previousEntryHmac: previousHmac,
       ipAddress: null,
       userAgent: null,
       revealedFields: null,

@@ -12,7 +12,7 @@ import { env } from '../../config/env.js'
 import { AppError } from '../../lib/errors.js'
 import { firstActorTokenIdForUser } from '../audit/actor-token.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
-import { computeAuditHmac } from '../audit/write-entry.js'
+import { computeAuditHmac, getPreviousEntryHmac, GENESIS_SENTINEL } from '../audit/write-entry.js'
 import { assertOrgMayWriteAuditGates, estimateAuditEntrySizeBytes } from '../audit/quota-gate.js'
 import { writeSystemAuditEntry } from '../audit/machine-entry.js'
 import { getAuditKey } from '../vault/key-service.js'
@@ -89,6 +89,10 @@ async function writeSessionRevokedAudit(
     eventType: AuditEvent.SESSION_REVOKED,
     sizeBytes: estimateAuditEntrySizeBytes({ payload }),
   })
+  const previousHmac = await getPreviousEntryHmac(tx, {
+    table: 'audit_log_entries',
+    orgId: fields.orgId,
+  })
   const hmac = computeAuditHmac(
     {
       orgId: fields.orgId,
@@ -97,6 +101,7 @@ async function writeSessionRevokedAudit(
       eventType: AuditEvent.SESSION_REVOKED,
       payload,
       keyVersion,
+      previousEntryHmac: previousHmac ?? GENESIS_SENTINEL,
     },
     getAuditKey()
   )
@@ -109,6 +114,7 @@ async function writeSessionRevokedAudit(
     payload,
     keyVersion,
     hmac,
+    previousEntryHmac: previousHmac,
   })
 }
 

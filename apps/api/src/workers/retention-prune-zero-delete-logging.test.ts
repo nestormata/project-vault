@@ -2,9 +2,21 @@ import { describe, expect, it, vi } from 'vitest'
 
 const executeMock = vi.fn(async () => [{ deleted: '0' }])
 
+// Story 1.25 AC-4: see platform-audit-retention-prune.test.ts's identical comment — stubs the
+// new expectedGapHash-capture `tx.select(...)` lookup to find no survivor row.
+const selectMock = vi.fn(() => ({
+  from: () => ({
+    where: () => ({
+      orderBy: () => ({
+        limit: async () => [],
+      }),
+    }),
+  }),
+}))
+
 vi.mock('@project-vault/db', () => ({
   withPlatformOperatorContext: async (fn: (tx: unknown) => Promise<unknown>) =>
-    fn({ execute: executeMock }),
+    fn({ execute: executeMock, select: selectMock }),
 }))
 
 vi.mock('../config/env.js', () => ({

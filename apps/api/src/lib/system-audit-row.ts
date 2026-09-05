@@ -1,7 +1,11 @@
 import type { Tx } from '@project-vault/db'
 import { auditLogEntries } from '@project-vault/db/schema'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
-import { computeAuditHmac } from '../modules/audit/write-entry.js'
+import {
+  computeAuditHmac,
+  getPreviousEntryHmac,
+  GENESIS_SENTINEL,
+} from '../modules/audit/write-entry.js'
 import {
   assertOrgMayWriteAuditGates,
   estimateAuditEntrySizeBytes,
@@ -34,6 +38,10 @@ export async function writeSystemAuditRow(
     sizeBytes: estimateAuditEntrySizeBytes(input),
   })
   const keyVersion = await currentAuditKeyVersion(tx)
+  const previousHmac = await getPreviousEntryHmac(tx, {
+    table: 'audit_log_entries',
+    orgId: input.orgId,
+  })
   const hmac = computeAuditHmac(
     {
       orgId: input.orgId,
@@ -42,6 +50,7 @@ export async function writeSystemAuditRow(
       eventType: input.eventType,
       payload: input.payload,
       keyVersion,
+      previousEntryHmac: previousHmac ?? GENESIS_SENTINEL,
     },
     getAuditKey()
   )
@@ -54,5 +63,6 @@ export async function writeSystemAuditRow(
     payload: input.payload,
     keyVersion,
     hmac,
+    previousEntryHmac: previousHmac,
   })
 }

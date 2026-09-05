@@ -13,7 +13,11 @@ import { operationalLog } from '../lib/logger.js'
 import { zeroOverwriteCredentialVersionValue } from '../lib/zero-overwrite-credential-version.js'
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
-import { computeAuditHmac } from '../modules/audit/write-entry.js'
+import {
+  computeAuditHmac,
+  getPreviousEntryHmac,
+  GENESIS_SENTINEL,
+} from '../modules/audit/write-entry.js'
 import {
   assertOrgMayWriteAuditGates,
   estimateAuditEntrySizeBytes,
@@ -109,6 +113,7 @@ async function purgeVersion(tx: Tx, orgId: string, candidate: PurgeCandidate): P
     }),
   })
   const keyVersion = await currentAuditKeyVersion(tx)
+  const previousHmac = await getPreviousEntryHmac(tx, { table: 'audit_log_entries', orgId })
   const hmac = computeAuditHmac(
     {
       orgId,
@@ -119,6 +124,7 @@ async function purgeVersion(tx: Tx, orgId: string, candidate: PurgeCandidate): P
       resourceType: 'credential',
       payload,
       keyVersion,
+      previousEntryHmac: previousHmac ?? GENESIS_SENTINEL,
     },
     getAuditKey()
   )
@@ -132,6 +138,7 @@ async function purgeVersion(tx: Tx, orgId: string, candidate: PurgeCandidate): P
     payload,
     keyVersion,
     hmac,
+    previousEntryHmac: previousHmac,
   })
 
   // Review fix (5-6 code review, AC-9.1e/AC-9.3): the deferred break-glass `ROTATION_OLD_RETIRED`

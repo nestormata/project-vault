@@ -68,7 +68,10 @@ export type AuditVerifyResult = {
   summary: string
   rowsChecked: number
   passed: number
-  failed: { id: string; eventType: string; timestamp: string }[]
+  // Story 1.25 AC-3: `reason` is additive on the API response — optional here so existing test
+  // fixtures/mocks that predate this story (no `reason` field) still satisfy the type; no
+  // runtime behavior in this file or AuditVerifyPanel.svelte depends on it.
+  failed: { id: string; eventType: string; timestamp: string; reason?: string }[]
   failedCount: number
   failedTruncated: boolean
   verifiedAt: string

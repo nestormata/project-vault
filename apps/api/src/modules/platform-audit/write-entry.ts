@@ -3,15 +3,16 @@ import { sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { platformAuditEvents } from '@project-vault/db/schema'
 import { env } from '../../config/env.js'
-import { sortKeys } from '../audit/write-entry.js'
+import { sortKeys, getPreviousEntryHmac, GENESIS_SENTINEL } from '../audit/write-entry.js'
 import { isForbiddenAuditKey, sanitizeAuditPayload } from '../../lib/secure-route.js'
 import { getPlatformAuditKey } from '../vault/key-service.js'
 import { currentPlatformAuditKeyVersion } from './key-version.js'
 
 /** Story 9.4 D6: canonical JSON HMAC over the platform audit key — identical mechanism to
- * `computeAuditHmac` (per-row HMAC, no hash chain — the actual shipped mechanism, not the stale
- * "chaining" language in architecture.md/prd.md), but a distinct signing key so blast radius
- * between the two logs is isolated (D3). */
+ * `computeAuditHmac`, but a distinct signing key so blast radius between the two logs is
+ * isolated (D3). Story 1.25 closed the "no hash chain" gap this comment used to flag: the
+ * digest input now includes `previousEntryHmac` (see `writePlatformAuditEntry` below), making
+ * architecture.md/prd.md's "cryptographic chaining" language accurate rather than aspirational. */
 export function computePlatformAuditHmac(
   fields: Record<string, unknown>,
   platformAuditKey: Buffer
@@ -94,6 +95,14 @@ export async function writePlatformAuditEntry(tx: Tx, fields: PlatformAuditField
       process.stderr.write(`[platform-audit] WARN: ${message}\n`),
   })
 
+  // Story 1.25 AC-2/Edge Case ("retroactive-drain rows and chain_seq"): the lookup below is
+  // ordered by chain_seq (true insertion order), never by createdAt — so a drained pending entry
+  // (which preserves its ORIGINAL, earlier attempt time in createdAt below but is inserted NOW)
+  // correctly chains onto whatever row was actually last in the chain AT DRAIN TIME, not
+  // whatever row happens to have the closest createdAt. No special-casing needed here for the
+  // drain path; the ordinary chain_seq-based lookup is already correct for it.
+  const previousHmac = await getPreviousEntryHmac(tx, { table: 'platform_audit_events' })
+
   const hmacFields = {
     operatorId: fields.operatorId,
     actionType: fields.actionType,
@@ -101,6 +110,7 @@ export async function writePlatformAuditEntry(tx: Tx, fields: PlatformAuditField
     targetUserId: fields.targetUserId,
     payload,
     keyVersion,
+    previousEntryHmac: previousHmac ?? GENESIS_SENTINEL,
   }
   const hmac = computePlatformAuditHmac(hmacFields, getPlatformAuditKey())
 
@@ -113,6 +123,7 @@ export async function writePlatformAuditEntry(tx: Tx, fields: PlatformAuditField
     ipAddress: fields.ipAddress ?? null,
     keyVersion,
     hmac,
+    previousEntryHmac: previousHmac,
     ...(fields.createdAt ? { createdAt: fields.createdAt } : {}),
   })
 }

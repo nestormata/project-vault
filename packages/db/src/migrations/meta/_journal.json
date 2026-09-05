@@ -624,6 +624,13 @@
       "when": 1788120051054,
       "tag": "0088_organizations_centralizeme_org_id",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1788639396461,
+      "tag": "0089_audit_log_hmac_chain_linkage",
+      "breakpoints": true
     }
   ]
 }

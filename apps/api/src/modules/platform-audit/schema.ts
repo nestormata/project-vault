@@ -66,6 +66,10 @@ export const PlatformAuditVerifyFailedEntrySchema = z
     id: z.uuid(),
     actionType: z.string(),
     timestamp: z.string(),
+    // Story 1.25 AC-3: additive field — the "why" behind a failed row. Confirmed via grep
+    // (apps/web) that no existing consumer breaks on this wider shape; see audit/schema.ts's
+    // twin comment for the same confirmation on the org-scoped response.
+    reason: z.enum(['hmac_mismatch', 'key_version_mismatch', 'chain_break']),
   })
   .meta({ id: 'PlatformAuditVerifyFailedEntry' })
 

@@ -54,8 +54,17 @@ export const PREAUTH_ATTRIBUTABLE_EVENT_TYPES: ReadonlySet<string> = new Set([
  * 'audit.retention_configured' / 'audit.forwarding_configured' — neither is registered in the
  * AuditEvent registry today, which is pre-existing drift this story does not attempt to fix.
  */
+// Story 1.25 AC-4 edge case: confirmed directly (not assumed) that assertOrgMayWriteAuditGates
+// (called internally by writeSystemAuditEntry) can throw for an over-quota/over-rate org — which
+// is precisely the situation retention pruning exists to relieve. The retention-purge-boundary
+// tombstone is itself an event that helps an org get back under quota (it is the durable record
+// that data was purged), so it belongs in this existing remediation-exemption set rather than
+// needing a brand-new bypass mechanism — same rationale as AUDIT_QUOTA_CONFIGURED below. This is
+// resolution (a) from the story's two documented options: a quota-gate bypass for
+// system-authored purge-boundary rows (never option (b), log-and-continue-without-the-write).
 export const QUOTA_REMEDIATION_EVENT_TYPES: ReadonlySet<string> = new Set([
   AuditEvent.AUDIT_QUOTA_CONFIGURED,
+  AuditEvent.RETENTION_PURGE_BOUNDARY,
   'audit.retention_configured',
   'audit.forwarding_configured',
 ])

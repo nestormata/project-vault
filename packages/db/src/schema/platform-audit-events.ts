@@ -1,4 +1,14 @@
-import { pgTable, uuid, text, timestamp, jsonb, integer, index } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  uuid,
+  text,
+  timestamp,
+  jsonb,
+  integer,
+  bigint,
+  index,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core'
 import { users } from './users.js'
 
 // IMMUTABLE: append-only, no updates permitted
@@ -23,6 +33,16 @@ export const platformAuditEvents = pgTable(
     keyVersion: integer('key_version').notNull(),
     hmac: text('hmac').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // Story 1.25 (HIGH finding, chain-link audit HMACs): the previous row's `hmac` (single global
+    // chain — this table has no org_id), NULL only for the chain's true genesis row (the lowest
+    // chain_seq overall).
+    previousEntryHmac: text('previous_entry_hmac'),
+    // Story 1.25: true insertion-order sequence. NOT createdAt — the maintenance-mode drain path
+    // (PlatformAuditFields.createdAt) can insert a row with an explicit, earlier createdAt than
+    // its actual insertion time, so createdAt order can diverge from insertion order for this
+    // table specifically. chain_seq (GENERATED ALWAYS AS IDENTITY) is the one column guaranteed
+    // to reflect true insertion order.
+    chainSeq: bigint('chain_seq', { mode: 'number' }).notNull().generatedAlwaysAsIdentity(),
     // NO updated_at: immutable table
   },
   (t) => ({
@@ -38,6 +58,9 @@ export const platformAuditEvents = pgTable(
       t.targetOrgId,
       t.createdAt.desc()
     ),
+    // Story 1.25 AC-1: chain_seq must be unique; also the ordering index for verify.ts's global
+    // chain walk (ORDER BY chain_seq).
+    chainSeqUniqueIdx: uniqueIndex('idx_platform_audit_events_chain_seq').on(t.chainSeq),
   })
 )
 

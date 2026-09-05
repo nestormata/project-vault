@@ -3,7 +3,11 @@ import { auditLogEntries } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { firstActorTokenIdForUser } from '../modules/audit/actor-token.js'
 import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
-import { computeAuditHmac } from '../modules/audit/write-entry.js'
+import {
+  computeAuditHmac,
+  getPreviousEntryHmac,
+  GENESIS_SENTINEL,
+} from '../modules/audit/write-entry.js'
 import {
   assertOrgMayWriteAuditGates,
   estimateAuditEntrySizeBytes,
@@ -83,6 +87,10 @@ async function insertCapabilityDeniedRow(
           suppressedCount: input.suppressedCount,
         }
       : { capability: input.capability, reasonCode: input.reasonCode }
+  const previousHmac = await getPreviousEntryHmac(tx, {
+    table: 'audit_log_entries',
+    orgId: input.orgId,
+  })
   const fields = {
     orgId: input.orgId,
     actorTokenId,
@@ -92,6 +100,7 @@ async function insertCapabilityDeniedRow(
     resourceType: undefined,
     payload,
     keyVersion,
+    previousEntryHmac: previousHmac ?? GENESIS_SENTINEL,
   }
   // Story 22.1 AC-13 (site 9 of 9 — discovered by re-verifying the insert-site count at
   // implementation time per Task 1: Story 23.3 landed after this story was drafted and added this
@@ -116,6 +125,7 @@ async function insertCapabilityDeniedRow(
     payload,
     keyVersion,
     hmac,
+    previousEntryHmac: previousHmac,
   })
 }
 

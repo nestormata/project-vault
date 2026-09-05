@@ -201,7 +201,9 @@ export type PlatformAuditVerifyResult = {
   summary: string
   rowsChecked: number
   passed: number
-  failed: Array<{ id: string; actionType: string; timestamp: string }>
+  // Story 1.25 AC-3: `reason` is additive on the API response — optional here so existing test
+  // fixtures/mocks that predate this story still satisfy the type.
+  failed: Array<{ id: string; actionType: string; timestamp: string; reason?: string }>
   failedCount: number
   failedTruncated: boolean
   verifiedAt: string

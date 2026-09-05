@@ -16,13 +16,21 @@ const { computeAuditHmac, FIXTURE_HMAC } = vi.hoisted(() => {
   return { computeAuditHmac: vi.fn(() => FIXTURE_HMAC), FIXTURE_HMAC }
 })
 
+// Story 1.25 AC-2: every write call site now looks up the chain tail before computing its hmac.
+// Fixed to null (genesis) by default — individual tests override via mockResolvedValueOnce where
+// the previous-hmac value itself is under test.
+const { getPreviousEntryHmac, GENESIS_SENTINEL } = vi.hoisted(() => ({
+  getPreviousEntryHmac: vi.fn(async () => null as string | null),
+  GENESIS_SENTINEL: 'GENESIS',
+}))
+
 const { getAuditKey } = vi.hoisted(() => ({
   getAuditKey: vi.fn(() => Buffer.from('fixture-key')),
 }))
 
 vi.mock('./quota-gate.js', () => ({ assertOrgMayWriteAuditGates, estimateAuditEntrySizeBytes }))
 vi.mock('./key-version.js', () => ({ currentAuditKeyVersion }))
-vi.mock('./write-entry.js', () => ({ computeAuditHmac }))
+vi.mock('./write-entry.js', () => ({ computeAuditHmac, getPreviousEntryHmac, GENESIS_SENTINEL }))
 vi.mock('../vault/key-service.js', () => ({ getAuditKey }))
 
 import { writeExtensionAuditEntry } from './extension-entry.js'
@@ -31,6 +39,7 @@ const FIXTURE_ROW = { id: 'row-1', createdAt: new Date('2026-08-17T00:00:00Z') }
 const ORG_ID = 'org-1'
 const EVENT_TYPE = 'ext.com.acme.fixture.thing_happened'
 const EXTENSION_NAME = 'com.acme.fixture'
+const PRIOR_ROW_HMAC = 'prior-row-hmac'
 
 function createStubTx(): { tx: Tx; valuesSpy: ReturnType<typeof vi.fn> } {
   const returning = vi.fn(async () => [FIXTURE_ROW])
@@ -48,6 +57,7 @@ describe('writeExtensionAuditEntry — AC-9/AC-11/AC-12/AC-13/AC-14', () => {
     assertOrgMayWriteAuditGates.mockResolvedValue(undefined)
     currentAuditKeyVersion.mockResolvedValue(5)
     computeAuditHmac.mockReturnValue(FIXTURE_HMAC)
+    getPreviousEntryHmac.mockResolvedValue(null)
   })
 
   it('happy path: inserts a row with actor_type=extension, folded payload, and returns id/createdAt', async () => {
@@ -72,11 +82,50 @@ describe('writeExtensionAuditEntry — AC-9/AC-11/AC-12/AC-13/AC-14', () => {
         payload: { foo: 'bar', extensionName: EXTENSION_NAME },
         keyVersion: 5,
         hmac: FIXTURE_HMAC,
+        previousEntryHmac: null,
         ipAddress: null,
         userAgent: null,
         revealedFields: null,
       })
     )
+  })
+
+  it('Story 1.25 AC-2: threads the previous row hmac (or GENESIS_SENTINEL) into computeAuditHmac, and stores the real value (never the sentinel) in previousEntryHmac', async () => {
+    const { tx, valuesSpy } = createStubTx()
+    getPreviousEntryHmac.mockResolvedValue(PRIOR_ROW_HMAC)
+
+    await writeExtensionAuditEntry(tx, {
+      orgId: ORG_ID,
+      eventType: EVENT_TYPE,
+      payload: {},
+      extensionName: EXTENSION_NAME,
+    })
+
+    expect(computeAuditHmac).toHaveBeenCalledWith(
+      expect.objectContaining({ previousEntryHmac: PRIOR_ROW_HMAC }),
+      expect.anything()
+    )
+    expect(valuesSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ previousEntryHmac: PRIOR_ROW_HMAC })
+    )
+  })
+
+  it('Story 1.25 AC-2: a genesis row (no previous row) folds GENESIS_SENTINEL into the digest but stores null', async () => {
+    const { tx, valuesSpy } = createStubTx()
+    getPreviousEntryHmac.mockResolvedValue(null)
+
+    await writeExtensionAuditEntry(tx, {
+      orgId: ORG_ID,
+      eventType: EVENT_TYPE,
+      payload: {},
+      extensionName: EXTENSION_NAME,
+    })
+
+    expect(computeAuditHmac).toHaveBeenCalledWith(
+      expect.objectContaining({ previousEntryHmac: GENESIS_SENTINEL }),
+      expect.anything()
+    )
+    expect(valuesSpy).toHaveBeenCalledWith(expect.objectContaining({ previousEntryHmac: null }))
   })
 
   it('AC-11 edge case: a caller-supplied payload.extensionName is overwritten by the host-assigned value', async () => {
@@ -111,11 +160,12 @@ describe('writeExtensionAuditEntry — AC-9/AC-11/AC-12/AC-13/AC-14', () => {
 
     expect(tx.execute).not.toHaveBeenCalled()
     expect(currentAuditKeyVersion).not.toHaveBeenCalled()
+    expect(getPreviousEntryHmac).not.toHaveBeenCalled()
     expect(tx.insert).not.toHaveBeenCalled()
     expect(valuesSpy).not.toHaveBeenCalled()
   })
 
-  it('AC-13: key version is read and threaded into both the hmac computation and the insert, strictly in order (set_config -> keyVersion -> hmac -> insert)', async () => {
+  it('AC-13: key version is read and threaded into both the hmac computation and the insert, strictly in order (set_config -> keyVersion -> previousHmac -> hmac -> insert)', async () => {
     const { tx } = createStubTx()
     const callOrder: string[] = []
     ;(tx.execute as ReturnType<typeof vi.fn>).mockImplementation(async () => {
@@ -124,6 +174,10 @@ describe('writeExtensionAuditEntry — AC-9/AC-11/AC-12/AC-13/AC-14', () => {
     currentAuditKeyVersion.mockImplementation(async () => {
       callOrder.push('keyVersion')
       return 9
+    })
+    getPreviousEntryHmac.mockImplementation(async () => {
+      callOrder.push('previousHmac')
+      return null
     })
     computeAuditHmac.mockImplementation(() => {
       callOrder.push('hmac')
@@ -143,7 +197,7 @@ describe('writeExtensionAuditEntry — AC-9/AC-11/AC-12/AC-13/AC-14', () => {
       extensionName: EXTENSION_NAME,
     })
 
-    expect(callOrder).toEqual(['set_config', 'keyVersion', 'hmac', 'insert'])
+    expect(callOrder).toEqual(['set_config', 'keyVersion', 'previousHmac', 'hmac', 'insert'])
     expect(computeAuditHmac).toHaveBeenCalledWith(
       expect.objectContaining({ keyVersion: 9 }),
       expect.anything()

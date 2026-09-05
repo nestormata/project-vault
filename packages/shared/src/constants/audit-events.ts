@@ -190,6 +190,16 @@ export const AuditEvent = {
   // SECURITY_CRITICAL_AUDIT_EVENT_TYPES (finding M2) — an over-quota org must still be able to
   // have its own quota raised (the deadlock-prevention case, AC-11).
   AUDIT_QUOTA_CONFIGURED: 'audit.quota_configured',
+  // Story 1.25 AC-4: written by the retention-prune worker, in the same transaction as the
+  // SECURITY DEFINER purge call, whenever a purge actually deletes rows AND the deletion orphans
+  // a still-surviving row's previous_entry_hmac (the "attested-gap tombstone" — the mechanism
+  // verify.ts's chain-walk consults to distinguish a legitimate retention purge from tampering).
+  // In QUOTA_REMEDIATION_EVENT_TYPES (apps/api/src/modules/audit/quota-gate.ts), NOT
+  // SECURITY_CRITICAL_AUDIT_EVENT_TYPES — this write must never be blocked by the very quota
+  // pressure retention pruning exists to relieve (an over-quota org's purge run must still be
+  // able to record its own tombstone), the same deadlock-prevention rationale as
+  // AUDIT_QUOTA_CONFIGURED above.
+  RETENTION_PURGE_BOUNDARY: 'audit.retention_purge_boundary',
 } as const
 
 // Story 6.4 (P6-3, AC-J1/J2): this used to be hand-restated as a second literal union
