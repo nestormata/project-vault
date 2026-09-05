@@ -190,6 +190,20 @@ export const AuditEvent = {
   // SECURITY_CRITICAL_AUDIT_EVENT_TYPES (finding M2) — an over-quota org must still be able to
   // have its own quota raised (the deadlock-prevention case, AC-11).
   AUDIT_QUOTA_CONFIGURED: 'audit.quota_configured',
+  // Story 20.11 AC5: written in the same transaction as the corresponding state change.
+  // NOTIFICATION_DELIVERY_PROVIDER_REGISTERED/_UNREGISTERED are written per-org (system-actor
+  // fanout, no single natural org for a process-wide extension-hook registration — same posture
+  // as EXTENSION_LOADED above) by apps/api/src/lib/delivery-provider.ts's wiring step.
+  // NOTIFICATION_DELIVERY_STATUS_UPDATED is written by
+  // apps/api/src/notifications/delivery-status.ts's applyDeliveryStatusUpdate(), in the SAME
+  // transaction as the notification_queue row's status write, only when the status actually
+  // changes (never for a discarded backward move or an idempotent same-status replay — AC2/AC4).
+  // Payload is limited to the queue row id, provider id, old/new status, and timestamps — never
+  // message body content, recipient PII beyond what notification_queue already stores, or the
+  // webhook's raw signature/secret material (AC5).
+  NOTIFICATION_DELIVERY_PROVIDER_REGISTERED: 'notification.delivery_provider_registered',
+  NOTIFICATION_DELIVERY_PROVIDER_UNREGISTERED: 'notification.delivery_provider_unregistered',
+  NOTIFICATION_DELIVERY_STATUS_UPDATED: 'notification.delivery_status_updated',
 } as const
 
 // Story 6.4 (P6-3, AC-J1/J2): this used to be hand-restated as a second literal union

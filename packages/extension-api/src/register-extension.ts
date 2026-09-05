@@ -23,6 +23,7 @@ import type { NotificationChannel } from './hooks/notification-channel.js'
 import type { UIPanel } from './hooks/ui-panel.js'
 import type { ModuleAction } from './hooks/module-action.js'
 import type { CapabilityGate } from './hooks/capability-gate.js'
+import type { DeliveryProvider } from './hooks/delivery-provider.js'
 import type { HostServices } from './host-services.js'
 import type { ExtensionDbScopeEntry, ExtensionRuntimeContext } from './db-access.js'
 import type { ProjectCreatePolicy } from './hooks/project-lifecycle.js'
@@ -64,6 +65,15 @@ export type ExtensionHooks = {
    * handler.
    */
   moduleData?: Record<string, ModuleDataRouteHandler>
+  /**
+   * Story 20.11 AC1 — a map of `notification_queue.channel` name (e.g. `"email"`) to the
+   * `DeliveryProvider` handling that channel. PV's dispatcher calls the registered provider's
+   * `send()` instead of the built-in nodemailer transport only for a channel present as a key
+   * here (AC1/AC8). Registering the SAME channel key more than once in the same process is a
+   * loud, named conflict error at wiring time (`DeliveryProviderConflictError`,
+   * `apps/api/src/lib/delivery-provider.ts`) — last-registered-wins is not acceptable.
+   */
+  deliveryProvider?: Record<string, DeliveryProvider>
 }
 
 /** Default `HostServices` used when a caller (typically a test) invokes `registerExtension()`

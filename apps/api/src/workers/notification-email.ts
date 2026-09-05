@@ -6,6 +6,8 @@ import type { BossService } from '../lib/boss.js'
 import type { FastifyBaseLogger } from 'fastify'
 import nodemailer from 'nodemailer'
 import { resolveSmtpTransportConfig } from '../modules/platform-admin/service.js'
+import { getDeliveryProviderForChannel } from '../lib/delivery-provider.js'
+import { applyDeliveryStatusUpdate } from '../notifications/delivery-status.js'
 import {
   claimPendingNotificationEntry,
   markNotificationDelivered,
@@ -15,6 +17,8 @@ import {
   createNotificationJobHandler,
   runNotificationCatchup,
 } from './notification-worker-common.js'
+
+const EMAIL_CHANNEL = 'email'
 
 let _transport: ReturnType<typeof nodemailer.createTransport> | null | undefined
 
@@ -58,41 +62,77 @@ export function resetEmailTransportForTesting(): void {
   _transport = undefined
 }
 
-export async function sendEmailNotification(
+/**
+ * Story 20.11 AC1/AC8 — sends via the registered `DeliveryProvider` for the `email` channel
+ * instead of the built-in SMTP transport. Only the same class of already-permitted
+ * notification-template metadata `NotificationChannel` already carries crosses this boundary
+ * (AC7) — never a decrypted credential, a raw share token, or a DB handle. Throwing here (a
+ * rejected `send()`, or the provider hanging past the caller's own job-level timeout) propagates
+ * unchanged to the pg-boss job handler, so the existing retry/backoff behavior applies identically
+ * to a provider-backed send as to the SMTP path (AC1 edge case) — this function does not itself
+ * add a bounding timeout beyond what pg-boss's job execution already imposes.
+ */
+async function sendViaDeliveryProvider(
   notificationQueueId: string,
   orgId: string,
-  logger?: Pick<FastifyBaseLogger, 'error'>
+  toAddress: string,
+  templateId: string,
+  subject: string,
+  body: string
 ): Promise<void> {
-  const transport = await getEmailTransport()
-  const entry = await claimPendingNotificationEntry(notificationQueueId, orgId)
-  if (!entry) return
+  const provider = getDeliveryProviderForChannel(EMAIL_CHANNEL)
+  if (!provider) throw new Error('sendViaDeliveryProvider called with no registered provider')
 
-  if (!transport) {
-    await markNotificationSuppressed(notificationQueueId, orgId)
-    return
-  }
+  const { providerMessageId } = await provider.send({
+    recipientAddress: toAddress,
+    subject,
+    body,
+    templateId,
+    queueRowId: notificationQueueId,
+  })
 
-  let toAddress: string | null = null
+  // AC2/AC4: even the initial send-time transition goes through the single rank-based guard —
+  // pending (rank 0) -> sent (rank 1) is always forward progress, so this always applies.
+  await applyDeliveryStatusUpdate({
+    notificationQueueId,
+    orgId,
+    newStatus: 'sent',
+    providerId: EMAIL_CHANNEL,
+    providerMessageId,
+  })
+}
+
+type QueueEntry = Awaited<ReturnType<typeof claimPendingNotificationEntry>>
+
+/** Extracted from `sendEmailNotification` purely to keep its own cyclomatic complexity under
+ * this repo's lint budget. Resolves the outbound address from either the linked user's own email
+ * (looked up fresh, never trusting a stale denormalized copy) or the entry's own recorded
+ * recipientEmail. */
+async function resolveToAddress(
+  entry: NonNullable<QueueEntry>,
+  orgId: string
+): Promise<string | null> {
   if (entry.recipientUserId) {
     const recipientUserId = entry.recipientUserId
     const [user] = await withOrg(orgId, (tx) =>
       tx.select({ email: users.email }).from(users).where(eq(users.id, recipientUserId)).limit(1)
     )
-    toAddress = user?.email ?? null
-  } else if (entry.recipientEmail) {
-    toAddress = entry.recipientEmail
+    return user?.email ?? null
   }
-  if (!toAddress) {
-    await markNotificationSuppressed(notificationQueueId, orgId)
-    return
-  }
+  return entry.recipientEmail ?? null
+}
 
-  const { subject, text, html } = renderEmailTemplate(
-    entry.templateId,
-    entry.payload as Record<string, unknown>,
-    logger
-  )
-
+/** Extracted from `sendEmailNotification` for the same complexity-budget reason as
+ * `resolveToAddress` above: the built-in SMTP send path, unchanged from Story 3.1. */
+async function sendViaSmtp(
+  notificationQueueId: string,
+  orgId: string,
+  toAddress: string,
+  subject: string,
+  text: string | undefined,
+  html: string | undefined,
+  transport: NonNullable<Awaited<ReturnType<typeof getEmailTransport>>>
+): Promise<void> {
   // D3 precedence: the "from" address honors a system_settings override the same way host/port
   // do — resolveSmtpTransportConfig() is the single source of truth, so a second, independent
   // lookup isn't cached alongside the transport itself (kept simple: one extra DB read per send).
@@ -107,6 +147,51 @@ export async function sendEmailNotification(
   })
 
   await markNotificationDelivered(notificationQueueId, orgId)
+}
+
+export async function sendEmailNotification(
+  notificationQueueId: string,
+  orgId: string,
+  logger?: Pick<FastifyBaseLogger, 'error'>
+): Promise<void> {
+  const provider = getDeliveryProviderForChannel(EMAIL_CHANNEL)
+  const transport = provider ? null : await getEmailTransport()
+  const entry = await claimPendingNotificationEntry(notificationQueueId, orgId)
+  if (!entry) return
+
+  if (!provider && !transport) {
+    await markNotificationSuppressed(notificationQueueId, orgId)
+    return
+  }
+
+  const toAddress = await resolveToAddress(entry, orgId)
+  if (!toAddress) {
+    await markNotificationSuppressed(notificationQueueId, orgId)
+    return
+  }
+
+  const { subject, text, html } = renderEmailTemplate(
+    entry.templateId,
+    entry.payload as Record<string, unknown>,
+    logger
+  )
+
+  if (provider) {
+    await sendViaDeliveryProvider(
+      notificationQueueId,
+      orgId,
+      toAddress,
+      entry.templateId,
+      subject,
+      text ?? html ?? ''
+    )
+    return
+  }
+
+  // transport is non-null here: provider is falsy (checked above) and the !provider && !transport
+  // suppression branch already returned when transport was null.
+  if (!transport) return
+  await sendViaSmtp(notificationQueueId, orgId, toAddress, subject, text, html, transport)
 }
 
 export const notificationEmailHandler = createNotificationJobHandler(

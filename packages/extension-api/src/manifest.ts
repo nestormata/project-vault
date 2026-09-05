@@ -12,6 +12,9 @@ export type ExtensionCapability =
   | 'capability-gate'
   | 'audit-event-source'
   | 'project-lifecycle'
+  // Story 20.11 AC1 — declares that this extension's `hooksFactory()` may return a
+  // `deliveryProvider` hooks-bag entry (see `register-extension.ts`'s `ExtensionHooks`).
+  | 'delivery-provider'
 
 export type ExtensionManifest = {
   /** Reverse-DNS-style identifier, e.g. "com.acme.sso-extension" — validated by registerExtension (AC6). */
@@ -314,7 +317,14 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // itself kept) specifically to avoid an unplanned MAJOR bump for removing a public type field
 // (Story 23.11 AC6 precedent). Confirmed against `main` at implementation time: 3.9.0 was still
 // the latest claimed version, so 3.10.0 was free.
-export const EXTENSION_API_VERSION = '3.10.0'
+// Story 20.11 AC1 — bumped as an additive-minor (3.10.0 -> 3.11.0): `ExtensionCapability` gains
+// the `'delivery-provider'` literal and `ExtensionHooks` gains `deliveryProvider?: Record<string,
+// DeliveryProvider>` (see `hooks/delivery-provider.ts`), both purely-additive optional additions
+// with zero effect on any manifest/hooksFactory that omits them — no existing extension's
+// manifest or hook shape changes, and the floor stays `>=3.0.0` so every already-shipped
+// extension (including any real, currently-deployed CentralizeMe build) keeps loading unmodified
+// regardless.
+export const EXTENSION_API_VERSION = '3.11.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built
