@@ -42,8 +42,8 @@ describe('EXTENSION_API_VERSION', () => {
     // panelDataPaths? (also additive-minor): 3.7.0 -> 3.8.0. Story 29.3 adds ExtensionManifest's
     // navItems? (also additive-minor, not gated behind 'ui-panel'): 3.8.0 -> 3.9.0. Story 29.4
     // adds ExtensionManifest's moduleDataRoutes? and ExtensionHooks' moduleData? (also
-    // additive-minor): 3.9.0 -> 3.10.0.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.10.0')
+    // additive-minor): 3.9.0 -> 3.10.0 -> 3.11.0 (Story 20.11 AC1).
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.11.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

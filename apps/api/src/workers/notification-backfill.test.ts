@@ -1,18 +1,31 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { notificationQueue, orgMemberships, securityAlerts } from '@project-vault/db/schema'
 import { withTestOrg, createTestUser, deleteTestUser } from '@project-vault/db/test-helpers'
 import { createMockBoss } from '../__tests__/helpers/notification-test-helpers.js'
 import { expectQueueStatus } from '../__tests__/helpers/notification-test-helpers.js'
+import {
+  configureAuthIntegrationEnv,
+  initVaultForTest,
+} from '../__tests__/helpers/auth-test-helpers.js'
+import { resetVaultForTest } from '../__tests__/helpers/vault-test-cleanup.js'
 import { runNotificationBackfill } from './notification-backfill.js'
 import { deliverNotification } from './notification-deliver.js'
 import { resetEmailTransportForTesting, setEmailTransportForTesting } from './notification-email.js'
 import type { FastifyBaseLogger } from 'fastify'
 import nodemailer from 'nodemailer'
 
-process.env['DATABASE_URL'] ??=
-  'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
+configureAuthIntegrationEnv()
+
+// Story 20.11 AC4 — markNotificationDelivered/Suppressed/Failed (reached via deliverNotification's
+// sendEmailNotification call) now delegate to applyDeliveryStatusUpdate(), which writes a
+// same-transaction audit entry and needs a real (unsealed) vault for the audit HMAC key.
+beforeAll(async () => {
+  await resetVaultForTest()
+  const { initVault } = await import('../modules/vault/key-service.js')
+  await initVaultForTest(initVault, 'notification-backfill-vault-secret')
+})
 
 const FAILED_AUTH_TEMPLATE = 'security.failed_auth_threshold'
 const FAILED_AUTH_PAYLOAD = {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import nodemailer from 'nodemailer'
 import { withOrg } from '@project-vault/db'
 import { notificationQueue, orgMemberships } from '@project-vault/db/schema'
@@ -8,13 +8,26 @@ import {
   getNotificationQueueEntry,
 } from '../__tests__/helpers/notification-test-helpers.js'
 import {
+  configureAuthIntegrationEnv,
+  initVaultForTest,
+} from '../__tests__/helpers/auth-test-helpers.js'
+import { resetVaultForTest } from '../__tests__/helpers/vault-test-cleanup.js'
+import {
   resetEmailTransportForTesting,
   sendEmailNotification,
   setEmailTransportForTesting,
 } from './notification-email.js'
 
-process.env['DATABASE_URL'] ??=
-  'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
+configureAuthIntegrationEnv()
+
+// Story 20.11 AC4 — markNotificationDelivered()/markNotificationSuppressed() now delegate to
+// applyDeliveryStatusUpdate(), which writes a same-transaction audit entry and needs a real
+// (unsealed) vault for the audit HMAC key.
+beforeAll(async () => {
+  await resetVaultForTest()
+  const { initVault } = await import('../modules/vault/key-service.js')
+  await initVaultForTest(initVault, 'notification-email-vault-secret')
+})
 
 const TEMPLATE_PAYLOAD = {
   thresholdType: 'ip',

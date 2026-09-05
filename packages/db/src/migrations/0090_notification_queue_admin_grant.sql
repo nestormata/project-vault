@@ -1,0 +1,13 @@
+-- Story 20.11 AC3: the delivery-status webhook route resolves which org a webhook event belongs
+-- to via a single admin-connection (RLS-bypassing) point lookup on notification_queue by
+-- (provider_id, provider_message_id) — the same "org unknown until an opaque identifier resolves
+-- it" pattern already established for credential_shares' token-hash lookup and status_pages'
+-- token lookup (both already granted to vault_admin in migration 0071). vault_admin never needed
+-- SELECT on notification_queue before this story: every prior notification_queue access ran
+-- inside an org-scoped withOrg() transaction as vault_app.
+--
+-- Narrow, read-only column grant — only the columns the webhook lookup's WHERE clause and
+-- SELECT list reference (id, org_id, provider_id, provider_message_id). No DELETE/UPDATE grant:
+-- the actual status mutation always happens via applyDeliveryStatusUpdate()'s own
+-- withOrg(row.orgId, ...) scope as vault_app, never via the admin connection.
+GRANT SELECT (id, org_id, provider_id, provider_message_id) ON notification_queue TO vault_admin;

@@ -302,6 +302,18 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     expiresAfterStory: null,
   },
   {
+    route: 'POST /api/v1/notifications/delivery-webhook/:providerId',
+    reason:
+      'Story 20.11 AC3/AC6 — inbound delivery-status webhook called by an external DeliveryProvider, not a logged-in PV session. Org is unknown until the provider message id resolves a notification_queue row via a single admin-connection lookup (external-access-routes.ts precedent); the route never trusts a client-supplied org/tenant identifier.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [
+      IP_RATE_LIMIT,
+      'per-provider-signature-verification',
+      'non-enumerating-generic-rejection',
+    ],
+    expiresAfterStory: null,
+  },
+  {
     route: 'GET /api/v1/openapi.json',
     reason:
       'Story 9.3 D5/AC-6 — public live OpenAPI spec endpoint; only registered at all when docsEnabled() is true (ENABLE_API_DOCS=true, or NODE_ENV is development/test), defaulting closed in production. Exposes route/schema metadata only, no tenant data, and must remain reachable while the vault is sealed for operator diagnostics (AC-16).',
@@ -946,6 +958,20 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: 'read',
     auditOmissionReason:
       'User reads own profile summary and unread notification count; no secrets exposed.',
+    reviewer: SECURITY_OWNER,
+  },
+  // Story 20.11 AC3/AC5/AC6: requireAuth:false (no secureCtx.tx) so this cannot delegate through
+  // the sameTransactionAuditService pattern — the real audit write (when a status actually
+  // changes) happens inside applyDeliveryStatusUpdate()'s own withOrg-scoped transaction via
+  // writeSystemAuditEntryOrFailClosed (notification.delivery_status_updated), same non-scanner-
+  // visible shape as external-shares' reveal route above. A validly-signed event for an unknown
+  // message id is a deliberate non-enumerating no-op (AC3 edge) — never audited (no row to
+  // reference), also consistent with the reveal route's own precedent for a "nothing happened"
+  // outcome.
+  'POST /api/v1/notifications/delivery-webhook/:providerId': {
+    action: SENSITIVE_READ,
+    auditOmissionReason:
+      "requireAuth:false means no secureCtx.tx to delegate through; the real audit write (notification.delivery_status_updated) happens inside applyDeliveryStatusUpdate()'s own transaction, only when a status actually changes.",
     reviewer: SECURITY_OWNER,
   },
   'GET /api/v1/notifications/inbox': {

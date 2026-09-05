@@ -252,7 +252,7 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each(['3.11.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
+  it.each(['3.12.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
     'rejects canonical version outside %s',
     (apiVersion) => {
       const hooksFactory = makeHooksFactory()
@@ -288,18 +288,19 @@ describe('registerExtension — concrete canonical version gate', () => {
 
   it('allows only the above-host same-major rollback escape', () => {
     // Story 25.3 AC1/Task 1, Story 25.4 AC4/Task 4, Story 25.5 AC2/Task 1, Story 25.8 AC1/Task 1,
-    // Story 20.8, Story 25.12 AC2/Task 2, Story 29.3 AC8/Task 1, and Story 29.4 AC6/Task 1 — host
-    // EXTENSION_API_VERSION is now 3.10.0 (see manifest.ts's EXTENSION_API_VERSION doc comment
-    // for why this merge moves past 3.2.0/3.3.0/3.4.0/3.6.0/3.7.0/3.8.0/3.9.0, which Story
-    // 25.3/25.4/25.5/25.9/20.8/25.12/29.3 respectively already claimed on main for different
-    // additive changes); '3.11.0' is the above-host, same-major escape-eligible version, and
+    // Story 20.8, Story 25.12 AC2/Task 2, Story 29.3 AC8/Task 1, Story 29.4 AC6/Task 1, and Story
+    // 20.11 AC1 — host EXTENSION_API_VERSION is now 3.11.0 (see manifest.ts's
+    // EXTENSION_API_VERSION doc comment for why this merge moves past
+    // 3.2.0/3.3.0/3.4.0/3.6.0/3.7.0/3.8.0/3.9.0/3.10.0, which Story
+    // 25.3/25.4/25.5/25.9/20.8/25.12/29.3/29.4 respectively already claimed on main for different
+    // additive changes); '3.12.0' is the above-host, same-major escape-eligible version, and
     // '4.0.0' is a different major (never escape-eligible). Kept one minor version above whatever
     // EXTENSION_API_VERSION currently is — see loader.test.ts's identical comment.
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.11.0' }), makeHooksFactory())
+      registerExtension(manifest({ apiVersion: '3.12.0' }), makeHooksFactory())
     ).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.11.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '3.12.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()

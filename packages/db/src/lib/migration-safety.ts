@@ -337,6 +337,14 @@ export const KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS: Record<string, string> = {
   // operation is bundled with the ACL change.
   '0080_security_definer_function_grants':
     'Story 24.5a audit purge/trigger function ACL narrowing and default-privilege narrowing; paired safety test proves the migration contains no function body or data operation.',
+  // Story 20.11 AC2/AC9: notification_queue_status_check must be dropped and re-added (same
+  // cannot-widen-in-place limitation as 0047/0050/0078) to add 'sent'/'bounced' while keeping
+  // every existing value. The paired migration safety test verifies the only DROP CONSTRAINT/ADD
+  // CONSTRAINT pair present is this exact rewrite, that only three new nullable columns
+  // (provider_id, provider_message_id, last_event_at) plus one partial unique index are added, and
+  // that no other table is touched.
+  '0089_sturdy_calypso':
+    "notification_queue_status_check must be dropped and re-added to widen its allowed set with the new 'sent'/'bounced' values — identical reviewed pattern to 0047/0050/0078's CHECK-constraint widenings.",
   '0081_extension_db_role':
     'Story 23.5 reviewed role bootstrap, least-privilege schema access, and operator approval-table ACLs; paired migration safety tests assert it contains no data deletion, FORCE RLS, PUBLIC revoke, or default-privilege widening.',
   // Historical privilege migrations predate the privilege-pattern expansion. They remain
@@ -387,4 +395,11 @@ export const KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS: Record<string, string> = {
   // only the two documented GRANT statements.
   '0085_extension_ephemeral_state_admin_grant':
     'Story 20.8 reviewed vault_admin least-privilege grant (SELECT id/expires_at + DELETE) for the ephemeral-state cleanup worker; paired migration safety test proves it is grant-only with no schema/column change.',
+  // Story 20.11 AC3: the delivery-status webhook route's org-unknown-until-resolved admin lookup
+  // (mirrors credential_shares'/status_pages' own token-hash lookup precedent, both already
+  // granted in migration 0071) needs a narrow, read-only column grant on notification_queue.
+  // The paired migration-0090-safety.test.ts proves this file contains no schema/column change,
+  // no DELETE/UPDATE/INSERT grant — only the one documented SELECT column-grant statement.
+  '0090_notification_queue_admin_grant':
+    "Story 20.11 reviewed vault_admin least-privilege grant (SELECT id/org_id/provider_id/provider_message_id only) for the delivery-status webhook route's admin-connection lookup; paired migration safety test proves it is grant-only with no schema/column change.",
 }
