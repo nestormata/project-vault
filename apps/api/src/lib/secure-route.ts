@@ -6,10 +6,9 @@ import { checkCapability, getCapabilityGate } from './capability-gate.js'
 import { recordCapabilityDeniedAudit } from './capability-gate-audit.js'
 import { requireMfaEnrollment } from '../modules/auth/mfa-enforcement.js'
 import { firstActorTokenIdForUser } from '../modules/audit/actor-token.js'
-import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import {
   computeAuditHmac,
-  getPreviousEntryHmac,
+  readAuditChainHead,
   GENESIS_SENTINEL,
 } from '../modules/audit/write-entry.js'
 import {
@@ -330,11 +329,7 @@ async function defaultAuditWriter({
     throw new Error(`SecureRoute: missing audit resourceId param "${config.resourceIdFromParams}"`)
   }
   const actorTokenId = await firstActorTokenIdForUser(tx, auth.userId)
-  const keyVersion = await currentAuditKeyVersion(tx)
-  const previousHmac = await getPreviousEntryHmac(tx, {
-    table: 'audit_log_entries',
-    orgId: auth.orgId,
-  })
+  const { keyVersion, previousEntryHmac: previousHmac } = await readAuditChainHead(tx, auth.orgId)
   const fields = {
     orgId: auth.orgId,
     actorTokenId,

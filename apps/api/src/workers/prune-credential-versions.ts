@@ -12,10 +12,9 @@ import { env } from '../config/env.js'
 import { operationalLog } from '../lib/logger.js'
 import { zeroOverwriteCredentialVersionValue } from '../lib/zero-overwrite-credential-version.js'
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
-import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import {
   computeAuditHmac,
-  getPreviousEntryHmac,
+  readAuditChainHead,
   GENESIS_SENTINEL,
 } from '../modules/audit/write-entry.js'
 import {
@@ -112,8 +111,7 @@ async function purgeVersion(tx: Tx, orgId: string, candidate: PurgeCandidate): P
       resourceType: 'credential',
     }),
   })
-  const keyVersion = await currentAuditKeyVersion(tx)
-  const previousHmac = await getPreviousEntryHmac(tx, { table: 'audit_log_entries', orgId })
+  const { keyVersion, previousEntryHmac: previousHmac } = await readAuditChainHead(tx, orgId)
   const hmac = computeAuditHmac(
     {
       orgId,

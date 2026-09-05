@@ -65,6 +65,14 @@ async function writeSessionRevokedAudit(
   }
 ): Promise<void> {
   await tx.execute(sql`SELECT set_config('app.current_org_id', ${fields.orgId}, true)`)
+  // Deliberately NOT using audit/write-entry.ts's readAuditChainHead() helper here: everywhere
+  // else, currentAuditKeyVersion() and getPreviousEntryHmac() are called back-to-back with
+  // nothing but pure/synchronous work between them, so consolidating the pair is a pure
+  // dedupe with no behavior change. Here they are NOT adjacent — actorTokenId's DB lookup and
+  // assertOrgMayWriteAuditGates() (which may throw, and which the advisory-lock-holding
+  // previous-row read should not precede) sit between them. Combining the two calls would move
+  // this keyVersion read to after the gate, which is an actual reordering, not just dedupe — out
+  // of scope for the jscpd fix.
   const keyVersion = await currentAuditKeyVersion(tx)
   const payload = {
     sessionId: fields.sessionId,

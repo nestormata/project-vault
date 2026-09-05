@@ -2,10 +2,9 @@ import { getDb, type Tx } from '@project-vault/db'
 import { auditLogEntries } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { firstActorTokenIdForUser } from '../modules/audit/actor-token.js'
-import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
 import {
   computeAuditHmac,
-  getPreviousEntryHmac,
+  readAuditChainHead,
   GENESIS_SENTINEL,
 } from '../modules/audit/write-entry.js'
 import {
@@ -78,7 +77,7 @@ async function insertCapabilityDeniedRow(
   }
 ): Promise<void> {
   const actorTokenId = await firstActorTokenIdForUser(tx, input.userId)
-  const keyVersion = await currentAuditKeyVersion(tx)
+  const { keyVersion, previousEntryHmac: previousHmac } = await readAuditChainHead(tx, input.orgId)
   const payload =
     input.suppressedCount > 0
       ? {
@@ -87,10 +86,6 @@ async function insertCapabilityDeniedRow(
           suppressedCount: input.suppressedCount,
         }
       : { capability: input.capability, reasonCode: input.reasonCode }
-  const previousHmac = await getPreviousEntryHmac(tx, {
-    table: 'audit_log_entries',
-    orgId: input.orgId,
-  })
   const fields = {
     orgId: input.orgId,
     actorTokenId,

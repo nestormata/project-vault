@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto'
 import { sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
+import { currentAuditKeyVersion } from './key-version.js'
 
 type JsonLike =
   string | number | boolean | null | JsonLike[] | { [key: string]: JsonLike | undefined }
@@ -80,4 +81,33 @@ export async function getPreviousEntryHmac(
     sql`SELECT hmac FROM platform_audit_events ORDER BY chain_seq DESC LIMIT 1`
   )
   return rows[0]?.hmac ?? null
+}
+
+// ---------------------------------------------------------------------------------------------
+// jscpd fix (Story 1.25 CI-gate finding): every `audit_log_entries` write site reads the SAME
+// two-value pair — the current audit key version, then the chain tail's hmac — via the SAME two
+// calls in the SAME order (currentAuditKeyVersion(tx) before getPreviousEntryHmac(tx, {...})),
+// before computing this row's own hmac. That 2-statement boilerplate was duplicated verbatim
+// across 9 call sites. Consolidated here into one helper; behavior is unchanged — it performs
+// the exact same two calls, in the exact same order, inside the same transaction the caller
+// passes in.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Reads this org's audit-chain head: the current audit key version and the chain tail's hmac
+ * (or `null` for a not-yet-started chain). Must be called inside the same transaction as the
+ * row's own INSERT (see `getPreviousEntryHmac`'s own doc comment on lock/read ordering).
+ *
+ * Deliberately scoped to `audit_log_entries` + `currentAuditKeyVersion` only — the
+ * `platform_audit_events` call site (`modules/platform-audit/write-entry.ts`) reads a different
+ * key version (`currentPlatformAuditKeyVersion`, a distinct signing key per D3) and has no
+ * `orgId`, so it does not share this exact shape and keeps its own two calls.
+ */
+export async function readAuditChainHead(
+  tx: Tx,
+  orgId: string
+): Promise<{ keyVersion: number; previousEntryHmac: string | null }> {
+  const keyVersion = await currentAuditKeyVersion(tx)
+  const previousEntryHmac = await getPreviousEntryHmac(tx, { table: 'audit_log_entries', orgId })
+  return { keyVersion, previousEntryHmac }
 }

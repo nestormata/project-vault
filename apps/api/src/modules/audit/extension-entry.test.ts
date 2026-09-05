@@ -24,13 +24,31 @@ const { getPreviousEntryHmac, GENESIS_SENTINEL } = vi.hoisted(() => ({
   GENESIS_SENTINEL: 'GENESIS',
 }))
 
+// jscpd fix (Story 1.25 CI-gate finding): extension-entry.ts now calls the consolidated
+// `readAuditChainHead(tx, orgId)` helper instead of `currentAuditKeyVersion`/`getPreviousEntryHmac`
+// directly. The mock here calls straight through to the already-mocked `currentAuditKeyVersion`/
+// `getPreviousEntryHmac` (in the same order the real helper uses), so every existing test that
+// drives those two mocks directly (mockResolvedValue, mockImplementation, call-order assertions)
+// keeps working unchanged.
+const { readAuditChainHead } = vi.hoisted(() => ({
+  readAuditChainHead: vi.fn(async (tx: unknown, orgId: string) => ({
+    keyVersion: await currentAuditKeyVersion(tx),
+    previousEntryHmac: await getPreviousEntryHmac(tx, { table: 'audit_log_entries', orgId }),
+  })),
+}))
+
 const { getAuditKey } = vi.hoisted(() => ({
   getAuditKey: vi.fn(() => Buffer.from('fixture-key')),
 }))
 
 vi.mock('./quota-gate.js', () => ({ assertOrgMayWriteAuditGates, estimateAuditEntrySizeBytes }))
 vi.mock('./key-version.js', () => ({ currentAuditKeyVersion }))
-vi.mock('./write-entry.js', () => ({ computeAuditHmac, getPreviousEntryHmac, GENESIS_SENTINEL }))
+vi.mock('./write-entry.js', () => ({
+  computeAuditHmac,
+  getPreviousEntryHmac,
+  readAuditChainHead,
+  GENESIS_SENTINEL,
+}))
 vi.mock('../vault/key-service.js', () => ({ getAuditKey }))
 
 import { writeExtensionAuditEntry } from './extension-entry.js'
