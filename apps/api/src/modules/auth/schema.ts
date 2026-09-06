@@ -104,6 +104,16 @@ export const authMeResponseSchema = z.object({
 
 export const registerRouteResponseSchema = z.object({ data: RegisterResponseSchema })
 
+// Story 1.20 AC-3: self-signup registration's collapsed success/collision response — mirrors
+// RecoveryRequestResponseSchema's `{ message }` shape exactly, plus `.strict()` (deliberately
+// added here, unlike RecoveryRequestResponseSchema, since this schema's entire job is to
+// guarantee no extra, potentially-identifying field ever leaks onto it — see recovery-schema.ts's
+// `.strict()` convention on RecoveryRequestBodySchema).
+export const RegisterAcceptedResponseSchema = z
+  .object({ message: z.string() })
+  .strict()
+  .meta({ id: 'RegisterAcceptedResponse' })
+
 export const loginResponseSchema = z.union([
   z.object({ data: AuthSessionResponseSchema }),
   mfaLoginRequiredResponseSchema,

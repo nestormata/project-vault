@@ -32,6 +32,7 @@ import {
   mfaVerifyEnrollmentBodySchema,
   mfaVerifyEnrollmentResponseSchema,
   registerRouteResponseSchema,
+  RegisterAcceptedResponseSchema,
   loginResponseSchema,
   refreshResponseSchema,
   sessionsListResponseSchema,
@@ -689,6 +690,7 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       body: RegisterRequestSchema,
       response: {
         201: registerRouteResponseSchema,
+        202: RegisterAcceptedResponseSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
         409: ApiErrorSchema,
@@ -709,6 +711,15 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
       try {
         const result = await registerUser(parsed.data, req.log)
+        // Story 1.20 AC-4: the handler decides only accepted-vs-invitation-result — it never
+        // branches on whether the self-signup email was novel or already registered, since
+        // registerUser() itself already collapsed that distinction onto the same signal.
+        if ('accepted' in result) {
+          return reply.status(202).send({
+            message:
+              'If that email is available, your account has been created and you can sign in.',
+          })
+        }
         return reply.status(201).send({ data: result })
       } catch (error) {
         if (error instanceof AppError) return sendAppError(reply, error)

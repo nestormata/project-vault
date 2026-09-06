@@ -16,6 +16,13 @@ export type RegisterResponse = {
   invitedProject?: { projectId: string; projectName: string; role: 'admin' | 'member' | 'viewer' }
 }
 
+// Story 1.20 AC-3/AC-6a: self-signup registration's collapsed success/collision response —
+// identical whether the submitted email was novel or already registered, mirroring the API's
+// RegisterAcceptedResponseSchema (schema.ts). Never carries userId/orgId/any account data.
+export type RegisterAcceptedResponse = {
+  message: string
+}
+
 export type LoginRequest = {
   email: string
   password: string
@@ -111,8 +118,15 @@ function jsonPost(body?: unknown): RequestInit {
   }
 }
 
+// Story 1.20 AC-6a: a self-signup success/collision both resolve to RegisterAcceptedResponse
+// now, not RegisterResponse — the union return type lets RegisterForm.svelte's AC-6 branching
+// narrow correctly instead of relying on an `as`-cast or a silently-wrong shape.
 export function register(fetchFn: typeof fetch, request: RegisterRequest) {
-  return apiFetch<RegisterResponse>(fetchFn, '/api/v1/auth/register', jsonPost(request))
+  return apiFetch<RegisterResponse | RegisterAcceptedResponse>(
+    fetchFn,
+    '/api/v1/auth/register',
+    jsonPost(request)
+  )
 }
 
 export function login(fetchFn: typeof fetch, request: LoginRequest) {

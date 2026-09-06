@@ -167,6 +167,7 @@ describe.sequential('erasure re-invite block (Story 8.4 D6, AC-17/AC-17B/AC-18)'
   it('allows a different, never-erased user to register normally (AC-17B edge case)', async () => {
     const res = await registerViaApi(app, `never-erased-${randomUUID()}@example.com`)
 
-    expect(res.statusCode).toBe(201)
+    // Story 1.20 AC-9: self-signup registration now returns the generic accepted 202.
+    expect(res.statusCode).toBe(202)
   })
 })

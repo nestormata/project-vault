@@ -2891,6 +2891,18 @@
           "isRevoked"
         ]
       },
+      "RegisterAcceptedResponseInput": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "additionalProperties": false
+      },
       "RecoveryRequestBodyInput": {
         "type": "object",
         "properties": {
@@ -13034,6 +13046,18 @@
         ],
         "additionalProperties": false
       },
+      "RegisterAcceptedResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "additionalProperties": false
+      },
       "RecoveryRequestBody": {
         "type": "object",
         "properties": {
@@ -21895,6 +21919,16 @@
                     "data"
                   ],
                   "additionalProperties": false
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterAcceptedResponse"
                 }
               }
             }

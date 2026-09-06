@@ -8,6 +8,7 @@ import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
   createProjectViaApi as createProject,
+  parseSetCookies,
   registerAndLoginViaApi,
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import { createMockBoss } from '../../__tests__/helpers/notification-test-helpers.js'
@@ -925,11 +926,26 @@ describe.sequential('project invitation routes', () => {
         password: PASSWORD,
         orgName: `Self Signup Org ${randomUUID()}`,
       })
-      expect(res.statusCode).toBe(201)
-      const body = res.json<{ data: { orgId: string } }>()
+      // Story 1.20 AC-1: self-signup registration no longer discloses real account data
+      // synchronously — it always returns the generic accepted 202. orgId is recovered below
+      // via a real login + GET /me, mirroring auth-test-helpers.ts's registerAndLoginViaApi().
+      expect(res.statusCode).toBe(202)
+      const login = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/login',
+        payload: { email: selfSignupEmail, password: PASSWORD },
+      })
+      expect(login.statusCode).toBe(200)
+      const me = await app.inject({
+        method: 'GET',
+        url: '/api/v1/auth/me',
+        headers: { cookie: cookieHeader(parseSetCookies(login.headers['set-cookie'])) },
+      })
+      expect(me.statusCode).toBe(200)
+      const orgId = me.json<{ data: { orgId: string } }>().data.orgId
 
-      const newUserId = await userIdByEmail(body.data.orgId, selfSignupEmail)
-      expect(await localeOfUser(body.data.orgId, newUserId)).toBe('en')
+      const newUserId = await userIdByEmail(orgId, selfSignupEmail)
+      expect(await localeOfUser(orgId, newUserId)).toBe('en')
     })
 
     it("Story 15.2 AC4: a later org-default change never retroactively changes an already-registered user's own locale, including the admin who changes it", async () => {

@@ -86,6 +86,15 @@ export type RegisterResult = {
   invitedProject?: { projectId: string; projectName: string; role: 'admin' | 'member' | 'viewer' }
 }
 
+/**
+ * Story 1.20 AC-1/AC-4: signal returned by `registerUser()` for the self-signup
+ * (non-invitation) branch of the `users_email_unique` collision — both a genuinely-new
+ * registration and a collision on an already-registered email resolve here, so the route
+ * handler has nothing observable left to branch on for that path (see routes.ts's `/register`
+ * handler and AC-4's edge case).
+ */
+export type RegisterAccepted = { accepted: true }
+
 export type LoginInput = {
   email: string
   password: string
@@ -500,7 +509,7 @@ function assertRegistrationWonFirstUserRace(
 export async function registerUser(
   input: RegisterInput,
   logger?: Partial<Pick<FastifyBaseLogger, 'warn'>>
-): Promise<RegisterResult> {
+): Promise<RegisterResult | RegisterAccepted> {
   const email = normalizeEmail(input.email)
 
   // Story 8.4 D6/AC-17B: once erasure execution overwrites users.email to
@@ -584,11 +593,26 @@ export async function registerUser(
         })
       }
 
+      // Story 1.20 AC-1/AC-4: self-signup (no invitation) never discloses real account data
+      // synchronously any more — the account is still created exactly as before, but the
+      // caller only ever learns the generic `RegisterAccepted` signal, identical to what the
+      // collapsed taken-email branch below returns for the same (no-invitation) case. The
+      // invitation-acceptance path is completely unchanged (still returns the real
+      // `RegisterResult`, verified by `invitations/routes.test.ts`).
+      if (!invitation) {
+        return { accepted: true }
+      }
       return buildRegisterResult(tx as Tx, org, user, invitation)
     })
   } catch (error) {
     if (isUniqueViolation(error, 'users_email_unique')) {
       await verifyUserPassword(input.password, env.AUTH_DUMMY_PASSWORD_HASH)
+      // Story 1.20 AC-1: self-signup collapses onto the identical generic-accepted signal the
+      // happy path above also returns — the invitation path keeps throwing 409 unchanged (see
+      // Background's scoping decision; invitations/routes.test.ts:841-862 depends on this).
+      if (!invitation) {
+        return { accepted: true }
+      }
       throw new AppError('email_taken', 'An account with this email already exists', 409)
     }
     throw error

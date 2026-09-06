@@ -56,10 +56,13 @@ export async function registerAndLogin(
     url: '/api/v1/auth/register',
     payload: { email, password: LOGIN_SECRET, orgName },
   })
-  if (register.statusCode !== 201) {
+  // Story 1.20 AC-1: self-signup registration no longer returns real account data (userId/orgId)
+  // synchronously — it always resolves to the generic accepted 202, identical whether the email
+  // was novel or already registered. userId/orgId are recovered below via GET /auth/me using the
+  // freshly-established session cookie instead of the (now-generic) register response body.
+  if (register.statusCode !== 202) {
     throw new Error(`Contract test fixture registration failed: ${describeResponse(register)}`)
   }
-  const registerBody = register.json<{ data: { userId: string; orgId: string } }>()
 
   const login = await app.inject({
     method: 'POST',
@@ -69,13 +72,24 @@ export async function registerAndLogin(
   if (login.statusCode !== 200) {
     throw new Error(`Contract test fixture login failed: ${describeResponse(login)}`)
   }
+  const cookies = parseSetCookies(login.headers['set-cookie'])
+
+  const me = await app.inject({
+    method: 'GET',
+    url: '/api/v1/auth/me',
+    headers: { cookie: cookieHeader(cookies) },
+  })
+  if (me.statusCode !== 200) {
+    throw new Error(`Contract test fixture /auth/me lookup failed: ${describeResponse(me)}`)
+  }
+  const meBody = me.json<{ data: { userId: string; orgId: string } }>()
 
   return {
-    userId: registerBody.data.userId,
-    orgId: registerBody.data.orgId,
+    userId: meBody.data.userId,
+    orgId: meBody.data.orgId,
     email,
     password: LOGIN_SECRET,
-    cookies: parseSetCookies(login.headers['set-cookie']),
+    cookies,
   }
 }
 
