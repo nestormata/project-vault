@@ -236,7 +236,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.11.0"`
+- type: `"3.12.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 
@@ -483,6 +483,41 @@ Generated from `src/index.ts`; update this file and classify the change against 
     - since: 3.7.0
     - type: `(key: string, value: string, ttlSeconds: number) => Promise<void>`
     - call-signature: `(key: string, value: string, ttlSeconds: number): Promise<void>`
+- member: `monitoring`
+  - since: 3.12.0
+  - type: `PvMonitoringHost`
+  - member: `applyHealthCheckResult`
+    - since: 3.12.0
+    - type: `(params: MonitoringApplyHealthCheckResultParams) => Promise<MonitoringApplyHealthCheckResultResult>`
+    - call-signature: `(params: MonitoringApplyHealthCheckResultParams): Promise<MonitoringApplyHealthCheckResultResult>`
+  - member: `cleanupProjectMonitoring`
+    - since: 3.12.0
+    - type: `(params: MonitoringCleanupProjectMonitoringParams) => Promise<MonitoringCleanupProjectMonitoringResult>`
+    - call-signature: `(params: MonitoringCleanupProjectMonitoringParams): Promise<MonitoringCleanupProjectMonitoringResult>`
+  - member: `deleteServiceEndpoint`
+    - since: 3.12.0
+    - type: `(params: MonitoringDeleteServiceEndpointParams) => Promise<MonitoringServiceEndpointRecord | null>`
+    - call-signature: `(params: MonitoringDeleteServiceEndpointParams): Promise<MonitoringServiceEndpointRecord | null>`
+  - member: `disableStatusPage`
+    - since: 3.12.0
+    - type: `(params: MonitoringDisableStatusPageParams) => Promise<MonitoringDisableStatusPageResult | null>`
+    - call-signature: `(params: MonitoringDisableStatusPageParams): Promise<MonitoringDisableStatusPageResult | null>`
+  - member: `enableStatusPage`
+    - since: 3.12.0
+    - type: `(params: MonitoringEnableStatusPageParams) => Promise<MonitoringEnableStatusPageResult>`
+    - call-signature: `(params: MonitoringEnableStatusPageParams): Promise<MonitoringEnableStatusPageResult>`
+  - member: `getHealthDashboardData`
+    - since: 3.12.0
+    - type: `(params?: MonitoringGetHealthDashboardDataParams) => Promise<MonitoringHealthDashboard>`
+    - call-signature: `(params?: MonitoringGetHealthDashboardDataParams): Promise<MonitoringHealthDashboard>`
+  - member: `regenerateStatusPageToken`
+    - since: 3.12.0
+    - type: `(params: MonitoringRegenerateStatusPageTokenParams) => Promise<MonitoringRegenerateStatusPageTokenResult>`
+    - call-signature: `(params: MonitoringRegenerateStatusPageTokenParams): Promise<MonitoringRegenerateStatusPageTokenResult>`
+  - member: `updateServiceEndpointPauseState`
+    - since: 3.12.0
+    - type: `(params: MonitoringUpdateServiceEndpointPauseStateParams) => Promise<MonitoringUpdateServiceEndpointPauseStateResult | null>`
+    - call-signature: `(params: MonitoringUpdateServiceEndpointPauseStateParams): Promise<MonitoringUpdateServiceEndpointPauseStateResult | null>`
 - member: `orgAuthorization`
   - since: 2.2.0
   - type: `OrgAuthorizationHost`
@@ -539,25 +574,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.3.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@543`
-  - since: 3.11.0
+- member: `__@match@596`
+  - since: 3.12.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@552`
-  - since: 3.11.0
+- member: `__@matchAll@605`
+  - since: 3.12.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@545`
-  - since: 3.11.0
+- member: `__@replace@598`
+  - since: 3.12.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@548`
-  - since: 3.11.0
+- member: `__@search@601`
+  - since: 3.12.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@550`
-  - since: 3.11.0
+- member: `__@split@603`
+  - since: 3.12.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -615,25 +650,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.10.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@543`
-  - since: 3.11.0
+- member: `__@match@596`
+  - since: 3.12.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@552`
-  - since: 3.11.0
+- member: `__@matchAll@605`
+  - since: 3.12.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@545`
-  - since: 3.11.0
+- member: `__@replace@598`
+  - since: 3.12.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@548`
-  - since: 3.11.0
+- member: `__@search@601`
+  - since: 3.12.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@550`
-  - since: 3.11.0
+- member: `__@split@603`
+  - since: 3.12.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -814,30 +849,569 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `ModuleDataRouteHandler`
 - call-signature: `(context: ModuleDataRequestContext): Promise<ModuleDataResult>`
 
+## export `MonitoringAlertType`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringAlertType`
+- union-members: `"service.down"`, `"service.recovery"`
+
+## export `MonitoringApplyHealthCheckResultParams`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringApplyHealthCheckResultParams`
+- member: `checkedAt?`
+  - since: 3.12.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+- member: `failureReason`
+  - since: 3.12.0
+  - type: `"timeout" | "http_error" | "network_error" | "ssrf_blocked" | null`
+  - union-members: `null`, `"timeout"`, `"http_error"`, `"network_error"`, `"ssrf_blocked"`
+- member: `isHealthy`
+  - since: 3.12.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `latencyMs`
+  - since: 3.12.0
+  - type: `number`
+- member: `organizationId`
+  - since: 3.12.0
+  - type: `string`
+- member: `serviceEndpoint`
+  - since: 3.12.0
+  - type: `{ id: string; orgId: string; }`
+  - member: `id`
+    - since: 3.12.0
+    - type: `string`
+  - member: `orgId`
+    - since: 3.12.0
+    - type: `string`
+- member: `statusCode`
+  - since: 3.12.0
+  - type: `number | null`
+  - union-members: `null`, `number`
+
+## export `MonitoringApplyHealthCheckResultResult`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringApplyHealthCheckResultResult`
+- member: `alertFired`
+  - since: 3.12.0
+  - type: `MonitoringAlertType | null`
+  - union-members: `null`, `"service.down"`, `"service.recovery"`
+- member: `episodeKey`
+  - since: 3.12.0
+  - type: `string | null`
+  - union-members: `null`, `string`
+- member: `updatedRow`
+  - since: 3.12.0
+  - type: `MonitoringServiceEndpointRecord`
+  - member: `checkFrequencyMinutes`
+    - since: 3.12.0
+    - type: `number`
+  - member: `consecutiveFailures`
+    - since: 3.12.0
+    - type: `number`
+  - member: `createdAt`
+    - since: 3.12.0
+    - type: `string`
+  - member: `createdBy`
+    - since: 3.12.0
+    - type: `string | null`
+    - union-members: `null`, `string`
+  - member: `downThresholdFailures`
+    - since: 3.12.0
+    - type: `number`
+  - member: `healthCheckPaused`
+    - since: 3.12.0
+    - type: `boolean`
+    - union-members: `false`, `true`
+  - member: `healthCheckPausedAt`
+    - since: 3.12.0
+    - type: `string | null`
+    - union-members: `null`, `string`
+  - member: `healthCheckPausedBy`
+    - since: 3.12.0
+    - type: `string | null`
+    - union-members: `null`, `string`
+  - member: `id`
+    - since: 3.12.0
+    - type: `string`
+  - member: `lastCheckedAt`
+    - since: 3.12.0
+    - type: `string | null`
+    - union-members: `null`, `string`
+  - member: `name`
+    - since: 3.12.0
+    - type: `string`
+  - member: `orgId`
+    - since: 3.12.0
+    - type: `string`
+  - member: `projectId`
+    - since: 3.12.0
+    - type: `string`
+  - member: `status`
+    - since: 3.12.0
+    - type: `MonitoringServiceEndpointStatus`
+    - union-members: `"healthy"`, `"degraded"`, `"down"`
+  - member: `updatedAt`
+    - since: 3.12.0
+    - type: `string`
+  - member: `url`
+    - since: 3.12.0
+    - type: `string`
+
+## export `MonitoringCleanupProjectMonitoringParams`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringCleanupProjectMonitoringParams`
+- member: `organizationId`
+  - since: 3.12.0
+  - type: `string`
+- member: `projectId`
+  - since: 3.12.0
+  - type: `string`
+
+## export `MonitoringCleanupProjectMonitoringResult`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringCleanupProjectMonitoringResult`
+- member: `resolvedAlertCount`
+  - since: 3.12.0
+  - type: `number`
+
+## export `MonitoringDeleteServiceEndpointParams`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringDeleteServiceEndpointParams`
+- member: `projectId`
+  - since: 3.12.0
+  - type: `string`
+- member: `serviceEndpointId`
+  - since: 3.12.0
+  - type: `string`
+
+## export `MonitoringDisableStatusPageParams`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringDisableStatusPageParams`
+- member: `projectId`
+  - since: 3.12.0
+  - type: `string`
+
+## export `MonitoringDisableStatusPageResult`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringDisableStatusPageResult`
+- member: `statusPageId`
+  - since: 3.12.0
+  - type: `string`
+
+## export `MonitoringEnableStatusPageParams`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringEnableStatusPageParams`
+- member: `projectId`
+  - since: 3.12.0
+  - type: `string`
+- member: `userId`
+  - since: 3.12.0
+  - type: `string`
+
+## export `MonitoringEnableStatusPageResult`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringEnableStatusPageResult`
+- member: `createdAt`
+  - since: 3.12.0
+  - type: `string`
+- member: `id`
+  - since: 3.12.0
+  - type: `string`
+- member: `token`
+  - since: 3.12.0
+  - type: `string`
+
+## export `MonitoringGetHealthDashboardDataParams`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringGetHealthDashboardDataParams`
+- member: `permittedProjectIds?`
+  - since: 3.12.0
+  - type: `string[] | undefined`
+  - union-members: `undefined`, `string[]`
+
+## export `MonitoringHealthDashboard`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringHealthDashboard`
+- member: `projects`
+  - since: 3.12.0
+  - type: `MonitoringHealthDashboardProjectEntry[]`
+- member: `summary`
+  - since: 3.12.0
+  - type: `MonitoringHealthDashboardSummary`
+  - member: `degraded`
+    - since: 3.12.0
+    - type: `number`
+  - member: `down`
+    - since: 3.12.0
+    - type: `number`
+  - member: `healthy`
+    - since: 3.12.0
+    - type: `number`
+
+## export `MonitoringHealthDashboardProjectEntry`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringHealthDashboardProjectEntry`
+- member: `projectId`
+  - since: 3.12.0
+  - type: `string`
+- member: `projectName`
+  - since: 3.12.0
+  - type: `string`
+- member: `services`
+  - since: 3.12.0
+  - type: `MonitoringHealthDashboardServiceEntry[]`
+
+## export `MonitoringHealthDashboardServiceEntry`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringHealthDashboardServiceEntry`
+- member: `id`
+  - since: 3.12.0
+  - type: `string`
+- member: `lastCheckedAt`
+  - since: 3.12.0
+  - type: `string | null`
+  - union-members: `null`, `string`
+- member: `name`
+  - since: 3.12.0
+  - type: `string`
+- member: `status`
+  - since: 3.12.0
+  - type: `MonitoringServiceEndpointStatus`
+  - union-members: `"healthy"`, `"degraded"`, `"down"`
+
+## export `MonitoringHealthDashboardSummary`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringHealthDashboardSummary`
+- member: `degraded`
+  - since: 3.12.0
+  - type: `number`
+- member: `down`
+  - since: 3.12.0
+  - type: `number`
+- member: `healthy`
+  - since: 3.12.0
+  - type: `number`
+
+## export `MonitoringNoAmbientContextError`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringNoAmbientContextError`
+- member: `cause?`
+  - since: 3.12.0
+  - type: `unknown`
+- member: `readonly code`
+  - since: 3.12.0
+  - type: `"monitoring_no_ambient_context"`
+- member: `message`
+  - since: 3.12.0
+  - type: `string`
+- member: `name`
+  - since: 3.12.0
+  - type: `string`
+- member: `stack?`
+  - since: 3.12.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+
+## export `MonitoringOrgMismatchError`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringOrgMismatchError`
+- member: `cause?`
+  - since: 3.12.0
+  - type: `unknown`
+- member: `readonly code`
+  - since: 3.12.0
+  - type: `"monitoring_org_mismatch"`
+- member: `message`
+  - since: 3.12.0
+  - type: `string`
+- member: `name`
+  - since: 3.12.0
+  - type: `string`
+- member: `stack?`
+  - since: 3.12.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+
+## export `MonitoringRateLimitedError`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringRateLimitedError`
+- member: `cause?`
+  - since: 3.12.0
+  - type: `unknown`
+- member: `readonly code`
+  - since: 3.12.0
+  - type: `"monitoring_rate_limited"`
+- member: `message`
+  - since: 3.12.0
+  - type: `string`
+- member: `name`
+  - since: 3.12.0
+  - type: `string`
+- member: `stack?`
+  - since: 3.12.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+
+## export `MonitoringRegenerateStatusPageTokenParams`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringRegenerateStatusPageTokenParams`
+- member: `projectId`
+  - since: 3.12.0
+  - type: `string`
+
+## export `MonitoringRegenerateStatusPageTokenResult`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringRegenerateStatusPageTokenResult`
+- member: `id`
+  - since: 3.12.0
+  - type: `string`
+- member: `token`
+  - since: 3.12.0
+  - type: `string`
+- member: `updatedAt`
+  - since: 3.12.0
+  - type: `string`
+
+## export `MonitoringResourceNotFoundError`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringResourceNotFoundError`
+- member: `cause?`
+  - since: 3.12.0
+  - type: `unknown`
+- member: `readonly code`
+  - since: 3.12.0
+  - type: `"monitoring_resource_not_found"`
+- member: `message`
+  - since: 3.12.0
+  - type: `string`
+- member: `name`
+  - since: 3.12.0
+  - type: `string`
+- member: `stack?`
+  - since: 3.12.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+
+## export `MonitoringServiceEndpointRecord`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringServiceEndpointRecord`
+- member: `checkFrequencyMinutes`
+  - since: 3.12.0
+  - type: `number`
+- member: `consecutiveFailures`
+  - since: 3.12.0
+  - type: `number`
+- member: `createdAt`
+  - since: 3.12.0
+  - type: `string`
+- member: `createdBy`
+  - since: 3.12.0
+  - type: `string | null`
+  - union-members: `null`, `string`
+- member: `downThresholdFailures`
+  - since: 3.12.0
+  - type: `number`
+- member: `healthCheckPaused`
+  - since: 3.12.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `healthCheckPausedAt`
+  - since: 3.12.0
+  - type: `string | null`
+  - union-members: `null`, `string`
+- member: `healthCheckPausedBy`
+  - since: 3.12.0
+  - type: `string | null`
+  - union-members: `null`, `string`
+- member: `id`
+  - since: 3.12.0
+  - type: `string`
+- member: `lastCheckedAt`
+  - since: 3.12.0
+  - type: `string | null`
+  - union-members: `null`, `string`
+- member: `name`
+  - since: 3.12.0
+  - type: `string`
+- member: `orgId`
+  - since: 3.12.0
+  - type: `string`
+- member: `projectId`
+  - since: 3.12.0
+  - type: `string`
+- member: `status`
+  - since: 3.12.0
+  - type: `MonitoringServiceEndpointStatus`
+  - union-members: `"healthy"`, `"degraded"`, `"down"`
+- member: `updatedAt`
+  - since: 3.12.0
+  - type: `string`
+- member: `url`
+  - since: 3.12.0
+  - type: `string`
+
+## export `MonitoringServiceEndpointStatus`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringServiceEndpointStatus`
+- union-members: `"healthy"`, `"degraded"`, `"down"`
+
+## export `MonitoringUpdateServiceEndpointPauseStateParams`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringUpdateServiceEndpointPauseStateParams`
+- member: `paused`
+  - since: 3.12.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `projectId`
+  - since: 3.12.0
+  - type: `string`
+- member: `serviceEndpointId`
+  - since: 3.12.0
+  - type: `string`
+- member: `userId`
+  - since: 3.12.0
+  - type: `string`
+
+## export `MonitoringUpdateServiceEndpointPauseStateResult`
+
+- since: 3.12.0
+- kind: type
+- type: `MonitoringUpdateServiceEndpointPauseStateResult`
+- member: `pauseTransition`
+  - since: 3.12.0
+  - type: `"paused" | "resumed" | null`
+  - union-members: `null`, `"paused"`, `"resumed"`
+- member: `row`
+  - since: 3.12.0
+  - type: `MonitoringServiceEndpointRecord`
+  - member: `checkFrequencyMinutes`
+    - since: 3.12.0
+    - type: `number`
+  - member: `consecutiveFailures`
+    - since: 3.12.0
+    - type: `number`
+  - member: `createdAt`
+    - since: 3.12.0
+    - type: `string`
+  - member: `createdBy`
+    - since: 3.12.0
+    - type: `string | null`
+    - union-members: `null`, `string`
+  - member: `downThresholdFailures`
+    - since: 3.12.0
+    - type: `number`
+  - member: `healthCheckPaused`
+    - since: 3.12.0
+    - type: `boolean`
+    - union-members: `false`, `true`
+  - member: `healthCheckPausedAt`
+    - since: 3.12.0
+    - type: `string | null`
+    - union-members: `null`, `string`
+  - member: `healthCheckPausedBy`
+    - since: 3.12.0
+    - type: `string | null`
+    - union-members: `null`, `string`
+  - member: `id`
+    - since: 3.12.0
+    - type: `string`
+  - member: `lastCheckedAt`
+    - since: 3.12.0
+    - type: `string | null`
+    - union-members: `null`, `string`
+  - member: `name`
+    - since: 3.12.0
+    - type: `string`
+  - member: `orgId`
+    - since: 3.12.0
+    - type: `string`
+  - member: `projectId`
+    - since: 3.12.0
+    - type: `string`
+  - member: `status`
+    - since: 3.12.0
+    - type: `MonitoringServiceEndpointStatus`
+    - union-members: `"healthy"`, `"degraded"`, `"down"`
+  - member: `updatedAt`
+    - since: 3.12.0
+    - type: `string`
+  - member: `url`
+    - since: 3.12.0
+    - type: `string`
+
 ## export `NAV_ITEM_HREF_PATTERN`
 
 - since: 3.9.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@543`
-  - since: 3.11.0
+- member: `__@match@596`
+  - since: 3.12.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@552`
-  - since: 3.11.0
+- member: `__@matchAll@605`
+  - since: 3.12.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@545`
-  - since: 3.11.0
+- member: `__@replace@598`
+  - since: 3.12.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@548`
-  - since: 3.11.0
+- member: `__@search@601`
+  - since: 3.12.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@550`
-  - since: 3.11.0
+- member: `__@split@603`
+  - since: 3.12.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -901,25 +1475,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.9.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@543`
-  - since: 3.11.0
+- member: `__@match@596`
+  - since: 3.12.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@552`
-  - since: 3.11.0
+- member: `__@matchAll@605`
+  - since: 3.12.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@545`
-  - since: 3.11.0
+- member: `__@replace@598`
+  - since: 3.12.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@548`
-  - since: 3.11.0
+- member: `__@search@601`
+  - since: 3.12.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@550`
-  - since: 3.11.0
+- member: `__@split@603`
+  - since: 3.12.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -1036,25 +1610,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.8.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@543`
-  - since: 3.11.0
+- member: `__@match@596`
+  - since: 3.12.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@552`
-  - since: 3.11.0
+- member: `__@matchAll@605`
+  - since: 3.12.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@545`
-  - since: 3.11.0
+- member: `__@replace@598`
+  - since: 3.12.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@548`
-  - since: 3.11.0
+- member: `__@search@601`
+  - since: 3.12.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@550`
-  - since: 3.11.0
+- member: `__@split@603`
+  - since: 3.12.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -1145,6 +1719,44 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 2.1.0
   - type: `string`
 
+## export `PvMonitoringHost`
+
+- since: 3.12.0
+- kind: type
+- type: `PvMonitoringHost`
+- member: `applyHealthCheckResult`
+  - since: 3.12.0
+  - type: `(params: MonitoringApplyHealthCheckResultParams) => Promise<MonitoringApplyHealthCheckResultResult>`
+  - call-signature: `(params: MonitoringApplyHealthCheckResultParams): Promise<MonitoringApplyHealthCheckResultResult>`
+- member: `cleanupProjectMonitoring`
+  - since: 3.12.0
+  - type: `(params: MonitoringCleanupProjectMonitoringParams) => Promise<MonitoringCleanupProjectMonitoringResult>`
+  - call-signature: `(params: MonitoringCleanupProjectMonitoringParams): Promise<MonitoringCleanupProjectMonitoringResult>`
+- member: `deleteServiceEndpoint`
+  - since: 3.12.0
+  - type: `(params: MonitoringDeleteServiceEndpointParams) => Promise<MonitoringServiceEndpointRecord | null>`
+  - call-signature: `(params: MonitoringDeleteServiceEndpointParams): Promise<MonitoringServiceEndpointRecord | null>`
+- member: `disableStatusPage`
+  - since: 3.12.0
+  - type: `(params: MonitoringDisableStatusPageParams) => Promise<MonitoringDisableStatusPageResult | null>`
+  - call-signature: `(params: MonitoringDisableStatusPageParams): Promise<MonitoringDisableStatusPageResult | null>`
+- member: `enableStatusPage`
+  - since: 3.12.0
+  - type: `(params: MonitoringEnableStatusPageParams) => Promise<MonitoringEnableStatusPageResult>`
+  - call-signature: `(params: MonitoringEnableStatusPageParams): Promise<MonitoringEnableStatusPageResult>`
+- member: `getHealthDashboardData`
+  - since: 3.12.0
+  - type: `(params?: MonitoringGetHealthDashboardDataParams) => Promise<MonitoringHealthDashboard>`
+  - call-signature: `(params?: MonitoringGetHealthDashboardDataParams): Promise<MonitoringHealthDashboard>`
+- member: `regenerateStatusPageToken`
+  - since: 3.12.0
+  - type: `(params: MonitoringRegenerateStatusPageTokenParams) => Promise<MonitoringRegenerateStatusPageTokenResult>`
+  - call-signature: `(params: MonitoringRegenerateStatusPageTokenParams): Promise<MonitoringRegenerateStatusPageTokenResult>`
+- member: `updateServiceEndpointPauseState`
+  - since: 3.12.0
+  - type: `(params: MonitoringUpdateServiceEndpointPauseStateParams) => Promise<MonitoringUpdateServiceEndpointPauseStateResult | null>`
+  - call-signature: `(params: MonitoringUpdateServiceEndpointPauseStateParams): Promise<MonitoringUpdateServiceEndpointPauseStateResult | null>`
+
 ## export `registerExtension`
 
 - since: 1.0.0
@@ -1157,25 +1769,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.1.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@543`
-  - since: 3.11.0
+- member: `__@match@596`
+  - since: 3.12.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@552`
-  - since: 3.11.0
+- member: `__@matchAll@605`
+  - since: 3.12.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@545`
-  - since: 3.11.0
+- member: `__@replace@598`
+  - since: 3.12.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@548`
-  - since: 3.11.0
+- member: `__@search@601`
+  - since: 3.12.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@550`
-  - since: 3.11.0
+- member: `__@split@603`
+  - since: 3.12.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`

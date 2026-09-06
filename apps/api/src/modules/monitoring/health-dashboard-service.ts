@@ -1,4 +1,4 @@
-import { inArray, isNull } from 'drizzle-orm'
+import { and, inArray, isNull } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { projects, serviceEndpoints } from '@project-vault/db/schema'
 import type { HealthDashboard, HealthDashboardSummary } from '@project-vault/shared'
@@ -36,12 +36,31 @@ function incrementSummary(summary: HealthDashboardSummary, status: ServiceEndpoi
  * Queries all non-archived projects for the caller's org (RLS-scoped via the caller's `tx`), then
  * a single batched `service_endpoints` query across every one of those project ids — never one
  * query per project (N+1-avoidance discipline this ADR explicitly calls for).
+ *
+ * Story 34.1 AC5: `permittedProjectIds`, when supplied, filters the underlying query itself
+ * (never a post-filter) to that project set, intersected with the org's own RLS-scoped project
+ * set — a foreign/nonexistent project id is silently dropped, never echoed back, and never widens
+ * scope beyond the ambient org. Omitting the parameter (or passing `undefined`) preserves the
+ * existing all-projects-in-org behavior; an explicit empty array is a real "nothing permitted"
+ * signal and yields an empty dashboard.
  */
-export async function getHealthDashboardData(tx: Tx): Promise<HealthDashboard> {
+export async function getHealthDashboardData(
+  tx: Tx,
+  permittedProjectIds?: string[]
+): Promise<HealthDashboard> {
+  if (permittedProjectIds !== undefined && permittedProjectIds.length === 0) {
+    return { projects: [], summary: { ...EMPTY_SUMMARY } }
+  }
+
+  const projectConditions = [isNull(projects.archivedAt)]
+  if (permittedProjectIds !== undefined) {
+    projectConditions.push(inArray(projects.id, permittedProjectIds))
+  }
+
   const projectRows = await tx
     .select({ id: projects.id, name: projects.name })
     .from(projects)
-    .where(isNull(projects.archivedAt))
+    .where(and(...projectConditions))
     .orderBy(projects.createdAt)
 
   if (projectRows.length === 0) {

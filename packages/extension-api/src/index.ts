@@ -34,6 +34,36 @@ export type {
 } from './hooks/org-authorization.js'
 export type { EphemeralStateHost } from './hooks/ephemeral-state.js'
 export type {
+  MonitoringAlertType,
+  MonitoringApplyHealthCheckResultParams,
+  MonitoringApplyHealthCheckResultResult,
+  MonitoringCleanupProjectMonitoringParams,
+  MonitoringCleanupProjectMonitoringResult,
+  MonitoringDeleteServiceEndpointParams,
+  MonitoringDisableStatusPageParams,
+  MonitoringDisableStatusPageResult,
+  MonitoringEnableStatusPageParams,
+  MonitoringEnableStatusPageResult,
+  MonitoringGetHealthDashboardDataParams,
+  MonitoringHealthDashboard,
+  MonitoringHealthDashboardProjectEntry,
+  MonitoringHealthDashboardServiceEntry,
+  MonitoringHealthDashboardSummary,
+  MonitoringRegenerateStatusPageTokenParams,
+  MonitoringRegenerateStatusPageTokenResult,
+  MonitoringServiceEndpointRecord,
+  MonitoringServiceEndpointStatus,
+  MonitoringUpdateServiceEndpointPauseStateParams,
+  MonitoringUpdateServiceEndpointPauseStateResult,
+  PvMonitoringHost,
+} from './hooks/monitoring.js'
+export {
+  MonitoringNoAmbientContextError,
+  MonitoringOrgMismatchError,
+  MonitoringRateLimitedError,
+  MonitoringResourceNotFoundError,
+} from './hooks/monitoring.js'
+export type {
   ProjectCreateDecision,
   ProjectCreatePolicy,
   ProjectCreatePolicyContext,

@@ -159,4 +159,92 @@ describe('getHealthDashboardData (Story 6.3 ADR-6.3-02, realigned)', () => {
       }
     })
   })
+
+  describe('permittedProjectIds filter (Story 34.1 AC5)', () => {
+    it('filters the underlying query to only the permitted projects when supplied', async () => {
+      await withTestOrg(async ({ orgId, tx }) => {
+        const userId = await createTestUser('health-dashboard-filter')
+        try {
+          const projectA = await insertTestProject(orgId, { userId, slug: 'health-filter-a' })
+          const projectB = await insertTestProject(orgId, { userId, slug: 'health-filter-b' })
+          const projectC = await insertTestProject(orgId, { userId, slug: 'health-filter-c' })
+
+          await tx.insert(serviceEndpoints).values([
+            { orgId, projectId: projectA.id, name: 'svc-a', url: 'https://a.example.com/health' },
+            { orgId, projectId: projectB.id, name: 'svc-b', url: 'https://b.example.com/health' },
+            { orgId, projectId: projectC.id, name: 'svc-c', url: 'https://c.example.com/health' },
+          ])
+
+          const result = await getHealthDashboardData(tx, [projectA.id, projectB.id])
+          const returnedIds = result.projects.map((p) => p.projectId).sort()
+          expect(returnedIds).toEqual([projectA.id, projectB.id].sort())
+        } finally {
+          await deleteTestUser(userId)
+        }
+      })
+    })
+
+    it('treats an explicit empty array as "nothing permitted", not "unfiltered"', async () => {
+      await withTestOrg(async ({ orgId, tx }) => {
+        const userId = await createTestUser('health-dashboard-filter-empty')
+        try {
+          const project = await insertTestProject(orgId, { userId, slug: 'health-filter-empty' })
+          await tx.insert(serviceEndpoints).values({
+            orgId,
+            projectId: project.id,
+            name: 'svc',
+            url: 'https://empty.example.com/health',
+          })
+
+          const result = await getHealthDashboardData(tx, [])
+          expect(result).toEqual({ projects: [], summary: { healthy: 0, degraded: 0, down: 0 } })
+        } finally {
+          await deleteTestUser(userId)
+        }
+      })
+    })
+
+    it('silently drops a foreign/nonexistent project id from the filter rather than widening scope', async () => {
+      await withTestOrg(async ({ orgId, tx }) => {
+        const userId = await createTestUser('health-dashboard-filter-foreign')
+        try {
+          const project = await insertTestProject(orgId, { userId, slug: 'health-filter-foreign' })
+          await tx.insert(serviceEndpoints).values({
+            orgId,
+            projectId: project.id,
+            name: 'svc',
+            url: 'https://foreign.example.com/health',
+          })
+
+          // eslint-disable-next-line no-secrets/no-secrets -- test fixture UUID, not a secret.
+          const foreignId = '00000000-0000-0000-0000-000000000000'
+          const result = await getHealthDashboardData(tx, [project.id, foreignId])
+          expect(result.projects).toHaveLength(1)
+          expect(result.projects[0]?.projectId).toBe(project.id)
+        } finally {
+          await deleteTestUser(userId)
+        }
+      })
+    })
+
+    it("omitting the parameter preserves today's existing all-projects-in-org behavior", async () => {
+      await withTestOrg(async ({ orgId, tx }) => {
+        const userId = await createTestUser('health-dashboard-filter-omit')
+        try {
+          const project = await insertTestProject(orgId, { userId, slug: 'health-filter-omit' })
+          await tx.insert(serviceEndpoints).values({
+            orgId,
+            projectId: project.id,
+            name: 'svc',
+            url: 'https://omit.example.com/health',
+          })
+
+          const result = await getHealthDashboardData(tx, undefined)
+          expect(result.projects.map((p) => p.projectId)).toContain(project.id)
+        } finally {
+          await deleteTestUser(userId)
+        }
+      })
+    })
+  })
 })
