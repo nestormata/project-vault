@@ -85,9 +85,9 @@ describe('PvMonitoringHost — the inverted hook shape (Story 34.1 AC1/AC2/AC3)'
       cleanupProjectMonitoring: async () => ({ resolvedAlertCount: 0 }),
     }
 
-    expect(await host.deleteServiceEndpoint({ serviceEndpointId: 'se_1', projectId: 'p_1' })).toBe(
-      null
-    )
+    expect(
+      await host.deleteServiceEndpoint({ serviceEndpointId: 'se_1', projectId: 'p_1' })
+    ).toBeNull()
     expect(await host.getHealthDashboardData()).toEqual({
       projects: [],
       summary: { healthy: 0, degraded: 0, down: 0 },
@@ -119,8 +119,8 @@ describe('PvMonitoringHost — the inverted hook shape (Story 34.1 AC1/AC2/AC3)'
         userId: 'u_1',
         paused: true,
       })
-    ).toBe(null)
+    ).toBeNull()
 
-    expect(await host.disableStatusPage({ projectId: 'p_1' })).toBe(null)
+    expect(await host.disableStatusPage({ projectId: 'p_1' })).toBeNull()
   })
 })

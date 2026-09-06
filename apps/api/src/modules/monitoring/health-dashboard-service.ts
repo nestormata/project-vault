@@ -48,7 +48,7 @@ export async function getHealthDashboardData(
   tx: Tx,
   permittedProjectIds?: string[]
 ): Promise<HealthDashboard> {
-  if (permittedProjectIds !== undefined && permittedProjectIds.length === 0) {
+  if (permittedProjectIds?.length === 0) {
     return { projects: [], summary: { ...EMPTY_SUMMARY } }
   }
 

@@ -178,7 +178,7 @@ async function fetchAuthoritativeServiceEndpoint(
     .from(serviceEndpoints)
     .where(eq(serviceEndpoints.id, params.id))
     .limit(1)
-  if (!row || row.orgId !== params.orgId) return null
+  if (row?.orgId !== params.orgId) return null
   return row
 }
 
