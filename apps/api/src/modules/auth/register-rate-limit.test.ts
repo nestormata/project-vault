@@ -48,7 +48,9 @@ describe('POST /register rate limiting', () => {
     const app = await createApp({ logger: false })
     try {
       const responses = await registerN(app, 15)
-      for (const res of responses) expect(res.statusCode).toBe(201)
+      // Story 1.20 AC-9: self-signup registration now returns the generic accepted 202, not 201
+      // with real account data — the rate-limit-bypass behavior under test is unchanged.
+      for (const res of responses) expect(res.statusCode).toBe(202)
     } finally {
       await app.close()
       delete process.env['RATE_LIMIT_TEST_BYPASS']

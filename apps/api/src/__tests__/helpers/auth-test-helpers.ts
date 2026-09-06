@@ -111,8 +111,11 @@ export async function registerAndLoginViaApi(
     url: '/api/v1/auth/register',
     payload: { email: input.email, password: input.password, orgName: input.orgName },
   })
-  expect(register.statusCode).toBe(201)
-  const registerBody = register.json<{ data: { userId: string; orgId: string } }>()
+  // Story 1.20 AC-1: self-signup registration no longer returns real account data (userId/orgId)
+  // synchronously — it always resolves to the generic accepted 202, identical whether the email
+  // was novel or already registered. userId/orgId are recovered below via GET /auth/me using the
+  // freshly-established session cookie instead of the (now-generic) register response body.
+  expect(register.statusCode).toBe(202)
 
   const login = await app.inject({
     method: 'POST',
@@ -120,11 +123,20 @@ export async function registerAndLoginViaApi(
     payload: { email: input.email, password: input.password },
   })
   expect(login.statusCode).toBe(200)
+  const cookies = parseSetCookies(login.headers['set-cookie'])
+
+  const me = await app.inject({
+    method: 'GET',
+    url: '/api/v1/auth/me',
+    headers: { cookie: cookieHeader(cookies) },
+  })
+  expect(me.statusCode).toBe(200)
+  const meBody = me.json<{ data: { userId: string; orgId: string } }>()
 
   return {
-    userId: registerBody.data.userId,
-    orgId: registerBody.data.orgId,
-    cookies: parseSetCookies(login.headers['set-cookie']),
+    userId: meBody.data.userId,
+    orgId: meBody.data.orgId,
+    cookies,
   }
 }
 

@@ -681,7 +681,8 @@ describe('SSO routes (Story 14.3)', () => {
           orgName: `org-${randomUUID()}`,
         },
       })
-      expect(register.statusCode).toBe(201)
+      // Story 1.20 AC-9: self-signup registration now returns the generic accepted 202.
+      expect(register.statusCode).toBe(202)
 
       const login = await app.inject({
         method: 'POST',

@@ -73,40 +73,47 @@ describe('RegisterForm', () => {
     )
   })
 
-  it('registers with an org name (no invitation) and redirects to the post-register login path', async () => {
-    registerMock.mockResolvedValue({
-      userId: 'u1',
-      orgId: 'o1',
-      email: 'alex@example.com',
-      orgName: 'Acme',
-      role: 'owner',
-    })
+  // Story 1.20 AC-6: self-signup now always resolves to the generic accepted shape (no
+  // userId/orgId), identical whether the submitted email was novel or already registered — the
+  // form must show the generic message, redirect to the same unchanged path, and skip the
+  // locale-pending marker (documented, accepted minor UX regression), with no branching that
+  // could reintroduce the enumeration oracle at the UI layer.
+  const GENERIC_ACCEPTED_MESSAGE =
+    'If that email is available, your account has been created and you can sign in.'
 
-    render(RegisterForm)
+  it.each([
+    ['a novel email', 'alex-novel@example.com'],
+    ['an already-registered email', 'alex-taken@example.com'],
+  ])(
+    'Story 1.20 AC-6: self-signup with %s shows the generic confirmation and redirects to /login?reason=registered, without pre-seeding a locale marker',
+    async (_label, email) => {
+      registerMock.mockResolvedValue({ message: GENERIC_ACCEPTED_MESSAGE })
 
-    expect(screen.getByLabelText(/organization name/i)).toBeTruthy()
-    await fireEvent.input(screen.getByLabelText(/email/i), {
-      target: { value: 'alex@example.com' },
-    })
-    await fireEvent.input(screen.getByLabelText(/organization name/i), {
-      target: { value: 'Acme' },
-    })
-    await fireEvent.input(screen.getByLabelText(/^password$/i), {
-      target: { value: 'super-secret-password' },
-    })
-    await fireEvent.click(screen.getByRole('button', { name: /create account/i }))
+      render(RegisterForm)
 
-    await waitFor(() =>
-      expect(registerMock).toHaveBeenCalledWith(fetch, {
-        email: 'alex@example.com',
-        password: 'super-secret-password',
-        orgName: 'Acme',
-        invitationToken: undefined,
+      expect(screen.getByLabelText(/organization name/i)).toBeTruthy()
+      await fireEvent.input(screen.getByLabelText(/email/i), { target: { value: email } })
+      await fireEvent.input(screen.getByLabelText(/organization name/i), {
+        target: { value: 'Acme' },
       })
-    )
-    await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/login?reason=registered'))
-    expect(markRegistrationLocalePendingMock).toHaveBeenCalledWith('u1', 'es')
-  })
+      await fireEvent.input(screen.getByLabelText(/^password$/i), {
+        target: { value: 'super-secret-password' },
+      })
+      await fireEvent.click(screen.getByRole('button', { name: /create account/i }))
+
+      await waitFor(() =>
+        expect(registerMock).toHaveBeenCalledWith(fetch, {
+          email,
+          password: 'super-secret-password',
+          orgName: 'Acme',
+          invitationToken: undefined,
+        })
+      )
+      await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/login?reason=registered'))
+      expect((await screen.findByRole('status')).textContent).toContain(GENERIC_ACCEPTED_MESSAGE)
+      expect(markRegistrationLocalePendingMock).not.toHaveBeenCalled()
+    }
+  )
 
   it('hides the org-name field and readonly-locks email when an invitationToken is supplied, redirecting into the project', async () => {
     registerMock.mockResolvedValue({

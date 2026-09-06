@@ -25,6 +25,10 @@
   let password = $state('')
   let orgName = $state('')
   let errorMessage = $state(null)
+  // Story 1.20 AC-6: self-signup success/collision both resolve to the same generic-accepted
+  // response now — this surfaces its message so the user isn't silently redirected to /login
+  // with no feedback at all.
+  let infoMessage = $state(null)
   let localeRevision = $state(0)
   let emailInputEl: HTMLInputElement | undefined = $state()
 
@@ -70,17 +74,31 @@
 
   async function submitForm() {
     errorMessage = null
+    infoMessage = null
     try {
       const result = await register(
         fetch,
         buildRegisterRequest({ email, password, orgName, invitationToken })
       )
-      markRegistrationLocalePending(result.userId, getLocale())
-      clearFields()
-      // getPostRegisterPath() returns either a static route or a server-issued project id —
-      // not a literal resolve() can type-check at compile time.
-      // eslint-disable-next-line svelte/no-navigation-without-resolve
-      await goto(getPostRegisterPath(result.invitedProject))
+      // Story 1.20 AC-6: the invitation-acceptance path still returns the real RegisterResponse
+      // shape (userId present) — unchanged. Self-signup (novel email or already-registered
+      // email, indistinguishable by design) now always returns the generic accepted shape
+      // instead, which never carries userId, so markRegistrationLocalePending() is skipped for
+      // that path (documented, accepted minor UX regression — see Dev Notes) and its message is
+      // shown instead of silently redirecting with no feedback.
+      if ('userId' in result) {
+        markRegistrationLocalePending(result.userId, getLocale())
+        clearFields()
+        // getPostRegisterPath() returns either a static route or a server-issued project id —
+        // not a literal resolve() can type-check at compile time.
+        // eslint-disable-next-line svelte/no-navigation-without-resolve
+        await goto(getPostRegisterPath(result.invitedProject))
+      } else {
+        infoMessage = result.message
+        clearFields()
+        // eslint-disable-next-line svelte/no-navigation-without-resolve
+        await goto(getPostRegisterPath(undefined))
+      }
     } catch (error) {
       // Story 23.2 AC-6a/AC-13: registration is not blanket-hidden on this page — the very
       // first registration on a native-login-gated instance must still succeed (AC-6a's
@@ -169,6 +187,14 @@
     {#if errorMessage}
       <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
         {errorMessage}
+      </p>
+    {/if}
+    {#if infoMessage}
+      <p
+        class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800"
+        role="status"
+      >
+        {infoMessage}
       </p>
     {/if}
     <button

@@ -175,11 +175,12 @@ describe('Story 23.2 AC-6: native-credential surface fails closed', () => {
   it("AC-6a bootstrap carve-out: a registration under a disabled policy succeeds iff it is genuinely the first user ever, mirroring Story 9.1 D1/AC-1's own convention", async () => {
     await forcePolicyDisabled()
     const beforeInsert = new Date()
+    const email = `bootstrap-${randomUUID()}@example.com`
     const res = await app.inject({
       method: POST,
       url: REGISTER_URL,
       payload: {
-        email: `bootstrap-${randomUUID()}@example.com`,
+        email,
         password: TEST_PASSWORD,
         orgName: `bootstrap org ${randomUUID()}`,
       },
@@ -190,23 +191,45 @@ describe('Story 23.2 AC-6: native-credential surface fails closed', () => {
     // populated `users`. Either way, the response must match the real state.
     const priorCount = await countUsersCreatedBefore(beforeInsert)
     const wasFirstUser = priorCount === 0
-    expect(res.statusCode).toBe(wasFirstUser ? 201 : 403)
+    // Story 1.20 AC-1/AC-9: self-signup registration now always returns the generic accepted
+    // 202 on success (never real account data), so the "first user" happy path is 202, not 201.
+    expect(res.statusCode).toBe(wasFirstUser ? 202 : 403)
     if (!wasFirstUser) {
       expect(res.json()).toMatchObject({ code: 'native_login_disabled' })
       return
     }
 
+    // Story 1.20: the register response no longer discloses userId/orgId — recover them via a
+    // real login + GET /me, mirroring auth-test-helpers.ts's registerAndLoginViaApi() fix.
+    const login = await app.inject({
+      method: POST,
+      url: LOGIN_URL,
+      payload: { email, password: TEST_PASSWORD },
+    })
+    expect(login.statusCode).toBe(200)
+    const setCookie = login.headers['set-cookie']
+    const cookieHeaderValue = ([] as string[])
+      .concat(setCookie ?? [])
+      .map((header) => header.split(';')[0])
+      .join('; ')
+    const me = await app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+      headers: { cookie: cookieHeaderValue },
+    })
+    expect(me.statusCode).toBe(200)
+    const meBody = me.json<{ data: { orgId: string; userId: string } }>()
+
     // AC-6a item 3 / AC-9: the carve-out was genuinely exercised — assert both the warn log
     // (implicitly exercised, not directly observable via app.inject) and the dedicated audit
     // event, with the fixed, no-email payload shape.
-    const body = res.json<{ data: { orgId: string; userId: string } }>()
     const [row] = await getDb()
       .execute(
-        sql`SELECT payload FROM audit_log_entries WHERE org_id = ${body.data.orgId} AND event_type = ${AuditEvent.NATIVE_LOGIN_BOOTSTRAP_REGISTER_ALLOWED} LIMIT 1`
+        sql`SELECT payload FROM audit_log_entries WHERE org_id = ${meBody.data.orgId} AND event_type = ${AuditEvent.NATIVE_LOGIN_BOOTSTRAP_REGISTER_ALLOWED} LIMIT 1`
       )
       .then((result) => result as unknown as { payload: Record<string, unknown> }[])
     expect(row).toBeDefined()
-    expect(row?.payload).toEqual({ userId: body.data.userId, isPlatformOperator: true })
+    expect(row?.payload).toEqual({ userId: meBody.data.userId, isPlatformOperator: true })
   })
 
   it('AC-6a: a registration that is NOT the first user is gated (native_login_disabled), deterministically', async () => {
@@ -224,7 +247,8 @@ describe('Story 23.2 AC-6: native-credential surface fails closed', () => {
         orgName: `bootstrap guarantor org ${randomUUID()}`,
       },
     })
-    expect(guarantorRes.statusCode).toBe(201)
+    // Story 1.20 AC-9: self-signup registration now returns the generic accepted 202.
+    expect(guarantorRes.statusCode).toBe(202)
 
     await forcePolicyDisabled()
     const res = await app.inject({
