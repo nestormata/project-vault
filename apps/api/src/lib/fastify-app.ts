@@ -23,6 +23,17 @@ export type FastifyApp = {
   get: (path: string, handler: unknown) => FastifyApp
   route: (options: unknown) => FastifyApp
   addHook: (name: string, hook: unknown) => FastifyApp
+  // Story 20.11 — used by delivery-webhook-routes.ts's encapsulated raw-body capture (signature
+  // verification needs the provider's exact signed bytes, not a reserialized JSON.stringify).
+  addContentTypeParser: (
+    contentType: string,
+    opts: { parseAs: 'string' | 'buffer' },
+    parser: (
+      req: unknown,
+      body: string | Buffer,
+      done: (err: Error | null, body?: unknown) => void
+    ) => void
+  ) => void
   decorate?: (name: string, value: unknown) => FastifyApp
   authenticate?: unknown
   inject: (options: unknown) => Promise<FastifyInjectResponse>

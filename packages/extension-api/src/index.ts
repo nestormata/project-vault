@@ -43,6 +43,13 @@ export type {
   ModuleDataResult,
   ModuleDataRouteHandler,
 } from './hooks/module-data.js'
+export type {
+  DeliveryProvider,
+  DeliveryProviderSendPayload,
+  DeliveryProviderSendResult,
+  DeliveryStatusEvent,
+  DeliveryStatusValue,
+} from './hooks/delivery-provider.js'
 
 export type { HostServices } from './host-services.js'
 export type {

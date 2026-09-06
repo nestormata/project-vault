@@ -1,10 +1,26 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { eq } from 'drizzle-orm'
 import { createTestUser, deleteTestUser, withTestOrg } from '@project-vault/db/test-helpers'
 import { withOrg } from '@project-vault/db'
 import { notificationQueue } from '@project-vault/db/schema'
+import {
+  configureAuthIntegrationEnv,
+  initVaultForTest,
+} from '../__tests__/helpers/auth-test-helpers.js'
+import { resetVaultForTest } from '../__tests__/helpers/vault-test-cleanup.js'
 import { deliverNotification } from './notification-deliver.js'
+
+configureAuthIntegrationEnv()
+
+// Story 20.11 AC4 — markNotificationDelivered/Suppressed/Failed (reached via deliverNotification's
+// sendEmailNotification call) now delegate to applyDeliveryStatusUpdate(), which writes a
+// same-transaction audit entry and needs a real (unsealed) vault for the audit HMAC key.
+beforeAll(async () => {
+  await resetVaultForTest()
+  const { initVault } = await import('../modules/vault/key-service.js')
+  await initVaultForTest(initVault, 'notification-deliver-vault-secret')
+})
 
 async function insertPendingEntry(orgId: string, values: typeof notificationQueue.$inferInsert) {
   const [entry] = await withOrg(orgId, (tx) =>

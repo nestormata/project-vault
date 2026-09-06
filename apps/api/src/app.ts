@@ -48,6 +48,7 @@ import { auditQuotaRoutes } from './modules/platform-admin/audit-quota-routes.js
 import { statusTokenRoutes } from './modules/platform-admin/status-token-routes.js'
 import { platformAuditRoutes } from './modules/platform-audit/routes.js'
 import { notificationRoutes } from './modules/notifications/routes.js'
+import { deliveryWebhookRoutes } from './modules/notifications/delivery-webhook-routes.js'
 import { machineUserRoutes } from './modules/machine-users/routes.js'
 import { machineTokenExchangeRoutes } from './modules/machine-users/token-exchange-routes.js'
 import { machineCredentialRoutes } from './modules/machine-users/machine-credential-routes.js'
@@ -64,6 +65,11 @@ import { themeSelectionRoutes } from './modules/theming/selection-routes.js'
 import { reloadThemesWithFanout } from './modules/theming/service.js'
 import { wireExtensionAuthStrategy } from './modules/auth/strategies.js'
 import { wireExtensionCapabilityGate } from './lib/capability-gate.js'
+import {
+  wireExtensionDeliveryProvider,
+  auditDeliveryProviderRegistrationOrFailClosed,
+  getRegisteredDeliveryProviderChannels,
+} from './lib/delivery-provider.js'
 import { resolveNativeLoginPolicy } from './modules/auth/native-login-policy.js'
 import { resolveHandoffAuthStrategy } from './modules/auth/handoff-boot.js'
 import { writeHandoffSecurityEvent } from './modules/auth/handoff-security-events.js'
@@ -413,6 +419,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // ADMIN_PREFIX.
   await fastify.register(platformAuditRoutes, { prefix: '/api/v1/platform' })
   await fastify.register(notificationRoutes, { prefix: '/api/v1' })
+  await fastify.register(deliveryWebhookRoutes, { prefix: '/api/v1/notifications' })
   await fastify.register(machineUserRoutes, { prefix: '/api/v1' })
   await fastify.register(machineCredentialRoutes, { prefix: '/api/v1/machine' })
   await fastify.register(cacheActivatedRoutes, { prefix: '/api/v1/machine' })
@@ -458,6 +465,20 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // wireExtensionAuthStrategy() exactly — reads only the already-resolved ExtensionState, no-ops
   // for every state except loaded-with-a-capabilityGate-hook, and never throws.
   wireExtensionCapabilityGate(getExtensionStatus(), fastify.log)
+
+  // Story 20.11 AC1/AC5: sibling wiring step, mirroring wireExtensionCapabilityGate() exactly —
+  // no-ops for every state except loaded-with-a-deliveryProvider-hook. Throws
+  // DeliveryProviderConflictError (never silently swallowed) if the loaded extension's own
+  // manifest declares the same channel more than once inside one hooks bag — a load-time
+  // configuration bug in the extension itself, not a recoverable runtime condition. The audit
+  // fanout below is fail-closed (AC5): unlike wireExtensionCapabilityGate()'s sibling, a failure
+  // here rolls back the registration and throws, failing boot rather than leaving a live,
+  // unaudited provider registered.
+  wireExtensionDeliveryProvider(getExtensionStatus())
+  await auditDeliveryProviderRegistrationOrFailClosed(
+    getRegisteredDeliveryProviderChannels(),
+    fastify.log
+  )
 
   // Story 23.2 AC-4: resolved once, immediately after the auth-strategy wiring above, from
   // server-side state only (the loaded extension's manifest + the host-set break-glass /

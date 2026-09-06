@@ -1,16 +1,31 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { register } from 'prom-client'
 import { withOrg } from '@project-vault/db'
 import { notificationQueue } from '@project-vault/db/schema'
 import { withTwoTestOrgs } from '@project-vault/db/test-helpers'
 import { getNotificationQueueEntry } from '../__tests__/helpers/notification-test-helpers.js'
+import {
+  configureAuthIntegrationEnv,
+  initVaultForTest,
+} from '../__tests__/helpers/auth-test-helpers.js'
+import { resetVaultForTest } from '../__tests__/helpers/vault-test-cleanup.js'
 import { NOTIFICATION_MAX_ATTEMPTS } from './notification-worker-common.js'
 import { runNotificationDlqCleanup } from './notification-dlq-cleanup.js'
 import {
   PGBOSS_DLQ_ENTRIES_TOTAL_METRIC_NAME,
   pgbossDlqEntriesTotal,
 } from './notification-metrics.js'
+
+configureAuthIntegrationEnv()
+
+// Story 20.11 AC4 — markNotificationFailed() now delegates to applyDeliveryStatusUpdate(), which
+// writes a same-transaction audit entry and needs a real (unsealed) vault for the audit HMAC key.
+beforeAll(async () => {
+  await resetVaultForTest()
+  const { initVault } = await import('../modules/vault/key-service.js')
+  await initVaultForTest(initVault, 'notification-dlq-cleanup-vault-secret')
+})
 
 const FAILED_AUTH_TEMPLATE_ID = 'security.failed_auth_threshold'
 

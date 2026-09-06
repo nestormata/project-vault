@@ -20,7 +20,7 @@ const { computeAuditHmac, FIXTURE_HMAC } = vi.hoisted(() => {
 // Fixed to null (genesis) by default — individual tests override via mockResolvedValueOnce where
 // the previous-hmac value itself is under test.
 const { getPreviousEntryHmac, GENESIS_SENTINEL } = vi.hoisted(() => ({
-  getPreviousEntryHmac: vi.fn(async () => null as string | null),
+  getPreviousEntryHmac: vi.fn(async (..._args: unknown[]) => null as string | null),
   GENESIS_SENTINEL: 'GENESIS',
 }))
 

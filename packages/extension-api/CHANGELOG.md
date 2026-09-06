@@ -2,6 +2,20 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.11.0 — 2026-09-04
+
+contract-hash: sha256:e54d0ab5fa3fc587b9a3dedd66c9d1c101a7a993e0d08f9816134ef2681e8b69
+
+### Added
+
+- Added a new `DeliveryProvider` Extension API hook category (Story 20.11 AC1) — an extension can
+  register a `send(payload)`/`verifyWebhookSignature(request)`/`parseWebhookEvents(rawBody)`
+  provider per notification channel via `ExtensionHooks.deliveryProvider?: Record<string,
+  DeliveryProvider>`, and a matching `'delivery-provider'` manifest capability. PV's dispatcher
+  calls the registered provider instead of the built-in `nodemailer` transport only when one is
+  registered for the relevant channel — Story 3.1's SMTP/nodemailer default path is fully
+  backward-compatible and unchanged when no provider is registered.
+
 ## 3.10.0 — 2026-08-29
 
 contract-hash: sha256:ee971b28e6d7678640588edca361890559baa317a726e70f06cba4a992c548d6

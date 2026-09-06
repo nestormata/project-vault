@@ -6,9 +6,13 @@ import {
   expectQueueStatus,
   getNotificationQueueEntry,
 } from '../__tests__/helpers/notification-test-helpers.js'
+import {
+  configureAuthIntegrationEnv,
+  initVaultForTest,
+} from '../__tests__/helpers/auth-test-helpers.js'
+import { resetVaultForTest } from '../__tests__/helpers/vault-test-cleanup.js'
 
-process.env['DATABASE_URL'] ??=
-  'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
+configureAuthIntegrationEnv()
 
 const FAILED_AUTH_TEMPLATE = 'security.failed_auth_threshold'
 const SLACK_WEBHOOK_TEST_URL = 'https://hooks.slack.com/services/test'
@@ -38,6 +42,15 @@ async function loadSendSlackNotification(webhookUrl?: string) {
   } else {
     delete process.env['SLACK_WEBHOOK_URL']
   }
+  // Story 20.11 AC4: vi.resetModules() gives key-service.js's in-memory unsealed-vault state a
+  // fresh module instance every call, but the `vault_state` DB row from a PRIOR call's initVault()
+  // persists — so a second call's initVault() against the freshly-reset (sealed) module instance
+  // only proves ALREADY_INITIALIZED against that row without ever unsealing the new instance's
+  // in-memory key (mirrors delivery-status-integration.test.ts's identical resetVaultForTest()
+  // precedent). resetVaultForTest() must run on every call, not just once, for the same reason.
+  await resetVaultForTest()
+  const { initVault } = await import('../modules/vault/key-service.js')
+  await initVaultForTest(initVault, 'notification-slack-vault-secret')
   const mod = await import('./notification-slack.js')
   return mod.sendSlackNotification
 }
