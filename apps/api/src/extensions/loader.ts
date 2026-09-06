@@ -29,6 +29,7 @@ import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 import { writeExtensionAuditEventForManifest } from '../lib/audit-event-source.js'
 import { checkOrgAuthorization } from '../lib/org-authorization.js'
 import { createEphemeralStateHost } from '../lib/ephemeral-state.js'
+import { buildMonitoringHost } from '../lib/monitoring-host.js'
 import { writePlatformAuditEntryOrFailClosed } from '../lib/audit-or-fail-closed.js'
 import { fetchAllOrgIds } from '../middleware/rls.js'
 import type { Tx } from '@project-vault/db'
@@ -259,6 +260,12 @@ async function buildHostServices(
     // rebinding). Its methods internally call getRequestContext() at invocation time for the
     // current request's orgId.
     ephemeralState: createEphemeralStateHost(manifest.name, logger),
+    // Story 34.1 — bound once at extension-load time, same as every field above. Six of its
+    // eight methods internally resolve the current request's orgId via getRequestContext() at
+    // call time; the other two (applyHealthCheckResult, cleanupProjectMonitoring) take an
+    // explicit organizationId parameter, are rate-limited on a distinct accounting bucket, and
+    // are structurally audit-logged on every call. See lib/monitoring-host.ts.
+    monitoring: buildMonitoringHost(manifest, logger),
     getDbHandle: async () => {
       if (!manifest.dbScope || manifest.dbScope.length === 0) {
         return { unavailable: 'no-approved-scope' }

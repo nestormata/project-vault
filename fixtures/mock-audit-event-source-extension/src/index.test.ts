@@ -7,6 +7,22 @@ import mockAuditEventSourceExtension, {
 
 afterEach(() => __resetMockAuditEventSourceExtensionForTests())
 
+// Story 34.1 — HostServices widened to a fourth, required field. This fixture never reads it
+// (only auditEventSource/orgAuthorization matter to this extension), so a stub with
+// never-invoked rejects is sufficient here.
+const UNUSED_IN_FIXTURE = 'unused in this fixture'
+const rejectUnused = () => Promise.reject(new Error(UNUSED_IN_FIXTURE))
+const monitoringStub = {
+  deleteServiceEndpoint: rejectUnused,
+  updateServiceEndpointPauseState: rejectUnused,
+  getHealthDashboardData: rejectUnused,
+  enableStatusPage: rejectUnused,
+  regenerateStatusPageToken: rejectUnused,
+  disableStatusPage: rejectUnused,
+  applyHealthCheckResult: rejectUnused,
+  cleanupProjectMonitoring: rejectUnused,
+}
+
 describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
   it('declares a valid, reverse-DNS manifest with only the audit-event-source capability', () => {
     expect(mockAuditEventSourceExtension.manifest.name).toMatch(/^[a-z0-9]+(\.[a-z0-9-]+)+$/)
@@ -34,6 +50,7 @@ describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
         compareAndSwap: async () => false,
         compareAndDelete: async () => false,
       },
+      monitoring: monitoringStub,
     })
     expect(hooks).toEqual({})
   })
@@ -62,6 +79,7 @@ describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
         compareAndSwap: async () => false,
         compareAndDelete: async () => false,
       },
+      monitoring: monitoringStub,
     })
 
     const result = await triggerAuditWrite({

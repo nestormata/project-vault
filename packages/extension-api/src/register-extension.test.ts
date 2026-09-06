@@ -209,6 +209,53 @@ describe('registerExtension — AC-4 default HostServices (no host argument supp
     expect(result.hooks).toEqual({})
     await expect(hostWriteAuditEvent?.()).rejects.toThrow(/without a real HostServices/)
   })
+
+  it('a hooksFactory that calls every default host.monitoring method gets a rejected promise for each, never a silent no-op (Story 34.1 AC1)', async () => {
+    let capturedHost: HostServices | undefined
+    const hooksFactory = vi.fn((host: HostServices): ExtensionHooks => {
+      capturedHost = host
+      return {}
+    })
+
+    registerExtension(manifest(), hooksFactory)
+    if (!capturedHost) throw new Error('hooksFactory did not capture a host')
+    const monitoring = capturedHost.monitoring
+
+    await expect(
+      monitoring.deleteServiceEndpoint({ serviceEndpointId: 'se_1', projectId: 'p_1' })
+    ).rejects.toThrow(/without a real HostServices/)
+    await expect(
+      monitoring.updateServiceEndpointPauseState({
+        serviceEndpointId: 'se_1',
+        projectId: 'p_1',
+        userId: 'u_1',
+        paused: true,
+      })
+    ).rejects.toThrow(/without a real HostServices/)
+    await expect(monitoring.getHealthDashboardData()).rejects.toThrow(/without a real HostServices/)
+    await expect(monitoring.enableStatusPage({ projectId: 'p_1', userId: 'u_1' })).rejects.toThrow(
+      /without a real HostServices/
+    )
+    await expect(monitoring.regenerateStatusPageToken({ projectId: 'p_1' })).rejects.toThrow(
+      /without a real HostServices/
+    )
+    await expect(monitoring.disableStatusPage({ projectId: 'p_1' })).rejects.toThrow(
+      /without a real HostServices/
+    )
+    await expect(
+      monitoring.applyHealthCheckResult({
+        organizationId: 'org_1',
+        serviceEndpoint: { id: 'se_1', orgId: 'org_1' },
+        isHealthy: true,
+        statusCode: 200,
+        latencyMs: 1,
+        failureReason: null,
+      })
+    ).rejects.toThrow(/without a real HostServices/)
+    await expect(
+      monitoring.cleanupProjectMonitoring({ organizationId: 'org_1', projectId: 'p_1' })
+    ).rejects.toThrow(/without a real HostServices/)
+  })
 })
 
 describe('registerExtension — hooksFactory laziness', () => {
@@ -252,7 +299,7 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each(['3.12.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
+  it.each(['3.13.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
     'rejects canonical version outside %s',
     (apiVersion) => {
       const hooksFactory = makeHooksFactory()
@@ -288,19 +335,19 @@ describe('registerExtension — concrete canonical version gate', () => {
 
   it('allows only the above-host same-major rollback escape', () => {
     // Story 25.3 AC1/Task 1, Story 25.4 AC4/Task 4, Story 25.5 AC2/Task 1, Story 25.8 AC1/Task 1,
-    // Story 20.8, Story 25.12 AC2/Task 2, Story 29.3 AC8/Task 1, Story 29.4 AC6/Task 1, and Story
-    // 20.11 AC1 — host EXTENSION_API_VERSION is now 3.11.0 (see manifest.ts's
-    // EXTENSION_API_VERSION doc comment for why this merge moves past
-    // 3.2.0/3.3.0/3.4.0/3.6.0/3.7.0/3.8.0/3.9.0/3.10.0, which Story
-    // 25.3/25.4/25.5/25.9/20.8/25.12/29.3/29.4 respectively already claimed on main for different
-    // additive changes); '3.12.0' is the above-host, same-major escape-eligible version, and
-    // '4.0.0' is a different major (never escape-eligible). Kept one minor version above whatever
-    // EXTENSION_API_VERSION currently is — see loader.test.ts's identical comment.
+    // Story 20.8, Story 25.12 AC2/Task 2, Story 29.3 AC8/Task 1, Story 29.4 AC6/Task 1, Story
+    // 20.11 AC1, and Story 34.1 AC1/AC9 — host EXTENSION_API_VERSION is now 3.12.0 (see
+    // manifest.ts's EXTENSION_API_VERSION doc comment for why this merge moves past
+    // 3.2.0/3.3.0/3.4.0/3.6.0/3.7.0/3.8.0/3.9.0/3.10.0/3.11.0, which Story
+    // 25.3/25.4/25.5/25.9/20.8/25.12/29.3/29.4/20.11 respectively already claimed on main for
+    // different additive changes); '3.13.0' is the above-host, same-major escape-eligible
+    // version, and '4.0.0' is a different major (never escape-eligible). Kept one minor version
+    // above whatever EXTENSION_API_VERSION currently is — see loader.test.ts's identical comment.
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.12.0' }), makeHooksFactory())
+      registerExtension(manifest({ apiVersion: '3.13.0' }), makeHooksFactory())
     ).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.12.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '3.13.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()

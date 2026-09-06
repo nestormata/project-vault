@@ -29,6 +29,11 @@ describe('index.ts — root-only export surface (AC1, AC2)', () => {
         'ExtensionRegistrationError',
         'isExtensionApiVersionSupported',
         'registerExtension',
+        // Story 34.1 — new HostServices.monitoring hook-specific error classes (AC2/AC3/AC7).
+        'MonitoringNoAmbientContextError',
+        'MonitoringRateLimitedError',
+        'MonitoringOrgMismatchError',
+        'MonitoringResourceNotFoundError',
       ])
     )
   })

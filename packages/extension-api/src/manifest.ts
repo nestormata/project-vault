@@ -324,7 +324,13 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // manifest or hook shape changes, and the floor stays `>=3.0.0` so every already-shipped
 // extension (including any real, currently-deployed CentralizeMe build) keeps loading unmodified
 // regardless.
-export const EXTENSION_API_VERSION = '3.11.0'
+// Story 34.1 AC1/AC9 — bumped as an additive-minor (3.11.0 -> 3.12.0): `HostServices` gains
+// `monitoring: PvMonitoringHost` (see `hooks/monitoring.ts`), a purely-additive new field with
+// zero effect on any `hooksFactory` that omits referencing `host.monitoring` — no existing
+// extension's manifest or hook shape changes, and the floor stays `>=3.0.0` so every
+// already-shipped extension (including any real, currently-deployed CentralizeMe build) keeps
+// loading unmodified regardless.
+export const EXTENSION_API_VERSION = '3.12.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

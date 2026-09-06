@@ -429,6 +429,19 @@ export const OperationalEvent = {
   // logged, never allowed to fail or roll back an otherwise-successful revocation (the alert is a
   // detection aid, not a correctness gate, unlike the audit write in AC7.27).
   ORG_SESSIONS_REVOKED_ALERT_DISPATCH_FAILED: 'org_sessions_revoked.alert_dispatch_failed',
+
+  // Story 34.1 AC3: structured audit-log entry written for EVERY call to the two explicit-
+  // organizationId `HostServices.monitoring` methods (applyHealthCheckResult,
+  // cleanupProjectMonitoring) — success, denial (no-ambient-context is not applicable here since
+  // both are out-of-request; org-mismatch/not-found denials, and rate-limited calls, all still
+  // record one line each. Fields are `organizationId`/`extensionName`/`method`/`outcome` only —
+  // never full resource content, never a probe target URL.
+  MONITORING_HOST_CHECK_RECORDED: 'monitoring_host.check_recorded',
+  // Story 34.1 AC3(b): a call to applyHealthCheckResult/cleanupProjectMonitoring was refused
+  // before resolution because its extension's in-flight accounting key was already at its
+  // concurrency cap — a distinct rate-limit budget from both capability-gate.ts's and
+  // org-authorization.ts's own (never shared).
+  MONITORING_HOST_RATE_LIMITED: 'monitoring_host.rate_limited',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

@@ -622,30 +622,30 @@ async function resolvePauseUpdate(
 }
 
 /**
- * AC 3: deleting a service-endpoint cascades its health-check history (FK ON DELETE CASCADE),
- * suppresses any still-pending notification-queue rows for it, and marks any active/snoozed
- * monitoring_alerts rows for it as a terminal `resolved_by_deletion` status so a dangling
- * snoozed alert never references a deleted endpoint. The alert-status update MUST run BEFORE
- * the endpoint delete: monitoring_alerts.serviceEndpointId is ON DELETE SET NULL (a correction
- * to this story's original ON DELETE CASCADE draft — see monitoring-alerts.ts), so deleting the
- * endpoint first would already have nulled out the very column this UPDATE filters on.
+ * Shared by `deleteServiceEndpoint` and `cleanupServiceEndpointsForProjectDeletion` (Story 34.1
+ * Design Decision 6) — the one per-endpoint cascade: marks any active/snoozed `monitoringAlerts`
+ * rows for it as a terminal `resolved_by_deletion` status, then suppresses any still-pending
+ * `notificationQueue` rows for it. MUST run BEFORE the endpoint delete when the caller is about
+ * to delete the row: `monitoringAlerts.serviceEndpointId` is `ON DELETE SET NULL` (a correction
+ * to this story's original `ON DELETE CASCADE` draft — see monitoring-alerts.ts), so deleting the
+ * endpoint first would already have nulled out the very column this UPDATE filters on. Returns
+ * the count of alert rows actually transitioned by this call (idempotent — an already-
+ * `resolved_by_deletion` alert is not matched again and contributes `0`).
  */
-export async function deleteServiceEndpoint(
+async function resolveMonitoringAlertsForEndpointDeletion(
   tx: Tx,
-  params: { serviceEndpointId: string; projectId: string; orgId: string }
-) {
-  const endpoint = await findServiceEndpointInProject(tx, params)
-  if (!endpoint) return null
-
-  await tx
+  params: { serviceEndpointId: string; orgId: string }
+): Promise<number> {
+  const resolvedRows = await tx
     .update(monitoringAlerts)
     .set({ status: 'resolved_by_deletion' })
     .where(
       and(
-        eq(monitoringAlerts.serviceEndpointId, endpoint.id),
+        eq(monitoringAlerts.serviceEndpointId, params.serviceEndpointId),
         sql`${monitoringAlerts.status} IN ('active','snoozed')`
       )
     )
+    .returning({ id: monitoringAlerts.id })
 
   await tx
     .update(notificationQueue)
@@ -654,9 +654,32 @@ export async function deleteServiceEndpoint(
       and(
         eq(notificationQueue.orgId, params.orgId),
         eq(notificationQueue.status, 'pending'),
-        sql`${notificationQueue.payload}->>'serviceEndpointId' = ${endpoint.id}`
+        sql`${notificationQueue.payload}->>'serviceEndpointId' = ${params.serviceEndpointId}`
       )
     )
+
+  return resolvedRows.length
+}
+
+/**
+ * AC 3: deleting a service-endpoint cascades its health-check history (FK ON DELETE CASCADE),
+ * suppresses any still-pending notification-queue rows for it, and marks any active/snoozed
+ * monitoring_alerts rows for it as a terminal `resolved_by_deletion` status so a dangling
+ * snoozed alert never references a deleted endpoint (see
+ * `resolveMonitoringAlertsForEndpointDeletion` for why the alert-status update must run BEFORE
+ * the endpoint delete).
+ */
+export async function deleteServiceEndpoint(
+  tx: Tx,
+  params: { serviceEndpointId: string; projectId: string; orgId: string }
+) {
+  const endpoint = await findServiceEndpointInProject(tx, params)
+  if (!endpoint) return null
+
+  await resolveMonitoringAlertsForEndpointDeletion(tx, {
+    serviceEndpointId: endpoint.id,
+    orgId: params.orgId,
+  })
 
   const [deleted] = await tx
     .delete(serviceEndpoints)
@@ -668,6 +691,45 @@ export async function deleteServiceEndpoint(
     )
     .returning()
   return deleted ?? null
+}
+
+/**
+ * Story 34.1 Design Decision 6/AC7 — `cleanupProjectMonitoring`'s real implementation, wired as
+ * `HostServices.monitoring.cleanupProjectMonitoring`. No 1:1 existing PV function covers this: it
+ * reuses `deleteServiceEndpoint`'s exact same per-endpoint alert-resolution/notification-
+ * suppression cascade (`resolveMonitoringAlertsForEndpointDeletion` above — never a parallel
+ * reimplementation), applied across every service endpoint in the project instead of one at a
+ * time. Does NOT delete the service-endpoint rows themselves — that stays Story 35-1's
+ * project-deletion-cascade concern; this function only resolves monitoring-specific dangling
+ * state for a project about to be deleted.
+ *
+ * Atomic (AC7): every endpoint's cascade runs inside the caller's own single `tx` — a mid-loop
+ * failure rolls back every already-applied cascade, never leaving a partially-resolved project.
+ *
+ * Idempotent (AC7): re-running this against a project whose alerts are already
+ * `resolved_by_deletion` is a no-op for those rows — the shared helper's own idempotent UPDATE
+ * (see its doc comment) never a duplicate resolve or an error.
+ */
+export async function cleanupServiceEndpointsForProjectDeletion(
+  tx: Tx,
+  params: { projectId: string; orgId: string }
+): Promise<{ resolvedAlertCount: number }> {
+  const endpoints = await tx
+    .select({ id: serviceEndpoints.id })
+    .from(serviceEndpoints)
+    .where(eq(serviceEndpoints.projectId, params.projectId))
+
+  if (endpoints.length === 0) return { resolvedAlertCount: 0 }
+
+  let resolvedAlertCount = 0
+  for (const endpoint of endpoints) {
+    resolvedAlertCount += await resolveMonitoringAlertsForEndpointDeletion(tx, {
+      serviceEndpointId: endpoint.id,
+      orgId: params.orgId,
+    })
+  }
+
+  return { resolvedAlertCount }
 }
 
 // --- Health history (endpoint_health_checks) — AC 7 ---

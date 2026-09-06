@@ -2,6 +2,23 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.12.0 — 2026-09-06
+
+contract-hash: sha256:61f54603469f125942357ba00019ab5bc4ee129594b4b59afcee6418bcf6edb1
+
+### Added
+
+- Added `HostServices.monitoring: PvMonitoringHost` (Story 34.1 AC1) — a new host-provided-service
+  field wrapping PV's Epic 6 monitoring service-layer functions (service-endpoint CRUD/pause-
+  resume, cross-project health-dashboard aggregation, and status-page enable/regenerate/disable)
+  so an installed extension can invoke that logic in-process, with PV supplying org-scoped
+  transaction context ambiently for six in-request methods and explicitly (via an
+  `organizationId` parameter, rate-limited and structurally audit-logged) for two out-of-request
+  methods (`applyHealthCheckResult`, `cleanupProjectMonitoring`). Adds three new error classes
+  (`MonitoringNoAmbientContextError`, `MonitoringRateLimitedError`, `MonitoringOrgMismatchError`,
+  `MonitoringResourceNotFoundError`) for the new fail-closed/rate-limit/cross-tenant-mismatch
+  paths this hook introduces. Purely additive — no existing `HostServices` field changes.
+
 ## 3.11.0 — 2026-09-04
 
 contract-hash: sha256:e54d0ab5fa3fc587b9a3dedd66c9d1c101a7a993e0d08f9816134ef2681e8b69

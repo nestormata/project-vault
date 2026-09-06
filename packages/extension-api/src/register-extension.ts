@@ -128,6 +128,56 @@ const DEFAULT_HOST_SERVICES: HostServices = {
         )
       ),
   },
+  monitoring: {
+    deleteServiceEndpoint: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — monitoring.deleteServiceEndpoint is unavailable'
+        )
+      ),
+    updateServiceEndpointPauseState: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — monitoring.updateServiceEndpointPauseState is unavailable'
+        )
+      ),
+    getHealthDashboardData: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — monitoring.getHealthDashboardData is unavailable'
+        )
+      ),
+    enableStatusPage: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — monitoring.enableStatusPage is unavailable'
+        )
+      ),
+    regenerateStatusPageToken: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — monitoring.regenerateStatusPageToken is unavailable'
+        )
+      ),
+    disableStatusPage: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — monitoring.disableStatusPage is unavailable'
+        )
+      ),
+    applyHealthCheckResult: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — monitoring.applyHealthCheckResult is unavailable'
+        )
+      ),
+    cleanupProjectMonitoring: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — monitoring.cleanupProjectMonitoring is unavailable'
+        )
+      ),
+  },
 }
 
 /**
