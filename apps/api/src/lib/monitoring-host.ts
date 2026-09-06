@@ -279,10 +279,17 @@ export function buildMonitoringHost(
     },
 
     async applyHealthCheckResult(params) {
-      if (params.serviceEndpoint.orgId !== params.organizationId) {
+      // Guard against malformed/incomplete params (e.g. a missing `serviceEndpoint`) BEFORE
+      // dereferencing any nested field. Without this, a bad caller triggers a raw TypeError here
+      // that bypasses both the rate-limit accounting and the audit log entirely — undermining
+      // AC3(c)'s guarantee that every call (success, denial, or error) is structurally
+      // audit-logged. Treated as the same `MonitoringOrgMismatchError` denial as an actual
+      // org/resource mismatch, since "no comparable resource was supplied" is a strict subset of
+      // "the supplied resource doesn't match."
+      if (!params?.serviceEndpoint || params.serviceEndpoint.orgId !== params.organizationId) {
         recordMonitoringHostAudit(logger, {
           extensionName: manifest.name,
-          organizationId: params.organizationId,
+          organizationId: params?.organizationId ?? 'unknown',
           method: 'applyHealthCheckResult',
           outcome: 'org-mismatch-denied',
         })
@@ -325,6 +332,23 @@ export function buildMonitoringHost(
     },
 
     async cleanupProjectMonitoring(params) {
+      // Same audit-integrity guard as `applyHealthCheckResult` above: `params.organizationId` is
+      // read here, before `callOutOfRequestMethod` runs, so a missing/malformed `params` object
+      // must not be allowed to throw here directly — that would skip both the rate-limit
+      // accounting and the audit log for this call, contradicting AC3(c).
+      if (!params?.organizationId || !params.projectId) {
+        recordMonitoringHostAudit(logger, {
+          extensionName: manifest.name,
+          organizationId: params?.organizationId ?? 'unknown',
+          method: 'cleanupProjectMonitoring',
+          outcome: 'invalid-params-denied',
+        })
+        throw new MonitoringResourceNotFoundError(
+          'cleanupProjectMonitoring',
+          'organizationId and projectId are required'
+        )
+      }
+
       return callOutOfRequestMethod(
         'cleanupProjectMonitoring',
         params.organizationId,
