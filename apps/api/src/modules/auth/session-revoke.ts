@@ -12,7 +12,7 @@ import { env } from '../../config/env.js'
 import { AppError } from '../../lib/errors.js'
 import { firstActorTokenIdForUser } from '../audit/actor-token.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
-import { computeAuditHmac } from '../audit/write-entry.js'
+import { computeAuditHmac, getPreviousEntryHmac, GENESIS_SENTINEL } from '../audit/write-entry.js'
 import { assertOrgMayWriteAuditGates, estimateAuditEntrySizeBytes } from '../audit/quota-gate.js'
 import { writeSystemAuditEntry } from '../audit/machine-entry.js'
 import { getAuditKey } from '../vault/key-service.js'
@@ -65,6 +65,14 @@ async function writeSessionRevokedAudit(
   }
 ): Promise<void> {
   await tx.execute(sql`SELECT set_config('app.current_org_id', ${fields.orgId}, true)`)
+  // Deliberately NOT using audit/write-entry.ts's readAuditChainHead() helper here: everywhere
+  // else, currentAuditKeyVersion() and getPreviousEntryHmac() are called back-to-back with
+  // nothing but pure/synchronous work between them, so consolidating the pair is a pure
+  // dedupe with no behavior change. Here they are NOT adjacent — actorTokenId's DB lookup and
+  // assertOrgMayWriteAuditGates() (which may throw, and which the advisory-lock-holding
+  // previous-row read should not precede) sit between them. Combining the two calls would move
+  // this keyVersion read to after the gate, which is an actual reordering, not just dedupe — out
+  // of scope for the jscpd fix.
   const keyVersion = await currentAuditKeyVersion(tx)
   const payload = {
     sessionId: fields.sessionId,
@@ -89,6 +97,10 @@ async function writeSessionRevokedAudit(
     eventType: AuditEvent.SESSION_REVOKED,
     sizeBytes: estimateAuditEntrySizeBytes({ payload }),
   })
+  const previousHmac = await getPreviousEntryHmac(tx, {
+    table: 'audit_log_entries',
+    orgId: fields.orgId,
+  })
   const hmac = computeAuditHmac(
     {
       orgId: fields.orgId,
@@ -97,6 +109,7 @@ async function writeSessionRevokedAudit(
       eventType: AuditEvent.SESSION_REVOKED,
       payload,
       keyVersion,
+      previousEntryHmac: previousHmac ?? GENESIS_SENTINEL,
     },
     getAuditKey()
   )
@@ -109,6 +122,7 @@ async function writeSessionRevokedAudit(
     payload,
     keyVersion,
     hmac,
+    previousEntryHmac: previousHmac,
   })
 }
 

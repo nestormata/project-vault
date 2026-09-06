@@ -23,7 +23,7 @@ import { createLoginSessionInTx } from '../auth/service.js'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from './key-version.js'
 import { writeHumanAuditEntry } from './human-entry.js'
-import { computeAuditHmac } from './write-entry.js'
+import { computeAuditHmac, getPreviousEntryHmac, GENESIS_SENTINEL } from './write-entry.js'
 import { AUDIT_VERIFY_MAX_RANGE_DAYS, AUDIT_VERIFY_MAX_ROWS } from './verify.js'
 import { AUDIT_EVENTS_MAX_OFFSET } from './routes.js'
 
@@ -35,7 +35,7 @@ type VerifyBody = {
   summary: string
   rowsChecked: number
   passed: number
-  failed: { id: string; eventType: string; timestamp: string }[]
+  failed: { id: string; eventType: string; timestamp: string; reason: string }[]
   failedCount: number
   failedTruncated: boolean
   verifiedAt: string
@@ -84,6 +84,10 @@ async function insertRawAuditRow(
 ): Promise<{ id: string; createdAt: Date }> {
   return withOrg(orgId, async (tx) => {
     const keyVersion = input.keyVersion ?? (await currentAuditKeyVersion(tx))
+    // Story 1.25 AC-2: a synthetic row must still chain correctly (previousEntryHmac threaded
+    // into the digest, or all of these "clean" synthetic rows now fail hmac_mismatch under the
+    // new chain-linked digest) — mirrors write-entry.ts's own getPreviousEntryHmac call exactly.
+    const previousHmac = await getPreviousEntryHmac(tx, { table: 'audit_log_entries', orgId })
     const hmac =
       input.hmac ??
       computeAuditHmac(
@@ -96,6 +100,7 @@ async function insertRawAuditRow(
           resourceType: undefined,
           payload: {},
           keyVersion,
+          previousEntryHmac: previousHmac ?? GENESIS_SENTINEL,
         },
         getAuditKey()
       )
@@ -108,6 +113,7 @@ async function insertRawAuditRow(
         payload: {},
         keyVersion,
         hmac,
+        previousEntryHmac: previousHmac,
       })
       .returning({ id: auditLogEntries.id, createdAt: auditLogEntries.createdAt })
     if (!row) throw new Error('expected synthetic audit row to be inserted')
@@ -223,6 +229,10 @@ describe.sequential('audit verify route', () => {
         id: tampered.id,
         eventType: CREDENTIAL_VALUE_REVEALED,
         timestamp: tampered.createdAt.toISOString(),
+        // Story 1.25 AC-3: this is a genuine hmac-only tamper (the row's own hmac column was
+        // overwritten, but its previousEntryHmac still correctly chains), so the new reason
+        // field must be 'hmac_mismatch', not 'chain_break'.
+        reason: 'hmac_mismatch',
       },
     ])
     expect(body.summary).toBe('3 of 4 records verified — 1 record failed integrity check')

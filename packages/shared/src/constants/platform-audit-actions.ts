@@ -38,6 +38,10 @@ export const PlatformAuditAction = {
   // Dual-written alongside AuditEvent.AUDIT_QUOTA_CONFIGURED in the target org's own log (one
   // transaction) — see apps/api/src/modules/audit/quota-config.ts.
   AUDIT_QUOTA_CONFIGURED: 'audit_quota.configured',
+  // Story 1.25 AC-4: written by platform-audit-retention-prune.ts, in the same transaction as
+  // the SECURITY DEFINER purge call, whenever a purge deletes rows AND orphans a still-surviving
+  // row's previous_entry_hmac — the platform-wide sibling of AuditEvent.RETENTION_PURGE_BOUNDARY.
+  RETENTION_PURGE_BOUNDARY: 'platform_audit.retention_purge_boundary',
 } as const
 
 export type PlatformAuditActionType = (typeof PlatformAuditAction)[keyof typeof PlatformAuditAction]

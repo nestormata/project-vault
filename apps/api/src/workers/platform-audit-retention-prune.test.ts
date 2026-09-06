@@ -2,9 +2,25 @@ import { describe, it, expect, vi } from 'vitest'
 
 const executeMock = vi.fn(async () => [{ deleted: '3' }])
 
+// Story 1.25 AC-4: prunePlatformAuditEvents now runs a `tx.select(...)` lookup (the
+// expectedGapHash capture) BEFORE calling the purge function. Stubbed here to resolve an empty
+// array by default — no survivor row found means expectedGapHash stays null, so the new
+// tombstone-write branch is never reached, keeping these pre-existing unit tests focused on the
+// purge-call/logging behavior they were written for. The tombstone-write path itself is covered
+// by a real-DB integration test (see platform-audit/verify-chain.test.ts).
+const selectMock = vi.fn(() => ({
+  from: () => ({
+    where: () => ({
+      orderBy: () => ({
+        limit: async () => [],
+      }),
+    }),
+  }),
+}))
+
 vi.mock('@project-vault/db', () => ({
   withPlatformOperatorContext: async (fn: (tx: unknown) => Promise<unknown>) =>
-    fn({ execute: executeMock }),
+    fn({ execute: executeMock, select: selectMock }),
 }))
 
 vi.mock('../config/env.js', () => ({

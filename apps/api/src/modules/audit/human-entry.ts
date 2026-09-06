@@ -2,8 +2,7 @@ import { sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { auditLogEntries } from '@project-vault/db/schema'
 import { getAuditKey } from '../vault/key-service.js'
-import { currentAuditKeyVersion } from './key-version.js'
-import { computeAuditHmac } from './write-entry.js'
+import { computeAuditHmac, readAuditChainHead, GENESIS_SENTINEL } from './write-entry.js'
 import { assertOrgMayWriteAuditGates, estimateAuditEntrySizeBytes } from './quota-gate.js'
 
 type RequestMeta = {
@@ -36,7 +35,10 @@ export async function writeHumanAuditEntry(tx: Tx, fields: HumanAuditFields): Pr
     sizeBytes: estimateAuditEntrySizeBytes(fields),
   })
   await tx.execute(sql`SELECT set_config('app.current_org_id', ${fields.orgId}, true)`)
-  const keyVersion = await currentAuditKeyVersion(tx)
+  // Story 1.25 AC-2: the advisory lock + previous-row read happen inside this same transaction,
+  // before the insert, so no concurrent writer for this org can observe (or extend past) the
+  // same "previous row" between this read and the insert below.
+  const { keyVersion, previousEntryHmac: previousHmac } = await readAuditChainHead(tx, fields.orgId)
   const hmac = computeAuditHmac(
     {
       orgId: fields.orgId,
@@ -47,6 +49,7 @@ export async function writeHumanAuditEntry(tx: Tx, fields: HumanAuditFields): Pr
       resourceType: fields.resourceType,
       payload: fields.payload,
       keyVersion,
+      previousEntryHmac: previousHmac ?? GENESIS_SENTINEL,
     },
     getAuditKey()
   )
@@ -61,6 +64,9 @@ export async function writeHumanAuditEntry(tx: Tx, fields: HumanAuditFields): Pr
     payload: fields.payload,
     keyVersion,
     hmac,
+    // Story 1.25 AC-2: the ACTUAL previous row's hmac (or null for genesis) — never the sentinel
+    // above, which exists only inside the HMAC digest input.
+    previousEntryHmac: previousHmac,
     ipAddress: fields.meta?.ipAddress ?? null,
     userAgent: fields.meta?.userAgent ?? null,
     revealedFields: fields.revealedFields ?? null,
