@@ -6,8 +6,11 @@ import { checkCapability, getCapabilityGate } from './capability-gate.js'
 import { recordCapabilityDeniedAudit } from './capability-gate-audit.js'
 import { requireMfaEnrollment } from '../modules/auth/mfa-enforcement.js'
 import { firstActorTokenIdForUser } from '../modules/audit/actor-token.js'
-import { currentAuditKeyVersion } from '../modules/audit/key-version.js'
-import { computeAuditHmac } from '../modules/audit/write-entry.js'
+import {
+  computeAuditHmac,
+  readAuditChainHead,
+  GENESIS_SENTINEL,
+} from '../modules/audit/write-entry.js'
 import {
   assertOrgMayWriteAuditGates,
   estimateAuditEntrySizeBytes,
@@ -326,7 +329,7 @@ async function defaultAuditWriter({
     throw new Error(`SecureRoute: missing audit resourceId param "${config.resourceIdFromParams}"`)
   }
   const actorTokenId = await firstActorTokenIdForUser(tx, auth.userId)
-  const keyVersion = await currentAuditKeyVersion(tx)
+  const { keyVersion, previousEntryHmac: previousHmac } = await readAuditChainHead(tx, auth.orgId)
   const fields = {
     orgId: auth.orgId,
     actorTokenId,
@@ -336,6 +339,7 @@ async function defaultAuditWriter({
     resourceType: config.resourceType,
     payload,
     keyVersion,
+    previousEntryHmac: previousHmac ?? GENESIS_SENTINEL,
   }
   const hmac = computeAuditHmac(fields, getAuditKey())
   // Story 22.1 AC-13 / 22.2 AC-4 (site 4 of 9 — the inline defaultAuditWriter insert). Rate gate
@@ -364,6 +368,7 @@ async function defaultAuditWriter({
     payload,
     keyVersion,
     hmac,
+    previousEntryHmac: previousHmac,
   })
 }
 

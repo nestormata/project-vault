@@ -1,9 +1,10 @@
-import { eq, sql } from 'drizzle-orm'
-import { auditRetentionConfig } from '@project-vault/db/schema'
-import { OperationalEvent } from '@project-vault/shared'
+import { and, eq, gte, sql } from 'drizzle-orm'
+import { auditLogEntries, auditRetentionConfig } from '@project-vault/db/schema'
+import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import type { FastifyBaseLogger } from 'fastify'
 import { operationalLog } from '../lib/logger.js'
 import { fetchAllOrgIds, runOrgScopedJob } from '../middleware/rls.js'
+import { writeSystemAuditEntry } from '../modules/audit/machine-entry.js'
 
 type WorkerLogger = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
 
@@ -30,10 +31,46 @@ export async function pruneExpiredAuditLogEntries(logger?: WorkerLogger): Promis
         if (!config || config.retentionDays === null) return
 
         const cutoff = new Date(Date.now() - config.retentionDays * MS_PER_DAY)
+
+        // Story 1.25 AC-4: capture, BEFORE the purge runs, the hash the gap will orphan — the
+        // oldest row that WILL survive the purge (org-scoped, chain_seq order) has its own
+        // previous_entry_hmac already pointing at whatever is about to be deleted. This value is
+        // exactly what verify.ts's chain-walk will need to recognize as an attested (not
+        // tampered) gap once the purge removes the rows that would otherwise satisfy it. If no
+        // such row exists, the purge is about to remove this org's ENTIRE history — no gap to
+        // attest (the next row this org ever writes will naturally compute a null/genesis
+        // previousEntryHmac via the ordinary empty-lookup path).
+        const [survivor] = await tx
+          .select({ previousEntryHmac: auditLogEntries.previousEntryHmac })
+          .from(auditLogEntries)
+          .where(and(eq(auditLogEntries.orgId, orgId), gte(auditLogEntries.createdAt, cutoff)))
+          .orderBy(auditLogEntries.chainSeq)
+          .limit(1)
+        const expectedGapHash = survivor?.previousEntryHmac ?? null
+
         const rows = await tx.execute(
           sql`SELECT purge_expired_audit_log_entries(${orgId}::uuid, ${cutoff.toISOString()}::timestamptz) AS deleted`
         )
         const deleted = Number((rows as unknown as { deleted: string }[])[0]?.deleted ?? 0)
+
+        // Story 1.25 AC-4: the tombstone is an ordinary chained row — its own previous_entry_hmac
+        // is computed the normal way (chaining onto the current tail), it has no special chain
+        // position. RETENTION_PURGE_BOUNDARY is in QUOTA_REMEDIATION_EVENT_TYPES (quota-gate.ts),
+        // so an over-quota org's purge can still record its own tombstone — confirmed directly
+        // that assertOrgMayWriteAuditGates would otherwise refuse this write for exactly the org
+        // retention pruning exists to relieve.
+        if (deleted > 0 && expectedGapHash !== null) {
+          await writeSystemAuditEntry(tx, {
+            orgId,
+            eventType: AuditEvent.RETENTION_PURGE_BOUNDARY,
+            payload: {
+              retentionDays: config.retentionDays,
+              cutoff: cutoff.toISOString(),
+              deletedCount: deleted,
+              attestedGapHash: expectedGapHash,
+            },
+          })
+        }
 
         if (logger) {
           operationalLog(

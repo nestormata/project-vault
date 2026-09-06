@@ -2,8 +2,7 @@ import { sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { auditLogEntries } from '@project-vault/db/schema'
 import { getAuditKey } from '../vault/key-service.js'
-import { currentAuditKeyVersion } from './key-version.js'
-import { computeAuditHmac } from './write-entry.js'
+import { computeAuditHmac, readAuditChainHead, GENESIS_SENTINEL } from './write-entry.js'
 import { assertOrgMayWriteAuditGates, estimateAuditEntrySizeBytes } from './quota-gate.js'
 
 type RequestMeta = {
@@ -49,7 +48,7 @@ export async function writeMachineAuditEntry(tx: Tx, fields: MachineAuditFields)
     sizeBytes: estimateAuditEntrySizeBytes({ ...fields, payload }),
   })
   await tx.execute(sql`SELECT set_config('app.current_org_id', ${fields.orgId}, true)`)
-  const keyVersion = await currentAuditKeyVersion(tx)
+  const { keyVersion, previousEntryHmac: previousHmac } = await readAuditChainHead(tx, fields.orgId)
   const hmac = computeAuditHmac(
     {
       orgId: fields.orgId,
@@ -60,6 +59,7 @@ export async function writeMachineAuditEntry(tx: Tx, fields: MachineAuditFields)
       resourceType: fields.resourceType,
       payload,
       keyVersion,
+      previousEntryHmac: previousHmac ?? GENESIS_SENTINEL,
     },
     getAuditKey()
   )
@@ -74,6 +74,7 @@ export async function writeMachineAuditEntry(tx: Tx, fields: MachineAuditFields)
     payload,
     keyVersion,
     hmac,
+    previousEntryHmac: previousHmac,
     ipAddress: fields.meta?.ipAddress ?? null,
     userAgent: fields.meta?.userAgent ?? null,
     revealedFields: fields.revealedFields ?? null,
@@ -101,7 +102,7 @@ export async function writeSystemAuditEntry(tx: Tx, fields: SystemAuditFields): 
     sizeBytes: estimateAuditEntrySizeBytes(fields),
   })
   await tx.execute(sql`SELECT set_config('app.current_org_id', ${fields.orgId}, true)`)
-  const keyVersion = await currentAuditKeyVersion(tx)
+  const { keyVersion, previousEntryHmac: previousHmac } = await readAuditChainHead(tx, fields.orgId)
   const hmac = computeAuditHmac(
     {
       orgId: fields.orgId,
@@ -112,6 +113,7 @@ export async function writeSystemAuditEntry(tx: Tx, fields: SystemAuditFields): 
       resourceType: fields.resourceType,
       payload: fields.payload,
       keyVersion,
+      previousEntryHmac: previousHmac ?? GENESIS_SENTINEL,
     },
     getAuditKey()
   )
@@ -126,6 +128,7 @@ export async function writeSystemAuditEntry(tx: Tx, fields: SystemAuditFields): 
     payload: fields.payload,
     keyVersion,
     hmac,
+    previousEntryHmac: previousHmac,
     ipAddress: null,
     userAgent: null,
   })

@@ -1,4 +1,15 @@
-import { pgTable, uuid, text, timestamp, jsonb, integer, index, check } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  uuid,
+  text,
+  timestamp,
+  jsonb,
+  integer,
+  bigint,
+  index,
+  uniqueIndex,
+  check,
+} from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { orgScoped } from './helpers.js'
 import { userIdentityTokens } from './user-identity-tokens.js'
@@ -30,6 +41,16 @@ export const auditLogEntries = pgTable(
     keyVersion: integer('key_version').notNull(),
     hmac: text('hmac').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // Story 1.25 (HIGH finding, chain-link audit HMACs): the previous row's `hmac` (per-org
+    // chain), NULL only for a chain's true genesis row (the lowest chain_seq for that org).
+    // Never rewritten after insert (immutability holds for this column too).
+    previousEntryHmac: text('previous_entry_hmac'),
+    // Story 1.25: true insertion-order sequence — NOT createdAt (see platform-audit-events.ts's
+    // identical column for why createdAt is unsafe as a chain-ordering key for its sibling
+    // table; audit_log_entries has no such drain feature today, but this story deliberately
+    // uses one ordering convention across both tables — see Dev Notes "Row ordering" section of
+    // story 1-25).
+    chainSeq: bigint('chain_seq', { mode: 'number' }).notNull().generatedAlwaysAsIdentity(),
     // NO updated_at: immutable table
   },
   (t) => ({
@@ -62,5 +83,10 @@ export const auditLogEntries = pgTable(
       'audit_log_entries_actor_type_check',
       sql`${t.actorType} IN ('human','machine_user','system','extension')`
     ),
+    // Story 1.25 AC-1: chain_seq must be unique (a GENERATED ALWAYS AS IDENTITY column is not
+    // implicitly unique in Postgres unless it's the primary key). Also serves as the ordering
+    // index for verify.ts's per-org chain walk (WHERE org_id = :orgId ORDER BY chain_seq).
+    chainSeqUniqueIdx: uniqueIndex('idx_audit_log_entries_chain_seq').on(t.chainSeq),
+    orgChainSeqIdx: index('idx_audit_log_entries_org_chain_seq').on(t.orgId, t.chainSeq),
   })
 )

@@ -23,7 +23,7 @@ import { isNativeLoginEnabled } from './native-login-policy.js'
 import { env } from '../../config/env.js'
 import { getAuditKey } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
-import { computeAuditHmac } from '../audit/write-entry.js'
+import { computeAuditHmac, readAuditChainHead, GENESIS_SENTINEL } from '../audit/write-entry.js'
 import { assertOrgMayWriteAuditGates, estimateAuditEntrySizeBytes } from '../audit/quota-gate.js'
 import { findErasedRequestForEmailGlobally } from '../compliance/erasure-lookup.js'
 import {
@@ -168,7 +168,7 @@ async function insertAuditEntry(
     eventType: fields.eventType,
     sizeBytes: estimateAuditEntrySizeBytes(fields),
   })
-  const keyVersion = await currentAuditKeyVersion(tx)
+  const { keyVersion, previousEntryHmac: previousHmac } = await readAuditChainHead(tx, fields.orgId)
   const hmac = computeAuditHmac(
     {
       orgId: fields.orgId,
@@ -177,6 +177,7 @@ async function insertAuditEntry(
       eventType: fields.eventType,
       payload: fields.payload,
       keyVersion,
+      previousEntryHmac: previousHmac ?? GENESIS_SENTINEL,
     },
     getAuditKey()
   )
@@ -189,6 +190,7 @@ async function insertAuditEntry(
     payload: fields.payload,
     keyVersion,
     hmac,
+    previousEntryHmac: previousHmac,
     ipAddress: fields.ipAddress ?? null,
     userAgent: fields.userAgent ?? null,
   })
