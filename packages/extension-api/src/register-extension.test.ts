@@ -209,6 +209,53 @@ describe('registerExtension — AC-4 default HostServices (no host argument supp
     expect(result.hooks).toEqual({})
     await expect(hostWriteAuditEvent?.()).rejects.toThrow(/without a real HostServices/)
   })
+
+  it('a hooksFactory that calls every default host.monitoring method gets a rejected promise for each, never a silent no-op (Story 34.1 AC1)', async () => {
+    let capturedHost: HostServices | undefined
+    const hooksFactory = vi.fn((host: HostServices): ExtensionHooks => {
+      capturedHost = host
+      return {}
+    })
+
+    registerExtension(manifest(), hooksFactory)
+    if (!capturedHost) throw new Error('hooksFactory did not capture a host')
+    const monitoring = capturedHost.monitoring
+
+    await expect(
+      monitoring.deleteServiceEndpoint({ serviceEndpointId: 'se_1', projectId: 'p_1' })
+    ).rejects.toThrow(/without a real HostServices/)
+    await expect(
+      monitoring.updateServiceEndpointPauseState({
+        serviceEndpointId: 'se_1',
+        projectId: 'p_1',
+        userId: 'u_1',
+        paused: true,
+      })
+    ).rejects.toThrow(/without a real HostServices/)
+    await expect(monitoring.getHealthDashboardData()).rejects.toThrow(/without a real HostServices/)
+    await expect(monitoring.enableStatusPage({ projectId: 'p_1', userId: 'u_1' })).rejects.toThrow(
+      /without a real HostServices/
+    )
+    await expect(monitoring.regenerateStatusPageToken({ projectId: 'p_1' })).rejects.toThrow(
+      /without a real HostServices/
+    )
+    await expect(monitoring.disableStatusPage({ projectId: 'p_1' })).rejects.toThrow(
+      /without a real HostServices/
+    )
+    await expect(
+      monitoring.applyHealthCheckResult({
+        organizationId: 'org_1',
+        serviceEndpoint: { id: 'se_1', orgId: 'org_1' },
+        isHealthy: true,
+        statusCode: 200,
+        latencyMs: 1,
+        failureReason: null,
+      })
+    ).rejects.toThrow(/without a real HostServices/)
+    await expect(
+      monitoring.cleanupProjectMonitoring({ organizationId: 'org_1', projectId: 'p_1' })
+    ).rejects.toThrow(/without a real HostServices/)
+  })
 })
 
 describe('registerExtension — hooksFactory laziness', () => {
