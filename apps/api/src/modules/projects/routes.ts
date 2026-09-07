@@ -21,7 +21,12 @@ import {
   type SecureRouteContext,
 } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
-import { projectMemberships, projects, users } from '@project-vault/db/schema'
+import {
+  extensionLifecycleEvents,
+  projectMemberships,
+  projects,
+  users,
+} from '@project-vault/db/schema'
 import { buildPaginationMeta, parsePagination, paginationOffset } from '../../lib/pagination.js'
 import {
   ActiveRotationsErrorSchema,
@@ -66,6 +71,7 @@ import { activeMachineUserKeysQuery } from '../machine-users/archival-check.js'
 import { getExtensionStatus } from '../../extensions/loader.js'
 import { operationalLog } from '../../lib/logger.js'
 import { raceWithTimeout } from '../../lib/race-with-timeout.js'
+import { EXTENSION_CALLOUT_TIMEOUT_MS } from '../../lib/extension-callout-timeout.js'
 
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
 const CREATION_REQUEST_CONFLICT = {
@@ -372,7 +378,9 @@ async function readProjectCount(secureCtx: SecureRouteContext): Promise<number> 
 // `module-action-handler.ts`'s own MODULE_ACTION_TIMEOUT_MS choice to reuse that same interim
 // numeric default rather than invent a new one. Project creation is a user-initiated, not
 // high-frequency, hot path — the same rationale that justified reusing it for onAction().
-const PROJECT_CREATE_POLICY_TIMEOUT_MS = 10_000
+// Story 35.1 Task 4 — extracted to `lib/extension-callout-timeout.ts` so the new
+// extension-lifecycle-notify.ts worker can reuse the exact same value, not reinvent it.
+const PROJECT_CREATE_POLICY_TIMEOUT_MS = EXTENSION_CALLOUT_TIMEOUT_MS
 
 const PROJECT_CREATION_NOT_PERMITTED = {
   code: 'project_creation_not_permitted',
@@ -446,6 +454,31 @@ async function evaluateProjectCreatePolicy(
   // AC2/Failure Mode Analysis: the SAME denial shape a timeout/throw produces — the hook's own
   // explicit denial is never distinguished from a degraded-state denial on the wire.
   return PROJECT_CREATION_NOT_PERMITTED
+}
+
+// Story 35.1 Design Decision 4/Task 3/AC2 — inserts exactly one `extension_lifecycle_events` row
+// (eventType: 'project_archived', status: 'pending') in the SAME transaction as the archivedAt
+// UPDATE + the audit write immediately preceding the call site. If the enclosing transaction
+// rolls back for any reason (e.g. the audit write's own fail-closed path), this row is rolled
+// back with it — the notification-owed record is exactly as durable as the archive itself. No
+// hook call happens synchronously here or anywhere else in-request (AC5) — a background worker
+// (apps/api/src/workers/extension-lifecycle-notify.ts) reads this row later.
+async function insertProjectArchivedLifecycleEvent(
+  tx: SecureRouteContext['tx'],
+  input: { orgId: string; projectId: string; archivedAt: Date; archivedByUserId: string }
+): Promise<void> {
+  await tx.insert(extensionLifecycleEvents).values({
+    orgId: input.orgId,
+    projectId: input.projectId,
+    eventType: 'project_archived',
+    payload: {
+      organizationId: input.orgId,
+      projectId: input.projectId,
+      archivedAt: input.archivedAt.toISOString(),
+      archivedByUserId: input.archivedByUserId,
+    },
+    status: 'pending',
+  })
 }
 
 async function resolveProjectSlug(
@@ -1274,6 +1307,15 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
         // distinguish "acted as project owner" from "acted via org-owner override".
         payload: { authorizedVia },
         request: req,
+      })
+
+      // Story 35.1 AC2 — same transaction as the archivedAt UPDATE + audit write above; rolls
+      // back with them if anything downstream still fails before commit.
+      await insertProjectArchivedLifecycleEvent(secureCtx.tx, {
+        orgId: secureCtx.auth.orgId,
+        projectId: archived.id,
+        archivedAt: archived.archivedAt ?? new Date(),
+        archivedByUserId: secureCtx.auth.userId,
       })
 
       return {

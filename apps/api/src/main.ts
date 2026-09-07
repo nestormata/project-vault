@@ -18,6 +18,12 @@ import { pruneTotpUsedCodes } from './workers/prune-totp-used-codes.js'
 import { prunePendingMfaSessions } from './workers/prune-pending-mfa-sessions.js'
 import { checkFailedAuthThresholdHandler } from './workers/check-failed-auth-threshold.js'
 import { checkAnomalousAccessHandler } from './workers/check-anomalous-access.js'
+import {
+  EXTENSION_LIFECYCLE_NOTIFY_JOB_NAME,
+  EXTENSION_LIFECYCLE_PURGE_JOB_NAME,
+  extensionLifecycleNotifyJobHandler,
+  extensionLifecyclePurgeJobHandler,
+} from './workers/extension-lifecycle-notify.js'
 import { healthCheckTickHandler } from './workers/monitoring-health-check.js'
 import { pruneFailedAuthAttempts } from './workers/prune-failed-auth-attempts.js'
 import { pruneCredentialVersions } from './workers/prune-credential-versions.js'
@@ -192,6 +198,13 @@ async function main(): Promise<void> {
       'security/check-failed-auth-threshold': { cron: '* * * * *' },
       'security/check-anomalous-access': { cron: '* * * * *' },
       'monitoring/health-check': { cron: '* * * * *' },
+      // Story 35.1 Task 4 — same 1-minute cadence as the sibling security/monitoring poll jobs
+      // above; a pending row's own bounded attempt cap + exponential nothing (fixed cadence,
+      // mirrors notification-deliver-catchup's own simple periodic re-check) bounds retry load.
+      [EXTENSION_LIFECYCLE_NOTIFY_JOB_NAME]: { cron: '* * * * *' },
+      // Task 4 Operational Considerations — resolved-row retention purge; low-frequency, mirrors
+      // the daily cadence of this file's other prune/cleanup jobs.
+      [EXTENSION_LIFECYCLE_PURGE_JOB_NAME]: { cron: '0 4 * * *' },
       'security/prune-failed-auth-attempts': { cron: '0 2 * * *' },
       'credentials/prune-versions': { cron: '0 3 * * *' },
       [ROTATION_BREAK_GLASS_EXPIRE_JOB]: { cron: '* * * * *' },
@@ -264,6 +277,8 @@ async function main(): Promise<void> {
       'security/check-failed-auth-threshold': () => checkFailedAuthThresholdHandler(boss),
       'security/check-anomalous-access': () => checkAnomalousAccessHandler(boss),
       'monitoring/health-check': () => healthCheckTickHandler(boss, fastify.log),
+      [EXTENSION_LIFECYCLE_NOTIFY_JOB_NAME]: () => extensionLifecycleNotifyJobHandler(fastify.log),
+      [EXTENSION_LIFECYCLE_PURGE_JOB_NAME]: () => extensionLifecyclePurgeJobHandler(fastify.log),
       'security/prune-failed-auth-attempts': (job) =>
         withJobLogging(
           fastify.log,

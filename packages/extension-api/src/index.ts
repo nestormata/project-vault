@@ -64,6 +64,8 @@ export {
   MonitoringResourceNotFoundError,
 } from './hooks/monitoring.js'
 export type {
+  ProjectArchivedContext,
+  ProjectArchiveNotifier,
   ProjectCreateDecision,
   ProjectCreatePolicy,
   ProjectCreatePolicyContext,

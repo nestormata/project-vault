@@ -14,6 +14,7 @@ const INCOMPATIBLE_API_VERSION = '4.0.0'
 const INCOMPATIBLE_VERSION_REASON: ExtensionRegistrationErrorReason = 'incompatible-version'
 const INVALID_NAME_REASON: ExtensionRegistrationErrorReason = 'invalid-name'
 const PROJECT_LIFECYCLE_CAPABILITY = 'project-lifecycle' as const
+const PROJECT_ARCHIVE_NOTIFY_CAPABILITY = 'project-archive-notify' as const
 // Story 25.12 — used by the "declared without ui-panel in capabilities" rejection test in each
 // of the uiPanelSlots/moduleActions/panelDataPaths describe blocks below; a shared constant
 // avoids sonarjs/no-duplicate-string tripping on this literal repeated a 3rd time.
@@ -128,6 +129,70 @@ describe('registerExtension — AC4 (compatible manifest)', () => {
         () => ({ projectLifecycle: {} }) as ExtensionHooks
       )
     ).toThrow(/project-lifecycle/)
+  })
+
+  // Story 35.1 AC1/Task 6 — mirrors the project-lifecycle describe block immediately above, for
+  // the independent 'project-archive-notify' capability/projectArchiveNotifier hook pair.
+  it('requires the projectArchiveNotifier hook when "project-archive-notify" is declared', () => {
+    expect(() =>
+      registerExtension(
+        manifest({ capabilities: [PROJECT_ARCHIVE_NOTIFY_CAPABILITY] }),
+        makeHooksFactory()
+      )
+    ).toThrow(/project-archive-notify/)
+
+    const hooksFactory = vi.fn(() => ({
+      projectArchiveNotifier: {
+        onProjectArchived: async () => undefined,
+      },
+    }))
+    expect(
+      registerExtension(
+        manifest({ capabilities: [PROJECT_ARCHIVE_NOTIFY_CAPABILITY] }),
+        hooksFactory
+      ).hooks.projectArchiveNotifier
+    ).toBeDefined()
+  })
+
+  it('rejects a malformed projectArchiveNotifier hook during registration', () => {
+    expect(() =>
+      registerExtension(
+        manifest({ capabilities: [PROJECT_ARCHIVE_NOTIFY_CAPABILITY] }),
+        () => ({ projectArchiveNotifier: {} }) as ExtensionHooks
+      )
+    ).toThrow(/project-archive-notify/)
+  })
+
+  it('declaring "project-lifecycle" does not require projectArchiveNotifier, and vice versa (independent capabilities)', () => {
+    // project-lifecycle alone: no projectArchiveNotifier required.
+    const lifecycleOnlyFactory = vi.fn(() => ({
+      projectLifecycle: { onBeforeCreateProject: async () => ({ permitted: true as const }) },
+    }))
+    expect(() =>
+      registerExtension(
+        manifest({ capabilities: [PROJECT_LIFECYCLE_CAPABILITY] }),
+        lifecycleOnlyFactory
+      )
+    ).not.toThrow()
+
+    // project-archive-notify alone: no projectLifecycle required.
+    const archiveNotifyOnlyFactory = vi.fn(() => ({
+      projectArchiveNotifier: { onProjectArchived: async () => undefined },
+    }))
+    expect(() =>
+      registerExtension(
+        manifest({ capabilities: [PROJECT_ARCHIVE_NOTIFY_CAPABILITY] }),
+        archiveNotifyOnlyFactory
+      )
+    ).not.toThrow()
+  })
+
+  // Story 35.1 AC1 edge case — an extension built against the previous @project-vault/extension-api
+  // version (no projectArchiveNotifier field) continues to load and run unaffected.
+  it('backward-compatible: an extension with no projectArchiveNotifier/no "project-archive-notify" capability loads unaffected', () => {
+    const hooksFactory = vi.fn(() => ({}))
+    const result = registerExtension(manifest(), hooksFactory)
+    expect(result.hooks.projectArchiveNotifier).toBeUndefined()
   })
 })
 
@@ -299,7 +364,7 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each(['3.13.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
+  it.each(['3.14.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
     'rejects canonical version outside %s',
     (apiVersion) => {
       const hooksFactory = makeHooksFactory()
@@ -336,18 +401,18 @@ describe('registerExtension — concrete canonical version gate', () => {
   it('allows only the above-host same-major rollback escape', () => {
     // Story 25.3 AC1/Task 1, Story 25.4 AC4/Task 4, Story 25.5 AC2/Task 1, Story 25.8 AC1/Task 1,
     // Story 20.8, Story 25.12 AC2/Task 2, Story 29.3 AC8/Task 1, Story 29.4 AC6/Task 1, Story
-    // 20.11 AC1, and Story 34.1 AC1/AC9 — host EXTENSION_API_VERSION is now 3.12.0 (see
-    // manifest.ts's EXTENSION_API_VERSION doc comment for why this merge moves past
-    // 3.2.0/3.3.0/3.4.0/3.6.0/3.7.0/3.8.0/3.9.0/3.10.0/3.11.0, which Story
-    // 25.3/25.4/25.5/25.9/20.8/25.12/29.3/29.4/20.11 respectively already claimed on main for
-    // different additive changes); '3.13.0' is the above-host, same-major escape-eligible
+    // 20.11 AC1, Story 34.1 AC1/AC9, and Story 35.1 AC1 — host EXTENSION_API_VERSION is now
+    // 3.13.0 (see manifest.ts's EXTENSION_API_VERSION doc comment for why this merge moves past
+    // 3.2.0/3.3.0/3.4.0/3.6.0/3.7.0/3.8.0/3.9.0/3.10.0/3.11.0/3.12.0, which Story
+    // 25.3/25.4/25.5/25.9/20.8/25.12/29.3/29.4/20.11/34.1 respectively already claimed on main
+    // for different additive changes); '3.14.0' is the above-host, same-major escape-eligible
     // version, and '4.0.0' is a different major (never escape-eligible). Kept one minor version
     // above whatever EXTENSION_API_VERSION currently is — see loader.test.ts's identical comment.
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.13.0' }), makeHooksFactory())
+      registerExtension(manifest({ apiVersion: '3.14.0' }), makeHooksFactory())
     ).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.13.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '3.14.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()

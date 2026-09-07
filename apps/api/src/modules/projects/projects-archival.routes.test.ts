@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
-import { projects } from '@project-vault/db/schema'
+import { extensionLifecycleEvents, projects } from '@project-vault/db/schema'
+import type { ExtensionHooks, ExtensionManifest } from '@project-vault/extension-api'
+import {
+  __resetExtensionStateForTests,
+  __setExtensionStateForTests,
+} from '../../extensions/loader.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 import { createMembershipTestHelpers } from '../../__tests__/helpers/membership-test-helpers.js'
 import {
@@ -78,6 +83,17 @@ async function currentArchivedAt(orgId: string, projectId: string): Promise<Date
   return rows[0]?.archivedAt ?? null
 }
 
+// Story 35.1 AC2 — asserts the `extension_lifecycle_events` row(s) for one project, scoped by org
+// (RLS-respecting withOrg, matching this file's own currentArchivedAt convention).
+async function extensionLifecycleEventsFor(orgId: string, projectId: string) {
+  return withOrg(orgId, (tx) =>
+    tx
+      .select()
+      .from(extensionLifecycleEvents)
+      .where(eq(extensionLifecycleEvents.projectId, projectId))
+  )
+}
+
 describe.sequential('project archival routes (4.4)', () => {
   let app: TestApp
 
@@ -103,6 +119,25 @@ describe.sequential('project archival routes (4.4)', () => {
       expect(body.data.id).toBe(projectId)
       expect(body.data.isArchived).toBe(true)
       expect(new Date(body.data.archivedAt).toISOString()).toBe(body.data.archivedAt)
+
+      // Story 35.1 AC2 — exactly one pending extension_lifecycle_events row, scoped to the
+      // archiving org, inserted in the same transaction as the archivedAt UPDATE.
+      const events = await extensionLifecycleEventsFor(owner.orgId, projectId)
+      expect(events).toHaveLength(1)
+      expect(events[0]).toMatchObject({
+        orgId: owner.orgId,
+        projectId,
+        eventType: 'project_archived',
+        status: 'pending',
+        attemptCount: 0,
+        deliveredAt: null,
+      })
+      expect(events[0]?.payload).toMatchObject({
+        organizationId: owner.orgId,
+        projectId,
+        archivedByUserId: owner.userId,
+      })
+      expect(typeof (events[0]?.payload as { archivedAt?: unknown })?.archivedAt).toBe('string')
 
       const defaultList = await listProjects(app, owner.cookies)
       expect(defaultList.statusCode).toBe(200)
@@ -243,8 +278,69 @@ describe.sequential('project archival routes (4.4)', () => {
         const res = await archiveProject(app, owner.cookies, projectId)
         expectAuditWriteFailed(res)
         expect(await currentArchivedAt(owner.orgId, projectId)).toBeNull()
+        // Story 35.1 AC2 edge case — the audit write's own fail-closed path rolls back the WHOLE
+        // transaction, so no extension_lifecycle_events row is left behind either.
+        expect(await extensionLifecycleEventsFor(owner.orgId, projectId)).toHaveLength(0)
       } finally {
         auditSpy.mockRestore()
+      }
+    })
+
+    it('409 already_archived double-archive race inserts exactly one extension_lifecycle_events row, not two (AC2)', async () => {
+      const owner = await registerOwner(app, 'archive-race-events')
+      const projectId = await createProject(app, owner.cookies, 'archive-race-events')
+
+      const first = await archiveProject(app, owner.cookies, projectId)
+      expect(first.statusCode).toBe(200)
+      const second = await archiveProject(app, owner.cookies, projectId)
+      expect(second.statusCode).toBe(409)
+
+      const events = await extensionLifecycleEventsFor(owner.orgId, projectId)
+      expect(events).toHaveLength(1)
+    })
+
+    // Story 35.1 Task 5/AC5 — proves the archive route's own response time/status is unaffected
+    // by a never-resolving projectArchiveNotifier hook. Structural, not just timing-based: the
+    // route only ever inserts the outbox row (Task 3) — it never imports, references, or awaits
+    // `projectArchiveNotifier` at all, so a hanging hook has no code path in the request handler
+    // that could ever observe it. A loaded extension whose hook never resolves is set up here
+    // purely to prove that a real, "worse case" hook is still never reached synchronously.
+    it('archive route response is unaffected by a never-resolving projectArchiveNotifier hook (AC5)', async () => {
+      const onProjectArchived = vi.fn(() => new Promise<void>(() => undefined))
+      const manifest: ExtensionManifest = {
+        name: 'com.acme.archive-notify-hang',
+        apiVersion: '1.5.0',
+        capabilities: ['project-archive-notify'],
+      }
+      const hooks: ExtensionHooks = { projectArchiveNotifier: { onProjectArchived } }
+      __setExtensionStateForTests({
+        status: 'loaded',
+        manifest,
+        loadedAt: new Date().toISOString(),
+        hooks,
+      })
+
+      try {
+        const owner = await registerOwner(app, 'archive-hang-isolated')
+        const projectId = await createProject(app, owner.cookies, 'archive-hang-isolated')
+
+        const start = Date.now()
+        const res = await archiveProject(app, owner.cookies, projectId)
+        const elapsedMs = Date.now() - start
+
+        expect(res.statusCode).toBe(200)
+        // A generous ceiling well under the 10s extension-callout timeout the background worker
+        // (never invoked by this request) would apply — the request never awaits the hook at
+        // all, so it should return in ordinary request-handling time, not "eventually, after the
+        // hook degrades."
+        expect(elapsedMs).toBeLessThan(2_000)
+        expect(onProjectArchived).not.toHaveBeenCalled()
+
+        const events = await extensionLifecycleEventsFor(owner.orgId, projectId)
+        expect(events).toHaveLength(1)
+        expect(events[0]?.status).toBe('pending')
+      } finally {
+        __resetExtensionStateForTests()
       }
     })
   })

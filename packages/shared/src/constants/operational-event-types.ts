@@ -291,6 +291,21 @@ export const OperationalEvent = {
   // fixed-enum `subReason` only, same never-leak-internal-detail discipline as
   // EXTENSION_UI_PANEL_UNAVAILABLE/EXTENSION_MODULE_ACTION_FAILED above.
   EXTENSION_MODULE_DATA_ROUTE_FAILED: 'extension.module_data_route_failed',
+  // Story 35.1 AC3 (Security Audit Personas finding) — one structured log entry per background
+  // worker dispatch ATTEMPT of `projectArchiveNotifier.onProjectArchived()` (success, timeout, or
+  // thrown), not only terminal exhaustion — mirrors Story 34.1's AC3(c) "log every call, not just
+  // failures" precedent. Never carries the hook's raw exception message/stack — fixed-enum
+  // `outcome` only, same never-leak-internal-detail discipline as EXTENSION_PROJECT_LIFECYCLE_FAILED.
+  EXTENSION_PROJECT_ARCHIVE_NOTIFY_ATTEMPT: 'extension.project_archive_notify_attempt',
+  // Story 35.1 AC3 edge case — a pending `extension_lifecycle_events` row exhausted its bounded
+  // attempt cap and transitioned to terminal `failed` without ever being delivered. This is a
+  // real, silent-data-loss risk if unmonitored (the extension never learned the project archived)
+  // — operators must alert on this event, not just the per-attempt log above.
+  EXTENSION_PROJECT_ARCHIVE_NOTIFY_EXHAUSTED: 'extension.project_archive_notify_exhausted',
+  // Story 35.1 Task 4 (Cascading Failure Simulation finding) — one per-poll-cycle "oldest
+  // pending row age" line so a systemic extension outage (many rows quietly accumulating in
+  // `pending`) is visible before any individual row's own attempt cap is exhausted.
+  EXTENSION_PROJECT_ARCHIVE_NOTIFY_POLL_CYCLE: 'extension.project_archive_notify_poll_cycle',
 
   // Story 23.2: native-login-exclusion policy (apps/api/src/modules/auth/native-login-policy.ts).
   // AC-4a: fires on EVERY boot while the declared extension has never proven a successful
