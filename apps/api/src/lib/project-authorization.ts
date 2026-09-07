@@ -13,12 +13,7 @@ import { resolveEffectiveProjectRoleForOrgRole } from '../modules/projects/proje
 import { roleRank } from './secure-route.js'
 import { operationalLog } from './logger.js'
 import { getRequestContext } from './request-context.js'
-
-const RECOGNIZED_MINIMUM_ROLES = new Set<string>(['owner', 'admin', 'member', 'viewer'])
-
-function isRecognizedOrgRole(value: string): value is OrgRole {
-  return RECOGNIZED_MINIMUM_ROLES.has(value)
-}
+import { isRecognizedOrgRole } from './authorization-role-check.js'
 
 // ---------------------------------------------------------------------------------------------
 // AC5 — per-extension rate-limiting, a THIRD, fully independent in-flight accounting map/budget

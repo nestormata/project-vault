@@ -9,12 +9,7 @@ import type { OrgRole } from '../plugins/require-org-role.js'
 import { roleRank } from './secure-route.js'
 import { operationalLog } from './logger.js'
 import { getRequestContext } from './request-context.js'
-
-const RECOGNIZED_MINIMUM_ROLES = new Set<string>(['owner', 'admin', 'member', 'viewer'])
-
-function isRecognizedOrgRole(value: string): value is OrgRole {
-  return RECOGNIZED_MINIMUM_ROLES.has(value)
-}
+import { isRecognizedOrgRole } from './authorization-role-check.js'
 
 // ---------------------------------------------------------------------------------------------
 // AC8 (Task 5) — per-extension rate-limiting, mirroring capability-gate.ts's
