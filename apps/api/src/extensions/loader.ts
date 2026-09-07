@@ -28,6 +28,7 @@ import { raceWithTimeout as sharedRaceWithTimeout } from '../lib/race-with-timeo
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 import { writeExtensionAuditEventForManifest } from '../lib/audit-event-source.js'
 import { checkOrgAuthorization } from '../lib/org-authorization.js'
+import { checkProjectAuthorization } from '../lib/project-authorization.js'
 import { createEphemeralStateHost } from '../lib/ephemeral-state.js'
 import { buildMonitoringHost } from '../lib/monitoring-host.js'
 import { buildNotificationOriginatorHost } from '../lib/notification-originator-host.js'
@@ -246,14 +247,29 @@ async function buildHostServices(
       writeAuditEvent: (input) => writeExtensionAuditEventForManifest(manifest, input),
     },
     // Story 23.9 AC1/Task 2: bound once at extension-load time, same as auditEventSource above.
-    // Safe to reuse across requests — organizationId/viewerIdentityId are explicit call params
-    // (never resolved ambiently), and checkOrgAuthorization() itself never caches (AC5).
+    // Safe to reuse across requests — viewerIdentityId is an explicit call param, while the org
+    // itself is resolved ambiently via getRequestContext() (Story 23.11 AC3) rather than a
+    // caller-supplied field; checkOrgAuthorization() itself never caches (AC5).
     // Story 23.9 AC8 (Task 5): `extensionName`/`logger` are host-only accounting/audit context,
     // bound to this loaded extension's own manifest name — never part of the extension-facing
     // `checkMembership(context)` call signature the extension itself invokes.
     orgAuthorization: {
       checkMembership: (context) =>
         checkOrgAuthorization(context, { extensionName: manifest.name, logger }),
+    },
+    // Story 37.1 AC7: a new, structurally separate hook from orgAuthorization above — answers
+    // "is this identity a member of this specific PROJECT at this role or above," backed by
+    // project_memberships and effectiveProjectRole()'s org-owner/admin-bypass semantics. Same
+    // bound-once-at-load-time/never-cached-across-calls discipline; `projectId` stays an explicit
+    // call param (no ambient project-bearing context exists to resolve it from — see
+    // lib/project-authorization.ts's doc comment), while the org context is resolved ambiently
+    // exactly like orgAuthorization. `extensionName`/`logger` are the same kind of host-only
+    // accounting/audit context as orgAuthorization's own, but backed by a fully separate rate-limit
+    // budget and audit-log event (AC5/AC6) — never sharing orgAuthorization's or
+    // capability-gate's.
+    projectAuthorization: {
+      checkProjectMembership: (context) =>
+        checkProjectAuthorization(context, { extensionName: manifest.name, logger }),
     },
     // Story 20.8 — bound once at extension-load time, same as auditEventSource/orgAuthorization
     // above (see this story's Dev Notes "Construction Lifecycle" section: Story 23.11 shipped an

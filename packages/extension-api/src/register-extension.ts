@@ -106,6 +106,14 @@ const DEFAULT_HOST_SERVICES: HostServices = {
         )
       ),
   },
+  projectAuthorization: {
+    checkProjectMembership: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — projectAuthorization.checkProjectMembership is unavailable'
+        )
+      ),
+  },
   ephemeralState: {
     set: () =>
       Promise.reject(

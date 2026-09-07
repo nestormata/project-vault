@@ -3,6 +3,7 @@ import type { OrgAuthorizationHost } from './hooks/org-authorization.js'
 import type { EphemeralStateHost } from './hooks/ephemeral-state.js'
 import type { PvMonitoringHost } from './hooks/monitoring.js'
 import type { NotificationOriginatorHost } from './hooks/notification-originator.js'
+import type { ProjectAuthorizationHost } from './hooks/project-authorization.js'
 
 /**
  * Story 23.8 AC-4 — the new injected-context channel `hooksFactory()` receives at load time.
@@ -33,4 +34,11 @@ export type HostServices = {
    * `ExtensionCapability` — see `hooks/notification-originator.ts`'s doc comment for the full
    * naming-collision disambiguation. */
   notificationOriginator: NotificationOriginatorHost
+  /** Story 37.1 — bound once at extension-load time, same as every field above. Its one method,
+   * `checkProjectMembership()`, answers "is this identity a member of this specific project at
+   * this role or above" — a project-scoped sibling of `orgAuthorization`, not an extension of it
+   * (see `hooks/project-authorization.ts`'s doc comment for why a dedicated field). Reuses PV's
+   * own `project_memberships`-backed `effectiveProjectRole()` semantics (org-owner/admin bypass,
+   * explicit-row fallback) so its answer matches what PV's own project routes already enforce. */
+  projectAuthorization: ProjectAuthorizationHost
 }

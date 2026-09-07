@@ -24,6 +24,29 @@ export async function callerCanSeeProject(
 }
 
 /**
+ * Story 4.5 D4/AC-P1, story 37.1 AC2.2: the shared bypass + fallback DECISION at the heart of
+ * "effective project role" — org owner/admin always use their own org role unconditionally
+ * (the bypass never consults any `project_memberships` row); otherwise the explicit project role
+ * if one was found, else the org role.
+ *
+ * Deliberately takes the already-resolved `orgRole`/`membershipRole` as primitives rather than a
+ * `SecureRouteContext` or a `tx`, and deliberately does NOT query `project_memberships` itself —
+ * callers each fetch that row via whatever query shape their own cross-tenant-safety invariants
+ * require (this module's `effectiveProjectRole()` via a standalone `getProjectMembershipRole()`
+ * call; `project-authorization.ts`'s hook via a single `projects LEFT JOIN project_memberships`
+ * query that must stay the ONLY query on that path — see that module's AC3.2 doc comment). This
+ * keeps the genuinely-identical bypass+fallback logic shared in one place without forcing a
+ * second DB round-trip on either caller.
+ */
+export function resolveEffectiveProjectRoleForOrgRole(input: {
+  orgRole: OrgRole
+  membershipRole: OrgRole | undefined
+}): OrgRole {
+  if (isOrgAdminOrOwner(input.orgRole)) return input.orgRole
+  return input.membershipRole ?? input.orgRole
+}
+
+/**
  * Story 4.5 D4/AC-P1: effective role for value-reveal / version-create gates.
  * Org owner/admin always use their org role; otherwise project role if present, else org role.
  */
@@ -31,13 +54,19 @@ export async function effectiveProjectRole(
   secureCtx: SecureRouteContext,
   projectId: string
 ): Promise<OrgRole> {
+  // Short-circuit: org owner/admin never needs the `project_memberships` row at all — skip the
+  // query entirely rather than fetching a row `resolveEffectiveProjectRoleForOrgRole()` would
+  // discard anyway.
   if (isOrgAdminOrOwner(secureCtx.auth.orgRole)) return secureCtx.auth.orgRole
   const projectRole = await getProjectMembershipRole(secureCtx.tx, {
     orgId: secureCtx.auth.orgId,
     projectId,
     userId: secureCtx.auth.userId,
   })
-  return (projectRole as OrgRole | undefined) ?? secureCtx.auth.orgRole
+  return resolveEffectiveProjectRoleForOrgRole({
+    orgRole: secureCtx.auth.orgRole,
+    membershipRole: projectRole as OrgRole | undefined,
+  })
 }
 
 /** Structured denial log for the new visibility gate (AC-V10). */
