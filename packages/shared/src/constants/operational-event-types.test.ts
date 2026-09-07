@@ -155,6 +155,15 @@ describe('OperationalEvent', () => {
     )
   })
 
+  it('exposes the Story 36.1 notification-originator-host event types', () => {
+    expect(OperationalEvent.NOTIFICATION_ORIGINATOR_HOST_CALL_RECORDED).toBe(
+      'notification_originator_host.call_recorded'
+    )
+    expect(OperationalEvent.NOTIFICATION_ORIGINATOR_HOST_RATE_LIMITED).toBe(
+      'notification_originator_host.rate_limited'
+    )
+  })
+
   it('exposes the Story 16.1 theme-reload event types (AC-2, AC-7 fanout)', () => {
     expect(OperationalEvent.THEME_DIRECTORY_UNREADABLE).toBe('theme.directory_unreadable')
     expect(OperationalEvent.THEME_RELOAD_SUMMARY).toBe('theme.reload_summary')

@@ -82,6 +82,18 @@ export type {
   DeliveryStatusEvent,
   DeliveryStatusValue,
 } from './hooks/delivery-provider.js'
+export type {
+  NotificationOriginatorChannel,
+  NotificationOriginatorEnqueueParams,
+  NotificationOriginatorEnqueueResult,
+  NotificationOriginatorHost,
+} from './hooks/notification-originator.js'
+export {
+  NotificationOriginatorInvalidParamsError,
+  NotificationOriginatorInvalidRecipientError,
+  NotificationOriginatorNoAmbientContextError,
+  NotificationOriginatorRateLimitedError,
+} from './hooks/notification-originator.js'
 
 export type { HostServices } from './host-services.js'
 export type {

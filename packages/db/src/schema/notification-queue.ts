@@ -40,6 +40,12 @@ export const notificationQueue = pgTable(
     providerId: text('provider_id'),
     providerMessageId: text('provider_message_id'),
     lastEventAt: timestamp('last_event_at', { withTimezone: true }),
+    // Story 36.1 Design Decision 2 — additive, nullable, no default. `null` for every
+    // PV-internal row (byte-identical to today's rows) — it is set ONLY when this row was
+    // inserted via `HostServices.notificationOriginator.enqueueNotification()`, to the calling
+    // extension's own manifest name. Archive-vs-delete-style honesty callout: `null` here means
+    // "PV-internal," never "unknown" — there is no third state.
+    originExtensionName: text('origin_extension_name'),
   },
   (t) => ({
     channelCheck: check(
@@ -59,5 +65,13 @@ export const notificationQueue = pgTable(
       .on(t.orgId, t.status)
       .where(sql`${t.status} = 'pending'`),
     createdAtIdx: index('idx_notification_queue_created_at').on(t.createdAt),
+    // Story 36.1 AC5 Pre-Mortem finding — covers the rolling-window rate-cap COUNT query
+    // (`WHERE origin_extension_name = ? AND org_id = ? AND created_at > ?`), partial on
+    // `origin_extension_name IS NOT NULL` since every PV-internal row (the overwhelming
+    // majority) never matches this predicate at all, mirroring `idx_notification_queue_pending`'s
+    // own partial-index shape.
+    originExtensionRateLimitIdx: index('idx_notification_queue_origin_extension_rate_limit')
+      .on(t.originExtensionName, t.orgId, t.createdAt)
+      .where(sql`${t.originExtensionName} IS NOT NULL`),
   })
 )

@@ -21,6 +21,10 @@ const PROJECT_ARCHIVE_NOTIFY_CAPABILITY = 'project-archive-notify' as const
 const AUDIT_EVENT_SOURCE_CAPABILITY = 'audit-event-source' as const
 // Story 25.12 AC2 — the panelDataPaths describe block's own recurring example path template.
 const ORG_USERS_DATA_PATH = '/api/v1/org/users'
+// Story 34.1/36.1 — the "capture the real host, then assert against its default-rejecting
+// fields" tests' shared guard-clause message; a constant avoids sonarjs/no-duplicate-string
+// tripping on this literal repeated a 3rd time.
+const HOOKS_FACTORY_DID_NOT_CAPTURE_HOST = 'hooksFactory did not capture a host'
 
 function manifest(overrides: Partial<ExtensionManifest> = {}): ExtensionManifest {
   return {
@@ -283,7 +287,7 @@ describe('registerExtension — AC-4 default HostServices (no host argument supp
     })
 
     registerExtension(manifest(), hooksFactory)
-    if (!capturedHost) throw new Error('hooksFactory did not capture a host')
+    if (!capturedHost) throw new Error(HOOKS_FACTORY_DID_NOT_CAPTURE_HOST)
     const monitoring = capturedHost.monitoring
 
     await expect(
@@ -320,6 +324,43 @@ describe('registerExtension — AC-4 default HostServices (no host argument supp
     await expect(
       monitoring.cleanupProjectMonitoring({ organizationId: 'org_1', projectId: 'p_1' })
     ).rejects.toThrow(/without a real HostServices/)
+  })
+
+  it('a hooksFactory that calls the default host.notificationOriginator.enqueueNotification gets a rejected promise, never a silent no-op (Story 36.1 AC1)', async () => {
+    let capturedHost: HostServices | undefined
+    const hooksFactory = vi.fn((host: HostServices): ExtensionHooks => {
+      capturedHost = host
+      return {}
+    })
+
+    registerExtension(manifest(), hooksFactory)
+    if (!capturedHost) throw new Error(HOOKS_FACTORY_DID_NOT_CAPTURE_HOST)
+
+    await expect(
+      capturedHost.notificationOriginator.enqueueNotification({
+        channel: 'email',
+        recipientEmail: 'a@example.com',
+        subject: 'Subject',
+        body: 'Body',
+      })
+    ).rejects.toThrow(/without a real HostServices/)
+  })
+
+  // Story 36.1 AC6 — host.notificationOriginator is NOT gated by the unrelated
+  // 'notification-channel' ExtensionCapability (naming-collision Assumption Audit finding). It is
+  // present and callable even when the manifest declares NO notification-related capabilities at
+  // all — no existing HostServices field has ever been gated behind a manifest capability, and
+  // this field follows that exact precedent.
+  it('host.notificationOriginator is present and callable with no "notification-channel" (or any) capability declared (Story 36.1 AC6)', async () => {
+    let capturedHost: HostServices | undefined
+    const hooksFactory = vi.fn((host: HostServices): ExtensionHooks => {
+      capturedHost = host
+      return {}
+    })
+
+    registerExtension(manifest({ capabilities: [] }), hooksFactory)
+    if (!capturedHost) throw new Error(HOOKS_FACTORY_DID_NOT_CAPTURE_HOST)
+    expect(typeof capturedHost.notificationOriginator.enqueueNotification).toBe('function')
   })
 })
 
@@ -364,7 +405,7 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each(['3.14.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
+  it.each(['3.15.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
     'rejects canonical version outside %s',
     (apiVersion) => {
       const hooksFactory = makeHooksFactory()
@@ -401,18 +442,19 @@ describe('registerExtension — concrete canonical version gate', () => {
   it('allows only the above-host same-major rollback escape', () => {
     // Story 25.3 AC1/Task 1, Story 25.4 AC4/Task 4, Story 25.5 AC2/Task 1, Story 25.8 AC1/Task 1,
     // Story 20.8, Story 25.12 AC2/Task 2, Story 29.3 AC8/Task 1, Story 29.4 AC6/Task 1, Story
-    // 20.11 AC1, Story 34.1 AC1/AC9, and Story 35.1 AC1 — host EXTENSION_API_VERSION is now
-    // 3.13.0 (see manifest.ts's EXTENSION_API_VERSION doc comment for why this merge moves past
-    // 3.2.0/3.3.0/3.4.0/3.6.0/3.7.0/3.8.0/3.9.0/3.10.0/3.11.0/3.12.0, which Story
-    // 25.3/25.4/25.5/25.9/20.8/25.12/29.3/29.4/20.11/34.1 respectively already claimed on main
-    // for different additive changes); '3.14.0' is the above-host, same-major escape-eligible
-    // version, and '4.0.0' is a different major (never escape-eligible). Kept one minor version
-    // above whatever EXTENSION_API_VERSION currently is — see loader.test.ts's identical comment.
+    // 20.11 AC1, Story 34.1 AC1/AC9, Story 35.1 AC1, and Story 36.1 AC1/AC6 — host
+    // EXTENSION_API_VERSION is now 3.14.0 (see manifest.ts's EXTENSION_API_VERSION doc comment
+    // for why this merge moves past 3.2.0/3.3.0/3.4.0/3.6.0/3.7.0/3.8.0/3.9.0/3.10.0/3.11.0/
+    // 3.12.0/3.13.0, which Story 25.3/25.4/25.5/25.9/20.8/25.12/29.3/29.4/20.11/34.1/35.1
+    // respectively already claimed on main for different additive changes); '3.15.0' is the
+    // above-host, same-major escape-eligible version, and '4.0.0' is a different major (never
+    // escape-eligible). Kept one minor version above whatever EXTENSION_API_VERSION currently is
+    // — see loader.test.ts's identical comment.
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.14.0' }), makeHooksFactory())
+      registerExtension(manifest({ apiVersion: '3.15.0' }), makeHooksFactory())
     ).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.14.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '3.15.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()

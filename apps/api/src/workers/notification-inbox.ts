@@ -32,12 +32,16 @@ export async function deliverInboxNotification(
   if (!entry.recipientUserId) return
   const recipientUserId = entry.recipientUserId
 
-  const rendered = renderTemplate(
-    entry.templateId,
-    entry.payload as Record<string, unknown>,
-    logger
-  )
   const payload = entry.payload as Record<string, unknown>
+  // Story 36.1 Design Decision 2/Task 4 — an extension-originated row (originExtensionName
+  // non-null) sources its inbox title/body directly from its own caller-supplied
+  // payload.subject/payload.body, never through renderTemplate()'s closed registry.
+  const rendered = entry.originExtensionName
+    ? {
+        inboxTitle: typeof payload['subject'] === 'string' ? payload['subject'] : '',
+        inboxBody: typeof payload['body'] === 'string' ? payload['body'] : '',
+      }
+    : renderTemplate(entry.templateId, payload, logger)
   const expiresAt = new Date(Date.now() + env.INBOX_RETENTION_DAYS * 24 * 60 * 60 * 1000)
 
   const unreadCount = await withOrgAndUser(orgId, recipientUserId, async (tx) => {

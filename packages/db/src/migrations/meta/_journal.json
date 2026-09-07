@@ -652,6 +652,13 @@
       "when": 1788756346897,
       "tag": "0092_extension_lifecycle_events",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1788793673862,
+      "tag": "0093_notification_queue_origin_extension_name",
+      "breakpoints": true
     }
   ]
 }

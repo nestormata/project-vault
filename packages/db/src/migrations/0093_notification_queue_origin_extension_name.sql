@@ -1,0 +1,2 @@
+ALTER TABLE "notification_queue" ADD COLUMN "origin_extension_name" text;--> statement-breakpoint
+CREATE INDEX "idx_notification_queue_origin_extension_rate_limit" ON "notification_queue" USING btree ("origin_extension_name","org_id","created_at") WHERE "notification_queue"."origin_extension_name" IS NOT NULL;

@@ -170,4 +170,45 @@ describe('inbox delivery worker', () => {
       await deleteTestUser(userId)
     }
   })
+
+  describe('Story 36.1 AC2/Task 4 — extension-originated rows bypass the closed template registry', () => {
+    it('sources payload.title/payload.body directly from the caller-supplied subject/body, never through renderTemplate', async () => {
+      await withInboxTestUser('inbox-ext-originated', async ({ orgId, userId }) => {
+        const queueId = await insertInboxQueueEntry(orgId, userId, {
+          templateId: 'ext.com.acme.notification-originator-fixture',
+          payload: { subject: 'Incident detected', body: 'Service X is down' },
+          originExtensionName: 'com.acme.notification-originator-fixture',
+        })
+        const { emitter } = createMockEventEmitter()
+        setEmitterForTesting(emitter)
+
+        await deliverInboxNotification(queueId, orgId, emitter)
+
+        const inboxEntries = await listInboxEntriesForTest(orgId, userId)
+        expect(inboxEntries).toHaveLength(1)
+        expect(inboxEntries[0]?.payload).toMatchObject({
+          title: 'Incident detected',
+          body: 'Service X is down',
+        })
+      })
+    })
+
+    it('log-injection-shaped payload.body content is stored as a plain string, never crashing delivery', async () => {
+      await withInboxTestUser('inbox-ext-adversarial', async ({ orgId, userId }) => {
+        const adversarialBody = 'line1\nline2 fake-log-line eventType=forged'
+        const queueId = await insertInboxQueueEntry(orgId, userId, {
+          templateId: 'ext.com.acme.notification-originator-fixture',
+          payload: { subject: 'Subject', body: adversarialBody },
+          originExtensionName: 'com.acme.notification-originator-fixture',
+        })
+        const { emitter } = createMockEventEmitter()
+        setEmitterForTesting(emitter)
+
+        await expect(deliverInboxNotification(queueId, orgId, emitter)).resolves.toBeUndefined()
+
+        const inboxEntries = await listInboxEntriesForTest(orgId, userId)
+        expect(inboxEntries[0]?.payload).toMatchObject({ body: adversarialBody })
+      })
+    })
+  })
 })

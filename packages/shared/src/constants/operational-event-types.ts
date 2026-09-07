@@ -457,6 +457,18 @@ export const OperationalEvent = {
   // concurrency cap — a distinct rate-limit budget from both capability-gate.ts's and
   // org-authorization.ts's own (never shared).
   MONITORING_HOST_RATE_LIMITED: 'monitoring_host.rate_limited',
+
+  // Story 36.1 Task 3: structured audit-log entry written for EVERY call to
+  // `HostServices.notificationOriginator.enqueueNotification()` — success, denial (invalid
+  // params, invalid recipient, rate-limited), or error. Fields are
+  // `organizationId`/`extensionName`/`channel`/`outcome` only — never the caller-authored
+  // `subject`/`body` message content itself.
+  NOTIFICATION_ORIGINATOR_HOST_CALL_RECORDED: 'notification_originator_host.call_recorded',
+  // Story 36.1 AC5: a call was refused before insertion because the calling extension's
+  // (extensionName, orgId) pair had already reached its rolling-window enqueue cap — a distinct,
+  // DB-backed rate-limit budget from monitoring-host.ts's own in-flight/in-memory one (never
+  // shared).
+  NOTIFICATION_ORIGINATOR_HOST_RATE_LIMITED: 'notification_originator_host.rate_limited',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

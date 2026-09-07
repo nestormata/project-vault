@@ -2,6 +2,36 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.14.0 — 2026-09-07
+
+contract-hash: sha256:a3b487fbbe1df78f215d98847ecd0ae8ece7565e7db41ae4752ab38c7231d886
+
+### Added
+
+- Added `HostServices.notificationOriginator: NotificationOriginatorHost` (Story 36.1 AC1) — the
+  FIRST `HostServices` field that lets an extension *originate* a brand-new notification and hand
+  it IN to PV's own `notification_queue`/`notification-deliver.ts` pipeline for PV to enqueue,
+  deliver, and retry, as opposed to answering a question (`auditEventSource`/`orgAuthorization`),
+  servicing a request-scoped read/write (`ephemeralState`/`monitoring`), or PV calling OUT to a
+  registered extension sink/transport (`NotificationChannel`/`DeliveryProvider`). Its one method,
+  `enqueueNotification({ channel, recipientUserId | recipientEmail, subject, body })`, resolves
+  the ambient per-request org (no `organizationId` field exists on the params type at all —
+  structurally impossible to name a foreign org), validates `recipientUserId` against real,
+  active org membership before inserting, enforces a per-(extension, org) rolling-window
+  best-effort enqueue cap, and inserts a `notification_queue` row with the new, additive, nullable
+  `originExtensionName` column set and `templateId: \`ext.\${manifest.name}\`` — a reserved
+  sentinel PV's existing `sendEmailNotification`/`deliverInboxNotification` workers recognize to
+  build the outbound message directly from the caller's own `subject`/`body`, bypassing the
+  closed `EMAIL_RENDERERS`/`SLACK_RENDERERS` template registry entirely (which would otherwise
+  degrade to a raw `JSON.stringify(payload)` dump). Channel scope for v1 is `'email' | 'inbox'`
+  only (`'slack'` deliberately excluded — no per-recipient concept exists for the org-wide Slack
+  webhook today). Four new error classes (`NotificationOriginatorNoAmbientContextError`,
+  `NotificationOriginatorInvalidParamsError`, `NotificationOriginatorInvalidRecipientError`,
+  `NotificationOriginatorRateLimitedError`) — every rejection is a thrown, rejected Promise, never
+  a `{ ok: false }`-shaped return value. NOT gated by the unrelated `'notification-channel'`
+  `ExtensionCapability` (no existing `HostServices` field has ever been gated behind a manifest
+  capability). Purely additive — no existing `HostServices`/`ExtensionHooks` field changes.
+
 ## 3.13.0 — 2026-09-07
 
 contract-hash: sha256:2554991962ffc3a5e4ad53a5668d5462c915f06b134d0c0dec72d561b1633b15
