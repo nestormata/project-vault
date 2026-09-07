@@ -233,12 +233,14 @@ export function buildNotificationOriginatorHost(
         })
         return result
       } catch (error) {
-        const outcome =
-          error instanceof NotificationOriginatorInvalidRecipientError
-            ? 'invalid-recipient-denied'
-            : error instanceof NotificationOriginatorRateLimitedError
-              ? 'rate-limited'
-              : 'error'
+        let outcome: 'invalid-recipient-denied' | 'rate-limited' | 'error'
+        if (error instanceof NotificationOriginatorInvalidRecipientError) {
+          outcome = 'invalid-recipient-denied'
+        } else if (error instanceof NotificationOriginatorRateLimitedError) {
+          outcome = 'rate-limited'
+        } else {
+          outcome = 'error'
+        }
         if (outcome === 'rate-limited') {
           operationalLog(
             logger,
