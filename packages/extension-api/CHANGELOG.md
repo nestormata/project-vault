@@ -2,6 +2,23 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.13.0 — 2026-09-07
+
+contract-hash: sha256:2554991962ffc3a5e4ad53a5668d5462c915f06b134d0c0dec72d561b1633b15
+
+### Added
+
+- Added a new `'project-archive-notify'` `ExtensionCapability` and `ExtensionHooks.projectArchiveNotifier?:
+  ProjectArchiveNotifier` (Story 35.1 AC1) — a host-called NOTIFICATION hook fired after PV's own
+  `POST /:projectId/archive` transaction has already committed, dispatched entirely out-of-request
+  by a background worker (`apps/api/src/workers/extension-lifecycle-notify.ts`) reading a durable
+  outbox table rather than called synchronously inside the archive route's request/response cycle.
+  Never a veto/policy decision — `onProjectArchived` returns `Promise<void>`, independent from the
+  existing `'project-lifecycle'` capability/`ProjectCreatePolicy` hook (declaring one does not
+  imply the other). At-least-once delivery, no idempotency guarantee, mirroring
+  `AuditEventSourceHost`'s convention. Purely additive — no existing `HostServices`/`ExtensionHooks`
+  field changes.
+
 ## 3.12.0 — 2026-09-06
 
 contract-hash: sha256:61f54603469f125942357ba00019ab5bc4ee129594b4b59afcee6418bcf6edb1
