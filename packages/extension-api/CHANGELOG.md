@@ -2,6 +2,35 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.15.0 — 2026-09-07
+
+contract-hash: sha256:b101591274b03e18b434a0e809e6a9be28f2d874c46eecd3336d583df9bcbcf2
+
+### Added
+
+- Added `HostServices.projectAuthorization: ProjectAuthorizationHost` (Story 37.1 AC1) — a new,
+  structurally separate hook from `orgAuthorization`, not an extended
+  `OrgAuthorizationCheckContext`: `checkMembership()`'s existing type is a published contract
+  three real call sites and Story 23.11's enumeration-risk fix already depend on, so widening it
+  would change what "authorized" means for every existing org-scoped caller, not just new
+  project-scoped ones. Its one method, `checkProjectMembership({ viewerIdentityId, projectId,
+  minimumRole })`, answers "is this identity a member of this specific PV project at this role or
+  above," backed by the real `project_memberships` table and PV's existing
+  `effectiveProjectRole()` org-owner/admin-bypass semantics (`apps/api/src/modules/projects/
+  project-access.ts`) — reused rather than reimplemented, so the hook's answer matches what PV's
+  own project routes already enforce for the same identity/project pair. `projectId` stays an
+  explicit, caller-supplied parameter (there is no ambient project-bearing context to resolve it
+  from), but — mirroring Story 23.11's `organizationId` removal — it is validated against the
+  ambient per-request org (`getRequestContext().orgId`) via a single joined
+  `projects LEFT JOIN project_memberships` query BEFORE any role/bypass logic runs, closing a
+  cross-tenant enumeration hole that would otherwise let an org owner/admin caller pass an
+  arbitrary or cross-org `projectId` and receive `authorized` unconditionally. "No membership
+  row," "membership row present but role too low," and "`projectId` belongs to a different org"
+  all collapse to the identical `reasonCode` (`'not-a-project-member'`) to avoid a
+  membership/tenancy-existence oracle. Backed by its own dedicated per-extension rate-limit
+  budget and audit-log event — never sharing `orgAuthorization`'s or `capability-gate`'s. Purely
+  additive — no existing `HostServices`/`ExtensionHooks` field changes.
+
 ## 3.14.0 — 2026-09-07
 
 contract-hash: sha256:a3b487fbbe1df78f215d98847ecd0ae8ece7565e7db41ae4752ab38c7231d886

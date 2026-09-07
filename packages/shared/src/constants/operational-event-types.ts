@@ -469,6 +469,20 @@ export const OperationalEvent = {
   // DB-backed rate-limit budget from monitoring-host.ts's own in-flight/in-memory one (never
   // shared).
   NOTIFICATION_ORIGINATOR_HOST_RATE_LIMITED: 'notification_originator_host.rate_limited',
+
+  // Story 37.1 AC6: structured audit-log entry written for EVERY
+  // `HostServices.projectAuthorization.checkProjectMembership()` call (authorized, denied, or
+  // errored — including a rate-limited call), mirroring org-authorization.ts's
+  // `ORG_AUTHORIZATION_CHECK_RECORDED` pattern exactly. Fields are
+  // `organizationId`/`projectId`/`viewerIdentityId`/`minimumRole`/`outcome`/`extensionName`
+  // only — never `reasonCode` (diagnostic-only, and would otherwise leak the
+  // not-a-project-member membership/tenancy-existence oracle AC3/AC6 exist to close).
+  PROJECT_AUTHORIZATION_CHECK_RECORDED: 'project_authorization.check_recorded',
+  // Story 37.1 AC5(b): a checkProjectMembership() call was refused before resolution because its
+  // extension's in-flight accounting key was already at its concurrency cap — a distinct,
+  // dedicated rate-limit budget from both capability-gate.ts's and org-authorization.ts's own
+  // (never shared).
+  PROJECT_AUTHORIZATION_RATE_LIMITED: 'project_authorization.rate_limited',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

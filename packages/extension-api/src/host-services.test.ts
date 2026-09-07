@@ -44,11 +44,12 @@ const notificationOriginatorFixture: NotificationOriginatorHost = {
   enqueueNotification: async () => ({ notificationQueueId: 'nq1' }),
 }
 
-describe('HostServices — Story 36.1 AC1 widening to include notificationOriginator', () => {
-  it('exposes exactly auditEventSource/orgAuthorization/ephemeralState/monitoring/notificationOriginator', () => {
+describe('HostServices — Story 37.1 AC1 widening to include projectAuthorization', () => {
+  it('exposes exactly auditEventSource/orgAuthorization/projectAuthorization/ephemeralState/monitoring/notificationOriginator', () => {
     const fixture: HostServices = {
       auditEventSource: { writeAuditEvent: async () => ({ id: '1', createdAt: TEST_DATE }) },
       orgAuthorization: { checkMembership: async () => ({ outcome: 'authorized' }) },
+      projectAuthorization: { checkProjectMembership: async () => ({ outcome: 'authorized' }) },
       ephemeralState: {
         set: async () => undefined,
         get: async () => undefined,
@@ -63,6 +64,7 @@ describe('HostServices — Story 36.1 AC1 widening to include notificationOrigin
       new Set([
         'auditEventSource',
         'orgAuthorization',
+        'projectAuthorization',
         'ephemeralState',
         'monitoring',
         'notificationOriginator',
@@ -79,6 +81,7 @@ describe('HostServices — Story 36.1 AC1 widening to include notificationOrigin
     const host: HostServices = {
       auditEventSource: { writeAuditEvent: async () => ({ id: '1', createdAt: TEST_DATE }) },
       orgAuthorization: { checkMembership: async () => ({ outcome: 'authorized' }) },
+      projectAuthorization: { checkProjectMembership: async () => ({ outcome: 'authorized' }) },
       ephemeralState: {
         set: async () => undefined,
         get: async () => undefined,

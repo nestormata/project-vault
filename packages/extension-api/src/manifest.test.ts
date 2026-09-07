@@ -46,8 +46,9 @@ describe('EXTENSION_API_VERSION', () => {
     // HostServices.monitoring (also additive-minor): 3.11.0 -> 3.12.0. Story 35.1 AC1 —
     // projectArchiveNotifier/'project-archive-notify' (also additive-minor): 3.12.0 -> 3.13.0.
     // Story 36.1 AC1/AC6 — HostServices.notificationOriginator (also additive-minor):
-    // 3.13.0 -> 3.14.0.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.14.0')
+    // 3.13.0 -> 3.14.0. Story 37.1 AC1.3 — HostServices.projectAuthorization (also
+    // additive-minor): 3.14.0 -> 3.15.0.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.15.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

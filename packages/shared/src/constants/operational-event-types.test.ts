@@ -164,6 +164,15 @@ describe('OperationalEvent', () => {
     )
   })
 
+  it('exposes the Story 37.1 project-authorization-host event types', () => {
+    expect(OperationalEvent.PROJECT_AUTHORIZATION_CHECK_RECORDED).toBe(
+      'project_authorization.check_recorded'
+    )
+    expect(OperationalEvent.PROJECT_AUTHORIZATION_RATE_LIMITED).toBe(
+      'project_authorization.rate_limited'
+    )
+  })
+
   it('exposes the Story 16.1 theme-reload event types (AC-2, AC-7 fanout)', () => {
     expect(OperationalEvent.THEME_DIRECTORY_UNREADABLE).toBe('theme.directory_unreadable')
     expect(OperationalEvent.THEME_RELOAD_SUMMARY).toBe('theme.reload_summary')
