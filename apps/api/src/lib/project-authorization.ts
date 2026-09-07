@@ -9,6 +9,7 @@ import type {
 } from '@project-vault/extension-api'
 import { resolveActiveOrgRole } from '../plugins/authenticate.js'
 import type { OrgRole } from '../plugins/require-org-role.js'
+import { resolveEffectiveProjectRoleForOrgRole } from '../modules/projects/project-access.js'
 import { roleRank } from './secure-route.js'
 import { operationalLog } from './logger.js'
 import { getRequestContext } from './request-context.js'
@@ -17,10 +18,6 @@ const RECOGNIZED_MINIMUM_ROLES = new Set<string>(['owner', 'admin', 'member', 'v
 
 function isRecognizedOrgRole(value: string): value is OrgRole {
   return RECOGNIZED_MINIMUM_ROLES.has(value)
-}
-
-function isOrgAdminOrOwner(orgRole: OrgRole): boolean {
-  return orgRole === 'owner' || orgRole === 'admin'
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -220,13 +217,15 @@ async function queryProjectInOrgAndMembershipRole(
  * without a full org removal — `removeUserFromOrgMemberships()` only deletes `project_memberships`
  * rows on full removal, not on suspension). A `null` org role therefore denies unconditionally,
  * REGARDLESS of any explicit `project_memberships` row: a caller who is not currently an active
- * org member must never be authorized via a stale project-membership row alone. Org owner/admin
- * gets an unconditional bypass using their own org role (even when an explicit, lower
- * `project_memberships` row exists — the bypass never consults that row at all); an active
- * member/viewer falls through to the explicit row already fetched by AC3's joined query,
- * defaulting to their own org role when no row exists. Returns `undefined` when there is no
- * qualifying role at all. Only ever called AFTER AC3's project-in-org check has already passed —
- * see `resolveProjectAuthorizationOutcome()`'s ordering-invariant doc comment.
+ * org member must never be authorized via a stale project-membership row alone. The bypass +
+ * fallback decision itself (org owner/admin gets an unconditional bypass using their own org
+ * role, never consulting the row at all; an active member/viewer falls through to the explicit
+ * row already fetched by AC3's joined query, defaulting to their own org role when no row exists)
+ * is shared with `project-access.ts`'s `effectiveProjectRole()` via
+ * `resolveEffectiveProjectRoleForOrgRole()` — see that function's doc comment for why it takes
+ * primitives instead of re-querying `project_memberships` itself. Returns `undefined` when there
+ * is no qualifying role at all. Only ever called AFTER AC3's project-in-org check has already
+ * passed — see `resolveProjectAuthorizationOutcome()`'s ordering-invariant doc comment.
  */
 async function resolveEffectiveProjectRole(
   orgId: string,
@@ -249,9 +248,10 @@ async function resolveEffectiveProjectRole(
   const validMembershipRole =
     membershipRole && isRecognizedOrgRole(membershipRole) ? membershipRole : undefined
 
-  const role: OrgRole | undefined = isOrgAdminOrOwner(orgRole)
-    ? orgRole
-    : (validMembershipRole ?? orgRole)
+  const role = resolveEffectiveProjectRoleForOrgRole({
+    orgRole,
+    membershipRole: validMembershipRole,
+  })
 
   return { role }
 }
