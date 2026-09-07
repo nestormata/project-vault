@@ -645,6 +645,13 @@
       "when": 1788639396461,
       "tag": "0091_audit_log_hmac_chain_linkage",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1788756346897,
+      "tag": "0092_extension_lifecycle_events",
+      "breakpoints": true
     }
   ]
 }

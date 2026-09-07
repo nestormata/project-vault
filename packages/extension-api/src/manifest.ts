@@ -15,6 +15,12 @@ export type ExtensionCapability =
   // Story 20.11 AC1 — declares that this extension's `hooksFactory()` may return a
   // `deliveryProvider` hooks-bag entry (see `register-extension.ts`'s `ExtensionHooks`).
   | 'delivery-provider'
+  // Story 35.1 AC1 — declares that this extension's `hooksFactory()` may return a
+  // `projectArchiveNotifier` hooks-bag entry (see `register-extension.ts`'s `ExtensionHooks`).
+  // Deliberately independent of `'project-lifecycle'` — an extension that only wants archive
+  // notifications (no creation-policy veto) must not be forced to also implement
+  // `onBeforeCreateProject`.
+  | 'project-archive-notify'
 
 export type ExtensionManifest = {
   /** Reverse-DNS-style identifier, e.g. "com.acme.sso-extension" — validated by registerExtension (AC6). */
@@ -330,7 +336,14 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // extension's manifest or hook shape changes, and the floor stays `>=3.0.0` so every
 // already-shipped extension (including any real, currently-deployed CentralizeMe build) keeps
 // loading unmodified regardless.
-export const EXTENSION_API_VERSION = '3.12.0'
+// Story 35.1 AC1/Design Decision 8 — bumped as an additive-minor (3.12.0 -> 3.13.0):
+// `ExtensionCapability` gains the `'project-archive-notify'` literal and `ExtensionHooks` gains
+// `projectArchiveNotifier?: ProjectArchiveNotifier` (see `hooks/project-lifecycle.ts`), both
+// purely-additive optional additions with zero effect on any manifest/hooksFactory that omits
+// them — no existing extension's manifest or hook shape changes, and the floor stays `>=3.0.0`
+// so every already-shipped extension (including any real, currently-deployed CentralizeMe build)
+// keeps loading unmodified regardless.
+export const EXTENSION_API_VERSION = '3.13.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

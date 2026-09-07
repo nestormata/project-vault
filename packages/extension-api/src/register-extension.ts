@@ -26,7 +26,7 @@ import type { CapabilityGate } from './hooks/capability-gate.js'
 import type { DeliveryProvider } from './hooks/delivery-provider.js'
 import type { HostServices } from './host-services.js'
 import type { ExtensionDbScopeEntry, ExtensionRuntimeContext } from './db-access.js'
-import type { ProjectCreatePolicy } from './hooks/project-lifecycle.js'
+import type { ProjectArchiveNotifier, ProjectCreatePolicy } from './hooks/project-lifecycle.js'
 import type { ModuleDataRouteHandler } from './hooks/module-data.js'
 
 /**
@@ -54,6 +54,16 @@ export type ExtensionHooks = {
   uiPanel?: UIPanel
   capabilityGate?: CapabilityGate
   projectLifecycle?: ProjectCreatePolicy
+  /**
+   * Story 35.1 AC1 — a pure, non-vetoing notification target for
+   * `POST /:projectId/archive`'s already-committed archive event, dispatched exclusively by a
+   * background worker (`apps/api/src/workers/extension-lifecycle-notify.ts`), never in-request.
+   * Deliberately a SEPARATE optional field from `projectLifecycle` — gated by its own
+   * `'project-archive-notify'` capability, not folded into `'project-lifecycle'` — so an
+   * extension that only wants archive notifications is not forced to also implement
+   * `onBeforeCreateProject`.
+   */
+  projectArchiveNotifier?: ProjectArchiveNotifier
   /** Story 25.5 AC1 — dispatch target for `POST /extensions/panels/:slot/actions`. Only legal
    * (checked by `hasCallableModuleActionHook()`) when the manifest declares `moduleActions`. */
   moduleAction?: ModuleAction
@@ -762,6 +772,23 @@ function hasCallableProjectLifecycleHook(
 }
 
 /**
+ * Story 35.1 AC1 — a manifest declaring `'project-archive-notify'` whose `hooksFactory()` result
+ * has no callable `projectArchiveNotifier` hook is rejected, mirroring
+ * `hasCallableProjectLifecycleHook` exactly. Deliberately independent of that function — declaring
+ * `'project-lifecycle'` does not imply `'project-archive-notify'` and vice versa.
+ */
+function hasCallableProjectArchiveNotifierHook(
+  manifest: ExtensionManifest,
+  hooks: ExtensionHooks
+): boolean {
+  if (!manifest.capabilities.includes('project-archive-notify')) return true
+  return (
+    hooks.projectArchiveNotifier !== undefined &&
+    typeof hooks.projectArchiveNotifier.onProjectArchived === 'function'
+  )
+}
+
+/**
  * Story 25.2 AC1 (Boundary & Edge Case Sweep finding) — a manifest declaring `uiPanelSlots`
  * (implying real slot names exist to serve) whose `hooksFactory()` result has no `uiPanel` hook
  * at all is rejected, mirroring `hasCallableProjectLifecycleHook` exactly. General `'ui-panel'`
@@ -815,6 +842,15 @@ function assertCallableHooksAfterFactory(manifest: ExtensionManifest, hooks: Ext
     throw new ExtensionRegistrationError(
       'invalid-manifest-field',
       'Extension manifest declares "project-lifecycle" but hooksFactory() did not return a callable projectLifecycle hook'
+    )
+  }
+
+  // Story 35.1 AC1 — same class of bug hasCallableProjectLifecycleHook already catches above,
+  // for the independent 'project-archive-notify' capability/projectArchiveNotifier hook pair.
+  if (!hasCallableProjectArchiveNotifierHook(manifest, hooks)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest declares "project-archive-notify" but hooksFactory() did not return a callable projectArchiveNotifier hook'
     )
   }
 

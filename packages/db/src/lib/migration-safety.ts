@@ -402,4 +402,11 @@ export const KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS: Record<string, string> = {
   // no DELETE/UPDATE/INSERT grant — only the one documented SELECT column-grant statement.
   '0090_notification_queue_admin_grant':
     "Story 20.11 reviewed vault_admin least-privilege grant (SELECT id/org_id/provider_id/provider_message_id only) for the delivery-status webhook route's admin-connection lookup; paired migration safety test proves it is grant-only with no schema/column change.",
+  // Story 35.1 Design Decision 4/Task 2: brand-new, RLS-isolated `extension_lifecycle_events`
+  // table's own vault_app CRUD grant — same reviewed table-creation-time ACL pattern as 0084's
+  // extension_ephemeral_state. The paired migration-0092-safety.test.ts proves this migration
+  // creates exactly one new table, adds no ALTER on any pre-existing table, and contains no
+  // DROP/RENAME/TRUNCATE/DELETE.
+  '0092_extension_lifecycle_events':
+    'Story 35.1 reviewed table-creation-time vault_app CRUD grant on the new extension_lifecycle_events outbox table; paired migration safety test proves it is a single additive CREATE TABLE with no destructive statement riding along.',
 }

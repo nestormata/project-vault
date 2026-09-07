@@ -43,8 +43,9 @@ describe('EXTENSION_API_VERSION', () => {
     // navItems? (also additive-minor, not gated behind 'ui-panel'): 3.8.0 -> 3.9.0. Story 29.4
     // adds ExtensionManifest's moduleDataRoutes? and ExtensionHooks' moduleData? (also
     // additive-minor): 3.9.0 -> 3.10.0 -> 3.11.0 (Story 20.11 AC1). Story 34.1 adds
-    // HostServices.monitoring (also additive-minor): 3.11.0 -> 3.12.0.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.12.0')
+    // HostServices.monitoring (also additive-minor): 3.11.0 -> 3.12.0. Story 35.1 AC1 —
+    // projectArchiveNotifier/'project-archive-notify' (also additive-minor): 3.12.0 -> 3.13.0.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.13.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {
