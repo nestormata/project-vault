@@ -25,6 +25,8 @@ const VIEWER_ID = 'user-1'
 const PROJECT_ID = 'project-1'
 const NOT_A_PROJECT_MEMBER = { outcome: 'denied', reasonCode: 'not-a-project-member' } as const
 const RESOLUTION_FAILED = { outcome: 'error', reasonCode: 'resolution-failed' } as const
+const INVALID_CONTEXT = { outcome: 'error', reasonCode: 'invalid-context' } as const
+const TEST_EXTENSION_NAME = 'test-extension'
 const AUDIT_EVENT_TYPE = 'project_authorization.check_recorded'
 
 function withAmbientOrg<T>(fn: () => Promise<T>): Promise<T> {
@@ -471,5 +473,82 @@ describe('checkProjectAuthorization — never caches across calls', () => {
     withOrg.mockResolvedValueOnce(projectInOrgNoMembershipRows())
     const second = await call({ minimumRole: 'admin' })
     expect(second).toEqual(NOT_A_PROJECT_MEMBER)
+  })
+})
+
+describe('checkProjectAuthorization — code-review fix: a deactivated/removed org member never authorizes via a stale project_memberships row', () => {
+  it('an explicit project_memberships row is ignored when resolveActiveOrgRole resolves null (not a currently-active org member)', async () => {
+    withOrg.mockResolvedValueOnce(projectInOrgWithRoleRows('admin'))
+    resolveActiveOrgRole.mockResolvedValue(null)
+
+    const result = await call({ minimumRole: 'viewer' })
+
+    expect(result).toEqual(NOT_A_PROJECT_MEMBER)
+  })
+
+  it('a high (owner-level) stale project_memberships row still does not authorize a non-active-member identity', async () => {
+    withOrg.mockResolvedValueOnce(projectInOrgWithRoleRows('owner'))
+    resolveActiveOrgRole.mockResolvedValue(null)
+
+    const result = await call({ minimumRole: 'owner' })
+
+    expect(result).toEqual(NOT_A_PROJECT_MEMBER)
+  })
+})
+
+describe('checkProjectAuthorization — code-review fix: never throws on a malformed/null context', () => {
+  it('resolves to error/invalid-context (never rejects) for a null context', async () => {
+    await expect(
+      withAmbientOrg(() =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately malformed input from an untrusted extension
+        checkProjectAuthorization(null as any)
+      )
+    ).resolves.toEqual(INVALID_CONTEXT)
+    expect(withOrg).not.toHaveBeenCalled()
+  })
+
+  it('resolves to error/invalid-context (never rejects) for an undefined context', async () => {
+    await expect(
+      withAmbientOrg(() =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately malformed input from an untrusted extension
+        checkProjectAuthorization(undefined as any)
+      )
+    ).resolves.toEqual(INVALID_CONTEXT)
+    expect(withOrg).not.toHaveBeenCalled()
+  })
+
+  it('resolves to error/invalid-context (never rejects) for a context missing required fields', async () => {
+    await expect(
+      withAmbientOrg(() =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately malformed input from an untrusted extension
+        checkProjectAuthorization({ minimumRole: 'member' } as any)
+      )
+    ).resolves.toEqual(INVALID_CONTEXT)
+    expect(withOrg).not.toHaveBeenCalled()
+  })
+
+  it('still records exactly one audit-log entry for an invalid-context call, without leaking reasonCode', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), fatal: vi.fn() }
+    await withAmbientOrg(() =>
+      checkProjectAuthorization(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately malformed input
+        null as any,
+        { extensionName: TEST_EXTENSION_NAME, logger }
+      )
+    )
+
+    expect(logger.info).toHaveBeenCalledTimes(1)
+    const payload = logger.info.mock.calls[0]?.[0]
+    expect(payload).not.toHaveProperty('reasonCode')
+    expect(payload).toMatchObject({ outcome: 'error', extensionName: TEST_EXTENSION_NAME })
+  })
+
+  it('the rate-limit slot is still released for an invalid-context call', async () => {
+    await withAmbientOrg(() =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately malformed input
+      checkProjectAuthorization(null as any, { extensionName: TEST_EXTENSION_NAME })
+    )
+
+    expect(__getProjectAuthorizationInFlightCountForTests(TEST_EXTENSION_NAME)).toBe(0)
   })
 })

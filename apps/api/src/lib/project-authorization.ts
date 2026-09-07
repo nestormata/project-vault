@@ -140,6 +140,46 @@ const INTERNAL_ERROR_REASON_CODE = 'resolution-failed'
 // expectedly hit this branch — it is not later mistaken for a bug.
 const NO_REQUEST_CONTEXT_REASON_CODE = 'no-request-context'
 
+// A malformed call from a buggy/untrusted extension (null/undefined `context`, or a `context`
+// missing/misshaping one of its required fields) — never type-checked at runtime, since
+// `checkProjectMembership()` is invoked by third-party extension code. Fails closed with this
+// fixed reasonCode rather than letting a property access throw and violate this hook's "never
+// throws" contract.
+const INVALID_CONTEXT_REASON_CODE = 'invalid-context'
+
+function isValidProjectAuthorizationCheckContext(
+  context: unknown
+): context is ProjectAuthorizationCheckContext {
+  if (typeof context !== 'object' || context === null) return false
+  const candidate = context as Record<string, unknown>
+  return (
+    typeof candidate.viewerIdentityId === 'string' &&
+    typeof candidate.projectId === 'string' &&
+    typeof candidate.minimumRole === 'string'
+  )
+}
+
+/** Best-effort extraction of the three `ProjectAuthorizationCheckContext` fields for audit
+ * logging of a call whose `context` failed validation — never throws, and never assumes any
+ * field is actually present. Field names are fixed literals (never a caller-supplied string), so
+ * this reads each named field explicitly rather than by dynamic key. */
+function safeAuditFields(context: unknown): {
+  projectId: string
+  viewerIdentityId: string
+  minimumRole: string
+} {
+  if (typeof context !== 'object' || context === null) {
+    return { projectId: '', viewerIdentityId: '', minimumRole: '' }
+  }
+  const candidate = context as Record<string, unknown>
+  return {
+    projectId: typeof candidate.projectId === 'string' ? candidate.projectId : '',
+    viewerIdentityId:
+      typeof candidate.viewerIdentityId === 'string' ? candidate.viewerIdentityId : '',
+    minimumRole: typeof candidate.minimumRole === 'string' ? candidate.minimumRole : '',
+  }
+}
+
 /**
  * AC3.2 — the single query this hook's cross-tenant-enumeration defense depends on: a
  * `projects LEFT JOIN project_memberships` that returns in the same shape (and takes the same
@@ -171,15 +211,22 @@ async function queryProjectInOrgAndMembershipRole(
 }
 
 /**
- * AC2.2 — resolves the effective project role for `viewerIdentityId`, reusing
- * `effectiveProjectRole()`'s exact bypass + fallback semantics (`project-access.ts`): org
- * owner/admin gets an unconditional bypass using their own org role (even when an explicit,
- * lower `project_memberships` row exists — the bypass never consults that row at all);
+ * AC2.2 — resolves the effective project role for `viewerIdentityId`, adapting
+ * `effectiveProjectRole()`'s bypass + fallback semantics (`project-access.ts`) to a
+ * `viewerIdentityId` that — unlike `effectiveProjectRole()`'s `secureCtx.auth.orgRole`, which is
+ * guaranteed non-null by the caller already having authenticated into an active org membership —
+ * is an arbitrary, extension-supplied identity whose org role can genuinely be `null` (no active
+ * `orgMemberships` row, or a row present but not `status = 'active'`, e.g. suspended/deactivated
+ * without a full org removal — `removeUserFromOrgMemberships()` only deletes `project_memberships`
+ * rows on full removal, not on suspension). A `null` org role therefore denies unconditionally,
+ * REGARDLESS of any explicit `project_memberships` row: a caller who is not currently an active
+ * org member must never be authorized via a stale project-membership row alone. Org owner/admin
+ * gets an unconditional bypass using their own org role (even when an explicit, lower
+ * `project_memberships` row exists — the bypass never consults that row at all); an active
  * member/viewer falls through to the explicit row already fetched by AC3's joined query,
- * defaulting to their org role when no row exists. Returns `undefined` when there is no
- * qualifying role at all (no active org role and no explicit project row). Only ever called
- * AFTER AC3's project-in-org check has already passed — see
- * `resolveProjectAuthorizationOutcome()`'s ordering-invariant doc comment.
+ * defaulting to their own org role when no row exists. Returns `undefined` when there is no
+ * qualifying role at all. Only ever called AFTER AC3's project-in-org check has already passed —
+ * see `resolveProjectAuthorizationOutcome()`'s ordering-invariant doc comment.
  */
 async function resolveEffectiveProjectRole(
   orgId: string,
@@ -193,11 +240,18 @@ async function resolveEffectiveProjectRole(
     return { error: true }
   }
 
+  if (orgRole === null) {
+    // Not a currently-active org member at all — never fall back to a possibly-stale
+    // `project_memberships` row for this identity.
+    return { role: undefined }
+  }
+
   const validMembershipRole =
     membershipRole && isRecognizedOrgRole(membershipRole) ? membershipRole : undefined
 
-  const role: OrgRole | undefined =
-    orgRole && isOrgAdminOrOwner(orgRole) ? orgRole : (validMembershipRole ?? orgRole ?? undefined)
+  const role: OrgRole | undefined = isOrgAdminOrOwner(orgRole)
+    ? orgRole
+    : (validMembershipRole ?? orgRole)
 
   return { role }
 }
@@ -223,6 +277,10 @@ async function resolveEffectiveProjectRole(
 async function resolveProjectAuthorizationOutcome(
   context: ProjectAuthorizationCheckContext
 ): Promise<ProjectAuthorizationOutcome> {
+  if (!isValidProjectAuthorizationCheckContext(context)) {
+    return { outcome: 'error', reasonCode: INVALID_CONTEXT_REASON_CODE }
+  }
+
   if (!isRecognizedOrgRole(context.minimumRole)) {
     return { outcome: 'error', reasonCode: 'invalid-minimum-role' }
   }
@@ -318,22 +376,27 @@ export async function checkProjectAuthorization(
     recordProjectAuthorizationCheckAudit(logger, {
       extensionName: hostContext.extensionName,
       organizationId: auditOrganizationId(),
-      projectId: context.projectId,
-      viewerIdentityId: context.viewerIdentityId,
-      minimumRole: context.minimumRole,
+      ...safeAuditFields(context),
       outcome: outcome.outcome,
     })
     return outcome
   }
 
   try {
-    const outcome = await resolveProjectAuthorizationOutcome(context)
+    // Never let an unexpected exception (e.g. a malformed/null `context` from a buggy or
+    // untrusted extension — `checkProjectMembership()` is invoked by third-party code that is
+    // never type-checked at runtime) escape as a rejected promise: this hook's contract is to
+    // never throw, always resolving to one of the three `ProjectAuthorizationOutcome` shapes.
+    let outcome: ProjectAuthorizationOutcome
+    try {
+      outcome = await resolveProjectAuthorizationOutcome(context)
+    } catch {
+      outcome = { outcome: 'error', reasonCode: INVALID_CONTEXT_REASON_CODE }
+    }
     recordProjectAuthorizationCheckAudit(logger, {
       extensionName: hostContext.extensionName,
       organizationId: auditOrganizationId(),
-      projectId: context.projectId,
-      viewerIdentityId: context.viewerIdentityId,
-      minimumRole: context.minimumRole,
+      ...safeAuditFields(context),
       outcome: outcome.outcome,
     })
     return outcome
