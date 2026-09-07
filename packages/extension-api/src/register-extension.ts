@@ -188,6 +188,14 @@ const DEFAULT_HOST_SERVICES: HostServices = {
         )
       ),
   },
+  notificationOriginator: {
+    enqueueNotification: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — notificationOriginator.enqueueNotification is unavailable'
+        )
+      ),
+  },
 }
 
 /**

@@ -2,6 +2,7 @@ import type { AuditEventSourceHost } from './hooks/audit-event-source.js'
 import type { OrgAuthorizationHost } from './hooks/org-authorization.js'
 import type { EphemeralStateHost } from './hooks/ephemeral-state.js'
 import type { PvMonitoringHost } from './hooks/monitoring.js'
+import type { NotificationOriginatorHost } from './hooks/notification-originator.js'
 
 /**
  * Story 23.8 AC-4 — the new injected-context channel `hooksFactory()` receives at load time.
@@ -26,4 +27,10 @@ export type HostServices = {
    * time; the other two take an explicit `organizationId` parameter because they run outside any
    * request lifecycle. See `hooks/monitoring.ts`'s doc comment for the full split rationale. */
   monitoring: PvMonitoringHost
+  /** Story 36.1 — bound once at extension-load time, same as every field above. Its one method,
+   * `enqueueNotification()`, internally resolves the current request's `orgId` via
+   * `getRequestContext()` at call time. NOT gated by the unrelated `'notification-channel'`
+   * `ExtensionCapability` — see `hooks/notification-originator.ts`'s doc comment for the full
+   * naming-collision disambiguation. */
+  notificationOriginator: NotificationOriginatorHost
 }

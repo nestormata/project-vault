@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { HostServices } from './host-services.js'
 import type { PvMonitoringHost } from './hooks/monitoring.js'
+import type { NotificationOriginatorHost } from './hooks/notification-originator.js'
 
 const TEST_DATE = '2026-01-01'
 
@@ -39,8 +40,12 @@ const monitoringFixture: PvMonitoringHost = {
   cleanupProjectMonitoring: async () => ({ resolvedAlertCount: 0 }),
 }
 
-describe('HostServices — Story 34.1 AC1 widening to include monitoring', () => {
-  it('exposes exactly auditEventSource/orgAuthorization/ephemeralState/monitoring', () => {
+const notificationOriginatorFixture: NotificationOriginatorHost = {
+  enqueueNotification: async () => ({ notificationQueueId: 'nq1' }),
+}
+
+describe('HostServices — Story 36.1 AC1 widening to include notificationOriginator', () => {
+  it('exposes exactly auditEventSource/orgAuthorization/ephemeralState/monitoring/notificationOriginator', () => {
     const fixture: HostServices = {
       auditEventSource: { writeAuditEvent: async () => ({ id: '1', createdAt: TEST_DATE }) },
       orgAuthorization: { checkMembership: async () => ({ outcome: 'authorized' }) },
@@ -52,9 +57,16 @@ describe('HostServices — Story 34.1 AC1 widening to include monitoring', () =>
         compareAndDelete: async () => true,
       },
       monitoring: monitoringFixture,
+      notificationOriginator: notificationOriginatorFixture,
     }
     expect(new Set(Object.keys(fixture))).toEqual(
-      new Set(['auditEventSource', 'orgAuthorization', 'ephemeralState', 'monitoring'])
+      new Set([
+        'auditEventSource',
+        'orgAuthorization',
+        'ephemeralState',
+        'monitoring',
+        'notificationOriginator',
+      ])
     )
   })
 
@@ -75,6 +87,7 @@ describe('HostServices — Story 34.1 AC1 widening to include monitoring', () =>
         compareAndDelete: async () => true,
       },
       monitoring: monitoringFixture,
+      notificationOriginator: notificationOriginatorFixture,
     }
     legacyHooksFactory(host)
   })

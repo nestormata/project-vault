@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { users } from '@project-vault/db/schema'
 import { renderEmailTemplate } from '../notifications/templates/index.js'
+import { escapeHtml } from '../notifications/templates/html-safety.js'
 import type { BossService } from '../lib/boss.js'
 import type { FastifyBaseLogger } from 'fastify'
 import nodemailer from 'nodemailer'
@@ -102,7 +103,37 @@ async function sendViaDeliveryProvider(
   })
 }
 
+/** Story 36.1 Design Decision 2/AC2 — builds outbound email content directly from an
+ * extension-originated row's `payload.subject`/`payload.body`, bypassing the closed template
+ * registry entirely. `payload` is opaque, caller-authored `jsonb` — coerced to `string` via
+ * `String()` (never trusted to already be a string) before escaping, so a malformed row can't
+ * throw here. */
+function buildExtensionOriginatedEmailContent(payload: Record<string, unknown>): {
+  subject: string
+  text: string
+  html: string
+} {
+  const subject = typeof payload['subject'] === 'string' ? payload['subject'] : ''
+  const body = typeof payload['body'] === 'string' ? payload['body'] : ''
+  return {
+    subject,
+    text: body,
+    html: `<p>${escapeHtml(body)}</p>`,
+  }
+}
+
 type QueueEntry = Awaited<ReturnType<typeof claimPendingNotificationEntry>>
+
+/** Extracted from `sendEmailNotification` purely to keep its own cyclomatic complexity under
+ * this repo's lint budget — the Story 36.1 originExtensionName rendering-branch decision. */
+function renderOutboundEmailContent(
+  entry: NonNullable<QueueEntry>,
+  logger?: Pick<FastifyBaseLogger, 'error'>
+): { subject: string; text: string | undefined; html: string | undefined } {
+  return entry.originExtensionName
+    ? buildExtensionOriginatedEmailContent(entry.payload as Record<string, unknown>)
+    : renderEmailTemplate(entry.templateId, entry.payload as Record<string, unknown>, logger)
+}
 
 /** Extracted from `sendEmailNotification` purely to keep its own cyclomatic complexity under
  * this repo's lint budget. Resolves the outbound address from either the linked user's own email
@@ -170,11 +201,13 @@ export async function sendEmailNotification(
     return
   }
 
-  const { subject, text, html } = renderEmailTemplate(
-    entry.templateId,
-    entry.payload as Record<string, unknown>,
-    logger
-  )
+  // Story 36.1 Design Decision 2/Task 4 — an extension-originated row (originExtensionName
+  // non-null) is built directly from its own caller-supplied subject/body, never through
+  // renderEmailTemplate()'s closed EMAIL_RENDERERS registry (which would otherwise degrade to
+  // genericEmailFallback's raw JSON.stringify(payload) dump for the reserved `ext.<name>`
+  // templateId). HTML-escaped only in the HTML part — the plain-text part carries the raw
+  // string unescaped, matching every existing template's own text/html split.
+  const { subject, text, html } = renderOutboundEmailContent(entry, logger)
 
   if (provider) {
     await sendViaDeliveryProvider(

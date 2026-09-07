@@ -22,6 +22,10 @@ const monitoringStub = {
   applyHealthCheckResult: rejectUnused,
   cleanupProjectMonitoring: rejectUnused,
 }
+// Story 36.1 — HostServices widened to a fifth, required field. This fixture never reads it
+// (only auditEventSource/orgAuthorization matter to this extension), so a stub with a
+// never-invoked reject is sufficient here.
+const notificationOriginatorStub = { enqueueNotification: rejectUnused }
 
 describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
   it('declares a valid, reverse-DNS manifest with only the audit-event-source capability', () => {
@@ -51,6 +55,7 @@ describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
         compareAndDelete: async () => false,
       },
       monitoring: monitoringStub,
+      notificationOriginator: notificationOriginatorStub,
     })
     expect(hooks).toEqual({})
   })
@@ -80,6 +85,7 @@ describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
         compareAndDelete: async () => false,
       },
       monitoring: monitoringStub,
+      notificationOriginator: notificationOriginatorStub,
     })
 
     const result = await triggerAuditWrite({

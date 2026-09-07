@@ -30,6 +30,7 @@ import { writeExtensionAuditEventForManifest } from '../lib/audit-event-source.j
 import { checkOrgAuthorization } from '../lib/org-authorization.js'
 import { createEphemeralStateHost } from '../lib/ephemeral-state.js'
 import { buildMonitoringHost } from '../lib/monitoring-host.js'
+import { buildNotificationOriginatorHost } from '../lib/notification-originator-host.js'
 import { writePlatformAuditEntryOrFailClosed } from '../lib/audit-or-fail-closed.js'
 import { fetchAllOrgIds } from '../middleware/rls.js'
 import type { Tx } from '@project-vault/db'
@@ -266,6 +267,10 @@ async function buildHostServices(
     // explicit organizationId parameter, are rate-limited on a distinct accounting bucket, and
     // are structurally audit-logged on every call. See lib/monitoring-host.ts.
     monitoring: buildMonitoringHost(manifest, logger),
+    // Story 36.1 — bound once at extension-load time, same as every field above. Its one
+    // method, enqueueNotification(), internally resolves the current request's orgId via
+    // getRequestContext() at call time. See lib/notification-originator-host.ts.
+    notificationOriginator: buildNotificationOriginatorHost(manifest, logger),
     getDbHandle: async () => {
       if (!manifest.dbScope || manifest.dbScope.length === 0) {
         return { unavailable: 'no-approved-scope' }
