@@ -12,6 +12,11 @@ const tx = {
 const db = {
   select: vi.fn(),
   transaction: vi.fn(async (fn: (txArg: typeof tx) => Promise<unknown>) => fn(tx)),
+  // Story 1.22: loginUser() now calls isLoginLockedOut() (failed-auth.ts) before resolving the
+  // account, which runs a raw getDb().execute(sql`...`) count query. No failed_auth_attempts rows
+  // are seeded by this suite, so it always resolves to zero rows — not locked out — leaving the
+  // existing unknown_subject/orphan_user assertions below unaffected.
+  execute: vi.fn(async () => [{ attempt_count: '0' }]),
 }
 
 vi.mock('@project-vault/db', () => ({

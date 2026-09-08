@@ -1071,6 +1071,16 @@ const envSchema = z
     FAILED_AUTH_THRESHOLD_WINDOW_SECONDS: z.coerce.number().int().min(60).max(3600).default(300),
     FAILED_AUTH_RETENTION_HOURS: z.coerce.number().int().min(1).max(168).default(24),
     FAILED_AUTH_RECORD_ENABLED: booleanEnvDefault(true),
+    // Story 1.22 AC-5: deliberately SEPARATE from FAILED_AUTH_THRESHOLD_COUNT/
+    // FAILED_AUTH_THRESHOLD_WINDOW_SECONDS above, even though both read the same
+    // failed_auth_attempts table. FAILED_AUTH_THRESHOLD_* drives an async, informational
+    // operator alert (check-failed-auth-threshold.ts worker) — it never blocks login.
+    // LOGIN_LOCKOUT_* drives a synchronous, blocking check inside loginUser() itself
+    // (isLoginLockedOut(), failed-auth.ts) that rejects a login outright once tripped.
+    // Keeping them independently tunable lets the alert threshold/window differ from the
+    // actual login-blocking threshold/window without one setting implicitly changing the other.
+    LOGIN_LOCKOUT_THRESHOLD: z.coerce.number().int().min(3).max(100).default(10),
+    LOGIN_LOCKOUT_WINDOW_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
     RATE_LIMIT_TEST_BYPASS: z
       .enum(['true', 'false'])
       .default('false')
