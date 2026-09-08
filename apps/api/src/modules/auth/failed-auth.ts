@@ -61,12 +61,25 @@ export async function isLoginLockedOut(email: string): Promise<boolean> {
   const windowStartIso = new Date(
     Date.now() - env.LOGIN_LOCKOUT_WINDOW_SECONDS * 1000
   ).toISOString()
-  const rows = await getDb().execute<{ attempt_count: string | number }>(sql`
-    SELECT COUNT(*)::text AS attempt_count
-    FROM failed_auth_attempts
-    WHERE lower(attempted_email) = ${normalizedEmail}
-      AND attempted_at >= ${windowStartIso}::timestamptz
-  `)
-  const count = Number(rows[0]?.attempt_count ?? 0)
-  return count >= env.LOGIN_LOCKOUT_THRESHOLD
+  try {
+    const rows = await getDb().execute<{ attempt_count: string | number }>(sql`
+      SELECT COUNT(*)::text AS attempt_count
+      FROM failed_auth_attempts
+      WHERE lower(attempted_email) = ${normalizedEmail}
+        AND attempted_at >= ${windowStartIso}::timestamptz
+    `)
+    const count = Number(rows[0]?.attempt_count ?? 0)
+    return count >= env.LOGIN_LOCKOUT_THRESHOLD
+  } catch (error) {
+    // This is a new, unconditional read on the hot /login path (runs for every login, not
+    // just failed ones) — unlike recordFailedAuthAttempt()'s existing best-effort write, an
+    // unhandled failure here would turn a transient DB hiccup into a full login outage for
+    // every account. Fail open (not locked out): the per-IP rate limiter (AC-6) and this
+    // story's own recording path are unaffected, so failing open only forgoes this one
+    // additional, best-effort layer rather than availability of login itself.
+    process.stderr.write(
+      `[auth.login_lockout_check_error] ${error instanceof Error ? error.message : String(error)}\n`
+    )
+    return false
+  }
 }
