@@ -32,6 +32,10 @@ export function validationError(
     // message so a malformed domain surfaces the contract's invalid_domain_format code, not the
     // generic validation_error fallback.
     if (issue.message === 'invalid_domain_format') code = 'invalid_domain_format'
+    // Story 1.21 AC-1: PasswordSchema's strength refine sets this exact message so a
+    // length-padded-but-trivially-guessable password surfaces a distinguishing code rather
+    // than the generic validation_error fallback.
+    if (issue.message === 'password_too_weak') code = 'password_too_weak'
   }
   return {
     code,

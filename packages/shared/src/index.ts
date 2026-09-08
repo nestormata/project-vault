@@ -1,5 +1,7 @@
 export * from './schemas/api.js'
 export * from './schemas/auth.js'
+export * from './schemas/password-strength.js'
+export * from './schemas/org-sso-domains.js'
 export * from './schemas/dashboard.js'
 export * from './schemas/org-dashboard.js'
 export * from './schemas/health-dashboard.js'

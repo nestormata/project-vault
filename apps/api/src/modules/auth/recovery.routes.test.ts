@@ -285,8 +285,7 @@ describe.sequential('account recovery routes', () => {
 
       expect(responses.slice(0, 10).every((code) => code === 202 || code === 404)).toBe(true)
       expect(responses[10]).toBe(429)
-    }, // Story 10.4: 11 sequential real requests; previously relied on the global testTimeout
-    // default (raised 45s->60s) but has still been observed timing out at exactly that
+    }, // default (raised 45s->60s) but has still been observed timing out at exactly that // Story 10.4: 11 sequential real requests; previously relied on the global testTimeout
     // boundary under this session's shared-machine contention. Explicit override for headroom.
     90_000)
 
@@ -479,6 +478,27 @@ describe.sequential('account recovery routes', () => {
       expect(weak.statusCode).toBe(422)
 
       const retry = await complete(app, token, { newPassword: 'a-strong-enough-password-3!' })
+      expect(retry.statusCode).toBe(200)
+    })
+
+    // Story 1.21 AC-1: the finding's concrete example — a length-padded-but-trivially-guessable
+    // password — must be rejected on the reset-completion path exactly as it is on registration,
+    // since both share PasswordSchema.
+    it('rejects a length-padded weak password with password_too_weak, without consuming the token (Story 1.21 AC-1)', async () => {
+      const owner = await registerOwnerWithEmail(app, 'complete-weak-strength-owner')
+      const remoteAddress = `10.9.${randomUUID().slice(0, 2)}.14`
+      await requestRecovery(app, owner.email, remoteAddress)
+      const token = await opaqueTokenFromQueue(
+        owner.orgId,
+        owner.email,
+        RECOVERY_LINK_CREATED_TEMPLATE
+      )
+
+      const weak = await complete(app, token, { newPassword: 'passwordpassword' })
+      expect(weak.statusCode).toBe(422)
+      expect(weak.json()).toMatchObject({ code: 'password_too_weak' })
+
+      const retry = await complete(app, token, { newPassword: 'a-strong-enough-password-99!' })
       expect(retry.statusCode).toBe(200)
     })
 

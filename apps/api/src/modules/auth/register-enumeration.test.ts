@@ -155,4 +155,77 @@ describe('POST /register self-signup enumeration fix (Story 1.20)', () => {
     expect(res.statusCode).toBe(422)
     expect(res.json()).toMatchObject({ code: 'validation_error' })
   })
+
+  // Story 1.21 AC-1: the finding's concrete example — passwordpassword passes the >=12
+  // character length floor but is a trivially guessable length-padded dictionary word.
+  it('rejects passwordpassword with 422 password_too_weak', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: REGISTER_URL,
+      payload: {
+        email: uniqueEmail('weak'),
+        password: 'passwordpassword',
+        orgName: `Weak Org ${randomUUID()}`,
+      },
+    })
+
+    expect(res.statusCode).toBe(422)
+    expect(res.json()).toMatchObject({ code: 'password_too_weak' })
+  })
+
+  // Story 1.21 AC-1 table-driven cases: other length-padded-but-trivially-weak passwords the
+  // finding's class describes.
+  it.each(['qwertyqwertyqwer', 'letmeinletmeinle', 'aaaaaaaaaaaa1', '123456789012'])(
+    'rejects other length-padded weak passwords with 422 password_too_weak: %s',
+    async (weakPassword) => {
+      const res = await app.inject({
+        method: 'POST',
+        url: REGISTER_URL,
+        payload: {
+          email: uniqueEmail('weak-table'),
+          password: weakPassword,
+          orgName: `Weak Table Org ${randomUUID()}`,
+        },
+      })
+
+      expect(res.statusCode).toBe(422)
+      expect(res.json()).toMatchObject({ code: 'password_too_weak' })
+    }
+  )
+
+  // Story 1.21 Dev Notes "Enumeration independence": the new refine runs as part of the
+  // top-level Zod parse, before registerUser()/email-existence branching is ever reached — a
+  // password_too_weak rejection must therefore be byte-identical for a novel vs.
+  // already-registered email, creating no new enumeration signal alongside Story 1.20's fix.
+  it('returns a byte-identical 422 password_too_weak response for a novel vs. already-registered email using the same weak password', async () => {
+    const takenEmail = uniqueEmail('weak-enum-taken')
+    await app.inject({
+      method: 'POST',
+      url: REGISTER_URL,
+      payload: { email: takenEmail, password: PASSWORD, orgName: `Weak Enum Org ${randomUUID()}` },
+    })
+
+    const novelRes = await app.inject({
+      method: 'POST',
+      url: REGISTER_URL,
+      payload: {
+        email: uniqueEmail('weak-enum-novel'),
+        password: 'passwordpassword',
+        orgName: `Weak Enum Org 2 ${randomUUID()}`,
+      },
+    })
+    const takenRes = await app.inject({
+      method: 'POST',
+      url: REGISTER_URL,
+      payload: {
+        email: takenEmail,
+        password: 'passwordpassword',
+        orgName: `Weak Enum Org 3 ${randomUUID()}`,
+      },
+    })
+
+    expect(novelRes.statusCode).toBe(422)
+    expect(novelRes.statusCode).toBe(takenRes.statusCode)
+    expect(novelRes.json()).toEqual(takenRes.json())
+  })
 })
