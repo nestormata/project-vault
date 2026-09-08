@@ -11,9 +11,9 @@
   },
   "devDependencies": {
     "@project-vault/eslint-config": "workspace:*",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.0"
   },
   "peerDependencies": {
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.0"
   }
 }
