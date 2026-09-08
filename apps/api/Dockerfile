@@ -194,6 +194,9 @@ RUN node scripts/materialize-deploy-runtime.mjs \
       /app/deploy \
       /app \
       /app/packages/shared/node_modules/cron-parser \
+      /app/packages/shared/node_modules/@zxcvbn-ts/core \
+      /app/packages/shared/node_modules/@zxcvbn-ts/language-common \
+      /app/packages/shared/node_modules/@zxcvbn-ts/language-en \
       /app/packages/crypto/node_modules/argon2 \
       /app/packages/extension-api/node_modules/semver \
       /app/deploy/node_modules/@project-vault/extension-api \

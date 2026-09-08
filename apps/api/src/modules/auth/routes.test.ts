@@ -14,6 +14,7 @@ import {
 import { createUnsealedRouteSuite } from '../../__tests__/helpers/unsealed-route-suite-test-helpers.js'
 import { registerPlatformOperator } from '../../__tests__/helpers/platform-operator-test-helpers.js'
 import { hashUserPassword } from './password.js'
+import { mfaRecoverBodySchema } from './schema.js'
 
 // Only fall back to the default local port when DATABASE_URL isn't already set (e.g. by
 // `make test`, which points at whatever host port this worktree's Postgres actually uses —
@@ -128,6 +129,20 @@ describe('auth routes', () => {
     expect(response.statusCode).toBe(422)
 
     await app.close()
+  })
+
+  it('does not apply the new password-strength check to mfaRecoverBodySchema (Story 1.21 AC-5)', () => {
+    // mfaRecoverBodySchema.password verifies an existing credential to authorize consuming an
+    // MFA recovery code — it is not a new-password-creation field, so it must keep accepting a
+    // password that would now fail PasswordSchema's strength refine (e.g. passwordpassword),
+    // as long as the payload is otherwise structurally valid for this route's own purpose. This
+    // guards against a dev agent over-applying the new refine to every password-named field.
+    const result = mfaRecoverBodySchema.safeParse({
+      email: 'user@example.com',
+      password: 'passwordpassword',
+      recoveryCode: 'abcd1234ef',
+    })
+    expect(result.success).toBe(true)
   })
 
   it('keeps MFA verify-login public while validating malformed bodies', async () => {
