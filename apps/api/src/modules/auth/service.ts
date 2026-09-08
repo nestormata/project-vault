@@ -33,7 +33,7 @@ import {
 } from '../invitations/lookup.js'
 import { hashInvitationToken } from '../invitations/tokens.js'
 import { setGracePeriodOnPrivilegedRole } from './grace-period.js'
-import { recordFailedAuthAttempt } from './failed-auth.js'
+import { isLoginLockedOut, recordFailedAuthAttempt } from './failed-auth.js'
 import { createPendingMfaSession, type MfaChallengeResult } from './mfa-login.js'
 import { normalizeEmail } from './normalize.js'
 import { hashUserPassword, verifyUserPassword } from './password.js'
@@ -622,7 +622,12 @@ export async function registerUser(
 async function recordLoginFailed(
   user: { id: string; identityTokenId: string | null; orgId: string | null } | null,
   email: string,
-  meta: RequestMeta
+  meta: RequestMeta,
+  // Story 1.22 AC-9: internal audit-log-only distinguishing reason for a lockout-caused
+  // rejection, threaded through alongside (not replacing) the existing
+  // 'orphan_user'/'unknown_subject'/'invalid_credentials' literals below. Never surfaced in the
+  // HTTP response — that stays the generic 401 invalid_credentials per AC-1/Decision 1.
+  reason: 'invalid_credentials' | 'account_lockout' = 'invalid_credentials'
 ): Promise<void> {
   try {
     if (!user?.orgId) {
@@ -631,7 +636,10 @@ async function recordLoginFailed(
           eventType: AuditEvent.LOGIN_FAILED,
           subjectHash: subjectHash(email),
           emailDomain: emailDomain(email),
-          payload: { reason: user ? 'orphan_user' : 'unknown_subject' },
+          payload: {
+            reason:
+              reason === 'account_lockout' ? reason : user ? 'orphan_user' : 'unknown_subject',
+          },
           ipAddress: meta.ipAddress,
           userAgent: meta.userAgent,
         })
@@ -644,7 +652,7 @@ async function recordLoginFailed(
         actorTokenId: user.identityTokenId,
         actorType: 'human',
         eventType: AuditEvent.LOGIN_FAILED,
-        payload: { reason: 'invalid_credentials' },
+        payload: { reason },
         ipAddress: meta.ipAddress,
         userAgent: meta.userAgent,
       })
@@ -869,7 +877,11 @@ async function rejectInvalidLogin(
   meta: RequestMeta,
   user: Awaited<ReturnType<typeof findLoginUser>>[number] | undefined,
   rows: Awaited<ReturnType<typeof findLoginUser>>,
-  activeOrgId: string | null | undefined
+  activeOrgId: string | null | undefined,
+  // Story 1.22 AC-1/AC-9: true when this rejection is (also) due to an active lockout.
+  // Recording (recordFailedAuthAttempt) below is intentionally UNCHANGED by this flag (AC-4) —
+  // only the internal audit-log reason passed to recordLoginFailed distinguishes it.
+  lockedOut = false
 ): Promise<never> {
   void recordFailedAuthAttempt({
     userId: user?.id ?? null,
@@ -877,7 +889,12 @@ async function rejectInvalidLogin(
     attemptedEmail: email,
     reason: 'invalid_credentials',
   })
-  await recordLoginFailed(failedLoginAuditSubject(user, rows, activeOrgId), email, meta)
+  await recordLoginFailed(
+    failedLoginAuditSubject(user, rows, activeOrgId),
+    email,
+    meta,
+    lockedOut ? 'account_lockout' : 'invalid_credentials'
+  )
   throw invalidCredentials()
 }
 
@@ -886,13 +903,19 @@ export async function loginUser(
   meta: RequestMeta = {}
 ): Promise<LoginResult | MfaChallengeResult> {
   const email = normalizeLoginEmail(input.email, meta)
+  // Story 1.22 AC-1: lockout check runs before findLoginUser()/verifyLoginPassword(), keyed on
+  // the normalized submitted email (not a resolved user_id) so a nonexistent email accumulates
+  // the exact same counter shape as a real one (Decision 1 — no new enumeration surface).
+  const lockedOut = await isLoginLockedOut(email)
   const rows = await findLoginUser(email)
   const user = rows[0]
   const activeMembership = rows.find((row) => row.membershipStatus === 'active' && row.orgId)
+  // AC-3: verifyLoginPassword() always runs, locked out or not — timing parity is preserved by
+  // never short-circuiting before this call.
   const valid = await verifyLoginPassword(input, user)
 
-  if (!user || !valid || !activeMembership?.orgId) {
-    return rejectInvalidLogin(email, meta, user, rows, activeMembership?.orgId)
+  if (lockedOut || !user || !valid || !activeMembership?.orgId) {
+    return rejectInvalidLogin(email, meta, user, rows, activeMembership?.orgId, lockedOut)
   }
 
   if (user.mfaEnrolledAt) {
