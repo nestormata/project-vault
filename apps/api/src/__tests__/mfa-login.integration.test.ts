@@ -85,6 +85,23 @@ async function challengeForEnrolledUser() {
   return { user, challenge }
 }
 
+/**
+ * AC-1's regression tests need `writeHumanAuditEntry` to fail in a way that actually reproduces
+ * the story's root cause: a real Postgres-level aborted-transaction state (SQLSTATE 25P02), not
+ * merely a rejected JS promise. A bare `vi.spyOn(...).mockRejectedValueOnce(new Error(...))`
+ * never sends any SQL to Postgres, so it cannot mark the connection's transaction aborted —
+ * confirmed empirically during this story's implementation: that pure-JS-mock technique passes
+ * both pre-fix and post-fix, because `tryWriteLoginFailedAudit`'s own `try/catch` already
+ * swallows the JS-level rejection either way (the savepoint's job is isolating a *Postgres*-level
+ * abort, which a full-function mock never triggers). Executing a real failing statement
+ * (division by zero) against the caller's `tx` reproduces the actual condition instead.
+ */
+function mockAuditWriteAbortingTransaction() {
+  return vi.spyOn(auditModule, 'writeHumanAuditEntry').mockImplementationOnce(async (tx) => {
+    await (tx as Tx).execute(sql`SELECT 1/0`)
+  })
+}
+
 async function auditRowsForEvent(orgId: string, eventType: string) {
   return withOrg(orgId, (tx) =>
     tx
@@ -408,6 +425,83 @@ describe.sequential('MFA login service', () => {
       expect(result.userId).toBe(user.userId)
     } finally {
       auditSpy.mockRestore()
+    }
+  })
+
+  it('still returns invalid_totp when the failed-login audit insert fails', async () => {
+    const { user, challenge } = await challengeForEnrolledUser()
+    const auditSpy = mockAuditWriteAbortingTransaction()
+    const written: string[] = []
+    const stderrSpy = vi
+      .spyOn(process.stderr, 'write')
+      .mockImplementation((chunk: string | Uint8Array) => {
+        written.push(String(chunk))
+        return true
+      })
+
+    try {
+      await expect(
+        verifyLogin(
+          { mfaToken: challenge.mfaToken, totp: INVALID_TOTP_CODE },
+          { ipAddress: '203.0.113.13' }
+        )
+      ).rejects.toMatchObject({ code: INVALID_TOTP, statusCode: 422 })
+
+      // AC-8: the diagnostic log still fires, unchanged format/content, even though the
+      // write is now isolated in its own savepoint — same "[auth.mfa_login_failed_audit_error] "
+      // prefix, whatever the underlying error message is.
+      const logs = written.join('\n')
+      expect(logs).toMatch(/\[auth\.mfa_login_failed_audit_error\] .+\n/)
+    } finally {
+      auditSpy.mockRestore()
+      stderrSpy.mockRestore()
+    }
+
+    // AC-2 edge case: the attemptCount update (which happens before the now-isolated audit
+    // write, in the same outer transaction) must still have committed.
+    const pendingRows = await getDb()
+      .select()
+      .from(pendingMfaSessions)
+      .where(eq(pendingMfaSessions.tokenHash, hashPendingMfaToken(challenge.mfaToken)))
+    expect(pendingRows).toHaveLength(1)
+    expect(pendingRows[0]?.attemptCount).toBe(1)
+
+    // AC-3: the independent failed_auth_attempts write is unaffected by the audit-write failure
+    // (unlike the human audit-log row itself, which this attempt deliberately failed to write —
+    // do not assert that row here, only the decoupled failed_auth_attempts one).
+    const failedTotpRows = await waitForFailedTotpRows(user.userId)
+    expect(failedTotpRows).toHaveLength(1)
+    expect(failedTotpRows[0]?.attemptedEmail).toBe(user.email)
+    expect(failedTotpRows[0]?.ipAddress).toBe('203.0.113.13')
+
+    // AC-2: a correct code immediately afterward, for the same pending session, still succeeds —
+    // the savepoint isolates only the failed audit insert, not the surrounding transaction.
+    const result = await verifyLogin({
+      mfaToken: challenge.mfaToken,
+      totp: totpForSecret(user.secret, Date.now() + 30_000),
+    })
+    expect(result.userId).toBe(user.userId)
+  })
+
+  it('still returns mfa_token_expired (not a 500) when the failed-login audit insert fails on the attempt-capped branch', async () => {
+    const previousMaxAttempts = env.MFA_LOGIN_MAX_ATTEMPTS
+    env.MFA_LOGIN_MAX_ATTEMPTS = 1
+    try {
+      const { challenge } = await challengeForEnrolledUser()
+      const auditSpy = mockAuditWriteAbortingTransaction()
+
+      try {
+        await expect(
+          verifyLogin(
+            { mfaToken: challenge.mfaToken, totp: INVALID_TOTP_CODE },
+            { ipAddress: '203.0.113.14' }
+          )
+        ).rejects.toMatchObject({ code: MFA_TOKEN_EXPIRED, statusCode: 401 })
+      } finally {
+        auditSpy.mockRestore()
+      }
+    } finally {
+      env.MFA_LOGIN_MAX_ATTEMPTS = previousMaxAttempts
     }
   })
 

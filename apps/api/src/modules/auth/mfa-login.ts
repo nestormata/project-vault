@@ -81,13 +81,20 @@ async function tryWriteLoginFailedAudit(
   meta: RequestMeta
 ): Promise<void> {
   try {
-    await writeHumanAuditEntry(tx, {
-      orgId: row.orgId,
-      actorTokenId: await firstActorTokenIdForUser(tx, row.userId),
-      eventType: AuditEvent.LOGIN_FAILED,
-      payload: { method: 'totp_login' },
-      meta,
-    })
+    const actorTokenId = await firstActorTokenIdForUser(tx, row.userId)
+    // Keep the best-effort audit write inside a savepoint: a database error aborts the
+    // current PostgreSQL transaction, so catching a direct INSERT failure would not be enough
+    // to let the already-recorded attempt (and the eventual invalid_totp/mfa_token_expired
+    // response) commit.
+    await tx.transaction((auditTx) =>
+      writeHumanAuditEntry(auditTx as Tx, {
+        orgId: row.orgId,
+        actorTokenId,
+        eventType: AuditEvent.LOGIN_FAILED,
+        payload: { method: 'totp_login' },
+        meta,
+      })
+    )
   } catch (error) {
     process.stderr.write(
       `[auth.mfa_login_failed_audit_error] ${error instanceof Error ? error.message : String(error)}\n`
