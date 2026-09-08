@@ -631,14 +631,14 @@ async function recordLoginFailed(
 ): Promise<void> {
   try {
     if (!user?.orgId) {
+      const unresolvableSubjectReason = user ? 'orphan_user' : 'unknown_subject'
       await getDb().transaction((tx) =>
         insertPlatformSecurityEvent(tx as Tx, {
           eventType: AuditEvent.LOGIN_FAILED,
           subjectHash: subjectHash(email),
           emailDomain: emailDomain(email),
           payload: {
-            reason:
-              reason === 'account_lockout' ? reason : user ? 'orphan_user' : 'unknown_subject',
+            reason: reason === 'account_lockout' ? reason : unresolvableSubjectReason,
           },
           ipAddress: meta.ipAddress,
           userAgent: meta.userAgent,
