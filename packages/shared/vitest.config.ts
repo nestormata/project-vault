@@ -16,9 +16,15 @@ export default mergeConfig(baseVitestConfig, {
       // `src/**/*.ts` contract (Story 10.4) — worth doing here too, as its own dedicated change
       // (broadening now would newly subject ~15 previously-excluded files to this package's 80%
       // aggregate threshold below, which needs its own verification pass, not a CI-fix drive-by).
+      // Story 1.21: third recurrence — added password-strength.ts and org-sso-domains.ts (both
+      // with real tests, both 0% *measured* coverage before this fix) — same root cause, same
+      // fix. The `src/**/*.ts` refactor is still deliberately not done here for the same reason
+      // stated above.
       include: [
         'src/schemas/api.ts',
         'src/schemas/auth.ts',
+        'src/schemas/org-sso-domains.ts',
+        'src/schemas/password-strength.ts',
         'src/utils/absolute-url.ts',
         'src/validation/rotation-cron-description.ts',
       ],
