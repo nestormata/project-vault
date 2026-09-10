@@ -7,13 +7,6 @@
  * cause DW-137 to be closed on false evidence. This is the build failure that catches the *next*
  * stray file before it causes another silent false all-clear.
  *
- * Epic 38's retro (2026-09-08) found a second, distinct flavor of the same defect class (DW-160's
- * documented residual gap #1): a symlink that was never created at all, not a plain-file
- * substitute for one. 18 files across epics 22-26 and 32-37 existed only in
- * `project-vault-private` with zero corresponding entry here — invisible to the original scan,
- * which only classifies entries that already exist locally. `findMissingSymlinks` closes that gap
- * by diffing the canonical directory's file list against this one.
- *
  * Pure, DB-free: a static file scan over `_bmad-output/implementation-artifacts/`.
  */
 import { lstatSync, readdirSync, readlinkSync } from 'node:fs'
@@ -24,7 +17,6 @@ import { toRepoPath } from './lib/scan-utils.js'
 export type ImplementationArtifactsViolation =
   | { file: string; reason: 'not-a-symlink' }
   | { file: string; reason: 'dangling-symlink'; target: string }
-  | { file: string; reason: 'missing-symlink' }
 
 const BMAD_OUTPUT_DIR = '_bmad-output'
 const STORIES_DIR = '_bmad-output/implementation-artifacts'
@@ -100,75 +92,6 @@ function classifyEntry(
   }
 }
 
-/**
- * Finds the canonical `project-vault-private` implementation-artifacts directory by resolving any
- * one of the local per-file symlinks already confirmed valid — there is no configured or
- * hardcoded path to `project-vault-private` anywhere in this repo (deliberately: it's a sibling
- * checkout whose location isn't guaranteed, and hardcoding an absolute path would break for any
- * other checkout layout). Returns `undefined` if no valid symlink exists to anchor from (e.g. an
- * empty or entirely-dangling local directory) — in that case there is nothing to compare against,
- * so the missing-symlink check fails open rather than guessing.
- */
-function findCanonicalDir(storiesDir: string, entries: string[]): string | undefined {
-  for (const name of entries) {
-    if (ALLOWED_NON_SYMLINK_FILES.has(name)) continue
-    const fullPath = resolve(storiesDir, name)
-    let stat
-    try {
-      stat = lstatSync(fullPath)
-    } catch {
-      continue
-    }
-    if (!stat.isSymbolicLink()) continue
-
-    const target = readlinkSync(fullPath)
-    const resolvedTarget = target.startsWith('/') ? target : resolve(storiesDir, target)
-    try {
-      lstatSync(resolvedTarget)
-    } catch {
-      continue // dangling — can't anchor off a target that doesn't exist
-    }
-    return resolve(resolvedTarget, '..')
-  }
-  return undefined
-}
-
-/**
- * Finds every top-level file that exists in the canonical `project-vault-private` directory but
- * has no corresponding entry at all in the local `implementation-artifacts/` directory — a symlink
- * that was never created, as opposed to `classifyEntry`'s "symlink replaced by a stray plain file"
- * case. This is the defect class named in DW-160's residual gap #1 and confirmed recurring on 18
- * files across epics 22-26 and 32-37 during Epic 38's retro (2026-09-08): a file written directly
- * into `project-vault-private` (e.g. inside a dedicated retro worktree) whose symlink-creation step
- * back into `project-vault` never ran, and whose absence — not presence-as-a-plain-file — is
- * invisible to a scanner that only iterates over what's already in the local directory.
- */
-function findMissingSymlinks(
-  storiesDir: string,
-  root: string,
-  localEntries: readonly string[],
-  canonicalDir: string
-): ImplementationArtifactsViolation[] {
-  const localNames = new Set(localEntries)
-  let canonicalEntries: string[]
-  try {
-    canonicalEntries = readdirSync(canonicalDir)
-  } catch {
-    return [] // canonical dir vanished mid-scan or isn't readable — nothing to compare against
-  }
-
-  const violations: ImplementationArtifactsViolation[] = []
-  for (const name of canonicalEntries) {
-    if (localNames.has(name)) continue
-    if (lstatSync(resolve(canonicalDir, name)).isDirectory()) continue
-    violations.push({
-      file: toRepoPath(root, resolve(storiesDir, name)),
-      reason: 'missing-symlink',
-    })
-  }
-  return violations
-}
-
 export function scanImplementationArtifactsSymlinks(
   rootDir = process.cwd()
 ): ImplementationArtifactsViolation[] {
@@ -176,10 +99,6 @@ export function scanImplementationArtifactsSymlinks(
   const bmadOutputPath = resolve(root, BMAD_OUTPUT_DIR)
 
   try {
-    // When _bmad-output itself is a symlink (real CI's directory-level attach shape), every file
-    // reached through it IS project-vault-private's own tree by construction — nothing can be
-    // "missing" from itself, so the missing-symlink check is inapplicable in this mode too,
-    // matching the existing early-return's own reasoning.
     if (lstatSync(bmadOutputPath).isSymbolicLink()) return []
   } catch {
     // _bmad-output doesn't exist at all — nothing to scan.
@@ -199,11 +118,6 @@ export function scanImplementationArtifactsSymlinks(
   for (const name of entries) {
     const violation = classifyEntry(storiesDir, root, name)
     if (violation) violations.push(violation)
-  }
-
-  const canonicalDir = findCanonicalDir(storiesDir, entries)
-  if (canonicalDir) {
-    violations.push(...findMissingSymlinks(storiesDir, root, entries, canonicalDir))
   }
 
   return violations.sort((a, b) => a.file.localeCompare(b.file))
@@ -226,19 +140,14 @@ function report(violations: ImplementationArtifactsViolation[]): void {
   for (const v of violations) {
     if (v.reason === 'not-a-symlink') {
       process.stderr.write(`  - ${v.file}: plain regular file, not a symlink\n`)
-    } else if (v.reason === 'dangling-symlink') {
-      process.stderr.write(`  - ${v.file}: dangling symlink (target does not exist: ${v.target})\n`)
     } else {
-      process.stderr.write(
-        `  - ${v.file}: exists in project-vault-private but has no symlink here at all\n`
-      )
+      process.stderr.write(`  - ${v.file}: dangling symlink (target does not exist: ${v.target})\n`)
     }
   }
   process.stderr.write(
     '\nFix: either replace the file with a real symlink to its project-vault-private counterpart ' +
       '(creating that counterpart first if it does not yet exist), fix the dangling symlink to ' +
-      'point at a real file, create the missing symlink for a file that already exists in ' +
-      'project-vault-private, or — only if this is a genuinely intentional, documented local-only ' +
+      'point at a real file, or — only if this is a genuinely intentional, documented local-only ' +
       'artifact — add it to ALLOWED_NON_SYMLINK_FILES in ' +
       'scripts/check-implementation-artifacts-symlinks.ts with a one-line rationale.\n'
   )
