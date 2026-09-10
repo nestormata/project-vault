@@ -9,7 +9,11 @@
 
 _Run complex projects. Miss nothing._
 
-Project Vault is a self-hostable, open-core operations platform for engineering projects. Where every existing secrets manager organizes by environment (dev / staging / prod), Project Vault organizes by _project_: credentials, certificates, domains, services, and payment renewals grouped under the natural unit of engineering responsibility. It is a different data model, a different access-control model, and a different mental model — not a UI reorganization.
+Project Vault is a self-hostable, open-core operations platform for engineering projects.
+
+Most secrets managers key everything off environment: you get a "prod" bucket and a "staging" bucket, full stop. That works for one team running one app. It breaks down the moment you're running several projects — each with its own credentials, TLS cert, domain renewal, and billing date — because those all get scattered across folders you invented yourself, with no first-class place they belong together.
+
+Project Vault makes _project_ a real object instead: its own roles and permissions, not just a tag on a secret. When a project's domain is about to expire, you see that next to its credentials and services, not in a separate monitoring tool you have to cross-reference by hand.
 
 ## Try it now
 
