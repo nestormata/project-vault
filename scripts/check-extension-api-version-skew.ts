@@ -445,16 +445,15 @@ function formatBaseDefectNotice(result: VersionSkewCheckResult): string {
 function formatFailure(result: VersionSkewCheckResult): string {
   const verdict = result.verdict
   const baseNotice = formatBaseDefectNotice(result)
-  const detail =
-    verdict.code === UNRESOLVABLE_RANGE
-      ? formatUnresolvableRange(result)
-      : verdict.code === 'no-bump'
-        ? formatNoBump(result)
-        : verdict.code === NOT_GREATER_THAN_MERGE_BASE
-          ? formatDowngrade(result)
-          : verdict.code === INVALID_SEMVER
-            ? formatInvalidSemver(result)
-            : formatMissingVersion(result)
+  // A lookup keyed by verdict code, rather than a ternary chain: each formatter is reached by one
+  // lookup and a new verdict code is a single entry instead of another nesting level.
+  const formatters: Record<string, (input: VersionSkewCheckResult) => string> = {
+    [UNRESOLVABLE_RANGE]: formatUnresolvableRange,
+    'no-bump': formatNoBump,
+    [NOT_GREATER_THAN_MERGE_BASE]: formatDowngrade,
+    [INVALID_SEMVER]: formatInvalidSemver,
+  }
+  const detail = (formatters[verdict.code] ?? formatMissingVersion)(result)
   return baseNotice ? `${baseNotice}\n${detail}` : detail
 }
 

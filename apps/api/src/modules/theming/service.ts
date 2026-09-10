@@ -138,7 +138,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function hexPairToByte(pair: string): number {
-  return parseInt(pair, 16)
+  return Number.parseInt(pair, 16)
 }
 
 /**

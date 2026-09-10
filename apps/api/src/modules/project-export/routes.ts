@@ -51,11 +51,17 @@ const IMPORT_RATE_LIMIT = {
 const IMPORT_FILE_SIZE_LIMIT_BYTES = 25 * 1024 * 1024
 
 function slugifyForFilename(name: string): string {
-  const slug = name
+  const collapsed = name
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+  // Trimming the separator runs with slice rather than an anchored `-+` alternation: the regex
+  // form backtracks super-linearly on a long run of separators, which this input can contain.
+  let start = 0
+  let end = collapsed.length
+  while (start < end && collapsed[start] === '-') start += 1
+  while (end > start && collapsed[end - 1] === '-') end -= 1
+  const slug = collapsed.slice(start, end)
   return slug.length > 0 ? slug.slice(0, 64) : 'project'
 }
 

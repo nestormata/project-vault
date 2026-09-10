@@ -92,8 +92,45 @@ const CREDENTIAL_LITERAL_PATTERN = /^[A-Za-z0-9+/=_.-]{16,200}$/
 // isPublishedPlaceholder() below, which is generic and so cannot drift as that list changes.
 // Importing them directly was rejected: it would make this standalone, git-only pre-publication
 // script depend on apps/api's config graph.
-const PLACEHOLDER_VALUE_PATTERN =
-  /^(?:password|passwd|secret|token|api[-_]?key|changeme|todo|none|null|unset|redacted|x+|-+|\.+)$|^(?:test|fake|dummy|demo|sample|example|local|dev|fixture|mock|stub|invalid)[-_]|change[-_]?me|dev[-_]?only|placeholder|your[-_]|replace[-_]?me|not[-_]?a[-_]?real/i
+// Expressed as small predicates rather than one alternation: as a single regular expression this
+// exceeded the complexity budget and was unreadable. Repeated-character values ('a'.repeat(64),
+// '----') are deliberately absent, being covered by the character-diversity test below.
+const PLACEHOLDER_EXACT_VALUES = new Set([
+  'password',
+  'passwd',
+  'secret',
+  'token',
+  'apikey',
+  'changeme',
+  'todo',
+  'none',
+  'null',
+  'unset',
+  'redacted',
+])
+// A fixture value normally announces itself with a separator, as in `test-csrf-token`. Requiring
+// that separator keeps a real secret that merely begins with these letters out of the list.
+const PLACEHOLDER_PREFIXES = [
+  'test',
+  'fake',
+  'dummy',
+  'demo',
+  'sample',
+  'example',
+  'local',
+  'dev',
+  'fixture',
+  'mock',
+  'stub',
+  'invalid',
+  'your',
+]
+// Multi-word markers, matched with separators removed so `change-me`, `change_me` and `changeme`
+// are all recognised wherever they appear in the value.
+const PLACEHOLDER_MARKERS = ['changeme', 'devonly', 'placeholder', 'replaceme', 'notareal']
+// Trailing syntax the value may be embedded in (JSON, YAML, Markdown, shell). Stripped with a
+// loop rather than a `[...]+$` regex, which backtracks super-linearly on a long run.
+const TRAILING_SYNTAX_CHARACTERS = new Set(['"', "'", '`', ',', ';', ')', ']', '}', '|', '\\'])
 // These files intentionally document or exercise local service endpoints. A local endpoint in
 // source, prose, or an arbitrary workflow remains a finding.
 const SAFE_LOCAL_ENDPOINT_FILES = new Set([
@@ -147,14 +184,27 @@ function extractLiteralValue(rest: string): string | null {
   } else {
     value = value.split(/\s/, 1)[0] ?? ''
   }
-  // Trailing syntax the value is embedded in (JSON/YAML/Markdown/shell), never part of a secret.
-  value = value.replace(/["'`,;)\]}|\\]+$/, '')
+  // Trailing syntax the value is embedded in, never part of a secret.
+  let end = value.length
+  while (end > 0 && TRAILING_SYNTAX_CHARACTERS.has(value[end - 1] ?? '')) end -= 1
+  value = value.slice(0, end)
   return value.length > 0 ? value : null
+}
+
+/** A placeholder, fixture or "fill this in" value, as opposed to a generated credential. */
+function isPlaceholderValue(value: string): boolean {
+  const lower = value.toLowerCase()
+  const compact = lower.replaceAll('-', '').replaceAll('_', '')
+  if (PLACEHOLDER_EXACT_VALUES.has(compact)) return true
+  if (PLACEHOLDER_PREFIXES.some((p) => lower.startsWith(`${p}-`) || lower.startsWith(`${p}_`))) {
+    return true
+  }
+  return PLACEHOLDER_MARKERS.some((marker) => compact.includes(marker))
 }
 
 /** A value the repository publishes on purpose: a placeholder, a path, or a known dev literal. */
 function isPublishedPlaceholder(value: string): boolean {
-  if (PLACEHOLDER_VALUE_PATTERN.test(value)) return true
+  if (isPlaceholderValue(value)) return true
   // A leading `/` or `./` makes this a route or filesystem path, not a credential. (Base64
   // secrets may contain `/` but do not start with one.)
   if (/^\.{0,2}\//.test(value)) return true
@@ -164,7 +214,7 @@ function isPublishedPlaceholder(value: string): boolean {
 }
 
 function characterClasses(segment: string): number {
-  return [/[a-z]/, /[A-Z]/, /[0-9]/].filter((pattern) => pattern.test(segment)).length
+  return [/[a-z]/, /[A-Z]/, /\d/].filter((pattern) => pattern.test(segment)).length
 }
 
 /**

@@ -20,7 +20,7 @@ export type FollowupReviewGateVerdict = 'not-applicable' | 'pass' | 'block'
 const CLOSING_STATUS = 'done'
 
 function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return value.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)
 }
 
 /**
@@ -31,7 +31,7 @@ function escapeRegExp(value: string): string {
  * YAML parser. Never throws on malformed/truncated content; simply returns undefined.
  */
 function extractFrontmatterValue(content: string, key: string): string | undefined {
-  const match = new RegExp(`^${escapeRegExp(key)}:[ \\t]*(.*)$`, 'm').exec(content)
+  const match = new RegExp(String.raw`^${escapeRegExp(key)}:[ \t]*(.*)$`, 'm').exec(content)
   return match?.[1]?.trim()
 }
 
@@ -39,7 +39,7 @@ function stripQuotes(value: string): string {
   const trimmed = value.trim()
   if (trimmed.length >= 2) {
     const first = trimmed[0]
-    const last = trimmed[trimmed.length - 1]
+    const last = trimmed.at(-1)
     if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
       return trimmed.slice(1, -1)
     }

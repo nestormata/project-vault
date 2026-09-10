@@ -68,7 +68,8 @@ function base64UrlDecode(segment: string): Buffer | undefined {
   }
 }
 
-function parseJson(buf: Buffer): unknown | undefined {
+// `unknown` already admits `undefined`, so the failure case needs no separate union member.
+function parseJson(buf: Buffer): unknown {
   try {
     return JSON.parse(buf.toString('utf8'))
   } catch {

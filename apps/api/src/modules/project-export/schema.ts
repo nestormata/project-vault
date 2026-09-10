@@ -1,5 +1,4 @@
 import { z } from 'zod/v4'
-import { ApiErrorSchema } from '../../lib/api-contracts.js'
 
 // Story 28.9 D7: the export file's PLAINTEXT (post-decryption) payload version — distinct from
 // `EncryptedValue.version` (packages/crypto/src/types.ts), which only versions the AES-GCM
@@ -225,4 +224,4 @@ export const ImportProjectResponseSchema = z
   })
   .meta({ id: 'ImportProjectResponse' })
 
-export const ExportErrorSchema = ApiErrorSchema
+export { ApiErrorSchema as ExportErrorSchema } from '../../lib/api-contracts.js'
