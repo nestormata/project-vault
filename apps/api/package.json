@@ -46,7 +46,7 @@
     "fast-jwt": "^6.3.2",
     "fastify": "5.12.1",
     "fastify-plugin": "^6.0.0",
-    "nodemailer": "^9.0.5",
+    "nodemailer": "^9.1.1",
     "otpauth": "^9.5.1",
     "pg-boss": "12.28.0",
     "pino": "^10.3.1",
