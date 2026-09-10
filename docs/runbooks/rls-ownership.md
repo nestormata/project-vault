@@ -1,6 +1,12 @@
 # RLS ownership operations
 
-Story 24.1 makes the PostgreSQL RLS boundary effective for table owners.
+<!-- Verified against packages/db/src/migrations/0070_rls_ownership_and_force.sql,
+     scripts/check-rls-coverage.ts, scripts/fly-migrate.sh, docs/runbooks/rls-ownership-rollback.sql -->
+
+## When to use
+
+Running or verifying the migration that makes the PostgreSQL RLS boundary effective for table owners,
+restoring a dump, or rolling that ownership change back.
 
 ## Normal migration and verification
 
@@ -24,8 +30,8 @@ transaction clears. No data rewrite is performed.
 
 The append-only `audit_log_entries` and `platform_audit_events` tables retain `vault_app` `SELECT,
 INSERT` only. Do not grant direct `UPDATE` or `DELETE`; historical cleanup uses the existing
-controlled `SECURITY DEFINER` purge functions. Story 24.5a makes their function ACL the database
-boundary: `PUBLIC` is not executable, and only `vault_app` is explicitly granted `EXECUTE`. The
+controlled `SECURITY DEFINER` purge functions. Their function ACL is itself a database boundary:
+`PUBLIC` is not executable, and only `vault_app` is explicitly granted `EXECUTE`. The
 platform purge remains caller-enforced through `withPlatformOperatorContext()`; this ACL does not
 bound an in-process extension that already holds the `vault_app` pool.
 

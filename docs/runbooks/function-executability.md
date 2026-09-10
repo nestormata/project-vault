@@ -1,8 +1,16 @@
 # Function executability invariant
 
-Story 24.5b's catalog check is a read-only post-migration and post-restore guard. Run it as
-`vault_app` (or another role that can read the PostgreSQL catalogs and evaluate
-`has_function_privilege`), after migrations and after every dump/restore:
+<!-- Verified against scripts/check-function-executability.ts,
+     scripts/sql/check-function-executability.sql, package.json, Makefile -->
+
+## When to use
+
+After migrations, and after every dump/restore — including any disaster-recovery rebuild
+([`disaster-recovery.md`](disaster-recovery.md)). A failure here means a database privilege boundary
+is open, so treat it as a gate before serving traffic, not a report.
+
+This catalog check is read-only. Run it as `vault_app` (or another role that can read the PostgreSQL
+catalogs and evaluate `has_function_privilege`):
 
 ```bash
 DATABASE_URL="$VAULT_APP_DATABASE_URL" pnpm check-function-executability

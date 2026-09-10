@@ -38,7 +38,7 @@ export const CACHE_KDF_INFO = 'project-vault-agent-cache-v1'
 //      verified fresh by `scripts/check-vault-action-dist-fresh.ts`) so the bundled copy actually
 //      picks up this change — editing this file alone does NOT update the already-built dist/.
 //   3. Cut a `vault-action` re-tag/release so CI consumers of the mutable `v1` tag pick up the fix.
-// See `packages/agent/SECURITY.md` for the full checklist and `packages/crypto/src/aes.ts` for the
+// See `packages/agent/MAINTAINERS.md` for the full checklist and `packages/crypto/src/aes.ts` for the
 // cross-reference back the other way.
 
 /** Derives a 256-bit AES cache key from the plaintext API key. Salt is intentionally empty. */

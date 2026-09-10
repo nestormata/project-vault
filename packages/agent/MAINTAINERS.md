@@ -1,6 +1,9 @@
-# Security notes — `@project-vault/agent`
+# Maintainer notes — `@project-vault/agent`
 
-## Cache-encryption cross-release synchronization checklist (Story 8-6 AC-10)
+This file is an **internal maintainer checklist**, not a vulnerability-disclosure policy. To
+report a security issue in Project Vault, follow the repository's root `SECURITY.md`.
+
+## Cache-encryption cross-release synchronization checklist
 
 The AES-256-GCM/HKDF envelope used to encrypt the offline secret cache
 (`~/.project-vault/cache.json`) is intentionally **duplicated, not shared**, across three

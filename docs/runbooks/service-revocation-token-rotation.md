@@ -1,16 +1,19 @@
-# SERVICE_REVOCATION_TOKEN rotation and compromise response (Story 31.1)
+# SERVICE_REVOCATION_TOKEN rotation and compromise response
 
-<!-- Source: Story 31.1 (DW-130) AC14.48/AC14.49; verified against apps/api/src/config/env.ts,
+<!-- Verified against apps/api/src/config/env.ts,
      apps/api/src/modules/service-provisioning/routes.ts, apps/api/src/modules/service-provisioning/service.ts,
-     apps/api/src/modules/auth/session-revoke.ts (revokeAllSessionsForOrg); mirrors
-     docs/runbooks/handoff-key-rotation.md's structure (Story 30-2). -->
+     apps/api/src/modules/auth/session-revoke.ts (revokeAllSessionsForOrg) -->
 
-This runbook covers `SERVICE_REVOCATION_TOKEN`, the static shared secret that authenticates
-CentralizeMe (CM) as a machine caller to
-`POST /api/v1/service/organizations/:centralizemeOrganizationId/revoke-sessions` — the
-machine-authenticated, org-wide session-and-API-key revocation route CM calls when it deprovisions
-or deletes an organization (DW-130, closing the gap `docs/runbooks/handoff-key-rotation.md`'s own
-compromise-response section flagged as "explicitly out of scope").
+## When to use
+
+Rotating `SERVICE_REVOCATION_TOKEN` on a schedule, or responding to a suspected leak or an unexpected
+`org.sessions_revoked_by_service` alert.
+
+`SERVICE_REVOCATION_TOKEN` is the static shared secret that authenticates CentralizeMe (CM) as a
+machine caller to `POST /api/v1/service/organizations/:centralizemeOrganizationId/revoke-sessions` —
+the machine-authenticated, org-wide session-and-API-key revocation route CM calls when it
+deprovisions or deletes an organization. It is also the per-org revocation surface referenced from
+[`handoff-key-rotation.md`](handoff-key-rotation.md)'s compromise response.
 
 ## Background
 
@@ -25,7 +28,7 @@ compromise-response section flagged as "explicitly out of scope").
 - The route is fail-closed by design: when `SERVICE_REVOCATION_TOKEN` is unset, every request to
   the route gets `403 service_revocation_forbidden` — unconditionally, with no distinction between
   "unset" and "wrong token". This makes **unsetting the env var and restarting the API a
-  zero-code, immediate kill switch** (AC14.48) — the first step of the incident procedure below.
+  zero-code, immediate kill switch** — the first step of the incident procedure below.
 - The route is also rate-limited (a coarse, route-wide cap — not per-org, not per-IP) and fires a
   real-time operator alert on every successful call (even at zero revoked). Neither of these
   replaces the kill switch; they exist to bound and surface abuse of a *correct* secret, not to
@@ -46,14 +49,14 @@ compromise-response section flagged as "explicitly out of scope").
    blip if CM's own rotation lags PV's).
 5. **Confirm the new value is accepted**: a request from CM's updated caller with the new token
    must succeed (`200`, with real `sessionsRevokedCount`/`apiKeysRevokedCount` values) and fire the
-   operator alert (AC14.46) — confirming the whole path end to end, not just the auth check.
+   operator alert — confirming the whole path end to end, not just the auth check.
 
 There is no overlap window here (unlike the handoff-key rotation's dual-trusted-key period) — this
 is a single static secret, not an asymmetric key pair, so cutover is a single hard swap. A brief
 window of CM-caller failures between steps 3 and 4 (if CM's own update lags PV's restart) is
 expected and self-resolving once CM picks up the new value from step 2.
 
-## Incident procedure: the alert fired unexpectedly (AC14.46/AC14.48)
+## Incident procedure: the alert fired unexpectedly
 
 A successful call to this route always fires an operator-facing alert (`org.sessions_revoked_by_service`,
 delivered via this codebase's existing admin-alert mechanism — see
@@ -62,10 +65,10 @@ here rather than a new delivery path). A **correct**, CM-triggered call is rare 
 actual org deprovisioning. An operator seeing an **unexpected** one (an org nobody intended to
 deprovision, at a time nobody scheduled it, or simply more calls than CM's own operational cadence
 would produce) is the fast-detection signal this design relies on to bound a leaked-token blast
-radius (Decision 5, Story 31.1).
+radius.
 
 1. **Freeze the token immediately**: unset `SERVICE_REVOCATION_TOKEN` in PV's environment and
-   restart the API. This is the kill switch (AC14.48) — it takes the route offline for every
+   restart the API. This is the kill switch — it takes the route offline for every
    caller, including CM's legitimate traffic, until the investigation below is resolved. Prefer a
    short legitimate-traffic outage over continued exposure to a possibly-compromised secret.
 2. **Investigate before restoring**:
@@ -85,8 +88,9 @@ radius (Decision 5, Story 31.1).
 
 ## Cross-link
 
-See `docs/runbooks/handoff-key-rotation.md` (Story 30-2) for the CM handoff-login signing-key
-rotation runbook — a related but structurally different secret (asymmetric key pair with an
-overlap window, vs. this route's single static shared secret with a hard-swap kill switch). That
-runbook's own compromise-response section names this route (DW-130) as the mechanism that closes
-its "no fleet-wide, machine-authenticated revocation" gap.
+See [`handoff-key-rotation.md`](handoff-key-rotation.md) for the CentralizeMe handoff-login
+signing-key rotation runbook — a related but structurally different secret (an asymmetric key pair
+with an overlap window, versus this route's single static shared secret with a hard-swap kill
+switch). That runbook's compromise response names this route as its per-org revocation mechanism.
+
+For the twelve HMAC/session secrets, see [`secret-rotation.md`](secret-rotation.md).

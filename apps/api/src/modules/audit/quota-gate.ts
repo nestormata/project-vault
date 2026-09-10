@@ -238,7 +238,7 @@ export async function assertOrgMayWriteAudit(
 // sites, immediately BEFORE the storage gate (the documented ordering decision — a rate-refused
 // request never has its size estimated or attributed to the storage counter). Colocated on the
 // SAME `audit_org_storage_usage` row (no new table — see the Design Decision section of Story
-// 22.2's story file / docs/operations/audit-quota-degradation-strategy.md's addendum).
+// 22.2's story file / docs/design/audit-quota.md's addendum).
 // ---------------------------------------------------------------------------------------------
 
 type RateGateResult = { admitted: boolean; preauth: boolean }

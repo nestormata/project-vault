@@ -8,6 +8,14 @@
 # Usage:
 #   scripts/docker-ports.sh check   # report BUSY/OK for each port (default); exits 1 on conflict
 #   scripts/docker-ports.sh fix     # bump any busy port to the next free one and write .env
+#
+# Environment:
+#   DOCKER_PORTS_KEEP_DEFAULTS=1  Keep the classic 5432/3000/5173 defaults. Disables *only* the
+#                                 "isolate the shared default" remap (and the same stamping on a
+#                                 freshly created .env). Genuinely BUSY ports are still bumped to
+#                                 the next free one, and the script says so. Intended for a single
+#                                 checkout on a machine where nothing else is using those ports;
+#                                 do NOT set it when running several worktrees concurrently.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -89,7 +97,12 @@ shared_default_for_key() {
   esac
 }
 
-if [[ "$freshly_created" -eq 1 ]]; then
+KEEP_DEFAULTS="${DOCKER_PORTS_KEEP_DEFAULTS:-0}"
+if [[ "$KEEP_DEFAULTS" == "1" ]]; then
+  echo "==> DOCKER_PORTS_KEEP_DEFAULTS=1 — keeping 5432/3000/5173 unless a port is actually busy"
+fi
+
+if [[ "$freshly_created" -eq 1 && "$KEEP_DEFAULTS" != "1" ]]; then
   # Stamp deterministic ports immediately instead of leaving the literal 5432/3000/5173 copied
   # from .env.example in place — otherwise a fresh worktree only gets isolated once someone
   # remembers to run `fix`, and until then it's sitting at the exact default every other worktree
@@ -105,9 +118,13 @@ for key in DB_HOST_PORT API_HOST_PORT WEB_HOST_PORT; do
   derived="$(derive_port "$(base_for_key "$key")")"
   shared_default="$(shared_default_for_key "$key")"
 
-  current="$(env_value "$key" "$derived")"
+  if [[ "$KEEP_DEFAULTS" == "1" ]]; then
+    current="$(env_value "$key" "$shared_default")"
+  else
+    current="$(env_value "$key" "$derived")"
+  fi
 
-  if [[ "$MODE" == "fix" && "$current" == "$shared_default" ]]; then
+  if [[ "$MODE" == "fix" && "$KEEP_DEFAULTS" != "1" && "$current" == "$shared_default" ]]; then
     # Still at the un-isolated shared default — either a stale .env from before this worktree-
     # local derivation existed, or one freshly copied from .env.example. Migrate it to this
     # worktree's own deterministic port even if it isn't busy *right now* — the goal is that two
@@ -115,6 +132,18 @@ for key in DB_HOST_PORT API_HOST_PORT WEB_HOST_PORT; do
     set_env_value "$key" "$derived"
     echo "ISOLATED ${key}=${current} -> ${derived} (was the shared, non-isolated default)"
     current="$derived"
+  fi
+
+  if [[ "$MODE" == "fix" && "$KEEP_DEFAULTS" == "1" && "$current" != "$shared_default" ]]; then
+    # Opt-out requested: put the classic default back when it is actually available, so a
+    # checkout that was isolated by an earlier run can be returned to 5432/3000/5173.
+    if port_is_free "$shared_default"; then
+      set_env_value "$key" "$shared_default"
+      echo "RESTORED ${key}=${current} -> ${shared_default} (DOCKER_PORTS_KEEP_DEFAULTS=1)"
+      current="$shared_default"
+    else
+      echo "KEEP  ${key}=${current} — ${shared_default} is busy, staying on the current port"
+    fi
   fi
 
   if port_is_free "$current"; then

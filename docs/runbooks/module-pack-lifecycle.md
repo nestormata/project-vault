@@ -1,32 +1,32 @@
-# Module-pack lifecycle: install, deploy, rollback, health (Story 25.9)
+# Module-pack lifecycle: install, deploy, rollback, health
 
-<!-- Source: Story 25.9; verified against apps/api/src/extensions/loader.ts,
+<!-- Verified against apps/api/src/extensions/loader.ts,
      apps/api/src/extensions/status-routes.ts, apps/api/src/routes/health.ts,
-     apps/web/src/routes/(app)/settings/extensions/+page.svelte, ADR-0005 -->
+     apps/web/src/routes/(app)/settings/extensions/+page.svelte -->
 
-A **module pack** (a.k.a. "extension") is an npm package this instance loads at boot to extend
-core behavior — e.g. CentralizeMe's SSO/UI-panel/audit-source extension. ADR-0005 established the
-model; this document is the missing operator-facing lifecycle runbook for it: install, deploy a
-new version, roll back a bad deploy, and read the loaded module pack's health/version status.
+## When to use
 
-Everything below describes existing, already-shipped mechanism — this story added no new
-pre-flight, deploy, or rollback behavior. The one piece of code this story did add is the loaded
-package's own version now being surfaced on the admin status endpoint/UI (see "Health & version
-observability" below).
+Installing a module pack for the first time, deploying a new version of one, rolling a bad deploy
+back, or reading the loaded pack's health and version status.
+
+A **module pack** (a.k.a. "extension") is an npm package this instance loads at boot to extend core
+behaviour — for example CentralizeMe's SSO / UI-panel / audit-source extension.
 
 ## The model in one sentence
 
 Install, deploy, and rollback are all **the same operation**: set `VAULT_EXTENSIONS_PACKAGE` to
-resolve to the module pack version you want, then restart. There is no in-process hot-swap and
-none is planned by this story — **zero-downtime upgrade of the loaded module pack is explicitly
-out of scope.** A deploy of a new module-pack version is a normal restart-based PV deploy, nothing
-more.
+resolve to the module pack version you want, then restart. There is no in-process hot-swap —
+**zero-downtime upgrade of the loaded module pack is out of scope.** A deploy of a new module-pack
+version is a normal restart-based deploy, nothing more, and the restart seals the vault
+([`vault-lifecycle.md`](vault-lifecycle.md)).
 
 ## Install (first time)
 
-1. Publish/make available the module pack as a resolvable npm package (however this instance's
-   Node module resolution finds packages — a real npm registry install, or a pnpm workspace
-   package for local dev/test).
+1. Make the module pack resolvable by the API process's Node module resolution. For a self-hosted
+   Docker deployment the supported mechanisms — a derived image, or a read-only bind mount onto
+   `/app/node_modules/<name>` — are documented in
+   [installing an extension into the production Docker image](../extensions/authoring.md#6-installing-an-extension-into-the-production-docker-image).
+   For local development a pnpm workspace package is enough.
 2. Set `VAULT_EXTENSIONS_PACKAGE` to that package's name and restart the API process (env var,
    restart-only — no runtime toggle, matching every other extension-affecting setting in this
    codebase, e.g. `docs/runbooks/native-login-exclusion.md`'s three variables).
@@ -79,17 +79,18 @@ restart — the restart-based deploy above is the only supported path.
 
 Rollback is **symmetric to deploy**, not a distinct mechanism: point `VAULT_EXTENSIONS_PACKAGE`'s
 resolution back at the prior known-good version and restart. Nothing in the loader retains state
-across a process restart, so a rollback restart behaves identically to installing that older
-version fresh — there is no migration-order or stale-state hazard on PV's side to reason about.
+across a process restart, so a rollback restart behaves identically to installing that older version
+fresh — there is no migration-order or stale-state hazard on this application's side to reason about.
 
-This is not merely asserted — see "Verification performed for this story" below for a real
-install → deploy-new-version → rollback cycle run against a live local instance, confirming these
-steps work exactly as written.
+**Verify the rollback actually took**, rather than assuming it did: compare the admin status
+endpoint's `packageVersion` before and after the restart (below). `/health`'s `extensions_status`
+only says `loaded`, so it cannot distinguish the new version from the old one — a resolution that
+silently kept the cached newer package still reports `loaded`.
 
 ## Health & version observability
 
 The admin-only `GET /api/v1/admin/extensions/status` endpoint (`allowedRoles: ['admin']`,
-`requireMfa: true`) returns the full picture, including the field this story added:
+`requireMfa: true`) returns the full picture:
 
 ```bash
 curl -s http://localhost:3000/api/v1/admin/extensions/status \
@@ -98,7 +99,7 @@ curl -s http://localhost:3000/api/v1/admin/extensions/status \
 #     "extension": {
 #       "name": "com.acme.sso-extension",
 #       "apiVersion": "1.4.0",        // the extension-API *contract* version — NOT the pack's own release
-#       "packageVersion": "3.2.1",    // NEW (Story 25.9): the loaded package's own package.json "version"
+#       "packageVersion": "3.2.1",    // the loaded package's own package.json "version"
 #       "capabilities": ["auth-provider"],
 #       "loadedAt": "2026-08-26T10:00:00.000Z"
 #     },
@@ -110,30 +111,18 @@ curl -s http://localhost:3000/api/v1/admin/extensions/status \
 similar** — do not conflate them. `apiVersion` is governed by `EXTENSION_API_VERSION`
 (`packages/extension-api`) and only ever changes when the extension-API contract itself changes;
 `packageVersion` is the module pack's own release, chosen entirely by its maintainer. The admin UI
-page (`Settings → Extensions`, `apps/web/src/routes/(app)/settings/extensions/+page.svelte`) shows
-both, correctly labeled: **"API version"** (previously mislabeled just "Version" — fixed by this
-story) and, on its own line, **"Package version"**.
+page (`Settings → Extensions`) shows both on separate lines, labelled **"API version"** and
+**"Package version"**.
 
-`packageVersion` is read from the loaded package's own `package.json` `version` field at load
-time (`apps/api/src/extensions/loader.ts`'s `readVersionFromPackageDir()`/
-`defaultReadPackageVersion()`) — no `packages/extension-api` schema change, no
-`EXTENSION_API_VERSION` bump. It is `null` (never a load failure) whenever that field is missing,
-unreadable, or not a string — a module pack is not required to publish a well-formed
+`packageVersion` is read from the loaded package's own `package.json` `version` field at load time
+(`apps/api/src/extensions/loader.ts`). It is `null` — never a load failure — whenever that field is
+missing, unreadable, or not a string: a module pack is not required to publish a well-formed
 `package.json` `version`, and this can never become a new way for a load to fail. The admin UI
-renders `null` as "Package version unknown," never a crash or a blank field.
+renders `null` as "Package version unknown", never a crash or a blank field.
 
 ## What this runbook does not cover
 
-This document is PV's own lifecycle mechanism only. A module pack's own internal
-migration/rollback correctness (e.g. CentralizeMe's own database migrations bundled inside its
-package) is that package's own responsibility — PV's loader has no visibility into it and performs
-no such migration itself. Consult the module pack's own operator documentation for that half of a
-deploy or rollback.
-
-## Verification performed for this story
-
-Performed once against a live local instance (not merely described) using this project's own
-`@project-vault/mock-ui-panel-extension` fixture, with its local `package.json` `version` field
-deliberately bumped between steps to simulate a deploy and a rollback. See this story's Dev Agent
-Record (`_bmad-output/implementation-artifacts/25-9-module-pack-install-deploy-upgrade-rollback-health-status.md`)
-for the exact commands and observed output.
+This is the host application's own lifecycle mechanism only. A module pack's internal
+migration/rollback correctness (for example, database migrations bundled inside its package) is that
+package's own responsibility — the loader has no visibility into it and performs no such migration
+itself. Consult the module pack's own operator documentation for that half of a deploy or rollback.

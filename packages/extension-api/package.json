@@ -17,6 +17,8 @@
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
+    "api-surface.snapshot.md",
+    "contract-behaviour.snapshot.md",
     "tsconfig.json",
     "tsconfig.build.json"
   ],

@@ -1,4 +1,3 @@
-import { EXTENSION_THEME_CSS_VARS } from '@project-vault/extension-api'
 import type { ExtensionThemeCssVar } from '@project-vault/extension-api'
 
 /**
@@ -61,7 +60,7 @@ const SOURCE_CSS_VAR_BY_EXT_VAR: Record<
 }
 
 function escapeForRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return value.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)
 }
 
 // Code-review hardening (Story 25.4 post-implementation review, 2026-08-24): the extracted value
@@ -84,7 +83,7 @@ function escapeForRegExp(value: string): string {
 // backtracking shape a single combined pattern would otherwise raise a lint warning for.
 const HEX_COLOR = /^#[0-9a-fA-F]{3,8}$/
 const COLOR_FUNCTION = /^(rgb|rgba|hsl|hsla)\(([^()]*)\)$/
-const NUMERIC_COMPONENT = /^[0-9]{1,3}(?:\.[0-9]+)?%?$/
+const NUMERIC_COMPONENT = /^\d{1,3}(?:\.\d+)?%?$/
 const COLOR_FUNCTION_ARITY: Record<string, [number, number]> = {
   rgb: [3, 3],
   rgba: [3, 4],
@@ -110,7 +109,7 @@ function isSafeThemeColorValue(value: string): boolean {
 function extractCssCustomProperty(css: string, cssName: string): string | null {
   // Bounded at `;` or `}` (not just `;`) so a value that happens to be the last declaration in a
   // block (no trailing semicolon) never runs past the rule's closing brace.
-  const pattern = new RegExp(`${escapeForRegExp(cssName)}:\\s*([^;}]+)[;}]`)
+  const pattern = new RegExp(String.raw`${escapeForRegExp(cssName)}:\s*([^;}]+)[;}]`)
   const extracted = pattern.exec(css)?.[1]?.trim() ?? null
   if (extracted === null || !isSafeThemeColorValue(extracted)) return null
   return extracted
@@ -154,4 +153,4 @@ export function resolveExtensionThemeVars(
 // Re-exported so callers building the composed document's `:root {}` block can iterate the
 // published property list in its documented, stable order without importing from the
 // extension-api package a second time.
-export { EXTENSION_THEME_CSS_VARS }
+export { EXTENSION_THEME_CSS_VARS } from '@project-vault/extension-api'

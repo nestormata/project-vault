@@ -82,48 +82,14 @@ describe('renderExtensionPanel (Story 25.1 AC3/AC3b, Story 25.3 AC1-AC6)', () =>
     vi.useRealTimers()
   })
 
-  it('AC3b: rejects an empty slot before ever touching extension state', async () => {
+  it.each([
+    ['empty, rejected before ever touching extension state', ''],
+    ['oversized', 'a'.repeat(65)],
+    ['wrong charset', 'Group!'],
+    ['well-formed but not the one known slot', 'document'],
+  ])('AC3b: rejects a slot value that is %s', async (_label, slot) => {
     const result = await renderExtensionPanel(
-      '',
-      DEFAULT_UI_PANEL_SLOTS,
-      silentLogger(),
-      IDENTITY_1,
-      FAKE_TX,
-      {},
-      fakeDeps()
-    )
-    expect(result).toEqual({ outcome: 'invalid_slot' })
-  })
-
-  it('AC3b: rejects an oversized slot value', async () => {
-    const result = await renderExtensionPanel(
-      'a'.repeat(65),
-      DEFAULT_UI_PANEL_SLOTS,
-      silentLogger(),
-      IDENTITY_1,
-      FAKE_TX,
-      {},
-      fakeDeps()
-    )
-    expect(result).toEqual({ outcome: 'invalid_slot' })
-  })
-
-  it('AC3b: rejects a wrong-charset slot value', async () => {
-    const result = await renderExtensionPanel(
-      'Group!',
-      DEFAULT_UI_PANEL_SLOTS,
-      silentLogger(),
-      IDENTITY_1,
-      FAKE_TX,
-      {},
-      fakeDeps()
-    )
-    expect(result).toEqual({ outcome: 'invalid_slot' })
-  })
-
-  it('AC3b: rejects a well-formed but not-the-one-known-slot value', async () => {
-    const result = await renderExtensionPanel(
-      'document',
+      slot,
       DEFAULT_UI_PANEL_SLOTS,
       silentLogger(),
       IDENTITY_1,

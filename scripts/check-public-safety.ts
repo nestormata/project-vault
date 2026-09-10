@@ -58,44 +58,79 @@ const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i
 const CONNECTION_STRING_SCHEME_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\//i
 const LOCAL_PATH_PATTERN = /(?:\/home\/[^\s/]+\/|\.claude\/worktrees|\.worktrees\/)/
 const LOCAL_ENDPOINT_PATTERN = /\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d{2,5}\b/
-const SECRET_ENV_NAME_PATTERN =
-  /\b[A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY)[A-Z0-9_]*\b/
-// These names are public deployment interfaces; their values are still scanned for credentials.
-// Keep this allowlist exact so unknown secret-like names remain review findings.
-const SAFE_PUBLIC_CONSTANT_NAMES = new Set([
-  'ADMIN_PG_PASSWORD',
-  'DEMO_LOGIN_PASSWORD',
-  'FLY_DEMO_VAULT_ADMIN_PASSWORD',
-  'FLY_DEMO_VAULT_APP_PASSWORD',
-  'MAX_FIELDS_PER_SECRET',
-  'PGPASSWORD',
-  'VAULT_ADMIN_PASSWORD',
-  'VAULT_APP_PASSWORD',
-  // Story 23.11: a plain numeric TTL constant, not a credential value. Identical in name and
-  // value to the pre-existing `TEST_ACCESS_TOKEN_TTL_SECONDS` in
-  // apps/api/src/__tests__/secure-route.integration.test.ts (which the checker doesn't flag
-  // because those lines aren't new relative to `main`). New test files reproduce this
-  // established naming convention as a "new" finding only because the checker scans added
-  // lines, not full-file content.
-  'TEST_ACCESS_TOKEN_TTL_SECONDS',
-  // Story 25.4: `THEME_TOKENS` (packages/shared/src/constants/theme-tokens.ts) is the
-  // pre-existing public theme-token registry name (colors/lengths/enum tokens, no credential
-  // material) — it only trips this checker because a new file's doc comment references it by
-  // name and the checker scans added lines, not full-file content.
-  'THEME_TOKENS',
-  // Story 25.6: local test-fixture constant names, not real secret values. `DEFAULT_CSRF_TOKEN`
-  // is a literal test string asserting the CSRF double-submit-cookie check's own behavior;
-  // `OPAQUE_REFRESH_TOKEN` is `tokens.test.ts`'s existing fixture name for a fake refresh-token
-  // value, unrelated to this story's own change (only trips this checker because the new CSRF
-  // assertions in that file made the surrounding lines "added" relative to `main`).
-  'DEFAULT_CSRF_TOKEN',
-  'OPAQUE_REFRESH_TOKEN',
-  // Story 20.8: `ephemeral-state.integration.test.ts` fixture key names used to exercise
-  // `HostServices.ephemeralState`'s per-org isolation and compare-and-swap/delete semantics —
-  // they name the *test's own arbitrary storage key*, not a real credential value.
-  'PAIRING_TOKEN_KEY',
-  'PENDING_TOKEN_KEY',
+// --- secret-shaped environment assignments ---------------------------------------------------
+//
+// This replaces a rule that fired on a bare secret-shaped NAME anywhere on an added line. A name
+// is not a credential: an open-source product's own configuration reference, its .env.example and
+// its operator runbooks exist precisely to enumerate these names, so the bare-name rule produced a
+// finding on every line whose *purpose* was to name a variable. The disclosure risk is the VALUE,
+// so the rule now fires on `NAME = <literal that looks like a real credential>`.
+//
+// That also lets the former SAFE_PUBLIC_CONSTANT_NAMES allowlist be deleted. It was globally
+// blinding the checker to fifteen names (PGPASSWORD, VAULT_ADMIN_PASSWORD, DEMO_LOGIN_PASSWORD and
+// others) in *every* file including production source, so a line reading
+// `VAULT_ADMIN_PASSWORD=<a real secret>` was clean. Value-based detection needs no such list.
+// Both patterns share the same assignment tail: an optional closing quote or backtick (as docs,
+// JSON and YAML write it), then `:` or `=`, then the rest of the line. The trailing capture is
+// narrowed to a single token by extractLiteralValue(). They are written out literally rather than
+// composed through the RegExp constructor so the expressions stay statically analysable.
+//
+// A secret-shaped name: contains TOKEN, SECRET, PASSWORD, PRIVATE_KEY or API_KEY.
+const SECRET_ENV_ASSIGNMENT_PATTERN =
+  /\b([A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY)[A-Z0-9_]*)\b["'`]?[ \t]*[:=][ \t]*(\S.*)$/gm
+// Any SCREAMING_SNAKE env-style name, secret-shaped or not. Used by the broader value-first rule
+// below so that a credential assigned to a name the secret-shaped list never anticipated
+// (STRIPE_KEY, DEPLOY_CREDENTIAL, ...) is still caught — coverage the old rule did not have.
+const ENV_ASSIGNMENT_PATTERN = /\b([A-Z][A-Z0-9_]{2,})\b["'`]?[ \t]*[:=][ \t]*(\S.*)$/gm
+// A credential literal is an opaque, unpunctuated token. Anything holding a space, a shell or
+// Compose expansion (`$VAR`, `${VAR:?msg}`, `$(cmd)`), a GitHub expression (`${{ }}`), a URL, a
+// path or prose falls outside this charset and is therefore not a literal value.
+const CREDENTIAL_LITERAL_PATTERN = /^[A-Za-z0-9+/=_.-]{16,200}$/
+// Values the repository publishes on purpose. Supersets apps/api/src/config/env.ts's own
+// PLACEHOLDER_SECRET_PATTERN (change-me|dev-only|placeholder). That file's KNOWN_DEV_SECRET_VALUES
+// — the twelve `'x'.repeat(64)` dev fallbacks — are covered by the character-diversity test in
+// isPublishedPlaceholder() below, which is generic and so cannot drift as that list changes.
+// Importing them directly was rejected: it would make this standalone, git-only pre-publication
+// script depend on apps/api's config graph.
+// Expressed as small predicates rather than one alternation: as a single regular expression this
+// exceeded the complexity budget and was unreadable. Repeated-character values ('a'.repeat(64),
+// '----') are deliberately absent, being covered by the character-diversity test below.
+const PLACEHOLDER_EXACT_VALUES = new Set([
+  'password',
+  'passwd',
+  'secret',
+  'token',
+  'apikey',
+  'changeme',
+  'todo',
+  'none',
+  'null',
+  'unset',
+  'redacted',
 ])
+// A fixture value normally announces itself with a separator, as in `test-csrf-token`. Requiring
+// that separator keeps a real secret that merely begins with these letters out of the list.
+const PLACEHOLDER_PREFIXES = [
+  'test',
+  'fake',
+  'dummy',
+  'demo',
+  'sample',
+  'example',
+  'local',
+  'dev',
+  'fixture',
+  'mock',
+  'stub',
+  'invalid',
+  'your',
+]
+// Multi-word markers, matched with separators removed so `change-me`, `change_me` and `changeme`
+// are all recognised wherever they appear in the value.
+const PLACEHOLDER_MARKERS = ['changeme', 'devonly', 'placeholder', 'replaceme', 'notareal']
+// Trailing syntax the value may be embedded in (JSON, YAML, Markdown, shell). Stripped with a
+// loop rather than a `[...]+$` regex, which backtracks super-linearly on a long run.
+const TRAILING_SYNTAX_CHARACTERS = new Set(['"', "'", '`', ',', ';', ')', ']', '}', '|', '\\'])
 // These files intentionally document or exercise local service endpoints. A local endpoint in
 // source, prose, or an arbitrary workflow remains a finding.
 const SAFE_LOCAL_ENDPOINT_FILES = new Set([
@@ -121,9 +156,101 @@ const SAFE_LOCAL_ENDPOINT_FILES = new Set([
   // Story 25.9: new operator runbook document following docs/runbook.md's own established
   // convention of `curl http://localhost:3000/...` local-dev-verification examples (that file
   // has 21 such lines and is not itself flagged, since the checker only scans added lines).
-  // Trips this rule only because the whole file is new, reproducing an already-repo-wide pattern.
-  'docs/runbooks/module-pack-lifecycle.md',
 ])
+
+/**
+ * Prose documentation. A localhost URL in a Markdown file is the product's own documented default
+ * — a self-hoster needs the literal `http://localhost:5173` to start the app — not a disclosure of
+ * anyone's machine. Machine-specific disclosure in prose is still caught by LOCAL_PATH_PATTERN
+ * (home directories, worktree paths), which has no file-type exemption.
+ */
+function isDocumentation(file: string): boolean {
+  return file.endsWith('.md')
+}
+
+/**
+ * Narrow the right-hand side of an assignment to the single literal token being assigned, or
+ * null when there is no literal there (a shell expansion, prose, a URL, an empty value).
+ */
+function extractLiteralValue(rest: string): string | null {
+  let value = rest.trim()
+  const quote = value[0]
+  if (quote === '"' || quote === "'" || quote === '`') {
+    const end = value.indexOf(quote, 1)
+    // An unterminated quote means the value continues past this line; treat it as non-literal
+    // rather than guessing, since diff scanning is line-at-a-time.
+    if (end < 0) return null
+    value = value.slice(1, end)
+  } else {
+    value = value.split(/\s/, 1)[0] ?? ''
+  }
+  // Trailing syntax the value is embedded in, never part of a secret.
+  let end = value.length
+  while (end > 0 && TRAILING_SYNTAX_CHARACTERS.has(value[end - 1] ?? '')) end -= 1
+  value = value.slice(0, end)
+  return value.length > 0 ? value : null
+}
+
+/** A placeholder, fixture or "fill this in" value, as opposed to a generated credential. */
+function isPlaceholderValue(value: string): boolean {
+  const lower = value.toLowerCase()
+  const compact = lower.replaceAll('-', '').replaceAll('_', '')
+  if (PLACEHOLDER_EXACT_VALUES.has(compact)) return true
+  if (PLACEHOLDER_PREFIXES.some((p) => lower.startsWith(`${p}-`) || lower.startsWith(`${p}_`))) {
+    return true
+  }
+  return PLACEHOLDER_MARKERS.some((marker) => compact.includes(marker))
+}
+
+/** A value the repository publishes on purpose: a placeholder, a path, or a known dev literal. */
+function isPublishedPlaceholder(value: string): boolean {
+  if (isPlaceholderValue(value)) return true
+  // A leading `/` or `./` makes this a route or filesystem path, not a credential. (Base64
+  // secrets may contain `/` but do not start with one.)
+  if (/^\.{0,2}\//.test(value)) return true
+  // 'a'.repeat(64) and its eleven siblings in apps/api/src/config/env.ts: a value built from one
+  // or two distinct characters carries no entropy and cannot be a real credential.
+  return new Set(value).size <= 2
+}
+
+function characterClasses(segment: string): number {
+  return [/[a-z]/, /[A-Z]/, /\d/].filter((pattern) => pattern.test(segment)).length
+}
+
+/**
+ * A generated credential is opaque: one long run of characters with no word structure. Splitting
+ * on the separators human-readable identifiers use (`-`, `_`, `.`, `:`) is what separates a real
+ * secret from the slugs and fixture strings that dominate a codebase — `access-token`,
+ * `machine_user.api_key_issued`, `correct-horse-battery-staple` and `e2e-Owner-Password-123` are
+ * short words joined by separators, while a hex-64 digest, `sk_live_51HxYz…` and a base64 32-byte
+ * token each contain one long, mixed-alphabet run that no human typed.
+ */
+function hasOpaqueSegment(value: string): boolean {
+  return value
+    .split(/[-_.:]/)
+    .some((s) => s.length >= 16 && (characterClasses(s) >= 2 || s.length >= 24))
+}
+
+/**
+ * `broad` is set for the any-name rule, where the variable name gives no signal that the value is
+ * sensitive. It demands a longer, three-alphabet run so that git SHAs, lockfile integrity hashes,
+ * image digests and version strings assigned to ordinary env names do not become findings.
+ */
+function hasCredentialAssignment(text: string, pattern: RegExp, broad = false): boolean {
+  pattern.lastIndex = 0
+  for (const match of text.matchAll(pattern)) {
+    const value = extractLiteralValue(match[2] ?? '')
+    if (!value) continue
+    if (!CREDENTIAL_LITERAL_PATTERN.test(value)) continue
+    if (isPublishedPlaceholder(value)) continue
+    if (broad) {
+      if (value.split(/[-_.:]/).some((s) => s.length >= 20 && characterClasses(s) >= 3)) return true
+      continue
+    }
+    if (hasOpaqueSegment(value)) return true
+  }
+  return false
+}
 
 function makeFinding(
   file: string,
@@ -190,7 +317,11 @@ function scanMetadata(file: string, line: number, text: string): PublicSafetyFin
       )
     )
   }
-  if (LOCAL_ENDPOINT_PATTERN.test(text) && !SAFE_LOCAL_ENDPOINT_FILES.has(file)) {
+  if (
+    LOCAL_ENDPOINT_PATTERN.test(text) &&
+    !isDocumentation(file) &&
+    !SAFE_LOCAL_ENDPOINT_FILES.has(file)
+  ) {
     findings.push(
       makeFinding(
         file,
@@ -202,16 +333,28 @@ function scanMetadata(file: string, line: number, text: string): PublicSafetyFin
       )
     )
   }
-  const secretName = SECRET_ENV_NAME_PATTERN.exec(text)?.[0]
-  if (secretName && !SAFE_PUBLIC_CONSTANT_NAMES.has(secretName)) {
+  // Every assignment on the line is checked, not just the first: a benign assignment appearing
+  // first must not launder a credential-shaped one later on the same line.
+  if (hasCredentialAssignment(text, SECRET_ENV_ASSIGNMENT_PATTERN)) {
     findings.push(
       makeFinding(
         file,
         line,
         text,
-        'secret-environment-name',
+        'secret-environment-value',
+        'high',
+        'secret-shaped environment variable assigned a literal, non-placeholder value'
+      )
+    )
+  } else if (hasCredentialAssignment(text, ENV_ASSIGNMENT_PATTERN, true)) {
+    findings.push(
+      makeFinding(
+        file,
+        line,
+        text,
+        'credential-literal-assignment',
         'medium',
-        'secret-like environment variable names reveal operational conventions'
+        'environment variable assigned a high-entropy literal that looks like a credential'
       )
     )
   }

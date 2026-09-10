@@ -1,11 +1,11 @@
-# Native-login exclusion (Story 23.2)
+# Native-login exclusion
 
-<!-- Source: Story 23.2 AC-17.4; verified against apps/api/src/modules/auth/native-login-policy.ts,
+<!-- Verified against apps/api/src/modules/auth/native-login-policy.ts,
      apps/api/src/scripts/operator-recovery-link.ts, apps/api/src/config/env.ts -->
 
 An installed auth extension whose manifest declares `replacesNativeLogin: true` can, once it has
 actually authenticated someone at least once, cause this instance to stop accepting native
-email/password credentials on ten routes (`POST /register` subject to the AC-6a bootstrap
+email/password credentials on ten routes (`POST /register` subject to the bootstrap
 carve-out below, `/login`, `/mfa/verify-login`, `/mfa/recover`, all four `/recovery/*` routes, the
 external-share password step-up factor, and `POST /org/users/:userId/recovery/send-link`). This is
 an accepted, deliberate lockout risk — read this whole document before enabling it, and complete
@@ -20,7 +20,7 @@ request.
 | Variable | Effect | Default |
 |---|---|---|
 | `VAULT_EXTENSIONS_PACKAGE` | Names the npm package to dynamically `import()` as the loaded extension. Unset ⇒ no extension ⇒ native login always stays enabled regardless of the other two vars. | unset |
-| `VAULT_NATIVE_LOGIN_REPLACEMENT_CONFIRMED` | Operator opt-out of the AC-4a proving latch: excludes native login on the strength of the manifest declaration alone, without requiring a single proven successful authentication first. **Every boot with this set fires a `warn` operational log** — it stays loud, not a one-time warning. | `false` |
+| `VAULT_NATIVE_LOGIN_REPLACEMENT_CONFIRMED` | Operator opt-out of the proving latch: excludes native login on the strength of the manifest declaration alone, without requiring a single proven successful authentication first. **Every boot with this set fires a `warn` operational log** — it stays loud, not a one-time warning. | `false` |
 | `VAULT_NATIVE_LOGIN_BREAK_GLASS` | Re-opens the ten gated routes regardless of the other two — see "Break-glass" below. Host/deploy config only; no route, admin setting, or org setting can set it. | `false` |
 
 ## The two-state model (why native login might still be up)
@@ -46,7 +46,7 @@ only:
 (never un-set, read only at boot) that satisfies state 3 on the *next* restart. It says nothing
 about whether every user in your organization can actually sign in — see the pre-flight checklist.
 
-## Ordered first-boot bootstrap sequence (AC-6a)
+## Ordered first-boot bootstrap sequence
 
 **On a genuinely fresh instance, do this in order — do not enable the extension first:**
 
@@ -104,7 +104,7 @@ Tick every item. This is what stands between "proven, n = 1" and a one-person-lo
       from a lockout and must not proceed without your hosting provider's documented recovery SLA
       in hand.**
 
-## Break-glass topology reachability (AC-8b) — read this before you rely on break-glass at all
+## Break-glass topology reachability — read this before you rely on break-glass at all
 
 Break-glass (`VAULT_NATIVE_LOGIN_BREAK_GLASS`) requires host/deploy-config access — there is no
 in-app path to it by design. Whether the locked-out operator actually holds that access depends
@@ -117,12 +117,12 @@ rows it is not one:
 | Self-hosted Docker / compose | The operator | **Yes** — edit `.env`, `docker compose up -d`, run the `operator:recovery-link` command below | The runbook below applies as written |
 | Self-hosted Kubernetes / immutable image | The operator, but via a redeploy | **Yes, with delay** — an env change requires a Secret/ConfigMap edit plus a rollout; the recovery command needs `kubectl exec` into a running pod | The runbook applies; budget for rollout latency, and the pod must reach `Ready` with native login enabled before the command can run |
 | **CentralizeMe-hosted (multi-instance sharded topology)** | **CentralizeMe, not the org operator** | **No** | **The org operator cannot self-recover. Recovery is a CentralizeMe support operation** — PV cannot fix this from its own side |
-| PV-managed multi-tenant (any future variant where PV operations holds the host) | PV operations | No, for the tenant | Same as CentralizeMe-hosted |
+| PV-managed multi-tenant (any variant where platform operations holds the host) | PV operations | No, for the tenant | Same as CentralizeMe-hosted |
 
 **For the two rows where break-glass is not reachable by the locked-out party, prevention is the
 answer, not recovery:**
 
-1. **The AC-4a proving latch is the primary mitigation.** A CM-hosted instance never enters the
+1. **The proving latch is the primary mitigation.** A CM-hosted instance never enters the
    disabled state until the extension has demonstrably authenticated a human on that instance —
    most lockout causes (bad key, JWKS misconfiguration, wrong audience, clock skew, egress
    failure) never reach a state that needs break-glass at all, because they never produce a proven
@@ -138,7 +138,7 @@ answer, not recovery:**
 exclusion.** Discovering you cannot self-recover during an actual lockout is strictly worse than
 discovering it now.
 
-## The AC-8a break-glass recovery-link procedure
+## The break-glass recovery-link procedure
 
 Use this when: break-glass is active, the instance is genuinely in the excluded state, and no
 human holds a usable native password (every user was provisioned through the extension and holds
@@ -168,7 +168,7 @@ cannot help with, because outbound email is a second dependency this procedure h
    `VAULT_NATIVE_LOGIN_BREAK_GLASS` and restart. Leaving it set re-enables the entire native-credential
    surface indefinitely and is logged loudly on every subsequent boot for exactly that reason.
 
-## External shares require MFA on excluded instances (AC-6b consequence)
+## External shares require MFA on excluded instances
 
 The password factor of the external-share step-up re-authentication is disabled under exclusion —
 a sharer with no MFA enrolled can no longer create an external share at all (the password path
@@ -176,7 +176,7 @@ existed specifically for that case). `POST /mfa/enroll` remains fully functional
 share credentials externally, ensure they enroll in MFA **before** you enable exclusion, or they
 will lose the ability to create new external shares until they do.
 
-## After the cutover restart: ending pre-exclusion sessions (AC-10)
+## After the cutover restart: ending pre-exclusion sessions
 
 This story ships **no automatic session cap**. A session minted under native auth before the
 restart keeps working — indefinitely, through ordinary refresh rotation — even after exclusion
@@ -195,7 +195,7 @@ oversight.
 Revoking before confirming step 2 risks locking yourself out of a session while the extension
 integration is still unverified. This ordering is the whole point.
 
-## Remediation for instances that provisioned SSO users before this story (AC-6e)
+## Remediation for instances provisioned with SSO users before exclusion existed
 
 Before this story, every SSO/extension-provisioned user's password hash was set to one env-wide
 value, `env.AUTH_DUMMY_PASSWORD_HASH` — shared across every such user on the instance, and

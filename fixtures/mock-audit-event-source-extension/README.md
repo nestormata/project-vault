@@ -50,4 +50,10 @@ manifest name.
 **This package's name must never appear in any production `VAULT_EXTENSIONS_PACKAGE` default,
 example config, or deploy manifest.**
 `apps/api/src/__tests__/mock-extension-not-in-production.test.ts` enforces this with a
-repo-wide, grep-based check, alongside the other three reference fixture extensions.
+repo-wide, grep-based check, covering every `fixtures/mock-*` package.
+
+## Writing a real extension
+
+This is a test fixture, not a template. If you are building an actual extension, read
+[`docs/extensions/authoring.md`](../../docs/extensions/authoring.md) — it covers scaffolding, the
+manifest rules, building, loading, verifying, and installing into a production deployment.

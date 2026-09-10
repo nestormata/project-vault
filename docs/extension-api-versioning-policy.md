@@ -4,8 +4,11 @@
 
 **in force.** Story 24.3's host-authoritative load-time compatibility gate landed before this
 policy was published, so the policy is binding for the public `@project-vault/extension-api`
-contract. The current package contract version is `1.4.0`. This document is v1 and is
-channel-independent; its remaining distribution handoff is tracked against Story 23.1.
+contract. This document is v1 and is channel-independent. The package's current contract version
+is whatever `EXTENSION_API_VERSION` reports in the published
+[`@project-vault/extension-api`](https://github.com/nestormata/project-vault/tree/main/packages/extension-api)
+release you have installed — it is deliberately not restated here, so this policy cannot go stale
+against it.
 
 ## Scope — what v1 does not answer
 

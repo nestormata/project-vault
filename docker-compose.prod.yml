@@ -1,4 +1,21 @@
-version: "3.9"
+# Production overlay. Always pass it LAST:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# (Compose merges `environment:` key-by-key with the last -f winning, so a different order
+# silently leaves the base file's public dev-fallback secrets in place.)
+#
+# Variables this overlay HARD-REQUIRES in .env — `docker compose config` fails fast, naming each
+# one, until all 12 are set to distinct, non-placeholder 32+ byte values:
+#   SESSION_SECRET, REFRESH_TOKEN_HMAC_SECRET, TOTP_REPLAY_HMAC_SECRET,
+#   MFA_PENDING_SESSION_HMAC_SECRET, INVITATION_TOKEN_HMAC_SECRET, RECOVERY_TOKEN_HMAC_SECRET,
+#   API_KEY_HMAC_SECRET, MACHINE_JWT_SECRET, STATUS_PAGE_TOKEN_HMAC_SECRET,
+#   ERASURE_EMAIL_HASH_SECRET, SSO_STATE_HMAC_SECRET, OPERATIONAL_STATUS_TOKEN_HMAC_SECRET
+#
+# Strongly recommended but NOT enforced here (no compose-time check is possible):
+#   PUBLIC_WEB_ORIGIN            the exact scheme://host[:port] browsers use (CORS + adapter-node)
+#   VAULT_BOOTSTRAP_TOKEN        without it POST /vault/init answers 403 BOOTSTRAP_FORBIDDEN
+#   VAULT_ENVELOPE_KEY_HALF      required only for envelope-mode vaults (see the api service below)
+#   TRUST_PROXY / TRUST_PROXY_HOPS / COOKIE_SECURE   when terminating TLS at a reverse proxy
+# See docs/operator-quickstart.md § "Path D — Production".
 
 services:
   db:
@@ -26,7 +43,20 @@ services:
       - vault_keys:/run/secrets:ro
     environment:
       VAULT_KEY_DIR: /run/secrets
-      VAULT_ENVELOPE_KEY_HALF: ${VAULT_ENVELOPE_KEY_HALF:?VAULT_ENVELOPE_KEY_HALF required for envelope mode}
+      # !! ENVELOPE MODE ONLY — READ BEFORE DEPLOYING !!
+      # This used to be `${VAULT_ENVELOPE_KEY_HALF:?...}`, which made the whole production overlay
+      # refuse to start for passphrase-mode and file-mode deployments that legitimately have no
+      # envelope half. Compose cannot express "required only when the vault was initialized in
+      # envelope mode" (there is no conditional in interpolation and the vault's KMS type is
+      # database state, not an env var), so this is deliberately OPTIONAL here.
+      #
+      # If your vault was (or will be) initialized with kmsType=envelope you MUST set this in
+      # .env — 32 lowercase hex chars, `openssl rand -hex 16`. The app enforces it at runtime, not
+      # at `docker compose config` time: apps/api/src/modules/vault/key-service.ts logs
+      # "[vault] WARN: vault is sealed (envelope mode) but VAULT_ENVELOPE_KEY_HALF is not
+      # configured — unseal will fail until set" at boot, and every unseal attempt fails with
+      # "VAULT_ENVELOPE_KEY_HALF is not configured". Check the API's startup log after deploying.
+      VAULT_ENVELOPE_KEY_HALF: ${VAULT_ENVELOPE_KEY_HALF:-}
       # Story 1.24: docker-compose.yml sets these 12 secrets via `${VAR:-<dev fallback>}`, whose
       # fallback values are the literal repo-committed DEV_* constants in apps/api/src/config/env.ts
       # (e.g. SESSION_SECRET's fallback is 'a'.repeat(64), matching DEV_SESSION_SECRET). That's the

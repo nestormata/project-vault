@@ -144,6 +144,184 @@ function shouldNormalizeHandoffParserError(
   )
 }
 
+/**
+ * Consumer-facing preamble for the generated OpenAPI document. Everything here is a
+ * cross-cutting convention that no individual route schema can express; the long-form version,
+ * with worked examples, lives in `docs/api-consumers.md`.
+ */
+const OPENAPI_DESCRIPTION = `The HTTP API for Project Vault, a self-hosted credential vault.
+
+## Versioning
+
+Every documented route is served under the \`/api/v1\` prefix. That prefix is the compatibility
+boundary: within it, routes and response fields are only ever added, never removed or narrowed in
+a way that breaks an existing consumer. A breaking change ships under a new prefix.
+
+## Authentication
+
+Four independent mechanisms exist; see \`securitySchemes\` for each one's transport.
+
+- **\`cookieAuth\`** — the browser session. A successful login sets an \`access-token\` cookie;
+  everything a human user does in the web app rides on it.
+- **\`machineBearer\`** — a short-lived JWT for non-interactive callers, obtained by presenting an
+  API key to \`POST /api/v1/auth/machine-token\`. Scoped to exactly one project. Only the
+  \`/api/v1/machine/**\` routes accept it.
+- **\`apiKey\`** — a machine user's long-lived \`pk_\` key. Accepted *only* by
+  \`POST /api/v1/auth/machine-token\`, in exchange for a \`machineBearer\` token. It is never a
+  credential for a resource route.
+- **\`serviceProvisioningToken\`** — a deployment-wide shared secret in the
+  \`x-service-provisioning-token\` header, for the service-provisioning routes only. When the
+  secret is unset those routes are unreachable.
+
+## Response envelopes
+
+A successful response wraps its payload in \`data\`. A list response puts the rows in
+\`data.items\` alongside \`page\`, \`limit\`, \`total\`, and \`hasNext\`.
+
+An error response is a flat object with a machine-readable \`code\` and a human-readable
+\`message\`; some errors add fields of their own (for example \`retryAfter\` on a rate-limit
+refusal, or \`matchCount\` on an ambiguous-name conflict). Branch on \`code\`, never on
+\`message\`.
+
+## Pagination
+
+List routes take \`?page=\` (1-based, default 1) and \`?limit=\` (1-100, default 20). Requesting
+a page past the end returns an empty \`items\` array with \`hasNext: false\`, not a 404.
+
+## Rate limiting
+
+Routes are budgeted per authenticated identity (or per client IP where the route is public). A
+refusal is \`429\` with \`code: "rate_limit_exceeded"\`; most also carry \`retryAfter\` in
+seconds, and the audit-write refusal additionally sets a \`Retry-After\` header.`
+
+const OPENAPI_SECURITY_SCHEMES = {
+  cookieAuth: {
+    type: 'apiKey',
+    in: 'cookie',
+    name: 'access-token',
+    description: 'Browser session cookie issued by the login routes.',
+  },
+  machineBearer: {
+    type: 'http',
+    scheme: 'bearer',
+    bearerFormat: 'JWT',
+    description:
+      'Short-lived, project-scoped machine token from POST /api/v1/auth/machine-token. Accepted by the /api/v1/machine/** routes.',
+  },
+  apiKey: {
+    type: 'http',
+    scheme: 'bearer',
+    description:
+      'A machine user API key (pk_...). Accepted only by POST /api/v1/auth/machine-token, in exchange for a machine token.',
+  },
+  serviceProvisioningToken: {
+    type: 'apiKey',
+    in: 'header',
+    name: 'x-service-provisioning-token',
+    description:
+      'Deployment-wide shared secret for the service-provisioning routes. Unreachable when the secret is not configured.',
+  },
+} as const
+
+/** Tag names, defined once — several path prefixes map onto the same tag. */
+const TAG = {
+  auth: 'Authentication',
+  org: 'Organization',
+  users: 'Users',
+  projects: 'Projects',
+  machineUsers: 'Machine users',
+  machineApi: 'Machine API',
+  sharing: 'Sharing',
+  notifications: 'Notifications',
+  monitoring: 'Monitoring',
+  search: 'Search',
+  themes: 'Themes',
+  statusPages: 'Status pages',
+  extensions: 'Extensions',
+  vault: 'vault',
+  serviceProvisioning: 'Service provisioning',
+  platformAdministration: 'Platform administration',
+  operations: 'Operations',
+  other: 'Other',
+} as const
+
+const OPENAPI_TAGS = [
+  { name: TAG.auth, description: 'Login, MFA, sessions, SSO, and machine-token exchange.' },
+  { name: TAG.org, description: 'Organization settings, members, roles, and audit log.' },
+  { name: TAG.users, description: 'User profiles, preferences, and invitations.' },
+  {
+    name: TAG.projects,
+    description: 'Projects and everything nested under them: credentials, versions, memberships.',
+  },
+  { name: TAG.machineUsers, description: 'Machine-user identities and their API keys.' },
+  {
+    name: TAG.machineApi,
+    description:
+      'The non-interactive credential-retrieval surface, authenticated by machineBearer.',
+  },
+  { name: TAG.sharing, description: 'Internal shares and external one-time share links.' },
+  { name: TAG.notifications, description: 'Notification delivery and per-user preferences.' },
+  { name: TAG.monitoring, description: 'Dashboards, security alerts, and expiry surfaces.' },
+  { name: TAG.search, description: 'Cross-resource search.' },
+  { name: TAG.themes, description: 'Organization theming.' },
+  { name: TAG.statusPages, description: 'Public status pages.' },
+  { name: TAG.extensions, description: 'Extension status, panels, and capability checks.' },
+  { name: TAG.vault, description: 'Vault seal/unseal and initialization.' },
+  {
+    name: TAG.serviceProvisioning,
+    description: 'Deployment-level provisioning, authenticated by serviceProvisioningToken.',
+  },
+  { name: TAG.platformAdministration, description: 'Platform-operator-only administration.' },
+  // Declared by the platform-admin route modules themselves; listed here so every tag the
+  // document actually uses carries a description.
+  { name: 'Platform Admin', description: 'Platform-operator settings, organizations, and usage.' },
+  { name: 'Platform Audit', description: 'Platform-operator audit-log and quota administration.' },
+  { name: TAG.operations, description: 'Health, readiness, metrics, and the OpenAPI document.' },
+  { name: TAG.other, description: 'Routes that do not fall under a more specific tag.' },
+]
+
+const OPENAPI_TAG_BY_PATH_SEGMENT = new Map<string, string>(
+  Object.entries({
+    auth: TAG.auth,
+    org: TAG.org,
+    organizations: TAG.org,
+    users: TAG.users,
+    invitations: TAG.users,
+    projects: TAG.projects,
+    'machine-users': TAG.machineUsers,
+    machine: TAG.machineApi,
+    shares: TAG.sharing,
+    'external-shares': TAG.sharing,
+    notifications: TAG.notifications,
+    dashboard: TAG.monitoring,
+    'health-dashboard': TAG.monitoring,
+    'security-alerts': TAG.monitoring,
+    search: TAG.search,
+    themes: TAG.themes,
+    'status-pages': TAG.statusPages,
+    extensions: TAG.extensions,
+    capabilities: TAG.extensions,
+    vault: TAG.vault,
+    service: TAG.serviceProvisioning,
+    admin: TAG.platformAdministration,
+    platform: TAG.platformAdministration,
+    health: TAG.operations,
+    ready: TAG.operations,
+    status: TAG.operations,
+    metrics: TAG.operations,
+    'openapi.json': TAG.operations,
+  })
+)
+
+function openapiTagForUrl(url: string): string {
+  const segment =
+    url
+      .replace(/^\/api\/v1\//, '')
+      .replace(/^\//, '')
+      .split('/')[0] ?? ''
+  return OPENAPI_TAG_BY_PATH_SEGMENT.get(segment) ?? TAG.other
+}
+
 export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // Story 9.10 AC-1: read fresh on every createApp() call (not cached at module load) — the
   // env var is fixed for the life of a real process, but reading it here (rather than at
@@ -266,9 +444,33 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
         // route (D5) and the build-time generate-spec.ts script share this same createApp()
         // pipeline, so fixing the version source here fixes both with no duplicate logic.
         version: API_VERSION,
+        description: OPENAPI_DESCRIPTION,
+        license: { name: 'AGPL-3.0-or-later', url: 'https://www.gnu.org/licenses/agpl-3.0.txt' },
       },
+      components: { securitySchemes: OPENAPI_SECURITY_SCHEMES },
+      // Declared as alternatives, not as a conjunction: an operation is reachable with ANY ONE of
+      // these. Which one applies to a given route is stated in that route family's tag
+      // description and in docs/api-consumers.md; a handful of routes (login, machine-token
+      // exchange, health) are genuinely public and require none of them.
+      security: [
+        { cookieAuth: [] },
+        { machineBearer: [] },
+        { apiKey: [] },
+        { serviceProvisioningToken: [] },
+      ],
+      tags: OPENAPI_TAGS,
     },
-    transform: jsonSchemaTransform,
+    // Every route in this codebase declares its schema through Zod, and none of them set a
+    // `tags` array by hand — deriving the tag from the route's own URL prefix here keeps the
+    // generated document grouped without asking ~176 route registrations to repeat themselves,
+    // and cannot drift as routes are added. A route that ever does declare its own tags keeps
+    // them.
+    transform: (input: Parameters<typeof jsonSchemaTransform>[0]) => {
+      const result = jsonSchemaTransform(input)
+      const schema = result.schema as { tags?: string[] } | undefined
+      if (!schema || (schema.tags?.length ?? 0) > 0) return result
+      return { ...result, schema: { ...schema, tags: [openapiTagForUrl(result.url)] } }
+    },
     // Without this, jsonSchemaTransform emits $ref pointers into components.schemas but
     // nothing ever populates that section, leaving every $ref dangling in the generated
     // document (see apps/api/src/scripts/generate-spec.ts, which serializes app.swagger()).

@@ -13,7 +13,7 @@ import type { EncryptedValue } from './types.js'
 //   3. Cut a `vault-action` re-tag/release so CI consumers of the mutable `v1` tag actually pick up
 //      the fix (see 7.3 D7 on why that tag's release process matters).
 // This is a documented process control, not automation — no build-graph dependency-change-detector
-// enforces it; see `packages/agent/SECURITY.md` for the full checklist.
+// enforces it; see `packages/agent/MAINTAINERS.md` for the full checklist.
 const IV_BYTES = 12 // 96-bit IV — GCM recommended size
 const VERSION = 1 // ciphertext format version — increment on algorithm change
 

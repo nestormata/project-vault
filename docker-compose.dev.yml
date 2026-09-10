@@ -1,5 +1,11 @@
-version: "3.9"
-
+# Local hot-reload overlay: bind-mounts apps/*/src into the containers and runs the API with
+# `pnpm dev` instead of the built runner image, so edits take effect without a rebuild. It also
+# sets VAULT_ALLOW_REMOTE_INIT=true (dev-only) so vault init needs no bootstrap token.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d
+#
+# NEVER layer this on a production deployment. See docs/development.md § "Compose overlays".
 services:
   api:
     build:
