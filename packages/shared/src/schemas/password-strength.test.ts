@@ -28,15 +28,38 @@ describe('passwordMeetsStrengthRequirement', () => {
     }
   )
 
-  it('completes in bounded time for a 256-character adversarial worst-case input (DoS mitigation)', () => {
-    // Decision 4: only the first 100 characters are scored. A long run of a repeated
-    // substring is a documented zxcvbn worst case for pattern-matching cost; this test
-    // confirms the slice(0, 100) cap actually bounds the scoring cost, not just that it's
-    // documented.
-    const adversarial = 'ab'.repeat(128) // 256 characters
-    const start = performance.now()
-    passwordMeetsStrengthRequirement(adversarial)
-    const elapsedMs = performance.now() - start
-    expect(elapsedMs).toBeLessThan(200)
+  it('bounds scoring cost beyond the 100-character cap (DoS mitigation)', () => {
+    // Decision 4: only the first 100 characters are scored. A long run of a repeated substring is
+    // a documented zxcvbn worst case for pattern-matching cost, so this asserts that the
+    // slice(0, 100) cap actually bounds the cost rather than merely being documented.
+    //
+    // The assertion is a RATIO, not a wall-clock budget. An absolute millisecond threshold
+    // measures the machine, not the cap: the previous `toBeLessThan(200)` passed locally at ~37ms
+    // and failed on GitHub runners at ~228ms, consistently. Comparing an input beyond the cap
+    // against one exactly at the cap is speed-independent, and it tests the claim directly —
+    // both slice to the same 100 characters, so the cost must be the same. Measured here: 1.02x
+    // with the cap in place, against 2.08x for a genuine length increase below it, so a removed
+    // cap would push this well past the tolerance.
+    const beyondCap = 'ab'.repeat(128) // 256 characters
+    const atCap = 'ab'.repeat(50) // 100 characters
+
+    // Warm up first, so lazy initialisation inside the scorer is not charged to the first sample.
+    for (let index = 0; index < 5; index += 1) passwordMeetsStrengthRequirement(atCap)
+
+    const bestOf = (input: string): number => {
+      let fastest = Infinity
+      for (let index = 0; index < 15; index += 1) {
+        const start = performance.now()
+        passwordMeetsStrengthRequirement(input)
+        fastest = Math.min(fastest, performance.now() - start)
+      }
+      return fastest
+    }
+
+    const atCapMs = bestOf(atCap)
+    expect(bestOf(beyondCap) / atCapMs).toBeLessThan(1.5)
+    // A generous absolute ceiling as well, to catch a pathological blow-up that scales both
+    // inputs equally. Sized far above the slowest observed CI sample so it cannot flake.
+    expect(atCapMs).toBeLessThan(1000)
   })
 })
