@@ -60,6 +60,7 @@ const LOCAL_PATH_PATTERN = /(?:\/home\/[^\s/]+\/|\.claude\/worktrees|\.worktrees
 const LOCAL_ENDPOINT_PATTERN = /\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d{2,5}\b/
 const SECRET_ENV_NAME_PATTERN =
   /\b[A-Z][A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY)[A-Z0-9_]*\b/
+const SECRET_ENV_NAME_GLOBAL_PATTERN = new RegExp(SECRET_ENV_NAME_PATTERN.source, 'g')
 // These names are public deployment interfaces; their values are still scanned for credentials.
 // Keep this allowlist exact so unknown secret-like names remain review findings.
 const SAFE_PUBLIC_CONSTANT_NAMES = new Set([
@@ -202,8 +203,10 @@ function scanMetadata(file: string, line: number, text: string): PublicSafetyFin
       )
     )
   }
-  const secretName = SECRET_ENV_NAME_PATTERN.exec(text)?.[0]
-  if (secretName && !SAFE_PUBLIC_CONSTANT_NAMES.has(secretName)) {
+  // Every secret-like name on the line is checked, not just the first match: an allowlisted name
+  // appearing first must not launder a non-allowlisted one later on the same line.
+  const secretNames = text.match(SECRET_ENV_NAME_GLOBAL_PATTERN) ?? []
+  if (secretNames.some((name) => !SAFE_PUBLIC_CONSTANT_NAMES.has(name))) {
     findings.push(
       makeFinding(
         file,

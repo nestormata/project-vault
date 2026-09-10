@@ -75,10 +75,25 @@ services:
       # Narrowed by migration 0071; admin-provision sets the local-only credential before api starts.
       ADMIN_DATABASE_URL: postgresql://vault_admin:${VAULT_ADMIN_PASSWORD:-password}@db:5432/${POSTGRES_DB:-project_vault}
       API_PORT: 3000
-      # Must match the host port the browser actually hits, i.e. WEB_HOST_PORT — not the
-      # container-internal port. make fix-ports/docker-ports.sh can bump WEB_HOST_PORT away
-      # from 5173 on a busy host, so this can't be hardcoded.
-      CORS_ALLOWED_ORIGINS: http://localhost:${WEB_HOST_PORT:-5173}
+      # Must match the origin the browser actually hits. The default tracks WEB_HOST_PORT (make
+      # fix-ports/docker-ports.sh can bump it away from 5173 on a busy host, so it can't be
+      # hardcoded). Any deployment that is NOT reached on http://localhost:<WEB_HOST_PORT> — a LAN
+      # host, a reverse proxy, a real domain — must set PUBLIC_WEB_ORIGIN in .env to the exact
+      # scheme://host[:port] the browser uses; otherwise every credentialed cross-origin call is
+      # blocked by CORS and adapter-node rejects form actions with 403. See
+      # docs/operator-quickstart.md § "Public origin and reverse proxy".
+      CORS_ALLOWED_ORIGINS: ${PUBLIC_WEB_ORIGIN:-http://localhost:${WEB_HOST_PORT:-5173}}
+      # Used to build invitation/recovery links in outgoing email. Normally identical to the
+      # public origin above; override separately only if mail links must use a different host.
+      WEB_BASE_URL: ${WEB_BASE_URL:-${PUBLIC_WEB_ORIGIN:-http://localhost:${WEB_HOST_PORT:-5173}}}
+      # NODE_ENV=production above makes COOKIE_SECURE default to true, which a browser will only
+      # honour over HTTPS (or http://localhost). Serving the stack over plain HTTP on a LAN
+      # IP/hostname therefore needs COOKIE_SECURE=false — and terminating TLS at a reverse proxy
+      # needs TRUST_PROXY=true plus the correct hop count so rate limiting and audit logging see
+      # the real client IP.
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       METRICS_BIND_HOST: 127.0.0.1
       LOG_LEVEL: info
       # Required at boot (see .env.example) — dev-only placeholders, override in .env for anything
@@ -200,7 +215,9 @@ services:
       # (always 3000 in-container), and rejects every form action with a 403. Must match the host
       # port the browser actually hits, same convention as the api service's CORS_ALLOWED_ORIGINS
       # above — make fix-ports/docker-ports.sh can bump WEB_HOST_PORT so this can't be hardcoded.
-      ORIGIN: http://localhost:${WEB_HOST_PORT:-5173}
+      # Set PUBLIC_WEB_ORIGIN in .env for any non-localhost deployment (same value the api
+      # service's CORS_ALLOWED_ORIGINS uses).
+      ORIGIN: ${PUBLIC_WEB_ORIGIN:-http://localhost:${WEB_HOST_PORT:-5173}}
     ports:
       - '${WEB_HOST_PORT:-5173}:3000'
     depends_on:

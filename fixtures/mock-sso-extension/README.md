@@ -51,6 +51,12 @@ identities' backing rows, and prints ready-to-run `curl` commands for each scena
 
 ## Production-safety
 
-**This package's name must never appear in any production `EXTENSION_PATH`/`VAULT_EXTENSIONS_PACKAGE`
+**This package's name must never appear in any production `VAULT_EXTENSIONS_PACKAGE`
 default, example config, or deploy manifest.** `apps/api/src/__tests__/mock-extension-not-in-production.test.ts`
-enforces this with a repo-wide grep-based check.
+enforces this for every `fixtures/mock-*` package with a repo-wide grep-based check.
+
+## Writing a real extension
+
+This is a test fixture, not a template. If you are building an actual extension, read
+[`docs/extensions/authoring.md`](../../docs/extensions/authoring.md) — it covers scaffolding, the
+manifest rules, building, loading, verifying, and installing into a production deployment.

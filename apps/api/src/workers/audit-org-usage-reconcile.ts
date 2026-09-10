@@ -356,7 +356,7 @@ function logRunCompleted(
       logger,
       'warn',
       OperationalEvent.AUDIT_ORG_USAGE_RECONCILE_COMPLETED,
-      'audit-org-usage-reconcile: run exceeded 50% of its statement_timeout budget — see docs/operations/audit-log-scaling.md',
+      'audit-org-usage-reconcile: run exceeded 50% of its statement_timeout budget — see docs/design/audit-log-scaling.md',
       { durationMs, timeoutMs: env.AUDIT_ORG_USAGE_RECONCILE_TIMEOUT_MS }
     )
   }
@@ -369,7 +369,7 @@ function logRunCompleted(
  * runs. Per-org write-back failures are isolated (one bad org never blocks another's); a
  * statement_timeout abort writes nothing partial and raises an operator alert. No chunked or
  * incremental fallback is added deliberately — the documented escalation when this stops fitting
- * its budget is the table-partitioning step in docs/operations/audit-log-scaling.md, and the
+ * its budget is the table-partitioning step in docs/design/audit-log-scaling.md, and the
  * immediate remedy is the AC-25 kill switch.
  */
 export async function runAuditOrgUsageReconcile(

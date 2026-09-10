@@ -1,0 +1,40 @@
+# Prebuilt-image overlay: run the published GHCR images instead of building from source.
+#
+# `build: !reset null` removes the base file's `build:` block entirely, so `docker compose up
+# --build` (and `make docker-up`, which passes --build) can no longer rebuild these services from
+# source — without it Compose would keep the base `build:` and rebuild anyway, which is exactly
+# the trap the old "replace each service's build: block by hand" instructions fell into.
+# `!reset` requires Docker Compose v2.24 or newer (`docker compose version`).
+#
+# Usage — this overlay goes AFTER docker-compose.yml and BEFORE docker-compose.prod.yml, because
+# the prod overlay must stay last for its `${VAR:?}` secret requirements to win:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.images.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.images.yml up -d
+#
+#   # production:
+#   docker compose -f docker-compose.yml -f docker-compose.images.yml -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.images.yml -f docker-compose.prod.yml up -d
+#
+# Pin the version with VAULT_IMAGE_TAG in .env (default below), or replace the tags with immutable
+# digests for a fully reproducible deploy:
+#   image: ghcr.io/nestormata/project-vault/api@sha256:<64-hex-digest>
+#
+# A fork or renamed copy publishes under its own ghcr.io/<owner>/<repository> namespace — override
+# VAULT_IMAGE_REPO accordingly. See docs/container-images.md.
+services:
+  migrate:
+    build: !reset null
+    image: ${VAULT_IMAGE_REPO:-ghcr.io/nestormata/project-vault}/migrate:${VAULT_IMAGE_TAG:-latest}
+    # The published migrate image's own default command exits 0 without migrating, so the base
+    # file's explicit command must be preserved here too (Compose keeps it on merge, but it is
+    # restated so a copy-pasted fragment of this file is still correct on its own).
+    command: ['pnpm', '--filter', '@project-vault/db', 'db:migrate']
+
+  api:
+    build: !reset null
+    image: ${VAULT_IMAGE_REPO:-ghcr.io/nestormata/project-vault}/api:${VAULT_IMAGE_TAG:-latest}
+
+  web:
+    build: !reset null
+    image: ${VAULT_IMAGE_REPO:-ghcr.io/nestormata/project-vault}/web:${VAULT_IMAGE_TAG:-latest}

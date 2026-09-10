@@ -5,6 +5,12 @@ SHELL := /usr/bin/env bash
 #   make bootstrap         — local dev DB setup (Postgres + migrate + RLS)
 #   make bootstrap-docker  — full Docker stack
 # Pass ARGS to bootstrap targets, e.g. make bootstrap ARGS="--start-api --init-vault"
+# (`make bootstrap -- --init-vault` does NOT work — make treats --init-vault as a goal.)
+#
+# Host ports are per-checkout: every target below that touches Docker runs
+# scripts/docker-ports.sh fix, which rewrites DB/API/WEB_HOST_PORT in .env away from
+# 5432/3000/5173. Set DOCKER_PORTS_KEEP_DEFAULTS=1 to keep the classic ports on a single
+# checkout. See docs/operator-quickstart.md "Ports and URLs".
 
 # --- Host ports (multiple worktrees / standalone test stacks) --------------
 # Read from .env so `make db-migrate`/etc. talk to the same host port
@@ -94,14 +100,16 @@ check-form-guidance: ## Verify every user-facing web form control has localized 
 
 # --- Operator bootstrap (Epic 1 retro D2) ------------------------------------
 
-bootstrap: ## Postgres + migrate + RLS check (see docs/operator-quickstart.md); ARGS e.g. --start-api --init-vault
+bootstrap: ## Postgres + migrate + vault_admin credential + RLS check (docs/operator-quickstart.md); ARGS e.g. --start-api --init-vault
 	./scripts/operator-bootstrap.sh $(ARGS)
 
 bootstrap-docker: ## Full docker compose up; ARGS e.g. --init-vault (needs jq + VAULT_DEV_PASSPHRASE)
 	./scripts/operator-bootstrap.sh --docker $(ARGS)
 
 # --- Database --------------------------------------------------------------
-# Requires Postgres on localhost:5432 — `make bootstrap`, `make db-up`, or `make docker-up`.
+# Requires Postgres on localhost:$(DB_HOST_PORT) — start it with `make bootstrap`, `make db-up`,
+# or `make docker-up`. Note `make db-up` alone does NOT provision the vault_admin credential that
+# ADMIN_DATABASE_URL/`make test` need; `make bootstrap` and `make docker-up` do.
 
 db-up: ## Start only the Postgres container
 	docker compose up -d db

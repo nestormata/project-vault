@@ -8,7 +8,7 @@ import { parseSecrets, type ParsedSecretEntry } from './parse-secrets.js'
 // to either of those source copies is NOT reflected here until `dist/` is rebuilt
 // (`pnpm --filter @project-vault/vault-action build`, verified fresh by
 // `scripts/check-vault-action-dist-fresh.ts`) and a `vault-action` re-tag/release is cut so CI
-// consumers of the mutable `v1` tag pick it up. Full checklist: `packages/agent/SECURITY.md`.
+// consumers of the mutable `v1` tag pick it up. Full checklist: `packages/agent/MAINTAINERS.md`.
 import { isVaultUnreachable, perEntryMessage, reasonTokenFor } from './classify.js'
 import { withTimeout } from './with-timeout.js'
 

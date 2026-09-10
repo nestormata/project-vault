@@ -1385,7 +1385,7 @@ const envSchema = z
     // read by quota-gate.ts's enforcement path. Default `3.0` is AC-27's own illustrative figure
     // (Story 22.1), used here because no representative dataset was available in this
     // implementation environment to run the measurement spike — see
-    // docs/operations/audit-quota-degradation-strategy.md's "Physical-overhead estimate (Story
+    // docs/design/audit-quota.md's "Physical-overhead estimate (Story
     // 22.3)" subsection for the full disclosure and the re-measurement follow-up.
     AUDIT_ORG_QUOTA_PHYSICAL_OVERHEAD_ESTIMATE: z.coerce.number().positive().default(3.0),
 

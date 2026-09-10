@@ -1,4 +1,4 @@
--- CONTROLLED ROLLBACK ONLY — Story 24.1
+-- CONTROLLED ROLLBACK ONLY — reverses the RLS table-ownership + FORCE migration
 -- Not a registered Drizzle migration. Execute only during an approved recovery procedure, then
 -- reapply the forward migration before serving traffic. The transaction makes the all-table change
 -- atomic: either every RLS-enabled public table is restored or none is.
@@ -9,7 +9,7 @@ DO $$
 DECLARE
   table_row record;
 BEGIN
-  RAISE NOTICE 'Story 24.1 rollback: restoring RLS table ownership to postgres and removing FORCE';
+  RAISE NOTICE 'RLS ownership rollback: restoring RLS table ownership to postgres and removing FORCE';
   FOR table_row IN
     SELECT n.nspname AS schema_name, c.relname AS table_name
       FROM pg_catalog.pg_class c

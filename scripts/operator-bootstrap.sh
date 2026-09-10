@@ -22,6 +22,12 @@ WEB_HOST_PORT="$(env_port WEB_HOST_PORT 5173)"
 
 DB_URL_SUPERUSER="${DB_URL_SUPERUSER:-postgresql://postgres:password@localhost:${DB_HOST_PORT}/project_vault}"
 DB_URL_APP="${DB_URL_APP:-postgresql://vault_app:dev-only-change-in-prod@localhost:${DB_HOST_PORT}/project_vault}"
+# Migration 0071 creates vault_admin with NO usable password on purpose; the credential is
+# provisioned separately (docker-compose's `admin-provision` service for the Docker path,
+# provision_admin_role() below for the --dev path). Without it the API dies at boot with
+# `password authentication failed for user "vault_admin"`, because ADMIN_DATABASE_URL is required.
+VAULT_ADMIN_PASSWORD="${VAULT_ADMIN_PASSWORD:-password}"
+DB_URL_ADMIN="${DB_URL_ADMIN:-postgresql://vault_admin:${VAULT_ADMIN_PASSWORD}@localhost:${DB_HOST_PORT}/project_vault}"
 API_URL="${API_URL:-http://localhost:${API_HOST_PORT}}"
 MODE="dev"
 INIT_VAULT=false
@@ -40,6 +46,7 @@ Usage: scripts/operator-bootstrap.sh [options]
 Environment:
   DB_URL_SUPERUSER   Superuser URL for migrations (default: local postgres)
   DB_URL_APP         App role URL for check-rls (default: local vault_app)
+  VAULT_ADMIN_PASSWORD    Password provisioned for the vault_admin role (default: password)
   API_URL            API base URL (default: http://localhost:3000)
   VAULT_BOOTSTRAP_TOKEN   Required for init unless API has VAULT_ALLOW_REMOTE_INIT=true
   VAULT_DEV_PASSPHRASE    Passphrase for dev init/unseal (min 12 chars)
@@ -162,6 +169,16 @@ run_migrate() {
   log "Migrations complete"
 }
 
+provision_admin_role() {
+  # Same statement docker-compose.yml's `admin-provision` service and `make ci-inner` run. Local
+  # development only — a production operator provisions this credential through their secret
+  # manager and sets ADMIN_DATABASE_URL accordingly.
+  log "Provisioning the local vault_admin credential..."
+  docker compose exec -T db psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-project_vault}" \
+    -v ON_ERROR_STOP=1 -c "ALTER ROLE vault_admin PASSWORD '${VAULT_ADMIN_PASSWORD}'" >/dev/null
+  log "vault_admin credential provisioned (ADMIN_DATABASE_URL is now usable)"
+}
+
 run_check_rls() {
   log "Verifying RLS coverage as vault_app..."
   DATABASE_URL="$DB_URL_APP" pnpm check-rls
@@ -182,8 +199,13 @@ Next steps:
   2. API:     ${API_URL}
   3. Readiness: curl -sf ${API_URL}/ready
 
-Local dev (hot reload):
+Host ports for this checkout (from .env — they may differ from 5432/3000/5173):
+  DB_HOST_PORT=${DB_HOST_PORT}  API_HOST_PORT=${API_HOST_PORT}  WEB_HOST_PORT=${WEB_HOST_PORT}
+
+Local dev (hot reload) — BOTH database URLs are mandatory; the API refuses to boot
+without ADMIN_DATABASE_URL, and nothing auto-loads .env for turbo tasks:
   export DATABASE_URL='${DB_URL_APP}'
+  export ADMIN_DATABASE_URL='${DB_URL_ADMIN}'
   export VAULT_BOOTSTRAP_TOKEN='${token_hint}'
   export VAULT_ALLOW_REMOTE_INIT=true
   pnpm turbo dev
@@ -217,6 +239,7 @@ else
   docker compose up -d db
   wait_for_postgres 60
   run_migrate
+  provision_admin_role
   run_check_rls
   if [[ "$START_API" == true ]]; then
     log "Starting api + web containers..."

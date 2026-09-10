@@ -811,7 +811,7 @@ async function orchestratorMain(): Promise<void> {
     process.stdout.write(
       `\nFINDING: AC-3's regression threshold (${report.thresholdPercent}%) was exceeded ` +
         `(${report.regressionPercentAggregate.toFixed(1)}%). This is a finding to record in ` +
-        'docs/operations/audit-quota-degradation-strategy.md, never a threshold to quietly loosen.\n'
+        'docs/design/audit-quota.md, never a threshold to quietly loosen.\n'
     )
   }
   if (!disabled.isolation.ok || !enabled.isolation.ok) {

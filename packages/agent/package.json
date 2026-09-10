@@ -1,6 +1,9 @@
 {
   "name": "@project-vault/agent",
   "version": "0.0.1",
+  "private": true,
+  "description": "Machine-user authentication and secret retrieval for Project Vault. Bundled into @project-vault/vault-action; not published to any registry.",
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
