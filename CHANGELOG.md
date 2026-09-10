@@ -9,7 +9,7 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
-## [1.2.0] - 2026-09-09
+## [1.2.0] - 2026-09-10
 
 Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.2.0`
 (aliases `1.2`, `1`, `latest`). Extension API contract: `@project-vault/extension-api@3.15.0`.
