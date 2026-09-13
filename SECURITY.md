@@ -40,6 +40,20 @@ A useful report usually has:
   or the platform operator.
 - The impact you believe it has, and whether it crosses an organization boundary.
 
+## Review status
+
+Stated plainly, so it doesn't have to be restated from memory in a comment thread somewhere:
+
+- The codebase is reviewed against structured internal security-assessment playbooks
+  (white-box, source-level; black-box, external-attacker-perspective against the live demo),
+  with AI assistance. This is self-directed, not independent.
+- **No third-party security audit or penetration test has been performed yet.** One is planned
+  once it's funded. When it happens, this section will name the firm, the date, and link the
+  report or its public summary.
+- Until then, don't take "internally reviewed" as a substitute for independent verification.
+  The core is AGPL — read it yourself, or have someone you trust read it, rather than relying on
+  this document alone.
+
 ## Supported versions
 
 Project Vault is released from a single line; there is no long-term-support branch. Only the
