@@ -229,6 +229,24 @@ it does and a safe default. Do not defer this: it blocks the merge.
 - Maintainers review on a best-effort basis. A ping on a pull request that has been quiet for a
   week is welcome, not rude.
 
+## AI-assisted development
+
+Much of this codebase is written with AI assistance. That's disclosed here instead of left for
+someone to infer from commit trailers, because it changes what "reviewed" needs to mean:
+
+- **No exception without a human decision.** A failing quality gate (lint, duplication check,
+  type checker, security scanner) is never resolved by suppressing or whitelisting the finding
+  instead of fixing it. If a suppression genuinely looks warranted, that requires an expert
+  review of the finding first, and even then the suppression itself is never self-applied — a
+  human maintainer signs off on it explicitly before it lands. See `AGENTS.md` for the full
+  process.
+- **Security-sensitive paths get closer human attention, not less.** The "Review expectations"
+  section above already asks for this on auth, key custody, RLS, and audit-writing changes,
+  regardless of how the change was drafted.
+- This does not mean every line has been independently re-derived by a human. It means the gates
+  a change has to pass, and the sign-off a suppression requires, do not relax because AI wrote the
+  first draft.
+
 ## Reporting security issues
 
 Do not open a public issue for a security vulnerability. Follow the process in
