@@ -1,4 +1,4 @@
-import { randomBytes, createHmac } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { and, eq, sql } from 'drizzle-orm'
 import { getDb } from '@project-vault/db'
@@ -23,6 +23,8 @@ import { OperationalEvent } from '@project-vault/shared'
 import type { CookieReply } from '../auth/tokens.js'
 import { CSRF_HEADER_NAME, isRejectedByCsrfToken } from '../../lib/csrf.js'
 import { isRejectedBySecFetchSite } from '../../extensions/panel-routes.js'
+import { generateOpaqueId, hashCookieValue } from '../../lib/opaque-cookie-token.js'
+import { isValidActionResult, mapActionResultToResponse } from '../../lib/action-result-response.js'
 
 /**
  * Story 39.1 — PV's own route layer for the `oauthHandoff` extension-api mechanism (Recommended
@@ -61,14 +63,6 @@ function sendNotFound(reply: FastifyReply): unknown {
   return reply.status(404).send({ code: 'oauth_handoff_not_found', message: 'Not found' })
 }
 
-function generateOpaqueId(): string {
-  return randomBytes(24).toString('base64url')
-}
-
-function hashCookieValue(raw: string): string {
-  return createHmac('sha256', env.SSO_STATE_HMAC_SECRET).update(raw).digest('hex')
-}
-
 function readPendingCookie(request: FastifyRequest): string | undefined {
   const cookies = (request as unknown as { cookies?: Record<string, string> }).cookies
   return cookies?.[OAUTH_HANDOFF_COOKIE_NAME]
@@ -95,28 +89,8 @@ function isRejectedByFetchMode(request: FastifyRequest): boolean {
 
 type OAuthHandoffOutcome = OAuthHandoffRedirectResult | ActionResult
 
-function isValidActionResult(value: unknown): value is ActionResult {
-  if (!value || typeof value !== 'object') return false
-  const candidate = value as { outcome?: unknown; html?: unknown; message?: unknown }
-  const optionalString = (field: unknown): boolean =>
-    field === undefined || typeof field === 'string'
-  switch (candidate.outcome) {
-    case 'ok':
-      return optionalString(candidate.html) && optionalString(candidate.message)
-    case 'validation_failed':
-      return typeof candidate.message === 'string'
-    case 'denied':
-    case 'conflict':
-      return optionalString(candidate.message)
-    case 'error':
-      return true
-    default:
-      return false
-  }
-}
-
-// AC6 — extended for the new redirect variant, mirroring module-action-handler.ts's
-// isValidActionResult() exactly for every other outcome.
+// AC6 — extended for the new redirect variant, reusing the shared `isValidActionResult()`
+// (`lib/action-result-response.ts`) exactly for every other outcome.
 function isValidOAuthHandoffOutcome(value: unknown): value is OAuthHandoffOutcome {
   if (!value || typeof value !== 'object') return false
   const candidate = value as { outcome?: unknown; url?: unknown; state?: unknown }
@@ -129,39 +103,6 @@ function isValidOAuthHandoffOutcome(value: unknown): value is OAuthHandoffOutcom
     )
   }
   return isValidActionResult(value)
-}
-
-const FIXED_STATUS_BY_OUTCOME = {
-  denied: { status: 403, code: 'denied', message: 'Request denied' },
-  error: { status: 500, code: 'internal_error', message: 'Request failed' },
-} as const
-
-/**
- * Story 39.1 AC6 — maps a non-redirect `ActionResult` the same way
- * `apps/api/src/extensions/panel-routes.ts`'s `mapModuleActionOutcomeToResponse()` already maps
- * `ModuleAction.onAction()`'s outcomes — reused convention, not reinvented.
- */
-function mapActionResultToResponse(result: ActionResult): {
-  status: number
-  body: Record<string, unknown>
-} {
-  if (result.outcome === 'ok') {
-    return {
-      status: 200,
-      body: {
-        ...(result.html !== undefined ? { html: result.html } : {}),
-        ...(result.message !== undefined ? { message: result.message } : {}),
-      },
-    }
-  }
-  if (result.outcome === 'validation_failed') {
-    return { status: 400, body: { code: 'validation_failed', message: result.message } }
-  }
-  if (result.outcome === 'conflict') {
-    return { status: 409, body: { code: 'conflict', message: result.message ?? 'Conflict' } }
-  }
-  const fixed = FIXED_STATUS_BY_OUTCOME[result.outcome]
-  return { status: fixed.status, body: { code: fixed.code, message: fixed.message } }
 }
 
 function logOAuthHandoffFailed(

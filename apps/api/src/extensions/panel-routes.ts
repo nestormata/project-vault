@@ -18,6 +18,7 @@ import {
   type ModuleActionOutcome,
   type ModuleActionRequestBody,
 } from '../lib/module-action-handler.js'
+import { mapActionResultToResponse } from '../lib/action-result-response.js'
 import { getExtensionStatus } from './loader.js'
 
 const ExtensionPanelParamsSchema = z.object({ slot: z.string() })
@@ -162,6 +163,16 @@ export function isRejectedBySecFetchSite(header: string | string[] | undefined):
   return value !== 'same-origin'
 }
 
+/** Fixed host-precheck outcomes that never reach `onAction()` — table lookup, not a branching
+ * function, to keep `mapModuleActionOutcomeToResponse`'s cyclomatic complexity within this
+ * repo's lint budget while preserving the exact same AC5 status mapping. Every other
+ * (`ActionResult`) outcome is mapped by the shared `mapActionResultToResponse()` — see
+ * `lib/action-result-response.ts`'s own doc comment. */
+const FIXED_STATUS_BY_HOST_PRECHECK_OUTCOME = {
+  invalid_slot: { status: 400, code: 'invalid_slot', message: 'Unknown or malformed panel slot' },
+  not_found: { status: 404, code: 'action_not_found', message: 'Action not found' },
+} as const
+
 /**
  * Story 25.5 AC5 — the fixed `ActionResult`/host-precheck outcome → HTTP-status mapping. No
  * outcome ever forwards the extension's own thrown error text, DB error detail, or stack trace —
@@ -172,48 +183,15 @@ export function isRejectedBySecFetchSite(header: string | string[] | undefined):
  * existing discipline says must not leak (mirrors `renderExtensionPanel()`'s own
  * `panel_unavailable` non-distinguishing convention for a project-visibility denial).
  */
-function moduleActionOkResponse(result: Extract<ModuleActionOutcome, { outcome: 'ok' }>): {
-  status: number
-  body: Record<string, unknown>
-} {
-  return {
-    status: 200,
-    body: {
-      ...(result.html !== undefined ? { html: result.html } : {}),
-      ...(result.message !== undefined ? { message: result.message } : {}),
-    },
-  }
-}
-
-/** Fixed, non-`ok` host-precheck/`ActionResult` outcomes — table lookup, not a branching
- * function, to keep `mapModuleActionOutcomeToResponse`'s cyclomatic complexity within this
- * repo's lint budget while preserving the exact same AC5 status mapping. */
-const FIXED_STATUS_BY_OUTCOME = {
-  invalid_slot: { status: 400, code: 'invalid_slot', message: 'Unknown or malformed panel slot' },
-  not_found: { status: 404, code: 'action_not_found', message: 'Action not found' },
-  denied: { status: 403, code: 'denied', message: 'Request denied' },
-  error: { status: 500, code: 'internal_error', message: 'Request failed' },
-} as const
-
 function mapModuleActionOutcomeToResponse(result: ModuleActionOutcome): {
   status: number
   body: Record<string, unknown>
 } {
-  if (result.outcome === 'ok') return moduleActionOkResponse(result)
-
-  // AC5: `validation_failed`/`conflict` forward the extension's own `message` verbatim
-  // (deliberately — CM's real `dispatch()` displays it in its `aria-live` region, and it is
-  // by construction meant to be user-facing). Every other outcome uses a fixed generic message
-  // that never depends on anything extension-supplied.
-  if (result.outcome === 'validation_failed') {
-    return { status: 400, body: { code: 'validation_failed', message: result.message } }
+  if (result.outcome === 'invalid_slot' || result.outcome === 'not_found') {
+    const fixed = FIXED_STATUS_BY_HOST_PRECHECK_OUTCOME[result.outcome]
+    return { status: fixed.status, body: { code: fixed.code, message: fixed.message } }
   }
-  if (result.outcome === 'conflict') {
-    return { status: 409, body: { code: 'conflict', message: result.message ?? 'Conflict' } }
-  }
-
-  const fixed = FIXED_STATUS_BY_OUTCOME[result.outcome]
-  return { status: fixed.status, body: { code: fixed.code, message: fixed.message } }
+  return mapActionResultToResponse(result)
 }
 
 /**

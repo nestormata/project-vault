@@ -1,4 +1,4 @@
-import { randomBytes, createHmac } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { eq, inArray } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
@@ -20,6 +20,7 @@ import type { LoginResult, RequestMeta } from './service.js'
 import { buildCookieTokens, setAuthCookies, type CookieReply, type JwtSigner } from './tokens.js'
 import { verifyHandoffToken, type HandoffRejectReason } from './handoff-verify.js'
 import { writeHandoffSecurityEvent } from './handoff-security-events.js'
+import { generateOpaqueId, hashCookieValue } from '../../lib/opaque-cookie-token.js'
 import {
   findLinkedIdentity,
   findUserMfaEnrolledAndMembership,
@@ -42,14 +43,6 @@ function metaFromRequest(req: FastifyRequest): RequestMeta {
 
 function sendGenericRejection(reply: FastifyReply): unknown {
   return reply.status(401).send({ code: 'handoff_rejected', message: GENERIC_REJECTION_MESSAGE })
-}
-
-function generateOpaqueId(): string {
-  return randomBytes(24).toString('base64url')
-}
-
-function hashCookieValue(raw: string): string {
-  return createHmac('sha256', env.SSO_STATE_HMAC_SECRET).update(raw).digest('hex')
 }
 
 function readHandoffCookie(request: FastifyRequest): string | undefined {

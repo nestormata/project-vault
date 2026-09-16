@@ -34698,6 +34698,24 @@
         }
       }
     },
+    "/api/v1/extensions/oauth-handoff/start": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/extensions/oauth-handoff/callback": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/api/v1/users/me/onboarding": {
       "get": {
         "tags": [

@@ -12,6 +12,7 @@ import {
 } from './extension-panel.js'
 import { operationalLog } from './logger.js'
 import { raceWithTimeout } from './race-with-timeout.js'
+import { isValidActionResult } from './action-result-response.js'
 
 /** Mirrors `extension-panel.ts`'s own (unexported) `PanelLogger` type exactly. */
 type PanelLoggerLike = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>
@@ -59,26 +60,6 @@ function logModuleActionFailed(
     'Extension module action failed',
     { slot, actionKind, subReason }
   )
-}
-
-function isValidActionResult(value: unknown): value is ActionResult {
-  if (!value || typeof value !== 'object') return false
-  const candidate = value as { outcome?: unknown; html?: unknown; message?: unknown }
-  const optionalString = (field: unknown): boolean =>
-    field === undefined || typeof field === 'string'
-  switch (candidate.outcome) {
-    case 'ok':
-      return optionalString(candidate.html) && optionalString(candidate.message)
-    case 'validation_failed':
-      return typeof candidate.message === 'string'
-    case 'denied':
-    case 'conflict':
-      return optionalString(candidate.message)
-    case 'error':
-      return true
-    default:
-      return false
-  }
 }
 
 type ModuleActionAttemptOutcome =
