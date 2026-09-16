@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach } from 'vitest'
@@ -27,4 +27,16 @@ export function writeFixture(root: string, relativePath: string, content: string
   const fullPath = join(root, relativePath)
   mkdirSync(resolve(fullPath, '..'), { recursive: true })
   writeFileSync(fullPath, content)
+}
+
+/**
+ * Creates a real symlink at `root/relativePath` pointing at `target` (an absolute path, or a path
+ * relative to the symlink's own parent directory, matching `fs.symlinkSync`'s own contract). Used
+ * by `walkFiles`-consuming tests (Story 55.7) that need a genuine symlink fixture rather than a
+ * plain file — `writeFixture` above only ever creates regular files.
+ */
+export function writeFixtureSymlink(root: string, relativePath: string, target: string): void {
+  const fullPath = join(root, relativePath)
+  mkdirSync(resolve(fullPath, '..'), { recursive: true })
+  symlinkSync(target, fullPath)
 }

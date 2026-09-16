@@ -9,7 +9,12 @@
 import { readFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { toRepoPath, walkFiles } from './lib/scan-utils.js'
+import {
+  type DanglingSymlinkViolation,
+  toDanglingSymlinkViolation,
+  toRepoPath,
+  walkFiles,
+} from './lib/scan-utils.js'
 
 export type StatusMismatch = {
   storyKey: string
@@ -17,6 +22,11 @@ export type StatusMismatch = {
   storyStatus: string
   sprintStatus: string
 }
+
+/** A story-status-sync finding: either a `Status:` header mismatch or a dangling symlink under
+ * implementation-artifacts/ (Story 55.7 AC-2 — reported as its own kind, not folded into
+ * `StatusMismatch`). */
+export type StoryStatusSyncViolation = StatusMismatch | DanglingSymlinkViolation
 
 const SPRINT_STATUS_PATH = '_bmad-output/implementation-artifacts/sprint-status.yaml'
 const STORIES_DIR = '_bmad-output/implementation-artifacts'
@@ -32,7 +42,13 @@ export function parseDevelopmentStatus(yamlContent: string): Map<string, string>
       continue
     }
     if (!inBlock) continue
-    if (line.length > 0 && !/^\s/.test(line)) break // dedented back to top level — block ended
+    // Story 55.7 (AC-6): a genuinely dedented, non-comment, non-blank line ends the block (real
+    // YAML structure) — but `sprint-status.yaml`'s real convention interleaves column-0
+    // `# last_updated: ...` narrative comments *inside* the development_status: block itself, not
+    // only before it (confirmed at sprint-status.yaml:765). A `#`-prefixed line is never
+    // structural in YAML at any indentation, so it must be skipped like a blank line rather than
+    // treated as the block's end.
+    if (line.length > 0 && !/^\s/.test(line) && !/^#/.test(line)) break
 
     const match = /^\s{2}([a-zA-Z0-9_-]+):\s*(\S+)/.exec(line)
     if (match) statuses.set(match[1] as string, match[2] as string)
@@ -65,15 +81,25 @@ function extractStoryFileStatus(content: string): string | undefined {
   return /^Status:\s*(\S+)/m.exec(content)?.[1]
 }
 
-export function scanStoryStatusSync(rootDir = process.cwd()): StatusMismatch[] {
+function sortKey(v: StoryStatusSyncViolation): string {
+  return 'storyKey' in v ? v.storyKey : v.file
+}
+
+export function scanStoryStatusSync(rootDir = process.cwd()): StoryStatusSyncViolation[] {
   const root = resolve(rootDir)
   const storiesDir = resolve(root, STORIES_DIR)
 
   const sprintStatuses = loadSprintStatuses(root)
   if (!sprintStatuses) return []
 
-  const mismatches: StatusMismatch[] = []
-  for (const file of walkFiles(storiesDir, (path) => path.endsWith('.md'))) {
+  const violations: StoryStatusSyncViolation[] = []
+  const files = walkFiles(
+    storiesDir,
+    (path) => path.endsWith('.md'),
+    (path) => violations.push(toDanglingSymlinkViolation(root, path))
+  )
+
+  for (const file of files) {
     const storyKey = basename(file, '.md')
     const sprintStatus = sprintStatuses.get(storyKey)
     // Not a tracked story key — an adversarial-review file, retro doc, deferred-work.md, etc.
@@ -81,33 +107,54 @@ export function scanStoryStatusSync(rootDir = process.cwd()): StatusMismatch[] {
 
     const storyStatus = extractStoryFileStatus(readFileSync(file, 'utf-8'))
     if (storyStatus !== undefined && storyStatus !== sprintStatus) {
-      mismatches.push({ storyKey, storyFile: toRepoPath(root, file), storyStatus, sprintStatus })
+      violations.push({ storyKey, storyFile: toRepoPath(root, file), storyStatus, sprintStatus })
     }
   }
 
-  return mismatches.sort((a, b) => a.storyKey.localeCompare(b.storyKey))
+  return violations.sort((a, b) => sortKey(a).localeCompare(sortKey(b)))
 }
 
-function report(mismatches: StatusMismatch[]): void {
-  if (mismatches.length === 0) {
+function report(violations: StoryStatusSyncViolation[]): void {
+  if (violations.length === 0) {
     process.stdout.write(
       'check-story-status-sync: every story file Status: header matches sprint-status.yaml — OK\n'
     )
     return
   }
 
-  process.stderr.write(
-    'FATAL: story file `Status:` header does not match sprint-status.yaml (P6-1/P7-1/P8-1 drift):\n'
+  const mismatches = violations.filter((v): v is StatusMismatch => 'storyKey' in v)
+  const danglingSymlinks = violations.filter(
+    (v): v is DanglingSymlinkViolation => !('storyKey' in v)
   )
-  for (const m of mismatches) {
+
+  if (mismatches.length > 0) {
     process.stderr.write(
-      `  - ${m.storyFile}: file says "Status: ${m.storyStatus}", sprint-status.yaml says "${m.sprintStatus}"\n`
+      'FATAL: story file `Status:` header does not match sprint-status.yaml (P6-1/P7-1/P8-1 drift):\n'
+    )
+    for (const m of mismatches) {
+      process.stderr.write(
+        `  - ${m.storyFile}: file says "Status: ${m.storyStatus}", sprint-status.yaml says "${m.sprintStatus}"\n`
+      )
+    }
+    process.stderr.write(
+      "\nFix: update the story file's `Status:` header to match sprint-status.yaml (or vice versa,\n" +
+        "if the yaml is the one that's stale), then re-run.\n"
     )
   }
-  process.stderr.write(
-    "\nFix: update the story file's `Status:` header to match sprint-status.yaml (or vice versa,\n" +
-      "if the yaml is the one that's stale), then re-run.\n"
-  )
+
+  if (danglingSymlinks.length > 0) {
+    process.stderr.write(
+      '\nFATAL: found dangling symlink(s) under implementation-artifacts/ (Story 55.7 AC-2 — ' +
+        'a symlink whose target could not be read, not silently skipped):\n'
+    )
+    for (const d of danglingSymlinks) {
+      process.stderr.write(`  - ${d.file}: dangling symlink (target does not exist: ${d.target})\n`)
+    }
+    process.stderr.write(
+      '\nFix: point the symlink at a real target, or remove it if it should not exist.\n'
+    )
+  }
+
   process.exitCode = 1
 }
 
