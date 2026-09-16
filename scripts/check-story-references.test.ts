@@ -1,23 +1,25 @@
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { findDanglingStoryReferences, scanStoryReferences } from './check-story-references.js'
-import { useFixtureRoots, writeFixture } from './lib/fixture-test-helpers.js'
+import { useFixtureRoots, writeFixture, writeFixtureSymlink } from './lib/fixture-test-helpers.js'
 
 const ARTIFACTS_DIR = '_bmad-output/implementation-artifacts'
 const SPRINT_STATUS_PATH = `${ARTIFACTS_DIR}/sprint-status.yaml`
 const STORY_13_5_REFERENCE = 'Story 13.5'
+const SECOND_STORY_KEY = '13-2-store-and-edit-a-secret-with-multiple-named-fields-via-templates'
 
 const makeFixtureRoot = useFixtureRoots('story-references-', [ARTIFACTS_DIR])
 
 const SPRINT_STATUS = `development_status:
   epic-13: done
-  13-2-store-and-edit-a-secret-with-multiple-named-fields-via-templates: done
+  ${SECOND_STORY_KEY}: done
   13-5-rotation-same-value-and-dependency-scoping: done
   epic-13-retrospective: done
 `
 
 describe('findDanglingStoryReferences', () => {
   it('flags a "Story X.Y" mention with no matching sprint-status.yaml key', () => {
-    const keys = new Set(['13-2-store-and-edit-a-secret-with-multiple-named-fields-via-templates'])
+    const keys = new Set([SECOND_STORY_KEY])
     const dangling = findDanglingStoryReferences(
       'This limitation will be addressed in Story 13.5.',
       keys
@@ -50,7 +52,7 @@ describe('scanStoryReferences', () => {
     writeFixture(root, SPRINT_STATUS_PATH, SPRINT_STATUS)
     writeFixture(
       root,
-      `${ARTIFACTS_DIR}/13-2-store-and-edit-a-secret-with-multiple-named-fields-via-templates.md`,
+      `${ARTIFACTS_DIR}/${SECOND_STORY_KEY}.md`,
       '# Story 13.2\n\nSee Story 13.5 for the follow-up confirm gate.\n'
     )
 
@@ -59,12 +61,8 @@ describe('scanStoryReferences', () => {
 
   it('P13-2 (Epic 13 retro Finding 2): flags a phantom forward reference to a story that was never created', () => {
     const root = makeFixtureRoot()
-    const key = '13-2-store-and-edit-a-secret-with-multiple-named-fields-via-templates'
-    writeFixture(
-      root,
-      SPRINT_STATUS_PATH,
-      'development_status:\n  13-2-store-and-edit-a-secret-with-multiple-named-fields-via-templates: done\n'
-    )
+    const key = SECOND_STORY_KEY
+    writeFixture(root, SPRINT_STATUS_PATH, `development_status:\n  ${SECOND_STORY_KEY}: done\n`)
     writeFixture(
       root,
       `${ARTIFACTS_DIR}/${key}.md`,
@@ -96,6 +94,46 @@ describe('scanStoryReferences', () => {
   it('returns no findings when sprint-status.yaml does not exist', () => {
     const root = makeFixtureRoot()
     expect(scanStoryReferences(root)).toEqual([])
+  })
+
+  it('follows a symlinked story file and catches a dangling reference inside it (Story 55.7 AC-1)', () => {
+    const root = makeFixtureRoot()
+    const key = SECOND_STORY_KEY
+    writeFixture(root, SPRINT_STATUS_PATH, `development_status:\n  ${SECOND_STORY_KEY}: done\n`)
+    writeFixture(
+      root,
+      `targets/${key}.md`,
+      '# Story 13.2\n\nSame-value detection is warn-only; a blocking gate is deferred to Story 13.5.\n'
+    )
+    writeFixtureSymlink(root, `${ARTIFACTS_DIR}/${key}.md`, join(root, 'targets', `${key}.md`))
+
+    expect(scanStoryReferences(root)).toEqual([
+      {
+        storyKey: key,
+        storyFile: `${ARTIFACTS_DIR}/${key}.md`,
+        referencedStory: STORY_13_5_REFERENCE,
+      },
+    ])
+  })
+
+  it('reports a dangling symlink as its own violation kind, distinct from a dangling story reference (Story 55.7 AC-2)', () => {
+    const root = makeFixtureRoot()
+    const key = SECOND_STORY_KEY
+    writeFixture(root, SPRINT_STATUS_PATH, `development_status:\n  ${key}: done\n`)
+    writeFixtureSymlink(
+      root,
+      `${ARTIFACTS_DIR}/${key}.md`,
+      join(root, ARTIFACTS_DIR, 'does-not-exist.md')
+    )
+
+    const violations = scanStoryReferences(root)
+    expect(violations).toEqual([
+      {
+        file: `${ARTIFACTS_DIR}/${key}.md`,
+        reason: 'dangling-symlink',
+        target: join(root, ARTIFACTS_DIR, 'does-not-exist.md'),
+      },
+    ])
   })
 })
 

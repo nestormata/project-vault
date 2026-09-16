@@ -13,13 +13,24 @@ import { readFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadSprintStatuses } from './check-story-status-sync.js'
-import { toRepoPath, walkFiles } from './lib/scan-utils.js'
+import {
+  type DanglingSymlinkViolation,
+  reportDanglingSymlinks,
+  toDanglingSymlinkViolation,
+  toRepoPath,
+  walkFiles,
+} from './lib/scan-utils.js'
 
 export type DanglingStoryReference = {
   storyKey: string
   storyFile: string
   referencedStory: string
 }
+
+/** A story-references finding: either a dangling "Story X.Y" reference or a dangling symlink
+ * under implementation-artifacts/ (Story 55.7 AC-2 — reported as its own kind, not folded into
+ * `DanglingStoryReference`). */
+export type StoryReferenceViolation = DanglingStoryReference | DanglingSymlinkViolation
 
 const STORIES_DIR = '_bmad-output/implementation-artifacts'
 const STORY_REFERENCE_PATTERN = /\bStory (\d+)\.(\d+)\b/g
@@ -47,7 +58,11 @@ export function findDanglingStoryReferences(
   return dangling
 }
 
-export function scanStoryReferences(rootDir = process.cwd()): DanglingStoryReference[] {
+function sortKey(v: StoryReferenceViolation): [string, string] {
+  return 'storyKey' in v ? [v.storyKey, v.referencedStory] : [v.file, '']
+}
+
+export function scanStoryReferences(rootDir = process.cwd()): StoryReferenceViolation[] {
   const root = resolve(rootDir)
   const storiesDir = resolve(root, STORIES_DIR)
 
@@ -55,8 +70,14 @@ export function scanStoryReferences(rootDir = process.cwd()): DanglingStoryRefer
   if (!sprintStatuses) return []
   const sprintStatusKeys = new Set(sprintStatuses.keys())
 
-  const results: DanglingStoryReference[] = []
-  for (const file of walkFiles(storiesDir, (path) => path.endsWith('.md'))) {
+  const results: StoryReferenceViolation[] = []
+  const files = walkFiles(
+    storiesDir,
+    (path) => path.endsWith('.md'),
+    (path) => results.push(toDanglingSymlinkViolation(root, path))
+  )
+
+  for (const file of files) {
     const storyKey = basename(file, '.md')
     // Only scan genuine, tracked story files — not retro docs, adversarial-review docs, or
     // deferred-work.md, which legitimately discuss story numbers that don't exist yet (e.g.
@@ -69,33 +90,44 @@ export function scanStoryReferences(rootDir = process.cwd()): DanglingStoryRefer
     }
   }
 
-  return results.sort(
-    (a, b) =>
-      a.storyKey.localeCompare(b.storyKey) || a.referencedStory.localeCompare(b.referencedStory)
-  )
+  return results.sort((a, b) => {
+    const [aKey, aRef] = sortKey(a)
+    const [bKey, bRef] = sortKey(b)
+    return aKey.localeCompare(bKey) || aRef.localeCompare(bRef)
+  })
 }
 
-function report(dangling: DanglingStoryReference[]): void {
-  if (dangling.length === 0) {
+function report(violations: StoryReferenceViolation[]): void {
+  if (violations.length === 0) {
     process.stdout.write(
       'check-story-references: every "Story X.Y" reference in a story file resolves to a real sprint-status.yaml entry — OK\n'
     )
     return
   }
 
-  process.stderr.write(
-    'FATAL: a story file references a story number with no sprint-status.yaml entry (A12-3 gap — a phantom forward reference, same shape as the "Story 13.5" incident):\n'
+  const dangling = violations.filter((v): v is DanglingStoryReference => 'storyKey' in v)
+  const danglingSymlinks = violations.filter(
+    (v): v is DanglingSymlinkViolation => !('storyKey' in v)
   )
-  for (const d of dangling) {
+
+  if (dangling.length > 0) {
     process.stderr.write(
-      `  - ${d.storyFile}: references "${d.referencedStory}", no such key in sprint-status.yaml\n`
+      'FATAL: a story file references a story number with no sprint-status.yaml entry (A12-3 gap — a phantom forward reference, same shape as the "Story 13.5" incident):\n'
+    )
+    for (const d of dangling) {
+      process.stderr.write(
+        `  - ${d.storyFile}: references "${d.referencedStory}", no such key in sprint-status.yaml\n`
+      )
+    }
+    process.stderr.write(
+      '\nFix: either create the referenced story as a real backlog entry in sprint-status.yaml, or\n' +
+        'remove the forward reference and log the limitation as a row in\n' +
+        '_bmad-output/implementation-artifacts/deferred-work.md instead.\n'
     )
   }
-  process.stderr.write(
-    '\nFix: either create the referenced story as a real backlog entry in sprint-status.yaml, or\n' +
-      'remove the forward reference and log the limitation as a row in\n' +
-      '_bmad-output/implementation-artifacts/deferred-work.md instead.\n'
-  )
+
+  reportDanglingSymlinks(danglingSymlinks)
+
   process.exitCode = 1
 }
 

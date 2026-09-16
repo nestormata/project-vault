@@ -1,5 +1,7 @@
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { useFixtureRoots, writeFixture } from './lib/fixture-test-helpers.js'
+import { scanStoryReferences } from './check-story-references.js'
+import { useFixtureRoots, writeFixture, writeFixtureSymlink } from './lib/fixture-test-helpers.js'
 import { parseDevelopmentStatus, scanStoryStatusSync } from './check-story-status-sync.js'
 
 const ARTIFACTS_DIR = '_bmad-output/implementation-artifacts'
@@ -36,6 +38,33 @@ describe('parseDevelopmentStatus', () => {
       'development_status:\n  epic-4: done # closed 2026-07-05 — retro debt confirmed resolved\n'
     )
     expect(statuses.get('epic-4')).toBe('done')
+  })
+
+  it('does not truncate the block at a column-0 "#" comment interleaved mid-block (Story 55.7 AC-6, mirrors sprint-status.yaml:765)', () => {
+    const yaml =
+      'development_status:\n' +
+      '  epic-25: done\n' +
+      '  epic-25-retrospective: done\n' +
+      '# last_updated: 2026-08-25 (epic-26/26-1: ...)\n' +
+      '  epic-26: done\n' +
+      '  26-1-first-story: done\n'
+
+    const statuses = parseDevelopmentStatus(yaml)
+    expect(statuses.get('epic-25-retrospective')).toBe('done')
+    expect(statuses.get('epic-26')).toBe('done')
+    expect(statuses.get('26-1-first-story')).toBe('done')
+  })
+
+  it('still terminates the block at a genuinely dedented non-comment key (edge case)', () => {
+    const yaml =
+      'development_status:\n' +
+      '  epic-1: done\n' +
+      'another_top_level_key: value\n' +
+      '  should-not-be-parsed: done\n'
+
+    const statuses = parseDevelopmentStatus(yaml)
+    expect(statuses.get('epic-1')).toBe('done')
+    expect(statuses.get('should-not-be-parsed')).toBeUndefined()
   })
 })
 
@@ -126,6 +155,50 @@ describe('scanStoryStatusSync', () => {
     const root = makeFixtureRoot()
     expect(scanStoryStatusSync(root)).toEqual([])
   })
+
+  it('follows a symlinked story file and checks it like a regular one (Story 55.7 AC-1)', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, SPRINT_STATUS_PATH, SPRINT_STATUS)
+    writeFixture(root, `targets/${SECOND_STORY_KEY}.md`, SECOND_STORY_REVIEW_CONTENT)
+    writeFixtureSymlink(root, SECOND_STORY_PATH, join(root, 'targets', `${SECOND_STORY_KEY}.md`))
+
+    expect(scanStoryStatusSync(root)).toEqual([])
+  })
+
+  it('flags a mismatch in a symlinked story file the same as a plain one (Story 55.7 AC-1)', () => {
+    const root = makeFixtureRoot()
+    writeFixture(
+      root,
+      SPRINT_STATUS_PATH,
+      SPRINT_STATUS.replace(`${SECOND_STORY_KEY}: review`, `${SECOND_STORY_KEY}: done`)
+    )
+    writeFixture(root, `targets/${SECOND_STORY_KEY}.md`, SECOND_STORY_REVIEW_CONTENT)
+    writeFixtureSymlink(root, SECOND_STORY_PATH, join(root, 'targets', `${SECOND_STORY_KEY}.md`))
+
+    expect(scanStoryStatusSync(root)).toEqual([
+      {
+        storyKey: SECOND_STORY_KEY,
+        storyFile: SECOND_STORY_PATH,
+        storyStatus: 'review',
+        sprintStatus: 'done',
+      },
+    ])
+  })
+
+  it('reports a dangling symlink as its own violation kind, distinct from a status mismatch (Story 55.7 AC-2)', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, SPRINT_STATUS_PATH, SPRINT_STATUS)
+    writeFixtureSymlink(root, SECOND_STORY_PATH, join(root, ARTIFACTS_DIR, 'does-not-exist.md'))
+
+    const violations = scanStoryStatusSync(root)
+    expect(violations).toEqual([
+      {
+        file: SECOND_STORY_PATH,
+        reason: 'dangling-symlink',
+        target: join(root, ARTIFACTS_DIR, 'does-not-exist.md'),
+      },
+    ])
+  })
 })
 
 describe('scanStoryStatusSync — named historical-incident regression fixtures (Story 1.13 AC-P2)', () => {
@@ -190,5 +263,52 @@ describe('scanStoryStatusSync — named historical-incident regression fixtures 
 describe('scanStoryStatusSync against the real repository', () => {
   it('passes with zero mismatches against every story file currently committed', () => {
     expect(scanStoryStatusSync(process.cwd())).toEqual([])
+  })
+})
+
+describe('Story 55.7 AC-4 — the fixed walker makes both guards actually fail on a seeded violation', () => {
+  const AC4_ARTIFACTS_DIR = '_bmad-output/implementation-artifacts'
+  const AC4_SPRINT_STATUS_PATH = `${AC4_ARTIFACTS_DIR}/sprint-status.yaml`
+  const AC4_KEY = '9-1-seeded-symlinked-story'
+  const AC4_STORY_PATH = `${AC4_ARTIFACTS_DIR}/${AC4_KEY}.md`
+  const AC4_SPRINT_STATUS = 'development_status:\n  9-1-seeded-symlinked-story: done\n'
+
+  const makeAc4FixtureRoot = useFixtureRoots('story-ac4-', [AC4_ARTIFACTS_DIR])
+
+  it('a seeded symlinked story file with a mismatched Status: header and a dangling "Story X.Y" reference fails both guards; the reconciled record passes both', () => {
+    const root = makeAc4FixtureRoot()
+    writeFixture(root, AC4_SPRINT_STATUS_PATH, AC4_SPRINT_STATUS)
+    writeFixture(
+      root,
+      `targets/${AC4_KEY}.md`,
+      '# Story 9.1\n\nStatus: review\n\nDeferred to Story 13.5.\n'
+    )
+    writeFixtureSymlink(root, AC4_STORY_PATH, join(root, 'targets', `${AC4_KEY}.md`))
+
+    // Seeded: the symlinked file's `Status: review` disagrees with sprint-status.yaml's `done`,
+    // and it forward-references a "Story 13.5" that has no sprint-status.yaml entry.
+    expect(scanStoryStatusSync(root)).toEqual([
+      {
+        storyKey: AC4_KEY,
+        storyFile: AC4_STORY_PATH,
+        storyStatus: 'review',
+        sprintStatus: 'done',
+      },
+    ])
+    expect(scanStoryReferences(root)).toEqual([
+      {
+        storyKey: AC4_KEY,
+        storyFile: AC4_STORY_PATH,
+        referencedStory: 'Story 13.5',
+      },
+    ])
+
+    // Reconciled: fix the symlink target's content in place (real symlink still points at the
+    // same target — this mirrors how a maintainer would actually reconcile a real symlinked
+    // story file: edit the target, not the link).
+    writeFixture(root, `targets/${AC4_KEY}.md`, '# Story 9.1\n\nStatus: done\n')
+
+    expect(scanStoryStatusSync(root)).toEqual([])
+    expect(scanStoryReferences(root)).toEqual([])
   })
 })
