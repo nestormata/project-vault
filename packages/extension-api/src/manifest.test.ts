@@ -47,8 +47,10 @@ describe('EXTENSION_API_VERSION', () => {
     // projectArchiveNotifier/'project-archive-notify' (also additive-minor): 3.12.0 -> 3.13.0.
     // Story 36.1 AC1/AC6 — HostServices.notificationOriginator (also additive-minor):
     // 3.13.0 -> 3.14.0. Story 37.1 AC1.3 — HostServices.projectAuthorization (also
-    // additive-minor): 3.14.0 -> 3.15.0.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.15.0')
+    // additive-minor): 3.14.0 -> 3.15.0. Story 39.1 AC8 — ExtensionCapability's 'oauth-handoff'
+    // literal, ExtensionManifest's redirectOrigins?, and ExtensionHooks' oauthHandoff? (also
+    // additive-minor): 3.15.0 -> 3.16.0.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.16.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

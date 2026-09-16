@@ -59,6 +59,7 @@ import { erasureRoutes } from './modules/compliance/erasure-routes.js'
 import { extensionStatusRoutes } from './extensions/status-routes.js'
 import { extensionPanelRoutes } from './extensions/panel-routes.js'
 import { moduleDataRoutes } from './extensions/module-data-routes.js'
+import { oauthHandoffRoutes } from './modules/extensions/oauth-handoff-routes.js'
 import { loadExtension, getExtensionStatus } from './extensions/loader.js'
 import { themingRoutes } from './modules/theming/routes.js'
 import { themeSelectionRoutes } from './modules/theming/selection-routes.js'
@@ -584,6 +585,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // Story 25.1: authenticated (any active org member) UI-panel mounting routes — deliberately
   // NOT under ADMIN_PREFIX, unlike Story 14.2's extensionStatusRoutes above (AC1).
   await fastify.register(extensionPanelRoutes, { prefix: '/api/v1' })
+  // Story 39.1 — fixed URLs (not manifest-declared route paths, unlike moduleDataRoutes below),
+  // so this registers BEFORE loadExtension() and re-checks getExtensionStatus() fresh inside each
+  // request handler, mirroring extensionPanelRoutes/extensionStatusRoutes above exactly.
+  await fastify.register(oauthHandoffRoutes, { prefix: '/api/v1/extensions/oauth-handoff' })
   await fastify.register(onboardingRoutes, { prefix: '/api/v1/users' })
   await fastify.register(usersRoutes, { prefix: '/api/v1/users' })
   await fastify.register(searchRoutes, { prefix: '/api/v1' })

@@ -22,6 +22,11 @@ export const EXCLUDED_TABLES = new Set([
   // sso_login_states/platform_security_events above.
   'handoff_token_jti',
   'handoff_pending_states',
+  // Story 39.1 — extension OAuth start/callback pending-state: no tenant is known/trusted at
+  // insert (the start route's caller is authenticated but the row itself carries no org context)
+  // or at lookup time (the callback is hit by an external OAuth provider, not PV's own
+  // authenticated frontend). Same no-FK/no-RLS reasoning as handoff_pending_states above.
+  'extension_oauth_pending_states',
   // user_onboarding: no RLS — access gated in application layer by auth.userId == userId; org_id is a FK for cascade, not for multi-tenant row filtering.
   'user_onboarding',
   // account_recovery_tokens: identity-scoped (AC-1) — the row has no org_id column (only an
