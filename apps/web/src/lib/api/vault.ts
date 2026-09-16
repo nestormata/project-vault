@@ -1,32 +1,18 @@
+import type {
+  VaultInitRequest,
+  VaultInitResponse,
+  VaultUnsealRequest,
+  VaultUnsealResponse,
+} from '@project-vault/shared'
 import { ApiClientError, apiFetch, type ApiFailure } from './client.js'
+
+export type { VaultInitRequest, VaultInitResponse, VaultUnsealRequest, VaultUnsealResponse }
 
 export type VaultReadiness =
   | { state: 'ready' }
   | { state: 'uninitialized'; message: string }
   | { state: 'sealed'; message: string }
   | { state: 'unavailable'; message: string; retryAfter?: number }
-
-export type VaultInitRequest =
-  | { kmsType: 'passphrase'; passphrase: string }
-  | { kmsType: 'envelope'; envelopeKeyPath: string; acknowledgeSplitKeyModel: true }
-  | { kmsType: 'file'; masterKeyPath: string; acknowledgeCoLocationRisk: true }
-
-export type VaultUnsealRequest =
-  | { passphrase: string }
-  | { envelopeKeyPath: string }
-  | { masterKeyPath: string }
-
-export type VaultInitResponse = {
-  initialized: true
-  keyVersion: number
-  kmsType: string
-}
-
-export type VaultUnsealResponse = {
-  unsealed: true
-  keyVersion: number
-  kmsType: string
-}
 
 type ReadyBody = {
   status: 'ready' | 'unavailable'
