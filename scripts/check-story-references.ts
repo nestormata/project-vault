@@ -15,6 +15,7 @@ import { pathToFileURL } from 'node:url'
 import { loadSprintStatuses } from './check-story-status-sync.js'
 import {
   type DanglingSymlinkViolation,
+  reportDanglingSymlinks,
   toDanglingSymlinkViolation,
   toRepoPath,
   walkFiles,
@@ -125,18 +126,7 @@ function report(violations: StoryReferenceViolation[]): void {
     )
   }
 
-  if (danglingSymlinks.length > 0) {
-    process.stderr.write(
-      '\nFATAL: found dangling symlink(s) under implementation-artifacts/ (Story 55.7 AC-2 — ' +
-        'a symlink whose target could not be read, not silently skipped):\n'
-    )
-    for (const d of danglingSymlinks) {
-      process.stderr.write(`  - ${d.file}: dangling symlink (target does not exist: ${d.target})\n`)
-    }
-    process.stderr.write(
-      '\nFix: point the symlink at a real target, or remove it if it should not exist.\n'
-    )
-  }
+  reportDanglingSymlinks(danglingSymlinks)
 
   process.exitCode = 1
 }

@@ -49,6 +49,30 @@ export function toDanglingSymlinkViolation(
 }
 
 /**
+ * Writes the standard "FATAL: found dangling symlink(s)..." report block to `process.stderr` for
+ * `danglingSymlinks` (a no-op if empty). Shared by every `check-*.ts` script whose violation union
+ * includes `DanglingSymlinkViolation` (Story 55.7 AC-2) — `check-story-references.ts` and
+ * `check-story-status-sync.ts` both reported this identical block inline, which is exactly the kind
+ * of drift this story's own guard scripts warn against (a copy silently going stale in one call site
+ * while the other is fixed).
+ */
+export function reportDanglingSymlinks(danglingSymlinks: DanglingSymlinkViolation[]): void {
+  if (danglingSymlinks.length === 0) {
+    return
+  }
+  process.stderr.write(
+    '\nFATAL: found dangling symlink(s) under implementation-artifacts/ (Story 55.7 AC-2 — ' +
+      'a symlink whose target could not be read, not silently skipped):\n'
+  )
+  for (const d of danglingSymlinks) {
+    process.stderr.write(`  - ${d.file}: dangling symlink (target does not exist: ${d.target})\n`)
+  }
+  process.stderr.write(
+    '\nFix: point the symlink at a real target, or remove it if it should not exist.\n'
+  )
+}
+
+/**
  * Walks `dir` recursively, collecting every file (following symlinks) that matches `predicate`.
  *
  * Story 55.7 (AC-1): `Dirent.isFile()`/`Dirent.isDirectory()` (from `readdirSync`'s own listing)
