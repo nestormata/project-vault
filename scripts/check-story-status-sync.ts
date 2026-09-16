@@ -49,7 +49,7 @@ export function parseDevelopmentStatus(yamlContent: string): Map<string, string>
     // only before it (confirmed at sprint-status.yaml:765). A `#`-prefixed line is never
     // structural in YAML at any indentation, so it must be skipped like a blank line rather than
     // treated as the block's end.
-    if (line.length > 0 && !/^\s/.test(line) && !/^#/.test(line)) break
+    if (line.length > 0 && !/^\s/.test(line) && !line.startsWith('#')) break
 
     const match = /^\s{2}([a-zA-Z0-9_-]+):\s*(\S+)/.exec(line)
     if (match) statuses.set(match[1] as string, match[2] as string)
