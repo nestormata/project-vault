@@ -54,7 +54,7 @@ async function resetMaintenanceState(): Promise<void> {
   await getDb().delete(platformAuditPendingEntries)
 }
 
-describe.sequential('Story 9.4 AC-6/AC-15/AC-16: writePlatformAuditEntryOrFailClosed', () => {
+describe('Story 9.4 AC-6/AC-15/AC-16: writePlatformAuditEntryOrFailClosed', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     zeroKeys()

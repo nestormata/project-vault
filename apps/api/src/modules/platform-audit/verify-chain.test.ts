@@ -121,7 +121,7 @@ async function latestRowId(): Promise<string> {
   return row?.id as string
 }
 
-describe.sequential('Story 1.25 AC-3/AC-4: platform-audit chain-walk verification', () => {
+describe('Story 1.25 AC-3/AC-4: platform-audit chain-walk verification', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     zeroKeys()

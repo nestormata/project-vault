@@ -110,7 +110,7 @@ async function revokeCurrentSession(app: TestApp, jar: CookieJar) {
   })
 }
 
-describe.sequential('Session management integration', () => {
+describe('Session management integration', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     await initVaultForTest(initVault, TEST_PASSPHRASE)

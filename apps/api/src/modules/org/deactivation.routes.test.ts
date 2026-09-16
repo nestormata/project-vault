@@ -65,7 +65,7 @@ async function meRequest(app: TestApp, cookies: CookieJar) {
   })
 }
 
-describe.sequential('account deactivation routes', () => {
+describe('account deactivation routes', () => {
   let app: TestApp
 
   beforeAll(async () => {

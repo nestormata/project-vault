@@ -186,7 +186,7 @@ async function getNav(app: TestApp, cookies?: CookieJar) {
   })
 }
 
-describe.sequential('GET /api/v1/extensions/panels/:slot (Story 25.1)', () => {
+describe('GET /api/v1/extensions/panels/:slot (Story 25.1)', () => {
   suite.registerLifecycle()
 
   beforeEach(() => {
@@ -440,7 +440,7 @@ describe.sequential('GET /api/v1/extensions/panels/:slot (Story 25.1)', () => {
   })
 })
 
-describe.sequential('GET /api/v1/extensions/panels/:slot (Story 25.3 context)', () => {
+describe('GET /api/v1/extensions/panels/:slot (Story 25.3 context)', () => {
   suite.registerLifecycle()
 
   beforeEach(() => {
@@ -806,7 +806,7 @@ describe.sequential('GET /api/v1/extensions/panels/:slot (Story 25.3 context)', 
   })
 })
 
-describe.sequential('GET /api/v1/extensions/nav (Story 25.1 AC5)', () => {
+describe('GET /api/v1/extensions/nav (Story 25.1 AC5)', () => {
   suite.registerLifecycle()
 
   beforeEach(() => {
@@ -915,7 +915,7 @@ function actionState(
   })
 }
 
-describe.sequential('POST /api/v1/extensions/panels/:slot/actions (Story 25.5)', () => {
+describe('POST /api/v1/extensions/panels/:slot/actions (Story 25.5)', () => {
   suite.registerLifecycle()
 
   beforeEach(() => {

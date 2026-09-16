@@ -127,7 +127,7 @@ async function expectInvalidLoginTotpRecorded(
   })
 }
 
-describe.sequential('MFA login service', () => {
+describe('MFA login service', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     await initVaultForTest(initVault, TEST_PASSPHRASE)

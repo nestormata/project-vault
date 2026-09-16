@@ -102,7 +102,7 @@ async function rotationState(orgId: string, rotationId: string) {
 
 const MINUTES = 60_000
 
-describe.sequential('runStaleRotationRecoveryJob', () => {
+describe('runStaleRotationRecoveryJob', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     await unsealWorkerTestVault(initVault, TEST_PASSPHRASE)

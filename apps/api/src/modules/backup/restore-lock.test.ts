@@ -71,7 +71,7 @@ async function clearRunningRow(id: string): Promise<void> {
   await getDb().update(backupRuns).set({ status: 'failed' }).where(eq(backupRuns.id, id))
 }
 
-describe.sequential('Story 9.6 D1: acquireRestoreLock', () => {
+describe('Story 9.6 D1: acquireRestoreLock', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     try {

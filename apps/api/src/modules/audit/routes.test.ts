@@ -173,7 +173,7 @@ async function mintOwnerSessionForOrg(
   return { 'access-token': jwt }
 }
 
-describe.sequential('audit verify route', () => {
+describe('audit verify route', () => {
   let app: TestApp
 
   beforeAll(async () => {
@@ -615,7 +615,7 @@ async function insertIdentityToken(displayName: string): Promise<{ id: string; u
   return { id: token.id, userId: user.id }
 }
 
-describe.sequential('audit search route (GET /audit/events)', () => {
+describe('audit search route (GET /audit/events)', () => {
   let app: TestApp
 
   beforeAll(async () => {

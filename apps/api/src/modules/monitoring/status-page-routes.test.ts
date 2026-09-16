@@ -114,7 +114,7 @@ async function expireMfaGracePeriod(orgId: string, userId: string): Promise<void
   )
 }
 
-describe.sequential('status page admin routes (Story 6.3, Sections C-G, J)', () => {
+describe('status page admin routes (Story 6.3, Sections C-G, J)', () => {
   let app: TestApp
   const { registerOwner, addUserToOrg, addProjectMember } = createMembershipTestHelpers({
     emailPrefix: 'status-page',

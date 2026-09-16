@@ -25,7 +25,7 @@ const { users } = await import('@project-vault/db/schema')
 type TestApp = Awaited<ReturnType<typeof createApp>>
 let app: TestApp
 
-describe.sequential('Story 9.1 AC-15: backup disabled entirely (no BACKUP_* configured)', () => {
+describe('Story 9.1 AC-15: backup disabled entirely (no BACKUP_* configured)', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     await initVault({ kmsType: 'passphrase', passphrase: 'backup-disabled-test-passphrase' }, {})

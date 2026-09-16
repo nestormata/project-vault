@@ -60,7 +60,7 @@ async function versionState(orgId: string, versionId: string) {
   return row
 }
 
-describe.sequential('runBreakGlassOverlapExpiryJob', () => {
+describe('runBreakGlassOverlapExpiryJob', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     await unsealWorkerTestVault(initVault, TEST_PASSPHRASE)

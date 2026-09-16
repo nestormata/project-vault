@@ -40,7 +40,7 @@ function getHealthDashboard(app: TestApp, cookies: Cookies) {
   })
 }
 
-describe.sequential('GET /api/v1/health-dashboard (Story 6.3, Section A)', () => {
+describe('GET /api/v1/health-dashboard (Story 6.3, Section A)', () => {
   let app: TestApp
   let owner: { userId: string; orgId: string; cookies: Cookies }
   let other: { userId: string; orgId: string; cookies: Cookies }

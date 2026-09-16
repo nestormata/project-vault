@@ -41,7 +41,7 @@ async function listOrgsReq(app: TestApp, cookies: CookieJar) {
   return app.inject({ method: 'GET', url: ORGS_URL, headers: { cookie: cookieHeader(cookies) } })
 }
 
-describe.sequential('Story 9.2 platform-admin orgs routes', () => {
+describe('Story 9.2 platform-admin orgs routes', () => {
   suite.registerLifecycle()
 
   // This shared test database accumulates organizations across every test file's ordinary

@@ -49,7 +49,7 @@ async function makeOperator(prefix: string) {
   })
 }
 
-describe.sequential('Story 22.3 PUT /admin/orgs/:orgId/audit-quota', () => {
+describe('Story 22.3 PUT /admin/orgs/:orgId/audit-quota', () => {
   suite.registerLifecycle()
 
   it('AC-3: 401 with no auth header', async () => {

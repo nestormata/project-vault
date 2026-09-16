@@ -101,7 +101,7 @@ async function insertRawRow(
   )
 }
 
-describe.sequential('Story 1.25 AC-3/AC-4: chain-walk verification', () => {
+describe('Story 1.25 AC-3/AC-4: chain-walk verification', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     zeroKeys()

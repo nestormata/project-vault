@@ -99,7 +99,7 @@ async function staleStagedAuditCount(orgId: string, rotationId: string): Promise
 const DAYS = 24 * 60 * 60 * 1000
 const MINUTES = 60_000
 
-describe.sequential('runStaleStagedAlertJob', () => {
+describe('runStaleStagedAlertJob', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     await unsealWorkerTestVault(initVault, TEST_PASSPHRASE)

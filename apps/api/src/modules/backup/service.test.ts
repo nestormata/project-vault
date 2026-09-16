@@ -65,7 +65,7 @@ afterAll(async () => {
   rmSync(storageDir, { recursive: true, force: true })
 })
 
-describe.sequential('Story 9.1: backup service', () => {
+describe('Story 9.1: backup service', () => {
   beforeAll(async () => {
     await reinitVault()
   })

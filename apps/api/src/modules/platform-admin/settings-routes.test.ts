@@ -45,7 +45,7 @@ async function putSettings(app: TestApp, cookies: CookieJar, payload: Record<str
   })
 }
 
-describe.sequential('Story 9.2 platform-admin settings routes', () => {
+describe('Story 9.2 platform-admin settings routes', () => {
   suite.registerLifecycle()
 
   afterEach(async () => {

@@ -82,7 +82,7 @@ async function createAuthenticatedSession(
   return { userId: user.id, orgId: org.id, cookies: { 'access-token': accessToken } }
 }
 
-describe.sequential('SecureRoute integration', () => {
+describe('SecureRoute integration', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     await initVaultForTest(initVault, TEST_PASSPHRASE)

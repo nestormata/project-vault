@@ -26,7 +26,7 @@ function authHeaders(cookies: CookieJar) {
   return { cookie: cookieHeader(cookies) }
 }
 
-describe.sequential('notification preferences routes', () => {
+describe('notification preferences routes', () => {
   suite.registerLifecycle()
 
   it('GET /api/v1/users/me/notification-preferences returns defaults', async () => {

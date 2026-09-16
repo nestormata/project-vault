@@ -114,7 +114,7 @@ function dismissSecurityAlert(app: TestApp, cookies: CookieJar, securityAlertId:
   })
 }
 
-describe.sequential('security-alerts routes (Story 6.2 ADR-6.2-07, AC 12/18)', () => {
+describe('security-alerts routes (Story 6.2 ADR-6.2-07, AC 12/18)', () => {
   let app: TestApp
 
   beforeAll(async () => {

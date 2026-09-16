@@ -60,7 +60,7 @@ function assertSingleUnbrokenChain(rows: ChainRow[], expectedLength: number): vo
   }
 }
 
-describe.sequential('Story 1.25 AC-2: concurrent audit_log_entries chain writes', () => {
+describe('Story 1.25 AC-2: concurrent audit_log_entries chain writes', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     zeroKeys()

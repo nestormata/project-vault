@@ -131,7 +131,7 @@ async function seedSecurityAlert(
   )
 }
 
-describe.sequential('dashboard stats', () => {
+describe('dashboard stats', () => {
   let app: TestApp
 
   beforeAll(async () => {

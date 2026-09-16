@@ -56,7 +56,7 @@ async function insertAuditRow(orgId: string, eventType: string): Promise<{ id: s
   return row
 }
 
-describe.sequential('configureForwarding (AC-17)', () => {
+describe('configureForwarding (AC-17)', () => {
   it('upserts a webhook config, encrypts the secret, never stores it plaintext', async () => {
     await bootVault()
     await withTestOrg(async ({ orgId }) => {
@@ -146,7 +146,7 @@ describe.sequential('configureForwarding (AC-17)', () => {
   })
 })
 
-describe.sequential('runWebhookForwardCatchup (AC-18)', () => {
+describe('runWebhookForwardCatchup (AC-18)', () => {
   it('delivers rows in order, advancing the cursor only after each 2xx', async () => {
     await withTestOrg(async ({ orgId }) => {
       await withOrg(orgId, (tx) =>

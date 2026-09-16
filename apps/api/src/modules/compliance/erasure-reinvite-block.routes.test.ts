@@ -78,7 +78,7 @@ function registerViaApi(app: TestApp, email: string) {
   })
 }
 
-describe.sequential('erasure re-invite block (Story 8.4 D6, AC-17/AC-17B/AC-18)', () => {
+describe('erasure re-invite block (Story 8.4 D6, AC-17/AC-17B/AC-18)', () => {
   let app: TestApp
 
   beforeAll(async () => {

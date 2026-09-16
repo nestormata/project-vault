@@ -66,7 +66,7 @@ afterAll(async () => {
   rmSync(keyDir, { recursive: true, force: true })
 })
 
-describe.sequential('Vault lifecycle (passphrase mode)', () => {
+describe('Vault lifecycle (passphrase mode)', () => {
   beforeEach(async () => {
     await resetVaultForTest()
   })
@@ -212,7 +212,7 @@ describe.sequential('Vault lifecycle (passphrase mode)', () => {
   })
 })
 
-describe.sequential('Vault bootstrap token enforcement', () => {
+describe('Vault bootstrap token enforcement', () => {
   const BOOTSTRAP_TOKEN = 'a'.repeat(32)
 
   beforeEach(async () => {
@@ -250,7 +250,7 @@ describe.sequential('Vault bootstrap token enforcement', () => {
   })
 })
 
-describe.sequential('Vault key-service custody models', () => {
+describe('Vault key-service custody models', () => {
   beforeEach(async () => {
     await resetVaultForTest()
     process.env['VAULT_ALLOW_REMOTE_INIT'] = 'true'

@@ -113,7 +113,7 @@ async function versionsFor(orgId: string, credentialId: string) {
   )
 }
 
-describe.sequential('pruneCredentialVersions', () => {
+describe('pruneCredentialVersions', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     await unsealWorkerTestVault(initVault, TEST_PASSPHRASE)

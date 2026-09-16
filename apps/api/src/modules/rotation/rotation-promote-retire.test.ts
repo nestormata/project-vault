@@ -108,7 +108,7 @@ async function initiateAndGetIds(
   return { projectId, credentialId: credential.id, rotationId }
 }
 
-describe.sequential('rotation promote/retire/staged-value routes (Story 5.6)', () => {
+describe('rotation promote/retire/staged-value routes (Story 5.6)', () => {
   let app: TestApp
   let owner: RegisteredUser
 

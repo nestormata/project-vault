@@ -29,7 +29,7 @@ afterAll(async () => {
   rmSync(keyDir, { recursive: true, force: true })
 })
 
-describe.sequential('Story 9.4 D3/AC-4: getPlatformAuditKey()', () => {
+describe('Story 9.4 D3/AC-4: getPlatformAuditKey()', () => {
   it('throws a VaultSealedError while the vault is sealed/uninitialized', async () => {
     await resetVaultForTest()
     zeroKeys()

@@ -64,7 +64,7 @@ async function staleMostRecentSucceededBackup(): Promise<void> {
     .where(eq(backupRuns.id, latest.id))
 }
 
-describe.sequential('Story 9.1 AC-12: backup-health-check worker', () => {
+describe('Story 9.1 AC-12: backup-health-check worker', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     try {

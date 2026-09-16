@@ -50,7 +50,7 @@ async function putRetention(app: TestApp, cookies: Cookies, body: unknown) {
   })
 }
 
-describe.sequential('PUT /audit/forwarding', () => {
+describe('PUT /audit/forwarding', () => {
   let app: TestApp
 
   beforeAll(async () => {
@@ -194,7 +194,7 @@ describe.sequential('PUT /audit/forwarding', () => {
   })
 })
 
-describe.sequential('PUT /audit/retention', () => {
+describe('PUT /audit/retention', () => {
   let app: TestApp
 
   beforeAll(async () => {

@@ -210,7 +210,7 @@ describe('auth routes', () => {
   })
 })
 
-describe.sequential('GET /api/v1/auth/me', () => {
+describe('GET /api/v1/auth/me', () => {
   const ME_URL = '/api/v1/auth/me'
   const suite = createUnsealedRouteSuite(initVault, 'auth-me-routes-passphrase')
   suite.registerLifecycle()
@@ -268,7 +268,7 @@ describe.sequential('GET /api/v1/auth/me', () => {
   })
 })
 
-describe.sequential('POST /api/v1/auth/login for users seeded via raw SQL', () => {
+describe('POST /api/v1/auth/login for users seeded via raw SQL', () => {
   const suite = createUnsealedRouteSuite(initVault, 'auth-login-seed-fixture-passphrase')
   suite.registerLifecycle()
 

@@ -30,7 +30,7 @@ async function tryDeleteTestUser(userId: string): Promise<void> {
   }
 }
 
-describe.sequential('Story 9.4 AC-6: writePlatformAuditEntry', () => {
+describe('Story 9.4 AC-6: writePlatformAuditEntry', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     zeroKeys()

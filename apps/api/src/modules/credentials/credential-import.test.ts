@@ -52,7 +52,7 @@ async function credentialAuditRows(orgId: string, eventType: string, resourceId?
   )
 }
 
-describe.sequential('credential bulk import routes', () => {
+describe('credential bulk import routes', () => {
   let app: TestApp
   let owner: RegisteredUser
   let other: RegisteredUser
