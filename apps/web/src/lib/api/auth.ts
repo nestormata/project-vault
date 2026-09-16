@@ -1,19 +1,20 @@
+import type {
+  RegisterRequest,
+  RegisterResponse,
+  LoginRequest,
+  DomainLookupRequest,
+  DomainLookupResponse,
+  AuthSessionResponse,
+} from '@project-vault/shared'
 import { apiFetch } from './client.js'
 
-export type RegisterRequest = {
-  email: string
-  password: string
-  orgName?: string
-  invitationToken?: string
-}
-
-export type RegisterResponse = {
-  userId: string
-  orgId: string
-  email: string
-  orgName: string
-  role: 'owner' | 'member'
-  invitedProject?: { projectId: string; projectName: string; role: 'admin' | 'member' | 'viewer' }
+export type {
+  RegisterRequest,
+  RegisterResponse,
+  LoginRequest,
+  DomainLookupRequest,
+  DomainLookupResponse,
+  AuthSessionResponse,
 }
 
 // Story 1.20 AC-3/AC-6a: self-signup registration's collapsed success/collision response —
@@ -21,27 +22,6 @@ export type RegisterResponse = {
 // RegisterAcceptedResponseSchema (schema.ts). Never carries userId/orgId/any account data.
 export type RegisterAcceptedResponse = {
   message: string
-}
-
-export type LoginRequest = {
-  email: string
-  password: string
-}
-
-// Story 14.4 AC-1/AC-2/AC-9: request/response shapes for the pre-auth email-domain-to-SSO
-// lookup. Deliberately never carries an org id/name (AC-9a) — only whether the domain maps to a
-// currently-registered SSO strategy, and (if so) which provider.
-export type DomainLookupRequest = {
-  email: string
-}
-
-export type DomainLookupResponse = {
-  ssoRequired: boolean
-  providerName?: string
-  // Story 16.4 AC-3 — present only on a successful resolution of a currently-valid org default
-  // theme for the looked-up domain; `null`/absent on every other path (no mapping, no/orphaned
-  // org default, DB error). Both-or-neither: `name` and `css` are never independently present.
-  theme?: { name: string; css: string } | null
 }
 
 // Story 14.4 Task 3.5: reuses Story 14.3's existing start/callback contract — no hosted
@@ -53,12 +33,6 @@ export type SsoStartResponse = {
 
 export type SsoCallbackRequest = {
   credential: string
-}
-
-export type AuthSessionResponse = {
-  userId: string
-  orgId: string
-  expiresAt: string
 }
 
 export type MfaLoginChallenge = {
