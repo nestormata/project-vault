@@ -189,14 +189,29 @@ function logOAuthHandoffFailed(
  * data.
  */
 function isAllowedRedirectUrl(url: string, allowOrigins: readonly string[]): boolean {
+  return parseAllowedRedirectUrl(url, allowOrigins) !== undefined
+}
+
+/**
+ * Code-review fix (39.1) — returns the *parsed* URL so callers can build the `Location` header
+ * from its canonicalized `.href` rather than the raw, extension-supplied string. `new URL()`
+ * strips ASCII tab/CR/LF from the string it parses, but does NOT mutate the original string — so
+ * validating with `new URL(url)` and then still sending the original `url` verbatim would let a
+ * CR/LF sequence that survives origin/protocol validation reach `reply.header('Location', ...)`
+ * unchanged. Node's HTTP layer happens to reject invalid header characters today, but that's an
+ * incidental property of the runtime, not something this code should depend on for a documented
+ * security boundary (AC9).
+ */
+function parseAllowedRedirectUrl(url: string, allowOrigins: readonly string[]): URL | undefined {
   let parsed: URL
   try {
     parsed = new URL(url)
   } catch {
-    return false
+    return undefined
   }
-  if (parsed.protocol !== 'https:') return false
-  return allowOrigins.includes(parsed.origin)
+  if (parsed.protocol !== 'https:') return undefined
+  if (!allowOrigins.includes(parsed.origin)) return undefined
+  return parsed
 }
 
 type LoadedOAuthHandoffExtension = {
@@ -276,11 +291,15 @@ async function issueRedirect(
   logger: { error: (payload: unknown) => void },
   result: OAuthHandoffRedirectResult
 ): Promise<unknown> {
-  if (!isAllowedRedirectUrl(result.url, extension.redirectOrigins)) {
+  const parsed = parseAllowedRedirectUrl(result.url, extension.redirectOrigins)
+  if (!parsed) {
     logOAuthHandoffFailed(logger, leg, 'invalid_redirect_origin')
     return sendGenericRejection(reply)
   }
-  return reply.status(302).header('Location', result.url).send()
+  // Code-review fix (39.1) — use the parsed/canonicalized URL, never the raw extension-supplied
+  // string, so a control character (e.g. CR/LF) that survives validation can never reach the
+  // response header.
+  return reply.status(302).header('Location', parsed.href).send()
 }
 
 // Mirrors `apps/api/src/extensions/panel-routes.ts`'s POST actions route defense-in-depth exactly
@@ -292,7 +311,7 @@ function rejectedStartSecurityGuardReason(
   request: FastifyRequest
 ): 'denied' | 'csrf_rejected' | undefined {
   if (isRejectedBySecFetchSite(request.headers['sec-fetch-site'])) return 'denied'
-  // eslint-disable-next-line security/detect-object-injection -- CSRF_HEADER_NAME is a fixed, hardcoded string constant ('x-csrf-token'), never user input.
+
   if (
     isRejectedByCsrfToken(request.cookies, request.headers[CSRF_HEADER_NAME], env.COOKIE_SECURE)
   ) {
@@ -339,7 +358,6 @@ async function mintPendingStateAndCookie(
   const rawCookie = randomBytes(32).toString('base64url')
   const cookieHash = hashCookieValue(rawCookie)
   const id = generateOpaqueId()
-  const expiresAt = new Date(Date.now() + PENDING_TTL_MS)
 
   try {
     await getDb()
@@ -349,7 +367,12 @@ async function mintPendingStateAndCookie(
         cookieHash,
         extensionName: extension.name,
         stateJson: JSON.stringify(result.state),
-        expiresAt,
+        // Code-review fix (39.1, Pre-Mortem finding 2) — computed by Postgres's own `now()`, not
+        // the API process's `Date.now()`. `burnPendingState`'s read-side comparison already used
+        // the DB clock exclusively; computing the write-side value with the API's wall clock would
+        // still let multi-host clock drift make the effective TTL longer or shorter than intended.
+        // This keeps both the write and the read on the identical DB-side clock.
+        expiresAt: sql`now() + (interval '1 millisecond' * ${PENDING_TTL_MS})`,
       })
   } catch {
     reply
