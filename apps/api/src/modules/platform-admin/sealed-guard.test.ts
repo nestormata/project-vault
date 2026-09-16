@@ -18,7 +18,7 @@ const PASSWORD = 'correct-horse-battery-staple'
 
 const suite = createUnsealedRouteSuite(initVault, TEST_PASSPHRASE)
 
-describe.sequential('Story 9.2 AC-26: sealed-vault guard applies to all five new routes', () => {
+describe('Story 9.2 AC-26: sealed-vault guard applies to all five new routes', () => {
   suite.registerLifecycle()
 
   it('returns 503 { status: "sealed" } for GET/PUT settings, POST/GET orgs, GET resource-usage — no allow-list entry needed', async () => {

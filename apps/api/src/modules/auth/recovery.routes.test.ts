@@ -136,7 +136,7 @@ async function auditRowsFor(orgId: string, eventType: string) {
   )
 }
 
-describe.sequential('account recovery routes', () => {
+describe('account recovery routes', () => {
   let app: TestApp
 
   beforeAll(async () => {
@@ -285,8 +285,7 @@ describe.sequential('account recovery routes', () => {
 
       expect(responses.slice(0, 10).every((code) => code === 202 || code === 404)).toBe(true)
       expect(responses[10]).toBe(429)
-    }, // default (raised 45s->60s) but has still been observed timing out at exactly that // Story 10.4: 11 sequential real requests; previously relied on the global testTimeout
-    // boundary under this session's shared-machine contention. Explicit override for headroom.
+    }, // boundary under this session's shared-machine contention. Explicit override for headroom. // default (raised 45s->60s) but has still been observed timing out at exactly that // Story 10.4: 11 sequential real requests; previously relied on the global testTimeout
     90_000)
 
     it('rate-limits by normalized email after 5 requests (429, AC-11)', async () => {

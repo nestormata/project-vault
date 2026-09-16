@@ -27,7 +27,7 @@ const suite = createUnsealedRouteSuite(initVault, TEST_PASSPHRASE)
  * a common, platform-operator-initiated path, so shipping it without closing this gap would
  * knowingly ship on top of an untested tenant-isolation assumption in a credential vault.
  */
-describe.sequential('Story 9.2 AC-23b: multi-org user session scopes to only their JWT org', () => {
+describe('Story 9.2 AC-23b: multi-org user session scopes to only their JWT org', () => {
   suite.registerLifecycle()
 
   it('query-level: projects/credentials/service_endpoints RLS scoping holds for a user with active memberships in two orgs', async () => {

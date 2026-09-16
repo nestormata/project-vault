@@ -33,7 +33,7 @@ async function postNotificationTest(app: TestApp, cookies: CookieJar) {
   })
 }
 
-describe.sequential('POST /api/v1/admin/notifications/test', () => {
+describe('POST /api/v1/admin/notifications/test', () => {
   suite.registerLifecycle()
 
   it('returns not_configured when SMTP and Slack are absent', async () => {

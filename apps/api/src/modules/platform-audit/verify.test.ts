@@ -33,7 +33,7 @@ async function tryDeleteTestUser(userId: string): Promise<void> {
   }
 }
 
-describe.sequential('Story 9.4 AC-11/D11: verifyPlatformAuditRange', () => {
+describe('Story 9.4 AC-11/D11: verifyPlatformAuditRange', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     zeroKeys()

@@ -40,7 +40,7 @@ async function insertMachineUser(orgId: string, projectId: string, ownerId: stri
   return row
 }
 
-describe.sequential('machine key overlap-revoke job (AC-18)', () => {
+describe('machine key overlap-revoke job (AC-18)', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     await unsealTestVault()

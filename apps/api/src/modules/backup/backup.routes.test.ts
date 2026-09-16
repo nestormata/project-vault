@@ -93,7 +93,7 @@ async function seedSucceededBackup(): Promise<string> {
   return slot.filename
 }
 
-describe.sequential('Story 9.1: backup HTTP routes', () => {
+describe('Story 9.1: backup HTTP routes', () => {
   beforeAll(async () => {
     // This file exercises more than five restore outcomes with one authenticated operator and
     // creates a second app instance for log capture. The production limiter is process-global, so

@@ -58,7 +58,7 @@ async function deleteSharesByUser(orgId: string, userId: string): Promise<void> 
   )
 }
 
-describe.sequential('supersedeOutstandingSharesForRotation', () => {
+describe('supersedeOutstandingSharesForRotation', () => {
   beforeAll(async () => {
     await resetVaultForTest()
   })

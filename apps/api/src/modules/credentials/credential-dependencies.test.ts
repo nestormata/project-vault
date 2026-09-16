@@ -40,7 +40,7 @@ const TEST_PASSPHRASE = 'credential-deps-passphrase'
 const FUTURE_EXPIRY = '2026-12-31T23:59:59.000Z'
 const AWS_SSM_PARAMETERS_URL = 'https://console.aws.amazon.com/systems-manager/parameters'
 
-describe.sequential('credential dependencies and lifecycle routes', () => {
+describe('credential dependencies and lifecycle routes', () => {
   let app: TestApp
   let owner: RegisteredUser
   let other: RegisteredUser

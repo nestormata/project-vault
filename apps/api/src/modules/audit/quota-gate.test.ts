@@ -76,7 +76,7 @@ async function readUsage(orgId: string): Promise<
   })
 }
 
-describe.sequential('Story 22.1: assertOrgMayWriteAudit (the quota gate)', () => {
+describe('Story 22.1: assertOrgMayWriteAudit (the quota gate)', () => {
   beforeAll(() => {
     process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] = 'true'
   })

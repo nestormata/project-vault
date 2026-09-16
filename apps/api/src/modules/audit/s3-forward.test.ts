@@ -84,7 +84,7 @@ describe('nextDayToForward (AC-19)', () => {
   })
 })
 
-describe.sequential('runS3ForwardDaily (AC-19)', () => {
+describe('runS3ForwardDaily (AC-19)', () => {
   it("uploads yesterday's rows as gzipped JSONL and advances the watermark", async () => {
     await bootVault()
     await withTestOrg(async ({ orgId }) => {

@@ -44,7 +44,7 @@ function transferOwnership(app: TestApp, cookies: CookieJar, projectId: string, 
   })
 }
 
-describe.sequential('project member management routes', () => {
+describe('project member management routes', () => {
   let app: TestApp
 
   beforeAll(async () => {

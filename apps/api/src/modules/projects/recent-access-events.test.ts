@@ -60,7 +60,7 @@ async function writeCredentialAuditEntry(
   })
 }
 
-describe.sequential('getRecentAccessEventsForProject (AC-A1/A2/A3)', () => {
+describe('getRecentAccessEventsForProject (AC-A1/A2/A3)', () => {
   let app: TestApp
 
   beforeAll(async () => {

@@ -196,7 +196,7 @@ async function expectInvitationAccepted(orgId: string, invitationId: string): Pr
   expect(acceptedRow?.acceptedAt).not.toBeNull()
 }
 
-describe.sequential('project invitation routes', () => {
+describe('project invitation routes', () => {
   let app: TestApp
   let boss: BossService
   let bossSend: ReturnType<typeof createMockBoss>['send']

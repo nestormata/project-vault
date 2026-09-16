@@ -178,7 +178,7 @@ async function makeLegacyCredential(
 let app: TestApp
 let owner: RegisteredUser
 
-describe.sequential('credential field-set routes (Story 13.2)', () => {
+describe('credential field-set routes (Story 13.2)', () => {
   beforeAll(async () => {
     ;({ app, owner } = await bootstrapCredentialRouteOwners(
       createApp,
@@ -579,7 +579,7 @@ type FieldsValueBody = {
   }
 }
 
-describe.sequential('credential field-scoped reveal routes (Story 13.3)', () => {
+describe('credential field-scoped reveal routes (Story 13.3)', () => {
   beforeAll(async () => {
     ;({ app, owner } = await bootstrapCredentialRouteOwners(
       createApp,

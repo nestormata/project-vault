@@ -75,7 +75,7 @@ async function cleanup(orgId: string, userId: string): Promise<void> {
   )
 }
 
-describe.sequential('computeRotationRecommendedNudges', () => {
+describe('computeRotationRecommendedNudges', () => {
   beforeAll(async () => {
     await resetVaultForTest()
   })

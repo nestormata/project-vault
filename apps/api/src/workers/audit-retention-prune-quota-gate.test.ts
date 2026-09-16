@@ -58,7 +58,7 @@ async function setQuotaZero(orgId: string): Promise<void> {
   )
 }
 
-describe.sequential('Story 1.25 AC-4: retention-purge tombstone under an over-quota org', () => {
+describe('Story 1.25 AC-4: retention-purge tombstone under an over-quota org', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     zeroKeys()

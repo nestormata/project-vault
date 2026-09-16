@@ -15,7 +15,7 @@ function testLogger(stream: NodeJS.WritableStream): object {
   }
 }
 
-describe.sequential('Story 1.10 structured logging', () => {
+describe('Story 1.10 structured logging', () => {
   it('emits a structured http.request log with required FR82 fields', async () => {
     const { stream, lines } = createLogCaptureStream()
     const requestId = ['550e8400', 'e29b', '41d4', 'a716', '446655440000'].join('-')

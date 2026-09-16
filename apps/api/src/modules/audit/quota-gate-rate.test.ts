@@ -58,7 +58,7 @@ async function readUsage(orgId: string): Promise<
   })
 }
 
-describe.sequential('Story 22.2: assertOrgMayWriteAuditAtRate (the rate gate)', () => {
+describe('Story 22.2: assertOrgMayWriteAuditAtRate (the rate gate)', () => {
   beforeAll(() => {
     process.env['AUDIT_ORG_WRITE_RATE_ENFORCEMENT_ENABLED'] = 'true'
   })

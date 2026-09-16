@@ -81,7 +81,7 @@ async function deleteSharesByUser(orgId: string, userId: string): Promise<void> 
   )
 }
 
-describe.sequential('runCredentialShareExpireJob', () => {
+describe('runCredentialShareExpireJob', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     await unsealWorkerTestVault(initVault, TEST_PASSPHRASE)

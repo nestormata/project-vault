@@ -48,7 +48,7 @@ async function search(
   })
 }
 
-describe.sequential('search routes', () => {
+describe('search routes', () => {
   const suite = createUnsealedRouteSuite(initVault, TEST_PASSPHRASE)
   suite.registerLifecycle()
 

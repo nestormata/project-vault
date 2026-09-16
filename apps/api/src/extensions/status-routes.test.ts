@@ -45,7 +45,7 @@ async function getStatus(app: TestApp, cookies?: CookieJar) {
   })
 }
 
-describe.sequential('GET /api/v1/admin/extensions/status', () => {
+describe('GET /api/v1/admin/extensions/status', () => {
   suite.registerLifecycle()
 
   beforeEach(async () => {

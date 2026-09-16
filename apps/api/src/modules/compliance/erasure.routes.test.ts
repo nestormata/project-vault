@@ -119,7 +119,7 @@ async function seedMfaAndSessionPii(orgId: string, userId: string) {
     ])
 }
 
-describe.sequential('data subject erasure routes (Story 8.4)', () => {
+describe('data subject erasure routes (Story 8.4)', () => {
   let app: TestApp
 
   beforeAll(async () => {
@@ -515,14 +515,12 @@ describe.sequential('data subject erasure routes (Story 8.4)', () => {
       const ownerB = await registerOwner(app, 'ac8b-owner-b')
       const sam = await createSingleOrgMember(ownerA.orgId, 'ac8b-sam')
       await withOrg(ownerB.orgId, (tx) =>
-        tx
-          .insert(orgMemberships)
-          .values({
-            orgId: ownerB.orgId,
-            userId: sam.userId,
-            role: 'member',
-            status: 'deactivated',
-          })
+        tx.insert(orgMemberships).values({
+          orgId: ownerB.orgId,
+          userId: sam.userId,
+          role: 'member',
+          status: 'deactivated',
+        })
       )
       const created = await createErasureRequest(app, ownerA.cookies, sam.userId)
       const requestId = created.json<{ data: { requestId: string } }>().data.requestId
