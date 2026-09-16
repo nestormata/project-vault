@@ -46,7 +46,7 @@ async function seedActiveMembers(orgId: string, count: number, label: string): P
   }
 }
 
-describe.sequential('Story 9.2 AC-13/AC-14: resource-usage-check worker', () => {
+describe('Story 9.2 AC-13/AC-14: resource-usage-check worker', () => {
   afterEach(async () => {
     await getDb().delete(systemSettings)
   })

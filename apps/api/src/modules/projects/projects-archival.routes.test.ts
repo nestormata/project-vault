@@ -94,7 +94,7 @@ async function extensionLifecycleEventsFor(orgId: string, projectId: string) {
   )
 }
 
-describe.sequential('project archival routes (4.4)', () => {
+describe('project archival routes (4.4)', () => {
   let app: TestApp
 
   beforeAll(async () => {

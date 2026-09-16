@@ -23,7 +23,7 @@ afterAll(async () => {
   rmSync(keyDir, { recursive: true, force: true })
 })
 
-describe.sequential('Story 9.1 D5/AC-4: getBackupKey()', () => {
+describe('Story 9.1 D5/AC-4: getBackupKey()', () => {
   beforeEach(async () => {
     await resetVaultForTest()
     zeroKeys()

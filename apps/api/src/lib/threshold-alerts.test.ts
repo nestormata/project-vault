@@ -8,7 +8,7 @@ import { clearThresholdAlertEpisode, upsertThresholdAlert } from './threshold-al
 process.env['DATABASE_URL'] ??=
   'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
 
-describe.sequential('Story 9.2 threshold-alert episode idempotency', () => {
+describe('Story 9.2 threshold-alert episode idempotency', () => {
   it('creates a new alert on first crossing, does not re-fire at the same threshold, fires again on a higher threshold', async () => {
     const alertType = `test.threshold.${randomUUID()}`
 

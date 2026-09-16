@@ -35,7 +35,7 @@ afterAll(async () => {
   await resetVaultForTest()
 })
 
-describe.sequential('Story 1.14: KMS error mapping', () => {
+describe('Story 1.14: KMS error mapping', () => {
   beforeEach(async () => {
     await resetVaultForTest()
   })

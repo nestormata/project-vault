@@ -64,7 +64,7 @@ function publicStatusPageUrl(token: string): string {
 
 const CAPABILITIES_URL = '/api/v1/capabilities'
 
-describe.sequential('Story 23.3 AC-29 — real boot with mock-capability-gate-extension', () => {
+describe('Story 23.3 AC-29 — real boot with mock-capability-gate-extension', () => {
   let app: TestApp
 
   beforeAll(async () => {

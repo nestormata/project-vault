@@ -52,7 +52,7 @@ async function seedRecentSucceededRun(): Promise<void> {
     })
 }
 
-describe.sequential('Story 9.6 D3.4: backup-health-check S3 staging maintenance', () => {
+describe('Story 9.6 D3.4: backup-health-check S3 staging maintenance', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     try {

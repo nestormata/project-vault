@@ -71,7 +71,7 @@ async function resetMaintenanceState(): Promise<void> {
   await getDb().delete(platformAuditPendingEntries)
 }
 
-describe.sequential('Story 9.4 AC-9 through AC-16: platform-audit routes', () => {
+describe('Story 9.4 AC-9 through AC-16: platform-audit routes', () => {
   suite.registerLifecycle()
 
   afterEach(async () => {

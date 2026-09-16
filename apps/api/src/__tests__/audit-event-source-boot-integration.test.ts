@@ -53,7 +53,7 @@ const TEST_PASSPHRASE = 'audit-event-source-boot-integration-passphrase'
  * `capability-gate-boot-integration.test.ts`'s own `vault`/`extensions/loader.ts` singletons
  * survive a *preceding* file's `resetVaultForTest()` cycle correctly) — out of this story's scope.
  */
-describe.sequential('Story 23.8 AC-27 — real boot with mock-audit-event-source-extension', () => {
+describe('Story 23.8 AC-27 — real boot with mock-audit-event-source-extension', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     const { initVault } = await bootstrapRouteIntegrationTest()

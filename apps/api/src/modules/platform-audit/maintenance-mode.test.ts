@@ -62,7 +62,7 @@ async function resetMaintenanceState(): Promise<void> {
   await getDb().delete(platformAuditPendingEntries)
 }
 
-describe.sequential('Story 9.4 D8: platform-audit maintenance mode', () => {
+describe('Story 9.4 D8: platform-audit maintenance mode', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     zeroKeys()

@@ -124,7 +124,7 @@ const { registerOwner, addUserToOrg, addProjectMember } = createMembershipTestHe
   orgNamePrefix: 'ProjVisibility',
 })
 
-describe.sequential('project routes', () => {
+describe('project routes', () => {
   let app: TestApp
 
   beforeAll(async () => {

@@ -56,7 +56,7 @@ afterAll(async () => {
   rmSync(keyDir, { recursive: true, force: true })
 })
 
-describe.sequential('Story 1.14: KMS unseal mode', () => {
+describe('Story 1.14: KMS unseal mode', () => {
   beforeEach(async () => {
     await resetVaultForTest()
     __setKmsProviderForTest(makeFakeKmsProvider())

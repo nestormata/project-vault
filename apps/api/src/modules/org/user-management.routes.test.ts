@@ -83,7 +83,7 @@ function changeProjectRole(
   })
 }
 
-describe.sequential('org user management routes', () => {
+describe('org user management routes', () => {
   let app: TestApp
 
   beforeAll(async () => {

@@ -109,7 +109,7 @@ async function listDependenciesViaApi(
   })
 }
 
-describe.sequential('AC-5: dependency list checklist-status join', () => {
+describe('AC-5: dependency list checklist-status join', () => {
   let app: TestApp
   let owner: RegisteredUser
 

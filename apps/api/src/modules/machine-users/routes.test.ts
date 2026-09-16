@@ -160,7 +160,7 @@ async function auditRowsFor(orgId: string, eventType: string) {
   )
 }
 
-describe.sequential('machine-user routes (7.1)', () => {
+describe('machine-user routes (7.1)', () => {
   let app: TestApp
 
   beforeAll(async () => {

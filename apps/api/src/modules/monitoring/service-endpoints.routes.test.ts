@@ -71,7 +71,7 @@ async function createEndpointExpect201(
   return res.json<{ data: { id: string; [key: string]: unknown } }>().data
 }
 
-describe.sequential('service-endpoints / health-history / alerts routes (Story 6.2)', () => {
+describe('service-endpoints / health-history / alerts routes (Story 6.2)', () => {
   let app: TestApp
   let owner: { userId: string; orgId: string; cookies: Cookies }
   let other: { userId: string; orgId: string; cookies: Cookies }

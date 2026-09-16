@@ -30,7 +30,7 @@ const { getDb } = await import('@project-vault/db')
 const OPERATOR_LABEL = 'quota-config-operator'
 const ROUTINE_EVENT = 'credential.value_revealed'
 
-describe.sequential('Story 22.1 AC-5: setOrgAuditQuota dual-write', () => {
+describe('Story 22.1 AC-5: setOrgAuditQuota dual-write', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     try {

@@ -23,7 +23,7 @@ function authHeaders(cookies: CookieJar) {
   return { cookie: cookieHeader(cookies) }
 }
 
-describe.sequential('notification inbox routes', () => {
+describe('notification inbox routes', () => {
   suite.registerLifecycle()
 
   it('GET /api/v1/notifications/inbox returns empty array when no inbox entries', async () => {

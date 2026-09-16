@@ -96,7 +96,7 @@ async function createActiveApiKey(orgId: string, projectId: string, createdBy: s
   })
 }
 
-describe.sequential('revokeAllSessionsForOrg (Story 31.1 AC4/AC5/AC9/AC11/AC12)', () => {
+describe('revokeAllSessionsForOrg (Story 31.1 AC4/AC5/AC9/AC11/AC12)', () => {
   let app: TestApp
   let previousQuotaEnforcement: boolean
 

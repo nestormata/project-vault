@@ -77,7 +77,7 @@ async function createMultiFieldCredential(
   } as unknown as { name: string; value: string; [key: string]: unknown })
 }
 
-describe.sequential('rotation target_fields — field-scoped rotation (Story 13.4)', () => {
+describe('rotation target_fields — field-scoped rotation (Story 13.4)', () => {
   let app: TestApp
   let owner: RegisteredUser
 

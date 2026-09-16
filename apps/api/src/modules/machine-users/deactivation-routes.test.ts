@@ -94,7 +94,7 @@ async function auditRowsFor(orgId: string, eventType: string) {
   )
 }
 
-describe.sequential('POST /machine-users/:machineUserId/deactivate (8-6 AC-5)', () => {
+describe('POST /machine-users/:machineUserId/deactivate (8-6 AC-5)', () => {
   let app: TestApp
 
   beforeAll(async () => {

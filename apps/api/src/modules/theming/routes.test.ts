@@ -31,7 +31,7 @@ async function postReload(app: TestApp, cookies: CookieJar) {
   })
 }
 
-describe.sequential('POST /api/v1/admin/themes/reload', () => {
+describe('POST /api/v1/admin/themes/reload', () => {
   suite.registerLifecycle()
 
   it('AC-1/AC-2: returns 200 with an empty loaded/failed shape when VAULT_THEMES_DIR is unset/absent', async () => {

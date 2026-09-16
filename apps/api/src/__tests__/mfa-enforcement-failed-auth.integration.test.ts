@@ -117,7 +117,7 @@ async function waitForFailedAuthAttempt() {
   )
 }
 
-describe.sequential('Story 1.9 MFA enforcement', () => {
+describe('Story 1.9 MFA enforcement', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     await initVaultForTest(initVault, TEST_PASSPHRASE)
@@ -202,7 +202,7 @@ describe.sequential('Story 1.9 MFA enforcement', () => {
   })
 })
 
-describe.sequential('Story 1.9 failed auth recording', () => {
+describe('Story 1.9 failed auth recording', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     await initVaultForTest(initVault, `${TEST_PASSPHRASE}-failed-auth`)

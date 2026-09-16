@@ -94,7 +94,7 @@ async function readSelectedThemeName(userId: string): Promise<string | null> {
   return row?.selectedThemeName ?? null
 }
 
-describe.sequential('GET /api/v1/themes (Story 16.2 AC-1/AC-5/AC-10)', () => {
+describe('GET /api/v1/themes (Story 16.2 AC-1/AC-5/AC-10)', () => {
   suite.registerLifecycle()
 
   it('AC-1: lists the base theme plus any compiled custom themes, and the caller selection', async () => {
@@ -193,7 +193,7 @@ describe.sequential('GET /api/v1/themes (Story 16.2 AC-1/AC-5/AC-10)', () => {
   })
 })
 
-describe.sequential('PATCH /api/v1/themes/selection (Story 16.2 AC-2/AC-4/AC-5/AC-7/AC-10)', () => {
+describe('PATCH /api/v1/themes/selection (Story 16.2 AC-2/AC-4/AC-5/AC-7/AC-10)', () => {
   suite.registerLifecycle()
 
   it('AC-2: selects a compiled custom theme and persists it', async () => {

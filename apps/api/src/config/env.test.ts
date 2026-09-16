@@ -1176,12 +1176,13 @@ describe('env', () => {
       expect(exitSpy).not.toHaveBeenCalled()
     })
 
-    it('accepts SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/SMTP_FROM when all set', async () => {
+    it('accepts SMTP_HOST/SMTP_PORT/SMTP_SECURE/SMTP_USER/SMTP_PASS/SMTP_FROM when all set', async () => {
       process.env = {
         ...BASE_ENV,
         DATABASE_URL: VAULT_APP_DATABASE_URL,
         SMTP_HOST: SMTP_HOST_FIXTURE,
         SMTP_PORT: '587',
+        SMTP_SECURE: 'true',
         SMTP_USER: 'user',
         SMTP_PASS: 'pass',
         SMTP_FROM: SMTP_FROM_FIXTURE,
@@ -1189,6 +1190,7 @@ describe('env', () => {
       const { env } = await import('./env.js')
       expect(env.SMTP_HOST).toBe(SMTP_HOST_FIXTURE)
       expect(env.SMTP_PORT).toBe(587)
+      expect(env.SMTP_SECURE).toBe(true)
       expect(env.SMTP_USER).toBe('user')
       expect(env.SMTP_PASS).toBe('pass')
       expect(env.SMTP_FROM).toBe(SMTP_FROM_FIXTURE)

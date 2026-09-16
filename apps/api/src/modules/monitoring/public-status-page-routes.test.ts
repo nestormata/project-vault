@@ -66,7 +66,7 @@ async function insertEndpoint(orgId: string, projectId: string, name: string) {
   return row.id
 }
 
-describe.sequential('public status page route (Story 6.3, Section E)', () => {
+describe('public status page route (Story 6.3, Section E)', () => {
   let app: TestApp
   const { registerOwner } = createMembershipTestHelpers({
     emailPrefix: 'public-status-page',

@@ -55,7 +55,7 @@ async function createMultiFieldCredential(
   } as unknown as { name: string; value: string; [key: string]: unknown })
 }
 
-describe.sequential('rotation same-value confirmation + per-field fieldValues (Story 13.5)', () => {
+describe('rotation same-value confirmation + per-field fieldValues (Story 13.5)', () => {
   let app: TestApp
   let owner: RegisteredUser
 

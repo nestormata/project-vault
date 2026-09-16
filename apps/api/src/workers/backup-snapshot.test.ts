@@ -38,7 +38,7 @@ function silentLogger() {
   return { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
 }
 
-describe.sequential('Story 9.1: backup-snapshot worker', () => {
+describe('Story 9.1: backup-snapshot worker', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     try {

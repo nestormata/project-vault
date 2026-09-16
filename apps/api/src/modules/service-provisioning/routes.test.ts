@@ -322,7 +322,7 @@ describe('POST /api/v1/service/organizations', () => {
   })
 })
 
-describe.sequential('POST /api/v1/service/organizations/:organizationId/members', () => {
+describe('POST /api/v1/service/organizations/:organizationId/members', () => {
   // Story 32.1 Task 6: this route writes a real system-actor audit entry
   // (AuditEvent.ORG_MEMBER_PROVISIONED) inside the same transaction as its user/membership/
   // external-identity writes — unlike the plain org-bootstrap route above (26.1), which writes no
@@ -815,7 +815,7 @@ describe.sequential('POST /api/v1/service/organizations/:organizationId/members'
   })
 })
 
-describe.sequential('PATCH /api/v1/service/organizations/:organizationId/centralizeme-link', () => {
+describe('PATCH /api/v1/service/organizations/:organizationId/centralizeme-link', () => {
   // Story 33.1 Task 3: this route writes a real system-actor audit entry
   // (AuditEvent.ORG_CENTRALIZEME_LINK_BACKFILLED) inside the same transaction as its
   // organizations UPDATE — writeSystemAuditEntry needs a real (unsealed) vault to fetch the

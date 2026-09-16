@@ -75,7 +75,7 @@ async function withProjectAndEndpoint(
 // unsealVault() in the VAULT_SEALED_ON_READ test) — matches the established convention for every
 // other vault-singleton-mutating suite in this codebase (see vault-lifecycle.test.ts,
 // backup-key.test.ts, etc.) to prevent cross-test interference.
-describe.sequential('status-page-service', () => {
+describe('status-page-service', () => {
   beforeAll(async () => {
     configureAuthIntegrationEnv()
     await resetVaultForTest()

@@ -54,7 +54,7 @@ function test(app: TestApp, cookies: CookieJar) {
   })
 }
 
-describe.sequential('Story 1.19 platform-admin status-token routes', () => {
+describe('Story 1.19 platform-admin status-token routes', () => {
   suite.registerLifecycle()
 
   afterEach(async () => {

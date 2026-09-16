@@ -36,7 +36,7 @@ async function expireGracePeriod(userId: string, orgId: string) {
   )
 }
 
-describe.sequential('MFA journey (Epic 1 retro P3)', () => {
+describe('MFA journey (Epic 1 retro P3)', () => {
   let sharedApp: Awaited<ReturnType<typeof createApp>>
   let enrolledOwnerSessionCookies: Record<string, string>
   let enrolledOwnerOrgId: string

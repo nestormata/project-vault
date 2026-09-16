@@ -84,7 +84,7 @@ async function expectQueueChannels(
   return rows
 }
 
-describe.sequential('MFA notification wiring (AC-7e)', () => {
+describe('MFA notification wiring (AC-7e)', () => {
   registerMfaIntegrationLifecycle({ initVault, passphrase: TEST_PASSPHRASE, resetVaultForTest })
 
   it('enqueues a notification_queue row for the affected user when a recovery code is used', async () => {

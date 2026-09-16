@@ -65,7 +65,7 @@ async function listOnboardingRows(user: TestUser) {
   )
 }
 
-describe.sequential('onboarding routes', () => {
+describe('onboarding routes', () => {
   const suite = createUnsealedRouteSuite(initVault, TEST_PASSPHRASE)
   suite.registerLifecycle()
 

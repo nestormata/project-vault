@@ -64,7 +64,7 @@ function wideRange(): { from: string; to: string } {
   }
 }
 
-describe.sequential('audit export routes', () => {
+describe('audit export routes', () => {
   let app: TestApp
 
   beforeAll(async () => {

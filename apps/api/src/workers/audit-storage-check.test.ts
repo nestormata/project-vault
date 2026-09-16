@@ -41,7 +41,7 @@ async function clearAuditStorageAlerts(): Promise<void> {
   await getDb().delete(adminAlerts).where(eq(adminAlerts.alertType, WARNING_ALERT_TYPE))
 }
 
-describe.sequential('Story 9.2 D5/AC-15 through AC-17: audit-storage-check worker', () => {
+describe('Story 9.2 D5/AC-15 through AC-17: audit-storage-check worker', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     try {
@@ -157,191 +157,185 @@ async function clearPlatformAuditStorageAlerts(): Promise<void> {
   await getDb().delete(adminAlerts).where(eq(adminAlerts.alertType, PLATFORM_WARNING_ALERT_TYPE))
 }
 
-describe.sequential(
-  'Story 9.4 AC-18/D10: audit-storage-check extension for platform_audit_events',
-  () => {
-    // Bug found via full-suite regression run: these tests call runAuditStorageCheck() without a
-    // limitGbOverride, so the ORG-SCOPED check also runs against this file's persistently-tiny
-    // AUDIT_LOG_STORAGE_LIMIT_GB, creating a fresh audit_storage.critical row as a side effect —
-    // clearing only the platform-scoped alert types here left that row active for the rest of the
-    // suite (the exact "leaves maintenance mode on for every later file" risk the comment above
-    // this file's original afterAll already warns about).
-    afterAll(async () => {
-      await clearAuditStorageAlerts()
-      await clearPlatformAuditStorageAlerts()
-    })
+describe('Story 9.4 AC-18/D10: audit-storage-check extension for platform_audit_events', () => {
+  // Bug found via full-suite regression run: these tests call runAuditStorageCheck() without a
+  // limitGbOverride, so the ORG-SCOPED check also runs against this file's persistently-tiny
+  // AUDIT_LOG_STORAGE_LIMIT_GB, creating a fresh audit_storage.critical row as a side effect —
+  // clearing only the platform-scoped alert types here left that row active for the rest of the
+  // suite (the exact "leaves maintenance mode on for every later file" risk the comment above
+  // this file's original afterAll already warns about).
+  afterAll(async () => {
+    await clearAuditStorageAlerts()
+    await clearPlatformAuditStorageAlerts()
+  })
 
-    it('D10 regression guard: the job queries platform_audit_events too, independently of audit_log_entries', () => {
-      const source = readFileSync(new URL('./audit-storage-check.ts', import.meta.url), 'utf8')
-      expect(source).toContain("pg_total_relation_size('platform_audit_events')")
-    })
+  it('D10 regression guard: the job queries platform_audit_events too, independently of audit_log_entries', () => {
+    const source = readFileSync(new URL('./audit-storage-check.ts', import.meta.url), 'utf8')
+    expect(source).toContain("pg_total_relation_size('platform_audit_events')")
+  })
 
-    it('AC-18: raises a distinct platform_audit_storage.critical alert at >=95% utilization', async () => {
-      await clearAuditStorageAlerts()
-      await clearPlatformAuditStorageAlerts()
-      const boss = fakeBoss()
-      await runAuditStorageCheck(boss, fakeLogger())
+  it('AC-18: raises a distinct platform_audit_storage.critical alert at >=95% utilization', async () => {
+    await clearAuditStorageAlerts()
+    await clearPlatformAuditStorageAlerts()
+    const boss = fakeBoss()
+    await runAuditStorageCheck(boss, fakeLogger())
 
-      const [critical] = await getDb()
-        .select()
-        .from(adminAlerts)
-        .where(eq(adminAlerts.alertType, PLATFORM_CRITICAL_ALERT_TYPE))
-      expect(critical?.status).toBe('active')
-      expect(critical?.severity).toBe('critical')
-    })
+    const [critical] = await getDb()
+      .select()
+      .from(adminAlerts)
+      .where(eq(adminAlerts.alertType, PLATFORM_CRITICAL_ALERT_TYPE))
+    expect(critical?.status).toBe('active')
+    expect(critical?.severity).toBe('critical')
+  })
 
-    it('AC-18 edge: both logs are evaluated and alerted independently — never conflated into one alert row', async () => {
-      await clearAuditStorageAlerts()
-      await clearPlatformAuditStorageAlerts()
-      await runAuditStorageCheck(fakeBoss(), fakeLogger())
+  it('AC-18 edge: both logs are evaluated and alerted independently — never conflated into one alert row', async () => {
+    await clearAuditStorageAlerts()
+    await clearPlatformAuditStorageAlerts()
+    await runAuditStorageCheck(fakeBoss(), fakeLogger())
 
-      const [orgAlert] = await getDb()
-        .select()
-        .from(adminAlerts)
-        .where(eq(adminAlerts.alertType, CRITICAL_ALERT_TYPE))
-      const [platformAlert] = await getDb()
-        .select()
-        .from(adminAlerts)
-        .where(eq(adminAlerts.alertType, PLATFORM_CRITICAL_ALERT_TYPE))
-      expect(orgAlert?.status).toBe('active')
-      expect(platformAlert?.status).toBe('active')
-    })
-  }
-)
+    const [orgAlert] = await getDb()
+      .select()
+      .from(adminAlerts)
+      .where(eq(adminAlerts.alertType, CRITICAL_ALERT_TYPE))
+    const [platformAlert] = await getDb()
+      .select()
+      .from(adminAlerts)
+      .where(eq(adminAlerts.alertType, PLATFORM_CRITICAL_ALERT_TYPE))
+    expect(orgAlert?.status).toBe('active')
+    expect(platformAlert?.status).toBe('active')
+  })
+})
 
-describe.sequential(
-  'Story 22.5 AC-6/AC-8: daily-job early-warning step for orgs already over the new default',
-  () => {
-    afterAll(async () => {
-      await clearAuditStorageAlerts()
-      await clearPlatformAuditStorageAlerts()
-    })
+describe('Story 22.5 AC-6/AC-8: daily-job early-warning step for orgs already over the new default', () => {
+  afterAll(async () => {
+    await clearAuditStorageAlerts()
+    await clearPlatformAuditStorageAlerts()
+  })
 
-    it('AC-6: an org with no quota-config row whose bytes_used already exceeds the resolved default is WARN-logged with its org id and both figures, and AC-8: the existing instance-wide critical alert still fires unaffected', async () => {
-      const { withOrg, getDb: getRealDb } = await import('@project-vault/db')
-      const { auditOrgStorageUsage } = await import('@project-vault/db/schema')
-      const { withTestOrg } = await import('@project-vault/db/test-helpers')
+  it('AC-6: an org with no quota-config row whose bytes_used already exceeds the resolved default is WARN-logged with its org id and both figures, and AC-8: the existing instance-wide critical alert still fires unaffected', async () => {
+    const { withOrg, getDb: getRealDb } = await import('@project-vault/db')
+    const { auditOrgStorageUsage } = await import('@project-vault/db/schema')
+    const { withTestOrg } = await import('@project-vault/db/test-helpers')
 
-      const previousEnforcement = process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED']
-      const previousDefault = process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
-      process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] = 'true'
-      // A tiny MB default so the test does not need to seed anywhere near a realistic byte count
-      // to exceed it.
-      process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = '1'
+    const previousEnforcement = process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED']
+    const previousDefault = process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+    process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] = 'true'
+    // A tiny MB default so the test does not need to seed anywhere near a realistic byte count
+    // to exceed it.
+    process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = '1'
+    vi.resetModules()
+    try {
+      const { runAuditStorageCheck: runWithNewDefault } = await import('./audit-storage-check.js')
+
+      await withTestOrg(async ({ orgId }) => {
+        // No audit_storage_quota_config row for this org — resolves purely via the new
+        // instance-wide default (1 MB = 1_048_576 bytes here). Seed bytes_used comfortably over
+        // it.
+        const bytesUsed = 1_048_576 + 500
+        await withOrg(orgId, (tx) =>
+          tx
+            .insert(auditOrgStorageUsage)
+            .values({ orgId, bytesUsed, updatedAt: new Date() })
+            .onConflictDoUpdate({
+              target: auditOrgStorageUsage.orgId,
+              set: { bytesUsed, updatedAt: new Date() },
+            })
+        )
+
+        await clearAuditStorageAlerts()
+        await clearPlatformAuditStorageAlerts()
+        const logger = fakeLogger()
+        await runWithNewDefault(fakeBoss(), logger)
+
+        // AC-6: the WARN fired, naming this org id and both figures.
+        const warnCalls = logger.warn.mock.calls
+        const matchingCall = warnCalls.find(
+          (call) => (call[0] as { orgId?: string })?.orgId === orgId
+        )
+        expect(matchingCall).toBeDefined()
+        const [payload] = matchingCall as [Record<string, unknown>, string]
+        expect(payload['eventType']).toBe(
+          'audit_org_usage_reconcile.default_quota_already_exceeded'
+        )
+        expect(payload['bytesUsed']).toBe(bytesUsed)
+        expect(payload['resolvedDefaultQuotaBytes']).toBe(1_048_576)
+
+        // AC-8 regression confirmation: the existing instance-wide critical alert (this file's
+        // tiny AUDIT_LOG_STORAGE_LIMIT_GB pin forces >=95% on the real, non-empty table) still
+        // fires exactly as before, unaffected by this story's new early-warning step running in
+        // the same job invocation.
+        const [critical] = await getRealDb()
+          .select()
+          .from(adminAlerts)
+          .where(eq(adminAlerts.alertType, CRITICAL_ALERT_TYPE))
+        expect(critical?.status).toBe('active')
+        expect(critical?.severity).toBe('critical')
+      })
+    } finally {
+      if (previousEnforcement === undefined)
+        delete process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED']
+      else process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] = previousEnforcement
+      if (previousDefault === undefined) delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+      else process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = previousDefault
       vi.resetModules()
-      try {
-        const { runAuditStorageCheck: runWithNewDefault } = await import('./audit-storage-check.js')
+    }
+  })
 
-        await withTestOrg(async ({ orgId }) => {
-          // No audit_storage_quota_config row for this org — resolves purely via the new
-          // instance-wide default (1 MB = 1_048_576 bytes here). Seed bytes_used comfortably over
-          // it.
-          const bytesUsed = 1_048_576 + 500
-          await withOrg(orgId, (tx) =>
-            tx
-              .insert(auditOrgStorageUsage)
-              .values({ orgId, bytesUsed, updatedAt: new Date() })
-              .onConflictDoUpdate({
-                target: auditOrgStorageUsage.orgId,
-                set: { bytesUsed, updatedAt: new Date() },
-              })
-          )
+  it('AC-6 precision trap: an explicit per-org NULL quota row (operator unlimited override) is NEVER warned, even though it is also over the numeric default', async () => {
+    const { withOrg } = await import('@project-vault/db')
+    const { auditOrgStorageUsage, auditStorageQuotaConfig } =
+      await import('@project-vault/db/schema')
+    const { withTestOrg } = await import('@project-vault/db/test-helpers')
 
-          await clearAuditStorageAlerts()
-          await clearPlatformAuditStorageAlerts()
-          const logger = fakeLogger()
-          await runWithNewDefault(fakeBoss(), logger)
+    const previousEnforcement = process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED']
+    const previousDefault = process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+    process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] = 'true'
+    process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = '1'
+    vi.resetModules()
+    try {
+      const { runAuditStorageCheck: runWithNewDefault } = await import('./audit-storage-check.js')
 
-          // AC-6: the WARN fired, naming this org id and both figures.
-          const warnCalls = logger.warn.mock.calls
-          const matchingCall = warnCalls.find(
-            (call) => (call[0] as { orgId?: string })?.orgId === orgId
-          )
-          expect(matchingCall).toBeDefined()
-          const [payload] = matchingCall as [Record<string, unknown>, string]
-          expect(payload['eventType']).toBe(
-            'audit_org_usage_reconcile.default_quota_already_exceeded'
-          )
-          expect(payload['bytesUsed']).toBe(bytesUsed)
-          expect(payload['resolvedDefaultQuotaBytes']).toBe(1_048_576)
+      await withTestOrg(async ({ orgId }) => {
+        const bytesUsed = 1_048_576 + 500
+        await withOrg(orgId, (tx) =>
+          tx
+            .insert(auditOrgStorageUsage)
+            .values({ orgId, bytesUsed, updatedAt: new Date() })
+            .onConflictDoUpdate({
+              target: auditOrgStorageUsage.orgId,
+              set: { bytesUsed, updatedAt: new Date() },
+            })
+        )
+        // An explicit per-org NULL row — an operator's deliberate unlimited override, the TOP
+        // precedence tier — must never be conflated with "no row at all".
+        await withOrg(orgId, (tx) =>
+          tx
+            .insert(auditStorageQuotaConfig)
+            .values({ orgId, quotaBytes: null, updatedAt: new Date() })
+            .onConflictDoUpdate({
+              target: auditStorageQuotaConfig.orgId,
+              set: { quotaBytes: null, updatedAt: new Date() },
+            })
+        )
 
-          // AC-8 regression confirmation: the existing instance-wide critical alert (this file's
-          // tiny AUDIT_LOG_STORAGE_LIMIT_GB pin forces >=95% on the real, non-empty table) still
-          // fires exactly as before, unaffected by this story's new early-warning step running in
-          // the same job invocation.
-          const [critical] = await getRealDb()
-            .select()
-            .from(adminAlerts)
-            .where(eq(adminAlerts.alertType, CRITICAL_ALERT_TYPE))
-          expect(critical?.status).toBe('active')
-          expect(critical?.severity).toBe('critical')
-        })
-      } finally {
-        if (previousEnforcement === undefined)
-          delete process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED']
-        else process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] = previousEnforcement
-        if (previousDefault === undefined) delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
-        else process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = previousDefault
-        vi.resetModules()
-      }
-    })
+        await clearAuditStorageAlerts()
+        await clearPlatformAuditStorageAlerts()
+        const logger = fakeLogger()
+        await runWithNewDefault(fakeBoss(), logger)
 
-    it('AC-6 precision trap: an explicit per-org NULL quota row (operator unlimited override) is NEVER warned, even though it is also over the numeric default', async () => {
-      const { withOrg } = await import('@project-vault/db')
-      const { auditOrgStorageUsage, auditStorageQuotaConfig } =
-        await import('@project-vault/db/schema')
-      const { withTestOrg } = await import('@project-vault/db/test-helpers')
-
-      const previousEnforcement = process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED']
-      const previousDefault = process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
-      process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] = 'true'
-      process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = '1'
+        const warnCalls = logger.warn.mock.calls
+        const matchingCall = warnCalls.find(
+          (call) => (call[0] as { orgId?: string })?.orgId === orgId
+        )
+        expect(matchingCall).toBeUndefined()
+      })
+    } finally {
+      if (previousEnforcement === undefined)
+        delete process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED']
+      else process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] = previousEnforcement
+      if (previousDefault === undefined) delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
+      else process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = previousDefault
       vi.resetModules()
-      try {
-        const { runAuditStorageCheck: runWithNewDefault } = await import('./audit-storage-check.js')
-
-        await withTestOrg(async ({ orgId }) => {
-          const bytesUsed = 1_048_576 + 500
-          await withOrg(orgId, (tx) =>
-            tx
-              .insert(auditOrgStorageUsage)
-              .values({ orgId, bytesUsed, updatedAt: new Date() })
-              .onConflictDoUpdate({
-                target: auditOrgStorageUsage.orgId,
-                set: { bytesUsed, updatedAt: new Date() },
-              })
-          )
-          // An explicit per-org NULL row — an operator's deliberate unlimited override, the TOP
-          // precedence tier — must never be conflated with "no row at all".
-          await withOrg(orgId, (tx) =>
-            tx
-              .insert(auditStorageQuotaConfig)
-              .values({ orgId, quotaBytes: null, updatedAt: new Date() })
-              .onConflictDoUpdate({
-                target: auditStorageQuotaConfig.orgId,
-                set: { quotaBytes: null, updatedAt: new Date() },
-              })
-          )
-
-          await clearAuditStorageAlerts()
-          await clearPlatformAuditStorageAlerts()
-          const logger = fakeLogger()
-          await runWithNewDefault(fakeBoss(), logger)
-
-          const warnCalls = logger.warn.mock.calls
-          const matchingCall = warnCalls.find(
-            (call) => (call[0] as { orgId?: string })?.orgId === orgId
-          )
-          expect(matchingCall).toBeUndefined()
-        })
-      } finally {
-        if (previousEnforcement === undefined)
-          delete process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED']
-        else process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] = previousEnforcement
-        if (previousDefault === undefined) delete process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB']
-        else process.env['AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB'] = previousDefault
-        vi.resetModules()
-      }
-    })
-  }
-)
+    }
+  })
+})

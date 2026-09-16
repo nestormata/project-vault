@@ -34,7 +34,7 @@ async function readAuditRows(orgId: string, eventType: string) {
   return rows.filter((row) => row.eventType === eventType)
 }
 
-describe.sequential('loadExtension — audit write (Task 3, DB integration)', () => {
+describe('loadExtension — audit write (Task 3, DB integration)', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     await unsealWorkerTestVault(initVault, TEST_PASSPHRASE)

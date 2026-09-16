@@ -64,7 +64,7 @@ async function enrollAndVerifyWithSecret(
   return enrollAndVerifyMfaWithSecret(app, cookies)
 }
 
-describe.sequential('MFA enrollment integration', () => {
+describe('MFA enrollment integration', () => {
   registerMfaIntegrationLifecycle({ initVault, passphrase: TEST_PASSPHRASE, resetVaultForTest })
 
   it('enrolls TOTP MFA and recovers with a single-use recovery code', async () => {

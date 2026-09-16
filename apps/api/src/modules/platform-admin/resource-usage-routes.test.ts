@@ -19,7 +19,7 @@ const RESOURCE_USAGE_URL = '/api/v1/admin/resource-usage'
 
 const suite = createUnsealedRouteSuite(initVault, TEST_PASSPHRASE)
 
-describe.sequential('Story 9.2 platform-admin resource-usage route', () => {
+describe('Story 9.2 platform-admin resource-usage route', () => {
   suite.registerLifecycle()
 
   it('AC-1: 401 with no auth header', async () => {

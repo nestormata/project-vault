@@ -213,7 +213,7 @@ async function credentialTagAuditRows(orgId: string, credentialId: string) {
   )
 }
 
-describe.sequential('credential routes', () => {
+describe('credential routes', () => {
   let app: TestApp
   let owner: RegisteredUser
   let other: RegisteredUser
@@ -1638,7 +1638,7 @@ describe.sequential('credential routes', () => {
   }, 60_000)
 })
 
-describe.sequential('credential project visibility (AC-V4)', () => {
+describe('credential project visibility (AC-V4)', () => {
   const { registerOwner, addUserToOrg, addProjectMember } = createMembershipTestHelpers({
     emailPrefix: 'cred-vis',
     orgNamePrefix: 'CredVis',
@@ -1771,110 +1771,107 @@ describe.sequential('credential project visibility (AC-V4)', () => {
   }, 60_000)
 })
 
-describe.sequential(
-  'credential effective project role gate (AC-P2/AC-P3/AC-P4/AC-P5/AC-P6)',
-  () => {
-    const { registerOwner, addUserToOrg, addProjectMember } = createMembershipTestHelpers({
-      emailPrefix: 'cred-role',
-      orgNamePrefix: 'CredRole',
+describe('credential effective project role gate (AC-P2/AC-P3/AC-P4/AC-P5/AC-P6)', () => {
+  const { registerOwner, addUserToOrg, addProjectMember } = createMembershipTestHelpers({
+    emailPrefix: 'cred-role',
+    orgNamePrefix: 'CredRole',
+  })
+
+  let app: TestApp
+
+  beforeAll(async () => {
+    app = await bootCredentialRouteApp(createApp, initVault, TEST_PASSPHRASE)
+  })
+
+  afterAll(async () => {
+    await app.close()
+    await resetVaultForTest()
+  })
+
+  it('blocks reveal and version-create for a project-role viewer, even with org role member (AC-P2/AC-P3)', async () => {
+    const owner = await registerOwner(app, 'cred-role-viewer-owner')
+    const projectId = await createTestProject(app, owner.cookies, 'cred-role-viewer')
+    const credential = await createTestCredential(app, owner.cookies, projectId, {
+      name: 'Role Gate Cred',
+      value: SENTINEL_VALUE,
+    })
+    const member = await addUserToOrg(app, owner.orgId, 'cred-role-viewer-member', {
+      orgRole: 'member',
+    })
+    // Explicit project-role viewer (e.g. via the AC-V7 backfill, or a real 4.1 invitation at a
+    // lower project role than the org role) — D4's effective role is the project role, not the
+    // org role, for this specific gate.
+    await addProjectMember(owner.orgId, projectId, member.userId, 'viewer')
+
+    const revealDenied = await revealValue(app, member.cookies, projectId, credential.id)
+    expect(revealDenied.statusCode).toBe(403)
+    expect(revealDenied.json()).toMatchObject({ code: 'insufficient_project_role' })
+
+    const versionDenied = await addVersion(app, member.cookies, projectId, credential.id, 'v2')
+    expect(versionDenied.statusCode).toBe(403)
+    expect(versionDenied.json()).toMatchObject({ code: 'insufficient_project_role' })
+  }, 60_000)
+
+  it('allows reveal and version-create for a project-role member (AC-P2/AC-P3 positive)', async () => {
+    const owner = await registerOwner(app, 'cred-role-member-owner')
+    const projectId = await createTestProject(app, owner.cookies, 'cred-role-member')
+    const credential = await createTestCredential(app, owner.cookies, projectId, {
+      name: 'Role Gate Positive Cred',
+      value: SENTINEL_VALUE,
+    })
+    const member = await addUserToOrg(app, owner.orgId, 'cred-role-member-member', {
+      orgRole: 'member',
+    })
+    await addProjectMember(owner.orgId, projectId, member.userId, 'member')
+
+    const revealAllowed = await revealValue(app, member.cookies, projectId, credential.id)
+    expect(revealAllowed.statusCode).toBe(200)
+
+    const versionAllowed = await addVersion(app, member.cookies, projectId, credential.id, 'v2')
+    expect(versionAllowed.statusCode).toBe(201)
+  }, 60_000)
+
+  it('does not block a project-role viewer from metadata/history routes (AC-P4 regression)', async () => {
+    const owner = await registerOwner(app, 'cred-role-p4-owner')
+    const projectId = await createTestProject(app, owner.cookies, 'cred-role-p4')
+    const credential = await createTestCredential(app, owner.cookies, projectId, {
+      name: 'Role Gate P4 Cred',
+      value: SENTINEL_VALUE,
+    })
+    const member = await addUserToOrg(app, owner.orgId, 'cred-role-p4-member', {
+      orgRole: 'member',
+    })
+    await addProjectMember(owner.orgId, projectId, member.userId, 'viewer')
+
+    const list = await listCredentials(app, member.cookies, projectId)
+    expect(list.statusCode).toBe(200)
+
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/v1/projects/${projectId}/credentials/${credential.id}`,
+      headers: { cookie: cookieHeader(member.cookies) },
+    })
+    expect(detail.statusCode).toBe(200)
+
+    const history = await listVersions(app, member.cookies, projectId, credential.id)
+    expect(history.statusCode).toBe(200)
+  }, 60_000)
+
+  it('org admin with zero project rows can still reveal and add a version (D1/D4 bypass regression)', async () => {
+    const owner = await registerOwner(app, 'cred-role-admin-owner')
+    const projectId = await createTestProject(app, owner.cookies, 'cred-role-admin')
+    const credential = await createTestCredential(app, owner.cookies, projectId, {
+      name: 'Role Gate Admin Cred',
+      value: SENTINEL_VALUE,
+    })
+    const admin = await addUserToOrg(app, owner.orgId, 'cred-role-admin-caller', {
+      orgRole: 'admin',
     })
 
-    let app: TestApp
+    const revealAllowed = await revealValue(app, admin.cookies, projectId, credential.id)
+    expect(revealAllowed.statusCode).toBe(200)
 
-    beforeAll(async () => {
-      app = await bootCredentialRouteApp(createApp, initVault, TEST_PASSPHRASE)
-    })
-
-    afterAll(async () => {
-      await app.close()
-      await resetVaultForTest()
-    })
-
-    it('blocks reveal and version-create for a project-role viewer, even with org role member (AC-P2/AC-P3)', async () => {
-      const owner = await registerOwner(app, 'cred-role-viewer-owner')
-      const projectId = await createTestProject(app, owner.cookies, 'cred-role-viewer')
-      const credential = await createTestCredential(app, owner.cookies, projectId, {
-        name: 'Role Gate Cred',
-        value: SENTINEL_VALUE,
-      })
-      const member = await addUserToOrg(app, owner.orgId, 'cred-role-viewer-member', {
-        orgRole: 'member',
-      })
-      // Explicit project-role viewer (e.g. via the AC-V7 backfill, or a real 4.1 invitation at a
-      // lower project role than the org role) — D4's effective role is the project role, not the
-      // org role, for this specific gate.
-      await addProjectMember(owner.orgId, projectId, member.userId, 'viewer')
-
-      const revealDenied = await revealValue(app, member.cookies, projectId, credential.id)
-      expect(revealDenied.statusCode).toBe(403)
-      expect(revealDenied.json()).toMatchObject({ code: 'insufficient_project_role' })
-
-      const versionDenied = await addVersion(app, member.cookies, projectId, credential.id, 'v2')
-      expect(versionDenied.statusCode).toBe(403)
-      expect(versionDenied.json()).toMatchObject({ code: 'insufficient_project_role' })
-    }, 60_000)
-
-    it('allows reveal and version-create for a project-role member (AC-P2/AC-P3 positive)', async () => {
-      const owner = await registerOwner(app, 'cred-role-member-owner')
-      const projectId = await createTestProject(app, owner.cookies, 'cred-role-member')
-      const credential = await createTestCredential(app, owner.cookies, projectId, {
-        name: 'Role Gate Positive Cred',
-        value: SENTINEL_VALUE,
-      })
-      const member = await addUserToOrg(app, owner.orgId, 'cred-role-member-member', {
-        orgRole: 'member',
-      })
-      await addProjectMember(owner.orgId, projectId, member.userId, 'member')
-
-      const revealAllowed = await revealValue(app, member.cookies, projectId, credential.id)
-      expect(revealAllowed.statusCode).toBe(200)
-
-      const versionAllowed = await addVersion(app, member.cookies, projectId, credential.id, 'v2')
-      expect(versionAllowed.statusCode).toBe(201)
-    }, 60_000)
-
-    it('does not block a project-role viewer from metadata/history routes (AC-P4 regression)', async () => {
-      const owner = await registerOwner(app, 'cred-role-p4-owner')
-      const projectId = await createTestProject(app, owner.cookies, 'cred-role-p4')
-      const credential = await createTestCredential(app, owner.cookies, projectId, {
-        name: 'Role Gate P4 Cred',
-        value: SENTINEL_VALUE,
-      })
-      const member = await addUserToOrg(app, owner.orgId, 'cred-role-p4-member', {
-        orgRole: 'member',
-      })
-      await addProjectMember(owner.orgId, projectId, member.userId, 'viewer')
-
-      const list = await listCredentials(app, member.cookies, projectId)
-      expect(list.statusCode).toBe(200)
-
-      const detail = await app.inject({
-        method: 'GET',
-        url: `/api/v1/projects/${projectId}/credentials/${credential.id}`,
-        headers: { cookie: cookieHeader(member.cookies) },
-      })
-      expect(detail.statusCode).toBe(200)
-
-      const history = await listVersions(app, member.cookies, projectId, credential.id)
-      expect(history.statusCode).toBe(200)
-    }, 60_000)
-
-    it('org admin with zero project rows can still reveal and add a version (D1/D4 bypass regression)', async () => {
-      const owner = await registerOwner(app, 'cred-role-admin-owner')
-      const projectId = await createTestProject(app, owner.cookies, 'cred-role-admin')
-      const credential = await createTestCredential(app, owner.cookies, projectId, {
-        name: 'Role Gate Admin Cred',
-        value: SENTINEL_VALUE,
-      })
-      const admin = await addUserToOrg(app, owner.orgId, 'cred-role-admin-caller', {
-        orgRole: 'admin',
-      })
-
-      const revealAllowed = await revealValue(app, admin.cookies, projectId, credential.id)
-      expect(revealAllowed.statusCode).toBe(200)
-
-      const versionAllowed = await addVersion(app, admin.cookies, projectId, credential.id, 'v2')
-      expect(versionAllowed.statusCode).toBe(201)
-    }, 60_000)
-  }
-)
+    const versionAllowed = await addVersion(app, admin.cookies, projectId, credential.id, 'v2')
+    expect(versionAllowed.statusCode).toBe(201)
+  }, 60_000)
+})

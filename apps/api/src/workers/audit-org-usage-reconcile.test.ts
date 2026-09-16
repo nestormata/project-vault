@@ -37,7 +37,7 @@ async function readUsage(
   })
 }
 
-describe.sequential('Story 22.1 AC-7: audit-org-usage/reconcile', () => {
+describe('Story 22.1 AC-7: audit-org-usage/reconcile', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     try {

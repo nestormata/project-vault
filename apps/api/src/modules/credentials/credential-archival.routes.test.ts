@@ -91,7 +91,7 @@ async function createShareViaApi(
   })
 }
 
-describe.sequential('credential archival routes (28.5)', () => {
+describe('credential archival routes (28.5)', () => {
   let app: TestApp
 
   beforeAll(async () => {

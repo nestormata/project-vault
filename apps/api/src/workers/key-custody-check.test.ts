@@ -49,7 +49,7 @@ async function setVaultStateForTest(values: {
   })
 }
 
-describe.sequential('Story 9.2 FR109/AC-19/AC-20: key-custody-check worker', () => {
+describe('Story 9.2 FR109/AC-19/AC-20: key-custody-check worker', () => {
   beforeAll(async () => {
     await resetVaultForTest()
     try {
