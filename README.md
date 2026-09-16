@@ -22,6 +22,14 @@ Project Vault makes _project_ a real object instead: its own roles and permissio
 - Register your own account.
 - **The demo database resets every night.** Everything you create is wiped and reseeded on a nightly schedule. Treat it as a scratchpad.
 
+## The numbers, not just the claims
+
+- **91.2% test coverage**, 830 test files across the monorepo, tracked live by
+  [SonarCloud](https://sonarcloud.io/summary/new_code?id=nestormata_project-vault) — not a one-time snapshot, it updates on every merge.
+- **0 bugs, 0 vulnerabilities, 0 code smells, 0 security hotspots** on SonarCloud's current analysis.
+- An independent contract-test suite for the API, kept separate from the app's own tests, so the documented API surface can't silently drift from what actually ships.
+- **No third-party security audit has been performed yet.** See [SECURITY.md's Review status](SECURITY.md#review-status) for the honest current state and what's planned — we'd rather you read that than take a claim at face value.
+
 ## Why Project Vault
 
 - **Project as the unit of truth** — credentials, services, certificates, and monitoring grouped under one project context, mirroring how engineers actually work.
@@ -29,7 +37,7 @@ Project Vault makes _project_ a real object instead: its own roles and permissio
 - **Rotation you can audit** — a staged rotation state machine with a per-system confirmation checklist, overlap windows, and break-glass recovery, so a rotation is a tracked operation instead of a memory.
 - **Open-core and independently auditable** — the full security engine is open source; trust is earned through transparency, not claimed.
 - **Self-hosted primary, SaaS optional** — data sovereignty is the default trust path.
-- **Compliance by design** — chain-linked audit logs, role-based access control, and immutable versioning are structured to support SOC 2 Type II and ISO 27001 evidence collection.
+- **You can tell who touched what, and prove nobody edited the trail after the fact** — chain-linked audit logs, role-based access control, and immutable versioning, so "someone changed the prod DB password last Tuesday" has an answer. (The same properties happen to support SOC 2 / ISO 27001 evidence collection if you ever need that — details in [docs/](docs/README.md) — but that's not why they're there.)
 
 ## Features
 
