@@ -21,6 +21,10 @@ export type ExtensionCapability =
   // notifications (no creation-policy veto) must not be forced to also implement
   // `onBeforeCreateProject`.
   | 'project-archive-notify'
+  // Story 39.1 AC1/AC7 — declares that this extension's `hooksFactory()` may return an
+  // `oauthHandoff` hooks-bag entry (see `register-extension.ts`'s `ExtensionHooks`) and that its
+  // manifest must also declare a non-empty `redirectOrigins` allow-list (AC9).
+  | 'oauth-handoff'
 
 export type ExtensionManifest = {
   /** Reverse-DNS-style identifier, e.g. "com.acme.sso-extension" — validated by registerExtension (AC6). */
@@ -110,6 +114,18 @@ export type ExtensionManifest = {
    * `hooksFactory()` (AC3) — every declared route must have a matching callable handler.
    */
   moduleDataRoutes?: ModuleDataRouteDeclaration[]
+  /**
+   * Story 39.1 AC9 — optional, `oauth-handoff`-capability-scoped allow-list of URL origins
+   * (`scheme://host[:port]`, e.g. `"https://github.com"`) the `oauthHandoff` hook's `url` return
+   * value (on EITHER `onOAuthStart` or `onOAuthCallback`) is permitted to redirect to. PV
+   * validates every extension-supplied `url`'s origin against this list before ever issuing a
+   * `302` — including the very first redirect (the provider's own authorize URL), since even
+   * that is extension-supplied data (defense in depth, see this story's AC9 Dev Notes). Only
+   * legal alongside `'oauth-handoff'` in `capabilities[]`; REQUIRED (non-empty) whenever that
+   * capability is declared — validated by `registerExtension()`'s
+   * `validateRedirectOriginsShape()`.
+   */
+  redirectOrigins?: string[]
 }
 
 /**
@@ -245,6 +261,25 @@ export const MODULE_DATA_ROUTE_PATH_PATTERN = /^(?:\/(?:[a-z0-9-]+|:[a-zA-Z][a-z
  * `MAX_MODULE_ACTIONS`/`MAX_PANEL_DATA_PATHS`/`MAX_NAV_ITEMS`'s identical cap precedent. */
 export const MAX_MODULE_DATA_ROUTES = 32
 
+/**
+ * Story 39.1 AC9 — validates a declared `redirectOrigins[]` entry: an origin only (scheme + host
+ * + optional port), `https` only (open-redirect defense in depth never trusts an extension's own
+ * `http`/other-scheme claim), no path/query/fragment/trailing slash, and no wildcard — every
+ * concrete origin an extension needs must be listed explicitly. The host group's own quantified
+ * segments are bounded (a fixed leading/trailing alphanumeric plus a middle run of a closed
+ * charset excluding `/`) and input is ordinary manifest-origin length, not attacker-controlled
+ * arbitrary-length input, so there is no realistic catastrophic-backtracking case despite the
+ * nested quantifiers — same rationale as this file's other `eslint-disable`d patterns below.
+ */
+// eslint-disable-next-line security/detect-unsafe-regex -- see rationale in the comment above
+export const REDIRECT_ORIGIN_PATTERN =
+  /^https:\/\/[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?(?::\d{1,5})?$/
+
+/** Story 39.1 AC9 — generous for any real extension, small enough to bound a hostile/broken
+ * manifest from declaring an unbounded `redirectOrigins` list. Matches this file's other
+ * `MAX_*` cap precedents. */
+export const MAX_REDIRECT_ORIGINS = 32
+
 /** Story 29.3 AC4 — `label` is raw, host-rendered display text (auto-escaped by Svelte's ordinary
  * text interpolation, never `{@html}`); this cap bounds a hostile/broken manifest from declaring
  * an unreasonably long nav label, not a security control in itself. */
@@ -355,7 +390,15 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // `hooksFactory` that omits referencing `host.projectAuthorization`. No existing type is
 // modified; the floor stays `>=3.0.0` so every already-shipped extension (including any real,
 // currently-deployed CentralizeMe build) keeps loading unmodified regardless.
-export const EXTENSION_API_VERSION = '3.15.0'
+// Story 39.1 AC8 — bumped as an additive-minor (3.15.0 -> 3.16.0): `ExtensionCapability` gains
+// the `'oauth-handoff'` literal, `ExtensionManifest` gains `redirectOrigins?: string[]`, and
+// `ExtensionHooks` gains `oauthHandoff?: OAuthHandoffHooks` (see `hooks/oauth-handoff.ts`), all
+// purely-additive optional additions with zero effect on any manifest/hooksFactory that omits
+// them — no existing extension's manifest or hook shape changes, `ActionResult` itself is
+// unchanged (per Recommended Mechanism Decision's "why not (b)" analysis), and the floor stays
+// `>=3.0.0` so every already-shipped extension (including any real, currently-deployed
+// CentralizeMe build) keeps loading unmodified regardless.
+export const EXTENSION_API_VERSION = '3.16.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

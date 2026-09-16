@@ -2,6 +2,27 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.16.0 — 2026-09-16
+
+contract-hash: sha256:e5025be9388ef5e54474e4acd8bf27fa1a239c858de634d9512543fe7a23858a
+
+### Added
+
+- Added `ExtensionCapability`'s `'oauth-handoff'` literal, `ExtensionManifest.redirectOrigins?:
+  string[]`, and `ExtensionHooks.oauthHandoff?: OAuthHandoffHooks` (Story 39.1 AC1/AC7/AC9) — a
+  new mechanism letting an extension run a standard OAuth-style authorize-redirect/
+  provider-callback journey through a real, PV-hosted call path. PV owns ALL cookie cryptography
+  and the actual HTTP response (a real `302` + `Set-Cookie`, issued by PV's new
+  `POST /api/v1/extensions/oauth-handoff/start` and `GET /api/v1/extensions/oauth-handoff/callback`
+  routes, modeled on `apps/api/src/modules/auth/handoff-routes.ts`'s existing opaque-cookie +
+  HMAC-hash + DB-backed pending-state + TTL pattern) — the extension only supplies data
+  (`onOAuthStart`/`onOAuthCallback` return `{outcome: 'redirect', url, state}` or a plain
+  `ActionResult`, reusing that existing union rather than widening it). `redirectOrigins` is a
+  REQUIRED, non-empty allow-list whenever `'oauth-handoff'` is declared — PV validates every
+  extension-supplied `url`'s origin against it before ever issuing a redirect (open-redirect
+  defense in depth, AC9), including the very first redirect. Purely additive — no existing
+  `HostServices`/`ExtensionHooks`/`ActionResult` field changes.
+
 ## 3.15.0 — 2026-09-07
 
 contract-hash: sha256:b101591274b03e18b434a0e809e6a9be28f2d874c46eecd3336d583df9bcbcf2

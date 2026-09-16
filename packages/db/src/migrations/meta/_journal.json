@@ -659,6 +659,13 @@
       "when": 1788793673862,
       "tag": "0093_notification_queue_origin_extension_name",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1789574794760,
+      "tag": "0094_extension_oauth_pending_states",
+      "breakpoints": true
     }
   ]
 }

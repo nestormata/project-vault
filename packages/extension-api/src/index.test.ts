@@ -40,6 +40,9 @@ describe('index.ts — root-only export surface (AC1, AC2)', () => {
         'NotificationOriginatorInvalidParamsError',
         'NotificationOriginatorInvalidRecipientError',
         'NotificationOriginatorRateLimitedError',
+        // Story 39.1 — new redirectOrigins allow-list constants for the oauthHandoff hook (AC9).
+        'MAX_REDIRECT_ORIGINS',
+        'REDIRECT_ORIGIN_PATTERN',
       ])
     )
   })

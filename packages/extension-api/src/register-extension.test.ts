@@ -405,7 +405,7 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each(['3.16.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
+  it.each(['3.17.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
     'rejects canonical version outside %s',
     (apiVersion) => {
       const hooksFactory = makeHooksFactory()
@@ -440,21 +440,19 @@ describe('registerExtension — concrete canonical version gate', () => {
   })
 
   it('allows only the above-host same-major rollback escape', () => {
-    // Story 25.3 AC1/Task 1, Story 25.4 AC4/Task 4, Story 25.5 AC2/Task 1, Story 25.8 AC1/Task 1,
-    // Story 20.8, Story 25.12 AC2/Task 2, Story 29.3 AC8/Task 1, Story 29.4 AC6/Task 1, Story
-    // 20.11 AC1, Story 34.1 AC1/AC9, Story 35.1 AC1, Story 36.1 AC1/AC6, and Story 37.1 AC1.3 —
-    // host EXTENSION_API_VERSION is now 3.15.0 (see manifest.ts's EXTENSION_API_VERSION doc
-    // comment for why this merge moves past 3.2.0/3.3.0/3.4.0/3.6.0/3.7.0/3.8.0/3.9.0/3.10.0/
-    // 3.11.0/3.12.0/3.13.0/3.14.0, which Story 25.3/25.4/25.5/25.9/20.8/25.12/29.3/29.4/20.11/
-    // 34.1/35.1/36.1 respectively already claimed on main for different additive changes);
-    // '3.16.0' is the above-host, same-major escape-eligible version, and '4.0.0' is a different
-    // major (never escape-eligible). Kept one minor version above whatever EXTENSION_API_VERSION
-    // currently is — see loader.test.ts's identical comment.
+    // Story 20.11 AC1, Story 34.1 AC1/AC9, Story 35.1 AC1, Story 36.1 AC1/AC6, Story 37.1 AC1.3,
+    // and Story 39.1 AC8 — host EXTENSION_API_VERSION is now 3.16.0 (see manifest.ts's
+    // EXTENSION_API_VERSION doc comment for why this merge moves past 3.2.0/3.3.0/3.4.0/3.6.0/
+    // 3.7.0/3.8.0/3.9.0/3.10.0/3.11.0/3.12.0/3.13.0/3.14.0/3.15.0, which Story 25.3/25.4/25.5/
+    // 25.9/20.8/25.12/29.3/29.4/20.11/34.1/35.1/36.1/37.1 respectively already claimed on main
+    // for different additive changes); '3.17.0' is the above-host, same-major escape-eligible
+    // version, and '4.0.0' is a different major (never escape-eligible). Kept one minor version
+    // above whatever EXTENSION_API_VERSION currently is — see loader.test.ts's identical comment.
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.16.0' }), makeHooksFactory())
+      registerExtension(manifest({ apiVersion: '3.17.0' }), makeHooksFactory())
     ).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.16.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '3.17.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()
@@ -1336,5 +1334,147 @@ describe('registerExtension — AC1 (moduleDataRoutes, Story 29.4)', () => {
       logger: { warn },
     })
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('moduleDataRoutes'))
+  })
+})
+
+const OAUTH_HANDOFF_CAPABILITY = 'oauth-handoff' as const
+const PROVIDER_ORIGIN = 'https://provider.example'
+
+describe('registerExtension — Story 39.1 AC1/AC7/AC9 (oauthHandoff / redirectOrigins)', () => {
+  const OAUTH_HANDOFF_HOOKS: ExtensionHooks = {
+    oauthHandoff: {
+      onOAuthStart: vi.fn(async () => ({
+        outcome: 'redirect' as const,
+        url: `${PROVIDER_ORIGIN}/authorize`,
+        state: {},
+      })),
+      onOAuthCallback: vi.fn(async () => ({
+        outcome: 'redirect' as const,
+        url: 'https://pv.example/repository/select',
+        state: {},
+      })),
+    },
+  }
+
+  function oauthHandoffHooksFactory() {
+    return vi.fn(() => OAUTH_HANDOFF_HOOKS)
+  }
+
+  it('happy path: registers successfully with oauth-handoff + a non-empty redirectOrigins allow-list', () => {
+    const hooksFactory = oauthHandoffHooksFactory()
+    const result = registerExtension(
+      manifest({
+        capabilities: [OAUTH_HANDOFF_CAPABILITY],
+        redirectOrigins: [PROVIDER_ORIGIN, 'https://pv.example'],
+      }),
+      hooksFactory
+    )
+    expect(result.manifest.redirectOrigins).toEqual([PROVIDER_ORIGIN, 'https://pv.example'])
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('omitted entirely: parses fine, no redirectOrigins on the returned manifest', () => {
+    const hooksFactory = makeHooksFactory()
+    const result = registerExtension(manifest(), hooksFactory)
+    expect(result.manifest.redirectOrigins).toBeUndefined()
+  })
+
+  it('rejects "oauth-handoff" declared without a redirectOrigins allow-list', () => {
+    expectRejection({ capabilities: [OAUTH_HANDOFF_CAPABILITY] }, INVALID_MANIFEST_FIELD)
+  })
+
+  it('rejects redirectOrigins declared without "oauth-handoff" in capabilities', () => {
+    expectRejection(
+      {
+        capabilities: [AUDIT_EVENT_SOURCE_CAPABILITY],
+        redirectOrigins: [PROVIDER_ORIGIN],
+      },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an empty redirectOrigins array (distinct from omitted)', () => {
+    expectRejection(
+      { capabilities: [OAUTH_HANDOFF_CAPABILITY], redirectOrigins: [] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects a non-https origin', () => {
+    expectRejection(
+      { capabilities: [OAUTH_HANDOFF_CAPABILITY], redirectOrigins: ['http://provider.example'] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an origin carrying a path (origin-only, not a URL)', () => {
+    expectRejection(
+      {
+        capabilities: [OAUTH_HANDOFF_CAPABILITY],
+        redirectOrigins: [`${PROVIDER_ORIGIN}/authorize`],
+      },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects a wildcard origin', () => {
+    expectRejection(
+      { capabilities: [OAUTH_HANDOFF_CAPABILITY], redirectOrigins: ['https://*.example.com'] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects duplicate origins within one manifest', () => {
+    expectRejection(
+      {
+        capabilities: [OAUTH_HANDOFF_CAPABILITY],
+        redirectOrigins: [PROVIDER_ORIGIN, PROVIDER_ORIGIN],
+      },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects a redirectOrigins array longer than the 32-entry maximum', () => {
+    const tooMany = Array.from({ length: 33 }, (_, i) => `https://provider-${i}.example`)
+    expectRejection(
+      { capabilities: [OAUTH_HANDOFF_CAPABILITY], redirectOrigins: tooMany },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects "oauth-handoff" declared but hooksFactory() returns no oauthHandoff hook', () => {
+    const hooksFactory = makeHooksFactory()
+    let caught: unknown
+    try {
+      registerExtension(
+        manifest({
+          capabilities: [OAUTH_HANDOFF_CAPABILITY],
+          redirectOrigins: [PROVIDER_ORIGIN],
+        }),
+        hooksFactory
+      )
+    } catch (error) {
+      caught = error
+    }
+    expect((caught as ExtensionRegistrationError).reason).toBe(INVALID_MANIFEST_FIELD)
+  })
+
+  it('rejects "oauth-handoff" declared but hooksFactory() returns an incomplete oauthHandoff hook (missing onOAuthCallback)', () => {
+    const hooksFactory = vi.fn(
+      () => ({ oauthHandoff: { onOAuthStart: vi.fn() } }) as unknown as ExtensionHooks
+    )
+    let caught: unknown
+    try {
+      registerExtension(
+        manifest({
+          capabilities: [OAUTH_HANDOFF_CAPABILITY],
+          redirectOrigins: [PROVIDER_ORIGIN],
+        }),
+        hooksFactory
+      )
+    } catch (error) {
+      caught = error
+    }
+    expect((caught as ExtensionRegistrationError).reason).toBe(INVALID_MANIFEST_FIELD)
   })
 })

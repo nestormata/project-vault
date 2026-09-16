@@ -8,6 +8,7 @@ import {
   MAX_NAV_ITEM_LABEL_LENGTH,
   MAX_NAV_ITEMS,
   MAX_PANEL_DATA_PATHS,
+  MAX_REDIRECT_ORIGINS,
   MAX_UI_PANEL_SLOTS,
   MODULE_ACTION_NAME_PATTERN,
   MODULE_DATA_ROUTE_PATH_PATTERN,
@@ -15,6 +16,7 @@ import {
   NAV_ITEM_ID_PATTERN,
   NAV_ITEM_ICON_TOKENS,
   PANEL_DATA_PATH_PATTERN,
+  REDIRECT_ORIGIN_PATTERN,
   UI_PANEL_SLOT_NAME_PATTERN,
 } from './manifest.js'
 import type { ExtensionManifest, ModuleDataRouteDeclaration } from './manifest.js'
@@ -24,6 +26,7 @@ import type { UIPanel } from './hooks/ui-panel.js'
 import type { ModuleAction } from './hooks/module-action.js'
 import type { CapabilityGate } from './hooks/capability-gate.js'
 import type { DeliveryProvider } from './hooks/delivery-provider.js'
+import type { OAuthHandoffHooks } from './hooks/oauth-handoff.js'
 import type { HostServices } from './host-services.js'
 import type { ExtensionDbScopeEntry, ExtensionRuntimeContext } from './db-access.js'
 import type { ProjectArchiveNotifier, ProjectCreatePolicy } from './hooks/project-lifecycle.js'
@@ -84,6 +87,15 @@ export type ExtensionHooks = {
    * `apps/api/src/lib/delivery-provider.ts`) — last-registered-wins is not acceptable.
    */
   deliveryProvider?: Record<string, DeliveryProvider>
+  /**
+   * Story 39.1 AC1/AC7 — PV answers/dispatches, this extension supplies data: `onOAuthStart`/
+   * `onOAuthCallback` never touch a real HTTP response or a raw cookie value themselves, they
+   * only return `{outcome: 'redirect', url, state}` (or a plain `ActionResult`, AC6) for PV's own
+   * route layer to translate. Only legal (checked by `hasCallableOAuthHandoffHook()`) when the
+   * manifest declares `'oauth-handoff'` in `capabilities[]` and a non-empty `redirectOrigins`
+   * allow-list (AC9).
+   */
+  oauthHandoff?: OAuthHandoffHooks
 }
 
 /** Default `HostServices` used when a caller (typically a test) invokes `registerExtension()`
@@ -545,6 +557,85 @@ function validateModuleDataRoutesShape(manifest: ExtensionManifest): void {
   }
 }
 
+/**
+ * Story 39.1 AC9 — validates the optional `redirectOrigins` field's shape: when the manifest
+ * declares the `'oauth-handoff'` capability, this field is REQUIRED (unlike every other optional
+ * array field in this module) and must be a non-empty array of unique strings, each matching
+ * `REDIRECT_ORIGIN_PATTERN` (an `https://host[:port]` origin only — no path/query/wildcard),
+ * capped at `MAX_REDIRECT_ORIGINS` entries. When `'oauth-handoff'` is NOT declared, the field must
+ * be entirely absent — there is no legitimate reason to declare an allow-list for a capability the
+ * manifest doesn't use, mirroring `validateUiPanelSlotsShape`'s reverse-direction capability gate.
+ */
+/**
+ * Story 39.1 AC9 — validates one `redirectOrigins` entry's own shape (charset/scheme) and tracks
+ * uniqueness across the array, as a side effect adding this entry to `seen`. Extracted from
+ * `validateRedirectOriginsShape()` purely to keep that function's cyclomatic complexity within
+ * this repo's lint budget, mirroring `validateSingleModuleDataRoute`'s identical extraction
+ * precedent.
+ */
+function validateSingleRedirectOrigin(origin: unknown, seen: Set<string>): void {
+  if (typeof origin !== 'string' || !REDIRECT_ORIGIN_PATTERN.test(origin)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "redirectOrigins" contains an invalid origin ${JSON.stringify(origin)} (expected an "https://host[:port]" origin matching ${REDIRECT_ORIGIN_PATTERN})`
+    )
+  }
+  if (seen.has(origin)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "redirectOrigins" contains duplicate origin "${origin}"`
+    )
+  }
+  seen.add(origin)
+}
+
+function validateRedirectOriginsShape(manifest: ExtensionManifest): void {
+  const declaresCapability = manifest.capabilities.includes('oauth-handoff')
+
+  if (manifest.redirectOrigins === undefined) {
+    if (declaresCapability) {
+      throw new ExtensionRegistrationError(
+        INVALID_MANIFEST_FIELD,
+        'Extension manifest declares "oauth-handoff" in capabilities[] but does not declare a "redirectOrigins" allow-list (AC9)'
+      )
+    }
+    return
+  }
+
+  if (!declaresCapability) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest declares "redirectOrigins" but does not declare "oauth-handoff" in capabilities[]'
+    )
+  }
+
+  if (!Array.isArray(manifest.redirectOrigins)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "redirectOrigins" must be an array, got ${JSON.stringify(manifest.redirectOrigins)}`
+    )
+  }
+
+  if (manifest.redirectOrigins.length === 0) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest field "redirectOrigins" must not be an empty array when "oauth-handoff" is declared (AC9)'
+    )
+  }
+
+  if (manifest.redirectOrigins.length > MAX_REDIRECT_ORIGINS) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "redirectOrigins" declares ${manifest.redirectOrigins.length} entries, exceeding the maximum of ${MAX_REDIRECT_ORIGINS}`
+    )
+  }
+
+  const seen = new Set<string>()
+  for (const origin of manifest.redirectOrigins) {
+    validateSingleRedirectOrigin(origin, seen)
+  }
+}
+
 const NAV_ITEM_ICON_TOKEN_SET = new Set<string>(NAV_ITEM_ICON_TOKENS)
 
 type NavItemCandidate = {
@@ -848,6 +939,21 @@ function findMissingModuleDataRoute(
 }
 
 /**
+ * Story 39.1 AC7 — a manifest declaring `'oauth-handoff'` (implying `redirectOrigins` is also
+ * required by `validateRedirectOriginsShape`) whose `hooksFactory()` result has no callable
+ * `oauthHandoff` hook (both methods present) is rejected — a load-time registration error, not a
+ * silent per-request degradation. Mirrors `hasCallableModuleActionHook` exactly.
+ */
+function hasCallableOAuthHandoffHook(manifest: ExtensionManifest, hooks: ExtensionHooks): boolean {
+  if (!manifest.capabilities.includes('oauth-handoff')) return true
+  return (
+    hooks.oauthHandoff !== undefined &&
+    typeof hooks.oauthHandoff.onOAuthStart === 'function' &&
+    typeof hooks.oauthHandoff.onOAuthCallback === 'function'
+  )
+}
+
+/**
  * Post-`hooksFactory()` callability checks, grouped into one function purely to keep
  * `registerExtension`'s own cyclomatic complexity within this repo's lint budget — behaviorally
  * these are four independent gates, each throwing its own typed error, checked in the same order
@@ -903,6 +1009,16 @@ function assertCallableHooksAfterFactory(manifest: ExtensionManifest, hooks: Ext
     )
   }
 
+  // Story 39.1 AC7 — same class of bug hasCallableModuleActionHook already catches above: a
+  // manifest promising the oauth-handoff capability with nothing behind it. Runs after
+  // hooksFactory() per this function's existing lazy-hooksFactory convention.
+  if (!hasCallableOAuthHandoffHook(manifest, hooks)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest declares "oauth-handoff" but hooksFactory() did not return a callable oauthHandoff hook'
+    )
+  }
+
   // Story 23.2 AC-2 — a manifest declaring `replacesNativeLogin: true` whose hooksFactory()
   // yields no authStrategy would disable the only working login path with nothing to replace
   // it. Rejected here, after hooksFactory() has already been invoked per this function's
@@ -949,6 +1065,7 @@ export function registerExtension(
   validatePanelDataPathsShape(manifest)
   validateNavItemsShape(manifest)
   validateModuleDataRoutesShape(manifest)
+  validateRedirectOriginsShape(manifest)
 
   if (!REVERSE_DNS_NAME_PATTERN.test(manifest.name)) {
     throw new ExtensionRegistrationError(
@@ -975,6 +1092,7 @@ export function registerExtension(
       panelDataPaths: manifest.panelDataPaths, // NOSONAR(typescript:S1874) — passthrough of the deprecated-in-place field, see validatePanelDataPathsShape's own note
       navItems: manifest.navItems,
       moduleDataRoutes: manifest.moduleDataRoutes,
+      redirectOrigins: manifest.redirectOrigins,
     },
     hooks,
   }

@@ -897,6 +897,29 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
       "Dispatches to the extension's own moduleAction hook; the extension's own handler (CM's handleAccessGroupAction()) already writes its own business-event audit trail for whatever it persists. This route never touches PV-owned data directly, so there is no PV-side transition to audit.",
     reviewer: SECURITY_OWNER,
   },
+  // Story 39.1 AC1: authenticated, in-app mutation — dispatches to the loaded extension's own
+  // `oauthHandoff.onOAuthStart` hook and, on a redirect outcome, mints a new DB-backed
+  // pending-state row + issues an httpOnly cookie. No `secureCtx.tx` write happens through the
+  // audited transaction path (writeAuditEvent: false, mirroring the moduleAction route above) —
+  // the pending-state insert uses `getDb()` directly (mirrors handoff-routes.ts's own
+  // prepare/confirm convention, an instance-level, no-FK/no-RLS table with no org context to
+  // audit through).
+  'POST /api/v1/extensions/oauth-handoff/start': {
+    action: 'mutation',
+    auditOmissionReason:
+      "Dispatches to the loaded extension's own oauthHandoff.onOAuthStart hook and mints an instance-level (no-FK/no-RLS) pending-state row, mirroring handoff-routes.ts's prepare route's own no-org-context-to-audit-through convention.",
+    reviewer: SECURITY_OWNER,
+  },
+  // Story 39.1 AC2/AC3: pre-auth callback landing, hit directly by an external OAuth provider —
+  // no PV session exists at this point (mirrors POST /api/v1/auth/handoff/confirm's identical
+  // pre-auth convention one section above). Burns the pending-state row before ever invoking the
+  // extension's own `oauthHandoff.onOAuthCallback` hook.
+  'GET /api/v1/extensions/oauth-handoff/callback': {
+    action: 'mutation',
+    auditOmissionReason:
+      'Pre-auth callback route (requireAuth: false) — the caller has no PV session; the single-use pending-state row is burned via a direct getDb() atomic UPDATE before the extension hook is ever invoked, mirroring POST /api/v1/auth/handoff/confirm’s identical no-secureCtx.tx convention.',
+    reviewer: SECURITY_OWNER,
+  },
   // Story 25.1 AC5: informational-only capability-declaration read, driving whether
   // `(app)/+layout.server.ts` shows the generic panel nav entry.
   'GET /api/v1/extensions/nav': {

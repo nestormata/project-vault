@@ -93,6 +93,7 @@ export type {
   NotificationOriginatorEnqueueResult,
   NotificationOriginatorHost,
 } from './hooks/notification-originator.js'
+export type { OAuthHandoffHooks, OAuthHandoffRedirectResult } from './hooks/oauth-handoff.js'
 export {
   NotificationOriginatorInvalidParamsError,
   NotificationOriginatorInvalidRecipientError,
@@ -127,6 +128,7 @@ export {
   MAX_NAV_ITEM_LABEL_LENGTH,
   MAX_NAV_ITEMS,
   MAX_PANEL_DATA_PATHS,
+  MAX_REDIRECT_ORIGINS,
   MAX_UI_PANEL_SLOTS,
   MODULE_ACTION_NAME_PATTERN,
   MODULE_DATA_ROUTE_PATH_PATTERN,
@@ -134,6 +136,7 @@ export {
   NAV_ITEM_ID_PATTERN,
   NAV_ITEM_ICON_TOKENS,
   PANEL_DATA_PATH_PATTERN,
+  REDIRECT_ORIGIN_PATTERN,
   UI_PANEL_SLOT_NAME_PATTERN,
   defineExtension,
 } from './manifest.js'
