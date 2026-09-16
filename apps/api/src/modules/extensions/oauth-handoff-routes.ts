@@ -466,12 +466,20 @@ async function resolveCallbackPending(
   return { extension, state }
 }
 
+// A querystring value that isn't a string/array (e.g. bracket-notation nesting like `?a[b]=1`
+// parsed as an object) is malformed provider-callback input, not data worth stringifying --
+// `String({...})` silently produces the useless literal "[object Object]" instead (Sonar S6551),
+// which would corrupt onOAuthCallback()'s query params without ever surfacing as an error.
+function toQueryParamValue(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
 function callbackQueryParams(request: FastifyRequest): Record<string, string> {
   if (!request.query || typeof request.query !== 'object') return {}
   return Object.fromEntries(
     Object.entries(request.query as Record<string, unknown>).map(([key, value]) => [
       key,
-      Array.isArray(value) ? String(value[0] ?? '') : String(value ?? ''),
+      toQueryParamValue(Array.isArray(value) ? value[0] : value),
     ])
   )
 }
