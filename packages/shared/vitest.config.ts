@@ -27,6 +27,7 @@ export default mergeConfig(baseVitestConfig, {
         'src/schemas/password-strength.ts',
         'src/utils/absolute-url.ts',
         'src/validation/rotation-cron-description.ts',
+        'src/schemas/vault.ts',
       ],
       thresholds: {
         lines: 80,
