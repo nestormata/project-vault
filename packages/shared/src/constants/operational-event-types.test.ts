@@ -173,6 +173,15 @@ describe('OperationalEvent', () => {
     )
   })
 
+  it('exposes the Story 56.1 scheduled-task job-runner event types (AC4)', () => {
+    expect(OperationalEvent.EXTENSION_SCHEDULED_TASK_TICK_SKIPPED_OVERLAP).toBe(
+      'extension_scheduled_task.tick_skipped_overlap'
+    )
+    expect(OperationalEvent.EXTENSION_SCHEDULED_TASK_INVOKED).toBe(
+      'extension_scheduled_task.invoked'
+    )
+  })
+
   it('exposes the Story 16.1 theme-reload event types (AC-2, AC-7 fanout)', () => {
     expect(OperationalEvent.THEME_DIRECTORY_UNREADABLE).toBe('theme.directory_unreadable')
     expect(OperationalEvent.THEME_RELOAD_SUMMARY).toBe('theme.reload_summary')
