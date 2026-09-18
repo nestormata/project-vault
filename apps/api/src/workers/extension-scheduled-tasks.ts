@@ -230,9 +230,8 @@ export async function invokeOneTask(
   try {
     const fresh = getLoadedScheduledTaskExtension()
     if (
-      !fresh ||
-      fresh.extensionId !== expectedExtensionId ||
-      !fresh.taskIntervalMinutes.has(tuple.taskName)
+      fresh?.extensionId !== expectedExtensionId ||
+      !fresh?.taskIntervalMinutes.has(tuple.taskName)
     ) {
       return // uninstalled/reloaded between due-tuple selection and invocation — skip, not an error
     }

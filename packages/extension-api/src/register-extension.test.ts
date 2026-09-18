@@ -413,7 +413,7 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each(['3.18.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
+  it.each(['3.19.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
     'rejects canonical version outside %s',
     (apiVersion) => {
       const hooksFactory = makeHooksFactory()

@@ -19,7 +19,7 @@ import {
   runScheduledTasksTick,
 } from './extension-scheduled-tasks.js'
 
-const API_VERSION = '3.17.0'
+const API_VERSION = '3.18.0'
 const PROBE_SWEEP = 'probe-sweep'
 
 function singleTaskManifest(name: string, intervalMinutes = 5): ExtensionManifest {
@@ -51,6 +51,7 @@ function fakeHostServices(overrides: Partial<HostServices> = {}): HostServices {
       compareAndDelete: unavailable('ephemeralState.compareAndDelete'),
     },
     monitoring: {
+      createServiceEndpoint: unavailable('monitoring.createServiceEndpoint'),
       deleteServiceEndpoint: unavailable('monitoring.deleteServiceEndpoint'),
       updateServiceEndpointPauseState: unavailable('monitoring.updateServiceEndpointPauseState'),
       getHealthDashboardData: unavailable('monitoring.getHealthDashboardData'),
