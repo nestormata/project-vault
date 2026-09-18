@@ -1,6 +1,5 @@
 import { performance } from 'node:perf_hooks'
 import { sql } from 'drizzle-orm'
-import { getDb } from '@project-vault/db'
 import { extensionScheduledTaskRuns } from '@project-vault/db/schema'
 import { OperationalEvent } from '@project-vault/shared'
 import type { HostServices, ScheduledTaskContext } from '@project-vault/extension-api'
@@ -12,6 +11,7 @@ import { EXTENSION_CALLOUT_TIMEOUT_MS } from '../lib/extension-callout-timeout.j
 import { operationalLog, serializeLogError } from '../lib/logger.js'
 import { runWithConcurrencyLimit } from './monitoring-health-check.js'
 import type { WorkerLogger } from './expiry-alert-shared.js'
+import { runAdvisoryLockedTick, runTickHandler } from './lib/job-tick-helpers.js'
 
 /**
  * Story 56.1 Task 4 — background job runner invoking the `scheduled-task` extension hook once
@@ -277,41 +277,23 @@ export async function invokeOneTask(
  * tuple of a concurrency slot every tick, Task 4's sizing note).
  */
 export async function runScheduledTasksTick(logger?: WorkerLogger): Promise<void> {
-  await getDb().transaction(async (lockTx) => {
-    const lockRows = await lockTx.execute<{ locked: boolean }>(
-      sql`SELECT pg_try_advisory_xact_lock(hashtext(${ADVISORY_LOCK_NAME})) AS locked`
-    )
-    const acquired = Boolean(lockRows[0]?.locked)
-    if (!acquired) {
-      if (logger) {
-        operationalLog(
-          logger,
-          'warn',
-          OperationalEvent.EXTENSION_SCHEDULED_TASK_TICK_SKIPPED_OVERLAP,
-          'scheduled-task tick skipped — previous tick still running',
-          {}
-        )
-      }
-      return
+  await runAdvisoryLockedTick(
+    ADVISORY_LOCK_NAME,
+    logger,
+    OperationalEvent.EXTENSION_SCHEDULED_TASK_TICK_SKIPPED_OVERLAP,
+    'scheduled-task tick skipped — previous tick still running',
+    async () => {
+      const loaded = getLoadedScheduledTaskExtension()
+      if (!loaded) return // no-op: no extension loaded, capability not declared, or zero declared tasks
+
+      const dueTuples = await collectDueTuples(loaded, logger)
+      await runWithConcurrencyLimit(dueTuples, env.SCHEDULED_TASK_MAX_CONCURRENCY, (tuple) =>
+        invokeOneTask(tuple, loaded.extensionId, logger)
+      )
     }
-
-    const loaded = getLoadedScheduledTaskExtension()
-    if (!loaded) return // no-op: no extension loaded, capability not declared, or zero declared tasks
-
-    const dueTuples = await collectDueTuples(loaded, logger)
-    await runWithConcurrencyLimit(dueTuples, env.SCHEDULED_TASK_MAX_CONCURRENCY, (tuple) =>
-      invokeOneTask(tuple, loaded.extensionId, logger)
-    )
-  })
+  )
 }
 
 export async function scheduledTasksTickHandler(logger?: WorkerLogger): Promise<void> {
-  try {
-    await runScheduledTasksTick(logger)
-  } catch (error) {
-    process.stderr.write(
-      `${JSON.stringify({ eventType: 'job.failed', job: JOB_NAME, error: error instanceof Error ? error.message : String(error) })}\n`
-    )
-    throw error
-  }
+  await runTickHandler(JOB_NAME, () => runScheduledTasksTick(logger))
 }
