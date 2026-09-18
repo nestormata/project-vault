@@ -1,6 +1,5 @@
 import { performance } from 'node:perf_hooks'
 import { and, isNull, sql } from 'drizzle-orm'
-import { getDb } from '@project-vault/db'
 import { serviceEndpoints } from '@project-vault/db/schema'
 import { OperationalEvent } from '@project-vault/shared'
 import type { Dispatcher } from 'undici'
@@ -25,6 +24,7 @@ import {
   createSsrfSafeDispatcher,
 } from '../modules/monitoring/url-safety.js'
 import type { WorkerLogger } from './expiry-alert-shared.js'
+import { runAdvisoryLockedTick, runTickHandler } from './lib/job-tick-helpers.js'
 
 const JOB_NAME = 'monitoring/health-check'
 const ADVISORY_LOCK_NAME = 'monitoring/health-check'
@@ -263,71 +263,53 @@ async function processDueEndpoint(
  * an uncaught error — with no manual unlock/connection-pinning required.
  */
 export async function runHealthCheckTick(boss: BossService, logger?: WorkerLogger): Promise<void> {
-  await getDb().transaction(async (lockTx) => {
-    const lockRows = await lockTx.execute<{ locked: boolean }>(
-      sql`SELECT pg_try_advisory_xact_lock(hashtext(${ADVISORY_LOCK_NAME})) AS locked`
-    )
-    const acquired = Boolean(lockRows[0]?.locked)
-    if (!acquired) {
-      if (logger) {
-        operationalLog(
-          logger,
-          'warn',
-          OperationalEvent.MONITORING_HEALTH_CHECK_TICK_SKIPPED_OVERLAP,
-          'health-check tick skipped — previous tick still running',
-          {}
+  await runAdvisoryLockedTick(
+    ADVISORY_LOCK_NAME,
+    logger,
+    OperationalEvent.MONITORING_HEALTH_CHECK_TICK_SKIPPED_OVERLAP,
+    'health-check tick skipped — previous tick still running',
+    async () => {
+      const dispatcher = createSsrfSafeDispatcher()
+      const orgIds = await fetchAllOrgIds()
+      const allJobs: NotificationQueueJob[] = []
+
+      for (const orgId of orgIds) {
+        let dueEndpoints: ServiceEndpointRow[]
+        try {
+          dueEndpoints = await fetchDueServiceEndpoints(orgId)
+        } catch (error) {
+          if (logger) {
+            operationalLog(
+              logger,
+              'error',
+              OperationalEvent.MONITORING_HEALTH_CHECK_ROW_FAILED,
+              'health-check due-query failed for org',
+              { orgId, err: serializeLogError(error) }
+            )
+          }
+          continue
+        }
+
+        const jobsForOrg: NotificationQueueJob[] = []
+        await runWithConcurrencyLimit(
+          dueEndpoints,
+          env.HEALTH_CHECK_MAX_CONCURRENCY,
+          async (endpoint) => {
+            const jobs = await processDueEndpoint(orgId, endpoint, dispatcher, logger)
+            jobsForOrg.push(...jobs)
+          }
         )
-      }
-      return
-    }
-
-    const dispatcher = createSsrfSafeDispatcher()
-    const orgIds = await fetchAllOrgIds()
-    const allJobs: NotificationQueueJob[] = []
-
-    for (const orgId of orgIds) {
-      let dueEndpoints: ServiceEndpointRow[]
-      try {
-        dueEndpoints = await fetchDueServiceEndpoints(orgId)
-      } catch (error) {
-        if (logger) {
-          operationalLog(
-            logger,
-            'error',
-            OperationalEvent.MONITORING_HEALTH_CHECK_ROW_FAILED,
-            'health-check due-query failed for org',
-            { orgId, err: serializeLogError(error) }
-          )
-        }
-        continue
+        allJobs.push(...jobsForOrg)
       }
 
-      const jobsForOrg: NotificationQueueJob[] = []
-      await runWithConcurrencyLimit(
-        dueEndpoints,
-        env.HEALTH_CHECK_MAX_CONCURRENCY,
-        async (endpoint) => {
-          const jobs = await processDueEndpoint(orgId, endpoint, dispatcher, logger)
-          jobsForOrg.push(...jobs)
-        }
-      )
-      allJobs.push(...jobsForOrg)
+      await sendNotificationJobs(boss, allJobs)
     }
-
-    await sendNotificationJobs(boss, allJobs)
-  })
+  )
 }
 
 export async function healthCheckTickHandler(
   boss: BossService,
   logger?: WorkerLogger
 ): Promise<void> {
-  try {
-    await runHealthCheckTick(boss, logger)
-  } catch (error) {
-    process.stderr.write(
-      `${JSON.stringify({ eventType: 'job.failed', job: JOB_NAME, error: error instanceof Error ? error.message : String(error) })}\n`
-    )
-    throw error
-  }
+  await runTickHandler(JOB_NAME, () => runHealthCheckTick(boss, logger))
 }

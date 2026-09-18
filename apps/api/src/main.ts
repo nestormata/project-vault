@@ -25,6 +25,10 @@ import {
   extensionLifecyclePurgeJobHandler,
 } from './workers/extension-lifecycle-notify.js'
 import { healthCheckTickHandler } from './workers/monitoring-health-check.js'
+import {
+  JOB_NAME as SCHEDULED_TASK_JOB_NAME,
+  scheduledTasksTickHandler,
+} from './workers/extension-scheduled-tasks.js'
 import { pruneFailedAuthAttempts } from './workers/prune-failed-auth-attempts.js'
 import { pruneCredentialVersions } from './workers/prune-credential-versions.js'
 import { runBreakGlassOverlapExpiryJob } from './workers/rotation-break-glass-expire.js'
@@ -198,6 +202,9 @@ async function main(): Promise<void> {
       'security/check-failed-auth-threshold': { cron: '* * * * *' },
       'security/check-anomalous-access': { cron: '* * * * *' },
       'monitoring/health-check': { cron: '* * * * *' },
+      // Story 56.1 Task 4 — same 1-minute cadence as the sibling monitoring/health-check job
+      // above, mirroring its exact advisory-lock/bounded-concurrency worker shape.
+      [SCHEDULED_TASK_JOB_NAME]: { cron: '* * * * *' },
       // Story 35.1 Task 4 — same 1-minute cadence as the sibling security/monitoring poll jobs
       // above; a pending row's own bounded attempt cap + exponential nothing (fixed cadence,
       // mirrors notification-deliver-catchup's own simple periodic re-check) bounds retry load.
@@ -277,6 +284,7 @@ async function main(): Promise<void> {
       'security/check-failed-auth-threshold': () => checkFailedAuthThresholdHandler(boss),
       'security/check-anomalous-access': () => checkAnomalousAccessHandler(boss),
       'monitoring/health-check': () => healthCheckTickHandler(boss, fastify.log),
+      [SCHEDULED_TASK_JOB_NAME]: () => scheduledTasksTickHandler(fastify.log),
       [EXTENSION_LIFECYCLE_NOTIFY_JOB_NAME]: () => extensionLifecycleNotifyJobHandler(fastify.log),
       [EXTENSION_LIFECYCLE_PURGE_JOB_NAME]: () => extensionLifecyclePurgeJobHandler(fastify.log),
       'security/prune-failed-auth-attempts': (job) =>

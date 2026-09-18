@@ -45,6 +45,12 @@ describe('index.ts — root-only export surface (AC1, AC2)', () => {
         // Story 39.1 — new redirectOrigins allow-list constants for the oauthHandoff hook (AC9).
         'MAX_REDIRECT_ORIGINS',
         'REDIRECT_ORIGIN_PATTERN',
+        // Story 56.1 — new scheduledTasks manifest-declaration constants for the scheduledTask
+        // hook (AC4).
+        'MAX_SCHEDULED_TASKS_PER_EXTENSION',
+        'MIN_SCHEDULED_TASK_INTERVAL_MINUTES',
+        'SCHEDULED_TASK_HANDLER_NAME',
+        'SCHEDULED_TASK_NAME_PATTERN',
       ])
     )
   })

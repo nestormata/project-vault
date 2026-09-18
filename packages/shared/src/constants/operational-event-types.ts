@@ -483,6 +483,14 @@ export const OperationalEvent = {
   // dedicated rate-limit budget from both capability-gate.ts's and org-authorization.ts's own
   // (never shared).
   PROJECT_AUTHORIZATION_RATE_LIMITED: 'project_authorization.rate_limited',
+
+  // Story 56.1 AC4: scheduled-task extension hook job runner (extension-scheduled-tasks.ts).
+  // Mirrors monitoring-health-check.ts's own tick-skipped-overlap/row-failed event pair.
+  EXTENSION_SCHEDULED_TASK_TICK_SKIPPED_OVERLAP: 'extension_scheduled_task.tick_skipped_overlap',
+  // AC4d — structural log for EVERY (extensionId, taskName, organizationId) invocation attempt,
+  // success or failure, carrying outcome/durationMs so an operator can see exactly what recurring
+  // work an installed extension has claimed and how it's performing.
+  EXTENSION_SCHEDULED_TASK_INVOKED: 'extension_scheduled_task.invoked',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

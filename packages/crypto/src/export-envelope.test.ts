@@ -20,7 +20,16 @@ describe('project export/import envelope (Story 28.9 D2/D3)', () => {
   it('fails closed on a tampered ciphertext', async () => {
     const key = randomBytes(32)
     const encrypted = await encryptExportBundle(Buffer.from('secret bundle'), key)
-    const tampered = { ...encrypted, ciphertext: encrypted.ciphertext.replace(/^./, 'f') }
+    // Flip the first character to something guaranteed to differ from itself, rather than
+    // assuming a fixed replacement char (e.g. 'f') is never already present — that made the
+    // tamper a no-op (and this test intermittently, falsely pass-through) on the rare run where
+    // the random ciphertext's first character already was 'f'.
+    const originalFirstChar = encrypted.ciphertext[0]
+    const replacementChar = originalFirstChar === 'f' ? 'g' : 'f'
+    const tampered = {
+      ...encrypted,
+      ciphertext: replacementChar + encrypted.ciphertext.slice(1),
+    }
     await expect(decryptExportBundle(tampered, key)).rejects.toThrow()
   })
 })

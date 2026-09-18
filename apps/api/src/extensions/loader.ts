@@ -34,6 +34,7 @@ import { buildMonitoringHost } from '../lib/monitoring-host.js'
 import { buildNotificationOriginatorHost } from '../lib/notification-originator-host.js'
 import { writePlatformAuditEntryOrFailClosed } from '../lib/audit-or-fail-closed.js'
 import { fetchAllOrgIds } from '../middleware/rls.js'
+import { env } from '../config/env.js'
 import type { Tx } from '@project-vault/db'
 
 /**
@@ -61,6 +62,18 @@ export type ExtensionState =
        * state directly for unrelated test scenarios are not forced to supply it.
        */
       packageVersion?: string
+      /**
+       * Story 56.1 Task 4 — the SAME `HostServices` instance passed to this extension's
+       * `hooksFactory()` at load time (`buildHostServices()` below), retained so
+       * `extension-scheduled-tasks.ts`'s worker can reuse it for a due `(org, task)` invocation
+       * with no live request in flight. `buildHostServices()` captures no per-request-only state
+       * at bind time — every field either resolves org context per-call via an explicit param
+       * (`monitoring.applyHealthCheckResult`) or ambiently via `getRequestContext()` at call time
+       * (never at closure-creation time) — so reusing this one instance across ticks is safe.
+       * Optional so the many pre-existing `__setExtensionStateForTests()` call sites that
+       * construct a 'loaded' state directly for unrelated scenarios are not forced to supply it.
+       */
+      hostServices?: HostServices
     }
   | { status: 'load_failed'; reason: ExtensionLoadFailureReason }
 
@@ -493,7 +506,11 @@ async function runAuditFanout(
   }
 }
 
-type LoadOutcome = { manifest: ExtensionManifest; hooks: ExtensionHooks }
+type LoadOutcome = {
+  manifest: ExtensionManifest
+  hooks: ExtensionHooks
+  hostServices: ExtensionRuntimeContext & HostServices
+}
 type RaceResult = { outcome?: LoadOutcome; reason: ExtensionLoadFailureReason; message?: string }
 
 /**
@@ -512,12 +529,20 @@ async function raceWithTimeout(
 ): Promise<RaceResult> {
   const raced = await sharedRaceWithTimeout<LoadOutcome>(async () => {
     const mod = await importFn(packageName)
-    return registerExtension(
+    const hostServices = await buildHostServices(mod.default.manifest, logger)
+    const { manifest, hooks } = registerExtension(
       mod.default.manifest,
       mod.default.hooksFactory,
-      { allowApiVersionAboveHost },
-      await buildHostServices(mod.default.manifest, logger)
+      {
+        allowApiVersionAboveHost,
+        // Story 56.1 AC4 — operator-tunable floor/cap, mirroring env.HEALTH_CHECK_MAX_CONCURRENCY's
+        // existing environment-configurable precedent.
+        minScheduledTaskIntervalMinutes: env.MIN_SCHEDULED_TASK_INTERVAL_MINUTES,
+        maxScheduledTasksPerExtension: env.MAX_SCHEDULED_TASKS_PER_EXTENSION,
+      },
+      hostServices
     )
+    return { manifest, hooks, hostServices }
   }, timeoutMs)
 
   if (raced.status === 'resolved') return { outcome: raced.value, reason: 'import_error' }
@@ -554,7 +579,7 @@ async function applyOutcome(
   readPackageVersion: (packageName: string) => string | undefined
 ): Promise<void> {
   if (result.outcome) {
-    const { manifest, hooks } = result.outcome
+    const { manifest, hooks, hostServices } = result.outcome
     // Story 25.9 AC4: never let a throwing readPackageVersion() implementation (defensive test
     // coverage, or a genuinely misbehaving injected dep) fail the load itself — this data point
     // is best-effort, same posture as every other failure mode in this function.
@@ -570,6 +595,7 @@ async function applyOutcome(
       loadedAt: new Date().toISOString(),
       hooks,
       packageVersion,
+      hostServices,
     }
     const dbScopeSnapshot = await readExtensionDbScopeSnapshot(manifest)
     logExtensionDbScopeStatus(logger, dbScopeSnapshot)

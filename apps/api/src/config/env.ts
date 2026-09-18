@@ -1283,6 +1283,17 @@ const envSchema = z
     // Story 6.2 ADR-6.2-09: bounded per-tick concurrency so a large due-batch can't blow past
     // the 60-second health-check tick interval.
     HEALTH_CHECK_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(20),
+    // Story 56.1 AC4 — operator-tunable floor/cap for the scheduled-task extension hook, mirroring
+    // HEALTH_CHECK_MAX_CONCURRENCY's own environment-configurable precedent. Falls back to
+    // MIN_SCHEDULED_TASK_INTERVAL_MINUTES/MAX_SCHEDULED_TASKS_PER_EXTENSION's package-level
+    // defaults when unset.
+    MIN_SCHEDULED_TASK_INTERVAL_MINUTES: z.coerce.number().int().min(1).max(1440).default(1),
+    MAX_SCHEDULED_TASKS_PER_EXTENSION: z.coerce.number().int().min(1).max(256).default(32),
+    // Story 56.1 Task 4 — bounded per-tick concurrency across every due (org, task) tuple, mirroring
+    // HEALTH_CHECK_MAX_CONCURRENCY's identical rationale (ADR-6.2-09): bounds how much of one tick a
+    // large due-batch — or a handful of perpetually-failing tuples occupying a slot every tick
+    // (AC2's no-backoff edge case) — can consume.
+    SCHEDULED_TASK_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(20),
     // Story 6.2 ADR-6.2-06 (FR31): raw volume threshold for the anomalous-access detection job —
     // mirrors FAILED_AUTH_THRESHOLD_COUNT/_WINDOW_SECONDS. Max corrected to 86400 (24h) per
     // adversarial-review finding 17 so the window is genuinely widenable, not just narrowable.

@@ -9,7 +9,9 @@ import {
   MAX_NAV_ITEMS,
   MAX_PANEL_DATA_PATHS,
   MAX_REDIRECT_ORIGINS,
+  MAX_SCHEDULED_TASKS_PER_EXTENSION,
   MAX_UI_PANEL_SLOTS,
+  MIN_SCHEDULED_TASK_INTERVAL_MINUTES,
   MODULE_ACTION_NAME_PATTERN,
   MODULE_DATA_ROUTE_PATH_PATTERN,
   NAV_ITEM_HREF_PATTERN,
@@ -17,6 +19,8 @@ import {
   NAV_ITEM_ICON_TOKENS,
   PANEL_DATA_PATH_PATTERN,
   REDIRECT_ORIGIN_PATTERN,
+  SCHEDULED_TASK_HANDLER_NAME,
+  SCHEDULED_TASK_NAME_PATTERN,
   UI_PANEL_SLOT_NAME_PATTERN,
 } from './manifest.js'
 import type { ExtensionManifest, ModuleDataRouteDeclaration } from './manifest.js'
@@ -27,6 +31,7 @@ import type { ModuleAction } from './hooks/module-action.js'
 import type { CapabilityGate } from './hooks/capability-gate.js'
 import type { DeliveryProvider } from './hooks/delivery-provider.js'
 import type { OAuthHandoffHooks } from './hooks/oauth-handoff.js'
+import type { ScheduledTaskHooks } from './hooks/scheduled-task.js'
 import type { HostServices } from './host-services.js'
 import type { ExtensionDbScopeEntry, ExtensionRuntimeContext } from './db-access.js'
 import type { ProjectArchiveNotifier, ProjectCreatePolicy } from './hooks/project-lifecycle.js'
@@ -96,6 +101,12 @@ export type ExtensionHooks = {
    * allow-list (AC9).
    */
   oauthHandoff?: OAuthHandoffHooks
+  /**
+   * Story 56.1 AC1 — dispatch target for every due `(org, task)` tuple across this extension's
+   * manifest-declared `scheduledTasks[]`. Only legal (checked by `hasCallableScheduledTaskHook()`)
+   * when the manifest declares `scheduledTasks`.
+   */
+  scheduledTask?: ScheduledTaskHooks
 }
 
 /** Default `HostServices` used when a caller (typically a test) invokes `registerExtension()`
@@ -241,6 +252,12 @@ type RegisterExtensionOptions = {
   allowApiVersionAboveHost?: boolean
   /** Story 23.2 AC-2 (finding N17) — unrecognized top-level manifest keys are warned, not thrown. */
   logger?: RegisterExtensionLogger
+  /** Story 56.1 AC4 — operator override for `MIN_SCHEDULED_TASK_INTERVAL_MINUTES`. Falls back to
+   * that constant when omitted. */
+  minScheduledTaskIntervalMinutes?: number
+  /** Story 56.1 AC4 — operator override for `MAX_SCHEDULED_TASKS_PER_EXTENSION`. Falls back to
+   * that constant when omitted. */
+  maxScheduledTasksPerExtension?: number
 }
 
 const noopLogger: RegisterExtensionLogger = { warn: () => undefined }
@@ -257,6 +274,8 @@ const KNOWN_MANIFEST_KEYS = [
   'panelDataPaths',
   'navItems',
   'moduleDataRoutes',
+  'redirectOrigins',
+  'scheduledTasks',
 ]
 
 const INVALID_MANIFEST_FIELD = 'invalid-manifest-field'
@@ -642,6 +661,116 @@ function validateRedirectOriginsShape(manifest: ExtensionManifest): void {
   }
 }
 
+/**
+ * Story 56.1 AC4 — validates one `scheduledTasks` entry's own shape (name charset, interval
+ * floor) and tracks name-uniqueness across the array, as a side effect adding this entry's name to
+ * `seen`. Extracted from `validateScheduledTasksShape()` purely to keep that function's
+ * cyclomatic/cognitive complexity within this repo's lint budget, mirroring
+ * `validateSingleRedirectOrigin`'s identical extraction precedent.
+ */
+function validateSingleScheduledTask(
+  task: unknown,
+  seen: Set<string>,
+  minIntervalMinutes: number
+): void {
+  if (typeof task !== 'object' || task === null) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "scheduledTasks" contains a non-object entry ${JSON.stringify(task)}`
+    )
+  }
+
+  const { name, intervalMinutes, handler } = task as Record<string, unknown>
+
+  if (typeof name !== 'string' || !SCHEDULED_TASK_NAME_PATTERN.test(name)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "scheduledTasks" contains an invalid task name ${JSON.stringify(name)} (expected to match ${SCHEDULED_TASK_NAME_PATTERN})`
+    )
+  }
+
+  if (seen.has(name)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "scheduledTasks" contains duplicate task name "${name}"`
+    )
+  }
+  seen.add(name)
+
+  if (typeof intervalMinutes !== 'number' || !Number.isFinite(intervalMinutes)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "scheduledTasks" entry "${name}" has a non-numeric intervalMinutes ${JSON.stringify(intervalMinutes)}`
+    )
+  }
+
+  if (intervalMinutes < minIntervalMinutes) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "scheduledTasks" entry "${name}" declares intervalMinutes ${intervalMinutes}, below the platform floor of ${minIntervalMinutes}`
+    )
+  }
+
+  if (handler !== SCHEDULED_TASK_HANDLER_NAME) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "scheduledTasks" entry "${name}" declares handler ${JSON.stringify(handler)}, expected "${SCHEDULED_TASK_HANDLER_NAME}"`
+    )
+  }
+}
+
+/**
+ * Story 56.1 AC4 — validates the optional `scheduledTasks` field's shape: non-empty array of
+ * unique-named task declarations (if present), each with an `intervalMinutes` at or above the
+ * (operator-configurable) platform floor and a `handler` matching `SCHEDULED_TASK_HANDLER_NAME`,
+ * capped at the (operator-configurable) per-extension task count, and only legal alongside
+ * `'scheduled-task'` in `capabilities[]`. Mirrors `validateModuleActionsShape`'s structural shape.
+ * Does NOT check for the `scheduledTask` hook itself — that check needs `hooksFactory()`'s result
+ * and runs later (see `hasCallableScheduledTaskHook` below).
+ */
+function validateScheduledTasksShape(
+  manifest: ExtensionManifest,
+  options: RegisterExtensionOptions
+): void {
+  if (manifest.scheduledTasks === undefined) return
+
+  if (!Array.isArray(manifest.scheduledTasks)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "scheduledTasks" must be an array, got ${JSON.stringify(manifest.scheduledTasks)}`
+    )
+  }
+
+  if (manifest.scheduledTasks.length === 0) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest field "scheduledTasks" must not be an empty array — omit the field entirely to declare no scheduled tasks'
+    )
+  }
+
+  const maxTasks = options.maxScheduledTasksPerExtension ?? MAX_SCHEDULED_TASKS_PER_EXTENSION
+  if (manifest.scheduledTasks.length > maxTasks) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "scheduledTasks" declares ${manifest.scheduledTasks.length} entries, exceeding the maximum of ${maxTasks}`
+    )
+  }
+
+  const minIntervalMinutes =
+    options.minScheduledTaskIntervalMinutes ?? MIN_SCHEDULED_TASK_INTERVAL_MINUTES
+  const seen = new Set<string>()
+  for (const task of manifest.scheduledTasks) {
+    validateSingleScheduledTask(task, seen, minIntervalMinutes)
+  }
+
+  if (!manifest.capabilities.includes('scheduled-task')) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest declares "scheduledTasks" but does not declare "scheduled-task" in capabilities[]'
+    )
+  }
+}
+
 const NAV_ITEM_ICON_TOKEN_SET = new Set<string>(NAV_ITEM_ICON_TOKENS)
 
 type NavItemCandidate = {
@@ -960,6 +1089,19 @@ function hasCallableOAuthHandoffHook(manifest: ExtensionManifest, hooks: Extensi
 }
 
 /**
+ * Story 56.1 AC1 — a manifest declaring `scheduledTasks` (implying real periodic work exists to
+ * run) whose `hooksFactory()` result has no callable `scheduledTask.onScheduledTask` hook is
+ * rejected at `registerExtension()` time — the tick path must never discover a missing handler at
+ * invocation time. Mirrors `hasCallableModuleActionHook` exactly.
+ */
+function hasCallableScheduledTaskHook(manifest: ExtensionManifest, hooks: ExtensionHooks): boolean {
+  if (!manifest.scheduledTasks) return true
+  return (
+    hooks.scheduledTask !== undefined && typeof hooks.scheduledTask.onScheduledTask === 'function'
+  )
+}
+
+/**
  * Post-`hooksFactory()` callability checks, grouped into one function purely to keep
  * `registerExtension`'s own cyclomatic complexity within this repo's lint budget — behaviorally
  * these are four independent gates, each throwing its own typed error, checked in the same order
@@ -1036,6 +1178,16 @@ function assertCallableHooksAfterFactory(manifest: ExtensionManifest, hooks: Ext
       'Extension manifest declares "replacesNativeLogin: true" but hooksFactory() did not return an authStrategy hook'
     )
   }
+
+  // Story 56.1 AC1 — same class of bug hasCallableModuleActionHook already catches above: a
+  // manifest promising scheduledTasks with nothing behind it. Runs after hooksFactory() per this
+  // function's existing lazy-hooksFactory convention.
+  if (!hasCallableScheduledTaskHook(manifest, hooks)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest declares "scheduledTasks" but hooksFactory() did not return a callable scheduledTask hook'
+    )
+  }
 }
 
 /**
@@ -1072,6 +1224,7 @@ export function registerExtension(
   validateNavItemsShape(manifest)
   validateModuleDataRoutesShape(manifest)
   validateRedirectOriginsShape(manifest)
+  validateScheduledTasksShape(manifest, options)
 
   if (!REVERSE_DNS_NAME_PATTERN.test(manifest.name)) {
     throw new ExtensionRegistrationError(
@@ -1099,6 +1252,7 @@ export function registerExtension(
       navItems: manifest.navItems,
       moduleDataRoutes: manifest.moduleDataRoutes,
       redirectOrigins: manifest.redirectOrigins,
+      scheduledTasks: manifest.scheduledTasks,
     },
     hooks,
   }

@@ -666,6 +666,13 @@
       "when": 1789574794760,
       "tag": "0094_extension_oauth_pending_states",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1789707133712,
+      "tag": "0095_extension_scheduled_task_runs",
+      "breakpoints": true
     }
   ]
 }

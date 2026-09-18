@@ -2,6 +2,26 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.18.0 — 2026-09-18
+
+contract-hash: sha256:43cc86372323f1520afe564e75f9704e3d4401d7eb15f0c898ebd28b5af45711
+
+### Added
+
+- Added `ExtensionCapability`'s `'scheduled-task'` literal, `ExtensionManifest.scheduledTasks?:
+  ScheduledTaskDeclaration[]`, and `ExtensionHooks.scheduledTask?: ScheduledTaskHooks` (Story
+  56.1 AC1/AC3/AC4) — a new hook type letting an extension run periodic background work with no
+  real inbound request to anchor it to. PV's own job runner invokes a manifest-declared
+  `onScheduledTask(context)` handler once per org that has the extension active, on the
+  manifest-declared `intervalMinutes` interval, tracked per `(extensionId, taskName,
+  organizationId)` tuple. `context` is deliberately minimal and serializable-data-only
+  (`organizationId`, `taskName`, `hostServices: HostServices` — no `Tx`, no raw DB handle, no
+  `AuthContext`), reusing the SAME `HostServices` instance already bound for the extension at
+  load time. New constants `SCHEDULED_TASK_NAME_PATTERN`, `MIN_SCHEDULED_TASK_INTERVAL_MINUTES`,
+  `MAX_SCHEDULED_TASKS_PER_EXTENSION`, `SCHEDULED_TASK_HANDLER_NAME` enforce the manifest shape
+  and platform-wide floor/cap at `registerExtension()` time. Purely additive — no existing
+  `HostServices`/`ExtensionHooks`/`ExtensionManifest` field changes.
+
 ## 3.17.0 — 2026-09-17
 
 contract-hash: sha256:60ff63212b02f1f5b827e756212f14070a0dc56f52a9f2ac22a43f4bcc581e27
