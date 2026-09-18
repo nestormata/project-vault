@@ -34,6 +34,8 @@ describe('index.ts — root-only export surface (AC1, AC2)', () => {
         'MonitoringRateLimitedError',
         'MonitoringOrgMismatchError',
         'MonitoringResourceNotFoundError',
+        // Story 41.1 — new HostServices.monitoring.createServiceEndpoint hook-specific error class (AC3).
+        'MonitoringInvalidServiceEndpointInputError',
         // Story 36.1 — new HostServices.notificationOriginator hook-specific error classes
         // (AC1/AC3/AC4/AC5).
         'NotificationOriginatorNoAmbientContextError',

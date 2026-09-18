@@ -38,6 +38,24 @@ const monitoringFixture: PvMonitoringHost = {
     },
   }),
   cleanupProjectMonitoring: async () => ({ resolvedAlertCount: 0 }),
+  createServiceEndpoint: async () => ({
+    id: '1',
+    orgId: 'org1',
+    projectId: 'p1',
+    name: 'svc',
+    url: 'https://example.com',
+    checkFrequencyMinutes: 5,
+    downThresholdFailures: 2,
+    status: 'healthy',
+    consecutiveFailures: 0,
+    lastCheckedAt: null,
+    healthCheckPaused: false,
+    healthCheckPausedAt: null,
+    healthCheckPausedBy: null,
+    createdBy: null,
+    createdAt: TEST_DATE,
+    updatedAt: TEST_DATE,
+  }),
 }
 
 const notificationOriginatorFixture: NotificationOriginatorHost = {

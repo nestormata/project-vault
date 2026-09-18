@@ -1,10 +1,12 @@
 import type { FastifyBaseLogger } from 'fastify'
 import { eq } from 'drizzle-orm'
+import { z } from 'zod/v4'
 import { withOrg, type Tx } from '@project-vault/db'
 import { projects, serviceEndpoints } from '@project-vault/db/schema'
 import { OperationalEvent } from '@project-vault/shared'
 import type { ExtensionManifest, PvMonitoringHost } from '@project-vault/extension-api'
 import {
+  MonitoringInvalidServiceEndpointInputError,
   MonitoringNoAmbientContextError,
   MonitoringOrgMismatchError,
   MonitoringRateLimitedError,
@@ -13,10 +15,12 @@ import {
 import {
   applyHealthCheckResult as applyHealthCheckResultService,
   cleanupServiceEndpointsForProjectDeletion,
+  createServiceEndpoint as createServiceEndpointService,
   deleteServiceEndpoint as deleteServiceEndpointService,
   serializeServiceEndpoint,
   updateServiceEndpoint as updateServiceEndpointService,
 } from '../modules/monitoring/service.js'
+import { CreateServiceEndpointBodySchema } from '../modules/monitoring/schema.js'
 import { getHealthDashboardData as getHealthDashboardDataService } from '../modules/monitoring/health-dashboard-service.js'
 import {
   disableStatusPage as disableStatusPageService,
@@ -160,6 +164,10 @@ function requireAmbientOrgId(methodName: string): string {
   return context.orgId
 }
 
+/** Shared rejection message for every `MonitoringResourceNotFoundError` thrown when a supplied
+ * `projectId` does not resolve to a project within the relevant org (ambient or explicit). */
+const NO_SUCH_PROJECT_IN_ORG_MESSAGE = 'no such project in this org'
+
 type ServiceEndpointRow = typeof serviceEndpoints.$inferSelect
 
 /**
@@ -254,7 +262,7 @@ export function buildMonitoringHost(
         if (!(await findProjectInOrg(tx, params.projectId))) {
           throw new MonitoringResourceNotFoundError(
             'enableStatusPage',
-            'no such project in this org'
+            NO_SUCH_PROJECT_IN_ORG_MESSAGE
           )
         }
         return enableStatusPageService(tx, {
@@ -363,7 +371,7 @@ export function buildMonitoringHost(
             if (!projectRow) {
               throw new MonitoringResourceNotFoundError(
                 'cleanupProjectMonitoring',
-                'no such project in this org'
+                NO_SUCH_PROJECT_IN_ORG_MESSAGE
               )
             }
 
@@ -373,6 +381,70 @@ export function buildMonitoringHost(
             })
           })
       )
+    },
+
+    async createServiceEndpoint(params) {
+      const orgId = requireAmbientOrgId('createServiceEndpoint')
+
+      // Story 41.1 AC3 — reuses `CreateServiceEndpointBodySchema` (the same schema applied at
+      // the HTTP boundary) BEFORE any DB call, converting a validation failure into a
+      // distinguishable, hook-specific error class rather than letting a raw `ZodError` or an
+      // unclassified Postgres CHECK-constraint violation leak across the extension-api boundary.
+      // Catches `z.ZodError` specifically (never a blanket `catch`) so a genuine bug elsewhere in
+      // this block is never misreported as a user-input validation failure.
+      let body: ReturnType<typeof CreateServiceEndpointBodySchema.parse>
+      try {
+        body = CreateServiceEndpointBodySchema.parse({
+          name: params.name,
+          url: params.url,
+          checkFrequencyMinutes: params.checkFrequencyMinutes,
+          downThresholdFailures: params.downThresholdFailures,
+        })
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          throw new MonitoringInvalidServiceEndpointInputError(
+            error.issues.map((issue) => ({
+              path: issue.path.map((segment) =>
+                typeof segment === 'symbol' ? String(segment) : segment
+              ),
+              message: issue.message,
+            }))
+          )
+        }
+        throw error
+      }
+
+      // `userId`/`projectId` are identity/routing fields, not part of the service-endpoint body
+      // schema (AC3) — `projectId` is checked below via `findProjectInOrg` (AC4); `userId` gets
+      // this plain non-empty-string check alongside the Zod parse.
+      if (typeof params.userId !== 'string' || params.userId.trim().length === 0) {
+        throw new MonitoringInvalidServiceEndpointInputError([
+          { path: ['userId'], message: 'userId is required' },
+        ])
+      }
+
+      return withOrg(orgId, async (tx) => {
+        // Story 41.1 AC4 — mirrors `enableStatusPage`'s own tenant-isolation fix above:
+        // `service_endpoints`' RLS policy only ties the new row's own `org_id` column to the
+        // ambient org, never that the referenced `projectId` itself belongs to that org.
+        if (!(await findProjectInOrg(tx, params.projectId))) {
+          throw new MonitoringResourceNotFoundError(
+            'createServiceEndpoint',
+            NO_SUCH_PROJECT_IN_ORG_MESSAGE
+          )
+        }
+
+        // Story 41.1 AC5/AC6 — thin pass-through: `ServiceEndpointLimitReachedError`/
+        // `UrlNotMonitorableError` (both already thrown inside `createServiceEndpointService`
+        // itself) propagate unmodified — never caught/rewrapped here.
+        const row = await createServiceEndpointService(tx, {
+          orgId,
+          projectId: params.projectId,
+          userId: params.userId,
+          body,
+        })
+        return serializeServiceEndpoint(row)
+      })
     },
   }
 }

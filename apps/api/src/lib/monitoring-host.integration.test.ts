@@ -14,6 +14,8 @@ import {
   MonitoringOrgMismatchError,
   MonitoringResourceNotFoundError,
 } from '@project-vault/extension-api'
+import { ServiceEndpointLimitReachedError } from '../modules/monitoring/service.js'
+import { env } from '../config/env.js'
 import {
   configureAuthIntegrationEnv,
   initVaultForTest,
@@ -28,6 +30,7 @@ configureAuthIntegrationEnv()
 const { initVault } = await import('../modules/vault/key-service.js')
 
 const TEST_PASSPHRASE = 'monitoring-host-integration-tests-passphrase'
+const TEST_ENDPOINT_URL = 'https://example.com/health'
 
 const MANIFEST: ExtensionManifest = {
   name: 'com.acme.monitoring-integration-fixture',
@@ -234,6 +237,94 @@ describe('buildMonitoringHost — Story 34.1 real-Postgres/RLS integration (AC2,
           tx.select().from(statusPages).where(eq(statusPages.projectId, projectB.id))
         )
         expect(rows).toHaveLength(1)
+      } finally {
+        await deleteTestUser(userId)
+      }
+    })
+
+    it('createServiceEndpoint (Story 41.1 AC4): a real org-B projectId under org-A ambient context is rejected — never creates a cross-tenant service_endpoints row', async () => {
+      const orgA = await createTestOrg('create-a')
+      const orgB = await createTestOrg('create-b')
+      const userId = await createTestUser('monitoring-host-create')
+      try {
+        const projectB = await insertTestProject(orgB, { userId, slug: 'create-b-project' })
+
+        await expect(
+          bindAndRun(orgA, () =>
+            host.createServiceEndpoint({
+              projectId: projectB.id,
+              userId,
+              name: 'Cross-tenant check',
+              url: TEST_ENDPOINT_URL,
+            })
+          )
+        ).rejects.toBeInstanceOf(MonitoringResourceNotFoundError)
+
+        const rows = await withOrg(orgB, (tx) =>
+          tx.select().from(serviceEndpoints).where(eq(serviceEndpoints.projectId, projectB.id))
+        )
+        expect(rows).toHaveLength(0)
+      } finally {
+        await deleteTestUser(userId)
+      }
+    })
+
+    it('createServiceEndpoint (Story 41.1 AC6): the happy path creates a real row scoped to the ambient org when projectId genuinely belongs to it', async () => {
+      const orgA = await createTestOrg('create-happy-a')
+      const userId = await createTestUser('monitoring-host-create-happy')
+      try {
+        const projectA = await insertTestProject(orgA, { userId, slug: 'create-happy-project' })
+
+        const result = await bindAndRun(orgA, () =>
+          host.createServiceEndpoint({
+            projectId: projectA.id,
+            userId,
+            name: 'Happy Check',
+            url: TEST_ENDPOINT_URL,
+            checkFrequencyMinutes: 15,
+          })
+        )
+        expect(result.orgId).toBe(orgA)
+        expect(result.projectId).toBe(projectA.id)
+        expect(result.name).toBe('Happy Check')
+        expect(result.checkFrequencyMinutes).toBe(15)
+        expect(result.downThresholdFailures).toBe(2)
+        expect(result.createdBy).toBe(userId)
+
+        const rows = await withOrg(orgA, (tx) =>
+          tx.select().from(serviceEndpoints).where(eq(serviceEndpoints.projectId, projectA.id))
+        )
+        expect(rows).toHaveLength(1)
+      } finally {
+        await deleteTestUser(userId)
+      }
+    })
+
+    it('createServiceEndpoint (Story 41.1 AC5): a real cap-reached rejection propagates ServiceEndpointLimitReachedError unmodified, and creates no additional row', async () => {
+      const orgA = await createTestOrg('create-cap-a')
+      const userId = await createTestUser('monitoring-host-create-cap')
+      try {
+        const projectA = await insertTestProject(orgA, { userId, slug: 'create-cap-project' })
+
+        for (let i = 0; i < env.MAX_SERVICE_ENDPOINTS_PER_PROJECT; i++) {
+          await insertTestServiceEndpoint(orgA, projectA.id)
+        }
+
+        await expect(
+          bindAndRun(orgA, () =>
+            host.createServiceEndpoint({
+              projectId: projectA.id,
+              userId,
+              name: 'One too many',
+              url: TEST_ENDPOINT_URL,
+            })
+          )
+        ).rejects.toBeInstanceOf(ServiceEndpointLimitReachedError)
+
+        const rows = await withOrg(orgA, (tx) =>
+          tx.select().from(serviceEndpoints).where(eq(serviceEndpoints.projectId, projectA.id))
+        )
+        expect(rows).toHaveLength(env.MAX_SERVICE_ENDPOINTS_PER_PROJECT)
       } finally {
         await deleteTestUser(userId)
       }

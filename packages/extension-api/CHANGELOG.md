@@ -2,6 +2,32 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.17.0 — 2026-09-17
+
+contract-hash: sha256:60ff63212b02f1f5b827e756212f14070a0dc56f52a9f2ac22a43f4bcc581e27
+
+### Added
+
+- Added `PvMonitoringHost.createServiceEndpoint(params): Promise<MonitoringServiceEndpointRecord>`
+  (Story 41.1 AC1-AC6) — the ninth `HostServices.monitoring` method, letting an installed
+  extension (specifically `centralizeme-sass`'s module pack) create a new monitored service
+  endpoint on behalf of an authenticated org member. A thin closure over PV's existing, internal
+  `apps/api/src/modules/monitoring/service.ts#createServiceEndpoint` — no parallel
+  reimplementation of its cap-checking, SSRF-guarding, or insert logic. New exports:
+  `MonitoringCreateServiceEndpointParams` (parameter type, includes a required `userId: string`
+  for `createdBy` attribution, matching `updateServiceEndpointPauseState`/`enableStatusPage`'s
+  existing explicit-`userId` precedent) and `MonitoringInvalidServiceEndpointInputError` (new
+  hook-specific error class, thrown when input fails `CreateServiceEndpointBodySchema.parse()`,
+  reused from `apps/api/src/modules/monitoring/schema.ts`, before any DB call). `orgId` is
+  resolved ambiently via `getRequestContext()`, matching the other six in-request `monitoring`
+  methods (no `organizationId` field on the parameter type). The hook also verifies the supplied
+  `projectId` resolves to a real project within the ambient org (via `findProjectInOrg`, mirroring
+  `enableStatusPage`'s own Story 34.1 tenant-isolation fix) before calling the wrapped function;
+  `ServiceEndpointLimitReachedError`/`UrlNotMonitorableError` propagate unmodified.
+  `register-extension.ts`'s `DEFAULT_HOST_SERVICES.monitoring` fallback gains a matching
+  `createServiceEndpoint` entry. Additive-only — existing extensions whose `hooksFactory` does not
+  reference this new method remain structurally valid.
+
 ## 3.16.0 — 2026-09-16
 
 contract-hash: sha256:e5025be9388ef5e54474e4acd8bf27fa1a239c858de634d9512543fe7a23858a

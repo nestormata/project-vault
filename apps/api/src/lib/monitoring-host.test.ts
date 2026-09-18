@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  MonitoringInvalidServiceEndpointInputError,
   MonitoringNoAmbientContextError,
   MonitoringOrgMismatchError,
   MonitoringRateLimitedError,
@@ -62,6 +63,16 @@ describe('buildMonitoringHost — in-request methods (Story 34.1 AC2)', () => {
       invoke: (host) => host.regenerateStatusPageToken({ projectId: 'p' }),
     },
     { name: 'disableStatusPage', invoke: (host) => host.disableStatusPage({ projectId: 'p' }) },
+    {
+      name: 'createServiceEndpoint',
+      invoke: (host) =>
+        host.createServiceEndpoint({
+          projectId: 'p',
+          userId: 'u',
+          name: 'My Check',
+          url: 'https://example.com',
+        }),
+    },
   ]
 
   it.each(inRequestCalls)(
@@ -91,6 +102,41 @@ describe('buildMonitoringHost — in-request methods (Story 34.1 AC2)', () => {
       ).resolves.toBeNull()
     })
   })
+})
+
+describe('buildMonitoringHost.createServiceEndpoint (Story 41.1 AC3, AC5)', () => {
+  const VALID_PARAMS = {
+    projectId: 'p',
+    userId: 'u',
+    name: 'My Check',
+    url: 'https://example.com',
+  }
+
+  const invalidCases: Array<{ name: string; overrides: Record<string, unknown> }> = [
+    { name: 'checkFrequencyMinutes not one of 1|5|15|30', overrides: { checkFrequencyMinutes: 7 } },
+    {
+      name: 'url exceeds 2048 chars',
+      overrides: { url: 'https://example.com/' + 'a'.repeat(3000) },
+    },
+    { name: 'name is an empty string', overrides: { name: '' } },
+    { name: 'downThresholdFailures below 1', overrides: { downThresholdFailures: 0 } },
+    { name: 'downThresholdFailures above 10', overrides: { downThresholdFailures: 11 } },
+  ]
+
+  it.each(invalidCases)(
+    'rejects with MonitoringInvalidServiceEndpointInputError and makes zero DB calls: $name',
+    async ({ overrides }) => {
+      const host = buildMonitoringHost(MANIFEST)
+      await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
+        await expect(
+          host.createServiceEndpoint({
+            ...VALID_PARAMS,
+            ...overrides,
+          } as unknown as Parameters<typeof host.createServiceEndpoint>[0])
+        ).rejects.toBeInstanceOf(MonitoringInvalidServiceEndpointInputError)
+      })
+    }
+  )
 })
 
 describe('buildMonitoringHost — out-of-request methods (Story 34.1 AC3, AC7)', () => {

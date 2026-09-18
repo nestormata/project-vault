@@ -271,7 +271,7 @@ export const MAX_MODULE_DATA_ROUTES = 32
  * arbitrary-length input, so there is no realistic catastrophic-backtracking case despite the
  * nested quantifiers — same rationale as this file's other `eslint-disable`d patterns below.
  */
-// eslint-disable-next-line security/detect-unsafe-regex -- see rationale in the comment above
+
 export const REDIRECT_ORIGIN_PATTERN =
   /^https:\/\/[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?(?::\d{1,5})?$/
 
@@ -398,7 +398,7 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // unchanged (per Recommended Mechanism Decision's "why not (b)" analysis), and the floor stays
 // `>=3.0.0` so every already-shipped extension (including any real, currently-deployed
 // CentralizeMe build) keeps loading unmodified regardless.
-export const EXTENSION_API_VERSION = '3.16.0'
+export const EXTENSION_API_VERSION = '3.17.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  MonitoringInvalidServiceEndpointInputError,
   MonitoringNoAmbientContextError,
   MonitoringOrgMismatchError,
   MonitoringRateLimitedError,
@@ -63,10 +64,20 @@ describe('monitoring hook error classes (Story 34.1 AC2/AC3/AC6/AC7)', () => {
     expect(error.message).toContain('cleanupProjectMonitoring')
     expect(error.message).toContain('project not found in this org')
   })
+
+  it('MonitoringInvalidServiceEndpointInputError carries the Zod issue list and a stable code/name (Story 41.1 AC3)', () => {
+    const error = new MonitoringInvalidServiceEndpointInputError([
+      { path: ['checkFrequencyMinutes'], message: 'Invalid input' },
+    ])
+    expect(error).toBeInstanceOf(Error)
+    expect(error.name).toBe('MonitoringInvalidServiceEndpointInputError')
+    expect(error.code).toBe('monitoring_invalid_service_endpoint_input')
+    expect(error.issues).toEqual([{ path: ['checkFrequencyMinutes'], message: 'Invalid input' }])
+  })
 })
 
-describe('PvMonitoringHost — the inverted hook shape (Story 34.1 AC1/AC2/AC3)', () => {
-  it('typechecks a full implementation covering all eight methods', async () => {
+describe('PvMonitoringHost — the inverted hook shape (Story 34.1 AC1/AC2/AC3, Story 41.1 AC1)', () => {
+  it('typechecks a full implementation covering all nine methods', async () => {
     const host: PvMonitoringHost = {
       deleteServiceEndpoint: async () => null,
       updateServiceEndpointPauseState: async () => null,
@@ -83,6 +94,7 @@ describe('PvMonitoringHost — the inverted hook shape (Story 34.1 AC1/AC2/AC3)'
         updatedRow: FIXTURE_SERVICE_ENDPOINT,
       }),
       cleanupProjectMonitoring: async () => ({ resolvedAlertCount: 0 }),
+      createServiceEndpoint: async () => FIXTURE_SERVICE_ENDPOINT,
     }
 
     expect(
@@ -122,5 +134,14 @@ describe('PvMonitoringHost — the inverted hook shape (Story 34.1 AC1/AC2/AC3)'
     ).toBeNull()
 
     expect(await host.disableStatusPage({ projectId: 'p_1' })).toBeNull()
+
+    expect(
+      await host.createServiceEndpoint({
+        projectId: 'p_1',
+        userId: 'u_1',
+        name: 'My Check',
+        url: 'https://example.com',
+      })
+    ).toEqual(FIXTURE_SERVICE_ENDPOINT)
   })
 })

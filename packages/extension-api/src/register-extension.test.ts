@@ -324,6 +324,14 @@ describe('registerExtension — AC-4 default HostServices (no host argument supp
     await expect(
       monitoring.cleanupProjectMonitoring({ organizationId: 'org_1', projectId: 'p_1' })
     ).rejects.toThrow(/without a real HostServices/)
+    await expect(
+      monitoring.createServiceEndpoint({
+        projectId: 'p_1',
+        userId: 'u_1',
+        name: 'My Check',
+        url: 'https://example.com',
+      })
+    ).rejects.toThrow(/without a real HostServices/)
   })
 
   it('a hooksFactory that calls the default host.notificationOriginator.enqueueNotification gets a rejected promise, never a silent no-op (Story 36.1 AC1)', async () => {
@@ -405,7 +413,7 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each(['3.17.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
+  it.each(['3.18.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
     'rejects canonical version outside %s',
     (apiVersion) => {
       const hooksFactory = makeHooksFactory()
@@ -441,18 +449,19 @@ describe('registerExtension — concrete canonical version gate', () => {
 
   it('allows only the above-host same-major rollback escape', () => {
     // Story 20.11 AC1, Story 34.1 AC1/AC9, Story 35.1 AC1, Story 36.1 AC1/AC6, Story 37.1 AC1.3,
-    // and Story 39.1 AC8 — host EXTENSION_API_VERSION is now 3.16.0 (see manifest.ts's
+    // Story 39.1 AC8, and Story 41.1 — host EXTENSION_API_VERSION is now 3.17.0 (see manifest.ts's
     // EXTENSION_API_VERSION doc comment for why this merge moves past 3.2.0/3.3.0/3.4.0/3.6.0/
-    // 3.7.0/3.8.0/3.9.0/3.10.0/3.11.0/3.12.0/3.13.0/3.14.0/3.15.0, which Story 25.3/25.4/25.5/
-    // 25.9/20.8/25.12/29.3/29.4/20.11/34.1/35.1/36.1/37.1 respectively already claimed on main
-    // for different additive changes); '3.17.0' is the above-host, same-major escape-eligible
-    // version, and '4.0.0' is a different major (never escape-eligible). Kept one minor version
-    // above whatever EXTENSION_API_VERSION currently is — see loader.test.ts's identical comment.
+    // 3.7.0/3.8.0/3.9.0/3.10.0/3.11.0/3.12.0/3.13.0/3.14.0/3.15.0/3.16.0, which Story 25.3/25.4/
+    // 25.5/25.9/20.8/25.12/29.3/29.4/20.11/34.1/35.1/36.1/37.1/39.1 respectively already claimed
+    // on main for different additive changes); '3.18.0' is the above-host, same-major
+    // escape-eligible version, and '4.0.0' is a different major (never escape-eligible). Kept one
+    // minor version above whatever EXTENSION_API_VERSION currently is — see loader.test.ts's
+    // identical comment.
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.17.0' }), makeHooksFactory())
+      registerExtension(manifest({ apiVersion: '3.18.0' }), makeHooksFactory())
     ).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.17.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '3.18.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()
