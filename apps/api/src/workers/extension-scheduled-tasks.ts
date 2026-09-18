@@ -214,8 +214,14 @@ async function recordSuccess(
  * loaded extension fresh (not the snapshot `collectDueTuples` used) immediately before invoking,
  * skipping (not erroring) if the extension/task is no longer eligible; wraps the real invocation
  * in a bounded timeout and never lets one tuple's failure escape to the concurrency runner.
+ *
+ * Exported (not test-prefixed, mirroring `probeServiceEndpoint`/`fetchDueServiceEndpoints`'s own
+ * exported-for-direct-testing precedent in `monitoring-health-check.ts`) so the AC1 uninstall-race
+ * behavior can be exercised directly and deterministically: set the extension state AFTER the due
+ * tuple would have been selected but BEFORE calling this function, which is exactly the race
+ * window `runScheduledTasksTick` cannot be made to hit deterministically end-to-end.
  */
-async function invokeOneTask(
+export async function invokeOneTask(
   tuple: DueTuple,
   expectedExtensionId: string,
   logger: WorkerLogger | undefined

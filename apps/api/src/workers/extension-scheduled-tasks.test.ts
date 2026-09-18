@@ -13,7 +13,11 @@ import { __resetExtensionStateForTests, __setExtensionStateForTests } from '../e
 import { buildMonitoringHost } from '../lib/monitoring-host.js'
 import { withTwoTestOrgs } from './worker-test-helpers.js'
 import { withExpiryAlertTestOrg } from './expiry-alert-test-helpers.js'
-import { fetchDueTaskNames, runScheduledTasksTick } from './extension-scheduled-tasks.js'
+import {
+  fetchDueTaskNames,
+  invokeOneTask,
+  runScheduledTasksTick,
+} from './extension-scheduled-tasks.js'
 
 const API_VERSION = '3.17.0'
 const PROBE_SWEEP = 'probe-sweep'
@@ -273,14 +277,43 @@ describe('runScheduledTasksTick — AC1/AC2 invocation + isolation (DB integrati
     const manifest = singleTaskManifest('com.acme.uninstall-race')
 
     await withTestOrg(async ({ orgId }) => {
-      // Simulate: due-tuple selection sees the extension loaded, but by invocation time it has
-      // been unloaded. We can't race the real timing deterministically, so this test instead
-      // proves the direct invariant: a due tuple whose extension is no longer loaded/eligible at
-      // invocation time is skipped, not errored, and never crashes the tick.
+      // Simulate the real race directly: `collectDueTuples` selected this (org, task) tuple while
+      // the extension was loaded (captured here as `expectedExtensionId`/the tuple itself), but by
+      // the time `invokeOneTask` runs — its own fresh `getLoadedScheduledTaskExtension()` re-check
+      // — the extension has been uninstalled/unloaded process-wide. Calling `invokeOneTask`
+      // directly with the extension state flipped in between is the deterministic way to hit this
+      // exact window; racing `runScheduledTasksTick()` end-to-end cannot reliably land inside it.
+      setExtension(manifest, { scheduledTask: { onScheduledTask: handler } })
       __resetExtensionStateForTests()
-      await expect(runScheduledTasksTick()).resolves.toBeUndefined()
+
+      await expect(
+        invokeOneTask({ orgId, taskName: PROBE_SWEEP }, manifest.name, undefined)
+      ).resolves.toBeUndefined()
       expect(handler).not.toHaveBeenCalled()
       const run = await readRun(orgId, manifest.name, PROBE_SWEEP)
+      expect(run).toBeUndefined()
+    })
+  })
+
+  it('skips (does not error) when a different extension has since loaded in place of the expected one (AC1 uninstall-race, reload variant)', async () => {
+    const staleHandler = vi.fn(async () => undefined)
+    const staleManifest = singleTaskManifest('com.acme.stale-extension')
+
+    await withTestOrg(async ({ orgId }) => {
+      // A reload (not just an uninstall) between due-tuple selection and invocation must also be
+      // treated as "no longer eligible" — `invokeOneTask` compares `fresh.extensionId` against the
+      // `expectedExtensionId` captured at due-tuple-selection time, not just extension liveness.
+      const newHandler = vi.fn(async () => undefined)
+      setExtension(singleTaskManifest('com.acme.new-extension'), {
+        scheduledTask: { onScheduledTask: newHandler },
+      })
+
+      await expect(
+        invokeOneTask({ orgId, taskName: PROBE_SWEEP }, staleManifest.name, undefined)
+      ).resolves.toBeUndefined()
+      expect(staleHandler).not.toHaveBeenCalled()
+      expect(newHandler).not.toHaveBeenCalled()
+      const run = await readRun(orgId, staleManifest.name, PROBE_SWEEP)
       expect(run).toBeUndefined()
     })
   })

@@ -1487,3 +1487,200 @@ describe('registerExtension — Story 39.1 AC1/AC7/AC9 (oauthHandoff / redirectO
     expect((caught as ExtensionRegistrationError).reason).toBe(INVALID_MANIFEST_FIELD)
   })
 })
+
+/**
+ * Story 56.1 AC4 — `scheduledTasks?: ScheduledTaskDeclaration[]` manifest field validation.
+ * Mirrors the `moduleActions` describe block above exactly (separate namespace, identical
+ * validation shape: charset, uniqueness, capability gating, count cap, post-hooksFactory
+ * callability), plus this field's own interval-floor check and operator-configurable
+ * floor/cap overrides (`RegisterExtensionOptions.minScheduledTaskIntervalMinutes`/
+ * `maxScheduledTasksPerExtension`).
+ */
+const SCHEDULED_TASK_CAPABILITY = 'scheduled-task' as const
+const ON_SCHEDULED_TASK_HANDLER = 'onScheduledTask' as const
+const PROBE_SWEEP_TASK = {
+  name: 'probe-sweep',
+  intervalMinutes: 5,
+  handler: ON_SCHEDULED_TASK_HANDLER,
+} as const
+
+describe('registerExtension — AC4 (scheduledTasks)', () => {
+  const SCHEDULED_TASK_HOOKS: ExtensionHooks = {
+    scheduledTask: { onScheduledTask: vi.fn(async () => undefined) },
+  }
+
+  function scheduledTaskHooksFactory() {
+    return vi.fn(() => SCHEDULED_TASK_HOOKS)
+  }
+
+  it('happy path: a manifest declaring one scheduled task registers successfully', () => {
+    const hooksFactory = scheduledTaskHooksFactory()
+    const result = registerExtension(
+      manifest({
+        capabilities: [SCHEDULED_TASK_CAPABILITY],
+        scheduledTasks: [PROBE_SWEEP_TASK],
+      }),
+      hooksFactory
+    )
+    expect(result.manifest.scheduledTasks).toEqual([PROBE_SWEEP_TASK])
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('omitted: parses fine, no scheduledTasks on the returned manifest', () => {
+    const hooksFactory = makeHooksFactory()
+    const result = registerExtension(manifest(), hooksFactory)
+    expect(result.manifest.scheduledTasks).toBeUndefined()
+  })
+
+  it('rejects an uppercase task name (outside the allowed charset)', () => {
+    expectRejection(
+      {
+        capabilities: [SCHEDULED_TASK_CAPABILITY],
+        scheduledTasks: [{ ...PROBE_SWEEP_TASK, name: 'Probe-Sweep' }],
+      },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects duplicate task names within one manifest', () => {
+    expectRejection(
+      {
+        capabilities: [SCHEDULED_TASK_CAPABILITY],
+        scheduledTasks: [PROBE_SWEEP_TASK, PROBE_SWEEP_TASK],
+      },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an empty scheduledTasks array (distinct from omitted)', () => {
+    expectRejection(
+      { capabilities: [SCHEDULED_TASK_CAPABILITY], scheduledTasks: [] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects scheduledTasks declared without "scheduled-task" in capabilities', () => {
+    expectRejection(
+      {
+        capabilities: [AUDIT_EVENT_SOURCE_CAPABILITY],
+        scheduledTasks: [PROBE_SWEEP_TASK],
+      },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects a handler value other than "onScheduledTask"', () => {
+    expectRejection(
+      {
+        capabilities: [SCHEDULED_TASK_CAPABILITY],
+        scheduledTasks: [
+          { ...PROBE_SWEEP_TASK, handler: 'onOtherHandler' as typeof ON_SCHEDULED_TASK_HANDLER },
+        ],
+      },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects intervalMinutes just below the default floor (0.9 < 1)', () => {
+    expectRejection(
+      {
+        capabilities: [SCHEDULED_TASK_CAPABILITY],
+        scheduledTasks: [{ ...PROBE_SWEEP_TASK, intervalMinutes: 0.9 }],
+      },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('accepts intervalMinutes exactly at the default floor (1)', () => {
+    const hooksFactory = scheduledTaskHooksFactory()
+    expect(() =>
+      registerExtension(
+        manifest({
+          capabilities: [SCHEDULED_TASK_CAPABILITY],
+          scheduledTasks: [{ ...PROBE_SWEEP_TASK, intervalMinutes: 1 }],
+        }),
+        hooksFactory
+      )
+    ).not.toThrow()
+  })
+
+  it('honors an operator-configured minScheduledTaskIntervalMinutes override', () => {
+    const hooksFactory = scheduledTaskHooksFactory()
+    expect(() =>
+      registerExtension(
+        manifest({
+          capabilities: [SCHEDULED_TASK_CAPABILITY],
+          scheduledTasks: [{ ...PROBE_SWEEP_TASK, intervalMinutes: 5 }],
+        }),
+        hooksFactory,
+        { minScheduledTaskIntervalMinutes: 10 }
+      )
+    ).toThrow(ExtensionRegistrationError)
+  })
+
+  it('rejects an array longer than the default 32-entry maximum', () => {
+    const tooMany = Array.from({ length: 33 }, (_, i) => ({
+      name: `task-${i}`,
+      intervalMinutes: 5,
+      handler: ON_SCHEDULED_TASK_HANDLER,
+    }))
+    expectRejection(
+      { capabilities: [SCHEDULED_TASK_CAPABILITY], scheduledTasks: tooMany },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('accepts exactly the default 32-entry maximum', () => {
+    const exactlyMax = Array.from({ length: 32 }, (_, i) => ({
+      name: `task-${i}`,
+      intervalMinutes: 5,
+      handler: ON_SCHEDULED_TASK_HANDLER,
+    }))
+    const hooksFactory = scheduledTaskHooksFactory()
+    expect(() =>
+      registerExtension(
+        manifest({ capabilities: [SCHEDULED_TASK_CAPABILITY], scheduledTasks: exactlyMax }),
+        hooksFactory
+      )
+    ).not.toThrow()
+  })
+
+  it('honors an operator-configured maxScheduledTasksPerExtension override', () => {
+    const hooksFactory = scheduledTaskHooksFactory()
+    expect(() =>
+      registerExtension(
+        manifest({
+          capabilities: [SCHEDULED_TASK_CAPABILITY],
+          scheduledTasks: [PROBE_SWEEP_TASK, { ...PROBE_SWEEP_TASK, name: 'second-task' }],
+        }),
+        hooksFactory,
+        { maxScheduledTasksPerExtension: 1 }
+      )
+    ).toThrow(ExtensionRegistrationError)
+  })
+
+  it('rejects a manifest declaring scheduledTasks whose hooksFactory() has no scheduledTask hook (post-hooksFactory check)', () => {
+    const hooksFactory = makeHooksFactory()
+    let caught: unknown
+    try {
+      registerExtension(
+        manifest({
+          capabilities: [SCHEDULED_TASK_CAPABILITY],
+          scheduledTasks: [PROBE_SWEEP_TASK],
+        }),
+        hooksFactory
+      )
+    } catch (error) {
+      caught = error
+    }
+    expect((caught as ExtensionRegistrationError).reason).toBe(INVALID_MANIFEST_FIELD)
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT require a scheduledTask hook merely for declaring the "scheduled-task" capability without scheduledTasks', () => {
+    const hooksFactory = makeHooksFactory()
+    expect(() =>
+      registerExtension(manifest({ capabilities: [SCHEDULED_TASK_CAPABILITY] }), hooksFactory)
+    ).not.toThrow()
+  })
+})
