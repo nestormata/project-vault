@@ -409,4 +409,11 @@ export const KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS: Record<string, string> = {
   // DROP/RENAME/TRUNCATE/DELETE.
   '0092_extension_lifecycle_events':
     'Story 35.1 reviewed table-creation-time vault_app CRUD grant on the new extension_lifecycle_events outbox table; paired migration safety test proves it is a single additive CREATE TABLE with no destructive statement riding along.',
+  // Story 56.1 Task 3: brand-new, RLS-isolated `extension_scheduled_task_runs` table's own
+  // vault_app CRUD grant — same reviewed table-creation-time ACL pattern as 0092's
+  // extension_lifecycle_events. The paired migration-0095-safety.test.ts proves this migration
+  // creates exactly one new table, adds no ALTER on any pre-existing table, and contains no
+  // DROP/RENAME/TRUNCATE/DELETE.
+  '0095_extension_scheduled_task_runs':
+    'Story 56.1 reviewed table-creation-time vault_app CRUD grant on the new extension_scheduled_task_runs due-state table; paired migration safety test proves it is a single additive CREATE TABLE with no destructive statement riding along.',
 }
