@@ -186,7 +186,7 @@ describe('loadExtension — valid package (AC-2)', () => {
   // ephemeralState assertions above (this codebase's own recurring "typed but not wired" defect
   // class). Asserts the literal buildHostServices() return value includes a monitoring field with
   // all eight methods present and callable.
-  it('Story 34.1 AC1/Task 5: buildHostServices() actually wires monitoring with all eight methods', async () => {
+  it('Story 41.1 Task 3: buildHostServices() actually wires monitoring with all nine methods (createServiceEndpoint added)', async () => {
     let capturedHost: Record<string, unknown> | undefined
     const importFn = vi.fn().mockResolvedValue({
       default: {
@@ -216,6 +216,7 @@ describe('loadExtension — valid package (AC-2)', () => {
       'disableStatusPage',
       'applyHealthCheckResult',
       'cleanupProjectMonitoring',
+      'createServiceEndpoint',
     ]) {
       expect(typeof monitoring[method]).toBe('function')
     }
@@ -516,14 +517,14 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
     const logger = noopLogger()
     // Story 25.3 AC1/Task 1, Story 25.4 AC4/Task 4, Story 25.5 AC2/Task 1, Story 25.8 AC1/Task 1,
     // Story 20.8, Story 25.12 AC2/Task 2, Story 29.3 AC8/Task 1, Story 29.4 AC6/Task 1, Story
-    // 20.11 AC1, Story 34.1 AC1/AC9, Story 35.1 AC1, Story 36.1 AC1/AC6, Story 37.1 AC1.3, and
-    // Story 39.1 AC8 — host EXTENSION_API_VERSION is now 3.16.0 (see manifest.ts's
-    // EXTENSION_API_VERSION doc comment for the full version-bump history); '3.17.0' is the
+    // 20.11 AC1, Story 34.1 AC1/AC9, Story 35.1 AC1, Story 36.1 AC1/AC6, Story 37.1 AC1.3, Story
+    // 39.1 AC8, and Story 41.1 — host EXTENSION_API_VERSION is now 3.17.0 (see manifest.ts's
+    // EXTENSION_API_VERSION doc comment for the full version-bump history); '3.18.0' is the
     // above-host, same-major escape-eligible version. Kept one minor version above whatever
     // EXTENSION_API_VERSION currently is — a future bump must move this value forward again the
     // same way this story just did, or this test silently stops exercising the above-host path
     // once EXTENSION_API_VERSION catches up to a stale hardcoded value.
-    const aboveHostApiVersion = '3.17.0'
+    const aboveHostApiVersion = '3.18.0'
     const importFn = vi.fn().mockResolvedValue({
       default: {
         manifest: { ...VALID_MANIFEST, apiVersion: aboveHostApiVersion },

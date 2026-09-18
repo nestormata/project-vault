@@ -50,7 +50,7 @@ describe('EXTENSION_API_VERSION', () => {
     // additive-minor): 3.14.0 -> 3.15.0. Story 39.1 AC8 — ExtensionCapability's 'oauth-handoff'
     // literal, ExtensionManifest's redirectOrigins?, and ExtensionHooks' oauthHandoff? (also
     // additive-minor): 3.15.0 -> 3.16.0.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.16.0')
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.17.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

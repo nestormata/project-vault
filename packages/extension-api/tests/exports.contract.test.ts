@@ -18,6 +18,7 @@ describe('@project-vault/extension-api public value exports', () => {
       'MAX_UI_PANEL_SLOTS',
       'MODULE_ACTION_NAME_PATTERN',
       'MODULE_DATA_ROUTE_PATH_PATTERN',
+      'MonitoringInvalidServiceEndpointInputError',
       'MonitoringNoAmbientContextError',
       'MonitoringOrgMismatchError',
       'MonitoringRateLimitedError',

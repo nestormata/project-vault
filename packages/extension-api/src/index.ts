@@ -44,6 +44,7 @@ export type {
   MonitoringApplyHealthCheckResultResult,
   MonitoringCleanupProjectMonitoringParams,
   MonitoringCleanupProjectMonitoringResult,
+  MonitoringCreateServiceEndpointParams,
   MonitoringDeleteServiceEndpointParams,
   MonitoringDisableStatusPageParams,
   MonitoringDisableStatusPageResult,
@@ -63,6 +64,7 @@ export type {
   PvMonitoringHost,
 } from './hooks/monitoring.js'
 export {
+  MonitoringInvalidServiceEndpointInputError,
   MonitoringNoAmbientContextError,
   MonitoringOrgMismatchError,
   MonitoringRateLimitedError,

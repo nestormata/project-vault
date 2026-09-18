@@ -107,6 +107,29 @@ export class MonitoringResourceNotFoundError extends Error {
   }
 }
 
+/**
+ * Story 41.1 AC3 — thrown by `createServiceEndpoint` when its input fails
+ * `CreateServiceEndpointBodySchema.parse()` (reused from `apps/api/src/modules/monitoring/
+ * schema.ts`, never re-implemented). Carries the raw Zod issue list so a consumer can surface
+ * field-level detail without string-matching a message. Distinct from an unclassified Postgres
+ * `CHECK` constraint violation or a raw `ZodError` leaking across the extension-api boundary —
+ * this hook validates BEFORE any DB call, converting only a genuine `z.ZodError` (never a blanket
+ * catch) into this typed error.
+ */
+export class MonitoringInvalidServiceEndpointInputError extends Error {
+  readonly code = 'monitoring_invalid_service_endpoint_input'
+
+  readonly issues: ReadonlyArray<{ path: (string | number)[]; message: string }>
+
+  constructor(issues: ReadonlyArray<{ path: (string | number)[]; message: string }>) {
+    super(
+      `HostServices.monitoring.createServiceEndpoint() rejected: input failed CreateServiceEndpointBodySchema validation`
+    )
+    this.name = 'MonitoringInvalidServiceEndpointInputError'
+    this.issues = issues
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Shared data shapes — plain, serializable mirrors of PV's own monitoring row shapes. Deliberately
 // independent of `@project-vault/db`'s schema types (extension-api stays zero-DB-access) and of
@@ -198,6 +221,24 @@ export type MonitoringGetHealthDashboardDataParams = {
 export type MonitoringEnableStatusPageParams = {
   projectId: string
   userId: string
+}
+
+/**
+ * Story 41.1 — the ninth `PvMonitoringHost` method's parameter type. `userId` (required, not
+ * ambient) is for `service.ts#createServiceEndpoint`'s `createdBy` attribution column, matching
+ * `updateServiceEndpointPauseState`/`enableStatusPage`'s existing explicit-`userId` precedent —
+ * there is no ambient per-user context resolver in this codebase parallel to `getRequestContext()`
+ * 's ambient org resolution. `checkFrequencyMinutes`/`downThresholdFailures` are optional and
+ * default server-side inside `service.ts#createServiceEndpoint` itself (`?? 5`/`?? 2`) — this hook
+ * does not duplicate those defaults.
+ */
+export type MonitoringCreateServiceEndpointParams = {
+  projectId: string
+  userId: string
+  name: string
+  url: string
+  checkFrequencyMinutes?: 1 | 5 | 15 | 30
+  downThresholdFailures?: number
 }
 
 export type MonitoringEnableStatusPageResult = {
@@ -292,4 +333,7 @@ export type PvMonitoringHost = {
   cleanupProjectMonitoring(
     params: MonitoringCleanupProjectMonitoringParams
   ): Promise<MonitoringCleanupProjectMonitoringResult>
+  createServiceEndpoint(
+    params: MonitoringCreateServiceEndpointParams
+  ): Promise<MonitoringServiceEndpointRecord>
 }
