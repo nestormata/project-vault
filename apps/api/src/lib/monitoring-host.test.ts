@@ -137,6 +137,24 @@ describe('buildMonitoringHost.createServiceEndpoint (Story 41.1 AC3, AC5)', () =
       })
     }
   )
+
+  it.each([
+    { name: 'userId is an empty string', overrides: { userId: '' } },
+    { name: 'userId is whitespace only', overrides: { userId: '   ' } },
+  ])(
+    'rejects with MonitoringInvalidServiceEndpointInputError and makes zero DB calls: $name',
+    async ({ overrides }) => {
+      const host = buildMonitoringHost(MANIFEST)
+      await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
+        await expect(
+          host.createServiceEndpoint({
+            ...VALID_PARAMS,
+            ...overrides,
+          } as unknown as Parameters<typeof host.createServiceEndpoint>[0])
+        ).rejects.toBeInstanceOf(MonitoringInvalidServiceEndpointInputError)
+      })
+    }
+  )
 })
 
 describe('buildMonitoringHost — out-of-request methods (Story 34.1 AC3, AC7)', () => {
