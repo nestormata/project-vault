@@ -93,6 +93,7 @@ capability is what makes the matching hook legal in the object returned by `hook
 | `project-lifecycle` | `projectLifecycle` — a `ProjectCreatePolicy` that may veto project creation. |
 | `delivery-provider` | `deliveryProvider` — per-channel delivery implementations replacing PV's built-in transport for those channels. |
 | `project-archive-notify` | `projectArchiveNotifier` — a non-vetoing notification of an already-committed project archive. Deliberately independent of `project-lifecycle`, so an extension that only wants archive notifications is not forced to implement `onBeforeCreateProject`. |
+| `scheduled-task` | `scheduledTask` — a dispatch target for manifest-declared periodic background work. Also enables the `scheduledTasks` manifest field (`name`/`intervalMinutes`/`handler`). PV's own job runner invokes `onScheduledTask` once per org that has the extension active, on each task's declared interval, tracked server-side (never application wall-clock time). |
 
 ## Hooks returned by `hooksFactory()`
 
@@ -110,6 +111,7 @@ the hooks whose capability you declared.
 | `moduleAction` | `ModuleAction` | Dispatch target for panel actions. Legal only when the manifest declares `moduleActions`. |
 | `moduleData` | `Record<string, ModuleDataRouteHandler>` | Keyed by the exact `"GET <path>"` string of each `moduleDataRoutes` entry; every declared route must have exactly one handler. |
 | `deliveryProvider` | `Record<string, DeliveryProvider>` | Keyed by notification channel name. Registering the same channel key twice in one process is a loud conflict error, not last-one-wins. |
+| `scheduledTask` | `ScheduledTaskHooks` | `onScheduledTask(context)` — dispatch target for every due `(org, task)` tuple across this extension's declared `scheduledTasks`. `context` is `{ organizationId, taskName, hostServices }` only — no `Tx`, no raw DB handle; `hostServices` is the same instance bound at load time, safe to reuse with no live request in flight. |
 
 ## Host services injected into `hooksFactory(host)`
 
