@@ -1598,10 +1598,10 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
     reviewer: SECURITY_OWNER,
   },
   {
-    path: 'workers/monitoring-health-check.ts',
+    path: 'workers/lib/job-tick-helpers.ts',
     classification: PLATFORM_JOB,
     reason:
-      'Uses getDb() only for the transaction-scoped pg_try_advisory_xact_lock overlap guard (ADR-6.2-09) — no table data is read through it; the due-query and every alert/audit write use runOrgScopedJob for RLS-scoped access.',
+      'Shared advisory-lock tick wrapper extracted from monitoring-health-check.ts/extension-scheduled-tasks.ts (jscpd dedup) — uses getDb() only for the transaction-scoped pg_try_advisory_xact_lock overlap guard (ADR-6.2-09), same as the pre-extraction callers; no table data is read through it, callers do their own RLS-scoped access inside the lock.',
     reviewer: SECURITY_OWNER,
   },
   {
