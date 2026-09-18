@@ -105,6 +105,15 @@ describe('buildMonitoringHost — in-request methods (Story 34.1 AC2)', () => {
 })
 
 describe('buildMonitoringHost.createServiceEndpoint (Story 41.1 AC3, AC5)', () => {
+  const REJECTS_WITH_ZERO_DB_CALLS_TITLE =
+    'rejects with MonitoringInvalidServiceEndpointInputError and makes zero DB calls: $name'
+
+  // Test-fixture values, not secrets.
+  /* eslint-disable no-secrets/no-secrets */
+  const VALID_UUID_PROJECT_ID = '22222222-2222-4222-8222-222222222222'
+  const VALID_UUID_USER_ID = '33333333-3333-4333-8333-333333333333'
+  /* eslint-enable no-secrets/no-secrets */
+
   const VALID_PARAMS = {
     projectId: 'p',
     userId: 'u',
@@ -123,38 +132,52 @@ describe('buildMonitoringHost.createServiceEndpoint (Story 41.1 AC3, AC5)', () =
     { name: 'downThresholdFailures above 10', overrides: { downThresholdFailures: 11 } },
   ]
 
-  it.each(invalidCases)(
-    'rejects with MonitoringInvalidServiceEndpointInputError and makes zero DB calls: $name',
-    async ({ overrides }) => {
-      const host = buildMonitoringHost(MANIFEST)
-      await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
-        await expect(
-          host.createServiceEndpoint({
-            ...VALID_PARAMS,
-            ...overrides,
-          } as unknown as Parameters<typeof host.createServiceEndpoint>[0])
-        ).rejects.toBeInstanceOf(MonitoringInvalidServiceEndpointInputError)
-      })
-    }
-  )
+  it.each(invalidCases)(REJECTS_WITH_ZERO_DB_CALLS_TITLE, async ({ overrides }) => {
+    const host = buildMonitoringHost(MANIFEST)
+    await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
+      await expect(
+        host.createServiceEndpoint({
+          ...VALID_PARAMS,
+          ...overrides,
+        } as unknown as Parameters<typeof host.createServiceEndpoint>[0])
+      ).rejects.toBeInstanceOf(MonitoringInvalidServiceEndpointInputError)
+    })
+  })
 
   it.each([
     { name: 'userId is an empty string', overrides: { userId: '' } },
     { name: 'userId is whitespace only', overrides: { userId: '   ' } },
-  ])(
-    'rejects with MonitoringInvalidServiceEndpointInputError and makes zero DB calls: $name',
-    async ({ overrides }) => {
-      const host = buildMonitoringHost(MANIFEST)
-      await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
-        await expect(
-          host.createServiceEndpoint({
-            ...VALID_PARAMS,
-            ...overrides,
-          } as unknown as Parameters<typeof host.createServiceEndpoint>[0])
-        ).rejects.toBeInstanceOf(MonitoringInvalidServiceEndpointInputError)
-      })
-    }
-  )
+  ])(REJECTS_WITH_ZERO_DB_CALLS_TITLE, async ({ overrides }) => {
+    const host = buildMonitoringHost(MANIFEST)
+    await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
+      await expect(
+        host.createServiceEndpoint({
+          ...VALID_PARAMS,
+          ...overrides,
+        } as unknown as Parameters<typeof host.createServiceEndpoint>[0])
+      ).rejects.toBeInstanceOf(MonitoringInvalidServiceEndpointInputError)
+    })
+  })
+
+  // Code review fix (2026-09-17): projectId/userId weren't UUID-format-validated before
+  // reaching findProjectInOrg/the DB, so a malformed value would have surfaced as an
+  // unclassified Postgres error instead of this same typed error class.
+  it.each([
+    { name: 'userId is not a valid UUID', overrides: { userId: 'not-a-uuid' } },
+    { name: 'projectId is not a valid UUID', overrides: { projectId: 'not-a-uuid' } },
+  ])(REJECTS_WITH_ZERO_DB_CALLS_TITLE, async ({ overrides }) => {
+    const host = buildMonitoringHost(MANIFEST)
+    await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
+      await expect(
+        host.createServiceEndpoint({
+          ...VALID_PARAMS,
+          projectId: VALID_UUID_PROJECT_ID,
+          userId: VALID_UUID_USER_ID,
+          ...overrides,
+        } as unknown as Parameters<typeof host.createServiceEndpoint>[0])
+      ).rejects.toBeInstanceOf(MonitoringInvalidServiceEndpointInputError)
+    })
+  })
 })
 
 describe('buildMonitoringHost — out-of-request methods (Story 34.1 AC3, AC7)', () => {

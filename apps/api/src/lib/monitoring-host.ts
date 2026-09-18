@@ -415,12 +415,30 @@ export function buildMonitoringHost(
       }
 
       // `userId`/`projectId` are identity/routing fields, not part of the service-endpoint body
-      // schema (AC3) — `projectId` is checked below via `findProjectInOrg` (AC4); `userId` gets
-      // this plain non-empty-string check alongside the Zod parse.
+      // schema (AC3) — `projectId`'s ownership is checked below via `findProjectInOrg` (AC4), but
+      // BOTH must first be well-formed UUIDs, checked here, before any DB call. Without this, a
+      // malformed value (e.g. a non-UUID string) reaches `findProjectInOrg`'s/`createServiceEndpointService`'s
+      // raw SQL comparisons and surfaces as an unclassified Postgres error (a `TypeError`-shaped
+      // operational failure, not a typed Monitoring error) instead of the same
+      // `MonitoringInvalidServiceEndpointInputError` class AC3's own body-field validation already
+      // uses. Found in code review (2026-09-17): this same gap is pre-existing on every other
+      // in-request method in this file (`enableStatusPage`, `deleteServiceEndpoint`, etc., none of
+      // which UUID-validate their own `projectId`/identity params) — fixed here for
+      // `createServiceEndpoint` only, per this story's own scope; the identical fix across the
+      // other six in-request methods is a separate, cross-cutting follow-up, not bundled in here.
+      const identityIssues: { path: string[]; message: string }[] = []
       if (typeof params.userId !== 'string' || params.userId.trim().length === 0) {
-        throw new MonitoringInvalidServiceEndpointInputError([
-          { path: ['userId'], message: 'userId is required' },
-        ])
+        identityIssues.push({ path: ['userId'], message: 'userId is required' })
+      } else if (!z.uuid().safeParse(params.userId).success) {
+        identityIssues.push({ path: ['userId'], message: 'userId must be a valid UUID' })
+      }
+      if (typeof params.projectId !== 'string' || params.projectId.trim().length === 0) {
+        identityIssues.push({ path: ['projectId'], message: 'projectId is required' })
+      } else if (!z.uuid().safeParse(params.projectId).success) {
+        identityIssues.push({ path: ['projectId'], message: 'projectId must be a valid UUID' })
+      }
+      if (identityIssues.length > 0) {
+        throw new MonitoringInvalidServiceEndpointInputError(identityIssues)
       }
 
       return withOrg(orgId, async (tx) => {

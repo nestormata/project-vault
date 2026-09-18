@@ -44,8 +44,11 @@ const { runWithRequestContext } = await import('./request-context.js')
 // Test-fixture values, not secrets.
 /* eslint-disable no-secrets/no-secrets */
 const AMBIENT_ORG_ID = '11111111-1111-1111-1111-111111111111'
-const PROJECT_ID = '22222222-2222-2222-2222-222222222222'
-const USER_ID = '33333333-3333-3333-3333-333333333333'
+// Story 41.1's new UUID-format validation (code review fix) requires a real RFC-4122 v4 shape
+// (version/variant nibits set) — z.uuid() rejects the all-same-digit placeholder style used
+// elsewhere in this file for orgId (which this hook never UUID-validates, only projectId/userId).
+const PROJECT_ID = '22222222-2222-4222-8222-222222222222'
+const USER_ID = '33333333-3333-4333-8333-333333333333'
 /* eslint-enable no-secrets/no-secrets */
 
 const MANIFEST: ExtensionManifest = {
