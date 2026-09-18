@@ -53,7 +53,7 @@ const USER_ID = '33333333-3333-4333-8333-333333333333'
 
 const MANIFEST: ExtensionManifest = {
   name: 'com.acme.create-service-endpoint-fixture',
-  apiVersion: '3.17.0',
+  apiVersion: '3.18.0',
   capabilities: [],
 }
 

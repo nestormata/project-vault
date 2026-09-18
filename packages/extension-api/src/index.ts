@@ -96,6 +96,7 @@ export type {
   NotificationOriginatorHost,
 } from './hooks/notification-originator.js'
 export type { OAuthHandoffHooks, OAuthHandoffRedirectResult } from './hooks/oauth-handoff.js'
+export type { ScheduledTaskContext, ScheduledTaskHooks } from './hooks/scheduled-task.js'
 export {
   NotificationOriginatorInvalidParamsError,
   NotificationOriginatorInvalidRecipientError,
@@ -120,6 +121,7 @@ export type {
   ExtensionManifest,
   ExtensionNavItem,
   ModuleDataRouteDeclaration,
+  ScheduledTaskDeclaration,
 } from './manifest.js'
 export type { NavItemIconToken } from './manifest.js'
 export {
@@ -131,7 +133,9 @@ export {
   MAX_NAV_ITEMS,
   MAX_PANEL_DATA_PATHS,
   MAX_REDIRECT_ORIGINS,
+  MAX_SCHEDULED_TASKS_PER_EXTENSION,
   MAX_UI_PANEL_SLOTS,
+  MIN_SCHEDULED_TASK_INTERVAL_MINUTES,
   MODULE_ACTION_NAME_PATTERN,
   MODULE_DATA_ROUTE_PATH_PATTERN,
   NAV_ITEM_HREF_PATTERN,
@@ -139,6 +143,8 @@ export {
   NAV_ITEM_ICON_TOKENS,
   PANEL_DATA_PATH_PATTERN,
   REDIRECT_ORIGIN_PATTERN,
+  SCHEDULED_TASK_HANDLER_NAME,
+  SCHEDULED_TASK_NAME_PATTERN,
   UI_PANEL_SLOT_NAME_PATTERN,
   defineExtension,
 } from './manifest.js'

@@ -25,6 +25,11 @@ export type ExtensionCapability =
   // `oauthHandoff` hooks-bag entry (see `register-extension.ts`'s `ExtensionHooks`) and that its
   // manifest must also declare a non-empty `redirectOrigins` allow-list (AC9).
   | 'oauth-handoff'
+  // Story 56.1 AC1/AC4 — declares that this extension's `hooksFactory()` may return a
+  // `scheduledTask` hooks-bag entry (see `register-extension.ts`'s `ExtensionHooks`) and that its
+  // manifest may also declare a non-empty `scheduledTasks` array of named, interval-declared
+  // periodic background tasks PV's own job runner invokes once per active org.
+  | 'scheduled-task'
 
 export type ExtensionManifest = {
   /** Reverse-DNS-style identifier, e.g. "com.acme.sso-extension" — validated by registerExtension (AC6). */
@@ -126,6 +131,33 @@ export type ExtensionManifest = {
    * `validateRedirectOriginsShape()`.
    */
   redirectOrigins?: string[]
+  /**
+   * Story 56.1 AC1/AC4 — optional declaration of named, interval-driven periodic background tasks
+   * this extension wants PV's own job runner to invoke, once per org that has the extension
+   * installed/active, on the declared interval. Omitted (or `undefined`) is fully
+   * backward-compatible: PV's job runner invokes nothing for this extension — every pre-existing
+   * extension (none of which declare this field) continues to register and run unchanged. Only
+   * legal alongside `'scheduled-task'` in `capabilities[]` — validated by `registerExtension()`'s
+   * `validateScheduledTasksShape()`, and cross-checked against `ExtensionHooks.scheduledTask`
+   * post-`hooksFactory()` (checked by `hasCallableScheduledTaskHook()`) — the manifest must never
+   * promise a scheduled task the extension's registered hooks cannot actually run.
+   */
+  scheduledTasks?: ScheduledTaskDeclaration[]
+}
+
+/**
+ * Story 56.1 AC1/AC4 — a single manifest-declared scheduled task. `name` must be unique within the
+ * SAME extension's `scheduledTasks` array and match `SCHEDULED_TASK_NAME_PATTERN`. `intervalMinutes`
+ * is the minimum time PV's job runner waits between successful invocations for a given
+ * `(extensionId, name, organizationId)` tuple — must be `>= MIN_SCHEDULED_TASK_INTERVAL_MINUTES`.
+ * `handler` is currently always the literal `'onScheduledTask'` (not a union) — this story ships a
+ * single dispatch entry point per extension; a future story may widen this to per-task handler
+ * names if a real need for it emerges.
+ */
+export type ScheduledTaskDeclaration = {
+  name: string
+  intervalMinutes: number
+  handler: 'onScheduledTask'
 }
 
 /**
@@ -280,6 +312,33 @@ export const REDIRECT_ORIGIN_PATTERN =
  * `MAX_*` cap precedents. */
 export const MAX_REDIRECT_ORIGINS = 32
 
+/**
+ * Story 56.1 AC4 — the charset a declared `scheduledTasks[].name` entry must match. Identical
+ * shape to `MODULE_ACTION_NAME_PATTERN`/`UI_PANEL_SLOT_NAME_PATTERN` (lowercase alphanumerics and
+ * hyphens only, 1-64 chars) but a separately-named constant — task names are yet another
+ * namespace, never conflated with action/slot/nav-id names despite the identical validation shape.
+ */
+export const SCHEDULED_TASK_NAME_PATTERN = /^[a-z0-9-]{1,64}$/
+
+/** Story 56.1 AC4 — the platform-wide floor for `scheduledTasks[].intervalMinutes`, enforced at
+ * `registerExtension()` time. Operator-configurable (see `RegisterExtensionOptions.
+ * minScheduledTaskIntervalMinutes` / `env.MIN_SCHEDULED_TASK_INTERVAL_MINUTES`) — this constant is
+ * only the built-in default used when no override is supplied. */
+export const MIN_SCHEDULED_TASK_INTERVAL_MINUTES = 1
+
+/** Story 56.1 AC4 — generous for any real extension, small enough to bound a hostile/broken
+ * manifest from declaring an unbounded `scheduledTasks` list. Matches this file's other `MAX_*`
+ * cap precedents (`MAX_MODULE_ACTIONS` et al). Operator-configurable (see
+ * `RegisterExtensionOptions.maxScheduledTasksPerExtension` / `env.MAX_SCHEDULED_TASKS_PER_EXTENSION`)
+ * — this constant is only the built-in default used when no override is supplied. */
+export const MAX_SCHEDULED_TASKS_PER_EXTENSION = 32
+
+/** Story 56.1 AC1 — the sole handler name PV dispatches a due `(org, task)` invocation to. Not a
+ * union type today (see `ScheduledTaskDeclaration.handler`'s own doc comment) — kept as a named
+ * constant so the register-time cross-check and the runtime dispatch path share one source of
+ * truth instead of two independent string literals. */
+export const SCHEDULED_TASK_HANDLER_NAME = 'onScheduledTask'
+
 /** Story 29.3 AC4 — `label` is raw, host-rendered display text (auto-escaped by Svelte's ordinary
  * text interpolation, never `{@html}`); this cap bounds a hostile/broken manifest from declaring
  * an unreasonably long nav label, not a security control in itself. */
@@ -398,7 +457,20 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // unchanged (per Recommended Mechanism Decision's "why not (b)" analysis), and the floor stays
 // `>=3.0.0` so every already-shipped extension (including any real, currently-deployed
 // CentralizeMe build) keeps loading unmodified regardless.
-export const EXTENSION_API_VERSION = '3.17.0'
+// Story 41.1 AC1-AC6 — bumped as an additive-minor (3.16.0 -> 3.17.0): `HostServices.monitoring`
+// gains `createServiceEndpoint(params): Promise<MonitoringServiceEndpointRecord>`, a purely
+// additive new method with zero effect on any `hooksFactory` that omits referencing
+// `host.monitoring.createServiceEndpoint` — no existing type is modified, and the floor stays
+// `>=3.0.0` so every already-shipped extension (including any real, currently-deployed
+// CentralizeMe build) keeps loading unmodified regardless.
+// Story 56.1 AC1/AC4 — bumped as an additive-minor (3.17.0 -> 3.18.0): `ExtensionCapability` gains
+// the `'scheduled-task'` literal, `ExtensionManifest` gains `scheduledTasks?:
+// ScheduledTaskDeclaration[]`, and `ExtensionHooks` gains `scheduledTask?: ScheduledTaskHooks` (see
+// `hooks/scheduled-task.ts`), all purely-additive optional additions with zero effect on any
+// manifest/hooksFactory that omits them — no existing extension's manifest or hook shape changes,
+// and the floor stays `>=3.0.0` so every already-shipped extension (including any real,
+// currently-deployed CentralizeMe build) keeps loading unmodified regardless.
+export const EXTENSION_API_VERSION = '3.18.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built
