@@ -76,7 +76,7 @@ function getLoadedScheduledTaskExtension(): LoadedScheduledTaskExtension | undef
  * due-check comparison — never application wall-clock time, per Task 3's explicit requirement.
  * `lastRunAt IS NULL` (never run) or elapsed-beyond-interval both count as due.
  */
-async function fetchDueTaskNames(
+export async function fetchDueTaskNames(
   orgId: string,
   extensionId: string,
   taskIntervalMinutes: Map<string, number>
