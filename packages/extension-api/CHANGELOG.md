@@ -2,6 +2,32 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.20.0 — 2026-09-19
+
+contract-hash: sha256:9a16f2f41682f84867de1d2c1dbdcba7dec7dabb3a55879b9e4082191f5f8508
+
+### Added
+
+- Added `PvMonitoringHost.listServiceEndpointsForScheduling(params): Promise<MonitoringServiceEndpointForScheduling[]>`
+  (Story 57.1 AC1-AC6) — the tenth `HostServices.monitoring` method, letting an installed extension
+  (specifically `centralizeme-sass`'s module pack) list every active service endpoint for an org
+  from inside an out-of-request `onScheduledTask` handler (Story 56.1), with the full set of
+  scheduling-relevant fields (`checkFrequencyMinutes`, `healthCheckPausedAt`, `consecutiveFailures`,
+  `status`, `lastCheckedAt`) it needs to decide which endpoints are due for a probe, in one
+  round-trip. Deliberately returns the **raw, unredacted `url`** — the first `HostServices` method
+  to do so (every other read-facing caller gets `serializeServiceEndpoint()`'s ADR-6.2-11-redacted
+  value) — because the caller needs it to actually connect and probe the endpoint; the new
+  `MonitoringServiceEndpointForScheduling` type's doc comment states this explicitly, including that
+  the URL may carry embedded credentials and callers must not log it. No ambient-request-context
+  requirement (same exemption as `applyHealthCheckResult`/`cleanupProjectMonitoring`), and shares
+  their existing per-extension rate-limit/audit-log wrapper — no new accounting bucket. Purely
+  additive — no existing `HostServices`/`ExtensionHooks`/`ExtensionManifest` field changes.
+
+Per `docs/extension-api-versioning-policy.md` Row 11 ("adding a new hook type and a new optional
+field on `ExtensionHooks`/existing types") — this is a purely additive new `HostServices.monitoring`
+method, so this is a MINOR bump, consistent with every other `HostServices` method addition (e.g.
+Story 41.1's `createServiceEndpoint`, 3.16.0 → 3.17.0).
+
 ## 3.19.0 — 2026-09-19
 
 contract-hash: sha256:cfb24ea6e19a4b12dc4e133f64771189ef04db99a500343bac1c08bc35f92d01
