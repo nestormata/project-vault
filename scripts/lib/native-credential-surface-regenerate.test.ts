@@ -157,6 +157,50 @@ describe('regenerateManifest (Story 40.2)', () => {
     expect(result.unresolvedGroupCount).toBe(0)
   })
 
+  it('rejects an ordinal-fallback pairing whose symbol does not match its claimed hit text, leaving the group unresolved (AC-11 hardening)', () => {
+    // Both entries have REAL (non-sentinel) symbol text, not the "(see comment context)" sentinel,
+    // and neither entry's symbol equals EITHER hit's text exactly (an unrelated refactor reworded
+    // the lines), so neither matches via identity (step 2a) or exact symbol-to-text (step 2b) — both
+    // fall through to the step-3 ordinal fallback, which pairs purely by position: A (original order
+    // 0) <-> earliest unclaimed hit (ascending line), B (original order 1) <-> the other hit. Every
+    // claimed line still resolves to *some* real hit (the plain diff would report clean), but the
+    // pairing is textually wrong for both entries — the exact gap this hardening closes.
+    const manifest = [
+      entry({ path: 'g.ts', line: 3, predicate: P2, symbol: 'verifyPassword(oldSignature)' }),
+      entry({ path: 'g.ts', line: 10, predicate: P2, symbol: 'verifyPassword(otherOldSignature)' }),
+    ]
+    const hits = [
+      hit({ path: 'g.ts', line: 8, predicate: P2, text: 'hashPassword(candidate)' }),
+      hit({ path: 'g.ts', line: 20, predicate: P2, text: 'hashPassword(other)' }),
+    ]
+
+    const result = regenerateManifest(REPO_ROOT, manifest, hits)
+
+    expect(result.manifest).toEqual(manifest)
+    expect(result.changes).toEqual([])
+    expect(result.unresolvedGroupCount).toBe(1)
+  })
+
+  it('still regenerates genuine "(see comment context)" sentinel entries via ordinal fallback (no regression from the symbol-mismatch hardening)', () => {
+    const manifest = [
+      entry({ path: 'h.ts', line: 3, predicate: P2, symbol: SEE_COMMENT_CONTEXT }),
+      entry({ path: 'h.ts', line: 10, predicate: P2, symbol: SEE_COMMENT_CONTEXT }),
+    ]
+    const hits = [
+      hit({ path: 'h.ts', line: 6, predicate: P2, text: 'passwordHash: fields.passwordHash,' }),
+      hit({ path: 'h.ts', line: 14, predicate: P2, text: 'passwordHash: other,' }),
+    ]
+
+    const result = regenerateManifest(REPO_ROOT, manifest, hits)
+
+    expect(result.manifest.map((e) => e.line)).toEqual([6, 14])
+    expect(result.changes).toEqual([
+      { path: 'h.ts', predicate: P2, oldLine: 3, newLine: 6 },
+      { path: 'h.ts', predicate: P2, oldLine: 10, newLine: 14 },
+    ])
+    expect(result.unresolvedGroupCount).toBe(0)
+  })
+
   it('claims duplicate-text hits deterministically by ascending line (AC-12)', () => {
     const manifest = [
       entry({ path: 'e.ts', line: 3, predicate: P5, symbol: INSERT_USERS }),

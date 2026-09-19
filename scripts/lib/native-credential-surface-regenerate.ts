@@ -31,8 +31,21 @@ export type RegenerationResult = {
 }
 
 type IndexedEntry = { index: number; entry: SurfaceManifestEntry }
-type LineUpdate = { index: number; line: number }
+type LineUpdate = {
+  index: number
+  line: number
+  viaOrdinalFallback: boolean
+  hitText: string
+  entrySymbol: string
+}
 type MatchedGroup = { key: string; updates: LineUpdate[] }
+
+/**
+ * Sentinel `symbol` value used when an entry has no single-line literal to copy (multi-line/context-
+ * dependent hits). It is a deliberate placeholder, not real source text, so it is exempt from the
+ * step-3 ordinal-fallback symbol-vs-hit-text verification below (AC-11 hardening).
+ */
+const SEE_COMMENT_CONTEXT_SENTINEL = '(see comment context)'
 
 function groupKeyOf(path: string, predicate: Predicate): string {
   return `${path}:::${predicate}`
@@ -88,7 +101,10 @@ function groupHitsByKey(hits: SurfaceHit[]): Map<string, SurfaceHit[]> {
  */
 function matchGroup(entries: IndexedEntry[], hits: SurfaceHit[]): LineUpdate[] {
   const claimedPositions = new Set<number>()
-  const updates = new Map<number, number>()
+  const updates = new Map<
+    number,
+    { line: number; viaOrdinalFallback: boolean; hitText: string; entrySymbol: string }
+  >()
 
   // Step 2a: identity match — an entry already sitting on a real hit's line is never moved.
   for (const { index, entry } of entries) {
@@ -98,7 +114,14 @@ function matchGroup(entries: IndexedEntry[], hits: SurfaceHit[]): LineUpdate[] {
     if (hitPosition === -1) continue
     claimedPositions.add(hitPosition)
     const claimedHit = hits.at(hitPosition)
-    if (claimedHit) updates.set(index, claimedHit.line)
+    if (claimedHit) {
+      updates.set(index, {
+        line: claimedHit.line,
+        viaOrdinalFallback: false,
+        hitText: claimedHit.text,
+        entrySymbol: entry.symbol,
+      })
+    }
   }
 
   // Step 2b: exact symbol-to-text match among whatever step 2a left unclaimed.
@@ -110,17 +133,35 @@ function matchGroup(entries: IndexedEntry[], hits: SurfaceHit[]): LineUpdate[] {
     if (hitPosition === -1) continue
     claimedPositions.add(hitPosition)
     const claimedHit = hits.at(hitPosition)
-    if (claimedHit) updates.set(index, claimedHit.line)
+    if (claimedHit) {
+      updates.set(index, {
+        line: claimedHit.line,
+        viaOrdinalFallback: false,
+        hitText: claimedHit.text,
+        entrySymbol: entry.symbol,
+      })
+    }
   }
 
+  // Step 3: ordinal fallback — pairs remaining entries (original order) with remaining hits
+  // (ascending line) purely by position. Flagged `viaOrdinalFallback` so the self-verify pass
+  // (AC-11 hardening) can additionally check `symbol` really corresponds to the claimed hit's
+  // `text`, since positional pairing alone never confirms that.
   const unclaimedHits = hits.filter((_, position) => !claimedPositions.has(position))
   const unmatchedEntries = entries.filter(({ index }) => !updates.has(index))
-  unmatchedEntries.forEach(({ index }, position) => {
+  unmatchedEntries.forEach(({ index, entry }, position) => {
     const fallbackHit = unclaimedHits.at(position)
-    if (fallbackHit) updates.set(index, fallbackHit.line)
+    if (fallbackHit) {
+      updates.set(index, {
+        line: fallbackHit.line,
+        viaOrdinalFallback: true,
+        hitText: fallbackHit.text,
+        entrySymbol: entry.symbol,
+      })
+    }
   })
 
-  return [...updates.entries()].map(([index, line]) => ({ index, line }))
+  return [...updates.entries()].map(([index, value]) => ({ index, ...value }))
 }
 
 /** Returns a new manifest with `line` overridden per `updates`; every other field is untouched. */
@@ -149,6 +190,44 @@ function findFailingGroupKeys(
   for (const failure of failures) {
     const subject = failure.kind === 'unlisted' ? failure.hit : failure.entry
     keys.add(groupKeyOf(subject.path, subject.predicate))
+  }
+  return keys
+}
+
+/**
+ * AC-11 hardening: `diffManifestAgainstHits` only confirms a manifest entry's `(path, line,
+ * predicate)` triple resolves to SOME real hit — it never checks that `entry.symbol` actually
+ * matches THAT hit's `text`. Steps 2a/2b are self-evidently symbol-correct by construction (they
+ * only ever claim a hit whose position or text already matches), so they don't need re-checking
+ * here.
+ *
+ * Step 3's ordinal fallback pairs purely by position, which is only ever AMBIGUOUS — and therefore
+ * only ever a real mis-pairing risk — when a group has two or more entries resolved via step 3: a
+ * lone step-3 pair has no alternative candidate it could have been swapped with, so it is left
+ * alone here exactly like a step-2 match (this also matches this story's own `--write` CLI-mode
+ * fixtures, whose single-entry test symbols are deliberately paraphrased rather than byte-identical
+ * to the source line, and must keep resolving via the unambiguous 1:1 ordinal case).
+ *
+ * For a group with 2+ step-3 pairs, a reordering of same-predicate, same-file entries relative to
+ * their hits CAN mis-pair two textually-real entries while still passing the plain diff — this
+ * scans those pairs and flags the group whenever a (real, non-sentinel) `symbol` doesn't match its
+ * claimed hit's `text`, trimmed. Entries whose `symbol` genuinely is the `"(see comment context)"`
+ * sentinel are exempt from the literal check — that placeholder never carried real source text and
+ * remains eligible via ordinal fallback as before.
+ */
+function findOrdinalSymbolMismatchGroupKeys(matchedGroups: MatchedGroup[]): Set<string> {
+  const keys = new Set<string>()
+  for (const group of matchedGroups) {
+    const ordinalUpdates = group.updates.filter((update) => update.viaOrdinalFallback)
+    if (ordinalUpdates.length < 2) continue
+    for (const update of ordinalUpdates) {
+      const symbol = update.entrySymbol.trim()
+      if (symbol === SEE_COMMENT_CONTEXT_SENTINEL) continue
+      if (symbol !== update.hitText.trim()) {
+        keys.add(group.key)
+        break
+      }
+    }
   }
   return keys
 }
@@ -207,12 +286,18 @@ export function regenerateManifest(
     matchedGroups.push({ key, updates: matchGroup(entries, groupHits) })
   }
 
-  // Step 4: self-verify against the full candidate manifest (every matched group applied).
+  // Step 4: self-verify against the full candidate manifest (every matched group applied), plus
+  // the AC-11 hardening check (see the doc comment on the function below) that any step-3
+  // ordinal-fallback pairing's `symbol` really matches its claimed hit's `text` — the plain diff
+  // alone can't see this.
   const candidateManifest = applyLineUpdates(
     manifest,
     matchedGroups.flatMap((group) => group.updates)
   )
-  const failingGroupKeys = findFailingGroupKeys(repoRoot, hits, candidateManifest)
+  const failingGroupKeys = new Set<string>([
+    ...findFailingGroupKeys(repoRoot, hits, candidateManifest),
+    ...findOrdinalSymbolMismatchGroupKeys(matchedGroups),
+  ])
   const cleanGroups = matchedGroups.filter((group) => !failingGroupKeys.has(group.key))
 
   // Step 5: apply. Only groups that self-verified clean get written; every other group —
