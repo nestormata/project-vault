@@ -304,6 +304,33 @@ export type MonitoringCleanupProjectMonitoringResult = {
   resolvedAlertCount: number
 }
 
+export type MonitoringListServiceEndpointsForSchedulingParams = {
+  organizationId: string
+}
+
+/**
+ * Story 57.1 — deliberately NOT `MonitoringServiceEndpointRecord`. That type's `url` field is
+ * documented above as already-redacted per `serializeServiceEndpoint()`/ADR-6.2-11; reusing it
+ * here would misleadingly imply this method's `url` is also redacted. It is not (see AC2 on
+ * `listServiceEndpointsForScheduling` below) — this is a dedicated sibling type so the shape
+ * itself signals the difference to any future reader, not just a doc comment.
+ */
+export type MonitoringServiceEndpointForScheduling = {
+  id: string
+  orgId: string
+  projectId: string
+  name: string
+  /** RAW, unredacted DB value — may carry embedded credentials (API key in a query param,
+   * userinfo). See `listServiceEndpointsForScheduling`'s own doc comment (AC2) for the full
+   * rationale and the caller's logging responsibility. */
+  url: string
+  checkFrequencyMinutes: number
+  healthCheckPausedAt: string | null
+  consecutiveFailures: number
+  status: MonitoringServiceEndpointStatus
+  lastCheckedAt: string | null
+}
+
 /**
  * Story 34.1 — the real `HostServices.monitoring` field. See this module's doc comment for the
  * full directionality/error-class/org-scoping rationale.
@@ -336,4 +363,18 @@ export type PvMonitoringHost = {
   createServiceEndpoint(
     params: MonitoringCreateServiceEndpointParams
   ): Promise<MonitoringServiceEndpointRecord>
+  /**
+   * Story 57.1 — out-of-request (AC3, same shape as `applyHealthCheckResult`/
+   * `cleanupProjectMonitoring`, no `requireAmbientOrgId()` guard), rate-limited and
+   * audit-logged through the same `callOutOfRequestMethod()` wrapper and
+   * `MONITORING_HOST_MAX_IN_FLIGHT_PER_EXTENSION` budget as those two (AC6). Returns every
+   * non-deleted service endpoint for `organizationId` (AC1) with its **raw, unredacted** `url` —
+   * this is the first `HostServices` method to hand an extension a value that may carry embedded
+   * credentials (an API key in a query param, userinfo). The caller is responsible for never
+   * logging the returned `url` (AC2). Paused endpoints ARE included (`healthCheckPausedAt` set);
+   * no due-ness pre-filtering happens server-side — the caller computes due-ness itself.
+   */
+  listServiceEndpointsForScheduling(
+    params: MonitoringListServiceEndpointsForSchedulingParams
+  ): Promise<MonitoringServiceEndpointForScheduling[]>
 }

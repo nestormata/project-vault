@@ -22,6 +22,7 @@ const monitoringStub = {
   applyHealthCheckResult: rejectUnused,
   cleanupProjectMonitoring: rejectUnused,
   createServiceEndpoint: rejectUnused,
+  listServiceEndpointsForScheduling: rejectUnused,
 }
 // Story 36.1 — HostServices widened to a fifth, required field. This fixture never reads it
 // (only auditEventSource/orgAuthorization matter to this extension), so a stub with a

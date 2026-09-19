@@ -17,6 +17,7 @@ import {
   cleanupServiceEndpointsForProjectDeletion,
   createServiceEndpoint as createServiceEndpointService,
   deleteServiceEndpoint as deleteServiceEndpointService,
+  listServiceEndpointsForOrg as listServiceEndpointsForOrgService,
   serializeServiceEndpoint,
   updateServiceEndpoint as updateServiceEndpointService,
 } from '../modules/monitoring/service.js'
@@ -463,6 +464,21 @@ export function buildMonitoringHost(
         })
         return serializeServiceEndpoint(row)
       })
+    },
+
+    async listServiceEndpointsForScheduling(params) {
+      // Story 57.1 — out-of-request (AC3), same wrapping pattern as `cleanupProjectMonitoring`
+      // above: no resource-identity cross-check needed before entering the wrapper (only an
+      // `organizationId` scope), unlike `applyHealthCheckResult`'s AC7 check.
+      return callOutOfRequestMethod(
+        'listServiceEndpointsForScheduling',
+        params.organizationId,
+        hostContext,
+        () =>
+          withOrg(params.organizationId, (tx) =>
+            listServiceEndpointsForOrgService(tx, params.organizationId)
+          )
+      )
     },
   }
 }

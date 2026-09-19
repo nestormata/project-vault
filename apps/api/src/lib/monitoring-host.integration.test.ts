@@ -476,6 +476,111 @@ describe('buildMonitoringHost — Story 34.1 real-Postgres/RLS integration (AC2,
     })
   })
 
+  describe('listServiceEndpointsForScheduling — Story 57.1 (AC1, AC2, AC5)', () => {
+    it('AC5: cross-tenant scoping — org A with 2 endpoints, org B with 3, calling with org A returns exactly org A rows', async () => {
+      const orgA = await createTestOrg('schedule-cross-a')
+      const orgB = await createTestOrg('schedule-cross-b')
+      const userId = await createTestUser('monitoring-host-schedule-cross')
+      try {
+        const projectA = await insertTestProject(orgA, { userId, slug: 'schedule-cross-a-project' })
+        const projectB = await insertTestProject(orgB, { userId, slug: 'schedule-cross-b-project' })
+        const endpointA1 = await insertTestServiceEndpoint(orgA, projectA.id)
+        const endpointA2 = await insertTestServiceEndpoint(orgA, projectA.id)
+        await insertTestServiceEndpoint(orgB, projectB.id)
+        await insertTestServiceEndpoint(orgB, projectB.id)
+        await insertTestServiceEndpoint(orgB, projectB.id)
+
+        const result = await host.listServiceEndpointsForScheduling({ organizationId: orgA })
+
+        expect(result).toHaveLength(2)
+        expect(new Set(result.map((row) => row.id))).toEqual(
+          new Set([endpointA1.id, endpointA2.id])
+        )
+        expect(result.every((row) => row.orgId === orgA)).toBe(true)
+      } finally {
+        await deleteTestUser(userId)
+      }
+    })
+
+    it('AC5 edge case: a syntactically valid UUID with no real org returns [], never an error', async () => {
+      const result = await host.listServiceEndpointsForScheduling({
+        organizationId: randomUUID(),
+      })
+      expect(result).toEqual([])
+    })
+
+    it('AC1: a paused endpoint is included in the results with healthCheckPausedAt set', async () => {
+      const orgId = await createTestOrg('schedule-paused')
+      const userId = await createTestUser('monitoring-host-schedule-paused')
+      try {
+        const project = await insertTestProject(orgId, { userId, slug: 'schedule-paused-project' })
+        const pausedAt = new Date()
+        const endpoint = await insertTestServiceEndpoint(orgId, project.id, {
+          healthCheckPausedAt: pausedAt,
+          healthCheckPausedBy: userId,
+        })
+
+        const result = await host.listServiceEndpointsForScheduling({ organizationId: orgId })
+
+        expect(result).toHaveLength(1)
+        expect(result[0]?.id).toBe(endpoint.id)
+        expect(result[0]?.healthCheckPausedAt).toBe(pausedAt.toISOString())
+      } finally {
+        await deleteTestUser(userId)
+      }
+    })
+
+    it('AC1: endpoints across multiple projects within the same org are all returned', async () => {
+      const orgId = await createTestOrg('schedule-multi-project')
+      const userId = await createTestUser('monitoring-host-schedule-multi')
+      try {
+        const projectOne = await insertTestProject(orgId, {
+          userId,
+          slug: 'schedule-multi-project-one',
+        })
+        const projectTwo = await insertTestProject(orgId, {
+          userId,
+          slug: 'schedule-multi-project-two',
+        })
+        const endpointOne = await insertTestServiceEndpoint(orgId, projectOne.id)
+        const endpointTwo = await insertTestServiceEndpoint(orgId, projectTwo.id)
+
+        const result = await host.listServiceEndpointsForScheduling({ organizationId: orgId })
+
+        expect(new Set(result.map((row) => row.id))).toEqual(
+          new Set([endpointOne.id, endpointTwo.id])
+        )
+        expect(new Set(result.map((row) => row.projectId))).toEqual(
+          new Set([projectOne.id, projectTwo.id])
+        )
+      } finally {
+        await deleteTestUser(userId)
+      }
+    })
+
+    it('AC2: the returned url is the raw, unredacted DB value even when it carries a secret-shaped query param', async () => {
+      const orgId = await createTestOrg('schedule-raw-url')
+      const userId = await createTestUser('monitoring-host-schedule-raw-url')
+      try {
+        const project = await insertTestProject(orgId, {
+          userId,
+          slug: 'schedule-raw-url-project',
+        })
+        // Test-fixture URL, not a real secret.
+
+        const rawUrl = 'https://api.example.com/health?api_key=secret123'
+
+        await insertTestServiceEndpoint(orgId, project.id, { url: rawUrl })
+
+        const result = await host.listServiceEndpointsForScheduling({ organizationId: orgId })
+
+        expect(result[0]?.url).toBe(rawUrl)
+      } finally {
+        await deleteTestUser(userId)
+      }
+    })
+  })
+
   describe('cleanupServiceEndpointsForProjectDeletion via the host wrapper — atomicity/idempotency (AC7)', () => {
     it('a second call against the same already-cleaned-up project is a no-op: resolvedAlertCount: 0, no duplicate side effects', async () => {
       const orgId = await createTestOrg('idempotent')
