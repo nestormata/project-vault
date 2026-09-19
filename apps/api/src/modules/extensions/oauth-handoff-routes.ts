@@ -459,7 +459,7 @@ async function resolveCallbackPending(
   if (!pending) return undefined
 
   const extension = loadOAuthHandoffExtension()
-  if (!extension || extension.name !== pending.extension_name) return undefined
+  if (extension?.name !== pending.extension_name) return undefined
 
   const state = parsePendingStateJson(pending.state_json)
   if (!state) return undefined

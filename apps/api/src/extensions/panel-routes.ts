@@ -408,10 +408,8 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
           orgRole: secureCtx.auth.orgRole,
         },
         secureCtx.tx,
-        action,
-        { projectId, resourceId },
-        undefined,
-        requestStateCookie
+        { request: action, requestStateCookie },
+        { projectId, resourceId }
       )
 
       const { status, body } = mapModuleActionOutcomeToResponse(result)

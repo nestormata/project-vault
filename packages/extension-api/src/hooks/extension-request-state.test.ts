@@ -20,6 +20,6 @@ describe('ExtensionRequestStateHostService type (Story 40.1 AC3/AC4/AC12)', () =
     const host: ExtensionRequestStateHostService = {
       consume: () => Promise.resolve(undefined),
     }
-    expect(host.consume.length).toBe(0)
+    expect(host.consume).toHaveLength(0)
   })
 })

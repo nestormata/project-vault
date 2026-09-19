@@ -72,9 +72,16 @@ type ModuleActionAttemptOutcome =
  * Story 25.5 Task 3/Sonar S107 — `moduleAction`/`knownActions` are both derived from the same
  * loaded-extension state and always passed together (the AC2 allowlist check below, then the
  * `onAction()` call itself), so they're bundled into one parameter, the same rationale as
- * `ModuleActionPanelTarget` above.
+ * `ModuleActionPanelTarget` above. Story 40.1/Sonar S107 — `extensionName`/`requestStateCookie`
+ * joined this bundle rather than becoming a 9th positional parameter: both are also derived from
+ * the same loaded-extension/request state and consumed together, only by `peekRequestState()`.
  */
-type ModuleActionCapability = { moduleAction: ModuleAction; knownActions: readonly string[] }
+type ModuleActionCapability = {
+  moduleAction: ModuleAction
+  knownActions: readonly string[]
+  extensionName: string
+  requestStateCookie: string | undefined
+}
 
 /**
  * Story 25.5 Task 3 — the single unit of work `raceWithTimeout()` races: the AC2 action-kind
@@ -90,8 +97,7 @@ async function resolveModuleActionContextAndDispatch(
   query: PanelQuery,
   deps: RenderExtensionPanelDeps,
   capability: ModuleActionCapability,
-  request: ModuleActionRequestBody,
-  requestStateScope: { extensionName: string; requestStateCookie: string | undefined }
+  request: ModuleActionRequestBody
 ): Promise<ModuleActionAttemptOutcome> {
   const { moduleAction, knownActions } = capability
   // AC2: checked BEFORE onAction() is ever invoked — a request naming an action.kind the
@@ -119,8 +125,8 @@ async function resolveModuleActionContextAndDispatch(
   // `uiPanel`'s own `resolveBaseModuleActionContext()` call sites (`extension-panel.ts`,
   // `oauth-handoff-routes.ts`'s `handleStart`) — see `ModuleActionContext.requestState`'s own doc
   // comment for the "point-in-time snapshot, computed once before onAction() runs" contract.
-  const requestState = await peekRequestState(requestStateScope.requestStateCookie, {
-    extensionName: requestStateScope.extensionName,
+  const requestState = await peekRequestState(capability.requestStateCookie, {
+    extensionName: capability.extensionName,
     orgId: identity.orgId,
     identityId: identity.userId,
   })
@@ -190,6 +196,20 @@ function finalizeModuleActionResult(
 export type ModuleActionPanelTarget = { slot: string; knownSlots: readonly string[] }
 
 /**
+ * Story 40.1 AC2/AC8/Sonar S107 — `request`/`requestStateCookie` are both the parsed inbound
+ * `moduleAction` request's own data and always passed together, so they're bundled into one
+ * parameter rather than becoming a positional 8th argument to `handleModuleAction()`, the same
+ * rationale as `ModuleActionPanelTarget`/`ModuleActionCapability` above.
+ * `requestStateCookie` is deliberately a field here (never read off `query`) so it stays obvious
+ * at every call site that only `moduleAction` routes ever supply it — `uiPanel`'s own render path
+ * has no equivalent field at all (AC8).
+ */
+export type ModuleActionRequest = {
+  request: ModuleActionRequestBody
+  requestStateCookie?: string
+}
+
+/**
  * Story 25.5 Task 3 — `POST /extensions/panels/:slot/actions`'s reusable dispatch function,
  * sibling to `renderExtensionPanel()` (same file's dependency-injection discipline). Re-derives
  * the caller's identity/org/project/locale/theme context fresh per call, reusing
@@ -201,15 +221,11 @@ export async function handleModuleAction(
   logger: PanelLoggerLike,
   identity: PanelIdentity,
   tx: Tx,
-  request: ModuleActionRequestBody,
+  moduleActionRequest: ModuleActionRequest,
   query: PanelQuery = {},
-  deps: RenderExtensionPanelDeps = defaultRenderExtensionPanelDeps,
-  // Story 40.1 AC2/AC8 — the raw `extension-request-state` cookie value off the inbound
-  // `moduleAction` request, if any. Deliberately a separate, explicit parameter (never read off
-  // `query`/`request`) so it is obvious at every call site that only `moduleAction` routes ever
-  // supply it — `uiPanel`'s own render path has no equivalent parameter at all (AC8).
-  requestStateCookie?: string
+  deps: RenderExtensionPanelDeps = defaultRenderExtensionPanelDeps
 ): Promise<ModuleActionOutcome> {
+  const { request, requestStateCookie } = moduleActionRequest
   const { slot, knownSlots } = panelTarget
   if (!knownSlots.includes(slot)) {
     return { outcome: 'invalid_slot' }
@@ -235,9 +251,8 @@ export async function handleModuleAction(
         tx,
         query,
         deps,
-        { moduleAction, knownActions },
-        request,
-        { extensionName: status.manifest.name, requestStateCookie }
+        { moduleAction, knownActions, extensionName: status.manifest.name, requestStateCookie },
+        request
       ),
     MODULE_ACTION_TIMEOUT_MS
   )
