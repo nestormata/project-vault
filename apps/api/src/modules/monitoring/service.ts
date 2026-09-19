@@ -15,6 +15,7 @@ import {
   computeStatusTransition,
   episodeKeyFor,
   type MonitoringAlertType,
+  type ServiceEndpointStatus,
 } from '../../workers/monitoring-alert-shared.js'
 import type {
   CreateCertificateBody,
@@ -449,7 +450,7 @@ export function serializeServiceEndpoint(row: typeof serviceEndpoints.$inferSele
     url: redactUrlForDisplay(row.url),
     checkFrequencyMinutes: row.checkFrequencyMinutes,
     downThresholdFailures: row.downThresholdFailures,
-    status: row.status as 'healthy' | 'degraded' | 'down',
+    status: row.status as ServiceEndpointStatus,
     consecutiveFailures: row.consecutiveFailures,
     lastCheckedAt: row.lastCheckedAt?.toISOString() ?? null,
     healthCheckPaused: row.healthCheckPausedAt !== null,
@@ -476,6 +477,38 @@ export async function listServiceEndpoints(tx: Tx, projectId: string) {
     .where(eq(serviceEndpoints.projectId, projectId))
     .orderBy(serviceEndpoints.createdAt)
   return rows.map(serializeServiceEndpoint)
+}
+
+/**
+ * Story 57.1 (AC1, AC4, AC5) — org-wide (not per-project) service-endpoint list for
+ * `HostServices.monitoring.listServiceEndpointsForScheduling`. Queries `serviceEndpoints.orgId`
+ * directly (the column already exists on every row; no `projects` join needed). Deliberately
+ * does NOT call `serializeServiceEndpoint()` (AC2 — that redacts `url` via
+ * `redactUrlForDisplay()`, which would make the returned URL unprobeable for this method's own
+ * caller) and builds its return value via an explicit whitelist mapper — never a wholesale
+ * `...row` spread — so a future schema addition (e.g. a new secret-shaped column) cannot
+ * silently leak to extension code through this path just because it wasn't added to
+ * `serializeServiceEndpoint`'s own exclusion list. Ordered by `createdAt` for determinism,
+ * matching `listServiceEndpoints`'s existing per-project ordering.
+ */
+export async function listServiceEndpointsForOrg(tx: Tx, orgId: string) {
+  const rows = await tx
+    .select()
+    .from(serviceEndpoints)
+    .where(eq(serviceEndpoints.orgId, orgId))
+    .orderBy(serviceEndpoints.createdAt)
+  return rows.map((row) => ({
+    id: row.id,
+    orgId: row.orgId,
+    projectId: row.projectId,
+    name: row.name,
+    url: row.url,
+    checkFrequencyMinutes: row.checkFrequencyMinutes,
+    healthCheckPausedAt: row.healthCheckPausedAt?.toISOString() ?? null,
+    consecutiveFailures: row.consecutiveFailures,
+    status: row.status as ServiceEndpointStatus,
+    lastCheckedAt: row.lastCheckedAt?.toISOString() ?? null,
+  }))
 }
 
 /**
@@ -829,7 +862,7 @@ export async function applyHealthCheckResult(
   })
 
   const transition = computeStatusTransition({
-    currentStatus: input.serviceEndpoint.status as 'healthy' | 'degraded' | 'down',
+    currentStatus: input.serviceEndpoint.status as ServiceEndpointStatus,
     consecutiveFailures: input.serviceEndpoint.consecutiveFailures,
     downThresholdFailures: input.serviceEndpoint.downThresholdFailures,
     isHealthy: input.isHealthy,

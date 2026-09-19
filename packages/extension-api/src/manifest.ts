@@ -480,7 +480,7 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // required shape changes, and the floor stays `>=3.0.0` so every already-shipped extension
 // (including any real, currently-deployed CentralizeMe build) keeps loading unmodified
 // regardless.
-export const EXTENSION_API_VERSION = '3.19.0'
+export const EXTENSION_API_VERSION = '3.20.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

@@ -57,6 +57,7 @@ const monitoringFixture: PvMonitoringHost = {
     createdAt: TEST_DATE,
     updatedAt: TEST_DATE,
   }),
+  listServiceEndpointsForScheduling: async () => [],
 }
 
 const notificationOriginatorFixture: NotificationOriginatorHost = {

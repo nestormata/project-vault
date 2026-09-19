@@ -5,6 +5,7 @@ import {
   MonitoringOrgMismatchError,
   MonitoringRateLimitedError,
   MonitoringResourceNotFoundError,
+  type MonitoringServiceEndpointForScheduling,
   type MonitoringServiceEndpointRecord,
   type PvMonitoringHost,
 } from './monitoring.js'
@@ -26,6 +27,21 @@ const FIXTURE_SERVICE_ENDPOINT: MonitoringServiceEndpointRecord = {
   createdBy: null,
   createdAt: '2026-09-06T00:00:00.000Z',
   updatedAt: '2026-09-06T00:00:00.000Z',
+}
+
+// Story 57.1 — deliberately a raw (unredacted-shaped) fixture url, distinct from
+// FIXTURE_SERVICE_ENDPOINT above, to underline that this is a different sibling type (AC2).
+const FIXTURE_SERVICE_ENDPOINT_FOR_SCHEDULING: MonitoringServiceEndpointForScheduling = {
+  id: 'se_1',
+  orgId: 'org_1',
+  projectId: 'p_1',
+  name: 'Fixture Endpoint',
+  url: 'https://example.com/health?api_key=fixture',
+  checkFrequencyMinutes: 5,
+  healthCheckPausedAt: null,
+  consecutiveFailures: 0,
+  status: 'healthy',
+  lastCheckedAt: null,
 }
 
 describe('monitoring hook error classes (Story 34.1 AC2/AC3/AC6/AC7)', () => {
@@ -76,8 +92,8 @@ describe('monitoring hook error classes (Story 34.1 AC2/AC3/AC6/AC7)', () => {
   })
 })
 
-describe('PvMonitoringHost — the inverted hook shape (Story 34.1 AC1/AC2/AC3, Story 41.1 AC1)', () => {
-  it('typechecks a full implementation covering all nine methods', async () => {
+describe('PvMonitoringHost — the inverted hook shape (Story 34.1 AC1/AC2/AC3, Story 41.1 AC1, Story 57.1)', () => {
+  it('typechecks a full implementation covering all ten methods', async () => {
     const host: PvMonitoringHost = {
       deleteServiceEndpoint: async () => null,
       updateServiceEndpointPauseState: async () => null,
@@ -95,6 +111,7 @@ describe('PvMonitoringHost — the inverted hook shape (Story 34.1 AC1/AC2/AC3, 
       }),
       cleanupProjectMonitoring: async () => ({ resolvedAlertCount: 0 }),
       createServiceEndpoint: async () => FIXTURE_SERVICE_ENDPOINT,
+      listServiceEndpointsForScheduling: async () => [FIXTURE_SERVICE_ENDPOINT_FOR_SCHEDULING],
     }
 
     expect(
@@ -143,5 +160,9 @@ describe('PvMonitoringHost — the inverted hook shape (Story 34.1 AC1/AC2/AC3, 
         url: 'https://example.com',
       })
     ).toEqual(FIXTURE_SERVICE_ENDPOINT)
+
+    expect(await host.listServiceEndpointsForScheduling({ organizationId: 'org_1' })).toEqual([
+      FIXTURE_SERVICE_ENDPOINT_FOR_SCHEDULING,
+    ])
   })
 })

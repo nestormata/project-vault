@@ -60,6 +60,9 @@ function fakeHostServices(overrides: Partial<HostServices> = {}): HostServices {
       disableStatusPage: unavailable('monitoring.disableStatusPage'),
       applyHealthCheckResult: unavailable('monitoring.applyHealthCheckResult'),
       cleanupProjectMonitoring: unavailable('monitoring.cleanupProjectMonitoring'),
+      listServiceEndpointsForScheduling: unavailable(
+        'monitoring.listServiceEndpointsForScheduling'
+      ),
     },
     notificationOriginator: {
       enqueueNotification: unavailable('notificationOriginator.enqueueNotification'),
