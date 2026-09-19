@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { getDb } from '@project-vault/db'
-import { extensionOauthPendingStates } from '@project-vault/db/schema'
+import { extensionOauthPendingStates, extensionRequestStates } from '@project-vault/db/schema'
 import type { ModuleActionContext, OAuthHandoffHooks } from '@project-vault/extension-api'
 import {
   bootstrapRouteIntegrationTest,
@@ -19,6 +19,7 @@ import {
 } from '../../extensions/loader.js'
 import type { ExtensionState } from '../../extensions/loader.js'
 import { MAX_STATE_SIZE_BYTES, PENDING_TTL_MS } from './oauth-handoff-routes.js'
+import { REQUEST_STATE_COOKIE_NAME } from '../../lib/extension-request-state.js'
 
 const { initVault } = await bootstrapRouteIntegrationTest()
 
@@ -512,26 +513,38 @@ describe('GET /api/v1/extensions/oauth-handoff/callback (Story 39.1 AC2/AC3)', (
   })
 })
 
+/**
+ * Shared by AC4 (below) and Story 40.1's AC7 describe block — both scan every non-test `.ts`
+ * file under `apps/api/src` for `setCookie(...)` call sites, so this walk is extracted once
+ * rather than hand-copied per cookie-name-disjointness test (AC11-style rule-of-three discipline,
+ * applied within this one test file).
+ */
+async function tsFilesUnderApiSrc(): Promise<string[]> {
+  const { readdirSync, statSync } = await import('node:fs')
+  const { resolve } = await import('node:path')
+
+  // apps/api/src is this test file's own ancestor — walk up from here rather than trusting an
+  // ambient cwd (which differs between `vitest run` invoked from the repo root vs this package).
+  const apiSrcRoot = resolve(new URL('.', import.meta.url).pathname, '../../')
+
+  function tsFilesUnder(dir: string): string[] {
+    const files: string[] = []
+    for (const entry of readdirSync(dir)) {
+      if (entry === 'node_modules' || entry === 'dist') continue
+      const fullPath = resolve(dir, entry)
+      const stat = statSync(fullPath)
+      if (stat.isDirectory()) files.push(...tsFilesUnder(fullPath))
+      else if (entry.endsWith('.ts') && !entry.endsWith('.test.ts')) files.push(fullPath)
+    }
+    return files
+  }
+
+  return tsFilesUnder(apiSrcRoot)
+}
+
 describe('AC4: cookie namespace does not collide with any existing PV cookie name', () => {
   it('oauth-handoff-pending is disjoint from every other literal cookie name used by setCookie(...) call sites', async () => {
-    const { readdirSync, readFileSync, statSync } = await import('node:fs')
-    const { resolve } = await import('node:path')
-
-    // apps/api/src is this test file's own ancestor — walk up from here rather than trusting an
-    // ambient cwd (which differs between `vitest run` invoked from the repo root vs this package).
-    const apiSrcRoot = resolve(new URL('.', import.meta.url).pathname, '../../')
-
-    function tsFilesUnder(dir: string): string[] {
-      const files: string[] = []
-      for (const entry of readdirSync(dir)) {
-        if (entry === 'node_modules' || entry === 'dist') continue
-        const fullPath = resolve(dir, entry)
-        const stat = statSync(fullPath)
-        if (stat.isDirectory()) files.push(...tsFilesUnder(fullPath))
-        else if (entry.endsWith('.ts') && !entry.endsWith('.test.ts')) files.push(fullPath)
-      }
-      return files
-    }
+    const { readFileSync } = await import('node:fs')
 
     // `setCookie('literal', ...)` string-literal call sites (handoff-routes.ts, tokens.ts, etc).
     const literalNames = new Set<string>()
@@ -540,7 +553,7 @@ describe('AC4: cookie namespace does not collide with any existing PV cookie nam
     // constant's own declaration (`const OAUTH_HANDOFF_COOKIE_NAME = '...'`).
     const constantDeclaredNames = new Set<string>()
 
-    for (const filePath of tsFilesUnder(apiSrcRoot)) {
+    for (const filePath of await tsFilesUnderApiSrc()) {
       const source = readFileSync(filePath, 'utf8')
       for (const match of source.matchAll(/setCookie\(\s*['"]([^'"]+)['"]/g)) {
         if (match[1]) literalNames.add(match[1])
@@ -612,5 +625,169 @@ describe('AC8: version-skew invariant sanity (not a full CI-script re-run, see s
     if (state.status !== 'loaded') throw new Error('expected loaded state')
     expect(state.manifest.capabilities).toContain(OAUTH_HANDOFF_CAPABILITY)
     expect(state.manifest.redirectOrigins).toEqual([PROVIDER_ORIGIN, PV_ORIGIN])
+  })
+})
+
+// Story 40.1 — persistState leg tests. Mirrors the file's own existing suite conventions above.
+describe('Story 40.1 AC1/AC5/AC6/Pre-Mortem-3: persistState leg of the callback route', () => {
+  suite.registerLifecycle()
+
+  beforeEach(async () => {
+    __resetExtensionStateForTests()
+    await getDb().delete(extensionOauthPendingStates)
+    await getDb().delete(extensionRequestStates)
+  })
+
+  async function startAndGetCookieWithCallback(
+    app: TestApp,
+    cookies: CookieJar,
+    onOAuthCallback: OAuthHandoffHooks['onOAuthCallback']
+  ): Promise<string> {
+    __setExtensionStateForTests(defaultHandoffState(undefined, onOAuthCallback))
+    const res = await postStart(app, cookies)
+    expect(res.statusCode).toBe(302)
+    return extractPendingCookie(res)
+  }
+
+  it('AC1: onOAuthCallback returning persistState mints a second cookie + extension_request_states row', async () => {
+    const member = await createDirectAuthenticatedUser(suite.app, 'persist-ac1', 'member')
+    const cookieValue = await startAndGetCookieWithCallback(
+      suite.app,
+      member.cookies,
+      async () => ({
+        outcome: 'redirect',
+        url: CALLBACK_TARGET_URL,
+        state: {},
+        persistState: { selectionId: 'abc123' },
+      })
+    )
+
+    const res = await getCallback(suite.app, cookieValue)
+
+    expect(res.statusCode).toBe(302)
+    const cookies = parseSetCookies(res.headers['set-cookie'] as string | string[] | undefined)
+    expect(cookies[REQUEST_STATE_COOKIE_NAME]).toBeDefined()
+
+    const rows = await getDb().select().from(extensionRequestStates)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.consumedAt).toBeNull()
+    expect(JSON.parse(rows[0]?.stateJson ?? '{}')).toEqual({ selectionId: 'abc123' })
+    expect(rows[0]?.orgId).toBe(member.orgId)
+    expect(rows[0]?.identityId).toBe(member.userId)
+    const ttlMs = (rows[0]?.expiresAt?.getTime() ?? 0) - Date.now()
+    expect(ttlMs).toBeGreaterThan(25 * 60 * 1000)
+    expect(ttlMs).toBeLessThanOrEqual(30 * 60 * 1000)
+  })
+
+  it('AC5: persistState on onOAuthStart has no effect — no second cookie/row, no change to the start leg', async () => {
+    const member = await createDirectAuthenticatedUser(suite.app, 'persist-ac5', 'member')
+    __setExtensionStateForTests(
+      defaultHandoffState(async () => ({
+        outcome: 'redirect',
+        url: PROVIDER_AUTHORIZE_URL,
+        state: { nonce: 'abc' },
+        // Misuse: persistState is only meaningful on onOAuthCallback.
+        persistState: { shouldNeverPersist: true },
+      }))
+    )
+
+    const res = await postStart(suite.app, member.cookies)
+
+    expect(res.statusCode).toBe(302)
+    const cookies = parseSetCookies(res.headers['set-cookie'] as string | string[] | undefined)
+    expect(cookies[REQUEST_STATE_COOKIE_NAME]).toBeUndefined()
+    expect(await getDb().select().from(extensionRequestStates)).toHaveLength(0)
+  })
+
+  it('AC6: an oversized persistState never mints a row/cookie but leaves the redirect unaffected', async () => {
+    const member = await createDirectAuthenticatedUser(suite.app, 'persist-ac6', 'member')
+    const cookieValue = await startAndGetCookieWithCallback(
+      suite.app,
+      member.cookies,
+      async () => ({
+        outcome: 'redirect',
+        url: CALLBACK_TARGET_URL,
+        state: {},
+        persistState: { big: 'x'.repeat(5000) },
+      })
+    )
+
+    const res = await getCallback(suite.app, cookieValue)
+
+    expect(res.statusCode).toBe(302)
+    expect(res.headers['location']).toBe(CALLBACK_TARGET_URL)
+    const cookies = parseSetCookies(res.headers['set-cookie'] as string | string[] | undefined)
+    expect(cookies[REQUEST_STATE_COOKIE_NAME]).toBeUndefined()
+    expect(await getDb().select().from(extensionRequestStates)).toHaveLength(0)
+  })
+
+  it('stray persistState on a non-redirect callback outcome is ignored entirely (Boundary Sweep)', async () => {
+    const member = await createDirectAuthenticatedUser(suite.app, 'persist-nonredirect', 'member')
+    // A stray `persistState` field on a non-redirect ActionResult (a misuse the type system
+    // doesn't forbid via a plain object literal in this contextually-typed position — see the
+    // real `@ts-expect-error` proofs in `module-action.test.ts` for the enforced type-level
+    // guarantees this story adds); the route must never read it regardless.
+    const strayPersistCallback = (async () => ({
+      outcome: 'denied',
+      persistState: { shouldNeverPersist: true },
+    })) as OAuthHandoffHooks['onOAuthCallback']
+    const cookieValue = await startAndGetCookieWithCallback(
+      suite.app,
+      member.cookies,
+      strayPersistCallback
+    )
+
+    const res = await getCallback(suite.app, cookieValue)
+
+    expect(res.statusCode).toBe(403)
+    expect(await getDb().select().from(extensionRequestStates)).toHaveLength(0)
+  })
+
+  it('Pre-Mortem 3: a rejected redirect (invalid origin) never leaves an orphaned extension_request_states row', async () => {
+    const member = await createDirectAuthenticatedUser(suite.app, 'persist-premortem3', 'member')
+    const cookieValue = await startAndGetCookieWithCallback(
+      suite.app,
+      member.cookies,
+      async () => ({
+        outcome: 'redirect',
+        url: 'https://attacker.example/steal',
+        state: {},
+        persistState: { selectionId: 'should-not-persist' },
+      })
+    )
+
+    const res = await getCallback(suite.app, cookieValue)
+
+    expect(res.statusCode).toBe(401)
+    expect(await getDb().select().from(extensionRequestStates)).toHaveLength(0)
+  })
+})
+
+describe('Story 40.1 AC7: extension-request-state cookie namespace is disjoint from every existing PV cookie, including oauth-handoff-pending', () => {
+  it('extension-request-state is disjoint from every other literal/constant cookie name used by setCookie(...) call sites', async () => {
+    const { readFileSync } = await import('node:fs')
+
+    const literalNames = new Set<string>()
+    const constantDeclaredNames = new Set<string>()
+
+    for (const filePath of await tsFilesUnderApiSrc()) {
+      const source = readFileSync(filePath, 'utf8')
+      for (const match of source.matchAll(/setCookie\(\s*['"]([^'"]+)['"]/g)) {
+        if (match[1]) literalNames.add(match[1])
+      }
+      for (const match of source.matchAll(/const [A-Z_]*COOKIE[A-Z_]*NAME\w* = '([^']+)'/g)) {
+        if (match[1]) constantDeclaredNames.add(match[1])
+      }
+    }
+
+    expect(literalNames.size).toBeGreaterThan(1)
+    expect(constantDeclaredNames.has(REQUEST_STATE_COOKIE_NAME)).toBe(true)
+    expect(constantDeclaredNames.has(OAUTH_HANDOFF_COOKIE_NAME)).toBe(true)
+
+    expect(literalNames.has(REQUEST_STATE_COOKIE_NAME)).toBe(false)
+    for (const name of constantDeclaredNames) {
+      if (name === REQUEST_STATE_COOKIE_NAME) continue
+      expect(name).not.toBe(REQUEST_STATE_COOKIE_NAME)
+    }
   })
 })

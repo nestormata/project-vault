@@ -52,8 +52,10 @@ describe('EXTENSION_API_VERSION', () => {
     // additive-minor): 3.15.0 -> 3.16.0. Story 41.1 AC1-AC6 — HostServices.monitoring gains
     // createServiceEndpoint (also additive-minor): 3.16.0 -> 3.17.0. Story 56.1 AC1/AC4 —
     // ExtensionCapability's 'scheduled-task' literal, ExtensionManifest's scheduledTasks?, and
-    // ExtensionHooks' scheduledTask? (also additive-minor): 3.17.0 -> 3.18.0.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.18.0')
+    // ExtensionHooks' scheduledTask? (also additive-minor): 3.17.0 -> 3.18.0. Story 40.1 AC1/AC2/
+    // AC3/AC10 — OAuthHandoffRedirectResult.persistState?, ModuleActionContext.requestState?, and
+    // HostServices.extensionRequestState (also additive-minor): 3.18.0 -> 3.19.0.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.19.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

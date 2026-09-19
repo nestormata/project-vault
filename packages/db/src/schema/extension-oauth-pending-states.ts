@@ -52,6 +52,17 @@ export const extensionOauthPendingStates = pgTable(
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Story 40.1 — nullable, purely additive metadata: `handleStart()`'s own authenticated caller
+     * identity (`ctx.auth.orgId`/`ctx.auth.userId`), captured at START-leg mint time so the
+     * CALLBACK leg (hit by an external OAuth provider with no PV session of its own — see
+     * `oauth-handoff.ts`'s `onOAuthCallback` doc comment) can still know WHO started this journey
+     * when it needs to mint this story's own `extension_request_states` row (AC12's `org_id`/
+     * `identity_id` scoping). Never read/enforced by 39.1's own burn-before-use logic — that
+     * mechanism's single-use-cookie replay protection is unaffected by these two columns' values.
+     */
+    orgId: text('org_id'),
+    identityId: text('identity_id'),
   },
   (t) => ({
     expiresAtIdx: index('idx_extension_oauth_pending_states_expires_at').on(t.expiresAt),

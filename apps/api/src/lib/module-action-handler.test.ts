@@ -64,7 +64,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
       silentLogger(),
       IDENTITY_1,
       FAKE_TX,
-      RENAME_ACTION,
+      { request: RENAME_ACTION },
       {},
       fakeDeps()
     )
@@ -77,7 +77,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
       silentLogger(),
       IDENTITY_1,
       FAKE_TX,
-      RENAME_ACTION,
+      { request: RENAME_ACTION },
       {},
       fakeDeps()
     )
@@ -94,7 +94,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
       silentLogger(),
       IDENTITY_1,
       FAKE_TX,
-      { kind: 'delete-everything' },
+      { request: { kind: 'delete-everything' } },
       {},
       fakeDeps()
     )
@@ -110,7 +110,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
       silentLogger(),
       IDENTITY_1,
       FAKE_TX,
-      RENAME_ACTION,
+      { request: RENAME_ACTION },
       {},
       fakeDeps()
     )
@@ -132,7 +132,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
       silentLogger(),
       IDENTITY_1,
       FAKE_TX,
-      RENAME_ACTION,
+      { request: RENAME_ACTION },
       {},
       fakeDeps()
     )
@@ -156,7 +156,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
       silentLogger(),
       IDENTITY_1,
       FAKE_TX,
-      RENAME_ACTION,
+      { request: RENAME_ACTION },
       {},
       fakeDeps()
     )
@@ -180,7 +180,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
       logger,
       IDENTITY_1,
       FAKE_TX,
-      RENAME_ACTION,
+      { request: RENAME_ACTION },
       {},
       fakeDeps()
     )
@@ -203,7 +203,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
       logger,
       IDENTITY_1,
       FAKE_TX,
-      RENAME_ACTION,
+      { request: RENAME_ACTION },
       {},
       fakeDeps()
     )
@@ -223,7 +223,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
       silentLogger(),
       IDENTITY_1,
       FAKE_TX,
-      RENAME_ACTION,
+      { request: RENAME_ACTION },
       {},
       fakeDeps()
     )
@@ -243,7 +243,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
       silentLogger(),
       IDENTITY_1,
       FAKE_TX,
-      RENAME_ACTION,
+      { request: RENAME_ACTION },
       {},
       fakeDeps()
     )
@@ -271,7 +271,9 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
         silentLogger(),
         IDENTITY_1,
         FAKE_TX,
-        { kind: ADD_MEMBER_KIND, orgId: 'org-b', userId: 'user-b', projectId: 'proj-b' },
+        {
+          request: { kind: ADD_MEMBER_KIND, orgId: 'org-b', userId: 'user-b', projectId: 'proj-b' },
+        },
         {},
         fakeDeps()
       )
@@ -290,7 +292,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
         silentLogger(),
         IDENTITY_1,
         FAKE_TX,
-        { kind: ADD_MEMBER_KIND },
+        { request: { kind: ADD_MEMBER_KIND } },
         { projectId: 'proj-not-visible' },
         deps
       )
@@ -321,7 +323,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
         silentLogger(),
         IDENTITY_1,
         FAKE_TX,
-        { kind: ADD_MEMBER_KIND },
+        { request: { kind: ADD_MEMBER_KIND } },
         {},
         fakeDeps({ getUserLocale: vi.fn(async () => 'en' as const) })
       ),
@@ -330,7 +332,7 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
         silentLogger(),
         IDENTITY_2,
         FAKE_TX,
-        { kind: ADD_MEMBER_KIND },
+        { request: { kind: ADD_MEMBER_KIND } },
         {},
         fakeDeps({ getUserLocale: vi.fn(async () => 'es' as const) })
       ),

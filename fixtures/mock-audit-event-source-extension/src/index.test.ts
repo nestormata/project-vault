@@ -27,6 +27,7 @@ const monitoringStub = {
 // (only auditEventSource/orgAuthorization matter to this extension), so a stub with a
 // never-invoked reject is sufficient here.
 const notificationOriginatorStub = { enqueueNotification: rejectUnused }
+const extensionRequestStateStub = { consume: rejectUnused }
 
 describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
   it('declares a valid, reverse-DNS manifest with only the audit-event-source capability', () => {
@@ -58,6 +59,7 @@ describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
       },
       monitoring: monitoringStub,
       notificationOriginator: notificationOriginatorStub,
+      extensionRequestState: extensionRequestStateStub,
     })
     expect(hooks).toEqual({})
   })
@@ -89,6 +91,7 @@ describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
       },
       monitoring: monitoringStub,
       notificationOriginator: notificationOriginatorStub,
+      extensionRequestState: extensionRequestStateStub,
     })
 
     const result = await triggerAuditWrite({

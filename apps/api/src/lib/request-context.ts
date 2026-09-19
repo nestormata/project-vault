@@ -9,6 +9,16 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 export type RequestContext = {
   orgId: string
   userId: string
+  /**
+   * Story 40.1 — the raw `extension-request-state` cookie value on the CURRENT `moduleAction`
+   * request, if any (`undefined` on every other request kind — `uiPanel`, `oauth-handoff`, etc.
+   * never bind this field). This is the one binding point
+   * `HostServices.extensionRequestState.consume()` (`extension-request-state-host.ts`) reads to
+   * resolve which pending row to atomically burn, mirroring `orgId`/`userId`'s own
+   * ambient-per-request-context shape exactly — an extension's `consume()` call takes no
+   * parameters, so the cookie must already be ambient by the time it's invoked.
+   */
+  extensionRequestStateCookie?: string
 }
 
 /**

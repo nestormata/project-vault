@@ -3,14 +3,26 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
+import type { FastifyReply } from 'fastify'
 import { getDb, withOrg } from '@project-vault/db'
-import { organizations, projectMemberships, projects, users } from '@project-vault/db/schema'
+import {
+  extensionRequestStates,
+  organizations,
+  projectMemberships,
+  projects,
+  users,
+} from '@project-vault/db/schema'
 import type {
   ModuleAction,
   ModuleActionContext,
   UIPanel,
   UIPanelContext,
 } from '@project-vault/extension-api'
+import {
+  REQUEST_STATE_COOKIE_NAME,
+  mintRequestStateAndCookie,
+} from '../lib/extension-request-state.js'
+import { createExtensionRequestStateHost } from '../lib/extension-request-state-host.js'
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
@@ -1425,5 +1437,244 @@ describe('POST /api/v1/extensions/panels/:slot/actions (Story 25.5)', () => {
     const forB = captured.find((c) => c.identity.userId === memberB.userId)
     expect(forA?.orgId).toBe(memberA.orgId)
     expect(forB?.orgId).toBe(memberB.orgId)
+  })
+})
+
+// Story 40.1 — request-state peek (context.requestState)/consume (host.extensionRequestState.
+// consume()) tests. Mirrors this file's own moduleAction-route conventions above.
+describe('Story 40.1: extension-request-state peek/consume on POST .../actions (AC2/AC3/AC4/AC12)', () => {
+  suite.registerLifecycle()
+
+  const EXTENSION_NAME = 'com.example.ext'
+
+  beforeEach(async () => {
+    __resetExtensionStateForTests()
+    await getDb().delete(extensionRequestStates)
+  })
+
+  function fakeReply(): FastifyReply & { setCookie: ReturnType<typeof vi.fn> } {
+    return { setCookie: vi.fn() } as unknown as FastifyReply & {
+      setCookie: ReturnType<typeof vi.fn>
+    }
+  }
+
+  async function mintRowAndCookie(scope: {
+    orgId: string
+    identityId: string
+    persistState: Record<string, unknown>
+  }): Promise<string> {
+    const reply = fakeReply()
+    const outcome = await mintRequestStateAndCookie(reply, {
+      extensionName: EXTENSION_NAME,
+      ...scope,
+    })
+    expect(outcome).toEqual({ ok: true })
+    return (reply.setCookie.mock.calls[0] as unknown as [string, string])[1]
+  }
+
+  it('AC2: context.requestState equals the persisted state verbatim, and a repeat request still sees it', async () => {
+    const member = await createDirectAuthenticatedUser(suite.app, 'reqstate-peek', 'member')
+    const rawCookie = await mintRowAndCookie({
+      orgId: member.orgId,
+      identityId: member.userId,
+      persistState: { selectionId: 'abc123' },
+    })
+    const seen: Array<Record<string, unknown> | undefined> = []
+    __setExtensionStateForTests(
+      actionState(async (context) => {
+        seen.push(context.requestState)
+        return { outcome: 'ok' }
+      })
+    )
+
+    const cookies = { ...member.cookies, [REQUEST_STATE_COOKIE_NAME]: rawCookie }
+    const res1 = await postAction(suite.app, ACTION_SLOT, { kind: RENAME_ACTION_KIND }, cookies)
+    const res2 = await postAction(suite.app, ACTION_SLOT, { kind: RENAME_ACTION_KIND }, cookies)
+
+    expect(res1.statusCode).toBe(200)
+    expect(res2.statusCode).toBe(200)
+    expect(seen).toEqual([{ selectionId: 'abc123' }, { selectionId: 'abc123' }])
+
+    const rows = await getDb().select().from(extensionRequestStates)
+    expect(rows[0]?.consumedAt).toBeNull()
+  })
+
+  it('AC4: no cookie at all resolves requestState to undefined, never an error', async () => {
+    const member = await createDirectAuthenticatedUser(suite.app, 'reqstate-nocookie', 'member')
+    let seen: Record<string, unknown> | undefined = { sentinel: true }
+    __setExtensionStateForTests(
+      actionState(async (context) => {
+        seen = context.requestState
+        return { outcome: 'ok' }
+      })
+    )
+
+    const res = await postAction(
+      suite.app,
+      ACTION_SLOT,
+      { kind: RENAME_ACTION_KIND },
+      member.cookies
+    )
+
+    expect(res.statusCode).toBe(200)
+    expect(seen).toBeUndefined()
+  })
+
+  it('AC3: host.extensionRequestState.consume() burns the row; a second consume in a later request returns undefined and the peek stops seeing it', async () => {
+    const member = await createDirectAuthenticatedUser(suite.app, 'reqstate-consume', 'member')
+    const rawCookie = await mintRowAndCookie({
+      orgId: member.orgId,
+      identityId: member.userId,
+      persistState: { selectionId: 'abc123' },
+    })
+    const host = createExtensionRequestStateHost(EXTENSION_NAME)
+    const consumed: Array<Record<string, unknown> | undefined> = []
+    __setExtensionStateForTests(
+      actionState(async () => {
+        consumed.push(await host.consume())
+        return { outcome: 'ok' }
+      })
+    )
+    const cookies = { ...member.cookies, [REQUEST_STATE_COOKIE_NAME]: rawCookie }
+
+    const res1 = await postAction(suite.app, ACTION_SLOT, { kind: RENAME_ACTION_KIND }, cookies)
+    const res2 = await postAction(suite.app, ACTION_SLOT, { kind: RENAME_ACTION_KIND }, cookies)
+
+    expect(res1.statusCode).toBe(200)
+    expect(res2.statusCode).toBe(200)
+    expect(consumed).toEqual([{ selectionId: 'abc123' }, undefined])
+
+    // The peek also stops seeing the now-consumed row.
+    const peekSeen: Array<Record<string, unknown> | undefined> = []
+    __setExtensionStateForTests(
+      actionState(async (context) => {
+        peekSeen.push(context.requestState)
+        return { outcome: 'ok' }
+      })
+    )
+    await postAction(suite.app, ACTION_SLOT, { kind: RENAME_ACTION_KIND }, cookies)
+    expect(peekSeen).toEqual([undefined])
+  })
+
+  it('AC8: uiPanel (GET panel render) never sees requestState, even with a valid cookie present', async () => {
+    const member = await createDirectAuthenticatedUser(suite.app, 'reqstate-uipanel', 'member')
+    const rawCookie = await mintRowAndCookie({
+      orgId: member.orgId,
+      identityId: member.userId,
+      persistState: { selectionId: 'abc123' },
+    })
+    let seenContext: UIPanelContext | undefined
+    __setExtensionStateForTests(
+      loadedState({
+        capabilities: ['ui-panel'],
+        uiPanel: {
+          onRenderPanel: async (context) => {
+            seenContext = context
+            return { html: HELLO_HTML }
+          },
+        },
+      })
+    )
+
+    const res = await getPanel(suite.app, 'group', {
+      ...member.cookies,
+      [REQUEST_STATE_COOKIE_NAME]: rawCookie,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(seenContext).toBeDefined()
+    expect('requestState' in (seenContext as object)).toBe(false)
+  })
+
+  it('AC12: a cross-org caller never sees another org’s requestState, and a cross-org consume does not burn the row', async () => {
+    const orgAMember = await createDirectAuthenticatedUser(suite.app, 'reqstate-orga', 'member')
+    const orgBMember = await createDirectAuthenticatedUser(suite.app, 'reqstate-orgb', 'member')
+    const rawCookie = await mintRowAndCookie({
+      orgId: orgAMember.orgId,
+      identityId: orgAMember.userId,
+      persistState: { selectionId: 'abc123' },
+    })
+    const host = createExtensionRequestStateHost(EXTENSION_NAME)
+    const peeked: Array<Record<string, unknown> | undefined> = []
+    const consumed: Array<Record<string, unknown> | undefined> = []
+    __setExtensionStateForTests(
+      actionState(async (context) => {
+        peeked.push(context.requestState)
+        consumed.push(await host.consume())
+        return { outcome: 'ok' }
+      })
+    )
+
+    // Org B's browser somehow carries org A's cookie (e.g. a leaked/stolen cookie) — but Org B's
+    // own authenticated session drives the request's real orgId/identity.
+    const crossOrgCookies = { ...orgBMember.cookies, [REQUEST_STATE_COOKIE_NAME]: rawCookie }
+    const crossOrgRes = await postAction(
+      suite.app,
+      ACTION_SLOT,
+      { kind: RENAME_ACTION_KIND },
+      crossOrgCookies
+    )
+    expect(crossOrgRes.statusCode).toBe(200)
+    expect(peeked).toEqual([undefined])
+    expect(consumed).toEqual([undefined])
+
+    // The row must be untouched — the legitimate org A caller can still consume it.
+    const rows = await getDb().select().from(extensionRequestStates)
+    expect(rows[0]?.consumedAt).toBeNull()
+
+    const legitimateCookies = { ...orgAMember.cookies, [REQUEST_STATE_COOKIE_NAME]: rawCookie }
+    const legitimateRes = await postAction(
+      suite.app,
+      ACTION_SLOT,
+      { kind: RENAME_ACTION_KIND },
+      legitimateCookies
+    )
+    expect(legitimateRes.statusCode).toBe(200)
+    expect(peeked).toEqual([undefined, { selectionId: 'abc123' }])
+    expect(consumed).toEqual([undefined, { selectionId: 'abc123' }])
+  })
+
+  it('AC9-equivalent: two concurrent journeys never cross-resolve requestState', async () => {
+    const memberA = await createDirectAuthenticatedUser(suite.app, 'reqstate-multi-a', 'member')
+    const memberB = await createDirectAuthenticatedUser(suite.app, 'reqstate-multi-b', 'member')
+    const cookieA = await mintRowAndCookie({
+      orgId: memberA.orgId,
+      identityId: memberA.userId,
+      persistState: { journey: 'a' },
+    })
+    const cookieB = await mintRowAndCookie({
+      orgId: memberB.orgId,
+      identityId: memberB.userId,
+      persistState: { journey: 'b' },
+    })
+    const seen: Array<Record<string, unknown> | undefined> = []
+    __setExtensionStateForTests(
+      actionState(async (context) => {
+        seen.push(context.requestState)
+        return { outcome: 'ok' }
+      })
+    )
+
+    await postAction(
+      suite.app,
+      ACTION_SLOT,
+      { kind: RENAME_ACTION_KIND },
+      {
+        ...memberA.cookies,
+        [REQUEST_STATE_COOKIE_NAME]: cookieA,
+      }
+    )
+    await postAction(
+      suite.app,
+      ACTION_SLOT,
+      { kind: RENAME_ACTION_KIND },
+      {
+        ...memberB.cookies,
+        [REQUEST_STATE_COOKIE_NAME]: cookieB,
+      }
+    )
+
+    expect(seen).toContainEqual({ journey: 'a' })
+    expect(seen).toContainEqual({ journey: 'b' })
   })
 })

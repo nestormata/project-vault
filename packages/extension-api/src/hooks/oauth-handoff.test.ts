@@ -3,6 +3,7 @@ import type { ActionResult, ModuleActionContext } from './module-action.js'
 import type { OAuthHandoffHooks, OAuthHandoffRedirectResult } from './oauth-handoff.js'
 
 const REPOSITORY_SELECT_URL = 'https://pv.example/repository/select'
+const PROVIDER_AUTHORIZE_URL = 'https://provider.example/authorize'
 
 function baseContext(overrides: Partial<ModuleActionContext> = {}): ModuleActionContext {
   return {
@@ -59,7 +60,7 @@ describe('OAuthHandoffHooks type (Story 39.1 AC1/AC2/AC6/AC9)', () => {
       onOAuthStart: () =>
         Promise.resolve({
           outcome: 'redirect',
-          url: 'https://provider.example/authorize',
+          url: PROVIDER_AUTHORIZE_URL,
           state: {},
         }),
       onOAuthCallback: (query, state) => {
@@ -85,7 +86,7 @@ describe('OAuthHandoffHooks type (Story 39.1 AC1/AC2/AC6/AC9)', () => {
       onOAuthStart: () =>
         Promise.resolve({
           outcome: 'redirect',
-          url: 'https://provider.example/authorize',
+          url: PROVIDER_AUTHORIZE_URL,
           state: {},
         }),
       onOAuthCallback: () =>
@@ -100,6 +101,27 @@ describe('OAuthHandoffHooks type (Story 39.1 AC1/AC2/AC6/AC9)', () => {
       outcome: 'redirect',
       url: REPOSITORY_SELECT_URL,
       state: {},
+    })
+  })
+
+  it('Story 40.1 AC1 — onOAuthCallback may additionally return persistState on a redirect outcome', async () => {
+    const hook: OAuthHandoffHooks = {
+      onOAuthStart: () =>
+        Promise.resolve({ outcome: 'redirect', url: PROVIDER_AUTHORIZE_URL, state: {} }),
+      onOAuthCallback: () =>
+        Promise.resolve({
+          outcome: 'redirect',
+          url: REPOSITORY_SELECT_URL,
+          state: {},
+          persistState: { selectionId: 'abc123' },
+        }),
+    }
+    const result = await hook.onOAuthCallback({ code: 'abc' }, {})
+    expect(result).toEqual<OAuthHandoffRedirectResult>({
+      outcome: 'redirect',
+      url: REPOSITORY_SELECT_URL,
+      state: {},
+      persistState: { selectionId: 'abc123' },
     })
   })
 })
