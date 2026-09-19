@@ -106,41 +106,38 @@ function matchGroup(entries: IndexedEntry[], hits: SurfaceHit[]): LineUpdate[] {
     { line: number; viaOrdinalFallback: boolean; hitText: string; entrySymbol: string }
   >()
 
-  // Step 2a: identity match — an entry already sitting on a real hit's line is never moved.
-  for (const { index, entry } of entries) {
+  // Claims the first unclaimed hit matching `predicate` and records a non-ordinal-fallback
+  // update for `entry`. Returns whether a hit was claimed.
+  const claimMatch = (
+    index: number,
+    entry: IndexedEntry['entry'],
+    predicate: (hit: SurfaceHit, position: number) => boolean
+  ): boolean => {
     const hitPosition = hits.findIndex(
-      (hit, position) => !claimedPositions.has(position) && hit.line === entry.line
+      (hit, position) => !claimedPositions.has(position) && predicate(hit, position)
     )
-    if (hitPosition === -1) continue
+    if (hitPosition === -1) return false
     claimedPositions.add(hitPosition)
     const claimedHit = hits.at(hitPosition)
-    if (claimedHit) {
-      updates.set(index, {
-        line: claimedHit.line,
-        viaOrdinalFallback: false,
-        hitText: claimedHit.text,
-        entrySymbol: entry.symbol,
-      })
-    }
+    if (!claimedHit) return false
+    updates.set(index, {
+      line: claimedHit.line,
+      viaOrdinalFallback: false,
+      hitText: claimedHit.text,
+      entrySymbol: entry.symbol,
+    })
+    return true
+  }
+
+  // Step 2a: identity match — an entry already sitting on a real hit's line is never moved.
+  for (const { index, entry } of entries) {
+    claimMatch(index, entry, (hit) => hit.line === entry.line)
   }
 
   // Step 2b: exact symbol-to-text match among whatever step 2a left unclaimed.
   for (const { index, entry } of entries) {
     if (updates.has(index)) continue
-    const hitPosition = hits.findIndex(
-      (hit, position) => !claimedPositions.has(position) && hit.text === entry.symbol
-    )
-    if (hitPosition === -1) continue
-    claimedPositions.add(hitPosition)
-    const claimedHit = hits.at(hitPosition)
-    if (claimedHit) {
-      updates.set(index, {
-        line: claimedHit.line,
-        viaOrdinalFallback: false,
-        hitText: claimedHit.text,
-        entrySymbol: entry.symbol,
-      })
-    }
+    claimMatch(index, entry, (hit) => hit.text === entry.symbol)
   }
 
   // Step 3: ordinal fallback — pairs remaining entries (original order) with remaining hits
