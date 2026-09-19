@@ -19,22 +19,21 @@ export class NativeCredentialSurfaceError extends Error {
   }
 }
 
-function entryKey(entry: { path: string; line: number; predicate: string }): string {
+export function entryKey(entry: { path: string; line: number; predicate: string }): string {
   return `${entry.path}:${entry.line}:${entry.predicate}`
 }
 
 /**
- * Story 23.2 AC-19 — re-runs the P1-P5 sweep over the live tree and fails when:
- *  - a hit exists that the manifest does not list ('unlisted' — the N1 failure);
- *  - a manifest entry no longer matches a hit ('dead-entry' — dead entry, or the code moved);
- *  - any entry has a missing/unknown classification or a missing `ac` pointer;
- *  - any entry classified `gate` corresponds to a file the gate helper does not touch.
+ * Story 40.2 — the pure diff half of {@link checkNativeCredentialSurface}, extracted so the
+ * `--write` regeneration mode's self-verify pass (AC-11) can re-run the same diff logic against a
+ * candidate manifest and the hits already scanned this run, without a second tree walk.
+ * `checkNativeCredentialSurface()` itself is unchanged (AC-9) — it now just scans, then delegates.
  */
-export function checkNativeCredentialSurface(
+export function diffManifestAgainstHits(
   repoRoot: string,
+  hits: SurfaceHit[],
   manifest: SurfaceManifestEntry[]
 ): SurfaceCheckFailure[] {
-  const hits = scanNativeCredentialSurface(repoRoot)
   const hitsByKey = new Map(hits.map((hit) => [entryKey(hit), hit]))
   const manifestByKey = new Map(manifest.map((entry) => [entryKey(entry), entry]))
 
@@ -61,6 +60,21 @@ export function checkNativeCredentialSurface(
   }
 
   return failures
+}
+
+/**
+ * Story 23.2 AC-19 — re-runs the P1-P5 sweep over the live tree and fails when:
+ *  - a hit exists that the manifest does not list ('unlisted' — the N1 failure);
+ *  - a manifest entry no longer matches a hit ('dead-entry' — dead entry, or the code moved);
+ *  - any entry has a missing/unknown classification or a missing `ac` pointer;
+ *  - any entry classified `gate` corresponds to a file the gate helper does not touch.
+ */
+export function checkNativeCredentialSurface(
+  repoRoot: string,
+  manifest: SurfaceManifestEntry[]
+): SurfaceCheckFailure[] {
+  const hits = scanNativeCredentialSurface(repoRoot)
+  return diffManifestAgainstHits(repoRoot, hits, manifest)
 }
 
 export function formatFailure(failure: SurfaceCheckFailure): string {
