@@ -47,7 +47,7 @@ void readRequestStateOffBaseUIPanelContext
 
 const RENAME_GROUP_KIND = 'rename-group'
 
-function baseContext(overrides: Partial<UIPanelContext> = {}): ModuleActionContext {
+function baseContext(overrides: Partial<ModuleActionContext> = {}): ModuleActionContext {
   return {
     slot: 'group',
     identity: { userId: 'user_1', orgRole: 'member' },
