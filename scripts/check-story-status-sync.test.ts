@@ -12,6 +12,8 @@ const SECOND_STORY_REVIEW_CONTENT = '# Story 1.2\n\nStatus: review\n'
 
 const makeFixtureRoot = useFixtureRoots('story-status-sync-', [ARTIFACTS_DIR])
 
+const DEVELOPMENT_STATUS_HEADER = 'development_status:\n'
+
 const SPRINT_STATUS = `generated: 2026-05-31
 last_updated: 2026-07-07
 project: Fixture Project
@@ -42,7 +44,7 @@ describe('parseDevelopmentStatus', () => {
 
   it('does not truncate the block at a column-0 "#" comment interleaved mid-block (Story 55.7 AC-6, mirrors sprint-status.yaml:765)', () => {
     const yaml =
-      'development_status:\n' +
+      DEVELOPMENT_STATUS_HEADER +
       '  epic-25: done\n' +
       '  epic-25-retrospective: done\n' +
       '# last_updated: 2026-08-25 (epic-26/26-1: ...)\n' +
@@ -57,7 +59,7 @@ describe('parseDevelopmentStatus', () => {
 
   it('still terminates the block at a genuinely dedented non-comment key (edge case)', () => {
     const yaml =
-      'development_status:\n' +
+      DEVELOPMENT_STATUS_HEADER +
       '  epic-1: done\n' +
       'another_top_level_key: value\n' +
       '  should-not-be-parsed: done\n'
@@ -66,12 +68,40 @@ describe('parseDevelopmentStatus', () => {
     expect(statuses.get('epic-1')).toBe('done')
     expect(statuses.get('should-not-be-parsed')).toBeUndefined()
   })
+
+  it('is unaffected by an epic-*-gate key (Story 42.0 AC3 non-interference — parses it as a plain key/value like any other)', () => {
+    const yaml =
+      DEVELOPMENT_STATUS_HEADER +
+      '  epic-42: in-progress\n' +
+      '  epic-51-gate: blocked-on-42-4\n' +
+      '  42-4-fixture-story: backlog\n'
+
+    const statuses = parseDevelopmentStatus(yaml)
+    expect(statuses.get('epic-51-gate')).toBe('blocked-on-42-4')
+    expect(statuses.get('42-4-fixture-story')).toBe('backlog')
+  })
 })
 
 describe('scanStoryStatusSync', () => {
   it('returns no mismatches when every story file Status: header matches sprint-status.yaml', () => {
     const root = makeFixtureRoot()
     writeFixture(root, SPRINT_STATUS_PATH, SPRINT_STATUS)
+    writeFixture(root, `${ARTIFACTS_DIR}/1-1-first-story.md`, '# Story 1.1\n\nStatus: done\n')
+    writeFixture(root, SECOND_STORY_PATH, SECOND_STORY_REVIEW_CONTENT)
+
+    expect(scanStoryStatusSync(root)).toEqual([])
+  })
+
+  it('is unaffected by an epic-*-gate key present alongside tracked story files (Story 42.0 AC3 non-interference)', () => {
+    const root = makeFixtureRoot()
+    writeFixture(
+      root,
+      SPRINT_STATUS_PATH,
+      SPRINT_STATUS.replace(
+        DEVELOPMENT_STATUS_HEADER,
+        `${DEVELOPMENT_STATUS_HEADER}  epic-51-gate: blocked-on-42-4\n  42-4-fixture-story: backlog\n`
+      )
+    )
     writeFixture(root, `${ARTIFACTS_DIR}/1-1-first-story.md`, '# Story 1.1\n\nStatus: done\n')
     writeFixture(root, SECOND_STORY_PATH, SECOND_STORY_REVIEW_CONTENT)
 

@@ -200,6 +200,24 @@ describe('scanFollowupReviewGate', () => {
     expect(scanFollowupReviewGate(root)).toEqual([])
   })
 
+  it('is unaffected by an epic-*-gate key present in sprint-status.yaml (Story 42.0 AC3 non-interference)', () => {
+    const root = makeFixtureRoot()
+    writeFixture(
+      root,
+      SPRINT_STATUS_PATH,
+      BASE_SPRINT_STATUS.replace(
+        'development_status:\n',
+        'development_status:\n  epic-51-gate: blocked-on-42-4\n  42-4-fixture-story: backlog\n'
+      )
+    )
+    writeFixture(root, DEFERRED_WORK_PATH, EMPTY_DEFERRED_WORK)
+    writeFixture(root, FIXTURE_STORY_PATH, flaggedStorySimple())
+
+    const violations = scanFollowupReviewGate(root)
+    expect(violations).toHaveLength(1)
+    expect(violations[0]?.storyKey).toBe(STORY_KEY)
+  })
+
   it('never reports a story without the flag, regardless of ledger/waiver state', () => {
     const root = makeFixtureRoot()
     writeFixture(root, SPRINT_STATUS_PATH, BASE_SPRINT_STATUS)
