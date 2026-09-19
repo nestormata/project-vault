@@ -470,7 +470,17 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // manifest/hooksFactory that omits them — no existing extension's manifest or hook shape changes,
 // and the floor stays `>=3.0.0` so every already-shipped extension (including any real,
 // currently-deployed CentralizeMe build) keeps loading unmodified regardless.
-export const EXTENSION_API_VERSION = '3.18.0'
+// Story 40.1 AC1/AC2/AC3/AC10 — bumped as an additive-minor (3.18.0 -> 3.19.0):
+// `OAuthHandoffRedirectResult` gains `persistState?: Record<string, unknown>`,
+// `ModuleActionContext` gains `requestState?: Record<string, unknown>` (no longer a bare
+// `UIPanelContext` alias — see `hooks/module-action.ts`), and `HostServices` gains
+// `extensionRequestState: ExtensionRequestStateHostService` (see
+// `hooks/extension-request-state.ts`), all purely-additive optional/new-field additions with
+// zero effect on any manifest/hooksFactory that omits referencing them — no existing type's
+// required shape changes, and the floor stays `>=3.0.0` so every already-shipped extension
+// (including any real, currently-deployed CentralizeMe build) keeps loading unmodified
+// regardless.
+export const EXTENSION_API_VERSION = '3.19.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

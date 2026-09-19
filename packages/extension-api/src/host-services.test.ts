@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { HostServices } from './host-services.js'
 import type { PvMonitoringHost } from './hooks/monitoring.js'
 import type { NotificationOriginatorHost } from './hooks/notification-originator.js'
+import type { ExtensionRequestStateHostService } from './hooks/extension-request-state.js'
 
 const TEST_DATE = '2026-01-01'
 
@@ -62,8 +63,12 @@ const notificationOriginatorFixture: NotificationOriginatorHost = {
   enqueueNotification: async () => ({ notificationQueueId: 'nq1' }),
 }
 
-describe('HostServices — Story 37.1 AC1 widening to include projectAuthorization', () => {
-  it('exposes exactly auditEventSource/orgAuthorization/projectAuthorization/ephemeralState/monitoring/notificationOriginator', () => {
+const extensionRequestStateFixture: ExtensionRequestStateHostService = {
+  consume: async () => undefined,
+}
+
+describe('HostServices — Story 40.1 AC widening to include extensionRequestState', () => {
+  it('exposes exactly auditEventSource/orgAuthorization/projectAuthorization/ephemeralState/monitoring/notificationOriginator/extensionRequestState', () => {
     const fixture: HostServices = {
       auditEventSource: { writeAuditEvent: async () => ({ id: '1', createdAt: TEST_DATE }) },
       orgAuthorization: { checkMembership: async () => ({ outcome: 'authorized' }) },
@@ -77,6 +82,7 @@ describe('HostServices — Story 37.1 AC1 widening to include projectAuthorizati
       },
       monitoring: monitoringFixture,
       notificationOriginator: notificationOriginatorFixture,
+      extensionRequestState: extensionRequestStateFixture,
     }
     expect(new Set(Object.keys(fixture))).toEqual(
       new Set([
@@ -86,6 +92,7 @@ describe('HostServices — Story 37.1 AC1 widening to include projectAuthorizati
         'ephemeralState',
         'monitoring',
         'notificationOriginator',
+        'extensionRequestState',
       ])
     )
   })
@@ -109,6 +116,7 @@ describe('HostServices — Story 37.1 AC1 widening to include projectAuthorizati
       },
       monitoring: monitoringFixture,
       notificationOriginator: notificationOriginatorFixture,
+      extensionRequestState: extensionRequestStateFixture,
     }
     legacyHooksFactory(host)
   })

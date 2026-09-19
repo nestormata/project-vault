@@ -96,6 +96,7 @@ export type {
   NotificationOriginatorHost,
 } from './hooks/notification-originator.js'
 export type { OAuthHandoffHooks, OAuthHandoffRedirectResult } from './hooks/oauth-handoff.js'
+export type { ExtensionRequestStateHostService } from './hooks/extension-request-state.js'
 export type { ScheduledTaskContext, ScheduledTaskHooks } from './hooks/scheduled-task.js'
 export {
   NotificationOriginatorInvalidParamsError,

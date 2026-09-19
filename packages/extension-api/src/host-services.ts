@@ -4,6 +4,7 @@ import type { EphemeralStateHost } from './hooks/ephemeral-state.js'
 import type { PvMonitoringHost } from './hooks/monitoring.js'
 import type { NotificationOriginatorHost } from './hooks/notification-originator.js'
 import type { ProjectAuthorizationHost } from './hooks/project-authorization.js'
+import type { ExtensionRequestStateHostService } from './hooks/extension-request-state.js'
 
 /**
  * Story 23.8 AC-4 — the new injected-context channel `hooksFactory()` receives at load time.
@@ -41,4 +42,11 @@ export type HostServices = {
    * own `project_memberships`-backed `effectiveProjectRole()` semantics (org-owner/admin bypass,
    * explicit-row fallback) so its answer matches what PV's own project routes already enforce. */
   projectAuthorization: ProjectAuthorizationHost
+  /** Story 40.1 — bound once at extension-load time, same as every field above. Its one method,
+   * `consume()`, internally resolves the current request's `extension-request-state` cookie and
+   * `orgId`/`identity` via `getRequestContext()` at call time. The sibling PEEK leg of this same
+   * mechanism is `ModuleActionContext.requestState`, not a `HostServices` field — see
+   * `hooks/extension-request-state.ts`'s doc comment for the full peek-vs-consume shape
+   * rationale. */
+  extensionRequestState: ExtensionRequestStateHostService
 }

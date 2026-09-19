@@ -13,6 +13,7 @@ import {
 import { operationalLog } from './logger.js'
 import { raceWithTimeout } from './race-with-timeout.js'
 import { isValidActionResult } from './action-result-response.js'
+import { peekRequestState } from './extension-request-state.js'
 
 /** Mirrors `extension-panel.ts`'s own (unexported) `PanelLogger` type exactly. */
 type PanelLoggerLike = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>
@@ -89,7 +90,8 @@ async function resolveModuleActionContextAndDispatch(
   query: PanelQuery,
   deps: RenderExtensionPanelDeps,
   capability: ModuleActionCapability,
-  request: ModuleActionRequestBody
+  request: ModuleActionRequestBody,
+  requestStateScope: { extensionName: string; requestStateCookie: string | undefined }
 ): Promise<ModuleActionAttemptOutcome> {
   const { moduleAction, knownActions } = capability
   // AC2: checked BEFORE onAction() is ever invoked — a request naming an action.kind the
@@ -113,7 +115,21 @@ async function resolveModuleActionContextAndDispatch(
     return { kind: 'denied_project', projectId: base.projectId }
   }
 
-  const result = await moduleAction.onAction(base.context as ModuleActionContext, {
+  // Story 40.1 AC2/AC8/AC12 — populated ONLY here (the `moduleAction` dispatch path), never on
+  // `uiPanel`'s own `resolveBaseModuleActionContext()` call sites (`extension-panel.ts`,
+  // `oauth-handoff-routes.ts`'s `handleStart`) — see `ModuleActionContext.requestState`'s own doc
+  // comment for the "point-in-time snapshot, computed once before onAction() runs" contract.
+  const requestState = await peekRequestState(requestStateScope.requestStateCookie, {
+    extensionName: requestStateScope.extensionName,
+    orgId: identity.orgId,
+    identityId: identity.userId,
+  })
+  const moduleActionContext: ModuleActionContext = {
+    ...base.context,
+    ...(requestState !== undefined ? { requestState } : {}),
+  }
+
+  const result = await moduleAction.onAction(moduleActionContext, {
     action: request,
   })
   return { kind: 'dispatched', result }
@@ -187,7 +203,12 @@ export async function handleModuleAction(
   tx: Tx,
   request: ModuleActionRequestBody,
   query: PanelQuery = {},
-  deps: RenderExtensionPanelDeps = defaultRenderExtensionPanelDeps
+  deps: RenderExtensionPanelDeps = defaultRenderExtensionPanelDeps,
+  // Story 40.1 AC2/AC8 — the raw `extension-request-state` cookie value off the inbound
+  // `moduleAction` request, if any. Deliberately a separate, explicit parameter (never read off
+  // `query`/`request`) so it is obvious at every call site that only `moduleAction` routes ever
+  // supply it — `uiPanel`'s own render path has no equivalent parameter at all (AC8).
+  requestStateCookie?: string
 ): Promise<ModuleActionOutcome> {
   const { slot, knownSlots } = panelTarget
   if (!knownSlots.includes(slot)) {
@@ -215,7 +236,8 @@ export async function handleModuleAction(
         query,
         deps,
         { moduleAction, knownActions },
-        request
+        request,
+        { extensionName: status.manifest.name, requestStateCookie }
       ),
     MODULE_ACTION_TIMEOUT_MS
   )

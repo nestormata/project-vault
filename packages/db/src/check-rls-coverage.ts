@@ -27,6 +27,18 @@ export const EXCLUDED_TABLES = new Set([
   // or at lookup time (the callback is hit by an external OAuth provider, not PV's own
   // authenticated frontend). Same no-FK/no-RLS reasoning as handoff_pending_states above.
   'extension_oauth_pending_states',
+  // Story 40.1 (AC12) — extension request-state peek/consume table. Unlike most org-scoped
+  // tables, this one carries `org_id`/`identity_id` for a DELIBERATE reason that is NOT "isolate
+  // by RLS": both `peekRequestState()`/`consumeRequestState()`
+  // (`apps/api/src/lib/extension-pending-state.ts`) explicitly filter `WHERE cookie_hash = $1 AND
+  // org_id = $2 AND identity_id = $3` in application code, matching this story's Recommended
+  // Mechanism Decision verbatim (a cookie-hash match against a row minted under a different
+  // org/identity must resolve to `undefined`, never fall through to a session-var-driven RLS
+  // policy that could itself be misconfigured/bypassed by a future admin-role query). Following
+  // `extension_oauth_pending_states`'s own no-RLS precedent for this table family rather than
+  // introducing a second, redundant enforcement layer that the peek/consume helpers would still
+  // have to duplicate anyway.
+  'extension_request_states',
   // user_onboarding: no RLS — access gated in application layer by auth.userId == userId; org_id is a FK for cascade, not for multi-tenant row filtering.
   'user_onboarding',
   // account_recovery_tokens: identity-scoped (AC-1) — the row has no org_id column (only an

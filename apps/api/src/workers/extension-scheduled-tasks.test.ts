@@ -64,6 +64,9 @@ function fakeHostServices(overrides: Partial<HostServices> = {}): HostServices {
     notificationOriginator: {
       enqueueNotification: unavailable('notificationOriginator.enqueueNotification'),
     },
+    extensionRequestState: {
+      consume: unavailable('extensionRequestState.consume'),
+    },
     ...overrides,
   }
 }

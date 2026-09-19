@@ -2,6 +2,33 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.19.0 — 2026-09-19
+
+contract-hash: sha256:cfb24ea6e19a4b12dc4e133f64771189ef04db99a500343bac1c08bc35f92d01
+
+### Added
+
+- Added `OAuthHandoffRedirectResult.persistState?: Record<string, unknown>` (Story 40.1 AC1/AC5/
+  AC6) — when present on an `onOAuthCallback()` result ONLY, PV additionally mints a second,
+  longer-lived, repeatably-readable cookie (`extension-request-state`, 30-minute TTL) holding this
+  data, backed by a new `extension_request_states` DB row. Has no effect on `onOAuthStart()`.
+- Added `ModuleActionContext.requestState?: Record<string, unknown>` (Story 40.1 AC2/AC4/AC8/
+  AC12) — a non-destructive, repeatable peek of the `persistState` data above, populated on every
+  `moduleAction` call (never on `uiPanel`), scoped to the current request's `orgId`/identity so a
+  stolen-but-valid cookie cannot be read under a different org/identity than the one active when
+  it was minted.
+- Added `HostServices.extensionRequestState: ExtensionRequestStateHostService` with one method,
+  `consume(): Promise<Record<string, unknown> | undefined>` (Story 40.1 AC3/AC4/AC12) — the
+  single-use, destructive counterpart to `requestState` above; a cross-org/cross-identity consume
+  attempt resolves to `undefined` without burning the row.
+- `ModuleActionContext` is no longer a bare re-exported alias of `UIPanelContext` — it is now
+  `UIPanelContext & { requestState?: Record<string, unknown> }` (Story 40.1 ADR). Purely additive/
+  structural for every existing caller; see `module-action.test.ts`'s type-contract test.
+
+Per `docs/extension-api-versioning-policy.md` Row 11 ("adding a new hook type and a new optional
+field on `ExtensionHooks`/existing types") — all four changes above are additive and optional, so
+this is a MINOR bump, consistent with every other hook/context/`HostServices` addition.
+
 ## 3.18.0 — 2026-09-18
 
 contract-hash: sha256:43cc86372323f1520afe564e75f9704e3d4401d7eb15f0c898ebd28b5af45711

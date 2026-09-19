@@ -1,6 +1,4 @@
-import { randomBytes } from 'node:crypto'
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { and, eq, sql } from 'drizzle-orm'
 import { getDb } from '@project-vault/db'
 import { extensionOauthPendingStates } from '@project-vault/db/schema'
 import type {
@@ -23,7 +21,17 @@ import { OperationalEvent } from '@project-vault/shared'
 import type { CookieReply } from '../auth/tokens.js'
 import { CSRF_HEADER_NAME, isRejectedByCsrfToken } from '../../lib/csrf.js'
 import { isRejectedBySecFetchSite } from '../../extensions/panel-routes.js'
-import { generateOpaqueId, hashCookieValue } from '../../lib/opaque-cookie-token.js'
+import {
+  burnPendingStateRow,
+  generateOpaqueId,
+  hashCookieValue,
+  mintOpaqueCookieValue,
+  parsePendingStateJson,
+  ttlExpiresAtSql,
+  validatePendingStateSize,
+  type PendingStateRow,
+} from '../../lib/extension-pending-state.js'
+import { mintRequestStateAndCookie } from '../../lib/extension-request-state.js'
 import { isValidActionResult, mapActionResultToResponse } from '../../lib/action-result-response.js'
 
 /**
@@ -183,10 +191,6 @@ function loadOAuthHandoffExtension(): LoadedOAuthHandoffExtension | undefined {
   }
 }
 
-function stateByteLength(state: Record<string, unknown>): number {
-  return Buffer.byteLength(JSON.stringify(state), 'utf8')
-}
-
 function sendInternalError(reply: FastifyReply): unknown {
   return reply.status(500).send({ code: 'internal_error', message: 'Request failed' })
 }
@@ -280,7 +284,8 @@ async function mintPendingStateAndCookie(
   reply: FastifyReply,
   request: FastifyRequest,
   extension: LoadedOAuthHandoffExtension,
-  result: OAuthHandoffRedirectResult
+  result: OAuthHandoffRedirectResult,
+  identity: PanelIdentity
 ): Promise<boolean> {
   if (!isAllowedRedirectUrl(result.url, extension.redirectOrigins)) {
     logOAuthHandoffFailed(request.log, 'start', 'invalid_redirect_origin')
@@ -288,7 +293,8 @@ async function mintPendingStateAndCookie(
     return false
   }
 
-  if (stateByteLength(result.state) > MAX_STATE_SIZE_BYTES) {
+  const validation = validatePendingStateSize(result.state, MAX_STATE_SIZE_BYTES)
+  if (!validation.ok) {
     logOAuthHandoffFailed(request.log, 'start', 'state_too_large')
     reply
       .status(400)
@@ -296,7 +302,7 @@ async function mintPendingStateAndCookie(
     return false
   }
 
-  const rawCookie = randomBytes(32).toString('base64url')
+  const rawCookie = mintOpaqueCookieValue()
   const cookieHash = hashCookieValue(rawCookie)
   const id = generateOpaqueId()
 
@@ -307,13 +313,21 @@ async function mintPendingStateAndCookie(
         id,
         cookieHash,
         extensionName: extension.name,
+        // Story 40.1 — nullable metadata threaded through to the callback leg (see
+        // `extension-oauth-pending-states.ts`'s own doc comment) so it can mint this story's
+        // `extension_request_states` row (AC12's org/identity scoping) without needing its own
+        // (nonexistent) PV session.
+        orgId: identity.orgId,
+        identityId: identity.userId,
         stateJson: JSON.stringify(result.state),
-        // Code-review fix (39.1, Pre-Mortem finding 2) — computed by Postgres's own `now()`, not
-        // the API process's `Date.now()`. `burnPendingState`'s read-side comparison already used
-        // the DB clock exclusively; computing the write-side value with the API's wall clock would
-        // still let multi-host clock drift make the effective TTL longer or shorter than intended.
-        // This keeps both the write and the read on the identical DB-side clock.
-        expiresAt: sql`now() + (interval '1 millisecond' * ${PENDING_TTL_MS})`,
+        // Code-review fix (39.1, Pre-Mortem finding 2) / Story 40.1 AC11 — computed by Postgres's
+        // own `now()`, not the API process's `Date.now()`, via the shared
+        // `extension-pending-state.ts` helper now reused by both this table and
+        // `extension_request_states`. `burnPendingStateRow`'s read-side comparison already uses
+        // the DB clock exclusively; computing the write-side value with the API's wall clock
+        // would still let multi-host clock drift make the effective TTL longer or shorter than
+        // intended. This keeps both the write and the read on the identical DB-side clock.
+        expiresAt: ttlExpiresAtSql(PENDING_TTL_MS),
       })
   } catch {
     reply
@@ -390,32 +404,22 @@ async function handleStart(
     return reply.status(mapped.status).send(mapped.body)
   }
 
-  if (!(await mintPendingStateAndCookie(reply, request, extension, result))) return reply
+  if (!(await mintPendingStateAndCookie(reply, request, extension, result, identity))) return reply
 
   return issueRedirect(reply, extension, 'start', request.log, result)
 }
 
-type PendingRow = typeof extensionOauthPendingStates.$inferSelect
-
 /**
- * Story 39.1 AC3 — single-use burn-before-use as ONE atomic conditional `UPDATE ... RETURNING`:
- * at most one concurrent caller can ever see a non-empty result for a given `cookieHash`
- * (Boundary Sweep's concurrent-duplicate-callback-hits requirement). `expiresAt` comparison uses
- * the database's own `now()`, never app-process wall-clock time (Pre-Mortem finding 2).
+ * Story 39.1 AC3 / Story 40.1 AC11 — single-use burn-before-use as ONE atomic conditional
+ * `UPDATE ... RETURNING`: at most one concurrent caller can ever see a non-empty result for a
+ * given `cookieHash` (Boundary Sweep's concurrent-duplicate-callback-hits requirement).
+ * `expiresAt` comparison uses the database's own `now()`, never app-process wall-clock time
+ * (Pre-Mortem finding 2). Now backed by the shared `burnPendingStateRow()` helper
+ * (`lib/extension-pending-state.ts`), reused verbatim by this story's own
+ * `extension_request_states` consume path (AC11 rule-of-three extraction).
  */
-async function burnPendingState(cookieHash: string): Promise<PendingRow | undefined> {
-  const rows = await getDb()
-    .update(extensionOauthPendingStates)
-    .set({ consumedAt: sql`now()` })
-    .where(
-      and(
-        eq(extensionOauthPendingStates.cookieHash, cookieHash),
-        sql`${extensionOauthPendingStates.consumedAt} IS NULL`,
-        sql`${extensionOauthPendingStates.expiresAt} > now()`
-      )
-    )
-    .returning()
-  return rows[0]
+async function burnPendingState(cookieHash: string): Promise<PendingStateRow | undefined> {
+  return burnPendingStateRow('extension_oauth_pending_states', cookieHash)
 }
 
 /**
@@ -428,16 +432,13 @@ async function burnPendingState(cookieHash: string): Promise<PendingRow | undefi
 type ResolvedCallbackPending = {
   extension: LoadedOAuthHandoffExtension
   state: Record<string, unknown>
-}
-
-function parsePendingStateJson(stateJson: string): Record<string, unknown> | undefined {
-  try {
-    const parsed: unknown = JSON.parse(stateJson)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
-    return parsed as Record<string, unknown>
-  } catch {
-    return undefined
-  }
+  /** Story 40.1 — the START leg's authenticated caller identity, threaded through the burned
+   * row's nullable `org_id`/`identity_id` columns (see `extension-oauth-pending-states.ts`).
+   * `undefined` for a pending row minted before this story shipped, or in the (currently
+   * unreachable, since `handleStart` always supplies both) theoretical case either is absent —
+   * `mintRequestStateAndCookie()` is simply never attempted in that case (AC6's own
+   * malformed-persist-leg-must-not-break-the-redirect discipline, generalized). */
+  identity: { orgId: string; userId: string } | undefined
 }
 
 /**
@@ -458,12 +459,20 @@ async function resolveCallbackPending(
   if (!pending) return undefined
 
   const extension = loadOAuthHandoffExtension()
-  if (!extension || extension.name !== pending.extensionName) return undefined
+  if (!extension || extension.name !== pending.extension_name) return undefined
 
-  const state = parsePendingStateJson(pending.stateJson)
+  const state = parsePendingStateJson(pending.state_json)
   if (!state) return undefined
 
-  return { extension, state }
+  // Story 40.1 — org_id (uuid)/identity_id (uuid) are stored as plain text columns; a row minted
+  // before this story shipped left both NULL. Treated as `undefined` uniformly rather than
+  // distinguishing "old row" from "somehow missing" — see `ResolvedCallbackPending`'s own doc
+  // comment.
+  const orgId = pending.org_id as string | null
+  const identityId = pending.identity_id as string | null
+  const identity = orgId && identityId ? { orgId, userId: identityId } : undefined
+
+  return { extension, state, identity }
 }
 
 // A querystring value that isn't a string/array (e.g. bracket-notation nesting like `?a[b]=1`
@@ -494,7 +503,7 @@ async function handleCallback(request: FastifyRequest, reply: FastifyReply): Pro
   // corrupt state) collapses to the identical generic rejection; onOAuthCallback() is never
   // invoked in any of these cases.
   if (!resolved) return sendGenericRejection(reply)
-  const { extension, state } = resolved
+  const { extension, state, identity } = resolved
 
   const result = await raceAndValidateOutcome(
     () => extension.onOAuthCallback(callbackQueryParams(request), state),
@@ -507,6 +516,35 @@ async function handleCallback(request: FastifyRequest, reply: FastifyReply): Pro
   if (result.outcome !== 'redirect') {
     const mapped = mapActionResultToResponse(result)
     return reply.status(mapped.status).send(mapped.body)
+  }
+
+  // Story 40.1 AC1/AC5/AC6/Pre-Mortem 3 — `persistState` is ONLY ever processed on the callback
+  // leg's `redirect` outcome (AC5: a `persistState` on `onOAuthStart()`'s own result is handled
+  // by `mintPendingStateAndCookie()` above, which never reads it at all — `OAuthHandoffRedirectResult`
+  // is a shared type but only the callback call site below ever inspects this field). Pre-Mortem
+  // 3's ordering requirement: the redirect `url`'s own allow-list validation
+  // (`issueRedirect`/`parseAllowedRedirectUrl`) MUST run and succeed before `persistState` is ever
+  // minted, so a rejected redirect never leaves an orphaned `extension_request_states` row behind.
+  if (
+    result.persistState &&
+    identity &&
+    isAllowedRedirectUrl(result.url, extension.redirectOrigins)
+  ) {
+    const mintOutcome = await mintRequestStateAndCookie(reply, {
+      extensionName: extension.name,
+      orgId: identity.orgId,
+      identityId: identity.userId,
+      persistState: result.persistState,
+    })
+    // AC6: a malformed/oversized persistState or a transient store failure is logged server-side
+    // only and never blocks the outer redirect, which is governed independently by `url`/`state`.
+    if (!mintOutcome.ok) {
+      logOAuthHandoffFailed(
+        request.log,
+        'callback',
+        mintOutcome.reason === 'too_large' ? 'state_too_large' : 'threw'
+      )
+    }
   }
 
   return issueRedirect(reply, extension, 'callback', request.log, result)

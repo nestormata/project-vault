@@ -233,6 +233,14 @@ const DEFAULT_HOST_SERVICES: HostServices = {
         )
       ),
   },
+  extensionRequestState: {
+    consume: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — extensionRequestState.consume is unavailable'
+        )
+      ),
+  },
 }
 
 /**

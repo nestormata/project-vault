@@ -20,6 +20,8 @@ import {
 } from '../lib/module-action-handler.js'
 import { mapActionResultToResponse } from '../lib/action-result-response.js'
 import { getExtensionStatus } from './loader.js'
+import { REQUEST_STATE_COOKIE_NAME } from '../lib/extension-request-state.js'
+import { bindRequestContext } from '../lib/request-context.js'
 
 const ExtensionPanelParamsSchema = z.object({ slot: z.string() })
 
@@ -383,6 +385,18 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
 
       const secureCtx = ctx as SecureRouteContext
       const knownSlots = resolveKnownUiPanelSlots(getExtensionStatus(), req.log)
+      // Story 40.1 AC2/AC3/AC12 — the raw `extension-request-state` cookie off THIS request,
+      // read directly here (never memoized/cached), threaded into both the peek
+      // (`handleModuleAction`'s own parameter, below) and the consume
+      // (`HostServices.extensionRequestState.consume()`'s ambient resolution, via
+      // `bindRequestContext()`) legs.
+      // eslint-disable-next-line security/detect-object-injection -- REQUEST_STATE_COOKIE_NAME is a fixed, hardcoded string constant, never user input.
+      const requestStateCookie = req.cookies[REQUEST_STATE_COOKIE_NAME]
+      bindRequestContext({
+        orgId: secureCtx.auth.orgId,
+        userId: secureCtx.auth.userId,
+        extensionRequestStateCookie: requestStateCookie,
+      })
       // AC3: identity/orgId are read directly from THIS request's own resolved `secureCtx.auth`
       // — never from `action` (the client-supplied body), never memoized from an earlier call.
       const result = await handleModuleAction(
@@ -395,7 +409,9 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
         },
         secureCtx.tx,
         action,
-        { projectId, resourceId }
+        { projectId, resourceId },
+        undefined,
+        requestStateCookie
       )
 
       const { status, body } = mapModuleActionOutcomeToResponse(result)

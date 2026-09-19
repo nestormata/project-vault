@@ -23,6 +23,27 @@ export type OAuthHandoffRedirectResult = {
   outcome: 'redirect'
   url: string
   state: Record<string, unknown>
+  /**
+   * Story 40.1 — when present on an `onOAuthCallback()` result ONLY, PV additionally mints a
+   * SECOND, longer-lived, repeatably-readable cookie (`extension-request-state`) holding this
+   * data, backed by a new `extension_request_states` row. Has NO effect when returned from
+   * `onOAuthStart()` — that leg's own `state` round-trip already fully covers the short-lived,
+   * single-use pending-state case Story 39.1 was built for; a `persistState` field on an
+   * `onOAuthStart()` result is ignored entirely (no second cookie minted, no new DB row).
+   *
+   * PV validates nothing about the CONTENTS of `persistState` (same posture as `state`), but DOES
+   * enforce: (a) the same `MAX_STATE_SIZE_BYTES` size cap `state` is already held to; (b) that
+   * the value is JSON-serializable (a non-serializable value — e.g. a function, a circular
+   * reference — is rejected the same way an oversized payload is). Either rejection leaves the
+   * callback's own redirect (governed by `url`/`state`, independently validated per 39.1's
+   * existing ACs) UNAFFECTED — a malformed persist leg must never break an otherwise-successful
+   * OAuth journey's redirect.
+   *
+   * Read back later via `ModuleActionContext.requestState` (non-destructive, repeatable peek) or
+   * `HostServices.extensionRequestState.consume()` (single-use, destructive read) — see
+   * `hooks/module-action.ts` and `hooks/extension-request-state.ts`.
+   */
+  persistState?: Record<string, unknown>
 }
 
 /**

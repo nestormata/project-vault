@@ -30,6 +30,7 @@ import { writeExtensionAuditEventForManifest } from '../lib/audit-event-source.j
 import { checkOrgAuthorization } from '../lib/org-authorization.js'
 import { checkProjectAuthorization } from '../lib/project-authorization.js'
 import { createEphemeralStateHost } from '../lib/ephemeral-state.js'
+import { createExtensionRequestStateHost } from '../lib/extension-request-state-host.js'
 import { buildMonitoringHost } from '../lib/monitoring-host.js'
 import { buildNotificationOriginatorHost } from '../lib/notification-originator-host.js'
 import { writePlatformAuditEntryOrFailClosed } from '../lib/audit-or-fail-closed.js'
@@ -300,6 +301,13 @@ async function buildHostServices(
     // method, enqueueNotification(), internally resolves the current request's orgId via
     // getRequestContext() at call time. See lib/notification-originator-host.ts.
     notificationOriginator: buildNotificationOriginatorHost(manifest, logger),
+    // Story 40.1 — bound once at extension-load time, same as every field above. Its one method,
+    // consume(), internally resolves the current request's orgId/userId AND
+    // extensionRequestStateCookie via getRequestContext() at call time — see
+    // `RequestContext`'s own doc comment for why the cookie itself is threaded through the same
+    // ambient-context mechanism rather than a new parallel one. See
+    // lib/extension-request-state-host.ts.
+    extensionRequestState: createExtensionRequestStateHost(manifest.name),
     getDbHandle: async () => {
       if (!manifest.dbScope || manifest.dbScope.length === 0) {
         return { unavailable: 'no-approved-scope' }
