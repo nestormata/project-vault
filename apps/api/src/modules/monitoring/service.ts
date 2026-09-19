@@ -15,6 +15,7 @@ import {
   computeStatusTransition,
   episodeKeyFor,
   type MonitoringAlertType,
+  type ServiceEndpointStatus,
 } from '../../workers/monitoring-alert-shared.js'
 import type {
   CreateCertificateBody,
@@ -449,7 +450,7 @@ export function serializeServiceEndpoint(row: typeof serviceEndpoints.$inferSele
     url: redactUrlForDisplay(row.url),
     checkFrequencyMinutes: row.checkFrequencyMinutes,
     downThresholdFailures: row.downThresholdFailures,
-    status: row.status as 'healthy' | 'degraded' | 'down',
+    status: row.status as ServiceEndpointStatus,
     consecutiveFailures: row.consecutiveFailures,
     lastCheckedAt: row.lastCheckedAt?.toISOString() ?? null,
     healthCheckPaused: row.healthCheckPausedAt !== null,
@@ -505,7 +506,7 @@ export async function listServiceEndpointsForOrg(tx: Tx, orgId: string) {
     checkFrequencyMinutes: row.checkFrequencyMinutes,
     healthCheckPausedAt: row.healthCheckPausedAt?.toISOString() ?? null,
     consecutiveFailures: row.consecutiveFailures,
-    status: row.status as 'healthy' | 'degraded' | 'down',
+    status: row.status as ServiceEndpointStatus,
     lastCheckedAt: row.lastCheckedAt?.toISOString() ?? null,
   }))
 }
@@ -861,7 +862,7 @@ export async function applyHealthCheckResult(
   })
 
   const transition = computeStatusTransition({
-    currentStatus: input.serviceEndpoint.status as 'healthy' | 'degraded' | 'down',
+    currentStatus: input.serviceEndpoint.status as ServiceEndpointStatus,
     consecutiveFailures: input.serviceEndpoint.consecutiveFailures,
     downThresholdFailures: input.serviceEndpoint.downThresholdFailures,
     isHealthy: input.isHealthy,
