@@ -224,6 +224,12 @@ const DEFAULT_HOST_SERVICES: HostServices = {
           'registerExtension() was called without a real HostServices — monitoring.createServiceEndpoint is unavailable'
         )
       ),
+    listServiceEndpointsForScheduling: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — monitoring.listServiceEndpointsForScheduling is unavailable'
+        )
+      ),
   },
   notificationOriginator: {
     enqueueNotification: () =>

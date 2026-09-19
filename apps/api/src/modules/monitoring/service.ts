@@ -479,6 +479,38 @@ export async function listServiceEndpoints(tx: Tx, projectId: string) {
 }
 
 /**
+ * Story 57.1 (AC1, AC4, AC5) — org-wide (not per-project) service-endpoint list for
+ * `HostServices.monitoring.listServiceEndpointsForScheduling`. Queries `serviceEndpoints.orgId`
+ * directly (the column already exists on every row; no `projects` join needed). Deliberately
+ * does NOT call `serializeServiceEndpoint()` (AC2 — that redacts `url` via
+ * `redactUrlForDisplay()`, which would make the returned URL unprobeable for this method's own
+ * caller) and builds its return value via an explicit whitelist mapper — never a wholesale
+ * `...row` spread — so a future schema addition (e.g. a new secret-shaped column) cannot
+ * silently leak to extension code through this path just because it wasn't added to
+ * `serializeServiceEndpoint`'s own exclusion list. Ordered by `createdAt` for determinism,
+ * matching `listServiceEndpoints`'s existing per-project ordering.
+ */
+export async function listServiceEndpointsForOrg(tx: Tx, orgId: string) {
+  const rows = await tx
+    .select()
+    .from(serviceEndpoints)
+    .where(eq(serviceEndpoints.orgId, orgId))
+    .orderBy(serviceEndpoints.createdAt)
+  return rows.map((row) => ({
+    id: row.id,
+    orgId: row.orgId,
+    projectId: row.projectId,
+    name: row.name,
+    url: row.url,
+    checkFrequencyMinutes: row.checkFrequencyMinutes,
+    healthCheckPausedAt: row.healthCheckPausedAt?.toISOString() ?? null,
+    consecutiveFailures: row.consecutiveFailures,
+    status: row.status as 'healthy' | 'degraded' | 'down',
+    lastCheckedAt: row.lastCheckedAt?.toISOString() ?? null,
+  }))
+}
+
+/**
  * AC 1/ADR-6.2-09: checks the per-project registration cap BEFORE any SSRF validation or DB
  * write, then AC 1/2: synchronously validates the URL is not private/loopback/reserved.
  */
