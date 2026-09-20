@@ -498,6 +498,27 @@ export const OperationalEvent = {
   // success or failure, carrying outcome/durationMs so an operator can see exactly what recurring
   // work an installed extension has claimed and how it's performing.
   EXTENSION_SCHEDULED_TASK_INVOKED: 'extension_scheduled_task.invoked',
+
+  // Story 20.12 AC5: structured audit-log entry written for EVERY call to any
+  // `HostServices.credentialSharing` method — success, denial (rate-limited, no-machine-user), or
+  // error. Fields are `organizationId`/`extensionName`/`method`/`outcome` only — never share
+  // content, tokens, or revealed values. Mirrors `MONITORING_HOST_CHECK_RECORDED`'s pattern
+  // exactly.
+  CREDENTIAL_SHARING_HOST_CHECK_RECORDED: 'credential_sharing_host.check_recorded',
+  // Story 20.12 AC5: a call was refused before resolution because its extension's per-extension
+  // in-flight accounting key was already at its concurrency cap — a distinct rate-limit budget
+  // from every other hook's own (never shared).
+  CREDENTIAL_SHARING_HOST_RATE_LIMITED: 'credential_sharing_host.rate_limited',
+  // Story 20.12 AC5b (Design Decision B): `findShareByToken`/`revealShare` were refused because
+  // the resolved organizationId's own per-org token-bucket was exhausted — distinct from the
+  // per-extension in-flight cap above (protects against a token-guessing attack against one org,
+  // not runaway per-extension concurrency).
+  CREDENTIAL_SHARING_HOST_ORG_RATE_LIMITED: 'credential_sharing_host.org_rate_limited',
+  // Story 20.12 Design Decision A: `createExternalShare`/`revokeShare`/
+  // `supersedeSharesForRotation` refused because the calling extension's org has no mapped PV
+  // machine-user to attribute the audit write to — fail-closed, never an unattributed or
+  // system-actor write.
+  CREDENTIAL_SHARING_HOST_NO_MACHINE_USER: 'credential_sharing_host.no_machine_user',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]

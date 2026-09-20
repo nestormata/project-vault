@@ -100,6 +100,24 @@ export type {
 } from './hooks/notification-originator.js'
 export type { OAuthHandoffHooks, OAuthHandoffRedirectResult } from './hooks/oauth-handoff.js'
 export type { ExtensionRequestStateHostService } from './hooks/extension-request-state.js'
+export type {
+  CredentialSharingCreateExternalShareParams,
+  CredentialSharingCreateExternalShareResult,
+  CredentialSharingFindShareByTokenResult,
+  CredentialSharingHost,
+  CredentialSharingRevealResult,
+  CredentialSharingRevokeShareParams,
+  CredentialSharingRevokeShareResult,
+  CredentialSharingShareRecord,
+  CredentialSharingShareStatus,
+  CredentialSharingSupersedeSharesForRotationParams,
+  CredentialSharingSupersedeSharesForRotationResult,
+} from './hooks/credential-sharing.js'
+export {
+  CredentialSharingNoMachineUserError,
+  CredentialSharingOrgRateLimitedError,
+  CredentialSharingRateLimitedError,
+} from './hooks/credential-sharing.js'
 export type { ScheduledTaskContext, ScheduledTaskHooks } from './hooks/scheduled-task.js'
 export {
   NotificationOriginatorInvalidParamsError,

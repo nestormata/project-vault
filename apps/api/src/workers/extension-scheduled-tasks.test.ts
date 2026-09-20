@@ -71,6 +71,13 @@ function fakeHostServices(overrides: Partial<HostServices> = {}): HostServices {
     extensionRequestState: {
       consume: unavailable('extensionRequestState.consume'),
     },
+    credentialSharing: {
+      createExternalShare: unavailable('credentialSharing.createExternalShare'),
+      findShareByToken: unavailable('credentialSharing.findShareByToken'),
+      revealShare: unavailable('credentialSharing.revealShare'),
+      revokeShare: unavailable('credentialSharing.revokeShare'),
+      supersedeSharesForRotation: unavailable('credentialSharing.supersedeSharesForRotation'),
+    },
     ...overrides,
   }
 }

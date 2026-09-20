@@ -33,6 +33,7 @@ import { createEphemeralStateHost } from '../lib/ephemeral-state.js'
 import { createExtensionRequestStateHost } from '../lib/extension-request-state-host.js'
 import { buildMonitoringHost } from '../lib/monitoring-host.js'
 import { buildNotificationOriginatorHost } from '../lib/notification-originator-host.js'
+import { buildCredentialSharingHost } from '../lib/credential-sharing-host.js'
 import { writePlatformAuditEntryOrFailClosed } from '../lib/audit-or-fail-closed.js'
 import { fetchAllOrgIds } from '../middleware/rls.js'
 import { env } from '../config/env.js'
@@ -313,6 +314,12 @@ async function buildHostServices(
     // ambient-context mechanism rather than a new parallel one. See
     // lib/extension-request-state-host.ts.
     extensionRequestState: createExtensionRequestStateHost(manifest.name),
+    // Story 20.12 — bound once at extension-load time, same as every field above. A thin facade
+    // over PV's already-shipped credential-shares service layer (Epic 17/20.4/20.5). No
+    // capability-gating enumeration update needed (57.1's own Dev Notes finding: HostServices
+    // fields are not enumerated anywhere for that purpose — credentialSharing is wired as a whole
+    // object, same as monitoring/notificationOriginator above). See lib/credential-sharing-host.ts.
+    credentialSharing: buildCredentialSharingHost(manifest, logger),
     getDbHandle: async () => {
       if (!manifest.dbScope || manifest.dbScope.length === 0) {
         return { unavailable: 'no-approved-scope' }

@@ -253,6 +253,38 @@ const DEFAULT_HOST_SERVICES: HostServices = {
         )
       ),
   },
+  credentialSharing: {
+    createExternalShare: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — credentialSharing.createExternalShare is unavailable'
+        )
+      ),
+    findShareByToken: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — credentialSharing.findShareByToken is unavailable'
+        )
+      ),
+    revealShare: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — credentialSharing.revealShare is unavailable'
+        )
+      ),
+    revokeShare: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — credentialSharing.revokeShare is unavailable'
+        )
+      ),
+    supersedeSharesForRotation: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — credentialSharing.supersedeSharesForRotation is unavailable'
+        )
+      ),
+  },
 }
 
 /**

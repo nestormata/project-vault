@@ -3,6 +3,7 @@ import type { HostServices } from './host-services.js'
 import type { PvMonitoringHost } from './hooks/monitoring.js'
 import type { NotificationOriginatorHost } from './hooks/notification-originator.js'
 import type { ExtensionRequestStateHostService } from './hooks/extension-request-state.js'
+import type { CredentialSharingHost } from './hooks/credential-sharing.js'
 
 const TEST_DATE = '2026-01-01'
 
@@ -69,8 +70,16 @@ const extensionRequestStateFixture: ExtensionRequestStateHostService = {
   consume: async () => undefined,
 }
 
-describe('HostServices — Story 40.1 AC widening to include extensionRequestState', () => {
-  it('exposes exactly auditEventSource/orgAuthorization/projectAuthorization/ephemeralState/monitoring/notificationOriginator/extensionRequestState', () => {
+const credentialSharingFixture: CredentialSharingHost = {
+  createExternalShare: async () => ({ status: 'credential_not_found' }),
+  findShareByToken: async () => ({ status: 'not_found' }),
+  revealShare: async () => ({ status: 'not_found' }),
+  revokeShare: async () => ({ status: 'not_found' }),
+  supersedeSharesForRotation: async () => ({ supersededShares: [] }),
+}
+
+describe('HostServices — Story 20.12 AC widening to include credentialSharing', () => {
+  it('exposes exactly auditEventSource/orgAuthorization/projectAuthorization/ephemeralState/monitoring/notificationOriginator/extensionRequestState/credentialSharing', () => {
     const fixture: HostServices = {
       auditEventSource: { writeAuditEvent: async () => ({ id: '1', createdAt: TEST_DATE }) },
       orgAuthorization: { checkMembership: async () => ({ outcome: 'authorized' }) },
@@ -85,6 +94,7 @@ describe('HostServices — Story 40.1 AC widening to include extensionRequestSta
       monitoring: monitoringFixture,
       notificationOriginator: notificationOriginatorFixture,
       extensionRequestState: extensionRequestStateFixture,
+      credentialSharing: credentialSharingFixture,
     }
     expect(new Set(Object.keys(fixture))).toEqual(
       new Set([
@@ -95,6 +105,7 @@ describe('HostServices — Story 40.1 AC widening to include extensionRequestSta
         'monitoring',
         'notificationOriginator',
         'extensionRequestState',
+        'credentialSharing',
       ])
     )
   })
@@ -119,6 +130,7 @@ describe('HostServices — Story 40.1 AC widening to include extensionRequestSta
       monitoring: monitoringFixture,
       notificationOriginator: notificationOriginatorFixture,
       extensionRequestState: extensionRequestStateFixture,
+      credentialSharing: credentialSharingFixture,
     }
     legacyHooksFactory(host)
   })
