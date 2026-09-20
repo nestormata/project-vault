@@ -101,6 +101,7 @@ export type {
 export type { OAuthHandoffHooks, OAuthHandoffRedirectResult } from './hooks/oauth-handoff.js'
 export type { ExtensionRequestStateHostService } from './hooks/extension-request-state.js'
 export type {
+  CredentialShareCreationErrorStatus,
   CredentialSharingCreateExternalShareParams,
   CredentialSharingCreateExternalShareResult,
   CredentialSharingFindShareByTokenResult,

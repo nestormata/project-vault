@@ -12,6 +12,7 @@ import {
 import type { CredentialShareRow } from '../modules/credential-shares/service.js'
 import {
   revokeShare as revokeShareService,
+  shareRecipientAndTimingFields,
   supersedeOutstandingSharesForRotation as supersedeOutstandingSharesForRotationService,
 } from '../modules/credential-shares/service.js'
 import {
@@ -370,12 +371,7 @@ function serializeShare(share: CredentialShareRow) {
     credentialId: share.credentialId,
     fieldKey: share.fieldKey,
     attributeKeys: share.attributeKeys,
-    recipientType: share.recipientType as 'user' | 'external',
-    recipientUserId: share.recipientUserId,
-    recipientEmail: share.recipientEmail,
-    singleUse: share.singleUse,
-    createdAt: share.createdAt.toISOString(),
-    expiresAt: share.expiresAt.toISOString(),
+    ...shareRecipientAndTimingFields(share),
     revokedAt: share.revokedAt ? share.revokedAt.toISOString() : null,
     supersededAt: share.supersededAt ? share.supersededAt.toISOString() : null,
     firstViewedAt: share.firstViewedAt ? share.firstViewedAt.toISOString() : null,

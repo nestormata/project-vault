@@ -17,6 +17,21 @@ import { DEFAULT_SHARE_LIST_LIMIT, MAX_ATTRIBUTE_KEYS, SHARE_MAX_TTL_MS } from '
 
 export type CredentialShareRow = typeof credentialShares.$inferSelect
 
+/** The recipient/timing fields every `serializeShare()` variant needs verbatim — factored out of
+ * `routes.ts`'s (HTTP response) and `apps/api/src/lib/credential-sharing-host.ts`'s (Story 20.12
+ * `HostServices.credentialSharing` facade) own serializers, which otherwise duplicated this block
+ * line-for-line (tripped jscpd, same shape as the `createShareErrorResponse` factor-out below). */
+export function shareRecipientAndTimingFields(share: CredentialShareRow) {
+  return {
+    recipientType: share.recipientType as 'user' | 'external',
+    recipientUserId: share.recipientUserId,
+    recipientEmail: share.recipientEmail,
+    singleUse: share.singleUse,
+    createdAt: share.createdAt.toISOString(),
+    expiresAt: share.expiresAt.toISOString(),
+  }
+}
+
 /**
  * Token generation/hashing mirrors `apps/api/src/modules/invitations/tokens.ts`'s bearer-token
  * pattern: only the HMAC digest is ever persisted, the raw token is returned to the caller once.

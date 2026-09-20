@@ -146,7 +146,12 @@ export type CredentialSharingCreateExternalShareParams = {
   attributeKeys?: string[] | null
 }
 
-export type CredentialSharingCreateExternalShareResult =
+/** The non-`'ok'` failure-status vocabulary for creating an external share — single source of
+ * truth, mirrored back into apps/api's own internal `CreateExternalShareResult`
+ * (`external-service.ts` imports this type rather than redeclaring the literal union) so the two
+ * no longer duplicate the same 7-variant union verbatim (Story 20.12 code review: this was a
+ * jscpd clone). */
+export type CredentialShareCreationErrorStatus =
   | { status: 'credential_not_found' }
   | { status: 'credential_archived' }
   | { status: 'unknown_field_key'; field: string }
@@ -154,6 +159,9 @@ export type CredentialSharingCreateExternalShareResult =
   | { status: 'too_many_attribute_keys' }
   | { status: 'expires_at_invalid'; reason: 'past' | 'too_far_in_future' }
   | { status: 'cap_exceeded' }
+
+export type CredentialSharingCreateExternalShareResult =
+  | CredentialShareCreationErrorStatus
   | { status: 'ok'; share: CredentialSharingShareRecord; token: string }
 
 // ---------------------------------------------------------------------------------------------

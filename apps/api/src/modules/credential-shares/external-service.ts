@@ -2,6 +2,7 @@ import { and, eq, inArray, sql, type SQL } from 'drizzle-orm'
 import { withOrg, type Tx } from '@project-vault/db'
 import { credentialShares } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
+import type { CredentialShareCreationErrorStatus } from '@project-vault/extension-api'
 import { getAdminDb } from '../../lib/db.js'
 import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { serializeBounded } from '../credentials/bounded-share-adapter.js'
@@ -105,17 +106,13 @@ export type CreateExternalShareInput = {
   expiresAt: Date
 }
 
+// The non-'ok' variants are `CredentialShareCreationErrorStatus`, defined once in
+// `@project-vault/extension-api` (`hooks/credential-sharing.ts`) and mirrored back in here rather
+// than redeclared, since `HostServices.credentialSharing.createExternalShare` (Story 20.12) needs
+// the identical failure vocabulary and the two literal unions previously duplicated verbatim
+// (jscpd clone, fixed in code review).
 export type CreateExternalShareResult =
-  | { status: 'credential_not_found' }
-  // Story 28.5 AC4: the credential itself is archived.
-  | { status: 'credential_archived' }
-  | { status: 'unknown_field_key'; field: string }
-  | { status: 'ambiguous_share_scope' }
-  // Bugfix (review patch): see `ShareFieldAndExpiryValidation`'s matching variant in service.ts.
-  | { status: 'too_many_attribute_keys' }
-  | { status: 'expires_at_invalid'; reason: 'past' | 'too_far_in_future' }
-  | { status: 'cap_exceeded' }
-  | { status: 'ok'; share: CredentialShareRow; token: string }
+  CredentialShareCreationErrorStatus | { status: 'ok'; share: CredentialShareRow; token: string }
 
 /** Story 17.2 AC-1/AC-4/AC-5/AC-16: creates a `recipient_type = 'external'` share. Eligibility
  *  (AC-2, reuses `rejectIfInsufficientProjectRoleForReveal`) and step-up re-auth (AC-3) are

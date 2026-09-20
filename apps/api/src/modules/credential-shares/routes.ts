@@ -50,6 +50,7 @@ import {
   findShareInScope,
   listSharesForCredential,
   revokeShare,
+  shareRecipientAndTimingFields,
   type CredentialShareRow,
 } from './service.js'
 import {
@@ -132,12 +133,7 @@ export function serializeShare(share: CredentialShareRow) {
     attributeKeys: share.attributeKeys,
     action: share.action,
     sharedBy: share.sharedBy,
-    recipientType: share.recipientType as 'user' | 'external',
-    recipientUserId: share.recipientUserId,
-    recipientEmail: share.recipientEmail,
-    singleUse: share.singleUse,
-    createdAt: share.createdAt.toISOString(),
-    expiresAt: share.expiresAt.toISOString(),
+    ...shareRecipientAndTimingFields(share),
     revokedAt: share.revokedAt?.toISOString() ?? null,
     firstViewedAt: share.firstViewedAt?.toISOString() ?? null,
     viewCount: share.viewCount,

@@ -69,7 +69,7 @@ const OTHER_ORG_ID = '77777777-7777-7777-7777-777777777777'
 const CREATED_BY_USER_ID = '88888888-8888-8888-8888-888888888888'
 /* eslint-enable no-secrets/no-secrets */
 const VALID_TOKEN = 'valid-token'
-const RECIPIENT_EMAIL = 'recipient@example.com'
+const RECIPIENT_EMAIL = 'recipient@invalid'
 const EXPIRES_AT_ISO = '2026-01-02T00:00:00.000Z'
 const ROTATION_ID = 'rotation-1'
 

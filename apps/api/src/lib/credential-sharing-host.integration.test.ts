@@ -36,7 +36,7 @@ const { registerOwner } = createMembershipTestHelpers({
 })
 
 const EXTENSION_NAME = 'com.acme.credential-sharing-host-fixture'
-const RECIPIENT_EMAIL = 'recipient@example.com'
+const RECIPIENT_EMAIL = 'recipient@invalid'
 
 const MANIFEST: ExtensionManifest = {
   name: EXTENSION_NAME,
@@ -293,7 +293,7 @@ describe('buildCredentialSharingHost — real-Postgres integration (Story 20.12 
       organizationId: owner.orgId,
       projectId,
       credentialId: credential.id,
-      recipientEmail: 'recipient2@example.com',
+      recipientEmail: 'recipient2@invalid',
       expiresAt: futureIso(),
       fieldKey: 'username',
     })
