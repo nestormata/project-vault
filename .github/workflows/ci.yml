@@ -176,6 +176,12 @@ jobs:
       - name: Check audit-ci baseline guard's own test suite (Story 42.2)
         run: pnpm vitest run scripts/check-audit-baseline.test.ts
 
+      - name: Check crypto-adjacent dependency pins (Story 42.3)
+        run: pnpm check-crypto-adjacent-pins
+
+      - name: Check crypto-adjacent pins guard's own test suite (Story 42.3)
+        run: pnpm vitest run scripts/check-crypto-adjacent-pins.test.ts
+
       - name: Check .env.example parity
         run: pnpm tsx scripts/check-env-example.ts
 

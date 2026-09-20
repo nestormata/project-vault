@@ -205,6 +205,8 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm jscpd
 	pnpm tsx scripts/check-audit-baseline.ts
 	pnpm vitest run scripts/check-audit-baseline.test.ts
+	pnpm check-crypto-adjacent-pins
+	pnpm vitest run scripts/check-crypto-adjacent-pins.test.ts
 	pnpm tsx scripts/check-env-example.ts
 	# Blocking, matching ci.yml's `audit-ci` step on this same command (Story 42.2 — the
 	# formerly non-blocking `pnpm audit --audit-level=high || true` is superseded by this
