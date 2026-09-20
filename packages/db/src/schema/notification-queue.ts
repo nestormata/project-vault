@@ -5,6 +5,7 @@ import {
   timestamp,
   integer,
   jsonb,
+  boolean,
   check,
   index,
   uniqueIndex,
@@ -46,6 +47,13 @@ export const notificationQueue = pgTable(
     // extension's own manifest name. Archive-vs-delete-style honesty callout: `null` here means
     // "PV-internal," never "unknown" — there is no third state.
     originExtensionName: text('origin_extension_name'),
+    // Story 58.1 Design Decision 2/Task 2 — a STRICT boolean for exactly the two rate-limit
+    // budgets that exist today: `false` (the default, and every existing row's backfilled value)
+    // means "counts against the in-request `enqueueNotification()` budget"; `true` means "counts
+    // against the separate out-of-request `enqueueNotificationForOrg()` budget." A future third
+    // notification entry point that needs its own independent budget MUST add a new column, never
+    // overload this one with a third meaning — see ADR-58.1-2 in the story file.
+    enqueuedOutOfRequest: boolean('enqueued_out_of_request').notNull().default(false),
   },
   (t) => ({
     channelCheck: check(
@@ -73,5 +81,14 @@ export const notificationQueue = pgTable(
     originExtensionRateLimitIdx: index('idx_notification_queue_origin_extension_rate_limit')
       .on(t.originExtensionName, t.orgId, t.createdAt)
       .where(sql`${t.originExtensionName} IS NOT NULL`),
+    // Story 58.1 Design Decision 2/Task 2 — mirrors `originExtensionRateLimitIdx` above, but
+    // scoped to the out-of-request budget's own rolling-window COUNT query (`WHERE
+    // origin_extension_name = ? AND org_id = ? AND created_at > ? AND enqueued_out_of_request =
+    // true`). Partial on `enqueued_out_of_request = true` for the same reason as the in-request
+    // index's own `IS NOT NULL` partial: the overwhelming majority of rows never match this
+    // predicate at all.
+    outOfRequestExtensionRateLimitIdx: index('idx_notification_queue_ooref_extension_rate_limit')
+      .on(t.originExtensionName, t.orgId, t.createdAt)
+      .where(sql`${t.enqueuedOutOfRequest} = true`),
   })
 )

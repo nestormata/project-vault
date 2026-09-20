@@ -79,7 +79,7 @@ factory declaring zero parameters stays valid, so new services are always additi
 | `projectAuthorization` | `checkProjectMembership()` | The project-scoped sibling, reusing Project Vault's own effective-project-role semantics (org owner/admin bypass, explicit membership-row fallback). |
 | `ephemeralState` | key/value read/write | Short-lived, org-scoped state. Resolves the current request's organization at call time. |
 | `monitoring` | eight methods | Project Vault's monitoring surface. Six resolve the current request's organization at call time; two take an explicit `organizationId` because they run outside any request. |
-| `notificationOriginator` | `enqueueNotification()` | Enqueue through Project Vault's own notification queue. Not gated by the unrelated `notification-channel` capability. |
+| `notificationOriginator` | `enqueueNotification()`, `enqueueNotificationForOrg()` | Enqueue through Project Vault's own notification queue. `enqueueNotification()` is in-request only; `enqueueNotificationForOrg()` is its out-of-request sibling (explicit `organizationId`, own independent rate-limit budget). Not gated by the unrelated `notification-channel` capability. |
 
 Host services are bound once, at load time. Values they return are request-scoped — never cache
 them across requests.

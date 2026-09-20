@@ -164,6 +164,12 @@ describe('OperationalEvent', () => {
     )
   })
 
+  it('exposes the Story 58.1 out-of-request notification-originator rate-limit event type', () => {
+    expect(OperationalEvent.NOTIFICATION_ORIGINATOR_HOST_OUT_OF_REQUEST_RATE_LIMITED).toBe(
+      'notification_originator_host.out_of_request_rate_limited'
+    )
+  })
+
   it('exposes the Story 37.1 project-authorization-host event types', () => {
     expect(OperationalEvent.PROJECT_AUTHORIZATION_CHECK_RECORDED).toBe(
       'project_authorization.check_recorded'

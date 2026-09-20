@@ -1,0 +1,2 @@
+ALTER TABLE "notification_queue" ADD COLUMN "enqueued_out_of_request" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE INDEX "idx_notification_queue_ooref_extension_rate_limit" ON "notification_queue" USING btree ("origin_extension_name","org_id","created_at") WHERE "notification_queue"."enqueued_out_of_request" = true;
