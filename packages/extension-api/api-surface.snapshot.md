@@ -944,24 +944,24 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.3.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@651`
+- member: `__@match@804`
   - since: 3.22.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@660`
+- member: `__@matchAll@813`
   - since: 3.22.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@653`
+- member: `__@replace@806`
   - since: 3.22.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@656`
+- member: `__@search@809`
   - since: 3.22.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@658`
+- member: `__@split@811`
   - since: 3.22.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
@@ -1012,10 +1012,6 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - call-signature: `(string: string): boolean`
 - member: `readonly unicode`
   - since: 3.3.0
-  - type: `boolean`
-  - union-members: `false`, `true`
-- member: `readonly unicodeSets`
-  - since: 3.22.0
   - type: `boolean`
   - union-members: `false`, `true`
 
@@ -1024,24 +1020,24 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.10.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@651`
+- member: `__@match@804`
   - since: 3.22.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@660`
+- member: `__@matchAll@813`
   - since: 3.22.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@653`
+- member: `__@replace@806`
   - since: 3.22.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@656`
+- member: `__@search@809`
   - since: 3.22.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@658`
+- member: `__@split@811`
   - since: 3.22.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
@@ -1092,10 +1088,6 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - call-signature: `(string: string): boolean`
 - member: `readonly unicode`
   - since: 3.10.0
-  - type: `boolean`
-  - union-members: `false`, `true`
-- member: `readonly unicodeSets`
-  - since: 3.22.0
   - type: `boolean`
   - union-members: `false`, `true`
 
@@ -1828,24 +1820,24 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.9.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@651`
+- member: `__@match@804`
   - since: 3.22.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@660`
+- member: `__@matchAll@813`
   - since: 3.22.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@653`
+- member: `__@replace@806`
   - since: 3.22.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@656`
+- member: `__@search@809`
   - since: 3.22.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@658`
+- member: `__@split@811`
   - since: 3.22.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
@@ -1896,10 +1888,6 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - call-signature: `(string: string): boolean`
 - member: `readonly unicode`
   - since: 3.9.0
-  - type: `boolean`
-  - union-members: `false`, `true`
-- member: `readonly unicodeSets`
-  - since: 3.22.0
   - type: `boolean`
   - union-members: `false`, `true`
 
@@ -1914,24 +1902,24 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.9.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@651`
+- member: `__@match@804`
   - since: 3.22.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@660`
+- member: `__@matchAll@813`
   - since: 3.22.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@653`
+- member: `__@replace@806`
   - since: 3.22.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@656`
+- member: `__@search@809`
   - since: 3.22.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@658`
+- member: `__@split@811`
   - since: 3.22.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
@@ -1982,10 +1970,6 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - call-signature: `(string: string): boolean`
 - member: `readonly unicode`
   - since: 3.9.0
-  - type: `boolean`
-  - union-members: `false`, `true`
-- member: `readonly unicodeSets`
-  - since: 3.22.0
   - type: `boolean`
   - union-members: `false`, `true`
 
@@ -2237,24 +2221,24 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.8.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@651`
+- member: `__@match@804`
   - since: 3.22.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@660`
+- member: `__@matchAll@813`
   - since: 3.22.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@653`
+- member: `__@replace@806`
   - since: 3.22.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@656`
+- member: `__@search@809`
   - since: 3.22.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@658`
+- member: `__@split@811`
   - since: 3.22.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
@@ -2305,10 +2289,6 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - call-signature: `(string: string): boolean`
 - member: `readonly unicode`
   - since: 3.8.0
-  - type: `boolean`
-  - union-members: `false`, `true`
-- member: `readonly unicodeSets`
-  - since: 3.22.0
   - type: `boolean`
   - union-members: `false`, `true`
 
@@ -2462,24 +2442,24 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.16.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@651`
+- member: `__@match@804`
   - since: 3.22.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@660`
+- member: `__@matchAll@813`
   - since: 3.22.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@653`
+- member: `__@replace@806`
   - since: 3.22.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@656`
+- member: `__@search@809`
   - since: 3.22.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@658`
+- member: `__@split@811`
   - since: 3.22.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
@@ -2530,10 +2510,6 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - call-signature: `(string: string): boolean`
 - member: `readonly unicode`
   - since: 3.16.0
-  - type: `boolean`
-  - union-members: `false`, `true`
-- member: `readonly unicodeSets`
-  - since: 3.22.0
   - type: `boolean`
   - union-members: `false`, `true`
 
@@ -2555,24 +2531,24 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.18.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@651`
+- member: `__@match@804`
   - since: 3.22.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@660`
+- member: `__@matchAll@813`
   - since: 3.22.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@653`
+- member: `__@replace@806`
   - since: 3.22.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@656`
+- member: `__@search@809`
   - since: 3.22.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@658`
+- member: `__@split@811`
   - since: 3.22.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
@@ -2623,10 +2599,6 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - call-signature: `(string: string): boolean`
 - member: `readonly unicode`
   - since: 3.18.0
-  - type: `boolean`
-  - union-members: `false`, `true`
-- member: `readonly unicodeSets`
-  - since: 3.22.0
   - type: `boolean`
   - union-members: `false`, `true`
 
@@ -2803,24 +2775,24 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.1.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@651`
+- member: `__@match@804`
   - since: 3.22.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@660`
+- member: `__@matchAll@813`
   - since: 3.22.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@653`
+- member: `__@replace@806`
   - since: 3.22.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@656`
+- member: `__@search@809`
   - since: 3.22.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@658`
+- member: `__@split@811`
   - since: 3.22.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
@@ -2871,10 +2843,6 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - call-signature: `(string: string): boolean`
 - member: `readonly unicode`
   - since: 3.1.0
-  - type: `boolean`
-  - union-members: `false`, `true`
-- member: `readonly unicodeSets`
-  - since: 3.22.0
   - type: `boolean`
   - union-members: `false`, `true`
 
