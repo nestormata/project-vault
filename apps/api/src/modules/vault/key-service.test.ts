@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { encrypt, deriveKey, HKDF_INFO } from '@project-vault/crypto'
+import { encrypt, deriveKey, HKDF_INFO, createKeyDerivationParams } from '@project-vault/crypto'
 
 const limit = vi.fn()
 const db = {
@@ -400,5 +400,56 @@ describe('parseVaultStateRow: malformed encryptedSentinel (half-written/corrupte
 
     expect(caught).toMatchObject({ code: 'VAULT_CORRUPTED', statusCode: 503 })
     expect(caught).not.toBeInstanceOf(SyntaxError)
+  })
+})
+
+// Code-review finding (Story 42.4 review pass): the malformed-encryptedSentinel test above only
+// ever supplies kmsType: 'file', so parseVaultStateRow's passphrase-mode branch (JSON.parse of
+// keyDerivationParams, then validateKeyDerivationParams) was never exercised by any corruption
+// test despite this file's own orienting comment (line ~74) claiming coverage of
+// "DB-row corruption branches of parseVaultStateRow" generally. These two tests close that gap.
+describe('parseVaultStateRow: malformed keyDerivationParams (passphrase-mode DB-row corruption)', () => {
+  afterEach(async () => {
+    vi.clearAllMocks()
+    const { zeroKeys } = await import('./key-service.js')
+    zeroKeys()
+  })
+
+  it('throws VAULT_CORRUPTED (503), never a raw JSON.parse SyntaxError, for an unparseable keyDerivationParams string', async () => {
+    limit.mockResolvedValueOnce([
+      {
+        ...fileModeState(await encryptedSentinelFor(randomBytes(32))),
+        kmsType: 'passphrase',
+        keyDerivationParams: 'not-valid-json{{{',
+      },
+    ])
+
+    const { unsealVault } = await import('./key-service.js')
+
+    let caught: unknown
+    try {
+      await unsealVault({ passphrase: 'a-passphrase-that-is-long-enough' })
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).toMatchObject({ code: 'VAULT_CORRUPTED', statusCode: 503 })
+    expect(caught).not.toBeInstanceOf(SyntaxError)
+  })
+
+  it('throws VAULT_CORRUPTED (503) for a parseable-but-invalid keyDerivationParams object (fails validateKeyDerivationParams)', async () => {
+    limit.mockResolvedValueOnce([
+      {
+        ...fileModeState(await encryptedSentinelFor(randomBytes(32))),
+        kmsType: 'passphrase',
+        keyDerivationParams: JSON.stringify({ ...createKeyDerivationParams(), memoryCost: 1024 }),
+      },
+    ])
+
+    const { unsealVault } = await import('./key-service.js')
+
+    await expect(
+      unsealVault({ passphrase: 'a-passphrase-that-is-long-enough' })
+    ).rejects.toMatchObject({ code: 'VAULT_CORRUPTED', statusCode: 503 })
   })
 })
