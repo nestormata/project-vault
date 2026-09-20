@@ -177,8 +177,7 @@ jobs:
         run: pnpm tsx scripts/check-env-example.ts
 
       - name: Audit dependencies
-        run: pnpm audit --audit-level=high
-        continue-on-error: true
+        run: pnpm exec audit-ci --config audit-ci.jsonc
 
       - name: Validate commitlint (PR only)
         if: github.event_name == 'pull_request'

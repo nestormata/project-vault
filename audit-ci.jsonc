@@ -1,11 +1,22 @@
 {
-  // High and critical vulnerabilities fail CI
-  // Each acknowledged vulnerability MUST have:
-  //   "expires": "2026-MM-DD" (max 90 days from acknowledgement)
-  //   "reason": "Short justification string"
-  "high": [],
-  "critical": [],
-  "moderate": [],
-  "low": [],
+  // $schema: https://github.com/IBM/audit-ci/raw/main/docs/schema.json
+  //
+  // audit-ci's real config schema (Story 42.2 — see that story's Dev Agent Record for the
+  // root-cause finding this reshape fixes): the severity keys below are BOOLEANS meaning "gate
+  // on this severity or above", not arrays of suppression entries. Setting "high": true also
+  // gates "critical" via audit-ci's low->moderate->high->critical fallthrough, i.e. this repo
+  // gates on high-or-above. "moderate"/"low"/"critical" are intentionally omitted (omitted ->
+  // undefined -> falls back to audit-ci's own default of false) so the 6 pre-existing
+  // moderate/low findings (esbuild, cookie, qs — left unfixed by Story 42.1 as out-of-scope)
+  // stay out of the gate by construction, not by suppression.
+  //
+  // Suppressions (not currently needed — allowlist is empty) go in "allowlist" below, as
+  // NSPRecord entries: { "<GHSA-id-or-module-or-path>": { "expiry": "<date>", "notes": "<reason>" } }.
+  // "expiry" and "notes" are both required by scripts/check-audit-baseline.ts for any object-form
+  // entry (unless "active": false, which marks a suppression as registered but not applied, and
+  // is exempt from that check). Bare-string allowlist entries (audit-ci itself supports them) are
+  // rejected by scripts/check-audit-baseline.ts — every suppression in this repo must be
+  // auditable and time-boxed via an expiry, which a bare string can't carry.
+  "high": true,
   "allowlist": []
 }
