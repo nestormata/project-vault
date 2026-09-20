@@ -426,7 +426,7 @@ function checkDependabotGroupList(
     }
   }
 
-  const sorted = [...found].sort()
+  const sorted = [...found].sort((a, b) => a.localeCompare(b))
   if (JSON.stringify(sorted) === JSON.stringify(canonical)) return undefined
 
   return {
@@ -454,7 +454,7 @@ function scanDependabotCrossCheck(root: string): DependabotCrossCheckViolation[]
     ]
   }
 
-  const canonical = [...CRYPTO_ADJACENT_PACKAGES].sort()
+  const canonical = [...CRYPTO_ADJACENT_PACKAGES].sort((a, b) => a.localeCompare(b))
   const violations: DependabotCrossCheckViolation[] = []
   for (const target of DEPENDABOT_LIST_TARGETS) {
     const violation = checkDependabotGroupList(raw, target, canonical)
