@@ -479,6 +479,51 @@ describe('buildCredentialSharingHost.findShareByToken / revealShare (AC3)', () =
       })
     )
   })
+
+  // Code review 2026-09-20 (Medium finding, Nestor-confirmed as a required fix, not a judgment
+  // call): the previous window-per-bucket counter reset its ENTIRE bucket once `windowMs` had
+  // elapsed since the bucket's own `windowStart`, regardless of how recently the bucket's last
+  // call landed. That let a full new burst of `max` calls straight through immediately after the
+  // reset, even when the previous burst's last call was only milliseconds earlier — up to ~2x the
+  // stated limit inside any real `windowMs` span. A true sliding window (recent-call timestamps,
+  // pruned to `(now - windowMs, now]`) must still count those still-recent calls and reject.
+  it('AC5b (sliding-window regression): a burst spanning a window reset is still rejected, unlike the old window-per-bucket counter', async () => {
+    const timestamps = [0, 1, 1000, 1000]
+    let callIndex = 0
+    const now = () => timestamps[callIndex++] ?? (timestamps[timestamps.length - 1] as number)
+    const host = buildCredentialSharingHost(
+      MANIFEST,
+      {},
+      { orgRateLimits: { findShareByToken: 2, windowMs: 1000 }, now }
+    )
+
+    await host.findShareByToken('token-1') // t=0, count=1
+    await host.findShareByToken('token-2') // t=1, count=2 (at the limit)
+    // t=1000 — the old bucket (windowStart=0) had "expired" (1000 - 0 >= windowMs), so the old
+    // window-per-bucket counter reset it and allowed a whole new burst of `max` calls straight
+    // through, immediately after the t=1 call. A true sliding window still has the t=1 call
+    // inside (0, 1000], so only ONE more call fits in the budget here.
+    await expect(host.findShareByToken('token-3')).resolves.toMatchObject({ status: 'ok' }) // t=1000, count=2 (t=1 and t=1000 both in (0,1000])
+    await expect(host.findShareByToken('token-4')).rejects.toBeInstanceOf(
+      CredentialSharingOrgRateLimitedError
+    ) // t=1000 again — bucket is already at the limit within the sliding window, must reject
+  })
+
+  it('AC5b (sliding-window): a call outside the window after the burst is allowed once old entries age out', async () => {
+    const timestamps = [999, 999, 2000]
+    let callIndex = 0
+    const now = () => timestamps[callIndex++] ?? (timestamps[timestamps.length - 1] as number)
+    const host = buildCredentialSharingHost(
+      MANIFEST,
+      {},
+      { orgRateLimits: { findShareByToken: 2, windowMs: 1000 }, now }
+    )
+
+    await host.findShareByToken('token-1') // t=999
+    await host.findShareByToken('token-2') // t=999, at the limit
+    // t=2000 is more than windowMs (1000) after both prior calls, so they've aged out.
+    await expect(host.findShareByToken('token-3')).resolves.toMatchObject({ status: 'ok' })
+  })
 })
 
 describe('buildCredentialSharingHost.revokeShare (AC4)', () => {

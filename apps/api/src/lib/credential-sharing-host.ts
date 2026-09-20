@@ -62,21 +62,30 @@ export function __resetCredentialSharingHostRateLimitForTests(): void {
 }
 
 // -------------------------------------------------------------------------------------------
-// AC5b (Design Decision B, Nestor-confirmed) — per-org token-bucket rate limiter for
+// AC5b (Design Decision B, Nestor-confirmed) — per-org sliding-window rate limiter for
 // findShareByToken/revealShare, keyed by organizationId (resolved from the token, never by IP —
-// IP doesn't exist in-process). A dedicated, in-memory fixed-window structure local to this file
-// — deliberately NOT Fastify's route-level `rateLimit` plugin (HTTP-request-scoped, unreachable
-// from an in-process call). Matches `external-access-routes.ts`'s existing route limits as the
-// starting point: 60/min for findShareByToken, 30/min for revealShare.
+// IP doesn't exist in-process). A dedicated, in-memory structure local to this file — deliberately
+// NOT Fastify's route-level `rateLimit` plugin (HTTP-request-scoped, unreachable from an
+// in-process call). Matches `external-access-routes.ts`'s existing route limits as the starting
+// point: 60/min for findShareByToken, 30/min for revealShare.
+//
+// Algorithm (upgraded per code review 2026-09-20, Nestor-confirmed as a required fix): a true
+// sliding window over a per-key timestamp log, NOT a fixed/rolling window-per-bucket counter. The
+// earlier counter reset its whole bucket once `windowMs` had elapsed since the bucket's own
+// `windowStart`, regardless of how recently the bucket's last call had actually landed — letting a
+// fresh burst of up to `max` calls through immediately after that reset, on top of whatever had
+// just been allowed before it (up to ~2x the stated limit within any real `windowMs` span). A
+// sliding window closes that gap: each call is recorded by timestamp, entries older than
+// `windowMs` are pruned before every check, and the call is rejected whenever the number of
+// still-recent entries already meets the limit — no reset ever discards calls that are still
+// within the trailing window.
 // -------------------------------------------------------------------------------------------
 
 export const CREDENTIAL_SHARING_ORG_RATE_LIMIT_WINDOW_MS = 60_000
 export const CREDENTIAL_SHARING_FIND_SHARE_BY_TOKEN_ORG_LIMIT = 60
 export const CREDENTIAL_SHARING_REVEAL_SHARE_ORG_LIMIT = 30
 
-type OrgRateLimitState = { windowStart: number; count: number }
-
-const orgRateLimitState = new Map<string, OrgRateLimitState>()
+const orgRateLimitState = new Map<string, number[]>()
 
 function orgRateLimitKeyFor(methodName: string, organizationId: string): string {
   return `${methodName}:${organizationId}`
@@ -89,13 +98,19 @@ function tryAcquireOrgRateLimitSlot(
   windowMs: number,
   now: number
 ): boolean {
-  const state = orgRateLimitState.get(key)
-  if (!state || now - state.windowStart >= windowMs) {
-    orgRateLimitState.set(key, { windowStart: now, count: 1 })
-    return true
+  const windowStart = now - windowMs
+  const existing = orgRateLimitState.get(key) ?? []
+  const recent = existing.filter((timestamp) => timestamp > windowStart)
+
+  if (recent.length >= max) {
+    // Persist the pruned log even on rejection so a key that goes quiet doesn't keep growing
+    // unboundedly with stale entries.
+    orgRateLimitState.set(key, recent)
+    return false
   }
-  if (state.count >= max) return false
-  state.count += 1
+
+  recent.push(now)
+  orgRateLimitState.set(key, recent)
   return true
 }
 
