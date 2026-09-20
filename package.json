@@ -52,6 +52,7 @@
     "prepare": "husky"
   },
   "devDependencies": {
+    "json5-seeded-advisory-throwaway": "npm:json5@1.0.1",
     "@commitlint/cli": "^21.2.2",
     "@commitlint/config-conventional": "^21.2.2",
     "@project-vault/db": "workspace:*",
