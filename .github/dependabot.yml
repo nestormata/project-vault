@@ -5,9 +5,36 @@ updates:
     schedule:
       interval: "weekly"
     groups:
+      # Story 42.3 — crypto-adjacent packages (see scripts/lib/crypto-adjacent-packages.ts, the
+      # canonical source of truth this group's `patterns` list is kept in sync with by hand, since
+      # YAML cannot import a .ts const; scripts/check-crypto-adjacent-pins.test.ts cross-checks the
+      # two stay in sync). Split into its own group, with its own label, so a version bump to any of
+      # these never rides along inside the omnibus pnpm-workspace PR below — a reviewer must see it
+      # called out and go read its changelog, not skim past it inside a 20-package diff.
+      crypto-adjacent:
+        patterns:
+          - "argon2"
+          - "bcrypt"
+          - "@fastify/jwt"
+          - "fast-jwt"
+          - "otpauth"
+        labels:
+          - "crypto-adjacent"
       pnpm-workspace:
         patterns:
           - "*"
+        # Required, not optional (Story 42.3) — Dependabot's catch-all `patterns: ["*"]` group does
+        # not automatically defer to a more specific, earlier-defined group; without this
+        # exclude-patterns list the crypto-adjacent packages above could still be re-absorbed into
+        # this omnibus group, defeating the whole point of splitting them out. Keep in sync with the
+        # crypto-adjacent group's own `patterns` above (and with
+        # scripts/lib/crypto-adjacent-packages.ts).
+        exclude-patterns:
+          - "argon2"
+          - "bcrypt"
+          - "@fastify/jwt"
+          - "fast-jwt"
+          - "otpauth"
 
   - package-ecosystem: "github-actions"
     directory: "/"

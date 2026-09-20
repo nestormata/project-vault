@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@project-vault/extension-api": "workspace:*",
-    "fast-jwt": "^6.3.3"
+    "fast-jwt": "6.3.3"
   },
   "devDependencies": {
     "@project-vault/eslint-config": "workspace:*",

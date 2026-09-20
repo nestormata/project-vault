@@ -34,7 +34,7 @@
     "eslint": "^10.10.0",
     "eslint-plugin-svelte": "^3.23.0",
     "jsdom": "^30.0.1",
-    "otpauth": "^9.5.2",
+    "otpauth": "9.5.2",
     "postgres": "^3.4.9",
     "svelte": "^5.57.0",
     "svelte-check": "^4.7.6",

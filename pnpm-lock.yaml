@@ -7,7 +7,6 @@ settings:
 overrides:
   '@fastify/static': ^10.1.1
   postcss: ^8.5.18
-  fast-jwt: ^6.2.4
   minimatch@>=10 <10.2.3: ^10.2.5
   tsx: 4.21.1
   vite: ^6.4.3
@@ -98,7 +97,7 @@ importers:
         specifier: ^13.1.1
         version: 13.1.1
       '@fastify/jwt':
-        specifier: ^10.2.2
+        specifier: 10.2.2
         version: 10.2.2
       '@fastify/multipart':
         specifier: ^10.1.1
@@ -128,13 +127,13 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       bcrypt:
-        specifier: ^6.0.0
+        specifier: 6.0.0
         version: 6.0.0
       drizzle-orm:
         specifier: ^0.45.0
         version: 0.45.2(@opentelemetry/api@1.9.1)(kysely@0.28.17)(pg@8.23.0)(postgres@3.4.9)
       fast-jwt:
-        specifier: ^6.2.4
+        specifier: 6.3.3
         version: 6.3.3
       fastify:
         specifier: 5.12.4
@@ -146,7 +145,7 @@ importers:
         specifier: ^10.0.9
         version: 10.0.9
       otpauth:
-        specifier: ^9.5.2
+        specifier: 9.5.2
         version: 9.5.2
       pg-boss:
         specifier: 12.31.0
@@ -295,7 +294,7 @@ importers:
         specifier: ^30.0.1
         version: 30.0.1(@noble/hashes@2.4.0)
       otpauth:
-        specifier: ^9.5.2
+        specifier: 9.5.2
         version: 9.5.2
       postgres:
         specifier: ^3.4.9
@@ -381,7 +380,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/extension-api
       fast-jwt:
-        specifier: ^6.2.4
+        specifier: 6.3.3
         version: 6.3.3
     devDependencies:
       '@project-vault/eslint-config':
@@ -520,7 +519,7 @@ importers:
         specifier: ^10.10.0
         version: 10.10.0(jiti@2.7.0)(supports-color@7.2.0)
       otpauth:
-        specifier: ^9.5.2
+        specifier: 9.5.2
         version: 9.5.2
       tsx:
         specifier: 4.21.1
@@ -535,7 +534,7 @@ importers:
   packages/crypto:
     dependencies:
       argon2:
-        specifier: ^0.45.1
+        specifier: 0.45.1
         version: 0.45.1
     devDependencies:
       '@project-vault/eslint-config':

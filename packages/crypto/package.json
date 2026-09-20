@@ -18,7 +18,7 @@
     "build": "tsc"
   },
   "dependencies": {
-    "argon2": "^0.45.1"
+    "argon2": "0.45.1"
   },
   "devDependencies": {
     "@project-vault/eslint-config": "workspace:*",
