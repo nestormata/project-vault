@@ -205,8 +205,12 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm jscpd
 	pnpm tsx scripts/check-audit-baseline.ts
 	pnpm tsx scripts/check-env-example.ts
-	# Non-blocking, matching ci.yml's `continue-on-error: true` on this same command — see
-	# packages/vault-action's accepted transitive undici advisory via @actions/core.
+	# Non-blocking, matching ci.yml's `continue-on-error: true` on this same command.
+	# The undici advisory formerly accepted here via packages/vault-action's
+	# @actions/core dependency is resolved (undici@7.29.0, no advisory as of
+	# Story 42.1, 2026-09-19) — see that story's Dev Agent Record for the
+	# current high-or-above advisory inventory. Story 42.2 makes this gate
+	# blocking.
 	pnpm audit --audit-level=high || true
 	DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_ADMIN) pnpm generate-spec
 	git diff --exit-code packages/shared/openapi.json
