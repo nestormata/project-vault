@@ -2,6 +2,38 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.22.0 — 2026-09-20
+
+contract-hash: sha256:4c41a9131ed7fe25b724cd5fdfc05515ec5300174c8b6d7f8dfaf9ea48be7a49
+
+### Added
+
+- Added `HostServices.credentialSharing` (Story 20.12 AC1-AC6) — the eighth `HostServices` field,
+  exposing `createExternalShare`, `findShareByToken`, `revealShare`, `revokeShare`, and
+  `supersedeSharesForRotation` as thin closures over the already-shipped Epic 17/20.4/20.5
+  `credential-shares` service layer (`apps/api/src/modules/credential-shares/service.ts`,
+  `external-service.ts`) — no parallel reimplementation of validation, caps, or RLS-exception
+  handling; the runtime implementation lives entirely in `apps/api/src/lib/
+credential-sharing-host.ts`. `createExternalShare`/`revokeShare`/`supersedeSharesForRotation`
+  take an explicit `organizationId` and attribute their audit writes via a resolved PV
+  machine-user (`writeMachineAuditEntry`, `actorType: 'machine_user'`), failing closed with a new
+  `CredentialSharingNoMachineUserError` if the calling extension's org has no mapped, live
+  machine-user. `findShareByToken`/`revealShare` take only a `rawToken: string` (no
+  `organizationId` field), inheriting Epic 17.2's already-shipped anonymous-redemption boundary
+  unchanged, and are additionally rate-limited per resolved `organizationId` via a new
+  in-memory token-bucket (`CredentialSharingOrgRateLimitedError`), on top of the per-extension
+  in-flight cap every method shares (`CredentialSharingRateLimitedError`). Also exports
+  `CredentialShareCreationErrorStatus` — the shared non-`'ok'` failure-status vocabulary for
+  `createExternalShare`, factored out so apps/api's own internal `CreateExternalShareResult`
+  (`external-service.ts`) imports it instead of redeclaring the same literal union (code review:
+  eliminates a jscpd duplicate). Purely additive — no existing `HostServices`/`ExtensionHooks`/
+  `ExtensionManifest` field or behavior changes.
+
+Per `docs/extension-api-versioning-policy.md` Row 11 ("adding a new hook type and a new optional
+field on `ExtensionHooks`/existing types") — this is a purely additive new `HostServices` field, so
+this is a MINOR bump, consistent with every other `HostServices` method/field addition (e.g. Story
+58.1's `notificationOriginator.enqueueNotificationForOrg`, 3.20.0 -> 3.21.0).
+
 ## 3.21.0 — 2026-09-19
 
 contract-hash: sha256:3cc73e97ed02e06b2615597380ade20be02a42bbe3d404c7b5173bd1085b3d0a
@@ -92,12 +124,12 @@ contract-hash: sha256:43cc86372323f1520afe564e75f9704e3d4401d7eb15f0c898ebd28b5a
 ### Added
 
 - Added `ExtensionCapability`'s `'scheduled-task'` literal, `ExtensionManifest.scheduledTasks?:
-  ScheduledTaskDeclaration[]`, and `ExtensionHooks.scheduledTask?: ScheduledTaskHooks` (Story
+ScheduledTaskDeclaration[]`, and `ExtensionHooks.scheduledTask?: ScheduledTaskHooks` (Story
   56.1 AC1/AC3/AC4) — a new hook type letting an extension run periodic background work with no
   real inbound request to anchor it to. PV's own job runner invokes a manifest-declared
   `onScheduledTask(context)` handler once per org that has the extension active, on the
   manifest-declared `intervalMinutes` interval, tracked per `(extensionId, taskName,
-  organizationId)` tuple. `context` is deliberately minimal and serializable-data-only
+organizationId)` tuple. `context` is deliberately minimal and serializable-data-only
   (`organizationId`, `taskName`, `hostServices: HostServices` — no `Tx`, no raw DB handle, no
   `AuthContext`), reusing the SAME `HostServices` instance already bound for the extension at
   load time. New constants `SCHEDULED_TASK_NAME_PATTERN`, `MIN_SCHEDULED_TASK_INTERVAL_MINUTES`,
@@ -138,7 +170,7 @@ contract-hash: sha256:e5025be9388ef5e54474e4acd8bf27fa1a239c858de634d9512543fe7a
 ### Added
 
 - Added `ExtensionCapability`'s `'oauth-handoff'` literal, `ExtensionManifest.redirectOrigins?:
-  string[]`, and `ExtensionHooks.oauthHandoff?: OAuthHandoffHooks` (Story 39.1 AC1/AC7/AC9) — a
+string[]`, and `ExtensionHooks.oauthHandoff?: OAuthHandoffHooks` (Story 39.1 AC1/AC7/AC9) — a
   new mechanism letting an extension run a standard OAuth-style authorize-redirect/
   provider-callback journey through a real, PV-hosted call path. PV owns ALL cookie cryptography
   and the actual HTTP response (a real `302` + `Set-Cookie`, issued by PV's new
@@ -164,10 +196,10 @@ contract-hash: sha256:b101591274b03e18b434a0e809e6a9be28f2d874c46eecd3336d583df9
   three real call sites and Story 23.11's enumeration-risk fix already depend on, so widening it
   would change what "authorized" means for every existing org-scoped caller, not just new
   project-scoped ones. Its one method, `checkProjectMembership({ viewerIdentityId, projectId,
-  minimumRole })`, answers "is this identity a member of this specific PV project at this role or
+minimumRole })`, answers "is this identity a member of this specific PV project at this role or
   above," backed by the real `project_memberships` table and PV's existing
   `effectiveProjectRole()` org-owner/admin-bypass semantics (`apps/api/src/modules/projects/
-  project-access.ts`) — reused rather than reimplemented, so the hook's answer matches what PV's
+project-access.ts`) — reused rather than reimplemented, so the hook's answer matches what PV's
   own project routes already enforce for the same identity/project pair. `projectId` stays an
   explicit, caller-supplied parameter (there is no ambient project-bearing context to resolve it
   from), but — mirroring Story 23.11's `organizationId` removal — it is validated against the
@@ -188,7 +220,7 @@ contract-hash: sha256:a3b487fbbe1df78f215d98847ecd0ae8ece7565e7db41ae4752ab38c72
 ### Added
 
 - Added `HostServices.notificationOriginator: NotificationOriginatorHost` (Story 36.1 AC1) — the
-  FIRST `HostServices` field that lets an extension *originate* a brand-new notification and hand
+  FIRST `HostServices` field that lets an extension _originate_ a brand-new notification and hand
   it IN to PV's own `notification_queue`/`notification-deliver.ts` pipeline for PV to enqueue,
   deliver, and retry, as opposed to answering a question (`auditEventSource`/`orgAuthorization`),
   servicing a request-scoped read/write (`ephemeralState`/`monitoring`), or PV calling OUT to a
@@ -198,18 +230,18 @@ contract-hash: sha256:a3b487fbbe1df78f215d98847ecd0ae8ece7565e7db41ae4752ab38c72
   structurally impossible to name a foreign org), validates `recipientUserId` against real,
   active org membership before inserting, enforces a per-(extension, org) rolling-window
   best-effort enqueue cap, and inserts a `notification_queue` row with the new, additive, nullable
-  `originExtensionName` column set and `templateId: \`ext.\${manifest.name}\`` — a reserved
-  sentinel PV's existing `sendEmailNotification`/`deliverInboxNotification` workers recognize to
-  build the outbound message directly from the caller's own `subject`/`body`, bypassing the
-  closed `EMAIL_RENDERERS`/`SLACK_RENDERERS` template registry entirely (which would otherwise
-  degrade to a raw `JSON.stringify(payload)` dump). Channel scope for v1 is `'email' | 'inbox'`
-  only (`'slack'` deliberately excluded — no per-recipient concept exists for the org-wide Slack
-  webhook today). Four new error classes (`NotificationOriginatorNoAmbientContextError`,
-  `NotificationOriginatorInvalidParamsError`, `NotificationOriginatorInvalidRecipientError`,
-  `NotificationOriginatorRateLimitedError`) — every rejection is a thrown, rejected Promise, never
-  a `{ ok: false }`-shaped return value. NOT gated by the unrelated `'notification-channel'`
-  `ExtensionCapability` (no existing `HostServices` field has ever been gated behind a manifest
-  capability). Purely additive — no existing `HostServices`/`ExtensionHooks` field changes.
+  `originExtensionName` column set and `templateId: \`ext.\${manifest.name}\``— a reserved
+sentinel PV's existing`sendEmailNotification`/`deliverInboxNotification`workers recognize to
+build the outbound message directly from the caller's own`subject`/`body`, bypassing the
+closed `EMAIL_RENDERERS`/`SLACK_RENDERERS`template registry entirely (which would otherwise
+degrade to a raw`JSON.stringify(payload)`dump). Channel scope for v1 is`'email' | 'inbox'`
+only (`'slack'` deliberately excluded — no per-recipient concept exists for the org-wide Slack
+webhook today). Four new error classes (`NotificationOriginatorNoAmbientContextError`,
+`NotificationOriginatorInvalidParamsError`, `NotificationOriginatorInvalidRecipientError`,
+`NotificationOriginatorRateLimitedError`) — every rejection is a thrown, rejected Promise, never
+a `{ ok: false }`-shaped return value. NOT gated by the unrelated `'notification-channel'`
+`ExtensionCapability`(no existing`HostServices`field has ever been gated behind a manifest
+capability). Purely additive — no existing`HostServices`/`ExtensionHooks` field changes.
 
 ## 3.13.0 — 2026-09-07
 
@@ -218,7 +250,7 @@ contract-hash: sha256:2554991962ffc3a5e4ad53a5668d5462c915f06b134d0c0dec72d561b1
 ### Added
 
 - Added a new `'project-archive-notify'` `ExtensionCapability` and `ExtensionHooks.projectArchiveNotifier?:
-  ProjectArchiveNotifier` (Story 35.1 AC1) — a host-called NOTIFICATION hook fired after PV's own
+ProjectArchiveNotifier` (Story 35.1 AC1) — a host-called NOTIFICATION hook fired after PV's own
   `POST /:projectId/archive` transaction has already committed, dispatched entirely out-of-request
   by a background worker (`apps/api/src/workers/extension-lifecycle-notify.ts`) reading a durable
   outbox table rather than called synchronously inside the archive route's request/response cycle.
@@ -254,7 +286,7 @@ contract-hash: sha256:e54d0ab5fa3fc587b9a3dedd66c9d1c101a7a993e0d08f9816134ef268
 - Added a new `DeliveryProvider` Extension API hook category (Story 20.11 AC1) — an extension can
   register a `send(payload)`/`verifyWebhookSignature(request)`/`parseWebhookEvents(rawBody)`
   provider per notification channel via `ExtensionHooks.deliveryProvider?: Record<string,
-  DeliveryProvider>`, and a matching `'delivery-provider'` manifest capability. PV's dispatcher
+DeliveryProvider>`, and a matching `'delivery-provider'` manifest capability. PV's dispatcher
   calls the registered provider instead of the built-in `nodemailer` transport only when one is
   registered for the relevant channel — Story 3.1's SMTP/nodemailer default path is fully
   backward-compatible and unchanged when no provider is registered.

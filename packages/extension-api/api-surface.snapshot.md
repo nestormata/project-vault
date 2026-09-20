@@ -131,6 +131,279 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - type: `string | null`
   - union-members: `null`, `string`
 
+## export `CredentialShareCreationErrorStatus`
+
+- since: 3.22.0
+- kind: type
+- type: `CredentialShareCreationErrorStatus`
+- union-members: `{ status: "credential_not_found"; }`, `{ status: "credential_archived"; }`, `{ status: "unknown_field_key"; field: string; }`, `{ status: "ambiguous_share_scope"; }`, `{ status: "too_many_attribute_keys"; }`, `{ status: "expires_at_invalid"; reason: "past" | "too_far_in_future"; }`, `{ status: "cap_exceeded"; }`
+
+## export `CredentialSharingCreateExternalShareParams`
+
+- since: 3.22.0
+- kind: type
+- type: `CredentialSharingCreateExternalShareParams`
+- member: `attributeKeys?`
+  - since: 3.22.0
+  - type: `string[] | null | undefined`
+  - union-members: `undefined`, `null`, `string[]`
+- member: `credentialId`
+  - since: 3.22.0
+  - type: `string`
+- member: `expiresAt`
+  - since: 3.22.0
+  - type: `string`
+- member: `fieldKey?`
+  - since: 3.22.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+- member: `organizationId`
+  - since: 3.22.0
+  - type: `string`
+- member: `projectId`
+  - since: 3.22.0
+  - type: `string`
+- member: `recipientEmail`
+  - since: 3.22.0
+  - type: `string`
+
+## export `CredentialSharingCreateExternalShareResult`
+
+- since: 3.22.0
+- kind: type
+- type: `CredentialSharingCreateExternalShareResult`
+- union-members: `{ status: "credential_not_found"; }`, `{ status: "credential_archived"; }`, `{ status: "unknown_field_key"; field: string; }`, `{ status: "ambiguous_share_scope"; }`, `{ status: "too_many_attribute_keys"; }`, `{ status: "expires_at_invalid"; reason: "past" | "too_far_in_future"; }`, `{ status: "cap_exceeded"; }`, `{ status: "ok"; share: CredentialSharingShareRecord; token: string; }`
+
+## export `CredentialSharingFindShareByTokenResult`
+
+- since: 3.22.0
+- kind: type
+- type: `CredentialSharingFindShareByTokenResult`
+- union-members: `{ status: "not_found"; }`, `{ status: "ok"; share: CredentialSharingShareRecord; credentialName: string; credentialProjectId: string; sharedByDisplayName: string; }`
+
+## export `CredentialSharingHost`
+
+- since: 3.22.0
+- kind: type
+- type: `CredentialSharingHost`
+- member: `createExternalShare`
+  - since: 3.22.0
+  - type: `(params: CredentialSharingCreateExternalShareParams) => Promise<CredentialSharingCreateExternalShareResult>`
+  - call-signature: `(params: CredentialSharingCreateExternalShareParams): Promise<CredentialSharingCreateExternalShareResult>`
+- member: `findShareByToken`
+  - since: 3.22.0
+  - type: `(rawToken: string) => Promise<CredentialSharingFindShareByTokenResult>`
+  - call-signature: `(rawToken: string): Promise<CredentialSharingFindShareByTokenResult>`
+- member: `revealShare`
+  - since: 3.22.0
+  - type: `(rawToken: string) => Promise<CredentialSharingRevealResult>`
+  - call-signature: `(rawToken: string): Promise<CredentialSharingRevealResult>`
+- member: `revokeShare`
+  - since: 3.22.0
+  - type: `(params: CredentialSharingRevokeShareParams) => Promise<CredentialSharingRevokeShareResult>`
+  - call-signature: `(params: CredentialSharingRevokeShareParams): Promise<CredentialSharingRevokeShareResult>`
+- member: `supersedeSharesForRotation`
+  - since: 3.22.0
+  - type: `(params: CredentialSharingSupersedeSharesForRotationParams) => Promise<CredentialSharingSupersedeSharesForRotationResult>`
+  - call-signature: `(params: CredentialSharingSupersedeSharesForRotationParams): Promise<CredentialSharingSupersedeSharesForRotationResult>`
+
+## export `CredentialSharingNoMachineUserError`
+
+- since: 3.22.0
+- kind: type
+- type: `CredentialSharingNoMachineUserError`
+- member: `cause?`
+  - since: 3.22.0
+  - type: `unknown`
+- member: `readonly code`
+  - since: 3.22.0
+  - type: `"credential_sharing_no_machine_user"`
+- member: `message`
+  - since: 3.22.0
+  - type: `string`
+- member: `name`
+  - since: 3.22.0
+  - type: `string`
+- member: `stack?`
+  - since: 3.22.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+
+## export `CredentialSharingOrgRateLimitedError`
+
+- since: 3.22.0
+- kind: type
+- type: `CredentialSharingOrgRateLimitedError`
+- member: `cause?`
+  - since: 3.22.0
+  - type: `unknown`
+- member: `readonly code`
+  - since: 3.22.0
+  - type: `"credential_sharing_org_rate_limited"`
+- member: `message`
+  - since: 3.22.0
+  - type: `string`
+- member: `name`
+  - since: 3.22.0
+  - type: `string`
+- member: `stack?`
+  - since: 3.22.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+
+## export `CredentialSharingRateLimitedError`
+
+- since: 3.22.0
+- kind: type
+- type: `CredentialSharingRateLimitedError`
+- member: `cause?`
+  - since: 3.22.0
+  - type: `unknown`
+- member: `readonly code`
+  - since: 3.22.0
+  - type: `"credential_sharing_rate_limited"`
+- member: `message`
+  - since: 3.22.0
+  - type: `string`
+- member: `name`
+  - since: 3.22.0
+  - type: `string`
+- member: `stack?`
+  - since: 3.22.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+
+## export `CredentialSharingRevealResult`
+
+- since: 3.22.0
+- kind: type
+- type: `CredentialSharingRevealResult`
+- union-members: `{ status: "not_found"; }`, `{ status: "expired"; }`, `{ status: "already_viewed"; }`, `{ status: "revoked"; }`, `{ status: "ok"; share: CredentialSharingShareRecord; value: string; valueFormat: "scalar" | "fields"; fieldKey: string | null; }`
+
+## export `CredentialSharingRevokeShareParams`
+
+- since: 3.22.0
+- kind: type
+- type: `CredentialSharingRevokeShareParams`
+- member: `credentialId`
+  - since: 3.22.0
+  - type: `string`
+- member: `organizationId`
+  - since: 3.22.0
+  - type: `string`
+- member: `projectId`
+  - since: 3.22.0
+  - type: `string`
+- member: `shareId`
+  - since: 3.22.0
+  - type: `string`
+
+## export `CredentialSharingRevokeShareResult`
+
+- since: 3.22.0
+- kind: type
+- type: `CredentialSharingRevokeShareResult`
+- union-members: `{ status: "not_found"; }`, `{ status: "ok"; share: CredentialSharingShareRecord; alreadyTerminal: boolean; }`
+
+## export `CredentialSharingShareRecord`
+
+- since: 3.22.0
+- kind: type
+- type: `CredentialSharingShareRecord`
+- member: `attributeKeys`
+  - since: 3.22.0
+  - type: `string[] | null`
+  - union-members: `null`, `string[]`
+- member: `createdAt`
+  - since: 3.22.0
+  - type: `string`
+- member: `credentialId`
+  - since: 3.22.0
+  - type: `string`
+- member: `expiresAt`
+  - since: 3.22.0
+  - type: `string`
+- member: `fieldKey`
+  - since: 3.22.0
+  - type: `string | null`
+  - union-members: `null`, `string`
+- member: `firstViewedAt`
+  - since: 3.22.0
+  - type: `string | null`
+  - union-members: `null`, `string`
+- member: `id`
+  - since: 3.22.0
+  - type: `string`
+- member: `orgId`
+  - since: 3.22.0
+  - type: `string`
+- member: `recipientEmail`
+  - since: 3.22.0
+  - type: `string | null`
+  - union-members: `null`, `string`
+- member: `recipientType`
+  - since: 3.22.0
+  - type: `"user" | "external"`
+  - union-members: `"user"`, `"external"`
+- member: `recipientUserId`
+  - since: 3.22.0
+  - type: `string | null`
+  - union-members: `null`, `string`
+- member: `revokedAt`
+  - since: 3.22.0
+  - type: `string | null`
+  - union-members: `null`, `string`
+- member: `singleUse`
+  - since: 3.22.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `status`
+  - since: 3.22.0
+  - type: `CredentialSharingShareStatus`
+  - union-members: `"expired"`, `"revoked"`, `"active"`, `"viewed"`, `"superseded"`
+- member: `supersededAt`
+  - since: 3.22.0
+  - type: `string | null`
+  - union-members: `null`, `string`
+- member: `viewCount`
+  - since: 3.22.0
+  - type: `number`
+
+## export `CredentialSharingShareStatus`
+
+- since: 3.22.0
+- kind: type
+- type: `CredentialSharingShareStatus`
+- union-members: `"expired"`, `"revoked"`, `"active"`, `"viewed"`, `"superseded"`
+
+## export `CredentialSharingSupersedeSharesForRotationParams`
+
+- since: 3.22.0
+- kind: type
+- type: `CredentialSharingSupersedeSharesForRotationParams`
+- member: `credentialId`
+  - since: 3.22.0
+  - type: `string`
+- member: `organizationId`
+  - since: 3.22.0
+  - type: `string`
+- member: `rotationId`
+  - since: 3.22.0
+  - type: `string`
+- member: `targetFields`
+  - since: 3.22.0
+  - type: `string[] | null`
+  - union-members: `null`, `string[]`
+
+## export `CredentialSharingSupersedeSharesForRotationResult`
+
+- since: 3.22.0
+- kind: type
+- type: `CredentialSharingSupersedeSharesForRotationResult`
+- member: `supersededShares`
+  - since: 3.22.0
+  - type: `CredentialSharingShareRecord[]`
+
 ## export `defineExtension`
 
 - since: 1.0.0
@@ -236,7 +509,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.21.0"`
+- type: `"3.22.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 
@@ -490,6 +763,29 @@ Generated from `src/index.ts`; update this file and classify the change against 
     - since: 1.0.0
     - type: `(input: AuditEventSourceWriteInput) => Promise<AuditEventSourceWriteResult>`
     - call-signature: `(input: AuditEventSourceWriteInput): Promise<AuditEventSourceWriteResult>`
+- member: `credentialSharing`
+  - since: 3.22.0
+  - type: `CredentialSharingHost`
+  - member: `createExternalShare`
+    - since: 3.22.0
+    - type: `(params: CredentialSharingCreateExternalShareParams) => Promise<CredentialSharingCreateExternalShareResult>`
+    - call-signature: `(params: CredentialSharingCreateExternalShareParams): Promise<CredentialSharingCreateExternalShareResult>`
+  - member: `findShareByToken`
+    - since: 3.22.0
+    - type: `(rawToken: string) => Promise<CredentialSharingFindShareByTokenResult>`
+    - call-signature: `(rawToken: string): Promise<CredentialSharingFindShareByTokenResult>`
+  - member: `revealShare`
+    - since: 3.22.0
+    - type: `(rawToken: string) => Promise<CredentialSharingRevealResult>`
+    - call-signature: `(rawToken: string): Promise<CredentialSharingRevealResult>`
+  - member: `revokeShare`
+    - since: 3.22.0
+    - type: `(params: CredentialSharingRevokeShareParams) => Promise<CredentialSharingRevokeShareResult>`
+    - call-signature: `(params: CredentialSharingRevokeShareParams): Promise<CredentialSharingRevokeShareResult>`
+  - member: `supersedeSharesForRotation`
+    - since: 3.22.0
+    - type: `(params: CredentialSharingSupersedeSharesForRotationParams) => Promise<CredentialSharingSupersedeSharesForRotationResult>`
+    - call-signature: `(params: CredentialSharingSupersedeSharesForRotationParams): Promise<CredentialSharingSupersedeSharesForRotationResult>`
 - member: `ephemeralState`
   - since: 3.7.0
   - type: `EphemeralStateHost`
@@ -655,25 +951,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.3.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@674`
-  - since: 3.21.0
+- member: `__@match@806`
+  - since: 3.22.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@683`
-  - since: 3.21.0
+- member: `__@matchAll@815`
+  - since: 3.22.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@676`
-  - since: 3.21.0
+- member: `__@replace@808`
+  - since: 3.22.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@679`
-  - since: 3.21.0
+- member: `__@search@811`
+  - since: 3.22.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@681`
-  - since: 3.21.0
+- member: `__@split@813`
+  - since: 3.22.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -731,25 +1027,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.10.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@674`
-  - since: 3.21.0
+- member: `__@match@806`
+  - since: 3.22.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@683`
-  - since: 3.21.0
+- member: `__@matchAll@815`
+  - since: 3.22.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@676`
-  - since: 3.21.0
+- member: `__@replace@808`
+  - since: 3.22.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@679`
-  - since: 3.21.0
+- member: `__@search@811`
+  - since: 3.22.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@681`
-  - since: 3.21.0
+- member: `__@split@813`
+  - since: 3.22.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -1531,25 +1827,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.9.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@674`
-  - since: 3.21.0
+- member: `__@match@806`
+  - since: 3.22.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@683`
-  - since: 3.21.0
+- member: `__@matchAll@815`
+  - since: 3.22.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@676`
-  - since: 3.21.0
+- member: `__@replace@808`
+  - since: 3.22.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@679`
-  - since: 3.21.0
+- member: `__@search@811`
+  - since: 3.22.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@681`
-  - since: 3.21.0
+- member: `__@split@813`
+  - since: 3.22.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -1613,25 +1909,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.9.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@674`
-  - since: 3.21.0
+- member: `__@match@806`
+  - since: 3.22.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@683`
-  - since: 3.21.0
+- member: `__@matchAll@815`
+  - since: 3.22.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@676`
-  - since: 3.21.0
+- member: `__@replace@808`
+  - since: 3.22.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@679`
-  - since: 3.21.0
+- member: `__@search@811`
+  - since: 3.22.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@681`
-  - since: 3.21.0
+- member: `__@split@813`
+  - since: 3.22.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -1932,25 +2228,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.8.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@674`
-  - since: 3.21.0
+- member: `__@match@806`
+  - since: 3.22.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@683`
-  - since: 3.21.0
+- member: `__@matchAll@815`
+  - since: 3.22.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@676`
-  - since: 3.21.0
+- member: `__@replace@808`
+  - since: 3.22.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@679`
-  - since: 3.21.0
+- member: `__@search@811`
+  - since: 3.22.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@681`
-  - since: 3.21.0
+- member: `__@split@813`
+  - since: 3.22.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -2153,25 +2449,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.16.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@674`
-  - since: 3.21.0
+- member: `__@match@806`
+  - since: 3.22.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@683`
-  - since: 3.21.0
+- member: `__@matchAll@815`
+  - since: 3.22.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@676`
-  - since: 3.21.0
+- member: `__@replace@808`
+  - since: 3.22.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@679`
-  - since: 3.21.0
+- member: `__@search@811`
+  - since: 3.22.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@681`
-  - since: 3.21.0
+- member: `__@split@813`
+  - since: 3.22.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -2242,25 +2538,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.18.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@674`
-  - since: 3.21.0
+- member: `__@match@806`
+  - since: 3.22.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@683`
-  - since: 3.21.0
+- member: `__@matchAll@815`
+  - since: 3.22.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@676`
-  - since: 3.21.0
+- member: `__@replace@808`
+  - since: 3.22.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@679`
-  - since: 3.21.0
+- member: `__@search@811`
+  - since: 3.22.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@681`
-  - since: 3.21.0
+- member: `__@split@813`
+  - since: 3.22.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -2328,6 +2624,29 @@ Generated from `src/index.ts`; update this file and classify the change against 
       - since: 3.18.0
       - type: `(input: AuditEventSourceWriteInput) => Promise<AuditEventSourceWriteResult>`
       - call-signature: `(input: AuditEventSourceWriteInput): Promise<AuditEventSourceWriteResult>`
+  - member: `credentialSharing`
+    - since: 3.22.0
+    - type: `CredentialSharingHost`
+    - member: `createExternalShare`
+      - since: 3.22.0
+      - type: `(params: CredentialSharingCreateExternalShareParams) => Promise<CredentialSharingCreateExternalShareResult>`
+      - call-signature: `(params: CredentialSharingCreateExternalShareParams): Promise<CredentialSharingCreateExternalShareResult>`
+    - member: `findShareByToken`
+      - since: 3.22.0
+      - type: `(rawToken: string) => Promise<CredentialSharingFindShareByTokenResult>`
+      - call-signature: `(rawToken: string): Promise<CredentialSharingFindShareByTokenResult>`
+    - member: `revealShare`
+      - since: 3.22.0
+      - type: `(rawToken: string) => Promise<CredentialSharingRevealResult>`
+      - call-signature: `(rawToken: string): Promise<CredentialSharingRevealResult>`
+    - member: `revokeShare`
+      - since: 3.22.0
+      - type: `(params: CredentialSharingRevokeShareParams) => Promise<CredentialSharingRevokeShareResult>`
+      - call-signature: `(params: CredentialSharingRevokeShareParams): Promise<CredentialSharingRevokeShareResult>`
+    - member: `supersedeSharesForRotation`
+      - since: 3.22.0
+      - type: `(params: CredentialSharingSupersedeSharesForRotationParams) => Promise<CredentialSharingSupersedeSharesForRotationResult>`
+      - call-signature: `(params: CredentialSharingSupersedeSharesForRotationParams): Promise<CredentialSharingSupersedeSharesForRotationResult>`
   - member: `ephemeralState`
     - since: 3.18.0
     - type: `EphemeralStateHost`
@@ -2463,25 +2782,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.1.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@674`
-  - since: 3.21.0
+- member: `__@match@806`
+  - since: 3.22.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@683`
-  - since: 3.21.0
+- member: `__@matchAll@815`
+  - since: 3.22.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@676`
-  - since: 3.21.0
+- member: `__@replace@808`
+  - since: 3.22.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@679`
-  - since: 3.21.0
+- member: `__@search@811`
+  - since: 3.22.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@681`
-  - since: 3.21.0
+- member: `__@split@813`
+  - since: 3.22.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`

@@ -32,6 +32,16 @@ const notificationOriginatorStub = {
   enqueueNotificationForOrg: rejectUnused,
 }
 const extensionRequestStateStub = { consume: rejectUnused }
+// Story 20.12 — HostServices widened to an eighth, required field. This fixture never reads it
+// (only auditEventSource/orgAuthorization matter to this extension), so a stub with never-invoked
+// rejects is sufficient here.
+const credentialSharingStub = {
+  createExternalShare: rejectUnused,
+  findShareByToken: rejectUnused,
+  revealShare: rejectUnused,
+  revokeShare: rejectUnused,
+  supersedeSharesForRotation: rejectUnused,
+}
 
 describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
   it('declares a valid, reverse-DNS manifest with only the audit-event-source capability', () => {
@@ -64,6 +74,7 @@ describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
       monitoring: monitoringStub,
       notificationOriginator: notificationOriginatorStub,
       extensionRequestState: extensionRequestStateStub,
+      credentialSharing: credentialSharingStub,
     })
     expect(hooks).toEqual({})
   })
@@ -96,6 +107,7 @@ describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {
       monitoring: monitoringStub,
       notificationOriginator: notificationOriginatorStub,
       extensionRequestState: extensionRequestStateStub,
+      credentialSharing: credentialSharingStub,
     })
 
     const result = await triggerAuditWrite({

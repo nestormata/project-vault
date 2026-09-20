@@ -494,7 +494,13 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // `host.notificationOriginator.enqueueNotificationForOrg` — no existing type is modified, and the
 // floor stays `>=3.0.0` so every already-shipped extension (including any real,
 // currently-deployed CentralizeMe build) keeps loading unmodified regardless.
-export const EXTENSION_API_VERSION = '3.21.0'
+// Story 20.12 AC1-AC7 — bumped as an additive-minor (3.21.0 -> 3.22.0): `HostServices` gains a
+// new eighth field, `credentialSharing: CredentialSharingHost` (see `hooks/credential-sharing.ts`),
+// a purely additive new field with zero effect on any `hooksFactory` that omits referencing
+// `host.credentialSharing` — no existing type is modified, and the floor stays `>=3.0.0` so every
+// already-shipped extension (including any real, currently-deployed CentralizeMe build) keeps
+// loading unmodified regardless.
+export const EXTENSION_API_VERSION = '3.22.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

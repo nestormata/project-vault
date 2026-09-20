@@ -5,6 +5,9 @@ import * as extensionApi from '../src/index.js'
 describe('@project-vault/extension-api public value exports', () => {
   it('keeps the root export surface exact', () => {
     expect(Object.keys(extensionApi).sort()).toEqual([
+      'CredentialSharingNoMachineUserError',
+      'CredentialSharingOrgRateLimitedError',
+      'CredentialSharingRateLimitedError',
       'EXTENSION_API_VERSION',
       'EXTENSION_THEME_CSS_VARS',
       'ExtensionRegistrationError',

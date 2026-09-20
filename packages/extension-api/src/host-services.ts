@@ -5,6 +5,7 @@ import type { PvMonitoringHost } from './hooks/monitoring.js'
 import type { NotificationOriginatorHost } from './hooks/notification-originator.js'
 import type { ProjectAuthorizationHost } from './hooks/project-authorization.js'
 import type { ExtensionRequestStateHostService } from './hooks/extension-request-state.js'
+import type { CredentialSharingHost } from './hooks/credential-sharing.js'
 
 /**
  * Story 23.8 AC-4 — the new injected-context channel `hooksFactory()` receives at load time.
@@ -52,4 +53,12 @@ export type HostServices = {
    * `hooks/extension-request-state.ts`'s doc comment for the full peek-vs-consume shape
    * rationale. */
   extensionRequestState: ExtensionRequestStateHostService
+  /** Story 20.12 — bound once at extension-load time, same as every field above. A thin facade
+   * over PV's already-shipped `credential-shares` service layer (Epic 17/20.4/20.5), never a
+   * parallel reimplementation. `createExternalShare`/`revokeShare`/`supersedeSharesForRotation`
+   * take an explicit `organizationId` (out-of-request style); `findShareByToken`/`revealShare`
+   * take only a `rawToken` — org resolves from the token itself, inherited unchanged from Epic
+   * 17.2's anonymous-redemption boundary. See `hooks/credential-sharing.ts`'s doc comment for the
+   * full directionality/attribution/rate-limiting rationale. */
+  credentialSharing: CredentialSharingHost
 }
