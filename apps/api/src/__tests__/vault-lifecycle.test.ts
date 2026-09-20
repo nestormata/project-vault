@@ -25,6 +25,7 @@ const { getDb } = await import('@project-vault/db')
 const { vaultState } = await import('@project-vault/db/schema')
 
 const TEST_PASSPHRASE = 'test-passphrase-12chars'
+const WRONG_PASSPHRASE = 'wrong-passphrase-here'
 const INIT_URL = '/api/v1/vault/init'
 const UNSEAL_URL = '/api/v1/vault/unseal'
 
@@ -139,9 +140,45 @@ describe('Vault lifecycle (passphrase mode)', () => {
 
   it('POST /vault/unseal with wrong passphrase returns 401', async () => {
     await initThenSeal()
-    const res = await unsealWith('wrong-passphrase-here')
+    const res = await unsealWith(WRONG_PASSPHRASE)
     expect(res.statusCode).toBe(401)
     expect(res.json()).toMatchObject({ error: 'unseal_failed' })
+  })
+
+  // Story 42.4 Task 8.5 (5-round elicitation, Cascading Failure Simulation): AC1's "fails
+  // loudly" is ambiguous between "rejects the one request, process stays up" and "crashes the
+  // process." Traced by reading routes.ts's handler for POST /vault/unseal: unsealVault()'s thrown
+  // AppError is caught in a try/catch (routes.ts ~lines 122-141) and mapped to an HTTP error
+  // response — it never escapes as an uncaught exception. This test pins that down explicitly, at
+  // the route/handler level, using a single long-lived app instance (unlike the 401 test above,
+  // which closes and recreates the app per call and so can't distinguish "process survived" from
+  // "a fresh process handled the retry"): the same Fastify instance that just rejected a corrupted
+  // unseal attempt stays healthy and unseals correctly on the very next request.
+  it('Story 42.4 Task 8.5: a failed unseal (wrong passphrase) rejects only that one request — the same process stays up, remains sealed, and a subsequent correct-key unseal on the SAME app instance still succeeds', async () => {
+    await initThenSeal()
+    const app = await createApp({ logger: false, vaultGuardEnabled: true })
+    try {
+      const failedRes = await app.inject({
+        method: 'POST',
+        url: UNSEAL_URL,
+        payload: { passphrase: WRONG_PASSPHRASE },
+      })
+      expect(failedRes.statusCode).toBe(401)
+      expect(failedRes.json()).toMatchObject({ error: 'unseal_failed' })
+      // The process is still alive and reachable (no uncaught exception escaped) and the vault
+      // correctly remains sealed rather than proceeding on the bad credential.
+      expect(getVaultStatus()).toBe('sealed')
+
+      const retryRes = await app.inject({
+        method: 'POST',
+        url: UNSEAL_URL,
+        payload: { passphrase: TEST_PASSPHRASE },
+      })
+      expect(retryRes.statusCode).toBe(200)
+      expect(retryRes.json()).toMatchObject({ unsealed: true, kmsType: 'passphrase' })
+    } finally {
+      await app.close()
+    }
   })
 
   it('POST /vault/unseal before init returns 400 not_initialized', async () => {
@@ -200,7 +237,7 @@ describe('Vault lifecycle (passphrase mode)', () => {
         const res = await app.inject({
           method: 'POST',
           url: UNSEAL_URL,
-          payload: { passphrase: 'wrong-passphrase-here' },
+          payload: { passphrase: WRONG_PASSPHRASE },
         })
         statuses.push(res.statusCode)
       }

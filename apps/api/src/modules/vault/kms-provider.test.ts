@@ -179,5 +179,78 @@ describe('Story 1.14 AC-21/AC-23: AwsKmsProvider', () => {
         kind: 'permission_denied',
       })
     })
+
+    // Story 42.4 Task 3: a stored kmsEncryptedDek that is syntactically valid base64 but decodes
+    // to bytes AWS KMS itself rejects — this is the "corrupted stored ciphertext blob" crash-path
+    // scenario named explicitly (the underlying classification already exists via
+    // InvalidCiphertextException -> not_found, line 47 of kms-provider.ts, but was never
+    // exercised by a dedicated test naming that scenario).
+    it('Story 42.4 AC1/AC3: InvalidCiphertextException (corrupted stored ciphertext blob) maps to kind=not_found, never an unhandled raw AWS error', async () => {
+      const validBase64ButRejectedByKms = Buffer.from(
+        'this decodes fine but KMS rejects it'
+      ).toString('base64')
+      const client = fakeClient(async () => {
+        const err = new Error('ciphertext blob is malformed or corrupted') as Error & {
+          name: string
+        }
+        err.name = 'InvalidCiphertextException'
+        throw err
+      })
+      const provider = new AwsKmsProvider(client)
+
+      await expect(provider.decryptDataKey(validBase64ButRejectedByKms)).rejects.toMatchObject({
+        kind: 'not_found',
+      })
+      await expect(provider.decryptDataKey(validBase64ButRejectedByKms)).rejects.toBeInstanceOf(
+        KmsProviderError
+      )
+    })
+
+    // Story 42.4 Task 3: decryptDataKey's already-coded length guard (kms-provider.ts:163-165)
+    // rejects a plaintext of the wrong length rather than silently re-deriving vault keys from
+    // corrupted/truncated key material — currently untested.
+    it('Story 42.4 AC1/AC3/AC4: a plaintext key of the wrong length (16 bytes instead of 32) throws KmsProviderError(unknown), specific class asserted', async () => {
+      const wrongLengthPlaintext = Buffer.from('b'.repeat(16))
+      const client = fakeClient(async () => ({ Plaintext: wrongLengthPlaintext }))
+      const provider = new AwsKmsProvider(client)
+
+      let caught: unknown
+      try {
+        await provider.decryptDataKey('AAAA')
+        expect.unreachable()
+      } catch (error) {
+        caught = error
+      }
+
+      expect(caught).toBeInstanceOf(KmsProviderError)
+      expect((caught as KmsProviderError).kind).toBe('unknown')
+      expect((caught as Error).message).toMatch(/unexpected key length/)
+    })
+  })
+
+  describe('generateDataKey: wrong-length plaintext (mirror of decryptDataKey)', () => {
+    // Story 42.4 Task 3: generateDataKey's already-coded length guard (kms-provider.ts:133-135) —
+    // currently untested.
+    it('Story 42.4 AC1/AC3/AC4: a plaintext key of the wrong length (16 bytes instead of 32) throws KmsProviderError(unknown), specific class asserted', async () => {
+      const wrongLengthPlaintext = Buffer.from('a'.repeat(16))
+      const ciphertext = Buffer.from('encrypted-blob-bytes')
+      const client = fakeClient(async () => ({
+        Plaintext: wrongLengthPlaintext,
+        CiphertextBlob: ciphertext,
+      }))
+      const provider = new AwsKmsProvider(client)
+
+      let caught: unknown
+      try {
+        await provider.generateDataKey(KEY_ID)
+        expect.unreachable()
+      } catch (error) {
+        caught = error
+      }
+
+      expect(caught).toBeInstanceOf(KmsProviderError)
+      expect((caught as KmsProviderError).kind).toBe('unknown')
+      expect((caught as Error).message).toMatch(/unexpected key length/)
+    })
   })
 })
