@@ -22,6 +22,7 @@ const LIB_PACKAGE_JSON_REL = 'packages/lib/package.json'
 const GROUP_CRYPTO_ADJACENT = 'crypto-adjacent'
 const GROUP_PNPM_WORKSPACE = 'pnpm-workspace'
 const VIOLATION_KIND_DEPENDABOT = 'dependabot-cross-check'
+const MINIMAL_ROOT_PACKAGE_JSON = '{"name":"root"}'
 
 /** A clean, fully-compliant `.github/dependabot.yml` fixture — the two group lists both match the
  * real canonical list exactly (argon2, bcrypt, @fastify/jwt, fast-jwt, otpauth). */
@@ -120,7 +121,7 @@ describe('findWorkspacePackageJsonPaths', () => {
   it('derives workspace package.json paths from a nonstandard glob (e.g. tools/*), not a hardcoded apps/*|packages/*|fixtures/* literal', () => {
     const root = makeFixtureRoot()
     writeFixture(root, WORKSPACE_YAML_REL, 'packages:\n  - "tools/*"\n')
-    writeFixture(root, ROOT_PACKAGE_JSON_REL, '{"name":"root"}')
+    writeFixture(root, ROOT_PACKAGE_JSON_REL, MINIMAL_ROOT_PACKAGE_JSON)
     writeFixture(root, 'tools/widget/package.json', '{"name":"widget"}')
 
     const paths = findWorkspacePackageJsonPaths(root)
@@ -245,7 +246,7 @@ describe('scanCryptoAdjacentPins', () => {
     const root = makeFixtureRoot()
     writeFixture(root, WORKSPACE_YAML_REL, CLEAN_WORKSPACE_YAML)
     writeFixture(root, DEPENDABOT_YML_REL, CLEAN_DEPENDABOT_YML)
-    writeFixture(root, ROOT_PACKAGE_JSON_REL, '{"name":"root"}')
+    writeFixture(root, ROOT_PACKAGE_JSON_REL, MINIMAL_ROOT_PACKAGE_JSON)
     writeFixture(
       root,
       SVC_PACKAGE_JSON_REL,
@@ -285,16 +286,79 @@ describe('scanCryptoAdjacentPins', () => {
   it('flags a canonical-list package that appears in pnpm-workspace.yaml overrides:, even with an exact-pin value', () => {
     const root = makeFixtureRoot()
     writeCleanBaseFixture(root)
-    writeFixture(
-      root,
-      'pnpm-workspace.yaml',
-      `${CLEAN_WORKSPACE_YAML}overrides:\n  argon2: 0.45.1\n`
-    )
+    writeFixture(root, WORKSPACE_YAML_REL, `${CLEAN_WORKSPACE_YAML}overrides:\n  argon2: 0.45.1\n`)
 
     const { violations } = scanCryptoAdjacentPins(root)
     expect(violations).toContainEqual(
       expect.objectContaining({ kind: 'override', packageName: 'argon2', overrideValue: '0.45.1' })
     )
+  })
+
+  it('flags a canonical-list package overridden via pnpm\'s version-range-qualified key syntax (a quoted key containing a space, e.g. "argon2@>=0.40.0 <0.46.0"), not just a bare-name key', () => {
+    const root = makeFixtureRoot()
+    writeCleanBaseFixture(root)
+    writeFixture(
+      root,
+      WORKSPACE_YAML_REL,
+      `${CLEAN_WORKSPACE_YAML}overrides:\n  "argon2@>=0.40.0 <0.46.0": 0.45.1\n`
+    )
+
+    const { violations } = scanCryptoAdjacentPins(root)
+    expect(violations).toContainEqual(
+      expect.objectContaining({ kind: 'override', packageName: 'argon2' })
+    )
+  })
+
+  it('flags a scoped canonical-list package overridden via a version-range-qualified quoted key (e.g. "@fastify/jwt@>=10.0.0 <11.0.0")', () => {
+    const root = makeFixtureRoot()
+    writeCleanBaseFixture(root)
+    writeFixture(
+      root,
+      WORKSPACE_YAML_REL,
+      `${CLEAN_WORKSPACE_YAML}overrides:\n  "@fastify/jwt@>=10.0.0 <11.0.0": 10.2.2\n`
+    )
+
+    const { violations } = scanCryptoAdjacentPins(root)
+    expect(violations).toContainEqual(
+      expect.objectContaining({ kind: 'override', packageName: '@fastify/jwt' })
+    )
+  })
+
+  it('flags a crypto-adjacent package declared under peerDependencies with a range (not just dependencies/devDependencies)', () => {
+    const root = makeFixtureRoot()
+    writeCleanBaseFixture(root)
+    writeFixture(
+      root,
+      SVC_PACKAGE_JSON_REL,
+      JSON.stringify(
+        {
+          name: 'svc',
+          dependencies: {
+            argon2: '0.45.1',
+            bcrypt: '6.0.0',
+            '@fastify/jwt': '10.2.2',
+            'fast-jwt': '6.3.3',
+            otpauth: '9.5.2',
+          },
+          peerDependencies: { bcrypt: '^6.0.0' },
+        },
+        null,
+        2
+      )
+    )
+
+    const { violations } = scanCryptoAdjacentPins(root)
+    expect(violations.some((v) => v.kind === 'pin' && v.packageName === 'bcrypt')).toBe(true)
+  })
+
+  it('fails closed (does not silently under-scan) when pnpm-workspace.yaml declares an unsupported glob shape (recursive ** or a negation pattern)', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, WORKSPACE_YAML_REL, 'packages:\n  - "packages/**"\n')
+    writeFixture(root, DEPENDABOT_YML_REL, CLEAN_DEPENDABOT_YML)
+    writeFixture(root, ROOT_PACKAGE_JSON_REL, MINIMAL_ROOT_PACKAGE_JSON)
+
+    const { violations } = scanCryptoAdjacentPins(root)
+    expect(violations.some((v) => v.kind === 'pin' && v.file === WORKSPACE_YAML_REL)).toBe(true)
   })
 
   it('fails loudly (does not silently pass) when dependabot.yml is missing the crypto-adjacent group entirely', () => {

@@ -65,7 +65,12 @@ export type CryptoAdjacentPinScanResult = {
 /** Allow-list of what an "exact pin" looks like — not a deny-list of range-operator characters. */
 const EXACT_SEMVER_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z-.]+)?$/
 
-const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies'] as const
+const DEPENDENCY_FIELDS = [
+  'dependencies',
+  'devDependencies',
+  'peerDependencies',
+  'optionalDependencies',
+] as const
 
 const WORKSPACE_YAML_PATH = 'pnpm-workspace.yaml'
 
@@ -99,10 +104,18 @@ export function parseWorkspacePackagesGlobs(yamlContent: string): string[] | und
   return inBlock ? globs : undefined
 }
 
-/** Resolves a single `packages:` glob entry (e.g. `apps/*`, or a literal directory with no
- * wildcard) to the workspace-member directories it matches under `root`. Only a trailing `/*` is
- * supported — the one shape this repo's own `pnpm-workspace.yaml` uses — matching this script's
- * static-file-scan scope (no general glob library). */
+/** Only a literal directory (no wildcard) or a single trailing `/*` segment is a supported
+ * `packages:` glob shape — the one this repo's own `pnpm-workspace.yaml` uses, matching this
+ * script's static-file-scan scope (no general glob library). Anything else (a recursive `**`, a
+ * mid-string `*`, or a pnpm negation `!pattern`) must fail closed rather than being silently
+ * resolved as a literal, near-certainly-nonexistent directory and quietly under-scanned. */
+function isSupportedPackagesGlob(glob: string): boolean {
+  return /^[^*!]+$/.test(glob) || /^[^*!]+\/\*$/.test(glob)
+}
+
+/** Resolves a single supported `packages:` glob entry (e.g. `apps/*`, or a literal directory with
+ * no wildcard) to the workspace-member directories it matches under `root`. Callers must check
+ * `isSupportedPackagesGlob` first — this function assumes the glob shape is already supported. */
 function resolveGlobToDirs(root: string, glob: string): string[] {
   if (glob.endsWith('/*')) {
     const base = resolve(root, glob.slice(0, -2))
@@ -143,6 +156,7 @@ export function findWorkspacePackageJsonPaths(root: string): string[] | undefine
 
   const globs = parseWorkspacePackagesGlobs(raw)
   if (globs === undefined) return undefined
+  if (globs.some((glob) => !isSupportedPackagesGlob(glob))) return undefined
 
   const dirs = [root, ...globs.flatMap((glob) => resolveGlobToDirs(root, glob))]
 
@@ -249,7 +263,13 @@ function scanPackageJsonPins(rootDir: string, packageJsonPath: string): PinViola
 /** Parses `pnpm-workspace.yaml`'s top-level `overrides:` block into its raw `{ name: value }`
  * entries. Returns an empty map (not `undefined`) if the block is genuinely absent — an
  * `overrides:` block is optional in this repo's own schema, unlike the `packages:`/dependabot
- * blocks this script also parses, which are always expected to exist. */
+ * blocks this script also parses, which are always expected to exist.
+ *
+ * Keys are tried in two shapes: quoted (`"pkg@>=x <y": value`) first, since pnpm's
+ * version-range-qualified override syntax embeds a literal space inside the quotes — a plain
+ * `[^\s]+` key pattern alone would silently fail to match that line at all and drop the entry
+ * (this repo's own `pnpm-workspace.yaml` already has this exact shape: `"minimatch@>=10 <10.2.3"`)
+ * — then bare/unquoted (`pkg: value`) as a fallback. */
 export function parseWorkspaceOverrides(yamlContent: string): Map<string, string> {
   const overrides = new Map<string, string>()
   const lines = yamlContent.split('\n')
@@ -263,11 +283,27 @@ export function parseWorkspaceOverrides(yamlContent: string): Map<string, string
     if (!inBlock) continue
     if (line.length > 0 && !/^\s/.test(line)) break
 
-    const match = /^\s{2}"?([^":\s]+(?:@[^"\s]*)?)"?:\s*(.+?)\s*$/.exec(line)
-    if (match) overrides.set(match[1] as string, match[2] as string)
+    const quoted = /^\s{2}"([^"]+)"\s*:\s*(.+?)\s*$/.exec(line)
+    if (quoted) {
+      overrides.set(quoted[1] as string, quoted[2] as string)
+      continue
+    }
+    const bare = /^\s{2}([^"\s:]+)\s*:\s*(.+?)\s*$/.exec(line)
+    if (bare) overrides.set(bare[1] as string, bare[2] as string)
   }
 
   return overrides
+}
+
+/** Extracts an override key's base package name, stripping pnpm's optional `@<selector>` version-
+ * range qualifier (e.g. `"minimatch@>=10 <10.2.3"` → `minimatch`, `"@fastify/static"` → itself
+ * unchanged since a scoped name's leading `@scope/` isn't a selector). A selector qualifier is only
+ * ever the *last* `@`-delimited segment and, per pnpm's own override syntax, is never itself scoped
+ * (it's a semver range), so splitting on `@` and treating everything before the final `@`-segment as
+ * the name is safe for both scoped and unscoped package names. */
+function extractOverrideBaseName(key: string): string {
+  const atIndex = key.startsWith('@') ? key.indexOf('@', 1) : key.indexOf('@')
+  return atIndex === -1 ? key : key.slice(0, atIndex)
 }
 
 function scanWorkspaceOverrides(root: string): OverrideViolation[] {
@@ -281,13 +317,18 @@ function scanWorkspaceOverrides(root: string): OverrideViolation[] {
   }
 
   const overrides = parseWorkspaceOverrides(raw)
+  const byBaseName = new Map<string, string>()
+  for (const [key, value] of overrides) {
+    byBaseName.set(extractOverrideBaseName(key), value)
+  }
+
   const violations: OverrideViolation[] = []
   for (const name of CRYPTO_ADJACENT_PACKAGES) {
-    if (overrides.has(name)) {
+    if (byBaseName.has(name)) {
       violations.push({
         kind: 'override',
         packageName: name,
-        overrideValue: overrides.get(name) as string,
+        overrideValue: byBaseName.get(name) as string,
       })
     }
   }
