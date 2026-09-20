@@ -73,8 +73,15 @@ RUN pnpm --filter @project-vault/web deploy --prod --legacy /app/deploy
 # @inlang/paraglide-js -> @inlang/sdk starting at paraglide-js 2.24.1 — it's lix's "git for
 # translations" engine, used only by paraglide's compiler/CLI, never imported by the compiled
 # runtime output. Same build-time-dead-weight pattern as vite/esbuild above.
+# @inlang/sdk's own transitive deps (binaryen, the @bytecodealliance/jco* WASM component
+# toolchain, and oxc-minify's per-platform native bindings) arrived the same way and are the
+# same story: paraglide-js's compiler resolves them to build/transpile lix's WASM plugins, but
+# none of it is imported by paraglide's compiled output (verified by grepping /app/build for
+# every one of these package names — zero hits). binaryen alone is ~90MB unpacked.
 RUN find /app/deploy/node_modules/.pnpm \
-  -maxdepth 1 \( -name 'vite@*' -o -name 'esbuild@*' -o -name '@esbuild+*' -o -name '@lix-js+*' \) \
+  -maxdepth 1 \( -name 'vite@*' -o -name 'esbuild@*' -o -name '@esbuild+*' -o -name '@lix-js+*' \
+    -o -name 'binaryen@*' -o -name 'oxc-minify@*' -o -name '@oxc-minify+*' -o -name '@bytecodealliance+*' \
+    -o -name '@inlang+sdk@*' \) \
   -exec rm -rf {} +
 
 # node:24-alpine, pinned by digest — see builder stage comment above.
