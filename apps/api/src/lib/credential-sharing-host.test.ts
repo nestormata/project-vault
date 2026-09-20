@@ -68,6 +68,7 @@ const KEY_ID = '66666666-6666-6666-6666-666666666666'
 const OTHER_ORG_ID = '77777777-7777-7777-7777-777777777777'
 const CREATED_BY_USER_ID = '88888888-8888-8888-8888-888888888888'
 /* eslint-enable no-secrets/no-secrets */
+const VALID_TOKEN = 'valid-token'
 const RECIPIENT_EMAIL = 'recipient@example.com'
 const EXPIRES_AT_ISO = '2026-01-02T00:00:00.000Z'
 const ROTATION_ID = 'rotation-1'
@@ -310,7 +311,7 @@ describe('buildCredentialSharingHost.findShareByToken / revealShare (AC3)', () =
 
   it('findShareByToken: thin closure returning the resolved metadata on a valid token', async () => {
     const host = buildCredentialSharingHost(MANIFEST)
-    const result = await host.findShareByToken('valid-token')
+    const result = await host.findShareByToken(VALID_TOKEN)
     expect(result).toEqual({
       status: 'ok',
       share: expect.objectContaining({ id: SHARE_ID }),
@@ -331,7 +332,7 @@ describe('buildCredentialSharingHost.findShareByToken / revealShare (AC3)', () =
 
   it('revealShare: thin closure returning the revealed value on a valid token', async () => {
     const host = buildCredentialSharingHost(MANIFEST)
-    const result = await host.revealShare('valid-token')
+    const result = await host.revealShare(VALID_TOKEN)
     expect(result).toEqual({
       status: 'ok',
       share: expect.objectContaining({ id: SHARE_ID }),
@@ -409,6 +410,74 @@ describe('buildCredentialSharingHost.findShareByToken / revealShare (AC3)', () =
     await host.findShareByToken('garbage-2')
     await host.findShareByToken('garbage-3')
     // No throw — not_found lookups never resolve an org, so the org bucket is never touched.
+  })
+
+  // Fix (code review 2026-09-20): AC5's audit entry must carry `organizationId (once resolved)`
+  // — previously findShareByToken/revealShare's 'ok' audit entry always recorded the literal
+  // 'unresolved' placeholder, even after the org had been resolved from the token.
+  it("AC5: findShareByToken's success audit entry carries the resolved organizationId, not the 'unresolved' placeholder", async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), fatal: vi.fn() }
+    const host = buildCredentialSharingHost(MANIFEST, logger)
+    await host.findShareByToken(VALID_TOKEN)
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: ORG_ID,
+        method: 'findShareByToken',
+        outcome: 'ok',
+      }),
+      expect.any(String)
+    )
+    expect(logger.info).not.toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: 'unresolved', outcome: 'ok' }),
+      expect.any(String)
+    )
+  })
+
+  it("AC5: revealShare's success audit entry carries the resolved organizationId, not the 'unresolved' placeholder", async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), fatal: vi.fn() }
+    const host = buildCredentialSharingHost(MANIFEST, logger)
+    await host.revealShare(VALID_TOKEN)
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: ORG_ID,
+        method: 'revealShare',
+        outcome: 'ok',
+      }),
+      expect.any(String)
+    )
+    expect(logger.info).not.toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: 'unresolved', outcome: 'ok' }),
+      expect.any(String)
+    )
+  })
+
+  // Fix (code review 2026-09-20): an org-rate-limit denial was previously audited twice — once by
+  // enforceOrgRateLimit with the correct 'org-rate-limited' outcome, and again by
+  // callOutOfRequestMethod's own catch block with a misleading generic 'error' outcome.
+  it('AC5b: an org-rate-limit denial is audited exactly once, with outcome "org-rate-limited" (never a duplicate "error" entry)', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), fatal: vi.fn() }
+    const host = buildCredentialSharingHost(MANIFEST, logger, {
+      orgRateLimits: { findShareByToken: 1 },
+    })
+    await host.findShareByToken('token-1')
+    logger.info.mockClear()
+
+    await expect(host.findShareByToken('token-2')).rejects.toBeInstanceOf(
+      CredentialSharingOrgRateLimitedError
+    )
+
+    const auditCalls = logger.info.mock.calls.filter(
+      ([fields]) =>
+        typeof fields === 'object' && fields !== null && 'method' in fields && 'outcome' in fields
+    )
+    expect(auditCalls).toHaveLength(1)
+    expect(auditCalls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        organizationId: ORG_ID,
+        method: 'findShareByToken',
+        outcome: 'org-rate-limited',
+      })
+    )
   })
 })
 

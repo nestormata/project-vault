@@ -149,16 +149,30 @@ function recordCredentialSharingHostAudit(
  * AC5 — wraps a `credentialSharing` method call with (a) per-extension rate-limiting via a
  * distinct in-flight budget and (b) a structured audit-log entry recorded on every outcome
  * (success, denial, or error).
+ *
+ * `organizationId` starts as the caller-supplied value (a real org id for the three out-of-
+ * request methods, or the `'unresolved'` placeholder for `findShareByToken`/`revealShare`, whose
+ * org isn't known until the token resolves). `fn` receives a `setOrganizationId` callback so those
+ * two methods can update it once resolved — AC5 requires the audit entry to carry
+ * `organizationId (once resolved)`, not the placeholder, once a real org is known.
+ *
+ * Fix (code review 2026-09-20): previously (a) the 'ok'/'error' audit entries for
+ * `findShareByToken`/`revealShare` always recorded the literal `'unresolved'` placeholder, even
+ * on success once the real org was known, and (b) an org-rate-limit denial was audited twice —
+ * once inside `enforceOrgRateLimit` with the correct `'org-rate-limited'` outcome, and again here
+ * with a misleading generic `'error'` outcome, since `CredentialSharingOrgRateLimitedError`
+ * propagates through this function's own catch block. Both are fixed below.
  */
 async function callOutOfRequestMethod<T>(
   methodName: string,
   organizationId: string,
   hostContext: CredentialSharingHostContext,
-  fn: () => Promise<T>
+  fn: (setOrganizationId: (resolvedOrganizationId: string) => void) => Promise<T>
 ): Promise<T> {
   const logger = hostContext.logger ?? {}
   const accountingKey = accountingKeyFor(hostContext.extensionName)
   const maxInFlight = hostContext.maxInFlight ?? CREDENTIAL_SHARING_HOST_MAX_IN_FLIGHT_PER_EXTENSION
+  let resolvedOrganizationId = organizationId
 
   if (!tryAcquireSlot(accountingKey, maxInFlight)) {
     operationalLog(
@@ -170,7 +184,7 @@ async function callOutOfRequestMethod<T>(
     )
     recordCredentialSharingHostAudit(logger, {
       extensionName: hostContext.extensionName,
-      organizationId,
+      organizationId: resolvedOrganizationId,
       method: methodName,
       outcome: 'rate-limited',
     })
@@ -178,21 +192,28 @@ async function callOutOfRequestMethod<T>(
   }
 
   try {
-    const result = await fn()
+    const result = await fn((id) => {
+      resolvedOrganizationId = id
+    })
     recordCredentialSharingHostAudit(logger, {
       extensionName: hostContext.extensionName,
-      organizationId,
+      organizationId: resolvedOrganizationId,
       method: methodName,
       outcome: 'ok',
     })
     return result
   } catch (error) {
-    recordCredentialSharingHostAudit(logger, {
-      extensionName: hostContext.extensionName,
-      organizationId,
-      method: methodName,
-      outcome: 'error',
-    })
+    // enforceOrgRateLimit already recorded its own, more specific 'org-rate-limited' audit entry
+    // before throwing — do not also record a second, less-informative 'error' entry for the same
+    // call.
+    if (!(error instanceof CredentialSharingOrgRateLimitedError)) {
+      recordCredentialSharingHostAudit(logger, {
+        extensionName: hostContext.extensionName,
+        organizationId: resolvedOrganizationId,
+        method: methodName,
+        outcome: 'error',
+      })
+    }
     throw error
   } finally {
     releaseSlot(accountingKey)
@@ -424,46 +445,60 @@ export function buildCredentialSharingHost(
       // key; instead this call is wrapped with a synthetic 'unresolved' key for the in-flight
       // accounting (AC5's own per-extension budget, independent of the token's own org), and the
       // per-org token-bucket (AC5b) is only enforced once the org is actually known.
-      return callOutOfRequestMethod('findShareByToken', 'unresolved', hostContext, async () => {
-        const result = await findExternalShareByTokenHash(rawToken)
-        if (result.status !== 'ok') return { status: 'not_found' as const }
+      return callOutOfRequestMethod(
+        'findShareByToken',
+        'unresolved',
+        hostContext,
+        async (setOrganizationId) => {
+          const result = await findExternalShareByTokenHash(rawToken)
+          if (result.status !== 'ok') return { status: 'not_found' as const }
 
-        enforceOrgRateLimit('findShareByToken', result.metadata.share.orgId, hostContext)
+          setOrganizationId(result.metadata.share.orgId)
+          enforceOrgRateLimit('findShareByToken', result.metadata.share.orgId, hostContext)
 
-        return {
-          status: 'ok' as const,
-          share: serializeShare(result.metadata.share),
-          credentialName: result.metadata.credentialName,
-          credentialProjectId: result.metadata.credentialProjectId,
-          sharedByDisplayName: result.metadata.sharedByDisplayName,
+          return {
+            status: 'ok' as const,
+            share: serializeShare(result.metadata.share),
+            credentialName: result.metadata.credentialName,
+            credentialProjectId: result.metadata.credentialProjectId,
+            sharedByDisplayName: result.metadata.sharedByDisplayName,
+          }
         }
-      })
+      )
     },
 
     async revealShare(rawToken) {
-      return callOutOfRequestMethod('revealShare', 'unresolved', hostContext, async () => {
-        // AC3's timing-safe lookup happens inside revealExternalShare itself; this facade cannot
-        // resolve the org (to apply the AC5b org rate limit) without first doing the same
-        // admin-connection lookup revealExternalShare performs internally. Reusing
-        // findExternalShareByTokenHash here (read-only, no mutation, no attempt-counter increment)
-        // purely to resolve the org for rate-limiting BEFORE calling the real reveal step —
-        // mirrors AC3's own "hash + query unconditionally" timing-safety discipline (never an
-        // early return before this lookup runs).
-        const lookup = await findExternalShareByTokenHash(rawToken)
-        if (lookup.status === 'ok') {
-          enforceOrgRateLimit('revealShare', lookup.metadata.share.orgId, hostContext)
-        }
+      return callOutOfRequestMethod(
+        'revealShare',
+        'unresolved',
+        hostContext,
+        async (setOrganizationId) => {
+          // AC3's timing-safe lookup happens inside revealExternalShare itself; this facade
+          // cannot resolve the org (to apply the AC5b org rate limit) without first doing the
+          // same admin-connection lookup revealExternalShare performs internally. Reusing
+          // findExternalShareByTokenHash here (read-only for the org-resolution purpose; note it
+          // may still perform its own lazy active->expired transition internally, same as the
+          // subsequent revealExternalShare call would) purely to resolve the org for
+          // rate-limiting BEFORE calling the real reveal step — mirrors AC3's own "hash + query
+          // unconditionally" timing-safety discipline (never an early return before this lookup
+          // runs).
+          const lookup = await findExternalShareByTokenHash(rawToken)
+          if (lookup.status === 'ok') {
+            setOrganizationId(lookup.metadata.share.orgId)
+            enforceOrgRateLimit('revealShare', lookup.metadata.share.orgId, hostContext)
+          }
 
-        const result = await revealExternalShare(rawToken)
-        if (result.status !== 'ok') return result
-        return {
-          status: 'ok' as const,
-          share: serializeShare(result.share),
-          value: result.value,
-          valueFormat: result.valueFormat,
-          fieldKey: result.fieldKey,
+          const result = await revealExternalShare(rawToken)
+          if (result.status !== 'ok') return result
+          return {
+            status: 'ok' as const,
+            share: serializeShare(result.share),
+            value: result.value,
+            valueFormat: result.valueFormat,
+            fieldKey: result.fieldKey,
+          }
         }
-      })
+      )
     },
 
     async revokeShare(params) {
