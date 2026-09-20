@@ -76,14 +76,15 @@ function validateNSPContent(
   if (content.expiry === undefined) {
     violations.push({ entryKey, reason: 'missing "expiry"' })
   } else {
-    const expiryDate = new Date(content.expiry as string | number)
+    const expiry: string | number = content.expiry as string | number
+    const expiryDate = new Date(expiry)
     if (Number.isNaN(expiryDate.getTime())) {
       violations.push({
         entryKey,
-        reason: `"expiry" is not a parseable date: ${JSON.stringify(content.expiry)}`,
+        reason: `"expiry" is not a parseable date: ${JSON.stringify(expiry)}`,
       })
     } else if (expiryDate < today) {
-      violations.push({ entryKey, reason: `"expiry" has passed: ${String(content.expiry)}` })
+      violations.push({ entryKey, reason: `"expiry" has passed: ${expiry}` })
     }
   }
 
@@ -127,12 +128,18 @@ function loadAuditCiConfig(
   }
 
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    let actualShape: string
+    if (parsed === null) {
+      actualShape = 'null'
+    } else if (Array.isArray(parsed)) {
+      actualShape = 'an array'
+    } else {
+      actualShape = typeof parsed
+    }
     return {
       violation: {
         entryKey: '<file>',
-        reason: `audit-ci.jsonc must contain a JSON object, got ${
-          parsed === null ? 'null' : Array.isArray(parsed) ? 'an array' : typeof parsed
-        }`,
+        reason: `audit-ci.jsonc must contain a JSON object, got ${actualShape}`,
       },
     }
   }
