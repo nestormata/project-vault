@@ -336,7 +336,7 @@ async function resolveMachineUserForExtension(
     )
 
   const live = rows.find((row) => isMachineKeyLive(row) && row.createdBy !== null)
-  if (!live || !live.createdBy) return null
+  if (!live?.createdBy) return null
   return { machineUserId: live.machineUserId, keyId: live.keyId, sharedByUserId: live.createdBy }
 }
 
@@ -393,7 +393,7 @@ export function buildCredentialSharingHost(
   /** Test-only override seam — never used in production wiring. */
   overrides: {
     maxInFlight?: number
-    orgRateLimits?: CredentialSharingHostContext['orgRateLimits']
+    orgRateLimits?: NonNullable<CredentialSharingHostContext['orgRateLimits']>
     now?: () => number
   } = {}
 ): CredentialSharingHost {

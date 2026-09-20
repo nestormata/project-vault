@@ -406,10 +406,18 @@ describe('buildCredentialSharingHost.findShareByToken / revealShare (AC3)', () =
       {},
       { orgRateLimits: { findShareByToken: 1 } }
     )
-    await host.findShareByToken('garbage-1')
-    await host.findShareByToken('garbage-2')
-    await host.findShareByToken('garbage-3')
-    // No throw — not_found lookups never resolve an org, so the org bucket is never touched.
+    // Bucket limit is 1 — if a not_found lookup counted against it, the 2nd/3rd calls below
+    // would throw CredentialSharingOrgRateLimitedError. All three resolving proves the bucket
+    // was never touched, since a real org can never be resolved from an unmatched token.
+    await expect(host.findShareByToken('garbage-1')).resolves.toMatchObject({
+      status: 'not_found',
+    })
+    await expect(host.findShareByToken('garbage-2')).resolves.toMatchObject({
+      status: 'not_found',
+    })
+    await expect(host.findShareByToken('garbage-3')).resolves.toMatchObject({
+      status: 'not_found',
+    })
   })
 
   // Fix (code review 2026-09-20): AC5's audit entry must carry `organizationId (once resolved)`
