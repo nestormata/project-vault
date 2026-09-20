@@ -5,6 +5,7 @@ import {
   NotificationOriginatorNoAmbientContextError,
   NotificationOriginatorRateLimitedError,
   type NotificationOriginatorChannel,
+  type NotificationOriginatorEnqueueForOrgParams,
   type NotificationOriginatorEnqueueParams,
   type NotificationOriginatorEnqueueResult,
   type NotificationOriginatorHost,
@@ -55,6 +56,12 @@ describe('notification-originator hook error classes (Story 36.1 AC1/AC3/AC4/AC5
   })
 })
 
+// Shared fixture literals — a constant avoids sonarjs/no-duplicate-string tripping on these
+// values repeated across nearly every test case below.
+const TEST_SUBJECT = 'Subject'
+const TEST_BODY = 'Body'
+const TEST_RECIPIENT_EMAIL = 'a@example.com'
+
 describe('NotificationOriginatorHost type shape (AC1)', () => {
   it('accepts a structurally valid implementation and channel union', () => {
     const channels: NotificationOriginatorChannel[] = ['email', 'inbox']
@@ -64,18 +71,52 @@ describe('NotificationOriginatorHost type shape (AC1)', () => {
         expect(channels).toContain(params.channel)
         return result
       },
+      enqueueNotificationForOrg: async (params: NotificationOriginatorEnqueueForOrgParams) => {
+        const result: NotificationOriginatorEnqueueResult = { notificationQueueId: 'nq_2' }
+        expect(channels).toContain(params.channel)
+        return result
+      },
     }
     expect(typeof host.enqueueNotification).toBe('function')
+    expect(typeof host.enqueueNotificationForOrg).toBe('function')
   })
 
   it('NotificationOriginatorEnqueueParams has no organizationId/orgId field (Design Decision 4/AC3)', () => {
     const params: NotificationOriginatorEnqueueParams = {
       channel: 'email',
-      recipientEmail: 'a@example.com',
-      subject: 'Subject',
-      body: 'Body',
+      recipientEmail: TEST_RECIPIENT_EMAIL,
+      subject: TEST_SUBJECT,
+      body: TEST_BODY,
     }
     expect(Object.keys(params)).not.toContain('organizationId')
     expect(Object.keys(params)).not.toContain('orgId')
+  })
+})
+
+describe('NotificationOriginatorEnqueueForOrgParams type shape (Story 58.1 AC1/Design Decision 1)', () => {
+  it('is NotificationOriginatorEnqueueParams plus an explicit organizationId field', () => {
+    const params: NotificationOriginatorEnqueueForOrgParams = {
+      organizationId: 'org-1',
+      channel: 'email',
+      recipientUserId: 'user-1',
+      subject: TEST_SUBJECT,
+      body: TEST_BODY,
+    }
+    expect(params.organizationId).toBe('org-1')
+    expect(Object.keys(params).sort()).toEqual(
+      ['organizationId', 'channel', 'recipientUserId', 'subject', 'body'].sort()
+    )
+  })
+
+  it('supports the same recipientUserId/recipientEmail optionality as the in-request params', () => {
+    const params: NotificationOriginatorEnqueueForOrgParams = {
+      organizationId: 'org-1',
+      channel: 'email',
+      recipientEmail: TEST_RECIPIENT_EMAIL,
+      subject: TEST_SUBJECT,
+      body: TEST_BODY,
+    }
+    expect(params.recipientUserId).toBeUndefined()
+    expect(params.recipientEmail).toBe(TEST_RECIPIENT_EMAIL)
   })
 })

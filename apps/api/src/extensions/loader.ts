@@ -297,9 +297,14 @@ async function buildHostServices(
     // explicit organizationId parameter, are rate-limited on a distinct accounting bucket, and
     // are structurally audit-logged on every call. See lib/monitoring-host.ts.
     monitoring: buildMonitoringHost(manifest, logger),
-    // Story 36.1 — bound once at extension-load time, same as every field above. Its one
+    // Story 36.1 — bound once at extension-load time, same as every field above. Its in-request
     // method, enqueueNotification(), internally resolves the current request's orgId via
-    // getRequestContext() at call time. See lib/notification-originator-host.ts.
+    // getRequestContext() at call time. Story 58.1 adds enqueueNotificationForOrg(), an
+    // out-of-request sibling taking an explicit organizationId — no loader change needed for it
+    // either, confirmed directly (same finding as monitoring's split methods above):
+    // notificationOriginator is wired as a whole object, so a new method on the existing host
+    // type requires zero capability-gating enumeration updates. See
+    // lib/notification-originator-host.ts.
     notificationOriginator: buildNotificationOriginatorHost(manifest, logger),
     // Story 40.1 — bound once at extension-load time, same as every field above. Its one method,
     // consume(), internally resolves the current request's orgId/userId AND

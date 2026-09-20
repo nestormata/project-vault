@@ -27,7 +27,10 @@ const monitoringStub = {
 // Story 36.1 — HostServices widened to a fifth, required field. This fixture never reads it
 // (only auditEventSource/orgAuthorization matter to this extension), so a stub with a
 // never-invoked reject is sufficient here.
-const notificationOriginatorStub = { enqueueNotification: rejectUnused }
+const notificationOriginatorStub = {
+  enqueueNotification: rejectUnused,
+  enqueueNotificationForOrg: rejectUnused,
+}
 const extensionRequestStateStub = { consume: rejectUnused }
 
 describe('mock-audit-event-source-extension (Story 23.8 AC-27)', () => {

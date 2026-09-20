@@ -29,11 +29,14 @@ export type HostServices = {
    * time; the other two take an explicit `organizationId` parameter because they run outside any
    * request lifecycle. See `hooks/monitoring.ts`'s doc comment for the full split rationale. */
   monitoring: PvMonitoringHost
-  /** Story 36.1 — bound once at extension-load time, same as every field above. Its one method,
-   * `enqueueNotification()`, internally resolves the current request's `orgId` via
-   * `getRequestContext()` at call time. NOT gated by the unrelated `'notification-channel'`
-   * `ExtensionCapability` — see `hooks/notification-originator.ts`'s doc comment for the full
-   * naming-collision disambiguation. */
+  /** Story 36.1 — bound once at extension-load time, same as every field above. Its in-request
+   * method, `enqueueNotification()`, internally resolves the current request's `orgId` via
+   * `getRequestContext()` at call time. Story 58.1 adds an out-of-request sibling,
+   * `enqueueNotificationForOrg()`, which takes an explicit `organizationId` parameter instead
+   * (same split rationale as `monitoring` above) and is rate-limited on its own, independent
+   * budget. NOT gated by the unrelated `'notification-channel'` `ExtensionCapability` — see
+   * `hooks/notification-originator.ts`'s doc comment for the full naming-collision
+   * disambiguation. */
   notificationOriginator: NotificationOriginatorHost
   /** Story 37.1 — bound once at extension-load time, same as every field above. Its one method,
    * `checkProjectMembership()`, answers "is this identity a member of this specific project at

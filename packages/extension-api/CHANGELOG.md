@@ -2,6 +2,36 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.21.0 — 2026-09-19
+
+contract-hash: sha256:3cc73e97ed02e06b2615597380ade20be02a42bbe3d404c7b5173bd1085b3d0a
+
+### Added
+
+- Added `NotificationOriginatorHost.enqueueNotificationForOrg(params): Promise<NotificationOriginatorEnqueueResult>`
+  (Story 58.1 AC1-AC6) and a new sibling params type `NotificationOriginatorEnqueueForOrgParams`
+  (`NotificationOriginatorEnqueueParams & { organizationId: string }`) — the out-of-request-capable
+  sibling of `enqueueNotification()`, letting an installed extension (specifically
+  `centralizeme-sass`'s module pack) enqueue a notification through PV's own email/inbox delivery
+  queue from inside an out-of-request `onScheduledTask` handler (Story 56.1), with no ambient
+  request context available. Same insert shape, same `recipientUserId`-resolves-to-an-active-org-
+  member validation (reusing `assertRecipientIsOrgMember` verbatim, scoped to the explicit
+  `organizationId` instead of an ambient one), and the same audit-logging contract as
+  `enqueueNotification()` — but rate-limited against its OWN, independent rolling-window budget
+  (a new `notification_queue.enqueuedOutOfRequest` boolean column and partial index), deliberately
+  never shared with the in-request path's existing cap, so a scheduled-probe incident storm cannot
+  starve an unrelated in-request caller's notifications. Also adds a per-extension in-flight cap
+  (`NOTIFICATION_ORIGINATOR_HOST_MAX_IN_FLIGHT_PER_EXTENSION`), mirroring
+  `MONITORING_HOST_MAX_IN_FLIGHT_PER_EXTENSION`'s precedent. Purely additive — no existing
+  `HostServices`/`ExtensionHooks`/`ExtensionManifest` field or `enqueueNotification()` behavior
+  changes.
+
+Per `docs/extension-api-versioning-policy.md` Row 11 ("adding a new hook type and a new optional
+field on `ExtensionHooks`/existing types") — this is a purely additive new
+`HostServices.notificationOriginator` method, so this is a MINOR bump, consistent with every other
+`HostServices` method addition (e.g. Story 57.1's `listServiceEndpointsForScheduling`, 3.19.0 ->
+3.20.0).
+
 ## 3.20.0 — 2026-09-19
 
 contract-hash: sha256:9a16f2f41682f84867de1d2c1dbdcba7dec7dabb3a55879b9e4082191f5f8508

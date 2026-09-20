@@ -469,6 +469,13 @@ export const OperationalEvent = {
   // DB-backed rate-limit budget from monitoring-host.ts's own in-flight/in-memory one (never
   // shared).
   NOTIFICATION_ORIGINATOR_HOST_RATE_LIMITED: 'notification_originator_host.rate_limited',
+  // Story 58.1 Design Decision 2/Task 3 — a call to `enqueueNotificationForOrg` (the
+  // out-of-request sibling) was refused because its (extensionName, orgId) pair had already
+  // reached its OWN, independent rolling-window enqueue cap — deliberately a distinct event name
+  // from `NOTIFICATION_ORIGINATOR_HOST_RATE_LIMITED` above (the in-request path's own event) so
+  // an operator triaging alerts can tell which budget was exhausted.
+  NOTIFICATION_ORIGINATOR_HOST_OUT_OF_REQUEST_RATE_LIMITED:
+    'notification_originator_host.out_of_request_rate_limited',
 
   // Story 37.1 AC6: structured audit-log entry written for EVERY
   // `HostServices.projectAuthorization.checkProjectMembership()` call (authorized, denied, or

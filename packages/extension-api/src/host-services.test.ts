@@ -62,6 +62,7 @@ const monitoringFixture: PvMonitoringHost = {
 
 const notificationOriginatorFixture: NotificationOriginatorHost = {
   enqueueNotification: async () => ({ notificationQueueId: 'nq1' }),
+  enqueueNotificationForOrg: async () => ({ notificationQueueId: 'nq2' }),
 }
 
 const extensionRequestStateFixture: ExtensionRequestStateHostService = {

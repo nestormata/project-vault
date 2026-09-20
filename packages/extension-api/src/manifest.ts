@@ -480,7 +480,21 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // required shape changes, and the floor stays `>=3.0.0` so every already-shipped extension
 // (including any real, currently-deployed CentralizeMe build) keeps loading unmodified
 // regardless.
-export const EXTENSION_API_VERSION = '3.20.0'
+// Story 57.1 AC1-AC6 — bumped as an additive-minor (3.19.0 -> 3.20.0):
+// `HostServices.monitoring` gains `listServiceEndpointsForScheduling(params):
+// Promise<MonitoringServiceEndpointForScheduling[]>`, a purely additive new method with zero
+// effect on any `hooksFactory` that omits referencing it — no existing type is modified, and the
+// floor stays `>=3.0.0` so every already-shipped extension (including any real,
+// currently-deployed CentralizeMe build) keeps loading unmodified regardless.
+// Story 58.1 AC1-AC6 — bumped as an additive-minor (3.20.0 -> 3.21.0):
+// `NotificationOriginatorHost` gains `enqueueNotificationForOrg(params):
+// Promise<NotificationOriginatorEnqueueResult>` and a new sibling params type
+// `NotificationOriginatorEnqueueForOrgParams` (see `hooks/notification-originator.ts`), a purely
+// additive new method with zero effect on any `hooksFactory` that omits referencing
+// `host.notificationOriginator.enqueueNotificationForOrg` — no existing type is modified, and the
+// floor stays `>=3.0.0` so every already-shipped extension (including any real,
+// currently-deployed CentralizeMe build) keeps loading unmodified regardless.
+export const EXTENSION_API_VERSION = '3.21.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

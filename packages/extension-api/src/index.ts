@@ -93,6 +93,7 @@ export type {
 } from './hooks/delivery-provider.js'
 export type {
   NotificationOriginatorChannel,
+  NotificationOriginatorEnqueueForOrgParams,
   NotificationOriginatorEnqueueParams,
   NotificationOriginatorEnqueueResult,
   NotificationOriginatorHost,

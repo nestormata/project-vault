@@ -56,8 +56,9 @@ describe('EXTENSION_API_VERSION', () => {
     // AC3/AC10 — OAuthHandoffRedirectResult.persistState?, ModuleActionContext.requestState?, and
     // HostServices.extensionRequestState (also additive-minor): 3.18.0 -> 3.19.0. Story 57.1 —
     // HostServices.monitoring gains listServiceEndpointsForScheduling (also additive-minor):
-    // 3.19.0 -> 3.20.0.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.20.0')
+    // 3.19.0 -> 3.20.0. Story 58.1 — NotificationOriginatorHost gains enqueueNotificationForOrg
+    // (also additive-minor): 3.20.0 -> 3.21.0.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.21.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

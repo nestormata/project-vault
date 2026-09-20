@@ -238,6 +238,12 @@ const DEFAULT_HOST_SERVICES: HostServices = {
           'registerExtension() was called without a real HostServices — notificationOriginator.enqueueNotification is unavailable'
         )
       ),
+    enqueueNotificationForOrg: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — notificationOriginator.enqueueNotificationForOrg is unavailable'
+        )
+      ),
   },
   extensionRequestState: {
     consume: () =>

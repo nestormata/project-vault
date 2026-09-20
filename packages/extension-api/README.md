@@ -126,7 +126,7 @@ service is always an additive change.
 | `projectAuthorization` | `ProjectAuthorizationHost` | `checkProjectMembership()` — the project-scoped sibling of the above, reusing PV's own effective-project-role semantics (org owner/admin bypass, explicit membership row fallback). |
 | `ephemeralState` | `EphemeralStateHost` | Short-lived, org-scoped key/value state. Resolves the current request's org at call time. |
 | `monitoring` | `PvMonitoringHost` | PV's monitoring surface. Six of its eight methods resolve the current request's org at call time; two take an explicit `organizationId` because they run outside any request lifecycle. |
-| `notificationOriginator` | `NotificationOriginatorHost` | `enqueueNotification()` — enqueue a notification through PV's own queue. Not gated by the unrelated `notification-channel` capability. |
+| `notificationOriginator` | `NotificationOriginatorHost` | `enqueueNotification()` — enqueue a notification through PV's own queue (in-request only). `enqueueNotificationForOrg()` — the out-of-request sibling, taking an explicit `organizationId` and rate-limited on its own independent budget. Not gated by the unrelated `notification-channel` capability. |
 
 Host services are bound once at extension-load time. Do not cache the request-scoped values they
 return across requests.

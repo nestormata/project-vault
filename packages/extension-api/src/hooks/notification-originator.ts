@@ -78,6 +78,26 @@ export type NotificationOriginatorEnqueueResult = {
 }
 
 /**
+ * Story 58.1 Design Decision 1 (ADR-58.1-1) — a structurally SEPARATE sibling to
+ * `NotificationOriginatorEnqueueParams`, not a widened version of it. Same content/recipient/
+ * channel shape (including the same `recipientUserId`/`recipientEmail` optionality — exactly one
+ * of the two must be supplied, per `NotificationOriginatorEnqueueParams`'s own doc comment), plus
+ * an explicit, caller-supplied `organizationId`. This is the ONLY structural difference from the
+ * in-request type: there is no ambient context to resolve the org from when
+ * `enqueueNotificationForOrg()` is called from an out-of-request context (e.g. a scheduled-task
+ * handler with no bound HTTP request), so the caller must name the org directly.
+ */
+export type NotificationOriginatorEnqueueForOrgParams = NotificationOriginatorEnqueueParams & {
+  /** The org to enqueue the notification for. Trusted caller input, scoped only by the host's
+   * own `withOrg()` RLS transaction and `recipientUserId`'s membership check (AC2/AC3) — mirrors
+   * every existing out-of-request `HostServices` method's own accepted trust boundary (see the
+   * story's Elicitation Finding 1: the scheduled-task runner only ever invokes an extension's
+   * `onScheduledTask` for orgs where it is actually installed, so this is never
+   * attacker-controlled in practice). */
+  organizationId: string
+}
+
+/**
  * Thrown by `enqueueNotification()` when called with no ambient request context bound (e.g. a
  * call attempted outside any HTTP request lifecycle, such as accidentally from a background
  * job). Mirrors `MonitoringNoAmbientContextError` verbatim — zero DB calls before this throws.
@@ -157,5 +177,19 @@ export class NotificationOriginatorRateLimitedError extends Error {
 export type NotificationOriginatorHost = {
   enqueueNotification(
     params: NotificationOriginatorEnqueueParams
+  ): Promise<NotificationOriginatorEnqueueResult>
+
+  /**
+   * Story 58.1 — the out-of-request-capable sibling of `enqueueNotification()` above, for a
+   * caller with no ambient request context bound (e.g. a scheduled-task handler). Never throws
+   * `NotificationOriginatorNoAmbientContextError` — the org is named explicitly via
+   * `params.organizationId` instead of resolved ambiently. Otherwise behaves identically:
+   * same `notification_queue` insert shape, same recipient-membership validation (scoped to the
+   * named org), and same audit-logging contract — but rate-limited against its OWN, independent
+   * rolling-window budget (Design Decision 2/ADR-58.1-2), never shared with `enqueueNotification()`'s
+   * in-request budget.
+   */
+  enqueueNotificationForOrg(
+    params: NotificationOriginatorEnqueueForOrgParams
   ): Promise<NotificationOriginatorEnqueueResult>
 }

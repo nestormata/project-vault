@@ -6,6 +6,7 @@ import { OperationalEvent } from '@project-vault/shared'
 import type {
   ExtensionManifest,
   NotificationOriginatorChannel,
+  NotificationOriginatorEnqueueForOrgParams,
   NotificationOriginatorEnqueueParams,
   NotificationOriginatorEnqueueResult,
   NotificationOriginatorHost,
@@ -47,7 +48,62 @@ export const MAX_BODY_LENGTH = 20_000
 export const NOTIFICATION_ORIGINATOR_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000
 export const NOTIFICATION_ORIGINATOR_RATE_LIMIT_MAX_PER_WINDOW = 100
 
+/** Story 58.1 Task 3/AC6 — a per-extension in-flight cap for the out-of-request
+ * `enqueueNotificationForOrg` method only, mirroring `monitoring-host.ts`'s
+ * `MONITORING_HOST_MAX_IN_FLIGHT_PER_EXTENSION` precedent exactly. Distinct accounting map and
+ * budget from `monitoring-host.ts`'s own, `org-authorization.ts`'s own, and
+ * `capability-gate.ts`'s own — never shared. This is ALSO independent from the DB-backed
+ * rolling-window COUNT budget below (`NOTIFICATION_ORIGINATOR_RATE_LIMIT_MAX_PER_WINDOW`,
+ * Design Decision 2/AC5) — the in-flight cap bounds CONCURRENT calls, the rolling-window cap
+ * bounds SUSTAINED volume over time; a caller can be rejected by either independently. */
+export const NOTIFICATION_ORIGINATOR_HOST_MAX_IN_FLIGHT_PER_EXTENSION = 20
+
+const notificationOriginatorHostInFlightCounts = new Map<string, number>()
+
+function outOfRequestAccountingKeyFor(extensionName: string): string {
+  return `notification-originator-host:${extensionName}`
+}
+
+function tryAcquireOutOfRequestSlot(key: string, max: number): boolean {
+  const current = notificationOriginatorHostInFlightCounts.get(key) ?? 0
+  if (current >= max) return false
+  notificationOriginatorHostInFlightCounts.set(key, current + 1)
+  return true
+}
+
+function releaseOutOfRequestSlot(key: string): void {
+  const current = notificationOriginatorHostInFlightCounts.get(key) ?? 0
+  if (current <= 1) notificationOriginatorHostInFlightCounts.delete(key)
+  else notificationOriginatorHostInFlightCounts.set(key, current - 1)
+}
+
+/** Test-only introspection — never called from production code. */
+export function __getNotificationOriginatorHostInFlightCountForTests(
+  extensionName: string
+): number {
+  return (
+    notificationOriginatorHostInFlightCounts.get(outOfRequestAccountingKeyFor(extensionName)) ?? 0
+  )
+}
+
+/** Test-only reset — never called from production code. */
+export function __resetNotificationOriginatorHostInFlightForTests(): void {
+  notificationOriginatorHostInFlightCounts.clear()
+}
+
 type AuditLogger = Partial<Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>>
+
+// Shared audit-outcome literals — constants avoid sonarjs/no-duplicate-string tripping on these
+// values repeated across both enqueueNotification's and enqueueNotificationForOrg's identical
+// outcome-classification shape.
+const OUTCOME_OK = 'ok' as const
+const OUTCOME_INVALID_PARAMS_DENIED = 'invalid-params-denied' as const
+const OUTCOME_INVALID_RECIPIENT_DENIED = 'invalid-recipient-denied' as const
+const OUTCOME_RATE_LIMITED = 'rate-limited' as const
+const OUTCOME_ERROR = 'error' as const
+
+type EnqueueOutcome =
+  typeof OUTCOME_INVALID_RECIPIENT_DENIED | typeof OUTCOME_RATE_LIMITED | typeof OUTCOME_ERROR
 
 /** Structured audit-log entry recorded on EVERY call (success, denial, or error). Fields are
  * `organizationId`/`extensionName`/`channel`/`outcome` only — never the caller-authored
@@ -155,9 +211,22 @@ async function assertRecipientIsOrgMember(recipientUserId: string, orgId: string
  * AC5/Design Decision 6 — a DB-backed rolling-window COUNT, not an in-memory counter (a process
  * restart must not reset the cap). Best-effort/check-then-act: see
  * `NotificationOriginatorRateLimitedError`'s own doc comment for the accepted TOCTOU trade-off.
- * Uses the `idx_notification_queue_origin_extension_rate_limit` partial index (Task 2).
+ *
+ * Story 58.1 Design Decision 2 — `outOfRequest` selects which of the two INDEPENDENT budgets this
+ * call counts against: `false` (default, the in-request `enqueueNotification()` path) uses
+ * `idx_notification_queue_origin_extension_rate_limit` (Task 2, Story 36.1); `true` (the
+ * out-of-request `enqueueNotificationForOrg()` path) uses the sibling
+ * `idx_notification_queue_ooref_extension_rate_limit` (Task 2, Story 58.1). Both share the same
+ * numeric cap as a starting point (Design Decision 2) but are counted via two disjoint `WHERE`
+ * clauses over the same table — a burst on one path structurally cannot exhaust the other's
+ * budget.
  */
-async function assertUnderRateLimit(tx: Tx, extensionName: string, orgId: string): Promise<void> {
+async function assertUnderRateLimit(
+  tx: Tx,
+  extensionName: string,
+  orgId: string,
+  outOfRequest = false
+): Promise<void> {
   const windowStart = new Date(Date.now() - NOTIFICATION_ORIGINATOR_RATE_LIMIT_WINDOW_MS)
   const [row] = await tx
     .select({ count: sql<number>`count(*)::int` })
@@ -166,6 +235,7 @@ async function assertUnderRateLimit(tx: Tx, extensionName: string, orgId: string
       and(
         eq(notificationQueue.originExtensionName, extensionName),
         eq(notificationQueue.orgId, orgId),
+        eq(notificationQueue.enqueuedOutOfRequest, outOfRequest),
         gt(notificationQueue.createdAt, windowStart)
       )
     )
@@ -175,10 +245,89 @@ async function assertUnderRateLimit(tx: Tx, extensionName: string, orgId: string
   }
 }
 
+/** Story 58.1 Task 3/AC6 — the `enqueueNotificationForOrg`-only counterpart to
+ * `monitoring-host.ts`'s `callOutOfRequestMethod`: wraps the out-of-request enqueue path with (a)
+ * the per-extension in-flight budget above and (b) a `recordNotificationOriginatorAudit`-shaped
+ * audit entry on every outcome (success, denial, or error) — the SAME field set
+ * (`extensionName`/`organizationId`/`channel`/`outcome`) `enqueueNotification()` already uses,
+ * never `monitoring-host.ts`'s own `method`-keyed shape, so both `NotificationOriginatorHost`
+ * methods' audit trails stay uniform. */
+async function callOutOfRequestEnqueue(
+  organizationId: string,
+  channel: string,
+  hostContext: { extensionName: string; logger: AuditLogger; maxInFlight: number },
+  fn: () => Promise<NotificationOriginatorEnqueueResult>
+): Promise<NotificationOriginatorEnqueueResult> {
+  const { extensionName, logger, maxInFlight } = hostContext
+  const accountingKey = outOfRequestAccountingKeyFor(extensionName)
+
+  if (!tryAcquireOutOfRequestSlot(accountingKey, maxInFlight)) {
+    operationalLog(
+      logger,
+      'warn',
+      OperationalEvent.NOTIFICATION_ORIGINATOR_HOST_OUT_OF_REQUEST_RATE_LIMITED,
+      'enqueueNotificationForOrg() call denied without invoking resolution — extension at its in-flight cap',
+      { extensionName, organizationId }
+    )
+    recordNotificationOriginatorAudit(logger, {
+      extensionName,
+      organizationId,
+      channel,
+      outcome: OUTCOME_RATE_LIMITED,
+    })
+    throw new NotificationOriginatorRateLimitedError()
+  }
+
+  try {
+    const result = await fn()
+    recordNotificationOriginatorAudit(logger, {
+      extensionName,
+      organizationId,
+      channel,
+      outcome: OUTCOME_OK,
+    })
+    return result
+  } catch (error) {
+    let outcome: EnqueueOutcome
+    if (error instanceof NotificationOriginatorInvalidRecipientError) {
+      outcome = OUTCOME_INVALID_RECIPIENT_DENIED
+    } else if (error instanceof NotificationOriginatorRateLimitedError) {
+      outcome = OUTCOME_RATE_LIMITED
+    } else {
+      outcome = OUTCOME_ERROR
+    }
+    if (outcome === OUTCOME_RATE_LIMITED) {
+      operationalLog(
+        logger,
+        'warn',
+        OperationalEvent.NOTIFICATION_ORIGINATOR_HOST_OUT_OF_REQUEST_RATE_LIMITED,
+        'enqueueNotificationForOrg() call denied — extension at its out-of-request rolling-window enqueue cap',
+        { extensionName, organizationId }
+      )
+    }
+    recordNotificationOriginatorAudit(logger, {
+      extensionName,
+      organizationId,
+      channel,
+      outcome,
+    })
+    throw error
+  } finally {
+    releaseOutOfRequestSlot(accountingKey)
+  }
+}
+
 export function buildNotificationOriginatorHost(
   manifest: ExtensionManifest,
-  logger: AuditLogger = {}
+  logger: AuditLogger = {},
+  /** Test-only override seam (e.g. a lowered `maxInFlight` to exercise the out-of-request
+   * in-flight rate-limit path deterministically) — never used in production wiring. Mirrors
+   * `monitoring-host.ts`'s `buildMonitoringHost` overrides parameter. */
+  overrides: { maxInFlight?: number } = {}
 ): NotificationOriginatorHost {
+  const outOfRequestMaxInFlight =
+    overrides.maxInFlight ?? NOTIFICATION_ORIGINATOR_HOST_MAX_IN_FLIGHT_PER_EXTENSION
+
   return {
     async enqueueNotification(
       params: NotificationOriginatorEnqueueParams
@@ -194,7 +343,7 @@ export function buildNotificationOriginatorHost(
           extensionName: manifest.name,
           organizationId: orgId,
           channel: String(params.channel),
-          outcome: 'invalid-params-denied',
+          outcome: OUTCOME_INVALID_PARAMS_DENIED,
         })
         throw error
       }
@@ -229,19 +378,19 @@ export function buildNotificationOriginatorHost(
           extensionName: manifest.name,
           organizationId: orgId,
           channel: params.channel,
-          outcome: 'ok',
+          outcome: OUTCOME_OK,
         })
         return result
       } catch (error) {
-        let outcome: 'invalid-recipient-denied' | 'rate-limited' | 'error'
+        let outcome: EnqueueOutcome
         if (error instanceof NotificationOriginatorInvalidRecipientError) {
-          outcome = 'invalid-recipient-denied'
+          outcome = OUTCOME_INVALID_RECIPIENT_DENIED
         } else if (error instanceof NotificationOriginatorRateLimitedError) {
-          outcome = 'rate-limited'
+          outcome = OUTCOME_RATE_LIMITED
         } else {
-          outcome = 'error'
+          outcome = OUTCOME_ERROR
         }
-        if (outcome === 'rate-limited') {
+        if (outcome === OUTCOME_RATE_LIMITED) {
           operationalLog(
             logger,
             'warn',
@@ -258,6 +407,63 @@ export function buildNotificationOriginatorHost(
         })
         throw error
       }
+    },
+
+    async enqueueNotificationForOrg(
+      params: NotificationOriginatorEnqueueForOrgParams
+    ): Promise<NotificationOriginatorEnqueueResult> {
+      // Story 58.1 AC1 — out-of-request-capable: the org is named explicitly via
+      // `params.organizationId`, never resolved via `requireAmbientOrgId()`/
+      // `getRequestContext()`. This method never throws
+      // `NotificationOriginatorNoAmbientContextError`.
+      try {
+        validateParamsShape(params)
+      } catch (error) {
+        recordNotificationOriginatorAudit(logger, {
+          extensionName: manifest.name,
+          organizationId: params?.organizationId ?? 'unknown',
+          channel: String(params?.channel),
+          outcome: OUTCOME_INVALID_PARAMS_DENIED,
+        })
+        throw error
+      }
+
+      return callOutOfRequestEnqueue(
+        params.organizationId,
+        params.channel,
+        { extensionName: manifest.name, logger, maxInFlight: outOfRequestMaxInFlight },
+        () =>
+          withOrg(params.organizationId, async (tx) => {
+            if (params.recipientUserId !== undefined) {
+              // AC2/AC3 — reuses `assertRecipientIsOrgMember` verbatim, scoped to the EXPLICIT
+              // `params.organizationId` rather than any ambient org.
+              await assertRecipientIsOrgMember(params.recipientUserId, params.organizationId)
+            }
+
+            // AC5/Design Decision 2 — the out-of-request path's OWN, independent rolling-window
+            // budget: `outOfRequest: true` selects the `enqueued_out_of_request = true` partial
+            // index/WHERE clause, never the in-request path's own.
+            await assertUnderRateLimit(tx, manifest.name, params.organizationId, true)
+
+            const [row] = await tx
+              .insert(notificationQueue)
+              .values({
+                orgId: params.organizationId,
+                recipientUserId: params.recipientUserId ?? null,
+                recipientEmail: params.recipientEmail ?? null,
+                channel: params.channel,
+                templateId: `ext.${manifest.name}`,
+                payload: { subject: params.subject, body: params.body },
+                status: 'pending',
+                originExtensionName: manifest.name,
+                enqueuedOutOfRequest: true,
+              })
+              .returning({ id: notificationQueue.id })
+
+            if (!row?.id) throw new Error('notificationOriginator: insert returned no row')
+            return { notificationQueueId: row.id }
+          })
+      )
     },
   }
 }
