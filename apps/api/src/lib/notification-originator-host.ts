@@ -110,14 +110,19 @@ type EnqueueOutcome =
  * `subject`/`body` message content itself (Task 3). */
 function recordNotificationOriginatorAudit(
   logger: AuditLogger,
-  fields: { extensionName: string; organizationId: string; channel: string; outcome: string }
+  fields: { extensionName: string; organizationId: string; channel: string; outcome: string },
+  /** Code-review fix (58.1) — the audit message previously hardcoded `enqueueNotification()`
+   * for BOTH methods, so every `enqueueNotificationForOrg` audit entry misreported which method
+   * was actually called. Defaults to the in-request method name to keep every existing call site
+   * (and its log-message assertions) unchanged. */
+  methodName = 'enqueueNotification'
 ): void {
   try {
     operationalLog(
       logger,
       'info',
       OperationalEvent.NOTIFICATION_ORIGINATOR_HOST_CALL_RECORDED,
-      'HostServices.notificationOriginator.enqueueNotification() call recorded',
+      `HostServices.notificationOriginator.${methodName}() call recorded`,
       fields
     )
   } catch {
@@ -269,23 +274,21 @@ async function callOutOfRequestEnqueue(
       'enqueueNotificationForOrg() call denied without invoking resolution — extension at its in-flight cap',
       { extensionName, organizationId }
     )
-    recordNotificationOriginatorAudit(logger, {
-      extensionName,
-      organizationId,
-      channel,
-      outcome: OUTCOME_RATE_LIMITED,
-    })
+    recordNotificationOriginatorAudit(
+      logger,
+      { extensionName, organizationId, channel, outcome: OUTCOME_RATE_LIMITED },
+      'enqueueNotificationForOrg'
+    )
     throw new NotificationOriginatorRateLimitedError()
   }
 
   try {
     const result = await fn()
-    recordNotificationOriginatorAudit(logger, {
-      extensionName,
-      organizationId,
-      channel,
-      outcome: OUTCOME_OK,
-    })
+    recordNotificationOriginatorAudit(
+      logger,
+      { extensionName, organizationId, channel, outcome: OUTCOME_OK },
+      'enqueueNotificationForOrg'
+    )
     return result
   } catch (error) {
     let outcome: EnqueueOutcome
@@ -305,12 +308,11 @@ async function callOutOfRequestEnqueue(
         { extensionName, organizationId }
       )
     }
-    recordNotificationOriginatorAudit(logger, {
-      extensionName,
-      organizationId,
-      channel,
-      outcome,
-    })
+    recordNotificationOriginatorAudit(
+      logger,
+      { extensionName, organizationId, channel, outcome },
+      'enqueueNotificationForOrg'
+    )
     throw error
   } finally {
     releaseOutOfRequestSlot(accountingKey)
@@ -417,14 +419,31 @@ export function buildNotificationOriginatorHost(
       // `getRequestContext()`. This method never throws
       // `NotificationOriginatorNoAmbientContextError`.
       try {
+        // Code-review fix (58.1) — `params` itself (not just its fields) can be null/undefined
+        // for a misbehaving caller, and `organizationId` is the one field `validateParamsShape`
+        // never checked (every other field — channel/subject/body/recipient — already gets an
+        // explicit guard). Both previously fell straight through to a raw `TypeError`/DB error
+        // instead of the documented `NotificationOriginatorInvalidParamsError`.
+        if (params === null || params === undefined) {
+          throw new NotificationOriginatorInvalidParamsError('params must be an object')
+        }
+        if (typeof params.organizationId !== 'string' || params.organizationId.length === 0) {
+          throw new NotificationOriginatorInvalidParamsError(
+            'organizationId must be a non-empty string'
+          )
+        }
         validateParamsShape(params)
       } catch (error) {
-        recordNotificationOriginatorAudit(logger, {
-          extensionName: manifest.name,
-          organizationId: params?.organizationId ?? 'unknown',
-          channel: String(params?.channel),
-          outcome: OUTCOME_INVALID_PARAMS_DENIED,
-        })
+        recordNotificationOriginatorAudit(
+          logger,
+          {
+            extensionName: manifest.name,
+            organizationId: params?.organizationId ?? 'unknown',
+            channel: String(params?.channel),
+            outcome: OUTCOME_INVALID_PARAMS_DENIED,
+          },
+          'enqueueNotificationForOrg'
+        )
         throw error
       }
 
