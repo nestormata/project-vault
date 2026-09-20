@@ -105,6 +105,57 @@ const OUTCOME_ERROR = 'error' as const
 type EnqueueOutcome =
   typeof OUTCOME_INVALID_RECIPIENT_DENIED | typeof OUTCOME_RATE_LIMITED | typeof OUTCOME_ERROR
 
+/** Shared by `enqueueNotification`'s and `enqueueNotificationForOrg`'s catch blocks (jscpd-flagged
+ * duplication, Story 58.1 CI gate) — both classify a caught error into the same three-way outcome
+ * shape before recording it. */
+function classifyEnqueueOutcome(error: unknown): EnqueueOutcome {
+  if (error instanceof NotificationOriginatorInvalidRecipientError) {
+    return OUTCOME_INVALID_RECIPIENT_DENIED
+  }
+  if (error instanceof NotificationOriginatorRateLimitedError) {
+    return OUTCOME_RATE_LIMITED
+  }
+  return OUTCOME_ERROR
+}
+
+/** Shared by `enqueueNotification`'s and `enqueueNotificationForOrg`'s insert calls (jscpd-flagged
+ * duplication, Story 58.1 CI gate) — both build the same `notificationQueue` row shape, differing
+ * only in which org id resolved the call and whether it went through the out-of-request path. */
+function buildNotificationQueueValues(
+  manifest: ExtensionManifest,
+  orgId: string,
+  params: {
+    recipientUserId?: string
+    recipientEmail?: string
+    channel: string
+    subject: string
+    body: string
+  },
+  outOfRequest: boolean
+): {
+  orgId: string
+  recipientUserId: string | null
+  recipientEmail: string | null
+  channel: string
+  templateId: string
+  payload: { subject: string; body: string }
+  status: 'pending'
+  originExtensionName: string
+  enqueuedOutOfRequest: boolean
+} {
+  return {
+    orgId,
+    recipientUserId: params.recipientUserId ?? null,
+    recipientEmail: params.recipientEmail ?? null,
+    channel: params.channel,
+    templateId: `ext.${manifest.name}`,
+    payload: { subject: params.subject, body: params.body },
+    status: 'pending',
+    originExtensionName: manifest.name,
+    enqueuedOutOfRequest: outOfRequest,
+  }
+}
+
 /** Structured audit-log entry recorded on EVERY call (success, denial, or error). Fields are
  * `organizationId`/`extensionName`/`channel`/`outcome` only — never the caller-authored
  * `subject`/`body` message content itself (Task 3). */
@@ -291,14 +342,7 @@ async function callOutOfRequestEnqueue(
     )
     return result
   } catch (error) {
-    let outcome: EnqueueOutcome
-    if (error instanceof NotificationOriginatorInvalidRecipientError) {
-      outcome = OUTCOME_INVALID_RECIPIENT_DENIED
-    } else if (error instanceof NotificationOriginatorRateLimitedError) {
-      outcome = OUTCOME_RATE_LIMITED
-    } else {
-      outcome = OUTCOME_ERROR
-    }
+    const outcome = classifyEnqueueOutcome(error)
     if (outcome === OUTCOME_RATE_LIMITED) {
       operationalLog(
         logger,
@@ -360,16 +404,7 @@ export function buildNotificationOriginatorHost(
 
           const [row] = await tx
             .insert(notificationQueue)
-            .values({
-              orgId,
-              recipientUserId: params.recipientUserId ?? null,
-              recipientEmail: params.recipientEmail ?? null,
-              channel: params.channel,
-              templateId: `ext.${manifest.name}`,
-              payload: { subject: params.subject, body: params.body },
-              status: 'pending',
-              originExtensionName: manifest.name,
-            })
+            .values(buildNotificationQueueValues(manifest, orgId, params, false))
             .returning({ id: notificationQueue.id })
 
           if (!row?.id) throw new Error('notificationOriginator: insert returned no row')
@@ -384,14 +419,7 @@ export function buildNotificationOriginatorHost(
         })
         return result
       } catch (error) {
-        let outcome: EnqueueOutcome
-        if (error instanceof NotificationOriginatorInvalidRecipientError) {
-          outcome = OUTCOME_INVALID_RECIPIENT_DENIED
-        } else if (error instanceof NotificationOriginatorRateLimitedError) {
-          outcome = OUTCOME_RATE_LIMITED
-        } else {
-          outcome = OUTCOME_ERROR
-        }
+        const outcome = classifyEnqueueOutcome(error)
         if (outcome === OUTCOME_RATE_LIMITED) {
           operationalLog(
             logger,
@@ -466,17 +494,7 @@ export function buildNotificationOriginatorHost(
 
             const [row] = await tx
               .insert(notificationQueue)
-              .values({
-                orgId: params.organizationId,
-                recipientUserId: params.recipientUserId ?? null,
-                recipientEmail: params.recipientEmail ?? null,
-                channel: params.channel,
-                templateId: `ext.${manifest.name}`,
-                payload: { subject: params.subject, body: params.body },
-                status: 'pending',
-                originExtensionName: manifest.name,
-                enqueuedOutOfRequest: true,
-              })
+              .values(buildNotificationQueueValues(manifest, params.organizationId, params, true))
               .returning({ id: notificationQueue.id })
 
             if (!row?.id) throw new Error('notificationOriginator: insert returned no row')
