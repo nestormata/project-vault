@@ -31,41 +31,34 @@ import {
 import { findProjectInOrg } from '../modules/credentials/service.js'
 import { getRequestContext } from './request-context.js'
 import { operationalLog } from './logger.js'
+import {
+  callOutOfRequestHostMethod,
+  createInFlightSlotAccounting,
+} from './out-of-request-host-wrapper.js'
 
 /**
  * Story 34.1 AC3(b) — a per-extension in-flight cap for the two out-of-request `monitoring`
  * methods (`applyHealthCheckResult`, `cleanupProjectMonitoring`). Distinct accounting map and
  * budget from `org-authorization.ts`'s own and `capability-gate.ts`'s own — never shared.
+ *
+ * Story 58.2 Task 2 — accounting itself now lives in the shared
+ * `createInFlightSlotAccounting('monitoring-host')` instance (`out-of-request-host-wrapper.ts`),
+ * extracted verbatim from this file's own former `Map`-based implementation. The namespace
+ * `'monitoring-host'` is distinct from `notification-originator-host.ts`'s own namespace, and the
+ * shared factory's own runtime guard throws if either namespace is ever reused.
  */
 export const MONITORING_HOST_MAX_IN_FLIGHT_PER_EXTENSION = 20
 
-const monitoringHostInFlightCounts = new Map<string, number>()
-
-function accountingKeyFor(extensionName: string): string {
-  return `monitoring-host:${extensionName}`
-}
-
-function tryAcquireSlot(key: string, max: number): boolean {
-  const current = monitoringHostInFlightCounts.get(key) ?? 0
-  if (current >= max) return false
-  monitoringHostInFlightCounts.set(key, current + 1)
-  return true
-}
-
-function releaseSlot(key: string): void {
-  const current = monitoringHostInFlightCounts.get(key) ?? 0
-  if (current <= 1) monitoringHostInFlightCounts.delete(key)
-  else monitoringHostInFlightCounts.set(key, current - 1)
-}
+const monitoringHostAccounting = createInFlightSlotAccounting('monitoring-host')
 
 /** Test-only introspection — never called from production code. */
 export function __getMonitoringHostInFlightCountForTests(extensionName: string): number {
-  return monitoringHostInFlightCounts.get(accountingKeyFor(extensionName)) ?? 0
+  return monitoringHostAccounting.getCount(extensionName)
 }
 
 /** Test-only reset — never called from production code. */
 export function __resetMonitoringHostRateLimitForTests(): void {
-  monitoringHostInFlightCounts.clear()
+  monitoringHostAccounting.reset()
 }
 
 type AuditLogger = Partial<Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>>
@@ -107,6 +100,15 @@ function recordMonitoringHostAudit(
  * every outcome (success, denial, or error). `methodName` and `organizationId` are logged;
  * `organizationId` is the caller-supplied value even on a rejection, so a mismatch/denial is still
  * traceable to the org the caller claimed.
+ *
+ * Story 58.2 Task 2 — now a thin wrapper around the shared `callOutOfRequestHostMethod<T>`
+ * (`out-of-request-host-wrapper.ts`), wiring monitoring's own `onDenied` (warn-log +
+ * `recordMonitoringHostAudit(..., outcome: 'rate-limited')` + `throw new
+ * MonitoringRateLimitedError`) and `onOutcome` (`recordMonitoringHostAudit` with the
+ * `method`-keyed field shape). `classifyOutcome` is wired explicitly to `() => 'error'` — matching
+ * the shared default, but written out so a future reader sees the flat classification is an
+ * intentional, named choice for this host, not an oversight or a missed default (Design Decision
+ * 1 / Elicitation Finding 1).
  */
 async function callOutOfRequestMethod<T>(
   methodName: string,
@@ -115,46 +117,39 @@ async function callOutOfRequestMethod<T>(
   fn: () => Promise<T>
 ): Promise<T> {
   const logger = hostContext.logger ?? {}
-  const accountingKey = accountingKeyFor(hostContext.extensionName)
   const maxInFlight = hostContext.maxInFlight ?? MONITORING_HOST_MAX_IN_FLIGHT_PER_EXTENSION
 
-  if (!tryAcquireSlot(accountingKey, maxInFlight)) {
-    operationalLog(
-      logger,
-      'warn',
-      OperationalEvent.MONITORING_HOST_RATE_LIMITED,
-      `monitoring.${methodName}() call denied without invoking resolution — extension at its in-flight cap`,
-      { extensionName: hostContext.extensionName }
-    )
-    recordMonitoringHostAudit(logger, {
-      extensionName: hostContext.extensionName,
-      organizationId,
-      method: methodName,
-      outcome: 'rate-limited',
-    })
-    throw new MonitoringRateLimitedError(methodName)
-  }
-
-  try {
-    const result = await fn()
-    recordMonitoringHostAudit(logger, {
-      extensionName: hostContext.extensionName,
-      organizationId,
-      method: methodName,
-      outcome: 'ok',
-    })
-    return result
-  } catch (error) {
-    recordMonitoringHostAudit(logger, {
-      extensionName: hostContext.extensionName,
-      organizationId,
-      method: methodName,
-      outcome: 'error',
-    })
-    throw error
-  } finally {
-    releaseSlot(accountingKey)
-  }
+  return callOutOfRequestHostMethod({
+    accounting: monitoringHostAccounting,
+    extensionName: hostContext.extensionName,
+    maxInFlight,
+    onDenied: () => {
+      operationalLog(
+        logger,
+        'warn',
+        OperationalEvent.MONITORING_HOST_RATE_LIMITED,
+        `monitoring.${methodName}() call denied without invoking resolution — extension at its in-flight cap`,
+        { extensionName: hostContext.extensionName }
+      )
+      recordMonitoringHostAudit(logger, {
+        extensionName: hostContext.extensionName,
+        organizationId,
+        method: methodName,
+        outcome: 'rate-limited',
+      })
+      throw new MonitoringRateLimitedError(methodName)
+    },
+    onOutcome: (outcome) => {
+      recordMonitoringHostAudit(logger, {
+        extensionName: hostContext.extensionName,
+        organizationId,
+        method: methodName,
+        outcome,
+      })
+    },
+    classifyOutcome: () => 'error',
+    fn,
+  })
 }
 
 /** Story 34.1 AC2 — every in-request method's shared ambient-context gate: reads

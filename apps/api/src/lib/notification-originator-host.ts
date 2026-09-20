@@ -20,6 +20,10 @@ import {
 import { resolveActiveOrgRole } from '../plugins/authenticate.js'
 import { getRequestContext } from './request-context.js'
 import { operationalLog } from './logger.js'
+import {
+  callOutOfRequestHostMethod,
+  createInFlightSlotAccounting,
+} from './out-of-request-host-wrapper.js'
 
 /**
  * Story 36.1 — the real `HostServices.notificationOriginator` implementation, bound to the
@@ -58,37 +62,26 @@ export const NOTIFICATION_ORIGINATOR_RATE_LIMIT_MAX_PER_WINDOW = 100
  * bounds SUSTAINED volume over time; a caller can be rejected by either independently. */
 export const NOTIFICATION_ORIGINATOR_HOST_MAX_IN_FLIGHT_PER_EXTENSION = 20
 
-const notificationOriginatorHostInFlightCounts = new Map<string, number>()
-
-function outOfRequestAccountingKeyFor(extensionName: string): string {
-  return `notification-originator-host:${extensionName}`
-}
-
-function tryAcquireOutOfRequestSlot(key: string, max: number): boolean {
-  const current = notificationOriginatorHostInFlightCounts.get(key) ?? 0
-  if (current >= max) return false
-  notificationOriginatorHostInFlightCounts.set(key, current + 1)
-  return true
-}
-
-function releaseOutOfRequestSlot(key: string): void {
-  const current = notificationOriginatorHostInFlightCounts.get(key) ?? 0
-  if (current <= 1) notificationOriginatorHostInFlightCounts.delete(key)
-  else notificationOriginatorHostInFlightCounts.set(key, current - 1)
-}
+/** Story 58.2 Task 3 — accounting itself now lives in the shared
+ * `createInFlightSlotAccounting('notification-originator-host')` instance
+ * (`out-of-request-host-wrapper.ts`), extracted verbatim from this file's own former `Map`-based
+ * implementation. The namespace `'notification-originator-host'` is distinct from
+ * `monitoring-host.ts`'s own namespace, and the shared factory's own runtime guard throws if
+ * either namespace is ever reused. */
+const notificationOriginatorHostAccounting = createInFlightSlotAccounting(
+  'notification-originator-host'
+)
 
 /** Test-only introspection — never called from production code. */
 export function __getNotificationOriginatorHostInFlightCountForTests(
   extensionName: string
 ): number {
-  return (
-    notificationOriginatorHostInFlightCounts.get(outOfRequestAccountingKeyFor(extensionName)) ?? 0
-  )
+  return notificationOriginatorHostAccounting.getCount(extensionName)
 }
 
 /** Test-only reset — never called from production code. */
 export function __resetNotificationOriginatorHostInFlightForTests(): void {
-  notificationOriginatorHostInFlightCounts.clear()
+  notificationOriginatorHostAccounting.reset()
 }
 
 type AuditLogger = Partial<Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>>
@@ -307,7 +300,15 @@ async function assertUnderRateLimit(
  * audit entry on every outcome (success, denial, or error) — the SAME field set
  * (`extensionName`/`organizationId`/`channel`/`outcome`) `enqueueNotification()` already uses,
  * never `monitoring-host.ts`'s own `method`-keyed shape, so both `NotificationOriginatorHost`
- * methods' audit trails stay uniform. */
+ * methods' audit trails stay uniform.
+ *
+ * Story 58.2 Task 3 — now a thin wrapper around the shared `callOutOfRequestHostMethod<T>`
+ * (`out-of-request-host-wrapper.ts`). `classifyOutcome` is wired to the existing
+ * `classifyEnqueueOutcome` (kept as-is — domain logic, not wrapper logic, per Design Decision 1),
+ * and `onOutcome` additionally fires the conditional rate-limit warn-log when the classified
+ * outcome is `rate-limited` — the one piece of behavior `monitoring-host.ts` doesn't have an
+ * equivalent for; this conditional is preserved verbatim, not lost in the extraction.
+ */
 async function callOutOfRequestEnqueue(
   organizationId: string,
   channel: string,
@@ -315,52 +316,45 @@ async function callOutOfRequestEnqueue(
   fn: () => Promise<NotificationOriginatorEnqueueResult>
 ): Promise<NotificationOriginatorEnqueueResult> {
   const { extensionName, logger, maxInFlight } = hostContext
-  const accountingKey = outOfRequestAccountingKeyFor(extensionName)
 
-  if (!tryAcquireOutOfRequestSlot(accountingKey, maxInFlight)) {
-    operationalLog(
-      logger,
-      'warn',
-      OperationalEvent.NOTIFICATION_ORIGINATOR_HOST_OUT_OF_REQUEST_RATE_LIMITED,
-      'enqueueNotificationForOrg() call denied without invoking resolution — extension at its in-flight cap',
-      { extensionName, organizationId }
-    )
-    recordNotificationOriginatorAudit(
-      logger,
-      { extensionName, organizationId, channel, outcome: OUTCOME_RATE_LIMITED },
-      'enqueueNotificationForOrg'
-    )
-    throw new NotificationOriginatorRateLimitedError()
-  }
-
-  try {
-    const result = await fn()
-    recordNotificationOriginatorAudit(
-      logger,
-      { extensionName, organizationId, channel, outcome: OUTCOME_OK },
-      'enqueueNotificationForOrg'
-    )
-    return result
-  } catch (error) {
-    const outcome = classifyEnqueueOutcome(error)
-    if (outcome === OUTCOME_RATE_LIMITED) {
+  return callOutOfRequestHostMethod({
+    accounting: notificationOriginatorHostAccounting,
+    extensionName,
+    maxInFlight,
+    onDenied: () => {
       operationalLog(
         logger,
         'warn',
         OperationalEvent.NOTIFICATION_ORIGINATOR_HOST_OUT_OF_REQUEST_RATE_LIMITED,
-        'enqueueNotificationForOrg() call denied — extension at its out-of-request rolling-window enqueue cap',
+        'enqueueNotificationForOrg() call denied without invoking resolution — extension at its in-flight cap',
         { extensionName, organizationId }
       )
-    }
-    recordNotificationOriginatorAudit(
-      logger,
-      { extensionName, organizationId, channel, outcome },
-      'enqueueNotificationForOrg'
-    )
-    throw error
-  } finally {
-    releaseOutOfRequestSlot(accountingKey)
-  }
+      recordNotificationOriginatorAudit(
+        logger,
+        { extensionName, organizationId, channel, outcome: OUTCOME_RATE_LIMITED },
+        'enqueueNotificationForOrg'
+      )
+      throw new NotificationOriginatorRateLimitedError()
+    },
+    onOutcome: (outcome) => {
+      if (outcome === OUTCOME_RATE_LIMITED) {
+        operationalLog(
+          logger,
+          'warn',
+          OperationalEvent.NOTIFICATION_ORIGINATOR_HOST_OUT_OF_REQUEST_RATE_LIMITED,
+          'enqueueNotificationForOrg() call denied — extension at its out-of-request rolling-window enqueue cap',
+          { extensionName, organizationId }
+        )
+      }
+      recordNotificationOriginatorAudit(
+        logger,
+        { extensionName, organizationId, channel, outcome },
+        'enqueueNotificationForOrg'
+      )
+    },
+    classifyOutcome: classifyEnqueueOutcome,
+    fn,
+  })
 }
 
 export function buildNotificationOriginatorHost(
