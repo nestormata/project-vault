@@ -25,6 +25,13 @@
  *   there's nothing live to keep time-boxed.
  * - A missing or malformed `audit-ci.jsonc` fails closed (reported as a violation), matching this
  *   repo's other `check-*.ts` scripts' fail-closed-on-missing-input convention.
+ * - The top-level severity gate itself is also validated, not just `allowlist`: `high` must be
+ *   present and exactly boolean `true` (a typo'd `"high": false`, an omitted `high` key, or a
+ *   non-boolean value all silently disable the entire SCA gate at the `audit-ci` layer — the
+ *   same class of config-shape bug this story's root-cause finding uncovered — so this hygiene
+ *   check must catch it, not just the allowlist's own shape). `critical`/`moderate`/`low`, if
+ *   present at all, must be boolean (audit-ci coerces anything else via its own `?? default`
+ *   fallback, so a stray array/string there is exactly the pre-42.2 bug shape reintroduced).
  *
  * Pure, DB-free: a static read of `audit-ci.jsonc` under the given root.
  */
@@ -83,10 +90,18 @@ function validateNSPContent(
   return violations
 }
 
+type LoadedAuditCiConfig = {
+  allowlist?: unknown
+  high?: unknown
+  critical?: unknown
+  moderate?: unknown
+  low?: unknown
+}
+
 /** Reads and JSON(C)-parses `<root>/audit-ci.jsonc`, or a synthetic failure result if it can't be. */
 function loadAuditCiConfig(
   root: string
-): { config: { allowlist?: unknown } } | { violation: AuditBaselineViolation } {
+): { config: LoadedAuditCiConfig } | { violation: AuditBaselineViolation } {
   const auditCiPath = resolve(root, 'audit-ci.jsonc')
 
   let raw: string
@@ -99,8 +114,9 @@ function loadAuditCiConfig(
     }
   }
 
+  let parsed: unknown
   try {
-    return { config: JSON.parse(stripJsonComments(raw)) as { allowlist?: unknown } }
+    parsed = JSON.parse(stripJsonComments(raw))
   } catch (err) {
     return {
       violation: {
@@ -109,6 +125,57 @@ function loadAuditCiConfig(
       },
     }
   }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return {
+      violation: {
+        entryKey: '<file>',
+        reason: `audit-ci.jsonc must contain a JSON object, got ${
+          parsed === null ? 'null' : Array.isArray(parsed) ? 'an array' : typeof parsed
+        }`,
+      },
+    }
+  }
+
+  return { config: parsed as LoadedAuditCiConfig }
+}
+
+const BOOLEAN_SEVERITY_KEYS = ['critical', 'moderate', 'low'] as const
+
+/**
+ * Validates the top-level severity gate keys. `high` must be exactly `true` — anything else
+ * (missing, `false`, or a non-boolean like a stray array) silently disables the SCA gate at the
+ * `audit-ci` layer while still being invisible to a config-shape read, which is exactly the bug
+ * class this story's root-cause finding fixed. `critical`/`moderate`/`low`, if present, must be
+ * boolean (a non-boolean there is the pre-42.2 broken shape reintroduced).
+ */
+function validateSeverityGate(config: LoadedAuditCiConfig): AuditBaselineViolation[] {
+  const violations: AuditBaselineViolation[] = []
+
+  if (config.high !== true) {
+    violations.push({
+      entryKey: 'high',
+      reason:
+        '"high" must be exactly `true` to keep the SCA gate blocking on high-or-above severity ' +
+        `(got ${JSON.stringify(config.high)}) — see this story's root-cause finding on why a ` +
+        'falsy or non-boolean value here silently disables the gate',
+    })
+  }
+
+  for (const key of BOOLEAN_SEVERITY_KEYS) {
+    // eslint-disable-next-line security/detect-object-injection -- key is drawn from the fixed local BOOLEAN_SEVERITY_KEYS tuple, never external input
+    const value = config[key]
+    if (value !== undefined && typeof value !== 'boolean') {
+      violations.push({
+        entryKey: key,
+        reason:
+          `"${key}" must be a boolean when present (got ${JSON.stringify(value)}) — ` +
+          'audit-ci treats these keys as booleans, not suppression arrays',
+      })
+    }
+  }
+
+  return violations
 }
 
 /** Validates one raw `allowlist` array entry (bare string or NSPRecord object). */
@@ -149,18 +216,21 @@ export function scanAuditBaseline(root: string, now: Date = new Date()): AuditBa
   const loaded = loadAuditCiConfig(root)
   if ('violation' in loaded) return { violations: [loaded.violation] }
 
+  const violations: AuditBaselineViolation[] = validateSeverityGate(loaded.config)
+
   const { allowlist } = loaded.config
   if (allowlist === undefined) {
-    // `allowlist` is optional in audit-ci's own schema — nothing to validate.
-    return { violations: [] }
+    // `allowlist` is optional in audit-ci's own schema — nothing further to validate.
+    return { violations }
   }
   if (!Array.isArray(allowlist)) {
-    return {
-      violations: [{ entryKey: '<file>', reason: 'audit-ci.jsonc "allowlist" must be an array' }],
-    }
+    violations.push({ entryKey: '<file>', reason: 'audit-ci.jsonc "allowlist" must be an array' })
+    return { violations }
   }
 
-  const violations = (allowlist as unknown[]).flatMap((entry) => validateAllowlistEntry(entry, now))
+  violations.push(
+    ...(allowlist as unknown[]).flatMap((entry) => validateAllowlistEntry(entry, now))
+  )
   return { violations }
 }
 

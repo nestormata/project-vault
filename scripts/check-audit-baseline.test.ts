@@ -118,6 +118,57 @@ describe('scanAuditBaseline', () => {
     expect(scanAuditBaseline(root)).toEqual({ violations: [] })
   })
 
+  it('fails: "high" set to false (would silently disable the SCA gate)', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, AUDIT_CI_JSONC, JSON.stringify({ high: false, allowlist: [] }))
+
+    const { violations } = scanAuditBaseline(root)
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toMatchObject({ entryKey: 'high' })
+    expect(violations[0]?.reason).toContain('true')
+  })
+
+  it('fails: "high" omitted entirely (would silently disable the SCA gate)', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, AUDIT_CI_JSONC, JSON.stringify({ allowlist: [] }))
+
+    const { violations } = scanAuditBaseline(root)
+    expect(violations.some((v) => v.entryKey === 'high')).toBe(true)
+  })
+
+  it('fails: severity keys reintroduced as arrays (the pre-42.2 broken shape)', () => {
+    const root = makeFixtureRoot()
+    writeFixture(
+      root,
+      AUDIT_CI_JSONC,
+      JSON.stringify({ high: [], critical: [], moderate: [], low: [], allowlist: [] })
+    )
+
+    const { violations } = scanAuditBaseline(root)
+    const keys = violations.map((v) => v.entryKey).sort()
+    expect(keys).toEqual(['critical', 'high', 'low', 'moderate'])
+  })
+
+  it('fails closed: audit-ci.jsonc parses to a non-object JSON value (null)', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, AUDIT_CI_JSONC, 'null')
+
+    const { violations } = scanAuditBaseline(root)
+    expect(violations).toHaveLength(1)
+    expect(violations[0]?.entryKey).toBe('<file>')
+    expect(violations[0]?.reason).toContain('null')
+  })
+
+  it('fails closed: audit-ci.jsonc parses to a non-object JSON value (array)', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, AUDIT_CI_JSONC, '[]')
+
+    const { violations } = scanAuditBaseline(root)
+    expect(violations).toHaveLength(1)
+    expect(violations[0]?.entryKey).toBe('<file>')
+    expect(violations[0]?.reason).toContain('array')
+  })
+
   it('fails closed: a missing audit-ci.jsonc file', () => {
     const root = makeFixtureRoot()
 
