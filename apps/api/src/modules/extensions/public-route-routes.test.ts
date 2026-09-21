@@ -52,10 +52,14 @@ function loadedStateWithPublicRoute(overrides: {
 }
 
 const REDEEM_PATH_TEMPLATE = '/pv-public-test/redeem/:token'
+const REDEEM_URL = '/pv-public-test/redeem/abc123'
 const STATUS_PATH_TEMPLATE = '/pv-public-test/status'
 const BOOM_PATH_TEMPLATE = '/pv-public-test/boom'
 const SLOW_PATH_TEMPLATE = '/pv-public-test/slow'
 const MALFORMED_PATH_TEMPLATE = '/pv-public-test/malformed'
+const BAD_STATUS_PATH_TEMPLATE = '/pv-public-test/bad-status'
+const BAD_HEADER_PATH_TEMPLATE = '/pv-public-test/bad-header'
+const REDIRECT_STATUS_PATH_TEMPLATE = '/pv-public-test/redirect-status'
 
 describe('GET <declared path template> — Story 20.13 AC1-AC5 (real mounted route)', () => {
   let app: TestApp
@@ -73,6 +77,25 @@ describe('GET <declared path template> — Story 20.13 AC1-AC5 (real mounted rou
       if (request.pathTemplate === MALFORMED_PATH_TEMPLATE) {
         return 'not-an-object' as never
       }
+      if (request.pathTemplate === BAD_STATUS_PATH_TEMPLATE) {
+        return { outcome: 'response' as const, status: 999, body: {} }
+      }
+      if (request.pathTemplate === BAD_HEADER_PATH_TEMPLATE) {
+        return {
+          outcome: 'response' as const,
+          status: 200,
+          headers: { 'x-injected': 'value\r\nX-Evil: header' },
+          body: {},
+        }
+      }
+      if (request.pathTemplate === REDIRECT_STATUS_PATH_TEMPLATE) {
+        return {
+          outcome: 'response' as const,
+          status: 302,
+          headers: { location: '/elsewhere' },
+          body: {},
+        }
+      }
       return {
         outcome: 'response' as const,
         status: 200,
@@ -89,6 +112,9 @@ describe('GET <declared path template> — Story 20.13 AC1-AC5 (real mounted rou
           BOOM_PATH_TEMPLATE,
           SLOW_PATH_TEMPLATE,
           MALFORMED_PATH_TEMPLATE,
+          BAD_STATUS_PATH_TEMPLATE,
+          BAD_HEADER_PATH_TEMPLATE,
+          REDIRECT_STATUS_PATH_TEMPLATE,
         ],
         publicRoute: { onPublicRouteRequest },
       })
@@ -134,7 +160,7 @@ describe('GET <declared path template> — Story 20.13 AC1-AC5 (real mounted rou
   })
 
   it('AC4 edge case: a non-GET request to a declared path 404s the same non-enumerating way, never invoking the hook', async () => {
-    const res = await app.inject({ method: 'POST', url: '/pv-public-test/redeem/abc123' })
+    const res = await app.inject({ method: 'POST', url: REDEEM_URL })
     expect(res.statusCode).toBe(404)
     expect(onPublicRouteRequest).not.toHaveBeenCalled()
   })
@@ -148,6 +174,41 @@ describe('GET <declared path template> — Story 20.13 AC1-AC5 (real mounted rou
   it('AC5: a malformed hook result produces a generic 500', async () => {
     const res = await app.inject({ method: 'GET', url: MALFORMED_PATH_TEMPLATE })
     expect(res.statusCode).toBe(500)
+  })
+
+  it('code review fix (AC4/AC5): an out-of-range status code is rejected as malformed, not thrown past the route', async () => {
+    const res = await app.inject({ method: 'GET', url: BAD_STATUS_PATH_TEMPLATE })
+    expect(res.statusCode).toBe(500)
+  })
+
+  it('code review fix (AC4/AC5): a header value containing CRLF is rejected as malformed, not thrown past the route', async () => {
+    const res = await app.inject({ method: 'GET', url: BAD_HEADER_PATH_TEMPLATE })
+    expect(res.statusCode).toBe(500)
+  })
+
+  it('code review fix (Design Decision C): a hook result with a 3xx redirect status is rejected as malformed — no redirect outcome in v1', async () => {
+    const res = await app.inject({ method: 'GET', url: REDIRECT_STATUS_PATH_TEMPLATE })
+    expect(res.statusCode).toBe(500)
+  })
+
+  it('code review fix (AC5 non-enumeration): the denial body for an undeclared path uses the same shape as a genuine Sec-Fetch-Mode rejection on a declared path — no distinguishable oracle', async () => {
+    const undeclared = await app.inject({ method: 'GET', url: '/pv-public-test/not-declared' })
+    const rejectedByFetchMode = await app.inject({
+      method: 'GET',
+      url: REDEEM_URL,
+      headers: { 'sec-fetch-mode': 'cors' },
+    })
+    expect(undeclared.statusCode).toBe(404)
+    expect(rejectedByFetchMode.statusCode).toBe(404)
+    const undeclaredBody = undeclared.json() as Record<string, unknown>
+    const rejectedBody = rejectedByFetchMode.json() as Record<string, unknown>
+    // Same key set, same 'error'/'statusCode' values — the only field that legitimately differs
+    // is 'message', since it echoes back the request's own path (true of Fastify's own genuine
+    // not-found response too, not a mechanism-specific leak).
+    expect(Object.keys(undeclaredBody).sort()).toEqual(Object.keys(rejectedBody).sort())
+    expect(undeclaredBody['error']).toBe(rejectedBody['error'])
+    expect(undeclaredBody['statusCode']).toBe(rejectedBody['statusCode'])
+    expect(undeclaredBody).not.toHaveProperty('code')
   })
 
   it('AC5: a hook that never resolves times out to a generic 500', async () => {
@@ -165,7 +226,7 @@ describe('GET <declared path template> — Story 20.13 AC1-AC5 (real mounted rou
   it('AC5: a background fetch (Sec-Fetch-Mode != navigate) is rejected the same non-enumerating way', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: '/pv-public-test/redeem/abc123',
+      url: REDEEM_URL,
       headers: { 'sec-fetch-mode': 'cors' },
     })
     expect(res.statusCode).toBe(404)
