@@ -30,6 +30,7 @@
     "check-followup-review-gate": "tsx scripts/check-followup-review-gate.ts",
     "check-epic-gate": "tsx scripts/check-epic-gate.ts",
     "check-epic-retro-freshness": "tsx scripts/check-epic-retro-freshness.ts",
+    "check-cross-repo-dw-closure": "tsx scripts/check-cross-repo-dw-closure.ts",
     "check-crypto-adjacent-pins": "tsx scripts/check-crypto-adjacent-pins.ts",
     "check-implementation-artifacts-symlinks": "tsx scripts/check-implementation-artifacts-symlinks.ts",
     "check-post-merge-status-drift": "tsx scripts/check-post-merge-status-drift.ts",
