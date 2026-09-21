@@ -58,8 +58,10 @@ describe('EXTENSION_API_VERSION', () => {
     // HostServices.monitoring gains listServiceEndpointsForScheduling (also additive-minor):
     // 3.19.0 -> 3.20.0. Story 58.1 — NotificationOriginatorHost gains enqueueNotificationForOrg
     // (also additive-minor): 3.20.0 -> 3.21.0. Story 20.12 — HostServices gains credentialSharing
-    // (also additive-minor): 3.21.0 -> 3.22.0.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.22.0')
+    // (also additive-minor): 3.21.0 -> 3.22.0. Story 41.2 — UUID-format validation retrofitted
+    // onto PvMonitoringHost's six sibling in-request methods (behaviour-only patch, no shape
+    // change): 3.22.0 -> 3.22.1.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.22.1')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

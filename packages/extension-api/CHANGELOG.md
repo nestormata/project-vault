@@ -2,6 +2,30 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.22.1 — 2026-09-20
+
+contract-hash: sha256:1d0a09c98bf7844295a5fb192891a9ba090c82f1d48a4c87fde242d30f7a9ea8
+
+### Fixed [behaviour]
+
+- `HostServices.monitoring`'s six pre-existing in-request methods (`deleteServiceEndpoint`,
+  `updateServiceEndpointPauseState`, `getHealthDashboardData`, `enableStatusPage`,
+  `regenerateStatusPageToken`, `disableStatusPage`) now validate their own
+  `projectId`/`serviceEndpointId`/`userId`/`permittedProjectIds` identity fields as well-formed
+  UUIDs, before any database call, throwing the same typed `MonitoringInvalidServiceEndpointInputError`
+  that `createServiceEndpoint` (Story 41.1) already throws for the identical class of mistake — a
+  malformed identity field (a bug in the calling extension) now fails closed with a clear,
+  `instanceof`-checkable error instead of an unclassified Postgres `22P02 invalid input syntax for
+  type uuid` failure. `createServiceEndpoint`'s own existing check is unchanged in behavior, only
+  refactored to share the same underlying `validateIdentityUuids`/`validateIdentityUuidArray`
+  helpers (internal to `apps/api`, not part of this package's exported surface). No exported type,
+  method signature, or public shape changes (Story 41.2, closing Epic 41 retro Finding 2).
+
+Per `docs/extension-api-versioning-policy.md`'s "Runtime behaviour in the contract" section, this is
+a bug fix that makes behaviour match this documented contract — a PATCH, not a MINOR, carrying this
+`[behaviour]`-tagged entry since a consumer may have depended on the old, unclassified-error
+behavior for these six methods.
+
 ## 3.22.0 — 2026-09-20
 
 contract-hash: sha256:4c41a9131ed7fe25b724cd5fdfc05515ec5300174c8b6d7f8dfaf9ea48be7a49
