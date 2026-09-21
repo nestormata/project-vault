@@ -414,6 +414,55 @@ export async function countSharesForCredential(
   return Number(row?.count ?? 0)
 }
 
+/** Story 20.13 AC9 — org-scoped only, no `credentialId` filter: "all outstanding shares this
+ *  org has," not just one credential's. */
+export type ListSharesForOrganizationParams = {
+  orgId: string
+  status?: CredentialShareRow['status']
+  limit?: number
+  offset?: number
+}
+
+/** Story 20.13 AC9 — shared by `listSharesForOrganization`/`countSharesForOrganization`, mirroring
+ *  `sharesForCredentialWhereClause`'s own shared-WHERE-clause pattern so the two queries can never
+ *  drift apart. */
+function sharesForOrganizationWhereClause(params: ListSharesForOrganizationParams) {
+  return and(
+    eq(credentialShares.orgId, params.orgId),
+    params.status ? eq(credentialShares.status, params.status) : undefined
+  )
+}
+
+/** Story 20.13 AC9 — genuinely new query (no `listSharesForOrganization`/`countSharesForOrganization`
+ *  existed anywhere in this file before this story). Same optional `status`/`limit`/`offset` shape,
+ *  same `desc(credentialShares.createdAt)` ordering, and same `DEFAULT_SHARE_LIST_LIMIT` default as
+ *  the credential-scoped pair above. */
+export async function listSharesForOrganization(
+  tx: Tx,
+  params: ListSharesForOrganizationParams
+): Promise<CredentialShareRow[]> {
+  return tx
+    .select()
+    .from(credentialShares)
+    .where(sharesForOrganizationWhereClause(params))
+    .orderBy(desc(credentialShares.createdAt))
+    .limit(params.limit ?? DEFAULT_SHARE_LIST_LIMIT)
+    .offset(params.offset ?? 0)
+}
+
+/** Story 20.13 AC9 — a separate `COUNT(*)` query with the same filters, minus pagination, powering
+ *  the `total` field — mirrors `countSharesForCredential`'s own precedent. */
+export async function countSharesForOrganization(
+  tx: Tx,
+  params: ListSharesForOrganizationParams
+): Promise<number> {
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)` })
+    .from(credentialShares)
+    .where(sharesForOrganizationWhereClause(params))
+  return Number(row?.count ?? 0)
+}
+
 export async function findShareInScope(
   tx: Tx,
   params: { orgId: string; credentialId: string; shareId: string }

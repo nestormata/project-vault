@@ -9,6 +9,7 @@ import type {
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { env } from '../../config/env.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
+import { normalizeQueryParams } from '../../lib/route-helpers.js'
 import { getExtensionStatus } from '../../extensions/loader.js'
 import {
   defaultRenderExtensionPanelDeps,
@@ -475,24 +476,6 @@ async function resolveCallbackPending(
   return { extension, state, identity }
 }
 
-// A querystring value that isn't a string/array (e.g. bracket-notation nesting like `?a[b]=1`
-// parsed as an object) is malformed provider-callback input, not data worth stringifying --
-// `String({...})` silently produces the useless literal "[object Object]" instead (Sonar S6551),
-// which would corrupt onOAuthCallback()'s query params without ever surfacing as an error.
-function toQueryParamValue(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
-function callbackQueryParams(request: FastifyRequest): Record<string, string> {
-  if (!request.query || typeof request.query !== 'object') return {}
-  return Object.fromEntries(
-    Object.entries(request.query as Record<string, unknown>).map(([key, value]) => [
-      key,
-      toQueryParamValue(Array.isArray(value) ? value[0] : value),
-    ])
-  )
-}
-
 async function handleCallback(request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
   // AC2: defense-in-depth only — never the primary CSRF/replay boundary (that's the single-use,
   // SameSite=Lax pending-state cookie itself).
@@ -506,7 +489,7 @@ async function handleCallback(request: FastifyRequest, reply: FastifyReply): Pro
   const { extension, state, identity } = resolved
 
   const result = await raceAndValidateOutcome(
-    () => extension.onOAuthCallback(callbackQueryParams(request), state),
+    () => extension.onOAuthCallback(normalizeQueryParams(request), state),
     reply,
     request.log,
     'callback'

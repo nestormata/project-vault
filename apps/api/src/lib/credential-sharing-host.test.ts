@@ -21,13 +21,32 @@ vi.mock('@project-vault/db', async (importOriginal) => {
   return { ...actual, withOrg }
 })
 
-const { revokeShare, supersedeOutstandingSharesForRotation } = vi.hoisted(() => ({
+const {
+  revokeShare,
+  supersedeOutstandingSharesForRotation,
+  listSharesForCredential,
+  countSharesForCredential,
+  listSharesForOrganization,
+  countSharesForOrganization,
+} = vi.hoisted(() => ({
   revokeShare: vi.fn(),
   supersedeOutstandingSharesForRotation: vi.fn(),
+  listSharesForCredential: vi.fn(),
+  countSharesForCredential: vi.fn(),
+  listSharesForOrganization: vi.fn(),
+  countSharesForOrganization: vi.fn(),
 }))
 vi.mock('../modules/credential-shares/service.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../modules/credential-shares/service.js')>()
-  return { ...actual, revokeShare, supersedeOutstandingSharesForRotation }
+  return {
+    ...actual,
+    revokeShare,
+    supersedeOutstandingSharesForRotation,
+    listSharesForCredential,
+    countSharesForCredential,
+    listSharesForOrganization,
+    countSharesForOrganization,
+  }
 })
 
 const { createExternalCredentialShare, findExternalShareByTokenHash, revealExternalShare } =
@@ -138,6 +157,10 @@ beforeEach(() => {
   })
   revokeShare.mockResolvedValue({ status: 'ok', share: SHARE_ROW, alreadyTerminal: false })
   supersedeOutstandingSharesForRotation.mockResolvedValue([SHARE_ROW])
+  listSharesForCredential.mockResolvedValue([SHARE_ROW])
+  countSharesForCredential.mockResolvedValue(1)
+  listSharesForOrganization.mockResolvedValue([SHARE_ROW])
+  countSharesForOrganization.mockResolvedValue(1)
   findExternalShareByTokenHash.mockResolvedValue({
     status: 'ok',
     metadata: {
@@ -664,6 +687,96 @@ describe('buildCredentialSharingHost.supersedeSharesForRotation (AC4)', () => {
     })
     expect(result).toEqual({ supersededShares: [] })
     expect(writeMachineAuditEntry).not.toHaveBeenCalled()
+  })
+})
+
+describe('buildCredentialSharingHost.listSharesForCredential (AC8, AC10)', () => {
+  it('is a thin closure: calls listSharesForCredential/countSharesForCredential with the credential-scoped params, no sharedByUserId field', async () => {
+    const host = buildCredentialSharingHost(MANIFEST)
+    const result = await host.listSharesForCredential({
+      organizationId: ORG_ID,
+      credentialId: CREDENTIAL_ID,
+      status: 'active',
+      limit: 10,
+      offset: 0,
+    })
+
+    const expectedParams = {
+      orgId: ORG_ID,
+      credentialId: CREDENTIAL_ID,
+      status: 'active',
+      limit: 10,
+      offset: 0,
+    }
+    expect(listSharesForCredential).toHaveBeenCalledWith(FAKE_TX, expectedParams)
+    expect(countSharesForCredential).toHaveBeenCalledWith(FAKE_TX, expectedParams)
+    expect(listSharesForCredential.mock.calls[0]?.[1]).not.toHaveProperty('sharedByUserId')
+    expect(result).toEqual({
+      status: 'ok',
+      items: [expect.objectContaining({ id: SHARE_ID, status: 'active' })],
+      total: 1,
+    })
+  })
+
+  it('edge case: an empty result set returns { status: "ok", items: [], total: 0 }, not an error', async () => {
+    listSharesForCredential.mockResolvedValue([])
+    countSharesForCredential.mockResolvedValue(0)
+    const host = buildCredentialSharingHost(MANIFEST)
+    const result = await host.listSharesForCredential({
+      organizationId: ORG_ID,
+      credentialId: CREDENTIAL_ID,
+    })
+    expect(result).toEqual({ status: 'ok', items: [], total: 0 })
+  })
+})
+
+describe('buildCredentialSharingHost.listSharesForOrganization (AC9, AC10)', () => {
+  it('is a thin closure: calls listSharesForOrganization/countSharesForOrganization org-scoped only, no credentialId filter', async () => {
+    const host = buildCredentialSharingHost(MANIFEST)
+    const result = await host.listSharesForOrganization({
+      organizationId: ORG_ID,
+      status: 'active',
+      limit: 25,
+      offset: 5,
+    })
+
+    const expectedParams = { orgId: ORG_ID, status: 'active', limit: 25, offset: 5 }
+    expect(listSharesForOrganization).toHaveBeenCalledWith(FAKE_TX, expectedParams)
+    expect(countSharesForOrganization).toHaveBeenCalledWith(FAKE_TX, expectedParams)
+    expect(listSharesForOrganization.mock.calls[0]?.[1]).not.toHaveProperty('credentialId')
+    expect(result).toEqual({
+      status: 'ok',
+      items: [expect.objectContaining({ id: SHARE_ID })],
+      total: 1,
+    })
+  })
+
+  it('edge case: an org with zero shares returns { status: "ok", items: [], total: 0 }', async () => {
+    listSharesForOrganization.mockResolvedValue([])
+    countSharesForOrganization.mockResolvedValue(0)
+    const host = buildCredentialSharingHost(MANIFEST)
+    const result = await host.listSharesForOrganization({ organizationId: ORG_ID })
+    expect(result).toEqual({ status: 'ok', items: [], total: 0 })
+  })
+
+  it('AC11: goes through the same per-extension in-flight cap as every other method, no new bucket', async () => {
+    const host = buildCredentialSharingHost(MANIFEST, {}, { maxInFlight: 1 })
+    let releaseFirst: (() => void) | undefined
+    listSharesForOrganization.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseFirst = () => resolve([SHARE_ROW])
+        })
+    )
+
+    const first = host.listSharesForOrganization({ organizationId: ORG_ID })
+    await expect(host.listSharesForOrganization({ organizationId: ORG_ID })).rejects.toBeInstanceOf(
+      CredentialSharingRateLimitedError
+    )
+    expect(__getCredentialSharingHostInFlightCountForTests(MANIFEST.name)).toBe(1)
+    releaseFirst?.()
+    await first
+    expect(__getCredentialSharingHostInFlightCountForTests(MANIFEST.name)).toBe(0)
   })
 })
 

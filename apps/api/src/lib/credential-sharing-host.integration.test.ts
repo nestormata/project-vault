@@ -316,4 +316,133 @@ describe('buildCredentialSharingHost — real-Postgres integration (Story 20.12 
     expect(usernameAfter.status).toBe('ok')
     if (usernameAfter.status === 'ok') expect(usernameAfter.share.status).toBe('active')
   })
+
+  it('AC8/AC12 cross-tenant scoping: listSharesForCredential never returns another org’s shares on a same-id credential', async () => {
+    __resetCredentialSharingHostRateLimitForTests()
+    __resetCredentialSharingOrgRateLimitForTests()
+    const ownerA = await registerOwner(app, 'list-cred-tenant-a')
+    const projectA = await createCredentialTestProject(app, ownerA.cookies, 'list-cred-tenant-a')
+    const credentialA = await createCredentialViaApi(app, ownerA.cookies, projectA, {
+      name: 'list-cred-tenant-a-credential',
+      value: 'secret-a',
+    })
+    await provisionMachineUserForExtension(app, ownerA.cookies, projectA)
+
+    const ownerB = await registerOwner(app, 'list-cred-tenant-b')
+    const projectB = await createCredentialTestProject(app, ownerB.cookies, 'list-cred-tenant-b')
+    const credentialB = await createCredentialViaApi(app, ownerB.cookies, projectB, {
+      name: 'list-cred-tenant-b-credential',
+      value: 'secret-b',
+    })
+    await provisionMachineUserForExtension(app, ownerB.cookies, projectB)
+
+    const host = buildCredentialSharingHost(MANIFEST)
+    const shareA = await host.createExternalShare({
+      organizationId: ownerA.orgId,
+      projectId: projectA,
+      credentialId: credentialA.id,
+      recipientEmail: RECIPIENT_EMAIL,
+      expiresAt: futureIso(),
+    })
+    expect(shareA.status).toBe('ok')
+
+    const listFromOwnOrg = await host.listSharesForCredential({
+      organizationId: ownerA.orgId,
+      credentialId: credentialA.id,
+    })
+    expect(listFromOwnOrg).toMatchObject({ status: 'ok', total: 1 })
+
+    // AC8 edge case: a credentialId belonging to a different org resolves as empty, not an error.
+    const listFromWrongOrg = await host.listSharesForCredential({
+      organizationId: ownerB.orgId,
+      credentialId: credentialA.id,
+    })
+    expect(listFromWrongOrg).toEqual({ status: 'ok', items: [], total: 0 })
+
+    const listOtherCredential = await host.listSharesForCredential({
+      organizationId: ownerB.orgId,
+      credentialId: credentialB.id,
+    })
+    expect(listOtherCredential).toEqual({ status: 'ok', items: [], total: 0 })
+  })
+
+  it('AC9/AC12 cross-tenant scoping + pagination: listSharesForOrganization returns every credential’s shares in the caller’s org only', async () => {
+    __resetCredentialSharingHostRateLimitForTests()
+    __resetCredentialSharingOrgRateLimitForTests()
+    const owner = await registerOwner(app, 'list-org-owner')
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'list-org')
+    const credentialOne = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'list-org-credential-one',
+      value: 'secret-one',
+    })
+    const credentialTwo = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'list-org-credential-two',
+      value: 'secret-two',
+    })
+    await provisionMachineUserForExtension(app, owner.cookies, projectId)
+
+    const otherOwner = await registerOwner(app, 'list-org-other-owner')
+    const otherProjectId = await createCredentialTestProject(
+      app,
+      otherOwner.cookies,
+      'list-org-other'
+    )
+    const otherCredential = await createCredentialViaApi(app, otherOwner.cookies, otherProjectId, {
+      name: 'list-org-other-credential',
+      value: 'secret-other',
+    })
+    await provisionMachineUserForExtension(app, otherOwner.cookies, otherProjectId)
+
+    const host = buildCredentialSharingHost(MANIFEST)
+    await host.createExternalShare({
+      organizationId: owner.orgId,
+      projectId,
+      credentialId: credentialOne.id,
+      recipientEmail: RECIPIENT_EMAIL,
+      expiresAt: futureIso(),
+    })
+    await host.createExternalShare({
+      organizationId: owner.orgId,
+      projectId,
+      credentialId: credentialTwo.id,
+      recipientEmail: 'recipient3@invalid',
+      expiresAt: futureIso(),
+    })
+    await host.createExternalShare({
+      organizationId: otherOwner.orgId,
+      projectId: otherProjectId,
+      credentialId: otherCredential.id,
+      recipientEmail: 'recipient4@invalid',
+      expiresAt: futureIso(),
+    })
+
+    const orgList = await host.listSharesForOrganization({ organizationId: owner.orgId })
+    expect(orgList.status).toBe('ok')
+    expect(orgList.total).toBe(2)
+    expect(orgList.items.map((share) => share.credentialId).sort()).toEqual(
+      [credentialOne.id, credentialTwo.id].sort()
+    )
+    expect(orgList.items.every((share) => share.orgId === owner.orgId)).toBe(true)
+
+    const otherOrgList = await host.listSharesForOrganization({ organizationId: otherOwner.orgId })
+    expect(otherOrgList).toMatchObject({ status: 'ok', total: 1 })
+
+    // AC9: limit/offset pagination on the org-scoped listing.
+    const firstPage = await host.listSharesForOrganization({
+      organizationId: owner.orgId,
+      limit: 1,
+    })
+    expect(firstPage.items).toHaveLength(1)
+    expect(firstPage.total).toBe(2)
+  })
+
+  it('AC9 edge case: an org with zero shares returns { status: "ok", items: [], total: 0 }', async () => {
+    __resetCredentialSharingHostRateLimitForTests()
+    __resetCredentialSharingOrgRateLimitForTests()
+    const owner = await registerOwner(app, 'list-org-empty-owner')
+    const host = buildCredentialSharingHost(MANIFEST)
+
+    const result = await host.listSharesForOrganization({ organizationId: owner.orgId })
+    expect(result).toEqual({ status: 'ok', items: [], total: 0 })
+  })
 })

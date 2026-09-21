@@ -10,6 +10,8 @@ describe('index.ts — root-only export surface (AC1, AC2)', () => {
     expect(new Set(Object.keys(ExtensionApi))).toEqual(
       new Set([
         'defineExtension',
+        'ANONYMOUS_ROUTE_PATH_PATTERN',
+        'MAX_ANONYMOUS_ROUTE_PATHS',
         'EXTENSION_API_VERSION',
         'HOST_SUPPORTED_EXTENSION_API_RANGE',
         'MAX_UI_PANEL_SLOTS',

@@ -11,10 +11,18 @@ import {
 } from '@project-vault/extension-api'
 import type { CredentialShareRow } from '../modules/credential-shares/service.js'
 import {
+  countSharesForCredential,
+  countSharesForOrganization,
+  listSharesForCredential as listSharesForCredentialService,
+  listSharesForOrganization as listSharesForOrganizationService,
   revokeShare as revokeShareService,
   shareRecipientAndTimingFields,
   supersedeOutstandingSharesForRotation as supersedeOutstandingSharesForRotationService,
 } from '../modules/credential-shares/service.js'
+import {
+  DEFAULT_SHARE_LIST_LIMIT,
+  MAX_SHARE_LIST_LIMIT,
+} from '../modules/credential-shares/schema.js'
 import {
   createExternalCredentialShare,
   findExternalShareByTokenHash,
@@ -381,6 +389,32 @@ function serializeShare(share: CredentialShareRow) {
 }
 
 /**
+ * Code review fix (High finding, Story 20.13 AC8/AC9) — `listSharesForCredential`/
+ * `listSharesForOrganization` previously passed `params.limit`/`params.offset` straight through
+ * to `service.ts`'s query functions with no clamp, unlike the pre-existing authenticated HTTP
+ * route at `modules/credential-shares/routes.ts` (`Math.min(query.limit ?? DEFAULT..., MAX...)`
+ * + `query.offset ?? 0`). An extension could pass a negative/`NaN`/absurdly large `limit` or a
+ * negative `offset` straight into the `LIMIT`/`OFFSET` clause. Clamping here mirrors that
+ * existing HTTP-route convention exactly (same defaults/caps, never rejects — just clamps).
+ */
+function clampShareListPagination(params: { limit?: number; offset?: number }): {
+  limit: number
+  offset: number
+} {
+  const rawLimit = params.limit
+  const limit =
+    typeof rawLimit === 'number' && Number.isFinite(rawLimit) && rawLimit > 0
+      ? Math.min(Math.floor(rawLimit), MAX_SHARE_LIST_LIMIT)
+      : DEFAULT_SHARE_LIST_LIMIT
+  const rawOffset = params.offset
+  const offset =
+    typeof rawOffset === 'number' && Number.isFinite(rawOffset) && rawOffset > 0
+      ? Math.floor(rawOffset)
+      : 0
+  return { limit, offset }
+}
+
+/**
  * Story 20.12 — the real `HostServices.credentialSharing` implementation, bound to the loading
  * extension's own manifest by `loader.ts`'s `buildHostServices()`. Every method is a thin closure
  * over PV's real, already-shipped `credential-shares` service-layer functions (AC2/AC3/AC4/AC6) —
@@ -601,6 +635,56 @@ export function buildCredentialSharingHost(
             }
 
             return { supersededShares: superseded.map(serializeShare) }
+          })
+      )
+    },
+
+    // Story 20.13 AC8/AC9/AC11 — thin closures over `service.ts`'s list/count query pairs, routed
+    // through the same `callOutOfRequestMethod` per-extension in-flight wrapper every other method
+    // uses. No machine-user attribution (Design Decision E — a read produces no attributed write).
+    async listSharesForCredential(params) {
+      return callOutOfRequestMethod(
+        'listSharesForCredential',
+        params.organizationId,
+        hostContext,
+        () =>
+          withOrg(params.organizationId, async (tx) => {
+            const { limit, offset } = clampShareListPagination(params)
+            const listParams = {
+              orgId: params.organizationId,
+              credentialId: params.credentialId,
+              status: params.status,
+              limit,
+              offset,
+            }
+            const [items, total] = await Promise.all([
+              listSharesForCredentialService(tx, listParams),
+              countSharesForCredential(tx, listParams),
+            ])
+            return { status: 'ok' as const, items: items.map(serializeShare), total }
+          })
+      )
+    },
+
+    async listSharesForOrganization(params) {
+      return callOutOfRequestMethod(
+        'listSharesForOrganization',
+        params.organizationId,
+        hostContext,
+        () =>
+          withOrg(params.organizationId, async (tx) => {
+            const { limit, offset } = clampShareListPagination(params)
+            const listParams = {
+              orgId: params.organizationId,
+              status: params.status,
+              limit,
+              offset,
+            }
+            const [items, total] = await Promise.all([
+              listSharesForOrganizationService(tx, listParams),
+              countSharesForOrganization(tx, listParams),
+            ])
+            return { status: 'ok' as const, items: items.map(serializeShare), total }
           })
       )
     },

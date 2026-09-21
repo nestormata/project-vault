@@ -99,6 +99,11 @@ export type {
   NotificationOriginatorHost,
 } from './hooks/notification-originator.js'
 export type { OAuthHandoffHooks, OAuthHandoffRedirectResult } from './hooks/oauth-handoff.js'
+export type {
+  PublicRouteHooks,
+  PublicRouteRequest,
+  PublicRouteResult,
+} from './hooks/public-route.js'
 export type { ExtensionRequestStateHostService } from './hooks/extension-request-state.js'
 export type {
   CredentialShareCreationErrorStatus,
@@ -106,6 +111,9 @@ export type {
   CredentialSharingCreateExternalShareResult,
   CredentialSharingFindShareByTokenResult,
   CredentialSharingHost,
+  CredentialSharingListParams,
+  CredentialSharingListResult,
+  CredentialSharingOrgListParams,
   CredentialSharingRevealResult,
   CredentialSharingRevokeShareParams,
   CredentialSharingRevokeShareResult,
@@ -148,8 +156,10 @@ export type {
 } from './manifest.js'
 export type { NavItemIconToken } from './manifest.js'
 export {
+  ANONYMOUS_ROUTE_PATH_PATTERN,
   EXTENSION_API_VERSION,
   HOST_SUPPORTED_EXTENSION_API_RANGE,
+  MAX_ANONYMOUS_ROUTE_PATHS,
   MAX_MODULE_ACTIONS,
   MAX_MODULE_DATA_ROUTES,
   MAX_NAV_ITEM_LABEL_LENGTH,

@@ -17,6 +17,23 @@ export function isRateLimitEnforced(): boolean {
   return !(process.env['NODE_ENV'] === 'test' && process.env['RATE_LIMIT_TEST_BYPASS'] === 'true')
 }
 
+/**
+ * Story 20.13 (jscpd fix): extracted from `oauth-handoff-routes.ts`'s `callbackQueryParams` and
+ * `public-route-routes.ts`'s own equivalent, which independently reimplemented the same
+ * `request.query` -> `Record<string, string>` normalization (Fastify's parsed query values can be
+ * `string | string[] | undefined`; only the first array element, if a string, survives — matching
+ * both call sites' existing behavior byte-for-byte).
+ */
+export function normalizeQueryParams(request: FastifyRequest): Record<string, string> {
+  if (!request.query || typeof request.query !== 'object') return {}
+  return Object.fromEntries(
+    Object.entries(request.query as Record<string, unknown>).map(([key, value]) => {
+      const raw = Array.isArray(value) ? value[0] : value
+      return [key, typeof raw === 'string' ? raw : '']
+    })
+  )
+}
+
 export function validationError(
   error: { issues: { path: PropertyKey[]; message: string }[] },
   fallbackPath: string

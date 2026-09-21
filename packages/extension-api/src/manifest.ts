@@ -30,6 +30,11 @@ export type ExtensionCapability =
   // manifest may also declare a non-empty `scheduledTasks` array of named, interval-declared
   // periodic background tasks PV's own job runner invokes once per active org.
   | 'scheduled-task'
+  // Story 20.13 AC1/AC2 — declares that this extension's `hooksFactory()` may return a
+  // `publicRoute` hooks-bag entry (see `register-extension.ts`'s `ExtensionHooks`) and that its
+  // manifest must also declare a non-empty `anonymousRoutePaths` allow-list (AC3), mirroring
+  // `'oauth-handoff'`/`redirectOrigins`'s own precedent exactly.
+  | 'public-route'
 
 export type ExtensionManifest = {
   /** Reverse-DNS-style identifier, e.g. "com.acme.sso-extension" — validated by registerExtension (AC6). */
@@ -143,6 +148,20 @@ export type ExtensionManifest = {
    * promise a scheduled task the extension's registered hooks cannot actually run.
    */
   scheduledTasks?: ScheduledTaskDeclaration[]
+  /**
+   * Story 20.13 AC3 — optional, `public-route`-capability-scoped allow-list of path TEMPLATES
+   * (Design Decision B) this extension's `publicRoute.onPublicRouteRequest` hook may be dispatched
+   * to, e.g. `"/redeem/:token"`. Each entry has AT MOST ONE `:param` segment (multi-segment
+   * templates are out of scope for v1, rejected at `registerExtension()` time as a fail-closed
+   * guard against speculative complexity). PV registers each declared template as a REAL Fastify
+   * route at extension-load time (reusing Fastify's own `find-my-way` router, literal-beats-
+   * `:param` precedence included) — an extension may never be dispatched to a path PV did not
+   * already know about at manifest-load time, mirroring `redirectOrigins`'s own allow-list-before-
+   * trust pattern (AC9 of Story 39.1). Only legal alongside `'public-route'` in `capabilities[]`;
+   * REQUIRED (non-empty) whenever that capability is declared — validated by `registerExtension()`'s
+   * `validateAnonymousRoutePathsShape()`.
+   */
+  anonymousRoutePaths?: string[]
 }
 
 /**
@@ -333,6 +352,25 @@ export const MIN_SCHEDULED_TASK_INTERVAL_MINUTES = 1
  * — this constant is only the built-in default used when no override is supplied. */
 export const MAX_SCHEDULED_TASKS_PER_EXTENSION = 32
 
+/**
+ * Story 20.13 AC3 (Design Decision B) — validates a declared `anonymousRoutePaths[]` entry: must
+ * start with `/`, followed by one or more `/`-separated segments, each either a literal token
+ * matching `[a-z0-9-]+` or a SINGLE `:paramName` placeholder — and the template as a whole may
+ * contain AT MOST ONE `:param` segment (enforced by `registerExtension()`'s own count check, not
+ * by this pattern alone, since a regex cannot easily express "at most one" across repeated
+ * groups). Deliberately does NOT require the `/api/v1/` prefix `PANEL_DATA_PATH_PATTERN` requires
+ * — PV owns the real mount point for this mechanism via a fixed prefix it prepends, mirroring
+ * `MODULE_DATA_ROUTE_PATH_PATTERN`'s identical no-prefix precedent. The closed charset
+ * structurally cannot express a traversal segment, mirroring this file's other path patterns.
+ */
+// eslint-disable-next-line security/detect-unsafe-regex -- see MODULE_DATA_ROUTE_PATH_PATTERN's identical rationale above; charset is bounded and non-overlapping across each segment's two alternatives
+export const ANONYMOUS_ROUTE_PATH_PATTERN = /^(?:\/(?:[a-z0-9-]+|:[a-zA-Z][a-zA-Z0-9]*))+$/
+
+/** Story 20.13 AC3 — generous for any real extension, small enough to bound a hostile/broken
+ * manifest from declaring an unbounded `anonymousRoutePaths` list. Matches this file's other
+ * `MAX_*` cap precedents. */
+export const MAX_ANONYMOUS_ROUTE_PATHS = 32
+
 /** Story 56.1 AC1 — the sole handler name PV dispatches a due `(org, task)` invocation to. Not a
  * union type today (see `ScheduledTaskDeclaration.handler`'s own doc comment) — kept as a named
  * constant so the register-time cross-check and the runtime dispatch path share one source of
@@ -500,7 +538,16 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // `host.credentialSharing` — no existing type is modified, and the floor stays `>=3.0.0` so every
 // already-shipped extension (including any real, currently-deployed CentralizeMe build) keeps
 // loading unmodified regardless.
-export const EXTENSION_API_VERSION = '3.22.1'
+// Story 20.13 AC7/AC14 — bumped as an additive-minor (3.22.1 -> 3.23.0): `ExtensionCapability`
+// gains the `'public-route'` literal, `ExtensionManifest` gains `anonymousRoutePaths?: string[]`,
+// and `ExtensionHooks` gains `publicRoute?: PublicRouteHooks` (see `hooks/public-route.ts`, Part
+// A); `CredentialSharingHost` gains two new methods, `listSharesForCredential`/
+// `listSharesForOrganization` (see `hooks/credential-sharing.ts`, Part B). All purely-additive
+// optional/new-method additions with zero effect on any manifest/hooksFactory that omits
+// referencing them — no existing type's required shape changes, and the floor stays `>=3.0.0` so
+// every already-shipped extension (including any real, currently-deployed CentralizeMe build)
+// keeps loading unmodified regardless.
+export const EXTENSION_API_VERSION = '3.23.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

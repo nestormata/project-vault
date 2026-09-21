@@ -5,6 +5,7 @@ import * as extensionApi from '../src/index.js'
 describe('@project-vault/extension-api public value exports', () => {
   it('keeps the root export surface exact', () => {
     expect(Object.keys(extensionApi).sort()).toEqual([
+      'ANONYMOUS_ROUTE_PATH_PATTERN',
       'CredentialSharingNoMachineUserError',
       'CredentialSharingOrgRateLimitedError',
       'CredentialSharingRateLimitedError',
@@ -12,6 +13,7 @@ describe('@project-vault/extension-api public value exports', () => {
       'EXTENSION_THEME_CSS_VARS',
       'ExtensionRegistrationError',
       'HOST_SUPPORTED_EXTENSION_API_RANGE',
+      'MAX_ANONYMOUS_ROUTE_PATHS',
       'MAX_MODULE_ACTIONS',
       'MAX_MODULE_DATA_ROUTES',
       'MAX_NAV_ITEMS',

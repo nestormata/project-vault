@@ -519,6 +519,11 @@ export const OperationalEvent = {
   // machine-user to attribute the audit write to — fail-closed, never an unattributed or
   // system-actor write.
   CREDENTIAL_SHARING_HOST_NO_MACHINE_USER: 'credential_sharing_host.no_machine_user',
+  // Story 20.13 AC5: an anonymous `publicRoute.onPublicRouteRequest()` dispatch degraded (threw,
+  // timed out, or returned a malformed `PublicRouteResult`/`ActionResult`). Never carries the
+  // hook's raw exception message/stack — fixed-enum `subReason` only, same never-leak-
+  // internal-detail discipline as EXTENSION_MODULE_DATA_ROUTE_FAILED above.
+  EXTENSION_PUBLIC_ROUTE_FAILED: 'extension.public_route_failed',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]
