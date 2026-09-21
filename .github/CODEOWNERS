@@ -1,0 +1,14 @@
+# Story 42.5 — crypto-adjacent surface requires @nestormata's review on every touching PR,
+# independent of repo-wide auto-merge/branch-protection defaults. Keep in sync with
+# scripts/lib/crypto-adjacent-packages.ts — scripts/check-crypto-adjacent-pins.ts's
+# codeowners-coverage check (AC3) fails CI if this list and the canonical package list diverge.
+/.github/dependabot.yml                        @nestormata
+/.github/CODEOWNERS                            @nestormata
+/scripts/lib/crypto-adjacent-packages.ts       @nestormata
+/scripts/check-crypto-adjacent-pins.ts         @nestormata
+/scripts/check-crypto-adjacent-pins.test.ts    @nestormata
+/packages/crypto/package.json                  @nestormata
+/apps/api/package.json                         @nestormata
+/apps/web/package.json                         @nestormata
+/packages/api-contract-tests/package.json      @nestormata
+/fixtures/mock-envelope-extension/package.json @nestormata

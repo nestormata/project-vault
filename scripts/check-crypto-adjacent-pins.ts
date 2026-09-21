@@ -25,9 +25,19 @@
  *     it fails closed: if the expected block shape cannot be located at all (a rename, a reformat to
  *     flow-style, a missing key), that is reported as a violation, never silently treated as "list is
  *     empty, so it matches nothing, so nothing fails."
+ *  4. Story 42.5 (AC3) — `.github/CODEOWNERS` must carry an entry naming `@nestormata` for every
+ *     fixed crypto-adjacent-surface infra path (`dependabot.yml`, `CODEOWNERS` itself, this file,
+ *     its own test) and for every workspace `package.json` that declares a canonical-list package
+ *     (re-derived live from the same workspace-glob walk violation (1) already uses — never a
+ *     hardcoded snapshot, so a rename/addition is caught as a coverage gap automatically). This is
+ *     `CODEOWNERS`'s durable, auto-merge-toggle-independent enforcement — see that story's Dev Notes
+ *     for why branch protection + `CODEOWNERS`, not a CI-side merge-blocking script, is the
+ *     mechanism `require_code_owner_reviews` (configured out-of-band via `gh api`, not by this
+ *     script) actually relies on.
  *
- * Pure, DB-free: a static read of `package.json` files, `pnpm-workspace.yaml`, and
- * `.github/dependabot.yml` under the given root — no `pnpm list`/`pnpm why`, no network.
+ * Pure, DB-free: a static read of `package.json` files, `pnpm-workspace.yaml`,
+ * `.github/dependabot.yml`, and `.github/CODEOWNERS` under the given root — no `pnpm list`/`pnpm
+ * why`, no network, no live `gh api` calls.
  */
 import { readFileSync } from 'node:fs'
 import { readdirSync, statSync } from 'node:fs'
@@ -55,8 +65,14 @@ export type DependabotCrossCheckViolation = {
   reason: string
 }
 
+export type CodeownersCoverageViolation = {
+  kind: 'codeowners-coverage'
+  path: string
+  reason: string
+}
+
 export type CryptoAdjacentPinViolation =
-  PinViolation | OverrideViolation | DependabotCrossCheckViolation
+  PinViolation | OverrideViolation | DependabotCrossCheckViolation | CodeownersCoverageViolation
 
 export type CryptoAdjacentPinScanResult = {
   violations: CryptoAdjacentPinViolation[]
@@ -464,6 +480,133 @@ function scanDependabotCrossCheck(root: string): DependabotCrossCheckViolation[]
 }
 
 // ---------------------------------------------------------------------------------------------
+// CODEOWNERS/canonical-list sync check (Story 42.5 AC3 — the third consumer of the canonical
+// list, alongside the package.json pin scan above and the dependabot.yml cross-check).
+// ---------------------------------------------------------------------------------------------
+
+const CODEOWNERS_COVERAGE = 'codeowners-coverage' as const
+const CODEOWNERS_PATH = '.github/CODEOWNERS'
+
+/** The single reviewer every crypto-adjacent-surface CODEOWNERS entry must name (Story 42.5 AC1 —
+ * this repo's sole maintainer, confirmed via `git remote -v` at implementation time). */
+const EXPECTED_CODEOWNER = '@nestormata'
+
+/** Fixed infra paths that must always carry a `CODEOWNERS` entry, independent of which
+ * `package.json` files currently declare a canonical-list package — these are the tooling/config
+ * surfaces whose own unreviewed edit could silently weaken or remove this story's protection
+ * (Story 42.5 AC1). Deliberately does NOT include `apps/*`/`packages/*` `package.json` paths —
+ * those are derived dynamically below from the live workspace + canonical-list membership, never
+ * hardcoded, so a rename/addition is caught rather than silently missed (AC3's edge examples). */
+const FIXED_CODEOWNERS_PATHS = [
+  '/.github/dependabot.yml',
+  '/.github/CODEOWNERS',
+  '/scripts/lib/crypto-adjacent-packages.ts',
+  '/scripts/check-crypto-adjacent-pins.ts',
+  '/scripts/check-crypto-adjacent-pins.test.ts',
+] as const
+
+/** Parses `.github/CODEOWNERS`'s simple line-based format (`<path> <owner> [<owner> ...]`) into a
+ * map from the path token (exactly as written, e.g. `/apps/api/package.json`) to its list of owner
+ * tokens. Ignores blank lines and full-line `#` comments — no YAML/JSON parsing library needed,
+ * consistent with this script's existing hand-parsed `dependabot.yml`/`pnpm-workspace.yaml`
+ * treatment above. */
+export function parseCodeowners(content: string): Map<string, string[]> {
+  const map = new Map<string, string[]>()
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.trim()
+    if (line === '' || line.startsWith('#')) continue
+    const parts = line.split(/\s+/)
+    if (parts.length < 2) continue
+    const [path, ...owners] = parts as [string, ...string[]]
+    map.set(path, owners)
+  }
+  return map
+}
+
+/** True if `pkg`'s `dependencies`/`devDependencies`/`peerDependencies`/`optionalDependencies`
+ * declares at least one canonical-list package (any version — this check is about CODEOWNERS
+ * coverage, not pin exactness, which `scanPackageJsonPins` above already covers separately). */
+function packageJsonDeclaresCanonicalPackage(pkg: RawPackageJson): boolean {
+  for (const field of DEPENDENCY_FIELDS) {
+    const deps = pkg[field]
+    if (typeof deps !== 'object' || deps === null || Array.isArray(deps)) continue
+    for (const name of Object.keys(deps as Record<string, unknown>)) {
+      if (CRYPTO_ADJACENT_PACKAGES.includes(name)) return true
+    }
+  }
+  return false
+}
+
+/** Re-derives, live from the workspace glob (never a hardcoded snapshot), every `package.json`
+ * path that declares at least one canonical-list package — the dynamic half of AC3's expected
+ * `CODEOWNERS` coverage set. Returns `[]` (not a failure) if the workspace itself could not be
+ * enumerated; `scanCryptoAdjacentPins`'s own pin-scan branch already reports that as a `pin`
+ * violation, so this function does not double-report it. */
+function findCanonicalPackageDeclaringPaths(root: string): string[] {
+  const packageJsonPaths = findWorkspacePackageJsonPaths(root)
+  if (packageJsonPaths === undefined) return []
+
+  const paths: string[] = []
+  for (const packageJsonPath of packageJsonPaths) {
+    const pkg = loadPackageJson(packageJsonPath)
+    if (pkg === undefined || !packageJsonDeclaresCanonicalPackage(pkg)) continue
+
+    const relative = packageJsonPath.startsWith(root)
+      ? packageJsonPath.slice(root.length).replace(/\\/g, '/')
+      : packageJsonPath
+    paths.push(relative.startsWith('/') ? relative : `/${relative}`)
+  }
+  return paths
+}
+
+function scanCodeownersCoverage(root: string): CodeownersCoverageViolation[] {
+  const expectedPaths = [...FIXED_CODEOWNERS_PATHS, ...findCanonicalPackageDeclaringPaths(root)]
+
+  const codeownersPath = resolve(root, CODEOWNERS_PATH)
+  let raw: string
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- see above
+    raw = readFileSync(codeownersPath, 'utf-8')
+  } catch {
+    return expectedPaths.map((path) => ({
+      kind: CODEOWNERS_COVERAGE,
+      path,
+      reason:
+        `${CODEOWNERS_PATH} could not be read at ${codeownersPath} — expected an entry naming ` +
+        `${EXPECTED_CODEOWNER} for ${path}`,
+    }))
+  }
+
+  const entries = parseCodeowners(raw)
+  const violations: CodeownersCoverageViolation[] = []
+
+  for (const path of expectedPaths) {
+    const owners = entries.get(path)
+    if (owners === undefined) {
+      violations.push({
+        kind: CODEOWNERS_COVERAGE,
+        path,
+        reason:
+          `${CODEOWNERS_PATH} has no entry for ${path}, which is a fixed crypto-adjacent-surface ` +
+          'infra path or declares a canonical-list package',
+      })
+      continue
+    }
+    if (!owners.includes(EXPECTED_CODEOWNER)) {
+      violations.push({
+        kind: CODEOWNERS_COVERAGE,
+        path,
+        reason:
+          `${CODEOWNERS_PATH}'s entry for ${path} does not name ${EXPECTED_CODEOWNER} as an ` +
+          `owner (got: ${owners.join(', ')})`,
+      })
+    }
+  }
+
+  return violations
+}
+
+// ---------------------------------------------------------------------------------------------
 // Top-level scan
 // ---------------------------------------------------------------------------------------------
 
@@ -490,6 +633,7 @@ export function scanCryptoAdjacentPins(rootDir = process.cwd()): CryptoAdjacentP
 
   violations.push(...scanWorkspaceOverrides(root))
   violations.push(...scanDependabotCrossCheck(root))
+  violations.push(...scanCodeownersCoverage(root))
 
   return { violations }
 }
@@ -514,8 +658,10 @@ function report(result: CryptoAdjacentPinScanResult): void {
           `(value: ${v.overrideValue}) — crypto-adjacent packages must be pinned at their own ` +
           'declaration site, not via a workspace-wide override (see AC2)\n'
       )
-    } else {
+    } else if (v.kind === 'dependabot-cross-check') {
       process.stderr.write(`  - [dependabot:${v.group}] ${v.reason}\n`)
+    } else {
+      process.stderr.write(`  - [codeowners:${v.path}] ${v.reason}\n`)
     }
   }
   process.stderr.write('\n')
