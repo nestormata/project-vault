@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { useFixtureRoots, writeFixture } from './lib/fixture-test-helpers.js'
 import {
   findWorkspacePackageJsonPaths,
+  parseCodeowners,
   parseWorkspaceOverrides,
   parseWorkspacePackagesGlobs,
   scanCryptoAdjacentPins,
@@ -16,13 +17,34 @@ const makeFixtureRoot = useFixtureRoots('crypto-adjacent-pins-', ['apps', 'packa
 
 const WORKSPACE_YAML_REL = 'pnpm-workspace.yaml'
 const DEPENDABOT_YML_REL = '.github/dependabot.yml'
+const CODEOWNERS_REL = '.github/CODEOWNERS'
 const ROOT_PACKAGE_JSON_REL = 'package.json'
 const SVC_PACKAGE_JSON_REL = 'apps/svc/package.json'
 const LIB_PACKAGE_JSON_REL = 'packages/lib/package.json'
 const GROUP_CRYPTO_ADJACENT = 'crypto-adjacent'
 const GROUP_PNPM_WORKSPACE = 'pnpm-workspace'
 const VIOLATION_KIND_DEPENDABOT = 'dependabot-cross-check'
+const VIOLATION_KIND_CODEOWNERS = 'codeowners-coverage'
 const MINIMAL_ROOT_PACKAGE_JSON = '{"name":"root"}'
+const EXPECTED_CODEOWNER = '@nestormata'
+const SVC_CODEOWNERS_PATH = '/apps/svc/package.json'
+const DEPENDABOT_CODEOWNERS_PATH = '/.github/dependabot.yml'
+const SVC_CODEOWNERS_LINE = `${SVC_CODEOWNERS_PATH}                     ${EXPECTED_CODEOWNER}\n`
+
+/** Every fixed infra path's own `CODEOWNERS` line, shared by all fixtures below so the path list
+ * only needs to be kept in one place — a violation-injecting test then adds/removes/mutates just
+ * the one line it cares about rather than re-typing the whole block each time. */
+const FIXED_CODEOWNERS_LINES =
+  `${DEPENDABOT_CODEOWNERS_PATH}                    ${EXPECTED_CODEOWNER}\n` +
+  `/.github/CODEOWNERS                        ${EXPECTED_CODEOWNER}\n` +
+  `/scripts/lib/crypto-adjacent-packages.ts   ${EXPECTED_CODEOWNER}\n` +
+  `/scripts/check-crypto-adjacent-pins.ts     ${EXPECTED_CODEOWNER}\n` +
+  `/scripts/check-crypto-adjacent-pins.test.ts ${EXPECTED_CODEOWNER}\n`
+
+/** A clean, fully-compliant `.github/CODEOWNERS` fixture — covers the fixed infra paths this
+ * script always requires plus the one dynamic package.json path (`apps/svc/package.json`) that
+ * `writeCleanBaseFixture` declares all five canonical packages in. */
+const CLEAN_CODEOWNERS = `${FIXED_CODEOWNERS_LINES}${SVC_CODEOWNERS_LINE}`
 
 /** A clean, fully-compliant `.github/dependabot.yml` fixture — the two group lists both match the
  * real canonical list exactly (argon2, bcrypt, @fastify/jwt, fast-jwt, otpauth). */
@@ -66,6 +88,7 @@ const CLEAN_WORKSPACE_YAML = `packages:
 function writeCleanBaseFixture(root: string, appDeps: Record<string, string> = {}): void {
   writeFixture(root, WORKSPACE_YAML_REL, CLEAN_WORKSPACE_YAML)
   writeFixture(root, DEPENDABOT_YML_REL, CLEAN_DEPENDABOT_YML)
+  writeFixture(root, CODEOWNERS_REL, CLEAN_CODEOWNERS)
   writeFixture(
     root,
     ROOT_PACKAGE_JSON_REL,
@@ -246,6 +269,9 @@ describe('scanCryptoAdjacentPins', () => {
     const root = makeFixtureRoot()
     writeFixture(root, WORKSPACE_YAML_REL, CLEAN_WORKSPACE_YAML)
     writeFixture(root, DEPENDABOT_YML_REL, CLEAN_DEPENDABOT_YML)
+    // No dynamic package.json path is expected in CODEOWNERS here since svc declares no
+    // canonical-list package — only the fixed infra paths are required.
+    writeFixture(root, CODEOWNERS_REL, FIXED_CODEOWNERS_LINES)
     writeFixture(root, ROOT_PACKAGE_JSON_REL, MINIMAL_ROOT_PACKAGE_JSON)
     writeFixture(
       root,
@@ -435,6 +461,120 @@ updates:
 
   it('the real repository state passes cleanly today', () => {
     expect(scanCryptoAdjacentPins(repositoryRoot)).toEqual({ violations: [] })
+  })
+
+  // --- Story 42.5 AC3: CODEOWNERS/canonical-list sync gate --------------------------------------
+
+  it('passes clean when CODEOWNERS covers every fixed infra path and every canonical-package-declaring package.json', () => {
+    const root = makeFixtureRoot()
+    writeCleanBaseFixture(root)
+
+    expect(scanCryptoAdjacentPins(root)).toEqual({ violations: [] })
+  })
+
+  it('fails when CODEOWNERS is missing an entry for a package.json that declares a canonical-list package', () => {
+    const root = makeFixtureRoot()
+    writeCleanBaseFixture(root)
+    // Drop the one dynamic entry, keep the fixed infra paths.
+    writeFixture(root, CODEOWNERS_REL, FIXED_CODEOWNERS_LINES)
+
+    const { violations } = scanCryptoAdjacentPins(root)
+    expect(violations).toContainEqual(
+      expect.objectContaining({ kind: VIOLATION_KIND_CODEOWNERS, path: SVC_CODEOWNERS_PATH })
+    )
+  })
+
+  it('fails when CODEOWNERS is missing an entry for a fixed infra path (e.g. dependabot.yml)', () => {
+    const root = makeFixtureRoot()
+    writeCleanBaseFixture(root)
+    const withoutDependabotLine = FIXED_CODEOWNERS_LINES.split('\n')
+      .filter((line) => !line.startsWith(DEPENDABOT_CODEOWNERS_PATH))
+      .join('\n')
+    writeFixture(root, CODEOWNERS_REL, `${withoutDependabotLine}\n${SVC_CODEOWNERS_LINE}`)
+
+    const { violations } = scanCryptoAdjacentPins(root)
+    expect(violations).toContainEqual(
+      expect.objectContaining({
+        kind: VIOLATION_KIND_CODEOWNERS,
+        path: DEPENDABOT_CODEOWNERS_PATH,
+      })
+    )
+  })
+
+  it('fails when a matching CODEOWNERS entry names the wrong owner token', () => {
+    const root = makeFixtureRoot()
+    writeCleanBaseFixture(root)
+    writeFixture(
+      root,
+      CODEOWNERS_REL,
+      CLEAN_CODEOWNERS.replace(
+        SVC_CODEOWNERS_LINE,
+        '/apps/svc/package.json                     @someone-else\n'
+      )
+    )
+
+    const { violations } = scanCryptoAdjacentPins(root)
+    expect(violations).toContainEqual(
+      expect.objectContaining({ kind: VIOLATION_KIND_CODEOWNERS, path: SVC_CODEOWNERS_PATH })
+    )
+  })
+
+  it('fails when a canonical-list package gains a new declaring package.json with no corresponding CODEOWNERS entry (drift/rename detection)', () => {
+    const root = makeFixtureRoot()
+    writeCleanBaseFixture(root)
+    // A second workspace member starts declaring a canonical-list package but CODEOWNERS is not
+    // updated — this simulates both "a 6th canonical package is added to a new file" and "an
+    // existing declaring package.json is renamed/moved" (the old entry stops matching, the new
+    // live path has none), per AC3's edge examples.
+    writeFixture(
+      root,
+      LIB_PACKAGE_JSON_REL,
+      JSON.stringify({ name: 'lib', dependencies: { bcrypt: '6.0.0' } }, null, 2)
+    )
+
+    const { violations } = scanCryptoAdjacentPins(root)
+    expect(violations).toContainEqual(
+      expect.objectContaining({
+        kind: VIOLATION_KIND_CODEOWNERS,
+        path: '/packages/lib/package.json',
+      })
+    )
+  })
+
+  it('fails closed (one violation per expected path) when CODEOWNERS does not exist at all', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, WORKSPACE_YAML_REL, CLEAN_WORKSPACE_YAML)
+    writeFixture(root, DEPENDABOT_YML_REL, CLEAN_DEPENDABOT_YML)
+    writeFixture(root, ROOT_PACKAGE_JSON_REL, MINIMAL_ROOT_PACKAGE_JSON)
+    writeFixture(
+      root,
+      SVC_PACKAGE_JSON_REL,
+      JSON.stringify({ name: 'svc', dependencies: { argon2: '0.45.1' } }, null, 2)
+    )
+
+    const { violations } = scanCryptoAdjacentPins(root)
+    const codeownersViolations = violations.filter((v) => v.kind === VIOLATION_KIND_CODEOWNERS)
+    expect(codeownersViolations.length).toBeGreaterThanOrEqual(5)
+    expect(codeownersViolations).toContainEqual(
+      expect.objectContaining({ path: DEPENDABOT_CODEOWNERS_PATH })
+    )
+    expect(codeownersViolations).toContainEqual(
+      expect.objectContaining({ path: SVC_CODEOWNERS_PATH })
+    )
+  })
+})
+
+describe('parseCodeowners', () => {
+  it('parses simple path/owner lines, ignoring comments and blank lines', () => {
+    const map = parseCodeowners(
+      `# a comment\n\n/apps/api/package.json ${EXPECTED_CODEOWNER}\n/.github/CODEOWNERS   ${EXPECTED_CODEOWNER}\n`
+    )
+    expect(map.get('/apps/api/package.json')).toEqual([EXPECTED_CODEOWNER])
+    expect(map.get('/.github/CODEOWNERS')).toEqual([EXPECTED_CODEOWNER])
+  })
+
+  it('returns an empty map for an empty or all-comment file', () => {
+    expect(parseCodeowners('# nothing here\n\n').size).toBe(0)
   })
 })
 
