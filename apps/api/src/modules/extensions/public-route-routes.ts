@@ -8,6 +8,7 @@ import type {
 import { OperationalEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { secureRoute } from '../../lib/secure-route.js'
+import { normalizeQueryParams } from '../../lib/route-helpers.js'
 import { raceWithTimeout } from '../../lib/race-with-timeout.js'
 import { operationalLog } from '../../lib/logger.js'
 import { isValidActionResult, mapActionResultToResponse } from '../../lib/action-result-response.js'
@@ -126,20 +127,6 @@ function applyPublicRouteHeaders(
   }
 }
 
-function queryParams(request: FastifyRequest): Record<string, string> {
-  if (!request.query || typeof request.query !== 'object') return {}
-  return Object.fromEntries(
-    Object.entries(request.query as Record<string, unknown>).map(([key, value]) => [
-      key,
-      typeof value === 'string'
-        ? value
-        : Array.isArray(value) && typeof value[0] === 'string'
-          ? value[0]
-          : '',
-    ])
-  )
-}
-
 /**
  * Story 20.13 AC1/AC3/AC4/AC5/AC5b — a Fastify plugin mounting one real GET route per
  * `anonymousRoutePaths` entry declared by the currently loaded extension, reading
@@ -183,7 +170,7 @@ export async function publicRouteRoutes(fastify: FastifyApp): Promise<void> {
           method: 'GET',
           pathTemplate,
           params: request.params as Record<string, string>,
-          query: queryParams(request),
+          query: normalizeQueryParams(request),
         }
 
         const raced = await raceWithTimeout(
