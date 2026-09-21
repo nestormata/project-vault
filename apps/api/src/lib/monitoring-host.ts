@@ -164,6 +164,67 @@ function requireAmbientOrgId(methodName: string): string {
  * `projectId` does not resolve to a project within the relevant org (ambient or explicit). */
 const NO_SUCH_PROJECT_IN_ORG_MESSAGE = 'no such project in this org'
 
+/**
+ * Story 41.2 AC1 — the single required-then-format check every identity/routing field (never a
+ * body field) goes through: a missing/empty/non-string value is "required", a non-empty string
+ * that fails `z.uuid()` is "must be a valid UUID". Shared by `validateIdentityUuids` (object
+ * fields) and `validateIdentityUuidArray` (array elements, AC4) so the underlying check itself is
+ * never duplicated — only this one place would need to change if the UUID format rule ever did.
+ */
+function checkIdentityUuidValue(
+  fieldName: string,
+  value: string | undefined
+): { path: string[]; message: string } | null {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return { path: [fieldName], message: `${fieldName} is required` }
+  }
+  if (!z.uuid().safeParse(value).success) {
+    return { path: [fieldName], message: `${fieldName} must be a valid UUID` }
+  }
+  return null
+}
+
+/**
+ * Story 41.2 AC1 — extracted from `createServiceEndpoint`'s own Story 41.1 code-review fix
+ * (originally inline at this file's `createServiceEndpoint`, lines 425-438 before this refactor)
+ * so every in-request method's identity/routing fields (`projectId`, `serviceEndpointId`,
+ * `userId` — never a body field) get the same UUID-format check before any DB call, without
+ * re-duplicating the check six more times (which would trip `pnpm jscpd`'s zero-clones gate).
+ * Iterates `fields` in insertion order (JS preserves string-key insertion order), collecting
+ * *every* issue rather than stopping at the first, and throws once at the end so a caller with
+ * multiple malformed fields sees all of them in one `MonitoringInvalidServiceEndpointInputError`.
+ */
+function validateIdentityUuids(fields: Record<string, string | undefined>): void {
+  const issues: { path: string[]; message: string }[] = []
+  for (const [fieldName, value] of Object.entries(fields)) {
+    const issue = checkIdentityUuidValue(fieldName, value)
+    if (issue) issues.push(issue)
+  }
+  if (issues.length > 0) {
+    throw new MonitoringInvalidServiceEndpointInputError(issues)
+  }
+}
+
+/**
+ * Story 41.2 AC4 — array-aware sibling of `validateIdentityUuids` for `getHealthDashboardData`'s
+ * optional `permittedProjectIds`. `undefined` is a no-op (AC5 of Story 34.1: "no filter" must
+ * keep meaning exactly that); a defined array (including `[]`, which is also a no-op here — its
+ * own "nothing permitted" short-circuit is unaffected since there is nothing to iterate) is
+ * checked element-by-element with index-qualified paths (`[fieldName, String(index)]`) so a
+ * malformed element's position is never lost.
+ */
+function validateIdentityUuidArray(fieldName: string, values: string[] | undefined): void {
+  if (values === undefined) return
+  const issues: { path: string[]; message: string }[] = []
+  values.forEach((value, index) => {
+    const issue = checkIdentityUuidValue(`${fieldName}[${index}]`, value)
+    if (issue) issues.push({ path: [fieldName, String(index)], message: issue.message })
+  })
+  if (issues.length > 0) {
+    throw new MonitoringInvalidServiceEndpointInputError(issues)
+  }
+}
+
 type ServiceEndpointRow = typeof serviceEndpoints.$inferSelect
 
 /**
@@ -208,6 +269,10 @@ export function buildMonitoringHost(
   return {
     async deleteServiceEndpoint(params) {
       const orgId = requireAmbientOrgId('deleteServiceEndpoint')
+      validateIdentityUuids({
+        serviceEndpointId: params.serviceEndpointId,
+        projectId: params.projectId,
+      })
       return withOrg(orgId, async (tx) => {
         const deleted = await deleteServiceEndpointService(tx, {
           serviceEndpointId: params.serviceEndpointId,
@@ -220,6 +285,11 @@ export function buildMonitoringHost(
 
     async updateServiceEndpointPauseState(params) {
       const orgId = requireAmbientOrgId('updateServiceEndpointPauseState')
+      validateIdentityUuids({
+        serviceEndpointId: params.serviceEndpointId,
+        projectId: params.projectId,
+        userId: params.userId,
+      })
       return withOrg(orgId, async (tx) => {
         const result = await updateServiceEndpointService(tx, {
           serviceEndpointId: params.serviceEndpointId,
@@ -238,11 +308,13 @@ export function buildMonitoringHost(
 
     async getHealthDashboardData(params) {
       const orgId = requireAmbientOrgId('getHealthDashboardData')
+      validateIdentityUuidArray('permittedProjectIds', params?.permittedProjectIds)
       return withOrg(orgId, (tx) => getHealthDashboardDataService(tx, params?.permittedProjectIds))
     },
 
     async enableStatusPage(params) {
       const orgId = requireAmbientOrgId('enableStatusPage')
+      validateIdentityUuids({ projectId: params.projectId, userId: params.userId })
       return withOrg(orgId, async (tx) => {
         // Story 34.1 AC2 tenant-isolation fix (found via real-Postgres integration testing):
         // unlike regenerateStatusPageToken/disableStatusPage — which only ever touch a
@@ -271,11 +343,13 @@ export function buildMonitoringHost(
 
     async regenerateStatusPageToken(params) {
       const orgId = requireAmbientOrgId('regenerateStatusPageToken')
+      validateIdentityUuids({ projectId: params.projectId })
       return withOrg(orgId, (tx) => regenerateStatusPageTokenService(tx, params.projectId))
     },
 
     async disableStatusPage(params) {
       const orgId = requireAmbientOrgId('disableStatusPage')
+      validateIdentityUuids({ projectId: params.projectId })
       return withOrg(orgId, async (tx) => {
         const result = await disableStatusPageService(tx, params.projectId)
         return result ? { statusPageId: result.statusPageId } : null
@@ -422,20 +496,7 @@ export function buildMonitoringHost(
       // which UUID-validate their own `projectId`/identity params) — fixed here for
       // `createServiceEndpoint` only, per this story's own scope; the identical fix across the
       // other six in-request methods is a separate, cross-cutting follow-up, not bundled in here.
-      const identityIssues: { path: string[]; message: string }[] = []
-      if (typeof params.userId !== 'string' || params.userId.trim().length === 0) {
-        identityIssues.push({ path: ['userId'], message: 'userId is required' })
-      } else if (!z.uuid().safeParse(params.userId).success) {
-        identityIssues.push({ path: ['userId'], message: 'userId must be a valid UUID' })
-      }
-      if (typeof params.projectId !== 'string' || params.projectId.trim().length === 0) {
-        identityIssues.push({ path: ['projectId'], message: 'projectId is required' })
-      } else if (!z.uuid().safeParse(params.projectId).success) {
-        identityIssues.push({ path: ['projectId'], message: 'projectId must be a valid UUID' })
-      }
-      if (identityIssues.length > 0) {
-        throw new MonitoringInvalidServiceEndpointInputError(identityIssues)
-      }
+      validateIdentityUuids({ userId: params.userId, projectId: params.projectId })
 
       return withOrg(orgId, async (tx) => {
         // Story 41.1 AC4 — mirrors `enableStatusPage`'s own tenant-isolation fix above:

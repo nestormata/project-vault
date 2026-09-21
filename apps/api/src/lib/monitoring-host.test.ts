@@ -16,12 +16,18 @@ import { runWithRequestContext } from './request-context.js'
 // Test-fixture UUIDs, not secrets.
 /* eslint-disable no-secrets/no-secrets */
 const AMBIENT_ORG_ID = '11111111-1111-1111-1111-111111111111'
-const SMUGGLED_ENDPOINT_ID = '22222222-2222-2222-2222-222222222222'
-const SMUGGLED_PROJECT_ID = '33333333-3333-3333-3333-333333333333'
+// Story 41.2: must be RFC-4122-v4-shaped (version/variant nibbles set), not just
+// 8-4-4-4-12 hex-shaped — these now pass through `validateIdentityUuids`'s `z.uuid()` format
+// gate before this test's own "ambient context wins" assertion is ever reached.
+const SMUGGLED_ENDPOINT_ID = '22222222-2222-4222-8222-222222222222'
+const SMUGGLED_PROJECT_ID = '33333333-3333-4333-8333-333333333333'
 const SMUGGLED_ORG_ID = '44444444-4444-4444-4444-444444444444'
 const RATE_LIMIT_ORG_ID = '00000000-0000-0000-0000-000000000001'
 const RATE_LIMIT_PROJECT_ID = '00000000-0000-0000-0000-000000000002'
 /* eslint-enable no-secrets/no-secrets */
+
+// Story 41.2: reused across every method's malformed-UUID test case (sonarjs/no-duplicate-string).
+const NOT_A_UUID = 'not-a-uuid'
 
 const MANIFEST: ExtensionManifest = {
   name: 'com.acme.test-extension',
@@ -163,8 +169,8 @@ describe('buildMonitoringHost.createServiceEndpoint (Story 41.1 AC3, AC5)', () =
   // reaching findProjectInOrg/the DB, so a malformed value would have surfaced as an
   // unclassified Postgres error instead of this same typed error class.
   it.each([
-    { name: 'userId is not a valid UUID', overrides: { userId: 'not-a-uuid' } },
-    { name: 'projectId is not a valid UUID', overrides: { projectId: 'not-a-uuid' } },
+    { name: 'userId is not a valid UUID', overrides: { userId: NOT_A_UUID } },
+    { name: 'projectId is not a valid UUID', overrides: { projectId: NOT_A_UUID } },
   ])(REJECTS_WITH_ZERO_DB_CALLS_TITLE, async ({ overrides }) => {
     const host = buildMonitoringHost(MANIFEST)
     await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
@@ -176,6 +182,181 @@ describe('buildMonitoringHost.createServiceEndpoint (Story 41.1 AC3, AC5)', () =
           ...overrides,
         } as unknown as Parameters<typeof host.createServiceEndpoint>[0])
       ).rejects.toBeInstanceOf(MonitoringInvalidServiceEndpointInputError)
+    })
+  })
+})
+
+describe('buildMonitoringHost — sibling in-request methods UUID validation parity (Story 41.2 AC2-AC7)', () => {
+  const REJECTS_WITH_ZERO_DB_CALLS_TITLE =
+    'rejects with MonitoringInvalidServiceEndpointInputError and makes zero DB calls: $name'
+
+  // Test-fixture values, not secrets.
+  /* eslint-disable no-secrets/no-secrets */
+  const VALID_PROJECT_ID = '55555555-5555-4555-8555-555555555555'
+  const VALID_USER_ID = '66666666-6666-4666-8666-666666666666'
+  const VALID_SERVICE_ENDPOINT_ID = '77777777-7777-4777-8777-777777777777'
+  /* eslint-enable no-secrets/no-secrets */
+
+  describe('deleteServiceEndpoint (AC2)', () => {
+    it.each([
+      {
+        name: 'serviceEndpointId is not a valid UUID',
+        overrides: { serviceEndpointId: NOT_A_UUID },
+      },
+      { name: 'projectId is an empty string', overrides: { projectId: '' } },
+    ])(REJECTS_WITH_ZERO_DB_CALLS_TITLE, async ({ overrides }) => {
+      const host = buildMonitoringHost(MANIFEST)
+      await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
+        await expect(
+          host.deleteServiceEndpoint({
+            serviceEndpointId: VALID_SERVICE_ENDPOINT_ID,
+            projectId: VALID_PROJECT_ID,
+            ...overrides,
+          })
+        ).rejects.toBeInstanceOf(MonitoringInvalidServiceEndpointInputError)
+      })
+    })
+
+    it('collects both issues when serviceEndpointId and projectId are both malformed', async () => {
+      const host = buildMonitoringHost(MANIFEST)
+      await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
+        try {
+          await host.deleteServiceEndpoint({ serviceEndpointId: NOT_A_UUID, projectId: '' })
+          expect.unreachable('expected deleteServiceEndpoint to reject')
+        } catch (error) {
+          expect(error).toBeInstanceOf(MonitoringInvalidServiceEndpointInputError)
+          expect((error as MonitoringInvalidServiceEndpointInputError).issues).toHaveLength(2)
+        }
+      })
+    })
+  })
+
+  describe('updateServiceEndpointPauseState (AC3)', () => {
+    it.each([
+      { name: 'userId is not a valid UUID', overrides: { userId: NOT_A_UUID } },
+      {
+        name: 'userId is missing entirely (undefined smuggled past TS)',
+        overrides: { userId: undefined },
+      },
+      {
+        name: 'serviceEndpointId is not a valid UUID',
+        overrides: { serviceEndpointId: NOT_A_UUID },
+      },
+    ])(REJECTS_WITH_ZERO_DB_CALLS_TITLE, async ({ overrides }) => {
+      const host = buildMonitoringHost(MANIFEST)
+      await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
+        await expect(
+          host.updateServiceEndpointPauseState({
+            serviceEndpointId: VALID_SERVICE_ENDPOINT_ID,
+            projectId: VALID_PROJECT_ID,
+            userId: VALID_USER_ID,
+            paused: true,
+            ...overrides,
+          } as unknown as Parameters<typeof host.updateServiceEndpointPauseState>[0])
+        ).rejects.toBeInstanceOf(MonitoringInvalidServiceEndpointInputError)
+      })
+    })
+
+    it('collects all three issues when serviceEndpointId, projectId, and userId are all malformed', async () => {
+      const host = buildMonitoringHost(MANIFEST)
+      await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
+        try {
+          await host.updateServiceEndpointPauseState({
+            serviceEndpointId: NOT_A_UUID,
+            projectId: '',
+            userId: 'also-not-a-uuid',
+            paused: true,
+          })
+          expect.unreachable('expected updateServiceEndpointPauseState to reject')
+        } catch (error) {
+          expect(error).toBeInstanceOf(MonitoringInvalidServiceEndpointInputError)
+          expect((error as MonitoringInvalidServiceEndpointInputError).issues).toHaveLength(3)
+        }
+      })
+    })
+  })
+
+  describe('getHealthDashboardData (AC4)', () => {
+    it('rejects a malformed element and makes zero DB calls', async () => {
+      const host = buildMonitoringHost(MANIFEST)
+      await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
+        await expect(
+          host.getHealthDashboardData({ permittedProjectIds: [VALID_PROJECT_ID, NOT_A_UUID] })
+        ).rejects.toBeInstanceOf(MonitoringInvalidServiceEndpointInputError)
+      })
+    })
+
+    it('reports the malformed element at its real index (index 1, not hardcoded index 0)', async () => {
+      const host = buildMonitoringHost(MANIFEST)
+      await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
+        try {
+          await host.getHealthDashboardData({
+            permittedProjectIds: [VALID_PROJECT_ID, NOT_A_UUID],
+          })
+          expect.unreachable('expected getHealthDashboardData to reject')
+        } catch (error) {
+          expect(error).toBeInstanceOf(MonitoringInvalidServiceEndpointInputError)
+          expect((error as MonitoringInvalidServiceEndpointInputError).issues[0]?.path).toEqual([
+            'permittedProjectIds',
+            '1',
+          ])
+        }
+      })
+    })
+
+    it('rejects an empty-string element at index 0 as required, not invalid UUID', async () => {
+      const host = buildMonitoringHost(MANIFEST)
+      await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
+        try {
+          await host.getHealthDashboardData({ permittedProjectIds: ['', VALID_PROJECT_ID] })
+          expect.unreachable('expected getHealthDashboardData to reject')
+        } catch (error) {
+          expect(error).toBeInstanceOf(MonitoringInvalidServiceEndpointInputError)
+          const issues = (error as MonitoringInvalidServiceEndpointInputError).issues
+          expect(issues[0]?.path).toEqual(['permittedProjectIds', '0'])
+          expect(issues[0]?.message).toMatch(/required/)
+        }
+      })
+    })
+  })
+
+  describe('enableStatusPage (AC5)', () => {
+    it.each([
+      { name: 'projectId is not a valid UUID', overrides: { projectId: NOT_A_UUID } },
+      { name: 'userId is an empty string', overrides: { userId: '' } },
+    ])(REJECTS_WITH_ZERO_DB_CALLS_TITLE, async ({ overrides }) => {
+      const host = buildMonitoringHost(MANIFEST)
+      await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
+        await expect(
+          host.enableStatusPage({
+            projectId: VALID_PROJECT_ID,
+            userId: VALID_USER_ID,
+            ...overrides,
+          })
+        ).rejects.toBeInstanceOf(MonitoringInvalidServiceEndpointInputError)
+      })
+    })
+  })
+
+  describe('regenerateStatusPageToken (AC6)', () => {
+    it('rejects a malformed projectId and makes zero DB calls', async () => {
+      const host = buildMonitoringHost(MANIFEST)
+      await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
+        await expect(
+          host.regenerateStatusPageToken({ projectId: NOT_A_UUID })
+        ).rejects.toBeInstanceOf(MonitoringInvalidServiceEndpointInputError)
+      })
+    })
+  })
+
+  describe('disableStatusPage (AC7)', () => {
+    it('rejects a malformed projectId and makes zero DB calls', async () => {
+      const host = buildMonitoringHost(MANIFEST)
+      await runWithRequestContext({ orgId: AMBIENT_ORG_ID, userId: 'user-1' }, async () => {
+        await expect(host.disableStatusPage({ projectId: NOT_A_UUID })).rejects.toBeInstanceOf(
+          MonitoringInvalidServiceEndpointInputError
+        )
+      })
     })
   })
 })

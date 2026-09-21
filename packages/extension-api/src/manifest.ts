@@ -500,7 +500,7 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // `host.credentialSharing` — no existing type is modified, and the floor stays `>=3.0.0` so every
 // already-shipped extension (including any real, currently-deployed CentralizeMe build) keeps
 // loading unmodified regardless.
-export const EXTENSION_API_VERSION = '3.22.0'
+export const EXTENSION_API_VERSION = '3.22.1'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built
