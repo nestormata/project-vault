@@ -250,21 +250,19 @@ export type CredentialSharingOrgListParams = {
   offset?: number
 }
 
-/** AC10 — a facade-native summary shape, never `apps/api`'s own `CredentialShareRow` (Drizzle-
- * inferred) directly. Reuses `CredentialSharingShareRecord` verbatim — it already is the sibling,
- * DB-internals-free mirror `listSharesForCredential`/`listSharesForOrganization`'s rows need
- * (identical field shape to what `routes.ts`'s own `serializeShare()` returns minus `sharedBy`/
- * `action`, which no existing `credentialSharing` result type exposes either), so this story adds
- * a distinctly-named alias rather than a structurally-duplicate type. */
-export type CredentialShareSummary = CredentialSharingShareRecord
-
 /** AC8/AC9 — the same `items`+`total` pagination shape the existing `GET .../shares` route
  * already returns (`routes.ts` line ~725). An unmatched/empty scope (e.g. a `credentialId`
  * outside the caller's org) returns `{ status: 'ok', items: [], total: 0 }`, not a distinguishable
- * not-found — the underlying query's own existing behavior, not invented by this story. */
+ * not-found — the underlying query's own existing behavior, not invented by this story.
+ *
+ * AC10 — items are `CredentialSharingShareRecord` (Drizzle-internals-free, never `apps/api`'s own
+ * `CredentialShareRow` directly), the same sibling type `createExternalShare`/`revealShare` etc.
+ * already use — no separate `CredentialShareSummary` alias, since the shape is already identical
+ * (SonarQube S6564: a same-shape alias with no distinct meaning is redundant indirection, not a
+ * real sibling type). */
 export type CredentialSharingListResult = {
   status: 'ok'
-  items: CredentialShareSummary[]
+  items: CredentialSharingShareRecord[]
   total: number
 }
 

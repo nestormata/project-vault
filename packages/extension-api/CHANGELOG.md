@@ -4,7 +4,7 @@ The contract hash covers the checked-in public API surface and contract-behaviou
 
 ## 3.23.0 — 2026-09-21
 
-contract-hash: sha256:de26486d289383f61b8e8fcd7e99ec4485d534fe80dc0bf51e95d30847bf9372
+contract-hash: sha256:d44c648ff9e4092c8b6d92ea8cddb9715478e6c3dd0801e7ff59cbff06a23142
 
 ### Added
 
@@ -37,8 +37,9 @@ Promise<CredentialSharingListResult>` (Story 20.13 Part B, AC8-AC14) — the six
   `credential-shares/service.ts` — `listSharesForCredential` over the already-shipped
   `listSharesForCredential`/`countSharesForCredential` pair (Story 17.3), `listSharesForOrganization`
   over a genuinely new, org-scoped-only `listSharesForOrganization`/`countSharesForOrganization`
-  query pair added by this story. Both return the new sibling types `CredentialSharingListResult`/
-  `CredentialShareSummary` (never `apps/api`'s own Drizzle-derived `CredentialShareRow` directly).
+  query pair added by this story. Both return the new sibling type `CredentialSharingListResult`
+  (items typed as the existing `CredentialSharingShareRecord`, never `apps/api`'s own
+  Drizzle-derived `CredentialShareRow` directly).
   `listSharesForCredential`'s params drop `sharedByUserId` entirely — the facade has no PV-session
   identity to scope "my own shares only" by and always returns admin-equivalent results.
 

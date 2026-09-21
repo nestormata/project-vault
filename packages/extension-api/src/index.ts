@@ -107,7 +107,6 @@ export type {
 export type { ExtensionRequestStateHostService } from './hooks/extension-request-state.js'
 export type {
   CredentialShareCreationErrorStatus,
-  CredentialShareSummary,
   CredentialSharingCreateExternalShareParams,
   CredentialSharingCreateExternalShareResult,
   CredentialSharingFindShareByTokenResult,
