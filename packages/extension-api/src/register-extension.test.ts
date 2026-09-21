@@ -416,7 +416,7 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each(['3.23.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
+  it.each(['3.24.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
     'rejects canonical version outside %s',
     (apiVersion) => {
       const hooksFactory = makeHooksFactory()
@@ -453,20 +453,20 @@ describe('registerExtension — concrete canonical version gate', () => {
   it('allows only the above-host same-major rollback escape', () => {
     // Story 20.11 AC1, Story 34.1 AC1/AC9, Story 35.1 AC1, Story 36.1 AC1/AC6, Story 37.1 AC1.3,
     // Story 39.1 AC8, Story 41.1, Story 56.1 AC1/AC4, Story 40.1 AC1/AC2/AC3/AC10, Story 57.1,
-    // Story 58.1, and Story 20.12 — host EXTENSION_API_VERSION is now 3.22.0 (see manifest.ts's
-    // EXTENSION_API_VERSION doc comment for why this merge moves past
+    // Story 58.1, Story 20.12, and Story 20.13 — host EXTENSION_API_VERSION is now 3.23.0 (see
+    // manifest.ts's EXTENSION_API_VERSION doc comment for why this merge moves past
     // 3.2.0/3.3.0/3.4.0/3.6.0/3.7.0/3.8.0/3.9.0/3.10.0/3.11.0/3.12.0/3.13.0/3.14.0/3.15.0/3.16.0/
-    // 3.17.0/3.18.0/3.19.0/3.20.0/3.21.0, which Story
+    // 3.17.0/3.18.0/3.19.0/3.20.0/3.21.0/3.22.0/3.22.1, which Story
     // 25.3/25.4/25.5/25.9/20.8/25.12/29.3/29.4/20.11/34.1/35.1/36.1/37.1/39.1/41.1/56.1/40.1/57.1/
-    // 58.1 respectively already claimed on main for different additive changes); '3.23.0' is the
-    // above-host, same-major escape-eligible version, and '4.0.0' is a different major (never
+    // 58.1/20.12 respectively already claimed on main for different additive changes); '3.24.0' is
+    // the above-host, same-major escape-eligible version, and '4.0.0' is a different major (never
     // escape-eligible). Kept one minor version above whatever EXTENSION_API_VERSION currently is
     // — see loader.test.ts's identical comment.
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.23.0' }), makeHooksFactory())
+      registerExtension(manifest({ apiVersion: '3.24.0' }), makeHooksFactory())
     ).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.23.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '3.24.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()
@@ -1483,6 +1483,146 @@ describe('registerExtension — Story 39.1 AC1/AC7/AC9 (oauthHandoff / redirectO
         manifest({
           capabilities: [OAUTH_HANDOFF_CAPABILITY],
           redirectOrigins: [PROVIDER_ORIGIN],
+        }),
+        hooksFactory
+      )
+    } catch (error) {
+      caught = error
+    }
+    expect((caught as ExtensionRegistrationError).reason).toBe(INVALID_MANIFEST_FIELD)
+  })
+})
+
+const PUBLIC_ROUTE_CAPABILITY = 'public-route' as const
+const REDEEM_TOKEN_TEMPLATE = '/redeem/:token'
+
+describe('registerExtension — Story 20.13 AC1-AC3 (publicRoute / anonymousRoutePaths)', () => {
+  const PUBLIC_ROUTE_HOOKS: ExtensionHooks = {
+    publicRoute: {
+      onPublicRouteRequest: vi.fn(async () => ({ outcome: 'response' as const, status: 200 })),
+    },
+  }
+
+  function publicRouteHooksFactory() {
+    return vi.fn(() => PUBLIC_ROUTE_HOOKS)
+  }
+
+  it('happy path: registers successfully with public-route + a non-empty anonymousRoutePaths allow-list', () => {
+    const hooksFactory = publicRouteHooksFactory()
+    const result = registerExtension(
+      manifest({
+        capabilities: [PUBLIC_ROUTE_CAPABILITY],
+        anonymousRoutePaths: [REDEEM_TOKEN_TEMPLATE, '/status'],
+      }),
+      hooksFactory
+    )
+    expect(result.manifest.anonymousRoutePaths).toEqual([REDEEM_TOKEN_TEMPLATE, '/status'])
+    expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('omitted entirely: parses fine, no anonymousRoutePaths on the returned manifest', () => {
+    const hooksFactory = makeHooksFactory()
+    const result = registerExtension(manifest(), hooksFactory)
+    expect(result.manifest.anonymousRoutePaths).toBeUndefined()
+  })
+
+  it('rejects "public-route" declared without an anonymousRoutePaths allow-list', () => {
+    expectRejection({ capabilities: [PUBLIC_ROUTE_CAPABILITY] }, INVALID_MANIFEST_FIELD)
+  })
+
+  it('rejects anonymousRoutePaths declared without "public-route" in capabilities', () => {
+    expectRejection(
+      {
+        capabilities: [AUDIT_EVENT_SOURCE_CAPABILITY],
+        anonymousRoutePaths: [REDEEM_TOKEN_TEMPLATE],
+      },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an empty anonymousRoutePaths array (distinct from omitted)', () => {
+    expectRejection(
+      { capabilities: [PUBLIC_ROUTE_CAPABILITY], anonymousRoutePaths: [] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects a template not starting with "/"', () => {
+    expectRejection(
+      { capabilities: [PUBLIC_ROUTE_CAPABILITY], anonymousRoutePaths: ['redeem/:token'] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects a template containing a traversal-charset-violating segment', () => {
+    expectRejection(
+      { capabilities: [PUBLIC_ROUTE_CAPABILITY], anonymousRoutePaths: ['/redeem/../secret'] },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('Design Decision B: rejects a template with more than one ":param" segment', () => {
+    expectRejection(
+      {
+        capabilities: [PUBLIC_ROUTE_CAPABILITY],
+        anonymousRoutePaths: ['/redeem/:token/:extra'],
+      },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('accepts a template with zero ":param" segments (a fully literal path)', () => {
+    const hooksFactory = publicRouteHooksFactory()
+    const result = registerExtension(
+      manifest({ capabilities: [PUBLIC_ROUTE_CAPABILITY], anonymousRoutePaths: ['/status'] }),
+      hooksFactory
+    )
+    expect(result.manifest.anonymousRoutePaths).toEqual(['/status'])
+  })
+
+  it('rejects duplicate path templates within one manifest', () => {
+    expectRejection(
+      {
+        capabilities: [PUBLIC_ROUTE_CAPABILITY],
+        anonymousRoutePaths: [REDEEM_TOKEN_TEMPLATE, REDEEM_TOKEN_TEMPLATE],
+      },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects an anonymousRoutePaths array longer than the 32-entry maximum', () => {
+    const tooMany = Array.from({ length: 33 }, (_, i) => `/redeem-${i}/:token`)
+    expectRejection(
+      { capabilities: [PUBLIC_ROUTE_CAPABILITY], anonymousRoutePaths: tooMany },
+      INVALID_MANIFEST_FIELD
+    )
+  })
+
+  it('rejects "public-route" declared but hooksFactory() returns no publicRoute hook', () => {
+    const hooksFactory = makeHooksFactory()
+    let caught: unknown
+    try {
+      registerExtension(
+        manifest({
+          capabilities: [PUBLIC_ROUTE_CAPABILITY],
+          anonymousRoutePaths: [REDEEM_TOKEN_TEMPLATE],
+        }),
+        hooksFactory
+      )
+    } catch (error) {
+      caught = error
+    }
+    expect((caught as ExtensionRegistrationError).reason).toBe(INVALID_MANIFEST_FIELD)
+  })
+
+  it('rejects "public-route" declared but hooksFactory() returns an incomplete publicRoute hook (not a function)', () => {
+    const hooksFactory = vi.fn(() => ({ publicRoute: {} }) as unknown as ExtensionHooks)
+    let caught: unknown
+    try {
+      registerExtension(
+        manifest({
+          capabilities: [PUBLIC_ROUTE_CAPABILITY],
+          anonymousRoutePaths: [REDEEM_TOKEN_TEMPLATE],
         }),
         hooksFactory
       )

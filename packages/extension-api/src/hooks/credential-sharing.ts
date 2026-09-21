@@ -220,9 +220,66 @@ export type CredentialSharingSupersedeSharesForRotationResult = {
   supersededShares: CredentialSharingShareRecord[]
 }
 
+// ---------------------------------------------------------------------------------------------
+// listSharesForCredential / listSharesForOrganization (AC8/AC9/AC10) — thin, out-of-request,
+// explicit-organizationId read/list methods, mirroring createExternalShare/revokeShare/
+// supersedeSharesForRotation's own out-of-request directionality split (never
+// findShareByToken/revealShare's org-resolves-from-token shape, since these two take an
+// org-scoped caller up front). No `sharedByUserId` field anywhere on either params type (Design
+// Decision D, Nestor-confirmed) — the facade has no PV-session identity to scope "my own shares
+// only" by, and always returns admin-equivalent results (every share in scope).
+// ---------------------------------------------------------------------------------------------
+
+/** AC8 — mirrors `apps/api`'s own `ListSharesForCredentialParams` minus `orgId` (renamed
+ * `organizationId` for facade consistency, matching `createExternalShare`'s own precedent) and
+ * minus `sharedByUserId` (Design Decision D, dropped entirely). */
+export type CredentialSharingListParams = {
+  organizationId: string
+  credentialId: string
+  status?: CredentialSharingShareStatus
+  limit?: number
+  offset?: number
+}
+
+/** AC9 — org-scoped only, no `credentialId` filter: "all outstanding shares this extension's org
+ * has created," not just one credential's. */
+export type CredentialSharingOrgListParams = {
+  organizationId: string
+  status?: CredentialSharingShareStatus
+  limit?: number
+  offset?: number
+}
+
+/** AC10 — a facade-native summary shape, never `apps/api`'s own `CredentialShareRow` (Drizzle-
+ * inferred) directly. Reuses `CredentialSharingShareRecord` verbatim — it already is the sibling,
+ * DB-internals-free mirror `listSharesForCredential`/`listSharesForOrganization`'s rows need
+ * (identical field shape to what `routes.ts`'s own `serializeShare()` returns minus `sharedBy`/
+ * `action`, which no existing `credentialSharing` result type exposes either), so this story adds
+ * a distinctly-named alias rather than a structurally-duplicate type. */
+export type CredentialShareSummary = CredentialSharingShareRecord
+
+/** AC8/AC9 — the same `items`+`total` pagination shape the existing `GET .../shares` route
+ * already returns (`routes.ts` line ~725). An unmatched/empty scope (e.g. a `credentialId`
+ * outside the caller's org) returns `{ status: 'ok', items: [], total: 0 }`, not a distinguishable
+ * not-found — the underlying query's own existing behavior, not invented by this story. */
+export type CredentialSharingListResult = {
+  status: 'ok'
+  items: CredentialShareSummary[]
+  total: number
+}
+
 /**
  * Story 20.12 — the real `HostServices.credentialSharing` field. See this module's doc comment
  * for the full directionality/error-class/attribution/rate-limiting rationale.
+ *
+ * Story 20.13 AC8/AC9/AC11 — `listSharesForCredential`/`listSharesForOrganization` are the sixth
+ * and seventh methods, added by this story. Both are out-of-request, explicit-`organizationId`
+ * read/list operations (same directionality as `createExternalShare`/`revokeShare`/
+ * `supersedeSharesForRotation`), thin closures over `apps/api`'s `service.ts` query pair (one
+ * pre-existing, one genuinely new — see `service.ts`'s own doc comments), routed through the same
+ * `callOutOfRequestMethod` per-extension in-flight wrapper every other method already uses (AC11)
+ * — no new rate-limit bucket, no machine-user audit attribution (Design Decision E: a read
+ * produces no attributed write, so it has no equivalent requirement).
  */
 export type CredentialSharingHost = {
   createExternalShare(
@@ -236,4 +293,8 @@ export type CredentialSharingHost = {
   supersedeSharesForRotation(
     params: CredentialSharingSupersedeSharesForRotationParams
   ): Promise<CredentialSharingSupersedeSharesForRotationResult>
+  listSharesForCredential(params: CredentialSharingListParams): Promise<CredentialSharingListResult>
+  listSharesForOrganization(
+    params: CredentialSharingOrgListParams
+  ): Promise<CredentialSharingListResult>
 }

@@ -1,8 +1,10 @@
 import semver from 'semver'
 import { ExtensionRegistrationError } from './errors.js'
 import {
+  ANONYMOUS_ROUTE_PATH_PATTERN,
   EXTENSION_API_VERSION,
   HOST_SUPPORTED_EXTENSION_API_RANGE,
+  MAX_ANONYMOUS_ROUTE_PATHS,
   MAX_MODULE_ACTIONS,
   MAX_MODULE_DATA_ROUTES,
   MAX_NAV_ITEM_LABEL_LENGTH,
@@ -31,6 +33,7 @@ import type { ModuleAction } from './hooks/module-action.js'
 import type { CapabilityGate } from './hooks/capability-gate.js'
 import type { DeliveryProvider } from './hooks/delivery-provider.js'
 import type { OAuthHandoffHooks } from './hooks/oauth-handoff.js'
+import type { PublicRouteHooks } from './hooks/public-route.js'
 import type { ScheduledTaskHooks } from './hooks/scheduled-task.js'
 import type { HostServices } from './host-services.js'
 import type { ExtensionDbScopeEntry, ExtensionRuntimeContext } from './db-access.js'
@@ -107,6 +110,15 @@ export type ExtensionHooks = {
    * when the manifest declares `scheduledTasks`.
    */
   scheduledTask?: ScheduledTaskHooks
+  /**
+   * Story 20.13 AC1/AC2 — PV answers/dispatches, this extension supplies data:
+   * `onPublicRouteRequest` never touches a real HTTP request/response itself, it only returns
+   * `{outcome: 'response', ...}` (or a plain `ActionResult`, mirroring `oauthHandoff`'s own AC6
+   * precedent) for PV's own route layer to translate. Only legal (checked by
+   * `hasCallablePublicRouteHook()`) when the manifest declares `'public-route'` in
+   * `capabilities[]` and a non-empty `anonymousRoutePaths` allow-list (AC3).
+   */
+  publicRoute?: PublicRouteHooks
 }
 
 /** Default `HostServices` used when a caller (typically a test) invokes `registerExtension()`
@@ -284,6 +296,18 @@ const DEFAULT_HOST_SERVICES: HostServices = {
           'registerExtension() was called without a real HostServices — credentialSharing.supersedeSharesForRotation is unavailable'
         )
       ),
+    listSharesForCredential: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — credentialSharing.listSharesForCredential is unavailable'
+        )
+      ),
+    listSharesForOrganization: () =>
+      Promise.reject(
+        new Error(
+          'registerExtension() was called without a real HostServices — credentialSharing.listSharesForOrganization is unavailable'
+        )
+      ),
   },
 }
 
@@ -328,6 +352,7 @@ const KNOWN_MANIFEST_KEYS = [
   'moduleDataRoutes',
   'redirectOrigins',
   'scheduledTasks',
+  'anonymousRoutePaths',
 ]
 
 const INVALID_MANIFEST_FIELD = 'invalid-manifest-field'
@@ -823,6 +848,93 @@ function validateScheduledTasksShape(
   }
 }
 
+/**
+ * Story 20.13 AC3 (Design Decision B) — validates one `anonymousRoutePaths` entry's own shape
+ * (charset, at most one `:param` segment) and tracks uniqueness across the array, as a side
+ * effect adding this entry to `seen`. Extracted from `validateAnonymousRoutePathsShape()` purely
+ * to keep that function's cyclomatic complexity within this repo's lint budget, mirroring
+ * `validateSingleRedirectOrigin`'s identical extraction precedent.
+ */
+function validateSingleAnonymousRoutePath(path: unknown, seen: Set<string>): void {
+  if (typeof path !== 'string' || !ANONYMOUS_ROUTE_PATH_PATTERN.test(path)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "anonymousRoutePaths" contains an invalid path template ${JSON.stringify(path)} (expected to match ${ANONYMOUS_ROUTE_PATH_PATTERN})`
+    )
+  }
+
+  // Design Decision B — at most one `:param` segment per template.
+  const paramSegmentCount = path.split('/').filter((segment) => segment.startsWith(':')).length
+  if (paramSegmentCount > 1) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "anonymousRoutePaths" entry "${path}" declares ${paramSegmentCount} ":param" segments, exceeding the maximum of 1 (Design Decision B)`
+    )
+  }
+
+  if (seen.has(path)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "anonymousRoutePaths" contains duplicate path template "${path}"`
+    )
+  }
+  seen.add(path)
+}
+
+/**
+ * Story 20.13 AC3 — validates the optional `anonymousRoutePaths` field's shape: when the manifest
+ * declares the `'public-route'` capability, this field is REQUIRED (unlike every other optional
+ * array field in this module) and must be a non-empty array of unique path templates, each with at
+ * most one `:param` segment, capped at `MAX_ANONYMOUS_ROUTE_PATHS` entries — mirrors
+ * `validateRedirectOriginsShape`'s reverse-direction capability gate exactly.
+ */
+function validateAnonymousRoutePathsShape(manifest: ExtensionManifest): void {
+  const declaresCapability = manifest.capabilities.includes('public-route')
+
+  if (manifest.anonymousRoutePaths === undefined) {
+    if (declaresCapability) {
+      throw new ExtensionRegistrationError(
+        INVALID_MANIFEST_FIELD,
+        'Extension manifest declares "public-route" in capabilities[] but does not declare an "anonymousRoutePaths" allow-list (AC3)'
+      )
+    }
+    return
+  }
+
+  if (!declaresCapability) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest declares "anonymousRoutePaths" but does not declare "public-route" in capabilities[]'
+    )
+  }
+
+  if (!Array.isArray(manifest.anonymousRoutePaths)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "anonymousRoutePaths" must be an array, got ${JSON.stringify(manifest.anonymousRoutePaths)}`
+    )
+  }
+
+  if (manifest.anonymousRoutePaths.length === 0) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest field "anonymousRoutePaths" must not be an empty array when "public-route" is declared (AC3)'
+    )
+  }
+
+  if (manifest.anonymousRoutePaths.length > MAX_ANONYMOUS_ROUTE_PATHS) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "anonymousRoutePaths" declares ${manifest.anonymousRoutePaths.length} entries, exceeding the maximum of ${MAX_ANONYMOUS_ROUTE_PATHS}`
+    )
+  }
+
+  const seen = new Set<string>()
+  for (const path of manifest.anonymousRoutePaths) {
+    validateSingleAnonymousRoutePath(path, seen)
+  }
+}
+
 const NAV_ITEM_ICON_TOKEN_SET = new Set<string>(NAV_ITEM_ICON_TOKENS)
 
 type NavItemCandidate = {
@@ -1131,6 +1243,19 @@ function findMissingModuleDataRoute(
  * `oauthHandoff` hook (both methods present) is rejected — a load-time registration error, not a
  * silent per-request degradation. Mirrors `hasCallableModuleActionHook` exactly.
  */
+/**
+ * Story 20.13 AC1/AC2 — a manifest declaring `'public-route'` (implying `anonymousRoutePaths` is
+ * also required by `validateAnonymousRoutePathsShape`) whose `hooksFactory()` result has no
+ * callable `publicRoute.onPublicRouteRequest` hook is rejected — a load-time registration error,
+ * not a silent per-request degradation. Mirrors `hasCallableOAuthHandoffHook` exactly.
+ */
+function hasCallablePublicRouteHook(manifest: ExtensionManifest, hooks: ExtensionHooks): boolean {
+  if (!manifest.capabilities.includes('public-route')) return true
+  return (
+    hooks.publicRoute !== undefined && typeof hooks.publicRoute.onPublicRouteRequest === 'function'
+  )
+}
+
 function hasCallableOAuthHandoffHook(manifest: ExtensionManifest, hooks: ExtensionHooks): boolean {
   if (!manifest.capabilities.includes('oauth-handoff')) return true
   return (
@@ -1209,6 +1334,20 @@ function assertCallableHooksAfterFactory(manifest: ExtensionManifest, hooks: Ext
     )
   }
 
+  assertLateAdditionCallableHooksAfterFactory(manifest, hooks)
+}
+
+/**
+ * Story 20.13 — the tail end of `assertCallableHooksAfterFactory`'s four-plus-N independent
+ * gates, extracted purely to keep that function's own cyclomatic complexity within this repo's
+ * lint budget (the same rationale `assertCallableHooksAfterFactory`'s own doc comment already
+ * states for grouping these checks at all). Behaviorally these are still independent gates,
+ * checked in the same order they were checked inline before this extraction.
+ */
+function assertLateAdditionCallableHooksAfterFactory(
+  manifest: ExtensionManifest,
+  hooks: ExtensionHooks
+): void {
   // Story 39.1 AC7 — same class of bug hasCallableModuleActionHook already catches above: a
   // manifest promising the oauth-handoff capability with nothing behind it. Runs after
   // hooksFactory() per this function's existing lazy-hooksFactory convention.
@@ -1216,6 +1355,16 @@ function assertCallableHooksAfterFactory(manifest: ExtensionManifest, hooks: Ext
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
       'Extension manifest declares "oauth-handoff" but hooksFactory() did not return a callable oauthHandoff hook'
+    )
+  }
+
+  // Story 20.13 AC1/AC2 — same class of bug hasCallableOAuthHandoffHook already catches above: a
+  // manifest promising a "public-route" anonymous route mechanism with nothing behind it. Runs
+  // after hooksFactory() per this function's existing lazy-hooksFactory convention.
+  if (!hasCallablePublicRouteHook(manifest, hooks)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest declares "public-route" but hooksFactory() did not return a callable publicRoute hook'
     )
   }
 
@@ -1277,6 +1426,7 @@ export function registerExtension(
   validateModuleDataRoutesShape(manifest)
   validateRedirectOriginsShape(manifest)
   validateScheduledTasksShape(manifest, options)
+  validateAnonymousRoutePathsShape(manifest)
 
   if (!REVERSE_DNS_NAME_PATTERN.test(manifest.name)) {
     throw new ExtensionRegistrationError(
@@ -1305,6 +1455,7 @@ export function registerExtension(
       moduleDataRoutes: manifest.moduleDataRoutes,
       redirectOrigins: manifest.redirectOrigins,
       scheduledTasks: manifest.scheduledTasks,
+      anonymousRoutePaths: manifest.anonymousRoutePaths,
     },
     hooks,
   }

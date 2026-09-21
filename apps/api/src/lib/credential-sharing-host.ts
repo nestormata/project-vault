@@ -11,6 +11,10 @@ import {
 } from '@project-vault/extension-api'
 import type { CredentialShareRow } from '../modules/credential-shares/service.js'
 import {
+  countSharesForCredential,
+  countSharesForOrganization,
+  listSharesForCredential as listSharesForCredentialService,
+  listSharesForOrganization as listSharesForOrganizationService,
   revokeShare as revokeShareService,
   shareRecipientAndTimingFields,
   supersedeOutstandingSharesForRotation as supersedeOutstandingSharesForRotationService,
@@ -601,6 +605,54 @@ export function buildCredentialSharingHost(
             }
 
             return { supersededShares: superseded.map(serializeShare) }
+          })
+      )
+    },
+
+    // Story 20.13 AC8/AC9/AC11 — thin closures over `service.ts`'s list/count query pairs, routed
+    // through the same `callOutOfRequestMethod` per-extension in-flight wrapper every other method
+    // uses. No machine-user attribution (Design Decision E — a read produces no attributed write).
+    async listSharesForCredential(params) {
+      return callOutOfRequestMethod(
+        'listSharesForCredential',
+        params.organizationId,
+        hostContext,
+        () =>
+          withOrg(params.organizationId, async (tx) => {
+            const listParams = {
+              orgId: params.organizationId,
+              credentialId: params.credentialId,
+              status: params.status,
+              limit: params.limit,
+              offset: params.offset,
+            }
+            const [items, total] = await Promise.all([
+              listSharesForCredentialService(tx, listParams),
+              countSharesForCredential(tx, listParams),
+            ])
+            return { status: 'ok' as const, items: items.map(serializeShare), total }
+          })
+      )
+    },
+
+    async listSharesForOrganization(params) {
+      return callOutOfRequestMethod(
+        'listSharesForOrganization',
+        params.organizationId,
+        hostContext,
+        () =>
+          withOrg(params.organizationId, async (tx) => {
+            const listParams = {
+              orgId: params.organizationId,
+              status: params.status,
+              limit: params.limit,
+              offset: params.offset,
+            }
+            const [items, total] = await Promise.all([
+              listSharesForOrganizationService(tx, listParams),
+              countSharesForOrganization(tx, listParams),
+            ])
+            return { status: 'ok' as const, items: items.map(serializeShare), total }
           })
       )
     },

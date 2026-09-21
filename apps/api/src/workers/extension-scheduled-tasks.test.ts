@@ -77,6 +77,8 @@ function fakeHostServices(overrides: Partial<HostServices> = {}): HostServices {
       revealShare: unavailable('credentialSharing.revealShare'),
       revokeShare: unavailable('credentialSharing.revokeShare'),
       supersedeSharesForRotation: unavailable('credentialSharing.supersedeSharesForRotation'),
+      listSharesForCredential: unavailable('credentialSharing.listSharesForCredential'),
+      listSharesForOrganization: unavailable('credentialSharing.listSharesForOrganization'),
     },
     ...overrides,
   }

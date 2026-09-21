@@ -2,6 +2,52 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.23.0 — 2026-09-21
+
+contract-hash: sha256:de26486d289383f61b8e8fcd7e99ec4485d534fe80dc0bf51e95d30847bf9372
+
+### Added
+
+- Added the `publicRoute` extension-api mechanism (Story 20.13 Part A, AC1-AC7) — a new, general-
+  purpose `ExtensionHooks.publicRoute?: PublicRouteHooks` field (never a `HostServices` field,
+  mirroring `oauthHandoff`'s own "PV owns the actual HTTP request/response, the extension supplies
+  data only" directionality), gated by a new `'public-route'` `ExtensionCapability` literal and a
+  new, required-when-declared `ExtensionManifest.anonymousRoutePaths: string[]` allow-list (at most
+  one `:param` segment per template, validated by `registerExtension()` the same way
+  `redirectOrigins` is). `PublicRouteHooks.onPublicRouteRequest(request: PublicRouteRequest):
+Promise<PublicRouteResult | ActionResult>` receives only plain, serializable GET-request data
+  (method, matched path template, path params, query params — no request body in this v1) and
+  returns either a structured `PublicRouteResult` (status/headers/body — `Set-Cookie` is always
+  stripped, no redirect outcome in v1) or the existing `ActionResult` union reused unchanged. PV's
+  own new route layer (`apps/api/src/modules/extensions/public-route-routes.ts`) registers each
+  declared `anonymousRoutePaths` template as a real Fastify route at extension-load time (reusing
+  Fastify's own `find-my-way` router — literal-beats-`:param` precedence included — rather than a
+  bespoke matcher), re-checks the capability/hook/allow-list membership fresh on every request
+  (never cached from registration time), and carries its own IP-scoped rate limit per declared path
+  template. Generalizes `oauthHandoff.onOAuthCallback`'s existing shape into an arbitrary-path,
+  arbitrary-token anonymous route mechanism for use cases like an external credential-share
+  redemption link, without PV growing bespoke routes per extension.
+- Added `HostServices.credentialSharing.listSharesForCredential(params):
+Promise<CredentialSharingListResult>` and `.listSharesForOrganization(params):
+Promise<CredentialSharingListResult>` (Story 20.13 Part B, AC8-AC14) — the sixth and seventh
+  `CredentialSharingHost` methods, thin out-of-request closures (same `organizationId`-explicit
+  directionality as `createExternalShare`/`revokeShare`/`supersedeSharesForRotation`, same
+  `callOutOfRequestMethod` per-extension in-flight wrapper, no new rate-limit bucket, no
+  machine-user attribution since a read produces no attributed write) over `apps/api`'s
+  `credential-shares/service.ts` — `listSharesForCredential` over the already-shipped
+  `listSharesForCredential`/`countSharesForCredential` pair (Story 17.3), `listSharesForOrganization`
+  over a genuinely new, org-scoped-only `listSharesForOrganization`/`countSharesForOrganization`
+  query pair added by this story. Both return the new sibling types `CredentialSharingListResult`/
+  `CredentialShareSummary` (never `apps/api`'s own Drizzle-derived `CredentialShareRow` directly).
+  `listSharesForCredential`'s params drop `sharedByUserId` entirely — the facade has no PV-session
+  identity to scope "my own shares only" by and always returns admin-equivalent results.
+
+Per `docs/extension-api-versioning-policy.md` Row 11 (a new hook type on `ExtensionHooks`, a new
+`ExtensionCapability` literal, a new manifest field, and new `HostServices` methods are all purely
+additive) — this is a MINOR bump, consistent with 3.22.0's own precedent for a `HostServices` field
+addition. Both parts of Story 20.13 ship in one PR, so this single bump covers AC7 and AC14
+together (not double-bumped).
+
 ## 3.22.1 — 2026-09-20
 
 contract-hash: sha256:1d0a09c98bf7844295a5fb192891a9ba090c82f1d48a4c87fde242d30f7a9ea8
@@ -16,7 +62,7 @@ contract-hash: sha256:1d0a09c98bf7844295a5fb192891a9ba090c82f1d48a4c87fde242d30f
   that `createServiceEndpoint` (Story 41.1) already throws for the identical class of mistake — a
   malformed identity field (a bug in the calling extension) now fails closed with a clear,
   `instanceof`-checkable error instead of an unclassified Postgres `22P02 invalid input syntax for
-  type uuid` failure. `createServiceEndpoint`'s own existing check is unchanged in behavior, only
+type uuid` failure. `createServiceEndpoint`'s own existing check is unchanged in behavior, only
   refactored to share the same underlying `validateIdentityUuids`/`validateIdentityUuidArray`
   helpers (internal to `apps/api`, not part of this package's exported surface). No exported type,
   method signature, or public shape changes (Story 41.2, closing Epic 41 retro Finding 2).

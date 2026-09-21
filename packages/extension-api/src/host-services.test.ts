@@ -76,6 +76,8 @@ const credentialSharingFixture: CredentialSharingHost = {
   revealShare: async () => ({ status: 'not_found' }),
   revokeShare: async () => ({ status: 'not_found' }),
   supersedeSharesForRotation: async () => ({ supersededShares: [] }),
+  listSharesForCredential: async () => ({ status: 'ok', items: [], total: 0 }),
+  listSharesForOrganization: async () => ({ status: 'ok', items: [], total: 0 }),
 }
 
 describe('HostServices — Story 20.12 AC widening to include credentialSharing', () => {

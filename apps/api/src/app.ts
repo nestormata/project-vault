@@ -60,6 +60,7 @@ import { extensionStatusRoutes } from './extensions/status-routes.js'
 import { extensionPanelRoutes } from './extensions/panel-routes.js'
 import { moduleDataRoutes } from './extensions/module-data-routes.js'
 import { oauthHandoffRoutes } from './modules/extensions/oauth-handoff-routes.js'
+import { publicRouteRoutes } from './modules/extensions/public-route-routes.js'
 import { loadExtension, getExtensionStatus } from './extensions/loader.js'
 import { themingRoutes } from './modules/theming/routes.js'
 import { themeSelectionRoutes } from './modules/theming/selection-routes.js'
@@ -657,6 +658,14 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // so the manifest must already be loaded before the routes can be registered — see
   // module-data-routes.ts's own doc comment for the full rationale.
   await fastify.register(moduleDataRoutes, { prefix: '/api/v1/extensions/data' })
+
+  // Story 20.13 AC1/AC3 — same load-bearing ordering fact as `moduleDataRoutes` immediately
+  // above: this mechanism's route EXISTENCE (which anonymous paths respond at all) is
+  // manifest-declared (`anonymousRoutePaths`), so the manifest must already be loaded before
+  // these routes can be registered. Mounted at PV's own fixed root (no shared prefix with any
+  // other extension mechanism) since each declared template is itself a full path, not a
+  // sub-path under a PV-chosen mount point.
+  await fastify.register(publicRouteRoutes)
 
   // Story 16.1 AC-1/Task 5: startup automatic reload pass for VAULT_THEMES_DIR — identical code
   // path to the manual POST /admin/themes/reload endpoint, just invoked here so a fresh
