@@ -552,7 +552,7 @@ function findCanonicalPackageDeclaringPaths(root: string): string[] {
     if (pkg === undefined || !packageJsonDeclaresCanonicalPackage(pkg)) continue
 
     const relative = packageJsonPath.startsWith(root)
-      ? packageJsonPath.slice(root.length).replace(/\\/g, '/')
+      ? packageJsonPath.slice(root.length).replaceAll('\\', '/')
       : packageJsonPath
     paths.push(relative.startsWith('/') ? relative : `/${relative}`)
   }
@@ -631,9 +631,11 @@ export function scanCryptoAdjacentPins(rootDir = process.cwd()): CryptoAdjacentP
     }
   }
 
-  violations.push(...scanWorkspaceOverrides(root))
-  violations.push(...scanDependabotCrossCheck(root))
-  violations.push(...scanCodeownersCoverage(root))
+  violations.push(
+    ...scanWorkspaceOverrides(root),
+    ...scanDependabotCrossCheck(root),
+    ...scanCodeownersCoverage(root)
+  )
 
   return { violations }
 }
