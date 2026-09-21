@@ -188,6 +188,7 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-alert-pending-epic3
 	pnpm check-followup-review-gate
 	pnpm check-epic-gate
+	pnpm check-epic-retro-freshness
 	pnpm check-implementation-artifacts-symlinks
 	$(MAKE) check-form-guidance
 	pnpm check-public-safety -- --base main --strict

@@ -27,6 +27,7 @@ const GUARDS = {
   'check-story-review-deferrals': 'tsx scripts/check-story-review-deferrals.ts',
   'check-alert-pending-epic3': 'tsx scripts/check-alert-pending-epic3.ts',
   'check-followup-review-gate': 'tsx scripts/check-followup-review-gate.ts',
+  'check-epic-retro-freshness': 'tsx scripts/check-epic-retro-freshness.ts',
   'check-post-merge-status-drift': 'tsx scripts/check-post-merge-status-drift.ts',
 } as const
 
