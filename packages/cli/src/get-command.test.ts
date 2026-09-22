@@ -254,6 +254,37 @@ describe('runGet — AC-5 documented error cases', () => {
     expect(combined).not.toMatch(/\x1b/)
   })
 
+  it('sanitizes control characters embedded in error.message itself (not just safeName) for the unreachable/cache codes', async () => {
+    const streams = makeStreams(false)
+    const maliciousName = 'FOO\u001b[2J\u001b[HPWNED'
+    // packages/agent embeds the raw, unsanitized name directly into error.message for these
+    // codes (see packages/agent/src/errors.ts) — this must be sanitized independently of safeName.
+    const error = new VaultAgentError(
+      'vault_unreachable',
+      `Vault is unreachable and no cached value exists for "${maliciousName}".`
+    )
+    const getSecret = vi.fn().mockRejectedValue(error)
+    const createVaultAgent = vi.fn().mockReturnValue({ getSecret })
+
+    await runGet({ name: maliciousName, stdout: false }, validConfig, streams, { createVaultAgent })
+
+    const combined = streams.stderrChunks.join('')
+    expect(combined).not.toMatch(/\x1b/)
+  })
+
+  it('sanitizes control characters embedded in error.message for the generic fallback branch', async () => {
+    const streams = makeStreams(false)
+    const maliciousMessage = 'Vault request failed\u001b[2J\u001b[Hwith HTTP 500'
+    const error = new VaultAgentError('vault_request_failed', maliciousMessage)
+    const getSecret = vi.fn().mockRejectedValue(error)
+    const createVaultAgent = vi.fn().mockReturnValue({ getSecret })
+
+    await runGet({ name: 'FOO', stdout: false }, validConfig, streams, { createVaultAgent })
+
+    const combined = streams.stderrChunks.join('')
+    expect(combined).not.toMatch(/\x1b/)
+  })
+
   it('a fetch fixture whose error body contains a sentinel string never lets that sentinel reach CLI output', async () => {
     const streams = makeStreams(false)
     const sentinel = 'super-secret-should-never-leak'

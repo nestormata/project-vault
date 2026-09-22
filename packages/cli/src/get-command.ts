@@ -58,12 +58,16 @@ const MESSAGE_BUILDERS: ReadonlyMap<string, MessageBuilder> = new Map<string, Me
 ])
 
 function messageForAgentError(error: VaultAgentError, safeName: string): string {
+  // `error.message` (from packages/agent) can itself embed the raw, unsanitized credential name
+  // for several codes (see packages/agent/src/errors.ts) — sanitize it too, not just `safeName`,
+  // so the terminal-escape-injection hardening (AC-5) isn't bypassed via this second echo path.
+  const safeErrorMessage = sanitizeForTerminal(error.message)
   if (UNREACHABLE_CODES.has(error.code)) {
-    return `Vault is unreachable and no usable cached value exists for '${safeName}': ${error.message}`
+    return `Vault is unreachable and no usable cached value exists for '${safeName}': ${safeErrorMessage}`
   }
   const build = MESSAGE_BUILDERS.get(error.code)
   if (build) return build(safeName)
-  return `Failed to retrieve secret '${safeName}': ${error.message}`
+  return `Failed to retrieve secret '${safeName}': ${safeErrorMessage}`
 }
 
 /**
@@ -137,7 +141,7 @@ export async function runGet(
     // AC-6 edge case — an unexpected error path must never have the secret value in scope; it
     // never was in scope here, since this catch only runs when getSecret() itself rejected.
     const message = error instanceof Error ? error.message : String(error)
-    streams.stderr.write(`Unexpected error: ${message}\n`)
+    streams.stderr.write(`Unexpected error: ${sanitizeForTerminal(message)}\n`)
     return EXIT_CODES.unexpected
   }
 }
