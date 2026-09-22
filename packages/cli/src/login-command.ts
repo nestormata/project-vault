@@ -1,6 +1,7 @@
 import { EXIT_CODES } from './exit-codes.js'
 import { isBlank } from './validate.js'
 import { sanitizeForTerminal } from './sanitize.js'
+import { warnIfInsecureBaseUrl } from './config.js'
 import { writeSession, type EnvLike, type SessionData } from './session-store.js'
 import { PromptInterruptedError, type PromptFn } from './prompt.js'
 
@@ -295,6 +296,11 @@ export async function runLogin(
   streams: LoginStreams,
   deps: LoginDeps
 ): Promise<number> {
+  // AC-1/security hardening (matches get-command.ts's identical warning for the machine-user
+  // path) — a plaintext VAULT_URL would send the user's password, and then the access/refresh
+  // bearer-token pair, over the wire unencrypted. Defensive, non-blocking warning only.
+  warnIfInsecureBaseUrl(config.baseUrl, (chunk) => streams.stderr.write(chunk))
+
   for (let attempt = 0; attempt < MAX_RESTARTS; attempt += 1) {
     const credentials = await promptEmailPassword(streams, deps)
     if (typeof credentials === 'number') return credentials
@@ -310,5 +316,10 @@ export async function runLogin(
     if (outcome === 'restart') continue
     return outcome
   }
-  return unexpectedError(streams, new Error('Too many MFA-token restarts'))
+  // The pending-MFA token kept expiring/getting rejected across every restart attempt — this is
+  // the same "pending MFA session is dead" condition mfa_token_expired signals mid-flow, just
+  // repeated past MAX_RESTARTS, so it gets that condition's own distinguishable exit code rather
+  // than the generic `unexpected` one.
+  streams.stderr.write('Too many failed sign-in attempts. Please try `pvault login` again.\n')
+  return EXIT_CODES.mfaTokenExpired
 }
