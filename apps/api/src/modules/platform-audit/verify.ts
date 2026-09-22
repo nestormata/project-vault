@@ -117,7 +117,10 @@ async function evaluatePlatformAuditRow(
       actionType: row.actionType,
       targetOrgId: row.targetOrgId ?? undefined,
       targetUserId: row.targetUserId ?? undefined,
-      payload: row.payload,
+      // row.payload is `unknown` (jsonb column) — a narrow, single-field assertion to the same
+      // Record<string, unknown> shape the write path always inserted, not a blanket cast forcing
+      // the whole `fields` argument through the new type.
+      payload: row.payload as Record<string, unknown>,
       keyVersion: row.keyVersion,
       previousEntryHmac: row.previousEntryHmac ?? GENESIS_SENTINEL,
     },

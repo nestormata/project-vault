@@ -212,7 +212,10 @@ async function evaluateAuditRow(
       eventType: row.eventType,
       resourceId: row.resourceId ?? undefined,
       resourceType: row.resourceType ?? undefined,
-      payload: row.payload,
+      // row.payload is `unknown` (jsonb column) — a narrow, single-field assertion to the same
+      // Record<string, unknown> shape the write path always inserted, not a blanket cast forcing
+      // the whole `fields` argument through AC-1's new type.
+      payload: row.payload as Record<string, unknown>,
       keyVersion: row.keyVersion,
       // Story 1.25 AC-2: reproduces exactly what the write path fed into the digest — the row's
       // own stored previousEntryHmac, or the GENESIS sentinel when that column is null.

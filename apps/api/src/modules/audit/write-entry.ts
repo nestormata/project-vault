@@ -24,8 +24,55 @@ export function sortKeys(value: unknown): JsonLike {
   )
 }
 
+// ---------------------------------------------------------------------------------------------
+// Story 1.26 (CodeQL js/insufficient-password-hash false positive, alert #10): `computeAuditHmac`
+// used to accept a bare `fields: Record<string, unknown>`, which made CodeQL's dataflow treat the
+// entire property bag of ANY object shaped like `fields` as flowing into this HMAC sink — so an
+// unrelated `PASSWORD` test fixture threaded through a shared helper got over-approximated as
+// "flowing into a password hash" alongside 27 other unrelated sources, all pointing at this one
+// sink. Replacing the generic bag with two closed, named interfaces (the two real shapes that
+// actually reach this function today — see the grep-verified full call-site inventory in Story
+// 1.26's own artifact) narrows CodeQL's taint-tracking granularity without changing behavior at
+// all: `sortKeys`/`JSON.stringify`/`createHmac` below are byte-for-byte unchanged.
+//
+// `payload: Record<string, unknown>` deliberately stays generic on both shapes below — different
+// event types carry genuinely varied payload shapes, and narrowing that further is out of scope.
+// ---------------------------------------------------------------------------------------------
+
+/** The `audit_log_entries` row shape — the majority of `computeAuditHmac` call sites (human,
+ * machine, extension, system-actor writes, plus `verify.ts`'s recomputation). `previousEntryHmac`
+ * is `string`, not `string | null`: every real call site already coerces the DB's nullable
+ * previous-hmac read via `?? GENESIS_SENTINEL` before it ever reaches this function (see
+ * `human-entry.ts`), so a nullable field type here would be wider than the actual contract. */
+export interface AuditLogEntryHmacFields {
+  orgId: string
+  actorTokenId: string | null
+  actorType: string
+  eventType: string
+  resourceId?: string
+  resourceType?: string
+  payload: Record<string, unknown>
+  keyVersion: number
+  previousEntryHmac: string
+}
+
+/** The `platform_security_events` row shape — the pre-org-resolution rejection paths
+ * (`auth/service.ts`'s `insertPlatformSecurityEvent`, `auth/sso-routes.ts`'s
+ * `writePlatformSsoRejected`, `auth/handoff-security-events.ts`'s `writeHandoffSecurityEvent`).
+ * This table has no `org_id`/`actorTokenId`/chain-linkage columns at all — genuinely a different
+ * shape from `AuditLogEntryHmacFields`, not an approximation of it. */
+export interface PlatformSecurityEventHmacFields {
+  eventType: string
+  subjectHash: string | null
+  emailDomain: string | null
+  payload: Record<string, unknown>
+  keyVersion: number
+}
+
+export type AuditHmacFields = AuditLogEntryHmacFields | PlatformSecurityEventHmacFields
+
 /** Canonical JSON: sorted keys, no whitespace; matches the Story 8.1 audit HMAC contract. */
-export function computeAuditHmac(fields: Record<string, unknown>, auditKey: Buffer): string {
+export function computeAuditHmac(fields: AuditHmacFields, auditKey: Buffer): string {
   const canonical = JSON.stringify(sortKeys(fields))
   return createHmac('sha256', auditKey).update(canonical).digest('hex')
 }
