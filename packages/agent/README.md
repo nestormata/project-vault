@@ -3,14 +3,16 @@
 Machine-user authentication and programmatic secret retrieval for
 [Project Vault](https://github.com/nestormata/project-vault).
 
-> **Bundled, not published.** This package is `"private": true` and is not on npm. No workflow
-> publishes it, and there is no supported way to `npm install` it. It exists as an internal
-> library that [`@project-vault/vault-action`](../vault-action/README.md) bundles verbatim into
-> its `dist/index.js`. Consume it through that action, or call the machine HTTP API directly as
-> documented in [`docs/machine-users.md`](../../docs/machine-users.md).
+> **Not published, but not single-consumer either.** This package is `"private": true` and is not
+> on npm. No workflow publishes it, and there is no supported way to `npm install` it. It is an
+> internal library consumed as a plain pnpm workspace dependency (`workspace:*`) by
+> [`@project-vault/vault-action`](../vault-action/README.md) (which bundles it verbatim into its
+> `dist/index.js`) **and** [`@project-vault/cli`](../cli/README.md) (which depends on it directly,
+> unbundled). Consume it through one of those two packages, or call the machine HTTP API directly
+> as documented in [`docs/machine-users.md`](../../docs/machine-users.md).
 >
-> If you are looking for a documented, versioned integration surface, that is the HTTP API and
-> the GitHub Action — not this package.
+> If you are looking for a documented, versioned integration surface, that is the HTTP API, the
+> GitHub Action, and the `pvault` CLI — not this package directly.
 
 It wraps the two-step machine-user flow (exchange a `pk_` API key for a short-lived JWT, then
 fetch a credential value with that JWT) behind a single `getSecret(name)` call, and adds an
@@ -36,19 +38,19 @@ triggers exactly one transparent re-exchange and retry.
 
 ## Options
 
-| Option | Type | Required | Default | Meaning |
-|---|---|---|---|---|
-| `apiKey` | `string` | yes | — | The machine user's `pk_...` key. Also the input to the cache-encryption key derivation. |
-| `baseUrl` | `string` | yes | — | Project Vault base URL, with no trailing `/api/v1`. |
-| `projectId` | `string` | yes | — | The project UUID the API key is scoped to. Must match, or the server answers `403`. |
-| `cachePath` | `string` | no | `$VAULT_CACHE_PATH`, else `~/.project-vault/cache.json` | Where the offline cache file lives. |
-| `fallbackThreshold` | `number` | no | `$VAULT_FALLBACK_THRESHOLD`, else `3` | Consecutive network failures, within a rolling 30-second window, before the agent switches to cache-first mode. |
+| Option              | Type     | Required | Default                                                 | Meaning                                                                                                         |
+| ------------------- | -------- | -------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `apiKey`            | `string` | yes      | —                                                       | The machine user's `pk_...` key. Also the input to the cache-encryption key derivation.                         |
+| `baseUrl`           | `string` | yes      | —                                                       | Project Vault base URL, with no trailing `/api/v1`.                                                             |
+| `projectId`         | `string` | yes      | —                                                       | The project UUID the API key is scoped to. Must match, or the server answers `403`.                             |
+| `cachePath`         | `string` | no       | `$VAULT_CACHE_PATH`, else `~/.project-vault/cache.json` | Where the offline cache file lives.                                                                             |
+| `fallbackThreshold` | `number` | no       | `$VAULT_FALLBACK_THRESHOLD`, else `3`                   | Consecutive network failures, within a rolling 30-second window, before the agent switches to cache-first mode. |
 
 ### Environment variables
 
-| Variable | Effect |
-|---|---|
-| `VAULT_CACHE_PATH` | Overrides the cache file location. Consulted only when `cachePath` is not passed explicitly. |
+| Variable                   | Effect                                                                                              |
+| -------------------------- | --------------------------------------------------------------------------------------------------- |
+| `VAULT_CACHE_PATH`         | Overrides the cache file location. Consulted only when `cachePath` is not passed explicitly.        |
 | `VAULT_FALLBACK_THRESHOLD` | Overrides the fallback threshold. Consulted only when `fallbackThreshold` is not passed explicitly. |
 
 An explicit option always wins over the environment variable.
@@ -97,19 +99,19 @@ never surfaces to `getSecret()`'s caller.
 Every error thrown by this package extends `VaultAgentError` and carries a stable `.code`.
 Discriminate on `.code` rather than `instanceof` where the package may be duplicated in a bundle.
 
-| Class | `.code` | Raised when |
-|---|---|---|
-| `VaultAgentError` | `token_exchange_failed` | Step 1 answered non-`2xx` — bad, revoked, or expired API key. |
-| `VaultAgentError` | `credential_not_found` | Step 2 answered `404`. |
-| `VaultAgentError` | `insufficient_role` | Step 2 answered `403` — the token is scoped to a different project. |
-| `VaultAgentError` | `ambiguous_credential_name` | Step 2 answered `409` — two credentials share that name in the project. |
-| `VaultAgentError` | `vault_request_failed` | Step 2 answered some other non-`2xx`. |
-| `VaultUnreachableError` | `vault_unreachable` | Vault unreachable and this name was never cached. |
-| `VaultUnreachableNonCacheableError` | `vault_unreachable_non_cacheable` | Vault unreachable and this name is flagged `cacheable: false`, so it can never be served offline. |
-| `VaultCacheExpiredError` | `cache_expired` | Vault unreachable and the cached entry has outlived its TTL. |
-| `VaultCacheDecryptionError` | `cache_decryption_failed` | A cached entry failed AES-GCM verification — almost always a cache written under a previous API key. |
-| `VaultCacheCorruptedError` | `cache_corrupted` | The cache file's JSON could not be parsed. |
-| `VaultMultiFieldSecretUnsupportedError` | `multi_field_secret_unsupported` | See below. |
+| Class                                   | `.code`                           | Raised when                                                                                          |
+| --------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `VaultAgentError`                       | `token_exchange_failed`           | Step 1 answered non-`2xx` — bad, revoked, or expired API key.                                        |
+| `VaultAgentError`                       | `credential_not_found`            | Step 2 answered `404`.                                                                               |
+| `VaultAgentError`                       | `insufficient_role`               | Step 2 answered `403` — the token is scoped to a different project.                                  |
+| `VaultAgentError`                       | `ambiguous_credential_name`       | Step 2 answered `409` — two credentials share that name in the project.                              |
+| `VaultAgentError`                       | `vault_request_failed`            | Step 2 answered some other non-`2xx`.                                                                |
+| `VaultUnreachableError`                 | `vault_unreachable`               | Vault unreachable and this name was never cached.                                                    |
+| `VaultUnreachableNonCacheableError`     | `vault_unreachable_non_cacheable` | Vault unreachable and this name is flagged `cacheable: false`, so it can never be served offline.    |
+| `VaultCacheExpiredError`                | `cache_expired`                   | Vault unreachable and the cached entry has outlived its TTL.                                         |
+| `VaultCacheDecryptionError`             | `cache_decryption_failed`         | A cached entry failed AES-GCM verification — almost always a cache written under a previous API key. |
+| `VaultCacheCorruptedError`              | `cache_corrupted`                 | The cache file's JSON could not be parsed.                                                           |
+| `VaultMultiFieldSecretUnsupportedError` | `multi_field_secret_unsupported`  | See below.                                                                                           |
 
 ## Limitation: multi-field secrets are not supported
 
