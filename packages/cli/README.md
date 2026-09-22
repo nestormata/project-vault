@@ -109,6 +109,139 @@ running. This is the same class of exposure every AWS CLI/`gcloud`/similar tool 
 risk" and Story 43.4's hardening scope for the analogous, explicitly-accepted limitation on
 _injected_ secrets.
 
+## `pvault login` / `pvault logout` (Story 43.2)
+
+Authenticate to the vault as yourself (a human user), instead of provisioning a machine user for
+personal work:
+
+```bash
+VAULT_URL=https://vault.example.com pvault login
+# Email: dev@example.com
+# Password: (not echoed)
+# Enter your 6-digit authenticator code: (only if TOTP MFA is enrolled)
+# Logged in.
+
+pvault logout
+# Logged out.
+```
+
+`login`/`logout` take no `--api-key`/`--project-id` (that's the machine-user path) — only
+`VAULT_URL` (or `--url`). Email and password are always prompted interactively, never accepted as
+flags or argv (the same shell-history/`ps`-visibility reasoning Story 43.3's injected-secret ACs
+document). A WebAuthn-only account fails closed with a clear message rather than silently
+attempting a weaker factor — CLI WebAuthn support is Epic 46's Story 46.5, not this one.
+
+## Design decisions (Dev Notes, Story 43.2)
+
+Story 43.2 adds three more decisions, appended to Story 43.1's six above. **Decision #2 below is
+binding on Story 51.2** (the browser extension's own login) — see its own note on exactly what
+that story inherits versus what it must decide for itself.
+
+### 1. Session storage: a `0600` file, not a platform keychain
+
+`${XDG_CONFIG_HOME:-~/.config}/pvault/session.json`, written atomically (temp file + `fsync` +
+`rename`) with the parent directory at `0700` and the file itself at `0600`, both enforced via an
+explicit post-write `chmodSync` (never relied on implicitly, since `umask` can widen
+`writeFileSync`'s `mode` option). A `keytar`-style OS-credential-store dependency was considered
+and explicitly **not** adopted — this monorepo has no existing native-module dependency of that
+class, and the AC itself accepts file-based storage as compliant ("mode `0600` **or** a platform
+keychain"). See `src/session-store.ts`.
+
+**Windows note:** Node's `mode` option on `fs.writeFileSync`/`chmodSync` is a no-op on Windows —
+POSIX mode bits don't exist there. The session file's confidentiality on Windows relies entirely
+on the OS default of NTFS ACLs scoping the file to the owning user account; this is **not** the
+same `0600` guarantee POSIX platforms get, and the permission-check in AC-5 (`src/session-store.ts`
+`readSession()`) is correspondingly skipped on `process.platform === 'win32'` rather than silently
+no-op'ing with no explanation.
+
+### 2. Token type, issuance endpoints, and lifetime — **binding on Story 51.2**
+
+New, dedicated JSON-bearer-token routes (`apps/api/src/modules/auth/cli-login-routes.ts`), rather
+than a header-gated dual-mode `/login` — a missing header silently falling back to cookie mode is
+a subtler, easier-to-regress surface than two explicit, independently-testable routes:
+
+- `POST /api/v1/auth/cli-login` — mirrors `/login`'s body (`email`, `password`); returns either
+  `{ data: { mfaRequired: true, mfaToken } }` (identical shape to the cookie route's MFA
+  challenge) or `{ data: { accessToken, refreshToken, tokenType: 'Bearer', expiresIn, userId,
+  orgId } }`.
+- `POST /api/v1/auth/cli/mfa/verify-login` — mirrors `/mfa/verify-login`'s body (`mfaToken`,
+  `totp`); returns the same bearer-token shape as above on success.
+- `POST /api/v1/auth/cli/refresh` — body `{ refreshToken }`; returns a fresh
+  `{ accessToken, refreshToken, tokenType, expiresIn }`. The refresh token **rotates** on every
+  successful refresh (confirmed directly against `service.ts`'s `refreshSession()`/
+  `rotateRefreshToken()` — the same rotation the cookie-based `/refresh` route already relies on,
+  with a grace-period allowance for a reused, very-recently-rotated token, which is what makes the
+  concurrent-refresh race below safe rather than merely likely-safe).
+- `POST /api/v1/auth/cli/logout` — body `{ refreshToken? }`; best-effort server-side revocation
+  (always returns `200 { data: { revoked } }`, never an error, even for an unknown/already-invalid
+  token — the CLI's local file deletion is the command's real primary job).
+
+All four call the **exact same** `loginUser()`/`verifyLogin()`/`refreshSession()` functions the
+cookie-based routes in `routes.ts` use (`routes.ts` exports a shared `handleGatedLogin()` helper
+both `/login` and `/cli-login` call, so the gate/normalize/parse/authenticate sequence is written
+once) — no auth logic is duplicated, only the reply shape differs (JSON body vs. `Set-Cookie`).
+
+**Both the access JWT and the refresh opaque token are returned in the JSON body** — a deliberate
+divergence from the browser, which never sees its refresh token directly (httpOnly-cookie-only).
+The CLI has no cookie jar; the refresh token has to live somewhere the CLI can present it later,
+and the `0600` session file (decision #1) is that somewhere.
+
+**Lifetime:** reuses `JWT_ACCESS_TTL_SECONDS`/`REFRESH_TOKEN_TTL_DAYS` as-is (no new env vars) —
+but the CLI implements its own client-side **silent refresh** (`src/session-refresh.ts`'s
+`ensureFreshSession()`): when the stored access token is expired or within 30s of expiring, it
+refreshes automatically and rewrites the session file, with no user-visible re-prompt. A
+still-expired-after-refresh (or refresh-call-failed) session produces the plain re-prompt message
+this story's AC-4 requires — "Your session has expired. Run `pvault login` to sign in again." —
+never a bare 401.
+
+**Concurrent-refresh race:** since the refresh token rotates, two processes racing to
+silently-refresh the same session file could otherwise produce a spurious failure for the loser.
+`ensureFreshSession()` re-reads the session file once before concluding a session is dead — a
+losing process picks up the winning process's freshly-written tokens instead of wrongly
+re-prompting for a session that's actually still healthy. The session file write itself is atomic
+(temp-file + `rename`), so a reader racing a writer never observes a torn/partial file.
+
+**Scope boundary — not inherited from `packages/agent`, and `pvault get` is unchanged:** a human
+session's access JWT is a first-party user JWT, a different token type from the machine-user
+`pk_`-key-derived scoped JWT `@project-vault/agent`'s `createVaultAgent()` accepts. `login`/
+`logout` talk to the new endpoints directly via `fetch`, entirely independent of
+`packages/agent`. **This story does not make `pvault get` consume a human session** — that wiring,
+if ever wanted, is a separate, unrequested piece of scope.
+
+**What Story 51.2 inherits, and what it must decide for itself:** the browser extension inherits
+this decision's **token type, issuance endpoint(s), and lifetime** (the JSON-bearer-token
+login/refresh routes above and their TTLs) — it should call the same `/cli-login`,
+`/cli/mfa/verify-login`, `/cli/refresh` routes rather than inventing a second session design. It
+must **not** inherit decision #1's file-based *storage* mechanism (a browser extension has no
+filesystem to write a `0600` file to) — its own storage decision belongs in `chrome.storage.local`
+(never `chrome.storage.sync`, which would replicate a human session's refresh token across every
+browser instance signed into the same account — a materially broader exposure than one machine's
+`0600` file).
+
+### 3. Interactive prompting: `node:readline/promises`, no new dependency
+
+Email/TOTP prompts use `readline/promises`'s `rl.question()` directly (normal line editing/echo).
+The password prompt reads raw keystrokes without echoing them (`src/prompt.ts`'s `promptMasked()`)
+rather than pulling in an `inquirer`-class dependency for one masked-input use case — same
+minimal-footprint reasoning as Story 43.1 choosing `commander` deliberately. `packages/cli/src/
+cli.ts`'s `CliRuntime` type gained a `prompt: PromptFn` field (and a `fetchFn: typeof fetch` field
+for decision #2's direct HTTP calls) so `login`'s tests inject a fake prompt/fetch exactly the way
+`get`'s tests inject fake streams — `bin.ts`'s real entry point wires `createRealPrompt()`/the
+real global `fetch`.
+
+### Exit-code additions (append-only, extends Story 43.1's table)
+
+| Exit code | Meaning                                                                                                    |
+| --------- | ----------------------------------------------------------------------------------------------------------- |
+| `14`      | `notLoggedIn` — a session-consuming command found no session file where one was expected                    |
+| `15`      | `sessionExpired` — the stored session is expired and the silent refresh also failed/expired (AC-4)           |
+| `16`      | `invalidTotp` — surfaced during the login MFA round trip, not a stored-session failure                       |
+| `17`      | `mfaTokenExpired` — the pending-MFA token itself died mid-login; the whole login flow restarts               |
+| `18`      | `webauthnOnlyUnsupported` — AC-3's fail-closed case for a non-TOTP MFA challenge                              |
+| `19`      | `insecureSessionFilePermissions` — AC-5's hard refusal to use a group/world-readable session file            |
+| `20`      | `nativeLoginDisabled` — this vault instance has native (password) login disabled (SSO-only)                  |
+| `21`      | `invalidCredentials` — plain wrong email/password (not one of Dev Notes decision #4's originally-named codes, added because this needed its own distinguishable code too — see `src/exit-codes.ts`) |
+
 ## Running the e2e test
 
 `src/get-command.e2e.test.ts` boots a real, listening `@project-vault/api` server and round-trips

@@ -27,6 +27,20 @@ export const EXIT_CODES = {
   cacheDecryptionFailed: 11,
   cacheCorrupted: 12,
   unexpected: 13,
+  // Story 43.2 (Dev Notes decision #4) — append-only, `pvault login`/`logout`/session-consuming
+  // command failure modes. Never renumber the block above.
+  notLoggedIn: 14,
+  sessionExpired: 15,
+  invalidTotp: 16,
+  mfaTokenExpired: 17,
+  webauthnOnlyUnsupported: 18,
+  insecureSessionFilePermissions: 19,
+  nativeLoginDisabled: 20,
+  // Not one of Dev Notes decision #4's originally-named codes, but a plain "email/password was
+  // wrong" outcome needs its own distinguishable code too (append-only, same discipline as the
+  // rest of this table) — reusing `usageError` would misleadingly suggest a bad CLI invocation
+  // rather than a rejected credential.
+  invalidCredentials: 21,
 } as const
 
 // A Map (rather than a plain object keyed by an external string) sidesteps prototype-pollution/

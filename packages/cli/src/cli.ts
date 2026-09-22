@@ -4,9 +4,12 @@ import {
   type VaultAgent,
   type VaultAgentConfig,
 } from '@project-vault/agent'
-import { CliUsageError } from './exit-codes.js'
-import { resolveConfig } from './config.js'
+import { CliUsageError, EXIT_CODES } from './exit-codes.js'
+import { resolveConfig, resolveLoginConfig } from './config.js'
 import { runGet, type GetStreams, type WritableLike } from './get-command.js'
+import { runLogin } from './login-command.js'
+import { runLogout } from './logout-command.js'
+import { createRealPrompt, type PromptFn } from './prompt.js'
 
 // Dev Notes decision #6 — CLI argument-parsing/command framework: commander (already resolved
 // elsewhere in this monorepo's lockfile), a real subcommand framework rather than hand-rolled
@@ -19,6 +22,12 @@ export type CliRuntime = {
   env: Record<string, string | undefined>
   createVaultAgent: (config: VaultAgentConfig) => VaultAgent
   setExitCode: (code: number) => void
+  /** Story 43.2 Dev Notes decision #3 — the interactive-prompt seam `login` needs. */
+  prompt: PromptFn
+  /** Story 43.2 Dev Notes decision #2 — `login`/`logout` talk to the new auth endpoints directly
+   * via `fetch`, independent of `@project-vault/agent` (a human session is a different token type
+   * than a machine-user key — see that decision's scope-boundary note). */
+  fetchFn: typeof fetch
 }
 
 const PACKAGE_VERSION = '0.0.1'
@@ -74,6 +83,43 @@ export function buildProgram(runtime: CliRuntime): Command {
       }
     )
 
+  program
+    .command('login')
+    .description(
+      'Authenticate as a human user (email + password, plus TOTP if enrolled). WebAuthn-only ' +
+        'accounts fail closed — see Epic 46 for CLI WebAuthn support.'
+    )
+    .option('--url <url>', 'overrides VAULT_URL')
+    .action(async (options: { url?: string }) => {
+      try {
+        const config = resolveLoginConfig({ url: options.url }, runtime.env)
+        const exitCode = await runLogin(config, runtime.streams, {
+          fetchFn: runtime.fetchFn,
+          prompt: runtime.prompt,
+          env: runtime.env,
+        })
+        runtime.setExitCode(exitCode)
+      } catch (error) {
+        if (error instanceof CliUsageError) {
+          runtime.streams.stderr.write(`${error.message}\n`)
+          runtime.setExitCode(EXIT_CODES.usageError)
+          return
+        }
+        throw error
+      }
+    })
+
+  program
+    .command('logout')
+    .description('Remove the locally stored session (AC-6).')
+    .action(async () => {
+      const exitCode = await runLogout(runtime.streams, {
+        fetchFn: runtime.fetchFn,
+        env: runtime.env,
+      })
+      runtime.setExitCode(exitCode)
+    })
+
   return program
 }
 
@@ -93,6 +139,8 @@ export async function runCli(argv: string[]): Promise<void> {
     setExitCode: (code) => {
       process.exitCode = code
     },
+    prompt: createRealPrompt(),
+    fetchFn: fetch,
   })
 
   try {

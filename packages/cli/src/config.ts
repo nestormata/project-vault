@@ -50,6 +50,26 @@ export function resolveConfig(flags: CliFlags, env: EnvLike = process.env): Reso
   return { apiKey: apiKey as string, baseUrl: baseUrl as string, projectId: projectId as string }
 }
 
+export type LoginFlags = { url?: string }
+export type LoginConfig = { baseUrl: string }
+
+/**
+ * Story 43.2 — `pvault login`/`logout` only need `VAULT_URL` (no `--api-key`, since that's the
+ * machine-user path — see Dev Notes "Architecture & prior art"). Same flag-overrides-env
+ * precedence as `resolveConfig()` above, deliberately kept as a separate function rather than
+ * widening `resolveConfig()` itself, since `apiKey`/`projectId` are not optional inputs to that
+ * function's contract and login has no use for either.
+ */
+export function resolveLoginConfig(flags: LoginFlags, env: EnvLike = process.env): LoginConfig {
+  const baseUrl = flags.url ?? env['VAULT_URL']
+  if (!baseUrl) {
+    throw new CliUsageError(
+      'Missing required configuration: VAULT_URL (or --url). Set the environment variable or pass the flag.'
+    )
+  }
+  return { baseUrl }
+}
+
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
 
 /**
