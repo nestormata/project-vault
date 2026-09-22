@@ -208,25 +208,27 @@ jobs:
       - name: Check vault-action dist/ freshness (D6/AC-11)
         run: pnpm check-vault-action-dist
 
-  # Shard 1 of 2 for the slow `pnpm turbo test` workload: apps/api + packages/db.
-  # These two are kept together (not split from each other) because turbo.json declares an
-  # explicit task dependency (`@project-vault/api#test` dependsOn `@project-vault/db#test`), and
-  # because they're the only packages under test that need a live Postgres connection —
+  # Shard 1 of 2 for the slow `pnpm turbo test` workload: apps/api + packages/db + packages/cli.
+  # apps/api and packages/db are kept together (not split from each other) because turbo.json
+  # declares an explicit task dependency (`@project-vault/api#test` dependsOn
+  # `@project-vault/db#test`); packages/cli rides along here too because its e2e test
+  # (src/get-command.e2e.test.ts) boots a real @project-vault/api server against this same
+  # Postgres. These three are the only packages under test that need a live Postgres connection —
   # packages/agent, packages/crypto, packages/shared and packages/vault-action reference the
   # literal string "DATABASE_URL" only in test fixtures (parse-secrets classification), never a
   # real connection. By test-file count this shard is apps/api (228) + packages/db (40) = 268
   # files, vs. 212 in the other shard — not exactly even, but close.
   #
-  # Within this shard, the combined apps/api + packages/db suite is further split 2-way via
-  # vitest's own `--shard` flag (matrix below), each leg getting its own isolated Postgres
-  # service so there's no risk of two shards racing against the same migrated schema. This
-  # roughly halves this job's wall-clock time (previously observed running 35-45+ min and
-  # occasionally getting cancelled by the timeout). Coverage thresholds are disabled for this
-  # sharded run (see CI_COVERAGE_SHARDED in apps/api/vitest.config.ts and
-  # packages/db/vitest.config.ts) since each shard only exercises half the suite and would
-  # otherwise fail on an artificially low per-shard coverage number; the `sonar` job below merges
-  # both shards' lcov.info via `lcov --add-tracefile` and SonarCloud's Quality Gate is the real
-  # coverage enforcement point.
+  # Within this shard, the combined suite is further split 2-way via vitest's own `--shard` flag
+  # (matrix below), each leg getting its own isolated Postgres service so there's no risk of two
+  # shards racing against the same migrated schema. This roughly halves this job's wall-clock time
+  # (previously observed running 35-45+ min and occasionally getting cancelled by the timeout).
+  # Coverage thresholds are disabled for this sharded run (see CI_COVERAGE_SHARDED in
+  # apps/api/vitest.config.ts and packages/db/vitest.config.ts, and the --coverage.thresholds.*
+  # CLI overrides below for packages/cli, which has no such env-gated config) since each shard
+  # only exercises part of the suite and would otherwise fail on an artificially low per-shard
+  # coverage number; the `sonar` job below merges all shards' lcov.info via `lcov --add-tracefile`
+  # and SonarCloud's Quality Gate is the real coverage enforcement point.
   test-api-db:
     name: Test (api + db)
     strategy:
@@ -321,9 +323,15 @@ jobs:
       # shards per-project, so apps/api and packages/db are each split independently, not as one
       # combined pool). Each matrix leg has its own isolated Postgres service (see `services:`
       # above), so there's no risk of the two shards racing against the same schema.
-      - name: Test (with coverage) - api, db
+      # packages/cli's e2e test (src/get-command.e2e.test.ts) boots a real @project-vault/api
+      # server and needs the same live, migrated Postgres this job already provisions for
+      # apps/api + packages/db — see packages/cli/README.md "Running the e2e test". It's included
+      # in the same sharded `turbo test` invocation as api/db (vitest shards per-project, so its
+      # small suite just rides along in whichever shard turbo assigns it).
+      - name: Test (with coverage) - api, db, cli
         run: >-
-          pnpm turbo test --filter=@project-vault/api --filter=@project-vault/db --
+          pnpm turbo test --filter=@project-vault/api --filter=@project-vault/db
+          --filter=@project-vault/cli --
           --shard=${{ matrix.shard }}/2
           --coverage.thresholds.lines=0 --coverage.thresholds.branches=0
           --coverage.thresholds.functions=0 --coverage.thresholds.statements=0
@@ -356,7 +364,7 @@ jobs:
       # miss shouldn't blank out the SonarCloud dashboard for this shard's packages. Named per
       # matrix.shard since both legs share this job id and upload-artifact rejects duplicate
       # names within one run; the sonar job merges the two via `lcov --add-tracefile`.
-      - name: Upload coverage for SonarCloud (api, db)
+      - name: Upload coverage for SonarCloud (api, db, cli)
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -364,6 +372,7 @@ jobs:
           path: |
             apps/api/coverage/
             packages/db/coverage/
+            packages/cli/coverage/
           retention-days: 1
 
   # Shard 2 of 2: everything under test that does NOT need a live Postgres connection. No
@@ -494,16 +503,16 @@ jobs:
       # test-api-db now runs as a 2-way matrix (see that job), each leg uploading its own
       # partial lcov.info under a shard-numbered artifact name. Downloaded into separate
       # directories here, then merged below — sonar.javascript.lcov.reportPaths expects exactly
-      # one lcov.info at apps/api/coverage/lcov.info and packages/db/coverage/lcov.info, so the
-      # two shards' partial reports must be combined into a single file at each of those paths
-      # before the scan step runs.
-      - name: Download coverage (api, db) - shard 1
+      # one lcov.info at apps/api/coverage/lcov.info, packages/db/coverage/lcov.info, and
+      # packages/cli/coverage/lcov.info, so the two shards' partial reports must be combined
+      # into a single file at each of those paths before the scan step runs.
+      - name: Download coverage (api, db, cli) - shard 1
         uses: actions/download-artifact@v8
         with:
           name: coverage-shard-api-db-1
           path: coverage-parts/shard-1
 
-      - name: Download coverage (api, db) - shard 2
+      - name: Download coverage (api, db, cli) - shard 2
         uses: actions/download-artifact@v8
         with:
           name: coverage-shard-api-db-2
@@ -519,10 +528,10 @@ jobs:
       # can legitimately be exercised by tests in BOTH shards — simple concatenation would
       # produce duplicate SF: records for such files, which most LCOV consumers resolve by
       # silently taking the last one rather than combining them correctly.
-      - name: Merge api/db coverage from both shards
+      - name: Merge api/db/cli coverage from both shards
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq lcov
-          mkdir -p apps/api/coverage packages/db/coverage
+          mkdir -p apps/api/coverage packages/db/coverage packages/cli/coverage
           lcov --add-tracefile coverage-parts/shard-1/apps/api/coverage/lcov.info \
                --add-tracefile coverage-parts/shard-2/apps/api/coverage/lcov.info \
                --output-file apps/api/coverage/lcov.info \
@@ -531,6 +540,22 @@ jobs:
                --add-tracefile coverage-parts/shard-2/packages/db/coverage/lcov.info \
                --output-file packages/db/coverage/lcov.info \
                --ignore-errors empty,unused
+
+          # packages/cli has a small test suite (8 files) split across the same 2-way
+          # --shard flag: unlike api/db, one shard leg can plausibly draw zero cli test
+          # files, so its lcov.info may not exist in that leg's artifact — build the
+          # --add-tracefile args from only the legs that actually produced one.
+          cli_tracefiles=()
+          for shard_dir in coverage-parts/shard-1 coverage-parts/shard-2; do
+            if [ -f "$shard_dir/packages/cli/coverage/lcov.info" ]; then
+              cli_tracefiles+=(--add-tracefile "$shard_dir/packages/cli/coverage/lcov.info")
+            fi
+          done
+          if [ "${#cli_tracefiles[@]}" -gt 0 ]; then
+            lcov "${cli_tracefiles[@]}" \
+                 --output-file packages/cli/coverage/lcov.info \
+                 --ignore-errors empty,unused
+          fi
 
       # Runs even if a test shard failed (e.g. a local coverage-threshold miss) — vitest writes
       # its full LCOV/coverage output to disk before evaluating thresholds, so the data

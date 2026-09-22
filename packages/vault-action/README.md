@@ -6,8 +6,10 @@ as masked environment variables in a GitHub Actions workflow.
 This action is a thin wrapper around
 [`@project-vault/agent`](https://github.com/nestormata/project-vault/tree/main/packages/agent), the
 machine-user authentication and secret-retrieval library bundled into this action's `dist/` — it
-does not implement its own HTTP client, token exchange, or retry logic. That package is **bundled,
-not published**: it is not on npm, and the only supported way to consume it is through this action.
+does not implement its own HTTP client, token exchange, or retry logic. That package is **not
+published**: it is not on npm. This action is one of two supported ways to consume it — the other
+is [`@project-vault/cli`](https://github.com/nestormata/project-vault/tree/main/packages/cli) (the
+`pvault` terminal CLI), which depends on it directly rather than bundling it.
 
 > **Consuming this action?** Use `nestormata/vault-action`, not this monorepo path. GitHub
 > Marketplace requires `action.yml` at a repository root, which this monorepo subdirectory can't
@@ -20,10 +22,10 @@ not published**: it is not on npm, and the only supported way to consume it is t
 The two repositories use different tag names for the same release. Releases are cut here, and the
 release workflow rewrites the tag when it mirrors:
 
-| This monorepo | `nestormata/vault-action` (what you reference) |
-|---|---|
-| `vault-action-v1.2.3` | `v1.2.3` |
-| `vault-action-v1` (moving major tag) | `v1` (moving major tag) |
+| This monorepo                        | `nestormata/vault-action` (what you reference) |
+| ------------------------------------ | ---------------------------------------------- |
+| `vault-action-v1.2.3`                | `v1.2.3`                                       |
+| `vault-action-v1` (moving major tag) | `v1` (moving major tag)                        |
 
 So `nestormata/vault-action@v1` and `@v1.2.3` are the names to use in a workflow;
 `vault-action-v1.2.3` is only ever a tag inside this monorepo and will not resolve as an action
@@ -58,12 +60,12 @@ constraint below.
 
 See section 9 below for a complete, runnable example with real values filled in.
 
-| Input | Required | Default | Description |
-|---|---|---|---|
-| `vault-url` | yes | — | Base URL of your Project Vault instance. |
-| `api-key` | yes | — | Machine user API key (`pk_...`) issued via Project Vault. |
-| `secrets` | yes | — | One mapping per line: `PROJECT_ID/CREDENTIAL_NAME as ENV_VAR_NAME`. |
-| `continue-on-error` | no | `'false'` | If `'true'`, warn (not fail) when the vault is unreachable. See the naming-collision note below — this is **not** the same thing as GitHub's own step-level `continue-on-error:` key. |
+| Input               | Required | Default   | Description                                                                                                                                                                           |
+| ------------------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vault-url`         | yes      | —         | Base URL of your Project Vault instance.                                                                                                                                              |
+| `api-key`           | yes      | —         | Machine user API key (`pk_...`) issued via Project Vault.                                                                                                                             |
+| `secrets`           | yes      | —         | One mapping per line: `PROJECT_ID/CREDENTIAL_NAME as ENV_VAR_NAME`.                                                                                                                   |
+| `continue-on-error` | no       | `'false'` | If `'true'`, warn (not fail) when the vault is unreachable. See the naming-collision note below — this is **not** the same thing as GitHub's own step-level `continue-on-error:` key. |
 
 ## 3. Secret-mapping syntax
 
@@ -147,7 +149,7 @@ environment variable).
 
 **Naming-collision warning:** GitHub Actions workflows have their **own**, unrelated,
 step-level `continue-on-error:` YAML key. Setting the workflow-native key to `true` makes GitHub
-skip marking the *job* as failed even if this action's step fails — regardless of what this
+skip marking the _job_ as failed even if this action's step fails — regardless of what this
 action's own `continue-on-error` **input** says. The two mechanisms are independent:
 
 ```yaml
@@ -195,7 +197,7 @@ add persistent or self-hosted runners:
   refused rather than served stale.
 - **Credentials the server marks `cacheable: false` are never written**, and an existing cached
   copy of a credential that later becomes non-cacheable is actively deleted.
-- **`fallbackThreshold` is `1` for this action.** That means the *first* network-level failure
+- **`fallbackThreshold` is `1` for this action.** That means the _first_ network-level failure
   flips the run into cache-fallback mode — there is no retry budget before the cache is consulted.
   Once in fallback, a missing or expired entry fails the step (or warns, under
   `continue-on-error: 'true'`).
@@ -242,7 +244,7 @@ Define `VAULT_URL`, `PROJECT_ID`, and `VAULT_API_KEY` as CI/CD variables under
 **Settings → CI/CD → Variables**, and mark `VAULT_API_KEY` as both **Masked** and **Protected** so
 it is redacted from job logs and only exposed to protected branches and tags.
 
-GitLab has no `$GITHUB_ENV` equivalent. To hand a value to *later jobs*, write a dotenv file and
+GitLab has no `$GITHUB_ENV` equivalent. To hand a value to _later jobs_, write a dotenv file and
 publish it with `artifacts: reports: dotenv`; within a single job an ordinary `export` is enough.
 
 ```yaml
@@ -297,16 +299,16 @@ jobs:
 
 ## Errors
 
-| Condition | Behavior |
-|---|---|
-| Vault unreachable | Fails the step (`continue-on-error: 'false'`, default) or warns (`'true'`). |
-| Invalid/revoked/expired `api-key` | Always fails the step. |
-| Credential not found | Always fails the step. |
-| Ambiguous credential name (duplicate name in project) | Always fails the step — rename one of the duplicates in Project Vault. |
-| Insufficient role / wrong project | Always fails the step. |
-| `PROJECT_ID` is not a UUID (e.g. a display name) | Always fails the step — use the project's UUID. |
-| Multi-field credential | Always fails that entry — see "Multi-field credentials are not supported". |
-| Cached value cannot be decrypted (key rotated) | Always fails the step — clear the cache file. |
+| Condition                                             | Behavior                                                                    |
+| ----------------------------------------------------- | --------------------------------------------------------------------------- |
+| Vault unreachable                                     | Fails the step (`continue-on-error: 'false'`, default) or warns (`'true'`). |
+| Invalid/revoked/expired `api-key`                     | Always fails the step.                                                      |
+| Credential not found                                  | Always fails the step.                                                      |
+| Ambiguous credential name (duplicate name in project) | Always fails the step — rename one of the duplicates in Project Vault.      |
+| Insufficient role / wrong project                     | Always fails the step.                                                      |
+| `PROJECT_ID` is not a UUID (e.g. a display name)      | Always fails the step — use the project's UUID.                             |
+| Multi-field credential                                | Always fails that entry — see "Multi-field credentials are not supported".  |
+| Cached value cannot be decrypted (key rotated)        | Always fails the step — clear the cache file.                               |
 
 ## Runtime
 

@@ -1,21 +1,14 @@
 {
-  "name": "@project-vault/agent",
+  "name": "@project-vault/cli",
   "version": "0.0.1",
   "private": true,
-  "description": "Machine-user authentication and secret retrieval for Project Vault. Consumed as a workspace dependency by @project-vault/vault-action (which bundles it) and @project-vault/cli; not published to any registry.",
+  "description": "Terminal CLI for fetching and injecting Project Vault secrets. Binary name is `pvault` (not `pv` — see README's \"Package/binary name\" decision).",
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    },
-    "./cache-crypto": {
-      "types": "./dist/cache-crypto.d.ts",
-      "default": "./dist/cache-crypto.js"
-    }
+  "bin": {
+    "pvault": "./dist/bin.js"
   },
   "files": [
     "dist"
@@ -29,12 +22,18 @@
   "engines": {
     "node": ">=20"
   },
+  "dependencies": {
+    "@project-vault/agent": "workspace:*",
+    "commander": "^14.0.3"
+  },
   "devDependencies": {
+    "@project-vault/api": "workspace:*",
     "@project-vault/eslint-config": "workspace:*",
     "@project-vault/tsconfig": "workspace:*",
     "@types/node": "^26.6.1",
     "@vitest/coverage-v8": "^5.0.1",
     "eslint": "^10.10.0",
+    "postgres": "^3.4.5",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1"
   }
