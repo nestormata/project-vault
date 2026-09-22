@@ -37,6 +37,7 @@ const PLATFORM_JOB = 'platform-job'
 const PUBLIC_ROUTE_SUPPORT = 'public-route-support'
 const TOKEN_IS_CREDENTIAL = 'token-is-the-credential'
 const NO_DATA_ACCESS = 'no-data-access'
+const PENDING_TOKEN_ATTEMPT_CAP = 'pending-token-attempt-cap'
 // Shared across the three /api/v1/service/* machine-authenticated routes (26.1's org-bootstrap,
 // 31.1's revoke-sessions, 32.1's per-member provisioning) — sonarjs/no-duplicate-string flags the
 // raw literal past 2 occurrences.
@@ -119,7 +120,39 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     reason:
       'Public MFA second-factor endpoint; validates a short-lived hashed pending login token before issuing a session.',
     securityOwner: SECURITY_OWNER,
-    compensatingControls: [IP_RATE_LIMIT, 'pending-token-attempt-cap', FAILED_AUTH_RECORDING],
+    compensatingControls: [IP_RATE_LIMIT, PENDING_TOKEN_ATTEMPT_CAP, FAILED_AUTH_RECORDING],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'POST /api/v1/auth/cli-login',
+    reason:
+      'Story 43.2 — CLI-facing public credential exchange endpoint, mirroring POST /api/v1/auth/login (cookie-based) but returning a JSON bearer-token pair instead of Set-Cookie. Calls the exact same handleGatedLogin()/loginUser() path as /login; only the reply shape differs.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [IP_RATE_LIMIT, FAILED_AUTH_RECORDING, 'generic-auth-errors'],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'POST /api/v1/auth/cli/mfa/verify-login',
+    reason:
+      'Story 43.2 — CLI-facing public MFA second-factor endpoint, mirroring POST /api/v1/auth/mfa/verify-login. Validates the same short-lived hashed pending login token via the shared verifyLogin() before issuing a bearer-token session instead of a cookie session.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [IP_RATE_LIMIT, PENDING_TOKEN_ATTEMPT_CAP, FAILED_AUTH_RECORDING],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'POST /api/v1/auth/cli/refresh',
+    reason:
+      'Story 43.2 — CLI-facing public refresh-token exchange endpoint, mirroring POST /api/v1/auth/refresh. The refresh token travels as a JSON body field instead of a cookie (the CLI has no cookie jar), but is validated via the same refreshSession() before renewal.',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: ['refresh-token-validation', TOKEN_IS_CREDENTIAL, IP_RATE_LIMIT],
+    expiresAfterStory: null,
+  },
+  {
+    route: 'POST /api/v1/auth/cli/logout',
+    reason:
+      "Story 43.2 AC-6 — CLI-facing best-effort session revoke. The caller's access token may already be expired (that is the normal logout case), so this cannot require an authenticated SecureRoute session; it authenticates purely via the hashed refresh token supplied in the body, exactly like /cli/refresh, and treats a missing/unrecognized/already-dead token as a no-op rather than an error.",
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [TOKEN_IS_CREDENTIAL, 'best-effort-no-op-on-missing-token'],
     expiresAfterStory: null,
   },
   {
@@ -143,7 +176,7 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     reason:
       'Public recovery-token-authenticated MFA re-enrollment start; the 256-bit recovery token is itself the authorization credential.',
     securityOwner: SECURITY_OWNER,
-    compensatingControls: [TOKEN_IS_CREDENTIAL, 'pending-token-attempt-cap'],
+    compensatingControls: [TOKEN_IS_CREDENTIAL, PENDING_TOKEN_ATTEMPT_CAP],
     expiresAfterStory: null,
   },
   {
