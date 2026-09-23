@@ -1,6 +1,7 @@
 import { VaultAgentError, type VaultAgent, type VaultAgentConfig } from '@project-vault/agent'
+import { messageForAgentError } from './agent-error-messages.js'
 import { withFetchProvenanceTracking } from './cache-provenance.js'
-import { warnIfInsecureBaseUrl, type ResolvedConfig } from './config.js'
+import { warnAndCreateAgent, type ResolvedConfig } from './config.js'
 import { exitCodeForAgentErrorCode, EXIT_CODES } from './exit-codes.js'
 import { sanitizeForTerminal } from './sanitize.js'
 import { isBlank, looksLikeUuid } from './validate.js'
@@ -21,53 +22,6 @@ export type GetStreams = {
 
 export type GetDeps = {
   createVaultAgent: (config: VaultAgentConfig) => VaultAgent
-}
-
-const UNREACHABLE_CODES = new Set([
-  'vault_unreachable',
-  'vault_unreachable_non_cacheable',
-  'cache_expired',
-  'cache_decryption_failed',
-  'cache_corrupted',
-])
-
-/** Per-code message builders for AC-5's mapping table, mirroring
- * packages/vault-action/src/classify.ts's perEntryMessage() wording pattern (reused, not
- * reinvented — see this story's Dev Notes "Architecture & prior art"). A Map keeps this a flat
- * lookup instead of a long switch/if-chain. */
-type MessageBuilder = (safeName: string) => string
-
-const MESSAGE_BUILDERS: ReadonlyMap<string, MessageBuilder> = new Map<string, MessageBuilder>([
-  [
-    'token_exchange_failed',
-    () =>
-      'Invalid or revoked API key. Check that VAULT_API_KEY is current and has not been revoked.',
-  ],
-  ['credential_not_found', (safeName) => `Credential '${safeName}' was not found in this project.`],
-  ['insufficient_role', (safeName) => `Access to '${safeName}' is not permitted for this project.`],
-  [
-    'ambiguous_credential_name',
-    (safeName) =>
-      `Multiple credentials named '${safeName}' exist in this project — machine-user retrieval requires unique names. Rename one of the duplicates in Project Vault.`,
-  ],
-  [
-    'multi_field_secret_unsupported',
-    (safeName) =>
-      `'${safeName}' is a multi-field secret; 'pvault get' can only fetch single-value secrets. Use the HTTP API directly with ?field=<key> (see docs/machine-users.md).`,
-  ],
-])
-
-function messageForAgentError(error: VaultAgentError, safeName: string): string {
-  // `error.message` (from packages/agent) can itself embed the raw, unsanitized credential name
-  // for several codes (see packages/agent/src/errors.ts) — sanitize it too, not just `safeName`,
-  // so the terminal-escape-injection hardening (AC-5) isn't bypassed via this second echo path.
-  const safeErrorMessage = sanitizeForTerminal(error.message)
-  if (UNREACHABLE_CODES.has(error.code)) {
-    return `Vault is unreachable and no usable cached value exists for '${safeName}': ${safeErrorMessage}`
-  }
-  const build = MESSAGE_BUILDERS.get(error.code)
-  if (build) return build(safeName)
-  return `Failed to retrieve secret '${safeName}': ${safeErrorMessage}`
 }
 
 /**
@@ -109,13 +63,9 @@ export async function runGet(
   }
 
   // AC-2 hardening — a defensive, non-blocking warning; never a hard failure.
-  warnIfInsecureBaseUrl(config.baseUrl, (chunk) => streams.stderr.write(chunk))
-
-  const agent = deps.createVaultAgent({
-    apiKey: config.apiKey,
-    baseUrl: config.baseUrl,
-    projectId: config.projectId,
-  })
+  const agent = warnAndCreateAgent(config, deps.createVaultAgent, (chunk) =>
+    streams.stderr.write(chunk)
+  )
 
   try {
     // Dev Notes decision #5 / AC-4a — participates in packages/agent's default offline-cache

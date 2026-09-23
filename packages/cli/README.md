@@ -1,9 +1,10 @@
 # `@project-vault/cli`
 
 Terminal CLI for fetching and injecting [Project Vault](https://github.com/nestormata/project-vault)
-secrets, for a developer or CI engineer using a machine-user API key. Story 43.1 implements the
-first command, `get`; later stories in Epic 43 (`login`, `run -- <cmd>`, `.env` materialization)
-build on the foundation this story establishes.
+secrets, for a developer or CI engineer using a machine-user API key. Story 43.1 implemented the
+first command, `get`; Story 43.2 added `login`/`logout`; Story 43.3 added `run -- <cmd>` (per
+UX-DR16, the documented default injection path). `.env` materialization and later Epic 43 stories
+build on the foundation these establish.
 
 This package is a thin wrapper around
 [`@project-vault/agent`](../agent/README.md) — it consumes that package as a plain pnpm workspace
@@ -163,7 +164,7 @@ a subtler, easier-to-regress surface than two explicit, independently-testable r
 - `POST /api/v1/auth/cli-login` — mirrors `/login`'s body (`email`, `password`); returns either
   `{ data: { mfaRequired: true, mfaToken } }` (identical shape to the cookie route's MFA
   challenge) or `{ data: { accessToken, refreshToken, tokenType: 'Bearer', expiresIn, userId,
-  orgId } }`.
+orgId } }`.
 - `POST /api/v1/auth/cli/mfa/verify-login` — mirrors `/mfa/verify-login`'s body (`mfaToken`,
   `totp`); returns the same bearer-token shape as above on success.
 - `POST /api/v1/auth/cli/refresh` — body `{ refreshToken }`; returns a fresh
@@ -212,7 +213,7 @@ if ever wanted, is a separate, unrequested piece of scope.
 this decision's **token type, issuance endpoint(s), and lifetime** (the JSON-bearer-token
 login/refresh routes above and their TTLs) — it should call the same `/cli-login`,
 `/cli/mfa/verify-login`, `/cli/refresh` routes rather than inventing a second session design. It
-must **not** inherit decision #1's file-based *storage* mechanism (a browser extension has no
+must **not** inherit decision #1's file-based _storage_ mechanism (a browser extension has no
 filesystem to write a `0600` file to) — its own storage decision belongs in `chrome.storage.local`
 (never `chrome.storage.sync`, which would replicate a human session's refresh token across every
 browser instance signed into the same account — a materially broader exposure than one machine's
@@ -231,18 +232,141 @@ real global `fetch`.
 
 ### Exit-code additions (append-only, extends Story 43.1's table)
 
-| Exit code | Meaning                                                                                                    |
-| --------- | ----------------------------------------------------------------------------------------------------------- |
-| `14`      | `notLoggedIn` — a session-consuming command found no session file where one was expected                    |
-| `15`      | `sessionExpired` — the stored session is expired and the silent refresh also failed/expired (AC-4)           |
-| `16`      | `invalidTotp` — surfaced during the login MFA round trip, not a stored-session failure                       |
-| `17`      | `mfaTokenExpired` — the pending-MFA token itself died mid-login; the whole login flow restarts               |
-| `18`      | `webauthnOnlyUnsupported` — AC-3's fail-closed case for a non-TOTP MFA challenge                              |
-| `19`      | `insecureSessionFilePermissions` — AC-5's hard refusal to use a group/world-readable session file            |
-| `20`      | `nativeLoginDisabled` — this vault instance has native (password) login disabled (SSO-only)                  |
+| Exit code | Meaning                                                                                                                                                                                             |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `14`      | `notLoggedIn` — a session-consuming command found no session file where one was expected                                                                                                            |
+| `15`      | `sessionExpired` — the stored session is expired and the silent refresh also failed/expired (AC-4)                                                                                                  |
+| `16`      | `invalidTotp` — surfaced during the login MFA round trip, not a stored-session failure                                                                                                              |
+| `17`      | `mfaTokenExpired` — the pending-MFA token itself died mid-login; the whole login flow restarts                                                                                                      |
+| `18`      | `webauthnOnlyUnsupported` — AC-3's fail-closed case for a non-TOTP MFA challenge                                                                                                                    |
+| `19`      | `insecureSessionFilePermissions` — AC-5's hard refusal to use a group/world-readable session file                                                                                                   |
+| `20`      | `nativeLoginDisabled` — this vault instance has native (password) login disabled (SSO-only)                                                                                                         |
 | `21`      | `invalidCredentials` — plain wrong email/password (not one of Dev Notes decision #4's originally-named codes, added because this needed its own distinguishable code too — see `src/exit-codes.ts`) |
 
-## Running the e2e test
+## `pvault run --` (Story 43.3)
+
+Fetch one or more secrets and spawn a command with them injected into its environment — per
+UX-DR16, this is Epic 43's **documented default path** (`pvault get`'s TTY refusal already names it
+as the intended way to consume a secret in a real process):
+
+```bash
+VAULT_API_KEY=pk_abc123 \
+VAULT_URL=https://vault.example.com \
+VAULT_PROJECT_ID=a1c2d3e4-0000-0000-0000-000000000000 \
+  pvault run --secret DATABASE_URL --allow-unhardened-injection -- psql "$DATABASE_URL"
+
+# Multiple secrets, and renaming a credential to a different env var name:
+pvault run --secret DATABASE_URL --secret "my-db-password=MY_DB_PASSWORD" \
+  --allow-unhardened-injection -- ./deploy.sh
+```
+
+`--allow-unhardened-injection` is required until Story 43.4 ships (see decision #6 below) — every
+invocation without it refuses to run at all. The command's own stdout/stderr never echo a fetched
+value (AC-1); the child's stdin/stdout/stderr connect directly to the terminal (`stdio: 'inherit'`),
+so interactive commands (`psql`, `python -i`, a dev server) behave exactly as if launched directly.
+
+## Design decisions (Dev Notes, Story 43.3)
+
+Seven more decisions, appended to Stories 43.1/43.2's above.
+
+### 1. Reserved/dangerous env var protection — CLI-local port (`src/reserved-env-vars.ts`)
+
+Ports `packages/vault-action/src/parse-secrets.ts`'s exact `RESERVED_ENV_VAR_NAMES` set (`PATH`,
+`LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES`, `DYLD_LIBRARY_PATH`, `NODE_OPTIONS`,
+`HOME`, `SHELL`), minus the two GitHub-Actions-specific entries (`GITHUB_TOKEN`, the
+`GITHUB_`/`ACTIONS_` prefix rules) that don't apply outside a GitHub Actions runner. `--secret
+DB_PASSWORD=LD_PRELOAD` is refused before any network call. The file is not vendored/imported
+directly from `packages/vault-action` (different shape, different conventions) — only the set and
+the identifier-validity regex are ported.
+
+### 2. The AC-6 seam: `src/inject-and-run.ts`'s `injectAndRun()`
+
+The core "resolve credential names to fetched values (fail-closed), then spawn a command with them
+injected" logic is an exported, framework-agnostic function — **zero** imports of `commander`,
+`Command`, `CliRuntime`, or `process.argv` parsing anywhere in the module. `src/run-command.ts` is
+the thin CLI adapter: it parses `pvault run`'s flags into `InjectEntry[]`, calls `injectAndRun()`,
+and maps the result to `setExitCode()`.
+`src/inject-and-run.non-cli-caller.test.ts` is the AC-6 proof: it imports only `injectAndRun` (never
+`cli.ts` or anything commander-related) and drives it directly, exactly as a future Epic 50 broker
+(FR177's `inject_env`) could. Epic 50 is currently gated with zero implementation stories, so this
+AC is satisfied **structurally** — by the seam and its proving test — not by a real cross-package
+integration that doesn't exist yet. The seam stays inside `packages/cli` (not a new top-level
+package), matching how `packages/cli` itself consumes `packages/agent` as a plain `workspace:*`
+dependency.
+
+### 3. Fail-closed, all-or-nothing multi-secret fetch
+
+Every requested secret is fetched sequentially, before `spawn()` is ever called. Any single failure
+aborts the whole command — **the child process is never spawned** — with an error built only from
+the failing entry's own message, never from a partially-built map of already-fetched values (a
+value fetched before a later failure must never leak into the abort-path error output). This is a
+deliberate divergence from `packages/vault-action`'s `run.ts`, which attempts every entry
+independently: a spawned arbitrary command with partially-missing secrets is a materially different
+risk than a CI step reporting a failed output. `src/agent-error-messages.ts` (extracted from
+`get-command.ts`) is shared between `get` and `run` so the two never diverge in wording for the same
+underlying `VaultAgentError` code.
+
+### 4. Commander's `--` passthrough: verified working, no manual fallback needed
+
+Verified directly against the installed `commander@^14`: `.argument('<command...>')` correctly
+captures everything after a literal `--` token verbatim (including flags that look like `pvault`'s
+own options, e.g. `ls --help` after `--`), with no manual `process.argv`-split fallback required.
+What commander's default parsing does **not** give a clean error for are two edge cases — a missing
+`--` entirely, and an empty command after it — both produce a confusing default (e.g. "unknown
+option '-la'"). A `program.hook('preSubcommand', ...)` inspects the subcommand's raw args _before_
+its own option/argument parsing runs, and calls `thisCommand.error(...)` with `pvault run`'s own
+clear usage message for both cases.
+
+### 5. New exit codes (append-only, extends Stories 43.1/43.2's 1-21 table)
+
+| Exit code | Meaning                                                                                                                                                                                                                |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `22`      | `secretsRequired` — zero `--secret` flags passed                                                                                                                                                                       |
+| `23`      | `unhardenedInjectionNotAcknowledged` — the `--allow-unhardened-injection` opt-in flag was omitted (AC-5)                                                                                                               |
+| `24`      | `childSignalTerminated` — Windows-only fallback for a signal-terminated child (AC-4); never actually observed on POSIX, where the parent dies via the re-raised signal itself instead of returning via `setExitCode()` |
+
+### 6. `--allow-unhardened-injection` (AC-5) — CLI-argument-only, no env var fallback
+
+A long, deliberately hard-to-type-by-accident flag name (rejecting a short `-f`/`--force` form),
+naming exactly what risk is being accepted: secrets injected into a process whose own crash dumps,
+stack traces, or `/proc/<pid>/environ` could leak them (FR158a — Story 43.4's scope, not this
+one's). The warning prints to stderr on **every** invocation with the flag present, not just once —
+a developer scripting this into a Makefile target should see it every run until Story 43.4 ships.
+Deliberately **not** also readable from an env var (every other flag in this CLI does have one) —
+this keeps the opt-in a conscious, per-invocation act during the gated interval. The check is
+isolated in its own function, `src/run-command.ts`'s `requireUnhardenedInjectionOptIn()`, so Story
+43.4 can delete one function call and its supporting flag/message cleanly when it removes this AC.
+
+**Known, accepted limitation:** the warning can be silently swallowed by a shell redirect that
+discards stderr (`... 2>/dev/null`) — a common, legitimate cron/CI pattern. There is no reliable way
+to force visibility into a process whose own invoker chose to discard stderr, short of refusing to
+run at all when stderr isn't a TTY, which would break that same legitimate use case. Story 43.4's
+audit-log requirement (FR158a) is the actual mitigation — an audit trail that doesn't depend on the
+invoker having read their own terminal output.
+
+### 7. Offline-cache/provenance participation: reuses `get`'s exact policy, not a special case
+
+`pvault run` participates in `packages/agent`'s offline-cache fallback exactly as `pvault get` does
+(decision #5 above) — each `--secret` fetch individually goes through
+`withFetchProvenanceTracking()`, and each secret served from a stale cache gets its own per-name
+warning on stderr (`warning: 'X' served from offline cache (vault unreachable), value may be
+stale`) before the child is ever spawned. This is a considered trade-off, not an oversight —
+injecting a stale credential into a running, possibly long-lived process is arguably riskier than
+`get` printing a stale value once for a human to judge — but disabling cache participation for `run`
+would make it less resilient to a genuinely offline vault than `get`, contradicting Epic 43's
+framing of the offline cache as a documented, accepted feature. The mandatory per-secret warning is
+the mitigation; a stronger one (refusing to inject a stale value without further opt-in) is out of
+this story's scope.
+
+### AC-4 — exact exit code / signal propagation, by design
+
+"Propagates the child's exit code exactly, including signal-terminated cases" is read as **the
+parent's own termination is the same signal event** — `process.kill(process.pid, signal)` — not a
+synthetic `128 + N` code, matching how `npm`/`cross-env`-class tools behave. A parent-received
+`SIGINT` while the child is running is forwarded to the child (`child.kill('SIGINT')`) rather than
+orphaning it, with the listener removed once the child's own `exit` event fires.
+
+## Running the e2e tests
 
 `src/get-command.e2e.test.ts` boots a real, listening `@project-vault/api` server and round-trips
 a real secret through it — it needs a real, migrated Postgres:
@@ -254,3 +378,9 @@ DATABASE_URL=postgresql://vault_app:dev-only-change-in-prod@localhost:$DB_HOST_P
 ADMIN_DATABASE_URL=postgresql://vault_admin:password@localhost:$DB_HOST_PORT/project_vault \
   pnpm --filter @project-vault/cli test
 ```
+
+`src/inject-and-run.e2e.test.ts` (Story 43.3, AC-4) needs **no** Postgres/API server — it spawns a
+real `node:child_process` child (via the real, non-mocked `spawn`) and asserts real exit-code/signal
+propagation, with `getSecret` stubbed in-memory (the fetch side is already covered by
+`get-command.e2e.test.ts`'s real round trip). It runs as part of the normal `pnpm test` command with
+no extra setup.

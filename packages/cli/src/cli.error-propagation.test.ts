@@ -31,6 +31,22 @@ function unusedPrompt(): never {
 function unusedFetch(): never {
   throw new Error('fetchFn() should not be called by this test')
 }
+function unusedSpawn(): never {
+  throw new Error('spawn() should not be called by this test')
+}
+const unusedParentProcess = {
+  pid: -1,
+  platform: 'linux' as NodeJS.Platform,
+  on: () => {
+    throw new Error('parentProcess.on() should not be called by this test')
+  },
+  removeListener: () => {
+    throw new Error('parentProcess.removeListener() should not be called by this test')
+  },
+  kill: () => {
+    throw new Error('parentProcess.kill() should not be called by this test')
+  },
+}
 
 describe('buildProgram — non-CliUsageError errors propagate uncaught', () => {
   it('get: rethrows instead of swallowing an unexpected error from runGet', async () => {
@@ -45,6 +61,8 @@ describe('buildProgram — non-CliUsageError errors propagate uncaught', () => {
       setExitCode: vi.fn(),
       prompt: unusedPrompt,
       fetchFn: unusedFetch,
+      spawn: unusedSpawn,
+      parentProcess: unusedParentProcess,
     })
 
     await expect(program.parseAsync(['node', 'pvault', 'get', 'FOO'])).rejects.toThrow('boom-get')
@@ -58,6 +76,8 @@ describe('buildProgram — non-CliUsageError errors propagate uncaught', () => {
       setExitCode: vi.fn(),
       prompt: unusedPrompt,
       fetchFn: unusedFetch,
+      spawn: unusedSpawn,
+      parentProcess: unusedParentProcess,
     })
 
     await expect(program.parseAsync(['node', 'pvault', 'login'])).rejects.toThrow('boom-login')

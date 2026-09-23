@@ -50,6 +50,25 @@ export function resolveConfig(flags: CliFlags, env: EnvLike = process.env): Reso
   return { apiKey: apiKey as string, baseUrl: baseUrl as string, projectId: projectId as string }
 }
 
+/**
+ * Shared by `get-command.ts` and `run-command.ts` — both are machine-user-key commands that
+ * resolve config the same way: warn (never hard-fail) on an insecure `baseUrl`, then construct the
+ * `VaultAgent` from the resolved config. Consolidated here to avoid the two commands' orchestration
+ * functions drifting out of sync on this shared setup step.
+ */
+export function warnAndCreateAgent<Agent>(
+  config: ResolvedConfig,
+  createVaultAgent: (config: { apiKey: string; baseUrl: string; projectId: string }) => Agent,
+  writeStderr: (chunk: string) => void
+): Agent {
+  warnIfInsecureBaseUrl(config.baseUrl, writeStderr)
+  return createVaultAgent({
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl,
+    projectId: config.projectId,
+  })
+}
+
 export type LoginFlags = { url?: string }
 export type LoginConfig = { baseUrl: string }
 
