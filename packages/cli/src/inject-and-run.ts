@@ -7,8 +7,20 @@
  *
  * `run-command.ts` is the thin CLI adapter: it parses `pvault run`'s flags into `InjectEntry[]`,
  * calls `injectAndRun()`, and maps the result to `CliRuntime.setExitCode()`.
+ *
+ * Story 43.4 (FR158a, and Epic 50's FR179 "inherits this protection from the shared seam") — every
+ * secondary-disclosure hardening lives HERE, not in the CLI adapter, so a future broker calling
+ * `injectAndRun()` gets all of it for free: the `--secrets-fd` FD-3 pipe delivery, the stripping of
+ * pvault's own `VAULT_API_KEY` from the child env, the audit invocation context sent on every
+ * fetch, and `hardenProcessDiagnostics()`.
+ *
+ * Code-review guidance (Story 43.4 Dev Notes decision #7): no error path in this module may
+ * serialize a fetched value, the `injected`/child-env map, the FD JSON payload, or the parent's
+ * environment into a message — e.g. a debugging `console.error(childEnv)` or `JSON.stringify(deps)`
+ * on an error path would violate AC-1 even though it has nothing to do with the child's own crash
+ * output.
  */
-import { VaultAgentError } from '@project-vault/agent'
+import { VaultAgentError, type SecretRequestContext } from '@project-vault/agent'
 import { messageForAgentError } from './agent-error-messages.js'
 import { withFetchProvenanceTracking } from './cache-provenance.js'
 import { EXIT_CODES, exitCodeForAgentErrorCode } from './exit-codes.js'
@@ -22,17 +34,83 @@ export type InjectEntry = {
   envVarName: string
 }
 
+/** The write end of the `--secrets-fd` pipe (Node's real `child.stdio[3]` is a `Writable`). */
+export type SecretsPipeLike = {
+  on(event: 'error', listener: (error: NodeJS.ErrnoException) => void): unknown
+  end(chunk: string): unknown
+  /** Releases the handle once the child has exited (optional so minimal fakes still type-check). */
+  destroy?(): unknown
+}
+
 export type ChildProcessLike = {
   on(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): void
   on(event: 'error', listener: (error: Error) => void): void
   kill(signal?: NodeJS.Signals): boolean
+  /** Only read in `delivery: 'fd'` mode; a spawn that failed may leave the slot `null`. */
+  stdio?: ReadonlyArray<SecretsPipeLike | object | null | undefined>
 }
+
+/** Story 43.4 AC-2 — FD 3 is the first slot after stdin/stdout/stderr. */
+export const SECRETS_FD = 3
+/** The non-secret marker telling the child which FD carries the JSON payload (like systemd's
+ * `LISTEN_FDS`). */
+export const SECRETS_FD_ENV_VAR = 'PVAULT_SECRETS_FD'
+export type SpawnStdio = 'inherit' | ['inherit', 'inherit', 'inherit', 'pipe']
 
 export type SpawnFn = (
   command: string,
   args: string[],
-  options: { env: NodeJS.ProcessEnv; stdio: 'inherit' }
+  options: { env: NodeJS.ProcessEnv; stdio: SpawnStdio }
 ) => ChildProcessLike
+
+/** `env` (default): requested secrets become child env vars. `fd`: they are written as one JSON
+ * object to an anonymous pipe on FD 3 and never appear in the child's environment. */
+export type SecretsDelivery = 'env' | 'fd'
+
+/**
+ * Story 43.4 AC-1 / Dev Notes decision #5 — pvault's OWN credential, stripped from the env the
+ * child inherits in both delivery modes. Without this, `VAULT_API_KEY=… pvault run --secret X --
+ * app` would hand the child a key able to fetch every credential the machine user can reach — a
+ * secondary-disclosure path strictly worse than the one this story closes. Non-secret config
+ * (`VAULT_URL`, `VAULT_PROJECT_ID`) is left in place. An explicit `--secret VAULT_API_KEY` still
+ * injects: the strip applies to the inherited base env only.
+ */
+export const CALLER_CREDENTIAL_ENV_VARS = ['VAULT_API_KEY'] as const
+const CALLER_CREDENTIAL_ENV_VAR_SET: ReadonlySet<string> = new Set(CALLER_CREDENTIAL_ENV_VARS)
+
+type DiagnosticReportSettings = {
+  reportOnFatalError: boolean
+  reportOnSignal: boolean
+  reportOnUncaughtException: boolean
+}
+
+/**
+ * Story 43.4 AC-1 — a Node diagnostic report (`--report-on-fatalerror`,
+ * `--report-uncaught-exception`, `--report-on-signal`, settable through `NODE_OPTIONS`) writes a
+ * JSON file containing pvault's full environment and a JS stack. These flags are writable at
+ * runtime on Node >= 20, so turn all three off. Lives in the seam module (not `bin.ts`) so a
+ * future Epic 50 broker process can call the same helper.
+ *
+ * NOT mitigable from Node (documented as residual risk in the README instead): heap snapshots
+ * (`--heapsnapshot-signal`, `--heapsnapshot-near-heap-limit`) and OS core dumps of pvault itself.
+ */
+export function hardenProcessDiagnostics(proc: { report?: DiagnosticReportSettings }): void {
+  if (!proc.report) return
+  proc.report.reportOnFatalError = false
+  proc.report.reportOnSignal = false
+  proc.report.reportOnUncaughtException = false
+}
+
+/**
+ * Story 43.4 AC-3 — the directly spawned binary's basename, split on both `/` and `\` (so a
+ * Windows-style `C:\tools\psql.exe` gives `psql.exe` on any host). Never argv: argv routinely
+ * carries other credentials (`mysql -p…`, connection URLs) that must not become audit-log content.
+ * A wrapper (`env X=1 psql`, `sh -c …`) records the wrapper — accepted and documented.
+ */
+export function commandBasename(command: string): string {
+  const segments = command.split(/[/\\]/)
+  return segments.at(-1) ?? ''
+}
 
 /** The subset of Node's global `process` this module needs for signal handling — injected rather
  * than read from the real global, so the whole SIGINT-forwarding/signal-re-raise behavior stays
@@ -47,7 +125,8 @@ export type ParentProcessLike = {
 }
 
 export type InjectAndRunDeps = {
-  getSecret: (name: string) => Promise<string>
+  /** Called with the audit invocation context computed by the seam (Story 43.4 AC-3/AC-5). */
+  getSecret: (name: string, context?: SecretRequestContext) => Promise<string>
   spawn: SpawnFn
   parentProcess: ParentProcessLike
   /** The environment the child inherits, layered with the injected vars on top — defaults to
@@ -56,6 +135,8 @@ export type InjectAndRunDeps = {
   /** Per-secret provenance/warning sink (Dev Notes decision #7). Optional — a non-CLI caller that
    * doesn't care about stderr-style diagnostics can simply omit it. */
   writeStderr?: (chunk: string) => void
+  /** Story 43.4 AC-2 — defaults to `'env'`. */
+  delivery?: SecretsDelivery
 }
 
 export type InjectAndRunResult =
@@ -76,6 +157,7 @@ function noop(): void {
  */
 async function fetchAllOrNothing(
   entries: InjectEntry[],
+  context: SecretRequestContext,
   deps: Pick<InjectAndRunDeps, 'getSecret' | 'writeStderr'>
 ): Promise<
   { ok: true; injected: Record<string, string> } | { ok: false; exitCode: number; error: string }
@@ -97,13 +179,15 @@ async function fetchAllOrNothing(
     try {
       // Dev Notes decision #7 — `run` participates in the same offline-cache fallback `get` does,
       // with its own mandatory per-secret provenance warning (never a silent, possibly-stale
-      // injection).
+      // injection). Story 43.4 decision #6 — a cache-served value makes no HTTP request, so the
+      // server writes no audit entry for this injection: say so rather than refuse (accepted
+      // residual risk, documented in the README).
       const { result: value, servedAfterNetworkFailure } = await withFetchProvenanceTracking(() =>
-        deps.getSecret(entry.credentialName)
+        deps.getSecret(entry.credentialName, context)
       )
       if (servedAfterNetworkFailure) {
         writeStderr(
-          `warning: '${safeName}' served from offline cache (vault unreachable), value may be stale\n`
+          `warning: '${safeName}' served from offline cache (vault unreachable), value may be stale and this injection is not recorded in the vault audit log\n`
         )
       }
       injected[entry.envVarName] = value
@@ -127,6 +211,86 @@ async function fetchAllOrNothing(
   }
 
   return { ok: true, injected }
+}
+
+function withoutCallerCredentials(baseEnv: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(baseEnv ?? {}).filter(
+      // Case-insensitive, since Windows environment names are.
+      ([name]) => !CALLER_CREDENTIAL_ENV_VAR_SET.has(name.toUpperCase())
+    )
+  )
+}
+
+/** "The reader went away" — not a pvault failure; the child's own exit code is what matters.
+ * Node's `'pipe'` stdio is a socketpair on POSIX, so a child exiting without draining FD 3 shows
+ * up as ECONNRESET (verified in inject-and-run.e2e.test.ts), not only EPIPE. */
+const READER_GONE_ERROR_CODES: ReadonlySet<string> = new Set([
+  'EPIPE',
+  'ECONNRESET',
+  'ERR_STREAM_DESTROYED',
+])
+
+/**
+ * Story 43.4 AC-2 — hands the JSON payload to the pipe's write end and returns immediately. It
+ * never awaits the write: a payload larger than the OS pipe buffer (64 KiB on Linux) that the
+ * child never reads would otherwise hang pvault forever — the caller settles on the child's
+ * 'exit' as always. Errors are reported from `error.code` only, never from the payload.
+ */
+function deliverOverSecretsFd(
+  child: ChildProcessLike,
+  payload: string,
+  writeStderr: (chunk: string) => void
+): () => void {
+  const pipe = child.stdio?.at(SECRETS_FD) as SecretsPipeLike | null | undefined
+  // A spawn that failed (ENOENT) may leave the slot null — nothing to write into.
+  if (!pipe) return noop
+  // Without this listener, the child exiting without reading FD 3 (EPIPE) would surface as an
+  // UNHANDLED stream error, crashing pvault with a stack trace and losing the child's exit code.
+  pipe.on('error', (error) => {
+    if (READER_GONE_ERROR_CODES.has(error.code ?? '')) return
+    writeStderr(
+      `warning: could not deliver secrets over FD ${SECRETS_FD} (${sanitizeForTerminal(error.code ?? 'unknown error')})\n`
+    )
+  })
+  pipe.end(payload)
+  // Called once the child has exited (or failed to spawn). Node's 'pipe' stdio is a duplex socket
+  // that stays referenced until the peer closes its end — so a grandchild the child backgrounded
+  // (and which inherited FD 3) would otherwise keep pvault's event loop alive, hanging `pvault run`
+  // long after the command it ran has exited. Destroying our end discards only bytes still queued
+  // in user space (the "settle on exit, let the stream be destroyed" contract); bytes already in
+  // the kernel buffer stay readable by whoever still holds FD 3.
+  return () => {
+    pipe.destroy?.()
+  }
+}
+
+/** Builds the child's env for the chosen delivery mode, spawns, and (fd mode) writes the payload —
+ * only ever after every secret was fetched and spawn() returned. */
+function spawnWithSecrets(
+  command: string,
+  args: string[],
+  injected: Record<string, string>,
+  deps: InjectAndRunDeps
+): { child: ChildProcessLike; releaseSecretsPipe: () => void } {
+  const inheritedEnv = withoutCallerCredentials(deps.baseEnv)
+  if (deps.delivery !== 'fd') {
+    const child = deps.spawn(command, args, {
+      env: { ...inheritedEnv, ...injected },
+      stdio: 'inherit',
+    })
+    return { child, releaseSecretsPipe: noop }
+  }
+  const child = deps.spawn(command, args, {
+    env: { ...inheritedEnv, [SECRETS_FD_ENV_VAR]: String(SECRETS_FD) },
+    stdio: ['inherit', 'inherit', 'inherit', 'pipe'],
+  })
+  const releaseSecretsPipe = deliverOverSecretsFd(
+    child,
+    JSON.stringify(injected),
+    deps.writeStderr ?? noop
+  )
+  return { child, releaseSecretsPipe }
 }
 
 /**
@@ -169,15 +333,38 @@ export async function injectAndRun(
     seenTargets.add(key)
   }
 
-  const fetched = await fetchAllOrNothing(entries, deps)
+  // Story 43.4 AC-3/AC-5 — the seam (never the CLI adapter) computes the audit context, so any
+  // caller of injectAndRun() sends it on every fetch. The label is hard-coded to `run` for now; an
+  // Epic 50 broker will want its own (e.g. `mcp`) via an optional override here plus a one-value
+  // server allowlist extension — deliberately not added until a consumer exists (YAGNI).
+  const targetCommand = commandBasename(command)
+  const context: SecretRequestContext =
+    targetCommand === '' ? { invocation: 'run' } : { invocation: 'run', targetCommand }
+
+  const fetched = await fetchAllOrNothing(entries, context, deps)
   if (!fetched.ok) {
     return { ok: false, exitCode: fetched.exitCode, error: fetched.error }
   }
 
-  const childEnv: NodeJS.ProcessEnv = { ...deps.baseEnv, ...fetched.injected }
-
   return new Promise<InjectAndRunResult>((resolve) => {
-    const child = deps.spawn(command, args, { env: childEnv, stdio: 'inherit' })
+    // The fetched values are handed off inside spawnWithSecrets() and are not captured by any of
+    // the listener closures below, so nothing here keeps them reachable once spawning is done.
+    let spawned: ReturnType<typeof spawnWithSecrets>
+    try {
+      spawned = spawnWithSecrets(command, args, fetched.injected, deps)
+    } catch (error) {
+      // Node's spawn() THROWS synchronously for some invalid input — notably
+      // ERR_INVALID_ARG_VALUE for an env value containing a NUL byte, whose message quotes the
+      // offending value verbatim. So the message is never used here: only the error code (AC-1).
+      const code = (error as { code?: unknown } | null)?.code
+      resolve({
+        ok: false,
+        exitCode: EXIT_CODES.unexpected,
+        error: `Failed to run '${sanitizeForTerminal(command)}' (${typeof code === 'string' ? sanitizeForTerminal(code) : 'spawn failed'})`,
+      })
+      return
+    }
+    const { child, releaseSecretsPipe } = spawned
 
     // AC-4 edge case — forward a parent-received SIGINT to the running child, so the child gets a
     // chance to clean up rather than being orphaned. Removed once the child's own 'exit' handler
@@ -194,6 +381,7 @@ export async function injectAndRun(
     let settled = false
     const cleanup = (): void => {
       deps.parentProcess.removeListener('SIGINT', forwardSigint)
+      releaseSecretsPipe()
     }
 
     // Without this handler, a spawn failure (most commonly a typo'd/missing target command) would

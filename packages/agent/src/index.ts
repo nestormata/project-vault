@@ -23,6 +23,9 @@ import {
   VaultUnreachableError,
   VaultUnreachableNonCacheableError,
 } from './errors.js'
+import { buildInvocationContextHeaders, type SecretRequestContext } from './invocation-context.js'
+
+export type { InvocationLabel, SecretRequestContext } from './invocation-context.js'
 
 export {
   VaultAgentError,
@@ -45,7 +48,13 @@ export type VaultAgentConfig = {
 }
 
 export type VaultAgent = {
-  getSecret: (name: string) => Promise<string>
+  /**
+   * `context` (Story 43.4 AC-3) is optional and additive: when given, the request carries
+   * `x-vault-invocation`/`x-vault-target-command` headers the server records (client-asserted) in
+   * the reveal's audit entry. Omitting it sends exactly the pre-43.4 request. A value served from
+   * the offline cache makes no request at all, so it carries no context and writes no audit entry.
+   */
+  getSecret: (name: string, context?: SecretRequestContext) => Promise<string>
 }
 
 type CredentialValueBody = {
@@ -86,15 +95,20 @@ export function createVaultAgent(config: VaultAgentConfig): VaultAgent {
 
   async function fetchCredentialValue(
     name: string,
-    alreadyReauthed: boolean
+    alreadyReauthed: boolean,
+    contextHeaders: Record<string, string>
   ): Promise<CredentialValueBody['data']> {
     if (!accessToken) accessToken = await exchangeToken()
     const url = `${config.baseUrl}/api/v1/machine/projects/${config.projectId}/credentials/${encodeURIComponent(name)}/value`
-    const res = await fetch(url, { headers: { authorization: `Bearer ${accessToken}` } })
+    const res = await fetch(url, {
+      headers: { ...contextHeaders, authorization: `Bearer ${accessToken}` },
+    })
 
     if (res.status === 401 && !alreadyReauthed) {
       accessToken = await exchangeToken()
-      return fetchCredentialValue(name, true)
+      // Story 43.4 AC-3 — the context must survive the re-auth retry, or the audited request
+      // (the retry is the one that succeeds) would lose it.
+      return fetchCredentialValue(name, true, contextHeaders)
     }
     if (res.status === 404) {
       throw new VaultAgentError('credential_not_found', `Credential "${name}" was not found`)
@@ -173,12 +187,16 @@ export function createVaultAgent(config: VaultAgentConfig): VaultAgent {
     return decryptFromCache(entry.encryptedValue, cacheKey)
   }
 
-  async function getSecret(name: string): Promise<string> {
+  async function getSecret(name: string, context?: SecretRequestContext): Promise<string> {
     const attemptLive = shouldAttemptLiveRetry(state)
     if (!attemptLive) return getFromCache(name)
 
+    // Built BEFORE the try below, whose `TypeError` branch means "network failure → serve from
+    // cache" — header construction must never be able to masquerade as a network failure.
+    const contextHeaders = buildInvocationContextHeaders(context)
+
     try {
-      const live = await fetchCredentialValue(name, false)
+      const live = await fetchCredentialValue(name, false, contextHeaders)
       const wasInFallback = state.inFallback
       recordSuccess(state)
       refreshCache(name, live)

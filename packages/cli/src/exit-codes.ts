@@ -46,9 +46,11 @@ export const EXIT_CODES = {
   /** Zero `--secret` flags passed (AC-1's edge case) — deliberately distinct from `usageError` so
    * a wrapper script can branch on "forgot the injection flags" specifically. */
   secretsRequired: 22,
-  /** The AC-5 opt-in flag (`--allow-unhardened-injection`) was omitted. Deliberately not reusing
-   * `usageError` — a CI pipeline or wrapper script may want to branch specifically on "the
-   * security gate wasn't acknowledged" versus a generic bad invocation. */
+  /** RETIRED (Story 43.4 AC-4) — never returned since Story 43.4 removed Story 43.3's
+   * `--allow-unhardened-injection` opt-in gate. Formerly: the opt-in flag was omitted. The slot is
+   * kept and must NEVER be reused for another meaning — a script that branched on `23` during the
+   * gated interval between 43.3 and 43.4 must not have it silently repurposed (same "keep the slot,
+   * document why it's dormant" pattern as `childSignalTerminated` below). */
   unhardenedInjectionNotAcknowledged: 23,
   /** Windows-only fallback (AC-4's Windows edge case): the parent cannot itself re-raise the
    * child's terminating signal, so it reports this code instead. On POSIX, where the real signal

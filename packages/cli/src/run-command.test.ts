@@ -3,7 +3,7 @@ import { VaultAgentError } from '@project-vault/agent'
 import { describe, expect, it, vi } from 'vitest'
 import { EXIT_CODES } from './exit-codes.js'
 import type { ChildProcessLike, ParentProcessLike } from './inject-and-run.js'
-import { requireUnhardenedInjectionOptIn, runRun } from './run-command.js'
+import { runRun } from './run-command.js'
 
 function makeStreams(isTTY = false) {
   const stdoutChunks: string[] = []
@@ -48,59 +48,95 @@ const validConfig = {
 
 const SECRET_VALUE = 'the-secret-value'
 
-describe('requireUnhardenedInjectionOptIn (Dev Notes decision #6, AC-5)', () => {
-  it('refuses and prints the named risk when the flag is absent, without proceeding', () => {
-    const stderrChunks: string[] = []
-    const proceed = requireUnhardenedInjectionOptIn(false, (c) => stderrChunks.push(c))
-
-    expect(proceed).toBe(false)
-    expect(stderrChunks.join('')).toContain('--allow-unhardened-injection')
-    expect(stderrChunks.join('')).toContain('/proc/<pid>/environ')
-  })
-
-  it('proceeds and still prints the warning every time when the flag is present', () => {
-    const stderrChunks: string[] = []
-    const proceed = requireUnhardenedInjectionOptIn(true, (c) => stderrChunks.push(c))
-
-    expect(proceed).toBe(true)
-    expect(stderrChunks.join('')).toContain('injects secrets into a process')
-  })
-})
-
-describe('runRun — AC-5 gate', () => {
-  it('refuses with unhardenedInjectionNotAcknowledged before ever calling getSecret/spawn', async () => {
+describe('runRun — Story 43.4 AC-4: the 43.3 opt-in gate is gone (generally available)', () => {
+  it('runs immediately with no opt-in flag and prints no residual-risk warning', async () => {
     const streams = makeStreams()
-    const createVaultAgent = vi.fn()
-    const spawn = vi.fn()
+    const fakeChild = makeFakeChild()
+    const spawn = vi.fn().mockReturnValue(fakeChild)
+    const getSecret = vi.fn().mockResolvedValue(SECRET_VALUE)
 
-    const exitCode = await runRun(
-      { secrets: ['X'], command: 'cmd', commandArgs: [], allowUnhardenedInjection: false },
-      validConfig,
-      streams,
-      { createVaultAgent, spawn, parentProcess: makeFakeParentProcess(), env: {} }
-    )
-
-    expect(exitCode).toBe(EXIT_CODES.unhardenedInjectionNotAcknowledged)
-    expect(createVaultAgent).not.toHaveBeenCalled()
-    expect(spawn).not.toHaveBeenCalled()
-  })
-
-  it('an env var alone (no CLI flag) does not bypass the gate', async () => {
-    // requireUnhardenedInjectionOptIn only ever receives the CLI-argument-derived boolean — this
-    // test documents that runRun has no env-var-reading code path for this flag at all.
-    const streams = makeStreams()
-    const exitCode = await runRun(
-      { secrets: ['X'], command: 'cmd', commandArgs: [], allowUnhardenedInjection: false },
+    const resultPromise = runRun(
+      { secrets: ['X'], command: 'cmd', commandArgs: [], secretsFd: false },
       validConfig,
       streams,
       {
-        createVaultAgent: vi.fn(),
-        spawn: vi.fn(),
+        createVaultAgent: vi.fn().mockReturnValue({ getSecret }),
+        spawn,
         parentProcess: makeFakeParentProcess(),
-        env: { VAULT_ALLOW_UNHARDENED: '1' },
+        env: {},
       }
     )
-    expect(exitCode).toBe(EXIT_CODES.unhardenedInjectionNotAcknowledged)
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled())
+    fakeChild.emitExit(0, null)
+
+    expect(await resultPromise).toBe(0)
+    const stderr = streams.stderrChunks.join('')
+    expect(stderr).not.toContain('allow-unhardened-injection')
+    expect(stderr).not.toContain('/proc/<pid>/environ')
+    expect(stderr).toBe('')
+  })
+
+  it('the run-command module no longer exports the retired opt-in gate', async () => {
+    const mod: Record<string, unknown> = await import('./run-command.js')
+    expect(mod['requireUnhardenedInjectionOptIn']).toBeUndefined()
+  })
+})
+
+describe('runRun — Story 43.4 AC-2/AC-3: thin adapter over the seam', () => {
+  it('--secrets-fd is passed through as fd delivery (value on FD 3, not in env)', async () => {
+    const streams = makeStreams()
+    const written: string[] = []
+    const fakeChild = Object.assign(makeFakeChild(), {
+      stdio: [null, null, null, { on: vi.fn(), end: (chunk: string) => void written.push(chunk) }],
+    })
+    const spawn = vi.fn().mockReturnValue(fakeChild)
+    const getSecret = vi.fn().mockResolvedValue(SECRET_VALUE)
+
+    const resultPromise = runRun(
+      { secrets: ['DATABASE_URL'], command: 'psql', commandArgs: [], secretsFd: true },
+      validConfig,
+      streams,
+      {
+        createVaultAgent: vi.fn().mockReturnValue({ getSecret }),
+        spawn,
+        parentProcess: makeFakeParentProcess(),
+        env: { EXISTING: 'x', VAULT_API_KEY: 'pk_abc123' },
+      }
+    )
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled())
+    fakeChild.emitExit(0, null)
+    expect(await resultPromise).toBe(0)
+
+    expect(spawn).toHaveBeenCalledWith('psql', [], {
+      env: { EXISTING: 'x', PVAULT_SECRETS_FD: '3' },
+      stdio: ['inherit', 'inherit', 'inherit', 'pipe'],
+    })
+    expect(JSON.parse(written[0] ?? '')).toEqual({ DATABASE_URL: SECRET_VALUE })
+    expect(streams.stderrChunks.join('')).not.toContain(SECRET_VALUE)
+  })
+
+  it('forwards the seam-computed invocation context to the agent', async () => {
+    const streams = makeStreams()
+    const fakeChild = makeFakeChild()
+    const spawn = vi.fn().mockReturnValue(fakeChild)
+    const getSecret = vi.fn().mockResolvedValue(SECRET_VALUE)
+
+    const resultPromise = runRun(
+      { secrets: ['A'], command: './bin/migrate', commandArgs: ['--up'], secretsFd: false },
+      validConfig,
+      streams,
+      {
+        createVaultAgent: vi.fn().mockReturnValue({ getSecret }),
+        spawn,
+        parentProcess: makeFakeParentProcess(),
+        env: {},
+      }
+    )
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled())
+    fakeChild.emitExit(0, null)
+    await resultPromise
+
+    expect(getSecret).toHaveBeenCalledWith('A', { invocation: 'run', targetCommand: 'migrate' })
   })
 })
 
@@ -108,7 +144,18 @@ describe('runRun — AC-1 usage errors', () => {
   it('zero --secret flags is a usage error (secretsRequired)', async () => {
     const streams = makeStreams()
     const exitCode = await runRun(
-      { secrets: [], command: 'cmd', commandArgs: [], allowUnhardenedInjection: true },
+      { secrets: [], command: 'cmd', commandArgs: [], secretsFd: false },
+      validConfig,
+      streams,
+      { createVaultAgent: vi.fn(), spawn: vi.fn(), parentProcess: makeFakeParentProcess(), env: {} }
+    )
+    expect(exitCode).toBe(EXIT_CODES.secretsRequired)
+  })
+
+  it('--secrets-fd with zero --secret flags is still the secretsRequired usage error (Story 43.4 AC-2)', async () => {
+    const streams = makeStreams()
+    const exitCode = await runRun(
+      { secrets: [], command: 'cmd', commandArgs: [], secretsFd: true },
       validConfig,
       streams,
       { createVaultAgent: vi.fn(), spawn: vi.fn(), parentProcess: makeFakeParentProcess(), env: {} }
@@ -120,7 +167,7 @@ describe('runRun — AC-1 usage errors', () => {
     const streams = makeStreams()
     const createVaultAgent = vi.fn()
     const exitCode = await runRun(
-      { secrets: ['=EMPTY_NAME'], command: 'cmd', commandArgs: [], allowUnhardenedInjection: true },
+      { secrets: ['=EMPTY_NAME'], command: 'cmd', commandArgs: [], secretsFd: false },
       validConfig,
       streams,
       { createVaultAgent, spawn: vi.fn(), parentProcess: makeFakeParentProcess(), env: {} }
@@ -143,7 +190,7 @@ describe('runRun — success path', () => {
         secrets: ['DATABASE_URL'],
         command: 'psql',
         commandArgs: [],
-        allowUnhardenedInjection: true,
+        secretsFd: false,
       },
       validConfig,
       streams,
@@ -174,7 +221,7 @@ describe('runRun — success path', () => {
     const createVaultAgent = vi.fn().mockReturnValue({ getSecret })
 
     const exitCode = await runRun(
-      { secrets: ['MISSING'], command: 'cmd', commandArgs: [], allowUnhardenedInjection: true },
+      { secrets: ['MISSING'], command: 'cmd', commandArgs: [], secretsFd: false },
       validConfig,
       streams,
       { createVaultAgent, spawn, parentProcess: makeFakeParentProcess(), env: {} }

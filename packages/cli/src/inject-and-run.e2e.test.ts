@@ -14,13 +14,18 @@
  */
 import { spawn as realSpawn } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
-import { injectAndRun, type ChildProcessLike, type ParentProcessLike } from './inject-and-run.js'
+import {
+  injectAndRun,
+  type ChildProcessLike,
+  type ParentProcessLike,
+  type SpawnStdio,
+} from './inject-and-run.js'
 
 function makeRealSpawn() {
   return (
     command: string,
     args: string[],
-    options: { env: NodeJS.ProcessEnv; stdio: 'inherit' }
+    options: { env: NodeJS.ProcessEnv; stdio: SpawnStdio }
   ): ChildProcessLike => realSpawn(command, args, options) as unknown as ChildProcessLike
 }
 
@@ -91,5 +96,126 @@ describe('injectAndRun — real end-to-end child process (no mocked spawn)', () 
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.terminatedBySignal).toBe('SIGTERM')
     expect(parentProcess.killCalls).toEqual([[99999, 'SIGTERM']])
+  })
+
+  describe('Story 43.4 AC-2 — --secrets-fd over a real OS pipe', () => {
+    it('delivers the value via FD 3 as JSON and NOT via the child environment', async () => {
+      const getSecret = async (): Promise<string> => 'fd-delivered-value'
+      const childScript = [
+        "const fs = require('node:fs')",
+        "const payload = JSON.parse(fs.readFileSync(3, 'utf8'))",
+        "const viaFd = payload.E2E_FD_SECRET === 'fd-delivered-value'",
+        "const notInEnv = !Object.hasOwn(process.env, 'E2E_FD_SECRET')",
+        "const marker = process.env.PVAULT_SECRETS_FD === '3'",
+        'process.exit(viaFd && notInEnv && marker ? 0 : 42)',
+      ].join(';')
+
+      const result = await injectAndRun(
+        [{ credentialName: 'E2E_FD_SECRET', envVarName: 'E2E_FD_SECRET' }],
+        process.execPath,
+        ['-e', childScript],
+        {
+          getSecret,
+          spawn: makeRealSpawn(),
+          parentProcess: makeFakeParentProcess(),
+          baseEnv: process.env,
+          delivery: 'fd',
+        }
+      )
+
+      expect(result).toEqual({ ok: true, exitCode: 0 })
+    })
+
+    it('a child that exits without reading a > 64 KiB payload returns its own exit code (EPIPE handled, no crash)', async () => {
+      const stderr: string[] = []
+      const result = await injectAndRun(
+        [{ credentialName: 'BIG', envVarName: 'BIG' }],
+        process.execPath,
+        ['-e', 'process.exit(5)'],
+        {
+          getSecret: async () => 'x'.repeat(256 * 1024),
+          spawn: makeRealSpawn(),
+          parentProcess: makeFakeParentProcess(),
+          baseEnv: process.env,
+          delivery: 'fd',
+          writeStderr: (chunk) => stderr.push(chunk),
+        }
+      )
+
+      expect(result).toEqual({ ok: true, exitCode: 5 })
+      expect(stderr).toEqual([])
+    })
+
+    it('a missing binary in fd mode reports the spawn failure without an unhandled pipe error or leaking the value', async () => {
+      const stderr: string[] = []
+      const result = await injectAndRun(
+        [{ credentialName: 'X', envVarName: 'X' }],
+        '/no/such/pvault-e2e-binary',
+        [],
+        {
+          getSecret: async () => 'enoent-secret-value',
+          spawn: makeRealSpawn(),
+          parentProcess: makeFakeParentProcess(),
+          baseEnv: process.env,
+          delivery: 'fd',
+          writeStderr: (chunk) => stderr.push(chunk),
+        }
+      )
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error).not.toContain('enoent-secret-value')
+      expect(stderr).toEqual([])
+    })
+
+    it('closes the FD-3 write end on child exit even while a grandchild still holds FD 3 open (no parent hang)', async () => {
+      let captured: { stdio?: ReadonlyArray<unknown> } | undefined
+      const spawn = (
+        command: string,
+        args: string[],
+        options: { env: NodeJS.ProcessEnv; stdio: SpawnStdio }
+      ): ChildProcessLike => {
+        const child = realSpawn(command, args, options)
+        captured = child
+        return child as unknown as ChildProcessLike
+      }
+
+      // The child backgrounds a grandchild that inherits FD 3 and outlives it — the pattern of a
+      // start script that launches a daemon and exits.
+      const result = await injectAndRun(
+        [{ credentialName: 'X', envVarName: 'X' }],
+        '/bin/sh',
+        ['-c', '(sleep 5) & exit 0'],
+        {
+          getSecret: async () => 'grandchild-secret-value',
+          spawn,
+          parentProcess: makeFakeParentProcess(),
+          baseEnv: process.env,
+          delivery: 'fd',
+        }
+      )
+
+      expect(result).toEqual({ ok: true, exitCode: 0 })
+      const pipe = captured?.stdio?.[3] as { destroyed?: boolean } | undefined
+      // An un-destroyed socket here keeps the real pvault process's event loop alive until the
+      // grandchild exits, even though the child it was asked to run has already finished.
+      expect(pipe?.destroyed).toBe(true)
+    })
+  })
+
+  it('an env value Node refuses (NUL byte) fails cleanly and never echoes the value (spawn throws synchronously)', async () => {
+    const result = await injectAndRun(
+      [{ credentialName: 'NUL_SECRET', envVarName: 'NUL_SECRET' }],
+      process.execPath,
+      ['-e', 'process.exit(0)'],
+      {
+        getSecret: async () => 'nul-secret-value\u0000tail',
+        spawn: makeRealSpawn(),
+        parentProcess: makeFakeParentProcess(),
+        baseEnv: process.env,
+      }
+    )
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).not.toContain('nul-secret-value')
   })
 })
