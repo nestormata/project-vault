@@ -25,15 +25,27 @@ export function sortKeys(value: unknown): JsonLike {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Story 1.26 (CodeQL js/insufficient-password-hash false positive, alert #10): `computeAuditHmac`
-// used to accept a bare `fields: Record<string, unknown>`, which made CodeQL's dataflow treat the
-// entire property bag of ANY object shaped like `fields` as flowing into this HMAC sink — so an
-// unrelated `PASSWORD` test fixture threaded through a shared helper got over-approximated as
-// "flowing into a password hash" alongside 27 other unrelated sources, all pointing at this one
-// sink. Replacing the generic bag with two closed, named interfaces (the two real shapes that
-// actually reach this function today — see the grep-verified full call-site inventory in Story
-// 1.26's own artifact) narrows CodeQL's taint-tracking granularity without changing behavior at
-// all: `sortKeys`/`JSON.stringify`/`createHmac` below are byte-for-byte unchanged.
+// Story 1.26 (CodeQL js/insufficient-password-hash, alerts #1 and #10 — both DISMISSED as false
+// positives, do not re-litigate without new evidence): CodeQL's query flags any identifier whose
+// name matches its `maybePassword()` heuristic (`([_-]|\b)mfa([_-]|\b)`, `api.?(key|tok)`, etc.)
+// that reaches a hash/HMAC sink. Audit event-type constants (`AuditEvent.MFA_ENROLLED`,
+// `MACHINE_USER_API_KEY_*`) and counters (`apiKeysRevokedCount`) match that regex purely by name
+// and flow into this function's `fields` argument — none of them are password material. This is
+// a keyed HMAC-SHA256 over canonical audit-row JSON for tamper-evidence chaining (Story 1.25), a
+// message-authentication use case, not password-at-rest storage; real user passwords use Argon2
+// (`@project-vault/crypto`). An attempted structural fix (narrowing `fields` from a bare
+// `Record<string, unknown>` to the two named interfaces below, so CodeQL's dataflow tracks
+// distinct shapes instead of one undifferentiated bag) did NOT change the analysis result —
+// CodeQL's taint-tracking here follows runtime property construction, not declared TS types. A
+// follow-up review of CodeQL's own query source (`InsufficientPasswordHashCustomizations.qll`)
+// confirmed there is no non-evasive code change that clears this: the query's only barrier is an
+// abstract `Sanitizer` with no default subclasses, and it doesn't honor models-as-data. Renaming
+// the flagged identifiers, rerouting the data, or switching to an unmodeled crypto API would all
+// be evasion, not fixes. If this alert reappears (a new fingerprint is likely after any edit to
+// the lines around the `createHmac` call below), dismiss it again with the same justification
+// rather than re-attempting a code fix — see alert #10's dismissal comment on GitHub for the
+// full text. The type-narrowing below is kept anyway as a genuine, independent type-safety
+// improvement over the original `Record<string, unknown>` shape.
 //
 // `payload: Record<string, unknown>` deliberately stays generic on both shapes below — different
 // event types carry genuinely varied payload shapes, and narrowing that further is out of scope.
