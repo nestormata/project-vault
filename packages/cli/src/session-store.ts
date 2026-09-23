@@ -1,19 +1,7 @@
-import {
-  chmodSync,
-  closeSync,
-  existsSync,
-  fsyncSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  renameSync,
-  statSync,
-  unlinkSync,
-  writeSync,
-} from 'node:fs'
-import { randomBytes } from 'node:crypto'
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { writeFileAtomicOwnerOnly } from './atomic-file.js'
 
 // AC-1/AC-7 decision #1 — file-based session storage (not a platform keychain — see
 // packages/cli/README.md "Decisions" for the full rationale). AC-1's XDG-first, HOME-fallback
@@ -42,7 +30,6 @@ export type SessionReadResult =
   | { status: 'insecure_permissions'; path: string }
 
 const DIR_MODE = 0o700
-const FILE_MODE = 0o600
 
 export function sessionDir(env: EnvLike = process.env): string {
   const xdg = env['XDG_CONFIG_HOME']
@@ -84,17 +71,13 @@ export function writeSession(session: SessionData, env: EnvLike = process.env): 
     // the directory itself (e.g. a read-only parent) surfaces later via the write failing anyway.
   }
 
+  // Story 43.5 Task 2 — the temp-file/fsync/chmod/rename sequence now lives in atomic-file.ts
+  // (shared with `pvault write-env`); `exclusive: false` keeps this function's replace semantics.
   const data = `${JSON.stringify(session, null, 2)}\n`
-  const tmpPath = join(dir, `.session.json.${randomBytes(6).toString('hex')}.tmp`)
-  const fd = openSync(tmpPath, 'w', FILE_MODE)
-  try {
-    writeSync(fd, data)
-    fsyncSync(fd)
-  } finally {
-    closeSync(fd)
-  }
-  chmodSync(tmpPath, FILE_MODE)
-  renameSync(tmpPath, sessionFilePath(env))
+  writeFileAtomicOwnerOnly(sessionFilePath(env), data, {
+    exclusive: false,
+    tempPrefix: '.session.json.',
+  })
 }
 
 /**

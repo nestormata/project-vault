@@ -57,6 +57,19 @@ export const EXIT_CODES = {
    * re-raise succeeds, this code is never actually observed — the process dies via the signal
    * itself, not via `setExitCode()`. */
   childSignalTerminated: 24,
+  // Story 43.5 (Dev Notes decision #5) — append-only, `pvault write-env` failure modes. Never
+  // renumber the blocks above.
+  /** The `--output` target already exists (including a symlink, even a dangling one) and
+   * `--force` was not passed — checked before any network call and again atomically at commit. */
+  outputExists: 25,
+  /** The `--output` path cannot be a secrets file: its parent directory is missing, it is a
+   * directory, or it is a non-regular file (FIFO, socket, device) — refused even with `--force`. */
+  outputPathInvalid: 26,
+  /** A fetched value cannot be represented losslessly in the requested `--format` (or contains
+   * NUL/CR in `dotenv`) — refused rather than silently corrupted; nothing is written. */
+  valueNotRepresentable: 27,
+  /** An unexpected filesystem error while writing (`EACCES`, `ENOSPC`, `EROFS`, …). */
+  outputWriteFailed: 28,
 } as const
 
 // A Map (rather than a plain object keyed by an external string) sidesteps prototype-pollution/

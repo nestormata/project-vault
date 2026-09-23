@@ -296,7 +296,7 @@ describe('injectAndRun — AC-1: fetch and inject', () => {
 
       expect(result).toEqual({ ok: true, exitCode: 0 })
       expect(writeStderr).toHaveBeenCalledWith(
-        "warning: 'X' served from offline cache (vault unreachable), value may be stale and this injection is not recorded in the vault audit log\n"
+        "warning: 'X' served from offline cache (vault unreachable), value may be stale and this fetch is not recorded in the vault audit log\n"
       )
     } finally {
       globalThis.fetch = originalFetch

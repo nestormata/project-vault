@@ -3,7 +3,9 @@
 Terminal CLI for fetching and injecting [Project Vault](https://github.com/nestormata/project-vault)
 secrets, for a developer or CI engineer using a machine-user API key. Story 43.1 implemented the
 first command, `get`; Story 43.2 added `login`/`logout`; Story 43.3 added `run -- <cmd>` (per
-UX-DR16, the documented default injection path); Story 43.4 hardened it and made it generally available. `.env` materialization and later Epic 43 stories
+UX-DR16, the documented default injection path); Story 43.4 hardened it and made it generally
+available. Story 43.5 added `write-env`, the explicit, opt-in fallback that materializes named
+secrets as a `.env`-style file for tooling that can only read from a file. Later Epic 43 stories
 build on the foundation these establish.
 
 This package is a thin wrapper around
@@ -491,6 +493,146 @@ Stated explicitly rather than left implicit:
   cache makes no HTTP request, so no server audit entry records that injection (only the original
   reveal that populated the cache exists). `pvault run` prints a per-secret warning saying so,
   rather than refusing — keeping CI resilient to a genuinely offline vault.
+
+## `pvault write-env` (Story 43.5)
+
+**Prefer `pvault run --`, which never writes secrets to disk.** `write-env` is the fallback for
+tooling that can only read configuration from a file:
+
+```bash
+pvault write-env --secret DATABASE_URL --secret "stripe-key=STRIPE_KEY" --output .env
+# stderr: Wrote 2 secrets to /srv/app/.env      (stdout stays empty)
+
+pvault write-env -s DATABASE_URL -o .env --force           # replace an existing file
+pvault write-env -s DATABASE_URL -o env.sh --format shell  # for `source env.sh`
+```
+
+- **Scope** is an explicit, named set of credentials (`--secret`, same `NAME[=ENV_VAR]` grammar
+  as `run`) in the one project the machine key is scoped to. There is **no** "whole project", tag,
+  or environment scope, by design: that would need a server-side credential-enumeration endpoint
+  for machine users, which deliberately doesn't exist (the route rate-limits failed name lookups to
+  20/min to resist enumeration). Project/org isolation is enforced server-side by the scoped
+  machine JWT; a name that exists only in another project fails like any not-found name.
+- **`--output` is required.** There is no default path, no `--output -` (stdout — use `pvault get`
+  or `pvault run --`), and no `mkdir -p` (a missing parent directory is exit `26`). A relative path
+  resolves against the current directory; the success line prints the absolute path.
+- **The file is written owner-only (`0600`)**, atomically (temp file in the same directory →
+  `fsync` → explicit `chmod 0600` → commit), even when your `umask` is `000`. On Windows, POSIX mode
+  bits are not meaningful: the file inherits the directory's ACLs (same caveat as the `login`
+  session file).
+- **All-or-nothing, fail closed.** Every secret is fetched (sequentially, via the same helper
+  `run` uses, `src/fetch-secrets.ts`) and every value is checked for representability **before**
+  any file is created. Any failure writes nothing and leaves an existing target byte-for-byte
+  untouched, with the same message and exit code `run` gives for that error.
+- **Output never contains a value** — only the path, the count, credential/variable names, and
+  error codes. The success line is exactly `Wrote N secret(s) to <path>`, plus
+  ` (K served from offline cache, may be stale)` when any value came from `packages/agent`'s offline
+  cache (in addition to `run`'s per-secret warning). Unlike `run`'s injected values, a stale value
+  written here persists on disk.
+- **The file is a snapshot.** It does not update when a secret rotates: re-run
+  `pvault write-env ... --force` after rotating, and **delete the file when you're done**.
+
+### Formats and the quoting ladder (AC-2)
+
+`packages/vault-action` has no `.env` quoting/escaping rules to reuse (it hands values to the
+GitHub runner's `GITHUB_ENV` heredoc protocol, which no general tool reads), so this story defines
+the format in `src/env-file-format.ts`. epics.md AC-2's "the same quoting and escaping rules apply"
+is satisfied by reusing vault-action-derived **parse** (the `--secret` grammar, identifier
+validation, reserved names), **classify** (error wording/exit codes), and **mask** (never-print
+policy) semantics, plus a defined, documented, tested serialization that round-trips losslessly
+through its named consumer **or refuses**. This is a deliberate interpretation, not an oversight.
+
+Every file starts with `# Written by pvault write-env. Contains secrets: do not commit, do not
+share.` (no timestamp, so output is deterministic), is UTF-8 without a BOM, uses LF line endings,
+and lists variables in `--secret` order.
+
+**`--format dotenv` (default) targets Node's built-in `--env-file` parser** (Node ≥ 20.6). Each value
+uses the first rule that applies:
+
+1. no `'` → `KEY='value'` — literal in Node **and** in POSIX shells
+2. no `` ` `` → ``KEY=`value` `` — literal in Node, **not** shell-safe
+3. no `"`, no newline, no two-character `\n`/`\r` → `KEY="value"` — Node expands `\n` in double
+   quotes, so those are excluded
+4. otherwise → **refused** (exit `27`), naming the credential and the reason, never the value.
+
+A carriage return (Node silently drops it) or NUL is always refused in this format. When any value
+needed rule 2 or 3, a warning names the affected keys: `do not 'source' this file from a shell —
+use --format shell for that`.
+
+**`--format shell` targets POSIX `sh`/`bash` `source`/`.`:** `export KEY='value'`, with every `'`
+written as `'\''`. Lossless for everything except NUL. Nothing in a value is ever expanded or
+executed (`$(...)`, backticks, `;`, quote-breaking attempts are all covered by tests).
+
+Other dialects (docker compose `env_file`, python-dotenv, direnv) are **not** claimed as supported.
+`src/env-file-format.test.ts`/`env-file-format.oracle.test.ts` prove compatibility against the
+real `node --env-file` and `bash` (including hostile values that try to inject an extra line such
+as `NODE_OPTIONS=...`); `parseEnvFile()` is only a reference inverse of the serializer's own output,
+not a general dotenv parser.
+
+### Code-execution and overwrite hazards (AC-3, AC-6)
+
+- **Reserved names are refused for files too** (`PATH`, `LD_PRELOAD`, `NODE_OPTIONS`, …, the same
+  set `run` uses): a `.env` line `NODE_OPTIONS=...` loaded via `node --env-file` **is** honored by
+  Node. Duplicate targets (case-insensitive) are refused too. Both before any network call.
+- **Existing target:** refused (exit `25`) unless `--force`. Checked before any network call, and
+  re-enforced atomically at commit time: without `--force` the commit is `link(tmp, target)`, which
+  fails if anything appeared meanwhile (two concurrent writers → exactly one wins). On filesystems
+  without hard links (`EPERM`/`ENOTSUP`, some FUSE/SMB mounts) it falls back to an exclusive
+  `open(target, 'wx', 0600)` — still race-safe, never a non-exclusive write.
+- **Symlinks:** a symlink at the target (even a dangling one) counts as existing. With `--force`
+  the symlink **itself** is replaced by a new regular `0600` file; the CLI never writes through a
+  link (a planted `.env → ~/.ssh/authorized_keys` cannot turn this into an arbitrary-file write).
+  `--force` over a `0644` file also yields `0600` (rename replaces the inode).
+- **Directories, FIFOs, sockets, devices** (`--output /dev/stdout`, `--output dir/`, `.`, `..`)
+  are refused with exit `26` **even with `--force`**.
+- **Interrupted writes:** the write/commit/cleanup runs synchronously, so Ctrl-C can't land
+  mid-write. Only an uncatchable kill (SIGKILL, power loss) can strand a temp file, named
+  `.pvault-write-env.<random>.tmp` (mode `0600`) in the target directory — safe to delete.
+
+### Accidental-commit guard (AC-9)
+
+If the target is inside a git work tree and not ignored, a warning suggests adding it to
+`.gitignore`. Warn-only and fail-open: `git` is run as `git -C <dir> check-ignore -q -- <name>`
+(argv array, no shell, 2 s timeout), and "not a repo", a missing `git`, or a timeout are silent.
+
+### Reusable seam (AC-7)
+
+`src/write-env-file.ts`'s `writeEnvFile(entries, target, { format, force }, deps)` has **zero**
+imports of `commander`/`cli.ts`/`CliRuntime`/`process.argv`; `src/write-env-command.ts` is the thin
+CLI adapter. `src/write-env-file.non-cli-caller.test.ts` drives it directly, as a future Epic 50
+broker (FR177's `write_env_file`) could. As with `run` (Story 43.3 AC-6), Epic 50 is gated with zero
+stories, so this is satisfied **structurally**. Shared building blocks: `src/fetch-secrets.ts`
+(fail-closed fetch + reserved/duplicate checks, also used by `run`), `src/atomic-file.ts` (the
+atomic owner-only writer, also used by the `login` session file), and
+`src/secrets-command-preamble.ts` (the `--secret`/UUID/agent preamble shared with `run`).
+
+### Audit and rate limits (AC-8)
+
+Each secret costs one request to the machine-user credential route and produces one server-side
+`CREDENTIAL_VALUE_REVEALED` audit entry, exactly as with `get`/`run`; no client-side audit or retry
+is added. On an aborted run, entries exist only for secrets fetched before the failure (the route
+audits reveals, not file writes). The route allows 300 requests/min per key (20 failed lookups/min),
+so a single invocation with more than about 300 secrets will hit `429` mid-fetch → exit `6`,
+nothing written. Every fetch sends Story 43.4's `x-vault-invocation` header with the value
+`write-env` (no target command), recorded as `clientInvocation: write-env`, so the audit trail can
+tell "revealed and written to disk" apart from `run` (handed to a process) and `get` (printed). As
+with `run`, a value served from the offline cache makes no request and so has no audit entry; the
+per-secret warning says so.
+
+### Accepted residual risk
+
+Epic 43 promises `run --` puts no plaintext secret in a file on disk. `write-env` is the explicit,
+opt-in exception: **the secrets live in plaintext on disk until you delete the file**, readable by
+anything running as your user (and by anyone with access to backups or disk images of it).
+
+### New exit codes (append-only, extends the 1-24 table)
+
+| Exit code | Meaning                                                                                                              |
+| --------- | -------------------------------------------------------------------------------------------------------------------- |
+| `25`      | `outputExists` — the target exists (including a symlink) and `--force` was not passed                                |
+| `26`      | `outputPathInvalid` — parent directory missing, target is a directory, or a FIFO/socket/device (even with `--force`) |
+| `27`      | `valueNotRepresentable` — a value can't be written losslessly in the chosen `--format`; nothing written              |
+| `28`      | `outputWriteFailed` — unexpected filesystem error while writing (`EACCES`, `ENOSPC`, `EROFS`, …)                     |
 
 ## Running the e2e tests
 

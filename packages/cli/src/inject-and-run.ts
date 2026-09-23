@@ -20,19 +20,14 @@
  * on an error path would violate AC-1 even though it has nothing to do with the child's own crash
  * output.
  */
-import { VaultAgentError, type SecretRequestContext } from '@project-vault/agent'
-import { messageForAgentError } from './agent-error-messages.js'
-import { withFetchProvenanceTracking } from './cache-provenance.js'
-import { EXIT_CODES, exitCodeForAgentErrorCode } from './exit-codes.js'
-import { isReservedEnvVarName } from './reserved-env-vars.js'
+import type { SecretRequestContext } from '@project-vault/agent'
+import { EXIT_CODES } from './exit-codes.js'
+import { checkEntryTargets, fetchAllOrNothing, type InjectEntry } from './fetch-secrets.js'
 import { sanitizeForTerminal } from './sanitize.js'
 
-export type InjectEntry = {
-  /** The credential name to fetch from the vault. */
-  credentialName: string
-  /** The environment variable name to inject the fetched value as, in the child's environment. */
-  envVarName: string
-}
+// Story 43.5 A2 — `InjectEntry` now lives in `fetch-secrets.ts`; re-exported so existing imports
+// keep compiling unchanged.
+export type { InjectEntry }
 
 /** The write end of the `--secrets-fd` pipe (Node's real `child.stdio[3]` is a `Writable`). */
 export type SecretsPipeLike = {
@@ -147,72 +142,6 @@ function noop(): void {
   // Default writeStderr when the caller doesn't supply one.
 }
 
-/**
- * Fail-closed, all-or-nothing sequential fetch (Dev Notes decision #3). Every requested secret is
- * fetched, in order, before `spawn()` is ever called. The first failure aborts immediately —
- * remaining secrets are never fetched, and the error returned is built ONLY from the failing
- * entry's own error, never from the partially-built map of already-fetched values (Security Audit
- * Personas finding, 2026-09-22 — a value already fetched but never used must never leak into the
- * abort-path error output).
- */
-async function fetchAllOrNothing(
-  entries: InjectEntry[],
-  context: SecretRequestContext,
-  deps: Pick<InjectAndRunDeps, 'getSecret' | 'writeStderr'>
-): Promise<
-  { ok: true; injected: Record<string, string> } | { ok: false; exitCode: number; error: string }
-> {
-  const writeStderr = deps.writeStderr ?? noop
-  // Object.create(null) rather than `{}` — a target env var name of `__proto__` (a syntactically
-  // valid, non-reserved identifier) would otherwise hit `Object.prototype`'s `__proto__` accessor
-  // on plain-object bracket assignment, which silently no-ops for a non-object value instead of
-  // setting an own property. That would make the requested secret vanish from the child's
-  // environment with no error — a fail-open gap in code whose whole purpose is guaranteed
-  // delivery. A null-prototype object has no such accessor, so the assignment below always sets a
-  // real own property, and the later `{ ...injected }` spread (which uses ordinary
-  // CopyDataProperties semantics, not [[Set]]) carries it through as a plain data property either
-  // way.
-  const injected: Record<string, string> = Object.create(null) as Record<string, string>
-
-  for (const entry of entries) {
-    const safeName = sanitizeForTerminal(entry.credentialName)
-    try {
-      // Dev Notes decision #7 — `run` participates in the same offline-cache fallback `get` does,
-      // with its own mandatory per-secret provenance warning (never a silent, possibly-stale
-      // injection). Story 43.4 decision #6 — a cache-served value makes no HTTP request, so the
-      // server writes no audit entry for this injection: say so rather than refuse (accepted
-      // residual risk, documented in the README).
-      const { result: value, servedAfterNetworkFailure } = await withFetchProvenanceTracking(() =>
-        deps.getSecret(entry.credentialName, context)
-      )
-      if (servedAfterNetworkFailure) {
-        writeStderr(
-          `warning: '${safeName}' served from offline cache (vault unreachable), value may be stale and this injection is not recorded in the vault audit log\n`
-        )
-      }
-      injected[entry.envVarName] = value
-    } catch (error) {
-      // Only this entry's own failure is ever used to build the abort message — `injected` (which
-      // may hold earlier, already-fetched values) is never serialized into it.
-      if (error instanceof VaultAgentError) {
-        return {
-          ok: false,
-          exitCode: exitCodeForAgentErrorCode(error.code),
-          error: messageForAgentError(error, safeName),
-        }
-      }
-      const message = error instanceof Error ? error.message : String(error)
-      return {
-        ok: false,
-        exitCode: EXIT_CODES.unexpected,
-        error: `Unexpected error fetching '${safeName}': ${sanitizeForTerminal(message)}`,
-      }
-    }
-  }
-
-  return { ok: true, injected }
-}
-
 function withoutCallerCredentials(baseEnv: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
   return Object.fromEntries(
     Object.entries(baseEnv ?? {}).filter(
@@ -305,33 +234,11 @@ export async function injectAndRun(
   args: string[],
   deps: InjectAndRunDeps
 ): Promise<InjectAndRunResult> {
-  // AC-1 — reserved/dangerous env var names are refused before any network call, regardless of
-  // caller (CLI or a future non-CLI Epic 50 broker) — this is an entry-level invariant, not a
-  // CLI-argument-parsing concern.
-  for (const entry of entries) {
-    if (isReservedEnvVarName(entry.envVarName)) {
-      return {
-        ok: false,
-        exitCode: EXIT_CODES.usageError,
-        error: `Refusing to inject into reserved/dangerous environment variable '${entry.envVarName}' — this could hijack the child process's dynamic linker, shell, or interpreter.`,
-      }
-    }
-  }
-
-  // AC-1 edge case — duplicate target env var (whether by explicit rename collision or the same
-  // credential requested twice) is a usage error caught before any network call.
-  const seenTargets = new Set<string>()
-  for (const entry of entries) {
-    const key = entry.envVarName.toUpperCase()
-    if (seenTargets.has(key)) {
-      return {
-        ok: false,
-        exitCode: EXIT_CODES.usageError,
-        error: `Duplicate environment variable target: ${entry.envVarName}`,
-      }
-    }
-    seenTargets.add(key)
-  }
+  // AC-1 — reserved/dangerous env var names and duplicate targets are refused before any network
+  // call, regardless of caller (CLI or a future non-CLI Epic 50 broker) — an entry-level
+  // invariant, shared with `write-env-file.ts` via `fetch-secrets.ts` (Story 43.5 Task 3).
+  const invalid = checkEntryTargets(entries, 'inject into')
+  if (invalid) return invalid
 
   // Story 43.4 AC-3/AC-5 — the seam (never the CLI adapter) computes the audit context, so any
   // caller of injectAndRun() sends it on every fetch. The label is hard-coded to `run` for now; an

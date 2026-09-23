@@ -23,7 +23,8 @@ export type MachineCredentialValueQuery = z.infer<typeof MachineCredentialValueQ
 //
 // A future Epic 50 broker label (e.g. `mcp`) is a one-value extension of this allowlist AND of
 // packages/agent's invocation-context.ts — deliberately not added until a consumer exists.
-export const ClientInvocationHeaderSchema = z.enum(['get', 'run'])
+// Story 43.5 AC-8 — `write-env` = revealed and persisted to a local file.
+export const ClientInvocationHeaderSchema = z.enum(['get', 'run', 'write-env'])
 
 const TARGET_COMMAND_ENCODED_PATTERN = /^[A-Za-z0-9%._+~-]{1,128}$/
 

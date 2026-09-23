@@ -13,6 +13,8 @@ import { runLogin } from './login-command.js'
 import { runLogout } from './logout-command.js'
 import { createRealPrompt, type PromptFn } from './prompt.js'
 import { runRun } from './run-command.js'
+import type { GitIgnoreStatus } from './git-ignore-check.js'
+import { runWriteEnv } from './write-env-command.js'
 
 // Dev Notes decision #6 — CLI argument-parsing/command framework: commander (already resolved
 // elsewhere in this monorepo's lockfile), a real subcommand framework rather than hand-rolled
@@ -35,6 +37,11 @@ export type CliRuntime = {
    * child process. */
   spawn: SpawnFn
   parentProcess: ParentProcessLike
+  /** Story 43.5 — base directory for `write-env`'s relative `--output`; defaults to
+   * `process.cwd()`. */
+  cwd?: string
+  /** Story 43.5 AC-9 — the accidental-commit check seam; defaults to a real `git check-ignore`. */
+  checkGitIgnored?: (dir: string, name: string) => Promise<GitIgnoreStatus>
 }
 
 const PACKAGE_VERSION = '0.0.1'
@@ -54,6 +61,26 @@ function addMachineUserConfigFlags(command: Command): Command {
     .option(API_KEY_FLAG, API_KEY_DESCRIPTION)
     .option(URL_FLAG, URL_DESCRIPTION)
     .option(PROJECT_ID_FLAG, PROJECT_ID_DESCRIPTION)
+}
+
+/** The repeatable `-s/--secret NAME[=ENV_VAR]` flag, shared by `run` and `write-env` (Story 43.5)
+ * so both commands accept exactly the same grammar. */
+function addSecretFlag(command: Command, verb: string): Command {
+  return command.option(
+    '-s, --secret <name>',
+    `a credential to ${verb}, as NAME or NAME=ENV_VAR (repeatable)`,
+    (value: string, previous: string[]) => [...previous, value],
+    []
+  )
+}
+
+type MachineUserFlagValues = { apiKey?: string; url?: string; projectId?: string }
+
+function resolveMachineUserConfig(runtime: CliRuntime, options: MachineUserFlagValues) {
+  return resolveConfig(
+    { apiKey: options.apiKey, url: options.url, projectId: options.projectId },
+    runtime.env
+  )
 }
 
 /**
@@ -140,10 +167,7 @@ export function buildProgram(runtime: CliRuntime): Command {
       options: { stdout: boolean; apiKey?: string; url?: string; projectId?: string }
     ) => {
       await runCommandAction(runtime, async () => {
-        const config = resolveConfig(
-          { apiKey: options.apiKey, url: options.url, projectId: options.projectId },
-          runtime.env
-        )
+        const config = resolveMachineUserConfig(runtime, options)
         return runGet({ name, stdout: options.stdout }, config, runtime.streams, {
           createVaultAgent: runtime.createVaultAgent,
         })
@@ -180,19 +204,16 @@ export function buildProgram(runtime: CliRuntime): Command {
       runtime.setExitCode(exitCode)
     })
 
-  program
-    .command('run')
-    .description(
-      'Fetch one or more secrets and spawn a command with them injected into its environment ' +
-        '(UX-DR16 — the documented default injection path). Pass --secrets-fd to deliver them ' +
-        'over file descriptor 3 instead of the environment (Story 43.4).'
-    )
-    .option(
-      '-s, --secret <name>',
-      'a credential to inject, as NAME or NAME=ENV_VAR (repeatable)',
-      (value: string, previous: string[]) => [...previous, value],
-      []
-    )
+  addSecretFlag(
+    program
+      .command('run')
+      .description(
+        'Fetch one or more secrets and spawn a command with them injected into its environment ' +
+          '(UX-DR16 — the documented default injection path). Pass --secrets-fd to deliver them ' +
+          'over file descriptor 3 instead of the environment (Story 43.4).'
+      ),
+    'inject'
+  )
     // Story 43.4 AC-4 — Story 43.3's `--allow-unhardened-injection` opt-in was removed, not
     // aliased: commander now rejects it as an unknown option (loud, intended).
     .option(
@@ -217,10 +238,7 @@ export function buildProgram(runtime: CliRuntime): Command {
         }
       ) => {
         await runCommandAction(runtime, async () => {
-          const config = resolveConfig(
-            { apiKey: options.apiKey, url: options.url, projectId: options.projectId },
-            runtime.env
-          )
+          const config = resolveMachineUserConfig(runtime, options)
           const [runCommand, ...runCommandArgs] = command
           return runRun(
             {
@@ -241,6 +259,52 @@ export function buildProgram(runtime: CliRuntime): Command {
         })
       }
     )
+
+  // Story 43.5 — `pvault write-env`. Dev Notes decision #8: positioned as the fallback to
+  // `run --` (which never writes secrets to disk); deliberately no alias/shortcut. `--output` is
+  // declared optional here and validated in `runWriteEnv()` so a missing value gets this command's
+  // own usage error (exit 1) rather than commander's generic one.
+  addMachineUserConfigFlags(
+    addSecretFlag(
+      program
+        .command('write-env')
+        .description(
+          'Write named secrets to a local file for tooling that can only read from a file (prefer "pvault run --", which never writes secrets to disk).'
+        ),
+      'write'
+    )
+      .option('-o, --output <path>', 'the file to write (required; never defaults)')
+      .option('--force', 'replace an existing file (never a directory, FIFO, or device)', false)
+      .option('--format <format>', 'dotenv (Node --env-file) or shell (POSIX source)', 'dotenv')
+  ).action(
+    async (
+      options: MachineUserFlagValues & {
+        secret: string[]
+        output?: string
+        force: boolean
+        format: string
+      }
+    ) => {
+      await runCommandAction(runtime, async () => {
+        const config = resolveMachineUserConfig(runtime, options)
+        return runWriteEnv(
+          {
+            secrets: options.secret,
+            output: options.output,
+            force: options.force,
+            format: options.format,
+          },
+          config,
+          runtime.streams,
+          {
+            createVaultAgent: runtime.createVaultAgent,
+            cwd: runtime.cwd ?? process.cwd(),
+            checkGitIgnored: runtime.checkGitIgnored,
+          }
+        )
+      })
+    }
+  )
 
   return program
 }
