@@ -22,11 +22,11 @@ const TIMEOUT_MS = 2000
 
 /** Repository-location overrides that would make git answer about some OTHER repository than the
  * one containing the target directory (e.g. when invoked from inside a git hook). */
-const REPO_OVERRIDE_VARS = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR']
+const REPO_OVERRIDE_VARS = new Set(['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR'])
 
 function gitEnv(): NodeJS.ProcessEnv {
   return Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => !REPO_OVERRIDE_VARS.includes(name))
+    Object.entries(process.env).filter(([name]) => !REPO_OVERRIDE_VARS.has(name))
   )
 }
 

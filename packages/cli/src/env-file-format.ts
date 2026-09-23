@@ -76,7 +76,7 @@ export function serializeEnvFile(
     if (value.includes('\0')) return { ok: false, key, reason: 'nul' }
 
     if (format === 'shell') {
-      lines.push(`export ${key}='${value.replaceAll("'", "'\\''")}'\n`)
+      lines.push(`export ${key}='${value.replaceAll("'", String.raw`'\''`)}'\n`)
       continue
     }
 
@@ -106,7 +106,7 @@ function readShellValue(text: string, start: number): { value: string; end: numb
     if (close === -1) throw parseError(pos)
     value += text.slice(pos + 1, close)
     pos = close + 1
-    if (!text.startsWith("\\'", pos)) return { value, end: pos }
+    if (!text.startsWith(String.raw`\'`, pos)) return { value, end: pos }
     value += "'"
     pos += 2
   }
