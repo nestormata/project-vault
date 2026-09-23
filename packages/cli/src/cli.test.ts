@@ -597,3 +597,97 @@ describe('buildProgram — `run` command wiring (Story 43.3)', () => {
     expect(setExitCode).toHaveBeenCalledWith(EXIT_CODES.secretsRequired)
   })
 })
+
+describe('buildProgram — `write-env` command wiring (Story 43.5)', () => {
+  let dir: string
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'pvault-cli-write-env-'))
+  })
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  function build(env: Record<string, string | undefined> = VALID_ENV) {
+    const streams = makeStreams(false)
+    const setExitCode = vi.fn()
+    const getSecret = vi.fn(async (name: string) => `v-${name}`)
+    const createVaultAgent = vi.fn().mockReturnValue({ getSecret })
+    const program = buildProgram({
+      streams,
+      env,
+      createVaultAgent,
+      setExitCode,
+      prompt: unusedPrompt,
+      fetchFn: unusedFetch,
+      spawn: unusedSpawn,
+      parentProcess: unusedParentProcess,
+      cwd: dir,
+      checkGitIgnored: async () => 'unknown',
+    })
+    const parse = (...rest: string[]) =>
+      program.parseAsync(['node', 'pvault', 'write-env', ...rest])
+    return { program, streams, setExitCode, getSecret, createVaultAgent, parse }
+  }
+
+  it('decision #8: describes itself as the fallback to "pvault run --" and registers no alias', () => {
+    const { program } = build()
+    const command = program.commands.find((c) => c.name() === 'write-env')
+    expect(command?.description()).toBe(
+      'Write named secrets to a local file for tooling that can only read from a file (prefer "pvault run --", which never writes secrets to disk).'
+    )
+    expect(command?.aliases()).toEqual([])
+    expect(program.commands.map((c) => c.name())).not.toContain('env')
+    expect(program.commands.map((c) => c.name())).not.toContain('export')
+    const flags = (command?.options ?? []).map((o) => o.long)
+    expect(flags).toEqual(
+      expect.arrayContaining([
+        '--secret',
+        '--output',
+        '--force',
+        '--format',
+        '--api-key',
+        '--url',
+        '--project-id',
+      ])
+    )
+    expect(flags).not.toContain('--value')
+  })
+
+  it('-s/-o/--force/--format are threaded through; writes the file and reports exit 0', async () => {
+    const { parse, setExitCode, streams, getSecret } = build()
+    await parse('-s', 'A', '--secret', 'b=B', '-o', 'out.sh', '--format', 'shell')
+    expect(setExitCode).toHaveBeenCalledWith(0)
+    expect(getSecret.mock.calls.map(([n]) => n)).toEqual(['A', 'b'])
+    expect(streams.stderrChunks).toEqual([`Wrote 2 secrets to ${join(dir, 'out.sh')}\n`])
+    expect(streams.stdoutChunks).toEqual([])
+  })
+
+  it('--force is required to replace an existing file', async () => {
+    const first = build()
+    await first.parse('-s', 'A', '-o', '.env')
+    const second = build()
+    await second.parse('-s', 'A', '-o', '.env')
+    expect(second.setExitCode).toHaveBeenCalledWith(EXIT_CODES.outputExists)
+    const third = build()
+    await third.parse('-s', 'A', '-o', '.env', '--force')
+    expect(third.setExitCode).toHaveBeenCalledWith(0)
+  })
+
+  it.each([
+    ['missing --output', ['-s', 'A']],
+    ['--output -', ['-s', 'A', '-o', '-']],
+    ['invalid --format', ['-s', 'A', '-o', '.env', '--format', 'DOTENV']],
+  ])('%s → usage error 1, no agent', async (_l, argv) => {
+    const { parse, setExitCode, createVaultAgent } = build()
+    await parse(...argv)
+    expect(setExitCode).toHaveBeenCalledWith(EXIT_CODES.usageError)
+    expect(createVaultAgent).not.toHaveBeenCalled()
+  })
+
+  it('missing config → usage error 1 via runCommandAction', async () => {
+    const { parse, setExitCode, streams } = build({})
+    await parse('-s', 'A', '-o', '.env')
+    expect(setExitCode).toHaveBeenCalledWith(EXIT_CODES.usageError)
+    expect(streams.stderrChunks.join('')).toContain('Missing required configuration')
+  })
+})

@@ -58,6 +58,19 @@ describe('EXIT_CODES — Story 43.2 additions are distinct, exact integers', () 
   })
 })
 
+describe('EXIT_CODES — Story 43.5 additions (append-only)', () => {
+  it('pvault write-env codes are exactly 25-28, after every earlier block', () => {
+    expect([
+      EXIT_CODES.outputExists,
+      EXIT_CODES.outputPathInvalid,
+      EXIT_CODES.valueNotRepresentable,
+      EXIT_CODES.outputWriteFailed,
+    ]).toEqual([25, 26, 27, 28])
+    const all = Object.values(EXIT_CODES)
+    expect(new Set(all).size).toBe(all.length)
+  })
+})
+
 describe('CliUsageError', () => {
   it('carries a message and is a real Error instance', () => {
     const err = new CliUsageError('missing VAULT_API_KEY')

@@ -1,11 +1,8 @@
 import type { VaultAgent, VaultAgentConfig } from '@project-vault/agent'
-import { warnAndCreateAgent, type ResolvedConfig } from './config.js'
-import { EXIT_CODES } from './exit-codes.js'
+import type { ResolvedConfig } from './config.js'
 import type { GetStreams } from './get-command.js'
 import { injectAndRun, type ParentProcessLike, type SpawnFn } from './inject-and-run.js'
-import { parseRunSecrets } from './parse-run-secrets.js'
-import { sanitizeForTerminal } from './sanitize.js'
-import { looksLikeUuid } from './validate.js'
+import { prepareSecretsCommand } from './secrets-command-preamble.js'
 
 export type RunArgs = {
   /** Raw `--secret` flag values, exactly as passed (e.g. `NAME` or `NAME=ENV_VAR`). */
@@ -40,32 +37,19 @@ export async function runRun(
   streams: GetStreams,
   deps: RunDeps
 ): Promise<number> {
-  // AC-1 edge case — zero `--secret` flags defeats the entire point of this command.
-  if (args.secrets.length === 0) {
-    streams.stderr.write(
-      'pvault run requires at least one --secret flag. Usage: pvault run --secret NAME -- <command> [args...]\n'
-    )
-    return EXIT_CODES.secretsRequired
-  }
-
-  const parsed = parseRunSecrets(args.secrets)
-  if (!parsed.ok) {
-    streams.stderr.write(`${parsed.error}\n`)
-    return EXIT_CODES.usageError
-  }
-
-  if (!looksLikeUuid(config.projectId)) {
-    streams.stderr.write(
-      `Invalid project identifier — '${sanitizeForTerminal(config.projectId)}' must be the project's UUID, not its display name.\n`
-    )
-    return EXIT_CODES.usageError
-  }
-
-  const agent = warnAndCreateAgent(config, deps.createVaultAgent, (chunk) =>
-    streams.stderr.write(chunk)
+  // AC-1 edge cases (zero/malformed `--secret`, non-UUID project id) and agent creation — shared
+  // with `pvault write-env` (Story 43.5 Dev Notes decision #9).
+  const prepared = prepareSecretsCommand(
+    args.secrets,
+    { commandName: 'run', usage: 'pvault run --secret NAME -- <command> [args...]' },
+    config,
+    streams.stderr,
+    deps.createVaultAgent
   )
+  if (!prepared.ok) return prepared.exitCode
+  const { entries, agent } = prepared
 
-  const result = await injectAndRun(parsed.entries, args.command, args.commandArgs, {
+  const result = await injectAndRun(entries, args.command, args.commandArgs, {
     getSecret: (name, context) => agent.getSecret(name, context),
     spawn: deps.spawn,
     parentProcess: deps.parentProcess,
