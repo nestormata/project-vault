@@ -8,6 +8,7 @@ import { injectAndRun, type ChildProcessLike, type ParentProcessLike } from './i
  * spawn dependency that returns a controllable fake child-process-like emitter). */
 function makeFakeChild(): ChildProcessLike & {
   emitExit: (code: number | null, signal: NodeJS.Signals | null) => void
+  emitError: (error: Error) => void
   kill: ReturnType<typeof vi.fn>
 } {
   const emitter = new EventEmitter()
@@ -18,6 +19,7 @@ function makeFakeChild(): ChildProcessLike & {
     },
     kill,
     emitExit: (code, signal) => emitter.emit('exit', code, signal),
+    emitError: (error) => emitter.emit('error', error),
   }
 }
 
@@ -121,6 +123,32 @@ describe('injectAndRun — AC-1: fetch and inject', () => {
       env: { MY_DB_PASSWORD: 'renamed-value' },
       stdio: 'inherit',
     })
+  })
+
+  it('injects a secret renamed to `__proto__` as a real own property, not silently dropped via the Object.prototype accessor (code review fix)', async () => {
+    const fakeChild = makeFakeChild()
+    const spawn = vi.fn().mockReturnValue(fakeChild)
+    const getSecret = vi.fn().mockResolvedValue('proto-secret-value')
+    const parentProcess = makeFakeParentProcess()
+
+    const resultPromise = injectAndRun(
+      [{ credentialName: 'SOME_SECRET', envVarName: '__proto__' }],
+      'cmd',
+      [],
+      { getSecret, spawn, parentProcess }
+    )
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled())
+    fakeChild.emitExit(0, null)
+    const result = await resultPromise
+
+    expect(result).toEqual({ ok: true, exitCode: 0 })
+    const spawnCall = spawn.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }]
+    const env = spawnCall[2].env
+    // A plain-object `{}` accumulator would let bracket-assignment `injected['__proto__'] = value`
+    // hit Object.prototype's `__proto__` accessor and silently no-op instead of setting an own
+    // property — the secret would vanish from the child's env with no error at all.
+    expect(Object.prototype.hasOwnProperty.call(env, '__proto__')).toBe(true)
+    expect(env.__proto__).toBe('proto-secret-value')
   })
 
   it('refuses a reserved/dangerous target env var name before any fetch', async () => {
@@ -345,6 +373,53 @@ describe('injectAndRun — AC-4: exact exit code / signal propagation', () => {
       exitCode: EXIT_CODES.childSignalTerminated,
       terminatedBySignal: 'SIGTERM',
     })
+  })
+
+  const SPAWN_ERROR_TEST_SECRET_VALUE = 'the-fetched-secret-value'
+
+  it("resolves with a failure result (never hangs) when spawn itself errors — e.g. a typo'd/missing target command (code review fix)", async () => {
+    const fakeChild = makeFakeChild()
+    const spawn = vi.fn().mockReturnValue(fakeChild)
+    const getSecret = vi.fn().mockResolvedValue(SPAWN_ERROR_TEST_SECRET_VALUE)
+    const parentProcess = makeFakeParentProcess()
+
+    const resultPromise = injectAndRun(
+      [{ credentialName: 'DATABASE_URL', envVarName: 'DATABASE_URL' }],
+      'no-such-binary',
+      [],
+      { getSecret, spawn, parentProcess }
+    )
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled())
+    fakeChild.emitError(Object.assign(new Error('spawn no-such-binary ENOENT'), { code: 'ENOENT' }))
+    const result = await resultPromise
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.exitCode).toBe(EXIT_CODES.unexpected)
+      expect(result.error).toContain('no-such-binary')
+      expect(result.error).not.toContain(SPAWN_ERROR_TEST_SECRET_VALUE)
+    }
+  })
+
+  it('does not double-resolve or re-forward SIGINT cleanup when both error and exit fire for the same child', async () => {
+    const fakeChild = makeFakeChild()
+    const spawn = vi.fn().mockReturnValue(fakeChild)
+    const getSecret = vi.fn().mockResolvedValue(SPAWN_ERROR_TEST_SECRET_VALUE)
+    const parentProcess = makeFakeParentProcess()
+
+    const resultPromise = injectAndRun(
+      [{ credentialName: 'DATABASE_URL', envVarName: 'DATABASE_URL' }],
+      'cmd',
+      [],
+      { getSecret, spawn, parentProcess }
+    )
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled())
+    fakeChild.emitError(new Error('boom'))
+    fakeChild.emitExit(0, null)
+    const result = await resultPromise
+
+    // Whichever event fired first wins; the second must be a no-op, not a second resolution.
+    expect(result.ok).toBe(false)
   })
 
   it('forwards a parent-received SIGINT to the running child', async () => {

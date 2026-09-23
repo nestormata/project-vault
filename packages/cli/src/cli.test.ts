@@ -304,17 +304,25 @@ describe('buildProgram — `login`/`logout` command wiring (Story 43.2)', () => 
 
 describe('buildProgram — `run` command wiring (Story 43.3)', () => {
   function makeFakeChild() {
-    const listeners: Array<(code: number | null, signal: NodeJS.Signals | null) => void> = []
+    const exitListeners: Array<(code: number | null, signal: NodeJS.Signals | null) => void> = []
+    const errorListeners: Array<(error: Error) => void> = []
     return {
       on: (
-        event: 'exit',
-        listener: (code: number | null, signal: NodeJS.Signals | null) => void
+        event: 'exit' | 'error',
+        listener:
+          ((code: number | null, signal: NodeJS.Signals | null) => void) | ((error: Error) => void)
       ) => {
-        listeners.push(listener)
+        if (event === 'exit') {
+          exitListeners.push(
+            listener as (code: number | null, signal: NodeJS.Signals | null) => void
+          )
+        } else if (event === 'error') {
+          errorListeners.push(listener as (error: Error) => void)
+        }
       },
       kill: vi.fn(),
       emitExit: (code: number | null, signal: NodeJS.Signals | null) => {
-        for (const l of listeners) l(code, signal)
+        for (const l of exitListeners) l(code, signal)
       },
     }
   }

@@ -24,6 +24,7 @@ export type InjectEntry = {
 
 export type ChildProcessLike = {
   on(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): void
+  on(event: 'error', listener: (error: Error) => void): void
   kill(signal?: NodeJS.Signals): boolean
 }
 
@@ -80,7 +81,16 @@ async function fetchAllOrNothing(
   { ok: true; injected: Record<string, string> } | { ok: false; exitCode: number; error: string }
 > {
   const writeStderr = deps.writeStderr ?? noop
-  const injected: Record<string, string> = {}
+  // Object.create(null) rather than `{}` — a target env var name of `__proto__` (a syntactically
+  // valid, non-reserved identifier) would otherwise hit `Object.prototype`'s `__proto__` accessor
+  // on plain-object bracket assignment, which silently no-ops for a non-object value instead of
+  // setting an own property. That would make the requested secret vanish from the child's
+  // environment with no error — a fail-open gap in code whose whole purpose is guaranteed
+  // delivery. A null-prototype object has no such accessor, so the assignment below always sets a
+  // real own property, and the later `{ ...injected }` spread (which uses ordinary
+  // CopyDataProperties semantics, not [[Set]]) carries it through as a plain data property either
+  // way.
+  const injected: Record<string, string> = Object.create(null) as Record<string, string>
 
   for (const entry of entries) {
     const safeName = sanitizeForTerminal(entry.credentialName)
@@ -177,8 +187,34 @@ export async function injectAndRun(
     }
     deps.parentProcess.on('SIGINT', forwardSigint)
 
-    child.on('exit', (code, signal) => {
+    // Guard against the promise settling twice — Node's real spawn() can emit 'error' (e.g. the
+    // target binary doesn't exist — ENOENT) without a corresponding 'exit' on some platforms, but
+    // there is no cross-platform guarantee that 'exit' is skipped, so both handlers must be safe
+    // to have fire.
+    let settled = false
+    const cleanup = (): void => {
       deps.parentProcess.removeListener('SIGINT', forwardSigint)
+    }
+
+    // Without this handler, a spawn failure (most commonly a typo'd/missing target command) would
+    // leave this promise pending forever — Node does not guarantee an 'exit' event fires when the
+    // child process could never be launched at all — hanging `pvault run` indefinitely with no
+    // exit code ever reported.
+    child.on('error', (error) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve({
+        ok: false,
+        exitCode: EXIT_CODES.unexpected,
+        error: `Failed to run '${sanitizeForTerminal(command)}': ${sanitizeForTerminal(error.message)}`,
+      })
+    })
+
+    child.on('exit', (code, signal) => {
+      if (settled) return
+      settled = true
+      cleanup()
 
       if (signal) {
         // AC-4 — "propagate the child's exit code exactly, including signal-terminated cases"
