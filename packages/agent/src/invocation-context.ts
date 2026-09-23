@@ -35,7 +35,10 @@ function encodeCodePoint(char: string): string {
     // than let an exception escape header construction.
     return REPLACEMENT_CHARACTER_ENCODED
   }
-  return encoded.replaceAll(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+  return encoded.replaceAll(
+    /[!'()*]/g,
+    (c) => `%${Number(c.codePointAt(0)).toString(16).toUpperCase()}`
+  )
 }
 
 /**
