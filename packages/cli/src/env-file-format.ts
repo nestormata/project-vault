@@ -56,6 +56,9 @@ function quoteDotenv(value: string): Quoted {
   return { ok: false, reason: 'unrepresentable' }
 }
 
+/** POSIX single-quote escape: close the quote, emit an escaped `'`, reopen. */
+const SHELL_ESCAPED_QUOTE = String.raw`'\''`
+
 /**
  * Serializes `entries` in order. Every value is checked before any text is returned, so a caller
  * that writes only on `ok: true` never writes a partial file.
@@ -76,7 +79,8 @@ export function serializeEnvFile(
     if (value.includes('\0')) return { ok: false, key, reason: 'nul' }
 
     if (format === 'shell') {
-      lines.push(`export ${key}='${value.replaceAll("'", String.raw`'\''`)}'\n`)
+      const escaped = value.replaceAll("'", SHELL_ESCAPED_QUOTE)
+      lines.push(`export ${key}='${escaped}'\n`)
       continue
     }
 
