@@ -13,8 +13,24 @@ import { currentPlatformAuditKeyVersion } from './key-version.js'
  * isolated (D3). Story 1.25 closed the "no hash chain" gap this comment used to flag: the
  * digest input now includes `previousEntryHmac` (see `writePlatformAuditEntry` below), making
  * architecture.md/prd.md's "cryptographic chaining" language accurate rather than aspirational. */
+/** Story 1.26 (CodeQL js/insufficient-password-hash false positive, alert #10): same
+ * type-narrowing treatment as `computeAuditHmac` (`modules/audit/write-entry.ts`) — this module's
+ * own `Record<string, unknown>`-shaped `fields` param was part of the same CodeQL
+ * over-approximation. `previousEntryHmac` is `string`, not `string | null`, for the same reason as
+ * the org-scoped interface: the only call site (`writePlatformAuditEntry` below) always coerces
+ * via `?? GENESIS_SENTINEL` first. */
+export interface PlatformAuditHmacFields {
+  operatorId: string
+  actionType: string
+  targetOrgId?: string
+  targetUserId?: string
+  payload: Record<string, unknown>
+  keyVersion: number
+  previousEntryHmac: string
+}
+
 export function computePlatformAuditHmac(
-  fields: Record<string, unknown>,
+  fields: PlatformAuditHmacFields,
   platformAuditKey: Buffer
 ): string {
   const canonical = JSON.stringify(sortKeys(fields))

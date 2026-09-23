@@ -577,6 +577,10 @@ async function insertSearchAuditRow(
         resourceType: input.resourceType,
         payload: {},
         keyVersion,
+        // This search-fixture row is never chain-verified (no verifyAuditRange call in this
+        // suite) — GENESIS_SENTINEL is a safe, always-valid stand-in satisfying the new required
+        // field, matching what a real genesis row's write path would hash.
+        previousEntryHmac: GENESIS_SENTINEL,
       },
       getAuditKey()
     )
