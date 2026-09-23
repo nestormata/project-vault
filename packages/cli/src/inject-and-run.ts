@@ -174,7 +174,7 @@ export async function injectAndRun(
     return { ok: false, exitCode: fetched.exitCode, error: fetched.error }
   }
 
-  const childEnv: NodeJS.ProcessEnv = { ...(deps.baseEnv ?? {}), ...fetched.injected }
+  const childEnv: NodeJS.ProcessEnv = { ...deps.baseEnv, ...fetched.injected }
 
   return new Promise<InjectAndRunResult>((resolve) => {
     const child = deps.spawn(command, args, { env: childEnv, stdio: 'inherit' })

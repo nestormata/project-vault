@@ -38,18 +38,12 @@ describe('parseRunSecrets', () => {
     if (!result.ok) expect(result.error).toContain(FREE_FORM_NAME)
   })
 
-  it('rejects an empty credential name (--secret =ENV_VAR)', () => {
-    const result = parseRunSecrets(['=ENV_VAR'])
-    expect(result.ok).toBe(false)
-  })
-
-  it('rejects an empty target env var (--secret NAME=)', () => {
-    const result = parseRunSecrets(['NAME='])
-    expect(result.ok).toBe(false)
-  })
-
-  it('rejects an invalid env var identifier on the rename side', () => {
-    const result = parseRunSecrets(['NAME=not valid'])
+  it.each([
+    ['empty credential name (--secret =ENV_VAR)', '=ENV_VAR'],
+    ['empty target env var (--secret NAME=)', 'NAME='],
+    ['invalid env var identifier on the rename side', 'NAME=not valid'],
+  ])('rejects %s', (_description, arg) => {
+    const result = parseRunSecrets([arg])
     expect(result.ok).toBe(false)
   })
 
