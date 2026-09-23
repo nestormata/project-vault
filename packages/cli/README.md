@@ -613,9 +613,11 @@ Each secret costs one request to the machine-user credential route and produces 
 is added. On an aborted run, entries exist only for secrets fetched before the failure (the route
 audits reveals, not file writes). The route allows 300 requests/min per key (20 failed lookups/min),
 so a single invocation with more than about 300 secrets will hit `429` mid-fetch → exit `6`,
-nothing written. The audit trail cannot yet distinguish "revealed and written to disk" from
-"revealed and injected into a process"; that invocation context is tracked as a Story 43.4
-subtask.
+nothing written. Every fetch sends Story 43.4's `x-vault-invocation` header with the value
+`write-env` (no target command), recorded as `clientInvocation: write-env`, so the audit trail can
+tell "revealed and written to disk" apart from `run` (handed to a process) and `get` (printed). As
+with `run`, a value served from the offline cache makes no request and so has no audit entry; the
+per-secret warning says so.
 
 ### Accepted residual risk
 

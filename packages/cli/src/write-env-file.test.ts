@@ -94,6 +94,15 @@ describe('writeEnvFile — AC-1 success', () => {
     expect(stderr).toEqual([])
   })
 
+  it("tags every fetch with the 'write-env' audit invocation context (Story 43.5 AC-8)", async () => {
+    const d = deps({ A: 'a', B: 'b' })
+    await writeEnvFile([entry('A'), entry('B')], '.env', DOTENV, d)
+    expect(d.getSecret.mock.calls).toEqual([
+      ['A', { invocation: 'write-env' }],
+      ['B', { invocation: 'write-env' }],
+    ])
+  })
+
   it('the same credential under two targets is fetched twice and both keys are written', async () => {
     const d = deps({ A: 'v' })
     const result = await writeEnvFile([entry('A', 'X'), entry('A', 'Y')], '.env', DOTENV, d)

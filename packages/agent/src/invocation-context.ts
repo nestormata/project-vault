@@ -1,12 +1,12 @@
 /**
  * Story 43.4 AC-3 — the optional, client-asserted invocation context a caller can attach to a
  * `getSecret()` fetch, so the server's audit entry for the reveal can record *why* the value was
- * fetched (`get` = printed, `run` = handed to a child process) and which command it was handed to.
+ * fetched (`get` = printed, `run` = handed to a child process, `write-env` = persisted to a file) and which command it was handed to.
  *
  * The server treats both values as advisory, client-asserted data (it records them under
  * `clientInvocation`/`clientTargetCommand`), never as a verified fact about what ran.
  */
-export type InvocationLabel = 'get' | 'run'
+export type InvocationLabel = 'get' | 'run' | 'write-env'
 
 export type SecretRequestContext = {
   invocation: InvocationLabel
@@ -21,7 +21,11 @@ export const TARGET_COMMAND_HEADER_MAX_LENGTH = 128
 
 // A future Epic 50 broker label (e.g. `mcp`) is a one-value extension here AND in the server's
 // allowlist (machine-credential-schema.ts) — deliberately not added until a consumer exists.
-const ALLOWED_INVOCATIONS: ReadonlySet<string> = new Set<InvocationLabel>(['get', 'run'])
+const ALLOWED_INVOCATIONS: ReadonlySet<string> = new Set<InvocationLabel>([
+  'get',
+  'run',
+  'write-env',
+])
 
 const REPLACEMENT_CHARACTER_ENCODED = '%EF%BF%BD'
 

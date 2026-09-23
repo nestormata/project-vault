@@ -10,6 +10,7 @@
  *   → fail-closed fetch (shared with `pvault run`) → serialize, refusing BEFORE any temp file (27)
  *   → dotenv-only-quoting warning (AC-6) → synchronous atomic 0600 write (25 on a race, 28)
  */
+import type { SecretRequestContext } from '@project-vault/agent'
 import { lstatSync, statSync, type Stats } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { writeFileAtomicOwnerOnly, type AtomicFs } from './atomic-file.js'
@@ -212,6 +213,8 @@ function checkIdentifiers(entries: InjectEntry[]): EntryFailure | null {
   )
 }
 
+const WRITE_ENV_CONTEXT: SecretRequestContext = { invocation: 'write-env' }
+
 export async function writeEnvFile(
   entries: InjectEntry[],
   target: string,
@@ -229,7 +232,12 @@ export async function writeEnvFile(
 
   await warnIfNotGitIgnored(path, deps.checkGitIgnored ?? realCheckGitIgnored, writeStderr)
 
-  const fetched = await fetchAllOrNothing(entries, { getSecret: deps.getSecret, writeStderr })
+  // Story 43.5 AC-8 — lets the audit trail tell "revealed and persisted to disk" apart from
+  // "revealed and injected into a process" (`run`) or "printed" (`get`).
+  const fetched = await fetchAllOrNothing(entries, WRITE_ENV_CONTEXT, {
+    getSecret: deps.getSecret,
+    writeStderr,
+  })
   if (!fetched.ok) return fetched
 
   const serialized = serializeOrRefuse(entries, fetched.injected, options.format, writeStderr)

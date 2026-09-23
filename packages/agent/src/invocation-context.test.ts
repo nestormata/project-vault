@@ -60,6 +60,12 @@ describe('buildInvocationContextHeaders (Story 43.4 AC-3)', () => {
     })
   })
 
+  it('sends x-vault-invocation only for `write-env` (Story 43.5 AC-8 — persisted to disk)', () => {
+    expect(buildInvocationContextHeaders({ invocation: 'write-env' })).toEqual({
+      'x-vault-invocation': 'write-env',
+    })
+  })
+
   it('sends both headers for `run`, with the target command percent-encoded', () => {
     expect(
       buildInvocationContextHeaders({ invocation: 'run', targetCommand: 'データ.sh' })

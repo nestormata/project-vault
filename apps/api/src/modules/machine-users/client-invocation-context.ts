@@ -1,4 +1,5 @@
 import type { IncomingHttpHeaders } from 'node:http'
+import type { z } from 'zod/v4'
 import {
   ClientInvocationHeaderSchema,
   ClientTargetCommandHeaderSchema,
@@ -15,7 +16,7 @@ export const TARGET_COMMAND_HEADER = 'x-vault-target-command'
  * must never read `clientTargetCommand` as proof of what ran.
  */
 export type ClientInvocationAuditFields = {
-  clientInvocation?: 'get' | 'run'
+  clientInvocation?: z.infer<typeof ClientInvocationHeaderSchema>
   clientTargetCommand?: string
   clientInvocationContextRejected?: true
 }

@@ -93,7 +93,7 @@ export async function runWriteEnv(
     args.output as string,
     { format: args.format as EnvFileFormat, force: args.force },
     {
-      getSecret: (name) => agent.getSecret(name),
+      getSecret: (name, context) => agent.getSecret(name, context),
       writeStderr: (chunk) => streams.stderr.write(chunk),
       cwd: deps.cwd,
       checkGitIgnored: deps.checkGitIgnored,

@@ -15,6 +15,12 @@ describe('parseClientInvocationContext (Story 43.4 AC-3)', () => {
     })
   })
 
+  it('accepts a write-env invocation (Story 43.5 AC-8 — revealed and persisted to disk)', () => {
+    expect(parseClientInvocationContext({ [INVOCATION]: 'write-env' })).toEqual({
+      clientInvocation: 'write-env',
+    })
+  })
+
   it('accepts a run invocation and stores the percent-decoded target command', () => {
     expect(
       parseClientInvocationContext({
