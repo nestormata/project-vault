@@ -139,7 +139,7 @@ describe('parseWorkspaceOverrides', () => {
     expect(parseWorkspaceOverrides('packages:\n  - "apps/*"\n').size).toBe(0)
   })
 
-  it('parses CRLF line endings instead of silently dropping every entry', () => {
+  it('parses CRLF line endings (the trailing \\r must not stop an entry from matching)', () => {
     const map = parseWorkspaceOverrides(
       'overrides:\r\n  argon2: 0.45.1\r\n  "minimatch@>=10 <10.2.3": 10.2.3\r\n'
     )
@@ -151,6 +151,7 @@ describe('parseWorkspaceOverrides', () => {
     const map = parseWorkspaceOverrides('overrides:\n  argon2:\n    foo: 1.0.0\n  "tsx":   \n')
     expect(map.get('argon2')).toBe('')
     expect(map.get('tsx')).toBe('')
+    expect([...map.keys()]).toEqual(['argon2', 'tsx']) // the nested `foo:` line is not a top-level key
   })
 
   it('trims surrounding whitespace from the value', () => {
@@ -158,10 +159,12 @@ describe('parseWorkspaceOverrides', () => {
   })
 
   it('stays linear on a long whitespace run (Sonar S8786 regression)', () => {
-    const line = `  "tsx":${' '.repeat(50_000)}x${' '.repeat(50_000)}!`
+    // ~200k chars: the old `\s*(.+?)\s*$` tail takes seconds here, the linear parser well under 10ms,
+    // so the 1s ceiling leaves wide headroom for a loaded CI runner either way.
+    const line = `  "tsx":${' '.repeat(100_000)}x${' '.repeat(100_000)}!`
     const started = performance.now()
     const map = parseWorkspaceOverrides(`overrides:\n${line}\n`)
-    expect(performance.now() - started).toBeLessThan(500)
+    expect(performance.now() - started).toBeLessThan(1000)
     expect(map.get('tsx')).toMatch(/^x +!$/)
   })
 })

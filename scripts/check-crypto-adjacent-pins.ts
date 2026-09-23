@@ -306,11 +306,13 @@ export function parseWorkspaceOverrides(yamlContent: string): Map<string, string
 }
 
 /** Parses one indented `overrides:` entry line into `[key, value]`, quoted key first, then bare.
- * Everything after the `:` is captured with `[^\n]*` (which also absorbs a CRLF file's trailing
- * `\r`) and trimmed in code, rather than by a `\s*(.+?)\s*$` regex tail that backtracks
- * super-linearly on long whitespace runs (Sonar S8786). A key with an empty value (e.g. a nested
- * `argon2:` map or a block scalar) is still recorded — this parser only exists to detect which
- * package names appear in `overrides:`, so it fails closed on value shapes it doesn't model. */
+ * The value is everything after the `:`, trimmed in code. Dropping the old `\s*(.+?)\s*$` tail —
+ * adjacent quantifiers that could all match whitespace — is what removes its super-linear
+ * backtracking (Sonar S8786); `[^\n]*` is used over `.*` only so a CRLF file's trailing `\r` is
+ * absorbed instead of making the line not match. A key with an empty value (e.g. a nested
+ * `argon2:` map) is still recorded, and a block scalar keeps its indicator (`|`, `>-`) as the
+ * value: `scanWorkspaceOverrides` flags any canonical-list key that is present at all, so the value
+ * shape never needs to be modeled for detection. */
 function parseOverrideLine(line: string): [string, string] | undefined {
   const match =
     /^\s{2}"([^"]+)"\s*:([^\n]*)$/.exec(line) ?? /^\s{2}([^"\s:]+)\s*:([^\n]*)$/.exec(line)
