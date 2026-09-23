@@ -19,6 +19,7 @@ import { docsEnabled } from './lib/docs-gating.js'
 import { vaultRoutes } from './modules/vault/routes.js'
 import { serviceProvisioningRoutes } from './modules/service-provisioning/routes.js'
 import { authRoutes } from './modules/auth/routes.js'
+import { cliLoginRoutes } from './modules/auth/cli-login-routes.js'
 import { orgRoutes } from './modules/org/routes.js'
 import { auditRoutes } from './modules/audit/routes.js'
 import { projectRoutes } from './modules/projects/routes.js'
@@ -99,6 +100,11 @@ import type { FastifyRequest } from 'fastify'
 // this regex — nil UUID and non-v4 formats are intentionally rejected so a caller
 // cannot inject arbitrary trace-correlation strings via X-Request-ID.
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+// Shared prefix for authRoutes/cliLoginRoutes/machineTokenExchangeRoutes below. route-audit.test.ts
+// resolves module-level string constants when reading a register() call's `prefix` option, so this
+// stays statically visible to that parser (see moduleStringConstants()/literalTextFromNode() there).
+const AUTH_ROUTE_PREFIX = '/api/v1/auth'
 
 type DbPool = {
   query: (sql: string) => Promise<unknown>
@@ -543,8 +549,11 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // Story 26.1: static-service-token-gated, unauthenticated-by-session route (own auth mechanism,
   // no secureRoute()) — registered alongside vaultRoutes, another static-token-gated route.
   await fastify.register(serviceProvisioningRoutes)
-  await fastify.register(authRoutes, { prefix: '/api/v1/auth' })
-  await fastify.register(machineTokenExchangeRoutes, { prefix: '/api/v1/auth' })
+  await fastify.register(authRoutes, { prefix: AUTH_ROUTE_PREFIX })
+  // Story 43.2 — CLI JSON-bearer-token login/refresh/logout, distinct from authRoutes' cookie-
+  // based routes above (same prefix, separate route file per Dev Notes decision #2).
+  await fastify.register(cliLoginRoutes, { prefix: AUTH_ROUTE_PREFIX })
+  await fastify.register(machineTokenExchangeRoutes, { prefix: AUTH_ROUTE_PREFIX })
   // Story 14.3: start/callback are public (unauthenticated) SSO routes, mounted alongside local
   // auth at the same public prefix — see Dev Notes judgment call #6 on file/module placement.
   await fastify.register(ssoRoutes, { prefix: '/api/v1/auth/sso' })

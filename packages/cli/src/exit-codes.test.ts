@@ -38,6 +38,26 @@ describe('exitCodeForAgentErrorCode', () => {
   })
 })
 
+describe('EXIT_CODES — Story 43.2 additions are distinct, exact integers', () => {
+  it("every new session/login exit code is a distinct integer, not overlapping 43.1's 1-13 range", () => {
+    const story432Codes = [
+      EXIT_CODES.notLoggedIn,
+      EXIT_CODES.sessionExpired,
+      EXIT_CODES.invalidTotp,
+      EXIT_CODES.mfaTokenExpired,
+      EXIT_CODES.webauthnOnlyUnsupported,
+      EXIT_CODES.insecureSessionFilePermissions,
+      EXIT_CODES.nativeLoginDisabled,
+      EXIT_CODES.invalidCredentials,
+    ]
+    expect(new Set(story432Codes).size).toBe(story432Codes.length)
+    for (const code of story432Codes) {
+      expect(code).toBeGreaterThan(EXIT_CODES.unexpected)
+    }
+    expect(story432Codes).toEqual([14, 15, 16, 17, 18, 19, 20, 21])
+  })
+})
+
 describe('CliUsageError', () => {
   it('carries a message and is a real Error instance', () => {
     const err = new CliUsageError('missing VAULT_API_KEY')

@@ -153,7 +153,8 @@ function importPathToSourcePath(moduleSpecifier: string): string | null {
 
 function registeredRouteFromCall(
   node: ts.CallExpression,
-  imports: Map<string, string>
+  imports: Map<string, string>,
+  constants: Map<string, string>
 ): RouteFile | null {
   if (!ts.isPropertyAccessExpression(node.expression)) return null
   if (node.expression.name.text !== 'register') return null
@@ -164,7 +165,7 @@ function registeredRouteFromCall(
   const options = node.arguments[1]
   const prefix =
     options && ts.isObjectLiteralExpression(options)
-      ? (literalText(objectProperty(options, 'prefix')) ?? '')
+      ? (literalTextFromNode(objectProperty(options, 'prefix'), constants) ?? '')
       : ''
   return { path: routePath, prefix }
 }
@@ -173,6 +174,7 @@ function productionRouteFiles(): RouteFile[] {
   const appSource = readFileSync(resolve(SRC_ROOT, 'app.ts'), 'utf-8')
   const app = sourceFile(appSource, 'app.ts')
   const imports = new Map<string, string>()
+  const constants = moduleStringConstants(appSource)
   const routes: RouteFile[] = []
 
   for (const statement of app.statements) {
@@ -189,7 +191,7 @@ function productionRouteFiles(): RouteFile[] {
 
   function visit(node: ts.Node): void {
     if (ts.isCallExpression(node)) {
-      const route = registeredRouteFromCall(node, imports)
+      const route = registeredRouteFromCall(node, imports, constants)
       if (route) routes.push(route)
     }
     ts.forEachChild(node, visit)

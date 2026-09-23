@@ -134,7 +134,9 @@ type AuthSessionResult = {
   tokens: TokenMaterial
 }
 
-function isMfaChallengeResult(
+/** Exported for reuse by cli-login-routes.ts (Story 43.2) — `loginUser()`'s return type is the
+ * same union there. */
+export function isMfaChallengeResult(
   result: AuthSessionResult | MfaChallengeResult
 ): result is MfaChallengeResult {
   return 'mfaRequired' in result
@@ -170,11 +172,41 @@ function normalizeEmailBodyForRoute(
   }
 }
 
-function metaFromRequest(req: FastifyRequest) {
+/** Exported for reuse by cli-login-routes.ts (Story 43.2) — the CLI's JSON-bearer-token login
+ * routes need the identical ip/user-agent extraction the cookie-based routes above use. */
+export function metaFromRequest(req: FastifyRequest) {
   return {
     ipAddress: req.ip,
     userAgent: req.headers['user-agent'] ?? null,
   }
+}
+
+/**
+ * Exported for reuse by cli-login-routes.ts (Story 43.2) — the shared gate/normalize/parse/
+ * authenticate/dispatch sequence `/login` and `/cli-login` both open with (jscpd gate: this was
+ * previously two near-identical inline copies of the same steps). Returns once `reply` has
+ * already been sent (the native-login gate, the ASCII-email-normalization failure, a 422
+ * validation failure, or `onMfaChallenge`/`onSuccess` sending the final response) — the caller
+ * only supplies how a success/MFA-challenge result is sent (cookies here, JSON bearer tokens in
+ * cli-login-routes.ts). `loginUser()`'s own thrown errors intentionally propagate — each call
+ * site wraps this in its own try/catch with its own error-translation policy
+ * (`sendRecoveryFailure()` here vs. `sendAppError()` in cli-login-routes.ts).
+ */
+export async function handleGatedLogin(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  onMfaChallenge: (reply: FastifyReply, result: MfaChallengeResult) => unknown,
+  onSuccess: (result: AuthSessionResult) => Promise<unknown>
+): Promise<unknown> {
+  const gated = rejectIfNativeLoginDisabled(reply)
+  if (gated !== null) return gated
+  const normalized = normalizeEmailBodyForRoute(req.body, reply)
+  if (!normalized.success) return normalized.reply
+  const parsed = LoginRequestSchema.safeParse(normalized.body)
+  if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
+  const result = await loginUser(parsed.data, metaFromRequest(req))
+  if (isMfaChallengeResult(result)) return onMfaChallenge(reply, result)
+  return onSuccess(result)
 }
 
 function parseBody<T>(
@@ -311,8 +343,11 @@ function sendAppError(reply: FastifyReply, error: AppError) {
  * persisted, and before any DB write — so it is unreachable to influence via any request-supplied
  * value (header, body, query, cookie). Returns the reply when the caller must stop, or `null`
  * when the handler should proceed normally.
+ *
+ * Exported for reuse by cli-login-routes.ts (Story 43.2) — the CLI's JSON-bearer-token login
+ * routes gate on the exact same native-login policy as the cookie-based routes above.
  */
-function rejectIfNativeLoginDisabled(reply: FastifyReply): unknown {
+export function rejectIfNativeLoginDisabled(reply: FastifyReply): unknown {
   if (isNativeLoginEnabled()) return null
   return reply.status(403).send({
     code: 'native_login_disabled',
@@ -395,7 +430,10 @@ async function enforceRecoverRateLimit(
 
 const SessionParamsSchema = z.object({ sessionId: z.uuid() })
 
-function registerMethodNotAllowed(fastify: FastifyApp, path: string): void {
+/** Exported for reuse by cli-login-routes.ts (Story 43.2) — its POST-only routes need the exact
+ * same explicit 405 registration (fastify's router returns a bare 404 for an unregistered
+ * method on a known path unless a handler for that method exists). */
+export function registerMethodNotAllowed(fastify: FastifyApp, path: string): void {
   for (const method of ['GET', 'PUT', 'PATCH', 'DELETE'] as const) {
     fastify.route({
       method,
@@ -742,19 +780,16 @@ export async function authRoutes(fastify: FastifyApp): Promise<void> {
       },
     },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
-      const gated = rejectIfNativeLoginDisabled(reply)
-      if (gated !== null) return gated
-      const normalized = normalizeEmailBodyForRoute(req.body, reply)
-      if (!normalized.success) return normalized.reply
-      const parsed = LoginRequestSchema.safeParse(normalized.body)
-      if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'body'))
       try {
-        const result = await loginUser(parsed.data, metaFromRequest(req))
-        if (isMfaChallengeResult(result)) {
-          clearAuthCookies(reply as unknown as CookieReply)
-          return reply.send({ data: result })
-        }
-        return sendAuthSession(fastify, reply, result)
+        return await handleGatedLogin(
+          req,
+          reply,
+          (reply, result) => {
+            clearAuthCookies(reply as unknown as CookieReply)
+            return reply.send({ data: result })
+          },
+          (result) => sendAuthSession(fastify, reply, result)
+        )
       } catch (error) {
         return sendRecoveryFailure(reply, error)
       }
