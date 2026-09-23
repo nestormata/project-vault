@@ -501,7 +501,7 @@ tooling that can only read configuration from a file:
 
 ```bash
 pvault write-env --secret DATABASE_URL --secret "stripe-key=STRIPE_KEY" --output .env
-# stderr: Wrote 2 secrets to /home/dev/app/.env      (stdout stays empty)
+# stderr: Wrote 2 secrets to /srv/app/.env      (stdout stays empty)
 
 pvault write-env -s DATABASE_URL -o .env --force           # replace an existing file
 pvault write-env -s DATABASE_URL -o env.sh --format shell  # for `source env.sh`
