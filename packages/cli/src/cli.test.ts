@@ -16,7 +16,9 @@ const VALID_ENV = {
 }
 
 const DATABASE_URL = 'DATABASE_URL'
-const ALLOW_UNHARDENED_INJECTION_FLAG = '--allow-unhardened-injection'
+/** Story 43.3's opt-in gate flag — removed by Story 43.4 AC-4; kept here only to prove the parser
+ * now rejects it. */
+const RETIRED_ALLOW_UNHARDENED_INJECTION_FLAG = '--allow-unhardened-injection'
 
 function makeStreams(isTTY: boolean) {
   const stdoutChunks: string[] = []
@@ -79,7 +81,7 @@ describe('buildProgram — `get <name>` command wiring', () => {
 
     expect(streams.stdoutChunks.join('')).toBe('the-value')
     expect(setExitCode).toHaveBeenCalledWith(0)
-    expect(getSecret).toHaveBeenCalledWith(DATABASE_URL)
+    expect(getSecret).toHaveBeenCalledWith(DATABASE_URL, { invocation: 'get' })
   })
 
   it('--api-key/--url/--project-id flags override env vars', async () => {
@@ -386,21 +388,16 @@ describe('buildProgram — `run` command wiring (Story 43.3)', () => {
     })
 
     const parsePromise = program.parseAsync(
-      runArgv(
-        '--secret',
-        DATABASE_URL,
-        ALLOW_UNHARDENED_INJECTION_FLAG,
-        '--',
-        'psql',
-        '-c',
-        'select 1'
-      )
+      runArgv('--secret', DATABASE_URL, '--', 'psql', '-c', 'select 1')
     )
     await vi.waitFor(() => expect(spawn).toHaveBeenCalled())
     fakeChild.emitExit(0, null)
     await parsePromise
 
-    expect(getSecret).toHaveBeenCalledWith(DATABASE_URL)
+    expect(getSecret).toHaveBeenCalledWith(DATABASE_URL, {
+      invocation: 'run',
+      targetCommand: 'psql',
+    })
     expect(spawn).toHaveBeenCalledWith(
       'psql',
       ['-c', 'select 1'],
@@ -411,7 +408,7 @@ describe('buildProgram — `run` command wiring (Story 43.3)', () => {
     expect(streams.stderrChunks.join('')).not.toContain(SECRET_VALUE)
   })
 
-  it('refuses without --allow-unhardened-injection, never calling createVaultAgent/spawn', async () => {
+  it('Story 43.4 AC-4: the retired --allow-unhardened-injection flag is gone from the parser entirely (unknown option, loud failure)', async () => {
     const streams = makeStreams(false)
     const spawn = vi.fn()
     const createVaultAgent = vi.fn()
@@ -428,12 +425,56 @@ describe('buildProgram — `run` command wiring (Story 43.3)', () => {
       parentProcess: runParentProcess,
     })
 
-    await program.parseAsync(runArgv('--secret', DATABASE_URL, '--', 'psql'))
+    const runCommand = program.commands.find((c) => c.name() === 'run')
+    const optionFlags = (runCommand?.options ?? []).map((o) => o.long)
+    expect(optionFlags).not.toContain(RETIRED_ALLOW_UNHARDENED_INJECTION_FLAG)
+    expect(optionFlags).toContain('--secrets-fd')
 
+    await expect(
+      program.parseAsync(
+        runArgv('--secret', DATABASE_URL, RETIRED_ALLOW_UNHARDENED_INJECTION_FLAG, '--', 'psql')
+      )
+    ).rejects.toThrow()
+    expect(streams.stderrChunks.join('')).toContain("unknown option '--allow-unhardened-injection'")
     expect(createVaultAgent).not.toHaveBeenCalled()
     expect(spawn).not.toHaveBeenCalled()
-    expect(setExitCode).toHaveBeenCalledWith(EXIT_CODES.unhardenedInjectionNotAcknowledged)
-    expect(streams.stderrChunks.join('')).toContain(ALLOW_UNHARDENED_INJECTION_FLAG)
+  })
+
+  it('Story 43.4 AC-2: --secrets-fd delivers over FD 3 instead of the child environment', async () => {
+    const streams = makeStreams(false)
+    const written: string[] = []
+    const fakeChild = Object.assign(makeFakeChild(), {
+      stdio: [null, null, null, { on: vi.fn(), end: (chunk: string) => void written.push(chunk) }],
+    })
+    const spawn = vi.fn().mockReturnValue(fakeChild)
+    const getSecret = vi.fn().mockResolvedValue(SECRET_VALUE)
+    const setExitCode = vi.fn()
+
+    const program = buildProgram({
+      streams,
+      env: VALID_ENV,
+      createVaultAgent: vi.fn().mockReturnValue({ getSecret }),
+      setExitCode,
+      prompt: unusedPrompt,
+      fetchFn: unusedFetch,
+      spawn,
+      parentProcess: runParentProcess,
+    })
+
+    const parsePromise = program.parseAsync(
+      runArgv('--secret', DATABASE_URL, '--secrets-fd', '--', 'psql')
+    )
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled())
+    fakeChild.emitExit(0, null)
+    await parsePromise
+
+    const options = (spawn.mock.calls[0] as [string, string[], { env: Record<string, string> }])[2]
+    expect(options.env).not.toHaveProperty(DATABASE_URL)
+    // pvault's own machine key (from VALID_ENV) is never inherited by the child.
+    expect(options.env).not.toHaveProperty('VAULT_API_KEY')
+    expect(options.env['PVAULT_SECRETS_FD']).toBe('3')
+    expect(JSON.parse(written[0] ?? '')).toEqual({ [DATABASE_URL]: SECRET_VALUE })
+    expect(setExitCode).toHaveBeenCalledWith(0)
   })
 
   it('rejects a missing "--" separator with a clear usage error, before commander misparses the trailing command as its own flags', async () => {
@@ -451,9 +492,7 @@ describe('buildProgram — `run` command wiring (Story 43.3)', () => {
       parentProcess: runParentProcess,
     })
 
-    await expect(
-      program.parseAsync(runArgv('--secret', 'X', ALLOW_UNHARDENED_INJECTION_FLAG, 'ls', '-la'))
-    ).rejects.toThrow()
+    await expect(program.parseAsync(runArgv('--secret', 'X', 'ls', '-la'))).rejects.toThrow()
 
     expect(streams.stderrChunks.join('')).toContain('missing "--" separator')
   })
@@ -473,9 +512,7 @@ describe('buildProgram — `run` command wiring (Story 43.3)', () => {
       parentProcess: runParentProcess,
     })
 
-    await expect(
-      program.parseAsync(runArgv('--secret', 'X', ALLOW_UNHARDENED_INJECTION_FLAG, '--'))
-    ).rejects.toThrow()
+    await expect(program.parseAsync(runArgv('--secret', 'X', '--'))).rejects.toThrow()
 
     expect(streams.stderrChunks.join('')).toContain('no command given')
   })
@@ -499,9 +536,7 @@ describe('buildProgram — `run` command wiring (Story 43.3)', () => {
       parentProcess: runParentProcess,
     })
 
-    const parsePromise = program.parseAsync(
-      runArgv('--secret', 'X', ALLOW_UNHARDENED_INJECTION_FLAG, '--', 'ls', '--help', '-la')
-    )
+    const parsePromise = program.parseAsync(runArgv('--secret', 'X', '--', 'ls', '--help', '-la'))
     await vi.waitFor(() => expect(spawn).toHaveBeenCalled())
     fakeChild.emitExit(0, null)
     await parsePromise
@@ -528,9 +563,7 @@ describe('buildProgram — `run` command wiring (Story 43.3)', () => {
       parentProcess: runParentProcess,
     })
 
-    const parsePromise = program.parseAsync(
-      runArgv('--secret', 'A', '--secret', 'B', ALLOW_UNHARDENED_INJECTION_FLAG, '--', 'cmd')
-    )
+    const parsePromise = program.parseAsync(runArgv('--secret', 'A', '--secret', 'B', '--', 'cmd'))
     await vi.waitFor(() => expect(spawn).toHaveBeenCalled())
     fakeChild.emitExit(0, null)
     await parsePromise
@@ -558,7 +591,7 @@ describe('buildProgram — `run` command wiring (Story 43.3)', () => {
       parentProcess: runParentProcess,
     })
 
-    await program.parseAsync(runArgv(ALLOW_UNHARDENED_INJECTION_FLAG, '--', 'ls'))
+    await program.parseAsync(runArgv('--', 'ls'))
 
     expect(createVaultAgent).not.toHaveBeenCalled()
     expect(setExitCode).toHaveBeenCalledWith(EXIT_CODES.secretsRequired)

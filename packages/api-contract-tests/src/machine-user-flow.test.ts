@@ -16,6 +16,9 @@
  * verify-enrollment routes rather than a DB shortcut.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { desc, eq } from 'drizzle-orm'
+import { withOrg } from '@project-vault/db'
+import { auditLogEntries } from '@project-vault/db/schema'
 import { bootContractTestApp, type TestApp } from './fixtures/app-instance.js'
 import { enrollMfa, registerAndLogin, type RegisteredUser } from './fixtures/auth.js'
 import { cookieHeader } from './fixtures/http.js'
@@ -124,6 +127,74 @@ describe('AC-7 — machine-user flow (pk_ key -> scoped JWT -> credential fetch)
 
     expect(res.statusCode).toBe(403)
     expect(res.json<{ code: string }>().code).toBe('insufficient_role')
+  })
+
+  describe('Story 43.4 AC-3 — optional invocation-context headers on the credential-value route', () => {
+    async function revealedPayloads(): Promise<Array<Record<string, unknown>>> {
+      const rows = await withOrg(admin.orgId, (tx) =>
+        tx
+          .select({ payload: auditLogEntries.payload })
+          .from(auditLogEntries)
+          .where(eq(auditLogEntries.eventType, 'credential.value_revealed'))
+          .orderBy(desc(auditLogEntries.chainSeq))
+      )
+      return rows.map((r) => r.payload as Record<string, unknown>)
+    }
+
+    it('accepts x-vault-invocation/x-vault-target-command and records them (client-asserted) in the reveal audit entry', async () => {
+      const accessToken = await exchangeMachineToken(apiKey)
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/machine/projects/${projectId}/credentials/${credentialName}/value`,
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          'x-vault-invocation': 'run',
+          'x-vault-target-command': 'psql',
+        },
+      })
+
+      expect(res.statusCode).toBe(200)
+      expect(res.json<{ data: { value: string } }>().data.value).toBe(credentialValue)
+      const [latest] = await revealedPayloads()
+      expect(latest).toMatchObject({
+        name: credentialName,
+        clientInvocation: 'run',
+        clientTargetCommand: 'psql',
+      })
+      expect(JSON.stringify(latest)).not.toContain(credentialValue)
+    })
+
+    it('without the headers (older CLI, vault-action, any other machine caller) the response and audit payload are unaffected', async () => {
+      const accessToken = await exchangeMachineToken(apiKey)
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/machine/projects/${projectId}/credentials/${credentialName}/value`,
+        headers: { authorization: `Bearer ${accessToken}` },
+      })
+
+      expect(res.statusCode).toBe(200)
+      const [latest] = await revealedPayloads()
+      expect(Object.keys(latest ?? {}).sort()).toEqual(
+        ['keyId', 'machineUserId', 'name', 'versionNumber'].sort()
+      )
+    })
+
+    it('an invalid header value never fails the reveal — it is dropped and flagged', async () => {
+      const accessToken = await exchangeMachineToken(apiKey)
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/v1/machine/projects/${projectId}/credentials/${credentialName}/value`,
+        headers: { authorization: `Bearer ${accessToken}`, 'x-vault-invocation': 'admin' },
+      })
+
+      expect(res.statusCode).toBe(200)
+      const [latest] = await revealedPayloads()
+      expect(latest).toMatchObject({ clientInvocationContextRejected: true })
+      expect(latest).not.toHaveProperty('clientInvocation')
+    })
   })
 
   it('rejects step 1 (token exchange) with an invalid key, distinct from a wrong-project failure', async () => {

@@ -7,40 +7,13 @@ import { parseRunSecrets } from './parse-run-secrets.js'
 import { sanitizeForTerminal } from './sanitize.js'
 import { looksLikeUuid } from './validate.js'
 
-/**
- * Story 43.3 AC-5 / Dev Notes decision #6 — the opt-in gate, isolated into its own small function
- * so Story 43.4 (which removes this AC once its hardening ships) can delete one function call and
- * its supporting flag/message cleanly, rather than a check scattered across multiple call sites.
- *
- * Deliberately CLI-argument-only (`--allow-unhardened-injection`) — no env var fallback — so the
- * opt-in stays a conscious, per-invocation act during the gated interval (never a permanent,
- * forgotten shell-profile default).
- */
-const RESIDUAL_RISK =
-  'pvault run -- injects secrets into a process whose own crash dumps, stack traces, or /proc/<pid>/environ could leak them'
-
-export function requireUnhardenedInjectionOptIn(
-  allowUnhardenedInjection: boolean,
-  writeStderr: (chunk: string) => void
-): boolean {
-  if (!allowUnhardenedInjection) {
-    writeStderr(
-      `${RESIDUAL_RISK} — this protection ships in a future release. Pass --allow-unhardened-injection to proceed anyway.\n`
-    )
-    return false
-  }
-  // Printed on EVERY invocation (never "warn once") — a developer scripting this flag into a
-  // Makefile target should see the warning on every run until Story 43.4 ships.
-  writeStderr(`warning: ${RESIDUAL_RISK}.\n`)
-  return true
-}
-
 export type RunArgs = {
   /** Raw `--secret` flag values, exactly as passed (e.g. `NAME` or `NAME=ENV_VAR`). */
   secrets: string[]
   command: string
   commandArgs: string[]
-  allowUnhardenedInjection: boolean
+  /** Story 43.4 AC-2 — deliver secrets as one JSON object on FD 3 instead of as env vars. */
+  secretsFd: boolean
 }
 
 export type RunDeps = {
@@ -52,9 +25,14 @@ export type RunDeps = {
 }
 
 /**
- * Orchestrates the full `pvault run --secret ... -- <command>` flow (AC-1 through AC-5). Thin CLI
- * adapter over `inject-and-run.ts`'s AC-6 seam — this module is the one place that knows about
- * `pvault run`'s own flag shapes; `injectAndRun()` itself has no idea any of this is a CLI at all.
+ * Orchestrates the full `pvault run --secret ... -- <command>` flow. Thin CLI adapter over
+ * `inject-and-run.ts`'s AC-6 seam — this module is the one place that knows about `pvault run`'s
+ * own flag shapes; `injectAndRun()` itself has no idea any of this is a CLI at all.
+ *
+ * Story 43.4 AC-4 — Story 43.3's `--allow-unhardened-injection` opt-in gate (and its
+ * per-invocation residual-risk warning) is removed: `pvault run --` is generally available. The
+ * residual-risk disclosure now lives once in packages/cli/README.md. Every Story 43.4 hardening
+ * (FD delivery, audit context, `VAULT_API_KEY` strip) lives in the seam, not here (AC-5).
  */
 export async function runRun(
   args: RunArgs,
@@ -62,16 +40,6 @@ export async function runRun(
   streams: GetStreams,
   deps: RunDeps
 ): Promise<number> {
-  // AC-5 — checked first, before any other validation: the opt-in gate is the primary security
-  // control for the unhardened interval between this story and Story 43.4.
-  if (
-    !requireUnhardenedInjectionOptIn(args.allowUnhardenedInjection, (chunk) =>
-      streams.stderr.write(chunk)
-    )
-  ) {
-    return EXIT_CODES.unhardenedInjectionNotAcknowledged
-  }
-
   // AC-1 edge case — zero `--secret` flags defeats the entire point of this command.
   if (args.secrets.length === 0) {
     streams.stderr.write(
@@ -98,11 +66,12 @@ export async function runRun(
   )
 
   const result = await injectAndRun(parsed.entries, args.command, args.commandArgs, {
-    getSecret: (name) => agent.getSecret(name),
+    getSecret: (name, context) => agent.getSecret(name, context),
     spawn: deps.spawn,
     parentProcess: deps.parentProcess,
     baseEnv: deps.env,
     writeStderr: (chunk) => streams.stderr.write(chunk),
+    delivery: args.secretsFd ? 'fd' : 'env',
   })
 
   if (!result.ok) {

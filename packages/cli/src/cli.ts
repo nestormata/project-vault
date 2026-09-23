@@ -184,8 +184,8 @@ export function buildProgram(runtime: CliRuntime): Command {
     .command('run')
     .description(
       'Fetch one or more secrets and spawn a command with them injected into its environment ' +
-        '(UX-DR16 — the documented default injection path). Requires --allow-unhardened-injection ' +
-        'until Story 43.4 ships (AC-5).'
+        '(UX-DR16 — the documented default injection path). Pass --secrets-fd to deliver them ' +
+        'over file descriptor 3 instead of the environment (Story 43.4).'
     )
     .option(
       '-s, --secret <name>',
@@ -193,9 +193,12 @@ export function buildProgram(runtime: CliRuntime): Command {
       (value: string, previous: string[]) => [...previous, value],
       []
     )
+    // Story 43.4 AC-4 — Story 43.3's `--allow-unhardened-injection` opt-in was removed, not
+    // aliased: commander now rejects it as an unknown option (loud, intended).
     .option(
-      '--allow-unhardened-injection',
-      'required opt-in (AC-5) — acknowledges the unhardened-secondary-disclosure risk until Story 43.4 ships',
+      '--secrets-fd',
+      'deliver the secrets as one JSON object on file descriptor 3 (PVAULT_SECRETS_FD=3) instead ' +
+        'of as environment variables, keeping them out of the child process environment',
       false
     )
     .option(API_KEY_FLAG, API_KEY_DESCRIPTION)
@@ -207,7 +210,7 @@ export function buildProgram(runtime: CliRuntime): Command {
         command: string[],
         options: {
           secret: string[]
-          allowUnhardenedInjection: boolean
+          secretsFd: boolean
           apiKey?: string
           url?: string
           projectId?: string
@@ -224,7 +227,7 @@ export function buildProgram(runtime: CliRuntime): Command {
               secrets: options.secret,
               command: runCommand ?? '',
               commandArgs: runCommandArgs,
-              allowUnhardenedInjection: options.allowUnhardenedInjection,
+              secretsFd: options.secretsFd,
             },
             config,
             runtime.streams,

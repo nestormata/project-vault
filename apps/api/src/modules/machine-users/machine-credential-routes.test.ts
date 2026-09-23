@@ -421,6 +421,92 @@ describe('GET /api/v1/machine/projects/:projectId/credentials/:name/value', () =
     })
   })
 
+  describe('Story 43.4 AC-3: client invocation context (x-vault-invocation / x-vault-target-command)', () => {
+    async function revealAndReadAuditPayload(
+      label: string,
+      extraHeaders: Record<string, string>
+    ): Promise<{ status: number; payload: Record<string, unknown>; orgId: string }> {
+      const owner = await registerOwner(app, `invocation-${label}`)
+      const projectId = await createProjectViaApi(app, owner.cookies, `machine-cred-inv-${label}`)
+      await createCredentialViaApi(app, owner.cookies, projectId, 'CONTEXT_SECRET', 'ctx-value')
+      const { machineUserId, key } = await issueMachineUserAndKey(app, owner.cookies, projectId)
+      const jwt = await exchangeForMachineJwt(app, key)
+
+      const res = await app.inject({
+        method: 'GET',
+        url: machineCredentialValueUrl(projectId, 'CONTEXT_SECRET'),
+        headers: { authorization: `Bearer ${jwt}`, ...extraHeaders },
+      })
+
+      const rows = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select()
+          .from(auditLogEntries)
+          .where(eq(auditLogEntries.eventType, VALUE_REVEALED_EVENT_TYPE))
+      )
+      const row = rows.find(
+        (r) => (r.payload as Record<string, unknown>)?.['machineUserId'] === machineUserId
+      )
+      expect(row).toBeDefined()
+      return {
+        status: res.statusCode,
+        payload: row?.payload as Record<string, unknown>,
+        orgId: owner.orgId,
+      }
+    }
+
+    it('records clientInvocation/clientTargetCommand (decoded) and the HMAC chain still verifies', async () => {
+      const { status, payload, orgId } = await revealAndReadAuditPayload('valid', {
+        'x-vault-invocation': 'run',
+        'x-vault-target-command': '%E3%83%87%E3%83%BC%E3%82%BF.sh',
+      })
+
+      expect(status).toBe(200)
+      expect(payload).toMatchObject({
+        clientInvocation: 'run',
+        clientTargetCommand: 'データ.sh',
+        name: 'CONTEXT_SECRET',
+      })
+      expect(payload).not.toHaveProperty('clientInvocationContextRejected')
+      expect(JSON.stringify(payload)).not.toContain('ctx-value')
+
+      const { verifyAuditRange } = await import('../audit/verify.js')
+      const result = await withOrg(orgId, (tx) =>
+        verifyAuditRange(tx, {
+          orgId,
+          from: new Date(Date.now() - 600_000).toISOString(),
+          to: new Date(Date.now() + 60_000).toISOString(),
+        })
+      )
+      expect(result.failed).toEqual([])
+    })
+
+    it('absent headers leave the payload exactly as before (no new keys)', async () => {
+      const { status, payload } = await revealAndReadAuditPayload('absent', {})
+
+      expect(status).toBe(200)
+      expect(Object.keys(payload).sort()).toEqual(
+        ['keyId', 'machineUserId', 'name', 'versionNumber'].sort()
+      )
+    })
+
+    it.each([
+      ['bad-invocation', { 'x-vault-invocation': 'admin' }],
+      ['newline', { 'x-vault-invocation': 'run', 'x-vault-target-command': 'a%0Ab' }],
+      ['oversized', { 'x-vault-invocation': 'run', 'x-vault-target-command': 'a'.repeat(500) }],
+      ['malformed', { 'x-vault-invocation': 'run', 'x-vault-target-command': '%E0%A4%A' }],
+    ])(
+      'an invalid header (%s) never fails the reveal — field dropped, rejection flagged',
+      async (label, headers) => {
+        const { status, payload } = await revealAndReadAuditPayload(label, headers)
+
+        expect(status).toBe(200)
+        expect(payload['clientInvocationContextRejected']).toBe(true)
+        expect(payload).not.toHaveProperty('clientTargetCommand')
+      }
+    )
+  })
+
   describe('AC-27: rate limiting', () => {
     it('returns 429 on the 21st failed lookup for the same keyId within 60s', async () => {
       process.env['RATE_LIMIT_TEST_BYPASS'] = 'false'

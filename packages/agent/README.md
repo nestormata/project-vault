@@ -36,6 +36,21 @@ const databaseUrl = await agent.getSecret('DATABASE_URL')
 `getSecret()` call, and the resulting access token is reused for the agent's lifetime; a `401`
 triggers exactly one transparent re-exchange and retry.
 
+### Optional invocation context (audit)
+
+`getSecret(name, context?)` accepts an optional second argument,
+`{ invocation: 'get' | 'run'; targetCommand?: string }`. When given, the credential-value request
+carries `x-vault-invocation` and (if `targetCommand` is non-empty) `x-vault-target-command`
+headers, which the server records — as **client-asserted** `clientInvocation` /
+`clientTargetCommand` — in that reveal's audit entry. `targetCommand` should be a command
+**basename only**, never argv; the agent percent-encodes it and truncates it to 128 encoded
+characters on whole code points, so header construction can never throw (a `TypeError` from
+`fetch()` would otherwise be mistaken for a network failure and trigger the offline-cache
+fallback). The headers are re-sent on the `401` re-auth retry. Omitting the argument sends exactly
+the request earlier versions sent (this is what `@project-vault/vault-action` does). A value served
+from the offline cache makes no request at all, so it carries no context and produces no audit
+entry.
+
 ## Options
 
 | Option              | Type     | Required | Default                                                 | Meaning                                                                                                         |

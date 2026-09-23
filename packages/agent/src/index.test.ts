@@ -9,6 +9,7 @@ import {
   VaultMultiFieldSecretUnsupportedError,
 } from './index.js'
 import { readCacheFile, writeCacheFile, type CacheFile } from './cache-store.js'
+import { INVOCATION_HEADER, TARGET_COMMAND_HEADER } from './invocation-context.js'
 
 const BASE_URL = 'https://vault.example.test'
 const PROJECT_ID = 'project-abc'
@@ -444,5 +445,109 @@ describe('createVaultAgent().getSecret — non-cacheable exclusion (AC-14)', () 
     await expect(agent.getSecret('NEVER_CACHEABLE')).rejects.toMatchObject({
       code: 'vault_unreachable_non_cacheable',
     })
+  })
+})
+
+describe('createVaultAgent().getSecret — invocation context headers (Story 43.4 AC-3)', () => {
+  const LIVE_VALUE = 'live-value'
+  type SeenRequest = { url: string; headers: Headers }
+
+  /** A fetch fake that — like the real one — validates header values as ByteStrings via the real
+   * `Headers` constructor, which throws a `TypeError` for an invalid value. That TypeError is
+   * exactly the agent's "network failure → serve from cache" signal, so an unencoded header would
+   * show up here as a (wrong) cache fallback. */
+  function recordingFetch(respond: (req: SeenRequest, valueCallIndex: number) => Response): {
+    seen: SeenRequest[]
+    fetchMock: ReturnType<typeof vi.fn>
+  } {
+    const seen: SeenRequest[] = []
+    let valueCalls = 0
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const headers = new Headers(init?.headers)
+      if (url === TOKEN_URL) return jsonResponse(200, { data: { accessToken: FIRST_ACCESS_TOKEN } })
+      const req = { url, headers }
+      seen.push(req)
+      valueCalls += 1
+      return respond(req, valueCalls)
+    })
+    return { seen, fetchMock }
+  }
+
+  const okBody = (name: string) =>
+    jsonResponse(200, { data: { name, value: LIVE_VALUE, versionNumber: 1, cacheable: true } })
+
+  function makeAgent() {
+    return createVaultAgent({
+      apiKey: API_KEY,
+      baseUrl: BASE_URL,
+      projectId: PROJECT_ID,
+      cachePath,
+    })
+  }
+
+  it('sends no invocation headers when called without a context (vault-action path unchanged)', async () => {
+    const { seen, fetchMock } = recordingFetch(() => okBody('A'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await makeAgent().getSecret('A')
+
+    expect(seen[0]?.headers.has(INVOCATION_HEADER)).toBe(false)
+    expect(seen[0]?.headers.has(TARGET_COMMAND_HEADER)).toBe(false)
+  })
+
+  it('sends x-vault-invocation: get (and no target command) for a get context', async () => {
+    const { seen, fetchMock } = recordingFetch(() => okBody('A'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await makeAgent().getSecret('A', { invocation: 'get' })
+
+    expect(seen[0]?.headers.get(INVOCATION_HEADER)).toBe('get')
+    expect(seen[0]?.headers.has(TARGET_COMMAND_HEADER)).toBe(false)
+  })
+
+  it('sends both headers for a run context', async () => {
+    const { seen, fetchMock } = recordingFetch(() => okBody('A'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await makeAgent().getSecret('A', { invocation: 'run', targetCommand: 'psql' })
+
+    expect(seen[0]?.headers.get(INVOCATION_HEADER)).toBe('run')
+    expect(seen[0]?.headers.get(TARGET_COMMAND_HEADER)).toBe('psql')
+    expect(seen[0]?.headers.get('authorization')).toBe(`Bearer ${FIRST_ACCESS_TOKEN}`)
+  })
+
+  it('re-sends the context headers on the 401 → re-exchange → retry request', async () => {
+    const { seen, fetchMock } = recordingFetch((_req, index) =>
+      index === 1 ? jsonResponse(401, { code: 'invalid_machine_token' }) : okBody('A')
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const value = await makeAgent().getSecret('A', {
+      invocation: 'run',
+      targetCommand: 'deploy.sh',
+    })
+
+    expect(value).toBe(LIVE_VALUE)
+    expect(seen).toHaveLength(2)
+    for (const req of seen) {
+      expect(req.headers.get(INVOCATION_HEADER)).toBe('run')
+      expect(req.headers.get(TARGET_COMMAND_HEADER)).toBe('deploy.sh')
+    }
+  })
+
+  it('a non-ASCII target command still produces a live request (encoded), never a TypeError-driven cache fallback', async () => {
+    // Seed a cache entry so that a (wrong) fallback would have something to serve.
+    const cache: CacheFile = {}
+    writeCacheFile(cachePath, cache)
+    const { seen, fetchMock } = recordingFetch(() => okBody('A'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const value = await makeAgent().getSecret('A', {
+      invocation: 'run',
+      targetCommand: 'データ.sh',
+    })
+
+    expect(value).toBe(LIVE_VALUE)
+    expect(seen[0]?.headers.get(TARGET_COMMAND_HEADER)).toBe('%E3%83%87%E3%83%BC%E3%82%BF.sh')
   })
 })

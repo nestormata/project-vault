@@ -7,6 +7,7 @@ import { enforceUserRateLimit, parseParams, parseQuery } from '../../lib/route-h
 import { secureRoute, SameTransactionAuditWriteError } from '../../lib/secure-route.js'
 import { writeMachineAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { findCredentialByNameInProject, revealCurrentValue } from '../credentials/service.js'
+import { parseClientInvocationContext } from './client-invocation-context.js'
 import {
   MACHINE_COMMON_ERROR_RESPONSES,
   MANUAL_MACHINE_AUTH_SECURITY,
@@ -104,6 +105,8 @@ export async function machineCredentialRoutes(fastify: FastifyApp): Promise<void
       const query = parseQuery(MachineCredentialValueQuerySchema, req, reply)
       if (!query) return reply
       const name = decodeURIComponent(params.name)
+      // Story 43.4 AC-3 — advisory, client-asserted invocation context; never fails the request.
+      const clientInvocationContext = parseClientInvocationContext(req.headers)
 
       // AC-7: a valid machine JWT reused against a project it isn't scoped to. 403 (not 404) —
       // the caller already holds a valid, scoped credential; the project's existence isn't the
@@ -169,7 +172,10 @@ export async function machineCredentialRoutes(fastify: FastifyApp): Promise<void
             eventType: AuditEvent.CREDENTIAL_VALUE_REVEALED,
             machineUserId: verified.machineUserId,
             keyId: verified.keyId,
-            payload: { versionNumber: result.versionNumber, name },
+            // Story 43.4 AC-3 — `client*` keys are CLIENT-ASSERTED (the caller can claim any
+            // command); only machineUserId/keyId (spread after this payload by
+            // writeMachineAuditEntry, so they can never be shadowed) are server-verified.
+            payload: { versionNumber: result.versionNumber, name, ...clientInvocationContext },
             // Story 13.3 — first-class column, not nested in payload (see human route).
             revealedFields: result.revealedFields,
             request: req,

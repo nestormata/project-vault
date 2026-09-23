@@ -3,7 +3,7 @@
 Terminal CLI for fetching and injecting [Project Vault](https://github.com/nestormata/project-vault)
 secrets, for a developer or CI engineer using a machine-user API key. Story 43.1 implemented the
 first command, `get`; Story 43.2 added `login`/`logout`; Story 43.3 added `run -- <cmd>` (per
-UX-DR16, the documented default injection path). `.env` materialization and later Epic 43 stories
+UX-DR16, the documented default injection path); Story 43.4 hardened it and made it generally available. `.env` materialization and later Epic 43 stories
 build on the foundation these establish.
 
 This package is a thin wrapper around
@@ -107,8 +107,10 @@ monorepo's lockfile.
 other process of the same OS user via `/proc/<pid>/environ` on Linux for as long as the process is
 running. This is the same class of exposure every AWS CLI/`gcloud`/similar tool accepts, and is
 **not** something this story engineers around — see Story 43.1's Dev Notes "Accepted residual
-risk" and Story 43.4's hardening scope for the analogous, explicitly-accepted limitation on
-_injected_ secrets.
+risk". The analogous limitation on _injected_ secrets, and the hardening that shipped for it, is
+covered in [Story 43.4's accepted residual risk](#accepted-residual-risk-story-434) below. Since
+Story 43.4, `VAULT_API_KEY` is **no longer inherited** by a `pvault run` child — it stays in
+`pvault`'s own process only.
 
 ## `pvault login` / `pvault logout` (Story 43.2)
 
@@ -253,15 +255,15 @@ as the intended way to consume a secret in a real process):
 VAULT_API_KEY=pk_abc123 \
 VAULT_URL=https://vault.example.com \
 VAULT_PROJECT_ID=a1c2d3e4-0000-0000-0000-000000000000 \
-  pvault run --secret DATABASE_URL --allow-unhardened-injection -- psql "$DATABASE_URL"
+  pvault run --secret DATABASE_URL -- psql "$DATABASE_URL"
 
 # Multiple secrets, and renaming a credential to a different env var name:
-pvault run --secret DATABASE_URL --secret "my-db-password=MY_DB_PASSWORD" \
-  --allow-unhardened-injection -- ./deploy.sh
+pvault run --secret DATABASE_URL --secret "my-db-password=MY_DB_PASSWORD" -- ./deploy.sh
 ```
 
-`--allow-unhardened-injection` is required until Story 43.4 ships (see decision #6 below) — every
-invocation without it refuses to run at all. The command's own stdout/stderr never echo a fetched
+`pvault run --` is generally available since Story 43.4 — no opt-in flag is needed (see Story
+43.4 below; remove `--allow-unhardened-injection` from existing invocations, it is now an unknown
+option). The command's own stdout/stderr never echo a fetched
 value (AC-1); the child's stdin/stdout/stderr connect directly to the terminal (`stdio: 'inherit'`),
 so interactive commands (`psql`, `python -i`, a dev server) behave exactly as if launched directly.
 
@@ -322,10 +324,14 @@ clear usage message for both cases.
 | Exit code | Meaning                                                                                                                                                                                                                |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `22`      | `secretsRequired` — zero `--secret` flags passed                                                                                                                                                                       |
-| `23`      | `unhardenedInjectionNotAcknowledged` — the `--allow-unhardened-injection` opt-in flag was omitted (AC-5)                                                                                                               |
+| `23`      | `unhardenedInjectionNotAcknowledged` — **retired by Story 43.4, never returned**. Formerly: the `--allow-unhardened-injection` opt-in flag was omitted (AC-5). The number is never reused.                             |
 | `24`      | `childSignalTerminated` — Windows-only fallback for a signal-terminated child (AC-4); never actually observed on POSIX, where the parent dies via the re-raised signal itself instead of returning via `setExitCode()` |
 
 ### 6. `--allow-unhardened-injection` (AC-5) — CLI-argument-only, no env var fallback
+
+> **Removed by Story 43.4 (AC-4).** The flag, its per-invocation warning, and
+> `requireUnhardenedInjectionOptIn()` no longer exist; exit code `23` is retired. Kept below as the
+> historical record of the gated interval.
 
 A long, deliberately hard-to-type-by-accident flag name (rejecting a short `-f`/`--force` form),
 naming exactly what risk is being accepted: secrets injected into a process whose own crash dumps,
@@ -350,7 +356,8 @@ invoker having read their own terminal output.
 (decision #5 above) — each `--secret` fetch individually goes through
 `withFetchProvenanceTracking()`, and each secret served from a stale cache gets its own per-name
 warning on stderr (`warning: 'X' served from offline cache (vault unreachable), value may be
-stale`) before the child is ever spawned. This is a considered trade-off, not an oversight —
+stale and this injection is not recorded in the vault audit log` — the audit clause added by Story
+43.4) before the child is ever spawned. This is a considered trade-off, not an oversight —
 injecting a stale credential into a running, possibly long-lived process is arguably riskier than
 `get` printing a stale value once for a human to judge — but disabling cache participation for `run`
 would make it less resilient to a genuinely offline vault than `get`, contradicting Epic 43's
@@ -366,6 +373,125 @@ synthetic `128 + N` code, matching how `npm`/`cross-env`-class tools behave. A p
 `SIGINT` while the child is running is forwarded to the child (`child.kill('SIGINT')`) rather than
 orphaning it, with the listener removed once the child's own `exit` event fires.
 
+## `pvault run --secrets-fd` and injection hardening (Story 43.4)
+
+Story 43.4 hardens injected secrets against **secondary disclosure** (FR158a) and makes `pvault run
+--` generally available. Everything below lives in `src/inject-and-run.ts`'s `injectAndRun()` seam
+(not the CLI adapter), so a future Epic 50 broker inherits it by calling the same function (FR179).
+
+### Delivering secrets over a file descriptor instead of the environment
+
+```bash
+pvault run --secrets-fd --secret DB_PASSWORD --secret TLS_KEY -- node app.js
+```
+
+With `--secrets-fd`, the requested secrets are **not** set as environment variables at all. Instead
+`pvault` spawns the child with a fourth file descriptor — an anonymous pipe on **FD 3** — writes
+**one UTF-8 JSON object** mapping each target name to its value, e.g.
+`{"DB_PASSWORD":"s3cr3t","TLS_KEY":"-----BEGIN…\n…"}` (no trailing newline), and closes the write
+end so the child sees EOF. The child's env gets only the non-secret marker `PVAULT_SECRETS_FD=3`
+(overwriting any inherited value), so a reader can discover the FD without hard-coding it (same
+idea as systemd's `LISTEN_FDS`). Reading it:
+
+```js
+// Node.js
+const secrets = JSON.parse(
+  require('node:fs').readFileSync(Number(process.env.PVAULT_SECRETS_FD), 'utf8')
+)
+```
+
+```python
+# Python
+import json, os
+secrets = json.load(os.fdopen(int(os.environ["PVAULT_SECRETS_FD"])))
+```
+
+```bash
+# bash + jq (or read /dev/fd/3 from any language that can open a file)
+DB_PASSWORD="$(jq -r .DB_PASSWORD <&3)"
+```
+
+Read the FD **fully and close it at startup**: FD 3 is inherited by anything the child `exec`s or
+forks without closing it. After EOF the pipe is empty, so late inheritance leaks nothing — but a
+child that never reads leaves the payload waiting for a grandchild. JSON (rather than
+`NAME=value` lines) needs no new escaping scheme for values containing `\n`, `=` or `\0`, and a
+truncated payload (another reader drained part of the pipe, or `pvault` died mid-write) is a parse
+error, never a silently partial secret set. Validation is identical to the env path (reserved-name
+refusal, duplicate-target detection, at least one `--secret`).
+
+**Platforms:** supported on Linux/macOS. On Windows, Node passes stdio index 3 to **Node.js
+children** only; a non-Node Windows binary generally has no POSIX FD 3 (no leak results — it simply
+cannot read it). The flag is not refused on `win32`.
+
+**Pipe failure modes:** a child that exits without reading gets its own exit code propagated as
+always (the resulting `EPIPE`/`ECONNRESET` on the write end is swallowed, never an unhandled
+crash); a payload larger than the OS pipe buffer (64 KiB on Linux) never blocks `pvault` from
+settling on the child's exit; any other write error prints one stderr line built only from the
+error code, never the payload.
+
+### Design decisions (Dev Notes, Story 43.4)
+
+1. **FD delivery: boolean `--secrets-fd`, fixed FD 3, JSON, then EOF; `PVAULT_SECRETS_FD=3`
+   marker; no extra opt-in.** A named pipe/FIFO was rejected: its filesystem path is `open()`-able
+   by any same-user process (re-creating the exposure this exists to reduce) and needs crash
+   cleanup. `/dev/fd/3` covers runtimes that can't use an inherited FD directly. The wire format
+   above is a public contract.
+2. **Audit "target command": two optional headers, basename only.** Every `pvault run` fetch sends
+   `x-vault-invocation: run` and `x-vault-target-command: <percent-encoded basename, ≤128 chars>`;
+   `pvault get` sends `x-vault-invocation: get` (so the audit trail can tell "a value was printed"
+   from "a value was handed to a child process"). The server validates them and records
+   `clientInvocation` / `clientTargetCommand` in the existing `credential.value_revealed` audit
+   entry — one entry per credential fetch, each carrying the same target command. **Only the
+   basename of the directly spawned binary is ever sent, never argv**: argv routinely carries other
+   credentials (`mysql -pHunter2`, `psql postgres://app:Hunter2@db/app`, `curl -H "Authorization:
+…"`) that must not become audit-log content. A wrapper records the wrapper: `pvault run -- env
+X=1 psql` records `env`, `pvault run -- sh -c "psql …"` records `sh`. **These two fields are
+   client-asserted** — a holder of the machine key can claim `ls` while running anything; only the
+   machine user and key id in the entry are server-verified. An invalid header value is dropped and
+   flagged (`clientInvocationContextRejected: true`), never a failed reveal. If the audit write
+   itself fails the server answers `503` and the child is never spawned (fail-closed).
+3. **Exit code `23` retired, never reused** (append-only table).
+4. **AC-1's crash-dump scope is `pvault`'s own process**, not an arbitrary child's crash reporter
+   (which `pvault` structurally cannot control). Read as: no secret leaks through `pvault`'s own
+   error/crash paths, plus an alternative delivery (`--secrets-fd`) that removes the child's
+   environment as an exposure surface. `pvault` also turns off Node diagnostic reports for itself
+   (`hardenProcessDiagnostics()` — `--report-on-fatalerror`/`--report-uncaught-exception`/
+   `--report-on-signal`, which would write its full environment to disk).
+5. **The child never inherits `pvault`'s own credential.** `VAULT_API_KEY` is stripped from the
+   inherited env in both modes (non-secret `VAULT_URL`/`VAULT_PROJECT_ID` stay). An explicit
+   `--secret VAULT_API_KEY` still injects. **Behavior change from 43.3:** a child that relied on
+   inheriting the key to call `pvault` again must now be given it explicitly.
+6. **Offline-cache-served injections are warned about and documented, not refused** (see below).
+
+### Accepted residual risk (Story 43.4)
+
+Stated explicitly rather than left implicit:
+
+- **Same-user process-environment visibility (default env injection).** A secret injected the
+  default way (`pvault run --secret NAME -- <command>`) is visible to any other process the same
+  OS user runs, for as long as the child is alive — on Linux via `/proc/<pid>/environ`; on macOS
+  via `ps eww`; on Windows via `OpenProcess`/`ReadProcessMemory`. It is also inherited by the
+  child's own children and dumped by any crash reporter that records the environment. This is a
+  same-user OS process-boundary property, not a `pvault` defect, and no hardening inside `pvault`
+  can change it. **`--secrets-fd` is the documented way to avoid this vector** for commands that
+  can read a file descriptor.
+- **`--secrets-fd` does not stop an active same-user attacker.** It removes the persistent,
+  passive exposure (environment readable for the child's whole lifetime, env-dumping crash
+  reporters, child-of-child inheritance). Until the child drains the pipe, a same-user attacker can
+  open `/proc/<child-pid>/fd/3` and race to read it; with ptrace access (Yama
+  `ptrace_scope=0`) they can read the child's memory at any time. The JSON format makes such a race
+  _detectable_ by the child (parse failure), not _preventable_.
+- **Heap snapshots and core dumps of `pvault` itself.** `--heapsnapshot-signal` /
+  `--heapsnapshot-near-heap-limit` snapshots and OS core dumps of `pvault` contain the fetched
+  values while it runs; Node exposes neither `setrlimit(RLIMIT_CORE)` nor
+  `prctl(PR_SET_DUMPABLE)`, so these are not mitigable from `pvault`.
+- **Fetched values cannot be zeroed.** V8 strings are immutable; `pvault` does not keep the fetched
+  values reachable after handing them to the child (so GC can reclaim them), but cannot wipe them.
+- **Offline-cache injections are not in the vault audit log.** A value served from the offline
+  cache makes no HTTP request, so no server audit entry records that injection (only the original
+  reveal that populated the cache exists). `pvault run` prints a per-secret warning saying so,
+  rather than refusing — keeping CI resilient to a genuinely offline vault.
+
 ## Running the e2e tests
 
 `src/get-command.e2e.test.ts` boots a real, listening `@project-vault/api` server and round-trips
@@ -379,8 +505,8 @@ ADMIN_DATABASE_URL=postgresql://vault_admin:password@localhost:$DB_HOST_PORT/pro
   pnpm --filter @project-vault/cli test
 ```
 
-`src/inject-and-run.e2e.test.ts` (Story 43.3, AC-4) needs **no** Postgres/API server — it spawns a
-real `node:child_process` child (via the real, non-mocked `spawn`) and asserts real exit-code/signal
-propagation, with `getSecret` stubbed in-memory (the fetch side is already covered by
+`src/inject-and-run.e2e.test.ts` (Story 43.3, AC-4; extended by Story 43.4 for `--secrets-fd`)
+needs **no** Postgres/API server — it spawns a real `node:child_process` child (via the real,
+non-mocked `spawn`) and asserts real exit-code/signal propagation and real FD-3 delivery, with `getSecret` stubbed in-memory (the fetch side is already covered by
 `get-command.e2e.test.ts`'s real round trip). It runs as part of the normal `pnpm test` command with
 no extra setup.

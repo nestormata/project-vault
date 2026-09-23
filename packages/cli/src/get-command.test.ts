@@ -42,7 +42,9 @@ describe('runGet — AC-2 success path', () => {
         projectId: 'a1c2d3e4-0000-0000-0000-000000000000',
       })
     )
-    expect(getSecret).toHaveBeenCalledWith('DATABASE_URL')
+    // Story 43.4 AC-3 / decision #2 — `get` tells the audit trail the value was printed, not
+    // handed to a child process (and carries no target command).
+    expect(getSecret).toHaveBeenCalledWith('DATABASE_URL', { invocation: 'get' })
   })
 
   it('round-trips a value that itself contains a trailing newline, unmodified', async () => {
