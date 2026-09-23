@@ -41,6 +41,20 @@ export const EXIT_CODES = {
   // rest of this table) — reusing `usageError` would misleadingly suggest a bad CLI invocation
   // rather than a rejected credential.
   invalidCredentials: 21,
+  // Story 43.3 (Dev Notes decision #5) — append-only, `pvault run --` failure modes. Never
+  // renumber the blocks above.
+  /** Zero `--secret` flags passed (AC-1's edge case) — deliberately distinct from `usageError` so
+   * a wrapper script can branch on "forgot the injection flags" specifically. */
+  secretsRequired: 22,
+  /** The AC-5 opt-in flag (`--allow-unhardened-injection`) was omitted. Deliberately not reusing
+   * `usageError` — a CI pipeline or wrapper script may want to branch specifically on "the
+   * security gate wasn't acknowledged" versus a generic bad invocation. */
+  unhardenedInjectionNotAcknowledged: 23,
+  /** Windows-only fallback (AC-4's Windows edge case): the parent cannot itself re-raise the
+   * child's terminating signal, so it reports this code instead. On POSIX, where the real signal
+   * re-raise succeeds, this code is never actually observed — the process dies via the signal
+   * itself, not via `setExitCode()`. */
+  childSignalTerminated: 24,
 } as const
 
 // A Map (rather than a plain object keyed by an external string) sidesteps prototype-pollution/

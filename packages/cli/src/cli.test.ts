@@ -15,6 +15,9 @@ const VALID_ENV = {
   VAULT_PROJECT_ID: FIXTURE_UUID,
 }
 
+const DATABASE_URL = 'DATABASE_URL'
+const ALLOW_UNHARDENED_INJECTION_FLAG = '--allow-unhardened-injection'
+
 function makeStreams(isTTY: boolean) {
   const stdoutChunks: string[] = []
   const stderrChunks: string[] = []
@@ -36,6 +39,24 @@ function unusedPrompt(): never {
 function unusedFetch(): never {
   throw new Error('fetchFn() should not be called by this test')
 }
+/** Story 43.3 — every `buildProgram()` call needs `spawn`/`parentProcess` too, even tests that
+ * only exercise `get`/`login`/`logout` wiring (unchanged by this story). */
+function unusedSpawn(): never {
+  throw new Error('spawn() should not be called by this test')
+}
+const unusedParentProcess = {
+  pid: -1,
+  platform: 'linux' as NodeJS.Platform,
+  on: () => {
+    throw new Error('parentProcess.on() should not be called by this test')
+  },
+  removeListener: () => {
+    throw new Error('parentProcess.removeListener() should not be called by this test')
+  },
+  kill: () => {
+    throw new Error('parentProcess.kill() should not be called by this test')
+  },
+}
 
 describe('buildProgram — `get <name>` command wiring', () => {
   it('resolves config from env, calls runGet, and reports its exit code via setExitCode', async () => {
@@ -51,12 +72,14 @@ describe('buildProgram — `get <name>` command wiring', () => {
       setExitCode,
       prompt: unusedPrompt,
       fetchFn: unusedFetch,
+      spawn: unusedSpawn,
+      parentProcess: unusedParentProcess,
     })
-    await program.parseAsync(['node', 'pvault', 'get', 'DATABASE_URL'])
+    await program.parseAsync(['node', 'pvault', 'get', DATABASE_URL])
 
     expect(streams.stdoutChunks.join('')).toBe('the-value')
     expect(setExitCode).toHaveBeenCalledWith(0)
-    expect(getSecret).toHaveBeenCalledWith('DATABASE_URL')
+    expect(getSecret).toHaveBeenCalledWith(DATABASE_URL)
   })
 
   it('--api-key/--url/--project-id flags override env vars', async () => {
@@ -72,6 +95,8 @@ describe('buildProgram — `get <name>` command wiring', () => {
       setExitCode,
       prompt: unusedPrompt,
       fetchFn: unusedFetch,
+      spawn: unusedSpawn,
+      parentProcess: unusedParentProcess,
     })
     await program.parseAsync([
       'node',
@@ -104,6 +129,8 @@ describe('buildProgram — `get <name>` command wiring', () => {
       setExitCode,
       prompt: unusedPrompt,
       fetchFn: unusedFetch,
+      spawn: unusedSpawn,
+      parentProcess: unusedParentProcess,
     })
     await program.parseAsync(['node', 'pvault', 'get', 'FOO'])
 
@@ -125,6 +152,8 @@ describe('buildProgram — `get <name>` command wiring', () => {
       setExitCode,
       prompt: unusedPrompt,
       fetchFn: unusedFetch,
+      spawn: unusedSpawn,
+      parentProcess: unusedParentProcess,
     })
     await program.parseAsync(['node', 'pvault', 'get', 'FOO', '--stdout'])
 
@@ -144,6 +173,8 @@ describe('buildProgram — `get <name>` command wiring', () => {
       setExitCode,
       prompt: unusedPrompt,
       fetchFn: unusedFetch,
+      spawn: unusedSpawn,
+      parentProcess: unusedParentProcess,
     })
     await program.parseAsync(['node', 'pvault', 'get', 'FOO'])
 
@@ -172,6 +203,8 @@ describe('buildProgram — `login`/`logout` command wiring (Story 43.2)', () => 
       setExitCode: vi.fn(),
       prompt: unusedPrompt,
       fetchFn: unusedFetch,
+      spawn: unusedSpawn,
+      parentProcess: unusedParentProcess,
     })
 
     const loginCommand = program.commands.find((c) => c.name() === 'login')
@@ -213,6 +246,8 @@ describe('buildProgram — `login`/`logout` command wiring (Story 43.2)', () => 
       setExitCode,
       prompt,
       fetchFn,
+      spawn: unusedSpawn,
+      parentProcess: unusedParentProcess,
     })
     await program.parseAsync(['node', 'pvault', 'login'])
 
@@ -235,6 +270,8 @@ describe('buildProgram — `login`/`logout` command wiring (Story 43.2)', () => 
       setExitCode,
       prompt,
       fetchFn: unusedFetch,
+      spawn: unusedSpawn,
+      parentProcess: unusedParentProcess,
     })
     await program.parseAsync(['node', 'pvault', 'login'])
 
@@ -255,10 +292,267 @@ describe('buildProgram — `login`/`logout` command wiring (Story 43.2)', () => 
       setExitCode,
       prompt: unusedPrompt,
       fetchFn,
+      spawn: unusedSpawn,
+      parentProcess: unusedParentProcess,
     })
     await program.parseAsync(['node', 'pvault', 'logout'])
 
     expect(setExitCode).toHaveBeenCalledWith(0)
     expect(streams.stdoutChunks.join('')).toContain('logged in')
+  })
+})
+
+describe('buildProgram — `run` command wiring (Story 43.3)', () => {
+  function makeFakeChild() {
+    const listeners: Array<(code: number | null, signal: NodeJS.Signals | null) => void> = []
+    return {
+      on: (
+        event: 'exit',
+        listener: (code: number | null, signal: NodeJS.Signals | null) => void
+      ) => {
+        listeners.push(listener)
+      },
+      kill: vi.fn(),
+      emitExit: (code: number | null, signal: NodeJS.Signals | null) => {
+        for (const l of listeners) l(code, signal)
+      },
+    }
+  }
+
+  const runParentProcess = {
+    pid: 1,
+    platform: 'linux' as NodeJS.Platform,
+    on: () => {},
+    removeListener: () => {},
+    kill: () => {},
+  }
+
+  /** Every `run` test's argv shares the `['node', 'pvault', 'run', ...]` prefix — a small helper
+   * avoids duplicating those three literals across every test's parseAsync() call. */
+  function runArgv(...rest: string[]): string[] {
+    return ['node', 'pvault', 'run', ...rest]
+  }
+
+  const SECRET_VALUE = 'the-secret-value'
+
+  it('security hardening: the `run` command definition has no flag whose value is treated as a secret value', () => {
+    const streams = makeStreams(false)
+    const program = buildProgram({
+      streams,
+      env: {},
+      createVaultAgent: vi.fn(),
+      setExitCode: vi.fn(),
+      prompt: unusedPrompt,
+      fetchFn: unusedFetch,
+      spawn: unusedSpawn,
+      parentProcess: unusedParentProcess,
+    })
+
+    const runCommand = program.commands.find((c) => c.name() === 'run')
+    expect(runCommand).toBeDefined()
+    const optionFlags = (runCommand?.options ?? []).map((o) => o.long)
+    // `--secret` takes a credential NAME (never accepts a literal secret value as argv) — no
+    // `--secret-value`/`--value` flag exists.
+    expect(optionFlags).toContain('--secret')
+    expect(optionFlags).not.toContain('--secret-value')
+    expect(optionFlags).not.toContain('--value')
+  })
+
+  it('resolves config, fetches the requested secret, spawns the command, and reports its real exit code', async () => {
+    const streams = makeStreams(false)
+    const fakeChild = makeFakeChild()
+    const spawn = vi.fn().mockReturnValue(fakeChild)
+    const getSecret = vi.fn().mockResolvedValue(SECRET_VALUE)
+    const createVaultAgent = vi.fn().mockReturnValue({ getSecret })
+    const setExitCode = vi.fn()
+
+    const program = buildProgram({
+      streams,
+      env: VALID_ENV,
+      createVaultAgent,
+      setExitCode,
+      prompt: unusedPrompt,
+      fetchFn: unusedFetch,
+      spawn,
+      parentProcess: runParentProcess,
+    })
+
+    const parsePromise = program.parseAsync(
+      runArgv(
+        '--secret',
+        DATABASE_URL,
+        ALLOW_UNHARDENED_INJECTION_FLAG,
+        '--',
+        'psql',
+        '-c',
+        'select 1'
+      )
+    )
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled())
+    fakeChild.emitExit(0, null)
+    await parsePromise
+
+    expect(getSecret).toHaveBeenCalledWith(DATABASE_URL)
+    expect(spawn).toHaveBeenCalledWith(
+      'psql',
+      ['-c', 'select 1'],
+      expect.objectContaining({ env: expect.objectContaining({ DATABASE_URL: SECRET_VALUE }) })
+    )
+    expect(setExitCode).toHaveBeenCalledWith(0)
+    expect(streams.stdoutChunks.join('')).toBe('')
+    expect(streams.stderrChunks.join('')).not.toContain(SECRET_VALUE)
+  })
+
+  it('refuses without --allow-unhardened-injection, never calling createVaultAgent/spawn', async () => {
+    const streams = makeStreams(false)
+    const spawn = vi.fn()
+    const createVaultAgent = vi.fn()
+    const setExitCode = vi.fn()
+
+    const program = buildProgram({
+      streams,
+      env: VALID_ENV,
+      createVaultAgent,
+      setExitCode,
+      prompt: unusedPrompt,
+      fetchFn: unusedFetch,
+      spawn,
+      parentProcess: runParentProcess,
+    })
+
+    await program.parseAsync(runArgv('--secret', DATABASE_URL, '--', 'psql'))
+
+    expect(createVaultAgent).not.toHaveBeenCalled()
+    expect(spawn).not.toHaveBeenCalled()
+    expect(setExitCode).toHaveBeenCalledWith(EXIT_CODES.unhardenedInjectionNotAcknowledged)
+    expect(streams.stderrChunks.join('')).toContain(ALLOW_UNHARDENED_INJECTION_FLAG)
+  })
+
+  it('rejects a missing "--" separator with a clear usage error, before commander misparses the trailing command as its own flags', async () => {
+    const streams = makeStreams(false)
+    const setExitCode = vi.fn()
+
+    const program = buildProgram({
+      streams,
+      env: VALID_ENV,
+      createVaultAgent: vi.fn(),
+      setExitCode,
+      prompt: unusedPrompt,
+      fetchFn: unusedFetch,
+      spawn: unusedSpawn,
+      parentProcess: runParentProcess,
+    })
+
+    await expect(
+      program.parseAsync(runArgv('--secret', 'X', ALLOW_UNHARDENED_INJECTION_FLAG, 'ls', '-la'))
+    ).rejects.toThrow()
+
+    expect(streams.stderrChunks.join('')).toContain('missing "--" separator')
+  })
+
+  it('rejects an empty command after "--" with a clear usage error', async () => {
+    const streams = makeStreams(false)
+    const setExitCode = vi.fn()
+
+    const program = buildProgram({
+      streams,
+      env: VALID_ENV,
+      createVaultAgent: vi.fn(),
+      setExitCode,
+      prompt: unusedPrompt,
+      fetchFn: unusedFetch,
+      spawn: unusedSpawn,
+      parentProcess: runParentProcess,
+    })
+
+    await expect(
+      program.parseAsync(runArgv('--secret', 'X', ALLOW_UNHARDENED_INJECTION_FLAG, '--'))
+    ).rejects.toThrow()
+
+    expect(streams.stderrChunks.join('')).toContain('no command given')
+  })
+
+  it("passes everything after '--' through to the child untouched, including flags that look like pvault's own options", async () => {
+    const streams = makeStreams(false)
+    const fakeChild = makeFakeChild()
+    const spawn = vi.fn().mockReturnValue(fakeChild)
+    const getSecret = vi.fn().mockResolvedValue('v')
+    const createVaultAgent = vi.fn().mockReturnValue({ getSecret })
+    const setExitCode = vi.fn()
+
+    const program = buildProgram({
+      streams,
+      env: VALID_ENV,
+      createVaultAgent,
+      setExitCode,
+      prompt: unusedPrompt,
+      fetchFn: unusedFetch,
+      spawn,
+      parentProcess: runParentProcess,
+    })
+
+    const parsePromise = program.parseAsync(
+      runArgv('--secret', 'X', ALLOW_UNHARDENED_INJECTION_FLAG, '--', 'ls', '--help', '-la')
+    )
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled())
+    fakeChild.emitExit(0, null)
+    await parsePromise
+
+    expect(spawn).toHaveBeenCalledWith('ls', ['--help', '-la'], expect.anything())
+  })
+
+  it('multiple --secret flags are all injected', async () => {
+    const streams = makeStreams(false)
+    const fakeChild = makeFakeChild()
+    const spawn = vi.fn().mockReturnValue(fakeChild)
+    const getSecret = vi.fn().mockImplementation((name: string) => Promise.resolve(`v-${name}`))
+    const createVaultAgent = vi.fn().mockReturnValue({ getSecret })
+    const setExitCode = vi.fn()
+
+    const program = buildProgram({
+      streams,
+      env: VALID_ENV,
+      createVaultAgent,
+      setExitCode,
+      prompt: unusedPrompt,
+      fetchFn: unusedFetch,
+      spawn,
+      parentProcess: runParentProcess,
+    })
+
+    const parsePromise = program.parseAsync(
+      runArgv('--secret', 'A', '--secret', 'B', ALLOW_UNHARDENED_INJECTION_FLAG, '--', 'cmd')
+    )
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled())
+    fakeChild.emitExit(0, null)
+    await parsePromise
+
+    expect(spawn).toHaveBeenCalledWith(
+      'cmd',
+      [],
+      expect.objectContaining({ env: expect.objectContaining({ A: 'v-A', B: 'v-B' }) })
+    )
+  })
+
+  it('zero --secret flags reports the secretsRequired exit code', async () => {
+    const streams = makeStreams(false)
+    const setExitCode = vi.fn()
+    const createVaultAgent = vi.fn()
+
+    const program = buildProgram({
+      streams,
+      env: VALID_ENV,
+      createVaultAgent,
+      setExitCode,
+      prompt: unusedPrompt,
+      fetchFn: unusedFetch,
+      spawn: unusedSpawn,
+      parentProcess: runParentProcess,
+    })
+
+    await program.parseAsync(runArgv(ALLOW_UNHARDENED_INJECTION_FLAG, '--', 'ls'))
+
+    expect(createVaultAgent).not.toHaveBeenCalled()
+    expect(setExitCode).toHaveBeenCalledWith(EXIT_CODES.secretsRequired)
   })
 })
