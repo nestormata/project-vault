@@ -38,6 +38,8 @@ export type InjectEntry = {
 export type SecretsPipeLike = {
   on(event: 'error', listener: (error: NodeJS.ErrnoException) => void): unknown
   end(chunk: string): unknown
+  /** Releases the handle once the child has exited (optional so minimal fakes still type-check). */
+  destroy?(): unknown
 }
 
 export type ChildProcessLike = {
@@ -239,10 +241,10 @@ function deliverOverSecretsFd(
   child: ChildProcessLike,
   payload: string,
   writeStderr: (chunk: string) => void
-): void {
+): () => void {
   const pipe = child.stdio?.at(SECRETS_FD) as SecretsPipeLike | null | undefined
   // A spawn that failed (ENOENT) may leave the slot null — nothing to write into.
-  if (!pipe) return
+  if (!pipe) return noop
   // Without this listener, the child exiting without reading FD 3 (EPIPE) would surface as an
   // UNHANDLED stream error, crashing pvault with a stack trace and losing the child's exit code.
   pipe.on('error', (error) => {
@@ -252,6 +254,15 @@ function deliverOverSecretsFd(
     )
   })
   pipe.end(payload)
+  // Called once the child has exited (or failed to spawn). Node's 'pipe' stdio is a duplex socket
+  // that stays referenced until the peer closes its end — so a grandchild the child backgrounded
+  // (and which inherited FD 3) would otherwise keep pvault's event loop alive, hanging `pvault run`
+  // long after the command it ran has exited. Destroying our end discards only bytes still queued
+  // in user space (the "settle on exit, let the stream be destroyed" contract); bytes already in
+  // the kernel buffer stay readable by whoever still holds FD 3.
+  return () => {
+    pipe.destroy?.()
+  }
 }
 
 /** Builds the child's env for the chosen delivery mode, spawns, and (fd mode) writes the payload —
@@ -261,17 +272,25 @@ function spawnWithSecrets(
   args: string[],
   injected: Record<string, string>,
   deps: InjectAndRunDeps
-): ChildProcessLike {
+): { child: ChildProcessLike; releaseSecretsPipe: () => void } {
   const inheritedEnv = withoutCallerCredentials(deps.baseEnv)
   if (deps.delivery !== 'fd') {
-    return deps.spawn(command, args, { env: { ...inheritedEnv, ...injected }, stdio: 'inherit' })
+    const child = deps.spawn(command, args, {
+      env: { ...inheritedEnv, ...injected },
+      stdio: 'inherit',
+    })
+    return { child, releaseSecretsPipe: noop }
   }
   const child = deps.spawn(command, args, {
     env: { ...inheritedEnv, [SECRETS_FD_ENV_VAR]: String(SECRETS_FD) },
     stdio: ['inherit', 'inherit', 'inherit', 'pipe'],
   })
-  deliverOverSecretsFd(child, JSON.stringify(injected), deps.writeStderr ?? noop)
-  return child
+  const releaseSecretsPipe = deliverOverSecretsFd(
+    child,
+    JSON.stringify(injected),
+    deps.writeStderr ?? noop
+  )
+  return { child, releaseSecretsPipe }
 }
 
 /**
@@ -330,7 +349,22 @@ export async function injectAndRun(
   return new Promise<InjectAndRunResult>((resolve) => {
     // The fetched values are handed off inside spawnWithSecrets() and are not captured by any of
     // the listener closures below, so nothing here keeps them reachable once spawning is done.
-    const child = spawnWithSecrets(command, args, fetched.injected, deps)
+    let spawned: ReturnType<typeof spawnWithSecrets>
+    try {
+      spawned = spawnWithSecrets(command, args, fetched.injected, deps)
+    } catch (error) {
+      // Node's spawn() THROWS synchronously for some invalid input — notably
+      // ERR_INVALID_ARG_VALUE for an env value containing a NUL byte, whose message quotes the
+      // offending value verbatim. So the message is never used here: only the error code (AC-1).
+      const code = (error as { code?: unknown } | null)?.code
+      resolve({
+        ok: false,
+        exitCode: EXIT_CODES.unexpected,
+        error: `Failed to run '${sanitizeForTerminal(command)}' (${typeof code === 'string' ? sanitizeForTerminal(code) : 'spawn failed'})`,
+      })
+      return
+    }
+    const { child, releaseSecretsPipe } = spawned
 
     // AC-4 edge case — forward a parent-received SIGINT to the running child, so the child gets a
     // chance to clean up rather than being orphaned. Removed once the child's own 'exit' handler
@@ -347,6 +381,7 @@ export async function injectAndRun(
     let settled = false
     const cleanup = (): void => {
       deps.parentProcess.removeListener('SIGINT', forwardSigint)
+      releaseSecretsPipe()
     }
 
     // Without this handler, a spawn failure (most commonly a typo'd/missing target command) would

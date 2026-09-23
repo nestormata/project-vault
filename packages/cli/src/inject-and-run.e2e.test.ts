@@ -166,5 +166,56 @@ describe('injectAndRun — real end-to-end child process (no mocked spawn)', () 
       if (!result.ok) expect(result.error).not.toContain('enoent-secret-value')
       expect(stderr).toEqual([])
     })
+
+    it('closes the FD-3 write end on child exit even while a grandchild still holds FD 3 open (no parent hang)', async () => {
+      let captured: { stdio?: ReadonlyArray<unknown> } | undefined
+      const spawn = (
+        command: string,
+        args: string[],
+        options: { env: NodeJS.ProcessEnv; stdio: SpawnStdio }
+      ): ChildProcessLike => {
+        const child = realSpawn(command, args, options)
+        captured = child
+        return child as unknown as ChildProcessLike
+      }
+
+      // The child backgrounds a grandchild that inherits FD 3 and outlives it — the pattern of a
+      // start script that launches a daemon and exits.
+      const result = await injectAndRun(
+        [{ credentialName: 'X', envVarName: 'X' }],
+        '/bin/sh',
+        ['-c', '(sleep 5) & exit 0'],
+        {
+          getSecret: async () => 'grandchild-secret-value',
+          spawn,
+          parentProcess: makeFakeParentProcess(),
+          baseEnv: process.env,
+          delivery: 'fd',
+        }
+      )
+
+      expect(result).toEqual({ ok: true, exitCode: 0 })
+      const pipe = captured?.stdio?.[3] as { destroyed?: boolean } | undefined
+      // An un-destroyed socket here keeps the real pvault process's event loop alive until the
+      // grandchild exits, even though the child it was asked to run has already finished.
+      expect(pipe?.destroyed).toBe(true)
+    })
+  })
+
+  it('an env value Node refuses (NUL byte) fails cleanly and never echoes the value (spawn throws synchronously)', async () => {
+    const result = await injectAndRun(
+      [{ credentialName: 'NUL_SECRET', envVarName: 'NUL_SECRET' }],
+      process.execPath,
+      ['-e', 'process.exit(0)'],
+      {
+        getSecret: async () => 'nul-secret-value\u0000tail',
+        spawn: makeRealSpawn(),
+        parentProcess: makeFakeParentProcess(),
+        baseEnv: process.env,
+      }
+    )
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).not.toContain('nul-secret-value')
   })
 })

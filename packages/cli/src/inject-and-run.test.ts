@@ -416,6 +416,41 @@ describe('injectAndRun — AC-4: exact exit code / signal propagation', () => {
     }
   })
 
+  it('a spawn() that throws synchronously resolves with a failure built from error.code only — never the thrown message, which can echo an env value (code review fix)', async () => {
+    // Real Node's spawn() throws ERR_INVALID_ARG_VALUE for an env value containing a NUL byte,
+    // and its message quotes the offending value verbatim.
+    const spawn = vi.fn().mockImplementation(() => {
+      throw Object.assign(
+        new TypeError(
+          `The property 'options.env['DATABASE_URL']' must be a string without null bytes. Received '${SPAWN_ERROR_TEST_SECRET_VALUE}'`
+        ),
+        { code: 'ERR_INVALID_ARG_VALUE' }
+      )
+    })
+    const parentProcess = makeFakeParentProcess()
+
+    const result = await injectAndRun(
+      [{ credentialName: 'DATABASE_URL', envVarName: 'DATABASE_URL' }],
+      'psql',
+      [],
+      {
+        getSecret: vi.fn().mockResolvedValue(SPAWN_ERROR_TEST_SECRET_VALUE),
+        spawn,
+        parentProcess,
+      }
+    )
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.exitCode).toBe(EXIT_CODES.unexpected)
+      expect(result.error).toContain('psql')
+      expect(result.error).toContain('ERR_INVALID_ARG_VALUE')
+      expect(result.error).not.toContain(SPAWN_ERROR_TEST_SECRET_VALUE)
+    }
+    // Nothing was spawned, so no SIGINT forwarding listener may be left behind.
+    expect(parentProcess.sigintListeners).toHaveLength(0)
+  })
+
   it('does not double-resolve or re-forward SIGINT cleanup when both error and exit fire for the same child', async () => {
     const fakeChild = makeFakeChild()
     const spawn = vi.fn().mockReturnValue(fakeChild)
@@ -469,6 +504,7 @@ const FD_TEST_SECRET_VALUE = 'x-secret-value'
 type FakePipe = SecretsPipeLike & {
   written: string[]
   ended: boolean
+  destroyed: boolean
   emitError: (error: NodeJS.ErrnoException) => void
 }
 
@@ -478,6 +514,11 @@ function makeFakePipe(): FakePipe {
   const pipe: FakePipe = {
     written: [],
     ended: false,
+    destroyed: false,
+    destroy: () => {
+      pipe.destroyed = true
+      return pipe
+    },
     on: (_event, listener) => {
       errorListeners.push(listener)
       return pipe
@@ -692,6 +733,21 @@ describe('injectAndRun — Story 43.4 AC-2: --secrets-fd delivery over an anonym
     const { fakeChild, resultPromise } = await runFd({ BIG: 'x'.repeat(70 * 1024) })
     fakeChild.emitExit(0, null)
     expect(await resultPromise).toEqual({ ok: true, exitCode: 0 })
+  })
+
+  it('releases the FD-3 write end once the child exits, so a grandchild still holding FD 3 cannot keep pvault alive (code review fix)', async () => {
+    const { pipe, fakeChild, resultPromise } = await runFd({ X: FD_TEST_SECRET_VALUE })
+    expect(pipe?.destroyed).toBe(false)
+    fakeChild.emitExit(0, null)
+    await resultPromise
+    expect(pipe?.destroyed).toBe(true)
+  })
+
+  it('releases the FD-3 write end when the spawn itself errors (code review fix)', async () => {
+    const { pipe, fakeChild, resultPromise } = await runFd({ X: FD_TEST_SECRET_VALUE })
+    fakeChild.emitError(Object.assign(new Error('spawn node ENOENT'), { code: 'ENOENT' }))
+    await resultPromise
+    expect(pipe?.destroyed).toBe(true)
   })
 
   it('no stdio[3] (spawn failed) — no write attempted, no throw, the spawn error is reported', async () => {
