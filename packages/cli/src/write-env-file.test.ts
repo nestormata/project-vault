@@ -140,6 +140,14 @@ describe('writeEnvFile — AC-1 fail-closed', () => {
   it.each([
     ['reserved target', [entry('x', 'NODE_OPTIONS')], /^Refusing to write reserved/],
     ['duplicate target', [entry('a', 'FOO'), entry('b', 'foo')], /^Duplicate environment/],
+    // Code review 43-5: a non-CLI caller (AC-7) skips parseRunSecrets' identifier check. An
+    // invalid name must be refused up front, not after every secret was revealed and audited.
+    [
+      'invalid identifier target (non-CLI caller)',
+      [entry('x', 'OK'), entry('a', 'BAD\nNODE_OPTIONS')],
+      /^Invalid environment variable name 'BADNODE_OPTIONS'/, // control chars sanitized
+    ],
+    ['empty target', [entry('x', '')], /^Invalid environment variable name ''/],
   ])('%s → exit 1 before any network call (AC-6)', async (_l, entries, message) => {
     const d = deps({ x: 'v', a: 'v', b: 'v' })
     const result = await writeEnvFile(entries, '.env', DOTENV, d)

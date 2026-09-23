@@ -23,6 +23,7 @@ import {
   type InjectEntry,
 } from './fetch-secrets.js'
 import { checkGitIgnored as realCheckGitIgnored, type GitIgnoreStatus } from './git-ignore-check.js'
+import { isValidEnvVarIdentifier, SAFE_ENV_VAR_REGEX } from './reserved-env-vars.js'
 import { sanitizeForTerminal } from './sanitize.js'
 
 export type WriteEnvFileOptions = {
@@ -198,6 +199,19 @@ function commit(
   }
 }
 
+/**
+ * A non-CLI caller (AC-7) bypasses `parseRunSecrets`' identifier check, and the serializer would
+ * only reject a malformed key AFTER every secret was revealed (and audited). Refuse it up front.
+ */
+function checkIdentifiers(entries: InjectEntry[]): EntryFailure | null {
+  const bad = entries.find((entry) => !isValidEnvVarIdentifier(entry.envVarName))
+  if (!bad) return null
+  return failure(
+    EXIT_CODES.usageError,
+    `Invalid environment variable name '${sanitizeForTerminal(bad.envVarName)}' — it must match ${SAFE_ENV_VAR_REGEX.source}.`
+  )
+}
+
 export async function writeEnvFile(
   entries: InjectEntry[],
   target: string,
@@ -206,7 +220,7 @@ export async function writeEnvFile(
 ): Promise<WriteEnvFileResult> {
   const writeStderr = deps.writeStderr ?? noop
 
-  const invalid = checkEntryTargets(entries, 'write')
+  const invalid = checkIdentifiers(entries) ?? checkEntryTargets(entries, 'write')
   if (invalid) return invalid
 
   const path = resolve(deps.cwd ?? process.cwd(), target)

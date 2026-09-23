@@ -57,10 +57,27 @@ function unlinkIfPresent(fs: AtomicFs, path: string): void {
   }
 }
 
+/**
+ * Writes every byte of `data`. `write(2)` may legally write fewer bytes than asked (ENOSPC/EDQUOT
+ * part-way, signals) and Node's `writeSync` does not loop, so a single call could commit a silently
+ * truncated file (code review 43-5). A call that makes no progress is an error, never a spin.
+ */
+function writeFully(fs: AtomicFs, fd: number, data: string): void {
+  const bytes = Buffer.from(data, 'utf8')
+  let offset = 0
+  while (offset < bytes.byteLength) {
+    const written = fs.writeSync(fd, bytes, offset, bytes.byteLength - offset)
+    if (written <= 0) {
+      throw Object.assign(new Error('write made no progress'), { code: 'EIO' })
+    }
+    offset += written
+  }
+}
+
 /** Writes `data` to an already-open fd and closes it, whatever happens. */
 function writeAndClose(fs: AtomicFs, fd: number, data: string): void {
   try {
-    fs.writeSync(fd, data)
+    writeFully(fs, fd, data)
     fs.fsyncSync(fd)
   } finally {
     fs.closeSync(fd)

@@ -248,6 +248,46 @@ describe('writeFileAtomicOwnerOnly', () => {
     expect(readFileSync(target, 'utf8')).toBe('x')
   })
 
+  // Code review 43-5 (HIGH): write(2) may legally write fewer bytes than asked (ENOSPC/EDQUOT
+  // mid-write, signals). A single unchecked writeSync would commit a silently truncated secrets
+  // file with exit 0 — breaking AC-2's lossless-or-refuse rule, and a truncation inside a quoted
+  // multi-line value lets its remaining lines parse as extra assignments.
+  it.each([
+    ['temp file (rename commit)', { exclusive: false, linkUnsupported: false }],
+    ['exclusive link commit', { exclusive: true, linkUnsupported: false }],
+    ['exclusive wx fallback', { exclusive: true, linkUnsupported: true }],
+  ])('loops until every byte is written on short writes (%s)', (_label, mode) => {
+    const payload = `KEY='${'é'.repeat(50)}\nline2'\nOTHER='x'\n`
+    const fs = fsWith({
+      // Writes at most 7 bytes per call, whatever it is handed (string or buffer).
+      writeSync: ((fd: number, data: string | Uint8Array, offset?: number, length?: number) => {
+        const isString = typeof data === 'string'
+        const buf = isString ? Buffer.from(data) : Buffer.from(data)
+        const start = isString ? 0 : (offset ?? 0)
+        const want = isString ? buf.byteLength : (length ?? buf.byteLength - start)
+        return realFs.writeSync(fd, buf, start, Math.min(want, 7))
+      }) as AtomicFs['writeSync'],
+      ...(mode.linkUnsupported
+        ? {
+            linkSync: () => {
+              throw errno('EPERM')
+            },
+          }
+        : {}),
+    })
+    writeFileAtomicOwnerOnly(target, payload, { exclusive: mode.exclusive, tempPrefix: PREFIX }, fs)
+    expect(readFileSync(target, 'utf8')).toBe(payload)
+    expect(readdirSync(dir)).toEqual(['out.env'])
+  })
+
+  it('fails (never commits) when write makes no progress, removing the temp file', () => {
+    const fs = fsWith({ writeSync: (() => 0) as AtomicFs['writeSync'] })
+    expect(() =>
+      writeFileAtomicOwnerOnly(target, 'secret', { exclusive: false, tempPrefix: PREFIX }, fs)
+    ).toThrow(expect.objectContaining({ code: 'EIO' }))
+    expect(readdirSync(dir)).toEqual([])
+  })
+
   it('gives up after the single temp-name retry', () => {
     const fs = fsWith({
       openSync: (() => {
