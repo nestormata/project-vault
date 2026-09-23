@@ -39,8 +39,7 @@
  * `.github/dependabot.yml`, and `.github/CODEOWNERS` under the given root — no `pnpm list`/`pnpm
  * why`, no network, no live `gh api` calls.
  */
-import { readFileSync } from 'node:fs'
-import { readdirSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { CRYPTO_ADJACENT_PACKAGES } from './lib/crypto-adjacent-packages.js'
@@ -299,16 +298,27 @@ export function parseWorkspaceOverrides(yamlContent: string): Map<string, string
     if (!inBlock) continue
     if (line.length > 0 && !/^\s/.test(line)) break
 
-    const quoted = /^\s{2}"([^"]+)"\s*:\s*(.+?)\s*$/.exec(line)
-    if (quoted) {
-      overrides.set(quoted[1] as string, quoted[2] as string)
-      continue
-    }
-    const bare = /^\s{2}([^"\s:]+)\s*:\s*(.+?)\s*$/.exec(line)
-    if (bare) overrides.set(bare[1] as string, bare[2] as string)
+    const entry = parseOverrideLine(line)
+    if (entry) overrides.set(entry[0], entry[1])
   }
 
   return overrides
+}
+
+/** Parses one indented `overrides:` entry line into `[key, value]`, quoted key first, then bare.
+ * The value is everything after the `:`, trimmed in code. Dropping the old `\s*(.+?)\s*$` tail —
+ * adjacent quantifiers that could all match whitespace — is what removes its super-linear
+ * backtracking (Sonar S8786); `[^\n]*` is used over `.*` only so a CRLF file's trailing `\r` is
+ * absorbed instead of making the line not match. A key with an empty value (e.g. a nested
+ * `argon2:` map) is still recorded, and a block scalar keeps its indicator (`|`, `>-`) as the
+ * value: `scanWorkspaceOverrides` flags any canonical-list key that is present at all, so the value
+ * shape never needs to be modeled for detection. */
+function parseOverrideLine(line: string): [string, string] | undefined {
+  const match =
+    /^\s{2}"([^"]+)"\s*:([^\n]*)$/.exec(line) ?? /^\s{2}([^"\s:]+)\s*:([^\n]*)$/.exec(line)
+  if (!match) return undefined
+  const [, key = '', rest = ''] = match
+  return [key, rest.trim()]
 }
 
 /** Extracts an override key's base package name, stripping pnpm's optional `@<selector>` version-
@@ -359,7 +369,7 @@ function scanWorkspaceOverrides(root: string): OverrideViolation[] {
  * `itemIndent` spaces, stopping at the first line that doesn't match that shape. */
 function collectListItems(lines: string[], startIndex: number, itemIndent: number): string[] {
   const items: string[] = []
-  const itemPattern = new RegExp(`^\\s{${itemIndent}}-\\s*"?([^"\\s]+)"?\\s*$`)
+  const itemPattern = new RegExp(String.raw`^\s{${itemIndent}}-\s*"?([^"\s]+)"?\s*$`)
   for (let i = startIndex; i < lines.length; i++) {
     const line = lines[i] as string
     const match = itemPattern.exec(line)
@@ -403,8 +413,8 @@ function findNestedYamlList(
   listIndent: number
 ): string[] | undefined {
   const lines = content.split('\n')
-  const parentPattern = new RegExp(`^\\s{${parentIndent}}${parentKey}:\\s*$`)
-  const listPattern = new RegExp(`^\\s{${listIndent}}${listKey}:\\s*$`)
+  const parentPattern = new RegExp(String.raw`^\s{${parentIndent}}${parentKey}:\s*$`)
+  const listPattern = new RegExp(String.raw`^\s{${listIndent}}${listKey}:\s*$`)
 
   for (let i = 0; i < lines.length; i++) {
     if (!parentPattern.test(lines[i] as string)) continue
