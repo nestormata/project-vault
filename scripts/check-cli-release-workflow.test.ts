@@ -31,9 +31,36 @@ describe('cli release workflow contract (Story 43.6 AC-5)', () => {
 
   it('uses least privilege and no secret beyond GITHUB_TOKEN', () => {
     const workflow = workflowText()
-    expect(workflow).toMatch(/permissions:\s*\n\s*contents:\s*write/)
     const secrets = [...workflow.matchAll(/secrets\.([A-Z_]+)/g)].map((m) => m[1])
     expect(new Set(secrets)).toEqual(new Set(['GITHUB_TOKEN']))
+  })
+
+  it('grants contents: write only to the upload job, never to the job that installs and runs code', () => {
+    const workflow = workflowText()
+    // No workflow-wide grant: every job states its own permissions.
+    expect(workflow).toMatch(/^permissions: \{\}$/m)
+    const jobs = workflow.slice(indexOfStep(workflow, '\njobs:\n'))
+    const jobPermissions = (job: string): string => {
+      const start = indexOfStep(jobs, `\n  ${job}:\n`)
+      const next = jobs.slice(start + 1).search(/\n {2}[a-z][a-z-]*:\n/)
+      const body = next === -1 ? jobs.slice(start) : jobs.slice(start, start + 1 + next)
+      const match = /\n {4}permissions:(?: \{\}|\n((?: {6}[a-z-]+: [a-z]+\n)+))/.exec(body)
+      expect(match, `job ${job} must declare permissions`).not.toBeNull()
+      return (match?.[1] ?? '').trim()
+    }
+    expect(jobPermissions('release')).toBe('contents: read')
+    expect(jobPermissions('verify')).toBe('')
+    expect(jobPermissions('publish')).toBe('contents: write')
+    expect(workflow.match(/^ +contents: write$/gm)).toHaveLength(1)
+  })
+
+  it('never persists the checkout token into the tree that dependencies and tests run in', () => {
+    const workflow = workflowText()
+    const checkouts = [...workflow.matchAll(/uses: actions\/checkout@[^\n]+\n((?: {8}.*\n)*)/g)]
+    expect(checkouts.length).toBeGreaterThan(0)
+    for (const [, withBlock] of checkouts) {
+      expect(withBlock).toMatch(/persist-credentials: false/)
+    }
   })
 
   it('serializes runs without cancelling (concurrency group cli-release)', () => {

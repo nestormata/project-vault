@@ -24,8 +24,10 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: write
+# No workflow-wide grant. Only the upload job gets `contents: write`; the job that installs
+# dependencies and runs the test suite and build holds a read-only token (never persisted into the
+# checkout), so no dependency or test code can ever act with write access to the repository.
+permissions: {}
 
 # Serializes a release and a manual recovery for the same or different tags (never cancelled).
 concurrency:
@@ -37,6 +39,8 @@ jobs:
     name: Build, verify and upload pvault
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     env:
       # Ephemeral CI database for the CLI's e2e test only (derived from the postgres service
       # below, same dev-only values as ci.yml).
@@ -87,6 +91,7 @@ jobs:
         with:
           ref: ${{ steps.release.outputs.tag }}
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Resolve the short commit
         id: source
@@ -165,6 +170,7 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions: {}
     strategy:
       fail-fast: true
       matrix:
@@ -213,6 +219,8 @@ jobs:
     needs: [release, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write
     steps:
       - name: Download the bundle
         uses: actions/download-artifact@v8
