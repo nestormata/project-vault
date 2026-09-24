@@ -83,6 +83,9 @@ jobs:
       - name: Check container publish workflow contract
         run: pnpm vitest run scripts/check-container-publish-workflow.test.ts
 
+      - name: Check pvault CLI release workflow contract (Story 43.6 AC-5)
+        run: pnpm vitest run scripts/check-cli-release-workflow.test.ts
+
       - name: Check extension-api version-skew guard's own test suite (Story 24.4)
         run: pnpm vitest run scripts/check-extension-api-version-skew.test.ts
 
@@ -105,6 +108,11 @@ jobs:
 
       - name: Check native-credential-surface guard's own test suite (Story 23.2 AC19)
         run: pnpm vitest run scripts/check-native-credential-surface.test.ts
+
+      - name: Check committed CLI/agent build-info stays unstamped (Story 43.6 AC-5)
+        run: |
+          pnpm check-build-info-unstamped &&
+          pnpm vitest run scripts/check-build-info-unstamped.test.ts scripts/stamp-build-info.test.ts
 
       - name: Typecheck
         run: pnpm turbo typecheck

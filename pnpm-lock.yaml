@@ -552,6 +552,9 @@ importers:
       '@types/node':
         specifier: ^26.6.1
         version: 26.6.1
+      '@vercel/ncc':
+        specifier: 0.45.0
+        version: 0.45.0
       '@vitest/coverage-v8':
         specifier: ^5.0.1
         version: 5.0.1(vitest@5.0.1)

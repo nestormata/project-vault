@@ -1,0 +1,242 @@
+name: pvault CLI Release
+
+# Story 43.6 AC-5 — attaches the distributable `pvault` CLI to every monorepo GitHub Release.
+#
+# Versioning: the CLI shares the monorepo release version and tag (vX.Y.Z). It deliberately
+# diverges from packages/vault-action's scheme (own vault-action-vX.Y.Z tags, a force-moved
+# mutable major tag, a mirror repo, a committed dist/): the CLI's compatibility contract is with
+# the server of the same release (the server advertises its own RELEASE_VERSION as the CLI's
+# `current`), it is downloaded once rather than resolved by tag on every run, it has no
+# Marketplace constraint, and nothing resolves it from git. See docs/releasing.md §8.
+#
+# Steps: validate the tag → test the UNSTAMPED tree (identical to PR CI) → stamp build info for
+# both packages/agent and packages/cli in one step → build → bundle one ESM file with ncc →
+# self-verify by executing the file on Node 24 and on the Node 20 engines floor → checksum →
+# upload both assets to the same Release (--clobber, so a re-run replaces them).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vMAJOR.MINOR.PATCH tag whose pvault assets to (re)build and upload
+        required: true
+        type: string
+
+# No workflow-wide grant. Only the upload job gets `contents: write`; the job that installs
+# dependencies and runs the test suite and build holds a read-only token (never persisted into the
+# checkout), so no dependency or test code can ever act with write access to the repository.
+permissions: {}
+
+# Serializes a release and a manual recovery for the same or different tags (never cancelled).
+concurrency:
+  group: cli-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, verify and upload pvault
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      # Ephemeral CI database for the CLI's e2e test only (derived from the postgres service
+      # below, same dev-only values as ci.yml).
+      SUPERUSER_DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
+      VAULT_APP_DATABASE_URL: postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: project_vault
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Resolve and validate the release tag
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Manual recovery is only allowed from refs/heads/main" >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
+            TAG="$RELEASE_TAG"
+          else
+            TAG="$INPUT_TAG"
+          fi
+          # Same regex as container-publish.yml. vault-action-v*, extension-api-v* and prerelease
+          # tags fail here, so nothing is uploaded for them.
+          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Expected vMAJOR.MINOR.PATCH without leading zeroes, received '$TAG'" >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Resolve the short commit
+        id: source
+        run: echo "commit=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.21.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The CLI's e2e test boots a real API against a migrated database (see ci.yml).
+      - name: Build workspace packages and migrate the test database
+        run: |
+          pnpm turbo build --filter=@project-vault/api --filter=@project-vault/db
+          DATABASE_URL="$SUPERUSER_DATABASE_URL" pnpm db:migrate
+          psql "$SUPERUSER_DATABASE_URL" -v ON_ERROR_STOP=1 -c "ALTER ROLE vault_admin PASSWORD 'password'"
+
+      # Tests run on the UNSTAMPED tree, exactly as in PR CI; the version check stays inert.
+      - name: Test the CLI and its agent (unstamped)
+        run: pnpm --filter "@project-vault/cli..." test
+        env:
+          DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
+          ADMIN_DATABASE_URL: postgresql://vault_admin:password@localhost:5432/project_vault
+
+      - name: Stamp build info (agent + cli, one step) and build
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          COMMIT: ${{ steps.source.outputs.commit }}
+        run: |
+          set -euo pipefail
+          pnpm exec tsx scripts/stamp-build-info.ts --version "$VERSION" --commit "$COMMIT"
+          pnpm --filter "@project-vault/cli..." build
+
+      # ncc emits index.js plus a sibling package.json {"type":"module"}; renaming to .mjs makes
+      # the asset ESM on its own, so the sibling is dropped and the asset is one file. Built
+      # without source maps (those would add sourcemap-register.cjs).
+      - name: Bundle pvault into one file
+        id: bundle
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/pvault-bundle"
+          pnpm --filter @project-vault/cli exec ncc build dist/bin.js -o "$OUT" --minify=false
+          ASSET_DIR="$RUNNER_TEMP/pvault-asset"
+          mkdir -p "$ASSET_DIR"
+          mv "$OUT/index.js" "$ASSET_DIR/pvault-${VERSION}.mjs"
+          chmod +x "$ASSET_DIR/pvault-${VERSION}.mjs"
+          echo "dir=$ASSET_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Keep the bundle for verification and publishing
+        uses: actions/upload-artifact@v7
+        with:
+          name: pvault-bundle
+          path: ${{ steps.bundle.outputs.dir }}
+          if-no-files-found: error
+          retention-days: 7
+
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      commit: ${{ steps.source.outputs.commit }}
+
+  # Self-verify executes the file itself (proving the shebang and the top-level await survived
+  # bundling) on the current LTS and on the `engines` floor, before anything is uploaded.
+  verify:
+    name: Self-verify pvault on Node ${{ matrix.node }}
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
+    strategy:
+      fail-fast: true
+      matrix:
+        node: ['20', '24']
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Download the bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: pvault-bundle
+          path: bundle
+
+      - name: Self-verify --version (exact lines, empty stderr, never 0.0.1)
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+          COMMIT: ${{ needs.release.outputs.commit }}
+        run: |
+          set -euo pipefail
+          cd bundle
+          ASSET="pvault-${VERSION}.mjs"
+          test "$(ls -A | wc -l)" -eq 1
+          chmod +x "$ASSET"
+          ./"$ASSET" --version > stdout.txt 2> stderr.txt
+          EXPECTED="$(printf '%s\n%s' "pvault ${VERSION} (commit ${COMMIT})" "agent  ${VERSION} (commit ${COMMIT})")"
+          if [[ "$(cat stdout.txt)" != "$EXPECTED" ]]; then
+            echo "Unexpected --version output:" >&2
+            cat stdout.txt >&2
+            exit 1
+          fi
+          if [[ -s stderr.txt ]]; then
+            echo "--version wrote to stderr (CLI/agent skew?):" >&2
+            cat stderr.txt >&2
+            exit 1
+          fi
+          if [[ "$(grep -c '0\.0\.1' stdout.txt || true)" != "0" ]]; then
+            echo "--version reports the package.json placeholder 0.0.1" >&2
+            exit 1
+          fi
+
+  publish:
+    name: Upload pvault to the release
+    needs: [release, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download the bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: pvault-bundle
+          path: bundle
+
+      - name: Write the checksum and upload both assets to the release
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+          TAG: ${{ needs.release.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd bundle
+          chmod +x "pvault-${VERSION}.mjs"
+          sha256sum "pvault-${VERSION}.mjs" > "pvault-${VERSION}.mjs.sha256"
+          ASSET="pvault-${VERSION}.mjs"
+          gh release upload "$TAG" "$ASSET" "$ASSET.sha256" --clobber --repo "$GITHUB_REPOSITORY"

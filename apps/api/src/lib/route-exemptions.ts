@@ -250,6 +250,15 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     expiresAfterStory: null,
   },
   {
+    // Story 43.6 (D3) — the CLI's startup version check. Not vault-guard-allowlisted (a sealed
+    // server returns 503, which the CLI treats as unreachable).
+    route: 'GET /api/v1/client-version-policy',
+    reason: 'Public, static client-version policy; no tenant data, no DB access',
+    securityOwner: SECURITY_OWNER,
+    compensatingControls: [NO_DATA_ACCESS, IP_RATE_LIMIT, 'static-boot-resolved-response'],
+    expiresAfterStory: null,
+  },
+  {
     route: 'POST /api/v1/auth/machine-token',
     reason:
       'Story 7.2 D2/D4 — pre-auth machine-user API key exchange endpoint; the caller has no session and no org context is resolvable until the key is looked up by hash via the admin connection.',
@@ -1362,6 +1371,13 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     action: SECURITY_ACTION,
     auditEvent: 'machine_user.api_key_revoked',
     sameTransactionAuditService: WRITE_HUMAN_AUDIT_OR_FAIL_CLOSED,
+  },
+  // Story 43.6 — public CLI version policy (see PUBLIC_ROUTE_EXEMPTIONS).
+  'GET /api/v1/client-version-policy': {
+    action: 'read',
+    auditOmissionReason:
+      'Public static policy read; no actor, no tenant, no state change — nothing to audit',
+    reviewer: SECURITY_OWNER,
   },
   // Story 7.2 — machine user authentication and programmatic secret retrieval.
   'POST /api/v1/auth/machine-token': {

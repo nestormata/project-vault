@@ -1,6 +1,12 @@
 import { z } from 'zod/v4'
 import { EXTENSION_DB_PLACEHOLDER_CREDENTIAL } from '@project-vault/db'
 import { DEV_AUTH_DUMMY_PASSWORD_HASH } from './dev-dummy-hash.js'
+import {
+  CLI_MAX_VERSION_LENGTH,
+  isCliAcceptedReleaseVersion,
+  parseCliWithdrawnVersions,
+} from '../modules/client-versions/policy.js'
+import { BAKED_CLI_VERSION_POLICY } from '../modules/client-versions/cli-version-policy.js'
 
 const DEV_SESSION_SECRET = 'a'.repeat(64)
 const DEV_REFRESH_TOKEN_HMAC_SECRET = 'b'.repeat(64)
@@ -1449,6 +1455,33 @@ const envSchema = z
     // decision" table row `iss`) — a mismatch rejects `handoff_malformed_claim`. Defaults to the
     // production router identifier the contract cites; overridable for staging/test issuers.
     VAULT_HANDOFF_ISSUER: z.string().min(1).default('https://app.centralizeme.com'),
+    // Story 43.6 (D5) — operator tightening of the CLI version policy served publicly by
+    // GET /api/v1/client-version-policy. Versions only, never free text; merged tighten-only with
+    // the baked upstream policy (modules/client-versions/cli-version-policy.ts).
+    CLI_MINIMUM_SUPPORTED_VERSION: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z
+        .string()
+        .refine(
+          isCliAcceptedReleaseVersion,
+          `FATAL: CLI_MINIMUM_SUPPORTED_VERSION must be a strict X.Y.Z version (no "v", no prerelease, no build metadata, at most ${CLI_MAX_VERSION_LENGTH} characters, every part at most ${Number.MAX_SAFE_INTEGER})`
+        )
+        .optional()
+    ),
+    CLI_WITHDRAWN_VERSIONS: z
+      .string()
+      .optional()
+      .transform((raw, ctx) => {
+        const parsed = parseCliWithdrawnVersions(
+          raw,
+          BAKED_CLI_VERSION_POLICY.withdrawn.map((entry) => entry.version)
+        )
+        if (!parsed.ok) {
+          ctx.addIssue({ code: 'custom', message: `FATAL: ${parsed.error}` })
+          return z.NEVER
+        }
+        return parsed.versions
+      }),
   })
   .superRefine((env, ctx) => {
     if (env.SESSION_SECRET === env.REFRESH_TOKEN_HMAC_SECRET) {

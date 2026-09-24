@@ -20717,6 +20717,115 @@
         }
       }
     },
+    "/api/v1/client-version-policy": {
+      "get": {
+        "tags": [
+          "Other"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "schemaVersion": {
+                          "type": "number",
+                          "enum": [
+                            1
+                          ]
+                        },
+                        "server": {
+                          "type": "object",
+                          "properties": {
+                            "version": {
+                              "type": "string"
+                            },
+                            "versionSource": {
+                              "type": "string",
+                              "enum": [
+                                "release",
+                                "development"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "version",
+                            "versionSource"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "clients": {
+                          "type": "object",
+                          "properties": {
+                            "cli": {
+                              "type": "object",
+                              "properties": {
+                                "current": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "minimumSupported": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "withdrawn": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "version": {
+                                        "type": "string"
+                                      },
+                                      "reason": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "version",
+                                      "reason"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                }
+                              },
+                              "required": [
+                                "current",
+                                "minimumSupported",
+                                "withdrawn"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "cli"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "schemaVersion",
+                        "server",
+                        "clients"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/status": {
       "get": {
         "tags": [

@@ -9,6 +9,24 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **CLI:** new optional API variables `CLI_MINIMUM_SUPPORTED_VERSION` and `CLI_WITHDRAWN_VERSIONS`
+  tighten the `pvault` version policy. Both are unset by default, and an invalid value fails boot.
+  See [`docs/runbooks/cli-version-policy.md`](docs/runbooks/cli-version-policy.md).
+
+### Added
+
+- `pvault` now checks the server's CLI version policy before `get`, `run`, `write-env` and
+  `login`. It prints a notice when it is older (or newer) than the server's release, warns below
+  the minimum supported version, and refuses with exit code `29` when its exact version has been
+  withdrawn. The check never blocks when the server is unreachable (1.5 s timeout, cached), and
+  `PVAULT_NO_VERSION_CHECK=1` silences the notices, but never the withdrawn refusal.
+- Public endpoint `GET /api/v1/client-version-policy` (unauthenticated, static, rate-limited).
+- `pvault --version` reports the bundled agent's version and commit next to the CLI's.
+- Each GitHub Release now carries a single-file `pvault-X.Y.Z.mjs` CLI bundle and its `.sha256`
+  (Node 20 or newer). See `docs/releasing.md` §8.
+
 ## [1.2.0] - 2026-09-10
 
 Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.2.0`

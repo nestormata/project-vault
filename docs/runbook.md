@@ -23,6 +23,7 @@ unreachable.
 | The instance is full but every org is inside its quota | [Audit storage exhaustion](runbooks/audit-storage-exhaustion.md) |
 | Nobody can log in after an auth extension was installed | [Native-login exclusion](runbooks/native-login-exclusion.md) |
 | Deciding what to expose publicly | [Reverse proxy & TLS](runbooks/reverse-proxy-tls.md) |
+| A `pvault` CLI release must stop being used (withdraw it), or users see CLI exit `29` | [CLI version policy](runbooks/cli-version-policy.md) |
 
 The full trigger table is in [`docs/runbooks/README.md`](runbooks/README.md).
 
@@ -41,6 +42,7 @@ The full trigger table is in [`docs/runbooks/README.md`](runbooks/README.md).
 - [Monitoring](runbooks/monitoring.md) — metrics, alert ownership, audit-log integrity
 - [Reverse proxy & TLS](runbooks/reverse-proxy-tls.md) — what to expose, worked Traefik example
 - [Multiple API replicas](runbooks/multi-replica.md) — why single-replica is the supported topology
+- [CLI version policy](runbooks/cli-version-policy.md) — `CLI_MINIMUM_SUPPORTED_VERSION` / `CLI_WITHDRAWN_VERSIONS`, withdrawing a CLI version
 - [Quarterly checklist](runbooks/quarterly-checklist.md)
 - Subsystems: [module packs](runbooks/module-pack-lifecycle.md) ·
   [extension DB access](runbooks/extension-db-access.md) ·

@@ -284,6 +284,17 @@ for (const op of operations) {
   })
 }
 
+// Story 43.6 AC-7 — the CLI's startup version check must work with no credential at all.
+describe('GET /api/v1/client-version-policy (Story 43.6)', () => {
+  it('is 200 unauthenticated and matches its documented schema', async () => {
+    const op = operations.find((o) => operationKey(o) === 'GET /api/v1/client-version-policy')
+    expect(op).toBeDefined()
+    const res = await app.inject({ method: 'GET', url: '/api/v1/client-version-policy' })
+    expect(res.statusCode).toBe(200)
+    assertDocumentedAndSchemaValid(op as Operation, res.statusCode, res.json())
+  })
+})
+
 // AC-22: cross-tenant (RLS) isolation — org B's session must never see org A's real resource
 // data, on a representative sample of org-scoped, resource-by-ID GET routes. These tests run
 // after the full generic per-operation sweep (hundreds of app.inject() calls), which can run

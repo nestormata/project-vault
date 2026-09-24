@@ -13,6 +13,10 @@
     "./app": {
       "types": "./dist/app.d.ts",
       "default": "./dist/app.js"
+    },
+    "./client-version-policy": {
+      "types": "./dist/modules/client-versions/policy.d.ts",
+      "default": "./dist/modules/client-versions/policy.js"
     }
   },
   "scripts": {
