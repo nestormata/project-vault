@@ -113,7 +113,7 @@ function harness(
     opts: {
       baseUrl: BASE_URL,
       cliVersion: '1.2.0',
-      fetchFn: fetchFn as unknown as typeof fetch,
+      fetchFn,
       now: () => clock.now,
       cacheDir: cacheDir(),
       writeStderr: (s) => void stderr.push(s),

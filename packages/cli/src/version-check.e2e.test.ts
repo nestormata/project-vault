@@ -105,7 +105,7 @@ function argvFor(command: Command): string[] {
       return ['run', '--secret', 'DATABASE_URL', '--', 'psql']
     case 'write-env':
       return ['write-env', '--secret', 'DATABASE_URL', '--output', '.env']
-    case 'login':
+    default:
       return ['login']
   }
 }
@@ -155,12 +155,12 @@ async function invoke(argv: string[], options: InvokeOptions = {}): Promise<Invo
       XDG_CONFIG_HOME: tempDir('pvault-vc-e2e-xdg-'),
       ...options.env,
     },
-    createVaultAgent: createVaultAgent as unknown as CliRuntime['createVaultAgent'],
+    createVaultAgent,
     setExitCode: (code) => {
       exitCode = code
     },
     prompt,
-    fetchFn: loginFetch as unknown as typeof fetch,
+    fetchFn: loginFetch,
     spawn: spawn as unknown as CliRuntime['spawn'],
     parentProcess: {
       pid: 1,
@@ -240,37 +240,36 @@ const OUTCOMES: Outcome[] = [
   'sticky-withdrawn',
 ]
 const REFUSING: Outcome[] = ['withdrawn', 'sticky-withdrawn']
+const MATRIX = COMMANDS.flatMap((command) =>
+  OUTCOMES.flatMap((outcome) => [false, true].map((suppress) => ({ command, outcome, suppress })))
+)
 
 describe('AC-6 stdout purity matrix', () => {
-  for (const command of COMMANDS) {
-    for (const outcome of OUTCOMES) {
-      for (const suppress of [false, true]) {
-        it(`${command} / ${outcome} / PVAULT_NO_VERSION_CHECK=${suppress ? '1' : 'unset'}`, async () => {
-          const baseline = await invoke(argvFor(command), { enabled: false })
-          const checked = await invokeOutcome(command, outcome, suppress)
-          if (REFUSING.includes(outcome)) {
-            expect(checked.stdout).toBe('')
-            expect(checked.exitCode).toBe(EXIT_CODES.cliVersionWithdrawn)
-            expect(checked.thrownExitCode).toBe(EXIT_CODES.cliVersionWithdrawn)
-            expect(checked.stderr).toContain(
-              'error: pvault 1.2.0 has been withdrawn by vault.example.com'
-            )
-            expect(checked.createVaultAgent).not.toHaveBeenCalled()
-            expect(checked.spawn).not.toHaveBeenCalled()
-            expect(checked.prompt).not.toHaveBeenCalled()
-            expect(checked.loginFetch).not.toHaveBeenCalled()
-            expect(readdirSync(checked.workDir)).toEqual([])
-          } else {
-            expect(checked.stdout).toBe(baseline.stdout)
-            expect(checked.exitCode).toBe(baseline.exitCode)
-            const extra = checked.stderr.replace(baseline.stderr, '')
-            const expectNotice =
-              !suppress && ['stale', 'below-minimum', 'server-older'].includes(outcome)
-            expect(extra.split('\n').filter(Boolean)).toHaveLength(expectNotice ? 1 : 0)
-          }
-        })
+  for (const { command, outcome, suppress } of MATRIX) {
+    it(`${command} / ${outcome} / PVAULT_NO_VERSION_CHECK=${suppress ? '1' : 'unset'}`, async () => {
+      const baseline = await invoke(argvFor(command), { enabled: false })
+      const checked = await invokeOutcome(command, outcome, suppress)
+      if (REFUSING.includes(outcome)) {
+        expect(checked.stdout).toBe('')
+        expect(checked.exitCode).toBe(EXIT_CODES.cliVersionWithdrawn)
+        expect(checked.thrownExitCode).toBe(EXIT_CODES.cliVersionWithdrawn)
+        expect(checked.stderr).toContain(
+          'error: pvault 1.2.0 has been withdrawn by vault.example.com'
+        )
+        expect(checked.createVaultAgent).not.toHaveBeenCalled()
+        expect(checked.spawn).not.toHaveBeenCalled()
+        expect(checked.prompt).not.toHaveBeenCalled()
+        expect(checked.loginFetch).not.toHaveBeenCalled()
+        expect(readdirSync(checked.workDir)).toEqual([])
+      } else {
+        expect(checked.stdout).toBe(baseline.stdout)
+        expect(checked.exitCode).toBe(baseline.exitCode)
+        const extra = checked.stderr.replace(baseline.stderr, '')
+        const expectNotice =
+          !suppress && ['stale', 'below-minimum', 'server-older'].includes(outcome)
+        expect(extra.split('\n').filter(Boolean)).toHaveLength(expectNotice ? 1 : 0)
       }
-    }
+    })
   }
 
   it('get with a stale CLI: stdout is byte-identical (multi-line value), notice on stderr only', async () => {
@@ -470,8 +469,8 @@ describe('AC-6 wiring', () => {
       createVaultAgent: vi.fn(),
       setExitCode: vi.fn(),
       prompt: vi.fn(),
-      fetchFn: vi.fn() as unknown as typeof fetch,
-      spawn: vi.fn() as unknown as CliRuntime['spawn'],
+      fetchFn: vi.fn(),
+      spawn: vi.fn(),
       parentProcess: {} as CliRuntime['parentProcess'],
     })
     for (const command of program.commands) {

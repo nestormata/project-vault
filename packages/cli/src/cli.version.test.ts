@@ -22,8 +22,8 @@ function makeRuntime(overrides: Partial<CliRuntime> = {}) {
     }),
     setExitCode: vi.fn(),
     prompt: vi.fn(),
-    fetchFn: fetchFn as unknown as typeof fetch,
-    spawn: vi.fn() as unknown as CliRuntime['spawn'],
+    fetchFn,
+    spawn: vi.fn(),
     parentProcess: {} as CliRuntime['parentProcess'],
     versionCheck: {
       fetchFn: fetchFn as unknown as typeof fetch,

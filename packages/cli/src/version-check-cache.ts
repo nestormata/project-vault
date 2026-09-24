@@ -79,13 +79,21 @@ function validateSticky(
   return { reason: sanitizeServerText(value['reason']), at: value['at'] }
 }
 
+function isCacheOutcome(value: unknown): boolean {
+  return value === 'ok' || value === 'unreachable'
+}
+
+function isNullableIsoString(value: unknown): boolean {
+  return value === null || isIsoString(value)
+}
+
 function hasValidScalars(value: Record<string, unknown>): boolean {
   const { cliVersion, checkedAt, outcome, lastNoticeAt } = value
   return (
     typeof cliVersion === 'string' &&
     isIsoString(checkedAt) &&
-    (outcome === 'ok' || outcome === 'unreachable') &&
-    (lastNoticeAt === null || isIsoString(lastNoticeAt))
+    isCacheOutcome(outcome) &&
+    isNullableIsoString(lastNoticeAt)
   )
 }
 

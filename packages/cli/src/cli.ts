@@ -135,7 +135,7 @@ function versionCheckTarget(
 ): { cliVersion: string; baseUrl: string } | null {
   if (!runtime.versionCheck || !VERSION_CHECKED_COMMANDS.has(actionCommand.name())) return null
   const cliVersion = (runtime.buildInfo?.cli ?? CLI_BUILD_INFO).version
-  const flagUrl = (actionCommand.opts() as { url?: string }).url
+  const flagUrl = actionCommand.opts<{ url?: string }>().url
   const baseUrl = flagUrl ?? runtime.env['VAULT_URL']
   if (cliVersion === 'dev' || !baseUrl) return null
   return { cliVersion, baseUrl }

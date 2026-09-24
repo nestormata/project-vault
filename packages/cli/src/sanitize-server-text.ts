@@ -23,9 +23,9 @@ export function sanitizeServerText(
   maxCodePoints: number = SERVER_TEXT_MAX_CODE_POINTS
 ): string {
   const cleaned = value
-    .replace(LINE_BREAKS, ' ')
-    .replace(INVISIBLE_OR_CONTROL, '')
-    .replace(WHITESPACE_RUNS, ' ')
+    .replaceAll(LINE_BREAKS, ' ')
+    .replaceAll(INVISIBLE_OR_CONTROL, '')
+    .replaceAll(WHITESPACE_RUNS, ' ')
     .trim()
   const codePoints = [...cleaned]
   if (codePoints.length <= maxCodePoints) return cleaned

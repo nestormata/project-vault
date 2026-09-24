@@ -56,7 +56,7 @@ type PolicyBody = {
 
 beforeEach(() => {
   process.env['RATE_LIMIT_TEST_BYPASS'] = 'true'
-  mockEnv.CLI_MINIMUM_SUPPORTED_VERSION = undefined
+  delete mockEnv.CLI_MINIMUM_SUPPORTED_VERSION
   mockEnv.CLI_WITHDRAWN_VERSIONS = []
 })
 
