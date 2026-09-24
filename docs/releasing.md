@@ -142,8 +142,9 @@ What the workflow does:
    `packages/cli/src/build-info.ts` in one step (`scripts/stamp-build-info.ts`), then builds.
 4. Bundles `packages/cli/dist/bin.js` with `@vercel/ncc` into one ESM file, `pvault-X.Y.Z.mjs`.
 5. Self-verifies by executing that file on Node 20 (the `engines` floor) and Node 24. Line 1 of
-   `--version` must be `pvault X.Y.Z (commit <sha7>)`, line 2 must be `agent  X.Y.Z (commit
-   <sha7>)`, stderr must be empty (no CLI/agent skew), and `0.0.1` must not appear.
+   `--version` must be `pvault X.Y.Z (commit <sha7>)`, line 2 must be
+   `agent  X.Y.Z (commit <sha7>)`, stderr must be empty (no CLI/agent skew), and `0.0.1` must not
+   appear.
 6. Writes `pvault-X.Y.Z.mjs.sha256` and uploads both files with `gh release upload --clobber`.
 
 Verify it:
