@@ -34,7 +34,7 @@ describe('parseStrictSemver', () => {
   it.each([
     'v1.2.3',
     '1.2',
-    '1.2.3.4',
+    '1.2.3.4', // NOSONAR(typescript:S1313) a rejected 4-component version string, not a real IP
     '01.2.3',
     '1.02.3',
     '1.2.03',

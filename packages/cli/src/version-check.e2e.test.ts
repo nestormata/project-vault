@@ -389,14 +389,17 @@ describe('AC-3 unreachable', () => {
   it('http:// non-loopback URL: the insecure warning is printed once, by the command only', async () => {
     const result = await invoke(argvFor('get'), {
       versionFetch: fetchFor('ok'),
-      env: { VAULT_URL: 'http://vault.example.com' },
+      env: { VAULT_URL: 'http://vault.example.com' }, // NOSONAR(typescript:S5332) verifying the insecure-http warning itself, not a real endpoint
     })
     expect(result.stderr.match(/is not https:\/\//g)).toHaveLength(1)
   })
 
   it('VAULT_URL missing → no version check, the usage error is unchanged', async () => {
-    const baseline = await invoke(argvFor('get'), { enabled: false, env: { VAULT_URL: undefined } })
-    const result = await invoke(argvFor('get'), { env: { VAULT_URL: undefined } })
+    // NOSONAR(typescript:S2138) x2 below — `undefined` overrides invoke()'s default VAULT_URL via
+    // object-spread merge; the runtime env type is `string | undefined`, so `null` would not
+    // compile and would not match what an actually-unset environment variable looks like.
+    const baseline = await invoke(argvFor('get'), { enabled: false, env: { VAULT_URL: undefined } }) // NOSONAR(typescript:S2138)
+    const result = await invoke(argvFor('get'), { env: { VAULT_URL: undefined } }) // NOSONAR(typescript:S2138)
     expect(result.versionFetch).not.toHaveBeenCalled()
     expect(result.exitCode).toBe(EXIT_CODES.usageError)
     expect(result.stderr).toBe(baseline.stderr)
