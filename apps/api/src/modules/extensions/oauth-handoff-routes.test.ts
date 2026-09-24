@@ -211,6 +211,37 @@ describe('POST /api/v1/extensions/oauth-handoff/start (Story 39.1 AC1)', () => {
     expect(res.json()).toMatchObject({ code: 'denied' })
   })
 
+  it('Story 59.1 AC8: a denied result with html is forwarded as an inert JSON field; denied.message is not', async () => {
+    __setExtensionStateForTests(
+      defaultHandoffState(async () => ({
+        outcome: 'denied',
+        message: 'no thanks',
+        html: '<p>D</p>',
+      }))
+    )
+    const member = await createDirectAuthenticatedUser(suite.app, 'oauth-denied-html', 'member')
+
+    const res = await postStart(suite.app, member.cookies)
+
+    expect(res.statusCode).toBe(403)
+    expect(res.json()).toEqual({ code: 'denied', message: 'Request denied', html: '<p>D</p>' })
+    expect(String(res.headers['content-type'])).toMatch(/^application\/json/)
+  })
+
+  it('Story 59.1 AC4: a thrown onOAuthStart yields a fixed 500 with no html', async () => {
+    __setExtensionStateForTests(
+      defaultHandoffState(async () => {
+        throw Object.assign(new Error('db exploded'), { html: '<p>LEAK</p>' })
+      })
+    )
+    const member = await createDirectAuthenticatedUser(suite.app, 'oauth-throw-html', 'member')
+
+    const res = await postStart(suite.app, member.cookies)
+
+    expect(res.statusCode).toBe(500)
+    expect(res.json()).toEqual({ code: 'internal_error', message: 'Request failed' })
+  })
+
   it('AC9: rejects a redirect url whose origin is not in the manifest redirectOrigins allow-list', async () => {
     __setExtensionStateForTests(
       defaultHandoffState(async () => ({
@@ -494,6 +525,27 @@ describe('GET /api/v1/extensions/oauth-handoff/callback (Story 39.1 AC2/AC3)', (
     const res = await getCallback(suite.app, cookieValue)
 
     expect(res.statusCode).toBe(500)
+  })
+
+  it('Story 59.1 AC8: an error result with html on the callback leg is forwarded as JSON, and the pending cookie is burned', async () => {
+    const member = await createDirectAuthenticatedUser(suite.app, 'oauth-cb-error-html', 'member')
+    const cookieValue = await startAndGetCookie(suite.app, member.cookies)
+    __setExtensionStateForTests(
+      defaultHandoffState(undefined, async () => ({ outcome: 'error', html: '<p>E</p>' }))
+    )
+
+    const res = await getCallback(suite.app, cookieValue)
+
+    expect(res.statusCode).toBe(500)
+    expect(res.json()).toEqual({
+      code: 'internal_error',
+      message: 'Request failed',
+      html: '<p>E</p>',
+    })
+    expect(String(res.headers['content-type'])).toMatch(/^application\/json/)
+    const replay = await getCallback(suite.app, cookieValue)
+    expect(replay.statusCode).not.toBe(500)
+    expect(replay.json()).not.toHaveProperty('html')
   })
 
   it('AC9: rejects the second redirect url when its origin is not allow-listed', async () => {

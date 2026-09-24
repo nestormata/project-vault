@@ -66,6 +66,10 @@ export type PublicRouteRequest = {
  * Story 20.13 AC1/AC4 — the single method a `publicRoute` hook implementation provides. Only
  * legal (checked by `hasCallablePublicRouteHook()`) when the manifest declares `'public-route'` in
  * `capabilities[]` and a non-empty `anonymousRoutePaths` allow-list (AC2/AC3).
+ *
+ * Story 59.1 — the widened `ActionResult` (optional `html` on every outcome) is reused unchanged.
+ * A returned `ActionResult`'s `html` is forwarded only as an inert JSON string field of the
+ * `application/json` response body (served with `nosniff`); it is never written as a document.
  */
 export type PublicRouteHooks = {
   onPublicRouteRequest(request: PublicRouteRequest): Promise<PublicRouteResult | ActionResult>

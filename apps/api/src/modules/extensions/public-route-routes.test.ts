@@ -4,6 +4,7 @@ import type {
   PublicRouteHooks,
   PublicRouteResult,
 } from '@project-vault/extension-api'
+import { OperationalEvent } from '@project-vault/shared'
 import {
   bootstrapRouteIntegrationTest,
   bootUnsealedRouteApp,
@@ -13,6 +14,20 @@ import {
   __setExtensionStateForTests,
 } from '../../extensions/loader.js'
 import type { ExtensionState } from '../../extensions/loader.js'
+
+// Story 59.1 AC8 — a pass-through spy on `operationalLog`, so the malformed-html case can assert
+// the route's own `EXTENSION_PUBLIC_ROUTE_FAILED` subReason (the test app runs with logger: false).
+const { operationalLogSpy } = vi.hoisted(() => ({ operationalLogSpy: vi.fn() }))
+vi.mock('../../lib/logger.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/logger.js')>()
+  return {
+    ...actual,
+    operationalLog: (...args: Parameters<typeof actual.operationalLog>) => {
+      operationalLogSpy(...args)
+      actual.operationalLog(...args)
+    },
+  }
+})
 
 /**
  * Story 20.13 Task 4 — real-mounted-route coverage for `publicRouteRoutes`, mirroring
@@ -60,6 +75,14 @@ const MALFORMED_PATH_TEMPLATE = '/pv-public-test/malformed'
 const BAD_STATUS_PATH_TEMPLATE = '/pv-public-test/bad-status'
 const BAD_HEADER_PATH_TEMPLATE = '/pv-public-test/bad-header'
 const REDIRECT_STATUS_PATH_TEMPLATE = '/pv-public-test/redirect-status'
+const DENIED_HTML_PATH_TEMPLATE = '/pv-public-test/denied-html'
+const BAD_HTML_PATH_TEMPLATE = '/pv-public-test/bad-html'
+// Story 59.1 AC8 — fixed hook results keyed by path template (keeps the shared hook's own
+// branching within the complexity budget).
+const FIXED_HOOK_RESULTS = new Map<string, PublicRouteResult | ActionResult>([
+  [DENIED_HTML_PATH_TEMPLATE, { outcome: 'denied', html: '<p>D</p>' }],
+  [BAD_HTML_PATH_TEMPLATE, { outcome: 'error', html: 5 } as never],
+])
 
 describe('GET <declared path template> — Story 20.13 AC1-AC5 (real mounted route)', () => {
   let app: TestApp
@@ -88,6 +111,8 @@ describe('GET <declared path template> — Story 20.13 AC1-AC5 (real mounted rou
           body: {},
         }
       }
+      const fixedResult = FIXED_HOOK_RESULTS.get(request.pathTemplate)
+      if (fixedResult) return fixedResult
       if (request.pathTemplate === REDIRECT_STATUS_PATH_TEMPLATE) {
         return {
           outcome: 'response' as const,
@@ -115,6 +140,8 @@ describe('GET <declared path template> — Story 20.13 AC1-AC5 (real mounted rou
           BAD_STATUS_PATH_TEMPLATE,
           BAD_HEADER_PATH_TEMPLATE,
           REDIRECT_STATUS_PATH_TEMPLATE,
+          DENIED_HTML_PATH_TEMPLATE,
+          BAD_HTML_PATH_TEMPLATE,
         ],
         publicRoute: { onPublicRouteRequest },
       })
@@ -169,6 +196,34 @@ describe('GET <declared path template> — Story 20.13 AC1-AC5 (real mounted rou
     const res = await app.inject({ method: 'GET', url: BOOM_PATH_TEMPLATE })
     expect(res.statusCode).toBe(500)
     expect(JSON.stringify(res.json())).not.toContain('should never leak this text')
+  })
+
+  it('Story 59.1 AC8: a denied result with html is returned as an inert JSON field, served with nosniff', async () => {
+    const res = await app.inject({ method: 'GET', url: DENIED_HTML_PATH_TEMPLATE })
+    expect(res.statusCode).toBe(403)
+    expect(res.json()).toEqual({ code: 'denied', message: 'Request denied', html: '<p>D</p>' })
+    expect(String(res.headers['content-type'])).toMatch(/^application\/json/)
+    expect(res.headers['x-content-type-options']).toBe('nosniff')
+  })
+
+  it('Story 59.1 AC4/AC8: a thrown hook yields the fixed 500 body with no html', async () => {
+    const res = await app.inject({ method: 'GET', url: BOOM_PATH_TEMPLATE })
+    expect(res.statusCode).toBe(500)
+    expect(res.json()).toEqual({ code: 'internal_error', message: 'Request failed' })
+  })
+
+  it('Story 59.1 AC8: an error result with a non-string html is malformed — 500 without html, logged as malformed', async () => {
+    operationalLogSpy.mockClear()
+    const res = await app.inject({ method: 'GET', url: BAD_HTML_PATH_TEMPLATE })
+    expect(res.statusCode).toBe(500)
+    expect(res.json()).toEqual({ code: 'internal_error', message: 'Request failed' })
+    expect(operationalLogSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      'error',
+      OperationalEvent.EXTENSION_PUBLIC_ROUTE_FAILED,
+      expect.any(String),
+      { pathTemplate: BAD_HTML_PATH_TEMPLATE, subReason: 'malformed' }
+    )
   })
 
   it('AC5: a malformed hook result produces a generic 500', async () => {

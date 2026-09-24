@@ -141,6 +141,8 @@ async function resolveModuleActionContextAndDispatch(
   return { kind: 'dispatched', result }
 }
 
+// Story 59.1 — every degraded outcome below is a fresh `{ outcome: 'error' }` literal, so a
+// thrown/timed-out/malformed hook can never carry `html`; only a valid returned result does.
 function finalizeModuleActionResult(
   raced: Awaited<ReturnType<typeof raceWithTimeout<ModuleActionAttemptOutcome>>>,
   logger: PanelLoggerLike,

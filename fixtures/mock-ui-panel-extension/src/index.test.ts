@@ -9,6 +9,8 @@ import mockUiPanelExtension, {
   TEST_ACTION_KIND,
   TEST_ACTION_NOTE,
   TEST_DATA_PATH,
+  TEST_DENIED_ACTION_KIND,
+  TEST_DENIED_BANNER_TEXT,
   TEST_MODULE_DATA_PATH,
   TEST_NAV_CHILD_ITEM_ID,
   TEST_NAV_ITEM_ID,
@@ -211,6 +213,37 @@ describe('mock-ui-panel-extension (Story 25.1 Task 7)', () => {
       expect(result?.html).toContain(`data-pv-action-note="${TEST_ACTION_NOTE}"`)
       expect(result?.html).not.toContain('<script>')
       expect(result?.html).not.toContain('postMessage')
+    })
+
+    // Story 59.1 — a test-only action kind that always resolves `denied` with the extension's own
+    // rendered banner html (plus a denial `message` PV must never forward), so a browser journey
+    // can prove non-ok html reaches the panel host end to end.
+    it('Story 59.1: declares TEST_DENIED_ACTION_KIND alongside TEST_ACTION_KIND', () => {
+      expect(mockUiPanelExtension.manifest.moduleActions).toEqual([
+        TEST_ACTION_KIND,
+        TEST_DENIED_ACTION_KIND,
+      ])
+    })
+
+    it('Story 59.1: the denied kind resolves denied with banner html carrying a retry action', async () => {
+      const hooks = mockUiPanelExtension.hooksFactory()
+      const result = await hooks.moduleAction?.onAction(context(), {
+        action: { kind: TEST_DENIED_ACTION_KIND },
+      })
+      expect(result?.outcome).toBe('denied')
+      expect(result?.html).toContain(TEST_DENIED_BANNER_TEXT)
+      expect(result?.html).toContain(`data-pv-action="${TEST_DENIED_ACTION_KIND}"`)
+      expect(result?.html).not.toContain('<script>')
+    })
+
+    it('Story 59.1: the panel html renders a denied-action button when actionEndpoint is present', async () => {
+      const hooks = mockUiPanelExtension.hooksFactory()
+      const withEndpoint = await hooks.uiPanel?.onRenderPanel(
+        context({ slot: HAPPY_SLOT, actionEndpoint: '/api/v1/extensions/panels/group/actions' })
+      )
+      const withoutEndpoint = await hooks.uiPanel?.onRenderPanel(context({ slot: HAPPY_SLOT }))
+      expect(withEndpoint?.html).toContain(`data-pv-action="${TEST_DENIED_ACTION_KIND}"`)
+      expect(withoutEndpoint?.html).not.toContain(`data-pv-action="${TEST_DENIED_ACTION_KIND}"`)
     })
   })
 })

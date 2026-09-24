@@ -63,8 +63,9 @@ describe('EXTENSION_API_VERSION', () => {
     // change): 3.22.0 -> 3.22.1. Story 20.13 AC7/AC14 — ExtensionCapability's 'public-route'
     // literal, ExtensionManifest's anonymousRoutePaths?, ExtensionHooks' publicRoute?, and
     // CredentialSharingHost's listSharesForCredential/listSharesForOrganization (also
-    // additive-minor): 3.22.1 -> 3.23.0.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.23.0')
+    // additive-minor): 3.22.1 -> 3.23.0. Story 59.1 — optional `html` on every ActionResult
+    // variant (also additive-minor): 3.23.0 -> 3.24.0.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.24.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

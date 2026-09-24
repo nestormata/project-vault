@@ -59,6 +59,16 @@ export const TEST_ACTION_KIND = 'test-action'
  */
 export const TEST_ACTION_NOTE = 'fixture-note'
 /**
+ * Story 59.1 — a test-only action kind whose `onAction` always resolves `denied` with this
+ * fixture's own rendered banner html (and a denial `message` PV must never forward), so a browser
+ * journey can prove a non-ok outcome's html reaches the panel host end to end. The banner carries
+ * its own button for the same kind, exercising the identical-html re-enable path on a repeat
+ * denial.
+ */
+export const TEST_DENIED_ACTION_KIND = 'test-denied-action'
+export const TEST_DENIED_BANNER_TEXT = 'Mock extension denied this action'
+export const TEST_DENIED_INTERNAL_REASON = 'fixture internal denial reason'
+/**
  * Story 25.12 AC2/Task 6 — a new DATA-relay path declared beyond the legacy
  * `/api/v1/projects`/`/api/v1/projects/:id` default, giving this story's own AC2 happy-path test
  * (and Chrome-driven manual verification) a real, manifest-declared end-to-end target.
@@ -110,7 +120,7 @@ const manifest: ExtensionManifest = {
   // button, so this fixture's own panel can exercise the real end-to-end action round trip (via
   // the postMessage relay to the host — see onRenderPanel's own comment) in Chrome-driven manual
   // verification, not just a direct handleModuleAction() unit test.
-  moduleActions: [TEST_ACTION_KIND],
+  moduleActions: [TEST_ACTION_KIND, TEST_DENIED_ACTION_KIND],
   // Story 25.12 AC2/Task 6 — declares the legacy default pair explicitly (so this fixture's
   // behavior for those two paths is unchanged) plus TEST_DATA_PATH, a real end-to-end target for
   // this story's AC2 happy-path test and Chrome-driven manual verification.
@@ -192,7 +202,8 @@ const uiPanel: UIPanel = {
         `<html><body>` +
         `<p style="color: var(--pv-ext-ink, #24323b); background: var(--pv-ext-surface, #ffffff);">Mock panel for slot "${context.slot}"</p>` +
         (context.actionEndpoint
-          ? `<button type="button" data-pv-action="${TEST_ACTION_KIND}" data-pv-action-note="${TEST_ACTION_NOTE}">Run test action</button>`
+          ? `<button type="button" data-pv-action="${TEST_ACTION_KIND}" data-pv-action-note="${TEST_ACTION_NOTE}">Run test action</button>` +
+            `<button type="button" data-pv-action="${TEST_DENIED_ACTION_KIND}">Trigger denied action</button>`
           : '') +
         // Story 29.6 AC1/AC12 — a plain, ordinary `<a href>` navigation link, intentionally never
         // combined with `data-pv-action` on itself or nested inside its subtree. Clicking it is a
@@ -206,6 +217,16 @@ const uiPanel: UIPanel = {
 
 const moduleAction: ModuleAction = {
   async onAction(context, request) {
+    if (request.action.kind === TEST_DENIED_ACTION_KIND) {
+      return {
+        outcome: 'denied',
+        message: TEST_DENIED_INTERNAL_REASON,
+        html:
+          `<section data-state="denied"><p role="alert">${TEST_DENIED_BANNER_TEXT}</p>` +
+          `<button type="button" data-pv-action="${TEST_DENIED_ACTION_KIND}">Retry denied action</button>` +
+          `</section>`,
+      }
+    }
     if (request.action.kind !== TEST_ACTION_KIND) {
       return { outcome: 'validation_failed', message: 'Unknown action kind' }
     }

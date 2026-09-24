@@ -2,6 +2,39 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.24.0 — 2026-09-24
+
+contract-hash: sha256:e3fc889e498132eb769fe9348a368c8a5df39c3fe512e88f4a8025b088bf391d
+
+### Added
+
+- `ActionResult` now declares an optional `html?: string` on every variant — `validation_failed`,
+  `denied`, `conflict` and `error` gain it alongside `ok` (Story 59.1). When present, `html` is
+  rendered to the end user by PV's panel host after sanitization, replacing the panel container
+  for failure outcomes exactly as it already did for `ok`. Forwarding rule: a field reaches the
+  caller if and only if its published contract says it is caller-facing — `html` is forwarded on
+  every outcome whenever present, `validation_failed.message`/`conflict.message` stay forwarded
+  verbatim, and `denied.message` stays suppressed (the caller always sees the fixed generic
+  denial message). `html` only ever comes from a result the extension explicitly returns: a thrown
+  hook, a timeout or a malformed result still degrades to a bare `{ outcome: 'error' }` with no
+  html. `error.html` is shown to end users and must never carry exception, stack or database
+  detail. The widened union is reused unchanged by `ModuleAction.onAction`,
+  `OAuthHandoffHooks.onOAuthStart`/`onOAuthCallback` and `PublicRouteHooks.onPublicRouteRequest`
+  (on the latter routes `html` is an inert JSON string field).
+
+### Changed [behaviour]
+
+- A non-`ok` result whose `html` is present but not a string (for example
+  `{ outcome: 'denied', html: 42 }`) is now malformed: it is rejected by PV's result validation
+  and degrades to the generic 500 (logged with `subReason: 'malformed'`) instead of being mapped
+  by its outcome with the field ignored. Such a value was never type-valid, so no correct
+  extension is affected.
+
+Per `docs/extension-api-versioning-policy.md` rows 1 (an optional field added to a type PV
+receives from the extension) and 9 (widening the declared return type of an extension hook) —
+both NON-BREAKING — this is a MINOR bump. Existing implementations that never set `html` on a
+non-`ok` result type-check and behave exactly as before, and the floor stays `>=3.0.0`.
+
 ## 3.23.0 — 2026-09-21
 
 contract-hash: sha256:d44c648ff9e4092c8b6d92ea8cddb9715478e6c3dd0801e7ff59cbff06a23142
