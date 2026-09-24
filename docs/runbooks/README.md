@@ -28,6 +28,7 @@ table below.
 | `SERVICE_REVOCATION_TOKEN` leak, or `org.sessions_revoked_by_service` fired unexpectedly | [`service-revocation-token-rotation.md`](service-revocation-token-rotation.md) |
 | Rotating the CentralizeMe handoff signing key, or responding to its compromise | [`handoff-key-rotation.md`](handoff-key-rotation.md) |
 | Configuring handoff identity/keys, or a `clock_skew.measured` warning | [`handoff-instance-identity.md`](handoff-instance-identity.md) |
+| Withdrawing a known-bad `pvault` CLI version, or users report CLI exit `29` | [`cli-version-policy.md`](cli-version-policy.md) |
 | No HTTP response at all from the API | [`incident-response.md`](incident-response.md) § Vault unreachable |
 | `audit_storage.critical` alert, or `/ready` warns `audit_storage_critical` | [`incident-response.md`](incident-response.md) § Audit-log storage at 95% |
 | The instance is full but every org is inside its quota | [`audit-storage-exhaustion.md`](audit-storage-exhaustion.md) |

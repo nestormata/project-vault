@@ -31,6 +31,7 @@
     "@project-vault/eslint-config": "workspace:*",
     "@project-vault/tsconfig": "workspace:*",
     "@types/node": "^26.6.1",
+    "@vercel/ncc": "0.45.0",
     "@vitest/coverage-v8": "^5.0.1",
     "eslint": "^10.10.0",
     "postgres": "^3.4.5",

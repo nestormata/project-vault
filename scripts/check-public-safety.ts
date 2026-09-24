@@ -137,6 +137,9 @@ const SAFE_LOCAL_ENDPOINT_FILES = new Set([
   '.env.example',
   '.github/workflows/ci.yml',
   '.github/workflows/nightly.yml',
+  // Story 43.6: the pvault release workflow runs the CLI's e2e test against the same ephemeral
+  // `postgres:` service container, with the same dev-only URLs, as ci.yml's test job.
+  '.github/workflows/cli-release.yml',
   'apps/api/src/config/env.test.ts',
   'docker-compose.yml',
   // Story 22.1: new test files following this codebase's established convention (identical to

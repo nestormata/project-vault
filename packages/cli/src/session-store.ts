@@ -31,6 +31,21 @@ export type SessionReadResult =
 
 const DIR_MODE = 0o700
 
+/**
+ * Creates `dir` (recursively) owner-only (`0700`). Shared by the session file and Story 43.6's
+ * version-check cache, which live in the same directory.
+ */
+export function ensureOwnerOnlyDir(dir: string): void {
+  mkdirSync(dir, { recursive: true, mode: DIR_MODE })
+  try {
+    chmodSync(dir, DIR_MODE)
+  } catch {
+    // Best-effort — the file-level chmod done by the atomic writer is the hard guarantee; a chmod
+    // failure on the directory itself (e.g. a read-only parent) surfaces later via the write
+    // failing anyway.
+  }
+}
+
 export function sessionDir(env: EnvLike = process.env): string {
   const xdg = env['XDG_CONFIG_HOME']
   const base = xdg && xdg.length > 0 ? xdg : join(homedir(), '.config')
@@ -62,14 +77,7 @@ function isSessionData(value: unknown): value is SessionData {
  * `umask` can widen on some platforms).
  */
 export function writeSession(session: SessionData, env: EnvLike = process.env): void {
-  const dir = sessionDir(env)
-  mkdirSync(dir, { recursive: true, mode: DIR_MODE })
-  try {
-    chmodSync(dir, DIR_MODE)
-  } catch {
-    // Best-effort — the file-level chmod below is this AC's hard guarantee; a chmod failure on
-    // the directory itself (e.g. a read-only parent) surfaces later via the write failing anyway.
-  }
+  ensureOwnerOnlyDir(sessionDir(env))
 
   // Story 43.5 Task 2 — the temp-file/fsync/chmod/rename sequence now lives in atomic-file.ts
   // (shared with `pvault write-env`); `exclusive: false` keeps this function's replace semantics.

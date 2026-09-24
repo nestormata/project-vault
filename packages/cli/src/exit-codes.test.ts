@@ -79,3 +79,13 @@ describe('CliUsageError', () => {
     expect(err.name).toBe('CliUsageError')
   })
 })
+
+describe('EXIT_CODES — Story 43.6 addition (append-only)', () => {
+  it('cliVersionWithdrawn is 29, after every earlier block, and 23 stays retired', () => {
+    expect(EXIT_CODES.cliVersionWithdrawn).toBe(29)
+    expect(EXIT_CODES.unhardenedInjectionNotAcknowledged).toBe(23)
+    const all = Object.values(EXIT_CODES)
+    expect(Math.max(...all)).toBe(29)
+    expect(new Set(all).size).toBe(all.length)
+  })
+})

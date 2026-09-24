@@ -12,6 +12,9 @@ import {
 } from '@fastify/type-provider-zod'
 import swaggerUi from '@fastify/swagger-ui'
 import { healthRoutes } from './routes/health.js'
+import { clientVersionPolicyRoutes } from './routes/client-version-policy.js'
+import { BAKED_CLI_VERSION_POLICY } from './modules/client-versions/cli-version-policy.js'
+import { resolveCliVersionPolicy } from './modules/client-versions/policy.js'
 import { statusRoutes } from './routes/status.js'
 import { metricsRoutes } from './routes/metrics.js'
 import { openapiRoutes } from './routes/openapi.js'
@@ -540,6 +543,19 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   }
 
   await fastify.register(healthRoutes, { dbPool: options.dbPool })
+  // Story 43.6 — public CLI version policy; resolved once at boot (tighten-only merge of the baked
+  // upstream policy and the operator's env vars), logged once, then served statically.
+  await fastify.register(clientVersionPolicyRoutes, {
+    policy: resolveCliVersionPolicy(
+      {
+        minimumSupported: env.CLI_MINIMUM_SUPPORTED_VERSION,
+        withdrawn: env.CLI_WITHDRAWN_VERSIONS ?? [],
+      },
+      BAKED_CLI_VERSION_POLICY,
+      fastify.log,
+      getReleaseVersion()
+    ),
+  })
   await fastify.register(statusRoutes, { dbPool: options.dbPool })
   await fastify.register(metricsRoutes, {
     metricsBindHost: options.metricsBindHost ?? env.METRICS_BIND_HOST,

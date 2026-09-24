@@ -201,6 +201,8 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm vitest run scripts/check-policy-doc-structure.test.ts scripts/check-policy-doc-content.test.ts scripts/check-extension-api-behaviour.test.ts scripts/check-extension-api-markers.test.ts scripts/check-extension-api-contract-changelog.test.ts
 	pnpm vitest run scripts/check-extension-api-version-skew.test.ts
 	pnpm check-native-credential-surface
+	pnpm check-build-info-unstamped # Story 43.6 AC-5
+	pnpm vitest run scripts/check-build-info-unstamped.test.ts scripts/stamp-build-info.test.ts scripts/check-cli-release-workflow.test.ts
 	pnpm check-audit-insert-sites
 	$(MAKE) test
 	pnpm jscpd

@@ -12,6 +12,8 @@
  * 2-12             one exit code per VaultAgentError `.code` value, see the table below
  * 13               unexpected/unclassified error (a bug, or a future packages/agent error code
  *                  this CLI doesn't know about yet)
+ * 14-28            later stories' append-only blocks (see each block's comment below)
+ * 29               this pvault version has been withdrawn by the server (Story 43.6)
  */
 export const EXIT_CODES = {
   usageError: 1,
@@ -70,6 +72,12 @@ export const EXIT_CODES = {
   valueNotRepresentable: 27,
   /** An unexpected filesystem error while writing (`EACCES`, `ENOSPC`, `EROFS`, …). */
   outputWriteFailed: 28,
+  // Story 43.6 — append-only. Never renumber the blocks above; slot 23 stays retired.
+  /** The server lists this exact `pvault` version as withdrawn (or did at the last successful
+   * check while it is now unreachable). Refused before any credential request, prompt, child
+   * spawn or file write. `pvault run` also propagates a child's own exit code, so a `29` from
+   * `run` is this refusal only when no child was spawned (the stderr line says which). */
+  cliVersionWithdrawn: 29,
 } as const
 
 // A Map (rather than a plain object keyed by an external string) sidesteps prototype-pollution/

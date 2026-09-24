@@ -13,15 +13,34 @@ This package is a thin wrapper around
 dependency (`workspace:*`) and never re-implements or vendors its token-exchange/credential-fetch
 logic (Story 43.1 AC-1).
 
-## Installation / running locally
+## Installation
 
 Not published to any registry (matching `@project-vault/agent` and `@project-vault/vault-action`).
-Run it from this monorepo checkout:
+
+### From a release (Story 43.6)
+
+Every GitHub Release (`vX.Y.Z`) carries a single-file bundle, `pvault-X.Y.Z.mjs`, and its
+checksum. It needs Node.js 20 or newer on `PATH`:
 
 ```bash
-pnpm --filter @project-vault/cli build
+VERSION=X.Y.Z
+BASE=https://github.com/nestormata/project-vault/releases/download/v$VERSION
+curl -fsSLO "$BASE/pvault-$VERSION.mjs" && curl -fsSLO "$BASE/pvault-$VERSION.mjs.sha256"
+sha256sum -c "pvault-$VERSION.mjs.sha256"
+chmod +x "pvault-$VERSION.mjs" && mv "pvault-$VERSION.mjs" ~/.local/bin/pvault
+pvault --version
+```
+
+The CLI shares the server's release number: use the `pvault` whose version matches your server.
+
+### From this monorepo checkout (a `dev` build)
+
+```bash
+pnpm --filter "@project-vault/cli..." build
 node packages/cli/dist/bin.js get DATABASE_URL
 ```
+
+A checkout build reports `pvault dev (commit unknown)` and never runs the version check.
 
 ## Usage
 
@@ -99,9 +118,10 @@ served, if stale, value is not itself a failure this CLI hard-fails on.
 ### 6. Argument-parsing framework: [`commander`](https://www.npmjs.com/package/commander) `^14`
 
 Chosen over hand-rolled `process.argv` parsing because this is the first story of a six-story epic
-whose later stories add `login`, `run -- <cmd>`, `.env` materialization, and a startup version
-check — all multi-command, multi-flag surfaces. `commander` was already resolved elsewhere in this
-monorepo's lockfile.
+whose later stories add `login`, `run -- <cmd>` and `.env` materialization, all multi-command,
+multi-flag surfaces. `commander` was already resolved elsewhere in this monorepo's lockfile. The
+startup version check has since shipped as one `preAction` hook (Story 43.6, see "Version check"
+below).
 
 ## Accepted residual risk
 
@@ -633,6 +653,71 @@ anything running as your user (and by anyone with access to backups or disk imag
 | `26`      | `outputPathInvalid` — parent directory missing, target is a directory, or a FIFO/socket/device (even with `--force`) |
 | `27`      | `valueNotRepresentable` — a value can't be written losslessly in the chosen `--format`; nothing written              |
 | `28`      | `outputWriteFailed` — unexpected filesystem error while writing (`EACCES`, `ENOSPC`, `EROFS`, …)                     |
+
+## Version check (Story 43.6)
+
+Before `get`, `run`, `write-env` and `login` make any network call, `pvault` reads the server's
+public policy (`GET /api/v1/client-version-policy`). `logout`, `--version`, `--help` and a
+`pvault run` without `--` never contact it. A `dev` (checkout) build is never checked.
+
+All output goes to **stderr**. stdout is exactly what it would be without the check. At most one
+advisory line prints per invocation, in this order of precedence:
+
+| Situation                                    | Output                                                                                                            | Exit code                                               |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| This exact version is withdrawn              | `error: pvault X has been withdrawn by <host>: <reason>` plus a download line                                     | `29`. Nothing is fetched, prompted, spawned or written. |
+| Below the server's minimum supported version | `warning: pvault X is below this server's minimum supported version Y and may stop working; …`                    | unchanged                                               |
+| Older than the server's release              | `notice: pvault X is older than this server's release Y; download the matching pvault from …`                     | unchanged                                               |
+| Newer than the server's release              | `notice: pvault X is newer than this server's release Y; some commands may not work until the server is upgraded` | unchanged                                               |
+
+- **Advisory notices** (the last three rows) print at most once per 24 h per server and CLI
+  version.
+- **Unreachable never blocks.** Examples: a timeout (1.5 s), connection refused, `404` from an
+  older server, `429`, `503` from a sealed vault, a redirect, or a malformed body. The command
+  proceeds silently, and the check does not retry that server for 10 minutes. The check uses its
+  own request, never the agent, so it cannot push the agent into offline-cache mode. The request
+  carries no credential, only `accept` and `user-agent: pvault/<version>`.
+- **Cache:** `<config dir>/pvault/version-check.json`, using `$XDG_CONFIG_HOME` or
+  `~/.config`. It is owner-only (`0600`) and holds at most 20 servers. A successful answer is kept
+  for 1 hour. The cache fails open: a broken or unwritable file is ignored.
+- **Sticky withdrawal:** if the last successful check said "withdrawn" and the server is now
+  unreachable, `pvault` still refuses. The message gives the date of that check and the cache file
+  path. Delete the file if you trust the verdict is wrong, or upgrade: a different version starts
+  clean. Only a later successful check clears it.
+- **`PVAULT_NO_VERSION_CHECK`:** `1` or `true` (case-insensitive, trimmed) silences the three
+  advisory notices, for example to keep CI logs quiet. `0`, `false`, empty or unset keeps them. Any
+  other value is ignored with one warning line. It still contacts the server and it **never**
+  suppresses the withdrawn refusal, so a CI job pinned to a withdrawn build still fails with `29`.
+- **No server-supplied link is ever printed.** The download URL is built into the CLI
+  (`https://github.com/nestormata/project-vault/releases`). A hostile server can make the CLI
+  refuse, but it cannot send you to a download of its choosing.
+- **`run` and exit `29`:** `pvault run -- cmd` propagates the child's own exit code, so `29` can
+  also come from the child. The withdrawn refusal is the case where no child was spawned and the
+  `error: … withdrawn …` line is on stderr.
+
+**This is advisory, not a security control.** A modified or pre-43.6 binary ignores it. A
+same-user process that edits the cache can hide notices, but cannot make the CLI refuse a version
+the server never withdrew, and cannot hide a fresh withdrawal (withdrawals are always re-checked).
+The server-side fix for a superseded auth path is revoking the affected credentials. See the
+operator runbook `docs/runbooks/cli-version-policy.md`.
+
+### `pvault --version`
+
+```
+pvault 1.3.0 (commit 3f2a1c9)
+agent  1.3.0 (commit 3f2a1c9)
+```
+
+Two stdout lines, exit `0`, no network. The second whitespace-separated token of line 1 is the
+version, and scripts may rely on this. If the CLI and its bundled agent were built from different
+sources, a warning goes to stderr. A released bundle is stamped in one step, so it never shows
+this warning.
+
+### New exit code (append-only, extends the 1-28 table)
+
+| Exit code | Meaning                                                                                                                                   |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `29`      | `cliVersionWithdrawn` — the server withdrew this exact `pvault` version (or did at the last successful check while it is now unreachable) |
 
 ## Running the e2e tests
 

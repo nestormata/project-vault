@@ -1,10 +1,12 @@
 import { spawn as realSpawn } from 'node:child_process'
-import { Command } from 'commander'
+import { Command, CommanderError } from 'commander'
 import {
   createVaultAgent as realCreateVaultAgent,
   type VaultAgent,
   type VaultAgentConfig,
 } from '@project-vault/agent'
+import { AGENT_BUILD_INFO } from '@project-vault/agent/build-info'
+import { CLI_BUILD_INFO, formatVersionOutput, type BuildInfo } from './build-info.js'
 import { CliUsageError, EXIT_CODES } from './exit-codes.js'
 import { resolveConfig, resolveLoginConfig } from './config.js'
 import { runGet, type GetStreams, type WritableLike } from './get-command.js'
@@ -15,12 +17,16 @@ import { createRealPrompt, type PromptFn } from './prompt.js'
 import { runRun } from './run-command.js'
 import type { GitIgnoreStatus } from './git-ignore-check.js'
 import { runWriteEnv } from './write-env-command.js'
+import { runVersionCheck } from './version-check.js'
+import { noVersionCheckWarning, parseNoVersionCheck } from './version-check-opt-out.js'
+import { sessionDir } from './session-store.js'
 
 // Dev Notes decision #6 — CLI argument-parsing/command framework: commander (already resolved
 // elsewhere in this monorepo's lockfile), a real subcommand framework rather than hand-rolled
 // `process.argv` parsing, chosen because this is the first story of a six-story epic whose later
 // stories (`login`, `run -- <cmd>`, `.env` materialization, a startup version check) all add more
-// multi-command, multi-flag surface. See packages/cli/README.md.
+// multi-command, multi-flag surface. See packages/cli/README.md. (The startup version check is
+// Story 43.6 — see version-check.ts and the `preAction` hook in buildProgram below.)
 
 export type CliRuntime = {
   streams: GetStreams
@@ -42,9 +48,24 @@ export type CliRuntime = {
   cwd?: string
   /** Story 43.5 AC-9 — the accidental-commit check seam; defaults to a real `git check-ignore`. */
   checkGitIgnored?: (dir: string, name: string) => Promise<GitIgnoreStatus>
+  /** Story 43.6 AC-4 — build identity override for tests; defaults to the stamped modules. */
+  buildInfo?: { cli: BuildInfo; agent: BuildInfo }
+  /** Story 43.6 — the startup version check's seams. Inert by default: only `runCli()` (the real
+   * entry) supplies it, so tests that build the program without it never make a check request,
+   * even on a stamped tree. `cacheDir: null` → no cache (the check still runs). */
+  versionCheck?: { fetchFn: typeof fetch; now: () => number; cacheDir: string | null }
 }
 
-const PACKAGE_VERSION = '0.0.1'
+/** Story 43.6 AC-6 — every subcommand is in exactly one of these sets (enforced by a test). */
+export const VERSION_CHECKED_COMMANDS: ReadonlySet<string> = new Set([
+  'get',
+  'run',
+  'write-env',
+  'login',
+])
+/** `logout` only reduces exposure (revokes and deletes the stored session), so a withdrawn CLI can
+ * always still run it. */
+export const VERSION_CHECK_EXEMPT_COMMANDS: ReadonlySet<string> = new Set(['logout'])
 
 // Shared machine-user-key flag definitions, reused by `get` and `run` (both stay on the
 // VAULT_API_KEY path — see config.ts's Dev Notes decision #2) — avoids duplicating the same
@@ -103,14 +124,63 @@ async function runCommandAction(runtime: CliRuntime, action: () => Promise<numbe
   }
 }
 
+/**
+ * Story 43.6 (decision D7) — the single wiring point of the version check: runs before a
+ * version-checked command's own network activity and is awaited, so a withdrawn refusal always
+ * precedes the first credential request, prompt, child spawn or file write.
+ */
+function versionCheckTarget(
+  runtime: CliRuntime,
+  actionCommand: Command
+): { cliVersion: string; baseUrl: string } | null {
+  if (!runtime.versionCheck || !VERSION_CHECKED_COMMANDS.has(actionCommand.name())) return null
+  const cliVersion = (runtime.buildInfo?.cli ?? CLI_BUILD_INFO).version
+  const flagUrl = (actionCommand.opts() as { url?: string }).url
+  const baseUrl = flagUrl ?? runtime.env['VAULT_URL']
+  if (cliVersion === 'dev' || !baseUrl) return null
+  return { cliVersion, baseUrl }
+}
+
+async function versionCheckHook(runtime: CliRuntime, actionCommand: Command): Promise<void> {
+  const target = versionCheckTarget(runtime, actionCommand)
+  const check = runtime.versionCheck
+  if (!target || !check) return
+
+  const optOutRaw = runtime.env['PVAULT_NO_VERSION_CHECK']
+  const optOut = parseNoVersionCheck(optOutRaw)
+  if (optOut.invalid) runtime.streams.stderr.write(noVersionCheckWarning(optOutRaw ?? ''))
+
+  const result = await runVersionCheck({
+    ...target,
+    fetchFn: check.fetchFn,
+    now: check.now,
+    cacheDir: check.cacheDir,
+    writeStderr: (chunk) => runtime.streams.stderr.write(chunk),
+    suppressNotices: optOut.suppress,
+  })
+  if (result.refuse) {
+    runtime.setExitCode(result.exitCode)
+    throw new CommanderError(result.exitCode, 'pvault.versionWithdrawn', 'pvault version withdrawn')
+  }
+}
+
 export function buildProgram(runtime: CliRuntime): Command {
   const program = new Command()
+  const versionOutput = formatVersionOutput(
+    runtime.buildInfo?.cli ?? CLI_BUILD_INFO,
+    runtime.buildInfo?.agent ?? AGENT_BUILD_INFO
+  )
+  // Story 43.6 AC-4 — the skew warning goes to stderr. Registered before `.version()` so it runs
+  // before commander's own version listener, which writes stdout and exits.
+  program.on('option:version', () => {
+    if (versionOutput.stderr) runtime.streams.stderr.write(versionOutput.stderr)
+  })
   program
     .name('pvault')
     .description(
       'Project Vault CLI — fetch and inject secrets from the terminal using a machine-user API key.'
     )
-    .version(PACKAGE_VERSION)
+    .version(versionOutput.stdout.trimEnd(), '-V, --version')
     // Never let commander call process.exit() itself — this library is used both as a real
     // binary (bin.ts controls the real exit) and in-process by tests via parseAsync().
     .exitOverride()
@@ -148,6 +218,11 @@ export function buildProgram(runtime: CliRuntime): Command {
       })
     }
   })
+
+  // Story 43.6 — runs after `preSubcommand` (so `pvault run` without `--` never reaches it).
+  program.hook('preAction', (_thisCommand, actionCommand) =>
+    versionCheckHook(runtime, actionCommand)
+  )
 
   addMachineUserConfigFlags(
     program
@@ -309,6 +384,13 @@ export function buildProgram(runtime: CliRuntime): Command {
   return program
 }
 
+/** Story 43.6 AC-8 — the cache lives next to the session file; with neither `XDG_CONFIG_HOME` nor
+ * a home directory there is no cache (the check itself still runs). */
+function versionCheckCacheDir(env: Record<string, string | undefined>): string | null {
+  const hasBase = [env['XDG_CONFIG_HOME'], env['HOME'], env['USERPROFILE']].some(Boolean)
+  return hasBase ? sessionDir(env) : null
+}
+
 /** The real entry point (see bin.ts) — wires the actual Node process streams/env and the real
  * `@project-vault/agent`. Kept separate from `buildProgram` so every test above can inject fakes
  * for all of it instead of touching the real process. */
@@ -330,6 +412,7 @@ export async function runCli(argv: string[]): Promise<void> {
     spawn: ((command, args, options) =>
       realSpawn(command, args, options) as unknown as ChildProcessLike) satisfies SpawnFn,
     parentProcess: process as unknown as ParentProcessLike,
+    versionCheck: { fetchFn: fetch, now: Date.now, cacheDir: versionCheckCacheDir(process.env) },
   })
 
   try {
