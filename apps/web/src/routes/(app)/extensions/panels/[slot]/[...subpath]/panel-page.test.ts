@@ -719,6 +719,39 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1, rewired inli
         expect(button.disabled).toBe(false)
       })
 
+      it.each([403, 200])(
+        'a %i-with-html response whose body is still being read when navigation happens is dropped',
+        async (status) => {
+          let resolveBody: (value: unknown) => void = () => undefined
+          vi.stubGlobal(
+            'fetch',
+            vi.fn().mockResolvedValue({
+              ok: status >= 200 && status < 300,
+              status,
+              json: () => new Promise((resolve) => (resolveBody = resolve)),
+            })
+          )
+          const { rerender } = render(ExtensionPanelPage, { props: { data: actionData } })
+
+          const button = screen.getByText('Run').closest('button') as HTMLButtonElement
+          button.click()
+          await flush()
+          // Headers have arrived (fetch resolved); the body is still streaming when the user
+          // navigates to another slot.
+          await rerender({
+            data: { ...actionData, slot: 'other-slot', html: '<p>navigated away</p>' },
+          })
+
+          resolveBody({ code: 'denied', message: 'Request denied', html: '<p>stale banner</p>' })
+          await flush()
+
+          expect(panelContainer()?.innerHTML).toContain('navigated away')
+          expect(panelContainer()?.innerHTML).not.toContain('stale banner')
+          expect(statusRegion()?.textContent ?? '').not.toContain(GENERIC)
+          expect(button.hasAttribute('disabled')).toBe(false)
+        }
+      )
+
       it('a stale 403-with-html response after navigation is dropped, and the element is re-enabled', async () => {
         let resolveFetch: (value: unknown) => void = () => undefined
         vi.stubGlobal(

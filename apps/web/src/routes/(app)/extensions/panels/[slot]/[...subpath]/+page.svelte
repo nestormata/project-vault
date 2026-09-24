@@ -268,8 +268,12 @@
         // button permanently `disabled`/`aria-busy` once its response arrived, with no recovery —
         // calling `removeAttribute` on a since-detached element (the real content-swap case) is a
         // harmless no-op, so it is always safe to re-enable unconditionally here.
-        const isCurrent = requestGeneration === panelGeneration
         const parsed: unknown = await res.json().catch(() => null)
+        // Story 59.1 code review — evaluated only AFTER the body has been read: `fetch` resolves
+        // on headers, so a navigation or later click can land while the body is still streaming,
+        // and a generation captured before the `await` would let that stale html paint into the
+        // new panel.
+        const isCurrent = requestGeneration === panelGeneration
         const parsedBody: Record<string, unknown> =
           parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {}
 
