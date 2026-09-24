@@ -14,10 +14,10 @@ export type ParsedSemver = {
 }
 
 const MAX_SEMVER_LENGTH = 128
-const NUMERIC = '0|[1-9]\\d*'
-const PRERELEASE_ID = '(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)'
+const NUMERIC = String.raw`0|[1-9]\d*`
+const PRERELEASE_ID = String.raw`(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)`
 const STRICT_SEMVER = new RegExp(
-  `^(${NUMERIC})\\.(${NUMERIC})\\.(${NUMERIC})(?:-(${PRERELEASE_ID}(?:\\.${PRERELEASE_ID})*))?$`
+  String.raw`^(${NUMERIC})\.(${NUMERIC})\.(${NUMERIC})(?:-(${PRERELEASE_ID}(?:\.${PRERELEASE_ID})*))?$`
 )
 const NUMERIC_ID = /^\d+$/
 
