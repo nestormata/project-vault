@@ -13,8 +13,8 @@ export const BUILD_INFO_FILES = [
 
 export const DEV_BUILD_INFO: BuildInfoValue = { version: 'dev', commit: null }
 
-/** Same tag shape `container-publish.yml` validates, without the leading `v`. */
-export const RELEASE_VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+$/
+/** Same tag shape `container-publish.yml` validates, without the leading `v`; no leading zeros. */
+export const RELEASE_VERSION_PATTERN = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/
 export const SHORT_COMMIT_PATTERN = /^[0-9a-f]{7}$/
 
 function quote(value: string | null): string {

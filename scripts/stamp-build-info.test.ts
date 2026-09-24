@@ -49,6 +49,10 @@ describe('stampBuildInfoSource', () => {
 })
 
 describe('parseStampArgs', () => {
+  it('accepts zero components without leading zeros', () => {
+    expect(parseStampArgs(['--version', '0.10.0', '--commit', '3f2a1c9']).version).toBe('0.10.0')
+  })
+
   it('accepts a strict X.Y.Z version and a 7-char lowercase hex commit', () => {
     expect(parseStampArgs(['--version', '1.3.0', '--commit', '3f2a1c9'])).toEqual({
       version: '1.3.0',
@@ -60,6 +64,9 @@ describe('parseStampArgs', () => {
     [['--version', 'v1.3.0', '--commit', '3f2a1c9']],
     [['--version', '1.3.0-rc.1', '--commit', '3f2a1c9']],
     [['--version', '1.3', '--commit', '3f2a1c9']],
+    [['--version', '01.3.0', '--commit', '3f2a1c9']],
+    [['--version', '1.03.0', '--commit', '3f2a1c9']],
+    [['--version', '1.3.00', '--commit', '3f2a1c9']],
     [['--version', 'dev', '--commit', '3f2a1c9']],
     [['--version', '1.3.0', '--commit', '3F2A1C9']],
     [['--version', '1.3.0', '--commit', '3f2a1c90']],
