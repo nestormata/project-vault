@@ -13,6 +13,10 @@ export const OperationalEvent = {
   ADMIN_POOL_IDENTITY_VERIFIED: 'admin_pool.identity_verified',
   ADMIN_POOL_IDENTITY_DRIFTED: 'admin_pool.identity_drifted',
   STARTUP_METRICS_EXPOSED: 'startup.metrics_exposed',
+  // Story 43.6: boot-time resolution of the served CLI client-version policy.
+  CLI_VERSION_POLICY_EFFECTIVE: 'cli_version_policy.effective',
+  CLI_VERSION_POLICY_ENV_MINIMUM_IGNORED: 'cli_version_policy.env_minimum_ignored',
+  CLI_VERSION_POLICY_SELF_CONTRADICTION: 'cli_version_policy.self_contradiction',
   // Story 30.1 (DW-129) AC3: clock-drift magnitude signal (W2 mitigation) — measured at boot and
   // on a periodic interval by comparing this process's Date.now() against Postgres's own
   // SELECT now(). CLOCK_SKEW_CHECK_FAILED fires when the round-trip itself fails (DB

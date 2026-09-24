@@ -1,3 +1,4 @@
+import { OperationalEvent, SYSTEM_TRACE_ID } from '@project-vault/shared'
 import type { ReleaseVersion } from '../../lib/package-version.js'
 
 /**
@@ -135,7 +136,12 @@ function effectiveMinimum(
     return envMinimum
   }
   logger.warn(
-    { configured: envMinimum, baked: bakedMinimum },
+    {
+      eventType: OperationalEvent.CLI_VERSION_POLICY_ENV_MINIMUM_IGNORED,
+      traceId: SYSTEM_TRACE_ID,
+      configured: envMinimum,
+      baked: bakedMinimum,
+    },
     `CLI_MINIMUM_SUPPORTED_VERSION ${envMinimum} is lower than this release's built-in minimum ${bakedMinimum} and is ignored (the policy can only be tightened)`
   )
   return bakedMinimum
@@ -150,13 +156,22 @@ function warnOnSelfContradiction(
   if (current === null) return
   if (policy.minimumSupported && compareReleaseVersions(policy.minimumSupported, current) > 0) {
     logger.warn(
-      { minimumSupported: policy.minimumSupported, serverVersion: current },
+      {
+        eventType: OperationalEvent.CLI_VERSION_POLICY_SELF_CONTRADICTION,
+        traceId: SYSTEM_TRACE_ID,
+        minimumSupported: policy.minimumSupported,
+        serverVersion: current,
+      },
       'CLI minimum supported version is above this server release; every CLI will be warned it is below the minimum'
     )
   }
   if (policy.withdrawn.some((entry) => entry.version === current)) {
     logger.warn(
-      { serverVersion: current },
+      {
+        eventType: OperationalEvent.CLI_VERSION_POLICY_SELF_CONTRADICTION,
+        traceId: SYSTEM_TRACE_ID,
+        serverVersion: current,
+      },
       "this server's own release version is in the withdrawn CLI version list"
     )
   }
@@ -217,6 +232,8 @@ export function resolveCliVersionPolicy(
   }
   logger.info(
     {
+      eventType: OperationalEvent.CLI_VERSION_POLICY_EFFECTIVE,
+      traceId: SYSTEM_TRACE_ID,
       cliVersionPolicy: {
         minimumSupported: policy.minimumSupported,
         withdrawn: withdrawn.map(({ version, source }) => ({ version, source })),

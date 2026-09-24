@@ -29,6 +29,16 @@ describe('OperationalEvent', () => {
     expect(OperationalEvent.DB_ERROR).toBe('db.error')
   })
 
+  it('exposes the Story 43.6 CLI version policy boot event types', () => {
+    expect(OperationalEvent.CLI_VERSION_POLICY_EFFECTIVE).toBe('cli_version_policy.effective')
+    expect(OperationalEvent.CLI_VERSION_POLICY_ENV_MINIMUM_IGNORED).toBe(
+      'cli_version_policy.env_minimum_ignored'
+    )
+    expect(OperationalEvent.CLI_VERSION_POLICY_SELF_CONTRADICTION).toBe(
+      'cli_version_policy.self_contradiction'
+    )
+  })
+
   it('exposes the migrated vault eventType values', () => {
     expect(OperationalEvent.VAULT_INIT).toBe('vault.init')
     expect(OperationalEvent.VAULT_UNSEAL).toBe('vault.unseal')

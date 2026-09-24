@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { OperationalEvent, SYSTEM_TRACE_ID } from '@project-vault/shared'
 import {
   buildClientVersionPolicyData,
   CLI_MAX_REASON_CODE_POINTS,
@@ -220,6 +221,31 @@ describe('resolveCliVersionPolicy — tighten-only merge (D5)', () => {
     const log = logger()
     resolveCliVersionPolicy({ withdrawn: ['1.3.0'] }, NO_BAKED, log, RELEASE)
     expect(log.warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('tags every boot log line with a registered eventType and the system traceId', () => {
+    const log = logger()
+    resolveCliVersionPolicy(
+      { minimumSupported: '1.0.0', withdrawn: ['1.3.0'] },
+      { minimumSupported: '1.4.0', withdrawn: [] },
+      log,
+      RELEASE
+    )
+    expect(log.info.mock.calls[0]?.[0]).toMatchObject({
+      eventType: OperationalEvent.CLI_VERSION_POLICY_EFFECTIVE,
+      traceId: SYSTEM_TRACE_ID,
+    })
+    const warnEvents = log.warn.mock.calls.map(
+      (call) => (call[0] as { eventType?: unknown }).eventType
+    )
+    expect(warnEvents).toEqual([
+      OperationalEvent.CLI_VERSION_POLICY_ENV_MINIMUM_IGNORED,
+      OperationalEvent.CLI_VERSION_POLICY_SELF_CONTRADICTION,
+      OperationalEvent.CLI_VERSION_POLICY_SELF_CONTRADICTION,
+    ])
+    for (const call of log.warn.mock.calls) {
+      expect(call[0]).toMatchObject({ traceId: SYSTEM_TRACE_ID })
+    }
   })
 
   it('never warns about the release version for a dev server', () => {
