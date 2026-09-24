@@ -1,12 +1,56 @@
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+
+// The repository root has no YAML dependency; reuse the `yaml` package apps/api already depends on.
+const { parse: parseYaml } = createRequire(resolve(process.cwd(), 'apps/api/package.json'))(
+  'yaml'
+) as typeof import('yaml')
 
 /** Story 43.6 AC-5 — the `pvault` release workflow's contract. */
 const workflowPath = resolve(process.cwd(), '.github/workflows/cli-release.yml')
 
 function workflowText(): string {
   return readFileSync(workflowPath, 'utf8')
+}
+
+type Workflow = {
+  on?: Record<string, { types?: unknown; inputs?: Record<string, unknown> } | null>
+  concurrency?: { group?: unknown; 'cancel-in-progress'?: unknown }
+}
+
+function parseWorkflow(text: string): Workflow {
+  return parseYaml(text) as Workflow
+}
+
+/** Runs only for published releases or a manual dispatch that names the tag — nothing else. */
+function triggerViolations(workflow: Workflow): string[] {
+  const on = workflow.on ?? {}
+  const violations: string[] = []
+  const triggers = Object.keys(on).sort()
+  if (triggers.join(',') !== 'release,workflow_dispatch') {
+    violations.push(`unexpected triggers: ${triggers.join(', ')}`)
+  }
+  if (JSON.stringify(on.release?.types) !== JSON.stringify(['published'])) {
+    violations.push('release must trigger on types [published] only')
+  }
+  if (on.workflow_dispatch?.inputs?.tag == null) {
+    violations.push('workflow_dispatch must declare a tag input')
+  }
+  return violations
+}
+
+/** One `cli-release` concurrency group, never cancelling an in-flight run. */
+function concurrencyViolations(workflow: Workflow): string[] {
+  const violations: string[] = []
+  if (workflow.concurrency?.group !== 'cli-release') {
+    violations.push('concurrency group must be cli-release')
+  }
+  if (workflow.concurrency?.['cancel-in-progress'] !== false) {
+    violations.push('cancel-in-progress must be false')
+  }
+  return violations
 }
 
 function indexOfStep(workflow: string, marker: string): number {
@@ -17,10 +61,17 @@ function indexOfStep(workflow: string, marker: string): number {
 
 describe('cli release workflow contract (Story 43.6 AC-5)', () => {
   it('runs only for published releases or an explicit manual recovery dispatch', () => {
-    const workflow = workflowText()
-    expect(workflow).toMatch(/release:\s*\n\s*types:\s*\[published\]/)
-    expect(workflow).toMatch(/workflow_dispatch:\s*\n\s*inputs:\s*\n\s*tag:/)
-    expect(workflow).not.toMatch(/push:\s*\n\s*(branches|tags):/)
+    expect(triggerViolations(parseWorkflow(workflowText()))).toEqual([])
+  })
+
+  it.each<[string, string, string]>([
+    ['a push trigger', '  release:\n', '  push:\n    tags: [v*]\n  release:\n'],
+    ['another release type', 'types: [published]', 'types: [published, created]'],
+    ['no tag input', '      tag:\n', '      ref:\n'],
+  ])('the trigger check rejects a workflow with %s', (_label, from, to) => {
+    const text = workflowText()
+    expect(text).toContain(from)
+    expect(triggerViolations(parseWorkflow(text.replace(from, to)))).not.toEqual([])
   })
 
   it('accepts only strict vMAJOR.MINOR.PATCH tags (same regex as container-publish)', () => {
@@ -64,10 +115,17 @@ describe('cli release workflow contract (Story 43.6 AC-5)', () => {
   })
 
   it('serializes runs without cancelling (concurrency group cli-release)', () => {
-    const workflow = workflowText()
-    expect(workflow).toMatch(
-      /concurrency:\s*\n\s*group:\s*cli-release\s*\n\s*cancel-in-progress:\s*false/
-    )
+    expect(concurrencyViolations(parseWorkflow(workflowText()))).toEqual([])
+  })
+
+  it.each<[string, string, string]>([
+    ['another group', 'group: cli-release', 'group: cli-release-${{ github.ref }}'],
+    ['cancel-in-progress true', 'cancel-in-progress: false', 'cancel-in-progress: true'],
+    ['no concurrency block', '\nconcurrency:\n', '\nx-concurrency:\n'],
+  ])('the concurrency check rejects a workflow with %s', (_label, from, to) => {
+    const text = workflowText()
+    expect(text).toContain(from)
+    expect(concurrencyViolations(parseWorkflow(text.replace(from, to)))).not.toEqual([])
   })
 
   it('tests the unstamped tree, then stamps, builds, bundles, self-verifies and uploads in order', () => {

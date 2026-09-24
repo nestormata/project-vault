@@ -7,6 +7,7 @@ import {
   NOTICE_INTERVAL_MS,
   OK_TTL_MS,
   readVersionCheckCache,
+  stripTrailingSlashes,
   UNREACHABLE_TTL_MS,
   versionCheckCachePath,
   writeVersionCheckCache,
@@ -60,7 +61,7 @@ export function evaluateVersionPolicy(
 /** `<baseUrl>/api/v1/client-version-policy`, tolerating any number of trailing slashes. */
 export function policyEndpointUrl(baseUrl: string): string {
   const base = new URL(baseUrl)
-  base.pathname = `${base.pathname.replace(/\/+$/, '')}/`
+  base.pathname = `${stripTrailingSlashes(base.pathname)}/`
   base.search = ''
   base.hash = ''
   return new URL(POLICY_PATH, base).toString()

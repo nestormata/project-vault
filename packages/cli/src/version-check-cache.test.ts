@@ -11,6 +11,7 @@ import {
   isWithinTtl,
   MAX_CACHE_ENTRIES,
   readVersionCheckCache,
+  stripTrailingSlashes,
   versionCheckCachePath,
   writeVersionCheckCache,
   type VersionCheckCacheEntry,
@@ -198,5 +199,18 @@ describe('readVersionCheckCache / writeVersionCheckCache', () => {
     const read = readVersionCheckCache(path)
     expect(read.size).toBe(1)
     expect(['https://a', 'https://b']).toContain([...read.keys()][0])
+  })
+})
+
+describe('stripTrailingSlashes', () => {
+  it.each([
+    ['', ''],
+    ['/', ''],
+    ['///', ''],
+    ['/a//', '/a'],
+    ['/a', '/a'],
+    ['/a//b/', '/a//b'],
+  ])('%j → %j', (input, expected) => {
+    expect(stripTrailingSlashes(input)).toBe(expected)
   })
 })

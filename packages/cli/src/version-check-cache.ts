@@ -31,6 +31,13 @@ export function versionCheckCachePath(cacheDir: string): string {
   return join(cacheDir, VERSION_CHECK_CACHE_FILE)
 }
 
+/** `path` without any trailing `/` characters (a linear scan, no regex). */
+export function stripTrailingSlashes(path: string): string {
+  let end = path.length
+  while (end > 0 && path[end - 1] === '/') end -= 1
+  return path.slice(0, end)
+}
+
 /**
  * `origin + pathname` without trailing slashes: userinfo, query and fragment never reach the key
  * (or the cache file), and `https://h` / `https://h/` share one entry.
@@ -42,7 +49,7 @@ export function computeServerKey(baseUrl: string): string | null {
   } catch {
     return null
   }
-  return `${url.origin}${url.pathname.replace(/\/+$/, '')}`
+  return `${url.origin}${stripTrailingSlashes(url.pathname)}`
 }
 
 /** `true` while `timestamp` is within `ttlMs` of `now`; a future timestamp counts as expired. */

@@ -8,6 +8,7 @@ import {
   ENV_WITHDRAWN_REASON,
   isCliAcceptedReleaseVersion,
   isCliAcceptedVersion,
+  isStrictSemver,
   parseCliWithdrawnVersions,
   resolveCliVersionPolicy,
   strictReleaseVersionOrNull,
@@ -52,6 +53,62 @@ const MAX_SAFE = String(Number.MAX_SAFE_INTEGER)
 const UNSAFE = String(Number.MAX_SAFE_INTEGER + 1)
 const LONGEST_ACCEPTED = `1.0.0-${'a'.repeat(CLI_MAX_VERSION_LENGTH - 6)}`
 const TOO_LONG = `${LONGEST_ACCEPTED}a`
+
+describe('isStrictSemver', () => {
+  it.each([
+    '0.0.0',
+    '1.2.3',
+    '10.20.30',
+    '99999999999999999999.0.0',
+    '1.0.0-0',
+    '1.0.0-0a',
+    '1.0.0-00a',
+    '1.0.0-a',
+    '1.0.0-A.B',
+    '1.0.0-rc.1',
+    '1.0.0-0.0',
+    '1.0.0-x-y.z',
+    '1.0.0--',
+    '1.0.0-a-',
+    '1.0.0-alpha.0x',
+    '1.0.0-x.7.z.92',
+    '1.0.0-9.a',
+  ])('accepts %j', (version) => {
+    expect(isStrictSemver(version)).toBe(true)
+  })
+
+  it.each([
+    '',
+    '1',
+    '1.0',
+    '1.0.0.0.0',
+    'v1.0.0',
+    'V1.0.0',
+    '01.0.0',
+    '1.00.0',
+    '1.0.00',
+    '-1.0.0',
+    '1.a.0',
+    '1..0',
+    ' 1.0.0',
+    '1.0.0 ',
+    '1.0.0\n',
+    '1.0.0-',
+    '1.0.0-00',
+    '1.0.0-01',
+    '1.0.0-a.01',
+    '1.0.0-a..b',
+    '1.0.0-a.',
+    '1.0.0-.a',
+    '1.0.0-a_b',
+    '1.0.0-é',
+    '1.0.0+build',
+    '1.0.0-rc.1+build',
+    '1.0.0-a+',
+  ])('rejects %j', (version) => {
+    expect(isStrictSemver(version)).toBe(false)
+  })
+})
 
 describe('CLI parser limits', () => {
   it('match the limits the pvault CLI enforces', () => {

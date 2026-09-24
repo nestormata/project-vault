@@ -10,9 +10,28 @@ import type { ReleaseVersion } from '../../lib/package-version.js'
 
 /** Strict `X.Y.Z` — no prerelease, no build metadata, no leading `v`. */
 export const STRICT_RELEASE_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+/** A prerelease identifier: numeric without a leading zero, or alphanumeric with a non-digit. */
+const PRERELEASE_NUMERIC_ID = /^(0|[1-9]\d*)$/
+const PRERELEASE_CHARS = /^[0-9a-zA-Z-]+$/
+const NON_DIGIT = /[a-zA-Z-]/
+
+function isPrereleaseIdentifier(id: string): boolean {
+  return PRERELEASE_NUMERIC_ID.test(id) || (PRERELEASE_CHARS.test(id) && NON_DIGIT.test(id))
+}
+
 /** Strict SemVer 2.0.0 with an optional prerelease; build metadata and a leading `v` rejected. */
-export const STRICT_SEMVER =
-  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-(0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(\.(0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*)?$/
+export function isStrictSemver(version: string): boolean {
+  const dash = version.indexOf('-')
+  if (dash === -1) return STRICT_RELEASE_VERSION.test(version)
+  return (
+    STRICT_RELEASE_VERSION.test(version.slice(0, dash)) &&
+    version
+      .slice(dash + 1)
+      .split('.')
+      .every(isPrereleaseIdentifier)
+  )
+}
+
 export const MAX_ENV_WITHDRAWN_VERSIONS = 50
 
 /**
@@ -31,7 +50,7 @@ const CLI_VERSION_LIMITS =
 
 /** True when the pvault CLI's strict-semver parser accepts `version`. */
 export function isCliAcceptedVersion(version: string): boolean {
-  if (version.length > CLI_MAX_VERSION_LENGTH || !STRICT_SEMVER.test(version)) return false
+  if (version.length > CLI_MAX_VERSION_LENGTH || !isStrictSemver(version)) return false
   const dash = version.indexOf('-')
   const core = (dash === -1 ? version : version.slice(0, dash)).split('.')
   const prerelease = dash === -1 ? [] : version.slice(dash + 1).split('.')
