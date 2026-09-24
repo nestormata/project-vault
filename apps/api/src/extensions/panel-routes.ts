@@ -123,6 +123,18 @@ const ExtensionActionOkSchema = z.object({
   message: z.string().optional(),
 })
 
+/**
+ * Story 59.1 AC5 — the non-2xx body of `POST /extensions/panels/:slot/actions` for the
+ * extension-produced outcomes (400 `validation_failed`, 403 `denied`, 409 `conflict`, 500
+ * `internal_error`). `ApiErrorSchema` plus the optional extension-computed `html`: without it the
+ * response serializer strips every undeclared field, so a non-ok result's html would never reach
+ * the panel host. 401/404/429 keep plain `ApiErrorSchema` — those are host prechecks produced
+ * before the hook runs and never carry html.
+ */
+const ExtensionActionErrorSchema = ApiErrorSchema.extend({
+  html: z.string().optional(),
+}).meta({ id: 'ExtensionActionError' })
+
 const ExtensionActionQuerySchema = z.object({
   projectId: z.string().optional(),
   resourceId: z.string().optional(),
@@ -184,6 +196,12 @@ const FIXED_STATUS_BY_HOST_PRECHECK_OUTCOME = {
  * `validation_failed`/`conflict` — a denial reason is exactly the kind of detail this codebase's
  * existing discipline says must not leak (mirrors `renderExtensionPanel()`'s own
  * `panel_unavailable` non-distinguishing convention for a project-visibility denial).
+ *
+ * Story 59.1 — forwarding rule: a field reaches the caller if and only if its published contract
+ * says it is caller-facing. The extension-computed `html` is caller-facing on EVERY outcome (the
+ * panel host renders it after sanitization), so it is forwarded for `validation_failed`/`denied`/
+ * `conflict`/`error` exactly as for `ok`; `denied.message` stays suppressed. Host-precheck
+ * outcomes (`invalid_slot`/`not_found`) never carry html — the hook has not run.
  */
 function mapModuleActionOutcomeToResponse(result: ModuleActionOutcome): {
   status: number
@@ -318,13 +336,13 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
       querystring: ExtensionActionQuerySchema,
       response: {
         200: ExtensionActionOkSchema,
-        400: ApiErrorSchema,
+        400: ExtensionActionErrorSchema,
         401: ApiErrorSchema,
-        403: ApiErrorSchema,
+        403: ExtensionActionErrorSchema,
         404: ApiErrorSchema,
-        409: ApiErrorSchema,
+        409: ExtensionActionErrorSchema,
         429: ApiErrorSchema,
-        500: ApiErrorSchema,
+        500: ExtensionActionErrorSchema,
       },
     },
     security: {

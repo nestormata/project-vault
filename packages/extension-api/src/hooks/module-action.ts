@@ -54,16 +54,32 @@ export type ModuleActionRequest = {
  * typed-outcome pattern already established elsewhere in this package: a caller branches on
  * `outcome`, never on parsing a thrown error's message text.
  *
- * `ok.html`/`ok.message` map directly onto CM's real `replaceWithResponse()`'s two accepted
- * success shapes. `error` is the degraded outcome for an unexpected/thrown failure or a timeout —
- * the host never forwards the extension's own thrown error text to the client (AC5).
+ * `error` is the degraded outcome for an unexpected/thrown failure or a timeout — the host never
+ * forwards the extension's own thrown error text to the client (AC5).
+ *
+ * Story 59.1 — `html` is optional on EVERY outcome, not only `ok`:
+ *
+ * - (a) Whenever present, `html` is rendered to the end user by PV's panel host, after DOMPurify
+ *   sanitization, replacing the panel container — for success and failure outcomes alike. (Older
+ *   docs described `ok.html`/`ok.message` as CM's `replaceWithResponse()` success shapes; that is
+ *   historical terminology — since Stories 29.1/29.2 the host-owned click handler is the consumer.)
+ * - (b) A field is forwarded to the caller if and only if its published contract says it is
+ *   caller-facing. `validation_failed.message` and `conflict.message` are forwarded verbatim;
+ *   `denied.message` is NEVER forwarded (the caller always sees a fixed generic denial message).
+ * - (c) `error.html` is shown to end users: it must never contain exception text, stack traces or
+ *   database detail. PV cannot inspect or enforce this — the extension author is responsible.
+ * - (d) `html` only ever comes from a result the extension explicitly RETURNS. A thrown hook, a
+ *   timeout or a malformed result always degrades to a bare `{ outcome: 'error' }` with no html.
+ *   A non-string `html` on any outcome makes the whole result malformed.
+ * - (e) PV does not inspect, cache or re-scope `html`: the extension alone is responsible for
+ *   rendering only data belonging to the request's `context.orgId`/`context.identity`.
  */
 export type ActionResult =
   | { outcome: 'ok'; html?: string; message?: string }
-  | { outcome: 'validation_failed'; message: string }
-  | { outcome: 'denied'; message?: string }
-  | { outcome: 'conflict'; message?: string }
-  | { outcome: 'error' }
+  | { outcome: 'validation_failed'; message: string; html?: string }
+  | { outcome: 'denied'; message?: string; html?: string }
+  | { outcome: 'conflict'; message?: string; html?: string }
+  | { outcome: 'error'; html?: string }
 
 export type ModuleAction = {
   onAction(context: ModuleActionContext, request: ModuleActionRequest): Promise<ActionResult>

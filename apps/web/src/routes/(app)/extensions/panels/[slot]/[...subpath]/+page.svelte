@@ -116,7 +116,8 @@
   const GENERIC_ACTION_ERROR_MESSAGE = 'Unable to complete this action. Please try again.'
 
   // Story 29.2 AC5 — a local override for the panel container's rendered content: when an
-  // action's response carries a non-empty `html` result, this is set to that HTML and bound into
+  // action's response carries a non-empty `html` result (Story 59.1: on a 2xx OR a non-2xx
+  // response — an extension's own failure banner is rendered too), this is set to that HTML and bound into
   // the SAME `use:renderPanelHtml={...}` expression the template already uses for `data.html`
   // (see the template below), so the result flows through the exact same sanitize-and-inject
   // pipeline rather than a second, independently-sanitized-or-unsanitized `innerHTML` assignment.
@@ -135,6 +136,42 @@
   function reenableActionElement(element: HTMLElement): void {
     element.removeAttribute('disabled')
     element.removeAttribute('aria-busy')
+  }
+
+  /** Story 59.1 AC6 — the one shared reader for an action response's `html`, used by both the
+   * 2xx and the non-2xx branch: only a non-empty string counts (empty/absent/non-string is
+   * ignored, leaving the container untouched). */
+  function readNonEmptyHtml(body: Record<string, unknown>): string | undefined {
+    const html = body['html']
+    return typeof html === 'string' && html.length > 0 ? html : undefined
+  }
+
+  /** Story 29.2 AC7 — the status-region text for a non-2xx response: the server's own `message`
+   * is shown verbatim only for `validation_failed`/`conflict` (the two outcomes `panel-routes.ts`
+   * documents as user-facing); every other outcome (`denied`/`invalid_slot`/`action_not_found`/
+   * `internal_error`/anything unrecognized) gets a fixed, generic, non-leaking message. */
+  function failureStatusMessage(body: Record<string, unknown>): string {
+    const code = body['code']
+    const serverMessage = body['message']
+    return (code === 'validation_failed' || code === 'conflict') &&
+      typeof serverMessage === 'string'
+      ? serverMessage
+      : GENERIC_ACTION_ERROR_MESSAGE
+  }
+
+  /** Story 59.1 AC6 — applies an action response's html (2xx or non-2xx) through the single
+   * `actionResultHtml` binding, i.e. the one `renderPanelHtml` sanitize-and-inject path. A
+   * current response with NEW html replaces the container's content (the clicked element is gone,
+   * so there is nothing to re-enable). A stale response, or html identical to what is already
+   * bound (Svelte does not re-run the action's `update()` for an unchanged value, so the clicked
+   * element — e.g. a banner's own "Retry" button — would otherwise stay disabled forever),
+   * re-enables the clicked element instead; no re-render is forced. */
+  function applyActionHtml(html: string, actionEl: HTMLElement, isCurrent: boolean): void {
+    if (isCurrent && html !== (actionResultHtml ?? data.html)) {
+      actionResultHtml = html
+      return
+    }
+    reenableActionElement(actionEl)
   }
 
   /**
@@ -236,17 +273,13 @@
         const parsedBody: Record<string, unknown> =
           parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {}
 
+        const html = readNonEmptyHtml(parsedBody)
+
         if (res.ok) {
-          const html = parsedBody['html']
-          if (typeof html === 'string' && html.length > 0) {
-            if (isCurrent) {
-              // AC5 — the clicked element no longer exists once this replaces the container's
-              // entire content, so there is nothing left to re-enable (AC8).
-              actionResultHtml = html
-              statusMessage = undefined
-            } else {
-              reenableActionElement(actionEl)
-            }
+          if (html !== undefined) {
+            // AC5 — replaces the container's entire content (see `applyActionHtml`).
+            if (isCurrent) statusMessage = undefined
+            applyActionHtml(html, actionEl, isCurrent)
             return
           }
           const message = parsedBody['message']
@@ -257,18 +290,16 @@
           return
         }
 
-        // AC7 — the server's own `message` is shown verbatim only for `validation_failed`/
-        // `conflict` (the two outcomes `panel-routes.ts` documents as user-facing); every other
-        // outcome (`denied`/`invalid_slot`/`action_not_found`/`internal_error`/anything
-        // unrecognized) gets a fixed, generic, non-leaking message.
+        // AC7 — the status region keeps announcing the failure (Story 59.1: even when the
+        // extension's own failure html replaces the container, which is not a live region).
         if (isCurrent) {
-          const code = parsedBody['code']
-          const serverMessage = parsedBody['message']
-          statusMessage =
-            (code === 'validation_failed' || code === 'conflict') &&
-            typeof serverMessage === 'string'
-              ? serverMessage
-              : GENERIC_ACTION_ERROR_MESSAGE
+          statusMessage = failureStatusMessage(parsedBody)
+        }
+        // Story 59.1 AC6 — a non-2xx response's extension-computed html is rendered through the
+        // exact same path as a 2xx response's.
+        if (html !== undefined) {
+          applyActionHtml(html, actionEl, isCurrent)
+          return
         }
         reenableActionElement(actionEl)
       })

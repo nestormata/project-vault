@@ -547,7 +547,14 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // referencing them — no existing type's required shape changes, and the floor stays `>=3.0.0` so
 // every already-shipped extension (including any real, currently-deployed CentralizeMe build)
 // keeps loading unmodified regardless.
-export const EXTENSION_API_VERSION = '3.23.0'
+// Story 59.1 — bumped as an additive-minor (3.23.0 -> 3.24.0): `ActionResult` (see
+// `hooks/module-action.ts`) gains an optional `html?: string` on its `validation_failed`/
+// `denied`/`conflict`/`error` variants (previously `ok` only), a purely additive optional field
+// on a type PV receives from the extension — every existing implementation that never sets `html`
+// type-checks and behaves exactly as before, and the floor stays `>=3.0.0` so every
+// already-shipped extension (including any real, currently-deployed CentralizeMe build) keeps
+// loading unmodified regardless.
+export const EXTENSION_API_VERSION = '3.24.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

@@ -624,5 +624,224 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1, rewired inli
         expect(firstButton.hasAttribute('aria-busy')).toBe(false)
       })
     })
+
+    // Story 59.1 AC6 — extension html on a non-2xx action response is rendered through the same
+    // single sanitize-and-inject path as 2xx html; the status region keeps today's announcement.
+    describe('Story 59.1: non-2xx action html', () => {
+      const GENERIC = 'Unable to complete this action. Please try again.'
+
+      function statusRegion(): Element | null {
+        return document.querySelector('[aria-live="polite"]')
+      }
+
+      it.each([
+        [
+          403,
+          { code: 'denied', message: 'Request denied' },
+          '<p>You no longer have access to this share.</p>',
+          'You no longer have access to this share.',
+          GENERIC,
+        ],
+        [
+          409,
+          { code: 'conflict', message: 'Already renamed' },
+          '<p>Conflict banner</p>',
+          'Conflict banner',
+          'Already renamed',
+        ],
+        [
+          500,
+          { code: 'internal_error', message: 'Request failed' },
+          '<p>Temporarily unavailable</p>',
+          'Temporarily unavailable',
+          GENERIC,
+        ],
+      ] as const)(
+        '%i with html replaces the container and keeps the status announcement',
+        async (status, body, html, expectedContent, expectedStatus) => {
+          vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(status, { ...body, html })))
+          render(ExtensionPanelPage, { props: { data: actionData } })
+
+          screen.getByText('Run').click()
+          await flush()
+
+          const container = panelContainer()
+          expect(container?.innerHTML).toContain(expectedContent)
+          expect(container?.querySelector('[data-pv-action]')).toBeNull()
+          expect(statusRegion()?.textContent).toContain(expectedStatus)
+          expect(container?.contains(statusRegion())).toBe(false)
+          if (status === 403) expect(statusRegion()?.textContent).not.toContain('Request denied')
+        }
+      )
+
+      it('failure html is sanitized exactly like success html (no script, handler, style, link or iframe)', async () => {
+        const hostile =
+          '<img src=x onerror="window.__pwned=1"><script>window.__pwned=2</script>' +
+          '<style>body{display:none}</style><link rel="stylesheet" href="https://evil.example/x.css">' +
+          '<iframe src="https://evil.example"></iframe><p>ok</p>'
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockResolvedValue(jsonResponse(403, { code: 'denied', html: hostile }))
+        )
+        render(ExtensionPanelPage, { props: { data: actionData } })
+
+        screen.getByText('Run').click()
+        await flush()
+
+        const container = panelContainer()
+        expect(container?.innerHTML).toContain('<p>ok</p>')
+        expect(container?.querySelector('script, style, link, iframe')).toBeNull()
+        expect(container?.innerHTML).not.toContain('onerror')
+        expect((window as unknown as { __pwned?: unknown }).__pwned).toBeUndefined()
+      })
+
+      it.each([
+        ['an empty string', { html: '' }],
+        ['no html key', {}],
+        ['a non-string', { html: 42 }],
+      ])('%s html leaves the container untouched', async (_label, extra) => {
+        vi.stubGlobal(
+          'fetch',
+          vi
+            .fn()
+            .mockResolvedValue(
+              jsonResponse(403, { code: 'denied', message: 'Request denied', ...extra })
+            )
+        )
+        render(ExtensionPanelPage, { props: { data: actionData } })
+
+        const button = screen.getByText('Run').closest('button') as HTMLButtonElement
+        button.click()
+        await flush()
+
+        expect(panelContainer()?.querySelector('[data-pv-action]')).not.toBeNull()
+        expect(statusRegion()?.textContent).toContain(GENERIC)
+        expect(button.disabled).toBe(false)
+      })
+
+      it('a stale 403-with-html response after navigation is dropped, and the element is re-enabled', async () => {
+        let resolveFetch: (value: unknown) => void = () => undefined
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockReturnValue(new Promise((resolve) => (resolveFetch = resolve)))
+        )
+        const { rerender } = render(ExtensionPanelPage, { props: { data: actionData } })
+
+        const button = screen.getByText('Run').closest('button') as HTMLButtonElement
+        button.click()
+        await flush()
+        await rerender({
+          data: { ...actionData, slot: 'other-slot', html: '<p>navigated away</p>' },
+        })
+
+        resolveFetch(jsonResponse(403, { code: 'denied', html: '<p>stale banner</p>' }))
+        await flush()
+
+        expect(panelContainer()?.innerHTML).toContain('navigated away')
+        expect(panelContainer()?.innerHTML).not.toContain('stale banner')
+        expect(button.hasAttribute('disabled')).toBe(false)
+      })
+
+      it('a stale 403-with-html response superseded by a later click is dropped, and its element is re-enabled', async () => {
+        let resolveFirst: (value: unknown) => void = () => undefined
+        let resolveSecond: (value: unknown) => void = () => undefined
+        vi.stubGlobal(
+          'fetch',
+          vi
+            .fn()
+            .mockReturnValueOnce(new Promise((resolve) => (resolveFirst = resolve)))
+            .mockReturnValueOnce(new Promise((resolve) => (resolveSecond = resolve)))
+        )
+        render(ExtensionPanelPage, {
+          props: {
+            data: {
+              ...actionData,
+              html:
+                '<button type="button" data-pv-action="first-action">First</button>' +
+                '<button type="button" data-pv-action="second-action">Second</button>',
+            },
+          },
+        })
+
+        const firstButton = screen.getByText('First')
+        firstButton.click()
+        await flush()
+        screen.getByText('Second').click()
+        await flush()
+
+        resolveSecond(jsonResponse(200, { message: 'second result' }))
+        await flush()
+        resolveFirst(jsonResponse(403, { code: 'denied', html: '<p>stale banner</p>' }))
+        await flush()
+
+        expect(panelContainer()?.innerHTML).not.toContain('stale banner')
+        expect(screen.getByText('second result')).toBeTruthy()
+        expect(firstButton.hasAttribute('disabled')).toBe(false)
+        expect(firstButton.hasAttribute('aria-busy')).toBe(false)
+      })
+
+      const RETRY_BANNER =
+        '<p>Share revoked</p><button type="button" data-pv-action="retry">Retry</button>'
+
+      it.each([
+        [403, { code: 'denied', message: 'Request denied' }, GENERIC],
+        [200, {}, undefined],
+      ] as const)(
+        'identical html on two consecutive %i responses re-enables the second clicked element',
+        async (status, body, expectedStatus) => {
+          vi.stubGlobal(
+            'fetch',
+            vi.fn().mockResolvedValue(jsonResponse(status, { ...body, html: RETRY_BANNER }))
+          )
+          render(ExtensionPanelPage, { props: { data: actionData } })
+
+          screen.getByText('Run').click()
+          await flush()
+          const retry = screen.getByText('Retry').closest('button') as HTMLButtonElement
+          retry.click()
+          await flush()
+
+          expect(screen.getByText('Retry')).toBe(retry)
+          expect(retry.disabled).toBe(false)
+          expect(retry.hasAttribute('aria-busy')).toBe(false)
+          if (expectedStatus !== undefined) {
+            expect(statusRegion()?.textContent).toContain(expectedStatus)
+          }
+        }
+      )
+
+      it('a non-JSON 500 from an intermediary leaves the container untouched with the generic message', async () => {
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockResolvedValue({
+            ok: false,
+            status: 500,
+            json: () => Promise.reject(new SyntaxError('Unexpected token <')),
+          })
+        )
+        render(ExtensionPanelPage, { props: { data: actionData } })
+
+        screen.getByText('Run').click()
+        await flush()
+
+        expect(panelContainer()?.querySelector('[data-pv-action]')).not.toBeNull()
+        expect(statusRegion()?.textContent).toContain(GENERIC)
+      })
+
+      it.each([
+        [429, { code: 'rate_limited', message: 'Too many requests' }],
+        [404, { code: 'action_not_found', message: 'Action not found' }],
+      ] as const)('a host-generated %i without html behaves as before', async (status, body) => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(status, body)))
+        render(ExtensionPanelPage, { props: { data: actionData } })
+
+        screen.getByText('Run').click()
+        await flush()
+
+        expect(panelContainer()?.querySelector('[data-pv-action]')).not.toBeNull()
+        expect(statusRegion()?.textContent).toContain(GENERIC)
+        expect(statusRegion()?.textContent).not.toContain(body.message)
+      })
+    })
   })
 })

@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm'
 import type { FastifyReply } from 'fastify'
 import { getDb, withOrg } from '@project-vault/db'
 import {
+  auditLogEntries,
   extensionRequestStates,
   organizations,
   projectMemberships,
@@ -50,6 +51,10 @@ const NAV_SETTINGS_ITEM_ID = 'settings-page'
 const SHOULD_NOT_RUN_HTML = 'should not run'
 const HELLO_HTML = '<p>hello</p>'
 const ACME_BRAND_THEME = 'acme-brand'
+// Story 59.1 — literals shared by the action-route tests (sonarjs/no-duplicate-string).
+const UNKNOWN_SLOT = 'not-a-real-slot'
+const NAME_REQUIRED_MESSAGE = 'Name is required'
+const SECRET_DENIAL_REASON = 'secret internal reason'
 
 const suite = createUnsealedRouteSuite(initVault, TEST_PASSPHRASE)
 
@@ -976,7 +981,7 @@ describe('POST /api/v1/extensions/panels/:slot/actions (Story 25.5)', () => {
     const member = await createDirectAuthenticatedUser(suite.app, 'action-badslot', 'member')
     const res = await postAction(
       suite.app,
-      'not-a-real-slot',
+      UNKNOWN_SLOT,
       { kind: RENAME_ACTION_KIND },
       member.cookies
     )
@@ -1028,7 +1033,7 @@ describe('POST /api/v1/extensions/panels/:slot/actions (Story 25.5)', () => {
 
   it('AC5: validation_failed maps to 400 and forwards the extension-supplied message', async () => {
     __setExtensionStateForTests(
-      actionState(async () => ({ outcome: 'validation_failed', message: 'Name is required' }))
+      actionState(async () => ({ outcome: 'validation_failed', message: NAME_REQUIRED_MESSAGE }))
     )
     const member = await createDirectAuthenticatedUser(suite.app, 'action-validation', 'member')
     const res = await postAction(
@@ -1038,7 +1043,7 @@ describe('POST /api/v1/extensions/panels/:slot/actions (Story 25.5)', () => {
       member.cookies
     )
     expect(res.statusCode).toBe(400)
-    expect(res.json()).toMatchObject({ message: 'Name is required' })
+    expect(res.json()).toMatchObject({ message: NAME_REQUIRED_MESSAGE })
   })
 
   it('AC5: denied maps to 403 with a fixed generic message — the extension-supplied message never leaks', async () => {
@@ -1233,7 +1238,7 @@ describe('POST /api/v1/extensions/panels/:slot/actions (Story 25.5)', () => {
       const member = await createDirectAuthenticatedUser(suite.app, 'shape-invalid-slot', 'member')
       const res = await postAction(
         suite.app,
-        'not-a-real-slot',
+        UNKNOWN_SLOT,
         { kind: RENAME_ACTION_KIND },
         member.cookies
       )
@@ -1271,7 +1276,7 @@ describe('POST /api/v1/extensions/panels/:slot/actions (Story 25.5)', () => {
 
     it('denied: exactly { code: "denied", message: "Request denied" } — never the extension-supplied message', async () => {
       __setExtensionStateForTests(
-        actionState(async () => ({ outcome: 'denied', message: 'secret internal reason' }))
+        actionState(async () => ({ outcome: 'denied', message: SECRET_DENIAL_REASON }))
       )
       const member = await createDirectAuthenticatedUser(suite.app, 'shape-denied', 'member')
       const res = await postAction(
@@ -1676,5 +1681,147 @@ describe('Story 40.1: extension-request-state peek/consume on POST .../actions (
 
     expect(seen).toContainEqual({ journey: 'a' })
     expect(seen).toContainEqual({ journey: 'b' })
+  })
+})
+
+// Story 59.1 AC5/AC9/AC10 — extension-computed html on a non-ok outcome survives the route's
+// response serializer; host prechecks never carry html; nothing about it reaches the audit log.
+const DENIED_HTML = '<section data-state="denied">No access</section>'
+
+async function countAuditRows(orgId: string): Promise<number> {
+  const rows = await withOrg(orgId, (tx) =>
+    tx.select({ id: auditLogEntries.id }).from(auditLogEntries)
+  )
+  return rows.length
+}
+
+describe('POST /api/v1/extensions/panels/:slot/actions — Story 59.1 non-ok html', () => {
+  suite.registerLifecycle()
+
+  beforeEach(() => {
+    __resetExtensionStateForTests()
+  })
+
+  it('denied: 403 forwards html but never the extension-supplied message, and writes no audit row', async () => {
+    __setExtensionStateForTests(
+      actionState(async () => ({
+        outcome: 'denied',
+        message: SECRET_DENIAL_REASON,
+        html: DENIED_HTML,
+      }))
+    )
+    const member = await createDirectAuthenticatedUser(suite.app, 'action-denied-html', 'member')
+    const auditBefore = await countAuditRows(member.orgId)
+    const res = await postAction(
+      suite.app,
+      ACTION_SLOT,
+      { kind: RENAME_ACTION_KIND },
+      member.cookies
+    )
+    expect(res.statusCode).toBe(403)
+    expect(res.json()).toEqual({ code: 'denied', message: 'Request denied', html: DENIED_HTML })
+    expect(JSON.stringify(res.json())).not.toContain(SECRET_DENIAL_REASON)
+    expect(await countAuditRows(member.orgId)).toBe(auditBefore)
+  })
+
+  it.each([
+    [
+      'conflict',
+      { outcome: 'conflict', message: 'Already renamed', html: '<p>C</p>' },
+      409,
+      { code: 'conflict', message: 'Already renamed', html: '<p>C</p>' },
+    ],
+    [
+      'error',
+      { outcome: 'error', html: '<p>E</p>' },
+      500,
+      { code: 'internal_error', message: 'Request failed', html: '<p>E</p>' },
+    ],
+    [
+      'validation_failed',
+      { outcome: 'validation_failed', message: NAME_REQUIRED_MESSAGE, html: '<p>V</p>' },
+      400,
+      { code: 'validation_failed', message: NAME_REQUIRED_MESSAGE, html: '<p>V</p>' },
+    ],
+  ] as const)('%s: forwards html with the exact body', async (label, result, status, body) => {
+    __setExtensionStateForTests(actionState(async () => ({ ...result })))
+    const member = await createDirectAuthenticatedUser(suite.app, `action-${label}-html`, 'member')
+    const res = await postAction(
+      suite.app,
+      ACTION_SLOT,
+      { kind: RENAME_ACTION_KIND },
+      member.cookies
+    )
+    expect(res.statusCode).toBe(status)
+    expect(res.json()).toEqual(body)
+  })
+
+  describe('host prechecks never carry html, even when the loaded hook would return it', () => {
+    const htmlHook = () => vi.fn(async () => ({ outcome: 'denied' as const, html: DENIED_HTML }))
+
+    it('401 unauthenticated', async () => {
+      const onAction = htmlHook()
+      __setExtensionStateForTests(actionState(onAction))
+      const res = await postAction(suite.app, ACTION_SLOT, { kind: RENAME_ACTION_KIND })
+      expect(res.statusCode).toBe(401)
+      expect(res.json<Record<string, unknown>>()).not.toHaveProperty('html')
+      expect(onAction).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['csrf_rejected', ACTION_SLOT, { kind: RENAME_ACTION_KIND }, {}, 'omit', 403],
+      [
+        'Sec-Fetch-Site cross-site',
+        ACTION_SLOT,
+        { kind: RENAME_ACTION_KIND },
+        { 'sec-fetch-site': 'cross-site' },
+        {},
+        403,
+      ],
+      ['invalid_action', ACTION_SLOT, { accessGroupId: 'grp_1' }, {}, {}, 400],
+      ['invalid_slot', UNKNOWN_SLOT, { kind: RENAME_ACTION_KIND }, {}, {}, 400],
+      ['action_not_found', ACTION_SLOT, { kind: 'delete-everything' }, {}, {}, 404],
+    ] as const)('%s', async (label, slot, body, headers, csrf, status) => {
+      const onAction = htmlHook()
+      __setExtensionStateForTests(actionState(onAction))
+      const member = await createDirectAuthenticatedUser(
+        suite.app,
+        `action-precheck-${label.replace(/[^a-z]/gi, '-').toLowerCase()}`,
+        'member'
+      )
+      const res = await postAction(
+        suite.app,
+        slot,
+        { ...body },
+        member.cookies,
+        { ...headers },
+        csrf === 'omit' ? 'omit' : {}
+      )
+      expect(res.statusCode).toBe(status)
+      expect(res.json<Record<string, unknown>>()).not.toHaveProperty('html')
+      expect(JSON.stringify(res.json())).not.toContain('No access')
+      expect(onAction).not.toHaveBeenCalled()
+    })
+  })
+
+  it('two concurrent members of two orgs each receive only their own org html', async () => {
+    __setExtensionStateForTests(
+      actionState(async (context) => {
+        await Promise.resolve()
+        return { outcome: 'denied', html: `<p>org=${context.orgId}</p>` }
+      })
+    )
+    const memberA = await createDirectAuthenticatedUser(suite.app, 'action-html-org-a', 'member')
+    const memberB = await createDirectAuthenticatedUser(suite.app, 'action-html-org-b', 'member')
+    const [resA, resB] = await Promise.all([
+      postAction(suite.app, ACTION_SLOT, { kind: RENAME_ACTION_KIND }, memberA.cookies),
+      postAction(suite.app, ACTION_SLOT, { kind: RENAME_ACTION_KIND }, memberB.cookies),
+    ])
+    expect(resA.statusCode).toBe(403)
+    expect(resB.statusCode).toBe(403)
+    expect(resA.json<{ html?: string }>().html).toBe(`<p>org=${memberA.orgId}</p>`)
+    expect(resB.json<{ html?: string }>().html).toBe(`<p>org=${memberB.orgId}</p>`)
+    expect(JSON.stringify(resA.json())).not.toContain(memberB.orgId)
+    expect(JSON.stringify(resB.json())).not.toContain(memberA.orgId)
   })
 })

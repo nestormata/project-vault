@@ -53,6 +53,10 @@ export type OAuthHandoffRedirectResult = {
  * `denied`/`conflict`/`error`), reused rather than reinvented, so PV's route layer can map them
  * the same way `module-action-handler.ts`'s `isValidActionResult()` already does, extended for the
  * new redirect variant.
+ *
+ * Story 59.1 — the widened `ActionResult` (optional `html` on every outcome) is reused unchanged.
+ * On these routes a returned `html` is forwarded only as an inert JSON string field of the
+ * `application/json` response body; no PV client renders it as markup here.
  */
 export type OAuthHandoffHooks = {
   /**

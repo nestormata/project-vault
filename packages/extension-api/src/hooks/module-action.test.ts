@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 import type {
   ActionResult,
   ModuleAction,
@@ -138,5 +138,70 @@ describe('ModuleAction hook type (AC1)', () => {
     }
     await hookNoState.onAction(baseContext(), { action: { kind: 'x' } })
     expect(seenWithout?.requestState).toBeUndefined()
+  })
+})
+
+// Story 59.1 AC1 — `html?: string` is declared on every `ActionResult` variant, proven with FRESH
+// object literals (which, unlike an object spread, are subject to TypeScript's excess-property
+// check). A regression that drops `html` from a non-ok variant fails this file's typecheck.
+const NO_ACCESS_BANNER = '<div role="alert">No access</div>'
+
+function renderBanner(): string {
+  return NO_ACCESS_BANNER
+}
+
+describe('Story 59.1 AC1 — html is optional on every ActionResult variant', () => {
+  it('fresh literals carrying html type-check for every non-ok variant', () => {
+    const denied: ActionResult = { outcome: 'denied', html: NO_ACCESS_BANNER }
+    const error: ActionResult = { outcome: 'error', html: '<p>Try later</p>' }
+    const conflict: ActionResult = {
+      outcome: 'conflict',
+      message: 'Already renamed',
+      html: '<p>x</p>',
+    }
+    const validationFailed: ActionResult = {
+      outcome: 'validation_failed',
+      message: 'Name is required',
+      html: '<p>x</p>',
+    }
+    expect([denied, error, conflict, validationFailed].map((r) => r.html)).toEqual([
+      NO_ACCESS_BANNER,
+      '<p>Try later</p>',
+      '<p>x</p>',
+      '<p>x</p>',
+    ])
+  })
+
+  it('declares html as string | undefined on each non-ok variant', () => {
+    expectTypeOf<Extract<ActionResult, { outcome: 'denied' }>['html']>().toEqualTypeOf<
+      string | undefined
+    >()
+    expectTypeOf<Extract<ActionResult, { outcome: 'conflict' }>['html']>().toEqualTypeOf<
+      string | undefined
+    >()
+    expectTypeOf<Extract<ActionResult, { outcome: 'error' }>['html']>().toEqualTypeOf<
+      string | undefined
+    >()
+    expectTypeOf<Extract<ActionResult, { outcome: 'validation_failed' }>['html']>().toEqualTypeOf<
+      string | undefined
+    >()
+  })
+
+  it('rejects a non-string html and a message on error at compile time', () => {
+    // @ts-expect-error -- html must be a string
+    const bad: ActionResult = { outcome: 'denied', html: 42 }
+    // @ts-expect-error -- error carries no message: the widening is html only
+    const errorWithMessage: ActionResult = { outcome: 'error', message: 'x' }
+    expect(bad.outcome).toBe('denied')
+    expect(errorWithMessage.outcome).toBe('error')
+  })
+
+  it('a fresh-literal denied result with computed html type-checks (PV-local stand-in for the extension-side mirror; that mirror update is an extension follow-up)', () => {
+    const result: ActionResult = { outcome: 'denied', message: 'm', html: renderBanner() }
+    expect(result).toEqual({
+      outcome: 'denied',
+      message: 'm',
+      html: NO_ACCESS_BANNER,
+    })
   })
 })

@@ -347,3 +347,116 @@ describe('handleModuleAction (Story 25.5 AC1-AC3, AC5, AC6)', () => {
     expect(forUser2).toMatchObject({ orgId: 'org_2', locale: 'es' })
   })
 })
+
+// Story 59.1 AC4/AC9/AC10 — html only ever comes from an explicitly returned result; a throw,
+// timeout or malformed result degrades to a bare `{ outcome: 'error' }`, and html is never logged.
+describe('handleModuleAction — Story 59.1 non-ok html guarantees', () => {
+  beforeEach(() => {
+    __resetExtensionStateForTests()
+  })
+
+  afterEach(() => {
+    __resetExtensionStateForTests()
+    vi.useRealTimers()
+  })
+
+  function dispatchWith(
+    onAction: ModuleAction['onAction'],
+    logger = silentLogger(),
+    identity: typeof IDENTITY_1 | typeof IDENTITY_2 = IDENTITY_1
+  ) {
+    __setExtensionStateForTests(
+      loadedState({ moduleActions: [RENAME_GROUP_KIND], moduleAction: { onAction } })
+    )
+    return handleModuleAction(
+      { slot: GROUP_SLOT, knownSlots: DEFAULT_UI_PANEL_SLOTS },
+      logger,
+      identity,
+      FAKE_TX,
+      { request: RENAME_ACTION },
+      {},
+      fakeDeps()
+    )
+  }
+
+  function loggedSubReasons(logger: ReturnType<typeof silentLogger>): string {
+    return JSON.stringify(logger.error.mock.calls)
+  }
+
+  it('passes a returned error result through with its html intact, logged as reported', async () => {
+    const logger = silentLogger()
+    const result = await dispatchWith(async () => ({ outcome: 'error', html: '<p>E</p>' }), logger)
+    expect(result).toEqual({ outcome: 'error', html: '<p>E</p>' })
+    expect(loggedSubReasons(logger)).toContain('"subReason":"reported"')
+  })
+
+  it('a thrown error carrying an html property degrades to exactly { outcome: "error" }', async () => {
+    const logger = silentLogger()
+    const result = await dispatchWith(async () => {
+      throw Object.assign(new Error('db exploded'), { html: '<p>LEAK</p>' })
+    }, logger)
+    expect(result).toEqual({ outcome: 'error' })
+    expect('html' in result).toBe(false)
+    expect(loggedSubReasons(logger)).toContain('"subReason":"threw"')
+    expect(loggedSubReasons(logger)).not.toContain('LEAK')
+  })
+
+  it('a timed-out hook degrades to exactly { outcome: "error" } with no html', async () => {
+    vi.useFakeTimers()
+    const promise = dispatchWith(() => new Promise(() => undefined))
+    await vi.advanceTimersByTimeAsync(10_001)
+    const result = await promise
+    expect(result).toEqual({ outcome: 'error' })
+    expect('html' in result).toBe(false)
+  })
+
+  it('an error result with a non-string html is malformed', async () => {
+    const logger = silentLogger()
+    const result = await dispatchWith(async () => ({ outcome: 'error', html: 7 }) as never, logger)
+    expect(result).toEqual({ outcome: 'error' })
+    expect('html' in result).toBe(false)
+    expect(loggedSubReasons(logger)).toContain('"subReason":"malformed"')
+  })
+
+  it('behaviour change: a denied result with a non-string html is now malformed', async () => {
+    const logger = silentLogger()
+    const result = await dispatchWith(
+      async () => ({ outcome: 'denied', html: 42 }) as never,
+      logger
+    )
+    expect(result).toEqual({ outcome: 'error' })
+    expect(logger.error).toHaveBeenCalled()
+    expect(loggedSubReasons(logger)).toContain('"subReason":"malformed"')
+  })
+
+  it('never logs the html of a reported error result', async () => {
+    const logger = silentLogger()
+    await dispatchWith(async () => ({ outcome: 'error', html: '<p>SENTINEL-59-1</p>' }), logger)
+    expect(logger.error).toHaveBeenCalled()
+    const allLogs = JSON.stringify([
+      logger.error.mock.calls,
+      logger.warn.mock.calls,
+      logger.info.mock.calls,
+      logger.fatal.mock.calls,
+    ])
+    expect(allLogs).not.toContain('SENTINEL-59-1')
+  })
+
+  it('two concurrent denied-with-html requests for two orgs each get only their own org html', async () => {
+    let releaseFirst: () => void = () => undefined
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    const onAction: ModuleAction['onAction'] = async (context) => {
+      // Interleave: org_1's hook resolves only after org_2's has finished.
+      if (context.orgId === 'org_1') await firstGate
+      return { outcome: 'denied', html: `<p>org=${context.orgId}</p>` }
+    }
+    const pendingA = dispatchWith(onAction, silentLogger(), IDENTITY_1)
+    const resultB = await dispatchWith(onAction, silentLogger(), IDENTITY_2)
+    releaseFirst()
+    const resultA = await pendingA
+    expect(resultA).toEqual({ outcome: 'denied', html: '<p>org=org_1</p>' })
+    expect(resultB).toEqual({ outcome: 'denied', html: '<p>org=org_2</p>' })
+  })
+})
