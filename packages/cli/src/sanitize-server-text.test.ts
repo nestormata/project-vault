@@ -43,6 +43,38 @@ describe('sanitizeServerText (Story 43.6 D6)', () => {
     expect(sanitizeServerText(`a${char}b`)).toBe('ab')
   })
 
+  it.each([
+    ['\u061C', 'ARABIC LETTER MARK'],
+    ['\u00AD', 'soft hyphen'],
+    ['\u2061', 'function application'],
+    ['\u2062', 'invisible times'],
+    ['\u2063', 'invisible separator'],
+    ['\u2064', 'invisible plus'],
+    ['\u206A', 'inhibit symmetric swapping'],
+    ['\u206B', 'activate symmetric swapping'],
+    ['\u206C', 'inhibit arabic form shaping'],
+    ['\u206D', 'activate arabic form shaping'],
+    ['\u206E', 'national digit shapes'],
+    ['\u206F', 'nominal digit shapes'],
+    ['\u{E0000}', 'tag range start'],
+    ['\u{E0001}', 'LANGUAGE TAG'],
+    ['\u{E0041}', 'TAG LATIN CAPITAL LETTER A'],
+    ['\u{E007F}', 'CANCEL TAG'],
+  ])('strips format character %j (%s, \\p{Cf})', (char) => {
+    expect(sanitizeServerText(`a${char}b`)).toBe('ab')
+  })
+
+  it('strips a whole run of tag characters hidden after visible text', () => {
+    const hidden = [...'ignore']
+      .map((c) => String.fromCodePoint(0xe0000 + c.charCodeAt(0)))
+      .join('')
+    expect(sanitizeServerText(`upgrade${hidden} now`)).toBe('upgrade now')
+  })
+
+  it('keeps ordinary non-ASCII text intact', () => {
+    expect(sanitizeServerText('mise à jour — 更新 😀')).toBe('mise à jour — 更新 😀')
+  })
+
   it.each(['\u2028', '\u2029', '\t', '\r\n'])('turns separator %j into one space', (sep) => {
     expect(sanitizeServerText(`a${sep}b`)).toBe('a b')
   })

@@ -13,6 +13,48 @@ export const STRICT_RELEASE_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)
 export const STRICT_SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-(0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(\.(0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*)?$/
 export const MAX_ENV_WITHDRAWN_VERSIONS = 50
+
+/**
+ * The limits the pvault CLI's policy validator enforces (packages/cli `semver-precedence.ts` and
+ * `version-policy-response.ts`; a parity test there imports these). The CLI rejects the WHOLE
+ * policy when any single value breaks them, which would silently stop withdrawals from being
+ * enforced — so the server refuses to boot rather than serve such a policy.
+ */
+export const CLI_MAX_VERSION_LENGTH = 128
+export const CLI_MAX_WITHDRAWN_ENTRIES = 100
+export const CLI_MAX_REASON_CODE_POINTS = 200
+const NUMERIC_IDENTIFIER = /^\d+$/
+const CLI_VERSION_LIMITS =
+  'strict semver (X.Y.Z or X.Y.Z-prerelease, no "v", no build metadata), at most ' +
+  `${CLI_MAX_VERSION_LENGTH} characters, every numeric part at most ${Number.MAX_SAFE_INTEGER}`
+
+/** True when the pvault CLI's strict-semver parser accepts `version`. */
+export function isCliAcceptedVersion(version: string): boolean {
+  if (version.length > CLI_MAX_VERSION_LENGTH || !STRICT_SEMVER.test(version)) return false
+  const dash = version.indexOf('-')
+  const core = (dash === -1 ? version : version.slice(0, dash)).split('.')
+  const prerelease = dash === -1 ? [] : version.slice(dash + 1).split('.')
+  return [...core, ...prerelease.filter((id) => NUMERIC_IDENTIFIER.test(id))].every((part) =>
+    Number.isSafeInteger(Number(part))
+  )
+}
+
+/** A strict `X.Y.Z` release version the pvault CLI's parser accepts. */
+export function isCliAcceptedReleaseVersion(version: string): boolean {
+  return STRICT_RELEASE_VERSION.test(version) && isCliAcceptedVersion(version)
+}
+
+const DISPLAYED_VALUE_MAX = 64
+
+function displayValue(value: string): string {
+  return value.length > DISPLAYED_VALUE_MAX ? `${value.slice(0, DISPLAYED_VALUE_MAX)}…` : value
+}
+
+function effectiveWithdrawnCountError(count: number): string | null {
+  return count > CLI_MAX_WITHDRAWN_ENTRIES
+    ? `the effective withdrawn CLI version list (built-in plus CLI_WITHDRAWN_VERSIONS) has ${count} versions; at most ${CLI_MAX_WITHDRAWN_ENTRIES} are allowed`
+    : null
+}
 /** The env var carries versions only, never free text, so env-withdrawn entries get this reason. */
 export const ENV_WITHDRAWN_REASON = "Withdrawn by this server's administrator."
 
@@ -33,8 +75,13 @@ type BootLogger = {
   warn: (payload: unknown, message?: string) => void
 }
 
+/**
+ * Parses `CLI_WITHDRAWN_VERSIONS`. `bakedVersions` (the built-in withdrawn list) only counts
+ * towards the CLI's limit on the effective, merged list.
+ */
 export function parseCliWithdrawnVersions(
-  raw: string | undefined
+  raw: string | undefined,
+  bakedVersions: readonly string[] = []
 ): { ok: true; versions: string[] } | { ok: false; error: string } {
   const versions = [
     ...new Set(
@@ -44,11 +91,11 @@ export function parseCliWithdrawnVersions(
         .filter(Boolean)
     ),
   ]
-  const bad = versions.find((version) => !STRICT_SEMVER.test(version))
+  const bad = versions.find((version) => !isCliAcceptedVersion(version))
   if (bad !== undefined) {
     return {
       ok: false,
-      error: `CLI_WITHDRAWN_VERSIONS entry "${bad}" is not a strict semver version (X.Y.Z or X.Y.Z-prerelease, no "v", no build metadata)`,
+      error: `CLI_WITHDRAWN_VERSIONS entry "${displayValue(bad)}" is not a version the pvault CLI accepts: ${CLI_VERSION_LIMITS}`,
     }
   }
   if (versions.length > MAX_ENV_WITHDRAWN_VERSIONS) {
@@ -57,6 +104,8 @@ export function parseCliWithdrawnVersions(
       error: `CLI_WITHDRAWN_VERSIONS lists ${versions.length} versions; at most ${MAX_ENV_WITHDRAWN_VERSIONS} are allowed`,
     }
   }
+  const countError = effectiveWithdrawnCountError(new Set([...bakedVersions, ...versions]).size)
+  if (countError !== null) return { ok: false, error: countError }
   return { ok: true, versions }
 }
 
@@ -73,7 +122,7 @@ function compareReleaseVersions(a: string, b: string): number {
 
 /** `current` for the CLI: the server's release version when it is strict `X.Y.Z`, else `null`. */
 export function strictReleaseVersionOrNull(release: ReleaseVersion): string | null {
-  return release.isRelease && STRICT_RELEASE_VERSION.test(release.version) ? release.version : null
+  return release.isRelease && isCliAcceptedReleaseVersion(release.version) ? release.version : null
 }
 
 function effectiveMinimum(
@@ -113,10 +162,35 @@ function warnOnSelfContradiction(
   }
 }
 
+/** Throws (failing boot) if the pvault CLI would reject the policy as a whole. */
+function assertCliAcceptsPolicy(policy: EffectiveCliVersionPolicy): void {
+  const { minimumSupported, withdrawn } = policy
+  if (minimumSupported !== null && !isCliAcceptedReleaseVersion(minimumSupported)) {
+    throw new Error(
+      `CLI minimum supported version "${displayValue(minimumSupported)}" is not a strict X.Y.Z version the pvault CLI accepts: ${CLI_VERSION_LIMITS}`
+    )
+  }
+  const countError = effectiveWithdrawnCountError(withdrawn.length)
+  if (countError !== null) throw new Error(countError)
+  for (const { version, reason } of withdrawn) {
+    if (!isCliAcceptedVersion(version)) {
+      throw new Error(
+        `withdrawn CLI version "${displayValue(version)}" is not a version the pvault CLI accepts: ${CLI_VERSION_LIMITS}`
+      )
+    }
+    if ([...reason].length > CLI_MAX_REASON_CODE_POINTS) {
+      throw new Error(
+        `the reason for withdrawn CLI version ${version} is longer than ${CLI_MAX_REASON_CODE_POINTS} characters`
+      )
+    }
+  }
+}
+
 /**
  * Tighten-only merge (D5): effective minimum = the higher of baked and env; effective withdrawn =
  * baked ∪ env, keeping the baked reason for duplicates. Logs the effective policy once (versions
- * and provenance only, never reasons) plus warnings for self-contradicting configuration.
+ * and provenance only, never reasons) plus warnings for self-contradicting configuration. Throws
+ * when the result is a policy the pvault CLI would reject (see `CLI_MAX_*`).
  */
 export function resolveCliVersionPolicy(
   envPolicy: CliVersionPolicyEnv,
@@ -134,6 +208,9 @@ export function resolveCliVersionPolicy(
       withdrawn.push({ version, reason: ENV_WITHDRAWN_REASON, source: 'env' })
     }
   }
+  // Validated before the tighten-only comparison, which assumes well-formed release versions.
+  assertCliAcceptsPolicy({ minimumSupported: envPolicy.minimumSupported ?? null, withdrawn })
+  assertCliAcceptsPolicy({ minimumSupported: baked.minimumSupported, withdrawn: [] })
   const policy = {
     minimumSupported: effectiveMinimum(envPolicy.minimumSupported, baked.minimumSupported, logger),
     withdrawn,

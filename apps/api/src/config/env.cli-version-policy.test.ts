@@ -58,15 +58,20 @@ describe('env — CLI version policy (Story 43.6)', () => {
     expect(env.CLI_MINIMUM_SUPPORTED_VERSION).toBeUndefined()
   })
 
-  it.each(['v1.1.0', '1.1', '1.1.0-rc.1', '1.1.0+build', 'latest'])(
-    'rejects minimum %j at boot',
-    async (value) => {
-      await expectBootFailure(
-        { CLI_MINIMUM_SUPPORTED_VERSION: value },
-        /CLI_MINIMUM_SUPPORTED_VERSION/
-      )
-    }
-  )
+  it.each([
+    'v1.1.0',
+    '1.1',
+    '1.1.0-rc.1',
+    '1.1.0+build',
+    'latest',
+    `${Number.MAX_SAFE_INTEGER + 1}.0.0`,
+    `1.0.${'1'.repeat(130)}`,
+  ])('rejects minimum %j at boot', async (value) => {
+    await expectBootFailure(
+      { CLI_MINIMUM_SUPPORTED_VERSION: value },
+      /CLI_MINIMUM_SUPPORTED_VERSION/
+    )
+  })
 
   it.each<[string, string[]]>([
     ['1.2.1, 1.2.2', ['1.2.1', '1.2.2']],
@@ -78,7 +83,7 @@ describe('env — CLI version policy (Story 43.6)', () => {
     expect(env.CLI_WITHDRAWN_VERSIONS).toEqual(expected)
   })
 
-  it.each(['v1.2.1', '1.2', 'latest', '1.2.1+build'])(
+  it.each(['v1.2.1', '1.2', 'latest', '1.2.1+build', `1.0.0-rc.${Number.MAX_SAFE_INTEGER + 1}`])(
     'rejects withdrawn entry %j at boot, naming it',
     async (value) => {
       const escaped = value.replace(/[.+]/g, '\\$&')
@@ -89,6 +94,26 @@ describe('env — CLI version policy (Story 43.6)', () => {
   it('rejects more than 50 withdrawn entries', async () => {
     const list = Array.from({ length: 51 }, (_, i) => `1.0.${i}`).join(',')
     await expectBootFailure({ CLI_WITHDRAWN_VERSIONS: list }, /CLI_WITHDRAWN_VERSIONS/)
+  })
+
+  it('rejects a withdrawn entry longer than the CLI accepts (128 characters)', async () => {
+    const tooLong = `1.0.0-${'a'.repeat(123)}`
+    await expectBootFailure({ CLI_WITHDRAWN_VERSIONS: tooLong }, /128/)
+  })
+
+  it('rejects an effective (baked plus configured) withdrawn list above the CLI limit of 100', async () => {
+    vi.doMock('../modules/client-versions/cli-version-policy.js', () => ({
+      BAKED_CLI_VERSION_POLICY: {
+        minimumSupported: null,
+        withdrawn: Array.from({ length: 60 }, (_, i) => ({ version: `2.0.${i}`, reason: 'r' })),
+      },
+    }))
+    try {
+      const list = Array.from({ length: 41 }, (_, i) => `1.0.${i}`).join(',')
+      await expectBootFailure({ CLI_WITHDRAWN_VERSIONS: list }, /at most 100/)
+    } finally {
+      vi.doUnmock('../modules/client-versions/cli-version-policy.js')
+    }
   })
 
   it('accepts exactly 50 withdrawn entries', async () => {

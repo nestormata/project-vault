@@ -113,6 +113,9 @@ async function fetchPolicy(
     return await Promise.race([attempt, timeout])
   } finally {
     clearTimeout(timer)
+    // Always tear the request down: an unread (e.g. non-200) body that never ends would otherwise
+    // keep the connection, and so the process, alive after the command has finished.
+    controller.abort()
   }
 }
 

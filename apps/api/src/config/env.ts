@@ -2,9 +2,11 @@ import { z } from 'zod/v4'
 import { EXTENSION_DB_PLACEHOLDER_CREDENTIAL } from '@project-vault/db'
 import { DEV_AUTH_DUMMY_PASSWORD_HASH } from './dev-dummy-hash.js'
 import {
+  CLI_MAX_VERSION_LENGTH,
+  isCliAcceptedReleaseVersion,
   parseCliWithdrawnVersions,
-  STRICT_RELEASE_VERSION,
 } from '../modules/client-versions/policy.js'
+import { BAKED_CLI_VERSION_POLICY } from '../modules/client-versions/cli-version-policy.js'
 
 const DEV_SESSION_SECRET = 'a'.repeat(64)
 const DEV_REFRESH_TOKEN_HMAC_SECRET = 'b'.repeat(64)
@@ -1460,9 +1462,9 @@ const envSchema = z
       (v) => (v === '' ? undefined : v),
       z
         .string()
-        .regex(
-          STRICT_RELEASE_VERSION,
-          'FATAL: CLI_MINIMUM_SUPPORTED_VERSION must be a strict X.Y.Z version (no "v", no prerelease, no build metadata)'
+        .refine(
+          isCliAcceptedReleaseVersion,
+          `FATAL: CLI_MINIMUM_SUPPORTED_VERSION must be a strict X.Y.Z version (no "v", no prerelease, no build metadata, at most ${CLI_MAX_VERSION_LENGTH} characters, every part at most ${Number.MAX_SAFE_INTEGER})`
         )
         .optional()
     ),
@@ -1470,7 +1472,10 @@ const envSchema = z
       .string()
       .optional()
       .transform((raw, ctx) => {
-        const parsed = parseCliWithdrawnVersions(raw)
+        const parsed = parseCliWithdrawnVersions(
+          raw,
+          BAKED_CLI_VERSION_POLICY.withdrawn.map((entry) => entry.version)
+        )
         if (!parsed.ok) {
           ctx.addIssue({ code: 'custom', message: `FATAL: ${parsed.error}` })
           return z.NEVER

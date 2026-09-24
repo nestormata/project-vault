@@ -35,7 +35,10 @@ environment variables. The merge can only **tighten** the built-in policy:
 | `CLI_WITHDRAWN_VERSIONS`        | comma-separated strict semver, at most 50 (`1.2.1, 1.2.2`) | Added to the built-in list with the fixed reason `Withdrawn by this server's administrator.`                   |
 
 Both variables carry versions only, never free text. An invalid value fails boot and names the bad
-entry. At boot the API logs one `info` line, `effective CLI version policy`, with the minimum and
+entry. Values must also stay within what `pvault` can parse: each version at most 128 characters,
+every numeric part at most 9007199254740991, and at most 100 withdrawn versions in total (built-in
+list included). `pvault` discards a policy that breaks any of these as a whole, which would
+silently stop withdrawals from being enforced, so the API refuses to boot instead of serving it. At boot the API logs one `info` line, `effective CLI version policy`, with the minimum and
 each withdrawn version and its source (`baked`/`env`). It logs a `warn` if the minimum is above this
 server's own release or if this server's own release is withdrawn.
 
