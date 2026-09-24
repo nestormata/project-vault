@@ -86,7 +86,7 @@ describe('env — CLI version policy (Story 43.6)', () => {
   it.each(['v1.2.1', '1.2', 'latest', '1.2.1+build', `1.0.0-rc.${Number.MAX_SAFE_INTEGER + 1}`])(
     'rejects withdrawn entry %j at boot, naming it',
     async (value) => {
-      const escaped = value.replace(/[.+]/g, '\\$&')
+      const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       await expectBootFailure({ CLI_WITHDRAWN_VERSIONS: `1.0.0,${value}` }, new RegExp(escaped))
     }
   )
