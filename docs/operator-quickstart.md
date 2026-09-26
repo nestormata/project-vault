@@ -377,7 +377,7 @@ The stack has no TLS of its own. Terminate TLS at your proxy and forward to the 
 
 | Variable | Set to |
 |----------|--------|
-| `PUBLIC_WEB_ORIGIN` | The exact `scheme://host[:port]` browsers use, e.g. `https://vault.example.com`. Compose feeds it to the api's `CORS_ALLOWED_ORIGINS`, the web service's `ORIGIN` (adapter-node's CSRF same-origin check) and `WEB_BASE_URL` |
+| `PUBLIC_WEB_ORIGIN` | The exact `scheme://host[:port]` browsers use, e.g. `https://vault.example.com`. Compose feeds it to the api's `CORS_ALLOWED_ORIGINS`, the web service's `ORIGIN` (adapter-node's CSRF same-origin check), `WEB_BASE_URL`, and (via the same expression) the web service's own `CORS_ALLOWED_ORIGINS`. List only origins you actually trust to receive PV session cookies and vault data |
 | `WEB_BASE_URL` | Only if invitation/recovery email links must use a different host from `PUBLIC_WEB_ORIGIN`; otherwise leave it empty and it follows |
 | `COOKIE_SECURE` | `true` (the default under `NODE_ENV=production`, which Compose always sets). Only set `false` if you are deliberately serving plain HTTP on a LAN address — a `Secure` cookie is dropped there, and nobody can log in |
 | `TRUST_PROXY` | `true` when a proxy is in front of the API |
