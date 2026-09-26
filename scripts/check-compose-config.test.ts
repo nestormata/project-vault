@@ -10,7 +10,7 @@
 // genuinely absent (not just a daemon), this suite skips with the real reason logged rather than
 // failing the whole run — see the `describeOrSkip` guard below.
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -98,7 +98,7 @@ describeOrSkip('docker compose config — web service CORS_ALLOWED_ORIGINS (Stor
     const dir = mkdtempSync(join(tmpdir(), 'pv-compose-config-regressed-'))
     tempDirs.push(dir)
     const regressedFile = join(dir, 'docker-compose.yml')
-    const original = execFileSync('cat', [composeFile], { encoding: 'utf8' })
+    const original = readFileSync(composeFile, { encoding: 'utf8' })
     const regressed = original.replace(
       /\n\s*CORS_ALLOWED_ORIGINS: \$\{PUBLIC_WEB_ORIGIN:-http:\/\/localhost:\$\{WEB_HOST_PORT:-5173\}\}\n(\s*ports:\n\s*- '\$\{WEB_HOST_PORT)/,
       '\n$1'
