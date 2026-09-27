@@ -1,6 +1,21 @@
-import { describe, expect, it } from 'vitest'
+import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { describe, expect, it, vi } from 'vitest'
 import { useFixtureRoots, writeFixture } from './lib/fixture-test-helpers.js'
-import { compareDistDirectories, listFilesRecursively } from './check-vault-action-dist-fresh.js'
+import { resolveBin } from './lib/trusted-executable.js'
+import {
+  buildFreshDist,
+  compareDistDirectories,
+  listFilesRecursively,
+} from './check-vault-action-dist-fresh.js'
+
+const execFileSyncMock = vi.hoisted(() => vi.fn())
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:child_process')>()),
+  execFileSync: execFileSyncMock,
+}))
+
+const REPO_ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
 
 const makeFixtureRoot = useFixtureRoots('vault-action-dist-fresh-', ['committed', 'fresh'])
 const dirs = (root: string) => [`${root}/committed`, `${root}/fresh`] as const
@@ -78,5 +93,41 @@ describe('compareDistDirectories', () => {
 
     const diffs = compareDistDirectories(...dirs(root))
     expect(diffs).toHaveLength(3)
+  })
+})
+
+// Story 43.9 AC-4 (typescript:S4036): no `pnpm` subprocess. The workspace-local tsc/ncc bins run
+// under the Node that is already executing, with ncc's arguments byte-identical to the old
+// `pnpm --filter @project-vault/vault-action exec ncc ...` invocation.
+describe('buildFreshDist', () => {
+  it('runs the agent build (tsc) then ncc under process.execPath, never via pnpm or $PATH', () => {
+    execFileSyncMock.mockReset()
+    const agentDir = join(REPO_ROOT, 'packages/agent')
+    const vaultActionDir = join(REPO_ROOT, 'packages/vault-action')
+
+    buildFreshDist(REPO_ROOT, '/tmp/out')
+
+    expect(execFileSyncMock.mock.calls).toEqual([
+      [
+        process.execPath,
+        [resolveBin('typescript', 'tsc', agentDir)],
+        { cwd: agentDir, stdio: 'inherit' },
+      ],
+      [
+        process.execPath,
+        [
+          resolveBin('@vercel/ncc', 'ncc', vaultActionDir),
+          'build',
+          'src/index.ts',
+          '-o',
+          '/tmp/out',
+          '--minify=false',
+          '--source-map',
+          '--license',
+          'licenses.txt',
+        ],
+        { cwd: vaultActionDir, stdio: 'inherit' },
+      ],
+    ])
   })
 })

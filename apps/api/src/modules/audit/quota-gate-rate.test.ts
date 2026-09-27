@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll, vi } from 'vitest'
+import { afterEach, describe, expect, it, beforeAll, vi } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 import { withOrg, type Tx } from '@project-vault/db'
 import { auditOrgStorageUsage, auditStorageQuotaConfig } from '@project-vault/db/schema'
@@ -11,11 +11,36 @@ process.env['AUDIT_ORG_WRITE_RATE_ENFORCEMENT_ENABLED'] = 'true'
 // gate OFF here so a test failure can never be misattributed to the wrong gate.
 process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] = 'false'
 
+// Story 43.9 AC-4: the Retry-After jitter comes from node:crypto's randomInt. Passthrough to the
+// real implementation by default so nothing else in the import graph changes behaviour.
+const crypto = vi.hoisted(() => {
+  const randomIntMock = vi.fn<(min: number, max: number) => number>()
+  const state = { real: (_min: number, _max: number): number => Number.NaN }
+  return {
+    randomIntMock,
+    setReal(real: (min: number, max: number) => number) {
+      state.real = real
+    },
+    restoreReal() {
+      randomIntMock.mockReset()
+      randomIntMock.mockImplementation((min, max) => state.real(min, max))
+    },
+  }
+})
+vi.mock('node:crypto', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:crypto')>()
+  crypto.setReal((min, max) => actual.randomInt(min, max))
+  crypto.restoreReal()
+  return { ...actual, randomInt: crypto.randomIntMock }
+})
+const randomIntMock = crypto.randomIntMock
+
 const { withTestOrg, withTwoTestOrgs } = await import('@project-vault/db/test-helpers')
 const {
   assertOrgMayWriteAuditAtRate,
   recordAuditRateRefusalBestEffort,
   classifyAuditWriteExemption,
+  retryAfterSecondsFor,
 } = await import('./quota-gate.js')
 const { SameTransactionAuditWriteError } = await import('../../lib/secure-route.js')
 
@@ -316,6 +341,41 @@ describe('Story 22.2: assertOrgMayWriteAuditAtRate (the rate gate)', () => {
         expect(usageB?.rateWindowCount).toBe(1)
       })
     }, 20_000)
+  })
+
+  describe('Story 43.9 AC-4: Retry-After jitter from a CSPRNG', () => {
+    afterEach(() => crypto.restoreReal())
+
+    it('draws the jitter as whole milliseconds in [0, 500] from randomInt(0, 501)', () => {
+      retryAfterSecondsFor(1600)
+      expect(randomIntMock).toHaveBeenCalledWith(0, 501)
+    })
+
+    it('is always ceil(remaining + j) for some j in [0, 0.5]', () => {
+      for (let i = 0; i < 200; i++) {
+        expect([2, 3]).toContain(retryAfterSecondsFor(1600))
+      }
+    })
+
+    it('remainingMs = 1000 yields 1 or 2', () => {
+      for (let i = 0; i < 200; i++) {
+        expect([1, 2]).toContain(retryAfterSecondsFor(1000))
+      }
+    })
+
+    it('remainingMs = 0 yields the 1-second floor', () => {
+      randomIntMock.mockReturnValueOnce(0)
+      expect(retryAfterSecondsFor(0)).toBe(1)
+      randomIntMock.mockReturnValueOnce(500)
+      expect(retryAfterSecondsFor(0)).toBe(1)
+    })
+
+    it('exact values at both jitter extremes: 0 ms -> ceil(1.6) = 2, 500 ms -> ceil(2.1) = 3', () => {
+      randomIntMock.mockReturnValueOnce(0)
+      expect(retryAfterSecondsFor(1600)).toBe(2)
+      randomIntMock.mockReturnValueOnce(500)
+      expect(retryAfterSecondsFor(1600)).toBe(3)
+    })
   })
 
   describe('AC-9: recordAuditRateRefusalBestEffort', () => {

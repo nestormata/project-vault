@@ -525,44 +525,14 @@ function validateModuleActionsShape(manifest: ExtensionManifest): void {
 }
 
 /**
- * Story 25.12 AC2 — validates the optional `panelDataPaths` field's shape: non-empty array of
- * unique strings (if present), each matching `PANEL_DATA_PATH_PATTERN` (a full path template
- * starting with `/api/v1/`), capped at `MAX_PANEL_DATA_PATHS` entries, and only legal alongside
- * `'ui-panel'` in `capabilities[]`. Mirrors `validateUiPanelSlotsShape`/`validateModuleActionsShape`
- * structurally. Unlike those two, this field has NO corresponding post-`hooksFactory()`
- * callability check (AC3) — it gates a client-relay allowlist, not a hook's existence, so there
- * is nothing analogous to `hasCallableUiPanelHook`/`hasCallableModuleActionHook` to add.
+ * Story 25.12 AC2 — asserts every `panelDataPaths` entry is a string matching
+ * `PANEL_DATA_PATH_PATTERN` (a full path template starting with `/api/v1/`) and that no entry
+ * repeats. Throws on the first offending entry; returning narrows `list` to `string[]` in place
+ * (no copy), because every element has just been checked.
  */
-function validatePanelDataPathsShape(manifest: ExtensionManifest): void {
-  // Read the deprecated field exactly once here (kept deprecated-in-place per Story 29.4) so the
-  // rest of this validator narrows/reuses a plain local instead of repeatedly re-flagging a
-  // deprecated property access.
-  const panelDataPaths = manifest.panelDataPaths // NOSONAR(typescript:S1874)
-  if (panelDataPaths === undefined) return
-
-  if (!Array.isArray(panelDataPaths)) {
-    throw new ExtensionRegistrationError(
-      INVALID_MANIFEST_FIELD,
-      `Extension manifest field "panelDataPaths" must be an array, got ${JSON.stringify(panelDataPaths)}`
-    )
-  }
-
-  if (panelDataPaths.length === 0) {
-    throw new ExtensionRegistrationError(
-      INVALID_MANIFEST_FIELD,
-      'Extension manifest field "panelDataPaths" must not be an empty array — omit the field entirely to declare no additional data paths'
-    )
-  }
-
-  if (panelDataPaths.length > MAX_PANEL_DATA_PATHS) {
-    throw new ExtensionRegistrationError(
-      INVALID_MANIFEST_FIELD,
-      `Extension manifest field "panelDataPaths" declares ${panelDataPaths.length} entries, exceeding the maximum of ${MAX_PANEL_DATA_PATHS}`
-    )
-  }
-
+function assertPanelDataPathEntries(list: unknown[]): asserts list is string[] {
   const seen = new Set<string>()
-  for (const path of panelDataPaths) {
+  for (const path of list) {
     if (typeof path !== 'string' || !PANEL_DATA_PATH_PATTERN.test(path)) {
       throw new ExtensionRegistrationError(
         INVALID_MANIFEST_FIELD,
@@ -577,6 +547,52 @@ function validatePanelDataPathsShape(manifest: ExtensionManifest): void {
     }
     seen.add(path)
   }
+}
+
+/**
+ * Story 25.12 AC2 — validates the optional `panelDataPaths` field's shape and returns the
+ * validated value (or `undefined` when absent) for registration to pass through: non-empty array
+ * of unique strings, each matching `PANEL_DATA_PATH_PATTERN`, capped at `MAX_PANEL_DATA_PATHS`
+ * entries, and only legal alongside `'ui-panel'` in `capabilities[]`. Mirrors
+ * `validateUiPanelSlotsShape`/`validateModuleActionsShape` structurally. Unlike those two, this
+ * field has NO corresponding post-`hooksFactory()` callability check (AC3) — it gates a
+ * client-relay allowlist, not a hook's existence.
+ *
+ * The field is deprecated in place (Story 29.4), and the manifest comes from third-party
+ * extension code: a JS extension bypasses the TypeScript type entirely, which is why this has
+ * always checked `Array.isArray` on a field typed `string[]`. So the field is read from the
+ * manifest viewed as the untrusted input it is (`unknown`), and every part of it is validated
+ * before the value is returned — the honest type for that input, and the one read of the field
+ * (Story 43.9 AC-5, typescript:S1874).
+ */
+function readValidatedPanelDataPaths(manifest: ExtensionManifest): string[] | undefined {
+  const untrusted = manifest as unknown as Readonly<Record<string, unknown>>
+  const raw = untrusted['panelDataPaths']
+  if (raw === undefined) return undefined
+
+  if (!Array.isArray(raw)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "panelDataPaths" must be an array, got ${JSON.stringify(raw)}`
+    )
+  }
+  const list: unknown[] = raw
+
+  if (list.length === 0) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest field "panelDataPaths" must not be an empty array — omit the field entirely to declare no additional data paths'
+    )
+  }
+
+  if (list.length > MAX_PANEL_DATA_PATHS) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "panelDataPaths" declares ${list.length} entries, exceeding the maximum of ${MAX_PANEL_DATA_PATHS}`
+    )
+  }
+
+  assertPanelDataPathEntries(list)
 
   if (!manifest.capabilities.includes('ui-panel')) {
     throw new ExtensionRegistrationError(
@@ -584,6 +600,7 @@ function validatePanelDataPathsShape(manifest: ExtensionManifest): void {
       'Extension manifest declares "panelDataPaths" but does not declare "ui-panel" in capabilities[]'
     )
   }
+  return list
 }
 
 /**
@@ -1049,7 +1066,7 @@ function validateNavItemParentIds(items: NavItemCandidate[], seenIds: Set<string
  * and every `parentId` reference/nesting-depth rule (`validateNavItemParentIds`). Deliberately NOT
  * gated behind `'ui-panel'` in `capabilities[]` — see `manifest.ts`'s own `navItems` doc comment
  * for why this is an intentional divergence from `validateUiPanelSlotsShape`/
- * `validateModuleActionsShape`/`validatePanelDataPathsShape`'s shared capability-gate pattern.
+ * `validateModuleActionsShape`/`readValidatedPanelDataPaths`'s shared capability-gate pattern.
  */
 function validateNavItemsShape(manifest: ExtensionManifest): void {
   if (manifest.navItems === undefined) return
@@ -1421,7 +1438,7 @@ export function registerExtension(
   validateDbScopeShape(manifest.dbScope)
   validateUiPanelSlotsShape(manifest)
   validateModuleActionsShape(manifest)
-  validatePanelDataPathsShape(manifest)
+  const validatedPanelDataPaths = readValidatedPanelDataPaths(manifest)
   validateNavItemsShape(manifest)
   validateModuleDataRoutesShape(manifest)
   validateRedirectOriginsShape(manifest)
@@ -1450,7 +1467,7 @@ export function registerExtension(
       dbScope: manifest.dbScope,
       uiPanelSlots: manifest.uiPanelSlots,
       moduleActions: manifest.moduleActions,
-      panelDataPaths: manifest.panelDataPaths, // NOSONAR(typescript:S1874) — passthrough of the deprecated-in-place field, see validatePanelDataPathsShape's own note
+      panelDataPaths: validatedPanelDataPaths,
       navItems: manifest.navItems,
       moduleDataRoutes: manifest.moduleDataRoutes,
       redirectOrigins: manifest.redirectOrigins,

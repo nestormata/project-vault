@@ -3,20 +3,17 @@ import type { Tx } from '@project-vault/db'
 import { projectInvitations } from '@project-vault/db/schema'
 
 /**
- * D7 / AC-8: Epic 5 (Credential Rotation) has not shipped — there is no `rotations` table yet, so
- * a real active-rotation block is impossible to implement today. This stub preserves the exact
- * call site and return shape the real check will need once Epic 5 lands (mirrors Story 4.4's
- * identical Epic 7 stub for its own forward dependency). Do not mark FR102's rotation-block
- * guarantee "done" in any tracking document until Epic 5 replaces this function body.
+ * D7 / AC-8: written before Epic 5 (Credential Rotation) shipped the `rotations` table. This stub
+ * preserves the exact call site and return shape the real check needs (mirrors Story 4.4's
+ * identical Epic 7 stub for its own forward dependency). Epic 5 has since shipped, but the query
+ * is still not wired: do not mark FR102's rotation-block guarantee "done" in any tracking document
+ * until story 43-15 replaces this function body.
  *
  * ADR-4.4-04 (reconciled, Epic 4 retro closure): the caller (routes.ts) surfaces `rotationIds`
  * on a 409 in the exact `{ error: 'active_rotations', rotationIds }` shape Story 4.4's archive
  * guard uses — both stub call sites are now byte-compatible.
  */
-// This is a tracked forward-dependency stub (see the doc comment above and deferred-work.md
-// for the Epic 5 handoff), not an unresolved open item.
-// NOSONAR(typescript:S1135) TODO: Epic 5 — query the `rotations` table for rows with
-// status='in_progress' for this user. Until Epic 5 ships, never block.
+// Stub: never blocks. Blocking deactivation while the user has an in_progress/stale_recovery rotation is tracked as story 43-15-epic-43-completion-block-user-deactivation-during-active-rotation.
 export async function checkActiveRotationsForUser(
   _userId: string,
   _orgId: string,

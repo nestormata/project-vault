@@ -4,6 +4,7 @@ import { z } from 'zod/v4'
 import rateLimit from '@fastify/rate-limit'
 import { OperationalEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../lib/fastify-app.js'
+import { isLoopbackSocketAddress } from '../lib/loopback-address.js'
 import { isRateLimitEnforced } from '../lib/route-helpers.js'
 import { operationalLog } from '../lib/logger.js'
 import { deriveAggregateStatus, runStatusChecks, type DbPool } from '../modules/status/service.js'
@@ -90,13 +91,6 @@ const NotFoundResponseSchema = z.object({
   message: z.string(),
 })
 
-// This is the loopback allowlist itself (AC-4), not an incidental literal — NOSONAR(typescript:S1313).
-const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']) // NOSONAR(typescript:S1313)
-
-function isLoopback(ip: string): boolean {
-  return LOOPBACK_ADDRESSES.has(ip)
-}
-
 // AC-4 hardening: this loopback check gates the entire safe-default (no token configured →
 // allow only loopback callers). `req.ip` is proxy-trust-resolved — when TRUST_PROXY is enabled
 // it reflects `X-Forwarded-For`, which a remote attacker fully controls. Use the raw untrusted
@@ -145,7 +139,9 @@ async function resolveStatusAuth(req: FastifyRequest): Promise<AuthOutcome> {
   const activeToken = await findActiveOperationalStatusToken()
 
   if (!activeToken) {
-    return isLoopback(rawRemoteAddress(req)) ? { allowed: true } : { allowed: false, status: 404 }
+    return isLoopbackSocketAddress(rawRemoteAddress(req))
+      ? { allowed: true }
+      : { allowed: false, status: 404 }
   }
 
   const presented = extractBearerToken(req.headers.authorization)

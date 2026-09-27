@@ -9,11 +9,15 @@ import {
 } from '@project-vault/db/schema'
 import { bootstrapRouteIntegrationTest } from '../__tests__/helpers/auth-test-helpers.js'
 import { initVaultForTest } from '../__tests__/helpers/auth-test-helpers.js'
+import { resetVaultForTest } from '../__tests__/helpers/vault-test-cleanup.js'
 
 // The manual-QA script deliberately requires a separately named cross-org connection. The
 // integration harness supplies the CI superuser connection for this test-only fixture cleanup;
 // production code has no fallback and still requires QA_DATABASE_URL explicitly.
 process.env['QA_DATABASE_URL'] ??= process.env['SUPERUSER_DATABASE_URL']
+// Story 43.9 AC-6 (B12): the QA vault passphrase is also required from the environment.
+const QA_TEST_PASSPHRASE = 'sso-qa-ensure-unsealed-test-passphrase'
+process.env['QA_VAULT_PASSPHRASE'] ??= QA_TEST_PASSPHRASE
 
 const { initVault } = await bootstrapRouteIntegrationTest()
 
@@ -27,6 +31,7 @@ vi.mock('../app.js', () => ({
 const { seedFixtures, printRunbook, ensureUnsealed, main, PROVIDER_NAME } =
   await import('./sso-qa.js')
 const { createApp } = await import('../app.js')
+const { isSealed, zeroKeys } = await import('../modules/vault/key-service.js')
 
 describe('sso-qa.ts (Story 14.3 Task 10, AC-12 manual-QA runbook)', () => {
   describe('printRunbook', () => {
@@ -50,9 +55,38 @@ describe('sso-qa.ts (Story 14.3 Task 10, AC-12 manual-QA runbook)', () => {
 
   describe('ensureUnsealed', () => {
     it('is a no-op once the vault is already unsealed (repeated manual-QA runs)', async () => {
-      await initVaultForTest(initVault, 'sso-qa-ensure-unsealed-test-passphrase')
+      await initVaultForTest(initVault, QA_TEST_PASSPHRASE)
 
       await expect(ensureUnsealed()).resolves.toBeUndefined()
+    })
+
+    it('does not need QA_VAULT_PASSPHRASE while the vault is unsealed', async () => {
+      // Start from a fresh vault so this worker's key-service really is unsealed (a vault_state
+      // row left by another suite would otherwise keep it sealed behind ALREADY_INITIALIZED).
+      await resetVaultForTest()
+      await initVaultForTest(initVault, QA_TEST_PASSPHRASE)
+      expect(isSealed()).toBe(false)
+      const saved = process.env['QA_VAULT_PASSPHRASE']
+      delete process.env['QA_VAULT_PASSPHRASE']
+      try {
+        await expect(ensureUnsealed()).resolves.toBeUndefined()
+      } finally {
+        process.env['QA_VAULT_PASSPHRASE'] = saved
+      }
+    })
+
+    it('rejects with a clear error when the vault is sealed and QA_VAULT_PASSPHRASE is unset', async () => {
+      const saved = process.env['QA_VAULT_PASSPHRASE']
+      delete process.env['QA_VAULT_PASSPHRASE']
+      zeroKeys()
+      try {
+        await expect(ensureUnsealed()).rejects.toThrow(
+          "QA_VAULT_PASSPHRASE is required (the passphrase this QA database's vault was initialised with)"
+        )
+      } finally {
+        process.env['QA_VAULT_PASSPHRASE'] = saved
+        await initVaultForTest(initVault, QA_TEST_PASSPHRASE)
+      }
     })
   })
 

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { enrollMfaViaUi, registerAndLoginViaApi } from '../fixtures/auth.js'
+import { setPlatformOperatorViaDb } from '../fixtures/db.js'
 import { uniqueEmail, uniqueOrgName } from '../fixtures/ids.js'
 
 // GET /status is mounted at the API's own root (apps/api/src/app.ts), NOT under /api/v1/* —
@@ -19,17 +20,19 @@ function apiBaseUrl(): string {
 // J15: Story 1.19 AC-5/AC-6/AC-9. Generate -> copy -> test -> rotate -> revoke the GET /status
 // bearer token from Settings, as a platform operator, plus one real request to GET /status.
 //
-// Known limitation (documented rather than silently flaky): "platform operator" is granted to
-// the FIRST user EVER registered on the instance (D1), and this repo has no UI/API path to
-// self-promote otherwise (by design — see registerPlatformOperator's rationale in
-// apps/api/src/__tests__/helpers/platform-operator-test-helpers.ts, which solves this the same
-// way for API-level integration tests by directly writing to the DB, an escape hatch not
-// available to a browser-driven Playwright spec). This spec therefore only asserts the full
-// journey when its own registration happens to land that slot (typically true on a freshly
-// reset E2E database with no other platform-admin journey ahead of it in file order) and skips
-// itself with a clear reason otherwise, rather than falsely reporting a failure that is really
-// "some other journey/worker registered first."
+// The platform operator is the FIRST user ever registered, and j1 registers first in file order,
+// so this journey promotes its own user with `setPlatformOperatorViaDb` (setup-only, on the
+// disposable E2E database; Story 43.9, following j29). The API re-reads
+// `users.is_platform_operator` on every request, so the promotion applies to the already-logged-in
+// session. The schema allows one operator, so the helper returns the operator it displaced, which
+// `afterAll` restores. MFA is still enrolled: the /api/v1/admin/settings probe is `requireMfa`.
 test.describe.serial('J15 — operational status token journey', () => {
+  let displacedOperatorEmail: string | null = null
+
+  test.afterAll(async () => {
+    if (displacedOperatorEmail) await setPlatformOperatorViaDb(displacedOperatorEmail, true)
+  })
+
   test('AC-5/AC-6: generate, test, rotate, revoke the GET /status token; real GET /status request', async ({
     page,
     context,
@@ -37,19 +40,14 @@ test.describe.serial('J15 — operational status token journey', () => {
     const email = uniqueEmail('j15-operator')
     const password = 'e2e-J15-Password-123'
     await registerAndLoginViaApi(context, { email, password, orgName: uniqueOrgName('J15 Org') })
+    const displaced = await setPlatformOperatorViaDb(email, true)
+    // Record the operator this worker displaced so afterAll can restore it. `??=` is only a
+    // defensive keep-first guard: a Playwright retry runs in a fresh worker (module state is
+    // reset), so it does not carry this value across retries. The suite runs `workers: 1`.
+    displacedOperatorEmail ??= displaced
     await enrollMfaViaUi(page)
 
     const settingsCheck = await context.request.get('/api/v1/admin/settings')
-    if (settingsCheck.status() === 403) {
-      // Playwright's conditional test.skip(condition, reason) — not a disabled/ignored test; see
-      // the file-level comment for why this runtime check exists. NOSONAR(typescript:S1607)
-      test.skip(
-        // NOSONAR(typescript:S1607)
-        true,
-        'This registration did not land the instance-wide "first user" platform-operator ' +
-          'bootstrap slot (see file-level comment) — skipping rather than failing.'
-      )
-    }
     expect(settingsCheck.ok(), await settingsCheck.text()).toBeTruthy()
 
     await page.goto('/platform/settings')

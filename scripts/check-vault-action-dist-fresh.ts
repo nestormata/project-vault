@@ -23,6 +23,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { resolveBin } from './lib/trusted-executable.js'
 
 export const VAULT_ACTION_PACKAGE_DIR = 'packages/vault-action'
 
@@ -85,18 +86,20 @@ export function compareDistDirectories(committedDir: string, freshDir: string): 
  * correct answer when run standalone (e.g. from the tag-triggered release workflow, or locally).
  */
 export function buildFreshDist(repoRoot: string, outDir: string): void {
+  const agentDir = join(repoRoot, 'packages/agent')
+  const vaultActionDir = join(repoRoot, VAULT_ACTION_PACKAGE_DIR)
+  // `@project-vault/agent`'s `build` script is exactly `tsc` (asserted by
+  // scripts/lib/trusted-executable.test.ts). Both bins run under the Node already executing this
+  // script, resolved from the consuming package so its pinned version is used: no `pnpm`
+  // subprocess and no $PATH lookup (Story 43.9, typescript:S4036).
+  execFileSync(process.execPath, [resolveBin('typescript', 'tsc', agentDir)], {
+    cwd: agentDir,
+    stdio: 'inherit',
+  })
   execFileSync(
-    'pnpm', // NOSONAR(typescript:S4036) — trusted binary on this CI/dev host's fixed, unwriteable PATH
-    ['--filter', '@project-vault/agent', 'build'],
-    { cwd: repoRoot, stdio: 'inherit' }
-  )
-  execFileSync(
-    'pnpm', // NOSONAR(typescript:S4036) — trusted binary on this CI/dev host's fixed, unwriteable PATH
+    process.execPath,
     [
-      '--filter',
-      '@project-vault/vault-action',
-      'exec',
-      'ncc',
+      resolveBin('@vercel/ncc', 'ncc', vaultActionDir),
       'build',
       'src/index.ts',
       '-o',
@@ -106,7 +109,7 @@ export function buildFreshDist(repoRoot: string, outDir: string): void {
       '--license',
       'licenses.txt',
     ],
-    { cwd: repoRoot, stdio: 'inherit' }
+    { cwd: vaultActionDir, stdio: 'inherit' }
   )
 }
 

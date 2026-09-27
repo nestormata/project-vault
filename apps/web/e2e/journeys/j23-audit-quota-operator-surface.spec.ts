@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { enrollMfaViaUi, registerAndLoginViaApi } from '../fixtures/auth.js'
+import { setPlatformOperatorViaDb } from '../fixtures/db.js'
 import { uniqueEmail, uniqueOrgName } from '../fixtures/ids.js'
 
 /**
@@ -10,13 +11,21 @@ import { uniqueEmail, uniqueOrgName } from '../fixtures/ids.js'
  * enforcement kill switch needs to be enabled — so this journey runs against the SHARED E2E stack
  * (`make e2e`'s docker-compose.e2e.yml), not an isolated one.
  *
- * Known limitation (documented rather than silently flaky), mirroring J15's own precedent:
- * "platform operator" is granted to the FIRST user EVER registered on the instance, and this repo
- * has no UI/API self-promotion path. This journey skips itself with a clear reason when its own
- * registration does not land that slot, rather than falsely reporting a failure that is really
- * "some other journey/worker registered first."
+ * The platform operator is the FIRST user ever registered, and j1 registers first in file order,
+ * so this journey promotes its own user with `setPlatformOperatorViaDb` (setup-only, on the
+ * disposable E2E database; Story 43.9, following j29). The API re-reads
+ * `users.is_platform_operator` on every request, so the promotion applies to the already-logged-in
+ * session. The schema allows one operator, so the helper returns the operator it displaced, which
+ * `afterAll` restores. MFA is still enrolled: the /api/v1/admin/resource-usage probe is
+ * `requireMfa`.
  */
 test.describe.serial('J23 — audit-storage operator surface journey', () => {
+  let displacedOperatorEmail: string | null = null
+
+  test.afterAll(async () => {
+    if (displacedOperatorEmail) await setPlatformOperatorViaDb(displacedOperatorEmail, true)
+  })
+
   test('AC-5/AC-6/AC-7: per-org table renders, inline edit updates in place, overcommit confirm-and-acknowledge flow', async ({
     page,
     context,
@@ -28,17 +37,14 @@ test.describe.serial('J23 — audit-storage operator surface journey', () => {
       password: e2ePassValue,
       orgName: uniqueOrgName('J23 Org'),
     })
+    const displaced = await setPlatformOperatorViaDb(email, true)
+    // Record the operator this worker displaced so afterAll can restore it. `??=` is only a
+    // defensive keep-first guard: a Playwright retry runs in a fresh worker (module state is
+    // reset), so it does not carry this value across retries. The suite runs `workers: 1`.
+    displacedOperatorEmail ??= displaced
     await enrollMfaViaUi(page)
 
     const resourceUsageCheck = await context.request.get('/api/v1/admin/resource-usage')
-    if (resourceUsageCheck.status() === 403) {
-      test.skip(
-        // NOSONAR(typescript:S1607)
-        true,
-        'This registration did not land the instance-wide "first user" platform-operator ' +
-          'bootstrap slot (see file-level comment) — skipping rather than failing.'
-      )
-    }
     expect(resourceUsageCheck.ok(), await resourceUsageCheck.text()).toBeTruthy()
 
     await page.goto('/platform/settings/resource-usage')

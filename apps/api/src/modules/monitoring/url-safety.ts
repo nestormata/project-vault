@@ -1,5 +1,6 @@
-import net, { BlockList } from 'node:net'
+import net from 'node:net'
 import dns from 'node:dns/promises'
+import ipaddr from 'ipaddr.js'
 import { Agent, buildConnector, type Dispatcher } from 'undici'
 
 /**
@@ -23,32 +24,43 @@ export class UrlNotMonitorableError extends Error {
   }
 }
 
-// This IS the SSRF blocklist (Story 6.2 AC 1/2, ADR-6.2-08) — not incidental literals — on
-// every range/subnet boundary below. NOSONAR must be the first token of its own comment to
-// suppress, so it leads each trailing comment rather than following other text.
-const PRIVATE_IPV4_RANGES: Array<[string, string]> = [
-  ['10.0.0.0', '10.255.255.255'], // NOSONAR(typescript:S1313) RFC1918 private
-  ['172.16.0.0', '172.31.255.255'], // NOSONAR(typescript:S1313) RFC1918 private
-  ['192.168.0.0', '192.168.255.255'], // NOSONAR(typescript:S1313) RFC1918 private
-  ['127.0.0.0', '127.255.255.255'], // loopback
-  ['169.254.0.0', '169.254.255.255'], // NOSONAR(typescript:S1313) link-local, includes 169.254.169.254 cloud metadata
-]
+// The SSRF block set (Story 6.2 AC 1/2, ADR-6.2-08), classified by ipaddr.js's IANA
+// special-purpose registry (`range()`) instead of a hand-maintained range table:
+// - IPv4: RFC 1918 private, loopback 127/8, link-local 169.254/16 (includes the
+//   169.254.169.254 cloud metadata address) and unspecified 0.0.0.0/8 (Story 43.9 AC-12:
+//   0.0.0.0 reaches the local host on Linux).
+// - IPv6: loopback ::1, unique-local fc00::/7, link-local fe80::/10 and unspecified ::
+//   (Story 43.9 AC-12, same reason). IPv4-mapped addresses (::ffff:a.b.c.d, in dotted or hex
+//   form) are unwrapped and checked against the IPv4 set.
+// Deliberately NOT blocked (unchanged, see the deferred-work ledger): CGNAT, multicast, 240/4.
+const BLOCKED_V4_RANGES: ReadonlySet<string> = new Set([
+  'private',
+  'loopback',
+  'linkLocal',
+  'unspecified',
+])
+const BLOCKED_V6_RANGES: ReadonlySet<string> = new Set([
+  'loopback',
+  'uniqueLocal',
+  'linkLocal',
+  'unspecified',
+])
 
-function buildReservedBlockList(): BlockList {
-  const blockList = new net.BlockList()
-  for (const [start, end] of PRIVATE_IPV4_RANGES) {
-    blockList.addRange(start, end, 'ipv4')
-  }
-  blockList.addAddress('::1', 'ipv6') // loopback
-  blockList.addSubnet('fc00::', 7, 'ipv6') // NOSONAR(typescript:S1313) unique-local
-  blockList.addSubnet('fe80::', 10, 'ipv6') // NOSONAR(typescript:S1313) link-local
-  return blockList
+/** `dotted` must be strict four-part decimal; anything else fails closed, because ipaddr.js's
+ * lenient parser would read e.g. '010.0.0.1' as octal 8.0.0.1 (public). */
+function isBlockedIpv4(dotted: string): boolean {
+  if (!ipaddr.IPv4.isValidFourPartDecimal(dotted)) return true
+  return BLOCKED_V4_RANGES.has(ipaddr.IPv4.parse(dotted).range())
 }
 
-// net.BlockList natively unwraps IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1 or its
-// hex-shorthand form ::ffff:7f00:1) against the ipv4 rules when checked with family 'ipv6' —
-// closes adversarial-review finding 7 without any manual unwrapping logic.
-const RESERVED_BLOCK_LIST = buildReservedBlockList()
+/** Fails closed on anything ipaddr.js cannot parse: `net.isIPv6` accepts zone IDs (e.g. the
+ * `%eth0.1` or `%br-1a2b` interface names) that ipaddr.js rejects. */
+function isBlockedIpv6(address: string): boolean {
+  if (!ipaddr.IPv6.isValid(address)) return true
+  const parsed = ipaddr.IPv6.parse(address)
+  if (parsed.isIPv4MappedAddress()) return isBlockedIpv4(parsed.toIPv4Address().toString())
+  return BLOCKED_V6_RANGES.has(parsed.range())
+}
 
 /**
  * Canonicalizes well-known SSRF-filter-bypass numeric IPv4 encodings (decimal, hex, octal —
@@ -83,10 +95,10 @@ function canonicalizeNumericIpv4Literal(input: string): string | null {
  */
 export function isPrivateOrReservedIp(ip: string): boolean {
   const trimmed = ip.trim()
-  if (net.isIPv4(trimmed)) return RESERVED_BLOCK_LIST.check(trimmed, 'ipv4')
-  if (net.isIPv6(trimmed)) return RESERVED_BLOCK_LIST.check(trimmed, 'ipv6')
+  if (net.isIPv4(trimmed)) return isBlockedIpv4(trimmed)
+  if (net.isIPv6(trimmed)) return isBlockedIpv6(trimmed)
   const canonicalIpv4 = canonicalizeNumericIpv4Literal(trimmed)
-  if (canonicalIpv4) return RESERVED_BLOCK_LIST.check(canonicalIpv4, 'ipv4')
+  if (canonicalIpv4) return isBlockedIpv4(canonicalIpv4)
   return false
 }
 

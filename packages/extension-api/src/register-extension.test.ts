@@ -21,6 +21,7 @@ const PROJECT_ARCHIVE_NOTIFY_CAPABILITY = 'project-archive-notify' as const
 const AUDIT_EVENT_SOURCE_CAPABILITY = 'audit-event-source' as const
 // Story 25.12 AC2 — the panelDataPaths describe block's own recurring example path template.
 const ORG_USERS_DATA_PATH = '/api/v1/org/users'
+const PROJECTS_DATA_PATH = '/api/v1/projects'
 // Story 34.1/36.1 — the "capture the real host, then assert against its default-rejecting
 // fields" tests' shared guard-clause message; a constant avoids sonarjs/no-duplicate-string
 // tripping on this literal repeated a 3rd time.
@@ -889,16 +890,31 @@ describe('registerExtension — AC2 (panelDataPaths, Story 25.12)', () => {
     const result = registerExtension(
       manifest({
         capabilities: ['ui-panel'],
-        panelDataPaths: ['/api/v1/projects', '/api/v1/projects/:id', ORG_USERS_DATA_PATH],
+        panelDataPaths: [PROJECTS_DATA_PATH, '/api/v1/projects/:id', ORG_USERS_DATA_PATH],
       }),
       hooksFactory
     )
     expect(result.manifest.panelDataPaths).toEqual([
-      '/api/v1/projects',
+      PROJECTS_DATA_PATH,
       '/api/v1/projects/:id',
       ORG_USERS_DATA_PATH,
     ])
     expect(hooksFactory).toHaveBeenCalledTimes(1)
+  })
+
+  it('passes the validated array through by reference, as before (Story 43.9 AC-5 behaviour preservation)', () => {
+    const declared = [PROJECTS_DATA_PATH, ORG_USERS_DATA_PATH]
+    const result = registerExtension(
+      manifest({ capabilities: ['ui-panel'], panelDataPaths: declared }),
+      makeHooksFactory()
+    )
+    expect(result.manifest.panelDataPaths).toBe(declared)
+    declared.push('/api/v1/org/teams')
+    expect(result.manifest.panelDataPaths).toEqual([
+      PROJECTS_DATA_PATH,
+      ORG_USERS_DATA_PATH,
+      '/api/v1/org/teams',
+    ])
   })
 
   it('accepts a template containing a :param placeholder segment', () => {

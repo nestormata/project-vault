@@ -6,7 +6,7 @@
 # secret the api/web apps need at boot. Safe to re-run: `flyctl apps create`/`flyctl volumes
 # create`/`flyctl secrets set` are all idempotent or explicitly guarded below.
 #
-# Usage: FLY_ORG=personal ./scripts/fly-setup.sh
+# Usage: FLY_ORG=personal VAULT_APP_PASSWORD=... VAULT_ADMIN_PASSWORD=... ./scripts/fly-setup.sh
 #
 # Requires: flyctl authenticated (`flyctl auth login`), openssl.
 set -euo pipefail
@@ -16,6 +16,9 @@ API_APP="${FLY_API_APP:-project-vault-demo-api}"
 WEB_APP="${FLY_WEB_APP:-project-vault-demo-web}"
 REGION="${FLY_REGION:-iad}"
 ORG="${FLY_ORG:?Set FLY_ORG to your Fly.io org slug (flyctl orgs list)}"
+# Required, checked before any flyctl call: there is no default, because the only possible one is
+# the migration's publicly known dev password (see the api secrets section below).
+: "${VAULT_APP_PASSWORD:?Set VAULT_APP_PASSWORD to the vault_app password (fly-reset.sh ALTERs vault_app to this value; it must match)}"
 
 command -v flyctl >/dev/null 2>&1 || { echo "flyctl not found — see https://fly.io/docs/flyctl/install/" >&2; exit 1; }
 
@@ -53,12 +56,12 @@ VAULT_PASSPHRASE="${DEMO_VAULT_PASSPHRASE:-$(openssl rand -base64 24)}"
 BOOTSTRAP_TOKEN="${VAULT_BOOTSTRAP_TOKEN:-$(openssl rand -base64 32)}"
 # vault_app doesn't exist yet — db:migrate creates it (packages/db/src/migrations/
 # 0001_rls_and_triggers.sql) with a hardcoded 'dev-only-change-in-prod' password.
-# scripts/fly-reset.sh ALTERs it to this same value right after every migrate run, so
-# DATABASE_URL below can point at the final password from the start; no separate manual
-# hardening step needed as long as VAULT_APP_PASSWORD here matches what you pass to
-# fly-reset.sh (and, if you're wiring up the nightly cron, FLY_DEMO_VAULT_APP_PASSWORD).
+# scripts/fly-reset.sh ALTERs it to VAULT_APP_PASSWORD right after every migrate run, so
+# DATABASE_URL below points at the final password from the start. VAULT_APP_PASSWORD is
+# required (checked at the top): it must be the value you pass to fly-reset.sh (and, if you're
+# wiring up the nightly cron, FLY_DEMO_VAULT_APP_PASSWORD).
 flyctl secrets set -a "$API_APP" \
-  DATABASE_URL="postgresql://vault_app:${VAULT_APP_PASSWORD:-dev-only-change-in-prod}@${DB_APP}.internal:5432/project_vault" \
+  DATABASE_URL="postgresql://vault_app:${VAULT_APP_PASSWORD}@${DB_APP}.internal:5432/project_vault" \
   ADMIN_DATABASE_URL="postgresql://vault_admin:${VAULT_ADMIN_PASSWORD}@${DB_APP}.internal:5432/project_vault" \
   CORS_ALLOWED_ORIGINS="https://${WEB_APP}.fly.dev" \
   SESSION_SECRET="$(openssl rand -hex 32)" \
@@ -79,9 +82,11 @@ flyctl secrets set -a "$API_APP" \
 echo "== web: secrets =="
 # http:// (not https://), intentional: this URL is only ever dialed over Fly's private 6PN
 # network (<app>.internal), which is itself an encrypted WireGuard overlay — api has no public
-# IP and terminates no TLS, so https:// here would just fail. NOSONAR(shell:S5332)
+# IP and terminates no TLS, so https:// here would just fail. This is a signed-off exception
+# (see sonar-project.properties); TLS on this hop is tracked as story
+# 43-16-epic-43-completion-tls-on-the-fly-internal-api-hop.
 flyctl secrets set -a "$WEB_APP" \
-  API_BASE_URL="http://${API_APP}.internal:3000" # NOSONAR(shell:S5332)
+  API_BASE_URL="http://${API_APP}.internal:3000"
 
 cat <<EOF
 

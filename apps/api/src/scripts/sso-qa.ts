@@ -6,6 +6,8 @@
  *
  * Usage:
  *   pnpm --filter @project-vault/mock-sso-extension build
+ *   export QA_DATABASE_URL=<separately provisioned QA connection>
+ *   export QA_VAULT_PASSPHRASE=<the passphrase this QA database's vault was initialised with>
  *   pnpm --filter @project-vault/api sso:qa
  *
  * This script never runs in production and is excluded from any production entrypoint/manifest —
@@ -33,15 +35,19 @@ export const PROVIDER_NAME = 'test.mock-sso-extension'
 // separately provisioned QA connection explicitly when running this script; there is no fallback.
 const qaDatabaseUrl = process.env['QA_DATABASE_URL']
 const qaDb = qaDatabaseUrl ? drizzle(postgres(qaDatabaseUrl)) : null
-// Not a credential — a fixed, non-secret local-only vault passphrase for this manual-QA script
-// alone; the script never runs in production (see file header + the
-// mock-extension-not-in-production.test.ts guard), so there is nothing here for the rule to protect.
-const QA_PASSPHRASE = 'sso-qa-local-passphrase-not-for-production' // NOSONAR(typescript:S2068)
 
 export async function ensureUnsealed(): Promise<void> {
   if (!isSealed()) return
+  // Like QA_DATABASE_URL, the QA vault passphrase comes from the environment with no fallback:
+  // it is only needed when the vault is sealed.
+  const qaVaultPassphrase = process.env['QA_VAULT_PASSPHRASE']
+  if (!qaVaultPassphrase) {
+    throw new Error(
+      "QA_VAULT_PASSPHRASE is required (the passphrase this QA database's vault was initialised with)"
+    )
+  }
   try {
-    await initVault({ kmsType: 'passphrase', passphrase: QA_PASSPHRASE }, {})
+    await initVault({ kmsType: 'passphrase', passphrase: qaVaultPassphrase }, {})
   } catch (error) {
     if ((error as { code?: string }).code !== 'ALREADY_INITIALIZED') throw error
     process.stdout.write(

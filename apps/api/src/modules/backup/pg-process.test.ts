@@ -36,6 +36,21 @@ vi.mock('node:child_process', () => ({
   spawn: (...args: unknown[]) => spawnMock(...args),
 }))
 
+// Story 43.9 AC-4 (typescript:S4036): pg_dump/psql are resolved from fixed root-owned directories,
+// never $PATH. Pin the filesystem view so these tests do not depend on the host's layout: by
+// default only /usr/bin has the two clients, as in the api runner image.
+const IMAGE_PG_DUMP = '/usr/bin/pg_dump'
+const IMAGE_PSQL = '/usr/bin/psql'
+const LOCAL_PG_DUMP = '/usr/local/bin/pg_dump'
+const IMAGE_CLIENT_PATHS = new Set([IMAGE_PG_DUMP, IMAGE_PSQL])
+const accessSyncMock = vi.fn((path: string) => {
+  if (!IMAGE_CLIENT_PATHS.has(path)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+})
+vi.mock('node:fs', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:fs')>()),
+  accessSync: (path: string) => accessSyncMock(path),
+}))
+
 describe('Story 28.8: runPgRestore stdin error handling', () => {
   beforeEach(() => {
     spawnMock.mockReset()
@@ -389,6 +404,69 @@ describe('Story 28.11: runPgRestore stdout/stderr error handling', () => {
       const result = await promise
       expect(result).toBeInstanceOf(PgProcessError)
       expect(settleCount).toBe(1)
+    }
+  )
+})
+
+describe('Story 43.9 AC-4: pg_dump/psql resolve from fixed directories, never $PATH', () => {
+  beforeEach(() => {
+    spawnMock.mockReset()
+    accessSyncMock.mockClear()
+    vi.resetModules()
+  })
+
+  it('runPgDump spawns the absolute /usr/bin/pg_dump', async () => {
+    const { runPgDump } = await import('./pg-process.js')
+    const fakeChild = createFakeChild()
+    spawnMock.mockReturnValue(fakeChild)
+    const promise = runPgDump(CONNECTION_STRING)
+    fakeChild.emit('close', 0)
+    await promise
+    expect(spawnMock.mock.calls[0]?.[0]).toBe(IMAGE_PG_DUMP)
+  })
+
+  it('runPgRestore spawns the absolute /usr/bin/psql', async () => {
+    const { runPgRestore } = await import('./pg-process.js')
+    const fakeChild = createFakeChild()
+    spawnMock.mockReturnValue(fakeChild)
+    const promise = runPgRestore(CONNECTION_STRING, Buffer.from('SELECT 1;'))
+    fakeChild.emit('close', 0)
+    await promise
+    expect(spawnMock.mock.calls[0]?.[0]).toBe(IMAGE_PSQL)
+  })
+
+  it('falls through to a later fixed directory in order', async () => {
+    accessSyncMock.mockImplementation((path: string) => {
+      if (path !== LOCAL_PG_DUMP) throw new Error('ENOENT')
+    })
+    const { runPgDump } = await import('./pg-process.js')
+    const fakeChild = createFakeChild()
+    spawnMock.mockReturnValue(fakeChild)
+    const promise = runPgDump(CONNECTION_STRING)
+    fakeChild.emit('close', 0)
+    await promise
+    expect(spawnMock.mock.calls[0]?.[0]).toBe(LOCAL_PG_DUMP)
+    expect(accessSyncMock.mock.calls.map(([path]) => path)).toEqual([IMAGE_PG_DUMP, LOCAL_PG_DUMP])
+  })
+
+  it.each([
+    ['pg_dump', (run: typeof import('./pg-process.js')) => run.runPgDump(CONNECTION_STRING)],
+    [
+      'psql',
+      (run: typeof import('./pg-process.js')) =>
+        run.runPgRestore(CONNECTION_STRING, Buffer.from('SELECT 1;')),
+    ],
+  ])(
+    'rejects with PgProcessError and never spawns when %s is in none of the directories',
+    async (name, invoke) => {
+      accessSyncMock.mockImplementation(() => {
+        throw new Error('ENOENT')
+      })
+      const pgProcess = await import('./pg-process.js')
+      const attempt = invoke(pgProcess)
+      await expect(attempt).rejects.toBeInstanceOf(pgProcess.PgProcessError)
+      await expect(attempt).rejects.toThrow(`${name} not found in /usr/bin, /usr/local/bin or /bin`)
+      expect(spawnMock).not.toHaveBeenCalled()
     }
   )
 })

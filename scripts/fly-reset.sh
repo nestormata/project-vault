@@ -13,7 +13,8 @@
 #
 # Required env:
 #   ADMIN_PG_PASSWORD     postgres superuser password (scripts/fly-setup.sh printed it)
-#   VAULT_APP_PASSWORD    vault_app role password (default matches pre-hardening compose value)
+#   VAULT_APP_PASSWORD    vault_app role password — the same value fly-setup.sh put in the api
+#                         app's DATABASE_URL (no default: the only possible one is public)
 #   VAULT_ADMIN_PASSWORD  vault_admin role password configured in the api app's ADMIN_DATABASE_URL
 #   DEMO_VAULT_PASSPHRASE passphrase used for vault init/unseal (scripts/fly-setup.sh printed it)
 #   DEMO_LOGIN_EMAIL      email for the one real, login-able seeded user
@@ -41,7 +42,7 @@ PROXY_PORT="${FLY_DB_PROXY_PORT:-15432}"
 : "${DEMO_LOGIN_PASSWORD:?Set DEMO_LOGIN_PASSWORD}"
 : "${VAULT_BOOTSTRAP_TOKEN:?Set VAULT_BOOTSTRAP_TOKEN (same value set on the api app by fly-setup.sh)}"
 : "${VAULT_ADMIN_PASSWORD:?Set VAULT_ADMIN_PASSWORD (same value set on the api app by fly-setup.sh)}"
-VAULT_APP_PASSWORD="${VAULT_APP_PASSWORD:-dev-only-change-in-prod}"
+: "${VAULT_APP_PASSWORD:?Set VAULT_APP_PASSWORD (the vault_app password fly-setup.sh put in the api DATABASE_URL; this script ALTERs vault_app to it)}"
 
 for bin in flyctl pnpm jq psql curl; do
   command -v "$bin" >/dev/null 2>&1 || { echo "missing required binary: $bin" >&2; exit 1; }
