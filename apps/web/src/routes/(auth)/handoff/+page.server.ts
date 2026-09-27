@@ -48,7 +48,7 @@ async function parseExchangeResult(
   // AC3: the REMAINING TTL, not a fresh 120s — a claim exchange must never let the pending
   // state's effective life extend past its original expiry.
   const remainingMs = new Date(expiresAtRaw).getTime() - Date.now()
-  if (!(remainingMs > 0)) return null
+  if (remainingMs <= 0) return null
 
   return { rawCookieValue, remainingMs }
 }
