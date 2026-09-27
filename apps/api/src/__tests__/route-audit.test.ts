@@ -7,6 +7,7 @@ import { MFA_ENROLLMENT_EXEMPT_ROUTES } from '@project-vault/shared'
 import {
   DIRECT_DB_ACCESS_CLASSIFICATIONS,
   HELPER_ROUTE_REGISTRATION_CLASSIFICATIONS,
+  IP_RATE_LIMIT,
   PUBLIC_ROUTE_EXEMPTIONS,
   ROUTE_ACTION_CLASSIFICATIONS,
 } from '../lib/route-exemptions.js'
@@ -40,6 +41,10 @@ type ParsedRoute = {
   preHandlerSource: string
   source: string
   registrar: string
+  // Story 43.8 (AC-8): the declaring call and its options object, so the ip-rate-limit audit can
+  // walk to the enclosing registrar function and inspect the route's own config/handler nodes.
+  call: ts.CallExpression
+  options: ts.ObjectLiteralExpression | undefined
 }
 
 type RouteFile = { path: string; prefix: string }
@@ -126,6 +131,7 @@ function objectProperty(
 }
 
 function routeFromOptions(
+  call: ts.CallExpression,
   object: ts.ObjectLiteralExpression,
   registrar: string,
   constants: Map<string, string>,
@@ -143,6 +149,8 @@ function routeFromOptions(
     preHandlerSource,
     source: object.getFullText(),
     registrar,
+    call,
+    options: object,
   }
 }
 
@@ -211,7 +219,7 @@ function rawRegisteredRoute(
   if (node.expression.name.text !== 'route') return null
   const firstArgument = node.arguments[0]
   if (!firstArgument || !ts.isObjectLiteralExpression(firstArgument)) return null
-  return routeFromOptions(firstArgument, 'fastify.route', constants)
+  return routeFromOptions(node, firstArgument, 'fastify.route', constants)
 }
 
 function shorthandRegisteredRoute(node: ts.CallExpression): ParsedRoute | null {
@@ -219,12 +227,15 @@ function shorthandRegisteredRoute(node: ts.CallExpression): ParsedRoute | null {
   const registrar = node.expression.name.text
   if (!(FASTIFY_SHORTHANDS as readonly string[]).includes(registrar)) return null
   const url = literalText(node.arguments[0])
+  const options = node.arguments[1]
   return {
     method: registrar.toUpperCase(),
     url: url ?? '<dynamic>',
-    preHandlerSource: node.arguments[1]?.getText() ?? '',
+    preHandlerSource: options?.getText() ?? '',
     source: node.getFullText(),
     registrar: `fastify.${registrar}`,
+    call: node,
+    options: options && ts.isObjectLiteralExpression(options) ? options : undefined,
   }
 }
 
@@ -257,7 +268,7 @@ function parseRoutes(source: string): ParsedRoute[] {
       secondArgument &&
       ts.isObjectLiteralExpression(secondArgument)
     ) {
-      const route = routeFromOptions(secondArgument, 'secureRoute', constants)
+      const route = routeFromOptions(node, secondArgument, 'secureRoute', constants)
       if (route) secureRoutes.push(route)
     }
     ts.forEachChild(node, visit)
@@ -372,6 +383,178 @@ function helperRegistrars(source: string): string[] {
     if (/fastify\.(route|get|post|put|patch|delete)\(/.test(body)) helpers.push(name)
   }
   return helpers
+}
+
+// --- Story 43.8 AC-8: a claimed `ip-rate-limit` compensating control must be machine-verifiable ---
+// Epic-43 retro Finding 3: the CLI routes listed IP_RATE_LIMIT while no @fastify/rate-limit was
+// registered in their plugin scope, so their `config.rateLimit` blocks were inert. The checker is a
+// pure function over source text (AST only — never substring matches, so comments/strings never
+// count) so it can be proven against fixtures that reproduce each way a lenient check would pass.
+
+/** Explicit allowlist of named, IP-keyed manual limiters (M-manual). Extend only with such helpers. */
+const MANUAL_IP_RATE_LIMITERS: readonly string[] = ['enforceIpRateLimitAndNormalizeEmailBody']
+const RATE_LIMIT_ENFORCED_GUARD = 'isRateLimitEnforced'
+
+type FunctionLike =
+  ts.FunctionDeclaration | ts.FunctionExpression | ts.ArrowFunction | ts.MethodDeclaration
+
+function isFunctionLike(node: ts.Node): node is FunctionLike {
+  return (
+    ts.isFunctionDeclaration(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isArrowFunction(node) ||
+    ts.isMethodDeclaration(node)
+  )
+}
+
+function enclosingFunction(node: ts.Node): FunctionLike | undefined {
+  let current = node.parent
+  while (current && !isFunctionLike(current)) current = current.parent
+  return current
+}
+
+function functionName(fn: FunctionLike | undefined): string {
+  if (!fn) return '<module scope>'
+  if ((ts.isFunctionDeclaration(fn) || ts.isMethodDeclaration(fn)) && fn.name) {
+    return fn.name.getText()
+  }
+  return '<anonymous registrar>'
+}
+
+function rateLimitImportName(file: ts.SourceFile): string | undefined {
+  for (const statement of file.statements) {
+    if (!ts.isImportDeclaration(statement)) continue
+    if (literalText(statement.moduleSpecifier as ts.Expression) !== '@fastify/rate-limit') continue
+    return statement.importClause?.name?.text
+  }
+  return undefined
+}
+
+function callsNamed(root: ts.Node, names: readonly string[]): boolean {
+  let found = false
+  function visit(node: ts.Node): void {
+    if (found) return
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+      found = names.includes(node.expression.text)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(root)
+  return found
+}
+
+function isRateLimitEnforcedGuard(node: ts.IfStatement, child: ts.Node): boolean {
+  const condition = node.expression
+  return (
+    node.thenStatement === child &&
+    ts.isCallExpression(condition) &&
+    ts.isIdentifier(condition.expression) &&
+    condition.expression.text === RATE_LIMIT_ENFORCED_GUARD &&
+    condition.arguments.length === 0
+  )
+}
+
+/** True when the registration always runs in `fn` (bar the isRateLimitEnforced() test bypass). */
+function isUnconditionalIn(registration: ts.CallExpression, fn: FunctionLike): boolean {
+  let child: ts.Node = registration
+  let current = registration.parent
+  while (current && current !== fn) {
+    const allowed =
+      ts.isAwaitExpression(current) ||
+      ts.isExpressionStatement(current) ||
+      ts.isBlock(current) ||
+      (ts.isIfStatement(current) && isRateLimitEnforcedGuard(current, child))
+    if (!allowed) return false
+    child = current
+    current = current.parent
+  }
+  return current === fn
+}
+
+function isRateLimitRegistration(node: ts.CallExpression, rateLimitName: string | undefined) {
+  if (ts.isIdentifier(node.expression)) return node.expression.text === 'registerIpRateLimit'
+  if (!ts.isPropertyAccessExpression(node.expression)) return false
+  if (node.expression.name.text !== 'register' || !rateLimitName) return false
+  const plugin = node.arguments[0]
+  return plugin !== undefined && ts.isIdentifier(plugin) && plugin.text === rateLimitName
+}
+
+function registrationIsGlobal(registration: ts.CallExpression): boolean {
+  const options = registration.arguments[1]
+  if (!options || !ts.isObjectLiteralExpression(options)) return true
+  return objectProperty(options, 'global')?.kind !== ts.SyntaxKind.FalseKeyword
+}
+
+function routeRateLimitConfig(route: ParsedRoute): ts.Expression | undefined {
+  const config = route.options ? objectProperty(route.options, 'config') : undefined
+  return config && ts.isObjectLiteralExpression(config)
+    ? objectProperty(config, 'rateLimit')
+    : undefined
+}
+
+function hasPrecedingPluginRegistration(route: ParsedRoute): boolean {
+  const ownConfig = routeRateLimitConfig(route)
+  if (ownConfig?.kind === ts.SyntaxKind.FalseKeyword) return false
+  const fn = enclosingFunction(route.call)
+  if (!fn?.body) return false
+  const rateLimitName = rateLimitImportName(route.call.getSourceFile())
+  const hasOwnObjectConfig = ownConfig !== undefined && ts.isObjectLiteralExpression(ownConfig)
+  let found = false
+  function visit(node: ts.Node): void {
+    if (found || node.getStart() >= route.call.getStart()) return
+    if (
+      ts.isCallExpression(node) &&
+      isRateLimitRegistration(node, rateLimitName) &&
+      isUnconditionalIn(node, fn as FunctionLike) &&
+      (hasOwnObjectConfig || registrationIsGlobal(node))
+    ) {
+      found = true
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(fn.body)
+  return found
+}
+
+function secureRouteKeepsRateLimit(route: ParsedRoute): boolean {
+  if (route.registrar !== 'secureRoute') return false
+  const security = route.options ? objectProperty(route.options, 'security') : undefined
+  if (!security || !ts.isObjectLiteralExpression(security)) return true
+  return objectProperty(security, 'rateLimit')?.kind !== ts.SyntaxKind.FalseKeyword
+}
+
+function routeHasIpRateLimit(route: ParsedRoute): boolean {
+  if (secureRouteKeepsRateLimit(route)) return true
+  if (callsNamed(route.options ?? route.call, MANUAL_IP_RATE_LIMITERS)) return true
+  return route.registrar !== 'secureRoute' && hasPrecedingPluginRegistration(route)
+}
+
+/** Every reason `routeKey` (declared in `source`, mounted at `prefix`) fails its ip-rate-limit claim. */
+function ipRateLimitViolations(source: string, routeKey: string, prefix = ''): string[] {
+  const matches = parseRoutes(source).filter((route) => routeKeyFor(route, prefix) === routeKey)
+  if (matches.length === 0) return [`${routeKey} claims ip-rate-limit but route not found`]
+  return matches
+    .filter((route) => !routeHasIpRateLimit(route))
+    .map(
+      (route) =>
+        `${routeKey} claims ip-rate-limit but no registerIpRateLimit/register(rateLimit) precedes ` +
+        `it in ${functionName(enclosingFunction(route.call))}, it is not a secureRoute (with ` +
+        `rateLimit enabled), and its handler calls no MANUAL_IP_RATE_LIMITERS`
+    )
+}
+
+function ipRateLimitClaimViolations(): string[] {
+  const claimed = PUBLIC_ROUTE_EXEMPTIONS.filter((entry) =>
+    (entry.compensatingControls as readonly string[]).includes(IP_RATE_LIMIT)
+  ).map((entry) => entry.route)
+  const productionRoutes = parsedProductionRoutes()
+  return claimed.flatMap((routeKey) => {
+    const declared = productionRoutes.find((entry) => entry.routeKey === routeKey)
+    if (!declared) return [`${routeKey} claims ip-rate-limit but route not found`]
+    const source = readFileSync(resolve(process.cwd(), 'src', declared.path), 'utf-8')
+    return ipRateLimitViolations(source, routeKey, declared.prefix)
+  })
 }
 
 describe('route audit', () => {
@@ -518,5 +701,110 @@ describe('route audit', () => {
 
     expect(appSource).not.toContain('privileged-test-route')
     expect(mainSource).not.toContain('privileged-test-route')
+  })
+  it('every route that claims ip-rate-limit actually registers an IP limiter in its own scope', () => {
+    expect(ipRateLimitClaimViolations()).toEqual([])
+  })
+})
+
+// Story 43.8 AC-8: proves the checker above would have caught Finding 3, and rejects each way a
+// lenient checker could pass a route whose IP limit can be off in production.
+describe('ip-rate-limit audit checker (fixtures)', () => {
+  const ROUTE_KEY = 'POST /cli-login'
+  const IMPORTS = [
+    "import rateLimit from '@fastify/rate-limit'",
+    "import { registerIpRateLimit } from '../../lib/ip-rate-limit.js'",
+  ].join('\n')
+
+  function plugin(body: string): string {
+    return `${IMPORTS}\nexport async function cliLoginRoutes(fastify) {\n${body}\n}\n`
+  }
+
+  const ROUTE_WITH_CONFIG = `
+  withRouteTypeProvider(fastify).route({
+    method: 'POST',
+    url: '/cli-login',
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+    handler: async () => ({}),
+  })`
+  const ROUTE_WITHOUT_CONFIG = `
+  fastify.route({ method: 'POST', url: '/cli-login', handler: async () => ({}) })`
+  const GUARDED_REGISTRATION = `
+  if (isRateLimitEnforced()) {
+    await fastify.register(rateLimit, { max: 60, timeWindow: '1 minute' })
+  }`
+
+  it('flags the pre-fix cli-login-routes.ts shape (config.rateLimit, no registration)', () => {
+    const violations = ipRateLimitViolations(plugin(ROUTE_WITH_CONFIG), ROUTE_KEY)
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toContain('POST /cli-login claims ip-rate-limit')
+    expect(violations[0]).toContain('cliLoginRoutes')
+  })
+
+  it.each([
+    [
+      'config.rateLimit: false inside a registered scope',
+      `${GUARDED_REGISTRATION}
+  fastify.route({ method: 'POST', url: '/cli-login', config: { rateLimit: false }, handler: h })`,
+    ],
+    ['the registration placed after the route', `${ROUTE_WITH_CONFIG}\n${GUARDED_REGISTRATION}`],
+    [
+      'the registration inside a feature-flag conditional',
+      `  if (env.FEATURE_X) {\n    await registerIpRateLimit(fastify, { max: 60 })\n  }\n${ROUTE_WITH_CONFIG}`,
+    ],
+    [
+      'the registration inside a try block',
+      `  try {\n    await registerIpRateLimit(fastify, { max: 60 })\n  } catch {}\n${ROUTE_WITH_CONFIG}`,
+    ],
+    [
+      'the registration only mentioned in a comment and a string',
+      `  // await registerIpRateLimit(fastify, { max: 60 })\n  const note = 'registerIpRateLimit(fastify)'\n${ROUTE_WITH_CONFIG}`,
+    ],
+    [
+      'register(rateLimit, { global: false }) with a route lacking its own config',
+      `  await fastify.register(rateLimit, { global: false })\n${ROUTE_WITHOUT_CONFIG}`,
+    ],
+    [
+      'the registration inside a nested helper function',
+      `  async function later() {\n    await registerIpRateLimit(fastify, { max: 60 })\n  }\n${ROUTE_WITH_CONFIG}`,
+    ],
+  ])('flags %s', (_label, body) => {
+    expect(ipRateLimitViolations(plugin(body), ROUTE_KEY)).toHaveLength(1)
+  })
+
+  it.each([
+    [
+      'the real guarded register(rateLimit) shape',
+      `${GUARDED_REGISTRATION}\n${ROUTE_WITHOUT_CONFIG}`,
+    ],
+    [
+      'registerIpRateLimit as the first statement',
+      `  await registerIpRateLimit(fastify, { max: 60 })\n${ROUTE_WITH_CONFIG}`,
+    ],
+    [
+      'register(rateLimit, { global: false }) with a route carrying its own config',
+      `  await fastify.register(rateLimit, { global: false })\n${ROUTE_WITH_CONFIG}`,
+    ],
+    [
+      'a secureRoute that keeps its default rate limit',
+      `  secureRoute(fastify, { method: 'POST', url: '/cli-login', security: { requireAuth: false }, handler: h })`,
+    ],
+    [
+      'a raw route whose handler calls an allowlisted manual IP limiter',
+      `  fastify.route({ method: 'POST', url: '/cli-login', handler: async (req, reply) => {\n    await enforceIpRateLimitAndNormalizeEmailBody(req, reply)\n  } })`,
+    ],
+  ])('accepts %s', (_label, body) => {
+    expect(ipRateLimitViolations(plugin(body), ROUTE_KEY)).toEqual([])
+  })
+
+  it('flags a secureRoute that opts out with rateLimit: false', () => {
+    const body = `  secureRoute(fastify, { method: 'POST', url: '/cli-login', security: { requireAuth: false, rateLimit: false }, handler: h })`
+    expect(ipRateLimitViolations(plugin(body), ROUTE_KEY)).toHaveLength(1)
+  })
+
+  it('flags a claimed route that cannot be found (a rename cannot silently drop out)', () => {
+    expect(ipRateLimitViolations(plugin(ROUTE_WITH_CONFIG), 'POST /renamed')).toEqual([
+      'POST /renamed claims ip-rate-limit but route not found',
+    ])
   })
 })

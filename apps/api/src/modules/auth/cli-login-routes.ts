@@ -2,9 +2,12 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { eq } from 'drizzle-orm'
 import { getDb, type Tx } from '@project-vault/db'
 import { refreshTokens } from '@project-vault/db/schema'
+import { OperationalEvent } from '@project-vault/shared'
+import { env } from '../../config/env.js'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { AppError } from '../../lib/errors.js'
 import { ApiErrorSchema, withRouteTypeProvider } from '../../lib/api-contracts.js'
+import { registerIpRateLimit } from '../../lib/ip-rate-limit.js'
 import { validationError } from '../../lib/route-helpers.js'
 import { revokeSessionById } from './session-revoke.js'
 import { refreshSession, type LoginResult } from './service.js'
@@ -34,6 +37,10 @@ import {
 // of `Set-Cookie`). Kept in this own file rather than a mode flag on `/login`, per this story's
 // Dev Notes: a header-gated dual-mode route is a subtler, easier-to-regress surface (a missing
 // header silently falls back to cookie mode) than two explicitly separate, testable routes.
+//
+// Story 43.8: this plugin registers its OWN per-IP limiter because it is a sibling of
+// `authRoutes` in app.ts, not a child — `authRoutes`' @fastify/rate-limit never saw these routes,
+// so their `config.rateLimit` blocks were inert and /cli-login was unthrottled (retro Finding 3).
 
 function sendAppError(reply: FastifyReply, error: AppError): unknown {
   return reply.status(error.statusCode).send({ code: error.code, message: error.message })
@@ -68,10 +75,18 @@ async function sendBearerSession(
 }
 
 export async function cliLoginRoutes(fastify: FastifyApp): Promise<void> {
+  // Must stay the first statement: the limiter only applies to routes declared after it.
+  await registerIpRateLimit(fastify, {
+    max: env.AUTH_RATE_LIMIT_MAX,
+    message: 'Too many authentication attempts',
+    logEventType: OperationalEvent.AUTH_CLI_RATE_LIMITED,
+  })
+
   withRouteTypeProvider(fastify).route({
     method: 'POST',
     url: '/cli-login',
     bodyLimit: 4096,
+    config: { rateLimit: { max: env.AUTH_RATE_LIMIT_MAX, timeWindow: '1 minute' } },
     attachValidation: true,
     schema: {
       body: LoginRequestSchema,
@@ -80,6 +95,7 @@ export async function cliLoginRoutes(fastify: FastifyApp): Promise<void> {
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         422: ApiErrorSchema,
+        429: ApiErrorSchema,
       },
     },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
@@ -139,6 +155,7 @@ export async function cliLoginRoutes(fastify: FastifyApp): Promise<void> {
         200: cliRefreshResponseSchema,
         401: ApiErrorSchema,
         422: ApiErrorSchema,
+        429: ApiErrorSchema,
       },
     },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {
@@ -173,12 +190,14 @@ export async function cliLoginRoutes(fastify: FastifyApp): Promise<void> {
     method: 'POST',
     url: '/cli/logout',
     bodyLimit: 4096,
+    config: { rateLimit: { max: env.AUTH_RATE_LIMIT_MAX, timeWindow: '1 minute' } },
     attachValidation: true,
     schema: {
       body: cliLogoutBodySchema,
       response: {
         200: cliLogoutResponseSchema,
         422: ApiErrorSchema,
+        429: ApiErrorSchema,
       },
     },
     handler: async (req: FastifyRequest, reply: FastifyReply) => {

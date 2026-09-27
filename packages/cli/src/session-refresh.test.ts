@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -41,6 +41,7 @@ const EXPIRED: SessionData = {
 }
 
 const REFRESHED_ACCESS_TOKEN = 'new-access'
+const OTHER_PROCESS_ACCESS = 'other-process-access'
 
 beforeEach(() => {
   xdgHome = mkdtempSync(join(tmpdir(), 'pvault-refresh-test-'))
@@ -110,7 +111,7 @@ describe('ensureFreshSession — AC-4 silent refresh', () => {
       writeSession(
         {
           ...EXPIRED,
-          accessToken: 'other-process-access',
+          accessToken: OTHER_PROCESS_ACCESS,
           accessExpiresAt: new Date(Date.now() + 300_000).toISOString(),
         },
         envFor()
@@ -122,18 +123,16 @@ describe('ensureFreshSession — AC-4 silent refresh', () => {
 
     expect(result).toEqual({
       status: 'ok',
-      session: expect.objectContaining({ accessToken: 'other-process-access' }),
+      session: expect.objectContaining({ accessToken: OTHER_PROCESS_ACCESS }),
     })
   })
 
   it('never throws on malformed refresh JSON — falls through to session_expired', async () => {
     writeSession(EXPIRED, envFor())
-    const fetchFn = vi
-      .fn()
-      .mockResolvedValue({
-        status: 200,
-        json: () => Promise.reject(new Error('bad json')),
-      } as Response)
+    const fetchFn = vi.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.reject(new Error('bad json')),
+    } as Response)
 
     const result = await ensureFreshSession({ fetchFn, env: envFor() })
 
@@ -169,5 +168,100 @@ describe('session file atomicity — AC-4 concurrency', () => {
     writeSession(FRESH, envFor())
     const raw = readFileSync(sessionFilePath(envFor()), 'utf8')
     expect(() => JSON.parse(raw)).not.toThrow()
+  })
+})
+
+describe('ensureFreshSession — Story 43.8 AC-7: a refresh 429 is rate limiting, not expiry', () => {
+  function rateLimited(headers: Record<string, string> = {}) {
+    return new Response(JSON.stringify({ code: 'rate_limit_exceeded', message: 'x' }), {
+      status: 429,
+      headers,
+    })
+  }
+
+  it('returns rate_limited with the parsed Retry-After and leaves the session file byte-identical', async () => {
+    writeSession(EXPIRED, envFor())
+    const path = sessionFilePath(envFor())
+    const before = readFileSync(path, 'utf-8')
+    const mtimeBefore = statSync(path).mtimeMs
+    const fetchFn = vi.fn().mockResolvedValue(rateLimited({ 'retry-after': '37' }))
+
+    const result = await ensureFreshSession({ fetchFn, env: envFor() })
+
+    expect(result).toEqual({ status: 'rate_limited', retryAfterSeconds: 37 })
+    expect(readFileSync(path, 'utf-8')).toBe(before)
+    expect(statSync(path).mtimeMs).toBe(mtimeBefore)
+  })
+
+  it('a later refresh with the SAME (unrotated) refresh token still succeeds', async () => {
+    writeSession(EXPIRED, envFor())
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(rateLimited())
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          data: { accessToken: REFRESHED_ACCESS_TOKEN, refreshToken: 'rotated', expiresIn: 300 },
+        })
+      )
+
+    expect(await ensureFreshSession({ fetchFn, env: envFor() })).toEqual({
+      status: 'rate_limited',
+      retryAfterSeconds: null,
+    })
+    const second = await ensureFreshSession({ fetchFn, env: envFor() })
+
+    expect(second.status).toBe('ok')
+    const bodies = fetchFn.mock.calls.map(([, init]) =>
+      JSON.parse((init as RequestInit).body as string)
+    )
+    expect(bodies).toEqual([
+      { refreshToken: EXPIRED.refreshToken },
+      { refreshToken: EXPIRED.refreshToken },
+    ])
+  })
+
+  it('still prefers a fresher session another process wrote during the rate-limited refresh', async () => {
+    writeSession(EXPIRED, envFor())
+    const fetchFn = vi.fn().mockImplementation(async () => {
+      writeSession(
+        {
+          ...EXPIRED,
+          accessToken: OTHER_PROCESS_ACCESS,
+          accessExpiresAt: new Date(Date.now() + 300_000).toISOString(),
+        },
+        envFor()
+      )
+      return rateLimited({ 'retry-after': '5' })
+    })
+
+    const result = await ensureFreshSession({ fetchFn, env: envFor() })
+
+    expect(result).toEqual({
+      status: 'ok',
+      session: expect.objectContaining({ accessToken: OTHER_PROCESS_ACCESS }),
+    })
+  })
+
+  it('a proxy HTML 429 without Retry-After is still rate_limited (branches on status alone)', async () => {
+    writeSession(EXPIRED, envFor())
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(new Response('<html>slow down</html>', { status: 429 }))
+
+    expect(await ensureFreshSession({ fetchFn, env: envFor() })).toEqual({
+      status: 'rate_limited',
+      retryAfterSeconds: null,
+    })
+  })
+
+  it('messageForSessionFailure maps rate_limited to the retry wording and exit 30', () => {
+    expect(messageForSessionFailure({ status: 'rate_limited', retryAfterSeconds: 37 })).toEqual({
+      message: 'The vault is rate-limiting this network; retry in 37 seconds.\n',
+      exitCode: EXIT_CODES.rateLimited,
+    })
+    expect(messageForSessionFailure({ status: 'rate_limited', retryAfterSeconds: null })).toEqual({
+      message: 'The vault is rate-limiting this network; retry later.\n',
+      exitCode: EXIT_CODES.rateLimited,
+    })
   })
 })

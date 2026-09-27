@@ -156,6 +156,27 @@ flags or argv (the same shell-history/`ps`-visibility reasoning Story 43.3's inj
 document). A WebAuthn-only account fails closed with a clear message rather than silently
 attempting a weaker factor — CLI WebAuthn support is Epic 46's Story 46.5, not this one.
 
+### Per-IP rate limits (Story 43.8)
+
+The server limits the CLI auth endpoints per client IP (IPv6 per `/64`), per minute, each route
+with its own budget: `/cli-login` 60 (`AUTH_RATE_LIMIT_MAX`), `/cli/mfa/verify-login` 20,
+`/cli/refresh` 120, `/cli/logout` 60 (`AUTH_RATE_LIMIT_MAX`). Over the limit the server answers
+`429` with a `Retry-After` header, and `pvault`:
+
+- `login`: prints `Too many sign-in attempts from this network. Try again in N seconds.` (or
+  `…Try again later.` when there is no usable `Retry-After`) and exits `30`, without re-prompting.
+- any session-consuming command whose silent refresh is limited: prints
+  `The vault is rate-limiting this network; retry in N seconds.` and exits `30`. The session file
+  is left untouched (the server did not rotate the refresh token), so a later run just works.
+- `logout`: still deletes the local session file and exits `0`, but first warns on stderr that the
+  session was **not** revoked remotely and stays valid until it expires (revoke it from the web
+  app's Sessions page if the token may have leaked).
+
+`pvault` never auto-retries a `429` (no sleep-and-retry loop), and it never echoes the server's
+message or the raw `Retry-After` value; only a plain integer 1–3600 is shown. A `429` from a
+reverse proxy in front of the vault (HTML body, no header) is handled the same way. CI jobs that
+share one NAT IP should prefer machine-user keys (`pvault get`/`run` with `VAULT_API_KEY`).
+
 ## Design decisions (Dev Notes, Story 43.2)
 
 Story 43.2 adds three more decisions, appended to Story 43.1's six above. **Decision #2 below is
@@ -266,6 +287,7 @@ real global `fetch`.
 | `19`      | `insecureSessionFilePermissions` — AC-5's hard refusal to use a group/world-readable session file                                                                                                   |
 | `20`      | `nativeLoginDisabled` — this vault instance has native (password) login disabled (SSO-only)                                                                                                         |
 | `21`      | `invalidCredentials` — plain wrong email/password (not one of Dev Notes decision #4's originally-named codes, added because this needed its own distinguishable code too — see `src/exit-codes.ts`) |
+| `30`      | `rateLimited` — the server (or a proxy) answered `429` to `login`, MFA verification or a session refresh; retry after the printed delay (Story 43.8, appended after `29`; never auto-retried)       |
 
 ## `pvault run --` (Story 43.3)
 

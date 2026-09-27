@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readSession, writeSession, type SessionData } from './session-store.js'
 import { runLogout } from './logout-command.js'
 
+const LOGGED_OUT = 'Logged out.\n'
+
 let xdgHome: string
 
 function envFor(): Record<string, string | undefined> {
@@ -48,7 +50,7 @@ describe('runLogout — AC-6', () => {
     const exitCode = await runLogout(streams, { fetchFn, env: envFor() })
 
     expect(exitCode).toBe(0)
-    expect(streams.stdoutChunks.join('')).toBe('Logged out.\n')
+    expect(streams.stdoutChunks.join('')).toBe(LOGGED_OUT)
     expect(readSession(envFor())).toEqual({ status: 'not_found' })
   })
 
@@ -86,7 +88,7 @@ describe('runLogout — AC-6', () => {
     const exitCode = await runLogout(streams, { fetchFn, env: envFor() })
 
     expect(exitCode).toBe(0)
-    expect(streams.stdoutChunks.join('')).toBe('Logged out.\n')
+    expect(streams.stdoutChunks.join('')).toBe(LOGGED_OUT)
     expect(readSession(envFor())).toEqual({ status: 'not_found' })
     expect(streams.stderrChunks.join('')).toContain('warning')
   })
@@ -101,5 +103,55 @@ describe('runLogout — AC-6', () => {
     const all = streams.stdoutChunks.join('') + streams.stderrChunks.join('')
     expect(all).not.toContain(SAMPLE.accessToken)
     expect(all).not.toContain(SAMPLE.refreshToken)
+  })
+})
+
+describe('runLogout — Story 43.8 AC-7: a rate-limited logout is not a remote revocation', () => {
+  const NOT_REVOKED_WARNING =
+    "warning: the server rate-limited this logout, so the session was NOT revoked remotely and stays valid until it expires. Revoke it from the web app's Sessions page if the token may have leaked.\n"
+
+  it('warns that the session was NOT revoked, still deletes the local file, and exits 0', async () => {
+    writeSession(SAMPLE, envFor())
+    const streams = makeStreams()
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ code: 'rate_limit_exceeded' }), { status: 429 })
+      )
+
+    const exitCode = await runLogout(streams, { fetchFn, env: envFor() })
+
+    expect(exitCode).toBe(0)
+    expect(streams.stderrChunks.join('')).toBe(NOT_REVOKED_WARNING)
+    expect(streams.stdoutChunks.join('')).toBe(LOGGED_OUT)
+    expect(readSession(envFor())).toEqual({ status: 'not_found' })
+  })
+
+  it('prints no new warning for a 200 { revoked: false }', async () => {
+    writeSession(SAMPLE, envFor())
+    const streams = makeStreams()
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ data: { revoked: false } }), { status: 200 })
+      )
+
+    const exitCode = await runLogout(streams, { fetchFn, env: envFor() })
+
+    expect(exitCode).toBe(0)
+    expect(streams.stderrChunks.join('')).toBe('')
+    expect(streams.stdoutChunks.join('')).toBe(LOGGED_OUT)
+  })
+
+  it('keeps the existing network-error warning (and no rate-limit warning) when offline', async () => {
+    writeSession(SAMPLE, envFor())
+    const streams = makeStreams()
+    const fetchFn = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'))
+
+    await runLogout(streams, { fetchFn, env: envFor() })
+
+    const stderr = streams.stderrChunks.join('')
+    expect(stderr).toContain('could not reach the server')
+    expect(stderr).not.toContain('rate-limited')
   })
 })
