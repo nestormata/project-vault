@@ -1,23 +1,28 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { writeFixture } from './lib/fixture-test-helpers.js'
 import { resolveTrustedExecutable } from './lib/trusted-executable.js'
 
 // Story 43.9 AC-13: scripts/fly-setup.sh must require VAULT_APP_PASSWORD instead of silently
 // wiring the api to the migration's publicly known default vault_app password.
 //
-// The script runs under bash with a stub `flyctl` first on the child's PATH that records every
-// invocation. The stub is test scaffolding only; the product never resolves binaries this way.
+// The script runs under bash with `flyctl` stubbed as an exported bash function (imported from the
+// child's environment, so it shadows any real flyctl and satisfies `command -v`) that records every
+// invocation on file descriptor 3 — a pipe the test reads back, so nothing is written to disk and a
+// `2>/dev/null` or `| grep` around a call in the script cannot swallow the record. The stub is test
+// scaffolding only; the product never resolves binaries this way.
 
-const SCRIPTS_DIR = resolve(fileURLToPath(new URL('.', import.meta.url)))
+const SCRIPTS_DIR = import.meta.dirname
 const SCRIPT = resolve(SCRIPTS_DIR, 'fly-setup.sh')
 const RESET_SCRIPT = resolve(SCRIPTS_DIR, 'fly-reset.sh')
 const MISSING_APP_PASSWORD = 'Set VAULT_APP_PASSWORD'
 const BASH = resolveTrustedExecutable('bash')
+// Bash imports `BASH_FUNC_<name>%%` environment entries as exported functions.
+const FLYCTL_STUB_ENV = 'BASH_FUNC_flyctl%%'
+const FLYCTL_CALL_FD = 3
+const FLYCTL_STUB = `() { printf '%s\\n' "$*" >&${FLYCTL_CALL_FD}; }`
 
 const tempRoots: string[] = []
 afterEach(() => {
@@ -34,22 +39,22 @@ function runFlyScript(
 } {
   const root = mkdtempSync(join(tmpdir(), 'fly-setup-'))
   tempRoots.push(root)
-  const log = join(root, 'flyctl-calls.log')
-  writeFixture(root, 'bin/flyctl', '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$FLY_STUB_LOG"\nexit 0\n')
-  chmodSync(join(root, 'bin/flyctl'), 0o755)
   const result = spawnSync(BASH, [script], {
     encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
     // A fixed environment, so a developer's own exported Fly variables never leak in.
     env: {
-      PATH: `${join(root, 'bin')}:/usr/bin:/bin`,
+      PATH: '/usr/bin:/bin',
       HOME: root,
-      FLY_STUB_LOG: log,
+      [FLYCTL_STUB_ENV]: FLYCTL_STUB,
       FLY_ORG: 'test-org',
       VAULT_ADMIN_PASSWORD: 'admin-test-value',
       ...extraEnv,
     },
   })
-  const flyctlCalls = existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean) : []
+  const flyctlCalls = String(result.output.at(FLYCTL_CALL_FD) ?? '')
+    .split('\n')
+    .filter(Boolean)
   return { status: result.status, stderr: result.stderr, flyctlCalls }
 }
 

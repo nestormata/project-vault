@@ -1,7 +1,6 @@
-import { chmodSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { writeFixture } from './fixture-test-helpers.js'
 import {
@@ -11,7 +10,7 @@ import {
   trustedGit,
 } from './trusted-executable.js'
 
-const REPO_ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)))
+const REPO_ROOT = resolve(import.meta.dirname, '../..')
 const AGENT_DIR = join(REPO_ROOT, 'packages/agent')
 const VAULT_ACTION_DIR = join(REPO_ROOT, 'packages/vault-action')
 
@@ -26,11 +25,10 @@ function tempRoot(): string {
   return root
 }
 
-function executable(dir: string, name: string): string {
-  writeFixture(dir, name, '#!/bin/sh\nexit 0\n')
-  const path = join(dir, name)
-  chmodSync(path, 0o755)
-  return path
+/** An `isExecutable` stand-in that accepts exactly `paths`, for the pure search-order cases. */
+function executableOnly(...paths: string[]): (path: string) => boolean {
+  const accepted = new Set(paths)
+  return (path) => accepted.has(path)
 }
 
 describe('resolveTrustedExecutable', () => {
@@ -39,31 +37,24 @@ describe('resolveTrustedExecutable', () => {
   })
 
   it('returns the executable in the first directory that has it', () => {
-    const root = tempRoot()
-    const first = join(root, 'first')
-    const second = join(root, 'second')
-    const expected = executable(first, 'git')
-    executable(second, 'git')
-    expect(resolveTrustedExecutable('git', [first, second])).toBe(expected)
+    const isExecutable = executableOnly('/first/git', '/second/git')
+    expect(resolveTrustedExecutable('git', ['/first', '/second'], isExecutable)).toBe('/first/git')
   })
 
   it('falls through to a later directory when earlier ones lack it', () => {
-    const root = tempRoot()
-    const empty = join(root, 'empty')
-    writeFixture(empty, 'unrelated', '')
-    const later = join(root, 'later')
-    const expected = executable(later, 'docker')
-    expect(resolveTrustedExecutable('docker', [empty, later])).toBe(expected)
+    const isExecutable = executableOnly('/later/docker')
+    expect(resolveTrustedExecutable('docker', ['/empty', '/later'], isExecutable)).toBe(
+      '/later/docker'
+    )
   })
 
-  it('skips a same-named file that is not executable', () => {
+  it('skips a same-named file that is not executable (real file check)', () => {
     const root = tempRoot()
     const first = join(root, 'first')
+    // writeFileSync creates files without execute bits (0o666 minus umask).
     writeFixture(first, 'git', 'not executable')
-    chmodSync(join(first, 'git'), 0o644)
-    const later = join(root, 'later')
-    const expected = executable(later, 'git')
-    expect(resolveTrustedExecutable('git', [first, later])).toBe(expected)
+    const hostGitDir = dirname(resolveTrustedExecutable('git'))
+    expect(resolveTrustedExecutable('git', [first, hostGitDir])).toBe(join(hostGitDir, 'git'))
   })
 
   it('throws, naming every searched directory, when the binary is nowhere', () => {

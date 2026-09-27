@@ -10,7 +10,7 @@
  *   instead of shelling out to `pnpm`.
  */
 import { execFileSync } from 'node:child_process'
-import { accessSync, constants, readFileSync } from 'node:fs'
+import { accessSync, constants } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 
@@ -75,12 +75,15 @@ type PackageJson = { bin?: string | Record<string, string>; name?: string }
 export function resolveBin(pkg: string, binName: string, fromDir: string): string {
   const requireFromPackage = createRequire(join(fromDir, 'package.json'))
   let manifestPath: string
+  let manifest: PackageJson
   try {
+    // Module resolution both locates and loads the manifest, so the file read is always the one
+    // Node's resolver picked for `pkg` (never an arbitrary caller-built path).
     manifestPath = requireFromPackage.resolve(`${pkg}/package.json`)
+    manifest = requireFromPackage(manifestPath) as PackageJson
   } catch (error) {
     throw new Error(`${pkg} is not resolvable from ${fromDir}: ${(error as Error).message}`)
   }
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as PackageJson
   const bins = new Map(
     typeof manifest.bin === 'string' ? [[pkg, manifest.bin]] : Object.entries(manifest.bin ?? {})
   )

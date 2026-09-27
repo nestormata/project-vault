@@ -18,8 +18,6 @@
  * governed by pick-story C3's PR-time refusal of new suppressions; a repo-wide guard here would fail on the
  * pre-existing lines, whose sign-off audit is tracked in the deferred-work ledger.
  */
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { trustedGit } from './lib/trusted-executable.js'
 
@@ -92,9 +90,24 @@ function splitKeyValue(logical: string): { key: string; value: string } {
   return { key: unescapeKey(rawKey), value: logical.slice(consumed).trim() }
 }
 
+/**
+ * `git grep` over tracked work-tree files, or `''` when nothing matches (its exit 1); any other
+ * failure surfaces. Every file this guard reads goes through git, so it only ever sees tracked
+ * content addressed by repo-relative pathspecs, exactly like the inline-token scan.
+ */
+function gitGrep(repoRoot: string, args: string[]): string {
+  try {
+    return git(repoRoot, ['grep', '--no-color', '-I', ...args])
+  } catch (error) {
+    if ((error as { status?: number }).status === 1) return ''
+    throw error
+  }
+}
+
 function readProperties(repoRoot: string): ReturnType<typeof parseProperties> | null {
-  const path = join(repoRoot, PROPERTIES_FILE)
-  return existsSync(path) ? parseProperties(readFileSync(path, 'utf8')) : null
+  // `^` matches every line (blank ones included), so this is the whole tracked file verbatim.
+  const text = gitGrep(repoRoot, ['-h', '-e', '^', '--', `:(literal)${PROPERTIES_FILE}`])
+  return text === '' ? null : parseProperties(text)
 }
 
 function sonarExclusions(properties: ReturnType<typeof parseProperties> | null): string[] {
@@ -109,15 +122,7 @@ function findInlineTokens(repoRoot: string, excluded: string[]): SuppressionFind
   const pathspecs = [...SELF_PATHS, ...NEVER_ANALYSED, ...excluded].map(
     (pattern) => `:(exclude,glob)${pattern}`
   )
-  let output: string
-  try {
-    output = git(repoRoot, ['grep', '-n', '-I', '-i', '-e', TOKEN, '--', '.', ...pathspecs])
-  } catch (error) {
-    // `git grep` exits 1 when nothing matches; any other failure must surface.
-    if ((error as { status?: number }).status === 1) return []
-    throw error
-  }
-  return output
+  return gitGrep(repoRoot, ['-n', '-i', '-e', TOKEN, '--', '.', ...pathspecs])
     .split('\n')
     .filter(Boolean)
     .map((hit) => {
@@ -127,23 +132,27 @@ function findInlineTokens(repoRoot: string, excluded: string[]): SuppressionFind
 }
 
 function findWorkflowIgnores(repoRoot: string): SuppressionFinding[] {
-  const files = git(repoRoot, ['ls-files', '--', '.github/workflows'])
+  const workflows = ['.github/workflows/**/*.yml', '.github/workflows/**/*.yaml'].map(
+    (pattern) => `:(glob)${pattern}`
+  )
+  return gitGrep(repoRoot, [
+    '-n',
+    '-i',
+    '-E',
+    '-e',
+    'sonar\\.issue\\.(ignore|enforce)',
+    '--',
+    ...workflows,
+  ])
     .split('\n')
-    .filter((path) => /\.ya?ml$/.test(path))
-  const findings: SuppressionFinding[] = []
-  for (const path of files) {
-    readFileSync(join(repoRoot, path), 'utf8')
-      .split('\n')
-      .forEach((text, index) => {
-        if (/sonar\.issue\.(?:ignore|enforce)/i.test(text)) {
-          findings.push({
-            location: `${path}:${index + 1}`,
-            reason: 'scanner-side issue ignore passed from CI config',
-          })
-        }
-      })
-  }
-  return findings
+    .filter(Boolean)
+    .map((hit) => {
+      const [path, line] = hit.split(':', 2)
+      return {
+        location: `${path}:${line}`,
+        reason: 'scanner-side issue ignore passed from CI config',
+      }
+    })
 }
 
 function isRealDate(year: string, month: string, day: string): boolean {
