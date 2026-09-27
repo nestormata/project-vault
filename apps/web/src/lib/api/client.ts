@@ -38,18 +38,25 @@ export function isMfaRequiredError(reason: unknown): boolean {
   return reason instanceof ApiClientError && reason.status === 403 && reason.code === 'mfa_required'
 }
 
-function isRefreshableAccessError(reason: unknown): reason is ApiClientError {
+/**
+ * The one shared "is this 401 worth a refresh-and-retry?" predicate, used by both apiFetch (via
+ * isRefreshableAccessError) and fetchWithSessionRefresh (Story 61.1).
+ */
+export function isRefreshableAccessCode(status: number, code: string | undefined): boolean {
   return (
-    reason instanceof ApiClientError &&
-    reason.status === 401 &&
+    status === 401 &&
     // `session_revoked` fires when a concurrent request's refresh rotation revoked the session
     // this request's access token belonged to (SvelteKit fires several requests per navigation).
     // Retrying picks up the winning session via the server's rotation grace window; if the
     // session is genuinely dead the refresh call itself will fail and the original error surfaces.
-    (reason.code === 'access_token_missing' ||
-      reason.code === 'access_token_invalid' ||
-      reason.code === 'session_revoked')
+    (code === 'access_token_missing' ||
+      code === 'access_token_invalid' ||
+      code === 'session_revoked')
   )
+}
+
+function isRefreshableAccessError(reason: unknown): reason is ApiClientError {
+  return reason instanceof ApiClientError && isRefreshableAccessCode(reason.status, reason.code)
 }
 
 function canReplayRequestBody(body: RequestInit['body']): boolean {
@@ -187,6 +194,52 @@ export async function apiFetch<T>(
     response = await fetchFn(path, requestInit)
     return parseApiEnvelope<T>(response)
   }
+}
+
+export type RefreshingFetchResult =
+  { kind: 'response'; response: Response } | { kind: 'session_expired' }
+
+/** Story 61.1 — reads a 401's error code from a clone, so the original body stays unread for the
+ * caller. A non-JSON body (E11) or a body without a string code is simply not refreshable. */
+async function isRefreshableAccessResponse(response: Response): Promise<boolean> {
+  if (response.status !== 401) return false
+  const body = (await response
+    .clone()
+    .json()
+    .catch(() => null)) as ApiFailure | null
+  const code = body !== null && typeof body === 'object' ? (body.code ?? body.error) : undefined
+  return isRefreshableAccessCode(response.status, typeof code === 'string' ? code : undefined)
+}
+
+/**
+ * Story 61.1 — a browser-side raw-`Response` fetch with the same refresh-on-401 semantics as
+ * apiFetch, for callers that must read a non-envelope body and handle non-2xx responses
+ * themselves (the extension panel action dispatcher). On a 401 whose body code is refreshable,
+ * it joins the shared single-flight refreshAccessSession() and, if that succeeds, retries exactly
+ * once with a freshly built RequestInit. `buildInit` is a factory because the refresh rotates the
+ * CSRF cookie: the retry must re-read it rather than replay the first attempt's header. If the
+ * refresh fails it triggers the latched redirectToSessionExpired() and returns
+ * `{ kind: 'session_expired' }`. Every other response, including a second 401 after a successful
+ * refresh (never a loop), is returned untouched; a rejection of either request propagates.
+ *
+ * The caller's init is passed through as-is (no added credentials/headers), the retry target is
+ * always the caller's own `input` (nothing is derived from the response), and during SSR it never
+ * refreshes or redirects: it just returns the first response.
+ */
+export async function fetchWithSessionRefresh(
+  fetchFn: typeof fetch,
+  input: string,
+  buildInit: () => RequestInit
+): Promise<RefreshingFetchResult> {
+  const response = await fetchFn(input, buildInit())
+  if (!browser || !(await isRefreshableAccessResponse(response))) {
+    return { kind: 'response', response }
+  }
+  if (!(await refreshAccessSession(fetchFn))) {
+    redirectToSessionExpired()
+    return { kind: 'session_expired' }
+  }
+  return { kind: 'response', response: await fetchFn(input, buildInit()) }
 }
 
 /** Shared by every API module building a query string from optional filter/pagination params

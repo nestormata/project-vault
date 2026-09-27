@@ -56,6 +56,11 @@ const DB_NAME = 'project_vault_j25_panel_relay_e2e'
 const PASSWORD = 'j25-panel-relay-e2e-Password-1'
 const BASE_URL = `http://localhost:${WEB_PORT}`
 const API_BASE = `http://localhost:${API_PORT}`
+const GROUP_ACTIONS_PATH = '/api/v1/extensions/panels/group/actions'
+const REFRESH_PATH = '/api/v1/auth/refresh'
+// The mock-ui-panel-extension fixture's own action button label and its message-only result.
+const RUN_BUTTON_NAME = 'Run test action'
+const RUN_RESULT_TEXT = 'test-action executed for slot "group" with note "fixture-note"'
 
 let apiProcess: ChildProcess | undefined
 let webHandle: WebHandle | undefined
@@ -134,7 +139,7 @@ test.describe
     // Story 29.1 removed the iframe: the fixture's button is rendered directly into the host
     // page's own DOM, so a real, top-level Playwright locator (no `frameLocator`, no
     // `frame.evaluate`) drives it.
-    const runButton = page.getByRole('button', { name: 'Run test action' })
+    const runButton = page.getByRole('button', { name: RUN_BUTTON_NAME })
     await expect(runButton).toBeVisible()
     await expect(runButton).toHaveAttribute('data-pv-action', 'test-action')
     await expect(runButton).toHaveAttribute('data-pv-action-note', 'fixture-note')
@@ -156,15 +161,74 @@ test.describe
     // status region (outside the sanitized panel container) — a second, independent
     // confirmation that the full payload reached `handleModuleAction()` and the response made it
     // all the way back, not just that the request left the browser.
-    await expect(
-      page.getByText('test-action executed for slot "group" with note "fixture-note"')
-    ).toBeVisible()
+    await expect(page.getByText(RUN_RESULT_TEXT)).toBeVisible()
 
     // The clicked button is re-enabled once the (message-only, no `html`) result settles — the
     // panel container itself was never replaced (AC8/AC5 disposition: only an `html` result
     // replaces the container).
     await expect(runButton).not.toHaveAttribute('disabled', '')
     await expect(runButton).not.toHaveAttribute('aria-busy', 'true')
+  })
+
+  // Story 61.1 AC5 — access-token expiry is simulated deterministically (no 5-minute wait) by
+  // deleting the cookies the browser itself drops once `JWT_ACCESS_TTL_SECONDS` elapses: the
+  // `access-token` cookie and the CSRF cookie (both share the access TTL — `setAuthCookies()` in
+  // apps/api's tokens.ts). Both CSRF names are cleared (`csrf-token` in dev/plain HTTP,
+  // `__Host-csrf-token` when COOKIE_SECURE) — clearing an absent cookie is a no-op.
+  async function expireAccessSession(context: import('@playwright/test').BrowserContext) {
+    await context.clearCookies({ name: 'access-token' })
+    await context.clearCookies({ name: 'csrf-token' })
+    await context.clearCookies({ name: '__Host-csrf-token' })
+  }
+
+  test('AC5 (Story 61.1): an action clicked after access-token expiry refreshes the session and retries — 401 -> refresh 200 -> 200', async ({
+    page,
+    context,
+  }) => {
+    await registerLoggedInMember(context.request, 'expired-action')
+
+    await page.goto(`${BASE_URL}/extensions/panels/group`)
+    await waitForPanelHydration(page)
+
+    const authFlow: string[] = []
+    page.on('response', (response) => {
+      const url = response.url()
+      if (
+        response.request().method() === 'POST' &&
+        (url.includes(GROUP_ACTIONS_PATH) || url.includes(REFRESH_PATH))
+      ) {
+        authFlow.push(`${new URL(url).pathname} ${response.status()}`)
+      }
+    })
+
+    await expireAccessSession(context)
+    const runButton = page.getByRole('button', { name: RUN_BUTTON_NAME })
+    await runButton.click()
+
+    await expect(page.getByText(RUN_RESULT_TEXT)).toBeVisible()
+    expect(authFlow).toEqual([
+      `${GROUP_ACTIONS_PATH} 401`,
+      `${REFRESH_PATH} 200`,
+      `${GROUP_ACTIONS_PATH} 200`,
+    ])
+    await expect(page.getByText('Unable to complete this action. Please try again.')).toHaveCount(0)
+    await expect(runButton).not.toHaveAttribute('disabled', '')
+  })
+
+  test('AC5 (Story 61.1): an action clicked with a dead session (refresh token gone too) lands on the session-expired login page', async ({
+    page,
+    context,
+  }) => {
+    await registerLoggedInMember(context.request, 'dead-session')
+
+    await page.goto(`${BASE_URL}/extensions/panels/group`)
+    await waitForPanelHydration(page)
+
+    await expireAccessSession(context)
+    await context.clearCookies({ name: 'refresh-token' })
+    await page.getByRole('button', { name: RUN_BUTTON_NAME }).click()
+
+    await expect(page).toHaveURL(`${BASE_URL}/login?reason=session-expired`)
   })
 
   // Story 29.6 AC13 — real Playwright e2e coverage that a genuine click on a panel-rendered

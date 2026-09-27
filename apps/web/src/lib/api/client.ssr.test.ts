@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { isRedirect } from '@sveltejs/kit'
-import { apiFetch } from './client.js'
+import { apiFetch, fetchWithSessionRefresh } from './client.js'
 import { jsonResponse } from '$lib/test/json-response.js'
 
 // This file exercises apiFetch()'s SSR branch (`browser: false`). `$app/environment`'s `browser`
@@ -126,5 +126,20 @@ describe('apiFetch during SSR (browser: false)', () => {
     for (const call of fetchFnUserB.mock.calls) {
       expect(call[0]).not.toBe('/api/v1/projects/project-1/services')
     }
+  })
+})
+
+// Story 61.1 — the raw-Response helper is browser-only in practice; during SSR it must stay safe
+// to call: no refresh, no goto(), the first response returned untouched.
+describe('fetchWithSessionRefresh during SSR (browser: false)', () => {
+  it('returns a refreshable 401 untouched without refreshing or redirecting', async () => {
+    const first = jsonResponse({ code: 'access_token_missing' }, { status: 401 })
+    const fetchFn = vi.fn().mockResolvedValueOnce(first)
+
+    const result = await fetchWithSessionRefresh(fetchFn, '/api/v1/x', () => ({ method: 'POST' }))
+
+    expect(result).toEqual({ kind: 'response', response: first })
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(gotoMock).not.toHaveBeenCalled()
   })
 })

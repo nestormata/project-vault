@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
 import { cleanup, render, screen } from '@testing-library/svelte'
 import { routeExists } from '$lib/test/route-exists.js'
 import { BASE_EXTENSION_THEME_VARS } from '$lib/security/extension-theme-vars.js'
 
-const gotoMock = vi.hoisted(() => vi.fn())
+// Story 61.1 E1 — must return a promise: client.ts's redirectToSessionExpired() chains
+// `.then(reset, reset)` onto goto()'s result.
+const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('$app/navigation', () => ({ goto: gotoMock }))
 
 import ExtensionPanelPage from './+page.svelte'
@@ -287,11 +291,21 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1, rewired inli
       actionEndpoint: '/api/v1/extensions/panels/group/actions',
     }
 
-    function jsonResponse(status: number, body: unknown) {
+    function jsonResponse(
+      status: number,
+      body: unknown
+    ): {
+      ok: boolean
+      status: number
+      json: () => Promise<unknown>
+      clone: () => unknown
+    } {
       return {
         ok: status >= 200 && status < 300,
         status,
         json: () => Promise.resolve(body),
+        // Story 61.1 — fetchWithSessionRefresh() peeks at a 401's code via response.clone().
+        clone: () => jsonResponse(status, body),
       }
     }
 
@@ -876,5 +890,439 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1, rewired inli
         expect(statusRegion()?.textContent).not.toContain(body.message)
       })
     })
+
+    // Story 61.1 — the action dispatcher refreshes the session on a refreshable 401 and retries
+    // exactly once (AC1), follows the standard session-expired path when the refresh fails (AC2),
+    // and keeps the panelGeneration paint gate across the retry (AC3).
+    describe('Story 61.1: refresh-on-401', () => {
+      const REFRESH_URL = '/api/v1/auth/refresh'
+      const ACTION_URL = '/api/v1/extensions/panels/group/actions'
+      const GENERIC = 'Unable to complete this action. Please try again.'
+      const TWO_BUTTONS =
+        '<button type="button" data-pv-action="a-action">A</button>' +
+        '<button type="button" data-pv-action="b-action">B</button>'
+
+      afterEach(() => {
+        document.cookie = 'csrf-token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+      })
+
+      function expired(code = 'access_token_missing') {
+        return jsonResponse(401, { code, message: 'Access token is missing' })
+      }
+
+      function refreshOk() {
+        return jsonResponse(200, { data: { expiresAt: '2026-09-26T02:00:00.000Z' } })
+      }
+
+      /** Routes `/auth/refresh` to `refresh()` and every other call to the next queued action
+       * response, in call order (a queued entry may be a pending promise). */
+      function routedFetch(actionResponses: unknown[], refresh: () => unknown = refreshOk) {
+        const queue = [...actionResponses]
+        return vi.fn(async (url: string, _init?: RequestInit) =>
+          url === REFRESH_URL ? refresh() : queue.shift()
+        )
+      }
+
+      function deferred<T = unknown>() {
+        let resolve: (value: T) => void = () => undefined
+        const promise = new Promise<T>((r) => (resolve = r))
+        return { promise, resolve }
+      }
+
+      function callsTo(fetchMock: ReturnType<typeof routedFetch>, url: string) {
+        return fetchMock.mock.calls.filter(([calledUrl]) => calledUrl === url)
+      }
+
+      function statusRegion(): Element | null {
+        return document.querySelector('[aria-live="polite"]')
+      }
+
+      function csrfHeaderOf(fetchMock: ReturnType<typeof routedFetch>, callIndex: number) {
+        const init = fetchMock.mock.calls.at(callIndex)?.[1] as { headers: Record<string, string> }
+        return init.headers['x-csrf-token']
+      }
+
+      // E2 — client.ts's redirect latch is module-level state; let it reset before the next test.
+      async function settleRedirectLatch() {
+        await vi.waitFor(() => expect(gotoMock).toHaveBeenCalled())
+        await flush()
+      }
+
+      it('AC1: 401 -> refresh -> retry paints the retried html (exactly 3 calls, same URL/method/body)', async () => {
+        const fetchMock = routedFetch([expired(), jsonResponse(200, { html: '<p>done</p>' })])
+        vi.stubGlobal('fetch', fetchMock)
+        render(ExtensionPanelPage, { props: { data: actionData } })
+
+        screen.getByText('Run').click()
+        await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+        await flush()
+
+        expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+          ACTION_URL,
+          REFRESH_URL,
+          ACTION_URL,
+        ])
+        const [first, , retry] = fetchMock.mock.calls
+        expect(retry?.[1]).toMatchObject({
+          method: 'POST',
+          credentials: 'same-origin',
+          body: JSON.stringify({ kind: 'test-action', note: 'hi' }),
+        })
+        expect(retry?.[1]?.body).toBe(first?.[1]?.body)
+        expect(panelContainer()?.innerHTML).toContain('done')
+        expect(statusRegion()?.textContent?.trim() ?? '').toBe('')
+        expect(gotoMock).not.toHaveBeenCalled()
+      })
+
+      it.each(['access_token_invalid', 'session_revoked'])(
+        'AC1: a %s 401 is refreshed and a message-only retry shows its message, element re-enabled',
+        async (code) => {
+          const fetchMock = routedFetch([expired(code), jsonResponse(200, { message: 'Saved' })])
+          vi.stubGlobal('fetch', fetchMock)
+          render(ExtensionPanelPage, { props: { data: actionData } })
+
+          const button = screen.getByText('Run').closest('button') as HTMLButtonElement
+          button.click()
+          await vi.waitFor(() => expect(screen.getByText('Saved')).toBeTruthy())
+
+          expect(callsTo(fetchMock, REFRESH_URL)).toHaveLength(1)
+          expect(button.disabled).toBe(false)
+          expect(button.hasAttribute('aria-busy')).toBe(false)
+        }
+      )
+
+      it('AC1: the retry re-reads the CSRF cookie rotated by the refresh', async () => {
+        document.cookie = 'csrf-token=old; path=/'
+        const fetchMock = routedFetch([expired(), jsonResponse(200, { message: 'Saved' })], () => {
+          document.cookie = 'csrf-token=new; path=/'
+          return refreshOk()
+        })
+        vi.stubGlobal('fetch', fetchMock)
+        render(ExtensionPanelPage, { props: { data: actionData } })
+
+        screen.getByText('Run').click()
+        await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+
+        expect(csrfHeaderOf(fetchMock, 0)).toBe('old')
+        expect(csrfHeaderOf(fetchMock, 2)).toBe('new')
+      })
+
+      it('AC1: no CSRF cookie before the click, one set by the refresh -> only the retry carries it', async () => {
+        const fetchMock = routedFetch([expired(), jsonResponse(200, { message: 'Saved' })], () => {
+          document.cookie = 'csrf-token=fresh; path=/'
+          return refreshOk()
+        })
+        vi.stubGlobal('fetch', fetchMock)
+        render(ExtensionPanelPage, { props: { data: actionData } })
+
+        screen.getByText('Run').click()
+        await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+
+        expect(csrfHeaderOf(fetchMock, 0)).toBeUndefined()
+        expect(csrfHeaderOf(fetchMock, 2)).toBe('fresh')
+      })
+
+      it('AC1: a retried 409 with html renders the banner and the verbatim conflict message (59.1)', async () => {
+        const fetchMock = routedFetch([
+          expired(),
+          jsonResponse(409, { code: 'conflict', message: 'Stale', html: '<p>banner</p>' }),
+        ])
+        vi.stubGlobal('fetch', fetchMock)
+        render(ExtensionPanelPage, { props: { data: actionData } })
+
+        screen.getByText('Run').click()
+        await vi.waitFor(() => expect(panelContainer()?.innerHTML).toContain('banner'))
+
+        expect(statusRegion()?.textContent).toContain('Stale')
+      })
+
+      it.each([
+        ['401 mfa_step_up_required', () => jsonResponse(401, { code: 'mfa_step_up_required' })],
+        ['401 with an unknown code', () => jsonResponse(401, { code: 'something_else' })],
+        [
+          'a non-JSON 401',
+          () => ({
+            ok: false,
+            status: 401,
+            json: () => Promise.reject(new SyntaxError('Unexpected token <')),
+            clone: () => ({ json: () => Promise.reject(new SyntaxError('Unexpected token <')) }),
+          }),
+        ],
+        ['403 csrf_rejected', () => jsonResponse(403, { code: 'csrf_rejected' })],
+        ['429', () => jsonResponse(429, { code: 'rate_limited' })],
+        ['500', () => jsonResponse(500, { code: 'internal_error' })],
+      ])('AC1 edge: %s is never refreshed and shows the generic message', async (_label, make) => {
+        const fetchMock = routedFetch([make()])
+        vi.stubGlobal('fetch', fetchMock)
+        render(ExtensionPanelPage, { props: { data: actionData } })
+
+        const button = screen.getByText('Run').closest('button') as HTMLButtonElement
+        button.click()
+        await flush()
+
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(callsTo(fetchMock, REFRESH_URL)).toHaveLength(0)
+        expect(statusRegion()?.textContent).toContain(GENERIC)
+        expect(button.disabled).toBe(false)
+        expect(gotoMock).not.toHaveBeenCalled()
+      })
+
+      it('DD4: a second 401 after a successful refresh shows the generic message — no loop, no redirect', async () => {
+        const fetchMock = routedFetch([expired(), expired()])
+        vi.stubGlobal('fetch', fetchMock)
+        render(ExtensionPanelPage, { props: { data: actionData } })
+
+        const button = screen.getByText('Run').closest('button') as HTMLButtonElement
+        button.click()
+        await vi.waitFor(() => expect(statusRegion()?.textContent).toContain(GENERIC))
+
+        expect(fetchMock).toHaveBeenCalledTimes(3)
+        expect(callsTo(fetchMock, REFRESH_URL)).toHaveLength(1)
+        expect(button.disabled).toBe(false)
+        expect(gotoMock).not.toHaveBeenCalled()
+      })
+
+      it('AC1: the element stays disabled/aria-busy through 401 -> refresh -> retry; a click during the refresh does nothing', async () => {
+        const refreshGate = deferred()
+        const fetchMock = routedFetch([expired(), jsonResponse(200, { message: 'Saved' })], () =>
+          refreshGate.promise.then(refreshOk)
+        )
+        vi.stubGlobal('fetch', fetchMock)
+        render(ExtensionPanelPage, { props: { data: actionData } })
+
+        const button = screen.getByText('Run').closest('button') as HTMLButtonElement
+        button.click()
+        await vi.waitFor(() => expect(callsTo(fetchMock, REFRESH_URL)).toHaveLength(1))
+        expect(button.disabled).toBe(true)
+        expect(button.getAttribute('aria-busy')).toBe('true')
+
+        button.click()
+        await flush()
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+
+        refreshGate.resolve(undefined)
+        await vi.waitFor(() => expect(screen.getByText('Saved')).toBeTruthy())
+        expect(fetchMock).toHaveBeenCalledTimes(3)
+        expect(button.disabled).toBe(false)
+      })
+
+      it.each([
+        ['a non-2xx refresh', () => jsonResponse(401, { code: 'refresh_token_missing' })],
+        ['a rejected refresh fetch', () => Promise.reject(new TypeError('Failed to fetch'))],
+      ])(
+        'AC2: %s redirects to /login?reason=session-expired, no retry, no generic error, element re-enabled',
+        async (_label, refresh) => {
+          const fetchMock = routedFetch([expired()], refresh)
+          vi.stubGlobal('fetch', fetchMock)
+          render(ExtensionPanelPage, { props: { data: actionData } })
+
+          const button = screen.getByText('Run').closest('button') as HTMLButtonElement
+          button.click()
+          await settleRedirectLatch()
+
+          expect(fetchMock).toHaveBeenCalledTimes(2)
+          expect(gotoMock).toHaveBeenCalledTimes(1)
+          expect(String(gotoMock.mock.calls[0]?.[0])).toMatch(/\/login\?reason=session-expired$/)
+          expect(statusRegion()?.textContent ?? '').not.toContain(GENERIC)
+          expect(statusRegion()?.textContent?.trim() ?? '').toBe('')
+          expect(button.disabled).toBe(false)
+          expect(button.hasAttribute('aria-busy')).toBe(false)
+        }
+      )
+
+      it('AC2: two concurrent dead-session clicks share one refresh and redirect at most once', async () => {
+        const refreshGate = deferred()
+        const fetchMock = routedFetch([expired(), expired()], () =>
+          refreshGate.promise.then(() => jsonResponse(401, { code: 'refresh_token_missing' }))
+        )
+        vi.stubGlobal('fetch', fetchMock)
+        render(ExtensionPanelPage, { props: { data: { ...actionData, html: TWO_BUTTONS } } })
+
+        screen.getByText('A').click()
+        await vi.waitFor(() => expect(callsTo(fetchMock, REFRESH_URL)).toHaveLength(1))
+        screen.getByText('B').click()
+        await vi.waitFor(() => expect(callsTo(fetchMock, ACTION_URL)).toHaveLength(2))
+        await flush()
+        refreshGate.resolve(undefined)
+        await settleRedirectLatch()
+        await flush()
+
+        expect(callsTo(fetchMock, REFRESH_URL)).toHaveLength(1)
+        expect(callsTo(fetchMock, ACTION_URL)).toHaveLength(2)
+        expect(gotoMock).toHaveBeenCalledTimes(1)
+      })
+
+      it('AC2/AC3: two concurrent live-session clicks share one refresh, both retry, only the later click paints', async () => {
+        const refreshGate = deferred()
+        const fetchMock = routedFetch(
+          [
+            expired(),
+            expired(),
+            jsonResponse(200, { message: 'A result' }),
+            jsonResponse(200, { message: 'B result' }),
+          ],
+          () => refreshGate.promise.then(refreshOk)
+        )
+        vi.stubGlobal('fetch', fetchMock)
+        render(ExtensionPanelPage, { props: { data: { ...actionData, html: TWO_BUTTONS } } })
+
+        const buttonA = screen.getByText('A').closest('button') as HTMLButtonElement
+        buttonA.click()
+        await vi.waitFor(() => expect(callsTo(fetchMock, REFRESH_URL)).toHaveLength(1))
+        screen.getByText('B').click()
+        await vi.waitFor(() => expect(callsTo(fetchMock, ACTION_URL)).toHaveLength(2))
+        await flush()
+        refreshGate.resolve(undefined)
+        await vi.waitFor(() => expect(callsTo(fetchMock, ACTION_URL)).toHaveLength(4))
+        await flush()
+
+        expect(callsTo(fetchMock, REFRESH_URL)).toHaveLength(1)
+        expect(screen.getByText('B result')).toBeTruthy()
+        expect(screen.queryByText('A result')).toBeNull()
+        expect(buttonA.disabled).toBe(false)
+      })
+
+      it('AC3: a newer click accepted during the refresh wins; the older retry never paints', async () => {
+        const refreshGate = deferred()
+        const fetchMock = routedFetch(
+          [
+            expired(),
+            jsonResponse(200, { html: '<p>B painted</p>' }),
+            jsonResponse(200, { html: '<p>A painted</p>' }),
+          ],
+          () => refreshGate.promise.then(refreshOk)
+        )
+        vi.stubGlobal('fetch', fetchMock)
+        render(ExtensionPanelPage, { props: { data: { ...actionData, html: TWO_BUTTONS } } })
+
+        const buttonA = screen.getByText('A').closest('button') as HTMLButtonElement
+        buttonA.click()
+        await vi.waitFor(() => expect(callsTo(fetchMock, REFRESH_URL)).toHaveLength(1))
+        screen.getByText('B').click()
+        await vi.waitFor(() => expect(panelContainer()?.innerHTML).toContain('B painted'))
+        refreshGate.resolve(undefined)
+        // DD2 — the retry is still issued even though its paint is gated.
+        await vi.waitFor(() => expect(callsTo(fetchMock, ACTION_URL)).toHaveLength(3))
+        await flush()
+
+        expect(panelContainer()?.innerHTML).toContain('B painted')
+        expect(panelContainer()?.innerHTML).not.toContain('A painted')
+        expect(buttonA.hasAttribute('disabled')).toBe(false)
+        expect(buttonA.hasAttribute('aria-busy')).toBe(false)
+      })
+
+      it('AC3: a slot navigation while the retry is in flight drops the retried result', async () => {
+        const retry = deferred()
+        const fetchMock = routedFetch([expired(), retry.promise])
+        vi.stubGlobal('fetch', fetchMock)
+        const { rerender } = render(ExtensionPanelPage, { props: { data: actionData } })
+
+        const button = screen.getByText('Run').closest('button') as HTMLButtonElement
+        button.click()
+        await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+        await rerender({
+          data: { ...actionData, slot: 'other-slot', html: '<p>navigated away</p>' },
+        })
+        retry.resolve(jsonResponse(200, { html: '<p>stale A</p>', message: 'stale message' }))
+        await flush()
+
+        expect(panelContainer()?.innerHTML).toContain('navigated away')
+        expect(panelContainer()?.innerHTML).not.toContain('stale A')
+        expect(screen.queryByText('stale message')).toBeNull()
+        expect(button.hasAttribute('disabled')).toBe(false)
+      })
+
+      it('AC3: a generation bump while the retried body is still streaming drops the result', async () => {
+        const body = deferred()
+        const fetchMock = routedFetch([
+          expired(),
+          { ok: true, status: 200, json: () => body.promise, clone: () => undefined },
+        ])
+        vi.stubGlobal('fetch', fetchMock)
+        const { rerender } = render(ExtensionPanelPage, { props: { data: actionData } })
+
+        const button = screen.getByText('Run').closest('button') as HTMLButtonElement
+        button.click()
+        await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+        await flush()
+        await rerender({
+          data: { ...actionData, slot: 'other-slot', html: '<p>navigated away</p>' },
+        })
+        body.resolve({ html: '<p>stale A</p>' })
+        await flush()
+
+        expect(panelContainer()?.innerHTML).toContain('navigated away')
+        expect(panelContainer()?.innerHTML).not.toContain('stale A')
+        expect(button.hasAttribute('disabled')).toBe(false)
+        expect(button.hasAttribute('aria-busy')).toBe(false)
+      })
+    })
+  })
+})
+
+// Story 61.1 AC4 / DD6 — the module-data path (`/api/v1/extensions/data/*`) has no host-side
+// dispatcher today (audited 2026-09-26). This guard keeps it that way: any production source that
+// names that path outside a comment must route the request through `fetchWithSessionRefresh()`,
+// otherwise it would reintroduce the F3 "401 after access-token expiry, retry never helps" bug.
+describe('Story 61.1 AC4: module-data requests go through fetchWithSessionRefresh', () => {
+  const WEB_SRC_ROOT = path.join(import.meta.dirname, '../../../../../..')
+  const MODULE_DATA_PATTERN = /extensions\/data\b/
+  const HELPER_CALL = /\bfetchWithSessionRefresh\s*\(/
+
+  function stripComments(source: string): string {
+    return source
+      .replaceAll(/\/\*[\s\S]*?\*\//g, '')
+      .replaceAll(/<!--[\s\S]*?-->/g, '')
+      .replaceAll(/(^|[^:\\])\/\/.*$/gm, '$1')
+  }
+
+  /** Returns every file whose comment-stripped source names the module-data path in a statement
+   * that is not a `fetchWithSessionRefresh(...)` call. */
+  function findUnguardedModuleDataCallers(files: { file: string; source: string }[]): string[] {
+    return files
+      .filter(({ source }) =>
+        stripComments(source)
+          .split(/;|\n\s*\n/)
+          .some((statement) => MODULE_DATA_PATTERN.test(statement) && !HELPER_CALL.test(statement))
+      )
+      .map(({ file }) => file)
+  }
+
+  function productionSources(): { file: string; source: string }[] {
+    return readdirSync(WEB_SRC_ROOT, { recursive: true, encoding: 'utf8' })
+      .filter((file) => /\.(ts|js|svelte)$/.test(file) && !/\.(test|spec)\.[tj]s$/.test(file))
+      .map((file) => ({ file, source: readFileSync(path.join(WEB_SRC_ROOT, file), 'utf8') }))
+  }
+
+  it('scans the real apps/web/src tree', () => {
+    const files = productionSources()
+    expect(files.some(({ file }) => file.endsWith(path.join('lib', 'api', 'client.ts')))).toBe(true)
+  })
+
+  it('no production file issues a module-data request outside fetchWithSessionRefresh', () => {
+    expect(findUnguardedModuleDataCallers(productionSources())).toEqual([])
+  })
+
+  it('flags a raw fetch/apiFetch to the module-data path and names the file', () => {
+    expect(
+      findUnguardedModuleDataCallers([
+        { file: 'a/+page.svelte', source: "fetch('/api/v1/extensions/data/x')" },
+        { file: 'b.ts', source: 'await apiFetch(fetch, `/api/v1/extensions/data/${id}`)' },
+      ])
+    ).toEqual(['a/+page.svelte', 'b.ts'])
+  })
+
+  it('accepts the helper and ignores comments', () => {
+    expect(
+      findUnguardedModuleDataCallers([
+        {
+          file: 'ok.ts',
+          source:
+            "await fetchWithSessionRefresh(fetch, '/api/v1/extensions/data/x', build)\n" +
+            '// the /api/v1/extensions/data/* routes are mounted server-side\n' +
+            '/* see /api/v1/extensions/data/ */\n<!-- extensions/data/ -->',
+        },
+      ])
+    ).toEqual([])
   })
 })
