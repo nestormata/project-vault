@@ -37908,38 +37908,18 @@
                 "type": "object",
                 "properties": {
                   "quotaBytes": {
-                    "anyOf": [
-                      {
-                        "type": "integer",
-                        "minimum": 0,
-                        "exclusiveMinimum": true,
-                        "maximum": 9007199254740991
-                      },
-                      {
-                        "type": "string",
-                        "nullable": true,
-                        "enum": [
-                          null
-                        ]
-                      }
-                    ]
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991,
+                    "nullable": true
                   },
                   "writeRatePerMinute": {
-                    "anyOf": [
-                      {
-                        "type": "integer",
-                        "minimum": 0,
-                        "exclusiveMinimum": true,
-                        "maximum": 9007199254740991
-                      },
-                      {
-                        "type": "string",
-                        "nullable": true,
-                        "enum": [
-                          null
-                        ]
-                      }
-                    ]
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991,
+                    "nullable": true
                   },
                   "acknowledgeOvercommit": {
                     "type": "boolean"
