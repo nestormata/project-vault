@@ -9,6 +9,11 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-27
+
+Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.3.0`
+(aliases `1.3`, `1`, `latest`).
+
 ### Upgrade notes
 
 - **CLI:** new optional API variables `CLI_MINIMUM_SUPPORTED_VERSION` and `CLI_WITHDRAWN_VERSIONS`
@@ -36,6 +41,17 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   an expired session, and never deletes the session file because of it. `pvault logout` now warns
   when a rate-limited logout left the session valid on the server.
 
+### Fixed
+
+- The `web` service's Docker Compose environment never carried `CORS_ALLOWED_ORIGINS`, so the
+  handoff-prepare CORS check always rejected every origin under `docker compose up`, including
+  Project Vault's own. `docker-compose.yml`'s `web` service now gets the same
+  `CORS_ALLOWED_ORIGINS` value the `api` service already uses. (Story 60-1)
+- A panel action click made after the 5-minute access-token TTL returned `401` and showed "Unable
+  to complete this action. Please try again.", with retrying never helping — the panel dispatcher
+  bypassed the app's refresh-on-401 path. It now refreshes the session and retries once
+  automatically, or sends the user to the login page if the session is dead. (Story 61-1)
+
 ### Security
 
 - The CLI auth endpoints are now rate limited per IP, like their browser equivalents:
@@ -44,6 +60,9 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   route definitions were never enforced, so `/cli-login` accepted unlimited password attempts per
   IP. Over-limit requests get `429` with `Retry-After`. The CI route audit now fails any public
   route that claims an IP rate limit without actually registering one.
+- The pinned `node:24-alpine` base image (API and web Docker images) is refreshed to clear
+  CVE-2026-14456 (`libssl3`/`libcrypto3`, HIGH). A new guard test keeps every `FROM` line across
+  the API, web and CI Dockerfiles pinned to one identical digest. (Story 64-1)
 
 ## [1.2.0] - 2026-09-10
 
@@ -119,5 +138,6 @@ Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.2.0`
 - The `fast-uri` transitive dependency is patched (CVE-2026-75899, CVE-2026-75931,
   CVE-2026-75975, CVE-2026-76172).
 
-[Unreleased]: https://github.com/nestormata/project-vault/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/nestormata/project-vault/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/nestormata/project-vault/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/nestormata/project-vault/compare/v1.1.0...v1.2.0
