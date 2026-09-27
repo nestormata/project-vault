@@ -1,5 +1,3 @@
-/* eslint-disable sonarjs/no-duplicate-string -- table-driven cases: each row spells its versions/URLs
-   literally so the expected precedence or mapping is readable at a glance. */
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -18,6 +16,11 @@ import { versionCheckCachePath } from './version-check-cache.js'
 const RELEASES = 'https://github.com/nestormata/project-vault/releases'
 const BASE_URL = 'https://vault.example.com'
 const T0 = Date.parse('2026-09-24T10:00:00.000Z')
+const BELOW_MINIMUM = 'below-minimum'
+const ROOT_POLICY_URL = 'https://h/api/v1/client-version-policy'
+const SUBPATH_POLICY_URL = 'https://h/vault/api/v1/client-version-policy'
+/** The message undici's fetch rejects with on a network failure. */
+const FETCH_FAILED = 'fetch failed'
 const REASON =
   'Session refresh sent the refresh token to the configured URL without TLS verification; upgrade immediately.'
 
@@ -33,12 +36,12 @@ describe('evaluateVersionPolicy (precedence withdrawn > below-minimum > stale > 
     ['1.4.0-rc.1', policy(), 'server-older'],
     ['1.3.0-rc.1', policy(), 'stale'],
     ['1.2.0', policy({ current: null }), 'ok'],
-    ['1.0.7', policy({ minimumSupported: '1.1.0' }), 'below-minimum'],
+    ['1.0.7', policy({ minimumSupported: '1.1.0' }), BELOW_MINIMUM],
     ['1.1.0', policy({ minimumSupported: '1.1.0', current: '1.1.0' }), 'ok'],
     ['1.1.0', policy({ minimumSupported: '1.1.0' }), 'stale'],
-    ['1.0.0', policy({ current: null, minimumSupported: '1.1.0' }), 'below-minimum'],
+    ['1.0.0', policy({ current: null, minimumSupported: '1.1.0' }), BELOW_MINIMUM],
     // contradictory policy (current < minimum) evaluated field-by-field
-    ['1.0.5', policy({ current: '1.0.0', minimumSupported: '1.1.0' }), 'below-minimum'],
+    ['1.0.5', policy({ current: '1.0.0', minimumSupported: '1.1.0' }), BELOW_MINIMUM],
     [
       '1.2.1',
       policy({ minimumSupported: '1.3.0', withdrawn: [{ version: '1.2.1', reason: 'x' }] }),
@@ -59,12 +62,12 @@ describe('evaluateVersionPolicy (precedence withdrawn > below-minimum > stale > 
 
 describe('policyEndpointUrl (AC-3 URL join)', () => {
   it.each([
-    ['https://h', 'https://h/api/v1/client-version-policy'],
-    ['https://h/', 'https://h/api/v1/client-version-policy'],
-    ['https://h//', 'https://h/api/v1/client-version-policy'],
-    ['https://h/vault/', 'https://h/vault/api/v1/client-version-policy'],
-    ['https://h/vault', 'https://h/vault/api/v1/client-version-policy'],
-    ['https://h/vault?q=1#f', 'https://h/vault/api/v1/client-version-policy'],
+    ['https://h', ROOT_POLICY_URL],
+    ['https://h/', ROOT_POLICY_URL],
+    ['https://h//', ROOT_POLICY_URL],
+    ['https://h/vault/', SUBPATH_POLICY_URL],
+    ['https://h/vault', SUBPATH_POLICY_URL],
+    ['https://h/vault?q=1#f', SUBPATH_POLICY_URL],
   ])('%s → %s', (base, expected) => {
     expect(policyEndpointUrl(base)).toBe(expected)
   })
@@ -248,7 +251,7 @@ describe('runVersionCheck — request hygiene (AC-3)', () => {
 
 describe('runVersionCheck — unreachable / malformed (AC-3)', () => {
   it.each<[string, () => Promise<Response> | Response]>([
-    ['connection refused', () => Promise.reject(new TypeError('fetch failed'))],
+    ['connection refused', () => Promise.reject(new TypeError(FETCH_FAILED))],
     ['404 (older server)', () => new Response('not found', { status: 404 })],
     ['500', () => new Response('x', { status: 500 })],
     ['503 sealed', () => jsonResponse({ status: 'sealed' }, 503)],
@@ -305,7 +308,7 @@ describe('runVersionCheck — unreachable / malformed (AC-3)', () => {
   it('a stale cached ok policy is still used for notices while unreachable', async () => {
     const h = harness(policy(), { suppressNotices: true })
     await runVersionCheck(h.opts)
-    h.fetchFn.mockImplementation(() => Promise.reject(new TypeError('fetch failed')))
+    h.fetchFn.mockImplementation(() => Promise.reject(new TypeError(FETCH_FAILED)))
     h.clock.now = T0 + 2 * 3_600_000
     h.opts.suppressNotices = false
     await runVersionCheck(h.opts)
@@ -314,10 +317,10 @@ describe('runVersionCheck — unreachable / malformed (AC-3)', () => {
   })
 
   it('a version-check failure never touches the agent fallback state', async () => {
-    const h = harness(() => Promise.reject(new TypeError('fetch failed')))
+    const h = harness(() => Promise.reject(new TypeError(FETCH_FAILED)))
     await runVersionCheck(h.opts)
     const agentFetch = vi.fn(async () => {
-      throw new TypeError('fetch failed')
+      throw new TypeError(FETCH_FAILED)
     })
     vi.stubGlobal('fetch', agentFetch)
     try {
@@ -399,7 +402,7 @@ describe('runVersionCheck — withdrawn (AC-2) and sticky verdict (AC-3 D9)', ()
     h.fetchFn.mockImplementation(async () => jsonResponse(policy({ current: '1.2.1' })))
     expect(await runVersionCheck(h.opts)).toEqual({ refuse: false })
     expect(h.fetchFn).toHaveBeenCalledTimes(2)
-    h.fetchFn.mockImplementation(() => Promise.reject(new TypeError('fetch failed')))
+    h.fetchFn.mockImplementation(() => Promise.reject(new TypeError(FETCH_FAILED)))
     h.clock.now = T0 + 2 * 3_600_000
     expect(await runVersionCheck(h.opts)).toEqual({ refuse: false })
   })
@@ -408,7 +411,7 @@ describe('runVersionCheck — withdrawn (AC-2) and sticky verdict (AC-3 D9)', ()
     const h = harness(withdrawnPolicy, { cliVersion: '1.2.1', suppressNotices: true })
     await runVersionCheck(h.opts)
     h.stderr.length = 0
-    h.fetchFn.mockImplementation(() => Promise.reject(new TypeError('fetch failed')))
+    h.fetchFn.mockImplementation(() => Promise.reject(new TypeError(FETCH_FAILED)))
     h.clock.now = T0 + 5 * 24 * 3_600_000
     expect(await runVersionCheck(h.opts)).toEqual({ refuse: true, exitCode: 29 })
     const path = versionCheckCachePath(h.opts.cacheDir as string)
@@ -420,7 +423,7 @@ describe('runVersionCheck — withdrawn (AC-2) and sticky verdict (AC-3 D9)', ()
   it('a sticky verdict for one server never leaks into another', async () => {
     const h = harness(withdrawnPolicy, { cliVersion: '1.2.1' })
     await runVersionCheck(h.opts)
-    h.fetchFn.mockImplementation(() => Promise.reject(new TypeError('fetch failed')))
+    h.fetchFn.mockImplementation(() => Promise.reject(new TypeError(FETCH_FAILED)))
     h.opts.baseUrl = 'https://other.example.com'
     expect(await runVersionCheck(h.opts)).toEqual({ refuse: false })
   })
@@ -428,13 +431,13 @@ describe('runVersionCheck — withdrawn (AC-2) and sticky verdict (AC-3 D9)', ()
   it('upgrading the CLI clears the sticky verdict', async () => {
     const h = harness(withdrawnPolicy, { cliVersion: '1.2.1' })
     await runVersionCheck(h.opts)
-    h.fetchFn.mockImplementation(() => Promise.reject(new TypeError('fetch failed')))
+    h.fetchFn.mockImplementation(() => Promise.reject(new TypeError(FETCH_FAILED)))
     h.opts.cliVersion = '1.3.0'
     expect(await runVersionCheck(h.opts)).toEqual({ refuse: false })
   })
 
   it('never-checked + unreachable proceeds silently', async () => {
-    const h = harness(() => Promise.reject(new TypeError('fetch failed')), { cliVersion: '1.2.1' })
+    const h = harness(() => Promise.reject(new TypeError(FETCH_FAILED)), { cliVersion: '1.2.1' })
     expect(await runVersionCheck(h.opts)).toEqual({ refuse: false })
     expect(h.stderr).toEqual([])
   })

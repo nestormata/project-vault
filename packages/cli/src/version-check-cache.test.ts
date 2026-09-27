@@ -1,5 +1,3 @@
-/* eslint-disable sonarjs/no-duplicate-string -- table-driven cases: each row spells its versions/URLs
-   literally so the expected precedence or mapping is readable at a glance. */
 import { spawn } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -19,6 +17,9 @@ import {
 
 // tsx (a root devDependency) resolves from the repository root for the child writers.
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
+const CHECKED_AT = '2026-09-24T10:00:00.000Z'
+const SERVER_KEY = 'https://v.example.com'
+const CACHE_FILE_NAME = 'version-check.json'
 const tempDirs: string[] = []
 function tempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), 'pvault-version-cache-'))
@@ -32,7 +33,7 @@ afterEach(() => {
 function entry(overrides: Partial<VersionCheckCacheEntry> = {}): VersionCheckCacheEntry {
   return {
     cliVersion: '1.2.0',
-    checkedAt: '2026-09-24T10:00:00.000Z',
+    checkedAt: CHECKED_AT,
     outcome: 'ok',
     policy: { current: '1.3.0', minimumSupported: null, withdrawn: [] },
     lastConfirmedWithdrawn: null,
@@ -43,13 +44,13 @@ function entry(overrides: Partial<VersionCheckCacheEntry> = {}): VersionCheckCac
 
 describe('computeServerKey (AC-8)', () => {
   it.each([
-    ['https://v.example.com', 'https://v.example.com'],
-    ['https://v.example.com/', 'https://v.example.com'],
-    ['https://v.example.com//', 'https://v.example.com'],
+    ['https://v.example.com', SERVER_KEY],
+    ['https://v.example.com/', SERVER_KEY],
+    ['https://v.example.com//', SERVER_KEY],
     ['https://v.example.com/vault/', 'https://v.example.com/vault'],
     ['https://v.example.com/vault?x=1#frag', 'https://v.example.com/vault'],
-    ['https://u:p@v.example.com/', 'https://v.example.com'],
-    ['HTTPS://V.EXAMPLE.COM:443/', 'https://v.example.com'],
+    ['https://u:p@v.example.com/', SERVER_KEY],
+    ['HTTPS://V.EXAMPLE.COM:443/', SERVER_KEY],
   ])('%s → %s', (input, expected) => {
     expect(computeServerKey(input)).toBe(expected)
   })
@@ -60,7 +61,7 @@ describe('computeServerKey (AC-8)', () => {
 })
 
 describe('isWithinTtl', () => {
-  const now = Date.parse('2026-09-24T10:00:00.000Z')
+  const now = Date.parse(CHECKED_AT)
   it('is fresh inside the window', () => {
     expect(isWithinTtl('2026-09-24T09:30:00.000Z', now, 3_600_000)).toBe(true)
   })
@@ -98,13 +99,13 @@ describe('readVersionCheckCache / writeVersionCheckCache', () => {
     ['entries not an object', JSON.stringify({ schemaVersion: 1, entries: [] })],
     ['JSON array', '[]'],
   ])('a corrupted file (%s) is treated as no cache', (_label, content) => {
-    const path = join(tempDir(), 'version-check.json')
+    const path = join(tempDir(), CACHE_FILE_NAME)
     writeFileSync(path, content)
     expect(readVersionCheckCache(path).size).toBe(0)
   })
 
   it('drops individual entries that fail validation', () => {
-    const path = join(tempDir(), 'version-check.json')
+    const path = join(tempDir(), CACHE_FILE_NAME)
     writeFileSync(
       path,
       JSON.stringify({
@@ -123,14 +124,14 @@ describe('readVersionCheckCache / writeVersionCheckCache', () => {
   })
 
   it('re-sanitizes a tampered sticky reason on read', () => {
-    const path = join(tempDir(), 'version-check.json')
+    const path = join(tempDir(), CACHE_FILE_NAME)
     writeFileSync(
       path,
       JSON.stringify({
         schemaVersion: 1,
         entries: {
           k: entry({
-            lastConfirmedWithdrawn: { reason: '\x1b[31mred\u202E', at: '2026-09-24T10:00:00.000Z' },
+            lastConfirmedWithdrawn: { reason: '\x1b[31mred\u202E', at: CHECKED_AT },
           }),
         },
       })
@@ -170,7 +171,7 @@ describe('readVersionCheckCache / writeVersionCheckCache', () => {
     const base = tempDir()
     writeFileSync(join(base, 'file'), 'x')
     expect(() =>
-      writeVersionCheckCache(join(base, 'file', 'sub', 'version-check.json'), new Map())
+      writeVersionCheckCache(join(base, 'file', 'sub', CACHE_FILE_NAME), new Map())
     ).not.toThrow()
   })
 

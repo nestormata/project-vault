@@ -1,5 +1,3 @@
-/* eslint-disable sonarjs/no-duplicate-string -- the outcome names are a string-literal union used as
-   switch cases and matrix rows; spelling them inline keeps the matrix readable. */
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -37,17 +35,25 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-type Outcome =
-  | 'ok'
-  | 'stale'
-  | 'below-minimum'
-  | 'server-older'
-  | 'withdrawn'
-  | 'unreachable'
-  | 'malformed'
-  | 'sticky-withdrawn'
+/** The check is silent and the command proceeds exactly as it would without the check. */
+const SILENT_OUTCOMES = ['ok', 'unreachable', 'malformed'] as const
+/** The command proceeds and exactly one notice line is added to stderr (unless suppressed). */
+const NOTICE_OUTCOMES = ['stale', 'below-minimum', 'server-older'] as const
+/** The command is refused with EXIT_CODES.cliVersionWithdrawn. */
+const REFUSING_OUTCOMES = ['withdrawn', 'sticky-withdrawn'] as const
+const OUTCOMES = [...SILENT_OUTCOMES, ...NOTICE_OUTCOMES, ...REFUSING_OUTCOMES] as const
+type Outcome = (typeof OUTCOMES)[number]
+const NOTICE = new Set<Outcome>(NOTICE_OUTCOMES)
+const REFUSING = new Set<Outcome>(REFUSING_OUTCOMES)
 
 function policyFor(outcome: Outcome, cliVersion: string): CliVersionPolicy {
+  if (REFUSING.has(outcome)) {
+    return {
+      current: '1.3.0',
+      minimumSupported: null,
+      withdrawn: [{ version: cliVersion, reason: REASON }],
+    }
+  }
   switch (outcome) {
     case 'ok':
       return { current: cliVersion, minimumSupported: null, withdrawn: [] }
@@ -55,13 +61,6 @@ function policyFor(outcome: Outcome, cliVersion: string): CliVersionPolicy {
       return { current: '1.3.0', minimumSupported: '1.2.5', withdrawn: [] }
     case 'server-older':
       return { current: '1.1.0', minimumSupported: null, withdrawn: [] }
-    case 'withdrawn':
-    case 'sticky-withdrawn':
-      return {
-        current: '1.3.0',
-        minimumSupported: null,
-        withdrawn: [{ version: cliVersion, reason: REASON }],
-      }
     default:
       return { current: '1.3.0', minimumSupported: null, withdrawn: [] }
   }
@@ -90,7 +89,13 @@ type Invocation = {
 
 type InvokeOptions = {
   versionFetch?: (url: string, init: RequestInit) => Promise<Response>
-  env?: Record<string, string | undefined>
+  env?: Record<string, string>
+  /**
+   * Keys removed from the runtime env after the defaults and `env` are merged, so each one is
+   * absent (as a genuinely unset variable is), not present with the value `undefined`. A key
+   * that is not in the env is a no-op. If a key is both set in `env` and listed here, unset wins.
+   */
+  unsetEnv?: readonly string[]
   cliVersion?: string
   cacheDir?: string | null
   enabled?: boolean
@@ -108,6 +113,19 @@ function argvFor(command: Command): string[] {
     default:
       return ['login']
   }
+}
+
+function runtimeEnv(options: InvokeOptions): Record<string, string> {
+  const merged: Record<string, string> = {
+    VAULT_API_KEY: 'pk_secret_key_value',
+    VAULT_URL: BASE_URL,
+    VAULT_PROJECT_ID: PROJECT_ID,
+    // `logout` touches the session directory; keep it away from the real home directory.
+    XDG_CONFIG_HOME: tempDir('pvault-vc-e2e-xdg-'),
+    ...options.env,
+  }
+  const unset = new Set(options.unsetEnv ?? [])
+  return Object.fromEntries(Object.entries(merged).filter(([key]) => !unset.has(key)))
 }
 
 async function invoke(argv: string[], options: InvokeOptions = {}): Promise<Invocation> {
@@ -147,14 +165,7 @@ async function invoke(argv: string[], options: InvokeOptions = {}): Promise<Invo
       stderr: { write: (c: string) => void stderr.push(c) },
       isTTY: false,
     },
-    env: {
-      VAULT_API_KEY: 'pk_secret_key_value',
-      VAULT_URL: BASE_URL,
-      VAULT_PROJECT_ID: PROJECT_ID,
-      // `logout` touches the session directory; keep it away from the real home directory.
-      XDG_CONFIG_HOME: tempDir('pvault-vc-e2e-xdg-'),
-      ...options.env,
-    },
+    env: runtimeEnv(options),
     createVaultAgent,
     setExitCode: (code) => {
       exitCode = code
@@ -214,7 +225,7 @@ function fetchFor(outcome: Outcome, cliVersion = '1.2.0') {
 }
 
 async function invokeOutcome(command: Command, outcome: Outcome, suppress: boolean) {
-  const env = suppress ? { PVAULT_NO_VERSION_CHECK: '1' } : {}
+  const env: Record<string, string> = suppress ? { PVAULT_NO_VERSION_CHECK: '1' } : {}
   if (outcome !== 'sticky-withdrawn') {
     return invoke(argvFor(command), { versionFetch: fetchFor(outcome), env })
   }
@@ -229,17 +240,6 @@ async function invokeOutcome(command: Command, outcome: Outcome, suppress: boole
 }
 
 const COMMANDS: Command[] = ['get', 'run', 'write-env', 'login']
-const OUTCOMES: Outcome[] = [
-  'ok',
-  'stale',
-  'below-minimum',
-  'server-older',
-  'withdrawn',
-  'unreachable',
-  'malformed',
-  'sticky-withdrawn',
-]
-const REFUSING: Outcome[] = ['withdrawn', 'sticky-withdrawn']
 const MATRIX = COMMANDS.flatMap((command) =>
   OUTCOMES.flatMap((outcome) => [false, true].map((suppress) => ({ command, outcome, suppress })))
 )
@@ -249,7 +249,7 @@ describe('AC-6 stdout purity matrix', () => {
     it(`${command} / ${outcome} / PVAULT_NO_VERSION_CHECK=${suppress ? '1' : 'unset'}`, async () => {
       const baseline = await invoke(argvFor(command), { enabled: false })
       const checked = await invokeOutcome(command, outcome, suppress)
-      if (REFUSING.includes(outcome)) {
+      if (REFUSING.has(outcome)) {
         expect(checked.stdout).toBe('')
         expect(checked.exitCode).toBe(EXIT_CODES.cliVersionWithdrawn)
         expect(checked.thrownExitCode).toBe(EXIT_CODES.cliVersionWithdrawn)
@@ -265,8 +265,7 @@ describe('AC-6 stdout purity matrix', () => {
         expect(checked.stdout).toBe(baseline.stdout)
         expect(checked.exitCode).toBe(baseline.exitCode)
         const extra = checked.stderr.replace(baseline.stderr, '')
-        const expectNotice =
-          !suppress && ['stale', 'below-minimum', 'server-older'].includes(outcome)
+        const expectNotice = !suppress && NOTICE.has(outcome)
         expect(extra.split('\n').filter(Boolean)).toHaveLength(expectNotice ? 1 : 0)
       }
     })
@@ -386,20 +385,17 @@ describe('AC-3 unreachable', () => {
     expect(result.stderr).toBe(STALE_NOTICE)
   })
 
-  it('http:// non-loopback URL: the insecure warning is printed once, by the command only', async () => {
+  it('plain-HTTP non-loopback URL: the insecure warning is printed once, by the command only', async () => {
     const result = await invoke(argvFor('get'), {
       versionFetch: fetchFor('ok'),
-      env: { VAULT_URL: 'http://vault.example.com' }, // NOSONAR(typescript:S5332) verifying the insecure-http warning itself, not a real endpoint
+      env: { VAULT_URL: 'http://vault.example.com' },
     })
     expect(result.stderr.match(/is not https:\/\//g)).toHaveLength(1)
   })
 
   it('VAULT_URL missing → no version check, the usage error is unchanged', async () => {
-    // NOSONAR(typescript:S2138) x2 below — `undefined` overrides invoke()'s default VAULT_URL via
-    // object-spread merge; the runtime env type is `string | undefined`, so `null` would not
-    // compile and would not match what an actually-unset environment variable looks like.
-    const baseline = await invoke(argvFor('get'), { enabled: false, env: { VAULT_URL: undefined } }) // NOSONAR(typescript:S2138)
-    const result = await invoke(argvFor('get'), { env: { VAULT_URL: undefined } }) // NOSONAR(typescript:S2138)
+    const baseline = await invoke(argvFor('get'), { enabled: false, unsetEnv: ['VAULT_URL'] })
+    const result = await invoke(argvFor('get'), { unsetEnv: ['VAULT_URL'] })
     expect(result.versionFetch).not.toHaveBeenCalled()
     expect(result.exitCode).toBe(EXIT_CODES.usageError)
     expect(result.stderr).toBe(baseline.stderr)
