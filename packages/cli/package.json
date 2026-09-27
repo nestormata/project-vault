@@ -24,16 +24,16 @@
   },
   "dependencies": {
     "@project-vault/agent": "workspace:*",
-    "commander": "^14.0.3"
+    "commander": "^15.0.0"
   },
   "devDependencies": {
     "@project-vault/api": "workspace:*",
     "@project-vault/eslint-config": "workspace:*",
     "@project-vault/tsconfig": "workspace:*",
-    "@types/node": "^26.6.1",
+    "@types/node": "^26.6.2",
     "@vercel/ncc": "0.45.0",
     "@vitest/coverage-v8": "^5.0.1",
-    "eslint": "^10.10.0",
+    "eslint": "^10.11.0",
     "postgres": "^3.4.5",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1"
