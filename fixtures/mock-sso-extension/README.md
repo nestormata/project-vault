@@ -49,6 +49,18 @@ See `pnpm --filter @project-vault/api sso:qa` (or `apps/api/src/scripts/sso-qa.t
 scripted runbook that boots the API with this extension loaded, seeds the three fixture
 identities' backing rows, and prints ready-to-run `curl` commands for each scenario.
 
+The script takes two required environment variables and has no fallback for either:
+
+```bash
+export QA_DATABASE_URL=<a separately provisioned QA connection>
+export QA_VAULT_PASSPHRASE=<the passphrase this QA database's vault was initialised with>
+pnpm --filter @project-vault/api sso:qa
+```
+
+`QA_VAULT_PASSPHRASE` is only read when the vault is sealed. A persistent QA database that an
+older version of the script initialised used the fixed passphrase
+`sso-qa-local-passphrase-not-for-production`: export that value once to unseal it.
+
 ## Production-safety
 
 **This package's name must never appear in any production `VAULT_EXTENSIONS_PACKAGE`
