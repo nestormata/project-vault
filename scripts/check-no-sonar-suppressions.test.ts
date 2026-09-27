@@ -199,4 +199,18 @@ describe('findSonarSuppressions — sonar-project.properties ignores', () => {
       ])
     }
   })
+
+  // java.util.Properties (which the scanner uses to load this file) also accepts a whitespace
+  // key/value separator and backslash/unicode escapes inside the key; each form must still count.
+  it.each([
+    ['a whitespace separator', 'sonar.issue.ignore.multicriteria e9'],
+    ['a tab separator', 'sonar.issue.ignore.allfile\tf1'],
+    ['an escaped key character', 'sonar\\.issue.ignore.multicriteria=e9'],
+    ['a unicode-escaped key character', '\\u0073onar.issue.ignore.multicriteria=e9'],
+  ])('an ignore key written with %s fails', (_label, line) => {
+    const content = [BASE_PROPERTIES, line, ''].join('\n')
+    expect(findSonarSuppressions(repo({ [PROPERTIES]: content }))).toEqual([
+      expect.objectContaining({ location: `${PROPERTIES}:4` }),
+    ])
+  })
 })

@@ -66,15 +66,30 @@ function parseProperties(text: string): { entries: PropertyLine[]; lines: string
       i++
       logical = logical.slice(0, -1) + (lines.at(i) ?? '').trim()
     }
-    const eq = logical.search(/[=:]/)
-    if (eq === -1) continue
-    entries.push({
-      key: logical.slice(0, eq).trim(),
-      value: logical.slice(eq + 1).trim(),
-      line: start + 1,
-    })
+    entries.push({ ...splitKeyValue(logical), line: start + 1 })
   }
   return { entries, lines }
+}
+
+/** Resolves java.util.Properties key escapes: `\uXXXX` and `\<char>` (e.g. `\.`, `\ `). */
+function unescapeKey(raw: string): string {
+  return raw.replace(
+    /\\(?:u([0-9a-fA-F]{4})|(.))/g,
+    (_match, hex: string | undefined, ch: string) =>
+      hex === undefined ? ch : String.fromCharCode(Number.parseInt(hex, 16))
+  )
+}
+
+/**
+ * Splits one logical line the way java.util.Properties (which the scanner loads this file with)
+ * does: the key ends at the first unescaped `=`, `:` or whitespace, so `key value` is as valid as
+ * `key=value`, and the key's escapes are resolved before it is compared.
+ */
+function splitKeyValue(logical: string): { key: string; value: string } {
+  const separator = /^((?:\\.|[^\\=:\s])*)\s*[=:]?\s*/.exec(logical)
+  const rawKey = separator?.[1] ?? logical
+  const consumed = separator?.[0].length ?? logical.length
+  return { key: unescapeKey(rawKey), value: logical.slice(consumed).trim() }
 }
 
 function readProperties(repoRoot: string): ReturnType<typeof parseProperties> | null {

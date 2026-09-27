@@ -217,6 +217,15 @@ describe('isPrivateOrReservedIp boundary parity (Story 43.9 AC-3, AC-12)', () =>
     expect(isPrivateOrReservedIp(ip)).toBe(expected)
   })
 
+  // net.isIPv6 accepts zone IDs that ipaddr.js's parser rejects (a VLAN/bridge interface name such
+  // as eth0.1 or br-1a2b). Those must fail closed (reserved), never throw out of the boolean check.
+  it.each(['fe80::1%eth0.1', 'fe80::1%br-1a2b', '::%a-b', '2606:4700::1%eth0.1'])(
+    '%s (a zone ID ipaddr.js cannot parse) fails closed without throwing',
+    (ip) => {
+      expect(isPrivateOrReservedIp(ip)).toBe(true)
+    }
+  )
+
   it.each(['0.0.0.0', '::'])(
     'rejects a hostname whose DNS answer is the unspecified address %s (AC-12)',
     async (address) => {

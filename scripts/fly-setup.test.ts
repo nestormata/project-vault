@@ -13,7 +13,10 @@ import { resolveTrustedExecutable } from './lib/trusted-executable.js'
 // The script runs under bash with a stub `flyctl` first on the child's PATH that records every
 // invocation. The stub is test scaffolding only; the product never resolves binaries this way.
 
-const SCRIPT = resolve(fileURLToPath(new URL('.', import.meta.url)), 'fly-setup.sh')
+const SCRIPTS_DIR = resolve(fileURLToPath(new URL('.', import.meta.url)))
+const SCRIPT = resolve(SCRIPTS_DIR, 'fly-setup.sh')
+const RESET_SCRIPT = resolve(SCRIPTS_DIR, 'fly-reset.sh')
+const MISSING_APP_PASSWORD = 'Set VAULT_APP_PASSWORD'
 const BASH = resolveTrustedExecutable('bash')
 
 const tempRoots: string[] = []
@@ -21,7 +24,10 @@ afterEach(() => {
   for (const root of tempRoots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-function runFlySetup(extraEnv: Record<string, string>): {
+function runFlyScript(
+  script: string,
+  extraEnv: Record<string, string>
+): {
   status: number | null
   stderr: string
   flyctlCalls: string[]
@@ -31,7 +37,7 @@ function runFlySetup(extraEnv: Record<string, string>): {
   const log = join(root, 'flyctl-calls.log')
   writeFixture(root, 'bin/flyctl', '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$FLY_STUB_LOG"\nexit 0\n')
   chmodSync(join(root, 'bin/flyctl'), 0o755)
-  const result = spawnSync(BASH, [SCRIPT], {
+  const result = spawnSync(BASH, [script], {
     encoding: 'utf8',
     // A fixed environment, so a developer's own exported Fly variables never leak in.
     env: {
@@ -47,18 +53,22 @@ function runFlySetup(extraEnv: Record<string, string>): {
   return { status: result.status, stderr: result.stderr, flyctlCalls }
 }
 
+function runFlySetup(extraEnv: Record<string, string>) {
+  return runFlyScript(SCRIPT, extraEnv)
+}
+
 describe('fly-setup.sh VAULT_APP_PASSWORD (Story 43.9 AC-13)', () => {
   it('unset: exits non-zero before any flyctl call, naming the variable', () => {
     const { status, stderr, flyctlCalls } = runFlySetup({})
     expect(status).not.toBe(0)
-    expect(stderr).toContain('Set VAULT_APP_PASSWORD')
+    expect(stderr).toContain(MISSING_APP_PASSWORD)
     expect(flyctlCalls).toEqual([])
   })
 
   it('empty: fails the same way (`:?` treats empty as unset)', () => {
     const { status, stderr, flyctlCalls } = runFlySetup({ VAULT_APP_PASSWORD: '' })
     expect(status).not.toBe(0)
-    expect(stderr).toContain('Set VAULT_APP_PASSWORD')
+    expect(stderr).toContain(MISSING_APP_PASSWORD)
     expect(flyctlCalls).toEqual([])
   })
 
@@ -70,5 +80,31 @@ describe('fly-setup.sh VAULT_APP_PASSWORD (Story 43.9 AC-13)', () => {
     )
     expect(apiSecrets).toContain('DATABASE_URL=postgresql://vault_app:s3cret@')
     expect(flyctlCalls.join('\n')).not.toContain('dev-only-change-in-prod')
+  })
+})
+
+// fly-reset.sh ALTERs vault_app to VAULT_APP_PASSWORD after every migrate run. A silent fallback
+// there to the migration's publicly known default would both break the api (its DATABASE_URL,
+// set by fly-setup.sh, carries the real password) and re-arm that public password on the demo DB.
+describe('fly-reset.sh VAULT_APP_PASSWORD (Story 43.9 AC-13 consistency)', () => {
+  const RESET_ENV = {
+    ADMIN_PG_PASSWORD: 'pg-test-value',
+    DEMO_VAULT_PASSPHRASE: 'passphrase-test-value',
+    DEMO_LOGIN_EMAIL: 'demo@example.com',
+    DEMO_LOGIN_PASSWORD: 'demo-test-value',
+    VAULT_BOOTSTRAP_TOKEN: 'bootstrap-test-value',
+  }
+
+  it.each([
+    ['unset', {}],
+    ['empty', { VAULT_APP_PASSWORD: '' }],
+  ])('%s: exits non-zero before any flyctl call, naming the variable', (_label, appPassword) => {
+    const { status, stderr, flyctlCalls } = runFlyScript(RESET_SCRIPT, {
+      ...RESET_ENV,
+      ...appPassword,
+    })
+    expect(status).not.toBe(0)
+    expect(stderr).toContain(MISSING_APP_PASSWORD)
+    expect(flyctlCalls).toEqual([])
   })
 })

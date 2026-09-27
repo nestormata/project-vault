@@ -53,7 +53,10 @@ function isBlockedIpv4(dotted: string): boolean {
   return BLOCKED_V4_RANGES.has(ipaddr.IPv4.parse(dotted).range())
 }
 
+/** Fails closed on anything ipaddr.js cannot parse: `net.isIPv6` accepts zone IDs (e.g. the
+ * `%eth0.1` or `%br-1a2b` interface names) that ipaddr.js rejects. */
 function isBlockedIpv6(address: string): boolean {
+  if (!ipaddr.IPv6.isValid(address)) return true
   const parsed = ipaddr.IPv6.parse(address)
   if (parsed.isIPv4MappedAddress()) return isBlockedIpv4(parsed.toIPv4Address().toString())
   return BLOCKED_V6_RANGES.has(parsed.range())
