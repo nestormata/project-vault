@@ -1,9 +1,35 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type BrowserContext, type Page } from '@playwright/test'
 
 const CONFIRM_URL = '**/api/v1/auth/handoff/confirm'
 const CONFIRM_BUTTON_NAME = 'Confirm sign-in'
 const GENERIC_REJECTION_MESSAGE = 'Sign-in could not be verified. Please start again.'
 const HANDOFF_CONFIRM_COOKIE_NAME = 'handoff-confirm'
+
+async function stubMfaChallengeConfirm(page: Page, mfaToken: string): Promise<void> {
+  await page.route(CONFIRM_URL, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { mfaRequired: true, mfaToken } }),
+    })
+  })
+}
+
+async function assertNoHandoffCookie(context: BrowserContext): Promise<void> {
+  expect((await context.cookies()).some((c) => c.name === HANDOFF_CONFIRM_COOKIE_NAME)).toBe(false)
+}
+
+async function confirmAndExpectMfaChallenge(page: Page): Promise<void> {
+  await expect(page.getByRole('heading', { name: CONFIRM_BUTTON_NAME })).toBeVisible()
+  await expect(
+    page.getByText('Sign in to Project Vault as alex@acme.com in Acme Corp?')
+  ).toBeVisible()
+
+  await page.getByRole('button', { name: CONFIRM_BUTTON_NAME }).click()
+
+  // The confirm response's mfaRequired branch renders the existing, unmodified MfaLoginForm.
+  await expect(page.getByLabelText(/authenticator code/i)).toBeVisible()
+}
 
 // J28 — Story 30.5's own Testing Requirements: "No true end-to-end CM->PV browser test is
 // possible in this repository" (CM is external, not present here, and DW-153 means even a
@@ -17,27 +43,13 @@ test.describe('J28 — handoff confirmation page', () => {
   test('renders the resolved account/org and completes a stubbed MFA-challenge login', async ({
     page,
   }) => {
-    await page.route(CONFIRM_URL, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ data: { mfaRequired: true, mfaToken: 'e2e-mfa-token' } }),
-      })
-    })
+    await stubMfaChallengeConfirm(page, 'e2e-mfa-token')
 
     await page.goto(
       '/handoff?pendingId=e2e-fixture-pending-id&organizationName=Acme%20Corp&accountLabel=alex%40acme.com'
     )
 
-    await expect(page.getByRole('heading', { name: CONFIRM_BUTTON_NAME })).toBeVisible()
-    await expect(
-      page.getByText('Sign in to Project Vault as alex@acme.com in Acme Corp?')
-    ).toBeVisible()
-
-    await page.getByRole('button', { name: CONFIRM_BUTTON_NAME }).click()
-
-    // The confirm response's mfaRequired branch renders the existing, unmodified MfaLoginForm.
-    await expect(page.getByLabelText(/authenticator code/i)).toBeVisible()
+    await confirmAndExpectMfaChallenge(page)
   })
 
   test('renders the neutral error state for a direct navigation with no query params', async ({
@@ -102,13 +114,7 @@ test.describe('J28 — handoff confirmation page', () => {
     page,
     context,
   }) => {
-    await page.route(CONFIRM_URL, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ data: { mfaRequired: true, mfaToken: 'e2e-mfa-token-claim' } }),
-      })
-    })
+    await stubMfaChallengeConfirm(page, 'e2e-mfa-token-claim')
 
     await page.goto(
       '/handoff?pendingId=e2e-fixture-pending-id-claim&claim=e2e-fixture-claim-does-not-exchange&organizationName=Acme%20Corp&accountLabel=alex%40acme.com'
@@ -116,17 +122,11 @@ test.describe('J28 — handoff confirmation page', () => {
 
     // The load's own exchange attempt fails closed (handoff disabled in this stack) — it must
     // never set the handoff-confirm cookie itself.
-    const cookiesAfterLoad = await context.cookies()
-    expect(cookiesAfterLoad.some((c) => c.name === HANDOFF_CONFIRM_COOKIE_NAME)).toBe(false)
+    await assertNoHandoffCookie(context)
 
     // The page still renders and functions normally — an unexchanged claim param must never break
     // the existing pendingId-driven rendering or the (still prepare()-cookie-backed) confirm flow.
-    await expect(page.getByRole('heading', { name: CONFIRM_BUTTON_NAME })).toBeVisible()
-    await expect(
-      page.getByText('Sign in to Project Vault as alex@acme.com in Acme Corp?')
-    ).toBeVisible()
-    await page.getByRole('button', { name: CONFIRM_BUTTON_NAME }).click()
-    await expect(page.getByLabelText(/authenticator code/i)).toBeVisible()
+    await confirmAndExpectMfaChallenge(page)
   })
 
   test('the same unexchangeable claim URL loaded twice is safe both times (no crash, no cookie either time)', async ({
@@ -137,18 +137,14 @@ test.describe('J28 — handoff confirmation page', () => {
       '/handoff?pendingId=e2e-fixture-pending-id-claim-2&claim=e2e-fixture-claim-replay&organizationName=Acme%20Corp&accountLabel=alex%40acme.com'
 
     await page.goto(url)
-    expect((await context.cookies()).some((c) => c.name === HANDOFF_CONFIRM_COOKIE_NAME)).toBe(
-      false
-    )
+    await assertNoHandoffCookie(context)
     await expect(page.getByRole('heading', { name: CONFIRM_BUTTON_NAME })).toBeVisible()
 
     // Second load of the identical URL — mirrors AC3's replay edge case at the level this suite
     // can actually exercise without a real signed claim (see the scope note above): idempotently
     // safe, never a crash, never a cookie either time.
     await page.goto(url)
-    expect((await context.cookies()).some((c) => c.name === HANDOFF_CONFIRM_COOKIE_NAME)).toBe(
-      false
-    )
+    await assertNoHandoffCookie(context)
     await expect(page.getByRole('heading', { name: CONFIRM_BUTTON_NAME })).toBeVisible()
   })
 })
