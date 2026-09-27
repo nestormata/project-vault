@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process'
+import { accessSync, constants } from 'node:fs'
+import { join } from 'node:path'
 
 export class PgProcessError extends Error {
   constructor(
@@ -8,6 +10,36 @@ export class PgProcessError extends Error {
     super(message)
     this.name = 'PgProcessError'
   }
+}
+
+type PgClientBinary = 'pg_dump' | 'psql'
+
+/** Root-owned directories searched, in order, for the Postgres client binaries. The api runner
+ * image's `postgresql16-client` package installs both into /usr/bin. */
+const PG_CLIENT_DIRS = ['/usr/bin', '/usr/local/bin', '/bin'] as const
+const resolvedPgClients = new Map<PgClientBinary, string>()
+
+/**
+ * Story 43.9 AC-4 (typescript:S4036) — the absolute path of `name`, resolved once, lazily, from
+ * fixed root-owned directories and never from `$PATH`. This matters beyond lint: both children run
+ * with the superuser/BYPASSRLS connection's PGPASSWORD in their environment, so a `pg_dump`
+ * picked up from a writable PATH entry would receive that credential. There is deliberately no
+ * fallback to the bare name, which would bring the PATH lookup back.
+ */
+function resolvePgClientBinary(name: PgClientBinary): string {
+  const cached = resolvedPgClients.get(name)
+  if (cached) return cached
+  for (const dir of PG_CLIENT_DIRS) {
+    const candidate = join(dir, name)
+    try {
+      accessSync(candidate, constants.X_OK)
+    } catch {
+      continue
+    }
+    resolvedPgClients.set(name, candidate)
+    return candidate
+  }
+  throw new PgProcessError(`${name} not found in /usr/bin, /usr/local/bin or /bin`, '')
 }
 
 type ParsedConnection = {
@@ -105,9 +137,10 @@ function attachCloseHandler(
  */
 export async function runPgDump(connectionString: string): Promise<Buffer> {
   const conn = parseConnectionString(connectionString)
+  const pgDump = resolvePgClientBinary('pg_dump')
   return new Promise((resolve, reject) => {
     const child = spawn(
-      'pg_dump', // NOSONAR(typescript:S4036) — trusted binary on this container's fixed image PATH
+      pgDump,
       [
         '-h',
         conn.host,
@@ -160,9 +193,10 @@ export async function runPgDump(connectionString: string): Promise<Buffer> {
  */
 export async function runPgRestore(connectionString: string, sql: Buffer): Promise<void> {
   const conn = parseConnectionString(connectionString)
+  const psql = resolvePgClientBinary('psql')
   return new Promise((resolve, reject) => {
     const child = spawn(
-      'psql', // NOSONAR(typescript:S4036) — trusted binary on this container's fixed image PATH
+      psql,
       [
         '-h',
         conn.host,

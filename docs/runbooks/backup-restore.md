@@ -1,6 +1,6 @@
 # Backup and restore
 
-<!-- Verified against apps/api/src/modules/backup/{routes,schema,service,storage-errors,alerts}.ts,
+<!-- Verified against apps/api/src/modules/backup/{routes,schema,service,storage-errors,alerts,pg-process}.ts,
      apps/api/src/workers/backup-health-check.ts, apps/api/docker-entrypoint.sh,
      docker-compose.yml, docker-compose.nfs.yml, .env.example -->
 
@@ -12,6 +12,12 @@ backup-storage permission failure, or responding to a `backup.missed` / `backup.
 For rebuilding an instance on a **new host** — volumes, cluster roles, key material, instance
 identity — use [`disaster-recovery.md`](disaster-recovery.md) instead; this runbook covers
 in-place backup and restore against a working instance.
+
+The API runs `pg_dump` (backup) and `psql` (restore) by absolute path, searching only `/usr/bin`,
+`/usr/local/bin` and `/bin` — never `$PATH`, because both children receive the backup connection's
+password. The API image installs both into `/usr/bin`. An API run outside the container, on a
+host whose clients live elsewhere (for example `/usr/lib/postgresql/16/bin`), fails backup and
+restore with `pg_dump not found in /usr/bin, /usr/local/bin or /bin` rather than falling back.
 
 All four endpoints below are instance-wide (not org-scoped) and require platform operator status
 (the role granted to the first-ever registered user). A non-operator caller receives
