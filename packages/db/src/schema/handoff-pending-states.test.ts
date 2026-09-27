@@ -15,6 +15,12 @@ describe('handoff_pending_states schema (Story 30.2 Task 2)', () => {
     expect(handoffPendingStates.createdAt).toBeDefined()
   })
 
+  // Story 60.3 AC2: nullable, unique-indexed claim_hash column for the claim-exchange mechanism.
+  it('exposes the nullable claimHash column added for Story 60.3 AC2', () => {
+    expect(handoffPendingStates.claimHash).toBeDefined()
+    expect(handoffPendingStates.claimHash.notNull).toBe(false)
+  })
+
   it('documents handoff_pending_states as an RLS coverage exception (org untrusted until confirm)', () => {
     expect(EXCLUDED_TABLES.has('handoff_pending_states')).toBe(true)
   })

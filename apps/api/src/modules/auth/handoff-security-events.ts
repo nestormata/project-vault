@@ -28,16 +28,23 @@ function subjectHash(value: string): string {
   return createHmac('sha256', getAuditKey()).update(value).digest('hex')
 }
 
-/** Defense-in-depth: strip a `token`/`rawToken` key even if a future caller mistakenly includes
- *  one in `payload` — belt-and-suspenders alongside the type shape's structural prevention. */
+/** Defense-in-depth: strip a `token`/`rawToken`/`claim`/`rawClaim` key even if a future caller
+ *  mistakenly includes one in `payload` — belt-and-suspenders alongside the type shape's
+ *  structural prevention. Story 60.3 AC4: a leaked, not-yet-consumed `claim` is equivalent in
+ *  severity to a leaked `rawCookie` (single-use — whoever consumes it first gets signed in), so
+ *  it gets the exact same redaction treatment as `token`/`rawToken`. */
 function sanitizePayload(payload: Record<string, unknown>): Record<string, unknown> {
   const {
     token: _token,
     rawToken: _rawToken,
+    claim: _claim,
+    rawClaim: _rawClaim,
     ...rest
   } = payload as Record<string, unknown> & {
     token?: unknown
     rawToken?: unknown
+    claim?: unknown
+    rawClaim?: unknown
   }
   return rest
 }

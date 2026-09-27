@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
 import {
   handoffPendingStates,
@@ -162,6 +162,14 @@ async function handlePrepare(request: FastifyRequest, reply: FastifyReply): Prom
 
   const rawCookie = randomBytes(32).toString('base64url')
   const cookieHash = hashCookieValue(rawCookie)
+  // Story 60.3 AC1: `claim` is a second, distinct single-use opaque value — never derived from
+  // `rawCookie`/`pendingId` or vice versa — that lets a same-origin `/handoff` `load` later
+  // "claim-exchange" a cross-site-dropped confirmation cookie back into existence (see
+  // handleExchangeClaim below). Generated with the exact same primitive as rawCookie
+  // (randomBytes(32).toString('base64url')), relying on its collision space rather than an
+  // app-level uniqueness check, matching rawCookie/pendingId's own generation.
+  const claim = randomBytes(32).toString('base64url')
+  const claimHash = hashCookieValue(claim)
   const id = generateOpaqueId()
   const expiresAt = new Date(Date.now() + PENDING_TTL_MS)
 
@@ -169,6 +177,7 @@ async function handlePrepare(request: FastifyRequest, reply: FastifyReply): Prom
     await getDb().insert(handoffPendingStates).values({
       id,
       cookieHash,
+      claimHash,
       jti: claims.jti,
       providerName: claims.providerName,
       externalSubject: claims.workosUserId,
@@ -180,6 +189,11 @@ async function handlePrepare(request: FastifyRequest, reply: FastifyReply): Prom
     return rejectHandoff(reply, HandoffEvent.HANDOFF_REPLAY_STORE_UNAVAILABLE, meta)
   }
 
+  // Story 60.3/60.2 elicitation Round 5: this cookie-set is KEPT unconditionally, even though the
+  // new claim-exchange mechanism below makes it redundant for cross-site deployments — removing it
+  // would break every cross-site handoff during the rollout gap before CentralizeMe ships its own
+  // claim-aware interstitial (AC5), and would needlessly affect same-site deployments that have no
+  // reason to be touched by this fix at all. The claim mechanism is purely additive.
   ;(reply as unknown as CookieReply).setCookie(HANDOFF_COOKIE_NAME, rawCookie, {
     httpOnly: true,
     // AC3.7: "SameSite=Lax-or-stricter" — Strict is used here (stricter than sso-state's Lax)
@@ -197,7 +211,7 @@ async function handlePrepare(request: FastifyRequest, reply: FastifyReply): Prom
   )
 
   return reply.status(200).send({
-    data: { pendingId: id, organizationName, accountLabel },
+    data: { pendingId: id, claim, organizationName, accountLabel },
   })
 }
 
@@ -212,6 +226,27 @@ async function loadPendingState(cookieHash: string): Promise<PendingRow | undefi
     .select()
     .from(handoffPendingStates)
     .where(eq(handoffPendingStates.cookieHash, cookieHash))
+    .limit(1)
+  return row
+}
+
+// Story 60.3 AC3: scoped by BOTH `pendingId` and `claimHash` matching the SAME row — never
+// `claimHash` alone. A `claim` that is otherwise valid but paired with a different request's
+// `pendingId` in the URL must still fail; a lookup keyed only on `claimHash` would let an attacker
+// who observes one full valid `/handoff` URL swap in an unrelated `pendingId`. A row with a
+// `claim_hash` of `NULL` (a pre-60.3 row created before this column existed — the rolling-deploy
+// skew case) can never match here, since SQL equality against NULL is never true — the generic
+// "missing claim" rejection path below covers it without any special-casing.
+async function loadPendingStateByIdAndClaimHash(
+  pendingId: string,
+  claimHash: string
+): Promise<PendingRow | undefined> {
+  const [row] = await getDb()
+    .select()
+    .from(handoffPendingStates)
+    .where(
+      and(eq(handoffPendingStates.id, pendingId), eq(handoffPendingStates.claimHash, claimHash))
+    )
     .limit(1)
   return row
 }
@@ -234,6 +269,100 @@ async function burnJti(jti: string, expiresAt: Date): Promise<BurnOutcome> {
     if (code === '23505') return { ok: false, reason: 'handoff_replay' }
     return { ok: false, reason: 'handoff_replay_store_unavailable' }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Story 60.3 AC3: POST /auth/handoff/exchange-claim — Option 1's claim-exchange consumption.
+// ---------------------------------------------------------------------------
+
+// A dedicated prefix keeps this burn's key space disjoint from real CentralizeMe-issued JTIs
+// burned by `burnAndResolveOrg` above — `claimHash` is a 64-char hex HMAC digest, so collision
+// with any real JTI value is not a practical concern either way, but the prefix makes the
+// intent explicit and greppable in the shared `handoff_token_jti` table.
+function claimBurnKey(claimHash: string): string {
+  return `claim:${claimHash}`
+}
+
+type ClaimExchangeResolution =
+  { ok: true; rawCookieValue: string; expiresAt: Date } | { ok: false; eventType: HandoffEventType }
+
+/**
+ * Split out of handleExchangeClaim to keep both functions under the repo's complexity threshold
+ * (mirroring burnAndResolveOrg's own split out of handleConfirm above). Looks up the row scoped by
+ * BOTH pendingId and claimHash, insert-first-burns the claim, and — only once burned — mints a
+ * fresh raw cookie value and re-keys the pending row's cookieHash to it (see handleExchangeClaim's
+ * doc comment for why this UPDATE is safe here).
+ */
+async function resolveClaimExchange(
+  pendingId: string,
+  claimHash: string
+): Promise<ClaimExchangeResolution> {
+  const pending = await loadPendingStateByIdAndClaimHash(pendingId, claimHash)
+  // AC3 edge case: expired matches replay's generic rejection exactly, same as confirm's own
+  // expired-pending-state handling — never a distinguishable response.
+  if (!pending || pending.expiresAt.getTime() <= Date.now()) {
+    return { ok: false, eventType: HandoffEvent.HANDOFF_REPLAY }
+  }
+
+  // Insert-first-burn, identical pattern to burnJti(): a unique-violation on the claim's burn key
+  // means it was already consumed (replay) — never a SELECT-then-UPDATE, which would allow a
+  // TOCTOU double-consumption race under concurrent requests for the same claim.
+  const burn = await burnJti(claimBurnKey(claimHash), pending.expiresAt)
+  if (!burn.ok) {
+    return {
+      ok: false,
+      eventType:
+        burn.reason === 'handoff_replay'
+          ? HandoffEvent.HANDOFF_REPLAY
+          : HandoffEvent.HANDOFF_REPLAY_STORE_UNAVAILABLE,
+    }
+  }
+
+  // The claim is burned — everything past this point must still fail closed into the single
+  // generic-rejection contract. `cookieHash` is never reversible (one-way HMAC), so rather than
+  // trying to recover the original `rawCookie`, a FRESH raw cookie value is minted and the
+  // pending row's `cookieHash` is updated to match it. This UPDATE is safe from the same TOCTOU
+  // concern the burn above guards against: it only ever runs once per claim, since it is gated by
+  // the burn's own atomicity.
+  const rawCookieValue = randomBytes(32).toString('base64url')
+  try {
+    await getDb()
+      .update(handoffPendingStates)
+      .set({ cookieHash: hashCookieValue(rawCookieValue) })
+      .where(eq(handoffPendingStates.id, pendingId))
+  } catch {
+    return { ok: false, eventType: HandoffEvent.HANDOFF_REPLAY_STORE_UNAVAILABLE }
+  }
+
+  return { ok: true, rawCookieValue, expiresAt: pending.expiresAt }
+}
+
+async function handleExchangeClaim(request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  // Matches handlePrepare/handleConfirm's own enablement guard.
+  if (!env.VAULT_HANDOFF_ENABLED) return sendGenericRejection(reply)
+
+  const meta = metaFromRequest(request)
+  const body = request.body as { pendingId?: unknown; claim?: unknown } | undefined
+  const pendingId = typeof body?.pendingId === 'string' ? body.pendingId : ''
+  // AC3 edge case: an empty-string claim is treated identically to a wholly missing one — never a
+  // distinct code path that could leak which failure mode occurred.
+  const claim = typeof body?.claim === 'string' ? body.claim : ''
+
+  if (!pendingId || !claim) {
+    return rejectHandoff(reply, HandoffEvent.HANDOFF_REPLAY, meta)
+  }
+
+  const resolution = await resolveClaimExchange(pendingId, hashCookieValue(claim))
+  if (!resolution.ok) {
+    return rejectHandoff(reply, resolution.eventType, meta)
+  }
+
+  return reply.status(200).send({
+    data: {
+      rawCookieValue: resolution.rawCookieValue,
+      expiresAt: resolution.expiresAt.toISOString(),
+    },
+  })
 }
 
 type OrgResolution =
@@ -454,5 +583,19 @@ export async function handoffRoutes(fastify: FastifyApp): Promise<void> {
       rateLimit: { max: 60, timeWindowMs: 60_000, key: 'POST /confirm' },
     },
     handler: async (_ctx, request, reply) => handleConfirm(fastify, request, reply),
+  })
+
+  // Story 60.3 AC3: same public/unauthenticated/replay-sensitive shape as prepare/confirm above,
+  // so it gets the same rate-limit treatment (Dev Notes' explicit recommendation).
+  secureRoute(fastify, {
+    method: 'POST',
+    url: '/exchange-claim',
+    bodyLimit: 16 * 1024,
+    security: {
+      requireAuth: false,
+      writeAuditEvent: false,
+      rateLimit: { max: 60, timeWindowMs: 60_000, key: 'POST /exchange-claim' },
+    },
+    handler: async (_ctx, request, reply) => handleExchangeClaim(request, reply),
   })
 }

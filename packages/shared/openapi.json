@@ -25654,6 +25654,15 @@
         }
       }
     },
+    "/api/v1/auth/handoff/exchange-claim": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/api/v1/auth/sso/domain-lookup": {
       "post": {
         "tags": [

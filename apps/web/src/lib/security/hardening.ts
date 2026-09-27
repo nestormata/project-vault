@@ -92,6 +92,35 @@ export function getFrameProtectionHeaders() {
  * `'unsafe-inline'` is kept for every real panel's own inline `style="var(--pv-ext-*, ...)"`
  * attribute (unchanged from Story 29.1's original rationale above).
  */
+/**
+ * Story 60.3 AC4 — the `/handoff` route's own claim-exchange `load` puts a single-use `claim`
+ * query parameter into the page URL. The same-origin `/confirm` POST that follows would otherwise
+ * carry that full URL into `/confirm`'s own access logs via the default `Referer` header — a
+ * leaked, not-yet-consumed `claim` is equivalent in severity to a leaked `rawCookie` (single-use,
+ * so whoever consumes it first gets signed in as the intended user). `strict-origin` (rather than
+ * `same-origin`) is chosen so same-origin analytics/monitoring reading `document.referrer` for
+ * path attribution still works — it strips the query string cross-origin but still sends the
+ * origin, which is the property this AC actually needs.
+ */
+export function getHandoffSecurityHeaders() {
+  return {
+    ...getFrameProtectionHeaders(),
+    'referrer-policy': 'strict-origin',
+  }
+}
+
+/**
+ * Story 60.3 AC4 (elicitation Round 3, Cascading Failure Simulation) — an exact match, never a
+ * prefix/substring match. A loose match here could either strip frame-protection headers from an
+ * unrelated route (e.g. a hypothetical `/handoff-admin`) or fail to apply the new Referrer-Policy
+ * to a real `/handoff` sub-path, silently weakening the security posture this AC exists to add.
+ * `/handoff` has no sub-resources today (confirmed: it is a single `+page.svelte`/`+page.server.ts`
+ * route with no nested routes), so an exact match is also the complete match for now.
+ */
+export function isHandoffPath(pathname: string) {
+  return pathname === '/handoff'
+}
+
 export function getExtensionPanelCspHeaders() {
   return {
     'content-security-policy':
