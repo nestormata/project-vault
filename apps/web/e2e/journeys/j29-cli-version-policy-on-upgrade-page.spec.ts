@@ -64,7 +64,9 @@ test.describe.serial('J29 — CLI version policy on the Version & Upgrade page',
       orgName: uniqueOrgName('J29 Org'),
     })
     const displaced = await setPlatformOperatorViaDb(email, true)
-    // Keep the first displaced operator only (a retry would otherwise "displace" j29's own user).
+    // Record the operator this worker displaced so afterAll can restore it. `??=` is only a
+    // defensive keep-first guard: a Playwright retry runs in a fresh worker (module state is
+    // reset), so it does not carry this value across retries.
     displacedOperatorEmail ??= displaced
     await expectPlatformOperator(context, true)
 
