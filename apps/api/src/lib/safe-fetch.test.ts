@@ -351,10 +351,7 @@ describe('unspecified addresses are blocked (Story 43.9 AC-12)', () => {
     }
   )
 
-  it.each(['http://0.0.0.0:8080/', 'http://[::]/'])(
-    'the URL literal %s is rejected',
-    async (url) => {
-      await expect(assertPublicHostname(url)).rejects.toThrow(UnsafeForwardingUrlError)
-    }
-  )
+  it.each(['http://0.0.0.0/', 'http://[::]/'])('the URL literal %s is rejected', async (url) => {
+    await expect(assertPublicHostname(url)).rejects.toThrow(UnsafeForwardingUrlError)
+  })
 })

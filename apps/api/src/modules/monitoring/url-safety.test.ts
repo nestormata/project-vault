@@ -236,7 +236,7 @@ describe('isPrivateOrReservedIp boundary parity (Story 43.9 AC-3, AC-12)', () =>
     }
   )
 
-  it.each(['http://0.0.0.0:8080/', 'http://[::]/'])(
+  it.each(['http://0.0.0.0/', 'http://[::]/'])(
     'rejects the unspecified-address URL literal %s (AC-12)',
     async (url) => {
       await expect(assertUrlIsMonitorable(url)).rejects.toBeInstanceOf(UrlNotMonitorableError)

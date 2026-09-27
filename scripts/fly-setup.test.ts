@@ -95,7 +95,8 @@ describe('fly-reset.sh VAULT_APP_PASSWORD (Story 43.9 AC-13 consistency)', () =>
   const RESET_ENV = {
     ADMIN_PG_PASSWORD: 'pg-test-value',
     DEMO_VAULT_PASSPHRASE: 'passphrase-test-value',
-    DEMO_LOGIN_EMAIL: 'demo@example.com',
+    // Only presence is checked before the VAULT_APP_PASSWORD guard, so any non-empty value will do.
+    DEMO_LOGIN_EMAIL: 'demo-login-email-test-value',
     DEMO_LOGIN_PASSWORD: 'demo-test-value',
     VAULT_BOOTSTRAP_TOKEN: 'bootstrap-test-value',
   }
