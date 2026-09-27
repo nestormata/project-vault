@@ -55,4 +55,14 @@ describe('/platform +page.svelte', () => {
 
     expect(screen.queryByRole('alert')).toBeNull()
   })
+
+  // Story 43.7 (G3): the index card describes what the page actually has (no changelog).
+  it('describes Version & Upgrade truthfully: CLI version policy, no changelog', () => {
+    render(PlatformPage, { props: { data: allowedData() } })
+
+    expect(
+      screen.getByText('Current version, CLI version policy, and upgrade procedure')
+    ).toBeTruthy()
+    expect(screen.queryByText(/changelog/i)).toBeNull()
+  })
 })

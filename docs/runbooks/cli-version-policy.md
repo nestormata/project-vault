@@ -2,7 +2,8 @@
 
 <!-- Verified against apps/api/src/config/env.ts, apps/api/src/routes/client-version-policy.ts,
      apps/api/src/modules/client-versions/{policy,cli-version-policy}.ts,
-     packages/cli/src/version-check.ts (Story 43.6) -->
+     packages/cli/src/version-check.ts (Story 43.6); docker-compose.yml,
+     apps/web/src/routes/(app)/platform/upgrade/ (Story 43.7) -->
 
 ## When to use
 
@@ -48,8 +49,10 @@ it. Withdrawing a version does not revoke anything it may have exposed.
 ## Fix: withdraw a CLI version
 
 1. Add the exact version(s) to `CLI_WITHDRAWN_VERSIONS` in the API's environment, for example
-   `CLI_WITHDRAWN_VERSIONS=1.2.1`.
-2. Restart the API. Check the boot log line `effective CLI version policy` lists the version
+   `CLI_WITHDRAWN_VERSIONS=1.2.1`. On the docker-compose deployment, set it in the compose
+   project's `.env`, then run `docker compose up -d api`. Do not use `docker compose restart api`:
+   it does not re-read the environment. On Fly, use `fly secrets set`.
+2. Restart the API (on compose, the `up -d api` above does this). Check the boot log line `effective CLI version policy` lists the version
    with `source: env`.
 3. Revoke or rotate whatever the defect may have exposed: machine-user API keys used with that CLI,
    and CLI sessions (see [secret rotation](secret-rotation.md) and
@@ -63,6 +66,8 @@ it. Withdrawing a version does not revoke anything it may have exposed.
 ```bash
 curl -s https://vault.example.com/api/v1/client-version-policy | jq '.data.clients.cli'
 ```
+
+Or open **Platform Admin → Version & Upgrade**, which shows the effective policy.
 
 Clients see the change within **1 hour**, which is the CLI's cache TTL. A client whose cache still
 holds an earlier answer keeps using it until the TTL expires.

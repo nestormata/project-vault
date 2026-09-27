@@ -1,6 +1,7 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
   import PlatformOperatorRequiredNotice from '$lib/components/PlatformOperatorRequiredNotice.svelte'
+  import CliVersionPolicySection from '$lib/components/platform/CliVersionPolicySection.svelte'
   import type { PageData } from './$types.js'
 
   let { data }: { data: PageData } = $props()
@@ -39,6 +40,9 @@
         <p class="mt-2 text-sm text-gray-500">Version information unavailable.</p>
       {/if}
     </section>
+
+    <!-- Story 43.7: the effective CLI version policy pvault clients are told. -->
+    <CliVersionPolicySection result={data.cliPolicy} />
 
     <section class="mt-6 rounded-xl border border-gray-200 bg-white p-6">
       <h2 class="text-base font-semibold text-gray-900">Upgrade Procedure</h2>

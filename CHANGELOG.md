@@ -24,6 +24,11 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   `PVAULT_NO_VERSION_CHECK=1` silences the notices, but never the withdrawn refusal.
 - Public endpoint `GET /api/v1/client-version-policy` (unauthenticated, static, rate-limited).
 - `pvault --version` reports the bundled agent's version and commit next to the CLI's.
+- Platform Admin → Version & Upgrade shows the effective CLI version policy (current release,
+  minimum supported version, withdrawn versions with reasons) exactly as the API publishes it, and
+  flags a policy that contradicts the server's own release.
+- `docker-compose.yml` now passes `CLI_MINIMUM_SUPPORTED_VERSION` and `CLI_WITHDRAWN_VERSIONS`
+  to the `api` service; before this, setting them in the compose `.env` had no effect.
 - Each GitHub Release now carries a single-file `pvault-X.Y.Z.mjs` CLI bundle and its `.sha256`
   (Node 20 or newer). See `docs/releasing.md` §8.
 
