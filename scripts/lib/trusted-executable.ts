@@ -9,6 +9,7 @@
  *   `node_modules` with `require.resolve`, so callers can run them under `process.execPath`
  *   instead of shelling out to `pnpm`.
  */
+import { execFileSync } from 'node:child_process'
 import { accessSync, constants, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
@@ -47,6 +48,21 @@ export function resolveTrustedExecutable(
     if (isExecutable(candidate)) return candidate
   }
   throw new Error(`${name} not found in ${humanList(dirs)}`)
+}
+
+/**
+ * Runs the trusted `git` in `cwd` and returns its stdout. stderr is captured (surfacing on the
+ * thrown error), never inherited. Node's default 1MB maxBuffer would eventually overflow on
+ * whole-history commands such as `git log --merges` over this repo and crash a check outright
+ * with ERR_CHILD_PROCESS_STDOUT_MAXBUFFER instead of reporting; 64MB is generous headroom.
+ */
+export function trustedGit(cwd: string, args: string[]): string {
+  return execFileSync(resolveTrustedExecutable('git'), args, {
+    cwd,
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 64 * 1024 * 1024,
+  })
 }
 
 type PackageJson = { bin?: string | Record<string, string>; name?: string }

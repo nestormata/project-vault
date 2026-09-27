@@ -8,6 +8,7 @@ import {
   TRUSTED_EXECUTABLE_DIRS,
   resolveBin,
   resolveTrustedExecutable,
+  trustedGit,
 } from './trusted-executable.js'
 
 const REPO_ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)))
@@ -82,6 +83,16 @@ describe('resolveTrustedExecutable', () => {
     const path = resolveTrustedExecutable('git')
     expect(isAbsolute(path)).toBe(true)
     expect(path.endsWith('/git')).toBe(true)
+  })
+})
+
+describe('trustedGit', () => {
+  it('runs the trusted git in the given directory and returns its stdout', () => {
+    expect(trustedGit(REPO_ROOT, ['rev-parse', '--show-toplevel']).trim()).toBe(REPO_ROOT)
+  })
+
+  it('throws when git fails', () => {
+    expect(() => trustedGit(REPO_ROOT, ['rev-parse', '--verify', 'no-such-ref-43-9'])).toThrow()
   })
 })
 

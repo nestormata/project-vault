@@ -78,7 +78,8 @@ describe('findSonarSuppressions — inline token', () => {
   })
 
   it('a mixed-case variant fails (the match is case-insensitive)', () => {
-    const root = repo({ 'src/a.ts': `export const a = 1 // NoSonar\n` })
+    const mixedCase = 'No' + 'Sonar'
+    const root = repo({ 'src/a.ts': `export const a = 1 // ${mixedCase}\n` })
     expect(findSonarSuppressions(root).map((f) => f.location)).toEqual(['src/a.ts:1'])
   })
 

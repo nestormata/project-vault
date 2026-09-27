@@ -14,15 +14,14 @@
  *      than exactly the signed-off set below, or has that set without its sign-off marker comment
  *      directly above the first key.
  *
- * Out of scope: `eslint-disable`, `@ts-expect-error` and similar. Those are governed by
- * pick-story C3's PR-time refusal of new suppressions; a repo-wide guard here would fail on the
+ * Out of scope: ESLint disable directives, TypeScript expect-error comments and similar. Those are
+ * governed by pick-story C3's PR-time refusal of new suppressions; a repo-wide guard here would fail on the
  * pre-existing lines, whose sign-off audit is tracked in the deferred-work ledger.
  */
-import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { resolveTrustedExecutable } from './lib/trusted-executable.js'
+import { trustedGit } from './lib/trusted-executable.js'
 
 export type SuppressionFinding = { location: string; reason: string }
 
@@ -52,14 +51,7 @@ const ISSUE_KEY = /^sonar\.issue\.(?:ignore|enforce)\./i
 
 type PropertyLine = { key: string; value: string; line: number }
 
-function git(repoRoot: string, args: string[]): string {
-  return execFileSync(resolveTrustedExecutable('git'), args, {
-    cwd: repoRoot,
-    encoding: 'utf-8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    maxBuffer: 64 * 1024 * 1024,
-  })
-}
+const git = trustedGit
 
 /** Parses `key=value` properties, joining `\`-continued lines; `line` is where the key starts. */
 function parseProperties(text: string): { entries: PropertyLine[]; lines: string[] } {
