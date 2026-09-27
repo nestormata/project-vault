@@ -28,6 +28,7 @@
  * loudly instead of the bench silently measuring two identical "arms".
  */
 import { execFileSync } from 'node:child_process'
+import { resolveTrustedExecutable } from './lib/trusted-executable.js'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
@@ -737,11 +738,11 @@ async function childMain(arm: 'enabled' | 'disabled'): Promise<void> {
 
 function getGitCommitHash(): string {
   try {
-    return execFileSync(
-      'git', // NOSONAR(typescript:S4036) — trusted binary on this CI/dev host's fixed, unwriteable PATH
-      ['rev-parse', 'HEAD'],
-      { cwd: REPO_ROOT, encoding: 'utf8' }
-    ).trim()
+    // A git binary missing from the trusted directories throws here too, which reads as 'unknown'.
+    return execFileSync(resolveTrustedExecutable('git'), ['rev-parse', 'HEAD'], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+    }).trim()
   } catch {
     return 'unknown'
   }

@@ -18,6 +18,7 @@
  * up-to-date and non-skipped checks (DW-118), because a script cannot re-run a stale GitHub check.
  */
 import { execFileSync } from 'node:child_process'
+import { resolveTrustedExecutable } from './lib/trusted-executable.js'
 import { pathToFileURL } from 'node:url'
 import semver from 'semver'
 
@@ -93,11 +94,11 @@ type DetectParams = {
 
 function git(repoRoot: string, args: string[]): string {
   try {
-    return execFileSync(
-      'git', // NOSONAR(typescript:S4036) — trusted binary on this CI/dev host's fixed, unwriteable PATH
-      args,
-      { cwd: repoRoot, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }
-    )
+    return execFileSync(resolveTrustedExecutable('git'), args, {
+      cwd: repoRoot,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
   } catch (error) {
     const stderr =
       error && typeof error === 'object' && 'stderr' in error ? String(error.stderr) : ''
@@ -234,7 +235,7 @@ export function detectVersionSkew(params: DetectParams): SkewVerdict {
   return { ok: true, reason: 'valid-increase', from: params.baseVersion, to: params.headVersion }
 }
 
-type PackageState = { exists: boolean; version: string | undefined }
+type PackageState = { exists: boolean; version?: string }
 
 function packageStateAtRef(repoRoot: string, ref: string): PackageState {
   // Verify the ref separately so an unavailable ref is not misreported as a new package.
@@ -242,18 +243,17 @@ function packageStateAtRef(repoRoot: string, ref: string): PackageState {
   try {
     git(repoRoot, ['cat-file', '-e', `${ref}:${EXTENSION_API_PACKAGE_JSON}`])
   } catch {
-    return { exists: false, version: undefined }
+    return { exists: false }
   }
   try {
     const parsed = JSON.parse(git(repoRoot, ['show', `${ref}:${EXTENSION_API_PACKAGE_JSON}`])) as {
       version?: unknown
     }
-    return {
-      exists: true,
-      version: typeof parsed.version === 'string' ? parsed.version : undefined,
-    }
+    return typeof parsed.version === 'string'
+      ? { exists: true, version: parsed.version }
+      : { exists: true }
   } catch {
-    return { exists: true, version: undefined }
+    return { exists: true }
   }
 }
 

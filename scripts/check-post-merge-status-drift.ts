@@ -15,6 +15,7 @@
  * are invisible to this scanner and must be disabled at the repo settings level).
  */
 import { execFileSync } from 'node:child_process'
+import { resolveTrustedExecutable } from './lib/trusted-executable.js'
 import { pathToFileURL } from 'node:url'
 import { loadSprintStatuses } from './check-story-status-sync.js'
 
@@ -31,20 +32,16 @@ export type PostMergeDrift = {
 const MERGE_SUBJECT_PATTERN = /^Merge pull request #(\d+) from [^/]+\/feature\/(.+)$/
 
 function git(repoRoot: string, args: string[]): string {
-  return execFileSync(
-    'git', // NOSONAR(typescript:S4036) — trusted binary on this CI/dev host's fixed, unwriteable PATH
-    args,
-    {
-      cwd: repoRoot,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      // Node's execFileSync default maxBuffer is 1MB — `git log --merges` over this repo's full
-      // history (required by AC-5's fetch-depth: 0) will keep growing every time a story PR
-      // merges, so the default ceiling would eventually throw ERR_CHILD_PROCESS_STDOUT_MAXBUFFER
-      // and crash this check outright rather than reporting drift. 64MB is generous headroom.
-      maxBuffer: 64 * 1024 * 1024,
-    }
-  )
+  return execFileSync(resolveTrustedExecutable('git'), args, {
+    cwd: repoRoot,
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    // Node's execFileSync default maxBuffer is 1MB — `git log --merges` over this repo's full
+    // history (required by AC-5's fetch-depth: 0) will keep growing every time a story PR
+    // merges, so the default ceiling would eventually throw ERR_CHILD_PROCESS_STDOUT_MAXBUFFER
+    // and crash this check outright rather than reporting drift. 64MB is generous headroom.
+    maxBuffer: 64 * 1024 * 1024,
+  })
 }
 
 /**

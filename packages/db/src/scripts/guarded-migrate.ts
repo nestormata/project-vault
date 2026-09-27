@@ -183,7 +183,7 @@ export function runDrizzleKitMigration(scriptDirectory: string): void {
   execFileSync(resolveDrizzleKitExecutable(scriptDirectory), ['migrate'], {
     stdio: 'inherit',
     cwd: resolve(scriptDirectory, '../..'),
-  }) // NOSONAR(typescript:S4036) trusted dev-dependency binary at a fixed workspace path
+  })
 }
 
 /** Queries `drizzle.__drizzle_migrations` for the most recently applied migration's `created_at`

@@ -1,5 +1,6 @@
 #!/usr/bin/env tsx
 import { execFileSync } from 'node:child_process'
+import { resolveTrustedExecutable } from './lib/trusted-executable.js'
 
 const MAX_BYTES = 300 * 1024 * 1024
 
@@ -15,7 +16,7 @@ for (const image of images) {
   let output: string
   try {
     output = execFileSync(
-      'docker', // NOSONAR(typescript:S4036) — trusted binary on this CI/dev host's fixed, unwriteable PATH
+      resolveTrustedExecutable('docker'),
       ['image', 'inspect', image, '--format={{.Size}}'],
       { encoding: 'utf-8' }
     ).trim()
