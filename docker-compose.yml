@@ -158,6 +158,11 @@ services:
       VAULT_EXTENSIONS_PACKAGE: ${VAULT_EXTENSIONS_PACKAGE:-}
       # Story 24.3: incident-only rollback escape; keep false in normal operation.
       VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST: ${VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST:-false}
+      # Story 43.6/43.7: optional CLI version policy (docs/runbooks/cli-version-policy.md).
+      # Versions only, never free text; empty = none. Invalid values fail API boot, naming the entry.
+      # Apply a change with `docker compose up -d api` (`restart` does not re-read the environment).
+      CLI_MINIMUM_SUPPORTED_VERSION: ${CLI_MINIMUM_SUPPORTED_VERSION:-}
+      CLI_WITHDRAWN_VERSIONS: ${CLI_WITHDRAWN_VERSIONS:-}
       # Story 18.6: Mailpit is the local default. Production/demo deployments should replace
       # these with their provider's host, port, TLS mode, credentials, and verified sender.
       SMTP_HOST: ${SMTP_HOST:-mailpit}

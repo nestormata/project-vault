@@ -1,4 +1,5 @@
 import { apiFetch } from './client.js'
+import { parseClientVersionPolicyBody } from './client-version-policy-validate.js'
 
 export type ReadyResponse = {
   status: 'ready' | 'unavailable'
@@ -448,3 +449,99 @@ export async function probeApiDocsEnabled(fetchFn: typeof fetch): Promise<boolea
     return false
   }
 }
+
+// ---- Story 43.7: client version policy -------------------------------------
+// GET /api/v1/client-version-policy (Story 43.6) is public, so this helper never uses the shared
+// credentialed client (no 401 refresh/login redirect, never throws): every failure becomes an
+// honest `unavailable` reason the Version & Upgrade page renders (AC-2/AC-3).
+
+export type CliVersionPolicy = {
+  server: { version: string; versionSource: 'release' | 'development' }
+  cli: {
+    current: string | null
+    minimumSupported: string | null
+    withdrawn: { version: string; reason: string }[]
+  }
+}
+
+export type CliVersionPolicyUnavailableReason =
+  'not_supported' | 'rate_limited' | 'api_unavailable' | 'invalid_response' | 'timeout' | 'error'
+
+export type CliVersionPolicyResult =
+  | { status: 'ok'; policy: CliVersionPolicy }
+  | { status: 'unavailable'; reason: CliVersionPolicyUnavailableReason }
+
+const CLIENT_VERSION_POLICY_PATH = '/api/v1/client-version-policy'
+export const CLIENT_VERSION_POLICY_TIMEOUT_MS = 3000
+// The largest legal payload is ~55 000 UTF-16 units (100 entries at every cap); the proxy has
+// already buffered the body, so the cap is checked on the read text, before JSON.parse.
+export const CLIENT_VERSION_POLICY_MAX_BODY_LENGTH = 65_536
+
+function policyUnavailable(reason: CliVersionPolicyUnavailableReason): CliVersionPolicyResult {
+  return { status: 'unavailable', reason }
+}
+
+function unavailableReasonForStatus(status: number): CliVersionPolicyUnavailableReason {
+  if (status === 404) return 'not_supported'
+  if (status === 429) return 'rate_limited'
+  if (status === 502 || status === 503 || status === 504) return 'api_unavailable'
+  return 'error'
+}
+
+async function readPolicyBody(response: Response): Promise<CliVersionPolicyResult> {
+  let parsed: unknown
+  try {
+    const text = await response.text()
+    if (text.length > CLIENT_VERSION_POLICY_MAX_BODY_LENGTH) {
+      return policyUnavailable('invalid_response')
+    }
+    parsed = JSON.parse(text)
+  } catch {
+    return policyUnavailable('invalid_response')
+  }
+  const policy = parseClientVersionPolicyBody(parsed)
+  return policy ? { status: 'ok', policy } : policyUnavailable('invalid_response')
+}
+
+async function requestClientVersionPolicy(
+  fetchFn: typeof fetch,
+  signal: AbortSignal
+): Promise<CliVersionPolicyResult> {
+  let response: Response
+  try {
+    response = await fetchFn(CLIENT_VERSION_POLICY_PATH, {
+      credentials: 'omit',
+      headers: { accept: 'application/json' },
+      signal,
+    })
+  } catch {
+    return policyUnavailable('api_unavailable')
+  }
+  if (response.status !== 200) return policyUnavailable(unavailableReasonForStatus(response.status))
+  return readPolicyBody(response)
+}
+
+/**
+ * One request, no retry (a 429 is never amplified), bounded by a 3000 ms race that covers the
+ * request and the body read. The race — not the AbortSignal — is the guarantee: SvelteKit's
+ * internal route call may ignore the signal, so aborting it is best-effort cleanup only.
+ */
+export async function fetchClientVersionPolicy(
+  fetchFn: typeof fetch
+): Promise<CliVersionPolicyResult> {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<CliVersionPolicyResult>((resolveTimeout) => {
+    timer = setTimeout(() => {
+      controller.abort()
+      resolveTimeout(policyUnavailable('timeout'))
+    }, CLIENT_VERSION_POLICY_TIMEOUT_MS)
+  })
+  try {
+    return await Promise.race([requestClientVersionPolicy(fetchFn, controller.signal), timeout])
+  } finally {
+    clearTimeout(timer)
+    controller.abort()
+  }
+}
+// ---- end Story 43.7 --------------------------------------------------------

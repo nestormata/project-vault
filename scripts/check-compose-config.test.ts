@@ -16,7 +16,8 @@ import { join, resolve } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 
 const repoRoot = resolve(process.cwd())
-const composeFile = join(repoRoot, 'docker-compose.yml')
+const COMPOSE_FILE_NAME = 'docker-compose.yml'
+const composeFile = join(repoRoot, COMPOSE_FILE_NAME)
 
 const tempDirs: string[] = []
 afterAll(() => {
@@ -97,7 +98,7 @@ describeOrSkip('docker compose config — web service CORS_ALLOWED_ORIGINS (Stor
   it('fails the key-presence assertion against a docker-compose.yml missing the web CORS_ALLOWED_ORIGINS line', () => {
     const dir = mkdtempSync(join(tmpdir(), 'pv-compose-config-regressed-'))
     tempDirs.push(dir)
-    const regressedFile = join(dir, 'docker-compose.yml')
+    const regressedFile = join(dir, COMPOSE_FILE_NAME)
     const original = readFileSync(composeFile, { encoding: 'utf8' })
     const regressed = original.replace(
       /\n\s*CORS_ALLOWED_ORIGINS: \$\{PUBLIC_WEB_ORIGIN:-http:\/\/localhost:\$\{WEB_HOST_PORT:-5173\}\}\n(\s*ports:\n\s*- '\$\{WEB_HOST_PORT)/,
@@ -118,3 +119,78 @@ describeOrSkip('docker compose config — web service CORS_ALLOWED_ORIGINS (Stor
     expect(services['web']?.environment).not.toHaveProperty('CORS_ALLOWED_ORIGINS')
   })
 })
+
+// Story 43.7 AC-6 — the operator's CLI version policy variables (Story 43.6) must reach the api
+// container. docker-compose.yml's api service uses an explicit `environment:` map (no env_file),
+// so a key missing from it silently never reaches the process: the documented "withdraw a CLI
+// version" procedure then has no effect and no error.
+const CLI_POLICY_KEYS = ['CLI_MINIMUM_SUPPORTED_VERSION', 'CLI_WITHDRAWN_VERSIONS'] as const
+
+function envFileWith(contents: string): string {
+  const dir = mkdtempSync(join(tmpdir(), 'pv-compose-config-cli-'))
+  tempDirs.push(dir)
+  const path = join(dir, 'cli.env')
+  writeFileSync(path, contents)
+  return path
+}
+
+function renderedServices(file: string, envFile: string) {
+  return renderComposeConfig(file, envFile)['services'] as Record<
+    string,
+    { environment?: Record<string, string> }
+  >
+}
+
+describeOrSkip(
+  'docker compose config — api CLI version policy passthrough (Story 43.7 AC-6)',
+  () => {
+    it('passes both keys to the api service as empty strings when unset (env.ts treats empty as no policy)', () => {
+      const services = renderedServices(composeFile, emptyEnvFile())
+
+      for (const key of CLI_POLICY_KEYS) {
+        expect(services['api']?.environment?.[key]).toBe('')
+      }
+    })
+
+    it('passes the operator values through verbatim', () => {
+      const envFile = envFileWith(
+        'CLI_MINIMUM_SUPPORTED_VERSION=1.1.0\nCLI_WITHDRAWN_VERSIONS=1.2.1,1.2.2\n'
+      )
+      const services = renderedServices(composeFile, envFile)
+
+      expect(services['api']?.environment?.['CLI_MINIMUM_SUPPORTED_VERSION']).toBe('1.1.0')
+      expect(services['api']?.environment?.['CLI_WITHDRAWN_VERSIONS']).toBe('1.2.1,1.2.2')
+    })
+
+    it('does not pass either key to the web service (it never needs them)', () => {
+      const envFile = envFileWith(
+        'CLI_MINIMUM_SUPPORTED_VERSION=1.1.0\nCLI_WITHDRAWN_VERSIONS=1.2.1,1.2.2\n'
+      )
+      const services = renderedServices(composeFile, envFile)
+
+      for (const key of CLI_POLICY_KEYS) {
+        expect(services['web']?.environment).not.toHaveProperty(key)
+      }
+    })
+
+    // Regression fixture: removing the two lines must make the keys disappear, proving the guard
+    // catches exactly the G4 bug rather than passing vacuously.
+    it('a docker-compose.yml missing the two passthrough lines renders without the keys', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'pv-compose-config-cli-regressed-'))
+      tempDirs.push(dir)
+      const regressedFile = join(dir, COMPOSE_FILE_NAME)
+      const original = readFileSync(composeFile, { encoding: 'utf8' })
+      const regressed = original
+        .replace(/\n\s*CLI_MINIMUM_SUPPORTED_VERSION: \$\{CLI_MINIMUM_SUPPORTED_VERSION:-\}/, '')
+        .replace(/\n\s*CLI_WITHDRAWN_VERSIONS: \$\{CLI_WITHDRAWN_VERSIONS:-\}/, '')
+      expect(regressed).not.toBe(original)
+      writeFileSync(regressedFile, regressed)
+
+      const services = renderedServices(regressedFile, emptyEnvFile())
+
+      for (const key of CLI_POLICY_KEYS) {
+        expect(services['api']?.environment).not.toHaveProperty(key)
+      }
+    })
+  }
+)

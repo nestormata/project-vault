@@ -102,6 +102,51 @@ export async function setOrganizationRoleViaDb(
 }
 
 /**
+ * Story 43.7 AC-7: grants or removes platform-operator status for one journey-owned user.
+ * Setup-only, on the disposable E2E database's superuser connection: the product has no UI/API
+ * path to promote a user (the first-ever registration is the operator, by design), and relying on
+ * that slot makes a journey skip whenever another journey registered first (the j15/j23 pattern).
+ * Valid mid-session because apps/api's authenticate plugin (`loadIsPlatformOperator`) reads
+ * `users.is_platform_operator` from the DB on every request, so no re-login is needed.
+ *
+ * The schema allows at most ONE operator instance-wide (`idx_users_one_platform_operator`, a
+ * unique partial index — the same constraint apps/api's `registerPlatformOperator` test helper
+ * handles), so promoting (`value: true`) first demotes the current operator, in one transaction,
+ * and returns that user's email (or null). The caller MUST hand it back to this helper once done
+ * (e.g. in `afterAll`) so the displaced operator — typically another journey's first-registered
+ * user — is restored. Safe only because the suite runs with `workers: 1`. Demoting
+ * (`value: false`) only ever touches the named user; only target a user the journey registered.
+ */
+export async function setPlatformOperatorViaDb(
+  email: string,
+  value: boolean
+): Promise<string | null> {
+  const sql = postgres(superuserDatabaseUrl(), { max: 1 })
+  try {
+    return await sql.begin(async (tx) => {
+      let displaced: string | null = null
+      if (value) {
+        const demoted = await tx<{ email: string }[]>`
+          update users set is_platform_operator = false
+          where is_platform_operator = true and email <> ${email}
+          returning email
+        `
+        displaced = demoted[0]?.email ?? null
+      }
+      const updated = await tx`
+        update users set is_platform_operator = ${value} where email = ${email}
+      `
+      if (updated.count !== 1) {
+        throw new Error(`setPlatformOperatorViaDb: expected exactly one user for ${email}`)
+      }
+      return displaced
+    })
+  } finally {
+    await sql.end({ timeout: 5 })
+  }
+}
+
+/**
  * Creates a large deterministic project set for pagination journeys without spending the real
  * project-creation rate limit. The browser still performs the authenticated GET/list/dashboard
  * journey; this helper is setup-only and inserts the same project and membership records the API

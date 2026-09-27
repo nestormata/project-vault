@@ -74,7 +74,9 @@
         >
           <div>
             <p class="font-medium text-gray-900">Version & Upgrade</p>
-            <p class="text-sm text-gray-500">Current version, changelog, and upgrade readiness</p>
+            <p class="text-sm text-gray-500">
+              Current version, CLI version policy, and upgrade procedure
+            </p>
           </div>
           <span class="text-gray-400">→</span>
         </a>

@@ -33,3 +33,9 @@ services:
       # e2e-only-override precedent as the vars above.
       VAULT_EXTENSIONS_PACKAGE: '@project-vault/mock-sso-extension'
       VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST: 'false'
+      # Story 43.7 (e2e-only): a populated CLI version policy so j29 exercises the Version &
+      # Upgrade page's minimum/withdrawn rendering against the real API. No other journey reads the
+      # CLI policy. The e2e api is a dev build (no RELEASE_VERSION), so `current` is null and the
+      # page's self-contradiction warnings cannot fire — the seed has no side effects.
+      CLI_MINIMUM_SUPPORTED_VERSION: '1.1.0'
+      CLI_WITHDRAWN_VERSIONS: '1.2.1,1.2.2-rc.1'
