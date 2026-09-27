@@ -24,7 +24,7 @@ export type DirectDbAccessClassification = {
 }
 
 const SECURITY_OWNER = 'api-security-reviewer'
-const IP_RATE_LIMIT = 'ip-rate-limit'
+export const IP_RATE_LIMIT = 'ip-rate-limit'
 const FAILED_AUTH_RECORDING = 'failed-auth-recording'
 const SECURITY_ACTION = 'security-action'
 const SENSITIVE_READ = 'sensitive-read'
@@ -152,7 +152,11 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
     reason:
       "Story 43.2 AC-6 — CLI-facing best-effort session revoke. The caller's access token may already be expired (that is the normal logout case), so this cannot require an authenticated SecureRoute session; it authenticates purely via the hashed refresh token supplied in the body, exactly like /cli/refresh, and treats a missing/unrecognized/already-dead token as a no-op rather than an error.",
     securityOwner: SECURITY_OWNER,
-    compensatingControls: [TOKEN_IS_CREDENTIAL, 'best-effort-no-op-on-missing-token'],
+    compensatingControls: [
+      TOKEN_IS_CREDENTIAL,
+      'best-effort-no-op-on-missing-token',
+      IP_RATE_LIMIT,
+    ],
     expiresAfterStory: null,
   },
   {

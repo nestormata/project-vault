@@ -90,7 +90,7 @@ variables only `docker-compose*.yml` reads. The copyable starting point is
 
 | Variable | Default | Prod | Purpose |
 |---|---|---|---|
-| `AUTH_RATE_LIMIT_MAX` | `60` | | Global per-IP limit for `/register` + `/login` per minute. |
+| `AUTH_RATE_LIMIT_MAX` | `60` | | Per-IP limit per minute for `/register`, `/login` and the CLI's `/cli-login` and `/cli/logout`. |
 | `AUTH_REGISTER_RATE_LIMIT_MAX` | `10` | | Stricter per-route limit for `/register`. |
 | `AUTH_SSO_DOMAIN_LOOKUP_RATE_LIMIT_MAX` | `20` | | Limit for the public SSO domain-lookup endpoint. |
 | `RATE_LIMIT_TEST_BYPASS` | `false` | never set | Skips rate-limit enforcement; requires `NODE_ENV=test` as well. |
@@ -98,6 +98,8 @@ variables only `docker-compose*.yml` reads. The copyable starting point is
 | `LOGIN_LOCKOUT_WINDOW_SECONDS` | `900` | | Rolling window for that lockout counter. |
 | `FAILED_AUTH_THRESHOLD_COUNT` | `10` | | Failures that raise an asynchronous operator alert (never blocks login). |
 | `FAILED_AUTH_THRESHOLD_WINDOW_SECONDS` | `300` | | Window for that alert threshold. |
+
+`/mfa/verify-login` and `/cli/mfa/verify-login` are fixed at 20 requests per minute per IP, and `/refresh` and `/cli/refresh` at 120. Each route has its own bucket, so `/login` and `/cli-login` budgets are separate. IPv6 clients on the CLI routes are grouped per `/64`.
 | `FAILED_AUTH_RETENTION_HOURS` | `24` | | Retention of `failed_auth_attempts` rows. |
 | `FAILED_AUTH_RECORD_ENABLED` | `true` | | Master switch for recording failed-auth attempts. |
 | `ANOMALOUS_ACCESS_THRESHOLD_COUNT` | `5` | | Credential reads that trigger an anomalous-access alert. |
@@ -217,7 +219,7 @@ Not part of the API's schema — read by `docker-compose*.yml` interpolation, so
 |---|---|---|---|
 | `PUBLIC_WEB_ORIGIN` | `http://localhost:${WEB_HOST_PORT}` | `docker-compose.yml` | The exact origin browsers use. Feeds the api's `CORS_ALLOWED_ORIGINS`, the web service's `ORIGIN`, `WEB_BASE_URL`, and (via the same expression) the web service's own `CORS_ALLOWED_ORIGINS`. Required for any non-localhost deployment. |
 | `TRUST_PROXY` | `false` | `docker-compose.yml` | Trust `X-Forwarded-*` headers. Set `true` behind a reverse proxy. |
-| `TRUST_PROXY_HOPS` | `1` | `docker-compose.yml` | Number of proxies in front of the API, so the real client IP is used for rate limiting and audit logging. |
+| `TRUST_PROXY_HOPS` | `1` | `docker-compose.yml` | Number of proxies in front of the API, so the real client IP is used for rate limiting and audit logging. Must equal the real number of proxies. Too high lets clients spoof their IP and bypass or weaponize per-IP rate limits; too low (or `TRUST_PROXY=false` behind a proxy) makes every client share the proxy's rate-limit bucket. |
 | `POSTGRES_USER` | `postgres` | `db`, `migrate`, `admin-provision` | Superuser for the Postgres container itself. |
 | `POSTGRES_PASSWORD` | `password` | same | Superuser password. |
 | `POSTGRES_DB` | `project_vault` | same | Database name. |

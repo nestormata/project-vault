@@ -4,6 +4,7 @@ import { sanitizeForTerminal } from './sanitize.js'
 import { warnIfInsecureBaseUrl } from './config.js'
 import { writeSession, type EnvLike, type SessionData } from './session-store.js'
 import { PromptInterruptedError, type PromptFn } from './prompt.js'
+import { retryAfterFromResponse, retryDelayPhrase } from './retry-after.js'
 
 export type WritableLike = { write: (chunk: string) => void }
 export type LoginStreams = { stdout: WritableLike; stderr: WritableLike }
@@ -67,7 +68,7 @@ function normalizeTotp(raw: string): string {
   return raw.replace(/\s+/g, '')
 }
 
-type PostJsonResult = { status: number; json: unknown }
+type PostJsonResult = { status: number; json: unknown; retryAfterSeconds: number | null }
 
 async function postJson(
   fetchFn: typeof fetch,
@@ -86,7 +87,16 @@ async function postJson(
   } catch {
     json = null
   }
-  return { status: response.status, json }
+  return { status: response.status, json, retryAfterSeconds: retryAfterFromResponse(response) }
+}
+
+/** Story 43.8 AC-7 — branches on status 429 alone (a reverse proxy's own limiter may answer with
+ * HTML and no `code`), never echoes the server's message or raw `Retry-After`, never auto-retries. */
+function reportRateLimited(result: PostJsonResult, streams: LoginStreams): number {
+  streams.stderr.write(
+    `Too many sign-in attempts from this network. Try again ${retryDelayPhrase(result.retryAfterSeconds)}.\n`
+  )
+  return EXIT_CODES.rateLimited
 }
 
 function handlePromptInterrupt(error: unknown, streams: LoginStreams): number {
@@ -215,10 +225,7 @@ async function classifyTotpResult(
     streams.stderr.write('Your login session expired. Please sign in again.\n')
     return 'restart'
   }
-  if (result.status === 429) {
-    streams.stderr.write('Too many attempts. Please try again later.\n')
-    return EXIT_CODES.invalidCredentials
-  }
+  if (result.status === 429) return reportRateLimited(result, streams)
   return unexpectedError(
     streams,
     new Error(`Unexpected MFA verification response (${result.status})`)
@@ -280,6 +287,8 @@ async function handleLoginResult(
     }
     return unexpectedError(streams, new Error('Unexpected login response shape'))
   }
+
+  if (result.status === 429) return reportRateLimited(result, streams)
 
   if (result.status === 401 || result.status === 422) {
     streams.stderr.write('Invalid email or password.\n')

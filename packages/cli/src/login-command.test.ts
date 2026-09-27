@@ -19,10 +19,9 @@ function jsonResponse(status: number, body: unknown) {
 }
 
 function promptSequence(answers: string[]): (q: string, o: { mask: boolean }) => Promise<string> {
-  let i = 0
+  const queue = [...answers]
   return async () => {
-    const value = answers[i]
-    i += 1
+    const value = queue.shift()
     if (value === undefined) throw new Error('prompt called more times than expected')
     return value
   }
@@ -220,13 +219,11 @@ describe('runLogin — AC-2 MFA challenge round trip', () => {
 describe('runLogin — AC-3 WebAuthn-only fails closed', () => {
   it('fails closed with a distinct exit code on a non-TOTP challenge shape, without prompting for TOTP', async () => {
     const streams = makeStreams()
-    const fetchFn = vi
-      .fn()
-      .mockResolvedValueOnce(
-        jsonResponse(200, {
-          data: { mfaRequired: true, mfaToken: PENDING_MFA_TOKEN, method: 'webauthn' },
-        })
-      )
+    const fetchFn = vi.fn().mockResolvedValueOnce(
+      jsonResponse(200, {
+        data: { mfaRequired: true, mfaToken: PENDING_MFA_TOKEN, method: 'webauthn' },
+      })
+    )
     const promptFn = vi.fn(promptSequence([TEST_EMAIL, 'hunter2']))
     const deps: LoginDeps = { fetchFn, prompt: promptFn, env: {}, writeSessionFn: vi.fn() }
 
@@ -375,5 +372,91 @@ describe('runLogin — unexpected-error hardening', () => {
 
     expect(exitCode).toBe(EXIT_CODES.unexpected)
     expect(streams.stderrChunks.join('')).toContain('Unexpected error')
+  })
+})
+
+describe('runLogin — Story 43.8 AC-7: an honest 429', () => {
+  const TRY_LATER = 'Too many sign-in attempts from this network. Try again later.\n'
+  const RATE_LIMIT_JSON = JSON.stringify({
+    code: 'rate_limit_exceeded',
+    message: 'SERVER-TEXT-NEVER-ECHOED',
+  })
+
+  function rateLimited(headers: Record<string, string> = {}, body = RATE_LIMIT_JSON) {
+    return new Response(body, { status: 429, headers })
+  }
+
+  async function loginAgainst(response: Response) {
+    const streams = makeStreams()
+    const fetchFn = vi.fn().mockResolvedValue(response)
+    const writeSessionFn = vi.fn()
+    const exitCode = await runLogin(BASE_CONFIG, streams, {
+      fetchFn,
+      prompt: promptSequence([TEST_EMAIL, 'hunter2']),
+      env: {},
+      writeSessionFn,
+    })
+    return { exitCode, stderr: streams.stderrChunks.join(''), fetchFn, writeSessionFn }
+  }
+
+  it('/cli-login 429 with Retry-After prints the retry delay and exits rateLimited (30)', async () => {
+    const { exitCode, stderr, fetchFn, writeSessionFn } = await loginAgainst(
+      rateLimited({ 'retry-after': '37' })
+    )
+    expect(exitCode).toBe(EXIT_CODES.rateLimited)
+    expect(stderr).toBe('Too many sign-in attempts from this network. Try again in 37 seconds.\n')
+    expect(stderr).not.toContain('SERVER-TEXT-NEVER-ECHOED')
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(writeSessionFn).not.toHaveBeenCalled()
+  })
+
+  it('/cli-login 429 without a usable Retry-After says "later"', async () => {
+    const { exitCode, stderr } = await loginAgainst(rateLimited())
+    expect(exitCode).toBe(EXIT_CODES.rateLimited)
+    expect(stderr).toBe(TRY_LATER)
+  })
+
+  it('a hostile Retry-After is never echoed and falls back to "later"', async () => {
+    const { exitCode, stderr } = await loginAgainst(rateLimited({ 'retry-after': '37; rm -rf /' }))
+    expect(exitCode).toBe(EXIT_CODES.rateLimited)
+    expect(stderr).toBe(TRY_LATER)
+  })
+
+  it("a reverse proxy's HTML 429 (no JSON code, no Retry-After) is still reported as rate limiting", async () => {
+    const { exitCode, stderr } = await loginAgainst(
+      rateLimited(
+        { 'content-type': 'text/html' },
+        '<html><body>429 Too Many Requests</body></html>'
+      )
+    )
+    expect(exitCode).toBe(EXIT_CODES.rateLimited)
+    expect(stderr).toBe(TRY_LATER)
+    expect(stderr).not.toContain('<html>')
+  })
+
+  it('/cli/mfa/verify-login 429 exits rateLimited without re-prompting for another code', async () => {
+    const streams = makeStreams()
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(200, { data: { mfaRequired: true, mfaToken: PENDING_MFA_TOKEN } })
+      )
+      .mockResolvedValueOnce(rateLimited({ 'retry-after': '12' }))
+    const writeSessionFn = vi.fn()
+
+    const exitCode = await runLogin(BASE_CONFIG, streams, {
+      fetchFn,
+      // Exactly three answers: a re-prompt would throw "prompt called more times than expected".
+      prompt: promptSequence([TEST_EMAIL, 'hunter2', '123456']),
+      env: {},
+      writeSessionFn,
+    })
+
+    expect(exitCode).toBe(EXIT_CODES.rateLimited)
+    expect(streams.stderrChunks.join('')).toBe(
+      'Too many sign-in attempts from this network. Try again in 12 seconds.\n'
+    )
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(writeSessionFn).not.toHaveBeenCalled()
   })
 })

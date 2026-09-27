@@ -31,6 +31,19 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   to the `api` service; before this, setting them in the compose `.env` had no effect.
 - Each GitHub Release now carries a single-file `pvault-X.Y.Z.mjs` CLI bundle and its `.sha256`
   (Node 20 or newer). See `docs/releasing.md` §8.
+- `pvault` exits with the new code `30` when the server rate-limits `login`, MFA verification or
+  a session refresh, and prints how long to wait. It no longer reports that as a wrong password or
+  an expired session, and never deletes the session file because of it. `pvault logout` now warns
+  when a rate-limited logout left the session valid on the server.
+
+### Security
+
+- The CLI auth endpoints are now rate limited per IP, like their browser equivalents:
+  `POST /api/v1/auth/cli-login` and `/cli/logout` at `AUTH_RATE_LIMIT_MAX` (default 60) per
+  minute, `/cli/mfa/verify-login` at 20 and `/cli/refresh` at 120. Before this, the limits in the
+  route definitions were never enforced, so `/cli-login` accepted unlimited password attempts per
+  IP. Over-limit requests get `429` with `Retry-After`. The CI route audit now fails any public
+  route that claims an IP rate limit without actually registering one.
 
 ## [1.2.0] - 2026-09-10
 

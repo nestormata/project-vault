@@ -14,6 +14,7 @@
  *                  this CLI doesn't know about yet)
  * 14-28            later stories' append-only blocks (see each block's comment below)
  * 29               this pvault version has been withdrawn by the server (Story 43.6)
+ * 30               the server rate-limited this network (HTTP 429) — retry later (Story 43.8)
  */
 export const EXIT_CODES = {
   usageError: 1,
@@ -78,6 +79,11 @@ export const EXIT_CODES = {
    * spawn or file write. `pvault run` also propagates a child's own exit code, so a `29` from
    * `run` is this refusal only when no child was spawned (the stderr line says which). */
   cliVersionWithdrawn: 29,
+  // Story 43.8 — append-only. Never renumber the blocks above; slot 23 stays retired.
+  /** The server (or a reverse proxy in front of it) answered HTTP 429 to `pvault login`, a
+   * session refresh, or MFA verification. Distinct from `invalidCredentials`/`sessionExpired`: the
+   * credentials and session may be perfectly fine. The CLI never auto-retries a 429. */
+  rateLimited: 30,
 } as const
 
 // A Map (rather than a plain object keyed by an external string) sidesteps prototype-pollution/

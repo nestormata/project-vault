@@ -1,5 +1,6 @@
 import { EXIT_CODES } from './exit-codes.js'
 import { readSession, writeSession, type EnvLike, type SessionData } from './session-store.js'
+import { retryAfterFromResponse, retryDelayPhrase } from './retry-after.js'
 
 /**
  * AC-4/Dev Notes decision #2 — reusable by any future session-consuming command (none exists yet
@@ -14,6 +15,9 @@ export type EnsureSessionResult =
   | { status: 'not_logged_in' }
   | { status: 'insecure_permissions'; path: string }
   | { status: 'session_expired' }
+  // Story 43.8 AC-7 — the server (or a proxy) answered 429: the session is NOT dead, so this must
+  // never be reported as expiry (which would send the user to a possibly also-limited /cli-login).
+  | { status: 'rate_limited'; retryAfterSeconds: number | null }
 
 export type RefreshDeps = {
   fetchFn: typeof fetch
@@ -38,10 +42,14 @@ function isRefreshBearerData(value: unknown): value is RefreshBearerData {
   )
 }
 
-async function attemptRefresh(
-  session: SessionData,
-  deps: RefreshDeps
-): Promise<SessionData | null> {
+type RefreshAttempt =
+  | { kind: 'ok'; session: SessionData }
+  | { kind: 'rate_limited'; retryAfterSeconds: number | null }
+  | { kind: 'failed' }
+
+const REFRESH_FAILED: RefreshAttempt = { kind: 'failed' }
+
+async function attemptRefresh(session: SessionData, deps: RefreshDeps): Promise<RefreshAttempt> {
   let response: Response
   try {
     response = await deps.fetchFn(`${session.baseUrl}/api/v1/auth/cli/refresh`, {
@@ -50,18 +58,23 @@ async function attemptRefresh(
       body: JSON.stringify({ refreshToken: session.refreshToken }),
     })
   } catch {
-    return null
+    return REFRESH_FAILED
   }
-  if (response.status !== 200) return null
+  // Branch on the status alone: a reverse proxy's own 429 may carry HTML and no JSON `code`. The
+  // server rejects in `onRequest`, so the refresh token was not rotated and the file stays as-is.
+  if (response.status === 429) {
+    return { kind: 'rate_limited', retryAfterSeconds: retryAfterFromResponse(response) }
+  }
+  if (response.status !== 200) return REFRESH_FAILED
 
   let json: unknown
   try {
     json = await response.json()
   } catch {
-    return null
+    return REFRESH_FAILED
   }
   const data = (json as { data?: unknown } | null)?.data
-  if (!isRefreshBearerData(data)) return null
+  if (!isRefreshBearerData(data)) return REFRESH_FAILED
 
   const updated: SessionData = {
     ...session,
@@ -70,7 +83,14 @@ async function attemptRefresh(
     accessExpiresAt: new Date(Date.now() + data.expiresIn * 1000).toISOString(),
   }
   writeSession(updated, deps.env)
-  return updated
+  return { kind: 'ok', session: updated }
+}
+
+function rereadFresherSession(sessionEnv: EnvLike, now: number): SessionData | null {
+  const reread = readSession(sessionEnv)
+  if (reread.status !== 'ok') return null
+  const rereadExpiresAtMs = Date.parse(reread.session.accessExpiresAt)
+  return Number.isFinite(rereadExpiresAtMs) && rereadExpiresAtMs - now > 0 ? reread.session : null
 }
 
 /**
@@ -91,19 +111,17 @@ export async function ensureFreshSession(deps: RefreshDeps): Promise<EnsureSessi
   }
 
   const refreshed = await attemptRefresh(read.session, deps)
-  if (refreshed) return { status: 'ok', session: refreshed }
+  if (refreshed.kind === 'ok') return { status: 'ok', session: refreshed.session }
 
   // AC-4 concurrency edge case — a losing process in a refresh-token-rotation race must not
-  // declare the session dead without first re-reading the file: another process may have already
-  // written fresh tokens a moment earlier.
-  const reread = readSession(deps.env)
-  if (reread.status === 'ok') {
-    const rereadExpiresAtMs = Date.parse(reread.session.accessExpiresAt)
-    if (Number.isFinite(rereadExpiresAtMs) && rereadExpiresAtMs - now > 0) {
-      return { status: 'ok', session: reread.session }
-    }
-  }
+  // declare the session dead (or rate-limited) without first re-reading the file: another process
+  // may have already written fresh tokens a moment earlier.
+  const fresher = rereadFresherSession(deps.env, now)
+  if (fresher) return { status: 'ok', session: fresher }
 
+  if (refreshed.kind === 'rate_limited') {
+    return { status: 'rate_limited', retryAfterSeconds: refreshed.retryAfterSeconds }
+  }
   return { status: 'session_expired' }
 }
 
@@ -125,6 +143,12 @@ export function messageForSessionFailure(result: Exclude<EnsureSessionResult, { 
         `Refusing to use the session file at ${result.path} — its permissions are too open. ` +
         `Fix with \`chmod 600 ${result.path}\`, or run \`pvault login\` to regenerate it.\n`,
       exitCode: EXIT_CODES.insecureSessionFilePermissions,
+    }
+  }
+  if (result.status === 'rate_limited') {
+    return {
+      message: `The vault is rate-limiting this network; retry ${retryDelayPhrase(result.retryAfterSeconds)}.\n`,
+      exitCode: EXIT_CODES.rateLimited,
     }
   }
   return {

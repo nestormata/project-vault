@@ -528,6 +528,11 @@ export const OperationalEvent = {
   // hook's raw exception message/stack — fixed-enum `subReason` only, same never-leak-
   // internal-detail discipline as EXTENSION_MODULE_DATA_ROUTE_FAILED above.
   EXTENSION_PUBLIC_ROUTE_FAILED: 'extension.public_route_failed',
+  // Story 43.8 AC-6: a CLI auth route (/cli-login, /cli/mfa/verify-login, /cli/refresh,
+  // /cli/logout) rejected a caller over its per-IP budget. Logged once per (route, IP key,
+  // window) by lib/ip-rate-limit.ts — never per 429, since request logging is off and a per-429
+  // line would be attacker-driven log amplification. Carries only the normalized IP key.
+  AUTH_CLI_RATE_LIMITED: 'auth.cli_rate_limited',
 } as const
 
 export type OperationalEventType = (typeof OperationalEvent)[keyof typeof OperationalEvent]
