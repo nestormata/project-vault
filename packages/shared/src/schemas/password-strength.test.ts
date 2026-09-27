@@ -61,5 +61,9 @@ describe('passwordMeetsStrengthRequirement', () => {
     // A generous absolute ceiling as well, to catch a pathological blow-up that scales both
     // inputs equally. Sized far above the slowest observed CI sample so it cannot flake.
     expect(atCapMs).toBeLessThan(1000)
-  })
+    // 40 scorer calls in total (warm-up plus two best-of-15 samples). Under v8 coverage on a GitHub
+    // runner they exceeded vitest's 5s default and failed on time alone, never on the ratio, which
+    // aborted the whole turbo test job. The budget covers the sampling; the assertions above are
+    // what test the cap.
+  }, 30_000)
 })

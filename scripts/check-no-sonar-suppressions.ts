@@ -74,7 +74,7 @@ function unescapeKey(raw: string): string {
   return raw.replace(
     /\\(?:u([0-9a-fA-F]{4})|(.))/g,
     (_match, hex: string | undefined, ch: string) =>
-      hex === undefined ? ch : String.fromCharCode(Number.parseInt(hex, 16))
+      hex === undefined ? ch : String.fromCodePoint(Number.parseInt(hex, 16))
   )
 }
 
@@ -140,7 +140,7 @@ function findWorkflowIgnores(repoRoot: string): SuppressionFinding[] {
     '-i',
     '-E',
     '-e',
-    'sonar\\.issue\\.(ignore|enforce)',
+    String.raw`sonar\.issue\.(ignore|enforce)`,
     '--',
     ...workflows,
   ])
