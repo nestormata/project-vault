@@ -172,3 +172,65 @@ describe('createSsrfSafeDispatcher (ADR-6.2-08 DNS-rebinding defense)', () => {
     await expect(fetch('http://rebind.example.com/', { dispatcher } as never)).rejects.toThrow()
   })
 })
+
+// Story 43.9 AC-3 / AC-12: the block set, pinned at every range boundary, so replacing the
+// hand-written range table with ipaddr.js range classification cannot silently widen or narrow
+// it. The only intended changes are the newly blocked 0.0.0.0/8 and :: (AC-12).
+describe('isPrivateOrReservedIp boundary parity (Story 43.9 AC-3, AC-12)', () => {
+  it.each([
+    ['10.0.0.0', true],
+    ['10.255.255.255', true],
+    ['9.255.255.255', false],
+    ['11.0.0.0', false],
+    ['172.16.0.0', true],
+    ['172.31.255.255', true],
+    ['172.15.255.255', false],
+    ['172.32.0.0', false],
+    ['192.168.0.0', true],
+    ['192.168.255.255', true],
+    ['192.167.255.255', false],
+    ['192.169.0.0', false],
+    ['169.254.169.254', true],
+    ['127.0.0.1', true],
+    ['127.255.255.254', true],
+    ['0.0.0.0', true], // newly blocked (AC-12)
+    ['0.255.255.255', true], // newly blocked (AC-12)
+    ['1.0.0.0', false],
+    ['100.64.0.1', false], // CGNAT: unchanged (allowed) — broadening is deferred work
+    ['224.0.0.1', false], // multicast: unchanged (allowed)
+    ['8.8.8.8', false],
+    ['1.1.1.1', false],
+    ['fc00::1', true],
+    ['fdff:ffff::1', true],
+    ['fe80::1', true],
+    ['::1', true],
+    ['::', true], // newly blocked (AC-12)
+    ['0:0:0:0:0:0:0:0', true], // newly blocked (AC-12)
+    ['::2', false],
+    ['fbff::1', false],
+    ['fec0::1', false],
+    ['2606:4700::1111', false],
+    ['::ffff:10.0.0.1', true],
+    ['::ffff:7f00:1', true],
+    ['::ffff:0.0.0.0', true], // newly blocked (AC-12)
+  ])('%s -> reserved=%s', (ip, expected) => {
+    expect(isPrivateOrReservedIp(ip)).toBe(expected)
+  })
+
+  it.each(['0.0.0.0', '::'])(
+    'rejects a hostname whose DNS answer is the unspecified address %s (AC-12)',
+    async (address) => {
+      lookupMock.mockResolvedValue([{ address, family: address.includes(':') ? 6 : 4 }])
+      const attempt = assertUrlIsMonitorable('http://unspecified.example.com/')
+      await expect(attempt).rejects.toBeInstanceOf(UrlNotMonitorableError)
+      await expect(attempt).rejects.toMatchObject({ code: 'url_not_allowed' })
+    }
+  )
+
+  it.each(['http://0.0.0.0:8080/', 'http://[::]/'])(
+    'rejects the unspecified-address URL literal %s (AC-12)',
+    async (url) => {
+      await expect(assertUrlIsMonitorable(url)).rejects.toBeInstanceOf(UrlNotMonitorableError)
+    }
+  )
+})

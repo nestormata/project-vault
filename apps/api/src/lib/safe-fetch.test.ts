@@ -287,3 +287,74 @@ describe('safeFetchExternal (AC-17/AC-18)', () => {
     expect(init.dispatcher).toBeDefined()
   })
 })
+
+// Story 43.9 AC-3: the block set, pinned at every range boundary, so replacing the hand-written
+// CIDR table with ipaddr.js range classification cannot silently widen or narrow it.
+describe('isPrivateIPv4 boundary parity (Story 43.9 AC-3)', () => {
+  it.each([
+    ['10.0.0.0', true],
+    ['10.255.255.255', true],
+    ['9.255.255.255', false],
+    ['11.0.0.0', false],
+    ['172.16.0.0', true],
+    ['172.31.255.255', true],
+    ['172.15.255.255', false],
+    ['172.32.0.0', false],
+    ['192.168.0.0', true],
+    ['192.168.255.255', true],
+    ['192.167.255.255', false],
+    ['192.169.0.0', false],
+    ['169.254.169.254', true],
+    ['127.0.0.1', true],
+    ['127.255.255.254', true],
+    ['0.0.0.0', true],
+    ['0.255.255.255', true],
+    ['1.0.0.0', false],
+    ['100.64.0.1', false], // CGNAT: unchanged (not blocked) — broadening is deferred work
+    ['224.0.0.1', false], // multicast: unchanged (not blocked)
+    ['8.8.8.8', false],
+    ['1.1.1.1', false],
+  ])('boundary %s -> private=%s', (ip, expected) => {
+    expect(isPrivateIPv4(ip)).toBe(expected)
+  })
+
+  // ipaddr.js's lenient parser reads '010.0.0.1' as octal (8.0.0.1, public). The old CIDR math
+  // read it as 10.0.0.1 (private). Anything that is not strict four-part decimal fails closed.
+  it.each(['010.0.0.1', '0177.0.0.1', '10.1', 'not-an-ip', ''])(
+    '%j (not strict four-part decimal) fails closed',
+    (ip) => {
+      expect(isPrivateIPv4(ip)).toBe(true)
+    }
+  )
+})
+
+// Story 43.9 AC-12: 0.0.0.0/8 and :: both reach the local host on Linux.
+describe('unspecified addresses are blocked (Story 43.9 AC-12)', () => {
+  it.each([
+    ['0.0.0.0', true],
+    ['0.255.255.255', true],
+    ['::', true],
+    ['0:0:0:0:0:0:0:0', true],
+    ['::ffff:0.0.0.0', true],
+    ['::2', false],
+    ['1.0.0.0', false],
+  ])('isPrivateOrReservedAddress(%s) -> %s', (address, expected) => {
+    expect(isPrivateOrReservedAddress(address)).toBe(expected)
+  })
+
+  it.each(['0.0.0.0', '::'])(
+    'a hostname whose DNS stub resolves to %s is rejected',
+    async (address) => {
+      await expect(
+        assertPublicHostname(WEBHOOK_HOSTNAME_URL, () => Promise.resolve([{ address }]))
+      ).rejects.toThrow(UnsafeForwardingUrlError)
+    }
+  )
+
+  it.each(['http://0.0.0.0:8080/', 'http://[::]/'])(
+    'the URL literal %s is rejected',
+    async (url) => {
+      await expect(assertPublicHostname(url)).rejects.toThrow(UnsafeForwardingUrlError)
+    }
+  )
+})

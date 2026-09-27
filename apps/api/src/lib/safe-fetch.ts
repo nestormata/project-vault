@@ -1,5 +1,6 @@
 import { promises as dnsPromises } from 'node:dns'
 import { isIP } from 'node:net'
+import ipaddr from 'ipaddr.js'
 import { Agent, fetch as undiciFetch } from 'undici'
 
 /** D4 — this codebase's first outbound HTTP request to an org-admin-controlled URL. Rejected
@@ -12,29 +13,27 @@ export const WEBHOOK_FETCH_TIMEOUT_MS = 5_000
  * bounded so a malicious/misbehaving endpoint can't force an unbounded read. */
 const MAX_RESPONSE_BODY_BYTES = 64 * 1024
 
-function ipv4ToInt(ip: string): number {
-  return ip.split('.').reduce((acc, octet) => (acc << 8) + Number(octet), 0)
-}
+// D4's required ranges — RFC 1918 private (10/8, 172.16/12, 192.168/16), loopback 127/8 and
+// link-local 169.254/16 — plus 0.0.0.0/8 (unspecified/"this network"), which reaches the local
+// host on Linux. Classified by ipaddr.js's IANA special-purpose registry (`range()`) rather than a
+// hand-maintained CIDR table. Deliberately NOT blocked (unchanged, see the deferred-work ledger):
+// CGNAT 100.64/10, multicast, 240/4 and the benchmarking ranges.
+const BLOCKED_V4_RANGES: ReadonlySet<string> = new Set([
+  'private',
+  'loopback',
+  'linkLocal',
+  'unspecified',
+])
 
-function cidrV4Matches(ip: string, base: string, bits: number): boolean {
-  const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0
-  return (ipv4ToInt(ip) & mask) === (ipv4ToInt(base) & mask)
-}
-
-// D4's exact required ranges: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8,
-// 169.254.0.0/16 — plus 0.0.0.0/8 (unspecified/"this network") as an obvious additional guard.
-// These are the SSRF blocklist itself (D4), not incidental literals — NOSONAR(typescript:S1313).
-const PRIVATE_V4_CIDRS: [string, number][] = [
-  ['10.0.0.0', 8], // NOSONAR(typescript:S1313)
-  ['172.16.0.0', 12], // NOSONAR(typescript:S1313)
-  ['192.168.0.0', 16], // NOSONAR(typescript:S1313)
-  ['127.0.0.0', 8],
-  ['169.254.0.0', 16], // NOSONAR(typescript:S1313)
-  ['0.0.0.0', 8],
-]
-
+/**
+ * True when `ip` is in a blocked IPv4 range. Anything that is not strict four-part decimal fails
+ * closed: ipaddr.js's lenient parser would read '010.0.0.1' as octal 8.0.0.1 (public), turning a
+ * private address into an allowed one. Production callers gate on `net.isIP`, which already
+ * rejects those forms; this guard keeps the exported function safe on its own.
+ */
 export function isPrivateIPv4(ip: string): boolean {
-  return PRIVATE_V4_CIDRS.some(([base, bits]) => cidrV4Matches(ip, base, bits))
+  if (!ipaddr.IPv4.isValidFourPartDecimal(ip)) return true
+  return BLOCKED_V4_RANGES.has(ipaddr.IPv4.parse(ip).range())
 }
 
 function ipv4PartToGroups(ipv4: string): [number, number] | null {
@@ -111,6 +110,11 @@ function isIPv6Loopback(groups: number[]): boolean {
   return groups.slice(0, 7).every((g) => g === 0) && groups[7] === 1
 }
 
+/** `::` — the unspecified address, which (like 0.0.0.0) reaches the local host on Linux. */
+function isIPv6Unspecified(groups: number[]): boolean {
+  return groups.every((g) => g === 0)
+}
+
 function isUniqueLocalIPv6(groups: number[]): boolean {
   return ((groups[0] ?? 0) & 0xfe00) === 0xfc00 // fc00::/7
 }
@@ -129,7 +133,7 @@ function ipv4MappedAddress(groups: number[]): string | null {
   return `${(g6 >> 8) & 0xff}.${g6 & 0xff}.${(g7 >> 8) & 0xff}.${g7 & 0xff}`
 }
 
-/** IPv6 D4 ranges: ::1 (loopback), fc00::/7 (unique local), fe80::/10 (link-local), and any
+/** IPv6 D4 ranges: ::1 (loopback), :: (unspecified), fc00::/7 (unique local), fe80::/10 (link-local), and any
  * IPv4-mapped IPv6 address (::ffff:0:0/96) whose embedded v4 address is private — matched by
  * parsing to numeric 16-bit groups (expandIPv6Groups) rather than a fragile textual prefix, so
  * detection is correct regardless of hex-vs-dotted rendering or leading-zero compression. */
@@ -137,7 +141,14 @@ export function isPrivateIPv6(ip: string): boolean {
   const groups = expandIPv6Groups(ip.toLowerCase())
   // Not a parseable IPv6 address at all — refuse rather than silently allow.
   if (!groups) return true
-  if (isIPv6Loopback(groups) || isUniqueLocalIPv6(groups) || isLinkLocalIPv6(groups)) return true
+  if (
+    isIPv6Loopback(groups) ||
+    isIPv6Unspecified(groups) ||
+    isUniqueLocalIPv6(groups) ||
+    isLinkLocalIPv6(groups)
+  ) {
+    return true
+  }
   const mappedV4 = ipv4MappedAddress(groups)
   return mappedV4 !== null && isPrivateIPv4(mappedV4)
 }

@@ -2,6 +2,7 @@ import type { FastifyRequest } from 'fastify/types/request.js'
 import type { FastifyReply } from 'fastify/types/reply.js'
 import { collectDefaultMetrics, register, Counter, Histogram, Gauge } from 'prom-client'
 import type { FastifyApp } from '../lib/fastify-app.js'
+import { isLoopbackSocketAddress } from '../lib/loopback-address.js'
 // Side-effect-only import: this registers the Story 1.10 DB pool gauge with prom-client's
 // default registry even when no instrumented pool has issued a query yet.
 import '../lib/db-pool-metrics.js'
@@ -38,12 +39,6 @@ export const vaultSealed = new Gauge({
   },
 })
 
-function isLoopbackRemoteAddress(remoteAddress: string): boolean {
-  return (
-    remoteAddress === '127.0.0.1' || remoteAddress === '::1' || remoteAddress === '::ffff:127.0.0.1' // NOSONAR(typescript:S1313) — loopback allowlist, not incidental
-  )
-}
-
 function metricsRemoteAddress(req: FastifyRequest): string {
   return req.raw.socket.remoteAddress ?? req.ip
 }
@@ -72,7 +67,7 @@ export async function metricsRoutes(
   fastify.get('/metrics', async (req: FastifyRequest, reply: FastifyReply) => {
     if (
       options.metricsBindHost !== '0.0.0.0' &&
-      !isLoopbackRemoteAddress(metricsRemoteAddress(req))
+      !isLoopbackSocketAddress(metricsRemoteAddress(req))
     ) {
       return reply.status(403).send({ error: 'Forbidden' })
     }
