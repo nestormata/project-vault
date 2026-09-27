@@ -34,7 +34,7 @@ const { env } = await import('../../config/env.js')
 type TestApp = Awaited<ReturnType<typeof createApp>>
 type InjectResponse = Awaited<ReturnType<TestApp['inject']>>
 
-const PASSWORD = 'correct-horse-battery-staple'
+const TEST_PASSWORD = 'correct-horse-battery-staple'
 const WRONG_PASSWORD = 'wrong-password-sentinel'
 const TEST_PASSPHRASE = 'cli-login-rate-limit-passphrase'
 const LOGIN_URL = '/api/v1/auth/login'
@@ -154,7 +154,7 @@ describe('Story 43.8: per-IP rate limiting on the CLI auth routes', () => {
     const plainEmail = uniqueEmail('plain')
     const registered = await registerAndLoginViaApi(setupApp, {
       email: plainEmail,
-      password: PASSWORD,
+      password: TEST_PASSWORD,
       orgName: `Org ${randomUUID()}`,
     })
     plain = { email: plainEmail, userId: registered.userId, orgId: registered.orgId }
@@ -162,7 +162,7 @@ describe('Story 43.8: per-IP rate limiting on the CLI auth routes', () => {
     const mfaEmail = uniqueEmail('mfa')
     const mfaUser = await registerAndLoginViaApi(setupApp, {
       email: mfaEmail,
-      password: PASSWORD,
+      password: TEST_PASSWORD,
       orgName: `Org ${randomUUID()}`,
     })
     const enroll = await setupApp.inject({
@@ -260,7 +260,7 @@ describe('Story 43.8: per-IP rate limiting on the CLI auth routes', () => {
         const ip = freshIp()
         const challenge = await post(app, CLI_LOGIN_URL, ip, {
           email: mfa.email,
-          password: PASSWORD,
+          password: TEST_PASSWORD,
         })
         expect(challenge.statusCode).toBe(200)
         const { mfaToken } = challenge.json<{ data: { mfaToken: string } }>().data
@@ -347,7 +347,7 @@ describe('Story 43.8: per-IP rate limiting on the CLI auth routes', () => {
         const ipB = freshIp()
         const other = await post(app, CLI_LOGIN_URL, ipB, {
           email: plain.email,
-          password: PASSWORD,
+          password: TEST_PASSWORD,
         })
         expect(other.statusCode).toBe(200)
         expect(other.json<{ data: { tokenType: string } }>().data.tokenType).toBe('Bearer')
@@ -372,7 +372,7 @@ describe('Story 43.8: per-IP rate limiting on the CLI auth routes', () => {
       const victim = uniqueEmail('victim')
       await registerAndLoginViaApi(setupApp, {
         email: victim,
-        password: PASSWORD,
+        password: TEST_PASSWORD,
         orgName: `Org ${randomUUID()}`,
       })
       await withLimitedApp(async (app) => {
@@ -384,7 +384,10 @@ describe('Story 43.8: per-IP rate limiting on the CLI auth routes', () => {
           })
           expect(res.statusCode).toBe(401)
         }
-        const correct = await post(app, CLI_LOGIN_URL, ipB, { email: victim, password: PASSWORD })
+        const correct = await post(app, CLI_LOGIN_URL, ipB, {
+          email: victim,
+          password: TEST_PASSWORD,
+        })
         expect(correct.statusCode).toBe(401)
         expect(correct.json()).toMatchObject({ code: 'invalid_credentials' })
       })
@@ -467,7 +470,7 @@ describe('Story 43.8: per-IP rate limiting on the CLI auth routes', () => {
         try {
           const ip = freshIp()
           const login = await burst(app, CLI_LOGIN_URL, ip, env.AUTH_RATE_LIMIT_MAX + 1, {
-            email: 'someone@example.com',
+            email: uniqueEmail('someone'),
             password: WRONG_PASSWORD,
           })
           expect(login[0]?.statusCode).toBe(403)

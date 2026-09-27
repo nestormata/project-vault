@@ -19,10 +19,9 @@ function jsonResponse(status: number, body: unknown) {
 }
 
 function promptSequence(answers: string[]): (q: string, o: { mask: boolean }) => Promise<string> {
-  let i = 0
+  const queue = [...answers]
   return async () => {
-    const value = answers[i]
-    i += 1
+    const value = queue.shift()
     if (value === undefined) throw new Error('prompt called more times than expected')
     return value
   }

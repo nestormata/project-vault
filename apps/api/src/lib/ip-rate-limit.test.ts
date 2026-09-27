@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OperationalEvent } from '@project-vault/shared'
@@ -7,7 +8,7 @@ import { resolveTrustProxy } from './trust-proxy.js'
 
 const MESSAGE = 'Too many authentication attempts'
 const EVENT = OperationalEvent.AUTH_CLI_RATE_LIMITED
-const SENTINEL_EMAIL = 'sentinel-victim@example.com'
+const SENTINEL_EMAIL = `sentinel-victim-${randomUUID()}@example.com`
 const SENTINEL_PASSWORD = 'sentinel-password-value'
 const IP_A = '198.51.100.7'
 

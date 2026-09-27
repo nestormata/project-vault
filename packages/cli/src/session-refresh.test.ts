@@ -171,6 +171,11 @@ describe('session file atomicity — AC-4 concurrency', () => {
   })
 })
 
+/** Bytes + mtime of a file, so a test can assert it was left untouched. */
+function snapshotFile(path: string): { raw: string; mtimeMs: number } {
+  return { raw: readFileSync(path, 'utf-8'), mtimeMs: statSync(path).mtimeMs }
+}
+
 describe('ensureFreshSession — Story 43.8 AC-7: a refresh 429 is rate limiting, not expiry', () => {
   function rateLimited(headers: Record<string, string> = {}) {
     return new Response(JSON.stringify({ code: 'rate_limit_exceeded', message: 'x' }), {
@@ -182,15 +187,13 @@ describe('ensureFreshSession — Story 43.8 AC-7: a refresh 429 is rate limiting
   it('returns rate_limited with the parsed Retry-After and leaves the session file byte-identical', async () => {
     writeSession(EXPIRED, envFor())
     const path = sessionFilePath(envFor())
-    const before = readFileSync(path, 'utf-8')
-    const mtimeBefore = statSync(path).mtimeMs
+    const before = snapshotFile(path)
     const fetchFn = vi.fn().mockResolvedValue(rateLimited({ 'retry-after': '37' }))
 
     const result = await ensureFreshSession({ fetchFn, env: envFor() })
 
     expect(result).toEqual({ status: 'rate_limited', retryAfterSeconds: 37 })
-    expect(readFileSync(path, 'utf-8')).toBe(before)
-    expect(statSync(path).mtimeMs).toBe(mtimeBefore)
+    expect(snapshotFile(path)).toEqual(before)
   })
 
   it('a later refresh with the SAME (unrotated) refresh token still succeeds', async () => {
