@@ -162,6 +162,11 @@ jobs:
       - name: Check native-credential surface (Story 23.2 AC19)
         run: pnpm check-native-credential-surface
 
+      - name: Check no unsigned Sonar suppressions (Story 43.9 AC-9)
+        run: |
+          pnpm check-no-sonar-suppressions &&
+          pnpm vitest run scripts/check-no-sonar-suppressions.test.ts scripts/lib/trusted-executable.test.ts
+
       - name: Check for duplicate code
         run: pnpm jscpd
 
