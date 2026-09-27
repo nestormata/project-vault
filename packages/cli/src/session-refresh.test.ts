@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +9,14 @@ import {
   messageForSessionFailure,
   type EnsureSessionResult,
 } from './session-refresh.js'
+
+// Pass-through spy on the session writer: every test still writes real files, but the Story 43.8
+// AC-7 tests can assert `ensureFreshSession` never *attempted* a write (session-refresh.ts's only
+// filesystem write path), which also catches a same-content rewrite a content diff would miss.
+vi.mock('./session-store.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./session-store.js')>()
+  return { ...actual, writeSession: vi.fn(actual.writeSession) }
+})
 
 function assertNotOk(
   result: EnsureSessionResult
@@ -166,15 +174,11 @@ describe('ensureFreshSession — not-logged-in / insecure-permissions distinguis
 describe('session file atomicity — AC-4 concurrency', () => {
   it('writeSession never leaves the file in a partially-written state a concurrent reader could observe', () => {
     writeSession(FRESH, envFor())
-    const raw = readFileSync(sessionFilePath(envFor()), 'utf8')
-    expect(() => JSON.parse(raw)).not.toThrow()
+    // readSession folds unparseable / schema-invalid JSON into `not_found`, so `ok` + the exact
+    // payload proves the file on disk is complete, valid JSON.
+    expect(readSession(envFor())).toEqual({ status: 'ok', session: FRESH })
   })
 })
-
-/** Bytes + mtime of a file, so a test can assert it was left untouched. */
-function snapshotFile(path: string): { raw: string; mtimeMs: number } {
-  return { raw: readFileSync(path, 'utf-8'), mtimeMs: statSync(path).mtimeMs }
-}
 
 describe('ensureFreshSession — Story 43.8 AC-7: a refresh 429 is rate limiting, not expiry', () => {
   function rateLimited(headers: Record<string, string> = {}) {
@@ -184,16 +188,16 @@ describe('ensureFreshSession — Story 43.8 AC-7: a refresh 429 is rate limiting
     })
   }
 
-  it('returns rate_limited with the parsed Retry-After and leaves the session file byte-identical', async () => {
+  it('returns rate_limited with the parsed Retry-After and leaves the session file untouched', async () => {
     writeSession(EXPIRED, envFor())
-    const path = sessionFilePath(envFor())
-    const before = snapshotFile(path)
+    vi.mocked(writeSession).mockClear()
     const fetchFn = vi.fn().mockResolvedValue(rateLimited({ 'retry-after': '37' }))
 
     const result = await ensureFreshSession({ fetchFn, env: envFor() })
 
     expect(result).toEqual({ status: 'rate_limited', retryAfterSeconds: 37 })
-    expect(snapshotFile(path)).toEqual(before)
+    expect(writeSession).not.toHaveBeenCalled()
+    expect(readSession(envFor())).toEqual({ status: 'ok', session: EXPIRED })
   })
 
   it('a later refresh with the SAME (unrotated) refresh token still succeeds', async () => {
