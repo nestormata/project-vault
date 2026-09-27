@@ -21,7 +21,7 @@ async function exchangeClaim(
   try {
     return await proxyApiRequest({
       fetchFn,
-      request: new Request('http://handoff.internal/exchange-claim', {
+      request: new Request('https://handoff.internal/exchange-claim', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ pendingId, claim }),
