@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fetchWithSessionRefresh } from '$lib/api/client.js'
   import { renderPanelHtml } from '$lib/security/render-panel-html.js'
   import { EXTENSION_THEME_CSS_VARS } from '$lib/security/extension-theme-vars.js'
   let { data } = $props()
@@ -244,20 +245,41 @@
     // accepted click, that bumps `panelGeneration` while this fetch is still in flight causes that
     // stale result to be silently dropped.
     const requestGeneration = panelGeneration
-    // Story 25.6 AC5 — reuses `readCsrfCookie()`/`CSRF_HEADER_NAME` completely unchanged; only the
-    // trigger moves from an incoming `postMessage` event to this resolved DOM click (AC3).
-    const csrfToken = readCsrfCookie()
+    // Story 61.1 E7 — captured at click time, next to `requestGeneration`: a slot navigation during
+    // the refresh must never send this click's retry (and old body) to the NEW panel's endpoint.
+    const endpoint = data.actionEndpoint
 
-    fetch(data.actionEndpoint, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'content-type': 'application/json',
-        ...(csrfToken !== undefined ? { [CSRF_HEADER_NAME]: csrfToken } : {}),
-      },
-      body: JSON.stringify(requestBody),
-    })
-      .then(async (res) => {
+    // Story 61.1 AC1 — routed through `fetchWithSessionRefresh()` (the raw-Response sibling of
+    // `apiFetch`'s refresh-on-401), so an expired access token refreshes the session and retries
+    // once instead of surfacing a "Please try again" that retrying can never fix. The retry is safe:
+    // this route only answers 401 from `secureRoute()`'s auth precheck, before the handler runs,
+    // so the first attempt never executed. `buildInit` re-reads the CSRF cookie on every attempt
+    // (Story 25.6 AC5's `readCsrfCookie()`/`CSRF_HEADER_NAME`, unchanged), because the refresh
+    // rotates it. The global `fetch` is passed at call time (E8). Per DD2 the retry is issued even
+    // if `panelGeneration` moved meanwhile; only the paint below is gated.
+    const buildInit = (): RequestInit => {
+      const csrfToken = readCsrfCookie()
+      return {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/json',
+          ...(csrfToken !== undefined ? { [CSRF_HEADER_NAME]: csrfToken } : {}),
+        },
+        body: JSON.stringify(requestBody),
+      }
+    }
+
+    fetchWithSessionRefresh(fetch, endpoint, buildInit)
+      .then(async (result) => {
+        // Story 61.1 AC2 / DD3 — the refresh itself failed: the helper already sent the user to
+        // `/login?reason=session-expired`. No generic "try again" message (that is the false
+        // failure this story removes); just release the element.
+        if (result.kind === 'session_expired') {
+          reenableActionElement(actionEl)
+          return
+        }
+        const res = result.response
         // Code-review hardening (2026-08-30) — the generation check below must gate only the
         // shared, single-slot UI state (`actionResultHtml`/`statusMessage`), never
         // `reenableActionElement(actionEl)`. `panelGeneration` is bumped both by a real

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { apiFetch } from './client.js'
+import { apiFetch, fetchWithSessionRefresh, isRefreshableAccessCode } from './client.js'
 import { jsonResponse } from '$lib/test/json-response.js'
 
 const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
@@ -236,5 +236,175 @@ describe('apiFetch', () => {
       credentials: 'include',
       headers: { 'x-vault-bootstrap-token': 'abc' },
     })
+  })
+})
+
+// Story 61.1 — the raw-Response sibling of apiFetch's refresh-on-401, used by callers (the
+// extension panel action dispatcher) that must read a non-envelope body and handle non-2xx
+// responses themselves.
+describe('fetchWithSessionRefresh', () => {
+  const ACTION_URL = '/api/v1/extensions/panels/group/actions'
+  const REFRESH_OK = () => jsonResponse({ data: { expiresAt: '2026-09-26T02:00:00.000Z' } })
+
+  // Waits for redirectToSessionExpired()'s `goto(...).then(reset, reset)` latch to settle so the
+  // next test's own redirect is never swallowed by a still-latched flag (module-level state).
+  async function settleRedirectLatch() {
+    await vi.waitFor(() => expect(gotoMock).toHaveBeenCalled())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  beforeEach(() => {
+    gotoMock.mockClear()
+  })
+
+  it.each(['access_token_missing', 'access_token_invalid', 'session_revoked'] as const)(
+    'refreshes once on a %s 401 and retries the original request exactly once',
+    async (code) => {
+      const fetchFn = vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse({ code }, { status: 401 }))
+        .mockResolvedValueOnce(REFRESH_OK())
+        .mockResolvedValueOnce(jsonResponse({ html: '<p>done</p>' }))
+
+      const result = await fetchWithSessionRefresh(fetchFn, ACTION_URL, () => ({
+        method: 'POST',
+        body: '{"kind":"x"}',
+      }))
+
+      expect(fetchFn).toHaveBeenCalledTimes(3)
+      expect(fetchFn).toHaveBeenNthCalledWith(
+        2,
+        '/api/v1/auth/refresh',
+        expect.objectContaining({ method: 'POST', credentials: 'include' })
+      )
+      expect(fetchFn).toHaveBeenNthCalledWith(3, ACTION_URL, {
+        method: 'POST',
+        body: '{"kind":"x"}',
+      })
+      expect(result.kind).toBe('response')
+      if (result.kind !== 'response') throw new Error('unreachable')
+      expect(result.response.status).toBe(200)
+      await expect(result.response.json()).resolves.toEqual({ html: '<p>done</p>' })
+      expect(gotoMock).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([
+    [
+      'a non-refreshable 401 code',
+      () => jsonResponse({ code: 'mfa_step_up_required' }, { status: 401 }),
+    ],
+    ['a 401 with no code', () => jsonResponse({ message: 'nope' }, { status: 401 })],
+    ['a non-JSON 401 body', () => new Response('<html>401</html>', { status: 401 })],
+    ['403 csrf_rejected', () => jsonResponse({ code: 'csrf_rejected' }, { status: 403 })],
+    [
+      '429 with a refreshable-looking code',
+      () => jsonResponse({ code: 'access_token_missing' }, { status: 429 }),
+    ],
+    ['500', () => jsonResponse({ code: 'internal_error' }, { status: 500 })],
+  ])('returns %s untouched (body unread) with no refresh and no retry', async (_label, make) => {
+    const first = make()
+    const fetchFn = vi.fn().mockResolvedValueOnce(first)
+
+    const result = await fetchWithSessionRefresh(fetchFn, ACTION_URL, () => ({ method: 'POST' }))
+
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(result).toEqual({ kind: 'response', response: first })
+    expect(first.bodyUsed).toBe(false)
+    expect(gotoMock).not.toHaveBeenCalled()
+  })
+
+  it('builds a fresh RequestInit per attempt via the buildInit factory, passed through unchanged', async () => {
+    let csrf = 'old'
+    const fetchFn = vi.fn(async (path: string) => {
+      if (path === '/api/v1/auth/refresh') {
+        csrf = 'new'
+        return REFRESH_OK()
+      }
+      return fetchFn.mock.calls.length === 1
+        ? jsonResponse({ code: 'access_token_missing' }, { status: 401 })
+        : jsonResponse({ message: 'Saved' })
+    })
+    const buildInit = vi.fn(() => ({
+      method: 'POST',
+      credentials: 'same-origin' as const,
+      headers: { 'x-csrf-token': csrf },
+    }))
+
+    await fetchWithSessionRefresh(fetchFn, ACTION_URL, buildInit)
+
+    expect(buildInit).toHaveBeenCalledTimes(2)
+    expect(fetchFn.mock.calls[0]?.[1]).toEqual({
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'x-csrf-token': 'old' },
+    })
+    expect(fetchFn.mock.calls[2]?.[1]).toEqual({
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'x-csrf-token': 'new' },
+    })
+  })
+
+  it('returns a second 401 after a successful refresh as-is: no second refresh, no redirect', async () => {
+    const retry401 = jsonResponse({ code: 'access_token_missing' }, { status: 401 })
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ code: 'access_token_missing' }, { status: 401 }))
+      .mockResolvedValueOnce(REFRESH_OK())
+      .mockResolvedValueOnce(retry401)
+
+    const result = await fetchWithSessionRefresh(fetchFn, ACTION_URL, () => ({ method: 'POST' }))
+
+    expect(fetchFn).toHaveBeenCalledTimes(3)
+    expect(result).toEqual({ kind: 'response', response: retry401 })
+    expect(retry401.bodyUsed).toBe(false)
+    expect(gotoMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [
+      'a non-2xx refresh',
+      () => Promise.resolve(jsonResponse({ code: 'refresh_token_missing' }, { status: 401 })),
+    ],
+    ['a rejected refresh fetch', () => Promise.reject(new TypeError('Failed to fetch'))],
+  ])(
+    'returns session_expired and redirects once on %s, without retrying',
+    async (_label, refresh) => {
+      const fetchFn = vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse({ code: 'access_token_invalid' }, { status: 401 }))
+        .mockImplementationOnce(refresh)
+
+      const result = await fetchWithSessionRefresh(fetchFn, ACTION_URL, () => ({ method: 'POST' }))
+
+      expect(result).toEqual({ kind: 'session_expired' })
+      expect(fetchFn).toHaveBeenCalledTimes(2)
+      expect(gotoMock).toHaveBeenCalledTimes(1)
+      expect(gotoMock).toHaveBeenCalledWith('/login?reason=session-expired')
+      await settleRedirectLatch()
+    }
+  )
+
+  it('does not swallow a rejection of the retried request (E9)', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ code: 'access_token_missing' }, { status: 401 }))
+      .mockResolvedValueOnce(REFRESH_OK())
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+
+    await expect(
+      fetchWithSessionRefresh(fetchFn, ACTION_URL, () => ({ method: 'POST' }))
+    ).rejects.toThrow('Failed to fetch')
+    expect(gotoMock).not.toHaveBeenCalled()
+  })
+
+  it('isRefreshableAccessCode only accepts a 401 with one of the three refreshable codes', () => {
+    expect(isRefreshableAccessCode(401, 'access_token_missing')).toBe(true)
+    expect(isRefreshableAccessCode(401, 'access_token_invalid')).toBe(true)
+    expect(isRefreshableAccessCode(401, 'session_revoked')).toBe(true)
+    expect(isRefreshableAccessCode(401, 'mfa_step_up_required')).toBe(false)
+    expect(isRefreshableAccessCode(401, undefined)).toBe(false)
+    expect(isRefreshableAccessCode(403, 'access_token_missing')).toBe(false)
   })
 })
