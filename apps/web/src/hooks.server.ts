@@ -2,7 +2,12 @@ import type { Handle } from '@sveltejs/kit'
 import { env } from '$env/dynamic/private'
 import { isAuthPath, isProtectedAppPath, resolveAuthContext } from '$lib/server/auth-guard.js'
 import { getVaultReadiness } from '$lib/api/vault.js'
-import { getExtensionPanelCspHeaders, getFrameProtectionHeaders } from '$lib/security/hardening.js'
+import {
+  getExtensionPanelCspHeaders,
+  getFrameProtectionHeaders,
+  getHandoffSecurityHeaders,
+  isHandoffPath,
+} from '$lib/security/hardening.js'
 import { createServerApiFetch } from '$lib/server/server-api-fetch.js'
 import { paraglideMiddleware } from '$lib/paraglide/server.js'
 import { parseAllowedOrigins } from '$lib/server/handoff-cors.js'
@@ -75,12 +80,17 @@ async function redirectIfVaultUnavailable(fetchFn: typeof fetch, pathname: strin
     : new Response(null, { status: 303, headers: { location: '/vault' } })
 }
 
+function securityHeadersFor(pathname: string) {
+  // Story 60.3 AC4: `event.setHeaders` throws on a duplicate header name, so the handoff branch
+  // must supply the FULL header set for that route in one call (its own frame-protection headers
+  // plus Referrer-Policy) — never call this alongside a second header-getter for the same route.
+  if (isHandoffPath(pathname)) return getHandoffSecurityHeaders()
+  if (isExtensionPanelPath(pathname)) return getExtensionPanelCspHeaders()
+  return getFrameProtectionHeaders()
+}
+
 const appHandle: Handle = async ({ event, resolve }) => {
-  event.setHeaders(
-    isExtensionPanelPath(event.url.pathname)
-      ? getExtensionPanelCspHeaders()
-      : getFrameProtectionHeaders()
-  )
+  event.setHeaders(securityHeadersFor(event.url.pathname))
   const forwardedSetCookies: string[] = []
   const pathname = event.url.pathname
   const apiFetch = createServerApiFetch({ apiBaseUrl: env.API_BASE_URL })

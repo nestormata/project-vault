@@ -58,6 +58,22 @@ describe('writeHandoffSecurityEvent (Story 30.2 AC6.22/AC6.23)', () => {
     expect(call.payload).toEqual({ safe: 'ok' })
   })
 
+  it('Story 60.3 AC4: the claim value never appears — payload is stripped of any claim/rawClaim key even if a caller mistakenly includes one', async () => {
+    const { writeHandoffSecurityEvent } = await import('./handoff-security-events.js')
+    await writeHandoffSecurityEvent({
+      eventType: 'handoff_replay',
+      meta: { ipAddress: null, userAgent: null },
+      payload: {
+        claim: 'super-secret-single-use-claim',
+        rawClaim: 'y',
+        safe: 'ok',
+      } as unknown as Record<string, unknown>,
+    })
+    const call = insertValues.mock.calls[0]?.[0] as { payload: Record<string, unknown> }
+    expect(JSON.stringify(call.payload)).not.toContain('super-secret-single-use-claim')
+    expect(call.payload).toEqual({ safe: 'ok' })
+  })
+
   it('swallows write failures (never throws to the caller)', async () => {
     db.transaction.mockRejectedValueOnce(new Error('db down'))
     const { writeHandoffSecurityEvent } = await import('./handoff-security-events.js')

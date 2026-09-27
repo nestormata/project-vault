@@ -60,8 +60,25 @@ describe('hooks.server handle', () => {
   // purpose is a single consent click, making UI-redress (iframe overlay) attacks a relevant
   // threat class. Confirms by test, rather than assuming, that it inherits the same app-wide
   // frame-protection headers as any other route -- no per-route opt-out exists for it.
-  it('sets frame protection headers on the handoff confirmation route (AC5.20)', async () => {
+  // Story 60.3 AC4: superseded by the route-scoped getHandoffSecurityHeaders() branch below —
+  // /handoff now gets its own Referrer-Policy header alongside (not instead of) the same
+  // frame-protection headers AC5.20 originally required.
+  it('sets frame-protection headers plus a Referrer-Policy on the handoff confirmation route (AC5.20, Story 60.3 AC4)', async () => {
     const event = makeEvent('/handoff')
+
+    await handle({ event, resolve: resolveMock } as never)
+
+    expect(event.setHeaders).toHaveBeenCalledWith({
+      'content-security-policy': "frame-ancestors 'none'",
+      'x-frame-options': 'DENY',
+      'referrer-policy': 'strict-origin',
+    })
+  })
+
+  // Story 60.3 AC4 — precision requirement: a near-miss path must still get the app-wide default
+  // headers, never accidentally routed into the handoff-specific branch.
+  it('does not apply the handoff-specific Referrer-Policy header to a near-miss path', async () => {
+    const event = makeEvent('/handoff-admin')
 
     await handle({ event, resolve: resolveMock } as never)
 

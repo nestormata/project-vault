@@ -694,6 +694,13 @@
       "when": 1789863244498,
       "tag": "0098_notification_queue_enqueued_out_of_request",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1790491108587,
+      "tag": "0099_handoff_pending_states_claim_hash",
+      "breakpoints": true
     }
   ]
 }

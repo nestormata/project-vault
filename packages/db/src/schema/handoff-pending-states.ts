@@ -1,4 +1,4 @@
-import { index, integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
+import { index, integer, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 
 /**
  * Story 30.2 Task 2: server-side pending-handoff state created by `POST /auth/handoff/prepare`
@@ -21,6 +21,15 @@ import { index, integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
  * this point (the token's claimed `organizationId` is untrusted input until AC4's org
  * cross-check runs). `expiresAt` gets its own index so the sweeper (AC5.20) can prune orphaned
  * pending-handoff rows independently of the `handoff_token_jti` sweep pass.
+ *
+ * Story 60.3 AC2: `claimHash` is the HMAC-SHA256 (via the same `hashCookieValue()` used for
+ * `cookieHash`) of a second, distinct single-use opaque value (`claim`) minted alongside
+ * `rawCookie`/`pendingId` at prepare time. It exists to let a same-origin `/handoff` `load`
+ * "claim-exchange" a cross-site-dropped confirmation cookie back into existence (Story 60.2's
+ * Option 1) without ever re-deriving it from `cookieHash` (a one-way hash). Nullable — rows
+ * written by pre-60.3 code have no `claim_hash` and simply can never be claim-exchanged (see the
+ * migration's own comment for why no backfill/NOT NULL is needed). Unique-indexed for the same
+ * reason `cookieHash` is: it is looked up by exact value during claim consumption.
  */
 export const handoffPendingStates = pgTable(
   'handoff_pending_states',
@@ -34,11 +43,13 @@ export const handoffPendingStates = pgTable(
     email: text('email'),
     displayName: text('display_name'),
     claimsVersion: integer('claims_version').notNull(),
+    claimHash: text('claim_hash'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     expiresAtIdx: index('idx_handoff_pending_states_expires_at').on(t.expiresAt),
+    claimHashIdx: uniqueIndex('idx_handoff_pending_states_claim_hash').on(t.claimHash),
   })
 )
 

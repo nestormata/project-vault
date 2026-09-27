@@ -9,7 +9,7 @@ import {
   userIdentityTokens,
   users,
 } from '@project-vault/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import {
   bootstrapRouteIntegrationTest,
   initVaultForTest,
@@ -33,6 +33,7 @@ const { initVault } = await bootstrapRouteIntegrationTest()
 
 const PREPARE_URL = '/api/v1/auth/handoff/prepare'
 const CONFIRM_URL = '/api/v1/auth/handoff/confirm'
+const EXCHANGE_CLAIM_URL = '/api/v1/auth/handoff/exchange-claim'
 const HANDOFF_COOKIE_NAME = 'handoff-confirm'
 const GENERIC_REJECTION_MESSAGE = 'Sign-in could not be verified. Please start again.'
 const SAME_ORIGIN = 'same-origin'
@@ -191,6 +192,24 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
       await app.close()
     })
 
+    it('AC1: response includes a distinct claim field, never derived from rawCookie/pendingId', async () => {
+      const app = await createApp({ logger: false })
+      const token = signToken()
+      const res = await app.inject({
+        method: 'POST',
+        url: PREPARE_URL,
+        payload: { token },
+      })
+      expect(res.statusCode).toBe(200)
+      const cookies = parseSetCookies(res.headers['set-cookie'])
+      const rawCookie = cookies[HANDOFF_COOKIE_NAME]
+      const body = res.json<{ data: { pendingId: string; claim: string } }>()
+      expect(body.data.claim).toBeTruthy()
+      expect(body.data.claim).not.toBe(rawCookie)
+      expect(body.data.claim).not.toBe(body.data.pendingId)
+      await app.close()
+    })
+
     it('AC2.5: VAULT_HANDOFF_ENABLED=false rejects an otherwise-valid token, no pending cookie', async () => {
       // env.ts parses process.env once at module load, so flipping the toggle for a single test
       // requires a fresh module graph (vi.resetModules) rather than just mutating process.env.
@@ -215,6 +234,193 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
         expect(res.json<{ message: string }>().message).toBe(GENERIC_REJECTION_MESSAGE)
         expect(res.headers['set-cookie']).toBeUndefined()
         await app.close()
+      } finally {
+        process.env['VAULT_HANDOFF_ENABLED'] = original
+        vi.resetModules()
+        register.clear()
+      }
+    })
+  })
+
+  describe('POST /exchange-claim (AC3, Story 60.3)', () => {
+    async function prepareAndGetClaim(
+      app: Awaited<ReturnType<typeof createApp>>,
+      claimOverrides: Record<string, unknown> = {}
+    ) {
+      const token = signToken(claimOverrides)
+      const prepareRes = await app.inject({
+        method: 'POST',
+        url: PREPARE_URL,
+        payload: { token },
+      })
+      return prepareRes.json<{ data: { pendingId: string; claim: string } }>().data
+    }
+
+    it('happy path: a valid pendingId/claim pair sets a fresh handoff-confirm cookie that the (unmodified) confirm POST path accepts and completes to a real login', async () => {
+      const app = await createApp({ logger: false })
+      const workosUserId = `user_${randomUUID()}`
+      const cmOrgId = `org_synthetic_${randomUUID()}`
+      const { orgId, userId } = await createLinkedHandoffOrg('claim-happy', workosUserId, cmOrgId)
+      const { pendingId, claim } = await prepareAndGetClaim(app, {
+        workosUserId,
+        organizationId: cmOrgId,
+      })
+
+      const res = await app.inject({
+        method: 'POST',
+        url: EXCHANGE_CLAIM_URL,
+        payload: { pendingId, claim },
+      })
+
+      expect(res.statusCode).toBe(200)
+      const body = res.json<{ data: { rawCookieValue: string; expiresAt: string } }>()
+      expect(body.data.rawCookieValue).toBeTruthy()
+      expect(body.data.expiresAt).toBeTruthy()
+
+      // AC3: the confirm POST path itself is unchanged — the newly exchanged cookie must be
+      // accepted exactly like the original prepare-set cookie would have been, all the way
+      // through to a real session.
+      const confirmRes = await app.inject({
+        method: 'POST',
+        url: CONFIRM_URL,
+        headers: {
+          cookie: `${HANDOFF_COOKIE_NAME}=${body.data.rawCookieValue}`,
+          'sec-fetch-site': SAME_ORIGIN,
+        },
+      })
+      expect(confirmRes.statusCode).toBe(200)
+      const confirmBody = confirmRes.json<{ data: { userId: string; orgId: string } }>()
+      expect(confirmBody.data.orgId).toBe(orgId)
+      expect(confirmBody.data.userId).toBe(userId)
+      await app.close()
+    })
+
+    it('replay: the same pendingId/claim pair succeeds once, then rejects generically on a second exchange', async () => {
+      const app = await createApp({ logger: false })
+      const { pendingId, claim } = await prepareAndGetClaim(app)
+
+      const first = await app.inject({
+        method: 'POST',
+        url: EXCHANGE_CLAIM_URL,
+        payload: { pendingId, claim },
+      })
+      expect(first.statusCode).toBe(200)
+
+      const second = await app.inject({
+        method: 'POST',
+        url: EXCHANGE_CLAIM_URL,
+        payload: { pendingId, claim },
+      })
+      expect(second.statusCode).toBe(401)
+      expect(second.json<{ message: string }>().message).toBe(GENERIC_REJECTION_MESSAGE)
+      await app.close()
+    })
+
+    it('expired pending state: a valid claim past expiresAt is rejected the same generic way as replay', async () => {
+      const app = await createApp({ logger: false })
+      const { pendingId, claim } = await prepareAndGetClaim(app)
+      const { handoffPendingStates } = await import('@project-vault/db/schema')
+      await getDb()
+        .update(handoffPendingStates)
+        .set({ expiresAt: new Date(Date.now() - 1000) })
+        .where(eq(handoffPendingStates.id, pendingId))
+
+      const res = await app.inject({
+        method: 'POST',
+        url: EXCHANGE_CLAIM_URL,
+        payload: { pendingId, claim },
+      })
+      expect(res.statusCode).toBe(401)
+      expect(res.json<{ message: string }>().message).toBe(GENERIC_REJECTION_MESSAGE)
+      await app.close()
+    })
+
+    it('malformed/missing claim: an empty-string claim is rejected identically to a wholly missing one', async () => {
+      const app = await createApp({ logger: false })
+      const { pendingId } = await prepareAndGetClaim(app)
+
+      const missing = await app.inject({
+        method: 'POST',
+        url: EXCHANGE_CLAIM_URL,
+        payload: { pendingId },
+      })
+      const empty = await app.inject({
+        method: 'POST',
+        url: EXCHANGE_CLAIM_URL,
+        payload: { pendingId, claim: '' },
+      })
+      expect(missing.statusCode).toBe(401)
+      expect(empty.statusCode).toBe(401)
+      expect(missing.json<{ message: string }>().message).toBe(
+        empty.json<{ message: string }>().message
+      )
+      await app.close()
+    })
+
+    it('a claim that does not hash-match any row is rejected generically', async () => {
+      const app = await createApp({ logger: false })
+      const { pendingId } = await prepareAndGetClaim(app)
+
+      const res = await app.inject({
+        method: 'POST',
+        url: EXCHANGE_CLAIM_URL,
+        payload: { pendingId, claim: 'not-a-real-claim' },
+      })
+      expect(res.statusCode).toBe(401)
+      await app.close()
+    })
+
+    it('mismatched pair: a valid claim paired with an unrelated pendingId is rejected (scoped lookup requires both to match the same row)', async () => {
+      const app = await createApp({ logger: false })
+      const first = await prepareAndGetClaim(app)
+      const second = await prepareAndGetClaim(app)
+
+      const res = await app.inject({
+        method: 'POST',
+        url: EXCHANGE_CLAIM_URL,
+        payload: { pendingId: second.pendingId, claim: first.claim },
+      })
+      expect(res.statusCode).toBe(401)
+      await app.close()
+    })
+
+    it('rolling-deploy skew: a pre-60.3 row with no claim_hash falls into the generic-rejection path, never a crash', async () => {
+      const app = await createApp({ logger: false })
+      const { pendingId } = await prepareAndGetClaim(app)
+      const { handoffPendingStates } = await import('@project-vault/db/schema')
+      await getDb().execute(
+        sql`update ${handoffPendingStates} set claim_hash = NULL where ${handoffPendingStates.id} = ${pendingId}`
+      )
+
+      const res = await app.inject({
+        method: 'POST',
+        url: EXCHANGE_CLAIM_URL,
+        payload: { pendingId, claim: 'anything' },
+      })
+      expect(res.statusCode).toBe(401)
+      await app.close()
+    })
+
+    it('VAULT_HANDOFF_ENABLED=false rejects an otherwise-valid exchange, generically', async () => {
+      const { register } = await import('prom-client')
+      const app = await createApp({ logger: false })
+      const { pendingId, claim } = await prepareAndGetClaim(app)
+      await app.close()
+
+      const original = process.env['VAULT_HANDOFF_ENABLED']
+      process.env['VAULT_HANDOFF_ENABLED'] = 'false'
+      vi.resetModules()
+      register.clear()
+      try {
+        const { createApp: createDisabledApp } = await import('../../app.js')
+        const disabledApp = await createDisabledApp({ logger: false })
+        const res = await disabledApp.inject({
+          method: 'POST',
+          url: EXCHANGE_CLAIM_URL,
+          payload: { pendingId, claim },
+        })
+        expect(res.statusCode).toBe(401)
+        await disabledApp.close()
       } finally {
         process.env['VAULT_HANDOFF_ENABLED'] = original
         vi.resetModules()

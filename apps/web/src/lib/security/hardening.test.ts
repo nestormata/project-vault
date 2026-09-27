@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   getExtensionPanelCspHeaders,
+  getHandoffSecurityHeaders,
   getLoginReasonMessage,
   getTrustedApiBase,
+  isHandoffPath,
   safeRedirectPath,
 } from './hardening.js'
 
@@ -59,6 +61,34 @@ describe('getExtensionPanelCspHeaders', () => {
 
     expect(headers['content-security-policy']).toContain("connect-src 'self'")
     expect(headers['content-security-policy']).not.toContain("connect-src 'none'")
+  })
+})
+
+describe('getHandoffSecurityHeaders (Story 60.3 AC4)', () => {
+  it('sets a Referrer-Policy header, alongside the same frame-protection headers as the app default', () => {
+    const headers = getHandoffSecurityHeaders()
+
+    expect(headers['referrer-policy']).toBe('strict-origin')
+    expect(headers['content-security-policy']).toBe("frame-ancestors 'none'")
+    expect(headers['x-frame-options']).toBe('DENY')
+  })
+})
+
+describe('isHandoffPath (Story 60.3 AC4 — precision requirement)', () => {
+  it('matches the /handoff route exactly', () => {
+    expect(isHandoffPath('/handoff')).toBe(true)
+  })
+
+  it('does not match a near-miss path with an extra prefix', () => {
+    expect(isHandoffPath('/handoff-admin')).toBe(false)
+  })
+
+  it('does not match a near-miss path with an extra path segment', () => {
+    expect(isHandoffPath('/api/v1/handoff')).toBe(false)
+  })
+
+  it('does not match a bare substring occurrence', () => {
+    expect(isHandoffPath('/some/handoff/nested')).toBe(false)
   })
 })
 
