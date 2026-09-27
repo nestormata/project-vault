@@ -146,6 +146,16 @@ describe('ensureFreshSession — AC-4 silent refresh', () => {
 
     expect(result).toEqual({ status: 'session_expired' })
   })
+
+  it('never throws when the refresh request itself fails at the network layer — falls through to session_expired', async () => {
+    writeSession(EXPIRED, envFor())
+    const fetchFn = vi.fn().mockRejectedValue(new TypeError('fetch failed'))
+
+    const result = await ensureFreshSession({ fetchFn, env: envFor() })
+
+    expect(result).toEqual({ status: 'session_expired' })
+    expect(readSession(envFor())).toEqual({ status: 'ok', session: EXPIRED })
+  })
 })
 
 describe('ensureFreshSession — not-logged-in / insecure-permissions distinguishability', () => {
