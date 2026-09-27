@@ -549,7 +549,7 @@ describe('loadExtension — fatal-equivalent failure logging (Task 4)', () => {
     // Story 20.8, Story 25.12 AC2/Task 2, Story 29.3 AC8/Task 1, Story 29.4 AC6/Task 1, Story
     // 20.11 AC1, Story 34.1 AC1/AC9, Story 35.1 AC1, Story 36.1 AC1/AC6, Story 37.1 AC1.3, Story
     // 39.1 AC8, Story 41.1, Story 56.1 AC1/AC4, Story 40.1 AC1/AC2/AC3/AC10, Story 57.1, Story
-    // 58.1, Story 20.12, Story 20.13, and Story 59.1 — host EXTENSION_API_VERSION is now 3.24.0
+    // 58.1, Story 20.12, Story 20.13, and Story 59.1 — host EXTENSION_API_VERSION is now 3.24.1 (Story 43.9 patch)
     // (see manifest.ts's EXTENSION_API_VERSION doc comment for the full version-bump history);
     // '3.25.0' is the above-host, same-major escape-eligible version. Kept one minor version
     // above whatever EXTENSION_API_VERSION currently is — a future bump must move this value

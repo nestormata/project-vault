@@ -2,6 +2,23 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.24.1 — 2026-09-27
+
+contract-hash: sha256:16e271aec98de2ab772d4bb80239abc10c59313e052f6823fb58fdf29d50d30a
+
+### Changed
+
+- Internal only (Story 43.9): `registerExtension()` now reads the deprecated `panelDataPaths`
+  manifest field once, from the manifest viewed as the untrusted input it is, validates it with
+  exactly the same rules, error codes and messages as before, and registers the validated value.
+  The registered manifest's `panelDataPaths` is unchanged: the same array (by reference) when
+  declared, `undefined` when omitted. No exported type or runtime behaviour changes, and the field
+  stays `@deprecated`.
+
+Per `docs/extension-api-versioning-policy.md`'s semver discipline, a change to the registration
+contract's implementation with no surface or behaviour change is a PATCH. The floor stays
+`>=3.0.0`.
+
 ## 3.24.0 — 2026-09-24
 
 contract-hash: sha256:e3fc889e498132eb769fe9348a368c8a5df39c3fe512e88f4a8025b088bf391d

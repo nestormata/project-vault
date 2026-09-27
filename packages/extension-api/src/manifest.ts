@@ -84,7 +84,7 @@ export type ExtensionManifest = {
    * a one-time warn log (mirroring `uiPanelSlots`' own fallback discipline). Each entry is a path
    * TEMPLATE, not a regex: `/`-separated segments, each either a literal `[a-z0-9-]+` token or a
    * `:param` placeholder, the whole template required to start with the literal prefix
-   * `/api/v1/` — validated by `registerExtension()`'s `validatePanelDataPathsShape()`. Only legal
+   * `/api/v1/` — validated by `registerExtension()`'s `readValidatedPanelDataPaths()`. Only legal
    * alongside `'ui-panel'` in `capabilities[]`. Unlike `uiPanelSlots`/`moduleActions`, this field
    * has NO `hooksFactory()`-callability cross-check — it gates a client-relay allowlist, not a
    * hook's existence (Story 25.12 AC3).
@@ -554,7 +554,11 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // type-checks and behaves exactly as before, and the floor stays `>=3.0.0` so every
 // already-shipped extension (including any real, currently-deployed CentralizeMe build) keeps
 // loading unmodified regardless.
-export const EXTENSION_API_VERSION = '3.24.0'
+// Story 43.9 AC-5 — bumped as a patch (3.24.0 -> 3.24.1): `registerExtension()` now reads the
+// deprecated `panelDataPaths` field once, from the manifest viewed as untrusted input, validates
+// it exactly as before, and passes the validated value through. No exported type, validation
+// rule, error code or message, or registered-manifest shape changes.
+export const EXTENSION_API_VERSION = '3.24.1'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built
