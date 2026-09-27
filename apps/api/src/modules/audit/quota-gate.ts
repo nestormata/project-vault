@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto'
 import { sql } from 'drizzle-orm'
 import { withOrg, type Tx } from '@project-vault/db'
 import { AuditEvent, OperationalEvent } from '@project-vault/shared'
@@ -322,6 +323,16 @@ async function runRateGateStatement(
 }
 
 /**
+ * AC-7's thundering-herd mitigation: the `Retry-After` seconds for a window that resets in
+ * `remainingMs`, plus 0-500 ms of jitter (uniform, 1 ms granularity), never below 1 s. The
+ * jitter only needs to be unpredictable enough to spread retries; a CSPRNG costs nothing here.
+ */
+export function retryAfterSecondsFor(remainingMs: number): number {
+  const jitterSeconds = randomInt(0, 501) / 1000
+  return Math.max(1, Math.ceil(remainingMs / 1000 + jitterSeconds))
+}
+
+/**
  * Story 22.2 AC-9 — mirrors recordAuditQuotaRefusalBestEffort() exactly: best-effort, on a
  * separate connection, called ONLY from the 429 error path AFTER the refusing transaction has
  * already rolled back. Returns the current `rate_window_reset_at` converted to a
@@ -347,11 +358,7 @@ export async function recordAuditRateRefusalBestEffort(
     const resetAt = rows[0]?.rate_window_reset_at
     if (!resetAt) return null
     const remainingMs = new Date(resetAt).getTime() - Date.now()
-    // Jitter for thundering-herd prevention on retry timing only — not a security-sensitive
-    // value, so Math.random() is the correct choice here, not crypto.randomInt/randomBytes.
-    const jitterSeconds = Math.random() * 0.5 // NOSONAR(typescript:S2245)
-    const retryAfterSeconds = Math.max(1, Math.ceil(remainingMs / 1000 + jitterSeconds))
-    return { retryAfterSeconds }
+    return { retryAfterSeconds: retryAfterSecondsFor(remainingMs) }
   } catch (error) {
     process.stdout.write(
       `${JSON.stringify({
