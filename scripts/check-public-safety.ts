@@ -159,6 +159,12 @@ const SAFE_LOCAL_ENDPOINT_FILES = new Set([
   // Story 25.9: new operator runbook document following docs/runbook.md's own established
   // convention of `curl http://localhost:3000/...` local-dev-verification examples (that file
   // has 21 such lines and is not itself flagged, since the checker only scans added lines).
+  // Story 60.1: new/changed test files reproducing the same already-documented
+  // `http://localhost:5173`/`CORS_ALLOWED_ORIGINS`/`ORIGIN` dev-only defaults already committed in
+  // .env.example and docker-compose.yml (both already exempt above) — not a new disclosure, just
+  // the checker's added-lines scan flagging the same repo-wide default in two more files.
+  'apps/web/src/hooks.server.test.ts',
+  'scripts/check-compose-config.test.ts',
 ])
 
 /**

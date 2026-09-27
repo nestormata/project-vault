@@ -17,7 +17,7 @@ vi.mock('$lib/server/auth-guard.js', async () => {
   }
 })
 
-import { handle } from './hooks.server.js'
+import { handle, checkHandoffCorsBootWarning } from './hooks.server.js'
 
 function makeEvent(pathname: string, cookieHeader: string | null = null) {
   const headers = new Headers()
@@ -241,5 +241,77 @@ describe('hooks.server handle', () => {
     const response = await handle({ event, resolve: echoResolve } as never)
 
     expect(await response.text()).toBe('<html lang="es">')
+  })
+})
+
+// AC4 (Story 60.1) — boot-time warning when handoff is enabled but apps/web's own
+// CORS_ALLOWED_ORIGINS has no non-PV origin (F1's "no PV-side log line" gap). Tested directly
+// against the extracted function, not only through hooks.server's module-scope call site, per
+// the story's own elicitation finding: the function itself must be pure/non-throwing/silent by
+// default, since a bare top-level call re-executes on every test-file import.
+describe('checkHandoffCorsBootWarning', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  })
+
+  it('warns when handoff is enabled and the allowlist contains only the PV origin', () => {
+    checkHandoffCorsBootWarning({
+      VAULT_HANDOFF_ENABLED: 'true',
+      CORS_ALLOWED_ORIGINS: 'http://localhost:5173',
+      ORIGIN: 'http://localhost:5173',
+    })
+
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    expect(warnSpy.mock.calls[0]?.[0]).toContain('[handoff] WARN')
+    expect(warnSpy.mock.calls[0]?.[0]).toContain('CORS_ALLOWED_ORIGINS')
+  })
+
+  it('warns when handoff is enabled and the allowlist is empty', () => {
+    checkHandoffCorsBootWarning({
+      VAULT_HANDOFF_ENABLED: 'true',
+      CORS_ALLOWED_ORIGINS: undefined,
+      ORIGIN: 'http://localhost:5173',
+    })
+
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not warn when handoff is enabled and a non-PV origin is present', () => {
+    checkHandoffCorsBootWarning({
+      VAULT_HANDOFF_ENABLED: 'true',
+      CORS_ALLOWED_ORIGINS: 'http://localhost:5173,https://app.centralizeme.com',
+      ORIGIN: 'http://localhost:5173',
+    })
+
+    expect(warnSpy).not.toHaveBeenCalled()
+  })
+
+  it('does not warn when handoff is disabled, regardless of the allowlist', () => {
+    checkHandoffCorsBootWarning({
+      VAULT_HANDOFF_ENABLED: 'false',
+      CORS_ALLOWED_ORIGINS: 'http://localhost:5173',
+      ORIGIN: 'http://localhost:5173',
+    })
+
+    expect(warnSpy).not.toHaveBeenCalled()
+  })
+
+  it('does not warn when VAULT_HANDOFF_ENABLED is unset', () => {
+    checkHandoffCorsBootWarning({
+      CORS_ALLOWED_ORIGINS: 'http://localhost:5173',
+      ORIGIN: 'http://localhost:5173',
+    })
+
+    expect(warnSpy).not.toHaveBeenCalled()
+  })
+
+  // Elicitation finding (Pre-mortem, integrated) — the fourth required case: with every relevant
+  // env var absent/undefined (the default state in a bare vitest run with no .env loaded), the
+  // call must throw nothing and print nothing.
+  it('throws nothing and warns nothing when every relevant env var is absent', () => {
+    expect(() => checkHandoffCorsBootWarning({})).not.toThrow()
+    expect(warnSpy).not.toHaveBeenCalled()
   })
 })

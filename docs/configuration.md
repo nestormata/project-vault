@@ -205,7 +205,7 @@ and no scheduling happens at all. Configure exactly one destination (path **xor*
 |---|---|---|---|
 | `NODE_ENV` | `development` | `production` | Selects strict production validation. Docker Compose forces `production` for the api and web services regardless of `.env`. |
 | `API_PORT` | `3000` | | Port the API listens on **inside** its process/container. Not the published host port. |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | recommended | Browser origins allowed to make credentialed requests; a literal `*` is rejected at boot. This is the literal schema default; under Compose it is derived from `PUBLIC_WEB_ORIGIN`. |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | recommended | Browser origins allowed to make credentialed requests; a literal `*` is rejected at boot. This is the literal schema default; under Compose it is derived from `PUBLIC_WEB_ORIGIN` for **both** the `api` and `web` services (Story 60.1 — `web` reads its own copy to CORS-guard the handoff prepare route). List only origins you actually trust to receive PV session cookies and vault data (e.g. CentralizeMe's real origin), never a broader set. |
 | `ENABLE_API_DOCS` | `false` (auto-on when `NODE_ENV` is development or test) | | Exposes `GET /api/v1/openapi.json` and the Swagger UI at `GET /api/v1/docs`. |
 
 ## Compose-only variables
@@ -215,7 +215,7 @@ Not part of the API's schema — read by `docker-compose*.yml` interpolation, so
 
 | Variable | Default | Used by | Purpose |
 |---|---|---|---|
-| `PUBLIC_WEB_ORIGIN` | `http://localhost:${WEB_HOST_PORT}` | `docker-compose.yml` | The exact origin browsers use. Feeds the api's `CORS_ALLOWED_ORIGINS`, the web service's `ORIGIN`, and `WEB_BASE_URL`. Required for any non-localhost deployment. |
+| `PUBLIC_WEB_ORIGIN` | `http://localhost:${WEB_HOST_PORT}` | `docker-compose.yml` | The exact origin browsers use. Feeds the api's `CORS_ALLOWED_ORIGINS`, the web service's `ORIGIN`, `WEB_BASE_URL`, and (via the same expression) the web service's own `CORS_ALLOWED_ORIGINS`. Required for any non-localhost deployment. |
 | `TRUST_PROXY` | `false` | `docker-compose.yml` | Trust `X-Forwarded-*` headers. Set `true` behind a reverse proxy. |
 | `TRUST_PROXY_HOPS` | `1` | `docker-compose.yml` | Number of proxies in front of the API, so the real client IP is used for rate limiting and audit logging. |
 | `POSTGRES_USER` | `postgres` | `db`, `migrate`, `admin-provision` | Superuser for the Postgres container itself. |

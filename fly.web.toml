@@ -12,6 +12,10 @@ primary_region = "iad"
   NODE_ENV = "production"
   # API_BASE_URL is set via `fly secrets set` (scripts/fly-setup.sh) to
   # http://project-vault-demo-api.internal:3000 — internal-only, never a public URL.
+  # Story 60.1: this demo topology has no CentralizeMe integration configured today, so there is
+  # no CORS_ALLOWED_ORIGINS entry here. A future CM integration on this Fly app would need
+  # CORS_ALLOWED_ORIGINS set via `fly secrets set` the same way API_BASE_URL is — list only the
+  # origin(s) you actually trust to receive PV session cookies and vault data.
 
 [http_service]
   internal_port = 3000
