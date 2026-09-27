@@ -12,16 +12,57 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 ## [1.3.0] - 2026-09-27
 
 Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.3.0`
-(aliases `1.3`, `1`, `latest`).
+(aliases `1.3`, `1`, `latest`). Extension API contract: `@project-vault/extension-api@3.24.1`;
+this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
+(`HOST_SUPPORTED_EXTENSION_API_RANGE`). CLI: `pvault-1.3.0.mjs` on this release's assets.
 
-### Upgrade notes
+### Upgrade notes (read before `docker compose pull`)
 
+- **Migrations 0094-0099 run automatically** via the `migrate` service. All six are additive
+  (four new tables, nullable or defaulted new columns, new indexes), and the migration guard
+  refuses none of them. None backfills existing rows. Migration 0098 builds a partial index on
+  `notification_queue`, which briefly blocks writes to that table in proportion to its size.
+  Images on `latest`, `1` or `1.3` pick these migrations up on the next pull.
+- **No new required environment variables.** Three new optional API variables tune the
+  scheduled-task extension hook: `MIN_SCHEDULED_TASK_INTERVAL_MINUTES` (default `1`),
+  `MAX_SCHEDULED_TASKS_PER_EXTENSION` (default `32`) and `SCHEDULED_TASK_MAX_CONCURRENCY`
+  (default `20`). `docker-compose.yml` does not forward them; to change one under Compose, add it
+  to the `api` service's `environment`.
 - **CLI:** new optional API variables `CLI_MINIMUM_SUPPORTED_VERSION` and `CLI_WITHDRAWN_VERSIONS`
   tighten the `pvault` version policy. Both are unset by default, and an invalid value fails boot.
   See [`docs/runbooks/cli-version-policy.md`](docs/runbooks/cli-version-policy.md).
+- **Backup and restore now run `pg_dump` and `psql` only from `/usr/bin`, `/usr/local/bin` or
+  `/bin`**, never from `$PATH`. The API image already installs them in `/usr/bin`. An API run
+  outside the container whose PostgreSQL clients live elsewhere (for example
+  `/usr/lib/postgresql/16/bin`) now fails backup and restore with `pg_dump not found in …`; link
+  the clients into one of those directories. See
+  [`docs/runbooks/backup-restore.md`](docs/runbooks/backup-restore.md).
+- **Fly.io demo scripts:** `scripts/fly-setup.sh` and `scripts/fly-reset.sh` now require
+  `VAULT_APP_PASSWORD` and no longer fall back to the migration's publicly known development
+  password.
+- **Handoff SSO (CentralizeMe):** `POST /api/v1/auth/handoff/prepare` now also returns a
+  single-use `claim`, which `/handoff` exchanges same-origin for the `handoff-confirm` cookie. The
+  existing cookie is still set, so a caller that ignores `claim` keeps working exactly as before.
 
 ### Added
 
+- **The `pvault` command-line client**, a new `@project-vault/cli` package. It needs Node.js 20
+  or newer on `PATH`; install it from this release's assets as described in
+  [`packages/cli/README.md` "From a release"](packages/cli/README.md#from-a-release-story-436).
+  - `pvault get <name>` prints one secret using a machine-user API key (`VAULT_API_KEY`), with
+    the same offline encrypted-cache fallback as the GitHub Action. It refuses to print to an
+    interactive terminal unless you pass `--stdout`. (#438)
+  - `pvault login` / `pvault logout` sign a human user in with email, password and TOTP. The
+    session is stored in a `0600` file under `~/.config/pvault` and refreshed silently. New
+    endpoints: `POST /api/v1/auth/cli-login`, `/cli/mfa/verify-login`, `/cli/refresh` and
+    `/cli/logout`. (#440)
+  - `pvault run --secret NAME[=ENV_VAR] … -- <command>` runs a command with secrets in its
+    environment, never on its command line. The fetch is all-or-nothing, and the child's exit code
+    and signal are passed through. `--secrets-fd` delivers the secrets as JSON on file descriptor
+    3 instead, keeping them out of `/proc/<pid>/environ`. (#442, #444)
+  - `pvault write-env --secret NAME … --output <path>` writes a named set of secrets to an
+    owner-only (`0600`) dotenv or shell file. It refuses to overwrite without `--force`, never
+    writes through a symlink, and warns when the target is not gitignored. (#443)
 - `pvault` now checks the server's CLI version policy before `get`, `run`, `write-env` and
   `login`. It prints a notice when it is older (or newer) than the server's release, warns below
   the minimum supported version, and refuses with exit code `29` when its exact version has been
@@ -40,6 +81,40 @@ Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.3.0`
   a session refresh, and prints how long to wait. It no longer reports that as a wrong password or
   an expired session, and never deletes the session file because of it. `pvault logout` now warns
   when a rate-limited logout left the session valid on the server.
+- Audit entries for secret reads made by `pvault` record which command asked for them
+  (`clientInvocation`, and for `run` the target command's basename as `clientTargetCommand`). An
+  invalid value is dropped and flagged, never failing the request. (#444)
+- Extension API 3.16.0 through 3.24.1 (see
+  [its changelog](packages/extension-api/CHANGELOG.md)):
+  - `oauthHandoff` hook: an extension can run an OAuth-style redirect and provider callback
+    through PV-hosted routes, limited to the origins in its manifest's `redirectOrigins`. (#415)
+  - Request state for extensions: the OAuth callback can persist state that a later module action
+    reads (`ModuleActionContext.requestState`) or consumes once
+    (`HostServices.extensionRequestState`), bound to the organization and identity. (#419)
+  - `scheduledTasks` manifest entries and an `onScheduledTask` hook run periodic background work
+    once per active organization, with an operator-tunable interval floor, task cap and
+    concurrency. (#418)
+  - `HostServices.monitoring.createServiceEndpoint` and the out-of-request
+    `listServiceEndpointsForScheduling`, which returns endpoint URLs unredacted so that the
+    extension can probe them; extensions must not log them. (#417, #420)
+  - `HostServices.notificationOriginator.enqueueNotificationForOrg`, usable outside a request,
+    with its own rate-limit budget. (#426)
+  - `HostServices.credentialSharing`: create, find, reveal, revoke and supersede external shares,
+    and list shares per credential or organization, with a per-organization sliding-window limit
+    on token lookups. (#431, #435)
+  - `publicRoute` hook: anonymous routes an extension declares in `anonymousRoutePaths`, behind
+    the `public-route` capability. Undeclared and denied paths return the same 404, and
+    redirects are rejected. (#435)
+  - `ActionResult.html` is now shown for every outcome, not only `ok`, after sanitization. (#447)
+
+### Changed
+
+- A module action result whose `html` is present but is not a string is now treated as
+  malformed and returns the generic `500`, instead of being mapped by its outcome. Such a value
+  was never type-valid. (#447)
+- `HostServices.monitoring`'s in-request methods reject a malformed `projectId`,
+  `serviceEndpointId` or `userId` with the typed `MonitoringInvalidServiceEndpointInputError`
+  instead of an unclassified database error. (#433)
 
 ### Fixed
 
@@ -51,6 +126,11 @@ Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.3.0`
   to complete this action. Please try again.", with retrying never helping — the panel dispatcher
   bypassed the app's refresh-on-401 path. It now refreshes the session and retries once
   automatically, or sends the user to the login page if the session is dead. (Story 61-1)
+- Browsers dropped the cross-site `handoff-confirm` cookie, so CentralizeMe handoff sign-in could
+  fail on a cross-site deployment. The new same-origin claim exchange (see Upgrade notes) sets the
+  cookie with `SameSite=Strict` intact. `/handoff` now sends `Referrer-Policy: strict-origin`, and
+  the claim is redacted from security-event logs. Migration 0099 adds the claim column.
+  (Story 60-3, #455)
 
 ### Security
 
@@ -63,6 +143,16 @@ Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.3.0`
 - The pinned `node:24-alpine` base image (API and web Docker images) is refreshed to clear
   CVE-2026-14456 (`libssl3`/`libcrypto3`, HIGH). A new guard test keeps every `FROM` line across
   the API, web and CI Dockerfiles pinned to one identical digest. (Story 64-1)
+- Outbound-URL checks (monitoring targets, audit-log forwarding, theme asset URLs) now also block
+  `0.0.0.0/8` and `::`, which reach loopback on Linux. Addresses are classified with `ipaddr.js`
+  behind a strict-format check, and IPv6 zone-ID forms fail closed. (Story 43-9, #457)
+- `pvault run` strips `VAULT_API_KEY` from the child's environment, disables Node diagnostic
+  reports, and never echoes a secret value in a spawn error. (#444)
+- Dependency supply chain: the high-severity advisory `GHSA-2883-xcg3-v3hh` (`js-yaml`, a
+  development-only transitive dependency) is patched, and the dependency audit in CI now blocks on
+  high-severity advisories (#423, #425). The crypto-adjacent packages (`argon2`, `bcrypt`,
+  `@fastify/jwt`, `fast-jwt`, `otpauth`) are exact-pinned, excluded from Dependabot's grouped
+  updates, and need code-owner review (#430, #434).
 
 ## [1.2.0] - 2026-09-10
 
