@@ -28,7 +28,7 @@ async function confirmAndExpectMfaChallenge(page: Page): Promise<void> {
   await page.getByRole('button', { name: CONFIRM_BUTTON_NAME }).click()
 
   // The confirm response's mfaRequired branch renders the existing, unmodified MfaLoginForm.
-  await expect(page.getByLabelText(/authenticator code/i)).toBeVisible()
+  await expect(page.getByLabel(/authenticator code/i)).toBeVisible()
 }
 
 // J28 — Story 30.5's own Testing Requirements: "No true end-to-end CM->PV browser test is
