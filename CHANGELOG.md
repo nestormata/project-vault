@@ -123,9 +123,10 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
   instead of an unclassified database error. (#433)
 - Deactivating or removing a user who initiated an unfinished rotation (`staged`, `promoted`,
   `stale_recovery` or legacy `in_progress`) is refused with `409 active_rotations` and changes
-  nothing, so a rotation is never left without its initiator. With `rotationHandling: "abandon"`
-  the same request abandons that user's `staged` and `stale_recovery` rotations (audited), keeps
-  `promoted` and `in_progress` ones for an admin to retire later, and returns
+  nothing, so no rotation is silently orphaned. With `rotationHandling: "abandon"` the same
+  request abandons that user's `staged` and `stale_recovery` rotations (audited), keeps
+  `promoted` and `in_progress` ones for an admin to retire later, then deactivates or removes the
+  user, and returns
   `abandonedRotationCount` and `heldRotationCount`. Settings → Users explains the refusal and
   offers to abandon the rotations and deactivate or remove the user. (Story 43-15, #460)
 
