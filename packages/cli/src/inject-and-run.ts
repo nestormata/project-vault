@@ -23,6 +23,7 @@
 import type { SecretRequestContext } from '@project-vault/agent'
 import { EXIT_CODES } from './exit-codes.js'
 import { checkEntryTargets, fetchAllOrNothing, type InjectEntry } from './fetch-secrets.js'
+import { ERROR_TEXT_MAX_CODE_POINTS, sanitizeServerText } from './sanitize-server-text.js'
 import { sanitizeForTerminal } from './sanitize.js'
 
 // Story 43.5 A2 — `InjectEntry` now lives in `fetch-secrets.ts`; re-exported so existing imports
@@ -302,7 +303,7 @@ export async function injectAndRun(
       resolve({
         ok: false,
         exitCode: EXIT_CODES.unexpected,
-        error: `Failed to run '${sanitizeForTerminal(command)}': ${sanitizeForTerminal(error.message)}`,
+        error: `Failed to run '${sanitizeForTerminal(command)}': ${sanitizeServerText(error.message, ERROR_TEXT_MAX_CODE_POINTS)}`,
       })
     })
 

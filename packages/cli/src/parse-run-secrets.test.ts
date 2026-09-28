@@ -52,3 +52,27 @@ describe('parseRunSecrets', () => {
     expect(result).toEqual({ ok: true, entries: [] })
   })
 })
+
+describe('parseRunSecrets — Story 43.13 AC-2 sweep: raw --secret values are identifier text', () => {
+  it('strips control and bidi characters from an invalid bare NAME echoed in the error', () => {
+    const result = parseRunSecrets(['bad\u202Ename\u001b[2J'])
+    expect(result).toEqual({
+      ok: false,
+      error: `--secret 'badname[2J': not a valid environment variable name. Supply an explicit rename: --secret "badname[2J=ENV_VAR_NAME".`,
+    })
+  })
+
+  it('strips them from a malformed NAME=ENV_VAR value', () => {
+    const result = parseRunSecrets(['=\u2066X'])
+    expect(!result.ok && result.error).toBe(
+      "--secret '=X': malformed — expected 'NAME=ENV_VAR', with both sides non-empty."
+    )
+  })
+
+  it('strips them from both the raw value and the invalid target name', () => {
+    const result = parseRunSecrets(['DB=BAD\u202E-NAME'])
+    expect(!result.ok && result.error).toBe(
+      "--secret 'DB=BAD-NAME': 'BAD-NAME' is not a valid environment variable name (must match ^[A-Za-z_][A-Za-z0-9_]*$)."
+    )
+  })
+})

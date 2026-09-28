@@ -416,6 +416,31 @@ describe('injectAndRun — AC-4: exact exit code / signal propagation', () => {
     }
   })
 
+  it('renders the async spawn-error message as capped one-line free text, the command as an identifier (Story 43.13 AC-2)', async () => {
+    const fakeChild = makeFakeChild()
+    const spawn = vi.fn().mockReturnValue(fakeChild)
+    const getSecret = vi.fn().mockResolvedValue(SPAWN_ERROR_TEST_SECRET_VALUE)
+    const parentProcess = makeFakeParentProcess()
+    const command = 'run\u202Eexe.sh'
+
+    const resultPromise = injectAndRun(
+      [{ credentialName: 'DATABASE_URL', envVarName: 'DATABASE_URL' }],
+      command,
+      [],
+      { getSecret, spawn, parentProcess }
+    )
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled())
+    fakeChild.emitError(new Error(`spawn x\u202Ey\nFAKE ${'f'.repeat(5000)}`))
+    const result = await resultPromise
+
+    const prefix = "Failed to run 'runexe.sh': "
+    const error = result.ok ? '' : result.error
+    expect(error.startsWith(`${prefix}spawn xy FAKE f`)).toBe(true)
+    expect([...error.slice(prefix.length)]).toHaveLength(500)
+    expect(error.endsWith('\u2026')).toBe(true)
+    expect(error).not.toContain('\n')
+  })
+
   it('a spawn() that throws synchronously resolves with a failure built from error.code only — never the thrown message, which can echo an env value (code review fix)', async () => {
     // Real Node's spawn() throws ERR_INVALID_ARG_VALUE for an env value containing a NUL byte,
     // and its message quotes the offending value verbatim.

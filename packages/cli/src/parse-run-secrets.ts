@@ -13,6 +13,7 @@
  */
 import type { InjectEntry } from './inject-and-run.js'
 import { isValidEnvVarIdentifier } from './reserved-env-vars.js'
+import { sanitizeForTerminal } from './sanitize.js'
 
 export type ParseRunSecretsSuccess = { ok: true; entries: InjectEntry[] }
 export type ParseRunSecretsFailure = { ok: false; error: string }
@@ -25,6 +26,9 @@ export type ParseRunSecretsResult = ParseRunSecretsSuccess | ParseRunSecretsFail
  */
 function parseOne(raw: string): InjectEntry | ParseRunSecretsFailure {
   const eqIndex = raw.indexOf('=')
+  // Story 43.13 AC-2 sweep — the raw flag value is identifier text echoed into error messages;
+  // only the printed copy is sanitized, never the parsed entry.
+  const safeRaw = sanitizeForTerminal(raw)
 
   if (eqIndex === -1) {
     // AC-1 edge case — a credential name with no valid env-var-identifier shape and no explicit
@@ -33,7 +37,7 @@ function parseOne(raw: string): InjectEntry | ParseRunSecretsFailure {
     if (!isValidEnvVarIdentifier(raw)) {
       return {
         ok: false,
-        error: `--secret '${raw}': not a valid environment variable name. Supply an explicit rename: --secret "${raw}=ENV_VAR_NAME".`,
+        error: `--secret '${safeRaw}': not a valid environment variable name. Supply an explicit rename: --secret "${safeRaw}=ENV_VAR_NAME".`,
       }
     }
     return { credentialName: raw, envVarName: raw }
@@ -47,14 +51,14 @@ function parseOne(raw: string): InjectEntry | ParseRunSecretsFailure {
   if (credentialName.length === 0 || envVarName.length === 0) {
     return {
       ok: false,
-      error: `--secret '${raw}': malformed — expected 'NAME=ENV_VAR', with both sides non-empty.`,
+      error: `--secret '${safeRaw}': malformed — expected 'NAME=ENV_VAR', with both sides non-empty.`,
     }
   }
 
   if (!isValidEnvVarIdentifier(envVarName)) {
     return {
       ok: false,
-      error: `--secret '${raw}': '${envVarName}' is not a valid environment variable name (must match ^[A-Za-z_][A-Za-z0-9_]*$).`,
+      error: `--secret '${safeRaw}': '${sanitizeForTerminal(envVarName)}' is not a valid environment variable name (must match ^[A-Za-z_][A-Za-z0-9_]*$).`,
     }
   }
 

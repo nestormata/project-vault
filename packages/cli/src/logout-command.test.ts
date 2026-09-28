@@ -155,3 +155,19 @@ describe('runLogout — Story 43.8 AC-7: a rate-limited logout is not a remote r
     expect(stderr).not.toContain('rate-limited')
   })
 })
+
+describe('runLogout — Story 43.13 AC-2: network-error text is free text', () => {
+  it('prints the error on one line, bidi stripped, capped at 500 code points', async () => {
+    writeSession(SAMPLE, envFor())
+    const streams = makeStreams()
+    const fetchFn = vi.fn().mockRejectedValue(new Error(`x\u202Ey\n${'w'.repeat(5000)}`))
+
+    await runLogout(streams, { fetchFn, env: envFor() })
+
+    const prefix = 'warning: could not reach the server to invalidate the session remotely: '
+    const warning = streams.stderrChunks.join('')
+    expect(warning.startsWith(`${prefix}xy w`)).toBe(true)
+    expect([...warning.slice(prefix.length, -1)]).toHaveLength(500)
+    expect(warning.endsWith('…\n')).toBe(true)
+  })
+})

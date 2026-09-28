@@ -90,7 +90,62 @@ describe('fetchAllOrNothing (extracted from inject-and-run.ts, Story 43.5 Task 3
   })
 })
 
+describe('fetchAllOrNothing — Story 43.13 AC-2: unexpected-error text is free text', () => {
+  const failWith = (thrown: unknown) => async () => {
+    throw thrown
+  }
+
+  it('strips bidi and renders multi-line text on one line', async () => {
+    const result = await fetchAllOrNothing([entry('A')], CONTEXT, {
+      getSecret: failWith(new Error('x\u202Egpj.exe\nFAKE: done')),
+    })
+    expect(!result.ok && result.error).toBe("Unexpected error fetching 'A': xgpj.exe FAKE: done")
+  })
+
+  it('caps a 5 000-code-point flood at 500 without cutting the prefix or name', async () => {
+    const prefix = "Unexpected error fetching 'A': "
+    const result = await fetchAllOrNothing([entry('A')], CONTEXT, {
+      getSecret: failWith(new Error('q'.repeat(5000))),
+    })
+    const error = result.ok ? '' : result.error
+    expect(error.startsWith(prefix)).toBe(true)
+    expect([...error.slice(prefix.length)]).toHaveLength(500)
+    expect(error.endsWith('\u2026')).toBe(true)
+  })
+
+  it('renders a whitespace-only message as an empty tail', async () => {
+    const result = await fetchAllOrNothing([entry('A')], CONTEXT, {
+      getSecret: failWith(new Error('   ')),
+    })
+    expect(!result.ok && result.error).toBe("Unexpected error fetching 'A': ")
+  })
+
+  it('sanitizes a thrown non-Error value via String(error)', async () => {
+    const result = await fetchAllOrNothing([entry('A')], CONTEXT, {
+      getSecret: failWith('plain string\u202E'),
+    })
+    expect(!result.ok && result.error).toBe("Unexpected error fetching 'A': plain string")
+  })
+
+  it('sends the raw credential name to getSecret while printing the stripped one (decision 6)', async () => {
+    const getSecret = vi.fn(failWith(new Error('boom')))
+    const result = await fetchAllOrNothing([entry('RAW\u202EKEY', 'RAW_KEY')], CONTEXT, {
+      getSecret,
+    })
+    expect(getSecret).toHaveBeenCalledWith('RAW\u202EKEY', CONTEXT)
+    expect(!result.ok && result.error).toBe("Unexpected error fetching 'RAWKEY': boom")
+  })
+})
+
 describe('checkEntryTargets (shared reserved/duplicate validation)', () => {
+  it("sanitizes a non-CLI caller's duplicate target name before echoing it (Story 43.13 AC-2 sweep)", () => {
+    expect(checkEntryTargets([entry('a', 'X\u202EY'), entry('b', 'x\u202Ey')], 'write')).toEqual({
+      ok: false,
+      exitCode: EXIT_CODES.usageError,
+      error: 'Duplicate environment variable target: xy',
+    })
+  })
+
   it('returns null for valid, distinct targets', () => {
     expect(checkEntryTargets([entry('A'), entry('B')], 'inject into')).toBeNull()
   })
