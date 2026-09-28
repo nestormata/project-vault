@@ -4,6 +4,7 @@ import {
   existsSync,
   lstatSync,
   readdirSync,
+  readFileSync,
   readlinkSync,
   statSync,
 } from 'node:fs'
@@ -243,6 +244,20 @@ export function runOverlayGuard(
 
 /** Story 43.11 violation-line suffix for a key declared on several lines: `:3`, `:3 and :7`,
  * `:3, :7 and :19`. */
+/**
+ * Story 43.12: the content of the overlay input `rootDir/relPath`, or `undefined` when it cannot
+ * be read. The one place the story-integrity guards read a whole overlay file (deferred-work.md,
+ * sprint-status.yaml); each CLI's `runOverlayGuard` reports why an input is unreadable before its
+ * scan runs, so a scan only needs "content or nothing".
+ */
+export function readOverlayFile(rootDir: string, relPath: string): string | undefined {
+  try {
+    return readFileSync(resolve(rootDir, relPath), 'utf-8')
+  } catch {
+    return undefined
+  }
+}
+
 export function formatLineRefs(lines: number[]): string {
   const refs = lines.map((line) => `:${line}`)
   if (refs.length <= 1) return refs.join('')

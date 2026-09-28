@@ -13,11 +13,9 @@
  * Pure, DB-free: a static scan of `_bmad-output/implementation-artifacts/deferred-work.md` using
  * the shared parser in `lib/deferred-work-ledger.ts`.
  */
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { type DwHeading, parseDwHeadings } from './lib/deferred-work-ledger.js'
-import { formatLineRefs, runOverlayGuard } from './lib/scan-utils.js'
+import { formatLineRefs, readOverlayFile, runOverlayGuard } from './lib/scan-utils.js'
 
 export const DEFERRED_WORK_PATH = '_bmad-output/implementation-artifacts/deferred-work.md'
 
@@ -54,12 +52,8 @@ function findDuplicates(headings: DwHeading[]): DuplicateDwId[] {
 /** Scans `deferred-work.md` under `rootDir`; an unreadable ledger yields no findings (the CLI
  * reports it as SKIPPED before ever calling this). */
 export function scanDeferredWorkIds(rootDir = process.cwd()): DeferredWorkIdFindings {
-  let content: string
-  try {
-    content = readFileSync(resolve(rootDir, DEFERRED_WORK_PATH), 'utf-8')
-  } catch {
-    return { headingCount: 0, duplicates: [], nonStandardLevels: [] }
-  }
+  const content = readOverlayFile(rootDir, DEFERRED_WORK_PATH)
+  if (content === undefined) return { headingCount: 0, duplicates: [], nonStandardLevels: [] }
 
   const headings = parseDwHeadings(content)
   return {

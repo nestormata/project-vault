@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -7,6 +7,7 @@ import {
   runScriptCli,
   useFixtureRoots,
   writeFixture,
+  writeFixtureDir,
   writeFixtureSymlink,
 } from './lib/fixture-test-helpers.js'
 import { trustedGit } from './lib/trusted-executable.js'
@@ -138,7 +139,7 @@ describe('check-deferred-work-ids CLI (Story 43.11 AC-4 report + AC-7 SKIPPED)',
 
   it('code review: FATAL (never OK) when deferred-work.md exists but cannot be read as a file', () => {
     const root = makeFixtureRoot()
-    mkdirSync(join(root, LEDGER_PATH), { recursive: true })
+    writeFixtureDir(root, LEDGER_PATH)
     const run = runScriptCli(SCRIPT, root)
     expect(run.status).toBe(1)
     expect(run.stderr).toContain(`FATAL: check-deferred-work-ids: ${LEDGER_PATH} cannot be read`)

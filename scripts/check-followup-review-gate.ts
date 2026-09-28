@@ -9,12 +9,11 @@
  *
  * Pure, DB-free: a static file scan over `_bmad-output/implementation-artifacts/`.
  */
-import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadSprintStatuses } from './check-story-status-sync.js'
 import { evaluateFollowupReviewGate } from './lib/followup-review-gate.js'
-import { toRepoPath } from './lib/scan-utils.js'
+import { readOverlayFile, toRepoPath } from './lib/scan-utils.js'
 import { resolveStoryFile } from './lib/story-files.js'
 
 export type FollowupReviewGateViolation = {
@@ -33,14 +32,10 @@ export function scanFollowupReviewGate(rootDir = process.cwd()): FollowupReviewG
   const sprintStatuses = loadSprintStatuses(root)
   if (!sprintStatuses) return []
 
-  let deferredWorkContent = ''
-  try {
-    deferredWorkContent = readFileSync(resolve(root, DEFERRED_WORK_PATH), 'utf-8')
-  } catch {
-    // deferred-work.md not found — can't verify tracking; fail open (don't block builds),
-    // matching check-psc-tbd-tracking.ts's existing convention.
-    return []
-  }
+  const deferredWorkContent = readOverlayFile(root, DEFERRED_WORK_PATH)
+  // deferred-work.md not found — can't verify tracking; fail open (don't block builds),
+  // matching check-psc-tbd-tracking.ts's existing convention.
+  if (deferredWorkContent === undefined) return []
 
   const violations: FollowupReviewGateViolation[] = []
   for (const [storyKey, status] of sprintStatuses) {

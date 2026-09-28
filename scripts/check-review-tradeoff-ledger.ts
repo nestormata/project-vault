@@ -19,7 +19,6 @@
  * deferred-work.md). Unchecked `- [ ] [Review]` deferral bullets stay check-story-review-deferrals'
  * contract (a follow-up story), not this one (a ledger entry).
  */
-import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseDevelopmentStatusComments, SPRINT_STATUS_PATH } from './check-story-status-sync.js'
@@ -31,7 +30,7 @@ import {
   parseDwEntries,
 } from './lib/deferred-work-ledger.js'
 import { isTrackedInDeferredWork } from './lib/followup-review-gate.js'
-import { runOverlayGuard, toRepoPath } from './lib/scan-utils.js'
+import { readOverlayFile, runOverlayGuard, toRepoPath } from './lib/scan-utils.js'
 import { resolveStoryFile } from './lib/story-files.js'
 
 export const DEFERRED_WORK_PATH = '_bmad-output/implementation-artifacts/deferred-work.md'
@@ -407,20 +406,12 @@ function storySources(root: string, storyKey: string, comment: BodyLine): TextSo
   return sources
 }
 
-function readOrEmpty(path: string): string {
-  try {
-    return readFileSync(path, 'utf-8')
-  } catch {
-    return ''
-  }
-}
-
 /** Scans the overlay under `rootDir` (the CLI reports unreadable inputs before calling this). */
 export function scanReviewTradeoffLedger(rootDir = process.cwd()): TradeoffFindings {
   const root = resolve(rootDir)
-  const ledger = loadLedger(readOrEmpty(resolve(root, DEFERRED_WORK_PATH)))
+  const ledger = loadLedger(readOverlayFile(root, DEFERRED_WORK_PATH) ?? '')
   const statusEntries = parseDevelopmentStatusComments(
-    readOrEmpty(resolve(root, SPRINT_STATUS_PATH))
+    readOverlayFile(root, SPRINT_STATUS_PATH) ?? ''
   )
   const findings: TradeoffFindings = { doneCount: 0, hitCount: 0, violations: [] }
   for (const entry of statusEntries) {

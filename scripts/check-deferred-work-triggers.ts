@@ -22,11 +22,9 @@
  * Pure, DB-free: a static scan of the private overlay's deferred-work.md using the shared parser in
  * `lib/deferred-work-ledger.ts`.
  */
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { type DwEntry, parseDwEntries } from './lib/deferred-work-ledger.js'
-import { formatLineRefs, runOverlayGuard } from './lib/scan-utils.js'
+import { formatLineRefs, readOverlayFile, runOverlayGuard } from './lib/scan-utils.js'
 
 export const DEFERRED_WORK_PATH = '_bmad-output/implementation-artifacts/deferred-work.md'
 
@@ -243,12 +241,8 @@ export function findTriggerViolations(content: string): TriggerViolation[] {
 /** Scans `deferred-work.md` under `rootDir` (the CLI reports an unreadable ledger before calling
  * this; here it yields no findings). */
 export function scanDeferredWorkTriggers(rootDir = process.cwd()): TriggerFindings {
-  let content: string
-  try {
-    content = readFileSync(resolve(rootDir, DEFERRED_WORK_PATH), 'utf-8')
-  } catch {
-    return { entryCount: 0, openCount: 0, violations: [] }
-  }
+  const content = readOverlayFile(rootDir, DEFERRED_WORK_PATH)
+  if (content === undefined) return { entryCount: 0, openCount: 0, violations: [] }
   return analyze(content)
 }
 

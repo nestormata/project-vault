@@ -1,5 +1,3 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   checkTriggerLabel,
@@ -12,6 +10,7 @@ import {
   runScriptCli,
   useFixtureRoots,
   writeFixture,
+  writeFixtureDir,
   writeFixtureSymlink,
 } from './lib/fixture-test-helpers.js'
 
@@ -256,7 +255,7 @@ describe('check-deferred-work-triggers CLI (AC-6)', () => {
 
   it('(iii) is FATAL when the ledger path is a directory', () => {
     const root = makeFixtureRoot()
-    mkdirSync(join(root, LEDGER_PATH))
+    writeFixtureDir(root, LEDGER_PATH)
     const run = runScriptCli(SCRIPT, root)
     expect(run.status).toBe(1)
     expect(run.stderr).toContain('FATAL')

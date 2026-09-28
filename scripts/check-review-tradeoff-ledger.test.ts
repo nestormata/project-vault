@@ -1,5 +1,3 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   extractReviewSections,
@@ -11,6 +9,7 @@ import {
   runScriptCli,
   useFixtureRoots,
   writeFixture,
+  writeFixtureDir,
   writeFixtureSymlink,
 } from './lib/fixture-test-helpers.js'
 
@@ -514,7 +513,7 @@ describe('check-review-tradeoff-ledger CLI (AC-6)', () => {
 
   it('(iii) is FATAL when an input is a directory', () => {
     const root = fixture({ sprint: sprint([]) })
-    mkdirSync(join(root, LEDGER_PATH))
+    writeFixtureDir(root, LEDGER_PATH)
     const run = runScriptCli(SCRIPT, root)
     expect(run.status).toBe(1)
     expect(run.stderr).toContain('FATAL')

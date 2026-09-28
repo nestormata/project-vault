@@ -16,8 +16,9 @@ import { basename, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   type DanglingSymlinkViolation,
-  runOverlayGuard,
+  readOverlayFile,
   reportDanglingSymlinks,
+  runOverlayGuard,
   toDanglingSymlinkViolation,
   toRepoPath,
   walkFiles,
@@ -124,13 +125,8 @@ export function parseDevelopmentStatus(yamlContent: string): Map<string, string>
 }
 
 export function loadSprintStatusEntries(rootDir: string): DevelopmentStatusEntry[] | null {
-  try {
-    return parseDevelopmentStatusEntries(
-      readFileSync(resolve(rootDir, SPRINT_STATUS_PATH), 'utf-8')
-    )
-  } catch {
-    return null
-  }
+  const content = readOverlayFile(rootDir, SPRINT_STATUS_PATH)
+  return content === undefined ? null : parseDevelopmentStatusEntries(content)
 }
 
 export function loadSprintStatuses(rootDir: string): Map<string, string> | null {
