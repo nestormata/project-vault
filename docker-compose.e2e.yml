@@ -42,7 +42,7 @@ services:
       CLI_MINIMUM_SUPPORTED_VERSION: '1.1.0'
       CLI_WITHDRAWN_VERSIONS: '1.2.1,1.2.2-rc.1'
   # Story 66.1 D-5: no host ports for mailpit under the e2e override, so two worktrees can run
-  # `make e2e` at the same time (the base file publishes fixed 127.0.0.1:8025/1025, which the
+  # `make e2e` at the same time (the base file publishes fixed loopback ports 8025/1025, which the
   # second stack cannot bind). No e2e journey reads mailpit from the host; the api reaches it on the
   # compose network. `!reset` needs Docker Compose >= 2.24 (scripts/e2e-stack.sh prints the version).
   mailpit:

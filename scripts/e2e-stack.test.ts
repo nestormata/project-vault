@@ -52,6 +52,7 @@ const HEX64 = /\b[0-9a-f]{64}\b/
 const FIRST_SECRET = 'SESSION_SECRET'
 const LATER_SECRET = 'MACHINE_JWT_SECRET'
 const E2E_JOB = 'e2e'
+const STUB_API_PORT = '39999'
 const ADD_MASK = '::add-mask::'
 const GITHUB_ACTIONS = 'GITHUB_ACTIONS'
 const BASE_COMPOSE = 'docker-compose.yml'
@@ -295,7 +296,7 @@ function runWait(env: Record<string, string>) {
   const base: Record<string, string> = {
     PATH: process.env.PATH ?? '',
     HOME: process.env.HOME ?? '',
-    API_HOST_PORT: '39999',
+    API_HOST_PORT: STUB_API_PORT,
     E2E_HEALTH_ATTEMPTS: '2',
     E2E_HEALTH_INTERVAL_SECONDS: '0',
   }
@@ -476,7 +477,7 @@ describe('Story 66.1 AC-4: readiness failure dump (stubbed docker/curl)', () => 
     const run = runWait({ STUB_PS: 'db running 0\napi running 0' })
     expect(run.status).toBe(1)
     const err = run.stderr
-    const final = 'e2e-stack: API never became ready on http://localhost:39999/health after'
+    const final = `e2e-stack: API never became ready on http://localhost:${STUB_API_PORT}/health after`
     expect(err).toContain('STUB-PS-A')
     expect(err).toContain('STUB-LOGS')
     expect(err.indexOf('STUB-PS-A')).toBeLessThan(err.indexOf('STUB-LOGS'))
