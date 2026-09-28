@@ -371,11 +371,11 @@ const DETECT_HARNESS = String.raw`
 set -euo pipefail
 ROOT=$(mktemp -d)
 trap 'rm -rf "$ROOT"' EXIT
-export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.invalid
-export GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.invalid
 git init -q --bare -b main "$ROOT/origin.git"
 git clone -q "$ROOT/origin.git" "$ROOT/work" 2>/dev/null
 cd "$ROOT/work"
+git config user.name t
+git config user.email test@invalid
 echo seed > seed.txt
 git add seed.txt
 git commit -q -m seed
