@@ -1,0 +1,252 @@
+import { globSync, readFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
+
+// Story 64.2 AC-3: every `uses:` ref in .github/workflows/**/*.yml and .github/actions/**/action.yml
+// must be immutable. A git tag or branch can be force-moved by anyone with push rights upstream
+// (the 2026-03 aquasecurity/trivy-action tag hijack), a 40-hex commit SHA cannot. Rules:
+//   (a) a non-first-party (owner other than `actions`/`github`) ref must be `@<40-hex commit SHA>`;
+//   (b) `@master`/`@main`/`@HEAD` is rejected for every owner, first-party included;
+//   (c) a SHA pin must carry a trailing `# vX.Y.Z` / `# <tag>` comment, which Dependabot needs to
+//       propose bumps and a reviewer needs to read the diff.
+// Local `./` actions and `docker://` refs are exempt. First-party `actions/*`/`github/*` refs may
+// stay on major tags by policy (Story 64.2 AC-6, see its Dev Notes for the rationale).
+
+const repositoryRoot = join(import.meta.dirname, '..')
+
+const FIRST_PARTY_OWNERS = new Set(['actions', 'github'])
+const BRANCH_REFS = new Set(['master', 'main', 'head'])
+const FULL_SHA_RE = /^[0-9a-f]{40}$/
+// A version-looking tag name after `#`: `v1`, `v4.6.0`, `1.6`, `v0.36.0`, `v2.0.0-rc.1`.
+const VERSION_TAG_RE = /^v?\d[\w.+-]*$/
+
+// Story 64.2 AC-2: a Trivy binary version must never be one of the TeamPCP-compromised releases.
+const COMPROMISED_TRIVY_VERSIONS = new Set(['v0.69.4', 'v0.69.5', 'v0.69.6'])
+
+export interface UsesRef {
+  file: string
+  line: number
+  ref: string
+  comment: string | undefined
+}
+
+export interface PinViolation {
+  file: string
+  line: number
+  ref: string
+  reason: string
+}
+
+/** Parses one YAML line as a `uses:` key — a step key (`- uses:`) or a mapping key (`uses:`) —
+ * returning its (optionally quoted) ref and trailing `#` comment, or undefined for any other line. */
+function parseUsesLine(raw: string): { ref: string; comment: string | undefined } | undefined {
+  let body = raw.trim()
+  if (body.startsWith('- ')) body = body.slice(2).trim()
+  if (!body.startsWith('uses:')) return undefined
+  body = body.slice('uses:'.length).trim()
+
+  const hashIndex = body.indexOf('#')
+  const comment = hashIndex === -1 ? undefined : body.slice(hashIndex).trim()
+  const value = (hashIndex === -1 ? body : body.slice(0, hashIndex)).trim()
+  const ref = value.replaceAll(/^["']|["']$/g, '')
+  return ref === '' ? undefined : { ref, comment }
+}
+
+/** Extracts every `uses:` ref (with its 1-based line number and trailing comment) from YAML text. */
+export function parseUsesRefs(file: string, text: string): UsesRef[] {
+  const refs: UsesRef[] = []
+  text.split('\n').forEach((raw, index) => {
+    const parsed = parseUsesLine(raw)
+    if (parsed) refs.push({ file, line: index + 1, ...parsed })
+  })
+  return refs
+}
+
+function hasVersionComment(comment: string | undefined): boolean {
+  return comment !== undefined && VERSION_TAG_RE.test(comment.slice(1).trim())
+}
+
+/** Applies rules (a)-(c) to one ref; returns the violation reason, or undefined when compliant. */
+export function checkRef(usesRef: UsesRef): string | undefined {
+  const { ref, comment } = usesRef
+  if (ref.startsWith('./') || ref.startsWith('docker://')) return undefined
+
+  const at = ref.lastIndexOf('@')
+  if (at <= 0) return 'no `@<ref>` — a remote action must name an explicit ref'
+  const owner = (ref.slice(0, at).split('/')[0] ?? '').toLowerCase()
+  const version = ref.slice(at + 1)
+
+  if (BRANCH_REFS.has(version.toLowerCase())) {
+    return `\`@${version}\` is a mutable branch ref (rejected for every owner, first-party included)`
+  }
+
+  if (!FULL_SHA_RE.test(version)) {
+    return FIRST_PARTY_OWNERS.has(owner)
+      ? undefined
+      : `third-party action \`@${version}\` is not a full 40-hex commit SHA`
+  }
+  return hasVersionComment(comment)
+    ? undefined
+    : 'SHA pin has no trailing `# vX.Y.Z` version comment'
+}
+
+export function findPinViolations(files: Record<string, string>): PinViolation[] {
+  const violations: PinViolation[] = []
+  for (const [file, text] of Object.entries(files)) {
+    for (const usesRef of parseUsesRefs(file, text)) {
+      const reason = checkRef(usesRef)
+      if (reason) violations.push({ file, line: usesRef.line, ref: usesRef.ref, reason })
+    }
+  }
+  return violations
+}
+
+// Every file the guard covers, relative to the repo root (`.github/actions/` need not exist).
+const GUARDED_GLOBS = ['.github/workflows/**/*.{yml,yaml}', '.github/actions/**/action.{yml,yaml}']
+
+/** Loads every workflow and composite-action file the guard covers, keyed by repo-relative path. */
+function loadRepoActionFiles(): Record<string, string> {
+  const paths = globSync(GUARDED_GLOBS, { cwd: repositoryRoot }).sort((a, b) => a.localeCompare(b))
+  return Object.fromEntries(
+    paths.map((path) => [path, readFileSync(resolve(repositoryRoot, path), 'utf-8')])
+  )
+}
+
+interface TrivySite {
+  file: string
+  line: number
+  ref: string
+  version: string | undefined
+}
+
+const indentOf = (line: string): number => line.length - line.trimStart().length
+
+/** Reads the `version:` input of the step whose `uses:` line is `lines[usesIndex]`, scanning the
+ * following lines until the step ends (a dedent, or the next `- ` list item). */
+function readStepVersion(lines: string[], usesIndex: number): string | undefined {
+  const stepIndent = indentOf(lines.at(usesIndex) ?? '')
+  for (const line of lines.slice(usesIndex + 1)) {
+    if (line.trim() === '') continue
+    if (indentOf(line) < stepIndent || line.trimStart().startsWith('- ')) return undefined
+    const versionMatch = /^version:\s*["']?([^"'\s#]+)/.exec(line.trim())
+    if (versionMatch) return versionMatch[1]
+  }
+  return undefined
+}
+
+/** Finds every aquasecurity/trivy-action step plus the `version:` input in that same step. */
+function findTrivySites(files: Record<string, string>): TrivySite[] {
+  return Object.entries(files).flatMap(([file, text]) => {
+    const lines = text.split('\n')
+    return parseUsesRefs(file, text)
+      .filter((usesRef) => usesRef.ref.toLowerCase().startsWith('aquasecurity/trivy-action@'))
+      .map((usesRef) => ({
+        file,
+        line: usesRef.line,
+        ref: usesRef.ref,
+        version: readStepVersion(lines, usesRef.line - 1),
+      }))
+  })
+}
+
+// Any 40-hex string is a syntactically valid pin; built rather than written out as a literal hash.
+const SHA = '0123456789abcdef'.repeat(3).slice(0, 40)
+
+describe('check-action-pins: fixture rules (Story 64.2 AC-3)', () => {
+  const run = (line: string) => findPinViolations({ 'fixture.yml': `steps:\n${line}\n` })
+
+  it('passes the cla.yml form: third-party SHA pin with a version comment', () => {
+    expect(
+      run(`      - uses: rdkcentral/contributor-assistant_github-action@${SHA} # v2.7.0`)
+    ).toEqual([])
+  })
+
+  it('passes a sub-path action SHA pin with a non-v tag comment', () => {
+    expect(run(`      - uses: superfly/flyctl-actions/setup-flyctl@${SHA} # 1.6`)).toEqual([])
+  })
+
+  it('passes first-party refs on major tags (policy, AC-6)', () => {
+    expect(run('      - uses: actions/checkout@v7')).toEqual([])
+    expect(run('        uses: github/codeql-action/init@v3')).toEqual([])
+  })
+
+  it('exempts local ./ actions and docker:// refs', () => {
+    expect(run('      - uses: ./.github/actions/setup')).toEqual([])
+    expect(run('      - uses: docker://alpine:3.20')).toEqual([])
+  })
+
+  it('(a) rejects a third-party tag ref', () => {
+    const violations = run('        uses: pnpm/action-setup@v6')
+    expect(violations).toHaveLength(1)
+    expect(violations[0]?.reason).toMatch(/not a full 40-hex commit SHA/)
+    expect(violations[0]?.line).toBe(2)
+  })
+
+  it('(a) rejects an exact third-party version tag and a short SHA', () => {
+    expect(run('        uses: aquasecurity/trivy-action@v0.36.0')).toHaveLength(1)
+    expect(run('        uses: aquasecurity/trivy-action@ed142fd # v0.36.0')).toHaveLength(1)
+  })
+
+  it('(a) rejects a quoted third-party tag ref', () => {
+    expect(run(`        uses: "docker/login-action@v4"`)).toHaveLength(1)
+  })
+
+  it('(b) rejects @master/@main/@HEAD for third-party and first-party owners', () => {
+    for (const ref of [
+      'aquasecurity/trivy-action@master',
+      'superfly/flyctl-actions/setup-flyctl@main',
+      'actions/checkout@main',
+      'github/codeql-action/init@HEAD',
+    ]) {
+      const violations = run(`      - uses: ${ref}`)
+      expect(violations, ref).toHaveLength(1)
+      expect(violations[0]?.reason, ref).toMatch(/mutable branch ref/)
+    }
+  })
+
+  it('(c) rejects a SHA pin with no version comment, or a non-version comment', () => {
+    for (const line of [
+      `      - uses: docker/login-action@${SHA}`,
+      `      - uses: docker/login-action@${SHA} # pinned`,
+      `      - uses: actions/checkout@${SHA}`,
+    ]) {
+      const violations = run(line)
+      expect(violations, line).toHaveLength(1)
+      expect(violations[0]?.reason, line).toMatch(/version comment/)
+    }
+  })
+
+  it('rejects a remote ref with no @ at all', () => {
+    expect(run('      - uses: pnpm/action-setup')).toHaveLength(1)
+  })
+})
+
+describe('check-action-pins: this repo (Story 64.2 AC-1/AC-3)', () => {
+  const files = loadRepoActionFiles()
+
+  it('finds the workflow files it is meant to guard', () => {
+    expect(Object.keys(files)).toContain('.github/workflows/ci.yml')
+    expect(parseUsesRefs('x', files['.github/workflows/ci.yml'] ?? '').length).toBeGreaterThan(0)
+  })
+
+  it('has no mutable or uncommented action refs', () => {
+    const report = findPinViolations(files).map((v) => `${v.file}:${v.line} ${v.ref} — ${v.reason}`)
+    expect(report).toEqual([])
+  })
+})
+
+describe('check-action-pins: trivy-action consistency (Story 64.2 AC-2)', () => {
+  const sites = findTrivySites(loadRepoActionFiles())
+
+  it('pins every trivy-action site to one SHA and one explicit, non-compromised Trivy binary', () => {
+    expect(sites.length).toBeGreaterThan(0)
+    expect(new Set(sites.map((site) => site.ref)).size).toBe(1)
+    for (const site of sites) {
+      expect(site.version, `${site.file}:${site.line} has no version: input`).toMatch(
+        /^v\d+\.\d+\.\d+$/
+      )
+      expect(COMPROMISED_TRIVY_VERSIONS.has(site.version ?? '')).toBe(false)
+    }
+    expect(new Set(sites.map((site) => site.version)).size).toBe(1)
+  })
+})

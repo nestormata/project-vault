@@ -36,7 +36,28 @@ updates:
           - "fast-jwt"
           - "otpauth"
 
+  # Story 64.2 — every third-party action is pinned `owner/repo@<40-hex sha> # vX.Y.Z`; Dependabot
+  # bumps the SHA and rewrites the trailing version comment in the same edit.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      # Split out, with its own label, so a bump to the scanner (trivy-action, the target of the
+      # 2026-03 tag hijack) or to the action that holds FLY_API_TOKEN (setup-flyctl) never rides
+      # along inside the routine PR below — a reviewer must see it called out (same reasoning as the
+      # npm crypto-adjacent group above).
+      ci-security-sensitive:
+        patterns:
+          - "aquasecurity/*"
+          - "superfly/*"
+        labels:
+          - "ci-security-sensitive"
+      routine-actions:
+        patterns:
+          - "*"
+        # Required, as for pnpm-workspace above: the catch-all group does not defer to a more
+        # specific earlier group without this list. Keep in sync with ci-security-sensitive.
+        exclude-patterns:
+          - "aquasecurity/*"
+          - "superfly/*"

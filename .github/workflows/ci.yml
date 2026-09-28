@@ -53,7 +53,7 @@ jobs:
           node-version: '24'
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 11.21.0
 
@@ -85,6 +85,9 @@ jobs:
 
       - name: Check base image digest lockstep guard (Story 64.1 AC-2)
         run: pnpm vitest run scripts/check-base-image-digest.test.ts
+
+      - name: Check third-party action SHA pins (Story 64.2 AC-3)
+        run: pnpm vitest run scripts/check-action-pins.test.ts
 
       # Story 43.11 AC-6.4: the story-integrity guards' own test suites. --dir scripts limits
       # vitest discovery to ./scripts (positional args are substring filters). The overlay guards
@@ -293,7 +296,7 @@ jobs:
           node-version: '24'
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 11.21.0
 
@@ -420,7 +423,7 @@ jobs:
           node-version: '24'
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 11.21.0
 
@@ -488,7 +491,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 11.21.0
 
@@ -586,14 +589,14 @@ jobs:
       # stale on the last passing run.
       - name: SonarCloud Scan
         if: ${{ !cancelled() }}
-        uses: SonarSource/sonarqube-scan-action@v8.2.2
+        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
       - name: SonarCloud Quality Gate
         if: ${{ !cancelled() }}
-        uses: SonarSource/sonarqube-quality-gate-action@v1.2.1
+        uses: SonarSource/sonarqube-quality-gate-action@7a5fffe8e523c40e0c740b6bc2712ab503e52efa # v1.2.1
         with:
           pollingTimeoutSec: 600
         env:
@@ -618,12 +621,12 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           driver: docker-container
 
       - name: Build API image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/api/Dockerfile
@@ -641,7 +644,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=api-${{ matrix.arch }}
 
       - name: Build web image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/web/Dockerfile
@@ -656,7 +659,7 @@ jobs:
       # amd64 is the primary deployment target; arm64 build success is the validation.
       - name: Load API image for size check
         if: matrix.arch == 'amd64'
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/api/Dockerfile
@@ -669,7 +672,7 @@ jobs:
 
       - name: Load web image for size check
         if: matrix.arch == 'amd64'
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/web/Dockerfile
@@ -712,8 +715,10 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          # Pinned Trivy binary (trivy-action v0.36.0's default); never v0.69.4-v0.69.6 (Story 64.2).
+          version: 'v0.70.0'
           scan-type: fs
           scan-ref: .
           format: table
@@ -739,7 +744,7 @@ jobs:
           node-version: '24'
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 11.21.0
 
