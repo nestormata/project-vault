@@ -151,6 +151,41 @@ describe('extractReviewSections (AC-1.2 a/a2)', () => {
     expect(titles(content)).toEqual([REVIEW_HEADING, '### Completion Notes List'])
   })
 
+  it.each([
+    '## Review Findings',
+    '### Review Findings (bmad-code-review, 2026-09-27)',
+    '### Review Findings (Second Pass)',
+    '## Review Findings Rerun',
+    '### Rerun Review Findings',
+    '### Review Triage Log',
+    '## Senior Developer Review (AI)',
+    '## Senior Developer Review (AI) - 2026-09-27',
+    '## Senior Developer Review (AI) — 2026-09-27',
+    '### Security review (auth/crypto)',
+    '## Code Review',
+    '### 2026-09-27 — Review pass',
+    '### Post-implementation code review (this session)',
+    '### REVIEW',
+  ])('scans the real review heading %s', (heading) => {
+    expect(titles(`${heading}\nx\n`)).toEqual([heading])
+  })
+
+  it.each([
+    '## Next Epic Preview',
+    '### Step 7: Next Epic Preview',
+    '### AC-5: Import — Parse & Preview',
+    '### Reviewed files',
+    '## Open Questions (for the reviewer)',
+    '### Reviews are the quality engine',
+    '### Why not an extension of check-story-review-deferrals',
+    '### Mandatory `followup_review_recommended` sweep',
+    '### Post-review Chrome re-verification',
+    '### Adversarial-Review Hardening (Read Before Coding)',
+    '### 2. [Low] Two code-review notes',
+  ])('does not scan %s ("review" joined to letters, digits, "_" or "-")', (heading) => {
+    expect(titles(`${heading}\nleft unfixed\n`)).toEqual([])
+  })
+
   it('keeps nested subsections inside their parent and ends at the same or a higher level', () => {
     const content = '## Review\na\n### Action Items\nb\n## Dev Notes\nc\n'
     expect(lineTexts(content)).toEqual([['a', '### Action Items', 'b']])

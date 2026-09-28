@@ -189,6 +189,17 @@ describe('extractDwCitations (Story 43.12 AC-2 rule 3)', () => {
     ).toEqual(['DW-344', 'DW-344', 'DW-344', 'DW-23.2-1', 'DW-0344', 'DW-5'])
   })
 
+  it('splits ranges and joined pairs into both IDs (DW-355..DW-391, DW-318-DW-319)', () => {
+    expect(extractDwCitations('DW-355..DW-391 and DW-318-DW-319; DW-23.2-1.DW-7')).toEqual([
+      'DW-355',
+      'DW-391',
+      'DW-318',
+      'DW-319',
+      'DW-23.2-1',
+      'DW-7',
+    ])
+  })
+
   it('ignores lowercase and in-word mentions', () => {
     expect(extractDwCitations('dw-5 XDW-6 DW- ')).toEqual([])
   })

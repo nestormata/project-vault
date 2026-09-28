@@ -175,9 +175,11 @@ export function parseDwEntries(content: string): DwEntry[] {
 }
 
 /** Story 43.12 AC-2 rule 3: every `DW-<id>` cited in `text`, trimmed like a heading ID
- * (`DW-344.` -> `DW-344`); compare them on `normalizeDwId`. */
+ * (`DW-344.` -> `DW-344`); compare them on `normalizeDwId`. A `DW-` right after `.`/`-` starts a
+ * new citation, so `DW-355..DW-391` and `DW-318-DW-319` each cite both IDs (the ID run would
+ * otherwise swallow the second one). */
 export function extractDwCitations(text: string): string[] {
-  return [...text.matchAll(DW_CITATION)]
+  return [...text.replaceAll(/([.-])(?=DW-)/g, '$1 ').matchAll(DW_CITATION)]
     .map((match) => idToken(match[1] as string))
     .filter((token) => token !== '')
     .map((token) => `DW-${token}`)

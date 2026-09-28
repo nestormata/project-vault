@@ -6,8 +6,9 @@
  * every unfixed finding gets a `deferred-work.md` entry; this is the CI half of that rule.
  *
  * For every `done` story key (`^\d+-\d+[a-z]?-`), the review text is the union of the story
- * file's review sections (level 2-4 headings matching /review/i, minus elicitation / pre-mortem /
- * red team), its Completion Notes section, and its sprint-status.yaml inline comment. FATAL:
+ * file's review sections (level 2-4 headings with the standalone word "review", minus
+ * elicitation / pre-mortem / red team), its Completion Notes section, and its sprint-status.yaml
+ * inline comment. FATAL:
  * - a closed trade-off phrase (`TRADEOFF_PHRASES`, or a severity count followed by an unfixed
  *   word) with no DW entry tracking the story: a `source_spec:` naming `<key>.md` /
  *   `spec-<key>.md`, the key in a `### DW-` heading, or a cited `DW-<id>` whose entry names it;
@@ -210,10 +211,17 @@ function parseHeading(line: string): Heading | undefined {
   return { level: (marks[1] as string).length, title }
 }
 
+/**
+ * "review" as a standalone word: not joined to a letter, digit, `_` or `-` on either side, so
+ * "Preview", "Reviewed", "reviewer", `followup_review_recommended`, `check-story-review-deferrals`
+ * and "post-review" are not review headings (code review, 43-12: a bare /review/i matched them).
+ */
+const REVIEW_WORD = /(?<![\p{L}\p{N}_-])review(?![\p{L}\p{N}_-])/iu
+
 function isScannedTitle(heading: Heading): boolean {
   if (heading.level < 2 || heading.level > 4) return false
   if (/completion notes/i.test(heading.title)) return true
-  return /review/i.test(heading.title) && !/elicitation|pre-?mortem|red team/i.test(heading.title)
+  return REVIEW_WORD.test(heading.title) && !/elicitation|pre-?mortem|red team/i.test(heading.title)
 }
 
 /** AC-1.2 (a)/(a2): the story file's review and Completion Notes sections, fenced lines left out. */
