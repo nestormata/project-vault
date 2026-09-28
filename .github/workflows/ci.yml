@@ -609,7 +609,7 @@ jobs:
   docker-build:
     name: Docker Build (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -643,9 +643,10 @@ jobs:
           IMAGES_CHANGED=false
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             git fetch --no-tags origin "$BASE_REF"
-            CHANGED=$(git diff --name-only "origin/${BASE_REF}...HEAD")
+            CHANGED=$(git diff --name-only --no-renames "origin/${BASE_REF}...HEAD")
             for INPUT in apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci .dockerignore \
-              apps/api/docker-entrypoint.sh pnpm-lock.yaml .trivyignore; do
+              apps/api/docker-entrypoint.sh pnpm-lock.yaml pnpm-workspace.yaml \
+              scripts/materialize-deploy-runtime.mjs .trivyignore; do
               if grep -Fxq -- "$INPUT" <<<"$CHANGED"; then
                 echo "Image input changed: $INPUT"
                 IMAGES_CHANGED=true

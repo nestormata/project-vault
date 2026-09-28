@@ -267,9 +267,9 @@ jobs:
           # The digest was pushed by buildx's docker-container driver and never loaded into the
           # local daemon: read it straight from the registry.
           TRIVY_IMAGE_SRC: remote
-          # Same job token the "Log in to GHCR" step uses; no new secret, no wider permission.
-          TRIVY_USERNAME: ${{ github.actor }}
-          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          # Registry auth comes from the Docker config the "Log in to GHCR" step wrote, which is
+          # scoped to ghcr.io. TRIVY_USERNAME/TRIVY_PASSWORD are deliberately not set: Trivy would
+          # offer them to every registry it contacts, including its vulnerability-DB mirrors.
         with:
           # Pinned Trivy binary (trivy-action v0.36.0's default); never v0.69.4-v0.69.6 (Story 64.2).
           version: 'v0.70.0'
@@ -291,9 +291,9 @@ jobs:
           # The digest was pushed by buildx's docker-container driver and never loaded into the
           # local daemon: read it straight from the registry.
           TRIVY_IMAGE_SRC: remote
-          # Same job token the "Log in to GHCR" step uses; no new secret, no wider permission.
-          TRIVY_USERNAME: ${{ github.actor }}
-          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          # Registry auth comes from the Docker config the "Log in to GHCR" step wrote, which is
+          # scoped to ghcr.io. TRIVY_USERNAME/TRIVY_PASSWORD are deliberately not set: Trivy would
+          # offer them to every registry it contacts, including its vulnerability-DB mirrors.
         with:
           # Pinned Trivy binary (trivy-action v0.36.0's default); never v0.69.4-v0.69.6 (Story 64.2).
           version: 'v0.70.0'

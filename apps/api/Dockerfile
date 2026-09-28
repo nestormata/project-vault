@@ -354,7 +354,9 @@ RUN set -eu; \
     printf '%s\n' 'packages:' '  - packages/db' 'verifyDepsBeforeRun: false' > "$RUNTIME/pnpm-workspace.yaml"; \
     test -f "$RUNTIME/packages/db/dist/scripts/guarded-migrate.js"; \
     test -f "$RUNTIME/packages/db/dist/migrations/meta/_journal.json"; \
-    ! find "$RUNTIME" -path '*/node_modules/*' \( -name drizzle-kit -o -name tsx -o -name esbuild -o -name '@esbuild' \) | grep -q .
+    if find "$RUNTIME" -path '*/node_modules/*' \( -name drizzle-kit -o -name tsx -o -name esbuild -o -name '@esbuild' \) | grep -q .; then \
+      echo "migrate runtime still contains dev tooling (drizzle-kit/tsx/esbuild)" >&2; exit 1; \
+    fi
 
 # Story 9.10 AC-1/AC-2 + Story 64.3: the `migrate` image's build target — a fresh node base with
 # only the migration runtime above plus pnpm (the invocation contract), no compiler toolchain,

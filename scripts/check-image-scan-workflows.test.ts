@@ -60,6 +60,8 @@ const IMAGE_INPUTS = [
   '.dockerignore',
   'apps/api/docker-entrypoint.sh',
   LOCKFILE,
+  'pnpm-workspace.yaml',
+  'scripts/materialize-deploy-runtime.mjs',
   TRIVYIGNORE,
 ]
 
@@ -214,7 +216,9 @@ describe('Story 64.3 AC-3: PR-time image scan in ci.yml docker-build', () => {
   it('has an image-input change-detection step covering every image input', () => {
     expect(detect, "a step with id 'image-inputs' must exist").toBeDefined()
     expect(detect?.run).toMatch(/git fetch[^\n]*origin "\$BASE_REF"/)
-    expect(detect?.run).toMatch(/git diff --name-only "origin\/\$\{BASE_REF\}\.\.\.HEAD"/)
+    expect(detect?.run).toMatch(
+      /git diff --name-only --no-renames "origin\/\$\{BASE_REF\}\.\.\.HEAD"/
+    )
     expect(detect?.run).toMatch(/images_changed=/)
     for (const input of IMAGE_INPUTS) expect(detect?.run).toContain(input)
   })

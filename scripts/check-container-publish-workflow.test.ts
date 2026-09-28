@@ -316,9 +316,11 @@ describe('Story 64.3: release vulnerability gate before alias promotion', () => 
   })
 
   it('pulls from GHCR with the job token only: no new secret, no wider permissions', () => {
+    // Auth comes from the ghcr.io-scoped Docker config the login step writes; explicit Trivy
+    // credentials would be offered to every registry Trivy contacts (its DB mirrors included).
     for (const scan of scans) {
-      expect(String(scan.env?.TRIVY_USERNAME)).toMatch(/^\$\{\{\s*github\.actor\s*\}\}$/)
-      expect(String(scan.env?.TRIVY_PASSWORD)).toMatch(/^\$\{\{\s*secrets\.GITHUB_TOKEN\s*\}\}$/)
+      expect(scan.env?.TRIVY_USERNAME).toBe(undefined)
+      expect(scan.env?.TRIVY_PASSWORD).toBe(undefined)
     }
     expect(jobs['build-publish']?.permissions).toEqual({
       contents: 'read',

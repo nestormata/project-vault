@@ -79,7 +79,8 @@ description.
         release rather than at the release gate). **Blocking**
         only on a PR that changes an image input (`apps/api/Dockerfile`, `apps/web/Dockerfile`,
         `Dockerfile.ci`, `.dockerignore`, `apps/api/docker-entrypoint.sh`, `pnpm-lock.yaml`,
-        `.trivyignore`). On every other PR and on pushes to `main` it is **advisory**: a warning
+        `pnpm-workspace.yaml`, `scripts/materialize-deploy-runtime.mjs`, `.trivyignore`; renames
+        count as a change to both paths). On every other PR and on pushes to `main` it is **advisory**: a warning
         annotation and a green job, because an unrelated PR must not go red the morning a new
         upstream CVE is published, and nightly is the gate on `main`.
       - **Release** (`container-publish.yml`): `api`, `migrate` and `web` by pushed digest, on
