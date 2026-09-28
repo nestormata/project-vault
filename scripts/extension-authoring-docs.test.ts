@@ -71,7 +71,14 @@ export function outcomesMissingFromSection(
   if (section === undefined) {
     throw new Error(`section "${heading}" is missing from the authoring guide`)
   }
-  return outcomes.filter((outcome) => !section.includes(`| \`${outcome}\` |`))
+  // Compare trimmed cells so Prettier's column padding (`| `ok`                | 200 |`) still matches.
+  const cells = new Set(
+    section
+      .split('\n')
+      .filter((line) => line.trimStart().startsWith('|'))
+      .flatMap((line) => line.split('|').map((cell) => cell.trim()))
+  )
+  return outcomes.filter((outcome) => !cells.has(`\`${outcome}\``))
 }
 
 /** GitHub-style heading slug: lowercase, punctuation dropped, spaces to hyphens. */

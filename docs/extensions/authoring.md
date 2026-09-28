@@ -351,13 +351,13 @@ re-renders the panel from the `ActionResult` it returns.
 
 What the caller gets for each `outcome`:
 
-| `outcome` | Status | `message` shown | `html` rendered |
-|---|---|---|---|
-| `ok` | 200 | yes, only when no `html` is returned | yes, replaces the panel |
-| `validation_failed` | 400 | yes (required) | yes, replaces the panel |
-| `denied` | 403 | **never**, a fixed generic message is shown | yes, replaces the panel |
-| `conflict` | 409 | yes (a generic "Conflict" if omitted) | yes, replaces the panel |
-| `error` | 500 | n/a (no field), a fixed generic message is shown | yes, replaces the panel |
+| `outcome`           | Status | `message` shown                                  | `html` rendered         |
+| ------------------- | ------ | ------------------------------------------------ | ----------------------- |
+| `ok`                | 200    | yes, only when no `html` is returned             | yes, replaces the panel |
+| `validation_failed` | 400    | yes (required)                                   | yes, replaces the panel |
+| `denied`            | 403    | **never**, a fixed generic message is shown      | yes, replaces the panel |
+| `conflict`          | 409    | yes (a generic "Conflict" if omitted)            | yes, replaces the panel |
+| `error`             | 500    | n/a (no field), a fixed generic message is shown | yes, replaces the panel |
 
 - **Non-empty `html` is sanitized by the host (DOMPurify) and replaces the panel container on
   every outcome**, failures included; an empty string is ignored. On a failure the status line
