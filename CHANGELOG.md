@@ -43,6 +43,12 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
 - **Handoff SSO (CentralizeMe):** `POST /api/v1/auth/handoff/prepare` now also returns a
   single-use `claim`, which `/handoff` exchanges same-origin for the `handoff-confirm` cookie. The
   existing cookie is still set, so a caller that ignores `claim` keeps working exactly as before.
+- **Scripts that deactivate or remove users** (`POST /api/v1/org/users/:userId/deactivate`,
+  `DELETE /api/v1/org/users/:userId`) now get `409` with `error: "active_rotations"` and the
+  blocking `rotationIds` when the user initiated an unfinished rotation; before 1.3.0 the request
+  succeeded and orphaned the rotation. Finish or abandon those rotations first, or send
+  `{"rotationHandling": "abandon"}` (the only accepted value; anything else returns `422`). A
+  `409` with `code: "rotation_busy"` means a rotation was being changed at that moment; retry.
 
 ### Added
 
@@ -115,6 +121,13 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
 - `HostServices.monitoring`'s in-request methods reject a malformed `projectId`,
   `serviceEndpointId` or `userId` with the typed `MonitoringInvalidServiceEndpointInputError`
   instead of an unclassified database error. (#433)
+- Deactivating or removing a user who initiated an unfinished rotation (`staged`, `promoted`,
+  `stale_recovery` or legacy `in_progress`) is refused with `409 active_rotations` and changes
+  nothing, so a rotation is never left without its initiator. With `rotationHandling: "abandon"`
+  the same request abandons that user's `staged` and `stale_recovery` rotations (audited), keeps
+  `promoted` and `in_progress` ones for an admin to retire later, and returns
+  `abandonedRotationCount` and `heldRotationCount`. Settings → Users explains the refusal and
+  offers to abandon the rotations and deactivate or remove the user. (Story 43-15, #460)
 
 ### Fixed
 
@@ -153,6 +166,10 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
   high-severity advisories (#423, #425). The crypto-adjacent packages (`argon2`, `bcrypt`,
   `@fastify/jwt`, `fast-jwt`, `otpauth`) are exact-pinned, excluded from Dependabot's grouped
   updates, and need code-owner review (#430, #434).
+- Every third-party GitHub Action in every workflow is pinned to a full commit SHA with its
+  version in a comment, and a CI guard (`scripts/check-action-pins.test.ts`) fails any tag-pinned
+  one; first-party `actions/*` stay on major tags. The Trivy scanner binary is pinned too.
+  (Story 64-2, #462)
 
 ## [1.2.0] - 2026-09-10
 
