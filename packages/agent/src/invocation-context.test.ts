@@ -19,7 +19,8 @@ describe('encodeTargetCommand (Story 43.4 AC-3)', () => {
     ['my tool', 'my%20tool'],
     ["weird!'()*", 'weird%21%27%28%29%2A'],
     ['a+b', 'a%2Bb'],
-    ['line\nbreak', 'line%0Abreak'],
+    // Story 43.13 AC-4.1 — control/format characters are stripped before encoding (was `line%0Abreak`).
+    ['line\nbreak', 'linebreak'],
   ])('percent-encodes %j to a server-acceptable token', (input, expected) => {
     const encoded = encodeTargetCommand(input)
     expect(encoded).toBe(expected)
@@ -42,6 +43,21 @@ describe('encodeTargetCommand (Story 43.4 AC-3)', () => {
     const encoded = encodeTargetCommand('bad\uD800name')
     expect(encoded).toBe('bad%EF%BF%BDname')
     expect(encoded).toMatch(SERVER_PATTERN)
+  })
+
+  it.each([
+    ['run\u202Eexe.sh', 'runexe.sh'],
+    ['A\u200Bb\u00ADc\u{E0001}d.sh', 'Abcd.sh'],
+    ['\u200B\u200B', ''],
+  ])(
+    'strips terminal-unsafe characters from %j before encoding (Story 43.13 AC-4.1)',
+    (input, expected) => {
+      expect(encodeTargetCommand(input)).toBe(expected)
+    }
+  )
+
+  it('still substitutes U+FFFD for a lone surrogate after stripping (Story 43.13 AC-4.1)', () => {
+    expect(encodeTargetCommand('\u202E\uD800')).toBe('%EF%BF%BD')
   })
 
   it('returns an empty string for an empty command', () => {
@@ -79,6 +95,12 @@ describe('buildInvocationContextHeaders (Story 43.4 AC-3)', () => {
     expect(buildInvocationContextHeaders({ invocation: 'run', targetCommand: '' })).toEqual({
       'x-vault-invocation': 'run',
     })
+  })
+
+  it('omits the target-command header when the command is only format characters (Story 43.13 AC-4.1)', () => {
+    expect(
+      buildInvocationContextHeaders({ invocation: 'run', targetCommand: '\u200B\u200B' })
+    ).toEqual({ 'x-vault-invocation': 'run' })
   })
 
   it('drops an invocation label outside the closed allowlist (a plain-JS caller bypassing the type) rather than sending it', () => {

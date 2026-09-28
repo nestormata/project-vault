@@ -495,6 +495,11 @@ describe('GET /api/v1/machine/projects/:projectId/credentials/:name/value', () =
       ['newline', { 'x-vault-invocation': 'run', 'x-vault-target-command': 'a%0Ab' }],
       ['oversized', { 'x-vault-invocation': 'run', 'x-vault-target-command': 'a'.repeat(500) }],
       ['malformed', { 'x-vault-invocation': 'run', 'x-vault-target-command': '%E0%A4%A' }],
+      // Story 43.13 AC-4.2 — a bidi override is dropped from the audit row; the reveal still succeeds.
+      [
+        'bidi-override',
+        { 'x-vault-invocation': 'run', 'x-vault-target-command': 'run%E2%80%AEexe.sh' },
+      ],
     ])(
       'an invalid header (%s) never fails the reveal — field dropped, rejection flagged',
       async (label, headers) => {
