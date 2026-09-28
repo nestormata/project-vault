@@ -1,12 +1,11 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import journal from '../../../../packages/db/src/migrations/meta/_journal.json' with { type: 'json' }
 import { JOB_NAME as SCHEDULED_TASK_JOB_NAME } from '../workers/extension-scheduled-tasks.js'
 import { SCHEDULED_TASK_WATCHDOG_JOB_NAME } from '../workers/extension-scheduled-tasks-watchdog.js'
 
-const MAIN_TS_PATH = resolve(process.cwd(), 'src/main.ts')
-const SRC_DIR = resolve(process.cwd(), 'src')
+const SRC_DIR = resolve(import.meta.dirname, '..')
 const MAIN_TS_MODULE_PATH = resolve(import.meta.dirname, '../main.ts')
 const REGISTER_SCHEDULES = 'registerSchedules({'
 const REGISTER_WORKERS = 'registerWorkers({'
@@ -16,19 +15,13 @@ const REGISTER_WORKERS = 'registerWorkers({'
 // out of registerSchedules on first vault unseal in every real deployment).
 const PG_BOSS_NAME_PATTERN = /^[\w.\-/]+$/
 
-function collectTsFiles(dir: string): string[] {
-  const files: string[] = []
-  for (const entry of readdirSync(dir)) {
-    const fullPath = join(dir, entry)
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
-    const stat = statSync(fullPath)
-    if (stat.isDirectory()) {
-      files.push(...collectTsFiles(fullPath))
-    } else if (entry.endsWith('.ts') && !entry.endsWith('.test.ts')) {
-      files.push(fullPath)
-    }
-  }
-  return files
+// Module-relative (static) root, so the directory listing needs no lint suppression.
+function collectTsFiles(): string[] {
+  return readdirSync(SRC_DIR, { recursive: true, withFileTypes: true })
+    .filter(
+      (entry) => entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')
+    )
+    .map((entry) => join(entry.parentPath, entry.name))
 }
 
 const stripInterpolation = (value: string): string => value.replace(/\$\{[^}]*\}/g, '')
@@ -43,8 +36,9 @@ function extractBalancedBlock(source: string, marker: string): string {
   let depth = 2 // marker already opened one '(' and one '{'
   let i = start + marker.length
   for (; i < source.length && depth > 0; i++) {
-    if (source[i] === '(' || source[i] === '{') depth++
-    else if (source[i] === ')' || source[i] === '}') depth--
+    const char = source.charAt(i)
+    if (char === '(' || char === '{') depth++
+    else if (char === ')' || char === '}') depth--
   }
   return source.slice(start, i)
 }
@@ -86,8 +80,7 @@ describe('credentials/prune-versions registration (AC-8 R3)', () => {
 
   it('uses pg-boss compatible queue names', () => {
     // This test intentionally inspects the static source file so queue naming cannot drift.
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
-    const mainSource = readFileSync(MAIN_TS_PATH, 'utf-8')
+    const mainSource = readFileSync(MAIN_TS_MODULE_PATH, 'utf-8')
     const schedulesBlock = extractBalancedBlock(mainSource, REGISTER_SCHEDULES)
     const workersBlock = extractBalancedBlock(mainSource, REGISTER_WORKERS)
     // Matches every top-level string-literal key, whichever registration shape follows it:
@@ -146,7 +139,7 @@ describe('credentials/prune-versions registration (AC-8 R3)', () => {
     const singletonKeyPattern = /singletonKey:\s*(['"`])((?:(?!\1)[\s\S])*?)\1/g
 
     let checkedAtLeastOne = false
-    for (const file of collectTsFiles(SRC_DIR)) {
+    for (const file of collectTsFiles()) {
       // eslint-disable-next-line security/detect-non-literal-fs-filename
       const source = readFileSync(file, 'utf-8')
       for (const match of source.matchAll(sendNamePattern)) {
@@ -171,8 +164,7 @@ describe('credentials/prune-versions registration (AC-8 R3)', () => {
   })
 
   it('registers notification workers (Story 3.1 AC-9)', () => {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
-    const mainSource = readFileSync(MAIN_TS_PATH, 'utf-8')
+    const mainSource = readFileSync(MAIN_TS_MODULE_PATH, 'utf-8')
     const workersBlock = extractBalancedBlock(mainSource, REGISTER_WORKERS)
 
     expect(workersBlock).toContain("'notification/email'")

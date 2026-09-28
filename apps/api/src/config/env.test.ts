@@ -81,7 +81,7 @@ async function expectDedicatedSecretRequired(
   resetEnvImport(exitSpy)
   process.env = productionEnv({ ...overridesWithoutSecret, [secretKey]: secretValue })
   const { env } = await import('./env.js')
-  expect((env as Record<string, unknown>)[secretKey]).toBe(secretValue)
+  expect(env).toHaveProperty(secretKey, secretValue)
   expect(exitSpy).not.toHaveBeenCalled()
 }
 
