@@ -176,18 +176,23 @@ function deferred<T = void>() {
   return { promise, resolve, reject }
 }
 
-/** Polls pg_stat_activity until some backend is blocked on a lock (fails loudly on timeout). */
-async function waitForLockWaiter(timeoutMs = 2_000): Promise<void> {
+/**
+ * Polls pg_stat_activity until some backend is blocked by `holderPid` — request A's own
+ * transaction, which holds the uncommitted burn PK row. Scoped to A's pid so an unrelated lock
+ * waiter (e.g. another package's concurrency test on the same database) cannot satisfy the poll
+ * and silently turn 4.2 into a sequential test. Fails loudly on timeout.
+ */
+async function waitForWaiterBlockedBy(holderPid: number, timeoutMs = 2_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     const rows = await getDb().execute<{ n: number }>(
-      sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()`
+      sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE ${holderPid}::int = ANY(pg_blocking_pids(pid))`
     )
     if ((rows[0]?.n ?? 0) > 0) return
     await new Promise((r) => setTimeout(r, 20))
   }
   throw new Error(
-    'request B never blocked on the burn PK lock — the race was not exercised concurrently'
+    'request B never blocked on the burn PK lock held by request A — the race was not exercised concurrently'
   )
 }
 
@@ -508,19 +513,20 @@ describe('POST /exchange-claim atomicity (Story 60.5)', () => {
       async () => {
         const app = await newApp()
         const prepared = await prepareLinked(app, 'atomic-rollback-race')
-        const aReachedSeam = deferred()
+        const aReachedSeam = deferred<number>()
         const releaseA = deferred()
-        rekeySpy.mockImplementationOnce(async () => {
-          aReachedSeam.resolve()
+        rekeySpy.mockImplementationOnce(async (tx) => {
+          const [row] = await tx.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`)
+          aReachedSeam.resolve(Number(row?.pid))
           await releaseA.promise
           return 1
         })
         const before = await eventCounts()
 
         const pA = exchange(app, prepared)
-        await aReachedSeam.promise
+        const aPid = await aReachedSeam.promise
         const pB = exchange(app, prepared)
-        await waitForLockWaiter()
+        await waitForWaiterBlockedBy(aPid)
         releaseA.reject(new Error('injected'))
         const [resA, resB] = await Promise.all([pA, pB])
 
