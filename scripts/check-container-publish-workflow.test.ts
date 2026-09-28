@@ -1,21 +1,24 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { afterAll, describe, expect, it } from 'vitest'
+import { createRequire } from 'node:module'
+import { resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
 
-const workflowPath = resolve(process.cwd(), '.github/workflows/container-publish.yml')
+// The repository root has no YAML dependency; reuse the `yaml` package apps/api already depends on.
+const { parse: parseYaml } = createRequire(resolve(process.cwd(), 'apps/api/package.json'))(
+  'yaml'
+) as typeof import('yaml')
 
-// runVerifyStep() writes one fixture per call and is invoked once per verification-step test, so
-// without this the suite leaks a temp directory into tmpdir on every `make ci` run.
-const tempDirs: string[] = []
-
-afterAll(() => {
-  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true })
-})
+// Read at transform time by Vite (vitest's module graph) as raw text: the lint-clean loading
+// pattern check-action-pins.test.ts introduced (Story 64.2).
+const WORKFLOW_TEXT: Record<string, string> = import.meta.glob(
+  '../.github/workflows/container-publish.yml',
+  { query: '?raw', import: 'default', eager: true }
+)
 
 function workflowText(): string {
-  return readFileSync(workflowPath, 'utf8')
+  const text = Object.values(WORKFLOW_TEXT)[0]
+  expect(text, 'container-publish.yml must be loadable').toBeDefined()
+  return text ?? ''
 }
 
 describe('container publish workflow contract', () => {
@@ -246,6 +249,95 @@ describe('container publish workflow contract', () => {
   })
 })
 
+// Story 64.3 AC-4/AC-5: a fixable HIGH/CRITICAL vulnerability in any pushed image, on either
+// platform, must fail build-publish before promote-aliases can move `latest`/semver aliases.
+describe('Story 64.3: release vulnerability gate before alias promotion', () => {
+  type Step = {
+    id?: string
+    name?: string
+    if?: unknown
+    uses?: string
+    with?: Record<string, unknown>
+    env?: Record<string, unknown>
+    'continue-on-error'?: unknown
+  }
+  type Job = { needs?: unknown; permissions?: unknown; steps?: Step[] }
+
+  const jobs = (parseYaml(workflowText()) as { jobs: Record<string, Job> }).jobs
+  const steps = jobs['build-publish']?.steps ?? []
+  const scans = steps.filter((step) => step.uses?.startsWith('aquasecurity/trivy-action@'))
+  const pushIndex = steps.findIndex((step) => step.id === 'push')
+  const verifyIndex = steps.findIndex((step) =>
+    /Verify published image version matches the release tag/.test(step.name ?? '')
+  )
+
+  it('(a) scans in build-publish, after the push and the version verification', () => {
+    expect(scans.length).toBeGreaterThan(0)
+    expect(pushIndex).toBeGreaterThan(-1)
+    expect(verifyIndex).toBeGreaterThan(pushIndex)
+    for (const scan of scans) expect(steps.indexOf(scan)).toBeGreaterThan(verifyIndex)
+  })
+
+  it('(b) scans the exact pushed digest of this matrix image', () => {
+    for (const scan of scans) {
+      const ref = String(scan.with?.['image-ref'])
+      expect(ref).toMatch(/\$\{\{\s*env\.IMAGE_NAMESPACE\s*\}\}\/\$\{\{\s*matrix\.name\s*\}\}@/)
+      expect(ref).toMatch(/@\$\{\{\s*steps\.push\.outputs\.digest\s*\}\}$/)
+    }
+  })
+
+  it('(b) covers both published platforms, and one failing platform does not mask the other', () => {
+    const platforms = scans.map((scan) => scan.env?.TRIVY_PLATFORM).sort()
+    // Exactly the platforms the push step published, so adding one without a scan fails here.
+    const published = String(steps.find((step) => step.id === 'push')?.with?.platforms ?? '')
+      .split(',')
+      .map((platform) => platform.trim())
+      .sort()
+    expect(published.length).toBeGreaterThanOrEqual(2)
+    expect(platforms).toEqual(published)
+    for (const scan of scans.slice(1)) expect(String(scan.if)).toMatch(/!\s*cancelled\(\)/)
+    for (const scan of scans) {
+      // Only scan a digest that was actually pushed, never an empty `name@` reference.
+      expect(String(scan.if ?? "steps.push.outcome == 'success'")).toMatch(
+        /steps\.push\.outcome == 'success'/
+      )
+    }
+  })
+
+  it('(c) fails the job on findings and honours .trivyignore with the PR-gate settings', () => {
+    for (const scan of scans) {
+      expect(scan.with?.['exit-code']).toBe('1')
+      expect(scan['continue-on-error']).toBe(undefined)
+      expect(scan.with?.trivyignores).toBe('.trivyignore')
+      expect(scan.with?.severity).toBe('CRITICAL,HIGH')
+      expect(scan.with?.['ignore-unfixed']).toBe(true)
+      expect(scan.with?.['vuln-type']).toBe('os,library')
+    }
+  })
+
+  it('pulls from GHCR with the job token only: no new secret, no wider permissions', () => {
+    for (const scan of scans) {
+      expect(String(scan.env?.TRIVY_USERNAME)).toMatch(/^\$\{\{\s*github\.actor\s*\}\}$/)
+      expect(String(scan.env?.TRIVY_PASSWORD)).toMatch(/^\$\{\{\s*secrets\.GITHUB_TOKEN\s*\}\}$/)
+    }
+    expect(jobs['build-publish']?.permissions).toEqual({
+      contents: 'read',
+      packages: 'write',
+      attestations: 'write',
+      'id-token': 'write',
+    })
+    expect(
+      workflowText()
+        .match(/secrets\.(\w+)/g)
+        ?.every((ref) => ref === 'secrets.GITHUB_TOKEN')
+    ).toBe(true)
+  })
+
+  it('(d) promote-aliases still needs build-publish, so a failed gate moves no alias', () => {
+    expect(jobs['promote-aliases']?.needs).toEqual(['prepare', 'build-publish'])
+  })
+})
+
 /**
  * Extracts the `run:` body of the "Verify published image version matches the release tag" step
  * from the real workflow file and executes it with `docker buildx imagetools inspect` replaced by
@@ -268,17 +360,17 @@ function runVerifyStep(options: { imageName: string; version: string; inspectJso
     bodyLines.push(line.slice(10))
   }
 
-  const stubDir = mkdtempSync(join(tmpdir(), 'verify-step-'))
-  tempDirs.push(stubDir)
-  const stubPath = join(stubDir, 'inspect.json')
-  writeFileSync(stubPath, JSON.stringify(options.inspectJson))
+  // The fixture reaches the script through an env var rather than a temp file, so nothing is
+  // written to disk and nothing needs cleaning up.
   const script = bodyLines
     .join('\n')
     .replace(
       /INSPECT_JSON=\$\(docker buildx imagetools inspect[^\n]*\)/,
-      `INSPECT_JSON=$(cat ${JSON.stringify(stubPath)})`
+      'INSPECT_JSON="$STUB_INSPECT_JSON"'
     )
-  expect(script, 'imagetools inspect call must be stubbable').toContain('INSPECT_JSON=$(cat ')
+  expect(script, 'imagetools inspect call must be stubbable').toContain(
+    'INSPECT_JSON="$STUB_INSPECT_JSON"'
+  )
 
   const run = spawnSync('bash', ['-c', script], {
     encoding: 'utf8',
@@ -287,6 +379,7 @@ function runVerifyStep(options: { imageName: string; version: string; inspectJso
       IMAGE_NAMESPACE: 'ghcr.io/example/project-vault',
       IMAGE_NAME: options.imageName,
       VERSION: options.version,
+      STUB_INSPECT_JSON: JSON.stringify(options.inspectJson),
       // Built rather than inlined so the fixture digest is not flagged as a leaked hash.
       DIGEST: `sha256:${'0'.repeat(64)}`,
     },
