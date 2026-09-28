@@ -37,11 +37,32 @@ function emptyEnvFile(): string {
   return path
 }
 
+/** Code review (60-4): Compose gives the caller's shell environment precedence over `--env-file`,
+ * so a variable exported in a developer's or CI shell (e.g. `VAULT_HANDOFF_ISSUER`) would silently
+ * override the test-owned env file and break the default-value assertions. Every variable the
+ * compose file interpolates (as listed by Compose itself) is dropped from the child's environment,
+ * keeping the rest (PATH, HOME, DOCKER_*) that the Docker CLI itself needs. A Compose CLI too old
+ * for `config --variables` falls back to the unfiltered environment (the pre-60-4 behaviour). */
+function isolatedComposeEnv(file: string): NodeJS.ProcessEnv {
+  let interpolated: Set<string>
+  try {
+    const stdout = execFileSync(
+      'docker',
+      ['compose', '-f', file, 'config', '--variables', '--format', 'json'],
+      { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+    )
+    interpolated = new Set(Object.keys(JSON.parse(stdout) as Record<string, unknown>))
+  } catch {
+    return process.env
+  }
+  return Object.fromEntries(Object.entries(process.env).filter(([key]) => !interpolated.has(key)))
+}
+
 function renderComposeConfig(file: string, envFile: string): Record<string, unknown> {
   const stdout = execFileSync(
     'docker',
     ['compose', '-f', file, '--env-file', envFile, 'config', '--format', 'json'],
-    { cwd: repoRoot, encoding: 'utf8' }
+    { cwd: repoRoot, encoding: 'utf8', env: isolatedComposeEnv(file) }
   )
   return JSON.parse(stdout) as Record<string, unknown>
 }

@@ -338,6 +338,13 @@ describe('/handoff +page.svelte', () => {
       expect(document.body.textContent).not.toContain('invalid.projectvault')
     })
 
+    it('1.9: a whitespace-padded synthetic label also falls back', () => {
+      setUrl(fullQuery({ accountLabel: encodeURIComponent(`  ${decodeURIComponent(SYNTHETIC)} `) }))
+      render(HandoffPage)
+
+      expect(document.body.textContent).not.toContain('invalid.projectvault')
+    })
+
     it('1.9: a case-variant synthetic label also falls back', () => {
       setUrl(
         fullQuery({
@@ -560,6 +567,17 @@ describe('/handoff +page.svelte', () => {
       expect(notMe.getAttribute('aria-disabled')).toBe('true')
       expect(notMe.getAttribute('tabindex')).toBe('-1')
       expect(notMe.className).toContain('pointer-events-none')
+    })
+
+    it('4.3: while submitting, activating "Not me" (e.g. via assistive tech) does not navigate', async () => {
+      confirmHandoffMock.mockReturnValue(new Promise(() => {}))
+      render(HandoffPage)
+      await clickConfirm()
+
+      const notMe = await screen.findByRole('link', { name: 'Not me' })
+      const click = new MouseEvent('click', { bubbles: true, cancelable: true })
+      notMe.dispatchEvent(click)
+      expect(click.defaultPrevented).toBe(true)
     })
 
     it.each([

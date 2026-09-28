@@ -36,8 +36,15 @@
   // Story 60.4 AC1 (F10), rollout-gap defense in depth: apps/api's prepare already nulls a
   // synthetic `service-provisioned+<id>@invalid.projectvault` label, but CM may forward one
   // obtained from a PV instance that predates that fix — it must never be rendered either way.
+  // Trimmed first so surrounding whitespace can't smuggle the synthetic address past the check.
   function accountDisplayValue(raw: string | null, fallback: string): string {
-    return isServiceProvisionedEmail(raw) ? fallback : displayValue(raw, fallback)
+    return isServiceProvisionedEmail(raw?.trim()) ? fallback : displayValue(raw, fallback)
+  }
+
+  // Code review (60-4): aria-disabled/pointer-events only style the link — assistive tech can
+  // still activate it, so the click itself is cancelled while a confirm is in flight.
+  function preventCancelWhileSubmitting(event: MouseEvent) {
+    if (phase === 'submitting') event.preventDefault()
   }
 
   let searchParams = $derived(page.url.searchParams)
@@ -193,6 +200,7 @@ drift. -->
           href={resolve('/login')}
           aria-disabled={phase === 'submitting' ? 'true' : undefined}
           tabindex={phase === 'submitting' ? -1 : undefined}
+          onclick={preventCancelWhileSubmitting}
         >
           {m.auth_handoff_cancel()}
         </a>
