@@ -13,3 +13,7 @@ coverage
 reports
 .svelte-kit
 *.log
+# Story 43.11 AC-12: Claude Code agent state, including every nested git worktree (3 GB on the
+# host) — never needed by the build, and stale worktree copies of scripts/*.test.ts would
+# otherwise be matched by vitest's positional substring filters inside `make ci`.
+.claude/

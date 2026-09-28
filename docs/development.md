@@ -39,6 +39,7 @@ The base stack is `docker-compose.yml` (`db`, `migrate`, `admin-provision`, `api
 | `docker-compose.nfs.yml` | manual | Bind-mounts an NFS export at `/var/backups/vault`; requires `BACKUP_NFS_PATH` |
 | `docker-compose.e2e.yml` | `make e2e`, nightly CI | Raises the auth rate limits, enables `VAULT_ALLOW_REMOTE_INIT`, and builds the API with the mock SSO extension so the Playwright suite can run unattended |
 | `docker-compose.ci.yml` | `make ci` | The containerized quality-gate runner (see below) |
+| `docker-compose.ci-overlay.yml` | `make ci`, only when the private overlay resolves | Mounts the private overlay repo read-only at its own absolute host path (see below) |
 
 ## Running the Playwright E2E suite locally
 
@@ -62,6 +63,18 @@ stack is left running afterwards — `make docker-down` stops it.
 generated-spec freshness checks inside the CI Docker service. It does not require private planning or
 BMAD artifacts. Private story and sprint governance checks live in the companion
 `project-vault-private` repository.
+
+When the private `project-vault-private` overlay is attached, `make ci` also mounts it
+**read-only at its own absolute host path** (`docker-compose.ci-overlay.yml`), so the overlay
+symlinks that `Dockerfile.ci`'s `COPY . .` carries into `/app` resolve inside the container and the
+overlay guards (`check-story-status-sync`, `check-sprint-status-rollup`, `check-deferred-work-ids`,
+and the other `_bmad-output` scans) check real data. The Makefile derives the root from
+`readlink -f _bmad-output/implementation-artifacts/sprint-status.yaml` and prints which case applies
+(`make ci: private overlay mounted read-only from ...` or `... not found; overlay guards will print
+SKIPPED`). Without the overlay (a public-only clone, public GitHub CI, a cloud session without it)
+those guards print `SKIPPED — <path> not found ...; nothing checked` and exit 0; they never print a
+false `— OK`. `.claude/` (including every git worktree) is excluded from the build context by
+`.dockerignore`.
 
 Run focused package tests while developing, then run `make ci` once after the complete change set
 is ready.

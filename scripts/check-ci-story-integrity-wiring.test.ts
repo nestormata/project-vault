@@ -18,10 +18,21 @@ const packageJsonPath = resolve(repositoryRoot, 'package.json')
 const makefilePath = resolve(repositoryRoot, 'Makefile')
 const postMergeWorkflowPath = resolve(repositoryRoot, '.github/workflows/ci.yml')
 const POST_MERGE_JOB_NAME = 'post-merge-status-drift'
+const ciComposePath = resolve(repositoryRoot, 'docker-compose.ci.yml')
+const ciOverlayComposePath = resolve(repositoryRoot, 'docker-compose.ci-overlay.yml')
+const CONDITIONAL_OVERLAY_INCLUDE = '$(if $(PRIVATE_OVERLAY_ROOT),-f docker-compose.ci-overlay.yml)'
+
+// Story 43.11 AC-6.4: the story-integrity guards' own test files, run with `--dir scripts` so
+// vitest's positional substring filters cannot also match stale copies in nested agent worktrees.
+const STORY_INTEGRITY_TEST_COMMAND =
+  'pnpm vitest run --dir scripts check-sprint-status-rollup.test.ts check-story-status-sync.test.ts ' +
+  'check-deferred-work-ids.test.ts next-dw-id.test.ts lib/deferred-work-ledger.test.ts ' +
+  'check-ci-story-integrity-wiring.test.ts'
 
 const GUARDS = {
   'check-story-status-sync': 'tsx scripts/check-story-status-sync.ts',
   'check-sprint-status-rollup': 'tsx scripts/check-sprint-status-rollup.ts',
+  'check-deferred-work-ids': 'tsx scripts/check-deferred-work-ids.ts',
   'check-story-references': 'tsx scripts/check-story-references.ts',
   'check-psc-tbd-tracking': 'tsx scripts/check-psc-tbd-tracking.ts',
   'check-story-review-deferrals': 'tsx scripts/check-story-review-deferrals.ts',
@@ -102,6 +113,36 @@ function assertCiInnerWiring(makefile: string): void {
   }
 }
 
+/** The `ci:` target's recipe (up to the next target). */
+function ciRecipe(makefile: string): string {
+  const start = makefile.search(/^ci:/m)
+  if (start < 0) throw new Error('Makefile has no ci target')
+  const afterStart = makefile.slice(start)
+  const nextTarget = afterStart.slice(1).search(/\n[a-zA-Z0-9_-]+:.*\n/)
+  return nextTarget < 0 ? afterStart : afterStart.slice(0, nextTarget + 2)
+}
+
+function assertOverlayMountWiring(
+  makefile: string,
+  overlayCompose: string,
+  baseCompose: string
+): void {
+  // (i) read-only same-path mount of the private overlay root
+  expect(overlayCompose).toMatch(
+    /^\s*- \$\{PRIVATE_OVERLAY_ROOT:\?[^}]*\}:\$\{PRIVATE_OVERLAY_ROOT\}:ro\s*$/m
+  )
+  // (ii) the ci recipe includes the override only inside $(if $(PRIVATE_OVERLAY_ROOT),...)
+  const recipe = ciRecipe(makefile)
+  expect(recipe).toContain(CONDITIONAL_OVERLAY_INCLUDE)
+  expect(recipe.replace(CONDITIONAL_OVERLAY_INCLUDE, '')).not.toContain(
+    'docker-compose.ci-overlay.yml'
+  )
+  expect(recipe).toMatch(/PRIVATE_OVERLAY_ROOT=\$\(PRIVATE_OVERLAY_ROOT\)/)
+  expect(makefile).toMatch(/^PRIVATE_OVERLAY_ROOT := \$\(shell .*readlink -f .*\)$/m)
+  // (iii) the base compose file never depends on PRIVATE_OVERLAY_ROOT
+  expect(baseCompose).not.toContain('PRIVATE_OVERLAY_ROOT')
+}
+
 function assertPostMergeWiring(workflow: string): void {
   const job = workflowJob(workflow, POST_MERGE_JOB_NAME)
   expect(job).toContain("if: github.event_name == 'push' && github.ref == 'refs/heads/main'")
@@ -161,6 +202,46 @@ describe('story-integrity CI wiring', () => {
       const swallowed = makefile.replace(commandLine, `\tpnpm ${guard} || true\n`)
       expect(() => assertCiInnerWiring(swallowed), `${guard} swallowed`).toThrow()
     }
+  })
+
+  it('runs the story-integrity guard test files in ci-inner and ci.yml, scoped with --dir scripts (Story 43.11 AC-6.4)', () => {
+    const recipeLines = ciInnerRecipe(readFileSync(makefilePath, 'utf8')).split('\n')
+    expect(recipeLines.filter((line) => line === `\t${STORY_INTEGRITY_TEST_COMMAND}`)).toHaveLength(
+      1
+    )
+    const workflowLines = readFileSync(postMergeWorkflowPath, 'utf8').split('\n')
+    expect(
+      workflowLines.filter((line) => line.trim() === `run: ${STORY_INTEGRITY_TEST_COMMAND}`)
+    ).toHaveLength(1)
+  })
+
+  it('make ci mounts the private overlay read-only, only when it resolves (Story 43.11 AC-11)', () => {
+    assertOverlayMountWiring(
+      readFileSync(makefilePath, 'utf8'),
+      readFileSync(ciOverlayComposePath, 'utf8'),
+      readFileSync(ciComposePath, 'utf8')
+    )
+  })
+
+  it('rejects a writable overlay mount, an unconditional include, and a base-compose reference (Story 43.11 AC-11)', () => {
+    const makefile = readFileSync(makefilePath, 'utf8')
+    const overlay = readFileSync(ciOverlayComposePath, 'utf8')
+    const base = readFileSync(ciComposePath, 'utf8')
+
+    expect(() =>
+      assertOverlayMountWiring(makefile, overlay.replace('}:ro', '}:rw'), base)
+    ).toThrow()
+    expect(() => assertOverlayMountWiring(makefile, overlay.replace('}:ro', '}'), base)).toThrow()
+    expect(() =>
+      assertOverlayMountWiring(
+        makefile.replace(CONDITIONAL_OVERLAY_INCLUDE, '-f docker-compose.ci-overlay.yml'),
+        overlay,
+        base
+      )
+    ).toThrow()
+    expect(() =>
+      assertOverlayMountWiring(makefile, overlay, `${base}\n# \${PRIVATE_OVERLAY_ROOT}\n`)
+    ).toThrow()
   })
 
   it('keeps post-merge execution in the public push-to-main full-history job exactly once', () => {
