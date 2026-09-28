@@ -152,10 +152,15 @@ test-repeat: ## Run the test suite N times back-to-back, stopping at the first f
 stryker: ## Run Stryker mutation testing (matches nightly CI)
 	DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_ADMIN) SUPERUSER_DATABASE_URL=$(DB_URL_SUPERUSER) pnpm stryker run
 
+# Story 43.11 AC-11: the private overlay's repo root, or empty when it is not attached/resolvable.
+PRIVATE_OVERLAY_ROOT := $(shell t=$$(readlink -f _bmad-output/implementation-artifacts/sprint-status.yaml 2>/dev/null) && [ -f "$$t" ] && git -C "$$(dirname "$$t")" rev-parse --show-toplevel 2>/dev/null)
+
 ci: ## Full local quality gates — runs inside Docker (isolated per-worktree; see docs/development.md)
 	$(MAKE) fix-ports
+	@echo "make ci: $(if $(PRIVATE_OVERLAY_ROOT),private overlay mounted read-only from $(PRIVATE_OVERLAY_ROOT),private overlay not found; overlay guards will print SKIPPED)"
 	GIT_COMMON_DIR=$$(git rev-parse --path-format=absolute --git-common-dir) \
-		docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm --build ci make ci-inner
+		PRIVATE_OVERLAY_ROOT='$(PRIVATE_OVERLAY_ROOT)' \
+		docker compose -f docker-compose.yml -f docker-compose.ci.yml $(if $(PRIVATE_OVERLAY_ROOT),-f docker-compose.ci-overlay.yml) run --rm --build ci make ci-inner
 	# Story 9.9 AC-6/Product Surface Contract G3: runs on the HOST (not inside ci-inner's
 	# container, which has no Docker socket to build/run nested images from) — builds the real
 	# apps/api image and exercises docker-entrypoint.sh's backup-volume chown-then-drop-privileges
@@ -182,6 +187,11 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-migration-compatibility
 	pnpm check-story-status-sync
 	pnpm check-sprint-status-rollup
+	# Story 43.11 AC-4/AC-6: duplicate DW-ID guard over the private overlay's deferred-work.md.
+	pnpm check-deferred-work-ids
+	# Story 43.11 AC-6.4: the story-integrity guards' own tests; --dir scripts keeps vitest's
+	# substring filters from also matching stale copies in nested agent worktrees.
+	pnpm vitest run --dir scripts check-sprint-status-rollup.test.ts check-story-status-sync.test.ts check-deferred-work-ids.test.ts next-dw-id.test.ts lib/deferred-work-ledger.test.ts check-ci-story-integrity-wiring.test.ts
 	pnpm check-story-references
 	pnpm check-psc-tbd-tracking
 	pnpm check-story-review-deferrals

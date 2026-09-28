@@ -1,6 +1,8 @@
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach } from 'vitest'
 
 /** Registers vitest afterEach cleanup and returns a function that creates a fresh temp fixture root. */
@@ -39,4 +41,24 @@ export function writeFixtureSymlink(root: string, relativePath: string, target: 
   const fullPath = join(root, relativePath)
   mkdirSync(resolve(fullPath, '..'), { recursive: true })
   symlinkSync(target, fullPath)
+}
+
+export type CliRun = { status: number | null; stdout: string; stderr: string }
+
+/**
+ * Runs a root `scripts/*.ts` guard as a real CLI (Story 43.11 AC-7): `process.execPath --import
+ * <tsx loader> <realpath(script)>` with `cwd` set to a fixture root, so exit code and the
+ * stdout/stderr split are asserted for real (same invocation shape as
+ * check-ci-story-integrity-wiring.test.ts). `scriptRelPath` is relative to the repository root.
+ */
+export function runScriptCli(scriptRelPath: string, cwd: string, args: string[] = []): CliRun {
+  const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+  const tsxLoader = resolve(repositoryRoot, 'node_modules/tsx/dist/esm/index.mjs')
+  const script = realpathSync(resolve(repositoryRoot, scriptRelPath))
+  const result = spawnSync(process.execPath, ['--import', tsxLoader, script, ...args], {
+    cwd,
+    encoding: 'utf-8',
+    stdio: 'pipe',
+  })
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr }
 }

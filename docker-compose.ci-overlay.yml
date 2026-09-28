@@ -1,0 +1,17 @@
+# Story 43.11 AC-11: included by `make ci` ONLY when the private overlay resolves on the host.
+#
+# Dockerfile.ci's `COPY . .` copies every private-overlay symlink (_bmad-output/implementation-
+# artifacts/*, scripts/check-story-integrity-guards-wiring.test.ts, ...) into /app as a symlink to
+# an absolute host path under project-vault-private, which does not exist in the container, so the
+# overlay guards would only print SKIPPED. Mounting the private repo read-only at that SAME
+# absolute path makes every link resolve without rewriting any of them (the same trick
+# docker-compose.ci.yml uses for GIT_COMMON_DIR in worktrees). Read-only on purpose: no ci-inner
+# step may write BMAD data; an attempt fails loudly with EROFS.
+#
+# The Makefile computes PRIVATE_OVERLAY_ROOT from `readlink -f` on the overlay's sprint-status.yaml
+# and adds `-f docker-compose.ci-overlay.yml` only when it is non-empty, so a public-only clone
+# never reaches the `:?` error below.
+services:
+  ci:
+    volumes:
+      - ${PRIVATE_OVERLAY_ROOT:?PRIVATE_OVERLAY_ROOT must be set when this file is included}:${PRIVATE_OVERLAY_ROOT}:ro

@@ -86,6 +86,12 @@ jobs:
       - name: Check base image digest lockstep guard (Story 64.1 AC-2)
         run: pnpm vitest run scripts/check-base-image-digest.test.ts
 
+      # Story 43.11 AC-6.4: the story-integrity guards' own test suites. --dir scripts limits
+      # vitest discovery to ./scripts (positional args are substring filters). The overlay guards
+      # themselves print SKIPPED here: public CI never has the private _bmad-output overlay.
+      - name: Check story-integrity guards' own test suites (Story 43.11)
+        run: pnpm vitest run --dir scripts check-sprint-status-rollup.test.ts check-story-status-sync.test.ts check-deferred-work-ids.test.ts next-dw-id.test.ts lib/deferred-work-ledger.test.ts check-ci-story-integrity-wiring.test.ts
+
       - name: Check pvault CLI release workflow contract (Story 43.6 AC-5)
         run: pnpm vitest run scripts/check-cli-release-workflow.test.ts
 
