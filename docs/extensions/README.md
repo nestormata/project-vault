@@ -63,7 +63,7 @@ whose capability you declared.
 | `capabilityGate` | `onCheckCapability(context) => CapabilityDecision` | Never cached by the host: every gated check calls it. Fails closed. |
 | `projectLifecycle` | `onBeforeCreateProject(...)` | May veto. Runs in-request. |
 | `projectArchiveNotifier` | notification of a committed archive | Never in-request, never vetoing. |
-| `moduleAction` | dispatch target for panel actions | Legal only when the manifest declares `moduleActions`. |
+| `moduleAction` | dispatch target for panel actions | Legal only when the manifest declares `moduleActions`. See [Module actions and ActionResult](authoring.md#module-actions-and-actionresult). |
 | `moduleData` | `Record<"GET <path>", handler>` | Every declared `moduleDataRoutes` entry must have exactly one matching handler. |
 | `deliveryProvider` | `Record<channelName, DeliveryProvider>` | Registering the same channel twice in one process is a loud conflict error, not last-one-wins. |
 
