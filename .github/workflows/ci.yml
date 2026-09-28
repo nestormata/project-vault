@@ -104,6 +104,9 @@ jobs:
       - name: Check extension-api version-skew guard's own test suite (Story 24.4)
         run: pnpm vitest run scripts/check-extension-api-version-skew.test.ts
 
+      - name: Check extension authoring guide documents every ActionResult outcome (Story 59.2)
+        run: pnpm vitest run scripts/extension-authoring-docs.test.ts
+
       - name: Check extension-api versioning policy guards (Story 23.6)
         run: >-
           pnpm vitest run scripts/check-policy-doc-structure.test.ts

@@ -49,6 +49,15 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
   succeeded and orphaned the rotation. Finish or abandon those rotations first, or send
   `{"rotationHandling": "abandon"}` (the only accepted value; anything else returns `422`). A
   `409` with `code: "rotation_busy"` means a rotation was being changed at that moment; retry.
+- **Extension panels now show the extension's own html on failed actions.** When a module action
+  returns `denied`, `conflict`, `validation_failed` or `error` with `html`, the panel displays it
+  (sanitized, like a successful result) in place of its content, above the usual status message;
+  before 1.3.0 that html was discarded and the user saw only a generic message. This needs no
+  extension upgrade, so an installed extension that already attached html to failures (for example
+  by spreading a result object) starts showing it on upgrade. Before upgrading, check that your
+  extensions' failure html (CentralizeMe's included) contains no exception, stack-trace or database
+  text and only the requesting organization's data. A hook that throws, times out or returns a
+  malformed result still shows only the generic error.
 
 ### Added
 
@@ -118,6 +127,9 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
 - A module action result whose `html` is present but is not a string is now treated as
   malformed and returns the generic `500`, instead of being mapped by its outcome. Such a value
   was never type-valid. (#447)
+- Module-action panels display the html an extension returns with a denied, conflict,
+  validation-failed or error outcome in place of the panel content, instead of leaving the panel
+  unchanged with only the status message. The denied `message` text is still never shown. (#447)
 - `HostServices.monitoring`'s in-request methods reject a malformed `projectId`,
   `serviceEndpointId` or `userId` with the typed `MonitoringInvalidServiceEndpointInputError`
   instead of an unclassified database error. (#433)
