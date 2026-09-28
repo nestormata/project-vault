@@ -5,6 +5,26 @@ import { orgMemberships, projectMemberships, projects, users } from '@project-va
 type OrgUserProject = { projectId: string; projectName: string; role: string }
 
 /**
+ * Story 4.3 AC-3/AC-19, Story 43-15 AC-4/AC-9: loads the target's membership row in this org,
+ * locked FOR UPDATE, shared by the deactivate and remove routes. The lock is held until the
+ * route's transaction ends, so a racing deactivate/remove re-checks rather than races, and a
+ * rotation the target starts meanwhile waits on it (initiateRotation's FOR SHARE) and is refused.
+ */
+export async function lockOrgMembershipForUpdate(
+  tx: Tx,
+  orgId: string,
+  userId: string
+): Promise<{ orgRole: string; status: string } | undefined> {
+  const [row] = await tx
+    .select({ orgRole: orgMemberships.role, status: orgMemberships.status })
+    .from(orgMemberships)
+    .where(and(eq(orgMemberships.userId, userId), eq(orgMemberships.orgId, orgId)))
+    .for('update')
+    .limit(1)
+  return row
+}
+
+/**
  * AC-2: list every org member with their per-project role chips. Two batched queries grouped in
  * application code (avoids an N+1 over projects). Lives here rather than inline in `routes.ts` so
  * the route stays a thin `secureRoute` registration — `route-audit.test.ts` scans `routes.ts` for

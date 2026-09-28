@@ -21,11 +21,21 @@ export type OrgUser = {
   projects: OrgUserProject[]
 }
 
+// Story 43-15 AC-8/AC-9: how many of the user's unfinished rotations `rotationHandling: "abandon"`
+// abandoned (staged/stale) and held (promoted, left for a later retire). Both 0 without it.
+export type RotationHandlingCounts = {
+  abandonedRotationCount: number
+  heldRotationCount: number
+}
+
+/** Story 43-15 AC-8: absent keeps the default `409 active_rotations` block. */
+export type RotationHandlingOptions = { rotationHandling: 'abandon' }
+
 export type DeactivateOrgUserResult = {
   userId: string
   revokedSessionCount: number
   revokedInvitationCount: number
-}
+} & RotationHandlingCounts
 
 export type SendRecoveryLinkResult = {
   userId: string
@@ -47,20 +57,31 @@ export function listOrgUsers(fetchFn: typeof fetch) {
   return apiFetch<OrgUser[]>(fetchFn, '/api/v1/org/users')
 }
 
-export function removeOrgUser(fetchFn: typeof fetch, userId: string) {
-  return apiFetch<{ userId: string; revokedSessionCount: number }>(
+/** Story 43-15 AC-9: pass `{ rotationHandling: 'abandon' }` to resolve a `409 active_rotations`
+ *  block (same body as deactivateOrgUser); absent sends no body, as before. */
+export function removeOrgUser(
+  fetchFn: typeof fetch,
+  userId: string,
+  options?: RotationHandlingOptions
+) {
+  return apiFetch<{ userId: string; revokedSessionCount: number } & RotationHandlingCounts>(
     fetchFn,
     `/api/v1/org/users/${userId}`,
-    { method: 'DELETE' }
+    jsonBody('DELETE', options)
   )
 }
 
-/** Story 4.3 AC-2: immediate session/invitation revocation, org-scoped, one-way. */
-export function deactivateOrgUser(fetchFn: typeof fetch, userId: string) {
+/** Story 4.3 AC-2: immediate session/invitation revocation, org-scoped, one-way. Story 43-15
+ *  AC-8: pass `{ rotationHandling: 'abandon' }` to resolve a `409 active_rotations` block. */
+export function deactivateOrgUser(
+  fetchFn: typeof fetch,
+  userId: string,
+  options?: RotationHandlingOptions
+) {
   return apiFetch<DeactivateOrgUserResult>(
     fetchFn,
     `/api/v1/org/users/${userId}/deactivate`,
-    jsonBody('POST')
+    jsonBody('POST', options)
   )
 }
 

@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
-import { credentialVersions } from '@project-vault/db/schema'
+import { credentialVersions, orgMemberships } from '@project-vault/db/schema'
 import { auditLogEntries } from '@project-vault/db/schema'
 import { withTestOrg, createTestUser, deleteTestUser } from '@project-vault/db/test-helpers'
 import { resetVaultForTest } from '../__tests__/helpers/vault-test-cleanup.js'
@@ -28,6 +28,14 @@ const VERSION_PURGED = 'credential.version_purged'
 const seedProject = (orgId: string) => seedWorkerProject(orgId, 'Prune')
 const seedCredential = (orgId: string, projectId: string, retentionCount = 3) =>
   seedWorkerCredential(orgId, projectId, 'Prune', retentionCount)
+
+/** Story 43-15 AC-4: initiateRotation now requires an `active` org membership for its initiator
+ *  (the real post-auth invariant), so rotation fixtures seed one alongside the test user. */
+async function createActiveMemberUser(orgId: string, label: string): Promise<string> {
+  const userId = await createTestUser(label)
+  await withOrg(orgId, (tx) => tx.insert(orgMemberships).values({ orgId, userId, role: 'admin' }))
+  return userId
+}
 
 async function seedVersion(
   orgId: string,
@@ -266,7 +274,7 @@ describe('pruneCredentialVersions', () => {
 
   it('AC-3.2: a promoted-but-unretired version survives the pruning job at retentionCount=1', async () => {
     await withTestOrg(async ({ orgId }) => {
-      const userId = await createTestUser('prune-ac3-promoted')
+      const userId = await createActiveMemberUser(orgId, 'prune-ac3-promoted')
       try {
         const projectId = await seedProject(orgId)
         const credentialId = await seedCredential(orgId, projectId, 1)
@@ -308,7 +316,7 @@ describe('pruneCredentialVersions', () => {
 
   it('AC-3.3: after retire, the old version is already purged and the pruning job is a safe no-op', async () => {
     await withTestOrg(async ({ orgId }) => {
-      const userId = await createTestUser('prune-ac3-retired')
+      const userId = await createActiveMemberUser(orgId, 'prune-ac3-retired')
       try {
         const projectId = await seedProject(orgId)
         const credentialId = await seedCredential(orgId, projectId, 1)

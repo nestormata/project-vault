@@ -203,4 +203,9 @@ describe('OperationalEvent', () => {
     expect(OperationalEvent.THEME_RELOAD_SUMMARY).toBe('theme.reload_summary')
     expect(OperationalEvent.THEME_AUDIT_FANOUT_ROW_FAILED).toBe('theme.audit_fanout_row_failed')
   })
+
+  it('exposes the Story 43-15 rotation-guard denial event types (AC-5, AC-9)', () => {
+    expect(OperationalEvent.ORG_USER_DEACTIVATE_DENIED).toBe('org_user.deactivate_denied')
+    expect(OperationalEvent.ORG_USER_REMOVE_DENIED).toBe('org_user.remove_denied')
+  })
 })

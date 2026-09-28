@@ -589,6 +589,80 @@ describe('/settings/users +page.svelte (Story 8.7 AC groups A4/I/J/K)', () => {
       expect((await screen.findByRole('alert')).textContent).toMatch(expected)
     })
 
+    // Story 43-15 AC-6/AC-8: the FR102 active-rotation block and its explicit abandon path.
+    function activeRotationsError(body: Record<string, unknown>) {
+      return new ApiClientError(409, body as { error: string }, 'Conflict')
+    }
+
+    it('explains an active_rotations refusal, keeps the user active, and releases the button', async () => {
+      deactivateOrgUserMock.mockRejectedValue(
+        activeRotationsError({ error: 'active_rotations', rotationIds: ['r1'] })
+      )
+      render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })
+      await fireEvent.click(screen.getByRole('button', { name: /deactivate account/i }))
+
+      expect((await screen.findByRole('alert')).textContent).toContain(
+        `${memberUser.email} still owns 1 unfinished rotation(s). Complete, retire, or abandon them before deactivating this account.`
+      )
+      expect(invalidateAllMock).not.toHaveBeenCalled()
+      const button = screen.getByRole('button', {
+        name: /deactivate account/i,
+      }) as HTMLButtonElement
+      expect(button.disabled).toBe(false)
+      expect(
+        screen.getByRole('button', { name: /abandon unfinished rotations and deactivate/i })
+      ).toBeTruthy()
+    })
+
+    it('renders the active_rotations message even for a malformed body (n = 0)', async () => {
+      deactivateOrgUserMock.mockRejectedValue(activeRotationsError({ error: 'active_rotations' }))
+      render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })
+      await fireEvent.click(screen.getByRole('button', { name: /deactivate account/i }))
+
+      expect((await screen.findByRole('alert')).textContent).toContain(
+        'still owns 0 unfinished rotation(s)'
+      )
+    })
+
+    it('re-sends with rotationHandling "abandon" after a second, explicit confirmation', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      deactivateOrgUserMock
+        .mockRejectedValueOnce(
+          activeRotationsError({ error: 'active_rotations', rotationIds: ['r1'] })
+        )
+        .mockResolvedValueOnce({ userId: 'u-member' })
+      render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })
+      await fireEvent.click(screen.getByRole('button', { name: /deactivate account/i }))
+      await fireEvent.click(
+        await screen.findByRole('button', { name: /abandon unfinished rotations and deactivate/i })
+      )
+
+      expect(confirmSpy).toHaveBeenLastCalledWith(expect.stringMatching(/staged.*abandoned/i))
+      expect(confirmSpy).toHaveBeenLastCalledWith(expect.stringMatching(/promoted.*retire/i))
+      expect(deactivateOrgUserMock).toHaveBeenLastCalledWith(expect.anything(), 'u-member', {
+        rotationHandling: 'abandon',
+      })
+      await vi.waitFor(() => expect(invalidateAllMock).toHaveBeenCalledTimes(1))
+      expect(
+        screen.queryByRole('button', { name: /abandon unfinished rotations and deactivate/i })
+      ).toBeNull()
+    })
+
+    it('does nothing when the abandon confirmation is declined', async () => {
+      deactivateOrgUserMock.mockRejectedValueOnce(
+        activeRotationsError({ error: 'active_rotations', rotationIds: ['r1'] })
+      )
+      render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })
+      await fireEvent.click(screen.getByRole('button', { name: /deactivate account/i }))
+      const abandon = await screen.findByRole('button', {
+        name: /abandon unfinished rotations and deactivate/i,
+      })
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+      await fireEvent.click(abandon)
+
+      expect(deactivateOrgUserMock).toHaveBeenCalledTimes(1)
+    })
+
     it('cancels removal and recovery without API calls', async () => {
       vi.spyOn(window, 'confirm').mockReturnValue(false)
       render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })
@@ -604,7 +678,12 @@ describe('/settings/users +page.svelte (Story 8.7 AC groups A4/I/J/K)', () => {
       sendRecoveryLinkMock.mockResolvedValue({})
       render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })
       await fireEvent.click(screen.getByRole('button', { name: /remove from organization/i }))
-      expect(removeOrgUserMock).toHaveBeenCalledWith(expect.anything(), memberUser.userId)
+      // Story 43-15 AC-9: no rotationHandling on a plain removal (the default FR102 block).
+      expect(removeOrgUserMock).toHaveBeenCalledWith(
+        expect.anything(),
+        memberUser.userId,
+        undefined
+      )
       await fireEvent.click(screen.getByRole('button', { name: /send recovery link/i }))
       expect(sendRecoveryLinkMock).toHaveBeenCalledWith(expect.anything(), memberUser.userId)
       expect(await screen.findByText(/recovery link sent/i)).toBeTruthy()
@@ -635,6 +714,97 @@ describe('/settings/users +page.svelte (Story 8.7 AC groups A4/I/J/K)', () => {
       render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })
       await fireEvent.click(screen.getByRole('button', { name: /remove from organization/i }))
       expect((await screen.findByRole('alert')).textContent).toMatch(expected)
+    })
+
+    // Story 43-15 AC-9 (code review): removal gets the same FR102 block as deactivation — the
+    // page must explain it on the row (not a generic "Request failed") and offer the explicit
+    // abandon path the API's `rotationHandling: "abandon"` body grants.
+    it('explains an active_rotations removal refusal on the row and keeps the user listed', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      removeOrgUserMock.mockRejectedValue(
+        new ApiClientError(
+          409,
+          { error: 'active_rotations', rotationIds: ['r1', 'r2'] } as { error: string },
+          'Request failed'
+        )
+      )
+      render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })
+      await fireEvent.click(screen.getByRole('button', { name: /remove from organization/i }))
+
+      const alert = await screen.findByRole('alert')
+      expect(alert.textContent).toContain(
+        `${memberUser.email} still owns 2 unfinished rotation(s). Complete, retire, or abandon them before removing this account.`
+      )
+      expect(alert.textContent).not.toMatch(/request failed/i)
+      expect(invalidateAllMock).not.toHaveBeenCalled()
+      const remove = screen.getByRole('button', {
+        name: /remove from organization/i,
+      }) as HTMLButtonElement
+      expect(remove.disabled).toBe(false)
+      expect(
+        screen.getByRole('button', { name: /abandon unfinished rotations and remove/i })
+      ).toBeTruthy()
+    })
+
+    it('renders the removal active_rotations message even for a malformed body (n = 0)', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      removeOrgUserMock.mockRejectedValue(
+        new ApiClientError(409, { error: 'active_rotations' } as { error: string }, 'Conflict')
+      )
+      render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })
+      await fireEvent.click(screen.getByRole('button', { name: /remove from organization/i }))
+
+      expect((await screen.findByRole('alert')).textContent).toContain(
+        'still owns 0 unfinished rotation(s)'
+      )
+    })
+
+    it('re-sends the removal with rotationHandling "abandon" after a second confirmation', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      removeOrgUserMock
+        .mockRejectedValueOnce(
+          new ApiClientError(
+            409,
+            { error: 'active_rotations', rotationIds: ['r1'] } as { error: string },
+            'Conflict'
+          )
+        )
+        .mockResolvedValueOnce({ userId: 'u-member' })
+      render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })
+      await fireEvent.click(screen.getByRole('button', { name: /remove from organization/i }))
+      await fireEvent.click(
+        await screen.findByRole('button', { name: /abandon unfinished rotations and remove/i })
+      )
+
+      expect(confirmSpy).toHaveBeenLastCalledWith(expect.stringMatching(/staged.*abandoned/i))
+      expect(confirmSpy).toHaveBeenLastCalledWith(expect.stringMatching(/promoted.*retire/i))
+      expect(removeOrgUserMock).toHaveBeenLastCalledWith(expect.anything(), 'u-member', {
+        rotationHandling: 'abandon',
+      })
+      await vi.waitFor(() => expect(invalidateAllMock).toHaveBeenCalledTimes(1))
+      expect(
+        screen.queryByRole('button', { name: /abandon unfinished rotations and remove/i })
+      ).toBeNull()
+    })
+
+    it('does not re-send the removal when the abandon confirmation is declined', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      removeOrgUserMock.mockRejectedValueOnce(
+        new ApiClientError(
+          409,
+          { error: 'active_rotations', rotationIds: ['r1'] } as { error: string },
+          'Conflict'
+        )
+      )
+      render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })
+      await fireEvent.click(screen.getByRole('button', { name: /remove from organization/i }))
+      const abandon = await screen.findByRole('button', {
+        name: /abandon unfinished rotations and remove/i,
+      })
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+      await fireEvent.click(abandon)
+
+      expect(removeOrgUserMock).toHaveBeenCalledTimes(1)
     })
 
     it.each([

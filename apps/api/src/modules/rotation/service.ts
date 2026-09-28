@@ -5,6 +5,7 @@ import {
   credentialDependencies,
   credentials,
   credentialVersions,
+  orgMemberships,
   projects,
   rotationChecklistItems,
   rotations,
@@ -138,6 +139,9 @@ export type InitiateRotationResult =
   // Story 13.5 AC-7: fieldValues' normalized key set didn't exactly match targetFields'
   // normalized key set. Returned before any write.
   | { status: 'field_values_target_mismatch'; missing: string[]; extra: string[] }
+  // Story 43-15 AC-4: the initiator's org membership was deactivated (or is gone) by the time this
+  // transaction read it under FOR SHARE — a deactivation won the race. Returned before any write.
+  | { status: 'initiator_inactive' }
   | {
       status: 'initiated'
       rotation: RotationRow
@@ -400,13 +404,31 @@ async function buildNewVersionInsertFields(
   }
 }
 
+/**
+ * Version numbers stay strictly monotonic regardless of abandonment: MAX(version_number)+1 across
+ * ALL of the credential's rows (abandoned ones included), never previousVersion.versionNumber+1.
+ * Abandon only sets abandoned_at, so an abandoned rotation's new version keeps its number, and
+ * lockCurrentNonPurgedVersion (which skips abandoned rows) returns the version *below* it —
+ * previous+1 would collide on idx_credential_versions_unique. Shared by initiateRotation (story
+ * 43-15 code review: an abandon-then-rotate-again got a bogus 409 rotation_in_progress with a
+ * null rotationId) and break-glass (same invariant addCredentialVersion already protects). Both
+ * callers hold the credential-scoped advisory lock, so the read-then-insert does not race.
+ */
+async function nextCredentialVersionNumber(tx: Tx, credentialId: string): Promise<number> {
+  const [maxVersionRow] = await tx
+    .select({ max: sql<number>`COALESCE(MAX(${credentialVersions.versionNumber}), 0)` })
+    .from(credentialVersions)
+    .where(eq(credentialVersions.credentialId, credentialId))
+  return Number(maxVersionRow?.max ?? 0) + 1
+}
+
 // Story 13.4 — extracted purely to keep initiateRotation()'s transaction callback under this
 // project's complexity ceiling. Builds the new credential_versions insert values, including the
 // two optional (undefined-when-whole-secret) schemaVersion/fieldMeta overrides from
 // buildNewVersionInsertFields().
 function newVersionInsertValues(
   input: { orgId: string; credentialId: string; userId: string },
-  previousVersion: { versionNumber: number },
+  versionNumber: number,
   keyVersion: number,
   newVersionFields: {
     encryptedValue: Awaited<ReturnType<typeof encryptValue>>
@@ -419,7 +441,7 @@ function newVersionInsertValues(
     credentialId: input.credentialId,
     encryptedValue: newVersionFields.encryptedValue,
     keyVersion,
-    versionNumber: previousVersion.versionNumber + 1,
+    versionNumber,
     createdBy: input.userId,
     ...(newVersionFields.schemaVersion !== undefined
       ? { schemaVersion: newVersionFields.schemaVersion }
@@ -628,6 +650,36 @@ async function resolveInitiateRotationPreflight(
 }
 
 /**
+ * Story 43-15 AC-4 (FR102): takes a FOR SHARE row lock on the initiator's own org_memberships row
+ * and reports whether it is still `active`. A deactivation holds that row FOR UPDATE from its
+ * rotation check until it commits, so the two serialize: if the deactivation locked first, this
+ * waits, then reads `deactivated`; if this locked first, the deactivation waits, then its
+ * rotation check (a new statement, READ COMMITTED) sees the rotation this transaction commits.
+ * The WHERE has no status filter so a deactivated row is read and rejected rather than silently
+ * matching nothing; a missing row (impossible post-auth) is treated as inactive too.
+ *
+ * Called on the OUTER transaction, after the credential advisory lock and before the savepoint:
+ * a lock taken inside the savepoint would be released by its early-return rollbacks, reopening the
+ * race. Only initiateRotation needs this — it is the only path that creates a new blocking row
+ * owned by a user (break-glass inserts non-blocking break_glass_complete, project-export imports
+ * insert initiated_by NULL, and resume keeps the original initiator of an already-blocking row).
+ * Lock order is credential advisory lock -> membership row; deactivation takes the membership
+ * row only (never the credential lock), so no cycle exists.
+ */
+async function lockActiveInitiatorMembership(
+  tx: Tx,
+  input: { orgId: string; userId: string }
+): Promise<boolean> {
+  const [membership] = await tx
+    .select({ status: orgMemberships.status })
+    .from(orgMemberships)
+    .where(and(eq(orgMemberships.orgId, input.orgId), eq(orgMemberships.userId, input.userId)))
+    .for('share')
+    .limit(1)
+  return membership?.status === 'active'
+}
+
+/**
  * AC-4/AC-5: acquires the non-blocking transaction-scoped advisory lock, then performs the
  * credential lookup, new-version insert, retention-lock UPDATE, checklist snapshot, and
  * rotations INSERT inside a nested (SAVEPOINT-backed) transaction — see ADR-5.1-01 and the
@@ -653,6 +705,8 @@ export async function initiateRotation(
     throw new RotationConflictError(await findInProgressRotationId(tx, input.credentialId))
   }
 
+  if (!(await lockActiveInitiatorMembership(tx, input))) return { status: 'initiator_inactive' }
+
   try {
     return await tx.transaction(async (trx) => {
       const loaded = await loadRotationTargetForUpdate(trx, input)
@@ -670,6 +724,7 @@ export async function initiateRotation(
       } = preflight
 
       const keyVersion = await currentKeyVersion(trx)
+      const versionNumber = await nextCredentialVersionNumber(trx, input.credentialId)
       const newVersionFields = await buildNewVersionInsertFields(
         previousVersion,
         previousPlaintext,
@@ -680,7 +735,7 @@ export async function initiateRotation(
 
       const [newVersion] = await trx
         .insert(credentialVersions)
-        .values(newVersionInsertValues(input, previousVersion, keyVersion, newVersionFields))
+        .values(newVersionInsertValues(input, versionNumber, keyVersion, newVersionFields))
         .returning()
       if (!newVersion)
         throw new Error('initiateRotation: new credential version insert returned no row')
@@ -2214,16 +2269,9 @@ async function createBreakGlassVersion(
     `breakGlassRotation: credential ${input.credentialId} has no non-purged/non-abandoned version to supersede`
   )
 
-  // Anti-pattern guard (Dev Notes): version numbers stay strictly monotonic regardless of
-  // abandonment — MUST be MAX(version_number)+1 across ALL rows (including abandoned ones), NOT
-  // previousVersion.versionNumber+1. If supersedeActiveRotation just abandoned an existing
-  // rotation's new version above, that version's number is still "used" and must never be
-  // reissued (same invariant addCredentialVersion's next-version computation already protects).
-  const [maxVersionRow] = await tx
-    .select({ max: sql<number>`COALESCE(MAX(${credentialVersions.versionNumber}), 0)` })
-    .from(credentialVersions)
-    .where(eq(credentialVersions.credentialId, input.credentialId))
-  const nextVersionNumber = Number(maxVersionRow?.max ?? 0) + 1
+  // Anti-pattern guard (Dev Notes): see nextCredentialVersionNumber — supersedeActiveRotation may
+  // just have abandoned an existing rotation's new version above, whose number stays used.
+  const nextVersionNumber = await nextCredentialVersionNumber(tx, input.credentialId)
 
   const keyVersion = await currentKeyVersion(tx)
   const encryptedValue = await encryptValue(input.newValue)

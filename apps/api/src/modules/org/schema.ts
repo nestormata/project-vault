@@ -16,6 +16,13 @@ export type OrgUserProjectRoleParams = z.infer<typeof OrgUserProjectRoleParamsSc
 
 // Story 4.3 AC-2: deactivation response — revokedSessionCount/revokedInvitationCount reflect the
 // actual work performed in the same transaction (AC-5/AC-7).
+// Story 43-15 AC-8/AC-9: how many of the target's blocking rotations `rotationHandling: "abandon"`
+// abandoned (staged/stale_recovery) and held (promoted/in_progress). Both 0 without the flag.
+const rotationHandlingCounts = {
+  abandonedRotationCount: z.number().int().nonnegative(),
+  heldRotationCount: z.number().int().nonnegative(),
+}
+
 export const OrgUserDeactivatedResponseSchema = z
   .object({
     data: z.object({
@@ -24,6 +31,7 @@ export const OrgUserDeactivatedResponseSchema = z
       revokedInvitationCount: z.number().int().nonnegative(),
       // Story 17.1 AC-15: count of credential_shares auto-revoked by this deactivation.
       revokedShareCount: z.number().int().nonnegative(),
+      ...rotationHandlingCounts,
     }),
   })
   .meta({ id: 'OrgUserDeactivatedResponse' })
@@ -75,6 +83,7 @@ export const OrgUserRemovedResponseSchema = z
     data: z.object({
       userId: z.uuid(),
       revokedSessionCount: z.number().int().nonnegative(),
+      ...rotationHandlingCounts,
     }),
   })
   .meta({ id: 'OrgUserRemovedResponse' })

@@ -762,10 +762,12 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditEvent: 'rotation.resumed',
     sameTransactionAuditService: 'writeResolutionAuditOrThrow',
   },
+  // Story 43-15: the abandon audit write moved into writeRotationAbandonedAuditOrThrow (shared
+  // with the deactivate/remove routes' rotationHandling path); it still writes through secureCtx.tx.
   'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/abandon': {
     action: 'mutation',
     auditEvent: 'rotation.abandoned',
-    sameTransactionAuditService: 'writeResolutionAuditOrThrow',
+    sameTransactionAuditService: 'writeRotationAbandonedAuditOrThrow',
   },
   // Story 5.6
   'POST /api/v1/projects/:projectId/credentials/:credentialId/rotations/:rotationId/promote': {

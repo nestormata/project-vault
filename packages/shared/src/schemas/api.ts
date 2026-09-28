@@ -51,6 +51,18 @@ export const ActiveRotationsErrorSchema = z
   .object({ error: z.literal('active_rotations'), rotationIds: z.array(z.uuid()) })
   .meta({ id: 'ActiveRotationsError' })
 
+// Story 43-15 AC-8/AC-9 (FR102 explicit orphan handling): the optional body of
+// POST /org/users/:userId/deactivate and DELETE /org/users/:userId. Absent (or `{}`) keeps the
+// default `active_rotations` block; `abandon` abandons the target's staged/stale_recovery
+// rotations and holds promoted/in_progress ones in the same transaction. `.strict()` + a literal:
+// an unknown key or any other value (e.g. a not-yet-built `transfer`) is rejected, never ignored.
+export const RotationHandlingBodySchema = z
+  .object({ rotationHandling: z.literal('abandon').optional() })
+  .strict()
+  .meta({ id: 'RotationHandlingBody' })
+
+export type RotationHandlingBody = z.infer<typeof RotationHandlingBodySchema>
+
 // Story 7.2 D12/AC-23 — archive-guard block shape for active machine-user API keys, matching
 // ActiveRotationsErrorSchema's `{ error, ... }` field-naming precedent (not `{ code, ... }`)
 // since this is the same project-archival block-response family (4.4 ADR-4.4-04).

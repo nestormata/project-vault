@@ -54,6 +54,28 @@ describe('org-users API helpers', () => {
     expect(result).toEqual({ userId: USER_ID, revokedSessionCount: 2, revokedInvitationCount: 1 })
   })
 
+  it('deactivateOrgUser sends no body by default, and { rotationHandling } when asked (43-15 AC-8)', async () => {
+    const counts = { abandonedRotationCount: 1, heldRotationCount: 0 }
+    const fetchFn = vi.fn().mockImplementation(async () =>
+      jsonResponse({
+        data: { userId: USER_ID, revokedSessionCount: 0, revokedInvitationCount: 0, ...counts },
+      })
+    )
+
+    await deactivateOrgUser(fetchFn, USER_ID)
+    const result = await deactivateOrgUser(fetchFn, USER_ID, { rotationHandling: 'abandon' })
+
+    expect(fetchFn.mock.calls[0]?.[1]).not.toHaveProperty('body')
+    expect(fetchFn).toHaveBeenLastCalledWith(
+      `/api/v1/org/users/${USER_ID}/deactivate`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ rotationHandling: 'abandon' }),
+      })
+    )
+    expect(result).toMatchObject(counts)
+  })
+
   it('deactivateOrgUser surfaces already_deactivated as a catchable ApiClientError', async () => {
     const fetchFn = vi
       .fn()
@@ -95,6 +117,32 @@ describe('org-users API helpers', () => {
       expect.objectContaining({ method: 'DELETE' })
     )
     expect(result.revokedSessionCount).toBe(2)
+  })
+
+  it('removeOrgUser sends no body by default, and { rotationHandling } when asked (43-15 AC-9)', async () => {
+    const fetchFn = vi.fn().mockImplementation(async () =>
+      jsonResponse({
+        data: {
+          userId: USER_ID,
+          revokedSessionCount: 0,
+          abandonedRotationCount: 1,
+          heldRotationCount: 0,
+        },
+      })
+    )
+
+    await removeOrgUser(fetchFn, USER_ID)
+    const result = await removeOrgUser(fetchFn, USER_ID, { rotationHandling: 'abandon' })
+
+    expect(fetchFn.mock.calls[0]?.[1]).not.toHaveProperty('body')
+    expect(fetchFn).toHaveBeenLastCalledWith(
+      `/api/v1/org/users/${USER_ID}`,
+      expect.objectContaining({
+        method: 'DELETE',
+        body: JSON.stringify({ rotationHandling: 'abandon' }),
+      })
+    )
+    expect(result.abandonedRotationCount).toBe(1)
   })
 
   it('changeProjectRole sends the role body via PUT', async () => {

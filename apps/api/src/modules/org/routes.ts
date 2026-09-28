@@ -3,7 +3,13 @@ import { and, eq, ne, sql } from 'drizzle-orm'
 import type { FastifyReply } from 'fastify/types/reply.js'
 import type { FastifyRequest } from 'fastify/types/request.js'
 import { orgMemberships, projectMemberships, users } from '@project-vault/db/schema'
-import { ActiveRotationsErrorSchema, AuditEvent } from '@project-vault/shared'
+import {
+  ActiveRotationsErrorSchema,
+  AuditEvent,
+  OperationalEvent,
+  RotationHandlingBodySchema,
+  type RotationHandlingBody,
+} from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseBody, parseParams, validationError } from '../../lib/route-helpers.js'
@@ -13,10 +19,14 @@ import type { OrgRole } from '../../plugins/require-org-role.js'
 import { revokeAllUserSessionsInOrg } from '../auth/session-revoke.js'
 import { sendAdminRecoveryLink } from '../auth/recovery.js'
 import { isNativeLoginEnabled } from '../auth/native-login-policy.js'
-import { checkActiveRotationsForUser, revokePendingInvitationsSentBy } from './deactivation.js'
+import { enforceRotationHandling, revokePendingInvitationsSentBy } from './deactivation.js'
 import { autoRevokeSharesForDeactivatedUser } from '../credential-shares/service.js'
 import { dismissSecurityAlert, listSecurityAlerts } from './security-alerts.js'
-import { listOrgUsers, removeUserFromOrgMemberships } from './user-management.js'
+import {
+  listOrgUsers,
+  lockOrgMembershipForUpdate,
+  removeUserFromOrgMemberships,
+} from './user-management.js'
 import { pseudonymizeUser } from './pseudonymize.js'
 import { getProjectMembershipRole } from '../projects/member-management.js'
 import {
@@ -81,6 +91,111 @@ function isUsableTarget<T extends { orgRole: string }>(
 ): target is T {
   if (!hasTarget(target, reply)) return false
   return !blockPeerOrHigherRole(target, secureCtx, reply, hierarchyMessage)
+}
+
+/** Story 43-15 AC-8/AC-9: the additive 200-body counts for a cleared rotation guard. */
+function rotationHandlingCounts(rotations: {
+  abandonedRotationIds: string[]
+  heldRotationIds: string[]
+}): { abandonedRotationCount: number; heldRotationCount: number } {
+  return {
+    abandonedRotationCount: rotations.abandonedRotationIds.length,
+    heldRotationCount: rotations.heldRotationIds.length,
+  }
+}
+
+/** Story 43-15 AC-8/AC-9: the optional `{ rotationHandling }` body; absent means `{}` (block). */
+function parseRotationHandlingBody(
+  req: FastifyRequest,
+  reply: FastifyReply
+): RotationHandlingBody | null {
+  const parsed = RotationHandlingBodySchema.safeParse(req.body ?? {})
+  if (parsed.success) return parsed.data
+  reply.status(422).send(validationError(parsed.error, 'body'))
+  return null
+}
+
+/**
+ * Story 43-15: the shared entry sequence of the deactivate and remove routes — params, the
+ * optional `{ rotationHandling }` body, then the D4 self-action block (before any DB access).
+ * Sends the 422/403 and returns null on failure.
+ */
+function parseTargetUserRequest(
+  secureCtx: SecureRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  selfAction: { code: string; message: string }
+): { params: { userId: string }; body: RotationHandlingBody } | null {
+  const params = parseParams(OrgUserParamsSchema, req, reply)
+  if (!params) return null
+  const body = parseRotationHandlingBody(req, reply)
+  if (!body) return null
+  if (blockSelfAction(params.userId, secureCtx, reply, selfAction.code, selfAction.message)) {
+    return null
+  }
+  return { params, body }
+}
+
+function logRotationGuardDenied(
+  req: FastifyRequest,
+  input: { eventType: string; targetUserId: string; callerId: string },
+  reason: 'active_rotations' | 'rotation_busy',
+  rotationCount: number
+): void {
+  req.log.warn(
+    { ...input, reason, rotationCount },
+    'Org user request denied — target still owns unfinished rotations'
+  )
+}
+
+/**
+ * Story 43-15 AC-2/AC-5/AC-8/AC-9 (FR102): runs the shared rotation guard for a deactivate or
+ * remove request and, when it refuses, sends the 409 and returns null — before any mutation, as
+ * secureRoute commits on return. `active_rotations` is ADR-4.4-04 byte-compatible with the project
+ * and credential archive guards (`error`, not `code`, carrying `rotationIds`). Like those guards, a
+ * refusal changed nothing, so it gets a structured warn log (the count, not the ids) and no audit
+ * row (KD-4).
+ */
+async function guardTargetRotations(
+  secureCtx: SecureRouteContext,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  input: {
+    targetUserId: string
+    handling: RotationHandlingBody['rotationHandling']
+    deniedEventType: string
+    abandonAuditPayload: Record<string, unknown>
+  }
+): Promise<{ abandonedRotationIds: string[]; heldRotationIds: string[] } | null> {
+  const guard = await enforceRotationHandling(secureCtx.tx, {
+    auth: secureCtx.auth,
+    targetUserId: input.targetUserId,
+    handling: input.handling,
+    request: req,
+    abandonAuditPayload: input.abandonAuditPayload,
+  })
+  if (guard.outcome === 'clear') {
+    return {
+      abandonedRotationIds: guard.abandonedRotationIds,
+      heldRotationIds: guard.heldRotationIds,
+    }
+  }
+  const logInput = {
+    eventType: input.deniedEventType,
+    targetUserId: input.targetUserId,
+    callerId: secureCtx.auth.userId,
+  }
+  if (guard.outcome === 'busy') {
+    logRotationGuardDenied(req, logInput, 'rotation_busy', 0)
+    reply.status(409).send({
+      code: 'rotation_busy',
+      message: 'A rotation for this user is being modified; retry shortly.',
+    })
+    return null
+  }
+  logRotationGuardDenied(req, logInput, 'active_rotations', guard.rotationIds.length)
+  reply.status(409).send({ error: 'active_rotations', rotationIds: guard.rotationIds })
+  return null
 }
 
 export async function orgRoutes(fastify: FastifyApp): Promise<void> {
@@ -212,17 +327,22 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
   })
 
   // Story 4.3 AC-2 through AC-8: deactivate a user in this org (immediate session/invitation
-  // revocation; D7-stubbed rotation-block check pending Epic 5).
+  // revocation), refused while the user still owns an unfinished rotation (FR102, story 43-15).
   secureRoute(fastify, {
     method: 'POST',
     url: '/users/:userId/deactivate',
     schema: {
+      // Story 43-15 AC-8: optional in practice — absent/`{}` keeps the default active_rotations
+      // block (the spec generator marks every request body `required`, as for every other route).
+      body: RotationHandlingBodySchema,
       response: {
         200: OrgUserDeactivatedResponseSchema,
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
+        // active_rotations (ADR-4.4-04), or already_deactivated / rotation_busy (ApiError).
         409: z.union([ActiveRotationsErrorSchema, ApiErrorSchema]),
+        422: ApiErrorSchema,
       },
     },
     security: {
@@ -234,35 +354,21 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       rateLimit: { max: 20, key: 'POST /org/users/:userId/deactivate' },
     },
     handler: async (ctx, req: FastifyRequest, reply: FastifyReply) => {
-      const params = parseParams(OrgUserParamsSchema, req, reply)
-      if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
-
-      if (
-        blockSelfAction(
-          params.userId,
-          secureCtx,
-          reply,
-          'cannot_deactivate_self',
-          'You cannot deactivate your own account'
-        )
-      ) {
-        return reply
-      }
+      const request = parseTargetUserRequest(secureCtx, req, reply, {
+        code: 'cannot_deactivate_self',
+        message: 'You cannot deactivate your own account',
+      })
+      if (!request) return reply
+      const { params, body } = request
 
       // AC-3 edge case: lock the target row before evaluating hierarchy/idempotency so a
       // concurrent role change or a racing deactivation call (AC-19) is re-checked, not raced.
-      const [target] = await secureCtx.tx
-        .select({ orgRole: orgMemberships.role, status: orgMemberships.status })
-        .from(orgMemberships)
-        .where(
-          and(
-            eq(orgMemberships.userId, params.userId),
-            eq(orgMemberships.orgId, secureCtx.auth.orgId)
-          )
-        )
-        .for('update')
-        .limit(1)
+      const target = await lockOrgMembershipForUpdate(
+        secureCtx.tx,
+        secureCtx.auth.orgId,
+        params.userId
+      )
       if (
         !isUsableTarget(
           target,
@@ -279,6 +385,19 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
           .status(409)
           .send({ code: 'already_deactivated', message: 'User is already deactivated' })
       }
+
+      // Story 43-15 AC-2/AC-8 (FR102): the rotation guard runs HERE — after the self/hierarchy/
+      // idempotency checks (a caller who fails those never learns another user's rotation ids)
+      // and BEFORE any mutation: secureRoute commits on return, so a 409 sent after the UPDATE
+      // below would still commit the deactivation and its session revocations. The target's row
+      // stays locked FOR UPDATE until commit, so a rotation they start meanwhile is refused (AC-4).
+      const rotations = await guardTargetRotations(secureCtx, req, reply, {
+        targetUserId: params.userId,
+        handling: body.rotationHandling,
+        deniedEventType: OperationalEvent.ORG_USER_DEACTIVATE_DENIED,
+        abandonAuditPayload: { reason: 'initiator_deactivated', deactivatedUserId: params.userId },
+      })
+      if (!rotations) return reply
 
       await secureCtx.tx
         .update(orgMemberships)
@@ -304,24 +423,6 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
         orgId: secureCtx.auth.orgId,
         userId: params.userId,
       })
-
-      // D7 stub — never blocks today (checkActiveRotationsForUser always returns
-      // blocked: false); see deactivation.ts for the Epic 5 forward-dependency note. Branching on
-      // the result now, even though it's always false, means Epic 5 only has to fill in the
-      // function body — this call site won't also need to be remembered and updated.
-      const rotationCheck = await checkActiveRotationsForUser(
-        params.userId,
-        secureCtx.auth.orgId,
-        secureCtx.tx
-      )
-      if (rotationCheck.blocked) {
-        // ADR-4.4-04: byte-compatible with Story 4.4's archive guard — `error`, not `code`, and
-        // carries `rotationIds` — so clients handle either endpoint's active-rotation block the
-        // same way once Epic 5 replaces both stubs with a real check.
-        return reply
-          .status(409)
-          .send({ error: 'active_rotations', rotationIds: rotationCheck.rotationIds })
-      }
 
       // Story 17.1 AC-15: a deactivated user's outstanding `active` credential shares are
       // revoked in this same transaction — mirrors the epic's own security-review finding F6
@@ -357,6 +458,7 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
           revokedSessionCount,
           revokedInvitationCount,
           revokedShareCount: revokedShares.length,
+          ...rotations,
         },
         request: req,
       })
@@ -367,6 +469,7 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
           revokedSessionCount,
           revokedInvitationCount,
           revokedShareCount: revokedShares.length,
+          ...rotationHandlingCounts(rotations),
         },
       }
     },
@@ -484,14 +587,17 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
     method: 'DELETE',
     url: '/users/:userId',
     schema: {
+      // Story 43-15 AC-9: same optional body as deactivate.
+      body: RotationHandlingBodySchema,
       response: {
         200: OrgUserRemovedResponseSchema,
         401: ApiErrorSchema,
         403: ApiErrorSchema,
         404: ApiErrorSchema,
-        // 409 covers both last_org_owner (plain ApiError) and sole_owner_of_projects (carries
-        // the offending `projects` array). A union keeps `projects` from being serialized away.
-        409: z.union([SoleOwnerConflictResponseSchema, ApiErrorSchema]),
+        // 409 covers last_org_owner / rotation_busy (plain ApiError), sole_owner_of_projects
+        // (carries the offending `projects` array) and Story 43-15's active_rotations (carries
+        // `rotationIds`). A union keeps those arrays from being serialized away.
+        409: z.union([SoleOwnerConflictResponseSchema, ActiveRotationsErrorSchema, ApiErrorSchema]),
         422: ApiErrorSchema,
       },
     },
@@ -502,33 +608,22 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       rateLimit: { max: 20, timeWindowMs: 60_000, key: 'DELETE /api/v1/org/users/:userId' },
     },
     handler: async (ctx, req, reply) => {
-      const params = parseParams(OrgUserParamsSchema, req, reply)
-      if (!params) return reply
       const secureCtx = ctx as SecureRouteContext
-
       // D4: self-removal is blocked. Cheapest check, before any DB access.
-      if (
-        blockSelfAction(
-          params.userId,
-          secureCtx,
-          reply,
-          'cannot_modify_self',
-          'You cannot remove yourself from the organization'
-        )
-      ) {
-        return reply
-      }
+      const request = parseTargetUserRequest(secureCtx, req, reply, {
+        code: 'cannot_modify_self',
+        message: 'You cannot remove yourself from the organization',
+      })
+      if (!request) return reply
+      const { params, body } = request
 
-      const [target] = await secureCtx.tx
-        .select({ userId: orgMemberships.userId, orgRole: orgMemberships.role })
-        .from(orgMemberships)
-        .where(
-          and(
-            eq(orgMemberships.userId, params.userId),
-            eq(orgMemberships.orgId, secureCtx.auth.orgId)
-          )
-        )
-        .limit(1)
+      // Story 43-15 AC-9: locked FOR UPDATE (as deactivation does) so the rotation guard below
+      // and a concurrent rotation initiation by the target serialize on this row (AC-4).
+      const target = await lockOrgMembershipForUpdate(
+        secureCtx.tx,
+        secureCtx.auth.orgId,
+        params.userId
+      )
       // D9: cannot act on a peer/superior org role.
       if (
         !isUsableTarget(
@@ -591,6 +686,16 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
         })
       }
 
+      // Story 43-15 AC-9: the same FR102 guard as deactivation — after the structural
+      // last-owner/sole-owner 409s above, before any mutation.
+      const rotations = await guardTargetRotations(secureCtx, req, reply, {
+        targetUserId: params.userId,
+        handling: body.rotationHandling,
+        deniedEventType: OperationalEvent.ORG_USER_REMOVE_DENIED,
+        abandonAuditPayload: { reason: 'initiator_removed', removedUserId: params.userId },
+      })
+      if (!rotations) return reply
+
       const { removedProjectCount } = await removeUserFromOrgMemberships(
         secureCtx.tx,
         secureCtx.auth.orgId,
@@ -612,11 +717,17 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
         actorUserId: secureCtx.auth.userId,
         eventType: AuditEvent.ORG_USER_REMOVED,
         resourceId: params.userId,
-        payload: { removedProjectCount },
+        payload: { removedProjectCount, ...rotations },
         request: req,
       })
 
-      return { data: { userId: params.userId, revokedSessionCount: revokedCount } }
+      return {
+        data: {
+          userId: params.userId,
+          revokedSessionCount: revokedCount,
+          ...rotationHandlingCounts(rotations),
+        },
+      }
     },
   })
 

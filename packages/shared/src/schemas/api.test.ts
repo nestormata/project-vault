@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ApiErrorSchema, ApiResponseSchema } from './api.js'
+import { ApiErrorSchema, ApiResponseSchema, RotationHandlingBodySchema } from './api.js'
 import { z } from 'zod/v4'
 
 describe('ApiResponse', () => {
@@ -54,5 +54,24 @@ describe('ApiError', () => {
       message: 'Validation failed',
     })
     expect(result.success).toBe(false)
+  })
+})
+
+// Story 43-15 AC-8/AC-9: the optional deactivate/remove body — `abandon` is the only accepted
+// value, and `.strict()` rejects unknown keys instead of silently falling back to the block.
+describe('RotationHandlingBody', () => {
+  it('accepts an empty body and the abandon literal', () => {
+    expect(RotationHandlingBodySchema.safeParse({}).success).toBe(true)
+    expect(RotationHandlingBodySchema.safeParse({ rotationHandling: 'abandon' }).success).toBe(true)
+  })
+
+  it('rejects any other handling value (no transfer, no silent fallback)', () => {
+    expect(RotationHandlingBodySchema.safeParse({ rotationHandling: 'transfer' }).success).toBe(
+      false
+    )
+  })
+
+  it('rejects unknown keys', () => {
+    expect(RotationHandlingBodySchema.safeParse({ handling: 'abandon' }).success).toBe(false)
   })
 })
