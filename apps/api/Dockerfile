@@ -292,15 +292,93 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["node", "dist/main.js"]
 
-# Story 9.10 AC-1/AC-2: the `migrate` image's build target. Filesystem-identical to `db-builder`
-# (it adds no layer beyond the OCI label) and it never runs the app, so it needs the label only,
-# not a runtime ENV. It exists as a separate LEAF stage purely for build caching: RELEASE_VERSION
-# changes on every release, so declaring the ARG/LABEL directly in `db-builder` would invalidate
-# every layer of the stages that build FROM it (`app-builder` -> `deploy` -> the runner's
-# COPY --from=deploy), re-running every `pnpm build` — including the QEMU-emulated linux/arm64
-# leg — on each publish. Keeping it in a stage nothing else derives from means the release
-# version can only ever bust this one label layer.
-FROM db-builder AS migrate
+# Story 64.3: production-only runtime tree for the published `migrate` image. It used to BE
+# `db-builder` (whole workspace, full devDependency install, compiler toolchain, drizzle-kit/tsx
+# and their esbuild Go binaries, npm), which failed the release vulnerability gate on the Go stdlib
+# CVEs in those esbuild binaries and on npm's bundled deps, while api/web were clean. Migrations
+# now run as compiled JS (`packages/db/dist/scripts/guarded-migrate.js`, which applies them through
+# drizzle-orm's own migrator, not drizzle-kit), so only @project-vault/db's production closure is
+# needed. Same `pnpm deploy --legacy` + materialize pattern as the api `deploy` stage above, in its
+# own leaf stage because `pnpm deploy` prunes the workspace in place.
+FROM db-builder AS migrate-deploy
+# One RUN (Sonar: merge consecutive RUNs), in four steps:
+#  1. deploy @project-vault/db's production closure;
+#  2. legacy deploy leaves the private workspace deps as links into /app/packages/*: copy their
+#     built package boundaries instead (same reasoning as the api `deploy` stage);
+#  3. materialize their own runtime deps, which legacy deploy prunes (zod too here: unlike the api,
+#     db does not depend on it directly). The materializer fails on any missing dependency or
+#     leftover symlink, and the imports prove the entry points resolve inside the deploy tree;
+#  4. assemble /app as a one-package pnpm workspace so the published invocation contract,
+#     `pnpm --filter @project-vault/db db:migrate` from /app (docker-compose.images.yml, operator
+#     stacks), keeps working unchanged. The shipped db manifest is a derived copy whose only script
+#     runs the compiled guard with node (the committed manifest is never edited; locally
+#     `db:migrate` still runs the TS source through tsx). guarded-migrate resolves `../migrations`
+#     from `dist/scripts`, so the SQL + journal go to `dist/migrations`. Compiled tests are dropped.
+#     verifyDepsBeforeRun=false: a deploy tree has no install state to verify, and pnpm must never
+#     try to "repair" it with an install at run time. The last check fails the build if any
+#     drizzle-kit/tsx/esbuild ever leaks back into the runtime tree.
+RUN set -eu; \
+    DEPLOY=/app/migrate-deploy; \
+    RUNTIME=/app/migrate-runtime; \
+    pnpm --filter @project-vault/db deploy --prod --legacy "$DEPLOY"; \
+    for package in shared crypto; do \
+      rm -rf "$DEPLOY/node_modules/@project-vault/$package"; \
+      mkdir -p "$DEPLOY/node_modules/@project-vault/$package"; \
+      cp "/app/packages/$package/package.json" "$DEPLOY/node_modules/@project-vault/$package/package.json"; \
+      cp -r "/app/packages/$package/dist" "$DEPLOY/node_modules/@project-vault/$package/dist"; \
+    done; \
+    node scripts/materialize-deploy-runtime.mjs \
+      "$DEPLOY" \
+      /app \
+      /app/packages/shared/node_modules/cron-parser \
+      /app/packages/shared/node_modules/zod \
+      /app/packages/shared/node_modules/@zxcvbn-ts/core \
+      /app/packages/shared/node_modules/@zxcvbn-ts/language-common \
+      /app/packages/shared/node_modules/@zxcvbn-ts/language-en \
+      /app/packages/crypto/node_modules/argon2; \
+    node --input-type=module -e "await import('$DEPLOY/node_modules/@project-vault/shared/dist/index.js')"; \
+    node --input-type=module -e "await import('$DEPLOY/node_modules/@project-vault/crypto/dist/index.js')"; \
+    mkdir -p "$RUNTIME/packages/db"; \
+    cp -a "$DEPLOY/node_modules" "$RUNTIME/packages/db/node_modules"; \
+    cp -a /app/packages/db/dist "$RUNTIME/packages/db/dist"; \
+    cp -a /app/packages/db/src/migrations "$RUNTIME/packages/db/dist/migrations"; \
+    find "$RUNTIME/packages/db/dist" \( -name '*.test.*' -o -name '__tests__' \) -prune -exec rm -rf {} +; \
+    node -e ' \
+      const fs = require("node:fs"); \
+      const manifest = JSON.parse(fs.readFileSync("/app/packages/db/package.json", "utf8")); \
+      manifest.scripts = { "db:migrate": "node dist/scripts/guarded-migrate.js" }; \
+      delete manifest.devDependencies; \
+      fs.writeFileSync(process.argv[1], JSON.stringify(manifest, null, 2) + "\n"); \
+    ' "$RUNTIME/packages/db/package.json"; \
+    printf '%s\n' '{ "name": "project-vault-migrate", "private": true }' > "$RUNTIME/package.json"; \
+    printf '%s\n' 'packages:' '  - packages/db' 'verifyDepsBeforeRun: false' > "$RUNTIME/pnpm-workspace.yaml"; \
+    test -f "$RUNTIME/packages/db/dist/scripts/guarded-migrate.js"; \
+    test -f "$RUNTIME/packages/db/dist/migrations/meta/_journal.json"; \
+    if find "$RUNTIME" -path '*/node_modules/*' \
+      \( -name drizzle-kit -o -name tsx -o -name esbuild -o -name '@esbuild' \) \
+      | grep -q .; then \
+      echo "migrate runtime still contains dev tooling (drizzle-kit/tsx/esbuild)" >&2; exit 1; \
+    fi
+
+# Story 9.10 AC-1/AC-2 + Story 64.3: the `migrate` image's build target — a fresh node base with
+# only the migration runtime above plus pnpm (the invocation contract), no compiler toolchain,
+# workspace sources, devDependencies, npm or corepack. It never runs the app, so it needs the
+# release-version label only, not a runtime ENV. It stays a LEAF stage declared last for build
+# caching: RELEASE_VERSION changes on every release and may only ever bust this one label layer.
+# It keeps the base image's ENTRYPOINT/CMD (a bare `node`, exits 0 without migrating) exactly as
+# before; callers pass `pnpm --filter @project-vault/db db:migrate` explicitly.
+FROM node@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS migrate
+# npm/npx and corepack are never used here; their bundled deps were a source of gate findings.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+      /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+# The same pinned pnpm the builder installed (a self-contained package with no dependencies).
+COPY --from=builder /usr/local/lib/node_modules/pnpm /usr/local/lib/node_modules/pnpm
+RUN PNPM_DIR=/usr/local/lib/node_modules/pnpm \
+ && PNPM_BIN=$(node -p "require('$PNPM_DIR/package.json').bin.pnpm") \
+ && ln -s "$PNPM_DIR/$PNPM_BIN" /usr/local/bin/pnpm \
+ && pnpm --version
+WORKDIR /app
+COPY --from=migrate-deploy /app/migrate-runtime .
 ARG RELEASE_VERSION=dev
 LABEL org.opencontainers.image.version=$RELEASE_VERSION
 # Sonar docker:S6471: unlike `runner` (which starts as root on purpose -- see that stage's own

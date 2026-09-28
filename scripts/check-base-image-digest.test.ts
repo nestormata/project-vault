@@ -163,7 +163,7 @@ describe('base image digest lockstep guard', () => {
       expect(uniqueDigests[0]).toMatch(/^sha256:[0-9a-f]{64}$/)
     })
 
-    it('finds exactly two external FROM lines in each of apps/api/Dockerfile and apps/web/Dockerfile, and one in Dockerfile.ci', () => {
+    it('finds exactly three external FROM lines in apps/api/Dockerfile, two in apps/web/Dockerfile, and one in Dockerfile.ci', () => {
       const apiFrom = parseFromLines(
         readFileSync(resolve(repositoryRoot, 'apps/api/Dockerfile'), 'utf8')
       ).filter((f) => !f.isInternalStageRef)
@@ -174,7 +174,8 @@ describe('base image digest lockstep guard', () => {
         readFileSync(resolve(repositoryRoot, 'Dockerfile.ci'), 'utf8')
       ).filter((f) => !f.isInternalStageRef)
 
-      expect(apiFrom).toHaveLength(2)
+      // api: builder, runner, and (Story 64.3) the minimal migrate image's own fresh base.
+      expect(apiFrom).toHaveLength(3)
       expect(webFrom).toHaveLength(2)
       expect(ciFrom).toHaveLength(1)
     })

@@ -83,6 +83,9 @@ jobs:
       - name: Check container publish workflow contract
         run: pnpm vitest run scripts/check-container-publish-workflow.test.ts
 
+      - name: Check image scan workflows contract (Story 64.3 AC-5)
+        run: pnpm vitest run scripts/check-image-scan-workflows.test.ts
+
       - name: Check base image digest lockstep guard (Story 64.1 AC-2)
         run: pnpm vitest run scripts/check-base-image-digest.test.ts
 
@@ -606,7 +609,7 @@ jobs:
   docker-build:
     name: Docker Build (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -619,6 +622,39 @@ jobs:
             arch: arm64
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Story 64.3 AC-3: full history so `origin/<base>...HEAD` has a merge base below.
+          fetch-depth: 0
+
+      # Story 64.3 AC-3: decides whether this run's image scans (below) are blocking. Only a PR
+      # that changes an image input can introduce a new image vulnerability through its own diff;
+      # every other run scans in advisory mode so an unrelated PR does not go red the morning a new
+      # upstream CVE is published (Story 10-1's reason for keeping image scans nightly-only). On a
+      # push to main/dev the scan is advisory too: nightly.yml is the gate there. github.* values
+      # reach the script through env:, never `${{ }}` inside run:, to rule out script injection.
+      - name: Detect image-input changes
+        id: image-inputs
+        if: matrix.arch == 'amd64'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          IMAGES_CHANGED=false
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            git fetch --no-tags origin "$BASE_REF"
+            CHANGED=$(git diff --name-only --no-renames "origin/${BASE_REF}...HEAD")
+            for INPUT in apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci .dockerignore \
+              apps/api/docker-entrypoint.sh pnpm-lock.yaml pnpm-workspace.yaml \
+              scripts/materialize-deploy-runtime.mjs .trivyignore; do
+              if grep -Fxq -- "$INPUT" <<<"$CHANGED"; then
+                echo "Image input changed: $INPUT"
+                IMAGES_CHANGED=true
+              fi
+            done
+          fi
+          echo "images_changed=${IMAGES_CHANGED}"
+          echo "images_changed=${IMAGES_CHANGED}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -658,6 +694,7 @@ jobs:
       # docker load only works for the host platform, so size check runs on amd64 only.
       # amd64 is the primary deployment target; arm64 build success is the validation.
       - name: Load API image for size check
+        id: load-api
         if: matrix.arch == 'amd64'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -671,6 +708,7 @@ jobs:
           cache-from: type=gha,scope=api-${{ matrix.arch }}
 
       - name: Load web image for size check
+        id: load-web
         if: matrix.arch == 'amd64'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -679,6 +717,26 @@ jobs:
           load: true
           tags: project-vault-web:size-check
           cache-from: type=gha,scope=web-${{ matrix.arch }}
+
+      # Story 64.3 (beyond AC-3's api+web): the published `migrate` image (apps/api/Dockerfile's
+      # minimal `migrate` stage) is built and scanned on PRs too. Without this, a broken or
+      # vulnerable migrate stage would first surface at release, in container-publish.yml's gate.
+      # It shares the builder/db-builder stages with the api image, so it reads the api build's
+      # cache; only its own small migrate-deploy/migrate layers go to a separate scope.
+      - name: Load migrate image for scan
+        id: load-migrate
+        if: matrix.arch == 'amd64'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          target: migrate
+          load: true
+          tags: project-vault-migrate:size-check
+          cache-from: |
+            type=gha,scope=api-${{ matrix.arch }}
+            type=gha,scope=migrate-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=migrate-${{ matrix.arch }}
 
       - name: Check extension-api deployed tree
         if: matrix.arch == 'amd64'
@@ -706,6 +764,93 @@ jobs:
             fi
             echo "$IMAGE is ${SIZE} bytes — OK"
           done
+
+      # Story 64.3 AC-3: the same settings as nightly.yml's image scans, on the amd64 images that
+      # were just loaded (arm64 cannot `load`; container-publish.yml scans both platforms at release).
+      # Each scan is `continue-on-error: true` so no scan masks another, and exit-code stays '1' so
+      # each step's `outcome` records whether findings exist. The blocking/advisory decision is made
+      # once, in "Enforce image scan gate" below, from those outcomes.
+      # Why not a `continue-on-error: ${{ steps.image-inputs.outputs.images_changed != 'true' }}`
+      # expression on each scan: on this composite action it let a real finding through as green
+      # with images_changed=true (throwaway PR #464, run 36439301535). The policy therefore lives in
+      # a plain `run:` script fed by `env:`, which reads step outputs reliably.
+      # `!cancelled()` + the load step's own outcome: a failed size check or another image's scan
+      # never skips this one, and it never runs against an image that was not loaded.
+      - name: Scan API image for vulnerabilities
+        id: scan-api
+        if: ${{ !cancelled() && matrix.arch == 'amd64' && steps.load-api.outcome == 'success' }}
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          # Pinned Trivy binary (trivy-action v0.36.0's default); never v0.69.4-v0.69.6 (Story 64.2).
+          version: 'v0.70.0'
+          image-ref: project-vault-api:size-check
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          trivyignores: .trivyignore
+
+      - name: Scan migrate image for vulnerabilities
+        id: scan-migrate
+        if: ${{ !cancelled() && matrix.arch == 'amd64' && steps.load-migrate.outcome == 'success' }}
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          # Pinned Trivy binary (trivy-action v0.36.0's default); never v0.69.4-v0.69.6 (Story 64.2).
+          version: 'v0.70.0'
+          image-ref: project-vault-migrate:size-check
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          trivyignores: .trivyignore
+
+      - name: Scan web image for vulnerabilities
+        id: scan-web
+        if: ${{ !cancelled() && matrix.arch == 'amd64' && steps.load-web.outcome == 'success' }}
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          # Pinned Trivy binary (trivy-action v0.36.0's default); never v0.69.4-v0.69.6 (Story 64.2).
+          version: 'v0.70.0'
+          image-ref: project-vault-web:size-check
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          trivyignores: .trivyignore
+
+      # Blocking only when this PR changes an image input (steps.image-inputs); otherwise, and on
+      # push to main (nightly is the gate there), findings become ::warning:: annotations.
+      - name: Enforce image scan gate
+        if: ${{ !cancelled() && matrix.arch == 'amd64' }}
+        env:
+          IMAGES_CHANGED: ${{ steps.image-inputs.outputs.images_changed }}
+          SCAN_API: ${{ steps.scan-api.outcome }}
+          SCAN_MIGRATE: ${{ steps.scan-migrate.outcome }}
+          SCAN_WEB: ${{ steps.scan-web.outcome }}
+        run: |
+          set -euo pipefail
+          FAILED=0
+          for PAIR in "api:${SCAN_API}" "migrate:${SCAN_MIGRATE}" "web:${SCAN_WEB}"; do
+            IMAGE="${PAIR%%:*}"
+            OUTCOME="${PAIR#*:}"
+            if [[ "$OUTCOME" != "failure" ]]; then
+              echo "project-vault-${IMAGE}:size-check scan outcome: ${OUTCOME:-not run}"
+              continue
+            fi
+            if [[ "$IMAGES_CHANGED" == "true" ]]; then
+              echo "::error title=Image scan (${IMAGE})::project-vault-${IMAGE}:size-check has fixable HIGH/CRITICAL findings (or the scan errored), and this PR changes an image input. See the scan step log."
+              FAILED=1
+            else
+              echo "::warning title=Advisory image scan (${IMAGE})::project-vault-${IMAGE}:size-check has fixable HIGH/CRITICAL findings (or the scan errored). Advisory because this run changes no image input; see the scan step log. Nightly/release gates will block on it."
+            fi
+          done
+          exit "$FAILED"
 
   security:
     name: Security Scan

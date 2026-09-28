@@ -14,6 +14,13 @@ These are the canonical repository paths. A fork or renamed copy is published un
 Each image is built for `linux/amd64` and `linux/arm64`, so the same tag runs on x86 servers and
 Apple Silicon / ARM hosts.
 
+The `migrate` image is a one-shot job, not a server. It holds only the compiled migration runner,
+its production dependencies, the SQL migrations and `pnpm`, and runs as the non-root `node` user.
+It has no build toolchain, `drizzle-kit`, `tsx` or `npm` (Story 64.3). Run it with
+`pnpm --filter @project-vault/db db:migrate` (append `--allow-destructive` only after the offline
+procedure in [runbooks/upgrades.md](runbooks/upgrades.md)); its default command exits without
+migrating.
+
 Images are built **only** when a GitHub Release with a strict `vMAJOR.MINOR.PATCH` tag is
 published — a push to `main` publishes nothing. For example, publishing `v1.2.3` produces the
 immutable release tag `1.2.3` and a long commit-SHA tag. Once all three images succeed, the
@@ -21,6 +28,29 @@ workflow promotes the `1.2`, `1`, and `latest` aliases.
 
 Use an exact version or digest for production and Portainer deployments. `latest` is a convenience
 alias and moves when a newer release is published.
+
+## Release vulnerability gate
+
+Before any alias moves, the publish workflow scans every pushed image (`api`, `migrate` and `web`)
+by digest, for both `linux/amd64` and `linux/arm64`, with Trivy: `CRITICAL,HIGH` severities,
+fixable vulnerabilities only (`ignore-unfixed`), OS and library packages, honouring the repository's
+time-boxed `.trivyignore`. Any finding fails the image's publish job, and the `X.Y`, `X` and
+`latest` aliases are **not** promoted. Both platforms are always scanned, so one finding never hides
+another.
+
+**Known limit.** The scan runs after the push, so the immutable `X.Y.Z` and `sha-<commit>` tags
+already exist when the gate fails. A failed gate therefore leaves a published but un-promoted
+`X.Y.Z` image in GHCR. Do not deploy it: nothing points an alias at it, but an exact-version pin
+still resolves.
+
+**Recovery.** Fix the vulnerability (usually a base-image digest bump or a dependency update), then
+cut the next patch release, `vX.Y.(Z+1)` (see [releasing.md](releasing.md)). Re-running the same
+tag through `workflow_dispatch` is refused by the workflow's "Reject existing immutable release tag"
+step, by design. A suppression is only acceptable through the documented `.trivyignore` process
+(CVE id, `exp:` date, one-line justification).
+
+Scanning before the push was rejected: it would need an extra single-platform `load` build for each
+platform, doubling release build time, and would still not scan the exact bytes that were pushed.
 
 ## Running the published images
 

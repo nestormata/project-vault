@@ -113,8 +113,12 @@ gh run watch <run-id>
 ```
 
 `container-publish` must pass its "Verify published image version matches the release tag" step
-before the alias-promotion job runs. If it fails after the push, do **not** re-run blindly — the
-immutable `X.Y.Z` image tag already exists. Follow the verification-failure procedure in
+and its per-platform "Scan published image for vulnerabilities" steps before the alias-promotion
+job runs. A failed vulnerability scan leaves `X.Y.Z` published but un-promoted: fix the finding and
+cut `vX.Y.(Z+1)` (see
+[container-images.md](container-images.md#release-vulnerability-gate)). If the version
+verification fails after the push, do **not** re-run blindly — the immutable `X.Y.Z` image tag
+already exists. Follow the verification-failure procedure in
 [docs/runbook.md](runbook.md): publish `X.Y.Z+1`, or delete the package versions first and re-run
 via `workflow_dispatch`.
 

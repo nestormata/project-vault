@@ -89,9 +89,10 @@ jobs:
           - name: api
             file: apps/api/Dockerfile
             target: runner
-          # `migrate` is a leaf stage that is filesystem-identical to `db-builder` and only adds
-          # the release-version OCI label — see apps/api/Dockerfile's comment on why the label
-          # cannot live in `db-builder` itself without cache-busting the whole api build chain.
+          # `migrate` is a minimal leaf stage (Story 64.3): a fresh node base carrying only
+          # @project-vault/db's compiled migration runner, its production deps and pnpm. It is the
+          # last stage and the only one with the release-version label — see apps/api/Dockerfile's
+          # comment on why that label must not live in a stage the api build chain derives from.
           - name: migrate
             file: apps/api/Dockerfile
             target: migrate
@@ -240,6 +241,69 @@ jobs:
 
             echo "Verified ${IMAGE_NAME} (${PLATFORM}): version '$VERSION'"
           done <<<"$ROWS"
+
+      # Story 64.3 AC-4: release vulnerability gate. Scans the exact bytes just pushed
+      # (`<image>@<digest>`) for BOTH published platforms with the same settings as ci.yml's PR
+      # scan and nightly.yml. Any fixable HIGH/CRITICAL finding fails build-publish, and because
+      # promote-aliases `needs: build-publish` (and requires its success), the semver and
+      # `latest` aliases are NOT moved onto a vulnerable image. The arm64 scan runs even when the
+      # amd64 one fails (`!cancelled()`), so one finding never hides the other platform's; both
+      # only run once the push itself succeeded, so they never scan an empty `name@` reference.
+      #
+      # KNOWN LIMIT (documented in docs/container-images.md, "Release vulnerability gate"): the
+      # immutable `X.Y.Z` and `sha-<commit>` tags are already pushed by the time this runs, so a
+      # failed gate leaves a published but un-promoted `X.Y.Z` image behind. Recovery: fix the vulnerability, then cut
+      # `vX.Y.(Z+1)`. Re-running the same tag through workflow_dispatch is refused by the
+      # "Reject existing immutable release tag" step above, by design. Rejected alternative:
+      # scanning before the push would need an extra single-arch `load` build per platform,
+      # doubling release build time, and would still not scan the exact pushed bytes.
+      - name: Scan published image for vulnerabilities (linux/amd64)
+        if: ${{ !cancelled() && steps.push.outcome == 'success' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          # trivy-action v0.36.0 has no platform input, but its entrypoint runs `trivy image`
+          # with the step's env, so Trivy's own TRIVY_PLATFORM selects the manifest-list entry.
+          TRIVY_PLATFORM: linux/amd64
+          # The digest was pushed by buildx's docker-container driver and never loaded into the
+          # local daemon: read it straight from the registry.
+          TRIVY_IMAGE_SRC: remote
+          # Registry auth comes from the Docker config the "Log in to GHCR" step wrote, which is
+          # scoped to ghcr.io. TRIVY_USERNAME/TRIVY_PASSWORD are deliberately not set: Trivy would
+          # offer them to every registry it contacts, including its vulnerability-DB mirrors.
+        with:
+          # Pinned Trivy binary (trivy-action v0.36.0's default); never v0.69.4-v0.69.6 (Story 64.2).
+          version: 'v0.70.0'
+          image-ref: ${{ env.IMAGE_NAMESPACE }}/${{ matrix.name }}@${{ steps.push.outputs.digest }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          trivyignores: .trivyignore
+
+      - name: Scan published image for vulnerabilities (linux/arm64)
+        if: ${{ !cancelled() && steps.push.outcome == 'success' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          # trivy-action v0.36.0 has no platform input, but its entrypoint runs `trivy image`
+          # with the step's env, so Trivy's own TRIVY_PLATFORM selects the manifest-list entry.
+          TRIVY_PLATFORM: linux/arm64
+          # The digest was pushed by buildx's docker-container driver and never loaded into the
+          # local daemon: read it straight from the registry.
+          TRIVY_IMAGE_SRC: remote
+          # Registry auth comes from the Docker config the "Log in to GHCR" step wrote, which is
+          # scoped to ghcr.io. TRIVY_USERNAME/TRIVY_PASSWORD are deliberately not set: Trivy would
+          # offer them to every registry it contacts, including its vulnerability-DB mirrors.
+        with:
+          # Pinned Trivy binary (trivy-action v0.36.0's default); never v0.69.4-v0.69.6 (Story 64.2).
+          version: 'v0.70.0'
+          image-ref: ${{ env.IMAGE_NAMESPACE }}/${{ matrix.name }}@${{ steps.push.outputs.digest }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          trivyignores: .trivyignore
 
   promote-aliases:
     name: Promote release aliases

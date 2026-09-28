@@ -12,10 +12,11 @@
  * journal `when` timestamp is newer as pending. This script does not maintain its own
  * bookkeeping table — it reads the same state drizzle-kit itself consults.
  */
-import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { drizzle } from 'drizzle-orm/postgres-js'
+import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
 import { OperationalEvent } from '@project-vault/shared'
 import {
@@ -175,15 +176,23 @@ function log(event: Record<string, unknown>): void {
   process.stdout.write(`${JSON.stringify(event)}\n`)
 }
 
-export function resolveDrizzleKitExecutable(scriptDirectory: string): string {
-  return resolve(scriptDirectory, '../../node_modules/drizzle-kit/bin.cjs')
-}
-
-export function runDrizzleKitMigration(scriptDirectory: string): void {
-  execFileSync(resolveDrizzleKitExecutable(scriptDirectory), ['migrate'], {
-    stdio: 'inherit',
-    cwd: resolve(scriptDirectory, '../..'),
-  })
+/** Applies every pending migration in `migrationsFolder` with drizzle-orm's own migrator — the
+ * exact code path `drizzle-kit migrate` delegates to (same `drizzle.__drizzle_migrations`
+ * bookkeeping and pending rule, the whole pending batch in one transaction). Calling it directly
+ * rather than spawning drizzle-kit means the published `migrate` image can run compiled JS with
+ * production dependencies only: no drizzle-kit, tsx or esbuild binaries, which the Story 64.3
+ * release vulnerability gate flagged (Go stdlib CVEs in esbuild). Server NOTICEs (e.g. the
+ * migrator's own `CREATE SCHEMA IF NOT EXISTS`) are dropped, matching drizzle-kit's output. */
+export async function applyMigrations(
+  databaseUrl: string,
+  migrationsFolder: string
+): Promise<void> {
+  const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined })
+  try {
+    await migrate(drizzle(sql), { migrationsFolder })
+  } finally {
+    await sql.end()
+  }
 }
 
 /** Queries `drizzle.__drizzle_migrations` for the most recently applied migration's `created_at`
@@ -265,10 +274,13 @@ export async function main(): Promise<void> {
   process.stderr.write(`${roleDecision.message}\n`)
 
   try {
-    runDrizzleKitMigration(__dirname)
-  } catch {
-    // drizzle-kit already prints its own error to stderr (inherited stdio); a non-zero exit
-    // here is enough to satisfy AC-2 (migrate service exits non-zero, api never starts).
+    await applyMigrations(databaseUrl, migrationsDir)
+  } catch (error) {
+    // A non-zero exit is what satisfies AC-2 (migrate service exits non-zero, api never starts);
+    // the whole pending batch ran in one transaction, so nothing was partially applied.
+    process.stderr.write(
+      `FATAL: migration failed: ${error instanceof Error ? error.message : String(error)}\n`
+    )
     process.exitCode = 1
     return
   }

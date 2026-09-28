@@ -2,7 +2,8 @@
 
 <!-- Verified against apps/api/src/main.ts (registerSchedules), apps/api/src/lib/boss.ts,
      apps/api/src/modules/backup/routes.ts, apps/api/src/modules/audit/routes.ts,
-     apps/api/src/modules/platform-audit/routes.ts, .trivyignore, .github/workflows/ci.yml -->
+     apps/api/src/modules/platform-audit/routes.ts, .trivyignore, .github/workflows/ci.yml,
+     .github/workflows/nightly.yml, .github/workflows/container-publish.yml -->
 
 ## When to use
 
@@ -67,6 +68,29 @@ description.
       it does not enforce the "max 30 days out from today" convention documented in the file's own
       header comment at entry-creation time. A human quarterly review is the actual enforcement of
       that convention.
+
+      Where the image scans run and when they block (Story 64.3). Every image scan honours
+      `.trivyignore`, so an entry suppresses the finding in all four places at once:
+      - **Nightly** (`nightly.yml`, "Trivy Docker Image Scan"): the `api` and `web` runner images
+        and the `migrate` image, one matrix leg each, so one image's finding never hides another's.
+        **Blocking** (red nightly).
+      - **PR / push** (`ci.yml`, "Docker Build (amd64)"): the amd64 `api`, `web` and `migrate`
+        images (`migrate` goes beyond AC-3, so a broken or vulnerable migrate stage shows up before
+        release rather than at the release gate). **Blocking**
+        only on a PR that changes an image input (`apps/api/Dockerfile`, `apps/web/Dockerfile`,
+        `Dockerfile.ci`, `.dockerignore`, `apps/api/docker-entrypoint.sh`, `pnpm-lock.yaml`,
+        `pnpm-workspace.yaml`, `scripts/materialize-deploy-runtime.mjs`, `.trivyignore`; renames
+        count as a change to both paths). On every other PR and on pushes to `main` it is **advisory**: a warning
+        annotation and a green job, because an unrelated PR must not go red the morning a new
+        upstream CVE is published, and nightly is the gate on `main`.
+      - **Release** (`container-publish.yml`): `api`, `migrate` and `web` by pushed digest, on
+        `linux/amd64` and `linux/arm64`. **Blocking**: a finding stops alias promotion (see
+        [`../container-images.md`](../container-images.md#release-vulnerability-gate)).
+      - **Filesystem** (`ci.yml`, "Security Scan"): lockfiles only; it cannot see base-image OS
+        packages, which is why the image scans exist.
+
+      As part of this review, check the last few nightly runs and any advisory PR-scan warnings for
+      findings that nobody picked up.
 
 - [ ] **`.trivyignore` expiry audit.** For every active entry, confirm its `exp: YYYY-MM-DD` deadline
       is not approaching without a renewal plan (same file and mechanism as the item above).
