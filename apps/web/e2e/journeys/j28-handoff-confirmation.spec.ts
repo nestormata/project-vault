@@ -4,6 +4,8 @@ const CONFIRM_URL = '**/api/v1/auth/handoff/confirm'
 const CONFIRM_BUTTON_NAME = 'Confirm sign-in'
 const GENERIC_REJECTION_MESSAGE = 'Sign-in could not be verified. Please start again.'
 const HANDOFF_CONFIRM_COOKIE_NAME = 'handoff-confirm'
+const ERROR_HEADING = "Sign-in couldn't be completed"
+const GUIDANCE = 'Return to CentralizeMe and start signing in again.'
 
 async function stubMfaChallengeConfirm(page: Page, mfaToken: string): Promise<void> {
   await page.route(CONFIRM_URL, async (route) => {
@@ -13,6 +15,27 @@ async function stubMfaChallengeConfirm(page: Page, mfaToken: string): Promise<vo
       body: JSON.stringify({ data: { mfaRequired: true, mfaToken } }),
     })
   })
+}
+
+async function stubRejectedConfirm(page: Page): Promise<void> {
+  await page.route(CONFIRM_URL, async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 'handoff_rejected', message: GENERIC_REJECTION_MESSAGE }),
+    })
+  })
+}
+
+// Story 60.4 AC2/AC3: every terminal error state shows the error heading, the generic alert, the
+// plain-text guidance (no VAULT_HANDOFF_ISSUER on this stack's web service), and no Confirm.
+async function expectTerminalErrorWithGuidance(page: Page): Promise<void> {
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(ERROR_HEADING)
+  await expect(page.getByRole('alert')).toHaveText(GENERIC_REJECTION_MESSAGE)
+  await expect(page.getByText(GUIDANCE, { exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Return to CentralizeMe' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: CONFIRM_BUTTON_NAME })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Not me' })).toHaveCount(0)
 }
 
 async function assertNoHandoffCookie(context: BrowserContext): Promise<void> {
@@ -64,16 +87,7 @@ test.describe('J28 — handoff confirmation page', () => {
   test('renders the generic rejection message on a stubbed 401, with no retry button', async ({
     page,
   }) => {
-    await page.route(CONFIRM_URL, async (route) => {
-      await route.fulfill({
-        status: 401,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          code: 'handoff_rejected',
-          message: GENERIC_REJECTION_MESSAGE,
-        }),
-      })
-    })
+    await stubRejectedConfirm(page)
 
     await page.goto(
       '/handoff?pendingId=e2e-fixture-pending-id-2&organizationName=Acme%20Corp&accountLabel=alex%40acme.com'
@@ -146,5 +160,60 @@ test.describe('J28 — handoff confirmation page', () => {
     await page.goto(url)
     await assertNoHandoffCookie(context)
     await expect(page.getByRole('heading', { name: CONFIRM_BUTTON_NAME })).toBeVisible()
+  })
+
+  // Story 60.4 (F10/F11). The e2e stack does not set VAULT_HANDOFF_ISSUER on the web service, so
+  // the terminal error states render the PLAIN-TEXT guidance here; the linked branch is covered by
+  // page.test.ts / page-server.test.ts and the Chrome pass.
+  test('60.4 (a): no-params renders the error heading and plain-text CentralizeMe guidance', async ({
+    page,
+  }) => {
+    await page.goto('/handoff')
+
+    await expectTerminalErrorWithGuidance(page)
+  })
+
+  test('60.4 (b): a stubbed 401 confirm renders the error heading and guidance', async ({
+    page,
+  }) => {
+    await stubRejectedConfirm(page)
+
+    await page.goto(
+      '/handoff?pendingId=e2e-fixture-pending-id-604b&organizationName=Acme%20Corp&accountLabel=alex%40acme.com'
+    )
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(CONFIRM_BUTTON_NAME)
+    await page.getByRole('button', { name: CONFIRM_BUTTON_NAME }).click()
+
+    await expectTerminalErrorWithGuidance(page)
+  })
+
+  test('60.4 (c): "Not me" navigates to /login without any handoff API call', async ({ page }) => {
+    const handoffRequests: string[] = []
+    page.on('request', (request) => {
+      if (request.url().includes('/api/v1/auth/handoff/')) handoffRequests.push(request.url())
+    })
+
+    await page.goto(
+      '/handoff?pendingId=e2e-fixture-pending-id-604c&organizationName=Acme%20Corp&accountLabel=alex%40acme.com'
+    )
+    await expect(page.getByRole('button', { name: CONFIRM_BUTTON_NAME })).toBeVisible()
+
+    await page.getByRole('link', { name: 'Not me' }).click()
+
+    await expect(page).toHaveURL(/\/login(\?|$)/)
+    expect(handoffRequests).toEqual([])
+  })
+
+  test('60.4 (d): a synthetic service-provisioned accountLabel renders as "your account"', async ({
+    page,
+  }) => {
+    await page.goto(
+      '/handoff?pendingId=e2e-fixture-pending-id-604d&organizationName=Acme%20Corp&accountLabel=service-provisioned%2Bab12%40invalid.projectvault'
+    )
+
+    await expect(
+      page.getByText('Sign in to Project Vault as your account in Acme Corp?')
+    ).toBeVisible()
+    await expect(page.getByText(/invalid\.projectvault/)).toHaveCount(0)
   })
 })

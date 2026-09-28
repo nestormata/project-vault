@@ -6,7 +6,7 @@ import { AppError } from '../../lib/errors.js'
 import { allocateOrganizationSlug, isUniqueViolation, slugify } from '../auth/service.js'
 import { generateUnusablePasswordHash } from '../auth/password.js'
 import { writeSystemAuditEntry } from '../audit/machine-entry.js'
-import { AuditEvent } from '@project-vault/shared'
+import { AuditEvent, serviceProvisionedEmail } from '@project-vault/shared'
 import type {
   BackfillCentralizemeOrgLinkRequest,
   ProvisionServiceOrganizationRequest,
@@ -100,7 +100,7 @@ async function insertNewProvisioning(
     const passwordHash = await generateUnusablePasswordHash()
     const [user] = await typedTx
       .insert(users)
-      .values({ email: `service-provisioned+${org.id}@invalid.projectvault`, passwordHash })
+      .values({ email: serviceProvisionedEmail(org.id), passwordHash })
       .returning({ id: users.id })
     if (!user) throw new Error('insertNewProvisioning: user insert returned no row')
 
@@ -266,7 +266,7 @@ async function insertNewOrgMember(
     const passwordHash = await generateUnusablePasswordHash()
     const [user] = await typedTx
       .insert(users)
-      .values({ email: `service-provisioned+${randomUUID()}@invalid.projectvault`, passwordHash })
+      .values({ email: serviceProvisionedEmail(randomUUID()), passwordHash })
       .returning({ id: users.id })
     if (!user) throw new Error('insertNewOrgMember: user insert returned no row')
 

@@ -37,11 +37,32 @@ function emptyEnvFile(): string {
   return path
 }
 
+/** Code review (60-4): Compose gives the caller's shell environment precedence over `--env-file`,
+ * so a variable exported in a developer's or CI shell (e.g. `VAULT_HANDOFF_ISSUER`) would silently
+ * override the test-owned env file and break the default-value assertions. Every variable the
+ * compose file interpolates (as listed by Compose itself) is dropped from the child's environment,
+ * keeping the rest (PATH, HOME, DOCKER_*) that the Docker CLI itself needs. A Compose CLI too old
+ * for `config --variables` falls back to the unfiltered environment (the pre-60-4 behaviour). */
+function isolatedComposeEnv(file: string): NodeJS.ProcessEnv {
+  let interpolated: Set<string>
+  try {
+    const stdout = execFileSync(
+      'docker',
+      ['compose', '-f', file, 'config', '--variables', '--format', 'json'],
+      { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+    )
+    interpolated = new Set(Object.keys(JSON.parse(stdout) as Record<string, unknown>))
+  } catch {
+    return process.env
+  }
+  return Object.fromEntries(Object.entries(process.env).filter(([key]) => !interpolated.has(key)))
+}
+
 function renderComposeConfig(file: string, envFile: string): Record<string, unknown> {
   const stdout = execFileSync(
     'docker',
     ['compose', '-f', file, '--env-file', envFile, 'config', '--format', 'json'],
-    { cwd: repoRoot, encoding: 'utf8' }
+    { cwd: repoRoot, encoding: 'utf8', env: isolatedComposeEnv(file) }
   )
   return JSON.parse(stdout) as Record<string, unknown>
 }
@@ -191,6 +212,41 @@ describeOrSkip(
       for (const key of CLI_POLICY_KEYS) {
         expect(services['api']?.environment).not.toHaveProperty(key)
       }
+    })
+  }
+)
+
+// Story 60.4 AC6 — the /handoff consent page's "Return to CentralizeMe" link reads the web
+// process's own VAULT_HANDOFF_ISSUER. Web defaults to EMPTY (link only when an operator explicitly
+// configures a CM issuer — a baked default would put a CentralizeMe link on every self-hosted
+// instance's reachable /handoff page); api defaults to its own zod default (an empty string would
+// fail api boot validation, z.string().min(1)). One operator value must reach both services.
+describeOrSkip(
+  'docker compose config — VAULT_HANDOFF_ISSUER on web and api (Story 60.4 AC6)',
+  () => {
+    it('renders web.environment.VAULT_HANDOFF_ISSUER as an empty string by default', () => {
+      const services = renderedServices(composeFile, emptyEnvFile())
+
+      expect(services['web']?.environment).toHaveProperty('VAULT_HANDOFF_ISSUER')
+      expect(services['web']?.environment?.['VAULT_HANDOFF_ISSUER']).toBe('')
+    })
+
+    it("renders api.environment.VAULT_HANDOFF_ISSUER as the api's own default", () => {
+      const services = renderedServices(composeFile, emptyEnvFile())
+
+      expect(services['api']?.environment?.['VAULT_HANDOFF_ISSUER']).toBe(
+        'https://app.centralizeme.com'
+      )
+    })
+
+    it('passes an operator-set issuer to both services', () => {
+      const services = renderedServices(
+        composeFile,
+        envFileWith('VAULT_HANDOFF_ISSUER=https://cm.example.test\n')
+      )
+
+      expect(services['web']?.environment?.['VAULT_HANDOFF_ISSUER']).toBe('https://cm.example.test')
+      expect(services['api']?.environment?.['VAULT_HANDOFF_ISSUER']).toBe('https://cm.example.test')
     })
   }
 )

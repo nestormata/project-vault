@@ -85,6 +85,10 @@ services:
       # Used to build invitation/recovery links in outgoing email. Normally identical to the
       # public origin above; override separately only if mail links must use a different host.
       WEB_BASE_URL: ${WEB_BASE_URL:-${PUBLIC_WEB_ORIGIN:-http://localhost:${WEB_HOST_PORT:-5173}}}
+      # Story 60.4: the handoff token `iss` the api verifies. Default = the api's own zod default
+      # (behaviour-neutral; must NOT be empty — the schema is min(1)). Wired here so an operator's
+      # custom issuer reaches the api verifier AND the web consent page's return link (below).
+      VAULT_HANDOFF_ISSUER: ${VAULT_HANDOFF_ISSUER:-https://app.centralizeme.com}
       # NODE_ENV=production above makes COOKIE_SECURE default to true, which a browser will only
       # honour over HTTPS (or http://localhost). Serving the stack over plain HTTP on a LAN
       # IP/hostname therefore needs COOKIE_SECURE=false — and terminating TLS at a reverse proxy
@@ -222,6 +226,10 @@ services:
       # Set PUBLIC_WEB_ORIGIN in .env for any non-localhost deployment (same value the api
       # service's CORS_ALLOWED_ORIGINS uses).
       ORIGIN: ${PUBLIC_WEB_ORIGIN:-http://localhost:${WEB_HOST_PORT:-5173}}
+      # Story 60.4: the /handoff consent page's "Return to CentralizeMe" link uses this value's
+      # origin (http(s) only). Deliberately EMPTY by default — the link appears only when an
+      # operator explicitly configures a CentralizeMe issuer; otherwise the guidance is plain text.
+      VAULT_HANDOFF_ISSUER: ${VAULT_HANDOFF_ISSUER:-}
       # Story 60.1 (Finding F1 fix): same expression/default as the api service's
       # CORS_ALLOWED_ORIGINS above. apps/web/src/lib/server/handoff-cors.ts reads this in the
       # web process itself to CORS-guard the handoff prepare route — without it here, that check's

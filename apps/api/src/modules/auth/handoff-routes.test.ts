@@ -15,6 +15,7 @@ import {
   initVaultForTest,
   parseSetCookies,
 } from '../../__tests__/helpers/auth-test-helpers.js'
+import { serviceProvisionedEmail } from '@project-vault/shared'
 
 process.env['DATABASE_URL'] ??=
   'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
@@ -75,12 +76,16 @@ const HANDOFF_PROVIDER = 'centralizeme-handoff'
  * with `centralizemeOrganizationId` stored on the org row — the fixture needed for
  * burnAndResolveOrg's real, stored-value comparison (never a raw-UUID comparison against the
  * token's `organizationId` claim).
+ *
+ * Story 60.4: `options.email` overrides the linked user's `users.email` (default unchanged), so
+ * prepare's display-label nulling can be exercised with a synthetic service-provisioned address.
  */
 async function createLinkedHandoffOrg(
   label: string,
   workosUserId: string,
-  centralizemeOrganizationId: string
-): Promise<{ orgId: string; userId: string }> {
+  centralizemeOrganizationId: string,
+  options: { email?: string } = {}
+): Promise<{ orgId: string; userId: string; organizationName: string }> {
   const orgId = randomUUID()
   const suffix = orgId.slice(0, 8)
   await getDb()
@@ -91,7 +96,7 @@ async function createLinkedHandoffOrg(
       slug: `handoff-${label}-${suffix}`,
       centralizemeOrganizationId,
     })
-  const email = `handoff-${label}-${randomUUID()}@example.com`
+  const email = options.email ?? `handoff-${label}-${randomUUID()}@example.com`
   const [user] = await getDb()
     .insert(users)
     .values({ email, passwordHash: 'x' })
@@ -111,7 +116,7 @@ async function createLinkedHandoffOrg(
       externalSubject: workosUserId,
     })
   )
-  return { orgId, userId: user.id }
+  return { orgId, userId: user.id, organizationName: `handoff-${label}-${suffix}` }
 }
 
 describe('handoff routes (Story 30.2 AC3/AC4)', () => {
@@ -208,6 +213,67 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
       expect(body.data.claim).not.toBe(rawCookie)
       expect(body.data.claim).not.toBe(body.data.pendingId)
       await app.close()
+    })
+
+    describe('display labels (Story 60.4 AC1, F10)', () => {
+      type PrepareBody = {
+        data: {
+          pendingId: string
+          claim: string
+          organizationName: string | null
+          accountLabel: string | null
+        }
+      }
+
+      async function prepareFor(workosUserId: string, cmOrgId: string): Promise<PrepareBody> {
+        const app = await createApp({ logger: false })
+        try {
+          const res = await app.inject({
+            method: 'POST',
+            url: PREPARE_URL,
+            payload: { token: signToken({ workosUserId, organizationId: cmOrgId }) },
+          })
+          expect(res.statusCode).toBe(200)
+          expect(parseSetCookies(res.headers['set-cookie'])).toHaveProperty(HANDOFF_COOKIE_NAME)
+          return res.json<PrepareBody>()
+        } finally {
+          await app.close()
+        }
+      }
+
+      it('1.1/1.2: a linked user with a synthetic service-provisioned email gets accountLabel null (key present), organizationName unaffected', async () => {
+        const workosUserId = `user_${randomUUID()}`
+        const cmOrgId = randomUUID()
+        const { organizationName } = await createLinkedHandoffOrg(
+          'synthetic',
+          workosUserId,
+          cmOrgId,
+          { email: serviceProvisionedEmail(randomUUID()) }
+        )
+        const body = await prepareFor(workosUserId, cmOrgId)
+        expect(body.data).toHaveProperty('accountLabel', null)
+        expect(body.data.organizationName).toBe(organizationName)
+        expect(body.data.pendingId).toBeTruthy()
+        expect(body.data.claim).toBeTruthy()
+      })
+
+      it('1.3: a linked user with a real email gets it back verbatim, organizationName unaffected', async () => {
+        const workosUserId = `user_${randomUUID()}`
+        const cmOrgId = randomUUID()
+        const realEmail = `alex-${randomUUID()}@acme.com`
+        const { organizationName } = await createLinkedHandoffOrg('real', workosUserId, cmOrgId, {
+          email: realEmail,
+        })
+        const body = await prepareFor(workosUserId, cmOrgId)
+        expect(body.data.accountLabel).toBe(realEmail)
+        expect(body.data.organizationName).toBe(organizationName)
+      })
+
+      it('1.12: an unlinked subject still gets null for both labels', async () => {
+        const body = await prepareFor(`user_${randomUUID()}`, randomUUID())
+        expect(body.data).toHaveProperty('accountLabel', null)
+        expect(body.data).toHaveProperty('organizationName', null)
+      })
     })
 
     it('AC2.5: VAULT_HANDOFF_ENABLED=false rejects an otherwise-valid token, no pending cookie', async () => {

@@ -196,7 +196,7 @@ and no scheduling happens at all. Configure exactly one destination (path **xor*
 | `VAULT_HANDOFF_ENABLED` | `false` | | Master switch for the CentralizeMe browser-handoff login. |
 | `VAULT_HANDOFF_INSTANCE_ID` | unset | required when enabled | This instance's identifier in the handoff claim. |
 | `VAULT_HANDOFF_VERIFY_KEYS` | unset | required when enabled | Public key(s) used to verify the router's handoff assertion. |
-| `VAULT_HANDOFF_ISSUER` | `https://app.centralizeme.com` | | Exact expected `iss` claim; a mismatch is rejected as `handoff_malformed_claim`. |
+| `VAULT_HANDOFF_ISSUER` | `https://app.centralizeme.com` (api); empty (web, under Compose) | | Exact expected `iss` claim; a mismatch is rejected as `handoff_malformed_claim`. The web process also reads it (Story 60.4), only for the `/handoff` consent page's "Return to CentralizeMe" link: the link points at this value's origin and is shown only when it is set to an absolute `http(s)` URL without credentials; otherwise the guidance is plain text. `docker-compose.yml` passes one operator value to both services. |
 | `VAULT_HANDOFF_CLOCK_SKEW_WARN_MS` | `20000` | | Skew above which a clock-skew warning is raised. |
 | `SERVICE_PROVISIONING_TOKEN` | unset | | Shared secret gating `POST /api/v1/service/organizations`. Unset means the route is unreachable (fail-closed). Generate with `openssl rand -base64 32`. |
 | `SERVICE_REVOCATION_TOKEN` | unset | | Shared secret for the companion service-side revocation callback. Same fail-closed default. |

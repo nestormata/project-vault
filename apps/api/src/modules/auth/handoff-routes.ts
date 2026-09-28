@@ -8,7 +8,11 @@ import {
   organizations,
   users,
 } from '@project-vault/db/schema'
-import { HandoffEvent, type HandoffEventType } from '@project-vault/shared'
+import {
+  HandoffEvent,
+  isServiceProvisionedEmail,
+  type HandoffEventType,
+} from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { env } from '../../config/env.js'
 import { secureRoute } from '../../lib/secure-route.js'
@@ -97,6 +101,12 @@ const REJECT_REASON_TO_EVENT: Record<HandoffRejectReason, HandoffEventType> = {
 // AC3: POST /auth/handoff/prepare
 // ---------------------------------------------------------------------------
 
+// Best-effort display hints for the /handoff consent screen. Story 60.4 (F10): a
+// CentralizeMe-provisioned user's `users.email` is a synthetic, undeliverable
+// `service-provisioned+<id>@invalid.projectvault` address that means nothing to the person
+// consenting, so it is returned as `null` (the page then shows its localized "your account"
+// fallback); a real, non-synthetic email is still returned verbatim. Display-only: this runs after
+// the pending state is written and never affects the auth outcome. The label is never logged.
 async function resolveDisplayNames(
   providerName: string,
   externalSubject: string
@@ -116,7 +126,11 @@ async function resolveDisplayNames(
         .where(eq(users.id, linked.userId))
         .limit(1)
     )
-    return { organizationName: org?.name ?? null, accountLabel: user?.email ?? null }
+    const email = user?.email ?? null
+    return {
+      organizationName: org?.name ?? null,
+      accountLabel: isServiceProvisionedEmail(email) ? null : email,
+    }
   } catch {
     // Best-effort only — display naming failure must never block the prepare response; the
     // authoritative org/membership check happens again at confirm time.
