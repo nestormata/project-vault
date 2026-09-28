@@ -250,6 +250,9 @@ describe('deployment hardening configuration', () => {
       'coverage',
       '.turbo',
       '.stryker-tmp',
+      // Story 66.1: Playwright's report/traces from a local `make e2e` (they can hold cookies/JWTs
+      // signed with that run's throwaway secrets, and `make ci`'s lint would scan the report's JS).
+      'apps/web/e2e/test-results/',
     ]) {
       expect(dockerignore).toContain(requiredEntry)
     }
