@@ -6,7 +6,9 @@ import { describe, expect, it } from 'vitest'
 const root = resolve(__dirname, '../../../../')
 const API_DOCKERFILE_PATH = 'apps/api/Dockerfile'
 const WEB_DOCKERFILE_PATH = 'apps/web/Dockerfile'
-const MIGRATE_STAGE_FROM = 'FROM db-builder AS migrate'
+// Story 64.3: `migrate` is now built on a fresh pinned node base (no longer `FROM db-builder`);
+// the trailing newline keeps this marker from matching the `migrate-deploy` stage.
+const MIGRATE_STAGE_MARKER = ' AS migrate\n'
 
 const readRepoFile = (path: string) => readFileSync(resolve(root, path), 'utf8')
 
@@ -33,7 +35,7 @@ describe('deployment hardening configuration', () => {
     const dockerfile = readRepoFile(API_DOCKERFILE_PATH)
     const runnerStage = dockerfile.slice(
       dockerfile.indexOf('AS runner'),
-      dockerfile.indexOf(MIGRATE_STAGE_FROM)
+      dockerfile.indexOf(MIGRATE_STAGE_MARKER)
     )
     const entrypoint = readRepoFile('apps/api/docker-entrypoint.sh')
 
@@ -46,9 +48,57 @@ describe('deployment hardening configuration', () => {
   // database over the network — so it has no reason to default to root.
   it('runs the migrate stage as the node user', () => {
     const dockerfile = readRepoFile(API_DOCKERFILE_PATH)
-    const migrateStage = dockerfile.slice(dockerfile.indexOf(MIGRATE_STAGE_FROM))
+    const migrateStage = dockerfile.slice(dockerfile.indexOf(MIGRATE_STAGE_MARKER))
 
     expect(migrateStage).toMatch(/\nUSER node\n/)
+  })
+
+  // Story 64.3: the published migrate image failed the release vulnerability gate while it was
+  // `db-builder` (esbuild Go binaries from drizzle-kit/tsx, npm's bundled deps). It must stay a
+  // minimal runtime: fresh pinned node base, no npm/corepack, only the production deploy tree and
+  // pnpm, which the `pnpm --filter @project-vault/db db:migrate` invocation contract needs.
+  describe('Story 64.3: minimal migrate image', () => {
+    const dockerfile = readRepoFile(API_DOCKERFILE_PATH)
+    const migrateStageStart = dockerfile.indexOf(MIGRATE_STAGE_MARKER)
+    const migrateLineStart = dockerfile.lastIndexOf('\n', migrateStageStart) + 1
+    const migrateStage = dockerfile.slice(migrateLineStart)
+    const deployStage = dockerfile.slice(
+      dockerfile.indexOf(' AS migrate-deploy\n'),
+      migrateLineStart
+    )
+    const nodeBase = /^FROM (node@sha256:[0-9a-f]{64}) AS builder$/m.exec(dockerfile)?.[1]
+
+    it('builds on the same pinned node base as the builder, not on a build stage', () => {
+      expect(nodeBase).toBeDefined()
+      expect(migrateStage.startsWith(`FROM ${nodeBase} AS migrate\n`)).toBe(true)
+    })
+
+    it('removes npm and corepack from the base image', () => {
+      const commands = dockerRunCommands(migrateStage).join('\n')
+      for (const path of [
+        '/usr/local/lib/node_modules/npm',
+        '/usr/local/lib/node_modules/corepack',
+        '/usr/local/bin/npx',
+      ]) {
+        expect(commands).toContain(path)
+      }
+    })
+
+    it('copies only the migration runtime tree and the builder pnpm', () => {
+      const copies = migrateStage.split('\n').filter((line) => line.startsWith('COPY '))
+      expect(copies).toEqual([
+        'COPY --from=builder /usr/local/lib/node_modules/pnpm /usr/local/lib/node_modules/pnpm',
+        'COPY --from=migrate-deploy /app/migrate-runtime .',
+      ])
+    })
+
+    it('ships a production-only deploy that runs compiled JS, never drizzle-kit/tsx/esbuild', () => {
+      const commands = dockerRunCommands(deployStage).join('\n')
+      expect(commands).toContain('pnpm --filter @project-vault/db deploy --prod --legacy')
+      expect(commands).toContain('"db:migrate": "node dist/scripts/guarded-migrate.js"')
+      expect(commands).toContain('verifyDepsBeforeRun: false')
+      expect(commands).toMatch(/-name drizzle-kit -o -name tsx -o -name esbuild/)
+    })
   })
 
   it.each([
@@ -96,7 +146,7 @@ describe('deployment hardening configuration', () => {
   // silently looks like a numbered release.
   it('declares RELEASE_VERSION as a build-arg with a documented dev default in the api migrate and runner stages', () => {
     const dockerfile = readRepoFile(API_DOCKERFILE_PATH)
-    const migrateStageStart = dockerfile.indexOf(MIGRATE_STAGE_FROM)
+    const migrateStageStart = dockerfile.indexOf(MIGRATE_STAGE_MARKER)
     const runnerStage = dockerfile.slice(dockerfile.indexOf('AS runner'), migrateStageStart)
     const migrateStage = dockerfile.slice(migrateStageStart)
 
@@ -123,8 +173,9 @@ describe('deployment hardening configuration', () => {
     )
 
     expect(dbBuilderStage).not.toMatch(/ARG RELEASE_VERSION/)
-    expect(dockerfile).not.toMatch(/FROM migrate\b/)
-    expect(dockerfile).not.toMatch(/--from=migrate\b/)
+    // `(?![\w-])`, not `\b`: `--from=migrate-deploy` (Story 64.3) is a different stage.
+    expect(dockerfile).not.toMatch(/FROM migrate(?![\w-])/)
+    expect(dockerfile).not.toMatch(/--from=migrate(?![\w-])/)
   })
 
   it('declares RELEASE_VERSION as a build-arg with the OCI version label in the web runner stage', () => {

@@ -14,6 +14,13 @@ These are the canonical repository paths. A fork or renamed copy is published un
 Each image is built for `linux/amd64` and `linux/arm64`, so the same tag runs on x86 servers and
 Apple Silicon / ARM hosts.
 
+The `migrate` image is a one-shot job, not a server. It holds only the compiled migration runner,
+its production dependencies, the SQL migrations and `pnpm`, and runs as the non-root `node` user.
+It has no build toolchain, `drizzle-kit`, `tsx` or `npm` (Story 64.3). Run it with
+`pnpm --filter @project-vault/db db:migrate` (append `--allow-destructive` only after the offline
+procedure in [runbooks/upgrades.md](runbooks/upgrades.md)); its default command exits without
+migrating.
+
 Images are built **only** when a GitHub Release with a strict `vMAJOR.MINOR.PATCH` tag is
 published — a push to `main` publishes nothing. For example, publishing `v1.2.3` produces the
 immutable release tag `1.2.3` and a long commit-SHA tag. Once all three images succeed, the

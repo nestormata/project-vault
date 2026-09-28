@@ -106,11 +106,12 @@ stays a permanent `0.0.1` development placeholder and is never read as release i
   `docker/build-push-action`, and adds the same value as the `org.opencontainers.image.version`
   label via `docker/metadata-action`. `apps/api/Dockerfile` declares `ARG RELEASE_VERSION=dev` in
   both the `migrate` and `runner` stages, and additionally sets `ENV RELEASE_VERSION=$RELEASE_VERSION`
-  in `runner` so the running process can read it. `migrate` is a leaf stage that is
-  filesystem-identical to `db-builder` and adds only the OCI label: because the release version
-  changes on every publish, a stage carrying that `ARG` invalidates the build cache of everything
-  built `FROM` it, so it must never live in `db-builder` (which `builder` → `deploy` → the api
-  runner's `COPY` all descend from). `apps/web/Dockerfile` declares the same `ARG`/`LABEL` in its
+  in `runner` so the running process can read it. `migrate` is the last, leaf stage: since Story
+  64.3 a fresh node base carrying only `@project-vault/db`'s compiled migration runner, its
+  production dependencies and pnpm (assembled in the `migrate-deploy` stage). Because the release
+  version changes on every publish, a stage carrying that `ARG` invalidates the build cache of
+  everything built `FROM` it, so it must never live in `db-builder` (which `builder` → `deploy` →
+  the api runner's `COPY` all descend from). `apps/web/Dockerfile` declares the same `ARG`/`LABEL` in its
   `runner` stage for OCI metadata parity — the web app never reads `RELEASE_VERSION` directly, since
   Version & Upgrade sources its version from the API's `/health`.
 - **Development fallback:** any build that does not pass the `RELEASE_VERSION` build-arg (a bare

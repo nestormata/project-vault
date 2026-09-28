@@ -89,9 +89,10 @@ jobs:
           - name: api
             file: apps/api/Dockerfile
             target: runner
-          # `migrate` is a leaf stage that is filesystem-identical to `db-builder` and only adds
-          # the release-version OCI label — see apps/api/Dockerfile's comment on why the label
-          # cannot live in `db-builder` itself without cache-busting the whole api build chain.
+          # `migrate` is a minimal leaf stage (Story 64.3): a fresh node base carrying only
+          # @project-vault/db's compiled migration runner, its production deps and pnpm. It is the
+          # last stage and the only one with the release-version label — see apps/api/Dockerfile's
+          # comment on why that label must not live in a stage the api build chain derives from.
           - name: migrate
             file: apps/api/Dockerfile
             target: migrate
