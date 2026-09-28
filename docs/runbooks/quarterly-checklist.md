@@ -71,8 +71,9 @@ description.
 
       Where the image scans run and when they block (Story 64.3). Every image scan honours
       `.trivyignore`, so an entry suppresses the finding in all four places at once:
-      - **Nightly** (`nightly.yml`, "Trivy Docker Image Scan"): `api` and `web` runner images, one
-        matrix leg each, so one image's finding never hides the other's. **Blocking** (red nightly).
+      - **Nightly** (`nightly.yml`, "Trivy Docker Image Scan"): the `api` and `web` runner images
+        and the `migrate` image, one matrix leg each, so one image's finding never hides another's.
+        **Blocking** (red nightly).
       - **PR / push** (`ci.yml`, "Docker Build (amd64)"): the amd64 `api`, `web` and `migrate`
         images (`migrate` goes beyond AC-3, so a broken or vulnerable migrate stage shows up before
         release rather than at the release gate). **Blocking**

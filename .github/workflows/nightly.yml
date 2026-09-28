@@ -158,32 +158,41 @@ jobs:
     runs-on: ubuntu-latest
     # A hung image pull or DB download must not burn the 6-hour default (Story 64.3).
     timeout-minutes: 20
-    # Story 64.3 AC-1: one matrix leg per shipped runtime image, with fail-fast disabled, so a
+    # Story 64.3 AC-1: one matrix leg per shipped image, with fail-fast disabled, so a
     # finding in one image never skips (masks) the other's scan — the job still ends failed when
     # any leg fails. Chosen over two sequential steps with `if: !cancelled()` because the legs
     # also build in parallel, and each image gets its own red/green check in the run summary.
     # Never `continue-on-error` here: that would turn a real finding into a green job.
+    # `migrate` is a shipped image too (container-publish.yml gates it at release, and ci.yml's
+    # scan of it is advisory on pushes to main), so nightly is its gate on main as well: without
+    # this leg a new upstream CVE in it would first block a release instead of turning a nightly red.
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: api
             file: apps/api/Dockerfile
+            target: runner
+          - name: migrate
+            file: apps/api/Dockerfile
+            target: migrate
           - name: web
             file: apps/web/Dockerfile
+            target: runner
     steps:
       - uses: actions/checkout@v7
 
       - name: Build ${{ matrix.name }} image
-        # --target runner matches container-publish.yml's published images. Without it, docker
-        # build produces the Dockerfile's default (last) stage -- for the API that is the
-        # `migrate` leaf stage since Story 9.10 -- an unpruned, dev-toolchain-heavy image that
-        # was never what actually ships (same bug ci.yml's Docker Build job had for its own
-        # size check). Deliberately uncached: nightly is where apk/base-image drift must show.
+        # An explicit --target per leg, matching container-publish.yml's published images. Without
+        # it, docker build produces the Dockerfile's default (last) stage -- for the API that is
+        # the `migrate` leaf stage since Story 9.10 -- instead of the api runner that actually
+        # ships (same bug ci.yml's Docker Build job had for its own size check). Deliberately
+        # uncached: nightly is where apk/base-image drift must show.
         env:
           DOCKERFILE: ${{ matrix.file }}
+          TARGET: ${{ matrix.target }}
           IMAGE_NAME: ${{ matrix.name }}
-        run: docker build -f "$DOCKERFILE" --target runner -t "project-vault-${IMAGE_NAME}:nightly" .
+        run: docker build -f "$DOCKERFILE" --target "$TARGET" -t "project-vault-${IMAGE_NAME}:nightly" .
 
       - name: Run Trivy scan on ${{ matrix.name }} image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

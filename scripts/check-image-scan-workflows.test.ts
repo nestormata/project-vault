@@ -160,10 +160,11 @@ describe('Story 64.3 AC-1: nightly scans every image and reports all of them', (
     expect(Object.keys(nightly.on ?? {})).toContain('workflow_dispatch')
   })
 
-  it('fans out over api and web in a matrix that does not cancel siblings on failure', () => {
+  it('fans out over every published image in a matrix that does not cancel siblings', () => {
     expect(trivyImage.strategy?.['fail-fast']).toBe(false)
     const names = (trivyImage.strategy?.matrix?.include ?? []).map((entry) => entry.name).sort()
-    expect(names).toEqual(['api', 'web'])
+    // migrate is published and release-gated too; nightly is its only blocking gate on main.
+    expect(names).toEqual(['api', 'migrate', 'web'])
   })
 
   it('no scan step masks another within a leg', () => {
@@ -182,10 +183,16 @@ describe('Story 64.3 AC-1: nightly scans every image and reports all of them', (
     }
   })
 
-  it('builds every image at the runner target that actually ships (Story 9.10 trap)', () => {
+  it('builds every image at the target that actually ships (Story 9.10 trap)', () => {
+    const include = trivyImage.strategy?.matrix?.include ?? []
+    const targets = Object.fromEntries(include.map((entry) => [entry.name, entry.target]))
+    expect(targets).toEqual({ api: 'runner', migrate: 'migrate', web: 'runner' })
     const builds = (trivyImage.steps ?? []).filter((step) => /docker build/.test(step.run ?? ''))
     expect(builds.length).toBeGreaterThan(0)
-    for (const step of builds) expect(step.run).toMatch(/--target runner/)
+    for (const step of builds) {
+      expect(step.run).toMatch(/--target "\$TARGET"/)
+      expect(String(step.env?.TARGET)).toMatch(/\$\{\{\s*matrix\.target\s*\}\}/)
+    }
   })
 
   it('bounds the job with timeout-minutes so a hung pull cannot burn the 6-hour default', () => {
