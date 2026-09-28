@@ -1,6 +1,7 @@
 import { dev } from '$app/environment'
 import { env } from '$env/dynamic/private'
 import { proxyApiRequest } from '$lib/server/api-proxy.js'
+import { resolveCentralizeMeOrigin } from '$lib/server/handoff-return-origin.js'
 import type { PageServerLoad } from './$types'
 
 // Matches handoff-routes.ts's own HANDOFF_COOKIE_NAME constant exactly — apps/web does not
@@ -76,13 +77,17 @@ async function parseExchangeResult(
  * cookie was set.
  */
 export const load: PageServerLoad = async (event) => {
+  // Story 60.4 AC3: resolved per request from the web process's own env (never cached, never
+  // read from the query string) and returned from every exit path below.
+  const pageData = { centralizeMeOrigin: resolveCentralizeMeOrigin(env.VAULT_HANDOFF_ISSUER) }
+
   const pendingId = event.url.searchParams.get('pendingId')
   const claim = event.url.searchParams.get('claim')
-  if (!pendingId || !claim) return {}
+  if (!pendingId || !claim) return pageData
 
   const response = await exchangeClaim(globalThis.fetch, env.API_BASE_URL, pendingId, claim)
   const result = response && (await parseExchangeResult(response))
-  if (!result) return {}
+  if (!result) return pageData
 
   event.cookies.set(HANDOFF_COOKIE_NAME, result.rawCookieValue, {
     httpOnly: true,
@@ -94,5 +99,5 @@ export const load: PageServerLoad = async (event) => {
     maxAge: Math.floor(result.remainingMs / 1000),
   })
 
-  return {}
+  return pageData
 }

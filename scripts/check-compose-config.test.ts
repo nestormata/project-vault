@@ -194,3 +194,38 @@ describeOrSkip(
     })
   }
 )
+
+// Story 60.4 AC6 — the /handoff consent page's "Return to CentralizeMe" link reads the web
+// process's own VAULT_HANDOFF_ISSUER. Web defaults to EMPTY (link only when an operator explicitly
+// configures a CM issuer — a baked default would put a CentralizeMe link on every self-hosted
+// instance's reachable /handoff page); api defaults to its own zod default (an empty string would
+// fail api boot validation, z.string().min(1)). One operator value must reach both services.
+describeOrSkip(
+  'docker compose config — VAULT_HANDOFF_ISSUER on web and api (Story 60.4 AC6)',
+  () => {
+    it('renders web.environment.VAULT_HANDOFF_ISSUER as an empty string by default', () => {
+      const services = renderedServices(composeFile, emptyEnvFile())
+
+      expect(services['web']?.environment).toHaveProperty('VAULT_HANDOFF_ISSUER')
+      expect(services['web']?.environment?.['VAULT_HANDOFF_ISSUER']).toBe('')
+    })
+
+    it("renders api.environment.VAULT_HANDOFF_ISSUER as the api's own default", () => {
+      const services = renderedServices(composeFile, emptyEnvFile())
+
+      expect(services['api']?.environment?.['VAULT_HANDOFF_ISSUER']).toBe(
+        'https://app.centralizeme.com'
+      )
+    })
+
+    it('passes an operator-set issuer to both services', () => {
+      const services = renderedServices(
+        composeFile,
+        envFileWith('VAULT_HANDOFF_ISSUER=https://cm.example.test\n')
+      )
+
+      expect(services['web']?.environment?.['VAULT_HANDOFF_ISSUER']).toBe('https://cm.example.test')
+      expect(services['api']?.environment?.['VAULT_HANDOFF_ISSUER']).toBe('https://cm.example.test')
+    })
+  }
+)

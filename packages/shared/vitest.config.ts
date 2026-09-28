@@ -26,6 +26,7 @@ export default mergeConfig(baseVitestConfig, {
         'src/schemas/org-sso-domains.ts',
         'src/schemas/password-strength.ts',
         'src/utils/absolute-url.ts',
+        'src/utils/service-provisioned-email.ts',
         'src/validation/rotation-cron-description.ts',
         'src/schemas/vault.ts',
       ],
