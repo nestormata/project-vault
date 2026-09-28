@@ -1,4 +1,4 @@
-import { generateKeyPairSync, sign as cryptoSign, createPrivateKey, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
 import {
@@ -15,18 +15,25 @@ import {
   initVaultForTest,
   parseSetCookies,
 } from '../../__tests__/helpers/auth-test-helpers.js'
+import {
+  b64url,
+  createLinkedHandoffOrg,
+  HANDOFF_PROVIDER,
+  HANDOFF_TEST_INSTANCE_ID,
+  HANDOFF_TEST_KID,
+  handoffTestPublicKeyPem,
+  signToken,
+} from '../../__tests__/helpers/handoff-test-helpers.js'
 import { serviceProvisionedEmail } from '@project-vault/shared'
 
 process.env['DATABASE_URL'] ??=
   'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
 
-const { publicKey, privateKey } = generateKeyPairSync('ed25519')
-const publicKeyPem = publicKey.export({ format: 'pem', type: 'spki' }).toString()
-const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
-
 process.env['VAULT_HANDOFF_ENABLED'] = 'true'
-process.env['VAULT_HANDOFF_INSTANCE_ID'] = 'pv-handoff-route-test'
-process.env['VAULT_HANDOFF_VERIFY_KEYS'] = JSON.stringify([{ kid: 'kid-1', publicKeyPem }])
+process.env['VAULT_HANDOFF_INSTANCE_ID'] = HANDOFF_TEST_INSTANCE_ID
+process.env['VAULT_HANDOFF_VERIFY_KEYS'] = JSON.stringify([
+  { kid: HANDOFF_TEST_KID, publicKeyPem: handoffTestPublicKeyPem },
+])
 
 let createApp: typeof import('../../app.js').createApp
 
@@ -38,86 +45,6 @@ const EXCHANGE_CLAIM_URL = '/api/v1/auth/handoff/exchange-claim'
 const HANDOFF_COOKIE_NAME = 'handoff-confirm'
 const GENERIC_REJECTION_MESSAGE = 'Sign-in could not be verified. Please start again.'
 const SAME_ORIGIN = 'same-origin'
-
-function b64url(input: Buffer | string): string {
-  return Buffer.from(input).toString('base64url')
-}
-
-function signToken(claimOverrides: Record<string, unknown> = {}): string {
-  const now = Math.floor(Date.now() / 1000)
-  const header = { alg: 'EdDSA', kid: 'kid-1', typ: 'JWT' }
-  const payload = {
-    iss: 'https://app.centralizeme.com',
-    aud: 'pv:pv-handoff-route-test',
-    iat: now,
-    exp: now + 30,
-    jti: `jti-${randomUUID()}`,
-    workosUserId: `user_${randomUUID()}`,
-    providerName: 'centralizeme-handoff',
-    organizationId: randomUUID(),
-    instanceId: 'pv-handoff-route-test',
-    tier: 'pro',
-    capabilities: [],
-    claimsVersion: 1,
-    ...claimOverrides,
-  }
-  const headerPart = b64url(JSON.stringify(header))
-  const payloadPart = b64url(JSON.stringify(payload))
-  const signingInput = `${headerPart}.${payloadPart}`
-  const key = createPrivateKey({ key: privateKeyPem, format: 'pem' })
-  const signature = cryptoSign(null, Buffer.from(signingInput), key)
-  return `${signingInput}.${b64url(signature)}`
-}
-
-const HANDOFF_PROVIDER = 'centralizeme-handoff'
-
-/**
- * Story 30.2: creates a PV org + active member linked to `workosUserId` via `HANDOFF_PROVIDER`,
- * with `centralizemeOrganizationId` stored on the org row — the fixture needed for
- * burnAndResolveOrg's real, stored-value comparison (never a raw-UUID comparison against the
- * token's `organizationId` claim).
- *
- * Story 60.4: `options.email` overrides the linked user's `users.email` (default unchanged), so
- * prepare's display-label nulling can be exercised with a synthetic service-provisioned address.
- */
-async function createLinkedHandoffOrg(
-  label: string,
-  workosUserId: string,
-  centralizemeOrganizationId: string,
-  options: { email?: string } = {}
-): Promise<{ orgId: string; userId: string; organizationName: string }> {
-  const orgId = randomUUID()
-  const suffix = orgId.slice(0, 8)
-  await getDb()
-    .insert(organizations)
-    .values({
-      id: orgId,
-      name: `handoff-${label}-${suffix}`,
-      slug: `handoff-${label}-${suffix}`,
-      centralizemeOrganizationId,
-    })
-  const email = options.email ?? `handoff-${label}-${randomUUID()}@example.com`
-  const [user] = await getDb()
-    .insert(users)
-    .values({ email, passwordHash: 'x' })
-    .returning({ id: users.id })
-  if (!user) throw new Error('expected user row')
-  await getDb().insert(userIdentityTokens).values({ userId: user.id, displayName: email })
-  await withOrg(orgId, (tx) =>
-    (tx as Tx)
-      .insert(orgMemberships)
-      .values({ orgId, userId: user.id, role: 'member', status: 'active' })
-  )
-  await withOrg(orgId, (tx) =>
-    (tx as Tx).insert(externalIdentities).values({
-      orgId,
-      userId: user.id,
-      providerName: HANDOFF_PROVIDER,
-      externalSubject: workosUserId,
-    })
-  )
-  return { orgId, userId: user.id, organizationName: `handoff-${label}-${suffix}` }
-}
 
 describe('handoff routes (Story 30.2 AC3/AC4)', () => {
   beforeAll(async () => {
