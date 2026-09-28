@@ -1,8 +1,7 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 // The repository root has no YAML dependency; reuse the `yaml` package apps/api already depends on.
@@ -11,10 +10,9 @@ const { parse: parseYaml } = createRequire(resolve(process.cwd(), 'apps/api/pack
 ) as typeof import('yaml')
 
 /** Story 43.6 AC-5 — the `pvault` release workflow's contract. */
-const workflowPath = resolve(process.cwd(), '.github/workflows/cli-release.yml')
-
 function workflowText(): string {
-  return readFileSync(workflowPath, 'utf8')
+  // Relative to the repository root, which is the working directory vitest runs from.
+  return readFileSync('.github/workflows/cli-release.yml', 'utf8')
 }
 
 type Step = {
@@ -27,7 +25,7 @@ type Step = {
   env?: Record<string, unknown>
 }
 
-type Job = { if?: unknown; steps?: Step[] }
+type Job = { if?: unknown; permissions?: unknown; steps?: Step[] }
 
 type DispatchInput = {
   type?: unknown
@@ -79,17 +77,24 @@ type RunKind = 'release' | 'dispatch' | 'dispatch-dry-run' | 'dispatch-no-dry-ru
 
 const RELEASE_RUN: RunKind = 'release'
 const DRY_RUN: RunKind = 'dispatch-dry-run'
-const REAL_RUNS: RunKind[] = [RELEASE_RUN, 'dispatch', 'dispatch-no-dry-run-input']
+const DISPATCH_RUN: RunKind = 'dispatch'
+const NO_DRY_RUN_INPUT_RUN: RunKind = 'dispatch-no-dry-run-input'
+const DISPATCH_REAL_RUNS: RunKind[] = [DISPATCH_RUN, NO_DRY_RUN_INPUT_RUN]
+const REAL_RUNS: RunKind[] = [RELEASE_RUN, ...DISPATCH_REAL_RUNS]
 const ALL_RUNS: RunKind[] = [...REAL_RUNS, DRY_RUN]
 const REAL_GROUP = 'cli-release'
 const CANDIDATE_TAG = 'v1.3.0'
 
 // Outside workflow_dispatch the `inputs` context is empty, so `inputs.dry_run` is null there.
-const RUN_INPUTS: Record<RunKind, ExprObject> = {
-  release: {},
-  dispatch: { tag: CANDIDATE_TAG, dry_run: false },
-  'dispatch-dry-run': { tag: CANDIDATE_TAG, dry_run: true },
-  'dispatch-no-dry-run-input': { tag: CANDIDATE_TAG },
+const RUN_INPUTS = new Map<RunKind, ExprObject>([
+  [RELEASE_RUN, {}],
+  [DISPATCH_RUN, { tag: CANDIDATE_TAG, dry_run: false }],
+  [DRY_RUN, { tag: CANDIDATE_TAG, dry_run: true }],
+  [NO_DRY_RUN_INPUT_RUN, { tag: CANDIDATE_TAG }],
+])
+
+function runInputs(kind: RunKind): ExprObject {
+  return RUN_INPUTS.get(kind) ?? {}
 }
 
 function eventNameFor(kind: RunKind): string {
@@ -97,7 +102,7 @@ function eventNameFor(kind: RunKind): string {
 }
 
 function contextFor(kind: RunKind): ExprObject {
-  return { github: { event_name: eventNameFor(kind) }, inputs: RUN_INPUTS[kind] }
+  return { github: { event_name: eventNameFor(kind) }, inputs: runInputs(kind) }
 }
 
 const TOKEN = /'(?:[^']|'')*'|&&|\|\||==|!=|!|\(|\)|\w[\w.-]*/y
@@ -137,16 +142,23 @@ function looseEquals(left: ExprValue, right: ExprValue): boolean {
 function lookup(path: string, context: ExprObject): ExprValue {
   let current: ExprValue | undefined = context
   for (const part of path.split('.')) {
-    current = current !== null && typeof current === 'object' ? current[part] : undefined
+    current =
+      current !== null && typeof current === 'object'
+        ? new Map(Object.entries(current)).get(part)
+        : undefined
   }
   return current ?? null
 }
 
-function literal(token: string, context: ExprObject): ExprValue {
-  if (token.startsWith("'")) return token.slice(1, -1).replaceAll("''", "'")
-  if (/^\d+$/.test(token)) return Number(token)
-  const keywords: Record<string, ExprValue> = { true: true, false: false, null: null }
-  return Object.hasOwn(keywords, token) ? (keywords[token] ?? null) : lookup(token, context)
+function literal(lexeme: string, context: ExprObject): ExprValue {
+  if (lexeme.startsWith("'")) return lexeme.slice(1, -1).replaceAll("''", "'")
+  if (/^\d+$/.test(lexeme)) return Number(lexeme)
+  const keywords = new Map<string, ExprValue>([
+    ['true', true],
+    ['false', false],
+    ['null', null],
+  ])
+  return keywords.has(lexeme) ? (keywords.get(lexeme) ?? null) : lookup(lexeme, context)
 }
 
 /** Recursive-descent evaluation of one expression: `||` < `&&` < `==`/`!=` < `!`/`( )`. */
@@ -154,27 +166,27 @@ class ExpressionEvaluator {
   private position = 0
 
   constructor(
-    private readonly tokens: string[],
+    private readonly lexemes: string[],
     private readonly context: ExprObject
   ) {}
 
   run(): ExprValue {
     const value = this.or()
-    if (this.position !== this.tokens.length)
-      throw new Error(`trailing tokens: ${this.tokens.join(' ')}`)
+    if (this.position !== this.lexemes.length)
+      throw new Error(`trailing tokens: ${this.lexemes.join(' ')}`)
     return value
   }
 
   private next(): string {
-    const token = this.tokens[this.position]
-    if (token === undefined) throw new Error(`unexpected end: ${this.tokens.join(' ')}`)
+    const lexeme = this.lexemes[this.position]
+    if (lexeme === undefined) throw new Error(`unexpected end: ${this.lexemes.join(' ')}`)
     this.position += 1
-    return token
+    return lexeme
   }
 
   private or(): ExprValue {
     let left = this.and()
-    while (this.tokens[this.position] === '||') {
+    while (this.lexemes[this.position] === '||') {
       this.position += 1
       const right = this.and()
       left = truthy(left) ? left : right
@@ -184,7 +196,7 @@ class ExpressionEvaluator {
 
   private and(): ExprValue {
     let left = this.comparison()
-    while (this.tokens[this.position] === '&&') {
+    while (this.lexemes[this.position] === '&&') {
       this.position += 1
       const right = this.comparison()
       left = truthy(left) ? right : left
@@ -194,22 +206,22 @@ class ExpressionEvaluator {
 
   private comparison(): ExprValue {
     let left = this.unary()
-    let operator = this.tokens[this.position]
+    let operator = this.lexemes[this.position]
     while (operator === '==' || operator === '!=') {
       this.position += 1
       const equal = looseEquals(left, this.unary())
       left = operator === '==' ? equal : !equal
-      operator = this.tokens[this.position]
+      operator = this.lexemes[this.position]
     }
     return left
   }
 
   private unary(): ExprValue {
-    const token = this.next()
-    if (token === '!') return !truthy(this.unary())
-    if (token !== '(') return literal(token, this.context)
+    const lexeme = this.next()
+    if (lexeme === '!') return !truthy(this.unary())
+    if (lexeme !== '(') return literal(lexeme, this.context)
     const value = this.or()
-    if (this.next() !== ')') throw new Error(`missing ) in ${this.tokens.join(' ')}`)
+    if (this.next() !== ')') throw new Error(`missing ) in ${this.lexemes.join(' ')}`)
     return value
   }
 }
@@ -233,8 +245,8 @@ function evaluate(
   if (typeof value === 'boolean' || typeof value === 'number') return value
   if (typeof value !== 'string') throw new Error(`not an expression: ${String(value)}`)
   const text = value.trim()
-  const whole = /^\$\{\{([^}]*)\}\}$/.exec(text)
-  if (whole) return evaluateExpression(whole[1], context)
+  const whole = /^\$\{\{([^}]*)\}\}$/.exec(text)?.[1]
+  if (whole !== undefined) return evaluateExpression(whole, context)
   if (condition) return evaluateExpression(text, context)
   return text.replaceAll(INTERPOLATION, (_match, inner: string) =>
     String(evaluateExpression(inner, context) ?? '')
@@ -294,11 +306,11 @@ function dryRunInputViolations(workflow: Workflow): string[] {
 }
 
 function publishGateViolations(workflow: Workflow): string[] {
-  const jobs = workflow.jobs ?? {}
+  const jobs = new Map(Object.entries(workflow.jobs ?? {}))
   const violations = ['release', 'verify']
-    .filter((job) => jobs[job]?.if !== undefined)
+    .filter((job) => jobs.get(job)?.if !== undefined)
     .map((job) => `${job} must run for every kind of run (no if:)`)
-  const gate = jobs.publish?.if
+  const gate = jobs.get('publish')?.if
   if (gate !== PUBLISH_CONDITION) {
     return [...violations, `publish must be gated by exactly: if: ${PUBLISH_CONDITION}`]
   }
@@ -373,15 +385,25 @@ type ValidateRun = { status: number | null; stderr: string; outputs: Map<string,
 /** A placeholder commit SHA for the runner environment (not a real object). */
 const FAKE_SHA = '1'.repeat(40)
 const FEATURE_REF = 'refs/heads/feature/x'
+/**
+ * Runs the step script (passed in $STEP_SCRIPT, removed before the step sees its environment) with
+ * $GITHUB_OUTPUT pointing at a file the wrapper owns, then prints that file as the wrapper's only
+ * stdout. The step's own stdout is not part of the contract and is discarded; stderr passes through.
+ */
+const RUN_WITH_GITHUB_OUTPUT = [
+  'script="$STEP_SCRIPT"; unset STEP_SCRIPT',
+  'out="$(mktemp)" || exit 97',
+  'GITHUB_OUTPUT="$out" bash -c "$script" >/dev/null; status=$?',
+  'cat "$out"; rm -f "$out"; exit "$status"',
+].join('\n')
 
 /** The runner-provided environment plus the step's own `env:`, evaluated for this kind of run. */
-function validateStepEnv(step: Step, kind: RunKind, tag: string, ref: string, outputFile: string) {
+function validateStepEnv(step: Step, kind: RunKind, tag: string, ref: string) {
   const env = new Map<string, string>([
     ['PATH', process.env.PATH ?? '/usr/bin:/bin'],
     ['GITHUB_EVENT_NAME', eventNameFor(kind)],
     ['GITHUB_REF', ref],
     ['GITHUB_SHA', FAKE_SHA],
-    ['GITHUB_OUTPUT', outputFile],
   ])
   // The event payload the expressions read, for the kind of run being simulated.
   const payload: ExprObject = {
@@ -390,7 +412,7 @@ function validateStepEnv(step: Step, kind: RunKind, tag: string, ref: string, ou
       event_name: eventNameFor(kind),
       event: { release: { tag_name: kind === RELEASE_RUN ? tag : null } },
     },
-    inputs: kind === RELEASE_RUN ? {} : { ...RUN_INPUTS[kind], tag },
+    inputs: kind === RELEASE_RUN ? {} : { ...runInputs(kind), tag },
   }
   for (const [name, expression] of Object.entries(step.env ?? {})) {
     env.set(name, String(evaluate(expression, payload) ?? ''))
@@ -417,20 +439,9 @@ function runValidateStep(
   if (step?.run === undefined) throw new Error('validate step (id: release) must have a run script')
   const tag = overrides.tag ?? CANDIDATE_TAG
   const ref = overrides.ref ?? (kind === RELEASE_RUN ? `refs/tags/${tag}` : 'refs/heads/main')
-  const dir = mkdtempSync(join(tmpdir(), 'cli-release-validate-'))
-  try {
-    const outputFile = join(dir, 'output')
-    writeFileSync(outputFile, '')
-    const env = validateStepEnv(step, kind, tag, ref, outputFile)
-    const result = spawnSync('bash', ['-c', step.run], { env, encoding: 'utf8' })
-    return {
-      status: result.status,
-      stderr: result.stderr,
-      outputs: parseOutputs(readFileSync(outputFile, 'utf8')),
-    }
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
+  const env = { ...validateStepEnv(step, kind, tag, ref), STEP_SCRIPT: step.run }
+  const result = spawnSync('bash', ['-c', RUN_WITH_GITHUB_OUTPUT], { env, encoding: 'utf8' })
+  return { status: result.status, stderr: result.stderr, outputs: parseOutputs(result.stdout) }
 }
 
 function indexOfStep(workflow: string, marker: string): number {
@@ -470,27 +481,26 @@ describe('cli release workflow contract (Story 43.6 AC-5)', () => {
     const workflow = workflowText()
     // No workflow-wide grant: every job states its own permissions.
     expect(workflow).toMatch(/^permissions: \{\}$/m)
-    const jobs = workflow.slice(indexOfStep(workflow, '\njobs:\n'))
-    const jobPermissions = (job: string): string => {
-      const start = indexOfStep(jobs, `\n  ${job}:\n`)
-      const next = jobs.slice(start + 1).search(/\n {2}[a-z][a-z-]*:\n/)
-      const body = next === -1 ? jobs.slice(start) : jobs.slice(start, start + 1 + next)
-      const match = /\n {4}permissions:(?: \{\}|\n((?: {6}[a-z-]+: [a-z]+\n)+))/.exec(body)
-      expect(match, `job ${job} must declare permissions`).not.toBeNull()
-      return (match?.[1] ?? '').trim()
+    const jobs = new Map(Object.entries(parseWorkflow(workflow).jobs ?? {}))
+    const jobPermissions = (job: string): unknown => {
+      const permissions = jobs.get(job)?.permissions
+      expect(permissions, `job ${job} must declare permissions`).toBeDefined()
+      return permissions
     }
-    expect(jobPermissions('release')).toBe('contents: read')
-    expect(jobPermissions('verify')).toBe('')
-    expect(jobPermissions('publish')).toBe('contents: write')
+    expect(jobPermissions('release')).toEqual({ contents: 'read' })
+    expect(jobPermissions('verify')).toEqual({})
+    expect(jobPermissions('publish')).toEqual({ contents: 'write' })
     expect(workflow.match(/^ +contents: write$/gm)).toHaveLength(1)
   })
 
   it('never persists the checkout token into the tree that dependencies and tests run in', () => {
     const workflow = workflowText()
-    const checkouts = [...workflow.matchAll(/uses: actions\/checkout@[^\n]+\n((?: {8}.*\n)*)/g)]
+    const checkouts = Object.values(parseWorkflow(workflow).jobs ?? {})
+      .flatMap((job) => job.steps ?? [])
+      .filter(usesAction('actions/checkout@'))
     expect(checkouts.length).toBeGreaterThan(0)
-    for (const [, withBlock] of checkouts) {
-      expect(withBlock).toMatch(/persist-credentials: false/)
+    for (const checkout of checkouts) {
+      expect(checkout.with?.['persist-credentials']).toBe(false)
     }
   })
 
@@ -626,7 +636,7 @@ describe('cli release workflow dry-run path (Story 43.10 AC-2)', () => {
 
   it('refuses a real manual dispatch outside main, but lets a dry-run rehearse any branch', () => {
     const workflow = parseWorkflow(workflowText())
-    for (const kind of ['dispatch', 'dispatch-no-dry-run-input'] as RunKind[]) {
+    for (const kind of DISPATCH_REAL_RUNS) {
       const real = runValidateStep(workflow, kind, { ref: FEATURE_REF })
       expect(real.status, kind).not.toBe(0)
       expect(real.stderr, kind).toContain('Manual recovery is only allowed from refs/heads/main')
