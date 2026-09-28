@@ -18,15 +18,16 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
 
 ### Upgrade notes (read before `docker compose pull`)
 
-- **Migrations 0094-0099 run automatically** via the `migrate` service. All six are additive
+- **Migrations 0094-0100 run automatically** via the `migrate` service. All seven are additive
   (three new tables, nullable or defaulted new columns, new indexes), and the migration guard
   refuses none of them. None backfills existing rows. Migration 0098 builds a partial index on
   `notification_queue`, which briefly blocks writes to that table in proportion to its size.
   Images on `latest`, `1` or `1.3` pick these migrations up on the next pull.
-- **No new required environment variables.** Three new optional API variables tune the
+- **No new required environment variables.** Four new optional API variables tune the
   scheduled-task extension hook: `MIN_SCHEDULED_TASK_INTERVAL_MINUTES` (default `1`),
-  `MAX_SCHEDULED_TASKS_PER_EXTENSION` (default `32`) and `SCHEDULED_TASK_MAX_CONCURRENCY`
-  (default `20`). `docker-compose.yml` does not forward them; to change one under Compose, add it
+  `MAX_SCHEDULED_TASKS_PER_EXTENSION` (default `32`), `SCHEDULED_TASK_MAX_CONCURRENCY`
+  (default `20`) and `SCHEDULED_TASK_MISSED_TICK_THRESHOLD` (default `3`, range `2`-`100`; see
+  the missed-tick alert under Added). `docker-compose.yml` does not forward them; to change one under Compose, add it
   to the `api` service's `environment`.
 - **CLI:** new optional API variables `CLI_MINIMUM_SUPPORTED_VERSION` and `CLI_WITHDRAWN_VERSIONS`
   tighten the `pvault` version policy. Both are unset by default, and an invalid value fails boot.
@@ -109,6 +110,12 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
   - `scheduledTasks` manifest entries and an `onScheduledTask` hook run periodic background work
     once per active organization, with an operator-tunable interval floor, task cap and
     concurrency. (#418)
+  - Missed scheduled-task alert: every scheduled-task invocation attempt is now recorded
+    (migration 0100), and a watchdog raises one operator alert when a declared task has made no
+    attempt for `max(SCHEDULED_TASK_MISSED_TICK_THRESHOLD × interval, 10 minutes)`: an admin
+    alert, an error log, a platform-operator notification, a Prometheus gauge and a `/ready`
+    warning. It resolves itself when the task runs again or is no longer declared.
+    (Story 56-2, #466)
   - `HostServices.monitoring.createServiceEndpoint` and the out-of-request
     `listServiceEndpointsForScheduling`, which returns endpoint URLs unredacted so that the
     extension can probe them; extensions must not log them. (#417, #420)
@@ -141,6 +148,10 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
   user, and returns
   `abandonedRotationCount` and `heldRotationCount`. Settings → Users explains the refusal and
   offers to abandon the rotations and deactivate or remove the user. (Story 43-15, #460)
+- The `migrate` image is much smaller (about 254 MB instead of 1.26 GB) and carries production
+  dependencies only: `guarded-migrate` now applies migrations with drizzle-orm's migrator instead
+  of spawning drizzle-kit. Its invocation and the resulting schema are unchanged.
+  (Story 64-3, #465)
 
 ### Fixed
 
@@ -183,6 +194,10 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
   version in a comment, and a CI guard (`scripts/check-action-pins.test.ts`) fails any tag-pinned
   one; first-party `actions/*` stay on major tags. The Trivy scanner binary is pinned too.
   (Story 64-2, #462)
+- Container image scans now cover all three images (`api`, `migrate`, `web`) in pull requests
+  and nightly runs, and a release scans each pushed image on `linux/amd64` and `linux/arm64`
+  before moving `latest` and the semver aliases; a finding leaves the aliases on the previous
+  release. The migrate image went from 53 scanner findings to 0. (Story 64-3, #465)
 
 ## [1.2.0] - 2026-09-10
 
