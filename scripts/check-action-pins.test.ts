@@ -1,5 +1,5 @@
-import { globSync, readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { globSync } from 'node:fs'
+import { join, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 // Story 64.2 AC-3: every `uses:` ref in .github/workflows/**/*.yml and .github/actions/**/action.yml
@@ -104,11 +104,27 @@ export function findPinViolations(files: Record<string, string>): PinViolation[]
 // Every file the guard covers, relative to the repo root (`.github/actions/` need not exist).
 const GUARDED_GLOBS = ['.github/workflows/**/*.{yml,yaml}', '.github/actions/**/action.{yml,yaml}']
 
+// The same globs, read at transform time by Vite (vitest's module graph) as raw text. Vite needs the
+// patterns as literals, so they are repeated here; `listGuardedPaths()` below is the independent
+// filesystem listing the test cross-checks this against, so the two can never silently diverge.
+const GUARDED_FILE_CONTENTS: Record<string, string> = import.meta.glob(
+  ['../.github/workflows/**/*.{yml,yaml}', '../.github/actions/**/action.{yml,yaml}'],
+  { query: '?raw', import: 'default', eager: true }
+)
+
+/** Lists every workflow and composite-action file on disk the guard covers, repo-relative. */
+function listGuardedPaths(): string[] {
+  return globSync(GUARDED_GLOBS, { cwd: repositoryRoot })
+    .map((path) => path.split(sep).join('/'))
+    .sort((a, b) => a.localeCompare(b))
+}
+
 /** Loads every workflow and composite-action file the guard covers, keyed by repo-relative path. */
 function loadRepoActionFiles(): Record<string, string> {
-  const paths = globSync(GUARDED_GLOBS, { cwd: repositoryRoot }).sort((a, b) => a.localeCompare(b))
   return Object.fromEntries(
-    paths.map((path) => [path, readFileSync(resolve(repositoryRoot, path), 'utf-8')])
+    Object.entries(GUARDED_FILE_CONTENTS)
+      .map(([path, text]): [string, string] => [path.replace(/^\.\.\//, ''), text])
+      .sort(([a], [b]) => a.localeCompare(b))
   )
 }
 
@@ -225,6 +241,9 @@ describe('check-action-pins: this repo (Story 64.2 AC-1/AC-3)', () => {
   const files = loadRepoActionFiles()
 
   it('finds the workflow files it is meant to guard', () => {
+    // Anti-vacuity: the loaded set must be exactly what is on disk (incl. a gitignored private
+    // overlay workflow when present locally), and must include the main CI workflow.
+    expect(Object.keys(files)).toEqual(listGuardedPaths())
     expect(Object.keys(files)).toContain('.github/workflows/ci.yml')
     expect(parseUsesRefs('x', files['.github/workflows/ci.yml'] ?? '').length).toBeGreaterThan(0)
   })
