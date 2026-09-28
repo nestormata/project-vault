@@ -13,8 +13,8 @@ const { parse: parseYaml } = createRequire(resolve(process.cwd(), 'apps/api/pack
  *  - nightly.yml scans every shipped image, and one failing scan never skips (masks) another;
  *  - every image scan honours `.trivyignore`, so a justified, time-boxed suppression is respected
  *    by every gate, not just the filesystem scan;
- *  - ci.yml scans the amd64 size-check images on every run, blocking only when the PR changes an
- *    image input and advisory (warning annotation, green job) otherwise.
+ *  - ci.yml scans the amd64 size-check images on every run; one gate step blocks only when the PR
+ *    changes an image input and is advisory (warning annotation, green job) otherwise.
  * The release gate (AC-4) is asserted in check-container-publish-workflow.test.ts.
  */
 
@@ -51,6 +51,8 @@ const WEB_SIZE_CHECK = 'project-vault-web:size-check'
 // broken or vulnerable migrate stage surfaces before a release rather than at the release gate.
 const MIGRATE_SIZE_CHECK = 'project-vault-migrate:size-check'
 const SIZE_CHECK_IMAGES = [API_SIZE_CHECK, MIGRATE_SIZE_CHECK, WEB_SIZE_CHECK]
+const GATE_STEP = 'Enforce image scan gate'
+const DOCKER_BUILD_JOB = 'docker-build'
 
 // Story 64.3 AC-3: the files whose change can alter a shipped image's contents.
 const IMAGE_INPUTS = [
@@ -204,7 +206,7 @@ describe('Story 64.3 AC-1: nightly scans every image and reports all of them', (
 })
 
 describe('Story 64.3 AC-3: PR-time image scan in ci.yml docker-build', () => {
-  const dockerBuild = job(loadWorkflow(CI_WORKFLOW), 'docker-build')
+  const dockerBuild = job(loadWorkflow(CI_WORKFLOW), DOCKER_BUILD_JOB)
   const steps = dockerBuild.steps ?? []
   const detect = steps.find((step) => step.id === 'image-inputs')
 
@@ -267,26 +269,62 @@ describe('Story 64.3 AC-3: PR-time image scan in ci.yml docker-build', () => {
     }
   })
 
-  it('blocks only when image inputs changed; otherwise it is advisory', () => {
+  it('lets every scan finish (continue-on-error: true) and records findings in its outcome', () => {
     for (const step of trivySteps(dockerBuild)) {
       expect(step.with?.['exit-code']).toBe('1')
-      expect(String(step['continue-on-error'])).toMatch(
-        /steps\.image-inputs\.outputs\.images_changed\s*!=\s*'true'/
-      )
-      expect(step.id, 'each scan needs an id so its outcome can be annotated').toBeTruthy()
+      // Never a per-step `images_changed` expression here: on this composite action it let a real
+      // finding through green with images_changed=true (throwaway PR #464). The gate step decides.
+      expect(step['continue-on-error']).toBe(true)
+      expect(step.id, 'each scan needs an id so the gate step can read its outcome').toBeTruthy()
       expectGateSettings(step)
     }
   })
 
-  it('emits a warning annotation for an advisory scan that found something', () => {
-    for (const step of trivySteps(dockerBuild)) {
-      const outcomeCheck = `steps.${step.id}.outcome == 'failure'`
-      const annotate = steps.find(
-        (candidate) =>
-          (candidate.run ?? '').includes('::warning') && ifText(candidate).includes(outcomeCheck)
-      )
-      expect(annotate, `a ::warning:: step must fire on ${outcomeCheck}`).toBeDefined()
+  it('enforces the blocking/advisory policy in one gate step after every scan', () => {
+    const gate = steps.find((step) => step.name === GATE_STEP) ?? {}
+    expect(gate.run, `a '${GATE_STEP}' step with a run body must exist`).toBeTruthy()
+    const lastScan = Math.max(...trivySteps(dockerBuild).map((step) => steps.indexOf(step)))
+    expect(steps.indexOf(gate)).toBeGreaterThan(lastScan)
+    expect(ifText(gate)).toMatch(/!\s*cancelled\(\)/)
+    expect(ifText(gate)).toMatch(/matrix\.arch == 'amd64'/)
+    expect(gate['continue-on-error']).toBe(undefined)
+    expect(gate.run).not.toMatch(/\$\{\{/)
+    const fed = Object.values(gate.env ?? {}).map(String)
+    expect(fed).toContain('${{ steps.image-inputs.outputs.images_changed }}')
+    for (const scan of trivySteps(dockerBuild)) {
+      const outcome = `steps.${scan.id}.outcome`
+      expect(
+        fed.some((value) => value.includes(outcome)),
+        `gate must read ${outcome}`
+      ).toBe(true)
     }
+  })
+
+  describe('gate script behaviour', () => {
+    it('fails and emits ::error when an image input changed and a scan found something', () => {
+      const result = runGate({ changed: 'true', outcomes: { web: 'failure' } })
+      expect(result.status).toBe(1)
+      expect(result.stdout).toMatch(/::error title=Image scan \(web\)::/)
+    })
+
+    it('stays green with a ::warning when no image input changed (PR or push)', () => {
+      for (const changed of ['false', '']) {
+        const result = runGate({ changed, outcomes: { api: 'failure', web: 'failure' } })
+        expect(result.status, `images_changed='${changed}'`).toBe(0)
+        expect(result.stdout).toMatch(/::warning title=Advisory image scan \(api\)::/)
+        expect(result.stdout).toMatch(/::warning title=Advisory image scan \(web\)::/)
+        expect(result.stdout).not.toMatch(/::error/)
+      }
+    })
+
+    it('passes when every scan succeeded or was skipped', () => {
+      const result = runGate({
+        changed: 'true',
+        outcomes: { api: 'success', migrate: 'skipped', web: 'success' },
+      })
+      expect(result.status).toBe(0)
+      expect(result.stdout).not.toMatch(/::(error|warning)/)
+    })
   })
 
   describe('change-detection script behaviour', () => {
@@ -361,7 +399,7 @@ cat "$GITHUB_OUTPUT"
  * given files relative to `origin/main`, and returns the `images_changed` output it wrote.
  */
 function runDetect(options: { event: string; changed: string[] }): string {
-  const detect = job(loadWorkflow(CI_WORKFLOW), 'docker-build').steps?.find(
+  const detect = job(loadWorkflow(CI_WORKFLOW), DOCKER_BUILD_JOB).steps?.find(
     (step) => step.id === 'image-inputs'
   )
   expect(detect?.run, 'image-inputs step must have a run body').toBeTruthy()
@@ -380,4 +418,31 @@ function runDetect(options: { event: string; changed: string[] }): string {
 
   const line = run.stdout.split('\n').find((entry) => entry.startsWith('images_changed='))
   return line?.slice('images_changed='.length) ?? ''
+}
+
+/**
+ * Executes the real "Enforce image scan gate" step body with the given images_changed output and
+ * scan outcomes (missing ones are '', as for a step that never ran), returning its exit status and
+ * stdout.
+ */
+function runGate(options: {
+  changed: string
+  outcomes: Partial<Record<'api' | 'migrate' | 'web', string>>
+}): { status: number | null; stdout: string } {
+  const gate = job(loadWorkflow(CI_WORKFLOW), DOCKER_BUILD_JOB).steps?.find(
+    (step) => step.name === GATE_STEP
+  )
+  expect(gate?.run, 'gate step must have a run body').toBeTruthy()
+
+  const run = spawnSync('bash', ['-c', gate?.run ?? ''], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      IMAGES_CHANGED: options.changed,
+      SCAN_API: options.outcomes.api ?? '',
+      SCAN_MIGRATE: options.outcomes.migrate ?? '',
+      SCAN_WEB: options.outcomes.web ?? '',
+    },
+  })
+  return { status: run.status, stdout: run.stdout }
 }
