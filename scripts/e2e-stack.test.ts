@@ -485,6 +485,26 @@ describe('Story 66.1 AC-4: readiness failure dump (stubbed docker/curl)', () => 
     expect(err.trimEnd().split('\n').at(-1)).toMatch(/after \d+s \(last curl exit 7\)$/)
   })
 
+  it('keeps each dump header next to its own output (headers go through the same pipe)', () => {
+    for (let round = 0; round < 5; round++) {
+      const err = runWait({ STUB_PS: 'db running 0\napi running 0' }).stderr
+      const order = [
+        'e2e-stack: container status (docker compose ps -a):',
+        'STUB-PS-A',
+        'e2e-stack: recent logs (migrate, admin-provision, api):',
+        'STUB-LOGS',
+      ].map((marker) => err.indexOf(marker))
+      expect(order.every((position) => position >= 0)).toBe(true)
+      expect([...order].sort((a, b) => a - b)).toEqual(order)
+    }
+  })
+
+  it('accepts a zero-padded attempt budget instead of dying on bash octal arithmetic', () => {
+    const run = runWait({ STUB_PS: 'api running 0', E2E_HEALTH_ATTEMPTS: '08' })
+    expect(run.status).toBe(1)
+    expect(run.stderr).toMatch(/API never became ready on .* \(last curl exit 7\)\n?$/)
+  })
+
   it('fails fast when the api container has exited, without burning the budget', () => {
     const run = runWait({ STUB_PS: 'migrate exited 0\napi exited 1', E2E_HEALTH_ATTEMPTS: '50' })
     expect(run.status).toBe(1)

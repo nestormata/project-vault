@@ -142,11 +142,13 @@ compose_states() {
   compose ps -a --format '{{.Service}} {{.State}} {{.ExitCode}}' 2>/dev/null || true
 }
 
+# Headers go to stdout inside the group, so they travel through the same redact pipe as the
+# command output they introduce and cannot overtake it on stderr.
 dump_diagnostics() {
   {
-    warn "container status (docker compose ps -a):"
+    say "container status (docker compose ps -a):"
     compose ps -a 2>&1 || true
-    warn "recent logs (migrate, admin-provision, api):"
+    say "recent logs (migrate, admin-provision, api):"
     compose logs --no-color --tail=200 migrate admin-provision api 2>&1 || true
   } | redact >&2 || true
 }
@@ -177,7 +179,8 @@ api_port() {
 
 positive_int() {
   [[ "$2" =~ ^[0-9]+$ ]] || die "$1 must be a non-negative integer"
-  printf '%s' "$2"
+  # Base 10 explicitly: bash arithmetic would read a zero-padded 08/09 as invalid octal.
+  printf '%s' "$((10#$2))"
 }
 
 UP_CAPTURE=""
