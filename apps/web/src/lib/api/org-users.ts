@@ -57,11 +57,17 @@ export function listOrgUsers(fetchFn: typeof fetch) {
   return apiFetch<OrgUser[]>(fetchFn, '/api/v1/org/users')
 }
 
-export function removeOrgUser(fetchFn: typeof fetch, userId: string) {
+/** Story 43-15 AC-9: pass `{ rotationHandling: 'abandon' }` to resolve a `409 active_rotations`
+ *  block (same body as deactivateOrgUser); absent sends no body, as before. */
+export function removeOrgUser(
+  fetchFn: typeof fetch,
+  userId: string,
+  options?: RotationHandlingOptions
+) {
   return apiFetch<{ userId: string; revokedSessionCount: number } & RotationHandlingCounts>(
     fetchFn,
     `/api/v1/org/users/${userId}`,
-    { method: 'DELETE' }
+    jsonBody('DELETE', options)
   )
 }
 

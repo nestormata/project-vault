@@ -3125,6 +3125,46 @@ describe('Story 5.3 — break-glass emergency rotation + stale-recovery resume/a
     expect(auditRows.some((row) => row.resourceId === rotationId)).toBe(true)
   }, 20_000)
 
+  // Story 43-15 code review: abandon keeps the abandoned version's row (only abandoned_at is
+  // set), so its version_number stays used. Re-initiating on the same credential must take
+  // MAX(version_number)+1, not previous-non-abandoned+1 — the latter collided on
+  // idx_credential_versions_unique and surfaced as a bogus 409 rotation_in_progress (rotationId
+  // null), blocking the abandon-then-rotate-again path 43-15's AC-8 relies on.
+  it('POST initiate after an abandon succeeds and issues the next unused version number', async () => {
+    const projectId = await createCredentialTestProject(app, owner.cookies, 'abandon-reinit')
+    const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+      name: 'Abandon Reinitiate Key',
+      value: 'original-value',
+    })
+    const first = await initiateRotationViaApi(app, owner.cookies, projectId, credential.id, {
+      newValue: 'abandoned-value',
+    })
+    const firstRotationId = first.json<{ data: { id: string } }>().data.id
+    await forceStaleRecovery(owner.orgId, firstRotationId)
+    const abandon = await resolutionViaApi(
+      app,
+      owner.cookies,
+      { projectId, credentialId: credential.id, rotationId: firstRotationId },
+      'abandon'
+    )
+    expect(abandon.statusCode).toBe(200)
+
+    const second = await initiateRotationViaApi(app, owner.cookies, projectId, credential.id, {
+      newValue: 'second-attempt-value',
+    })
+    expect(second.statusCode).toBe(201)
+    const secondRotationId = second.json<{ data: { id: string } }>().data.id
+    const versionNumbers = await withOrg(owner.orgId, (tx) =>
+      tx
+        .select({ versionNumber: credentialVersions.versionNumber })
+        .from(rotations)
+        .innerJoin(credentialVersions, eq(credentialVersions.id, rotations.newVersionId))
+        .where(eq(rotations.credentialId, credential.id))
+    )
+    expect(versionNumbers.map((row) => row.versionNumber).sort()).toEqual([2, 3])
+    expect(secondRotationId).not.toBe(firstRotationId)
+  }, 20_000)
+
   // ---------------------------------------------------------------------------------------
   // AC-15: resume/abandon concurrency
   // ---------------------------------------------------------------------------------------

@@ -119,6 +119,32 @@ describe('org-users API helpers', () => {
     expect(result.revokedSessionCount).toBe(2)
   })
 
+  it('removeOrgUser sends no body by default, and { rotationHandling } when asked (43-15 AC-9)', async () => {
+    const fetchFn = vi.fn().mockImplementation(async () =>
+      jsonResponse({
+        data: {
+          userId: USER_ID,
+          revokedSessionCount: 0,
+          abandonedRotationCount: 1,
+          heldRotationCount: 0,
+        },
+      })
+    )
+
+    await removeOrgUser(fetchFn, USER_ID)
+    const result = await removeOrgUser(fetchFn, USER_ID, { rotationHandling: 'abandon' })
+
+    expect(fetchFn.mock.calls[0]?.[1]).not.toHaveProperty('body')
+    expect(fetchFn).toHaveBeenLastCalledWith(
+      `/api/v1/org/users/${USER_ID}`,
+      expect.objectContaining({
+        method: 'DELETE',
+        body: JSON.stringify({ rotationHandling: 'abandon' }),
+      })
+    )
+    expect(result.abandonedRotationCount).toBe(1)
+  })
+
   it('changeProjectRole sends the role body via PUT', async () => {
     const fetchFn = vi
       .fn()

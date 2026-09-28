@@ -243,40 +243,73 @@
     }
   }
 
-  async function onRemoveOrgUser(user: OrgUser) {
-    if (busyKey) return
-    const confirmed = confirm(
-      `Remove ${user.email} from the organization? This removes them from every project and signs out their sessions immediately.`
-    )
-    if (!confirmed) return
+  // Story 43-15 AC-9: `n` for an active_rotations 409 (deactivate or remove), read defensively —
+  // a malformed body without `rotationIds` renders `0` rather than crashing (AC-6).
+  function blockingRotationCount(error: ApiClientError): number {
+    return ((error.body as { rotationIds?: string[] } | null)?.rotationIds ?? []).length
+  }
+
+  function isActiveRotationsError(error: unknown): error is ApiClientError {
+    return error instanceof ApiClientError && error.code === 'active_rotations'
+  }
+
+  // Story 43-15 AC-9: the user whose removal was just refused with 409 active_rotations — their
+  // row offers the explicit "abandon and remove" follow-up (mirrors AC-8's deactivate path).
+  let rotationBlockedRemovalUserId = $state<string | null>(null)
+
+  function removalBlockMessage(user: OrgUser, error: unknown): string | null {
+    if (!(error instanceof ApiClientError)) return null
+    if (error.code === 'sole_owner_of_projects') {
+      const projects = (error.body as { projects?: { projectName: string }[] } | null)?.projects
+      return soleOwnerMessage(user.email, projects ?? [])
+    }
+    if (error.code === 'last_org_owner') return 'Cannot remove the sole owner of the organization.'
+    if (error.code === 'active_rotations') {
+      return `${user.email} still owns ${blockingRotationCount(error)} unfinished rotation(s). Complete, retire, or abandon them before removing this account.`
+    }
+    return null
+  }
+
+  async function runRemoval(user: OrgUser, options?: { rotationHandling: 'abandon' }) {
     busyKey = user.userId
     errorMessage = null
     delete blockedRemoval[user.userId]
     try {
-      await removeOrgUser(fetch, user.userId)
+      await removeOrgUser(fetch, user.userId, options)
+      rotationBlockedRemovalUserId = null
       await invalidateAll()
     } catch (error) {
-      if (error instanceof ApiClientError && error.code === 'sole_owner_of_projects') {
-        const projects =
-          (error.body as { projects?: { projectName: string }[] } | null)?.projects ?? []
-        blockedRemoval = {
-          ...blockedRemoval,
-          [user.userId]: soleOwnerMessage(user.email, projects),
-        }
-      } else if (error instanceof ApiClientError && error.code === 'last_org_owner') {
-        blockedRemoval = {
-          ...blockedRemoval,
-          [user.userId]: 'Cannot remove the sole owner of the organization.',
-        }
+      const blocked = removalBlockMessage(user, error)
+      if (blocked) {
+        blockedRemoval = { ...blockedRemoval, [user.userId]: blocked }
       } else {
         errorMessage =
           error instanceof ApiClientError
             ? (error.message ?? 'Failed to remove user.')
             : 'Failed to remove user.'
       }
+      rotationBlockedRemovalUserId = isActiveRotationsError(error) ? user.userId : null
     } finally {
       busyKey = null
     }
+  }
+
+  async function onRemoveOrgUser(user: OrgUser) {
+    if (busyKey) return
+    const confirmed = confirm(
+      `Remove ${user.email} from the organization? This removes them from every project and signs out their sessions immediately.`
+    )
+    if (!confirmed) return
+    await runRemoval(user)
+  }
+
+  async function onAbandonRotationsAndRemove(user: OrgUser) {
+    if (busyKey) return
+    const confirmed = confirm(
+      `Abandon ${user.email}'s unfinished rotations and remove ${user.email} from the organization? Staged and stale rotations will be abandoned (their new values discarded, the previous values stay current). Promoted rotations are kept as they are, for an admin to retire later.`
+    )
+    if (!confirmed) return
+    await runRemoval(user, { rotationHandling: 'abandon' })
   }
 
   // Story 43-15 AC-6/AC-8: the user whose deactivation was just refused with 409
@@ -287,8 +320,7 @@
     if (!(error instanceof ApiClientError)) return 'Failed to deactivate account.'
     if (error.code === 'already_deactivated') return `${user.email} is already deactivated.`
     if (error.code === 'active_rotations') {
-      const rotationIds = (error.body as { rotationIds?: string[] } | null)?.rotationIds ?? []
-      return `${user.email} still owns ${rotationIds.length} unfinished rotation(s). Complete, retire, or abandon them before deactivating this account.`
+      return `${user.email} still owns ${blockingRotationCount(error)} unfinished rotation(s). Complete, retire, or abandon them before deactivating this account.`
     }
     return error.message ?? 'Failed to deactivate account.'
   }
@@ -302,8 +334,7 @@
       await invalidateAll()
     } catch (error) {
       errorMessage = deactivationErrorMessage(user, error)
-      rotationBlockedUserId =
-        error instanceof ApiClientError && error.code === 'active_rotations' ? user.userId : null
+      rotationBlockedUserId = isActiveRotationsError(error) ? user.userId : null
     } finally {
       busyKey = null
     }
@@ -632,6 +663,17 @@
                       {@render WarningIcon()}
                       Remove from organization
                     </button>
+                    {#if rotationBlockedRemovalUserId === user.userId}
+                      <button
+                        class="inline-flex items-center gap-1 text-sm font-medium text-red-700 underline disabled:cursor-not-allowed disabled:opacity-60"
+                        type="button"
+                        disabled={busyKey === user.userId}
+                        onclick={() => onAbandonRotationsAndRemove(user)}
+                      >
+                        {@render WarningIcon()}
+                        Abandon unfinished rotations and remove
+                      </button>
+                    {/if}
                     {#if blockedRemoval[user.userId]}
                       <p class="text-xs text-amber-800" role="alert">
                         {blockedRemoval[user.userId]}
