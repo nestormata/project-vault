@@ -9,9 +9,11 @@
 # number just above the story's original ~7-9-registrations estimate. Deliberately NOT merged into
 # the base docker-compose.yml's `api` service — that would silently weaken every developer's
 # default local stack's bootstrap-token/rate-limit protection (docs/runbook.md: "Never leave
-# VAULT_BOOTSTRAP_TOKEN blank in production... local-dev convenience only"). Apply explicitly:
-# `docker compose -f docker-compose.yml -f docker-compose.e2e.yml up --build -d` (this is what
-# `make e2e` and nightly.yml's `e2e` job do).
+# VAULT_BOOTSTRAP_TOKEN blank in production... local-dev convenience only"). Start it only through
+# `scripts/e2e-stack.sh up` (Story 66.1; this is what `make e2e` and nightly.yml's `e2e` job do):
+# the api keeps NODE_ENV=production, so it needs the script's per-run throwaway secrets. A bare
+# `docker compose -f docker-compose.yml -f docker-compose.e2e.yml up` falls back to the base file's
+# dev literals, which production validation rejects. Never set NODE_ENV or any secret here.
 services:
   api:
     build:
@@ -39,3 +41,9 @@ services:
       # page's self-contradiction warnings cannot fire — the seed has no side effects.
       CLI_MINIMUM_SUPPORTED_VERSION: '1.1.0'
       CLI_WITHDRAWN_VERSIONS: '1.2.1,1.2.2-rc.1'
+  # Story 66.1 D-5: no host ports for mailpit under the e2e override, so two worktrees can run
+  # `make e2e` at the same time (the base file publishes fixed loopback ports 8025/1025, which the
+  # second stack cannot bind). No e2e journey reads mailpit from the host; the api reaches it on the
+  # compose network. `!reset` needs Docker Compose >= 2.24 (scripts/e2e-stack.sh prints the version).
+  mailpit:
+    ports: !reset []

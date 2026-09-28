@@ -19,6 +19,32 @@ const dockerRunCommands = (dockerfile: string) =>
     .filter((line) => line.startsWith('RUN '))
     .map((line) => line.slice(4).trim())
 
+// Story 66.1 AC-9: the 12 production secrets ship blank in the example env file. Dev and test fall
+// back to built-in dev-only values in-app; production (including the docker compose stack) must be
+// given real, distinct values, so the template never carries a value production rejects.
+const PRODUCTION_SECRET_KEYS = [
+  'SESSION_SECRET',
+  'REFRESH_TOKEN_HMAC_SECRET',
+  'TOTP_REPLAY_HMAC_SECRET',
+  'MFA_PENDING_SESSION_HMAC_SECRET',
+  'INVITATION_TOKEN_HMAC_SECRET',
+  'RECOVERY_TOKEN_HMAC_SECRET',
+  'API_KEY_HMAC_SECRET',
+  'MACHINE_JWT_SECRET',
+  'STATUS_PAGE_TOKEN_HMAC_SECRET',
+  'ERASURE_EMAIL_HASH_SECRET',
+  'SSO_STATE_HMAC_SECRET',
+  'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET',
+]
+
+/** One problem per secret key that is missing, duplicated, or not an empty `KEY=` line. Never echoes values. */
+const blankSecretProblems = (envExample: string) =>
+  PRODUCTION_SECRET_KEYS.flatMap((key) => {
+    const lines = envExample.split('\n').filter((line) => line.startsWith(`${key}=`))
+    if (lines.length !== 1) return [`${key}: expected exactly one line, found ${lines.length}`]
+    return lines[0] === `${key}=` ? [] : [`${key}: must ship with an empty value`]
+  })
+
 describe('deployment hardening configuration', () => {
   it('runs the web container as the node user', () => {
     const webDockerfile = readRepoFile(WEB_DOCKERFILE_PATH)
@@ -224,6 +250,9 @@ describe('deployment hardening configuration', () => {
       'coverage',
       '.turbo',
       '.stryker-tmp',
+      // Story 66.1: Playwright's report/traces from a local `make e2e` (they can hold cookies/JWTs
+      // signed with that run's throwaway secrets, and `make ci`'s lint would scan the report's JS).
+      'apps/web/e2e/test-results/',
     ]) {
       expect(dockerignore).toContain(requiredEntry)
     }
@@ -243,6 +272,26 @@ describe('deployment hardening configuration', () => {
     const timeout = apiDbJob?.match(/\n\s+timeout-minutes:\s+(\d+)/)?.[1]
 
     expect(Number(timeout)).toBeGreaterThanOrEqual(45)
+  })
+
+  describe('Story 66.1 AC-9: the example env file ships the 12 production secrets blank', () => {
+    it('has each production secret exactly once, with an empty value', () => {
+      expect(blankSecretProblems(readRepoFile('.env.example'))).toEqual([])
+    })
+
+    it('names a key that regains a value or loses its line', () => {
+      const blank = PRODUCTION_SECRET_KEYS.map((key) => `${key}=`).join('\n')
+      const withValue = blank.replace('SESSION_SECRET=\n', `SESSION_SECRET=${'a'.repeat(64)}\n`)
+      const withoutLine = blank.replace('MACHINE_JWT_SECRET=\n', '')
+
+      expect(blankSecretProblems(blank)).toEqual([])
+      expect(blankSecretProblems(withValue)).toEqual([
+        'SESSION_SECRET: must ship with an empty value',
+      ])
+      expect(blankSecretProblems(withoutLine)).toEqual([
+        'MACHINE_JWT_SECRET: expected exactly one line, found 0',
+      ])
+    })
   })
 
   it('configures Dependabot for pnpm and GitHub Actions updates', () => {

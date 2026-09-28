@@ -86,6 +86,9 @@ jobs:
       - name: Check image scan workflows contract (Story 64.3 AC-5)
         run: pnpm vitest run scripts/check-image-scan-workflows.test.ts
 
+      - name: Check e2e stack script contract (Story 66.1 AC-7)
+        run: pnpm vitest run scripts/e2e-stack.test.ts
+
       - name: Check base image digest lockstep guard (Story 64.1 AC-2)
         run: pnpm vitest run scripts/check-base-image-digest.test.ts
 

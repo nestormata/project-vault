@@ -230,6 +230,7 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm vitest run scripts/check-base-image-digest.test.ts # Story 64.1 AC-2 base digest lockstep guard
 	pnpm vitest run scripts/check-action-pins.test.ts # Story 64.2 AC-3 third-party action SHA-pin guard
 	pnpm vitest run scripts/check-container-publish-workflow.test.ts scripts/check-image-scan-workflows.test.ts # Story 64.3 AC-5 image-scan gate contracts
+	pnpm vitest run scripts/e2e-stack.test.ts # Story 66.1 AC-7 e2e stack script contract
 	pnpm tsx scripts/check-env-example.ts
 	# Blocking, matching ci.yml's `audit-ci` step on this same command (Story 42.2 — the
 	# formerly non-blocking `pnpm audit --audit-level=high || true` is superseded by this
@@ -279,15 +280,21 @@ docker-logs: ## Follow logs for the full stack
 # scripts/docker-smoke.sh's own precedent for the same problem — otherwise a worktree whose ports
 # were actually bumped would run Playwright against the wrong (default) ports while docker-compose
 # itself listens on the bumped ones, producing a misleading "did you run `make docker-up`?" failure.
-e2e: fix-ports ## Playwright E2E suite against a real docker-compose stack (installs Chromium on first run)
-	docker compose -f docker-compose.yml -f docker-compose.e2e.yml up --build -d
+#
+# Story 66.1: the stack is started by scripts/e2e-stack.sh (the same script nightly.yml's e2e job
+# uses), run as a CHILD process so its per-run throwaway secrets die with it and never reach this
+# shell or Playwright. SPEC is appended to test:e2e with NO `--` (pnpm forwards extra args as-is; a
+# literal `--` makes Playwright ignore the filter and run every journey). Paths only, e.g.
+# `make e2e SPEC=e2e/journeys/j28-handoff-confirmation.spec.ts`.
+e2e: fix-ports ## Playwright E2E suite against a real docker-compose stack: make e2e [SPEC=e2e/journeys/<file>]
+	./scripts/e2e-stack.sh start
 	@DB_HOST_PORT="$$(grep -m1 '^DB_HOST_PORT=' .env 2>/dev/null | cut -d= -f2)"; \
 	API_HOST_PORT="$$(grep -m1 '^API_HOST_PORT=' .env 2>/dev/null | cut -d= -f2)"; \
 	WEB_HOST_PORT="$$(grep -m1 '^WEB_HOST_PORT=' .env 2>/dev/null | cut -d= -f2)"; \
 	E2E_CONFIRM_DB_RESET=true; \
 	export DB_HOST_PORT API_HOST_PORT WEB_HOST_PORT E2E_CONFIRM_DB_RESET; \
 	pnpm --filter @project-vault/web exec playwright install --with-deps chromium && \
-	pnpm --filter @project-vault/web test:e2e
+	pnpm --filter @project-vault/web test:e2e $(if $(SPEC),"$(SPEC)")
 
 docker-smoke: fix-ports ## Build, start, and curl /health + /ready end-to-end
 	pnpm docker:smoke
