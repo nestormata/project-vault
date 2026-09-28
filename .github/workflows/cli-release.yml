@@ -153,7 +153,7 @@ jobs:
 
       # Tests run on the UNSTAMPED tree, exactly as in PR CI; the version check stays inert.
       - name: Test the CLI and its agent (unstamped)
-        run: pnpm --filter "@project-vault/cli..." test
+        run: pnpm --filter @project-vault/cli --filter @project-vault/agent test
         env:
           DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
           ADMIN_DATABASE_URL: postgresql://vault_admin:password@localhost:5432/project_vault
