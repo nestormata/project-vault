@@ -354,7 +354,9 @@ RUN set -eu; \
     printf '%s\n' 'packages:' '  - packages/db' 'verifyDepsBeforeRun: false' > "$RUNTIME/pnpm-workspace.yaml"; \
     test -f "$RUNTIME/packages/db/dist/scripts/guarded-migrate.js"; \
     test -f "$RUNTIME/packages/db/dist/migrations/meta/_journal.json"; \
-    if find "$RUNTIME" -path '*/node_modules/*' \( -name drizzle-kit -o -name tsx -o -name esbuild -o -name '@esbuild' \) | grep -q .; then \
+    if find "$RUNTIME" -path '*/node_modules/*' \
+      \( -name drizzle-kit -o -name tsx -o -name esbuild -o -name '@esbuild' \) \
+      | grep -q .; then \
       echo "migrate runtime still contains dev tooling (drizzle-kit/tsx/esbuild)" >&2; exit 1; \
     fi
 
@@ -371,7 +373,9 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
       /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 # The same pinned pnpm the builder installed (a self-contained package with no dependencies).
 COPY --from=builder /usr/local/lib/node_modules/pnpm /usr/local/lib/node_modules/pnpm
-RUN ln -s "/usr/local/lib/node_modules/pnpm/$(node -p 'require("/usr/local/lib/node_modules/pnpm/package.json").bin.pnpm')" /usr/local/bin/pnpm \
+RUN PNPM_DIR=/usr/local/lib/node_modules/pnpm \
+ && PNPM_BIN=$(node -p "require('$PNPM_DIR/package.json').bin.pnpm") \
+ && ln -s "$PNPM_DIR/$PNPM_BIN" /usr/local/bin/pnpm \
  && pnpm --version
 WORKDIR /app
 COPY --from=migrate-deploy /app/migrate-runtime .
