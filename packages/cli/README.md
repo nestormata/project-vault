@@ -26,12 +26,19 @@ checksum. It needs Node.js 20 or newer on `PATH`:
 VERSION=X.Y.Z
 BASE=https://github.com/nestormata/project-vault/releases/download/v$VERSION
 curl -fsSLO "$BASE/pvault-$VERSION.mjs" && curl -fsSLO "$BASE/pvault-$VERSION.mjs.sha256"
-sha256sum -c "pvault-$VERSION.mjs.sha256"
+sha256sum -c "pvault-$VERSION.mjs.sha256"   # macOS without sha256sum: shasum -a 256 -c "pvault-$VERSION.mjs.sha256"
+mkdir -p ~/.local/bin
 chmod +x "pvault-$VERSION.mjs" && mv "pvault-$VERSION.mjs" ~/.local/bin/pvault
 pvault --version
 ```
 
 The CLI shares the server's release number: use the `pvault` whose version matches your server.
+
+The `.sha256` file is published on the same Release as the bundle, so the check detects a
+corrupted or wrong download, not a compromise of the repository or its release process. The bundle
+is not signed and has no build-provenance attestation yet. Only the Release asset whose SHA-256
+matches that Release's `.sha256` is authentic; a `pvault-bundle` workflow artifact from a dry-run is
+not a release and must not be used.
 
 ### From this monorepo checkout (a `dev` build)
 

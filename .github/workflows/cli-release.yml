@@ -13,6 +13,12 @@ name: pvault CLI Release
 # both packages/agent and packages/cli in one step → build → bundle one ESM file with ncc →
 # self-verify by executing the file on Node 24 and on the Node 20 engines floor → checksum →
 # upload both assets to the same Release (--clobber, so a re-run replaces them).
+#
+# Story 43.10 AC-2 — `dry_run: true` rehearses the whole chain with zero outward effect: it may be
+# dispatched from any branch, builds the DISPATCHING commit (github.sha; the tag need not exist
+# yet) stamped with the candidate version, runs the same Node 20/24 self-verify, keeps the bundle
+# as a 1-day workflow artifact and never runs `publish`, so `contents: write` is never granted and
+# no Release is touched. See docs/releasing.md §8.
 
 on:
   release:
@@ -23,6 +29,11 @@ on:
         description: Existing vMAJOR.MINOR.PATCH tag whose pvault assets to (re)build and upload
         required: true
         type: string
+      dry_run:
+        description: Rehearse from the dispatching commit; never uploads and never touches a Release
+        required: false
+        default: false
+        type: boolean
 
 # No workflow-wide grant. Only the upload job gets `contents: write`; the job that installs
 # dependencies and runs the test suite and build holds a read-only token (never persisted into the
@@ -30,8 +41,12 @@ on:
 permissions: {}
 
 # Serializes a release and a manual recovery for the same or different tags (never cancelled).
+# Dry-runs get their own group: GitHub keeps one PENDING run per group and cancels the older
+# pending one when another queues (even though in-progress runs are never cancelled), so a shared
+# group would let a dry-run dispatch cancel a queued real release. For a release event `inputs` is
+# empty, so the expression yields `cli-release`.
 concurrency:
-  group: cli-release
+  group: ${{ inputs.dry_run == true && 'cli-release-dry-run' || 'cli-release' }}
   cancel-in-progress: false
 
 jobs:
@@ -66,9 +81,13 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           INPUT_TAG: ${{ inputs.tag }}
+          # 'true' only for a dry-run dispatch; 'false' for a release event and a real dispatch.
+          DRY_RUN: ${{ inputs.dry_run == true }}
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$GITHUB_REF" != "refs/heads/main" ]]; then
+          # A dry-run may rehearse any branch (e.g. the PR branch before merge); a real manual
+          # recovery uploads assets, so it stays restricted to main.
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$DRY_RUN" != "true" && "$GITHUB_REF" != "refs/heads/main" ]]; then
             echo "Manual recovery is only allowed from refs/heads/main" >&2
             exit 1
           fi
@@ -83,13 +102,28 @@ jobs:
             echo "Expected vMAJOR.MINOR.PATCH without leading zeroes, received '$TAG'" >&2
             exit 1
           fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          {
+            echo "tag=$TAG"
+            echo "version=${TAG#v}"
+            echo "dry_run=$DRY_RUN"
+          } >> "$GITHUB_OUTPUT"
 
+      # Exactly one of the two checkouts runs. A real run builds the validated tag; a dry-run takes
+      # the default checkout of the dispatching commit (github.sha; the tag may not exist yet), so
+      # its bundle embeds that commit and never matches a Release checksum. Two fixed checkouts,
+      # never one step-output-computed ref, so no run can check out a ref chosen at runtime.
       - name: Check out the release tag
+        if: steps.release.outputs.dry_run != 'true'
         uses: actions/checkout@v7
         with:
           ref: ${{ steps.release.outputs.tag }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Check out the dispatching commit (dry-run)
+        if: steps.release.outputs.dry_run == 'true'
+        uses: actions/checkout@v7
+        with:
           fetch-depth: 1
           persist-credentials: false
 
@@ -156,7 +190,14 @@ jobs:
           name: pvault-bundle
           path: ${{ steps.bundle.outputs.dir }}
           if-no-files-found: error
-          retention-days: 7
+          # Artifacts of a public repository are downloadable by any signed-in GitHub user, and a
+          # dry-run bundle calls itself pvault X.Y.Z: keep it one day only.
+          retention-days: ${{ inputs.dry_run == true && 1 || 7 }}
+
+      - name: Record the dry-run in the job summary
+        if: steps.release.outputs.dry_run == 'true'
+        run: |
+          echo "DRY RUN: nothing uploaded; bundle kept as artifact pvault-bundle (1 day); do not distribute" >> "$GITHUB_STEP_SUMMARY"
 
     outputs:
       tag: ${{ steps.release.outputs.tag }}
@@ -214,9 +255,12 @@ jobs:
             exit 1
           fi
 
+  # Never runs for a dry-run. The `github.event_name == 'release'` branch keeps real uploads on
+  # for release events regardless of how `inputs.dry_run` evaluates there (inputs is empty).
   publish:
     name: Upload pvault to the release
     needs: [release, verify]
+    if: github.event_name == 'release' || inputs.dry_run != true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

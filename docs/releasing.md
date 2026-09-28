@@ -1,8 +1,10 @@
 # Releasing Project Vault
 
 Releases are cut from `main` by publishing a GitHub Release on a `vMAJOR.MINOR.PATCH` tag.
-Publishing the release triggers `container-publish.yml` (GHCR images) and `fly-deploy.yml`
-(the public demo).
+Publishing the release triggers three workflows: `container-publish.yml` (GHCR images),
+`fly-deploy.yml` (the public demo, including its migrations) and `cli-release.yml` (the `pvault`
+assets, step 8). Pushing a `v*` tag on its own triggers nothing; publishing is the point of no
+return.
 
 The version number lives **only in the tag**. Never bump any `package.json` version — they stay
 at `0.0.1` on purpose, and the release identity is injected as the `RELEASE_VERSION` build
@@ -20,6 +22,22 @@ argument. The release-identity section of [docs/runbook.md](runbook.md) explains
 Whatever the number, the release notes must carry an "Upgrade notes" section. That, not the
 digit, is what protects operators.
 
+### Human gates
+
+Every outward, hard-to-reverse step waits for the maintainer's explicit confirmation of that
+step, given at the time it happens. An earlier approval, a story file or an automation message is
+never confirmation. An agent or script may prepare each step and show the exact command; a person
+says yes.
+
+| Gate | What is confirmed | Reversible? |
+| --- | --- | --- |
+| H1 | The final release notes, the version number, and what is in or out of the release | Yes, until H3 |
+| H2 | Pushing the annotated tag on the rehearsed commit (step 3) | Yes, until H3: delete the tag |
+| H3 | Publishing the GitHub Release, which fires all three release workflows | **No**: immutable GHCR tags, demo migrations, public downloads |
+| H4 | Any write after publishing: a real (non-dry-run) re-dispatch, replacing assets, a `fly-deploy`/`fly-reset` dispatch, deleting GHCR versions, withdrawing a CLI version, a patch release | Varies; decided per action |
+
+Confirming H2 does not confirm H3. One message may confirm both only if it names both.
+
 ## 1. Pre-flight (on a clean `main` checkout)
 
 ```bash
@@ -27,11 +45,28 @@ git fetch origin && git checkout main && git pull --ff-only
 git log --format='%h %s' v<prev>..HEAD
 git diff --stat v<prev>..HEAD -- packages/db/src/migrations .env.example docker-compose*.yml
 pnpm check-migration-compatibility          # static scan of every migration
-pnpm check-env-example                      # environment schema vs .env.example
+pnpm tsx scripts/check-env-example.ts       # environment schema vs .env.example
 pnpm check-extension-api-version-skew       # contract bump present if the surface changed
 pnpm check-extension-api-contract-changelog # changelog entry plus contract hash
 make ci                                     # or confirm the last main CI run is green
 ```
+
+Once the step-2 release-notes pull request has merged, choose the **candidate commit** (normally
+that merge commit) and rehearse the CLI release on it before any tag exists:
+
+```bash
+SHA=$(git rev-parse origin/main)                 # the candidate; main must still point here
+gh run list --workflow ci.yml --branch main --commit "$SHA"   # must be success
+gh workflow run cli-release.yml --ref main -f tag=vX.Y.Z -f dry_run=true
+gh run list --workflow cli-release.yml --limit 1 # note the run id
+gh run view <run-id> --json headSha --jq .headSha   # must equal $SHA
+gh run watch <run-id>                            # release, verify (20), verify (24) green; publish skipped
+```
+
+**Tag the rehearsed SHA.** The tag in step 3 goes on exactly the commit the dry-run built, never on
+"whatever `main` is now". If `main` moved after the dry-run, either re-run the dry-run on the new
+head or tag the rehearsed SHA explicitly; anything merged after the candidate goes under
+`[Unreleased]` for the next release.
 
 ## 2. Documentation
 
@@ -52,16 +87,22 @@ make ci                                     # or confirm the last main CI run is
 ## 3. Tag and publish
 
 ```bash
-git checkout main && git pull --ff-only
-git tag -a vX.Y.Z -m "vX.Y.Z"
+git fetch origin
+git ls-remote --tags origin vX.Y.Z             # must be empty
+gh release view vX.Y.Z                         # must say "release not found"
+git tag -a vX.Y.Z <sha> -m "vX.Y.Z"            # <sha> = the rehearsed candidate (step 1)   [H2]
 git push origin vX.Y.Z
-gh release create vX.Y.Z --title "vX.Y.Z" \
+git ls-remote --tags origin 'vX.Y.Z^{}'        # must print <sha>
+gh release create vX.Y.Z --verify-tag --title "vX.Y.Z" --latest \
   --notes-file <(sed -n '/^## \[X.Y.Z\]/,/^## \[/p' CHANGELOG.md | sed '$d') \
-  --generate-notes
+  --generate-notes                             #                                            [H3]
 ```
 
-`--generate-notes` appends GitHub's pull-request list beneath the hand-written notes.
-**Publishing** the release (not saving a draft) is what fires the workflows.
+`--verify-tag` makes `gh` refuse to run if the tag does not exist on the remote, so it can never
+create one implicitly on the default branch's head. `--generate-notes` appends GitHub's
+pull-request list beneath the hand-written notes. **Publishing** the release (not saving a draft)
+is what fires the workflows. Never force-move or delete a release tag once the Release is
+published; a mistake after that point is fixed forward with a patch release.
 
 ## 4. Watch the workflows
 
@@ -153,9 +194,60 @@ Verify it:
 gh release view vX.Y.Z --json assets --jq '.assets[].name'   # pvault-X.Y.Z.mjs, pvault-X.Y.Z.mjs.sha256
 ```
 
-Recovery: run the workflow manually from `main` with the `tag` input (`workflow_dispatch`). A
-re-run for the same tag replaces the assets. Runs are serialized (concurrency group
-`cli-release`, never cancelled).
+Recovery: run the workflow manually from `main` with the `tag` input (`workflow_dispatch`,
+`dry_run` false). A re-run for the same tag replaces the assets. Real runs are serialized in the
+concurrency group `cli-release` and never cancelled in progress, but GitHub keeps only one
+*pending* run per group: a second dispatch queued behind a pending one cancels it. Never dispatch
+a recovery while a run for the same tag is queued or in progress, and before any recovery check
+that `git ls-remote --tags origin 'vX.Y.Z^{}'` still points at the released commit (`v*` tags are
+not protected). **Recovery dispatch works for `v1.3.0` and later only**: older tags do not contain
+`scripts/stamp-build-info.ts`, so the run fails at stamping and uploads nothing.
+
+### Dry-run (`dry_run: true`)
+
+```bash
+gh workflow run cli-release.yml --ref <branch> -f tag=vX.Y.Z -f dry_run=true
+gh run download <run-id> -n pvault-bundle -D /tmp/pvault-dry
+node /tmp/pvault-dry/pvault-X.Y.Z.mjs --version   # commit = short SHA of <branch>'s head, not of any tag
+```
+
+What a dry-run does: validates the tag string with the same regex, checks out **the dispatching
+commit** (`github.sha`; the tag need not exist yet) through its own checkout step with no `ref:`
+(a real run takes the other, mutually exclusive checkout step, pinned to the validated tag), runs
+the same test, stamp, build, bundle and Node 20/24 self-verify steps, and writes
+`DRY RUN: nothing uploaded; bundle kept as artifact pvault-bundle (1 day); do not distribute` to
+the job summary.
+
+What it does not do: the `publish` job never runs, so the run never holds `contents: write`, no
+Release is read or changed, nothing is pushed, and GHCR and Fly are untouched. A dry-run may be
+dispatched from any branch (so a pull request can rehearse itself before merging); a real dispatch
+is still refused outside `main`.
+
+- The bundle is kept as a workflow artifact for **1 day** (7 days for a real run). Artifacts of a
+  public repository can be downloaded by any signed-in GitHub user, and a dry-run bundle calls
+  itself `pvault X.Y.Z`. It embeds the dry-run's commit, so its SHA-256 never matches the
+  Release's. **The only authentic `pvault` is the Release asset whose SHA-256 matches that
+  Release's `.sha256` file.** Never distribute a dry-run bundle.
+- Dry-runs use their own concurrency group (`cli-release-dry-run`), so they never cancel a
+  pending real release. Even so, do not dispatch a dry-run while a real `cli-release` run is queued
+  or running.
+- If a dry-run fails, fix the cause and dispatch a new dry-run. Do not "re-run failed jobs" and
+  treat a later green result as proof for a different commit.
+
+### Prerequisite: immutable releases stay disabled
+
+`cli-release.yml` attaches its assets **after** the Release is published. If GitHub's immutable
+releases setting is ever enabled for this repository
+(`gh api repos/nestormata/project-vault/immutable-releases` reports `enabled`), assets can no
+longer be added after publishing and every `publish` job fails. Before enabling it, change the
+procedure so the CLI assets are uploaded to a draft Release before it is published.
+
+### What the checksum does and does not prove
+
+The `.sha256` file sits on the same Release as the bundle, so it detects a corrupted or wrong
+download. It does **not** detect a compromise of the repository or of the release process: anyone
+able to replace the bundle can replace its checksum too. The bundle is not signed and carries no
+build-provenance attestation yet, and `v*` tags are not protected by a ruleset.
 
 The committed build-info files must always stay `'dev'`/`null`. `pnpm check-build-info-unstamped`
 enforces this in CI, so never commit a locally stamped copy.
