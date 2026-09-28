@@ -77,17 +77,21 @@ async function parseExchangeResult(
  * cookie was set.
  */
 export const load: PageServerLoad = async (event) => {
-  // Story 60.4 AC3: resolved per request from the web process's own env (never cached, never
-  // read from the query string) and returned from every exit path below.
-  const pageData = { centralizeMeOrigin: resolveCentralizeMeOrigin(env.VAULT_HANDOFF_ISSUER) }
+  await exchangeClaimIntoCookie(event)
 
+  // Story 60.4 AC3: resolved per request from the web process's own env (never cached, never
+  // read from the query string), whatever the claim exchange's outcome.
+  return { centralizeMeOrigin: resolveCentralizeMeOrigin(env.VAULT_HANDOFF_ISSUER) }
+}
+
+async function exchangeClaimIntoCookie(event: Parameters<PageServerLoad>[0]): Promise<void> {
   const pendingId = event.url.searchParams.get('pendingId')
   const claim = event.url.searchParams.get('claim')
-  if (!pendingId || !claim) return pageData
+  if (!pendingId || !claim) return
 
   const response = await exchangeClaim(globalThis.fetch, env.API_BASE_URL, pendingId, claim)
   const result = response && (await parseExchangeResult(response))
-  if (!result) return pageData
+  if (!result) return
 
   event.cookies.set(HANDOFF_COOKIE_NAME, result.rawCookieValue, {
     httpOnly: true,
@@ -98,6 +102,4 @@ export const load: PageServerLoad = async (event) => {
     path: '/',
     maxAge: Math.floor(result.remainingMs / 1000),
   })
-
-  return pageData
 }
