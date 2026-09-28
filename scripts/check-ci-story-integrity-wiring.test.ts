@@ -24,15 +24,19 @@ const CONDITIONAL_OVERLAY_INCLUDE = '$(if $(PRIVATE_OVERLAY_ROOT),-f docker-comp
 
 // Story 43.11 AC-6.4: the story-integrity guards' own test files, run with `--dir scripts` so
 // vitest's positional substring filters cannot also match stale copies in nested agent worktrees.
+// Story 43.12 AC-7.3 appends the two ledger-backstop guards' tests.
 const STORY_INTEGRITY_TEST_COMMAND =
   'pnpm vitest run --dir scripts check-sprint-status-rollup.test.ts check-story-status-sync.test.ts ' +
   'check-deferred-work-ids.test.ts next-dw-id.test.ts lib/deferred-work-ledger.test.ts ' +
-  'check-ci-story-integrity-wiring.test.ts'
+  'check-ci-story-integrity-wiring.test.ts check-review-tradeoff-ledger.test.ts ' +
+  'check-deferred-work-triggers.test.ts'
 
 const GUARDS = {
   'check-story-status-sync': 'tsx scripts/check-story-status-sync.ts',
   'check-sprint-status-rollup': 'tsx scripts/check-sprint-status-rollup.ts',
   'check-deferred-work-ids': 'tsx scripts/check-deferred-work-ids.ts',
+  'check-deferred-work-triggers': 'tsx scripts/check-deferred-work-triggers.ts',
+  'check-review-tradeoff-ledger': 'tsx scripts/check-review-tradeoff-ledger.ts',
   'check-story-references': 'tsx scripts/check-story-references.ts',
   'check-psc-tbd-tracking': 'tsx scripts/check-psc-tbd-tracking.ts',
   'check-story-review-deferrals': 'tsx scripts/check-story-review-deferrals.ts',

@@ -9,49 +9,22 @@
  *
  * Pure, DB-free: a static file scan over `_bmad-output/implementation-artifacts/`.
  */
-import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadSprintStatuses } from './check-story-status-sync.js'
 import { evaluateFollowupReviewGate } from './lib/followup-review-gate.js'
-import { toRepoPath } from './lib/scan-utils.js'
+import { readOverlayFile, toRepoPath } from './lib/scan-utils.js'
+import { resolveStoryFile } from './lib/story-files.js'
 
 export type FollowupReviewGateViolation = {
   storyKey: string
   storyFile: string
 }
 
-const STORIES_DIR = '_bmad-output/implementation-artifacts'
 const DEFERRED_WORK_PATH = '_bmad-output/implementation-artifacts/deferred-work.md'
 
 /** Real story keys have the `<epic>-<story>-<slug>` shape — skip epic/retrospective/other keys. */
 const STORY_KEY_PATTERN = /^\d+-\d+-/
-
-type ResolvedStoryFile = { path: string; content: string }
-
-/**
- * This project has used two story-file naming conventions over time: the plain `<key>.md`
- * form, and a `spec-<key>.md` form (see e.g. `spec-9-9-...md`, `spec-21-5-...md`). Try both
- * rather than assuming the plain form — a `spec-`-prefixed story silently skipped here
- * (DW-138/DW-139) is indistinguishable from a real integrity gap, which is worse than a false
- * negative: it means this gate can never catch a flagged `spec-`-prefixed story regardless of
- * whether it's swept. Returns `undefined` when the story key is tracked in `sprint-status.yaml`
- * but has no matching file on disk under either convention.
- */
-function resolveStoryFile(root: string, storyKey: string): ResolvedStoryFile | undefined {
-  const candidatePaths = [
-    resolve(root, STORIES_DIR, `${storyKey}.md`),
-    resolve(root, STORIES_DIR, `spec-${storyKey}.md`),
-  ]
-  for (const path of candidatePaths) {
-    try {
-      return { path, content: readFileSync(path, 'utf-8') }
-    } catch {
-      continue
-    }
-  }
-  return undefined
-}
 
 export function scanFollowupReviewGate(rootDir = process.cwd()): FollowupReviewGateViolation[] {
   const root = resolve(rootDir)
@@ -59,14 +32,10 @@ export function scanFollowupReviewGate(rootDir = process.cwd()): FollowupReviewG
   const sprintStatuses = loadSprintStatuses(root)
   if (!sprintStatuses) return []
 
-  let deferredWorkContent = ''
-  try {
-    deferredWorkContent = readFileSync(resolve(root, DEFERRED_WORK_PATH), 'utf-8')
-  } catch {
-    // deferred-work.md not found — can't verify tracking; fail open (don't block builds),
-    // matching check-psc-tbd-tracking.ts's existing convention.
-    return []
-  }
+  const deferredWorkContent = readOverlayFile(root, DEFERRED_WORK_PATH)
+  // deferred-work.md not found — can't verify tracking; fail open (don't block builds),
+  // matching check-psc-tbd-tracking.ts's existing convention.
+  if (deferredWorkContent === undefined) return []
 
   const violations: FollowupReviewGateViolation[] = []
   for (const [storyKey, status] of sprintStatuses) {

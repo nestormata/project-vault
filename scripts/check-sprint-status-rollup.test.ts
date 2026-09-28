@@ -1,10 +1,9 @@
-import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   runScriptCli,
   useFixtureRoots,
   writeFixture,
+  writeFixtureDir,
   writeFixtureSymlink,
 } from './lib/fixture-test-helpers.js'
 import { scanSprintStatusRetroKeys, scanSprintStatusRollup } from './check-sprint-status-rollup.js'
@@ -420,7 +419,7 @@ describe('check-sprint-status-rollup CLI (Story 43.11 AC-1/AC-2/AC-7)', () => {
 
   it('code review: FATAL (never OK) when sprint-status.yaml exists but cannot be read as a file', () => {
     const root = makeFixtureRoot()
-    mkdirSync(join(root, SPRINT_STATUS_PATH), { recursive: true })
+    writeFixtureDir(root, SPRINT_STATUS_PATH)
     const run = runScriptCli(SCRIPT, root)
     expect(run.status).toBe(1)
     expect(run.stderr).toContain(

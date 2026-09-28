@@ -43,6 +43,12 @@ export function writeFixtureSymlink(root: string, relativePath: string, target: 
   symlinkSync(target, fullPath)
 }
 
+/** Story 43.12: creates a directory at `root/relativePath` — the "overlay input is a directory,
+ * not a file → FATAL" fixture shared by the story-integrity guards' CLI tests. */
+export function writeFixtureDir(root: string, relativePath: string): void {
+  mkdirSync(join(root, relativePath), { recursive: true })
+}
+
 export type CliRun = { status: number | null; stdout: string; stderr: string }
 
 /**
