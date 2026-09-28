@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { allocateNextDwId } from './next-dw-id.js'
@@ -136,6 +136,28 @@ describe('allocateNextDwId (Story 43.11 AC-5)', () => {
     expect(result.next).toBe('DW-342')
     expect(result.warnings).toHaveLength(1)
     expect(result.warnings[0]).toMatch(/^git fetch --all --prune failed/)
+  })
+
+  it('skips a ref that predates the ledger silently (the normal case, no warning)', () => {
+    const { root, git } = makeLedgerRepo()
+    git('checkout', '-q', '--orphan', 'no-ledger')
+    git('rm', '-rq', '--cached', '.')
+    git('commit', '-q', '--allow-empty', '-m', 'no ledger here')
+    git('checkout', '-q', '-f', 'main')
+    expect(allocateNextDwId(root)).toMatchObject({ next: 'DW-342', warnings: [] })
+  })
+
+  it('code review: warns (never silently skips) when a ref holds the ledger but git cannot read it', () => {
+    const { root, git, ledger } = makeLedgerRepo()
+    commitOnBranch(git, ledger, 'feature/corrupt', '### DW-900: unreadable')
+    const blob = git('rev-parse', `feature/corrupt:${LEDGER_PATH}`).trim()
+    rmSync(join(root, '.git/objects', blob.slice(0, 2), blob.slice(2)))
+    const result = allocateNextDwId(root)
+    expect(result.next).toBe('DW-342')
+    expect(result.warnings).toHaveLength(1)
+    expect(result.warnings[0]).toMatch(
+      /^could not read .*deferred-work\.md at refs\/heads\/feature\/corrupt \(.+\); the next ID may collide/
+    )
   })
 
   it('starts at DW-1 when the ledger has no plain numeric ID', () => {

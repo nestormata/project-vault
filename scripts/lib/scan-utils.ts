@@ -1,4 +1,12 @@
-import { existsSync, lstatSync, readdirSync, readlinkSync, statSync } from 'node:fs'
+import {
+  accessSync,
+  constants,
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readlinkSync,
+  statSync,
+} from 'node:fs'
 import { relative, resolve, sep } from 'node:path'
 
 // Never descend into a node_modules directory. This guards a real regression AC-1's own fix would
@@ -142,14 +150,22 @@ export function inspectOverlayInput(rootDir: string, relPath: string): OverlayIn
     let isLink: boolean
     try {
       isLink = lstatSync(current).isSymbolicLink()
-    } catch {
-      return { state: 'absent' }
+    } catch (error) {
+      // Only a provably missing path is "absent". Anything else (EACCES on a parent, ...) is not a
+      // reason to skip: stop here and let `overlayReadFailure` report it as FATAL.
+      if (isMissingPathError(error)) return { state: 'absent' }
+      return { state: 'present' }
     }
     if (isLink && !existsSync(current)) {
       return { state: 'dangling', target: readlinkSync(current) }
     }
   }
   return { state: 'present' }
+}
+
+function isMissingPathError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code
+  return code === 'ENOENT' || code === 'ENOTDIR'
 }
 
 export function detectOverlayInput(rootDir: string, relPath: string): OverlayInputState {
@@ -173,6 +189,56 @@ export function overlaySkipMessage(
       ? `dangling overlay symlink -> ${inspection.target}`
       : 'private overlay not attached'
   return `${checkName}: SKIPPED — ${relPath} not found (${reason}); nothing checked\n`
+}
+
+/**
+ * The FATAL stderr text for an overlay input that is there (not absent, not dangling) but cannot
+ * be read as a regular file (a directory, EACCES, ...), or `undefined` when it is readable. Without
+ * this, every guard's loader swallows the read error and the guard prints a false "— OK" having
+ * checked nothing, which is exactly what AC-7 forbids.
+ */
+export function overlayReadFailure(
+  checkName: string,
+  rootDir: string,
+  relPath: string
+): string | undefined {
+  const path = resolve(rootDir, relPath)
+  try {
+    if (!statSync(path).isFile()) throw new Error('not a regular file')
+    accessSync(path, constants.R_OK)
+    return undefined
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    return (
+      `FATAL: ${checkName}: ${relPath} cannot be read (${reason}); nothing was checked, ` +
+      'so this is not an OK.\n'
+    )
+  }
+}
+
+/**
+ * The shared CLI entry for an overlay guard (Story 43.11 AC-7): prints SKIPPED (exit 0) when the
+ * input is absent or a dangling overlay symlink, FATAL (exit 1) when it is there but unreadable,
+ * and otherwise runs the guard.
+ */
+export function runOverlayGuard(
+  checkName: string,
+  rootDir: string,
+  relPath: string,
+  run: () => void
+): void {
+  const skipped = overlaySkipMessage(checkName, rootDir, relPath)
+  if (skipped !== undefined) {
+    process.stdout.write(skipped)
+    return
+  }
+  const failure = overlayReadFailure(checkName, rootDir, relPath)
+  if (failure !== undefined) {
+    process.stderr.write(failure)
+    process.exitCode = 1
+    return
+  }
+  run()
 }
 
 /** Story 43.11 violation-line suffix for a key declared on several lines: `:3`, `:3 and :7`,

@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   runScriptCli,
@@ -414,6 +416,17 @@ describe('check-sprint-status-rollup CLI (Story 43.11 AC-1/AC-2/AC-7)', () => {
     expect(danglingRun.status).toBe(0)
     expect(danglingRun.stdout).toContain('SKIPPED')
     expect(danglingRun.stdout).toContain('dangling')
+  })
+
+  it('code review: FATAL (never OK) when sprint-status.yaml exists but cannot be read as a file', () => {
+    const root = makeFixtureRoot()
+    mkdirSync(join(root, SPRINT_STATUS_PATH), { recursive: true })
+    const run = runScriptCli(SCRIPT, root)
+    expect(run.status).toBe(1)
+    expect(run.stderr).toContain(
+      `FATAL: check-sprint-status-rollup: ${SPRINT_STATUS_PATH} cannot be read`
+    )
+    expect(run.stdout).not.toContain('OK')
   })
 
   it('AC-7.3: a present file without a development_status block is not a skip', () => {

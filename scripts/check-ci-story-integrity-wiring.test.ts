@@ -137,7 +137,8 @@ function assertOverlayMountWiring(
   expect(recipe.replace(CONDITIONAL_OVERLAY_INCLUDE, '')).not.toContain(
     'docker-compose.ci-overlay.yml'
   )
-  expect(recipe).toMatch(/PRIVATE_OVERLAY_ROOT=\$\(PRIVATE_OVERLAY_ROOT\)/)
+  // quoted, so an overlay path containing spaces stays one shell word (code review)
+  expect(recipe).toContain("PRIVATE_OVERLAY_ROOT='$(PRIVATE_OVERLAY_ROOT)' \\")
   expect(makefile).toMatch(/^PRIVATE_OVERLAY_ROOT := \$\(shell .*readlink -f .*\)$/m)
   // (iii) the base compose file never depends on PRIVATE_OVERLAY_ROOT
   expect(baseCompose).not.toContain('PRIVATE_OVERLAY_ROOT')
@@ -241,6 +242,16 @@ describe('story-integrity CI wiring', () => {
     ).toThrow()
     expect(() =>
       assertOverlayMountWiring(makefile, overlay, `${base}\n# \${PRIVATE_OVERLAY_ROOT}\n`)
+    ).toThrow()
+    expect(() =>
+      assertOverlayMountWiring(
+        makefile.replace(
+          "PRIVATE_OVERLAY_ROOT='$(PRIVATE_OVERLAY_ROOT)'",
+          'PRIVATE_OVERLAY_ROOT=$(PRIVATE_OVERLAY_ROOT)'
+        ),
+        overlay,
+        base
+      )
     ).toThrow()
   })
 

@@ -46,6 +46,17 @@ function firstLine(error: unknown): string {
   return message.split('\n')[0] ?? message
 }
 
+/** git's own stderr message for a failed `trustedGit` call (the thrown error's first line is only
+ * "Command failed: ..."), falling back to that first line. */
+function gitErrorText(error: unknown): string {
+  const stderr = (error as { stderr?: unknown } | undefined)?.stderr
+  const text = typeof stderr === 'string' ? stderr.trim() : ''
+  return text === '' ? firstLine(error) : (text.split('\n')[0] ?? text)
+}
+
+/** `git show <ref>:<path>`'s error when the ref simply has no such file (the normal skip). */
+const PATH_NOT_IN_REF = /does not exist in '|exists on disk, but not in '/
+
 /** Every branch and remote-tracking ref, minus symbolic refs such as `refs/remotes/origin/HEAD`. */
 function listRefs(repo: string): string[] {
   return trustedGit(repo, [
@@ -60,8 +71,10 @@ function listRefs(repo: string): string[] {
     .map(([refname]) => refname as string)
 }
 
-/** The ledger's content at each ref that has it; a ref without the file is skipped. */
-function readAtRefs(repo: string, repoRelativePath: string): LedgerSource[] {
+/** The ledger's content at each ref that has it. A ref without the file is skipped silently; any
+ * other read failure is a warning, because silently dropping a ref that holds a higher ID is how
+ * the allocator hands out a duplicate. */
+function readAtRefs(repo: string, repoRelativePath: string, warnings: string[]): LedgerSource[] {
   const sources: LedgerSource[] = []
   for (const ref of listRefs(repo)) {
     try {
@@ -69,8 +82,13 @@ function readAtRefs(repo: string, repoRelativePath: string): LedgerSource[] {
         label: ref,
         content: trustedGit(repo, ['show', `${ref}:${repoRelativePath}`]),
       })
-    } catch {
-      // This ref predates the ledger (or never had it) — the normal "skip" case.
+    } catch (error) {
+      const reason = gitErrorText(error)
+      if (PATH_NOT_IN_REF.test(reason)) continue // this ref predates the ledger
+      warnings.push(
+        `could not read ${repoRelativePath} at ${ref} (${reason}); the next ID may collide ` +
+          'with an entry on that ref'
+      )
     }
   }
   return sources
@@ -111,7 +129,7 @@ export function allocateNextDwId(
         warnings.push(`git fetch --all --prune failed (${firstLine(error)}); using local refs only`)
       }
     }
-    sources.push(...readAtRefs(repo, relative(repo, ledger).split(sep).join('/')))
+    sources.push(...readAtRefs(repo, relative(repo, ledger).split(sep).join('/'), warnings))
   }
 
   let max = 0

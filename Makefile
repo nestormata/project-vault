@@ -159,7 +159,7 @@ ci: ## Full local quality gates — runs inside Docker (isolated per-worktree; s
 	$(MAKE) fix-ports
 	@echo "make ci: $(if $(PRIVATE_OVERLAY_ROOT),private overlay mounted read-only from $(PRIVATE_OVERLAY_ROOT),private overlay not found; overlay guards will print SKIPPED)"
 	GIT_COMMON_DIR=$$(git rev-parse --path-format=absolute --git-common-dir) \
-		PRIVATE_OVERLAY_ROOT=$(PRIVATE_OVERLAY_ROOT) \
+		PRIVATE_OVERLAY_ROOT='$(PRIVATE_OVERLAY_ROOT)' \
 		docker compose -f docker-compose.yml -f docker-compose.ci.yml $(if $(PRIVATE_OVERLAY_ROOT),-f docker-compose.ci-overlay.yml) run --rm --build ci make ci-inner
 	# Story 9.9 AC-6/Product Surface Contract G3: runs on the HOST (not inside ci-inner's
 	# container, which has no Docker socket to build/run nested images from) — builds the real

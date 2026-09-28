@@ -25,7 +25,7 @@ import {
   loadSprintStatuses,
   SPRINT_STATUS_PATH,
 } from './check-story-status-sync.js'
-import { formatLineRefs, overlaySkipMessage } from './lib/scan-utils.js'
+import { formatLineRefs, runOverlayGuard } from './lib/scan-utils.js'
 
 export type RollupDrift = {
   epicKey: string
@@ -253,14 +253,7 @@ function report(drifts: RollupDrift[], retroKeys: RetroKeyFindings): void {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  const skipped = overlaySkipMessage(
-    'check-sprint-status-rollup',
-    process.cwd(),
-    SPRINT_STATUS_PATH
-  )
-  if (skipped === undefined) {
+  runOverlayGuard('check-sprint-status-rollup', process.cwd(), SPRINT_STATUS_PATH, () => {
     report(scanSprintStatusRollup(), scanSprintStatusRetroKeys())
-  } else {
-    process.stdout.write(skipped)
-  }
+  })
 }

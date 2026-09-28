@@ -16,7 +16,7 @@ import { basename, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   type DanglingSymlinkViolation,
-  overlaySkipMessage,
+  runOverlayGuard,
   reportDanglingSymlinks,
   toDanglingSymlinkViolation,
   toRepoPath,
@@ -321,10 +321,7 @@ function report(violations: StoryStatusSyncViolation[]): void {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  const skipped = overlaySkipMessage('check-story-status-sync', process.cwd(), SPRINT_STATUS_PATH)
-  if (skipped === undefined) {
+  runOverlayGuard('check-story-status-sync', process.cwd(), SPRINT_STATUS_PATH, () => {
     report(scanStoryStatusSync())
-  } else {
-    process.stdout.write(skipped)
-  }
+  })
 }

@@ -1,3 +1,4 @@
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { scanStoryReferences } from './check-story-references.js'
@@ -664,6 +665,17 @@ describe('check-story-status-sync CLI (Story 43.11 AC-3 report + AC-7 SKIPPED)',
     expect(run.stdout).toContain('SKIPPED')
     expect(run.stdout).toContain('dangling')
     expect(run.stderr).toBe('')
+  })
+
+  it('code review: FATAL (never OK) when sprint-status.yaml exists but cannot be read as a file', () => {
+    const root = makeFixtureRoot()
+    mkdirSync(join(root, SPRINT_STATUS_PATH), { recursive: true })
+    const run = runScriptCli(SCRIPT, root)
+    expect(run.status).toBe(1)
+    expect(run.stderr).toContain(
+      `FATAL: check-story-status-sync: ${SPRINT_STATUS_PATH} cannot be read`
+    )
+    expect(run.stdout).not.toContain('OK')
   })
 
   it('still reports a dangling story-file symlink as FATAL once sprint-status.yaml is readable', () => {

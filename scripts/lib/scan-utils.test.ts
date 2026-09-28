@@ -1,4 +1,4 @@
-import { mkdirSync, symlinkSync } from 'node:fs'
+import { chmodSync, mkdirSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { useFixtureRoots, writeFixture, writeFixtureSymlink } from './fixture-test-helpers.js'
@@ -6,11 +6,13 @@ import {
   detectOverlayInput,
   formatLineRefs,
   inspectOverlayInput,
+  overlayReadFailure,
   overlaySkipMessage,
   walkFiles,
 } from './scan-utils.js'
 
 const ROOT_DIR = 'root'
+const SPRINT_STATUS_BODY = 'development_status:\n'
 
 const makeFixtureRoot = useFixtureRoots('scan-utils-', [ROOT_DIR])
 
@@ -109,14 +111,14 @@ describe('detectOverlayInput (Story 43.11 AC-7.4)', () => {
 
   it('is "present" for a readable regular file', () => {
     const root = makeFixtureRoot()
-    writeFixture(root, REL, 'development_status:\n')
+    writeFixture(root, REL, SPRINT_STATUS_BODY)
     expect(detectOverlayInput(root, REL)).toBe('present')
     expect(overlaySkipMessage('check-x', root, REL)).toBeUndefined()
   })
 
   it('is "present" for a symlink whose target resolves', () => {
     const root = makeFixtureRoot()
-    writeFixture(root, 'private/sprint-status.yaml', 'development_status:\n')
+    writeFixture(root, 'private/sprint-status.yaml', SPRINT_STATUS_BODY)
     writeFixtureSymlink(root, REL, join(root, 'private/sprint-status.yaml'))
     expect(detectOverlayInput(root, REL)).toBe('present')
   })
@@ -155,6 +157,40 @@ describe('detectOverlayInput (Story 43.11 AC-7.4)', () => {
       target: '/nonexistent/project-vault-private/_bmad-output',
     })
   })
+})
+
+describe('overlayReadFailure (code review: a present-but-unreadable input is FATAL, never a false OK)', () => {
+  const REL = '_bmad-output/implementation-artifacts/sprint-status.yaml'
+
+  it('is undefined for a readable regular file', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, REL, SPRINT_STATUS_BODY)
+    expect(overlayReadFailure('check-x', root, REL)).toBeUndefined()
+  })
+
+  it('is a FATAL line when the input is a directory', () => {
+    const root = makeFixtureRoot()
+    mkdirSync(join(root, REL), { recursive: true })
+    expect(overlayReadFailure('check-x', root, REL)).toMatch(
+      new RegExp(`^FATAL: check-x: ${REL} cannot be read \\(not a regular file\\)`)
+    )
+  })
+
+  it.skipIf(process.getuid?.() === 0)(
+    'does not classify an unsearchable parent directory as "absent" (EACCES is not a skip)',
+    () => {
+      const root = makeFixtureRoot()
+      writeFixture(root, REL, SPRINT_STATUS_BODY)
+      const parent = join(root, '_bmad-output/implementation-artifacts')
+      chmodSync(parent, 0o000)
+      try {
+        expect(detectOverlayInput(root, REL)).toBe('present')
+        expect(overlayReadFailure('check-x', root, REL)).toContain('FATAL: check-x:')
+      } finally {
+        chmodSync(parent, 0o755)
+      }
+    }
+  )
 })
 
 describe('formatLineRefs (Story 43.11)', () => {

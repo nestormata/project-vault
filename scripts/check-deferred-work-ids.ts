@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { type DwHeading, parseDwHeadings } from './lib/deferred-work-ledger.js'
-import { formatLineRefs, overlaySkipMessage } from './lib/scan-utils.js'
+import { formatLineRefs, runOverlayGuard } from './lib/scan-utils.js'
 
 export const DEFERRED_WORK_PATH = '_bmad-output/implementation-artifacts/deferred-work.md'
 
@@ -120,10 +120,7 @@ function report(findings: DeferredWorkIdFindings): void {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  const skipped = overlaySkipMessage('check-deferred-work-ids', process.cwd(), DEFERRED_WORK_PATH)
-  if (skipped === undefined) {
+  runOverlayGuard('check-deferred-work-ids', process.cwd(), DEFERRED_WORK_PATH, () => {
     report(scanDeferredWorkIds())
-  } else {
-    process.stdout.write(skipped)
-  }
+  })
 }
