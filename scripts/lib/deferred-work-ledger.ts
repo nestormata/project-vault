@@ -58,8 +58,7 @@ function openingFence(line: string): Fence | undefined {
 function closesFence(line: string, fence: Fence): boolean {
   const marker = FENCE.exec(line)?.[1]
   return (
-    marker !== undefined &&
-    marker[0] === fence.char &&
+    marker?.startsWith(fence.char) === true &&
     marker.length >= fence.length &&
     line.trim() === marker
   )
