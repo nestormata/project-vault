@@ -11,10 +11,11 @@ import { HandoffEvent } from '@project-vault/shared'
 import {
   bootstrapRouteIntegrationTest,
   initVaultForTest,
-  parseSetCookies,
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import {
   createLinkedHandoffOrg,
+  HANDOFF_COOKIE_NAME,
+  handoffCookieFrom,
   HANDOFF_TEST_INSTANCE_ID,
   HANDOFF_TEST_KID,
   handoffTestPublicKeyPem,
@@ -38,9 +39,6 @@ vi.mock('./handoff-claim-exchange-db.js', async (importOriginal) => {
   }
 })
 
-process.env['DATABASE_URL'] ??=
-  'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
-
 process.env['VAULT_HANDOFF_ENABLED'] = 'true'
 process.env['VAULT_HANDOFF_INSTANCE_ID'] = HANDOFF_TEST_INSTANCE_ID
 process.env['VAULT_HANDOFF_VERIFY_KEYS'] = JSON.stringify([
@@ -57,7 +55,6 @@ const findSpy = vi.mocked(seam.findPendingForClaim)
 const PREPARE_URL = '/api/v1/auth/handoff/prepare'
 const CONFIRM_URL = '/api/v1/auth/handoff/confirm'
 const EXCHANGE_CLAIM_URL = '/api/v1/auth/handoff/exchange-claim'
-const HANDOFF_COOKIE_NAME = 'handoff-confirm'
 const GENERIC_REJECTION_BODY = {
   code: 'handoff_rejected',
   message: 'Sign-in could not be verified. Please start again.',
@@ -86,9 +83,7 @@ async function prepare(app: App, claimOverrides: Record<string, unknown> = {}): 
   })
   expect(res.statusCode).toBe(200)
   const { pendingId, claim } = res.json<{ data: { pendingId: string; claim: string } }>().data
-  const prepareCookie = new Map(Object.entries(parseSetCookies(res.headers['set-cookie']))).get(
-    HANDOFF_COOKIE_NAME
-  )
+  const prepareCookie = handoffCookieFrom(res.headers['set-cookie'])
   if (!prepareCookie) throw new Error('expected the prepare-set handoff cookie')
   createdClaims.push(claim)
   createdPendingIds.push(pendingId)

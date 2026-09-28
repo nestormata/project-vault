@@ -18,6 +18,8 @@ import {
 import {
   b64url,
   createLinkedHandoffOrg,
+  HANDOFF_COOKIE_NAME,
+  handoffCookieFrom,
   HANDOFF_PROVIDER,
   HANDOFF_TEST_INSTANCE_ID,
   HANDOFF_TEST_KID,
@@ -42,7 +44,6 @@ const { initVault } = await bootstrapRouteIntegrationTest()
 const PREPARE_URL = '/api/v1/auth/handoff/prepare'
 const CONFIRM_URL = '/api/v1/auth/handoff/confirm'
 const EXCHANGE_CLAIM_URL = '/api/v1/auth/handoff/exchange-claim'
-const HANDOFF_COOKIE_NAME = 'handoff-confirm'
 const GENERIC_REJECTION_MESSAGE = 'Sign-in could not be verified. Please start again.'
 const SAME_ORIGIN = 'same-origin'
 
@@ -105,8 +106,8 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
         payload: { token },
       })
       expect(res.statusCode).toBe(200)
-      const cookies = parseSetCookies(res.headers['set-cookie'])
-      expect(cookies[HANDOFF_COOKIE_NAME]).toBeTruthy()
+      const handoffCookie = handoffCookieFrom(res.headers['set-cookie'])
+      expect(handoffCookie).toBeTruthy()
       const body = res.json<{ data: { pendingId: string } }>()
       expect(body.data.pendingId).toBeTruthy()
       await app.close()
@@ -133,8 +134,8 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
         payload: { token },
       })
       expect(res.statusCode).toBe(200)
-      const cookies = parseSetCookies(res.headers['set-cookie'])
-      const rawCookie = cookies[HANDOFF_COOKIE_NAME]
+      const handoffCookie = handoffCookieFrom(res.headers['set-cookie'])
+      const rawCookie = handoffCookie
       const body = res.json<{ data: { pendingId: string; claim: string } }>()
       expect(body.data.claim).toBeTruthy()
       expect(body.data.claim).not.toBe(rawCookie)
@@ -439,7 +440,7 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
         url: PREPARE_URL,
         payload: { token },
       })
-      const cookies = parseSetCookies(prepareRes.headers['set-cookie'])
+      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
       const pendingId = prepareRes.json<{ data: { pendingId: string } }>().data.pendingId
       const { handoffPendingStates } = await import('@project-vault/db/schema')
       await getDb()
@@ -450,7 +451,7 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
       const res = await app.inject({
         method: 'POST',
         url: CONFIRM_URL,
-        headers: { cookie: `${HANDOFF_COOKIE_NAME}=${cookies[HANDOFF_COOKIE_NAME]}` },
+        headers: { cookie: `${HANDOFF_COOKIE_NAME}=${handoffCookie}` },
       })
       expect(res.statusCode).toBe(401)
       await app.close()
@@ -464,8 +465,8 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
         url: PREPARE_URL,
         payload: { token },
       })
-      const cookies = parseSetCookies(prepareRes.headers['set-cookie'])
-      const cookieHeader = `${HANDOFF_COOKIE_NAME}=${cookies[HANDOFF_COOKIE_NAME]}`
+      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
+      const cookieHeader = `${HANDOFF_COOKIE_NAME}=${handoffCookie}`
 
       // First confirm burns the jti (regardless of what happens further down the pipeline).
       await app.inject({
@@ -492,12 +493,12 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
         url: PREPARE_URL,
         payload: { token },
       })
-      const cookies = parseSetCookies(prepareRes.headers['set-cookie'])
+      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
       const res = await app.inject({
         method: 'POST',
         url: CONFIRM_URL,
         headers: {
-          cookie: `${HANDOFF_COOKIE_NAME}=${cookies[HANDOFF_COOKIE_NAME]}`,
+          cookie: `${HANDOFF_COOKIE_NAME}=${handoffCookie}`,
           'sec-fetch-site': 'cross-site',
         },
       })
@@ -513,7 +514,7 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
         url: PREPARE_URL,
         payload: { token },
       })
-      const cookies = parseSetCookies(prepareRes.headers['set-cookie'])
+      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
 
       // AC4.16's origin check runs BEFORE the cookie/pending lookup in this implementation, so a
       // cross-site-rejected attempt never reaches the burn step; use a same-origin attempt
@@ -522,7 +523,7 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
         method: 'POST',
         url: CONFIRM_URL,
         headers: {
-          cookie: `${HANDOFF_COOKIE_NAME}=${cookies[HANDOFF_COOKIE_NAME]}`,
+          cookie: `${HANDOFF_COOKIE_NAME}=${handoffCookie}`,
           'sec-fetch-site': SAME_ORIGIN,
         },
       })
@@ -550,12 +551,12 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
         url: PREPARE_URL,
         payload: { token },
       })
-      const cookies = parseSetCookies(prepareRes.headers['set-cookie'])
+      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
       const res = await app.inject({
         method: 'POST',
         url: CONFIRM_URL,
         headers: {
-          cookie: `${HANDOFF_COOKIE_NAME}=${cookies[HANDOFF_COOKIE_NAME]}`,
+          cookie: `${HANDOFF_COOKIE_NAME}=${handoffCookie}`,
           'sec-fetch-site': SAME_ORIGIN,
         },
       })
@@ -584,12 +585,12 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
         url: PREPARE_URL,
         payload: { token },
       })
-      const cookies = parseSetCookies(prepareRes.headers['set-cookie'])
+      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
       const res = await app.inject({
         method: 'POST',
         url: CONFIRM_URL,
         headers: {
-          cookie: `${HANDOFF_COOKIE_NAME}=${cookies[HANDOFF_COOKIE_NAME]}`,
+          cookie: `${HANDOFF_COOKIE_NAME}=${handoffCookie}`,
           'sec-fetch-site': SAME_ORIGIN,
         },
       })
@@ -635,12 +636,12 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
         url: PREPARE_URL,
         payload: { token },
       })
-      const cookies = parseSetCookies(prepareRes.headers['set-cookie'])
+      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
       const res = await app.inject({
         method: 'POST',
         url: CONFIRM_URL,
         headers: {
-          cookie: `${HANDOFF_COOKIE_NAME}=${cookies[HANDOFF_COOKIE_NAME]}`,
+          cookie: `${HANDOFF_COOKIE_NAME}=${handoffCookie}`,
           'sec-fetch-site': SAME_ORIGIN,
         },
       })
@@ -667,12 +668,12 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
         url: PREPARE_URL,
         payload: { token },
       })
-      const cookies = parseSetCookies(prepareRes.headers['set-cookie'])
+      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
       const res = await app.inject({
         method: 'POST',
         url: CONFIRM_URL,
         headers: {
-          cookie: `${HANDOFF_COOKIE_NAME}=${cookies[HANDOFF_COOKIE_NAME]}`,
+          cookie: `${HANDOFF_COOKIE_NAME}=${handoffCookie}`,
           'sec-fetch-site': SAME_ORIGIN,
         },
       })
@@ -696,12 +697,12 @@ describe('handoff routes (Story 30.2 AC3/AC4)', () => {
         url: PREPARE_URL,
         payload: { token },
       })
-      const cookies = parseSetCookies(prepareRes.headers['set-cookie'])
+      const handoffCookie = handoffCookieFrom(prepareRes.headers['set-cookie'])
       const res = await app.inject({
         method: 'POST',
         url: CONFIRM_URL,
         headers: {
-          cookie: `${HANDOFF_COOKIE_NAME}=${cookies[HANDOFF_COOKIE_NAME]}`,
+          cookie: `${HANDOFF_COOKIE_NAME}=${handoffCookie}`,
           'sec-fetch-site': SAME_ORIGIN,
         },
       })

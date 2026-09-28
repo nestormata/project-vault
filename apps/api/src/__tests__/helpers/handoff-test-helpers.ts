@@ -1,5 +1,6 @@
 import { generateKeyPairSync, sign as cryptoSign, createPrivateKey, randomUUID } from 'node:crypto'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
+import { parseSetCookies } from './auth-test-helpers.js'
 import {
   externalIdentities,
   organizations,
@@ -24,6 +25,12 @@ const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toStri
 export const HANDOFF_TEST_INSTANCE_ID = 'pv-handoff-route-test'
 export const HANDOFF_TEST_KID = 'kid-1'
 export const HANDOFF_PROVIDER = 'centralizeme-handoff'
+export const HANDOFF_COOKIE_NAME = 'handoff-confirm'
+
+/** The handoff pending-state cookie value a response set, if any (Map lookup, no dynamic key). */
+export function handoffCookieFrom(setCookie: string | string[] | undefined): string | undefined {
+  return new Map(Object.entries(parseSetCookies(setCookie))).get(HANDOFF_COOKIE_NAME)
+}
 
 export function b64url(input: Buffer | string): string {
   return Buffer.from(input).toString('base64url')

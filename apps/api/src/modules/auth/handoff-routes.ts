@@ -58,7 +58,7 @@ function sendGenericRejection(reply: FastifyReply): unknown {
 
 function readHandoffCookie(request: FastifyRequest): string | undefined {
   const cookies = (request as unknown as { cookies?: Record<string, string> }).cookies
-  return cookies?.[HANDOFF_COOKIE_NAME]
+  return Object.entries(cookies ?? {}).find(([name]) => name === HANDOFF_COOKIE_NAME)?.[1]
 }
 
 // AC4.16: defense-in-depth CSRF checks — never the primary boundary (that's the same-site
