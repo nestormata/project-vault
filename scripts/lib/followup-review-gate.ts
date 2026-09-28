@@ -73,13 +73,20 @@ export function extractFollowupReviewWaiver(storyFileContent: string): string | 
  * that titles itself slightly differently or omits `source_spec:`) via the story key appearing
  * as a full token in a `### DW-...` entry heading. Matching is on the full normalized story key,
  * not a substring — a near-miss like `22-1` inside `22-10` must not produce a false match.
+ * `allowSpecPrefix` (Story 43.12 AC-2 rule 1) also accepts a `source_spec:` naming
+ * `spec-<key>.md`; this gate's own callers keep the original plain-name-only behaviour.
  */
-export function isTrackedInDeferredWork(storyKey: string, deferredWorkContent: string): boolean {
+export function isTrackedInDeferredWork(
+  storyKey: string,
+  deferredWorkContent: string,
+  options: { allowSpecPrefix?: boolean } = {}
+): boolean {
   const key = storyKey.trim()
   if (!key) return false
   const escapedKey = escapeRegExp(key)
 
-  const sourceSpecRegex = new RegExp(`source_spec:\\s*\`?${escapedKey}\\.md\`?`)
+  const specPrefix = options.allowSpecPrefix === true ? '(?:spec-)?' : ''
+  const sourceSpecRegex = new RegExp(`source_spec:\\s*\`?${specPrefix}${escapedKey}\\.md\`?`)
   if (sourceSpecRegex.test(deferredWorkContent)) return true
 
   const tokenBoundary = '(?:^|[^a-zA-Z0-9._-])'

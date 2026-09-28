@@ -11,6 +11,7 @@ import {
 import {
   extractFrontmatterStatus,
   parseDevelopmentStatus,
+  parseDevelopmentStatusComments,
   parseDevelopmentStatusEntries,
   scanStoryStatusSync,
 } from './check-story-status-sync.js'
@@ -382,6 +383,29 @@ describe('parseDevelopmentStatusEntries (Story 43.11 Task 1.1)', () => {
   it('parseDevelopmentStatus stays the last-wins Map view over the same entries', () => {
     const yaml = DEVELOPMENT_STATUS_HEADER + '  a-1-x: optional\n  a-1-x: done\n'
     expect(parseDevelopmentStatus(yaml).get('a-1-x')).toBe('done')
+  })
+})
+
+describe('parseDevelopmentStatusComments (Story 43.12 AC-1 step 2b)', () => {
+  it('returns each entry with the text after the first " #" as its comment', () => {
+    const yaml =
+      DEVELOPMENT_STATUS_HEADER +
+      '  28-1-x: done # one low left unfixed # extra\r\n' +
+      '  28-2-y: done\n' +
+      '# last_updated: interleaved\n' +
+      '  28-3-z: review   #tight comment\n'
+    expect(parseDevelopmentStatusComments(yaml)).toEqual([
+      { key: '28-1-x', value: 'done', line: 2, comment: 'one low left unfixed # extra' },
+      { key: '28-2-y', value: 'done', line: 3, comment: '' },
+      { key: '28-3-z', value: 'review', line: 5, comment: 'tight comment' },
+    ])
+  })
+
+  it('agrees with parseDevelopmentStatusEntries on keys, values and lines', () => {
+    const yaml = DEVELOPMENT_STATUS_HEADER + '  a-1-x: done # c\n  a-1-x: review\n'
+    expect(
+      parseDevelopmentStatusComments(yaml).map(({ key, value, line }) => ({ key, value, line }))
+    ).toEqual(parseDevelopmentStatusEntries(yaml))
   })
 })
 

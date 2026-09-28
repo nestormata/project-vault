@@ -60,16 +60,23 @@ const STORIES_DIR = '_bmad-output/implementation-artifacts'
 /** One `development_status:` entry with its 1-based line number in the file (Story 43.11). */
 export type DevelopmentStatusEntry = { key: string; value: string; line: number }
 
+/** Story 43.12: a `development_status:` entry plus its inline comment — everything after the
+ * first ` #` on the line (trimmed; `''` when the line has none). */
+export type DevelopmentStatusCommentEntry = DevelopmentStatusEntry & { comment: string }
+
 /**
  * Parses only the `development_status:` block's flat `key: value` entries, in file order and
  * keeping duplicates (a duplicate key is its own violation, Story 43.11 AC-1 edge case 11) — not a
- * general YAML parser.
+ * general YAML parser. Story 43.12 adds each line's inline comment.
  */
-export function parseDevelopmentStatusEntries(yamlContent: string): DevelopmentStatusEntry[] {
-  const entries: DevelopmentStatusEntry[] = []
+export function parseDevelopmentStatusComments(
+  yamlContent: string
+): DevelopmentStatusCommentEntry[] {
+  const entries: DevelopmentStatusCommentEntry[] = []
   let inBlock = false
 
-  for (const [index, line] of yamlContent.split('\n').entries()) {
+  for (const [index, rawLine] of yamlContent.split('\n').entries()) {
+    const line = rawLine.replace(/\r$/, '')
     if (/^development_status:\s*$/.test(line)) {
       inBlock = true
       continue
@@ -84,10 +91,27 @@ export function parseDevelopmentStatusEntries(yamlContent: string): DevelopmentS
     if (line.length > 0 && !/^\s/.test(line) && !line.startsWith('#')) break
 
     const match = /^\s{2}([a-zA-Z0-9_-]+):\s*(\S+)/.exec(line)
-    if (match) entries.push({ key: match[1] as string, value: match[2] as string, line: index + 1 })
+    if (match) {
+      const commentStart = line.indexOf(' #')
+      entries.push({
+        key: match[1] as string,
+        value: match[2] as string,
+        line: index + 1,
+        comment: commentStart < 0 ? '' : line.slice(commentStart + 2).trim(),
+      })
+    }
   }
 
   return entries
+}
+
+/** The `{ key, value, line }` view of `parseDevelopmentStatusComments` (Story 43.11 shape). */
+export function parseDevelopmentStatusEntries(yamlContent: string): DevelopmentStatusEntry[] {
+  return parseDevelopmentStatusComments(yamlContent).map(({ key, value, line }) => ({
+    key,
+    value,
+    line,
+  }))
 }
 
 function toStatusMap(entries: DevelopmentStatusEntry[]): Map<string, string> {
