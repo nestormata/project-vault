@@ -717,6 +717,26 @@ jobs:
           tags: project-vault-web:size-check
           cache-from: type=gha,scope=web-${{ matrix.arch }}
 
+      # Story 64.3 (beyond AC-3's api+web): the published `migrate` image (apps/api/Dockerfile's
+      # minimal `migrate` stage) is built and scanned on PRs too. Without this, a broken or
+      # vulnerable migrate stage would first surface at release, in container-publish.yml's gate.
+      # It shares the builder/db-builder stages with the api image, so it reads the api build's
+      # cache; only its own small migrate-deploy/migrate layers go to a separate scope.
+      - name: Load migrate image for scan
+        id: load-migrate
+        if: matrix.arch == 'amd64'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          target: migrate
+          load: true
+          tags: project-vault-migrate:size-check
+          cache-from: |
+            type=gha,scope=api-${{ matrix.arch }}
+            type=gha,scope=migrate-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=migrate-${{ matrix.arch }}
+
       - name: Check extension-api deployed tree
         if: matrix.arch == 'amd64'
         run: |
@@ -771,6 +791,27 @@ jobs:
       - name: Annotate advisory API image scan findings
         if: ${{ !cancelled() && steps.scan-api.outcome == 'failure' && steps.image-inputs.outputs.images_changed != 'true' }}
         run: echo "::warning title=Advisory image scan (api)::project-vault-api:size-check has fixable HIGH/CRITICAL findings (or the scan errored). Advisory because this run changes no image input; see the scan step log. Nightly/release gates will block on it."
+
+      # Same blocking/advisory policy and non-masking rule as the API scan above.
+      - name: Scan migrate image for vulnerabilities
+        id: scan-migrate
+        if: ${{ !cancelled() && matrix.arch == 'amd64' && steps.load-migrate.outcome == 'success' }}
+        continue-on-error: ${{ steps.image-inputs.outputs.images_changed != 'true' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          # Pinned Trivy binary (trivy-action v0.36.0's default); never v0.69.4-v0.69.6 (Story 64.2).
+          version: 'v0.70.0'
+          image-ref: project-vault-migrate:size-check
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          trivyignores: .trivyignore
+
+      - name: Annotate advisory migrate image scan findings
+        if: ${{ !cancelled() && steps.scan-migrate.outcome == 'failure' && steps.image-inputs.outputs.images_changed != 'true' }}
+        run: echo "::warning title=Advisory image scan (migrate)::project-vault-migrate:size-check has fixable HIGH/CRITICAL findings (or the scan errored). Advisory because this run changes no image input; see the scan step log. Nightly/release gates will block on it."
 
       # Same blocking/advisory policy and non-masking rule as the API scan above.
       - name: Scan web image for vulnerabilities

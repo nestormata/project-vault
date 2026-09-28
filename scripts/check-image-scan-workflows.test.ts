@@ -47,6 +47,10 @@ const PUBLISH_WORKFLOW = 'container-publish.yml'
 const PULL_REQUEST = 'pull_request'
 const API_SIZE_CHECK = 'project-vault-api:size-check'
 const WEB_SIZE_CHECK = 'project-vault-web:size-check'
+// Beyond AC-3's api+web: the published `migrate` image is built and scanned on PRs too, so a
+// broken or vulnerable migrate stage surfaces before a release rather than at the release gate.
+const MIGRATE_SIZE_CHECK = 'project-vault-migrate:size-check'
+const SIZE_CHECK_IMAGES = [API_SIZE_CHECK, MIGRATE_SIZE_CHECK, WEB_SIZE_CHECK]
 
 // Story 64.3 AC-3: the files whose change can alter a shipped image's contents.
 const IMAGE_INPUTS = [
@@ -214,10 +218,10 @@ describe('Story 64.3 AC-3: PR-time image scan in ci.yml docker-build', () => {
     expect(String(detect?.env?.EVENT_NAME)).toMatch(/github\.event_name/)
   })
 
-  it('scans both size-check images on the amd64 leg only, neither masking the other', () => {
+  it('scans every size-check image on the amd64 leg only, none masking another', () => {
     const scans = trivySteps(dockerBuild)
     const refs = scans.map((step) => step.with?.['image-ref']).sort()
-    expect(refs).toEqual([API_SIZE_CHECK, WEB_SIZE_CHECK])
+    expect(refs).toEqual(SIZE_CHECK_IMAGES)
     for (const step of scans) {
       expect(ifText(step)).toMatch(/matrix\.arch == 'amd64'/)
       expect(ifText(step)).toMatch(/!\s*cancelled\(\)/)
@@ -225,14 +229,30 @@ describe('Story 64.3 AC-3: PR-time image scan in ci.yml docker-build', () => {
     expect(maskingViolations(dockerBuild)).toEqual([])
   })
 
-  it('places every scan after both size-check images are loaded', () => {
-    const loads = [API_SIZE_CHECK, WEB_SIZE_CHECK].map((tag) =>
-      steps.findIndex((step) => step.with?.tags === tag)
-    )
+  it('places every scan after all size-check images are loaded', () => {
+    const loads = SIZE_CHECK_IMAGES.map((tag) => steps.findIndex((step) => step.with?.tags === tag))
     for (const index of loads) expect(index).toBeGreaterThan(-1)
     const lastLoad = Math.max(...loads)
     for (const step of trivySteps(dockerBuild)) {
       expect(steps.indexOf(step)).toBeGreaterThan(lastLoad)
+    }
+  })
+
+  it('builds the published migrate target on the amd64 leg, loaded for the scan', () => {
+    const load = steps.find((step) => step.with?.tags === MIGRATE_SIZE_CHECK) ?? {}
+    const inputs = load.with ?? {}
+    expect(load.uses).toMatch(/^docker\/build-push-action@/)
+    expect(inputs).toMatchObject({ file: API_DOCKERFILE, target: 'migrate', load: true })
+    expect(ifText(load)).toMatch(/matrix\.arch == 'amd64'/)
+    // Reuses the api build's buildx cache: migrate shares its builder/db-builder stages.
+    expect(String(inputs['cache-from'])).toContain('scope=api-${{ matrix.arch }}')
+  })
+
+  it('gates each scan on the outcome of the step that loaded its own image', () => {
+    for (const scan of trivySteps(dockerBuild)) {
+      const load = steps.find((step) => step.with?.tags === scan.with?.['image-ref'])
+      expect(load?.id, `${String(scan.with?.['image-ref'])} load step needs an id`).toBeTruthy()
+      expect(ifText(scan)).toContain(`steps.${load?.id}.outcome == 'success'`)
     }
   })
 
