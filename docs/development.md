@@ -98,9 +98,12 @@ before failing, so the cause is in the output.
 - Re-running `make e2e` while the worktree's stack is up generates new secrets, so compose
   recreates the api: the vault is uninitialized again and every earlier session cookie is invalid.
   That is expected; `global-setup.ts` resets the database and re-initializes the vault. Because
-  `fix-ports` sees the running stack's own ports as busy, the ports also move on each re-run.
+  `fix-ports` sees the running stack's own ports as busy, the ports can also move on a re-run.
 - Two worktrees can run `make e2e` at the same time: compose project names and DB/API/WEB ports
-  differ per worktree, and the E2E overlay publishes no Mailpit host ports. Each worktree's images
+  differ per worktree, and the E2E overlay publishes no Mailpit host ports. The one shared step is
+  the Chromium install step (`playwright install --with-deps` runs `apt-get` on every run): if two
+  runs reach it at the same moment, one can fail with `Could not get lock /var/lib/apt/lists/lock`.
+  Stagger the starts, or re-run the one that failed. Each worktree's images
   cost about 1.6 GB; `docker compose -f docker-compose.yml -f docker-compose.e2e.yml down -v --rmi local`
   removes a finished worktree's stack, volumes and images.
 - Two `make e2e` runs in the **same** worktree at once are unsupported: they share one compose
