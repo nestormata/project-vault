@@ -24,6 +24,8 @@
     "check-story-status-sync": "tsx scripts/check-story-status-sync.ts",
     "check-sprint-status-rollup": "tsx scripts/check-sprint-status-rollup.ts",
     "check-deferred-work-ids": "tsx scripts/check-deferred-work-ids.ts",
+    "check-deferred-work-triggers": "tsx scripts/check-deferred-work-triggers.ts",
+    "check-review-tradeoff-ledger": "tsx scripts/check-review-tradeoff-ledger.ts",
     "next-dw-id": "tsx scripts/next-dw-id.ts",
     "check-story-references": "tsx scripts/check-story-references.ts",
     "check-psc-tbd-tracking": "tsx scripts/check-psc-tbd-tracking.ts",
