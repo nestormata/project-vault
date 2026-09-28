@@ -353,14 +353,16 @@ What the caller gets for each `outcome`:
 
 | `outcome` | Status | `message` shown | `html` rendered |
 |---|---|---|---|
-| `ok` | 200 | yes | yes, replaces the panel |
+| `ok` | 200 | yes, only when no `html` is returned | yes, replaces the panel |
 | `validation_failed` | 400 | yes (required) | yes, replaces the panel |
-| `denied` | 403 | **never**, a fixed generic denial is shown | yes, replaces the panel |
+| `denied` | 403 | **never**, a fixed generic message is shown | yes, replaces the panel |
 | `conflict` | 409 | yes (a generic "Conflict" if omitted) | yes, replaces the panel |
-| `error` | 500 | n/a (no field) | yes, replaces the panel |
+| `error` | 500 | n/a (no field), a fixed generic message is shown | yes, replaces the panel |
 
-- **`html` is sanitized by the host (DOMPurify) and replaces the panel container on every
-  outcome**, failures included. Sanitization removes scripts and unsafe markup, not information.
+- **Non-empty `html` is sanitized by the host (DOMPurify) and replaces the panel container on
+  every outcome**, failures included; an empty string is ignored. On a failure the status line
+  below the panel still shows the message from the table. Sanitization removes scripts and unsafe
+  markup, not information.
 - **`error.html` is shown to end users.** It must never contain exception text, stack traces or
   database detail. Project Vault cannot detect such text; you are responsible for it.
 - **Scope your html yourself.** Render only data that belongs to `context.orgId` and
@@ -393,8 +395,8 @@ const moduleAction: ModuleAction = {
 }
 
 // Don't: spreading a result object skips TypeScript's excess-property checks and attaches the
-// panel html to whatever outcome `result` carries, failures included.
-return { ...result, html: renderSharePanel(context.orgId, model) }
+// panel html to whatever outcome `result` carries, failures included:
+//   return { ...result, html: renderSharePanel(context.orgId, model) }
 ```
 
 ### Auth strategies and replay protection

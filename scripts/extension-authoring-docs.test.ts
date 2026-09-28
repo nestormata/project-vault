@@ -20,7 +20,8 @@ export const MODULE_ACTIONS_HEADING = '### Module actions and ActionResult'
 export const MODULE_ACTIONS_ANCHOR = 'module-actions-and-actionresult'
 
 const ACTION_RESULT_DECLARATION = 'export type ActionResult ='
-const OUTCOME_LITERAL_RE = /outcome:\s*'([a-z_]+)'/g
+const OUTCOME_LITERAL_RE = /outcome:\s*['"]([\w-]+)['"]/g
+const OUTCOME_KEY_RE = /\boutcome\??:/g
 
 /** Returns the `outcome` literals of the `export type ActionResult =` union, bounded to that
  * declaration (it ends at the first blank line or the next `export`). Throws when the declaration
@@ -36,6 +37,14 @@ export function extractActionResultOutcomes(source: string): string[] {
   const outcomes = [...declaration.matchAll(OUTCOME_LITERAL_RE)].map((match) => match[1])
   if (outcomes.length === 0) {
     throw new Error(`"${ACTION_RESULT_DECLARATION}" declares no outcome literal`)
+  }
+  // Every `outcome` key must have been read as a literal, so a variant written in a shape the
+  // regex does not match fails loudly instead of silently dropping out of the check.
+  const outcomeKeys = [...declaration.matchAll(OUTCOME_KEY_RE)].length
+  if (outcomeKeys !== outcomes.length) {
+    throw new Error(
+      `"${ACTION_RESULT_DECLARATION}" has ${outcomeKeys} outcome keys but ${outcomes.length} readable literals`
+    )
   }
   return outcomes
 }
@@ -82,11 +91,13 @@ export function hasHeadingWithSlug(markdown: string, anchor: string): boolean {
     .some((text) => text !== undefined && githubSlug(text) === anchor)
 }
 
+const DENIED_VARIANT = "  | { outcome: 'denied'; html?: string }"
+
 const FIXTURE_UNION = [
   '/** docs mentioning { outcome: `ok` } are ignored */',
   'export type ActionResult =',
   "  | { outcome: 'ok'; html?: string }",
-  "  | { outcome: 'denied'; html?: string }",
+  DENIED_VARIANT,
   '',
   'export type Other = { outcome: "unrelated" }',
 ].join('\n')
@@ -113,7 +124,7 @@ describe('extension authoring doc drift guard: fixtures', () => {
 
   it('reports a union variant missing from the section, by name', () => {
     const union = FIXTURE_UNION.replace(
-      "  | { outcome: 'denied'; html?: string }",
+      DENIED_VARIANT,
       "  | { outcome: 'denied'; html?: string }\n  | { outcome: 'rate_limited'; html?: string }"
     )
     const outcomes = extractActionResultOutcomes(union)
@@ -143,6 +154,18 @@ describe('extension authoring doc drift guard: fixtures', () => {
     expect(() => extractActionResultOutcomes('export type ActionResult = never\n')).toThrow(
       /declares no outcome literal/
     )
+  })
+
+  it('fails loudly on an outcome it cannot read as a literal', () => {
+    const union = FIXTURE_UNION.replace(
+      DENIED_VARIANT,
+      "  | { outcome: 'denied'; html?: string }\n  | { outcome: RateLimited; html?: string }"
+    )
+    expect(() => extractActionResultOutcomes(union)).toThrow(/3 outcome keys but 2 readable/)
+    expect(extractActionResultOutcomes(FIXTURE_UNION.replace("'denied'", '"denied"'))).toEqual([
+      'ok',
+      'denied',
+    ])
   })
 
   it('slugs the heading to the documented anchor', () => {
