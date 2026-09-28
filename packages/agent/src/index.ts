@@ -28,6 +28,12 @@ import { buildInvocationContextHeaders, type SecretRequestContext } from './invo
 export type { InvocationLabel, SecretRequestContext } from './invocation-context.js'
 
 export {
+  TERMINAL_UNSAFE_CHARACTERS,
+  isTerminalUnsafeCharacter,
+  stripTerminalUnsafeCharacters,
+} from './terminal-unsafe-characters.js'
+
+export {
   VaultAgentError,
   VaultCacheDecryptionError,
   VaultCacheCorruptedError,
