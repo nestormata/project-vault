@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readlinkSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, readlinkSync, statSync } from 'node:fs'
 import { relative, resolve, sep } from 'node:path'
 
 // Never descend into a node_modules directory. This guards a real regression AC-1's own fix would
@@ -119,4 +119,66 @@ export function walkFiles(
     }
   }
   return files
+}
+
+/** Whether a private-overlay input file is readable here (Story 43.11 AC-7). */
+export type OverlayInputState = 'present' | 'absent' | 'dangling'
+
+export type OverlayInputInspection =
+  { state: 'present' | 'absent' } | { state: 'dangling'; target: string }
+
+/**
+ * Classifies `relPath` (under `rootDir`) as `present`, `absent`, or `dangling`, walking every path
+ * component with `lstat` so a dangling symlink anywhere along the way is told apart from a plain
+ * missing file. Both layouts occur for real: per-file overlay symlinks copied into the `make ci`
+ * image (the file itself dangles) and the private workflow's directory-level `_bmad-output` attach
+ * (a parent directory dangles). For the overlay's top-level inputs (sprint-status.yaml,
+ * deferred-work.md) both mean "overlay not attached here", not data corruption.
+ */
+export function inspectOverlayInput(rootDir: string, relPath: string): OverlayInputInspection {
+  let current = resolve(rootDir)
+  for (const segment of relPath.split('/')) {
+    current = resolve(current, segment)
+    let isLink: boolean
+    try {
+      isLink = lstatSync(current).isSymbolicLink()
+    } catch {
+      return { state: 'absent' }
+    }
+    if (isLink && !existsSync(current)) {
+      return { state: 'dangling', target: readlinkSync(current) }
+    }
+  }
+  return { state: 'present' }
+}
+
+export function detectOverlayInput(rootDir: string, relPath: string): OverlayInputState {
+  return inspectOverlayInput(rootDir, relPath).state
+}
+
+/**
+ * The stdout line a guard prints instead of its "— OK" line when its overlay input is not
+ * readable (Story 43.11 AC-7.1/7.2), or `undefined` when the input is present and the guard should
+ * run normally. Never an OK: a guard that checked nothing must say so.
+ */
+export function overlaySkipMessage(
+  checkName: string,
+  rootDir: string,
+  relPath: string
+): string | undefined {
+  const inspection = inspectOverlayInput(rootDir, relPath)
+  if (inspection.state === 'present') return undefined
+  const reason =
+    inspection.state === 'dangling'
+      ? `dangling overlay symlink -> ${inspection.target}`
+      : 'private overlay not attached'
+  return `${checkName}: SKIPPED — ${relPath} not found (${reason}); nothing checked\n`
+}
+
+/** Story 43.11 violation-line suffix for a key declared on several lines: `:3`, `:3 and :7`,
+ * `:3, :7 and :19`. */
+export function formatLineRefs(lines: number[]): string {
+  const refs = lines.map((line) => `:${line}`)
+  if (refs.length <= 1) return refs.join('')
+  return `${refs.slice(0, -1).join(', ')} and ${refs.at(-1)}`
 }

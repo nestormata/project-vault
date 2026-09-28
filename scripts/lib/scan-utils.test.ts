@@ -2,7 +2,13 @@ import { mkdirSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { useFixtureRoots, writeFixture, writeFixtureSymlink } from './fixture-test-helpers.js'
-import { walkFiles } from './scan-utils.js'
+import {
+  detectOverlayInput,
+  formatLineRefs,
+  inspectOverlayInput,
+  overlaySkipMessage,
+  walkFiles,
+} from './scan-utils.js'
 
 const ROOT_DIR = 'root'
 
@@ -95,5 +101,66 @@ describe('walkFiles', () => {
     const found = walkFiles(join(root, ROOT_DIR), (path) => path.endsWith('.md'))
 
     expect(found).toEqual([join(root, ROOT_DIR, 'src', 'real.md')])
+  })
+})
+
+describe('detectOverlayInput (Story 43.11 AC-7.4)', () => {
+  const REL = '_bmad-output/implementation-artifacts/sprint-status.yaml'
+
+  it('is "present" for a readable regular file', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, REL, 'development_status:\n')
+    expect(detectOverlayInput(root, REL)).toBe('present')
+    expect(overlaySkipMessage('check-x', root, REL)).toBeUndefined()
+  })
+
+  it('is "present" for a symlink whose target resolves', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, 'private/sprint-status.yaml', 'development_status:\n')
+    writeFixtureSymlink(root, REL, join(root, 'private/sprint-status.yaml'))
+    expect(detectOverlayInput(root, REL)).toBe('present')
+  })
+
+  it('is "absent" when the file or its parent directory is missing', () => {
+    const root = makeFixtureRoot()
+    expect(detectOverlayInput(root, REL)).toBe('absent')
+    mkdirSync(join(root, '_bmad-output/implementation-artifacts'), { recursive: true })
+    expect(detectOverlayInput(root, REL)).toBe('absent')
+    expect(overlaySkipMessage('check-x', root, REL)).toBe(
+      `check-x: SKIPPED — ${REL} not found (private overlay not attached); nothing checked\n`
+    )
+  })
+
+  it('is "dangling" for a file symlink whose target is missing (the pre-AC-11 make ci container case)', () => {
+    const root = makeFixtureRoot()
+    writeFixtureSymlink(root, REL, '/nonexistent/project-vault-private/sprint-status.yaml')
+    expect(detectOverlayInput(root, REL)).toBe('dangling')
+    expect(inspectOverlayInput(root, REL)).toEqual({
+      state: 'dangling',
+      target: '/nonexistent/project-vault-private/sprint-status.yaml',
+    })
+    const message = overlaySkipMessage('check-x', root, REL) ?? ''
+    expect(message).toContain('check-x: SKIPPED')
+    expect(message).toContain(
+      '(dangling overlay symlink -> /nonexistent/project-vault-private/sprint-status.yaml)'
+    )
+    expect(message).not.toContain('OK')
+  })
+
+  it('is "dangling" when a parent directory is a dangling symlink (directory-attach layout)', () => {
+    const root = makeFixtureRoot()
+    symlinkSync('/nonexistent/project-vault-private/_bmad-output', join(root, '_bmad-output'))
+    expect(inspectOverlayInput(root, REL)).toEqual({
+      state: 'dangling',
+      target: '/nonexistent/project-vault-private/_bmad-output',
+    })
+  })
+})
+
+describe('formatLineRefs (Story 43.11)', () => {
+  it('joins 1, 2 and 3+ line numbers', () => {
+    expect(formatLineRefs([3])).toBe(':3')
+    expect(formatLineRefs([3, 7])).toBe(':3 and :7')
+    expect(formatLineRefs([3, 7, 19])).toBe(':3, :7 and :19')
   })
 })
