@@ -454,6 +454,46 @@ describe('runScheduledTaskWatchdogTick — raise / dedup / resolve (DB integrati
       expect(await gaugeValue(extensionId, PROBE)).toBe(0)
     })
   })
+
+  it('AC2 step 2: the default DB clock (SELECT now() on the lock tx) drives evaluation — a recent attempt resolves an active episode', async () => {
+    const extensionId = uniqueExtensionId('db-clock')
+    const scopeKey = `${extensionId}/${PROBE}`
+    loadExtension(extensionId, [[PROBE, 5]])
+
+    await withTestOrg(async ({ orgId }) => {
+      await upsertThresholdAlert({
+        alertType: MISSED_ALERT_TYPE,
+        thresholdPct: 80,
+        severity: 'warning',
+        scopeKey,
+        payload: {},
+      })
+      await withOrg(orgId, (tx) =>
+        tx.insert(extensionScheduledTaskRuns).values({
+          orgId,
+          extensionId,
+          taskName: PROBE,
+          lastRunAt: sql`now() - interval '1 minute'`,
+          lastAttemptAt: sql`now() - interval '1 minute'`,
+          lastOutcome: 'success',
+        })
+      )
+      const logger = fakeLogger()
+
+      // No `readDbNow` override: the production default reads now() on runAdvisoryLockedTick's tx.
+      await runScheduledTaskWatchdogTick(logger, {
+        fetchOrgIds: async () => [orgId],
+        missedTickThreshold: 3,
+        deliverToOperator: vi.fn(async () => undefined),
+      })
+
+      expect((await alertRows(scopeKey))[0]?.status).toBe('acknowledged')
+      expect(
+        logsOf(logger.info, OperationalEvent.EXTENSION_SCHEDULED_TASK_MISSED_RESOLVED)
+      ).toHaveLength(1)
+      expect(await gaugeValue(extensionId, PROBE)).toBe(0)
+    })
+  })
 })
 
 describe('runScheduledTaskWatchdogTick — Grace (arming) and restarts', () => {

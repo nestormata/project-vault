@@ -7,6 +7,7 @@ import { SCHEDULED_TASK_WATCHDOG_JOB_NAME } from '../workers/extension-scheduled
 
 const MAIN_TS_PATH = resolve(process.cwd(), 'src/main.ts')
 const SRC_DIR = resolve(process.cwd(), 'src')
+const MAIN_TS_MODULE_PATH = resolve(import.meta.dirname, '../main.ts')
 const REGISTER_SCHEDULES = 'registerSchedules({'
 const REGISTER_WORKERS = 'registerWorkers({'
 // Mirrors pg-boss's own attorney.js `assertObjectName`: alphanumeric, underscore, period,
@@ -53,8 +54,8 @@ describe('extension scheduled-task jobs registration (Story 56.2 AC7)', () => {
   // CI before merge; the runtime watchdog is only the second line of defence.
   it('registers both the tick and the watchdog in the schedules and workers maps in main.ts', () => {
     // This test intentionally inspects the static source file so worker registration cannot drift.
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
-    const mainSource = readFileSync(MAIN_TS_PATH, 'utf-8')
+    // Module-relative (static) path, so no lint suppression is needed for the read.
+    const mainSource = readFileSync(MAIN_TS_MODULE_PATH, 'utf-8')
     const schedulesBlock = extractBalancedBlock(mainSource, REGISTER_SCHEDULES)
     const workersBlock = extractBalancedBlock(mainSource, REGISTER_WORKERS)
 
@@ -74,8 +75,8 @@ describe('extension scheduled-task jobs registration (Story 56.2 AC7)', () => {
 describe('credentials/prune-versions registration (AC-8 R3)', () => {
   it('is registered in both the schedules and workers maps in main.ts', () => {
     // This test intentionally inspects the static source file so worker registration cannot drift.
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
-    const mainSource = readFileSync(MAIN_TS_PATH, 'utf-8')
+    // Module-relative (static) path, so no lint suppression is needed for the read.
+    const mainSource = readFileSync(MAIN_TS_MODULE_PATH, 'utf-8')
     const schedulesBlock = extractBalancedBlock(mainSource, REGISTER_SCHEDULES)
     const workersBlock = extractBalancedBlock(mainSource, REGISTER_WORKERS)
 
