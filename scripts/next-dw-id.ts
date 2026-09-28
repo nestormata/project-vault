@@ -9,7 +9,7 @@
  * next free plain numeric ID. It narrows the race window; it cannot close it alone. The
  * `check-deferred-work-ids` guard on every push is the backstop (see the story's Resolved Q1).
  *
- * Usage: `pnpm -s next-dw-id [--fetch] | head -1`. Line 1 of stdout is the ID, line 2 says
+ * Usage: `pnpm -s next-dw-id [--fetch]` (do not pipe it: a pipe masks the exit code). Line 1 of stdout is the ID, line 2 says
  * where the current max was seen; warnings go to stderr. Read-only apart from `--fetch`.
  */
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
