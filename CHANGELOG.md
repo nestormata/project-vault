@@ -19,7 +19,7 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
 ### Upgrade notes (read before `docker compose pull`)
 
 - **Migrations 0094-0099 run automatically** via the `migrate` service. All six are additive
-  (four new tables, nullable or defaulted new columns, new indexes), and the migration guard
+  (three new tables, nullable or defaulted new columns, new indexes), and the migration guard
   refuses none of them. None backfills existing rows. Migration 0098 builds a partial index on
   `notification_queue`, which briefly blocks writes to that table in proportion to its size.
   Images on `latest`, `1` or `1.3` pick these migrations up on the next pull.

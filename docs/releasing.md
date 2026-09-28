@@ -51,8 +51,8 @@ pnpm check-extension-api-contract-changelog # changelog entry plus contract hash
 make ci                                     # or confirm the last main CI run is green
 ```
 
-Then choose the **candidate commit** (normally the merge commit of the release-notes pull request)
-and rehearse the CLI release on it before any tag exists:
+Once the step-2 release-notes pull request has merged, choose the **candidate commit** (normally
+that merge commit) and rehearse the CLI release on it before any tag exists:
 
 ```bash
 SHA=$(git rev-parse origin/main)                 # the candidate; main must still point here
