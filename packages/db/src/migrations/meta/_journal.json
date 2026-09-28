@@ -701,6 +701,13 @@
       "when": 1790491108587,
       "tag": "0099_handoff_pending_states_claim_hash",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1790614591583,
+      "tag": "0100_extension_scheduled_task_runs_last_attempt_at",
+      "breakpoints": true
     }
   ]
 }

@@ -508,6 +508,20 @@ export const OperationalEvent = {
   // success or failure, carrying outcome/durationMs so an operator can see exactly what recurring
   // work an installed extension has claimed and how it's performing.
   EXTENSION_SCHEDULED_TASK_INVOKED: 'extension_scheduled_task.invoked',
+  // Story 56.2: missed-tick watchdog (extension-scheduled-tasks-watchdog.ts). MISSED is the error
+  // line emitted once per NEW episode (a declared (extensionId, taskName) pair had zero invocation
+  // attempts across N expected ticks); MISSED_RESOLVED is the info line when an active episode is
+  // cleared (the pair fired again, or is no longer declared). The remaining events cover the
+  // watchdog's own failure/inconclusive paths — none of them ever carries org data in an alert.
+  EXTENSION_SCHEDULED_TASK_MISSED: 'extension_scheduled_task.missed',
+  EXTENSION_SCHEDULED_TASK_MISSED_RESOLVED: 'extension_scheduled_task.missed_resolved',
+  EXTENSION_SCHEDULED_TASK_MISSED_ALERT_DISPATCH_FAILED:
+    'extension_scheduled_task.missed_alert_dispatch_failed',
+  EXTENSION_SCHEDULED_TASK_WATCHDOG_INCONCLUSIVE: 'extension_scheduled_task.watchdog_inconclusive',
+  EXTENSION_SCHEDULED_TASK_WATCHDOG_EVALUATION_FAILED:
+    'extension_scheduled_task.watchdog_evaluation_failed',
+  EXTENSION_SCHEDULED_TASK_WATCHDOG_TICK_SKIPPED_OVERLAP:
+    'extension_scheduled_task.watchdog_tick_skipped_overlap',
 
   // Story 20.12 AC5: structured audit-log entry written for EVERY call to any
   // `HostServices.credentialSharing` method — success, denial (rate-limited, no-machine-user), or

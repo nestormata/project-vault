@@ -1749,6 +1749,35 @@ describe('env', () => {
     })
   })
 
+  // Story 56.2 AC8: missed-tick watchdog threshold N (window = max(N × interval, 10 min)).
+  describe('Story 56.2: SCHEDULED_TASK_MISSED_TICK_THRESHOLD', () => {
+    it('defaults to 3', async () => {
+      process.env = { ...BASE_ENV, DATABASE_URL: VAULT_APP_DATABASE_URL }
+      const { env } = await import('./env.js')
+      expect(env.SCHEDULED_TASK_MISSED_TICK_THRESHOLD).toBe(3)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('accepts an explicit override', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SCHEDULED_TASK_MISSED_TICK_THRESHOLD: '5',
+      }
+      const { env } = await import('./env.js')
+      expect(env.SCHEDULED_TASK_MISSED_TICK_THRESHOLD).toBe(5)
+    })
+
+    it.each(['1', 'abc', '101', '2.5'])('rejects %s', async (value) => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SCHEDULED_TASK_MISSED_TICK_THRESHOLD: value,
+      }
+      await expectInvalidEnv(exitSpy)
+    })
+  })
+
   // Story 31.1 AC2: SERVICE_REVOCATION_TOKEN — a dedicated, optional (fail-closed-when-unset)
   // static shared secret for the machine-authenticated org-wide revocation route, mirroring
   // SERVICE_PROVISIONING_TOKEN's shape exactly but never reused from it or any other secret.

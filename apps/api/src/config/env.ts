@@ -1300,6 +1300,10 @@ const envSchema = z
     // large due-batch — or a handful of perpetually-failing tuples occupying a slot every tick
     // (AC2's no-backoff edge case) — can consume.
     SCHEDULED_TASK_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(20),
+    // Story 56.2 AC8 — N for the missed-tick watchdog: a declared (extensionId, taskName) pair with
+    // zero invocation attempts for max(N × intervalMinutes, 10) minutes raises an operator alert.
+    // Min 2 so a single late tick can never page the operator.
+    SCHEDULED_TASK_MISSED_TICK_THRESHOLD: z.coerce.number().int().min(2).max(100).default(3),
     // Story 6.2 ADR-6.2-06 (FR31): raw volume threshold for the anomalous-access detection job —
     // mirrors FAILED_AUTH_THRESHOLD_COUNT/_WINDOW_SECONDS. Max corrected to 86400 (24h) per
     // adversarial-review finding 17 so the window is genuinely widenable, not just narrowable.

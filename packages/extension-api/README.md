@@ -113,6 +113,13 @@ the hooks whose capability you declared.
 | `deliveryProvider` | `Record<string, DeliveryProvider>` | Keyed by notification channel name. Registering the same channel key twice in one process is a loud conflict error, not last-one-wins. |
 | `scheduledTask` | `ScheduledTaskHooks` | `onScheduledTask(context)` — dispatch target for every due `(org, task)` tuple across this extension's declared `scheduledTasks`. `context` is `{ organizationId, taskName, hostServices }` only — no `Tx`, no raw DB handle; `hostServices` is the same instance bound at load time, safe to reuse with no live request in flight. |
 
+**Missed-tick alerting (operator-side, no opt-in):** PV raises a platform-operator alert (an
+`extension_scheduled_task.missed` admin alert, a `/ready` warning and the
+`extension_scheduled_task_missed` metric) when a declared scheduled task records no invocation
+attempt for `max(N × intervalMinutes, 10)` minutes (`N` = `SCHEDULED_TASK_MISSED_TICK_THRESHOLD`,
+default 3), and clears it once the task is invoked again. An attempt counts whether your handler
+succeeds or fails, so a failing handler never triggers this alert; nothing in this package changes.
+
 ## Host services injected into `hooksFactory(host)`
 
 `hooksFactory` may declare a single parameter, `host: HostServices`. A factory that declares zero

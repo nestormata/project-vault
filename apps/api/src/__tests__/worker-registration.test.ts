@@ -2,6 +2,8 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import journal from '../../../../packages/db/src/migrations/meta/_journal.json' with { type: 'json' }
+import { JOB_NAME as SCHEDULED_TASK_JOB_NAME } from '../workers/extension-scheduled-tasks.js'
+import { SCHEDULED_TASK_WATCHDOG_JOB_NAME } from '../workers/extension-scheduled-tasks-watchdog.js'
 
 const MAIN_TS_PATH = resolve(process.cwd(), 'src/main.ts')
 const SRC_DIR = resolve(process.cwd(), 'src')
@@ -45,6 +47,29 @@ function extractBalancedBlock(source: string, marker: string): string {
   }
   return source.slice(start, i)
 }
+
+describe('extension scheduled-task jobs registration (Story 56.2 AC7)', () => {
+  // Deleting either job's schedule or worker (the exact Story 56.1 pre-mortem refactor) must fail
+  // CI before merge; the runtime watchdog is only the second line of defence.
+  it('registers both the tick and the watchdog in the schedules and workers maps in main.ts', () => {
+    // This test intentionally inspects the static source file so worker registration cannot drift.
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    const mainSource = readFileSync(MAIN_TS_PATH, 'utf-8')
+    const schedulesBlock = extractBalancedBlock(mainSource, REGISTER_SCHEDULES)
+    const workersBlock = extractBalancedBlock(mainSource, REGISTER_WORKERS)
+
+    for (const block of [schedulesBlock, workersBlock]) {
+      expect(block).toContain('[SCHEDULED_TASK_JOB_NAME]:')
+      expect(block).toContain('[SCHEDULED_TASK_WATCHDOG_JOB_NAME]:')
+    }
+  })
+
+  it('uses pg-boss compatible, distinct queue names (imported — main.ts harvest cannot see them)', () => {
+    expect(SCHEDULED_TASK_JOB_NAME).toMatch(PG_BOSS_NAME_PATTERN)
+    expect(SCHEDULED_TASK_WATCHDOG_JOB_NAME).toMatch(PG_BOSS_NAME_PATTERN)
+    expect(SCHEDULED_TASK_WATCHDOG_JOB_NAME).not.toBe(SCHEDULED_TASK_JOB_NAME)
+  })
+})
 
 describe('credentials/prune-versions registration (AC-8 R3)', () => {
   it('is registered in both the schedules and workers maps in main.ts', () => {
