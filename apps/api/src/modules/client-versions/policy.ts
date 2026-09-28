@@ -1,4 +1,10 @@
-import { OperationalEvent, SYSTEM_TRACE_ID } from '@project-vault/shared'
+import {
+  CLI_MAX_REASON_CODE_POINTS,
+  CLI_MAX_VERSION_LENGTH,
+  CLI_MAX_WITHDRAWN_ENTRIES,
+  OperationalEvent,
+  SYSTEM_TRACE_ID,
+} from '@project-vault/shared'
 import type { ReleaseVersion } from '../../lib/package-version.js'
 
 /**
@@ -35,14 +41,12 @@ export function isStrictSemver(version: string): boolean {
 export const MAX_ENV_WITHDRAWN_VERSIONS = 50
 
 /**
- * The limits the pvault CLI's policy validator enforces (packages/cli `semver-precedence.ts` and
- * `version-policy-response.ts`; a parity test there imports these). The CLI rejects the WHOLE
- * policy when any single value breaks them, which would silently stop withdrawals from being
- * enforced — so the server refuses to boot rather than serve such a policy.
+ * The limits the pvault CLI's policy validator enforces. Story 43.13 AC-5 — defined once in
+ * `@project-vault/shared` (which the web /version page's validator also imports) and re-exported
+ * here under the same names, so `config/env.ts`, `policy.test.ts` and the CLI's parity test (through
+ * the `./client-version-policy` package export) keep importing them from this module.
  */
-export const CLI_MAX_VERSION_LENGTH = 128
-export const CLI_MAX_WITHDRAWN_ENTRIES = 100
-export const CLI_MAX_REASON_CODE_POINTS = 200
+export { CLI_MAX_REASON_CODE_POINTS, CLI_MAX_VERSION_LENGTH, CLI_MAX_WITHDRAWN_ENTRIES }
 const NUMERIC_IDENTIFIER = /^\d+$/
 const CLI_VERSION_LIMITS =
   'strict semver (X.Y.Z or X.Y.Z-prerelease, no "v", no build metadata), at most ' +
@@ -134,7 +138,7 @@ function compareReleaseVersions(a: string, b: string): number {
   const pa = a.split('.').map(Number)
   const pb = b.split('.').map(Number)
   for (let i = 0; i < 3; i += 1) {
-    const diff = (pa[i] ?? 0) - (pb[i] ?? 0)
+    const diff = (pa.at(i) ?? 0) - (pb.at(i) ?? 0)
     if (diff !== 0) return diff
   }
   return 0

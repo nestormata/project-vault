@@ -1,6 +1,6 @@
 import { EXIT_CODES } from './exit-codes.js'
 import { isBlank } from './validate.js'
-import { sanitizeForTerminal } from './sanitize.js'
+import { ERROR_TEXT_MAX_CODE_POINTS, sanitizeServerText } from './sanitize-server-text.js'
 import { warnIfInsecureBaseUrl } from './config.js'
 import { writeSession, type EnvLike, type SessionData } from './session-store.js'
 import { PromptInterruptedError, type PromptFn } from './prompt.js'
@@ -109,7 +109,9 @@ function handlePromptInterrupt(error: unknown, streams: LoginStreams): number {
 
 function unexpectedError(streams: LoginStreams, error: unknown): number {
   const message = error instanceof Error ? error.message : String(error)
-  streams.stderr.write(`Unexpected error: ${sanitizeForTerminal(message)}\n`)
+  streams.stderr.write(
+    `Unexpected error: ${sanitizeServerText(message, ERROR_TEXT_MAX_CODE_POINTS)}\n`
+  )
   return EXIT_CODES.unexpected
 }
 

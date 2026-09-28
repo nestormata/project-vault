@@ -3,12 +3,15 @@
 // render "No pvault versions are withdrawn" for a malformed list, so any failing field rejects
 // the whole body. It checks types and display-safety caps only — never semver syntax (the API
 // refuses to boot on values the CLI would reject; a third semver parser would be a drift risk).
-import type { CliVersionPolicy } from './platform.js'
+// Story 43.13 AC-5: the display-safety caps are the single definition in @project-vault/shared,
+// the same constants the API re-exports (and the CLI's parity test checks).
+import {
+  CLI_MAX_REASON_CODE_POINTS,
+  CLI_MAX_VERSION_LENGTH,
+  CLI_MAX_WITHDRAWN_ENTRIES,
+} from '@project-vault/shared'
 
-// Mirrors apps/api/src/modules/client-versions/policy.ts CLI_MAX_* caps.
-const MAX_VERSION_LENGTH = 128
-const MAX_WITHDRAWN_ENTRIES = 100
-const MAX_REASON_CODE_POINTS = 200
+import type { CliVersionPolicy } from './platform.js'
 
 type WithdrawnEntry = CliVersionPolicy['cli']['withdrawn'][number]
 
@@ -18,7 +21,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function isVersionString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= MAX_VERSION_LENGTH
+  return typeof value === 'string' && value.length > 0 && value.length <= CLI_MAX_VERSION_LENGTH
 }
 
 function isNullableVersion(value: unknown): value is string | null {
@@ -38,12 +41,12 @@ function parseWithdrawnEntry(value: unknown): WithdrawnEntry | null {
   if (!entry || !isVersionString(entry.version)) return null
   const { reason } = entry
   // Code points, not UTF-16 units: an astral character counts once, as it does in the API.
-  if (typeof reason !== 'string' || [...reason].length > MAX_REASON_CODE_POINTS) return null
+  if (typeof reason !== 'string' || [...reason].length > CLI_MAX_REASON_CODE_POINTS) return null
   return { version: entry.version, reason }
 }
 
 function parseWithdrawn(value: unknown): WithdrawnEntry[] | null {
-  if (!Array.isArray(value) || value.length > MAX_WITHDRAWN_ENTRIES) return null
+  if (!Array.isArray(value) || value.length > CLI_MAX_WITHDRAWN_ENTRIES) return null
   const entries: WithdrawnEntry[] = []
   for (const item of value) {
     const entry = parseWithdrawnEntry(item)

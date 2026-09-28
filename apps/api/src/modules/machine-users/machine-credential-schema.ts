@@ -37,12 +37,35 @@ function safeDecodeURIComponent(value: string): string | null {
   }
 }
 
-/** C0 (U+0000–U+001F), DEL, and C1 (U+007F–U+009F) — never allowed to reach an audit UI or a
- * log forwarder (no newlines, no ANSI escapes). */
-function containsControlCharacter(value: string): boolean {
+/**
+ * Story 43.13 AC-4.2 — the terminal-unsafe set U: C0 (U+0000-U+001F), DEL and C1 (U+007F-U+009F),
+ * every Unicode format character (\p{Cf}: bidi controls and marks, zero-width characters, word
+ * joiner, BOM, soft hyphen, ...), the line/paragraph separators U+2028/U+2029 and the whole tag
+ * block U+E0000-U+E007F. None of it may reach an audit UI or a log forwarder: no newlines, no ANSI
+ * escapes, and nothing that visually reorders or hides part of a command name.
+ *
+ * The source of truth for U is packages/agent/src/terminal-unsafe-characters.ts; the API cannot
+ * import the agent, so the set is duplicated here on purpose and tied to it by the parity cases in
+ * client-invocation-context.test.ts. The header is client-asserted, so this server check (not the
+ * agent's client-side stripping) is the authoritative control.
+ */
+const FORMAT_OR_LINE_SEPARATOR = /[\p{Cf}\u2028\u2029]/u
+const TAG_BLOCK_FIRST = 0xe0000
+const TAG_BLOCK_LAST = 0xe007f
+
+function isUnsafeCodePoint(codePoint: number): boolean {
+  return (
+    codePoint < 0x20 ||
+    (codePoint >= 0x7f && codePoint <= 0x9f) ||
+    (codePoint >= TAG_BLOCK_FIRST && codePoint <= TAG_BLOCK_LAST)
+  )
+}
+
+function containsUnsafeCharacter(value: string): boolean {
   for (const char of value) {
-    const codePoint = char.codePointAt(0) ?? 0
-    if (codePoint < 0x20 || (codePoint >= 0x7f && codePoint <= 0x9f)) return true
+    if (isUnsafeCodePoint(char.codePointAt(0) ?? 0) || FORMAT_OR_LINE_SEPARATOR.test(char)) {
+      return true
+    }
   }
   return false
 }
@@ -51,7 +74,7 @@ export const ClientTargetCommandHeaderSchema = z
   .string()
   .regex(TARGET_COMMAND_ENCODED_PATTERN)
   .transform((value) => safeDecodeURIComponent(value))
-  .refine((decoded): decoded is string => decoded !== null && !containsControlCharacter(decoded))
+  .refine((decoded): decoded is string => decoded !== null && !containsUnsafeCharacter(decoded))
 
 const machineCredentialValueDataBase = {
   name: z.string(),

@@ -75,4 +75,14 @@ describe('warnIfInsecureBaseUrl', () => {
     expect(writes).toHaveLength(1)
     expect(writes[0]).toMatch(/plaintext|insecure|http/i)
   })
+
+  it('Story 43.13 review — strips terminal-unsafe characters from the echoed VAULT_URL', () => {
+    const writes: string[] = []
+    warnIfInsecureBaseUrl('http://vault.example.com/\u001b[2J\u202Eevil', (chunk) =>
+      writes.push(chunk)
+    )
+    expect(writes).toHaveLength(1)
+    expect(writes[0]).toContain('VAULT_URL (http://vault.example.com/[2Jevil)')
+    expect(writes[0]).not.toMatch(/[\u001b\u202E]/u)
+  })
 })

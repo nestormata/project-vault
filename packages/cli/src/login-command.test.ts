@@ -460,3 +460,18 @@ describe('runLogin — Story 43.8 AC-7: an honest 429', () => {
     expect(writeSessionFn).not.toHaveBeenCalled()
   })
 })
+
+describe('runLogin — Story 43.13 AC-2: unexpected-error text is free text', () => {
+  it('prints a bidi-laden, multi-line error message on one line with the override stripped', async () => {
+    const streams = makeStreams()
+    const deps: LoginDeps = {
+      fetchFn: vi.fn().mockRejectedValue(new Error('bad\u202Etxt.exe\nFAKE: logged in')),
+      prompt: promptSequence([TEST_EMAIL, 'hunter2']),
+      env: {},
+      writeSessionFn: vi.fn(),
+    }
+
+    expect(await runLogin(BASE_CONFIG, streams, deps)).toBe(EXIT_CODES.unexpected)
+    expect(streams.stderrChunks.join('')).toBe('Unexpected error: badtxt.exe FAKE: logged in\n')
+  })
+})

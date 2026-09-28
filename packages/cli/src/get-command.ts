@@ -3,6 +3,7 @@ import { messageForAgentError } from './agent-error-messages.js'
 import { withFetchProvenanceTracking } from './cache-provenance.js'
 import { warnAndCreateAgent, type ResolvedConfig } from './config.js'
 import { exitCodeForAgentErrorCode, EXIT_CODES } from './exit-codes.js'
+import { ERROR_TEXT_MAX_CODE_POINTS, sanitizeServerText } from './sanitize-server-text.js'
 import { sanitizeForTerminal } from './sanitize.js'
 import { isBlank, looksLikeUuid } from './validate.js'
 
@@ -93,7 +94,9 @@ export async function runGet(
     // AC-6 edge case — an unexpected error path must never have the secret value in scope; it
     // never was in scope here, since this catch only runs when getSecret() itself rejected.
     const message = error instanceof Error ? error.message : String(error)
-    streams.stderr.write(`Unexpected error: ${sanitizeForTerminal(message)}\n`)
+    streams.stderr.write(
+      `Unexpected error: ${sanitizeServerText(message, ERROR_TEXT_MAX_CODE_POINTS)}\n`
+    )
     return EXIT_CODES.unexpected
   }
 }

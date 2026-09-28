@@ -6,6 +6,8 @@
  * The server treats both values as advisory, client-asserted data (it records them under
  * `clientInvocation`/`clientTargetCommand`), never as a verified fact about what ran.
  */
+import { stripTerminalUnsafeCharacters } from './terminal-unsafe-characters.js'
+
 export type InvocationLabel = 'get' | 'run' | 'write-env'
 
 export type SecretRequestContext = {
@@ -57,7 +59,11 @@ function encodeCodePoint(char: string): string {
  */
 export function encodeTargetCommand(command: string): string {
   let result = ''
-  for (const char of command) {
+  // Story 43.13 AC-4.1 — the decoded value lands in an audit payload auditors read, so control,
+  // bidi, zero-width and other format characters are stripped first (a `run\u202Eexe.sh` must not
+  // display as a different command). Pure and non-throwing, like the rest of this function. The
+  // server rejects them too (authoritative); this keeps a legitimate name's audit field.
+  for (const char of stripTerminalUnsafeCharacters(command)) {
     const piece = encodeCodePoint(char)
     if (result.length + piece.length > TARGET_COMMAND_HEADER_MAX_LENGTH) break
     result += piece

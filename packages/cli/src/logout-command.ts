@@ -1,4 +1,4 @@
-import { sanitizeForTerminal } from './sanitize.js'
+import { ERROR_TEXT_MAX_CODE_POINTS, sanitizeServerText } from './sanitize-server-text.js'
 import { deleteSession, readSession, type EnvLike } from './session-store.js'
 
 export type WritableLike = { write: (chunk: string) => void }
@@ -37,7 +37,7 @@ export async function runLogout(streams: LogoutStreams, deps: LogoutDeps): Promi
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       streams.stderr.write(
-        `warning: could not reach the server to invalidate the session remotely: ${sanitizeForTerminal(message)}\n`
+        `warning: could not reach the server to invalidate the session remotely: ${sanitizeServerText(message, ERROR_TEXT_MAX_CODE_POINTS)}\n`
       )
     }
   }

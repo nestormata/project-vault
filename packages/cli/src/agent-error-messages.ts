@@ -1,5 +1,5 @@
 import { VaultAgentError } from '@project-vault/agent'
-import { sanitizeForTerminal } from './sanitize.js'
+import { ERROR_TEXT_MAX_CODE_POINTS, sanitizeServerText } from './sanitize-server-text.js'
 
 /**
  * Extracted from `get-command.ts` (Story 43.1) so `run-command.ts`/`inject-and-run.ts` (Story
@@ -46,7 +46,8 @@ export function messageForAgentError(error: VaultAgentError, safeName: string): 
   // `error.message` (from packages/agent) can itself embed the raw, unsanitized credential name
   // for several codes (see packages/agent/src/errors.ts) — sanitize it too, not just `safeName`,
   // so the terminal-escape-injection hardening (AC-5) isn't bypassed via this second echo path.
-  const safeErrorMessage = sanitizeForTerminal(error.message)
+  // Story 43.13 AC-2 — it is free text: one line, whitespace collapsed, capped.
+  const safeErrorMessage = sanitizeServerText(error.message, ERROR_TEXT_MAX_CODE_POINTS)
   if (UNREACHABLE_CODES.has(error.code)) {
     return `Vault is unreachable and no usable cached value exists for '${safeName}': ${safeErrorMessage}`
   }

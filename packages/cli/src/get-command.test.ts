@@ -340,3 +340,28 @@ describe('runGet — AC-4a cache-fallback provenance signaling', () => {
     expect(streams.stderrChunks.join('')).toBe('')
   })
 })
+
+describe('runGet — Story 43.13 AC-2: unexpected-error text is free text', () => {
+  it('renders a thrown non-Error string through sanitizeServerText (bidi stripped, one line)', async () => {
+    const streams = makeStreams(false)
+    const getSecret = vi.fn().mockRejectedValue('plain string\u202E\nsecond line')
+    const createVaultAgent = vi.fn().mockReturnValue({ getSecret })
+
+    const exitCode = await runGet({ name: 'FOO', stdout: false }, validConfig, streams, {
+      createVaultAgent,
+    })
+
+    expect(exitCode).toBe(EXIT_CODES.unexpected)
+    expect(streams.stderrChunks.join('')).toBe('Unexpected error: plain string second line\n')
+  })
+
+  it('renders a whitespace-only error message as an empty tail, never crashing', async () => {
+    const streams = makeStreams(false)
+    const getSecret = vi.fn().mockRejectedValue(new Error('   '))
+    const createVaultAgent = vi.fn().mockReturnValue({ getSecret })
+
+    await runGet({ name: 'FOO', stdout: false }, validConfig, streams, { createVaultAgent })
+
+    expect(streams.stderrChunks.join('')).toBe('Unexpected error: \n')
+  })
+})

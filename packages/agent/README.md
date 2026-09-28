@@ -43,8 +43,10 @@ triggers exactly one transparent re-exchange and retry.
 carries `x-vault-invocation` and (if `targetCommand` is non-empty) `x-vault-target-command`
 headers, which the server records — as **client-asserted** `clientInvocation` /
 `clientTargetCommand` — in that reveal's audit entry. `targetCommand` should be a command
-**basename only**, never argv; the agent percent-encodes it and truncates it to 128 encoded
-characters on whole code points, so header construction can never throw (a `TypeError` from
+**basename only**, never argv; the agent first strips control, bidi, zero-width and other
+invisible format characters (the set in `src/terminal-unsafe-characters.ts`, which the server
+also rejects), then percent-encodes it and truncates it to 128 encoded characters on whole code
+points, so header construction can never throw (a `TypeError` from
 `fetch()` would otherwise be mistaken for a network failure and trigger the offline-cache
 fallback). The headers are re-sent on the `401` re-auth retry. Omitting the argument sends exactly
 the request earlier versions sent (this is what `@project-vault/vault-action` does). A value served

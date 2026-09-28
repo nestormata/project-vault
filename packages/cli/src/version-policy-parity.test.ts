@@ -18,6 +18,11 @@ import {
  * CLI enforces. The CLI rejects a policy as a whole on any invalid value, so a drift between the
  * two would silently disable withdrawals. The server cannot import the CLI (the CLI's runtime
  * dependencies are kept minimal), so parity is asserted here.
+ *
+ * Story 43.13 AC-5 — the API's `CLI_MAX_*` values are re-exported from `@project-vault/shared`,
+ * which the web /version page's validator (`apps/web/src/lib/api/client-version-policy-validate.ts`)
+ * also imports, so this test ties all three consumers (API, CLI, web) together. The CLI keeps its
+ * own copies on purpose: it does not depend on `@project-vault/shared` at runtime.
  */
 
 const UNSAFE = String(Number.MAX_SAFE_INTEGER + 1)

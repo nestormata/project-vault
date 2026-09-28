@@ -1,14 +1,20 @@
-/**
- * AC-5 edge case (terminal escape-sequence injection, Security Audit Personas 2026-09-22) — a
- * credential `name` can originate from an external, less-trusted source (a templated CI variable,
- * a generated manifest) and every error message echoes it back verbatim. Strips C0/C1 control
- * characters (including ESC, and therefore every ANSI/CSI escape sequence that starts with it)
- * plus newlines/tabs, so a hostile name can never manipulate the invoking terminal or fake
- * multi-line output when interpolated into a stderr message. Never applied to the fetched secret
- * value itself — only to the attacker-influenceable `name` input.
- */
-const CONTROL_CHARS = /[\x00-\x1f\x7f-\x9f]/g
+import { stripTerminalUnsafeCharacters } from '@project-vault/agent'
 
+/**
+ * Renders **identifier text** (a credential name, project id, file path, command, env-var name or
+ * error code) for the terminal. Such a value can originate from an external, less-trusted source (a
+ * templated CI variable, a generated manifest, a name the server echoes back) and error messages
+ * echo it verbatim, so it must never be able to manipulate the invoking terminal, fake multi-line
+ * output or visually reorder what the operator reads.
+ *
+ * Story 43.13 (supersedes 43.6 D6's "unchanged" decision): strips the whole terminal-unsafe set U
+ * defined once in `@project-vault/agent` (`terminal-unsafe-characters.ts`) — C0/C1 controls
+ * (including ESC, so every ANSI/CSI/OSC sequence becomes inert), newlines and tabs, bidi controls
+ * and marks, zero-width and every other Unicode format character, and the tag block. It shares that
+ * character set with `sanitizeServerText`; the two differ only in shaping: an identifier is never
+ * truncated and its whitespace is never collapsed, and line breaks / tabs are **removed** (not turned
+ * into spaces) so a name stays one token. Never applied to a fetched secret value.
+ */
 export function sanitizeForTerminal(value: string): string {
-  return value.replace(CONTROL_CHARS, '')
+  return stripTerminalUnsafeCharacters(value)
 }

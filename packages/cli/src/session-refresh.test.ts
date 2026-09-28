@@ -282,3 +282,15 @@ describe('ensureFreshSession — Story 43.8 AC-7: a refresh 429 is rate limiting
     })
   })
 })
+
+describe('messageForSessionFailure — Story 43.13 review', () => {
+  it('strips terminal-unsafe characters from the echoed session file path', () => {
+    const { message } = messageForSessionFailure({
+      status: 'insecure_permissions',
+      path: '/home/u\u202Efdp.x/\u001b[2Jsession.json',
+    })
+    expect(message).toContain('the session file at /home/ufdp.x/[2Jsession.json')
+    expect(message).toContain('chmod 600 /home/ufdp.x/[2Jsession.json')
+    expect(message).not.toMatch(/[\u001b\u202E]/u)
+  })
+})

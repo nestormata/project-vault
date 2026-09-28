@@ -13,6 +13,7 @@ import { messageForAgentError } from './agent-error-messages.js'
 import { withFetchProvenanceTracking } from './cache-provenance.js'
 import { EXIT_CODES, exitCodeForAgentErrorCode } from './exit-codes.js'
 import { isReservedEnvVarName } from './reserved-env-vars.js'
+import { ERROR_TEXT_MAX_CODE_POINTS, sanitizeServerText } from './sanitize-server-text.js'
 import { sanitizeForTerminal } from './sanitize.js'
 
 export type InjectEntry = {
@@ -69,7 +70,7 @@ export function checkEntryTargets(entries: InjectEntry[], action: string): Entry
       return {
         ok: false,
         exitCode: EXIT_CODES.usageError,
-        error: `Duplicate environment variable target: ${entry.envVarName}`,
+        error: `Duplicate environment variable target: ${sanitizeForTerminal(entry.envVarName)}`,
       }
     }
     seenTargets.add(key)
@@ -132,7 +133,7 @@ export async function fetchAllOrNothing(
       return {
         ok: false,
         exitCode: EXIT_CODES.unexpected,
-        error: `Unexpected error fetching '${safeName}': ${sanitizeForTerminal(message)}`,
+        error: `Unexpected error fetching '${safeName}': ${sanitizeServerText(message, ERROR_TEXT_MAX_CODE_POINTS)}`,
       }
     }
   }

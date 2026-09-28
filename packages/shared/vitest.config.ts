@@ -29,6 +29,8 @@ export default mergeConfig(baseVitestConfig, {
         'src/utils/service-provisioned-email.ts',
         'src/validation/rotation-cron-description.ts',
         'src/schemas/vault.ts',
+        // Story 43.13 AC-5: fourth addition to this manual allowlist (see the comment above).
+        'src/constants/cli-version-policy.ts',
       ],
       thresholds: {
         lines: 80,
