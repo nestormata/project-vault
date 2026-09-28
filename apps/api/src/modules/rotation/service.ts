@@ -5,6 +5,7 @@ import {
   credentialDependencies,
   credentials,
   credentialVersions,
+  orgMemberships,
   projects,
   rotationChecklistItems,
   rotations,
@@ -138,6 +139,9 @@ export type InitiateRotationResult =
   // Story 13.5 AC-7: fieldValues' normalized key set didn't exactly match targetFields'
   // normalized key set. Returned before any write.
   | { status: 'field_values_target_mismatch'; missing: string[]; extra: string[] }
+  // Story 43-15 AC-4: the initiator's org membership was deactivated (or is gone) by the time this
+  // transaction read it under FOR SHARE — a deactivation won the race. Returned before any write.
+  | { status: 'initiator_inactive' }
   | {
       status: 'initiated'
       rotation: RotationRow
@@ -628,6 +632,36 @@ async function resolveInitiateRotationPreflight(
 }
 
 /**
+ * Story 43-15 AC-4 (FR102): takes a FOR SHARE row lock on the initiator's own org_memberships row
+ * and reports whether it is still `active`. A deactivation holds that row FOR UPDATE from its
+ * rotation check until it commits, so the two serialize: if the deactivation locked first, this
+ * waits, then reads `deactivated`; if this locked first, the deactivation waits, then its
+ * rotation check (a new statement, READ COMMITTED) sees the rotation this transaction commits.
+ * The WHERE has no status filter so a deactivated row is read and rejected rather than silently
+ * matching nothing; a missing row (impossible post-auth) is treated as inactive too.
+ *
+ * Called on the OUTER transaction, after the credential advisory lock and before the savepoint:
+ * a lock taken inside the savepoint would be released by its early-return rollbacks, reopening the
+ * race. Only initiateRotation needs this — it is the only path that creates a new blocking row
+ * owned by a user (break-glass inserts non-blocking break_glass_complete, project-export imports
+ * insert initiated_by NULL, and resume keeps the original initiator of an already-blocking row).
+ * Lock order is credential advisory lock -> membership row; deactivation takes the membership
+ * row only (never the credential lock), so no cycle exists.
+ */
+async function lockActiveInitiatorMembership(
+  tx: Tx,
+  input: { orgId: string; userId: string }
+): Promise<boolean> {
+  const [membership] = await tx
+    .select({ status: orgMemberships.status })
+    .from(orgMemberships)
+    .where(and(eq(orgMemberships.orgId, input.orgId), eq(orgMemberships.userId, input.userId)))
+    .for('share')
+    .limit(1)
+  return membership?.status === 'active'
+}
+
+/**
  * AC-4/AC-5: acquires the non-blocking transaction-scoped advisory lock, then performs the
  * credential lookup, new-version insert, retention-lock UPDATE, checklist snapshot, and
  * rotations INSERT inside a nested (SAVEPOINT-backed) transaction — see ADR-5.1-01 and the
@@ -652,6 +686,8 @@ export async function initiateRotation(
     await awaitCredentialScopedLockRelease(tx, input.orgId, input.credentialId)
     throw new RotationConflictError(await findInProgressRotationId(tx, input.credentialId))
   }
+
+  if (!(await lockActiveInitiatorMembership(tx, input))) return { status: 'initiator_inactive' }
 
   try {
     return await tx.transaction(async (trx) => {

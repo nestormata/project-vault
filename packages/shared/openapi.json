@@ -100,6 +100,18 @@
           "rotationIds"
         ]
       },
+      "RotationHandlingBodyInput": {
+        "type": "object",
+        "properties": {
+          "rotationHandling": {
+            "type": "string",
+            "enum": [
+              "abandon"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "ActiveMachineUserKeysErrorInput": {
         "type": "object",
         "properties": {
@@ -5193,13 +5205,25 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "abandonedRotationCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "heldRotationCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               }
             },
             "required": [
               "userId",
               "revokedSessionCount",
               "revokedInvitationCount",
-              "revokedShareCount"
+              "revokedShareCount",
+              "abandonedRotationCount",
+              "heldRotationCount"
             ]
           }
         },
@@ -5345,11 +5369,23 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "abandonedRotationCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "heldRotationCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               }
             },
             "required": [
               "userId",
-              "revokedSessionCount"
+              "revokedSessionCount",
+              "abandonedRotationCount",
+              "heldRotationCount"
             ]
           }
         },
@@ -10216,6 +10252,18 @@
           "error",
           "rotationIds"
         ],
+        "additionalProperties": false
+      },
+      "RotationHandlingBody": {
+        "type": "object",
+        "properties": {
+          "rotationHandling": {
+            "type": "string",
+            "enum": [
+              "abandon"
+            ]
+          }
+        },
         "additionalProperties": false
       },
       "ActiveMachineUserKeysError": {
@@ -15391,13 +15439,25 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "abandonedRotationCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "heldRotationCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               }
             },
             "required": [
               "userId",
               "revokedSessionCount",
               "revokedInvitationCount",
-              "revokedShareCount"
+              "revokedShareCount",
+              "abandonedRotationCount",
+              "heldRotationCount"
             ],
             "additionalProperties": false
           }
@@ -15550,11 +15610,23 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "abandonedRotationCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "heldRotationCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               }
             },
             "required": [
               "userId",
-              "revokedSessionCount"
+              "revokedSessionCount",
+              "abandonedRotationCount",
+              "heldRotationCount"
             ],
             "additionalProperties": false
           }
@@ -25874,6 +25946,16 @@
         "tags": [
           "Organization"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RotationHandlingBodyInput"
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "schema": {
@@ -25938,6 +26020,16 @@
                       "$ref": "#/components/schemas/ApiError"
                     }
                   ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             }
@@ -26048,6 +26140,16 @@
         "tags": [
           "Organization"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RotationHandlingBodyInput"
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "schema": {
@@ -26107,6 +26209,9 @@
                   "anyOf": [
                     {
                       "$ref": "#/components/schemas/SoleOwnerConflictResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ActiveRotationsError"
                     },
                     {
                       "$ref": "#/components/schemas/ApiError"

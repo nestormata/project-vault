@@ -279,27 +279,52 @@
     }
   }
 
+  // Story 43-15 AC-6/AC-8: the user whose deactivation was just refused with 409
+  // active_rotations — their row offers the explicit "abandon and deactivate" follow-up.
+  let rotationBlockedUserId = $state<string | null>(null)
+
+  function deactivationErrorMessage(user: OrgUser, error: unknown): string {
+    if (!(error instanceof ApiClientError)) return 'Failed to deactivate account.'
+    if (error.code === 'already_deactivated') return `${user.email} is already deactivated.`
+    if (error.code === 'active_rotations') {
+      const rotationIds = (error.body as { rotationIds?: string[] } | null)?.rotationIds ?? []
+      return `${user.email} still owns ${rotationIds.length} unfinished rotation(s). Complete, retire, or abandon them before deactivating this account.`
+    }
+    return error.message ?? 'Failed to deactivate account.'
+  }
+
+  async function runDeactivation(user: OrgUser, options?: { rotationHandling: 'abandon' }) {
+    busyKey = user.userId
+    errorMessage = null
+    try {
+      await deactivateOrgUser(fetch, user.userId, options)
+      rotationBlockedUserId = null
+      await invalidateAll()
+    } catch (error) {
+      errorMessage = deactivationErrorMessage(user, error)
+      rotationBlockedUserId =
+        error instanceof ApiClientError && error.code === 'active_rotations' ? user.userId : null
+    } finally {
+      busyKey = null
+    }
+  }
+
   async function onDeactivateOrgUser(user: OrgUser) {
     if (busyKey) return
     const confirmed = confirm(
       `Deactivate ${user.email}? ${user.email} will be signed out of every session immediately and can no longer log in. Pending invitations ${user.email} sent will be revoked.`
     )
     if (!confirmed) return
-    busyKey = user.userId
-    errorMessage = null
-    try {
-      await deactivateOrgUser(fetch, user.userId)
-      await invalidateAll()
-    } catch (error) {
-      errorMessage =
-        error instanceof ApiClientError && error.code === 'already_deactivated'
-          ? `${user.email} is already deactivated.`
-          : error instanceof ApiClientError
-            ? (error.message ?? 'Failed to deactivate account.')
-            : 'Failed to deactivate account.'
-    } finally {
-      busyKey = null
-    }
+    await runDeactivation(user)
+  }
+
+  async function onAbandonRotationsAndDeactivate(user: OrgUser) {
+    if (busyKey) return
+    const confirmed = confirm(
+      `Abandon ${user.email}'s unfinished rotations and deactivate ${user.email}? Staged and stale rotations will be abandoned (their new values discarded, the previous values stay current). Promoted rotations are kept as they are, for an admin to retire later.`
+    )
+    if (!confirmed) return
+    await runDeactivation(user, { rotationHandling: 'abandon' })
   }
 
   let recoveryLinkSentFor = $state<string | null>(null)
@@ -586,6 +611,17 @@
                         {@render WarningIcon()}
                         Deactivate account
                       </button>
+                      {#if rotationBlockedUserId === user.userId}
+                        <button
+                          class="inline-flex items-center gap-1 text-sm font-medium text-amber-700 underline disabled:cursor-not-allowed disabled:opacity-60"
+                          type="button"
+                          disabled={busyKey === user.userId}
+                          onclick={() => onAbandonRotationsAndDeactivate(user)}
+                        >
+                          {@render WarningIcon()}
+                          Abandon unfinished rotations and deactivate
+                        </button>
+                      {/if}
                     {/if}
                     <button
                       class="inline-flex items-center gap-1 text-sm font-medium text-red-700 underline disabled:cursor-not-allowed disabled:opacity-60"

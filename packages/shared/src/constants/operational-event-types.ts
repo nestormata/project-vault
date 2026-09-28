@@ -432,6 +432,14 @@ export const OperationalEvent = {
   // from capability-gate.ts's own (never shared).
   ORG_AUTHORIZATION_RATE_LIMITED: 'org_authorization.rate_limited',
 
+  // Story 43-15 AC-5/AC-9: an owner/admin's deactivate or remove request was refused because the
+  // target still owns an unfinished rotation (`active_rotations`) or one of its rotations was
+  // mid-modification (`rotation_busy`). Log only — a refused request changed nothing, so (like the
+  // project/credential archive guards) no audit row is written. Fields: targetUserId/callerId/
+  // reason/rotationCount — never credential names or values.
+  ORG_USER_DEACTIVATE_DENIED: 'org_user.deactivate_denied',
+  ORG_USER_REMOVE_DENIED: 'org_user.remove_denied',
+
   // Story 30.2 (DW-128) AC2.5: boot-time handoff AuthStrategy registration gate
   // (apps/api/src/modules/auth/handoff-boot.ts). Mirrors native-login-policy.ts's exact
   // two-branch fail-safe (native login still enabled — log fatal, keep serving local login) /

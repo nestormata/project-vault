@@ -22,6 +22,11 @@ import { effectiveProjectRole } from '../projects/project-access.js'
 import { supersedeOutstandingSharesForRotation } from '../credential-shares/service.js'
 import { writeShareAuditEntry } from '../credential-shares/audit.js'
 import {
+  writeResolutionAuditOrThrow,
+  writeRotationAbandonedAuditOrThrow,
+  writeRotationAuditEntry,
+} from './rotation-audit.js'
+import {
   AbandonRotationBodySchema,
   AbandonRotationResponseSchema,
   BreakGlassRotationBodySchema,
@@ -325,29 +330,15 @@ function resolveInitiateRotationEarlyExit(
   if (result.status === 'credential_not_found') {
     return reply.status(404).send(CREDENTIAL_NOT_FOUND)
   }
+  // Story 43-15 AC-4: a concurrent deactivation won the membership-row race. The identical
+  // code/message authenticate.ts's loadOrgRole already uses, so clients need no new case.
+  if (result.status === 'initiator_inactive') {
+    rotationInitiationsTotal.inc({ outcome: 'initiator_inactive' })
+    return reply
+      .status(403)
+      .send({ code: 'account_deactivated', message: 'Account is deactivated' })
+  }
   return undefined
-}
-
-/** Every audit write in this file shares orgId/actorUserId (from secureCtx.auth), resourceType
- *  ('rotation'), and request — only eventType/resourceId/payload vary per call site.
- *
- *  Takes `tx`/`auth` rather than the whole `secureCtx` (and callers pass `secureCtx.tx` /
- *  `secureCtx.auth` explicitly) so route-audit.test.ts's same-transaction-delegation check —
- *  which greps each route's own source for a literal `secureCtx.tx` following the delegated
- *  call — can still verify the audit write shares the route's transaction. */
-function writeRotationAuditEntry(
-  tx: SecureRouteContext['tx'],
-  auth: SecureRouteContext['auth'],
-  req: FastifyRequest,
-  input: { eventType: string; resourceId?: string; payload: Record<string, unknown> }
-): Promise<void> {
-  return writeHumanAuditEntryOrFailClosed(tx, {
-    orgId: auth.orgId,
-    actorUserId: auth.userId,
-    resourceType: 'rotation',
-    request: req,
-    ...input,
-  })
 }
 
 /** Shared by break-glass's instant-promote audit write and the ordinary `promote` route: both
@@ -533,39 +524,6 @@ function replyForResolutionFailure(
     message: 'This rotation is not awaiting stale-recovery resolution.',
     status: outcome.status,
   })
-}
-
-/** AC-11/AC-12: resume/abandon's shared success-path audit write — fail-closed, with the
- *  identical audit-failure metric/log/rethrow shape, differing only in eventType/metric outcome
- *  label/event constant/log message between the two callers.
- *
- *  Takes `tx`/`auth` (see writeRotationAuditEntry) rather than `secureCtx` so
- *  route-audit.test.ts's literal `secureCtx.tx` check still passes at the call site. */
-async function writeResolutionAuditOrThrow(
-  tx: SecureRouteContext['tx'],
-  auth: SecureRouteContext['auth'],
-  req: FastifyRequest,
-  params: Record<string, unknown>,
-  config: {
-    eventType: string
-    resourceId: string
-    payload: Record<string, unknown>
-    auditFailedMetricOutcome: string
-    auditFailedEvent: string
-    auditFailedMessage: string
-  }
-): Promise<void> {
-  try {
-    await writeRotationAuditEntry(tx, auth, req, {
-      eventType: config.eventType,
-      resourceId: config.resourceId,
-      payload: config.payload,
-    })
-  } catch (error) {
-    rotationResolutionsTotal.inc({ outcome: config.auditFailedMetricOutcome })
-    req.log.error({ eventType: config.auditFailedEvent, ...params }, config.auditFailedMessage)
-    throw error
-  }
 }
 
 function rotationNotActiveResponse(status: string) {
@@ -2172,18 +2130,13 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
         })
       }
 
-      await writeResolutionAuditOrThrow(secureCtx.tx, secureCtx.auth, req, params, {
-        eventType: AuditEvent.ROTATION_ABANDONED,
-        resourceId: result.rotation.id,
-        payload: {
-          credentialId: params.credentialId,
-          abandonedVersionId: result.rotation.newVersionId,
-          restoredCurrentVersionId: result.rotation.previousVersionId,
-        },
-        auditFailedMetricOutcome: 'abandon_audit_failed',
-        auditFailedEvent: OperationalEvent.ROTATION_ABANDON_AUDIT_FAILED,
-        auditFailedMessage: 'Rotation abandon audit write failed — transaction will roll back',
-      })
+      await writeRotationAbandonedAuditOrThrow(
+        secureCtx.tx,
+        secureCtx.auth,
+        req,
+        params,
+        result.rotation
+      )
 
       rotationResolutionsTotal.inc({ outcome: 'abandoned' })
       req.log.info(

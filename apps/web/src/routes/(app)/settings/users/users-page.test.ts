@@ -589,6 +589,80 @@ describe('/settings/users +page.svelte (Story 8.7 AC groups A4/I/J/K)', () => {
       expect((await screen.findByRole('alert')).textContent).toMatch(expected)
     })
 
+    // Story 43-15 AC-6/AC-8: the FR102 active-rotation block and its explicit abandon path.
+    function activeRotationsError(body: Record<string, unknown>) {
+      return new ApiClientError(409, body as { error: string }, 'Conflict')
+    }
+
+    it('explains an active_rotations refusal, keeps the user active, and releases the button', async () => {
+      deactivateOrgUserMock.mockRejectedValue(
+        activeRotationsError({ error: 'active_rotations', rotationIds: ['r1'] })
+      )
+      render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })
+      await fireEvent.click(screen.getByRole('button', { name: /deactivate account/i }))
+
+      expect((await screen.findByRole('alert')).textContent).toContain(
+        'jsmith@example.com still owns 1 unfinished rotation(s). Complete, retire, or abandon them before deactivating this account.'
+      )
+      expect(invalidateAllMock).not.toHaveBeenCalled()
+      const button = screen.getByRole('button', {
+        name: /deactivate account/i,
+      }) as HTMLButtonElement
+      expect(button.disabled).toBe(false)
+      expect(
+        screen.getByRole('button', { name: /abandon unfinished rotations and deactivate/i })
+      ).toBeTruthy()
+    })
+
+    it('renders the active_rotations message even for a malformed body (n = 0)', async () => {
+      deactivateOrgUserMock.mockRejectedValue(activeRotationsError({ error: 'active_rotations' }))
+      render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })
+      await fireEvent.click(screen.getByRole('button', { name: /deactivate account/i }))
+
+      expect((await screen.findByRole('alert')).textContent).toContain(
+        'still owns 0 unfinished rotation(s)'
+      )
+    })
+
+    it('re-sends with rotationHandling "abandon" after a second, explicit confirmation', async () => {
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      deactivateOrgUserMock
+        .mockRejectedValueOnce(
+          activeRotationsError({ error: 'active_rotations', rotationIds: ['r1'] })
+        )
+        .mockResolvedValueOnce({ userId: 'u-member' })
+      render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })
+      await fireEvent.click(screen.getByRole('button', { name: /deactivate account/i }))
+      await fireEvent.click(
+        await screen.findByRole('button', { name: /abandon unfinished rotations and deactivate/i })
+      )
+
+      expect(confirmSpy).toHaveBeenLastCalledWith(expect.stringMatching(/staged.*abandoned/i))
+      expect(confirmSpy).toHaveBeenLastCalledWith(expect.stringMatching(/promoted.*retire/i))
+      expect(deactivateOrgUserMock).toHaveBeenLastCalledWith(expect.anything(), 'u-member', {
+        rotationHandling: 'abandon',
+      })
+      await vi.waitFor(() => expect(invalidateAllMock).toHaveBeenCalledTimes(1))
+      expect(
+        screen.queryByRole('button', { name: /abandon unfinished rotations and deactivate/i })
+      ).toBeNull()
+    })
+
+    it('does nothing when the abandon confirmation is declined', async () => {
+      deactivateOrgUserMock.mockRejectedValueOnce(
+        activeRotationsError({ error: 'active_rotations', rotationIds: ['r1'] })
+      )
+      render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })
+      await fireEvent.click(screen.getByRole('button', { name: /deactivate account/i }))
+      const abandon = await screen.findByRole('button', {
+        name: /abandon unfinished rotations and deactivate/i,
+      })
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+      await fireEvent.click(abandon)
+
+      expect(deactivateOrgUserMock).toHaveBeenCalledTimes(1)
+    })
+
     it('cancels removal and recovery without API calls', async () => {
       vi.spyOn(window, 'confirm').mockReturnValue(false)
       render(UsersPage, { props: { data: baseData({ users: [memberUser] }) } })

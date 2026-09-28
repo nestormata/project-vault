@@ -4,10 +4,12 @@ import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import {
   accountRecoveryTokens,
+  credentialShares,
   notificationQueue,
   orgMemberships,
   projectInvitations,
 } from '@project-vault/db/schema'
+import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import {
   __resetNativeLoginPolicyForTests,
   resolveNativeLoginPolicy,
@@ -27,10 +29,25 @@ import {
   createMembershipTestHelpers,
 } from '../../__tests__/helpers/membership-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
+import {
+  createLogCaptureStream,
+  flushCapturedLogger,
+  parseCapturedLogLines,
+} from '../../__tests__/helpers/capture-logs.js'
+import { createLoggerConfig } from '../../lib/logger.js'
+import { createCredentialViaApi } from '../credentials/credential-route-test-helpers.js'
+import {
+  auditPayloads,
+  membershipRow,
+  removeViaApi,
+  startRotationViaApi,
+  updateRotation,
+} from './rotation-guard-test-helpers.js'
 
 const { createApp, initVault, humanAudit } = await bootstrapRouteIntegrationTest()
 
 const MOCK_EXTENSION_NAME = 'test.mock-envelope-extension'
+const SHARED_SECRET_VALUE = 'sentinel-value'
 
 type TestApp = Awaited<ReturnType<typeof createApp>>
 
@@ -368,7 +385,7 @@ describe('account deactivation routes', () => {
         method: 'POST',
         url: `/api/v1/projects/${projectId}/credentials`,
         headers: { cookie: cookieHeader(sharer.cookies) },
-        payload: { name: 'Deactivation Test Key', value: 'sentinel-value' },
+        payload: { name: 'Deactivation Test Key', value: SHARED_SECRET_VALUE },
       })
       expect(credential.statusCode).toBe(201)
       const credentialId = credential.json<{ data: { id: string } }>().data.id
@@ -425,7 +442,7 @@ describe('account deactivation routes', () => {
         method: 'POST',
         url: `/api/v1/projects/${projectId}/credentials`,
         headers: { cookie: cookieHeader(sharer.cookies) },
-        payload: { name: 'External Deactivation Test Key', value: 'sentinel-value' },
+        payload: { name: 'External Deactivation Test Key', value: SHARED_SECRET_VALUE },
       })
       expect(credential.statusCode).toBe(201)
       const credentialId = credential.json<{ data: { id: string } }>().data.id
@@ -456,6 +473,201 @@ describe('account deactivation routes', () => {
           .where(eq(credentialShares.id, shareId))
       })
       expect(shareRow?.status).toBe('revoked')
+    })
+  })
+
+  // Story 43-15 AC-2/AC-5: the FR102 rotation block. Only an owner deactivating an admin can
+  // realistically hit it (rotation initiation needs org admin; deactivation needs a strictly
+  // higher role), so fixtures use an owner actor and an admin initiator X.
+  describe('POST /api/v1/org/users/:userId/deactivate — active rotation block (43-15)', () => {
+    async function adminWithStagedRotation(label: string) {
+      const owner = await registerOwner(app, `${label}-owner`)
+      const x = await addUserToOrg(app, owner.orgId, `${label}-x`, { orgRole: 'admin' })
+      const projectId = await createProject(app, owner.cookies, `${label}-project`)
+      const rotation = await startRotationViaApi(app, x.cookies, projectId)
+      return { owner, x, projectId, ...rotation }
+    }
+
+    it('AC-2: 409 with the exact ADR-4.4-04 body, and NOTHING was mutated', async () => {
+      const { owner, x, projectId, rotationId } = await adminWithStagedRotation('block')
+      const recipient = await addUserToOrg(app, owner.orgId, 'block-recipient')
+
+      const invite = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/invitations`,
+        headers: { cookie: cookieHeader(x.cookies) },
+        payload: { email: uniqueEmail('block-invitee'), role: 'member' },
+      })
+      expect(invite.statusCode).toBe(201)
+      const sharedCredential = await createCredentialViaApi(app, x.cookies, projectId, {
+        name: `Block share ${randomUUID()}`,
+        value: SHARED_SECRET_VALUE,
+      })
+      const share = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/credentials/${sharedCredential.id}/shares`,
+        headers: { cookie: cookieHeader(x.cookies) },
+        payload: {
+          recipientUserId: recipient.userId,
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        },
+      })
+      expect(share.statusCode).toBe(201)
+      const shareId = share.json<{ data: { id: string } }>().data.id
+
+      const res = await deactivate(app, owner.cookies, x.userId)
+
+      expect(res.statusCode).toBe(409)
+      expect(res.json()).toEqual({ error: 'active_rotations', rotationIds: [rotationId] })
+      expect(await membershipStatus(owner.orgId, x.userId)).toBe('active')
+      expect((await meRequest(app, x.cookies)).statusCode).toBe(200)
+      const invitations = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ revokedAt: projectInvitations.revokedAt })
+          .from(projectInvitations)
+          .where(eq(projectInvitations.invitedBy, x.userId))
+      )
+      expect(invitations).toHaveLength(1)
+      expect(invitations[0]?.revokedAt).toBeNull()
+      const [shareRow] = await withOrg(owner.orgId, (tx) =>
+        tx
+          .select({ status: credentialShares.status })
+          .from(credentialShares)
+          .where(eq(credentialShares.id, shareId))
+      )
+      expect(shareRow?.status).toBe('active')
+      expect(await auditPayloads(owner.orgId, AuditEvent.ORG_USER_DEACTIVATED, x.userId)).toEqual(
+        []
+      )
+    })
+
+    it('AC-2: the same admin who got the 409 abandons the rotation, and the retry succeeds (200)', async () => {
+      const { owner, x, projectId, credentialId, rotationId } =
+        await adminWithStagedRotation('retry')
+
+      expect((await deactivate(app, owner.cookies, x.userId)).statusCode).toBe(409)
+      const abandon = await app.inject({
+        method: 'POST',
+        url: `/api/v1/projects/${projectId}/credentials/${credentialId}/rotations/${rotationId}/abandon`,
+        headers: { cookie: cookieHeader(owner.cookies) },
+        payload: {},
+      })
+      expect(abandon.statusCode).toBe(200)
+
+      const res = await deactivate(app, owner.cookies, x.userId)
+
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toMatchObject({ data: { userId: x.userId } })
+      expect(await membershipStatus(owner.orgId, x.userId)).toBe('deactivated')
+    })
+
+    it('AC-2: keys on initiated_by, not the current role — an initiator later lowered to member still blocks', async () => {
+      const { owner, x, rotationId } = await adminWithStagedRotation('lowered')
+      await withOrg(owner.orgId, (tx) =>
+        tx
+          .update(orgMemberships)
+          .set({ role: 'member' })
+          .where(and(eq(orgMemberships.orgId, owner.orgId), eq(orgMemberships.userId, x.userId)))
+      )
+
+      const res = await deactivate(app, owner.cookies, x.userId)
+
+      expect(res.statusCode).toBe(409)
+      expect(res.json()).toEqual({ error: 'active_rotations', rotationIds: [rotationId] })
+    })
+
+    it('AC-2: hierarchy (403), self (403), already_deactivated (409) and unknown user (404) all win over active_rotations', async () => {
+      const owner = await registerOwner(app, 'precedence-owner')
+      const admin = await addUserToOrg(app, owner.orgId, 'precedence-admin', { orgRole: 'admin' })
+      const projectId = await createProject(app, owner.cookies, 'precedence-project')
+      await startRotationViaApi(app, owner.cookies, projectId)
+      await startRotationViaApi(app, admin.cookies, projectId)
+
+      const hierarchy = await deactivate(app, admin.cookies, owner.userId)
+      expect(hierarchy.statusCode).toBe(403)
+      expect(hierarchy.json()).toMatchObject({ code: 'insufficient_role' })
+      expect(hierarchy.json()).not.toHaveProperty('rotationIds')
+
+      const self = await deactivate(app, owner.cookies, owner.userId)
+      expect(self.statusCode).toBe(403)
+      expect(self.json()).toMatchObject({ code: 'cannot_deactivate_self' })
+
+      // Legacy data: already deactivated AND still owning a staged rotation.
+      await withOrg(owner.orgId, (tx) =>
+        tx
+          .update(orgMemberships)
+          .set({ status: 'deactivated' })
+          .where(
+            and(eq(orgMemberships.orgId, owner.orgId), eq(orgMemberships.userId, admin.userId))
+          )
+      )
+      const already = await deactivate(app, owner.cookies, admin.userId)
+      expect(already.statusCode).toBe(409)
+      expect(already.json()).toMatchObject({ code: 'already_deactivated' })
+
+      const missing = await deactivate(app, owner.cookies, randomUUID())
+      expect(missing.statusCode).toBe(404)
+    })
+
+    it('AC-1/AC-2: a promoted (or legacy in_progress) rotation still blocks a default request', async () => {
+      const { owner, x, rotationId } = await adminWithStagedRotation('promoted')
+      await updateRotation(owner.orgId, rotationId, { status: 'promoted' })
+
+      const res = await deactivate(app, owner.cookies, x.userId)
+
+      expect(res.statusCode).toBe(409)
+      expect(res.json()).toEqual({ error: 'active_rotations', rotationIds: [rotationId] })
+      expect((await membershipRow(owner.orgId, x.userId))?.status).toBe('active')
+    })
+
+    it('AC-5: a refusal emits exactly one structured warn log; other refusals never claim active_rotations', async () => {
+      const { stream, lines } = createLogCaptureStream()
+      const logApp = await createApp({
+        logger: {
+          ...createLoggerConfig({
+            NODE_ENV: 'development',
+            LOG_LEVEL: 'info',
+            SERVICE_NAME: 'api',
+          }),
+          stream,
+        },
+        vaultGuardEnabled: true,
+      })
+      try {
+        const owner = await registerOwner(logApp, 'log-owner')
+        const x = await addUserToOrg(logApp, owner.orgId, 'log-x', { orgRole: 'admin' })
+        const projectId = await createProject(logApp, owner.cookies, 'log-project')
+        await startRotationViaApi(logApp, x.cookies, projectId)
+        await startRotationViaApi(logApp, x.cookies, projectId)
+
+        expect((await deactivate(logApp, owner.cookies, x.userId)).statusCode).toBe(409)
+        // Hierarchy refusal: must not log reason active_rotations.
+        expect((await deactivate(logApp, x.cookies, owner.userId)).statusCode).toBe(403)
+        // AC-9: the removal route logs its own refusal the same way.
+        expect((await removeViaApi(logApp, owner.cookies, x.userId)).statusCode).toBe(409)
+
+        await flushCapturedLogger(logApp.log)
+        const logLines = parseCapturedLogLines(lines)
+        const expected = {
+          level: 'warn',
+          targetUserId: x.userId,
+          callerId: owner.userId,
+          reason: 'active_rotations',
+          rotationCount: 2,
+        }
+        const denials = logLines.filter(
+          (line) => line['eventType'] === OperationalEvent.ORG_USER_DEACTIVATE_DENIED
+        )
+        expect(denials).toHaveLength(1)
+        expect(denials[0]).toMatchObject(expected)
+        const removeDenials = logLines.filter(
+          (line) => line['eventType'] === OperationalEvent.ORG_USER_REMOVE_DENIED
+        )
+        expect(removeDenials).toHaveLength(1)
+        expect(removeDenials[0]).toMatchObject(expected)
+      } finally {
+        await logApp.close()
+      }
     })
   })
 
