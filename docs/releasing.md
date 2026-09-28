@@ -150,11 +150,12 @@ only after the downstream consumer has verified the build:
 npm dist-tag add @project-vault/extension-api@X.Y.Z latest
 ```
 
-**Current state (2026-09-09):** npm carries only `1.1.0` on both `latest` and `next`, while the
-package source is at `3.15.0`. Twenty intermediate contract versions were never tagged or
-published, and they cannot be reconstructed. Publish `3.15.0` only, and note the gap in the
-package changelog. Version `3.0.0` contains a breaking change for the CentralizeMe consumer;
-coordinate the `latest` promotion with it.
+**Current state (2026-09-28):** npm `latest` is `1.1.0` and `next` is `3.23.0` (published tags:
+`extension-api-v1.1.0`, `-v3.15.0`, `-v3.23.0`). The package source is at `3.24.1`, pending
+publication to `next`; `3.24.0` was never tagged and is superseded by `3.24.1`. Every other
+intermediate contract version was never tagged or published, and cannot be reconstructed.
+Version `3.0.0` contains a breaking change for the CentralizeMe consumer, so `latest` still points
+at `1.1.0`: coordinate the `latest` promotion with it.
 
 ## 6. vault-action (only when `packages/vault-action` changed)
 
