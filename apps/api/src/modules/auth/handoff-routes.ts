@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { and, eq, inArray } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
 import {
   handoffPendingStates,
@@ -25,6 +25,13 @@ import { buildCookieTokens, setAuthCookies, type CookieReply, type JwtSigner } f
 import { verifyHandoffToken, type HandoffRejectReason } from './handoff-verify.js'
 import { writeHandoffSecurityEvent } from './handoff-security-events.js'
 import { generateOpaqueId, hashCookieValue } from '../../lib/opaque-cookie-token.js'
+import {
+  ClaimRekeyMissError,
+  classifyClaimExchangeError,
+  findPendingForClaim,
+  rekeyPendingCookieHash,
+  type PendingRow,
+} from './handoff-claim-exchange-db.js'
 import {
   findLinkedIdentity,
   findUserMfaEnrolledAndMembership,
@@ -51,7 +58,7 @@ function sendGenericRejection(reply: FastifyReply): unknown {
 
 function readHandoffCookie(request: FastifyRequest): string | undefined {
   const cookies = (request as unknown as { cookies?: Record<string, string> }).cookies
-  return cookies?.[HANDOFF_COOKIE_NAME]
+  return Object.entries(cookies ?? {}).find(([name]) => name === HANDOFF_COOKIE_NAME)?.[1]
 }
 
 // AC4.16: defense-in-depth CSRF checks — never the primary boundary (that's the same-site
@@ -233,34 +240,11 @@ async function handlePrepare(request: FastifyRequest, reply: FastifyReply): Prom
 // AC4: POST /auth/handoff/confirm
 // ---------------------------------------------------------------------------
 
-type PendingRow = typeof handoffPendingStates.$inferSelect
-
 async function loadPendingState(cookieHash: string): Promise<PendingRow | undefined> {
   const [row] = await getDb()
     .select()
     .from(handoffPendingStates)
     .where(eq(handoffPendingStates.cookieHash, cookieHash))
-    .limit(1)
-  return row
-}
-
-// Story 60.3 AC3: scoped by BOTH `pendingId` and `claimHash` matching the SAME row — never
-// `claimHash` alone. A `claim` that is otherwise valid but paired with a different request's
-// `pendingId` in the URL must still fail; a lookup keyed only on `claimHash` would let an attacker
-// who observes one full valid `/handoff` URL swap in an unrelated `pendingId`. A row with a
-// `claim_hash` of `NULL` (a pre-60.3 row created before this column existed — the rolling-deploy
-// skew case) can never match here, since SQL equality against NULL is never true — the generic
-// "missing claim" rejection path below covers it without any special-casing.
-async function loadPendingStateByIdAndClaimHash(
-  pendingId: string,
-  claimHash: string
-): Promise<PendingRow | undefined> {
-  const [row] = await getDb()
-    .select()
-    .from(handoffPendingStates)
-    .where(
-      and(eq(handoffPendingStates.id, pendingId), eq(handoffPendingStates.claimHash, claimHash))
-    )
     .limit(1)
   return row
 }
@@ -276,12 +260,9 @@ async function burnJti(jti: string, expiresAt: Date): Promise<BurnOutcome> {
     // AC4.11/AC4.13: insert-first burn — a unique-violation on the primary key means the exact
     // jti was already burned (replay). Any OTHER failure (connection refused, pool exhausted,
     // etc.) is treated as the replay store being unavailable — fail closed, never fall back to
-    // an in-process Map or skip the burn (AC4.14).
-    const code =
-      (error as { code?: string; cause?: { code?: string } })?.code ??
-      (error as { cause?: { code?: string } })?.cause?.code
-    if (code === '23505') return { ok: false, reason: 'handoff_replay' }
-    return { ok: false, reason: 'handoff_replay_store_unavailable' }
+    // an in-process Map or skip the burn (AC4.14). Story 60.5 Design Decision 3: the same
+    // classifier as the claim-exchange transaction, so the two paths never classify differently.
+    return { ok: false, reason: classifyClaimExchangeError(error) }
   }
 }
 
@@ -301,51 +282,76 @@ type ClaimExchangeResolution =
   { ok: true; rawCookieValue: string; expiresAt: Date } | { ok: false; eventType: HandoffEventType }
 
 /**
+ * Story 60.5 AC1: burns the claim and re-keys the pending row's `cookieHash` inside ONE plain
+ * `getDb().transaction()` — no tenant GUC, never `withOrg()`: both tables are RLS exceptions and
+ * the token's org is untrusted until `/confirm`. Either both statements commit or neither does, so
+ * a failure after the burn (AC2) leaves the claim unconsumed and a retry of the same link works.
+ *
+ * Insert-first burn, identical pattern to burnJti(): a unique violation on the claim's burn key
+ * means it was already consumed (replay) — never a SELECT-then-UPDATE, which would allow a TOCTOU
+ * double consumption. Inside the transaction, a concurrent exchange of the same claim waits on
+ * this uncommitted PK row: it gets `23505` if this commits, or proceeds if this rolls back (AC4).
+ *
+ * AC3: the re-key must hit exactly one row. 0 rows means the pending row vanished (pruned) between
+ * the lookup and the update; throwing the sentinel rolls the burn back so the endpoint never
+ * returns a cookie value that matches no row.
+ */
+async function consumeClaimInTransaction(
+  pending: PendingRow,
+  claimHash: string,
+  cookieHash: string
+): Promise<void> {
+  await getDb().transaction(async (tx) => {
+    await tx
+      .insert(handoffTokenJti)
+      .values({ jti: claimBurnKey(claimHash), expiresAt: pending.expiresAt })
+    const updated = await rekeyPendingCookieHash(tx as Tx, {
+      pendingId: pending.id,
+      claimHash,
+      cookieHash,
+    })
+    if (updated !== 1) throw new ClaimRekeyMissError()
+  })
+}
+
+/**
  * Split out of handleExchangeClaim to keep both functions under the repo's complexity threshold
  * (mirroring burnAndResolveOrg's own split out of handleConfirm above). Looks up the row scoped by
- * BOTH pendingId and claimHash, insert-first-burns the claim, and — only once burned — mints a
- * fresh raw cookie value and re-keys the pending row's cookieHash to it (see handleExchangeClaim's
- * doc comment for why this UPDATE is safe here).
+ * BOTH pendingId and claimHash (outside any transaction — the common rejection paths never open
+ * one), then burns the claim and re-keys the row to a freshly minted cookie value in a single
+ * transaction (consumeClaimInTransaction). Every failure — lookup outage included (AC3b) — maps to
+ * one internal event and the single generic rejection.
  */
 async function resolveClaimExchange(
   pendingId: string,
   claimHash: string
 ): Promise<ClaimExchangeResolution> {
-  const pending = await loadPendingStateByIdAndClaimHash(pendingId, claimHash)
+  let pending: PendingRow | undefined
+  try {
+    pending = await findPendingForClaim(pendingId, claimHash)
+  } catch {
+    // AC3b: a lookup outage is the generic rejection, never a 5xx. Deliberately wraps the lookup
+    // only — a catch-all would also swallow programming errors further down.
+    return { ok: false, eventType: HandoffEvent.HANDOFF_REPLAY_STORE_UNAVAILABLE }
+  }
   // AC3 edge case: expired matches replay's generic rejection exactly, same as confirm's own
   // expired-pending-state handling — never a distinguishable response.
   if (!pending || pending.expiresAt.getTime() <= Date.now()) {
     return { ok: false, eventType: HandoffEvent.HANDOFF_REPLAY }
   }
 
-  // Insert-first-burn, identical pattern to burnJti(): a unique-violation on the claim's burn key
-  // means it was already consumed (replay) — never a SELECT-then-UPDATE, which would allow a
-  // TOCTOU double-consumption race under concurrent requests for the same claim.
-  const burn = await burnJti(claimBurnKey(claimHash), pending.expiresAt)
-  if (!burn.ok) {
-    return {
-      ok: false,
-      eventType:
-        burn.reason === 'handoff_replay'
-          ? HandoffEvent.HANDOFF_REPLAY
-          : HandoffEvent.HANDOFF_REPLAY_STORE_UNAVAILABLE,
-    }
-  }
-
-  // The claim is burned — everything past this point must still fail closed into the single
-  // generic-rejection contract. `cookieHash` is never reversible (one-way HMAC), so rather than
-  // trying to recover the original `rawCookie`, a FRESH raw cookie value is minted and the
-  // pending row's `cookieHash` is updated to match it. This UPDATE is safe from the same TOCTOU
-  // concern the burn above guards against: it only ever runs once per claim, since it is gated by
-  // the burn's own atomicity.
+  // `cookieHash` is never reversible (one-way HMAC), so rather than trying to recover the original
+  // `rawCookie`, a FRESH raw cookie value is minted and the pending row is re-keyed to it. It only
+  // leaves the server if the burn and the re-key both committed; a rolled-back attempt's minted
+  // hash is discarded with the transaction and can never confirm.
   const rawCookieValue = randomBytes(32).toString('base64url')
   try {
-    await getDb()
-      .update(handoffPendingStates)
-      .set({ cookieHash: hashCookieValue(rawCookieValue) })
-      .where(eq(handoffPendingStates.id, pendingId))
-  } catch {
-    return { ok: false, eventType: HandoffEvent.HANDOFF_REPLAY_STORE_UNAVAILABLE }
+    await consumeClaimInTransaction(pending, claimHash, hashCookieValue(rawCookieValue))
+  } catch (error) {
+    // Classified OUTSIDE the transaction, after it has rolled back: `23505` (already burned) and
+    // the 0-row sentinel are replays; anything else (connection loss, timeout, failed COMMIT) is
+    // the replay store being unavailable. Same classifier as burnJti() (Design Decision 3).
+    return { ok: false, eventType: classifyClaimExchangeError(error) }
   }
 
   return { ok: true, rawCookieValue, expiresAt: pending.expiresAt }

@@ -1477,7 +1477,7 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'POST /api/v1/auth/handoff/exchange-claim': {
     action: 'mutation',
     auditOmissionReason:
-      "Story 60.3 AC3 — pre-auth claim-exchange route completing the cross-site handoff fix (F2); no org/user context is resolvable yet (org resolution still happens at /confirm). The claim is consumed via an insert-first burn identical in shape to /confirm's own JTI burn, but this route only re-keys the pending state's cookieHash and sets the handoff-confirm cookie — it does not itself decide login success/failure, so it does not use SecureRoute's declarative writeAuditEvent path. Any consumption failure (replay, expired, malformed, mismatched pendingId/claim pair) is still redacted of the raw claim value per this story's own hardening requirement.",
+      "Story 60.3 AC3 — pre-auth claim-exchange route completing the cross-site handoff fix (F2); no org/user context is resolvable yet (org resolution still happens at /confirm). The claim is consumed via an insert-first burn identical in shape to /confirm's own JTI burn; since Story 60.5 the burn and the cookieHash re-key commit in a single database transaction, so a failed exchange never consumes the claim. This route only re-keys the pending state's cookieHash and sets the handoff-confirm cookie — it does not itself decide login success/failure, so it does not use SecureRoute's declarative writeAuditEvent path. Any consumption failure (replay, expired, malformed, mismatched pendingId/claim pair) is still redacted of the raw claim value per this story's own hardening requirement.",
     reviewer: SECURITY_OWNER,
   },
   'POST /api/v1/auth/sso/domain-lookup': {
