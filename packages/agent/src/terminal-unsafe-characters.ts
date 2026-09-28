@@ -18,7 +18,10 @@
  *
  * The tag block is checked by code point rather than inside the regex: an astral range such as
  * `\u{E0000}-\u{E007F}` is only valid with the `u` flag, and static ReDoS analysers that re-parse
- * the literal without its flags reject it as unparseable.
+ * the literal without its flags reject it as unparseable. Consequently `TERMINAL_UNSAFE_CHARACTERS`
+ * on its own is NOT the whole of U (it misses the unassigned tag-block code points, e.g. U+E0000,
+ * U+E0002-U+E001F) and has no `g` flag (so `.test()` stays stateless): consumers must call
+ * `isTerminalUnsafeCharacter` / `stripTerminalUnsafeCharacters`, never the regex directly.
  */
 export const TERMINAL_UNSAFE_CHARACTERS =
   /[\u0000-\u001f\u007f-\u009f\u200B-\u200F\u202A-\u202E\u2028\u2029\u2060\u2066-\u2069\uFEFF\p{Cf}]/u

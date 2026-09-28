@@ -1,4 +1,5 @@
 import { CliUsageError } from './exit-codes.js'
+import { sanitizeForTerminal } from './sanitize.js'
 
 export type CliFlags = {
   apiKey?: string
@@ -111,6 +112,6 @@ export function warnIfInsecureBaseUrl(baseUrl: string, writeStderr: (chunk: stri
   if (parsed.protocol === 'http:' && LOOPBACK_HOSTS.has(parsed.hostname)) return
 
   writeStderr(
-    `warning: VAULT_URL (${baseUrl}) is not https:// and is not a loopback address — the API key and secret value will be sent in plaintext.\n`
+    `warning: VAULT_URL (${sanitizeForTerminal(baseUrl)}) is not https:// and is not a loopback address — the API key and secret value will be sent in plaintext.\n`
   )
 }

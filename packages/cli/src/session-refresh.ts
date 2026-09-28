@@ -1,6 +1,7 @@
 import { EXIT_CODES } from './exit-codes.js'
 import { readSession, writeSession, type EnvLike, type SessionData } from './session-store.js'
 import { retryAfterFromResponse, retryDelayPhrase } from './retry-after.js'
+import { sanitizeForTerminal } from './sanitize.js'
 
 /**
  * AC-4/Dev Notes decision #2 — reusable by any future session-consuming command (none exists yet
@@ -138,10 +139,12 @@ export function messageForSessionFailure(result: Exclude<EnsureSessionResult, { 
     }
   }
   if (result.status === 'insecure_permissions') {
+    // Story 43.13 review — the path comes from XDG_CONFIG_HOME / HOME, so it is identifier text.
+    const safePath = sanitizeForTerminal(result.path)
     return {
       message:
-        `Refusing to use the session file at ${result.path} — its permissions are too open. ` +
-        `Fix with \`chmod 600 ${result.path}\`, or run \`pvault login\` to regenerate it.\n`,
+        `Refusing to use the session file at ${safePath} — its permissions are too open. ` +
+        `Fix with \`chmod 600 ${safePath}\`, or run \`pvault login\` to regenerate it.\n`,
       exitCode: EXIT_CODES.insecureSessionFilePermissions,
     }
   }
