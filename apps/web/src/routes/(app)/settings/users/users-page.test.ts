@@ -602,7 +602,7 @@ describe('/settings/users +page.svelte (Story 8.7 AC groups A4/I/J/K)', () => {
       await fireEvent.click(screen.getByRole('button', { name: /deactivate account/i }))
 
       expect((await screen.findByRole('alert')).textContent).toContain(
-        'jsmith@example.com still owns 1 unfinished rotation(s). Complete, retire, or abandon them before deactivating this account.'
+        `${memberUser.email} still owns 1 unfinished rotation(s). Complete, retire, or abandon them before deactivating this account.`
       )
       expect(invalidateAllMock).not.toHaveBeenCalled()
       const button = screen.getByRole('button', {
@@ -733,7 +733,7 @@ describe('/settings/users +page.svelte (Story 8.7 AC groups A4/I/J/K)', () => {
 
       const alert = await screen.findByRole('alert')
       expect(alert.textContent).toContain(
-        'jsmith@example.com still owns 2 unfinished rotation(s). Complete, retire, or abandon them before removing this account.'
+        `${memberUser.email} still owns 2 unfinished rotation(s). Complete, retire, or abandon them before removing this account.`
       )
       expect(alert.textContent).not.toMatch(/request failed/i)
       expect(invalidateAllMock).not.toHaveBeenCalled()
