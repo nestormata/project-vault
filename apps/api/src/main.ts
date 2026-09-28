@@ -29,6 +29,10 @@ import {
   JOB_NAME as SCHEDULED_TASK_JOB_NAME,
   scheduledTasksTickHandler,
 } from './workers/extension-scheduled-tasks.js'
+import {
+  SCHEDULED_TASK_WATCHDOG_JOB_NAME,
+  scheduledTaskWatchdogTickHandler,
+} from './workers/extension-scheduled-tasks-watchdog.js'
 import { pruneFailedAuthAttempts } from './workers/prune-failed-auth-attempts.js'
 import { pruneCredentialVersions } from './workers/prune-credential-versions.js'
 import { runBreakGlassOverlapExpiryJob } from './workers/rotation-break-glass-expire.js'
@@ -205,6 +209,9 @@ async function main(): Promise<void> {
       // Story 56.1 Task 4 — same 1-minute cadence as the sibling monitoring/health-check job
       // above, mirroring its exact advisory-lock/bounded-concurrency worker shape.
       [SCHEDULED_TASK_JOB_NAME]: { cron: '* * * * *' },
+      // Story 56.2 — separate missed-tick watchdog for the job above (its own queue + advisory
+      // lock, so a dropped/hung tick job cannot take its own detection down with it).
+      [SCHEDULED_TASK_WATCHDOG_JOB_NAME]: { cron: EVERY_FIVE_MINUTES_CRON },
       // Story 35.1 Task 4 — same 1-minute cadence as the sibling security/monitoring poll jobs
       // above; a pending row's own bounded attempt cap + exponential nothing (fixed cadence,
       // mirrors notification-deliver-catchup's own simple periodic re-check) bounds retry load.
@@ -285,6 +292,7 @@ async function main(): Promise<void> {
       'security/check-anomalous-access': () => checkAnomalousAccessHandler(boss),
       'monitoring/health-check': () => healthCheckTickHandler(boss, fastify.log),
       [SCHEDULED_TASK_JOB_NAME]: () => scheduledTasksTickHandler(fastify.log),
+      [SCHEDULED_TASK_WATCHDOG_JOB_NAME]: () => scheduledTaskWatchdogTickHandler(boss, fastify.log),
       [EXTENSION_LIFECYCLE_NOTIFY_JOB_NAME]: () => extensionLifecycleNotifyJobHandler(fastify.log),
       [EXTENSION_LIFECYCLE_PURGE_JOB_NAME]: () => extensionLifecyclePurgeJobHandler(fastify.log),
       'security/prune-failed-auth-attempts': (job) =>

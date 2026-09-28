@@ -86,3 +86,19 @@ export async function clearThresholdAlertEpisode(
     WHERE alert_type = ${alertType} AND status = 'active' AND ${scopeFilter}
   `)
 }
+
+/**
+ * Story 56.2 AC4c — the `scopeKey`s of every currently-active episode of `alertType`. Lets a
+ * caller read the whole active set once per check tick (instead of a per-scope "is it active?"
+ * query) to decide which episodes a resolve genuinely transitions, and which active episodes no
+ * longer correspond to anything it is still evaluating. Instance-wide episodes (`scopeKey` null)
+ * are not listed.
+ */
+export async function listActiveThresholdAlertScopeKeys(alertType: string): Promise<string[]> {
+  const rows = await getDb().execute<{ scope_key: string }>(sql`
+    SELECT payload->>'scopeKey' AS scope_key
+    FROM admin_alerts
+    WHERE alert_type = ${alertType} AND status = 'active' AND payload->>'scopeKey' IS NOT NULL
+  `)
+  return rows.map((row) => row.scope_key)
+}

@@ -63,11 +63,22 @@ function isKnownDevSecretValue(value: string | undefined): boolean {
 // no analogous "too frequent" concern, just "is this parseable at all").
 // A single comma-separated term (no repeating group — comma-splitting happens in JS below,
 // avoiding a nested-quantifier regex that static analysis flags as a potential ReDoS risk).
-const CRON_TERM_PATTERN = /^(\*|\d{1,2})(-\d{1,2})?(\/\d{1,2})?$/
+const CRON_NUMBER_PATTERN = /^\d{1,2}$/
+// Same grammar as the former `^(\*|\d{1,2})(-\d{1,2})?(\/\d{1,2})?$` term regex, parsed by splitting
+// on '/' and '-' so no regex nests a quantifier inside an optional group.
+function isValidCronTerm(term: string): boolean {
+  const [range = '', step, ...extraSteps] = term.split('/')
+  if (extraSteps.length > 0) return false
+  if (step !== undefined && !CRON_NUMBER_PATTERN.test(step)) return false
+  const [start = '', end, ...extraEnds] = range.split('-')
+  if (extraEnds.length > 0) return false
+  if (end !== undefined && !CRON_NUMBER_PATTERN.test(end)) return false
+  return start === '*' || CRON_NUMBER_PATTERN.test(start)
+}
 function isValidCronExpression(expr: string): boolean {
   const fields = expr.trim().split(/\s+/)
   if (fields.length !== 5) return false
-  return fields.every((field) => field.split(',').every((term) => CRON_TERM_PATTERN.test(term)))
+  return fields.every((field) => field.split(',').every(isValidCronTerm))
 }
 const isProduction = process.env.NODE_ENV === 'production'
 const ARGON2_PHC_REGEX =
@@ -1300,6 +1311,10 @@ const envSchema = z
     // large due-batch — or a handful of perpetually-failing tuples occupying a slot every tick
     // (AC2's no-backoff edge case) — can consume.
     SCHEDULED_TASK_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(20),
+    // Story 56.2 AC8 — N for the missed-tick watchdog: a declared (extensionId, taskName) pair with
+    // zero invocation attempts for max(N × intervalMinutes, 10) minutes raises an operator alert.
+    // Min 2 so a single late tick can never page the operator.
+    SCHEDULED_TASK_MISSED_TICK_THRESHOLD: z.coerce.number().int().min(2).max(100).default(3),
     // Story 6.2 ADR-6.2-06 (FR31): raw volume threshold for the anomalous-access detection job —
     // mirrors FAILED_AUTH_THRESHOLD_COUNT/_WINDOW_SECONDS. Max corrected to 86400 (24h) per
     // adversarial-review finding 17 so the window is genuinely widenable, not just narrowable.
@@ -1572,16 +1587,18 @@ export type Env = Omit<
 // Story 14.3: extracted so adding SSO_STATE_HMAC_SECRET's fallback didn't push loadEnv() past
 // the repo's eslint cyclomatic-complexity threshold — every dev-only-secret-fallback branch
 // above this function's introduction shared this exact "warn + assign default" shape.
-function applyDevSecretFallback<K extends AuthEnvKey>(
-  data: Partial<Record<AuthEnvKey, string | undefined>>,
-  key: K,
+// Returns the value itself (rather than writing `data[key]`) so each call site assigns a named
+// property — no computed-key writes into the parsed env object.
+function withDevSecretFallback(
+  value: string | undefined,
+  key: AuthEnvKey,
   fallback: string
-): void {
-  if (data[key]) return
+): string {
+  if (value) return value
   process.stderr.write(
     `[env] ${key} unset outside production; falling back to a dedicated dev-only secret. Do not use this fallback in production.\n`
   )
-  data[key] = fallback
+  return fallback
 }
 
 function loadEnv(): Env {
@@ -1599,20 +1616,48 @@ function loadEnv(): Env {
     )
     data.TOTP_REPLAY_HMAC_SECRET = data.REFRESH_TOKEN_HMAC_SECRET
   }
-  applyDevSecretFallback(
-    data,
+  data.MFA_PENDING_SESSION_HMAC_SECRET = withDevSecretFallback(
+    data.MFA_PENDING_SESSION_HMAC_SECRET,
     'MFA_PENDING_SESSION_HMAC_SECRET',
     DEV_MFA_PENDING_SESSION_HMAC_SECRET
   )
-  applyDevSecretFallback(data, 'INVITATION_TOKEN_HMAC_SECRET', DEV_INVITATION_TOKEN_HMAC_SECRET)
-  applyDevSecretFallback(data, 'RECOVERY_TOKEN_HMAC_SECRET', DEV_RECOVERY_TOKEN_HMAC_SECRET)
-  applyDevSecretFallback(data, 'API_KEY_HMAC_SECRET', DEV_API_KEY_HMAC_SECRET)
-  applyDevSecretFallback(data, 'MACHINE_JWT_SECRET', DEV_MACHINE_JWT_SECRET)
-  applyDevSecretFallback(data, 'STATUS_PAGE_TOKEN_HMAC_SECRET', DEV_STATUS_PAGE_TOKEN_HMAC_SECRET)
-  applyDevSecretFallback(data, 'ERASURE_EMAIL_HASH_SECRET', DEV_ERASURE_EMAIL_HASH_SECRET)
-  applyDevSecretFallback(data, 'SSO_STATE_HMAC_SECRET', DEV_SSO_STATE_HMAC_SECRET)
-  applyDevSecretFallback(
-    data,
+  data.INVITATION_TOKEN_HMAC_SECRET = withDevSecretFallback(
+    data.INVITATION_TOKEN_HMAC_SECRET,
+    'INVITATION_TOKEN_HMAC_SECRET',
+    DEV_INVITATION_TOKEN_HMAC_SECRET
+  )
+  data.RECOVERY_TOKEN_HMAC_SECRET = withDevSecretFallback(
+    data.RECOVERY_TOKEN_HMAC_SECRET,
+    'RECOVERY_TOKEN_HMAC_SECRET',
+    DEV_RECOVERY_TOKEN_HMAC_SECRET
+  )
+  data.API_KEY_HMAC_SECRET = withDevSecretFallback(
+    data.API_KEY_HMAC_SECRET,
+    'API_KEY_HMAC_SECRET',
+    DEV_API_KEY_HMAC_SECRET
+  )
+  data.MACHINE_JWT_SECRET = withDevSecretFallback(
+    data.MACHINE_JWT_SECRET,
+    'MACHINE_JWT_SECRET',
+    DEV_MACHINE_JWT_SECRET
+  )
+  data.STATUS_PAGE_TOKEN_HMAC_SECRET = withDevSecretFallback(
+    data.STATUS_PAGE_TOKEN_HMAC_SECRET,
+    'STATUS_PAGE_TOKEN_HMAC_SECRET',
+    DEV_STATUS_PAGE_TOKEN_HMAC_SECRET
+  )
+  data.ERASURE_EMAIL_HASH_SECRET = withDevSecretFallback(
+    data.ERASURE_EMAIL_HASH_SECRET,
+    'ERASURE_EMAIL_HASH_SECRET',
+    DEV_ERASURE_EMAIL_HASH_SECRET
+  )
+  data.SSO_STATE_HMAC_SECRET = withDevSecretFallback(
+    data.SSO_STATE_HMAC_SECRET,
+    'SSO_STATE_HMAC_SECRET',
+    DEV_SSO_STATE_HMAC_SECRET
+  )
+  data.OPERATIONAL_STATUS_TOKEN_HMAC_SECRET = withDevSecretFallback(
+    data.OPERATIONAL_STATUS_TOKEN_HMAC_SECRET,
     'OPERATIONAL_STATUS_TOKEN_HMAC_SECRET',
     DEV_OPERATIONAL_STATUS_TOKEN_HMAC_SECRET
   )

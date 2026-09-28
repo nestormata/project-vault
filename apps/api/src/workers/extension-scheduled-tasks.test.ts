@@ -1,18 +1,15 @@
+import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { eq, and } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { extensionScheduledTaskRuns, serviceEndpoints } from '@project-vault/db/schema'
 import { insertTestProject, withTestOrg } from '@project-vault/db/test-helpers'
-import type {
-  ExtensionHooks,
-  ExtensionManifest,
-  HostServices,
-  ScheduledTaskContext,
-} from '@project-vault/extension-api'
-import { __resetExtensionStateForTests, __setExtensionStateForTests } from '../extensions/loader.js'
+import type { ExtensionManifest, ScheduledTaskContext } from '@project-vault/extension-api'
+import { __resetExtensionStateForTests } from '../extensions/loader.js'
 import { buildMonitoringHost } from '../lib/monitoring-host.js'
 import { withTwoTestOrgs } from './worker-test-helpers.js'
 import { withExpiryAlertTestOrg } from './expiry-alert-test-helpers.js'
+import { fakeHostServices, setExtension } from './extension-scheduled-tasks-test-helpers.js'
 import {
   fetchDueTaskNames,
   invokeOneTask,
@@ -29,73 +26,6 @@ function singleTaskManifest(name: string, intervalMinutes = 5): ExtensionManifes
     capabilities: ['scheduled-task'],
     scheduledTasks: [{ name: PROBE_SWEEP, intervalMinutes, handler: 'onScheduledTask' }],
   }
-}
-
-/** Minimal, rejecting-by-default HostServices — mirrors register-extension.ts's own
- * DEFAULT_HOST_SERVICES fallback shape. Only `monitoring` is ever overridden for the regression
- * guard test; every other field must never be reachable from this suite's own test handlers. */
-function fakeHostServices(overrides: Partial<HostServices> = {}): HostServices {
-  const unavailable = (name: string) => () =>
-    Promise.reject(new Error(`${name} is unavailable in this test`))
-  return {
-    auditEventSource: { writeAuditEvent: unavailable('auditEventSource.writeAuditEvent') },
-    orgAuthorization: { checkMembership: unavailable('orgAuthorization.checkMembership') },
-    projectAuthorization: {
-      checkProjectMembership: unavailable('projectAuthorization.checkProjectMembership'),
-    },
-    ephemeralState: {
-      set: unavailable('ephemeralState.set'),
-      get: unavailable('ephemeralState.get'),
-      delete: unavailable('ephemeralState.delete'),
-      compareAndSwap: unavailable('ephemeralState.compareAndSwap'),
-      compareAndDelete: unavailable('ephemeralState.compareAndDelete'),
-    },
-    monitoring: {
-      createServiceEndpoint: unavailable('monitoring.createServiceEndpoint'),
-      deleteServiceEndpoint: unavailable('monitoring.deleteServiceEndpoint'),
-      updateServiceEndpointPauseState: unavailable('monitoring.updateServiceEndpointPauseState'),
-      getHealthDashboardData: unavailable('monitoring.getHealthDashboardData'),
-      enableStatusPage: unavailable('monitoring.enableStatusPage'),
-      regenerateStatusPageToken: unavailable('monitoring.regenerateStatusPageToken'),
-      disableStatusPage: unavailable('monitoring.disableStatusPage'),
-      applyHealthCheckResult: unavailable('monitoring.applyHealthCheckResult'),
-      cleanupProjectMonitoring: unavailable('monitoring.cleanupProjectMonitoring'),
-      listServiceEndpointsForScheduling: unavailable(
-        'monitoring.listServiceEndpointsForScheduling'
-      ),
-    },
-    notificationOriginator: {
-      enqueueNotification: unavailable('notificationOriginator.enqueueNotification'),
-      enqueueNotificationForOrg: unavailable('notificationOriginator.enqueueNotificationForOrg'),
-    },
-    extensionRequestState: {
-      consume: unavailable('extensionRequestState.consume'),
-    },
-    credentialSharing: {
-      createExternalShare: unavailable('credentialSharing.createExternalShare'),
-      findShareByToken: unavailable('credentialSharing.findShareByToken'),
-      revealShare: unavailable('credentialSharing.revealShare'),
-      revokeShare: unavailable('credentialSharing.revokeShare'),
-      supersedeSharesForRotation: unavailable('credentialSharing.supersedeSharesForRotation'),
-      listSharesForCredential: unavailable('credentialSharing.listSharesForCredential'),
-      listSharesForOrganization: unavailable('credentialSharing.listSharesForOrganization'),
-    },
-    ...overrides,
-  }
-}
-
-function setExtension(
-  manifest: ExtensionManifest,
-  hooks: ExtensionHooks,
-  hostServices: HostServices = fakeHostServices()
-): void {
-  __setExtensionStateForTests({
-    status: 'loaded',
-    manifest,
-    loadedAt: new Date().toISOString(),
-    hooks,
-    hostServices,
-  })
 }
 
 async function readRun(orgId: string, extensionId: string, taskName: string) {
@@ -245,8 +175,15 @@ describe('runScheduledTasksTick — AC1/AC2 invocation + isolation (DB integrati
 
       const runA = await readRun(orgAId, manifest.name, PROBE_SWEEP)
       const runB = await readRun(orgBId, manifest.name, PROBE_SWEEP)
-      // Org A's failing invocation must NOT record a success row (stays due for retry).
-      expect(runA).toBeUndefined()
+      // Org A's failing invocation must NOT record a success (stays due for retry). Story 56.2
+      // AC1: it now records a failure attempt row instead — lastRunAt stays null.
+      expect(runA?.lastRunAt).toBeNull()
+      expect(runA?.lastOutcome).toBe('failure')
+      expect(runA?.lastAttemptAt).toBeInstanceOf(Date)
+      // The property the old `toBeUndefined()` assertion was really protecting: still due.
+      expect(await fetchDueTaskNames(orgAId, manifest.name, new Map([[PROBE_SWEEP, 5]]))).toEqual([
+        PROBE_SWEEP,
+      ])
       // Org B's succeeding invocation must record success.
       expect(runB?.lastOutcome).toBe('success')
     })
@@ -397,5 +334,112 @@ describe('runScheduledTasksTick — regression guard: monitoring.applyHealthChec
       const run = await readRun(orgId, regressionManifest.name, PROBE_SWEEP)
       expect(run?.lastOutcome).toBe('success')
     })
+  })
+})
+
+describe('invokeOneTask — Story 56.2 AC1 attempt bookkeeping (DB integration)', () => {
+  afterEach(() => {
+    __resetExtensionStateForTests()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  function fakeLogger() {
+    return { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+  }
+
+  it('records lastAttemptAt alongside lastRunAt on success (happy path)', async () => {
+    const manifest = singleTaskManifest('com.acme.attempt-success')
+    setExtension(manifest, { scheduledTask: { onScheduledTask: vi.fn(async () => undefined) } })
+
+    await withTestOrg(async ({ orgId }) => {
+      await invokeOneTask({ orgId, taskName: PROBE_SWEEP }, manifest.name, undefined)
+      const run = await readRun(orgId, manifest.name, PROBE_SWEEP)
+      expect(run?.lastOutcome).toBe('success')
+      expect(run?.lastRunAt).not.toBeNull()
+      expect(run?.lastAttemptAt).toBeInstanceOf(Date)
+      expect(run?.lastAttemptAt?.getTime()).toBe(run?.lastRunAt?.getTime())
+    })
+  })
+
+  it('inserts a failure row (lastRunAt NULL) when a first-ever attempt rejects, and the tuple stays due', async () => {
+    const manifest = singleTaskManifest('com.acme.attempt-first-failure')
+    setExtension(manifest, {
+      scheduledTask: {
+        onScheduledTask: vi.fn(async () => {
+          throw new Error('upstream 502')
+        }),
+      },
+    })
+
+    await withTestOrg(async ({ orgId }) => {
+      await invokeOneTask({ orgId, taskName: PROBE_SWEEP }, manifest.name, undefined)
+      const run = await readRun(orgId, manifest.name, PROBE_SWEEP)
+      expect(run).toBeDefined()
+      expect(run?.lastRunAt).toBeNull()
+      expect(run?.lastAttemptAt).toBeInstanceOf(Date)
+      expect(run?.lastOutcome).toBe('failure')
+      expect(await fetchDueTaskNames(orgId, manifest.name, new Map([[PROBE_SWEEP, 5]]))).toEqual([
+        PROBE_SWEEP,
+      ])
+    })
+  })
+
+  it('keeps a previous lastRunAt unchanged when a later attempt times out (retry semantics preserved)', async () => {
+    const manifest = singleTaskManifest('com.acme.attempt-timeout')
+    setExtension(manifest, {
+      scheduledTask: { onScheduledTask: () => new Promise<void>(() => undefined) },
+    })
+
+    await withTestOrg(async ({ orgId }) => {
+      const previousRunAt = new Date(Date.now() - 10 * 60_000)
+      await insertRun(orgId, manifest.name, PROBE_SWEEP, previousRunAt)
+
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      const pending = invokeOneTask({ orgId, taskName: PROBE_SWEEP }, manifest.name, undefined)
+      await vi.advanceTimersByTimeAsync(10_000)
+      vi.useRealTimers()
+      await pending
+
+      const run = await readRun(orgId, manifest.name, PROBE_SWEEP)
+      expect(run?.lastRunAt?.getTime()).toBe(previousRunAt.getTime())
+      expect(run?.lastOutcome).toBe('failure')
+      expect(run?.lastAttemptAt).toBeInstanceOf(Date)
+      expect(run?.lastAttemptAt?.getTime()).toBeGreaterThan(previousRunAt.getTime())
+      expect(await fetchDueTaskNames(orgId, manifest.name, new Map([[PROBE_SWEEP, 5]]))).toEqual([
+        PROBE_SWEEP,
+      ])
+    })
+  })
+
+  it('logs and swallows a failure-bookkeeping write error (never escapes invokeOneTask)', async () => {
+    const manifest = singleTaskManifest('com.acme.attempt-write-fails')
+    setExtension(manifest, {
+      scheduledTask: {
+        onScheduledTask: vi.fn(async () => {
+          throw new Error('upstream 502')
+        }),
+      },
+    })
+    const logger = fakeLogger()
+    // A non-existent org id makes the attempt-row upsert fail (org FK / RLS) — a real DB error.
+    const missingOrgId = randomUUID()
+
+    await expect(
+      invokeOneTask({ orgId: missingOrgId, taskName: PROBE_SWEEP }, manifest.name, logger)
+    ).resolves.toBeUndefined()
+
+    const messages = logger.error.mock.calls.map((call) => call[1])
+    expect(messages).toContain('failed to persist scheduled-task attempt due-state')
+    const persistCall = logger.error.mock.calls.find(
+      (call) => call[1] === 'failed to persist scheduled-task attempt due-state'
+    )
+    expect(persistCall?.[0]).toMatchObject({
+      eventType: 'extension_scheduled_task.invoked',
+      extensionId: manifest.name,
+      taskName: PROBE_SWEEP,
+    })
+    // The invocation-failure log line itself still happens after the swallowed write error.
+    expect(messages).toContain('extension scheduled-task invocation recorded')
   })
 })

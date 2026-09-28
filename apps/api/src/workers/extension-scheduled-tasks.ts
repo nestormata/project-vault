@@ -31,7 +31,7 @@ const ADVISORY_LOCK_NAME = 'extension/scheduled-tasks'
 
 type DueTuple = { orgId: string; taskName: string }
 
-type LoadedScheduledTaskExtension = {
+export type LoadedScheduledTaskExtension = {
   extensionId: string
   taskIntervalMinutes: Map<string, number>
   hostServices: HostServices
@@ -46,8 +46,11 @@ type LoadedScheduledTaskExtension = {
  * case: no extension loaded, capability not declared, zero declared tasks (pre-existing extension
  * migration-compatibility case), or hooksFactory() returned no callable handler (should never
  * happen — `registerExtension()` already rejects this shape — but never assumed).
+ *
+ * Exported for Story 56.2's missed-tick watchdog, which must apply exactly the same eligibility
+ * rules to decide which `(extensionId, taskName)` pairs are expected to fire.
  */
-function getLoadedScheduledTaskExtension(): LoadedScheduledTaskExtension | undefined {
+export function getLoadedScheduledTaskExtension(): LoadedScheduledTaskExtension | undefined {
   const state = getExtensionStatus()
   if (state.status !== 'loaded') return undefined
   if (!state.manifest.capabilities.includes('scheduled-task')) return undefined
@@ -161,16 +164,25 @@ function logInvocation(
   )
 }
 
-/** AC2 — updates `lastRunAt`/`lastOutcome` ONLY on a successful invocation (the tuple's row is
- * otherwise left stale, so it stays "due" and is retried on the next qualifying tick). A failure
- * to persist this success is logged but never rethrown — the extension's own work already
- * completed; losing the due-state bookkeeping just means one extra (harmless) re-invocation next
- * tick, not a correctness issue for the extension's own side effects. */
-async function recordSuccess(
+/**
+ * Records one completed invocation ATTEMPT for `tuple` (Story 56.2 AC1), sharing a single upsert
+ * between both outcomes:
+ * - `'success'` (56.1 AC2, unchanged): sets `lastRunAt`, `lastAttemptAt` and `lastOutcome`.
+ * - `'failure'` (rejected or timed out): sets ONLY `lastAttemptAt` and `lastOutcome` — `lastRunAt`
+ *   is never touched (a first-ever failure inserts it as NULL), so the tuple stays due and is
+ *   retried next tick exactly as before. `lastAttemptAt` is what the missed-tick watchdog reads.
+ *
+ * A failure to persist this bookkeeping is logged but never rethrown — the extension's own work
+ * already happened (or failed on its own); losing the due-state write just means one extra
+ * (harmless) re-invocation next tick, and the watchdog's window tolerates a single missed write.
+ */
+async function recordAttempt(
   tuple: DueTuple,
   extensionId: string,
+  outcome: 'success' | 'failure',
   logger: WorkerLogger | undefined
 ): Promise<void> {
+  const lastRunAt = outcome === 'success' ? { lastRunAt: sql`now()` } : {}
   try {
     await runOrgScopedJob(tuple.orgId, JOB_NAME, async ({ tx }) => {
       await tx
@@ -179,8 +191,9 @@ async function recordSuccess(
           orgId: tuple.orgId,
           extensionId,
           taskName: tuple.taskName,
-          lastRunAt: sql`now()`,
-          lastOutcome: 'success',
+          ...lastRunAt,
+          lastAttemptAt: sql`now()`,
+          lastOutcome: outcome,
         })
         .onConflictDoUpdate({
           target: [
@@ -188,7 +201,12 @@ async function recordSuccess(
             extensionScheduledTaskRuns.taskName,
             extensionScheduledTaskRuns.orgId,
           ],
-          set: { lastRunAt: sql`now()`, lastOutcome: 'success', updatedAt: sql`now()` },
+          set: {
+            ...lastRunAt,
+            lastAttemptAt: sql`now()`,
+            lastOutcome: outcome,
+            updatedAt: sql`now()`,
+          },
         })
     })
   } catch (error) {
@@ -197,7 +215,9 @@ async function recordSuccess(
         logger,
         'error',
         OperationalEvent.EXTENSION_SCHEDULED_TASK_INVOKED,
-        'failed to persist scheduled-task success due-state',
+        outcome === 'success'
+          ? 'failed to persist scheduled-task success due-state'
+          : 'failed to persist scheduled-task attempt due-state',
         {
           extensionId,
           taskName: tuple.taskName,
@@ -246,17 +266,20 @@ export async function invokeOneTask(
     const durationMs = Math.round(performance.now() - start)
 
     if (raced.status === 'resolved') {
-      await recordSuccess(tuple, expectedExtensionId, logger)
+      await recordAttempt(tuple, expectedExtensionId, 'success', logger)
       logInvocation(logger, tuple, expectedExtensionId, 'success', durationMs)
       return
     }
 
     const error =
       raced.status === 'rejected' ? raced.error : new Error('scheduled-task invocation timed out')
+    await recordAttempt(tuple, expectedExtensionId, 'failure', logger)
     logInvocation(logger, tuple, expectedExtensionId, 'failure', durationMs, error)
   } catch (error) {
-    // Defense in depth — invoke()/recordSuccess() already catch their own failure modes, but a
+    // Defense in depth — invoke()/recordAttempt() already catch their own failure modes, but a
     // genuinely unexpected throw here must still never escape to runWithConcurrencyLimit (AC2).
+    // No attempt row is written here (Story 56.2 AC1 edge): the handler itself never reaches this
+    // path, and a pair that only ever lands here correctly trends to Missed in the watchdog.
     logInvocation(
       logger,
       tuple,

@@ -81,7 +81,7 @@ async function expectDedicatedSecretRequired(
   resetEnvImport(exitSpy)
   process.env = productionEnv({ ...overridesWithoutSecret, [secretKey]: secretValue })
   const { env } = await import('./env.js')
-  expect((env as Record<string, unknown>)[secretKey]).toBe(secretValue)
+  expect(env).toHaveProperty(secretKey, secretValue)
   expect(exitSpy).not.toHaveBeenCalled()
 }
 
@@ -1746,6 +1746,35 @@ describe('env', () => {
       const { env } = await import('./env.js')
       expect(env.VAULT_HANDOFF_CLOCK_SKEW_WARN_MS).toBe(5000)
       expect(exitSpy).not.toHaveBeenCalled()
+    })
+  })
+
+  // Story 56.2 AC8: missed-tick watchdog threshold N (window = max(N × interval, 10 min)).
+  describe('Story 56.2: SCHEDULED_TASK_MISSED_TICK_THRESHOLD', () => {
+    it('defaults to 3', async () => {
+      process.env = { ...BASE_ENV, DATABASE_URL: VAULT_APP_DATABASE_URL }
+      const { env } = await import('./env.js')
+      expect(env.SCHEDULED_TASK_MISSED_TICK_THRESHOLD).toBe(3)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it('accepts an explicit override', async () => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SCHEDULED_TASK_MISSED_TICK_THRESHOLD: '5',
+      }
+      const { env } = await import('./env.js')
+      expect(env.SCHEDULED_TASK_MISSED_TICK_THRESHOLD).toBe(5)
+    })
+
+    it.each(['1', 'abc', '101', '2.5'])('rejects %s', async (value) => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        SCHEDULED_TASK_MISSED_TICK_THRESHOLD: value,
+      }
+      await expectInvalidEnv(exitSpy)
     })
   })
 

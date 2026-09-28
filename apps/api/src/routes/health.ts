@@ -63,7 +63,7 @@ function serializeError(err: unknown): { message: string; name?: string; stack?:
 
 /**
  * Story 9.2 AC-18: additive, optional `warnings` array — never changes `status` away from
- * `"ready"` for these two conditions (they are warnings, not outages, contrasting with the
+ * `"ready"` for these conditions (they are warnings, not outages, contrasting with the
  * existing `"sealed"`/`"uninitialized"`/`"db"` reasons above, which already return 503). A
  * best-effort lookup failure here must not fail /ready itself — /ready's core contract (DB
  * reachable, vault unsealed) already succeeded by the time this is called.
@@ -71,12 +71,17 @@ function serializeError(err: unknown): { message: string; name?: string; stack?:
 async function resolveReadyWarnings(dbPool: DbPool): Promise<string[]> {
   try {
     const rows = (await dbPool.query(
-      `SELECT alert_type FROM admin_alerts WHERE status = 'active' AND alert_type IN ('audit_storage.critical', 'key_custody_risk')`
+      `SELECT alert_type FROM admin_alerts WHERE status = 'active' AND alert_type IN ('audit_storage.critical', 'key_custody_risk', 'extension_scheduled_task.missed')`
     )) as { alert_type: string }[]
     const activeTypes = new Set(rows.map((row) => row.alert_type))
     const warnings: string[] = []
     if (activeTypes.has('audit_storage.critical')) warnings.push('audit_storage_critical')
     if (activeTypes.has('key_custody_risk')) warnings.push('key_custody_risk')
+    // Story 56.2 AC3d: generic token only — never the extension/task names (/ready is
+    // unauthenticated).
+    if (activeTypes.has('extension_scheduled_task.missed')) {
+      warnings.push('extension_scheduled_task_missed')
+    }
     return warnings
   } catch {
     return []

@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { getDb } from '@project-vault/db'
 import { adminAlerts } from '@project-vault/db/schema'
-import { clearThresholdAlertEpisode, upsertThresholdAlert } from './threshold-alerts.js'
+import {
+  clearThresholdAlertEpisode,
+  listActiveThresholdAlertScopeKeys,
+  upsertThresholdAlert,
+} from './threshold-alerts.js'
 
 process.env['DATABASE_URL'] ??=
   'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
@@ -89,5 +93,32 @@ describe('Story 9.2 threshold-alert episode idempotency', () => {
       scopeKey: null,
     })
     expect(reCrossed).not.toBeNull()
+  })
+})
+
+describe('Story 56.2 AC4c listActiveThresholdAlertScopeKeys', () => {
+  it('lists only the active, scope-keyed episodes of the given alert type', async () => {
+    const alertType = `test.threshold.list.${randomUUID()}`
+    const otherType = `test.threshold.list.other.${randomUUID()}`
+    const base = { thresholdPct: 80 as const, severity: 'warning' as const, payload: {} }
+
+    await upsertThresholdAlert({ ...base, alertType, scopeKey: 'com.acme.example/probe-sweep' })
+    await upsertThresholdAlert({ ...base, alertType, scopeKey: 'com.acme.example/cert-sweep' })
+    await upsertThresholdAlert({ ...base, alertType, scopeKey: 'com.acme.example/cleared' })
+    await clearThresholdAlertEpisode(alertType, 'com.acme.example/cleared')
+    await upsertThresholdAlert({ ...base, alertType, scopeKey: null })
+    await upsertThresholdAlert({ ...base, alertType: otherType, scopeKey: 'com.acme.other/x' })
+
+    const keys = await listActiveThresholdAlertScopeKeys(alertType)
+    expect([...keys].sort()).toEqual([
+      'com.acme.example/cert-sweep',
+      'com.acme.example/probe-sweep',
+    ])
+  })
+
+  it('returns an empty list when nothing is active for the type', async () => {
+    expect(await listActiveThresholdAlertScopeKeys(`test.threshold.none.${randomUUID()}`)).toEqual(
+      []
+    )
   })
 })

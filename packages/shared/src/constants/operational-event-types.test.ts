@@ -198,6 +198,25 @@ describe('OperationalEvent', () => {
     )
   })
 
+  it('exposes the Story 56.2 missed-tick watchdog event types (AC3/AC4/AC5)', () => {
+    expect(OperationalEvent.EXTENSION_SCHEDULED_TASK_MISSED).toBe('extension_scheduled_task.missed')
+    expect(OperationalEvent.EXTENSION_SCHEDULED_TASK_MISSED_RESOLVED).toBe(
+      'extension_scheduled_task.missed_resolved'
+    )
+    expect(OperationalEvent.EXTENSION_SCHEDULED_TASK_MISSED_ALERT_DISPATCH_FAILED).toBe(
+      'extension_scheduled_task.missed_alert_dispatch_failed'
+    )
+    expect(OperationalEvent.EXTENSION_SCHEDULED_TASK_WATCHDOG_INCONCLUSIVE).toBe(
+      'extension_scheduled_task.watchdog_inconclusive'
+    )
+    expect(OperationalEvent.EXTENSION_SCHEDULED_TASK_WATCHDOG_EVALUATION_FAILED).toBe(
+      'extension_scheduled_task.watchdog_evaluation_failed'
+    )
+    expect(OperationalEvent.EXTENSION_SCHEDULED_TASK_WATCHDOG_TICK_SKIPPED_OVERLAP).toBe(
+      'extension_scheduled_task.watchdog_tick_skipped_overlap'
+    )
+  })
+
   it('exposes the Story 16.1 theme-reload event types (AC-2, AC-7 fanout)', () => {
     expect(OperationalEvent.THEME_DIRECTORY_UNREADABLE).toBe('theme.directory_unreadable')
     expect(OperationalEvent.THEME_RELOAD_SUMMARY).toBe('theme.reload_summary')

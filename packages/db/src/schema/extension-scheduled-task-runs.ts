@@ -3,11 +3,14 @@ import { orgScoped } from './helpers.js'
 
 /**
  * Story 56.1 Task 3 (ODQ2) — PV-tracked due-state for the `scheduled-task` extension hook. Each
- * row is the per-`(extensionId, taskName, organizationId)` tuple's last SUCCESSFUL invocation
- * (`lastRunAt`/`lastOutcome` are only ever written by `extension-scheduled-tasks.ts`'s worker on
- * success — a failed invocation leaves its row's `lastRunAt` stale so the tuple stays "due" and is
- * retried on the next qualifying tick, per AC2's accepted no-backoff-in-this-story's-scope
- * behavior).
+ * row is the per-`(extensionId, taskName, organizationId)` tuple's invocation bookkeeping:
+ * - `lastRunAt` is the last SUCCESSFUL invocation, written only on success — a failed invocation
+ *   leaves it stale so the tuple stays "due" and is retried on the next qualifying tick (56.1 AC2's
+ *   accepted no-backoff behavior).
+ * - `lastAttemptAt` (Story 56.2 AC1) is the completion time of the last invocation ATTEMPT,
+ *   success or failure/timeout; `lastOutcome` is `'success'` or `'failure'` for that attempt. The
+ *   missed-tick watchdog (`extension-scheduled-tasks-watchdog.ts`) reads
+ *   `COALESCE(lastAttemptAt, lastRunAt)` so rows written before this column existed still count.
  *
  * **Why `extensionId` is a plain `text` column, not an FK** — confirmed directly against this
  * repo's real source during this story's implementation (mirroring `extension-lifecycle-notify.ts`
@@ -36,6 +39,7 @@ export const extensionScheduledTaskRuns = pgTable(
     taskName: text('task_name').notNull(),
     lastRunAt: timestamp('last_run_at', { withTimezone: true }),
     lastOutcome: text('last_outcome'),
+    lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

@@ -287,6 +287,42 @@ describe('GET /ready', () => {
     await app.close()
   })
 
+  it('Story 56.2 AC3d: warns extension_scheduled_task_missed while a missed-tick episode is active, status stays "ready"', async () => {
+    // The mock only returns the row when the query actually asks for this alert type AND for
+    // active rows — so a missing IN-list entry or a dropped status filter fails this test.
+    const mockDbPool = {
+      query: vi.fn().mockImplementation(async (statement: string) => {
+        if (
+          statement.includes("'extension_scheduled_task.missed'") &&
+          statement.includes("status = 'active'")
+        ) {
+          return [{ alert_type: 'extension_scheduled_task.missed' }]
+        }
+        return []
+      }),
+    }
+    const app = await createApp({ logger: false, dbPool: mockDbPool })
+    const response = await app.inject({ method: 'GET', url: '/ready' })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      status: 'ready',
+      warnings: ['extension_scheduled_task_missed'],
+    })
+    await app.close()
+  })
+
+  it('Story 56.2 AC3d: no extension_scheduled_task_missed warning once the episode is acknowledged', async () => {
+    // Acknowledged rows are excluded by the status filter, so the pool returns nothing.
+    const mockDbPool = { query: vi.fn().mockResolvedValue([]) }
+    const app = await createApp({ logger: false, dbPool: mockDbPool })
+    const response = await app.inject({ method: 'GET', url: '/ready' })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ status: 'ready' })
+    await app.close()
+  })
+
   it('returns 200 when DB pool resolves', async () => {
     const mockDbPool = {
       query: vi.fn().mockResolvedValue([]),
