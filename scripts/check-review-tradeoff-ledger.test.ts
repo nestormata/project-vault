@@ -136,6 +136,25 @@ describe('findTradeoffHits: count phrase (AC-3)', () => {
       'left as documented tradeoffs',
     ])
   })
+
+  it('matches the number and severity only on word boundaries', () => {
+    expect(count('1 2 low left unfixed')).toEqual([['2 low', 2]])
+    expect(count('Seven   Meds left')).toEqual([['Seven   Meds', 7]])
+    expect(count('12 lows accepted')).toEqual([['12 lows', 12]])
+    expect(count('12low left, x1 low left, one lowly note left, ten lowest left')).toEqual([])
+    expect(count('someone low left, often high left')).toEqual([])
+  })
+
+  it('counts consecutive count phrases separately', () => {
+    expect(count('2 low left; 3 high accepted')).toEqual([
+      ['2 low', 2],
+      ['3 high', 3],
+    ])
+    expect(count('2 low 3 high left')).toEqual([
+      ['2 low', 2],
+      ['3 high', 3],
+    ])
+  })
 })
 
 describe('extractReviewSections (AC-1.2 a/a2)', () => {

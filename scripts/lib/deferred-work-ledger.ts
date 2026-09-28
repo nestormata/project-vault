@@ -32,7 +32,7 @@ const DW_HEADING = /^(#{1,6})[ \t]+DW-([0-9A-Za-z][0-9A-Za-z.-]*)/
 const DW_CITATION = /(?<![0-9A-Za-z])DW-([0-9A-Za-z][0-9A-Za-z.-]*)/g
 const ANY_HEADING = /^#{1,6}(?:[ \t]|$)/
 const FLAT_SOURCE_SPEC_BULLET = /^[-*][ \t]+source_spec:/
-const STATUS_LINE = /^status:/
+const STATUS_PREFIX = 'status:'
 const FENCE = /^ {0,3}(`{3,}|~{3,})/
 
 /** `DW-0276` -> `dw-276`, `DW-24-05` -> `dw-24-5`, `DW-12A` -> `dw-12a`. */
@@ -161,7 +161,7 @@ export function parseDwEntries(content: string): DwEntry[] {
         end = next.line - 1
         break
       }
-      sawStatus ||= STATUS_LINE.test(next.text)
+      sawStatus ||= next.text.startsWith(STATUS_PREFIX)
       body.push({ line: next.line, text: next.text })
     }
     entries.push({

@@ -65,6 +65,23 @@ describe('entryState (AC-5.2)', () => {
     expect(stateOf('reason: r')).toMatchObject({ kind: 'missing' })
   })
 
+  it('drops only trailing punctuation and markup from the status word', () => {
+    expect(stateOf('status: open.,:;—- x')).toMatchObject({ kind: 'open', token: 'open.,:;—-' })
+    expect(stateOf('status: `done`.')).toMatchObject({ kind: 'closed' })
+    expect(stateOf('status: **in-progress**—')).toMatchObject({ kind: 'open' })
+    expect(stateOf('status: done--x')).toMatchObject({ kind: 'unknown', word: 'done--x' })
+    expect(stateOf('status: .open')).toMatchObject({ kind: 'unknown', word: '.open' })
+    expect(stateOf('status: ...')).toMatchObject({ kind: 'unknown', word: '' })
+  })
+
+  it('handles long adversarial status tokens in linear time', () => {
+    const started = performance.now()
+    expect(stateOf(`status: open${'.'.repeat(50_000)}x`)).toMatchObject({ kind: 'unknown' })
+    expect(stateOf(`status: open${'-—'.repeat(25_000)}`)).toMatchObject({ kind: 'open' })
+    expect(stateOf(`status:${' '.repeat(50_000)}open`)).toMatchObject({ kind: 'open' })
+    expect(performance.now() - started).toBeLessThan(500)
+  })
+
   it('reports every status line when there is more than one', () => {
     expect(stateOf('status: done\nreason: r\nstatus: open')).toMatchObject({
       kind: 'multiple',

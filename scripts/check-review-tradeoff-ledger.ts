@@ -66,9 +66,10 @@ const NUMBER_WORDS = [
   'eleven',
   'twelve',
 ]
-// `<number> <severity>`, then any `+ / and / , [<number>] <severity>` continuations (AC-3).
-const COUNT_START =
-  /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(?:critical|high|medium|med|low|info|nit)s?\b/gi
+// `<number> <severity>`, then any `+ / and / , [<number>] <severity>` continuations (AC-3). The
+// start is matched in two steps: a word-bounded number (COUNT_NUMBER), then COUNT_JOIN_SEVERITY
+// right after it.
+const COUNT_NUMBER = /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+/gi
 // A continuation, matched in flat steps (no nested quantifiers): separator, optional number,
 // severity.
 const COUNT_JOIN_SEPARATOR = /^\s*(?:\+|and\b|\/|,)\s*/i
@@ -142,10 +143,27 @@ function countContinuation(text: string): { length: number; value: number } | un
   }
 }
 
+type CountStart = { index: number; end: number; value: number }
+
+/** Every `<number> <severity>` in `sentence`, left to right, non-overlapping. */
+function countStarts(sentence: string): CountStart[] {
+  const starts: CountStart[] = []
+  const numbers = new RegExp(COUNT_NUMBER)
+  for (let number = numbers.exec(sentence); number; number = numbers.exec(sentence)) {
+    const afterNumber = number.index + number[0].length
+    const severity = COUNT_JOIN_SEVERITY.exec(sentence.slice(afterNumber))
+    if (!severity) continue
+    const end = afterNumber + severity[0].length
+    starts.push({ index: number.index, end, value: numberValue(number[1] as string) })
+    numbers.lastIndex = end
+  }
+  return starts
+}
+
 /** The count phrase starting at `start` (e.g. `8 low + 1 medium`): its end offset and sum. */
-function extendCount(sentence: string, start: RegExpExecArray): { end: number; sum: number } {
-  let end = start.index + start[0].length
-  let sum = numberValue(start[1] as string)
+function extendCount(sentence: string, start: CountStart): { end: number; sum: number } {
+  let end = start.end
+  let sum = start.value
   for (;;) {
     const next = countContinuation(sentence.slice(end))
     if (!next) return { end, sum }
@@ -156,7 +174,7 @@ function extendCount(sentence: string, start: RegExpExecArray): { end: number; s
 
 function countHits(sentence: string): TradeoffHit[] {
   const hits: TradeoffHit[] = []
-  for (const start of sentence.matchAll(COUNT_START)) {
+  for (const start of countStarts(sentence)) {
     const { end, sum } = extendCount(sentence, start)
     // A zero count ("0 critical/high left") records that nothing was left, like "zero".
     if (sum > 0 && UNFIXED_WORD.test(sentence.slice(end, end + COUNT_WINDOW))) {
@@ -190,7 +208,7 @@ export function findTradeoffHits(line: string): TradeoffHit[] {
 function withoutOverlaps(hits: TradeoffHit[]): TradeoffHit[] {
   const kept: TradeoffHit[] = []
   let end = 0
-  for (const hit of hits.sort((a, b) => a.index - b.index || b.text.length - a.text.length)) {
+  for (const hit of hits.toSorted((a, b) => a.index - b.index || b.text.length - a.text.length)) {
     if (hit.index < end) continue
     kept.push(hit)
     end = hit.index + hit.text.length

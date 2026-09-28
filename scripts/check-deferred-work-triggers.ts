@@ -75,7 +75,7 @@ const VAGUE_PREFIXES = [
   'whenever',
 ]
 /** Vague only when bare: `if it recurs in <named place>` names something and passes. */
-const VAGUE_EXACT = ['if it becomes a problem', 'if it recurs']
+const VAGUE_EXACT = new Set(['if it becomes a problem', 'if it recurs'])
 
 export type EntryState =
   | { kind: 'open'; line: number; token: string }
@@ -95,12 +95,20 @@ export type TriggerFindings = {
   violations: TriggerViolation[]
 }
 
+/** Characters dropped from the end of a status word. */
+const TRAILING_PUNCTUATION = new Set(['.', ',', ':', ';', '—', '-'])
+
+/** `text` without its trailing run of TRAILING_PUNCTUATION: a single backwards scan, where the
+ * equivalent unanchored `/[...]+$/` regex backtracks quadratically on long punctuation runs. */
+function dropTrailingPunctuation(text: string): string {
+  let end = text.length
+  while (end > 0 && TRAILING_PUNCTUATION.has(text.charAt(end - 1))) end -= 1
+  return text.slice(0, end)
+}
+
 /** First word of a status value: markup stripped, trailing `.,:;—-` dropped, lowercased. */
 function statusWord(token: string): string {
-  return token
-    .replaceAll(/[*`]/g, '')
-    .replace(/[.,:;—-]+$/, '')
-    .toLowerCase()
+  return dropTrailingPunctuation(token.replaceAll(/[*`]/g, '')).toLowerCase()
 }
 
 /** AC-5.2: the entry's state from its `status:` line(s). */
@@ -129,7 +137,7 @@ function normalizeTriggerValue(value: string): string {
 function isVague(value: string): boolean {
   const normalized = normalizeTriggerValue(value)
   return (
-    VAGUE_EXACT.includes(normalized) ||
+    VAGUE_EXACT.has(normalized) ||
     VAGUE_PREFIXES.some((prefix) => normalized === prefix || normalized.startsWith(`${prefix} `))
   )
 }
