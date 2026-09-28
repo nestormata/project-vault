@@ -170,6 +170,51 @@ test.describe
     await expect(runButton).not.toHaveAttribute('aria-busy', 'true')
   })
 
+  // Story 59.1 Task 10 (DW-308) — the full SvelteKit shell (layout, `+page.server.ts` load, `/api`
+  // proxy) end to end for a non-ok outcome: the fixture's `test-denied-action` resolves `denied`
+  // with its own banner html plus an internal `message`. PV must forward the html (rendered in
+  // the panel) and suppress the denial `message` (the status region shows the generic text).
+  // Strings cross-referenced against `fixtures/mock-ui-panel-extension/src/index.ts`
+  // (`TEST_DENIED_BANNER_TEXT`, `TEST_DENIED_INTERNAL_REASON`) and `+page.svelte`'s
+  // `GENERIC_ACTION_ERROR_MESSAGE` — the fixture package is not an `apps/web` dependency.
+  test('Story 59.1: a denied action with html renders the extension banner, keeps the status generic, and re-enables on an identical repeat denial', async ({
+    page,
+    context,
+  }) => {
+    await registerLoggedInMember(context.request, 'denied-html')
+
+    await page.goto(`${BASE_URL}/extensions/panels/group`)
+    await waitForPanelHydration(page)
+
+    const deniedResponse = page.waitForResponse(
+      (res) => res.url().includes(GROUP_ACTIONS_PATH) && res.request().method() === 'POST'
+    )
+    await page.getByRole('button', { name: 'Trigger denied action' }).click()
+    const res = await deniedResponse
+    expect(res.status()).toBe(403)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body['code']).toBe('denied')
+    expect(body['html']).toContain('Mock extension denied this action')
+    expect(JSON.stringify(body)).not.toContain('fixture internal denial reason')
+
+    await expect(
+      page.getByRole('alert').filter({ hasText: 'Mock extension denied this action' })
+    ).toBeVisible()
+    await expect(page.getByText('Unable to complete this action. Please try again.')).toBeVisible()
+    await expect(page.getByText('fixture internal denial reason')).toHaveCount(0)
+
+    // AC6 identical-html rule: a repeat denial returns byte-identical html, so the container is
+    // not re-rendered — the banner's own Retry button must be re-enabled, not left disabled.
+    const retryButton = page.getByRole('button', { name: 'Retry denied action' })
+    const repeatResponse = page.waitForResponse(
+      (r) => r.url().includes(GROUP_ACTIONS_PATH) && r.request().method() === 'POST'
+    )
+    await retryButton.click()
+    expect((await repeatResponse).status()).toBe(403)
+    await expect(retryButton).toBeEnabled()
+    await expect(retryButton).not.toHaveAttribute('aria-busy', 'true')
+  })
+
   // Story 61.1 AC5 — access-token expiry is simulated deterministically (no 5-minute wait) by
   // deleting the cookies the browser itself drops once `JWT_ACCESS_TTL_SECONDS` elapses: the
   // `access-token` cookie and the CSRF cookie (both share the access TTL — `setAuthCookies()` in
