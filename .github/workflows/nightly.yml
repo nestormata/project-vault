@@ -154,45 +154,50 @@ jobs:
           ADMIN_DATABASE_URL: postgresql://vault_admin:password@localhost:5432/project_vault
 
   trivy-image:
-    name: Trivy Docker Image Scan
+    name: Trivy Docker Image Scan (${{ matrix.name }})
     runs-on: ubuntu-latest
+    # A hung image pull or DB download must not burn the 6-hour default (Story 64.3).
+    timeout-minutes: 20
+    # Story 64.3 AC-1: one matrix leg per shipped runtime image, with fail-fast disabled, so a
+    # finding in one image never skips (masks) the other's scan — the job still ends failed when
+    # any leg fails. Chosen over two sequential steps with `if: !cancelled()` because the legs
+    # also build in parallel, and each image gets its own red/green check in the run summary.
+    # Never `continue-on-error` here: that would turn a real finding into a green job.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            file: apps/api/Dockerfile
+          - name: web
+            file: apps/web/Dockerfile
     steps:
       - uses: actions/checkout@v7
 
-      - name: Build API image
-        # --target runner matches container-publish.yml's published project-vault-api image.
-        # Without it, docker build produces the Dockerfile's default (last) stage -- the
+      - name: Build ${{ matrix.name }} image
+        # --target runner matches container-publish.yml's published images. Without it, docker
+        # build produces the Dockerfile's default (last) stage -- for the API that is the
         # `migrate` leaf stage since Story 9.10 -- an unpruned, dev-toolchain-heavy image that
         # was never what actually ships (same bug ci.yml's Docker Build job had for its own
-        # size check).
-        run: docker build -f apps/api/Dockerfile --target runner -t project-vault-api:nightly .
+        # size check). Deliberately uncached: nightly is where apk/base-image drift must show.
+        env:
+          DOCKERFILE: ${{ matrix.file }}
+          IMAGE_NAME: ${{ matrix.name }}
+        run: docker build -f "$DOCKERFILE" --target runner -t "project-vault-${IMAGE_NAME}:nightly" .
 
-      - name: Build web image
-        run: docker build -f apps/web/Dockerfile -t project-vault-web:nightly .
-
-      - name: Run Trivy scan on API image
+      - name: Run Trivy scan on ${{ matrix.name }} image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           # Pinned Trivy binary (trivy-action v0.36.0's default); never v0.69.4-v0.69.6 (Story 64.2).
           version: 'v0.70.0'
-          image-ref: project-vault-api:nightly
+          image-ref: project-vault-${{ matrix.name }}:nightly
           format: table
           exit-code: '1'
           ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH
-
-      - name: Run Trivy scan on web image
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          # Pinned Trivy binary (trivy-action v0.36.0's default); never v0.69.4-v0.69.6 (Story 64.2).
-          version: 'v0.70.0'
-          image-ref: project-vault-web:nightly
-          format: table
-          exit-code: '1'
-          ignore-unfixed: true
-          vuln-type: os,library
-          severity: CRITICAL,HIGH
+          # Story 64.3 AC-2: honour the same time-boxed suppressions as ci.yml's scans.
+          trivyignores: .trivyignore
 
   e2e:
     name: Playwright E2E Suite

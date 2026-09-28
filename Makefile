@@ -224,6 +224,7 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm vitest run scripts/check-crypto-adjacent-pins.test.ts
 	pnpm vitest run scripts/check-base-image-digest.test.ts # Story 64.1 AC-2 base digest lockstep guard
 	pnpm vitest run scripts/check-action-pins.test.ts # Story 64.2 AC-3 third-party action SHA-pin guard
+	pnpm vitest run scripts/check-container-publish-workflow.test.ts scripts/check-image-scan-workflows.test.ts # Story 64.3 AC-5 image-scan gate contracts
 	pnpm tsx scripts/check-env-example.ts
 	# Blocking, matching ci.yml's `audit-ci` step on this same command (Story 42.2 — the
 	# formerly non-blocking `pnpm audit --audit-level=high || true` is superseded by this

@@ -83,6 +83,9 @@ jobs:
       - name: Check container publish workflow contract
         run: pnpm vitest run scripts/check-container-publish-workflow.test.ts
 
+      - name: Check image scan workflows contract (Story 64.3 AC-5)
+        run: pnpm vitest run scripts/check-image-scan-workflows.test.ts
+
       - name: Check base image digest lockstep guard (Story 64.1 AC-2)
         run: pnpm vitest run scripts/check-base-image-digest.test.ts
 
@@ -619,6 +622,38 @@ jobs:
             arch: arm64
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Story 64.3 AC-3: full history so `origin/<base>...HEAD` has a merge base below.
+          fetch-depth: 0
+
+      # Story 64.3 AC-3: decides whether this run's image scans (below) are blocking. Only a PR
+      # that changes an image input can introduce a new image vulnerability through its own diff;
+      # every other run scans in advisory mode so an unrelated PR does not go red the morning a new
+      # upstream CVE is published (Story 10-1's reason for keeping image scans nightly-only). On a
+      # push to main/dev the scan is advisory too: nightly.yml is the gate there. github.* values
+      # reach the script through env:, never `${{ }}` inside run:, to rule out script injection.
+      - name: Detect image-input changes
+        id: image-inputs
+        if: matrix.arch == 'amd64'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          IMAGES_CHANGED=false
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            git fetch --no-tags origin "$BASE_REF"
+            CHANGED=$(git diff --name-only "origin/${BASE_REF}...HEAD")
+            for INPUT in apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci .dockerignore \
+              apps/api/docker-entrypoint.sh pnpm-lock.yaml .trivyignore; do
+              if grep -Fxq -- "$INPUT" <<<"$CHANGED"; then
+                echo "Image input changed: $INPUT"
+                IMAGES_CHANGED=true
+              fi
+            done
+          fi
+          echo "images_changed=${IMAGES_CHANGED}"
+          echo "images_changed=${IMAGES_CHANGED}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -658,6 +693,7 @@ jobs:
       # docker load only works for the host platform, so size check runs on amd64 only.
       # amd64 is the primary deployment target; arm64 build success is the validation.
       - name: Load API image for size check
+        id: load-api
         if: matrix.arch == 'amd64'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -671,6 +707,7 @@ jobs:
           cache-from: type=gha,scope=api-${{ matrix.arch }}
 
       - name: Load web image for size check
+        id: load-web
         if: matrix.arch == 'amd64'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -706,6 +743,55 @@ jobs:
             fi
             echo "$IMAGE is ${SIZE} bytes — OK"
           done
+
+      # Story 64.3 AC-3: the same settings as nightly.yml's image scans, on the amd64 image that
+      # was just loaded (arm64 cannot `load`; container-publish.yml scans both platforms at release).
+      # Blocking only when steps.image-inputs found a changed image input; otherwise the step's
+      # failure is downgraded by continue-on-error and surfaced as a ::warning:: annotation below.
+      # exit-code stays '1' in both modes (rather than '0' when advisory) so the step's `outcome`
+      # still records whether findings exist -- with '0' there would be nothing to annotate.
+      # `!cancelled()` + the load step's own outcome: a failed size check or the other image's scan
+      # never skips this one, and it never runs against an image that was not loaded.
+      - name: Scan API image for vulnerabilities
+        id: scan-api
+        if: ${{ !cancelled() && matrix.arch == 'amd64' && steps.load-api.outcome == 'success' }}
+        continue-on-error: ${{ steps.image-inputs.outputs.images_changed != 'true' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          # Pinned Trivy binary (trivy-action v0.36.0's default); never v0.69.4-v0.69.6 (Story 64.2).
+          version: 'v0.70.0'
+          image-ref: project-vault-api:size-check
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          trivyignores: .trivyignore
+
+      - name: Annotate advisory API image scan findings
+        if: ${{ !cancelled() && steps.scan-api.outcome == 'failure' && steps.image-inputs.outputs.images_changed != 'true' }}
+        run: echo "::warning title=Advisory image scan (api)::project-vault-api:size-check has fixable HIGH/CRITICAL findings (or the scan errored). Advisory because this run changes no image input; see the scan step log. Nightly/release gates will block on it."
+
+      # Same blocking/advisory policy and non-masking rule as the API scan above.
+      - name: Scan web image for vulnerabilities
+        id: scan-web
+        if: ${{ !cancelled() && matrix.arch == 'amd64' && steps.load-web.outcome == 'success' }}
+        continue-on-error: ${{ steps.image-inputs.outputs.images_changed != 'true' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          # Pinned Trivy binary (trivy-action v0.36.0's default); never v0.69.4-v0.69.6 (Story 64.2).
+          version: 'v0.70.0'
+          image-ref: project-vault-web:size-check
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          trivyignores: .trivyignore
+
+      - name: Annotate advisory web image scan findings
+        if: ${{ !cancelled() && steps.scan-web.outcome == 'failure' && steps.image-inputs.outputs.images_changed != 'true' }}
+        run: echo "::warning title=Advisory image scan (web)::project-vault-web:size-check has fixable HIGH/CRITICAL findings (or the scan errored). Advisory because this run changes no image input; see the scan step log. Nightly/release gates will block on it."
 
   security:
     name: Security Scan
