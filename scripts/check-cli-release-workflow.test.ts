@@ -21,6 +21,7 @@ type Step = {
   if?: unknown
   uses?: string
   run?: string
+  'continue-on-error'?: unknown
   with?: Record<string, unknown>
   env?: Record<string, unknown>
 }
@@ -499,6 +500,71 @@ function indexOfStep(workflow: string, marker: string): number {
   return index
 }
 
+// Story 43.21 AC-1: the test step runs exactly the CLI and its agent. A pnpm dependency closure
+// (`cli...`) pulls in @project-vault/api, a devDependency of the CLI, and with it the whole API
+// suite, which ci.yml already runs on the same SHA (run 36368061666 timed out on it).
+const TEST_STEP_NAME = 'Test the CLI and its agent (unstamped)'
+const TEST_STEP_COMMAND = 'pnpm --filter @project-vault/cli --filter @project-vault/agent test'
+const TEST_STEP_SELECTORS = ['@project-vault/agent', '@project-vault/cli']
+const BUILD_STEP_COMMAND = 'pnpm --filter "@project-vault/cli..." build'
+
+function unquote(word: string): string {
+  return word.replaceAll(/^["']|["']$/g, '')
+}
+
+/** The `--filter` selectors of a `pnpm --filter <a> [--filter <b> ...] test` command, or why not. */
+function filterSelectors(run: string): { selectors: string[]; violations: string[] } {
+  const words = run.trim().split(/\s+/).map(unquote)
+  const violations: string[] = []
+  if (words[0] !== 'pnpm' || words.at(-1) !== 'test') {
+    violations.push(`not a "pnpm ... test" command: ${run}`)
+  }
+  const args = words.slice(1, -1)
+  const selectors: string[] = []
+  while (args.length > 0) {
+    const [flag, selector] = args.splice(0, 2)
+    if (flag !== '--filter' || selector === undefined) {
+      violations.push(`unexpected argument: ${flag}`)
+      break
+    }
+    selectors.push(selector)
+  }
+  return { selectors, violations }
+}
+
+// A pnpm/turbo/vitest test invocation in any other release step would widen the scope again.
+const OTHER_TEST_RUN = /\b(?:pnpm|turbo)\b[^\n]*\btest\b|\bvitest\b/
+
+/** A skipped or failure-tolerant test step, or tests run elsewhere, would defeat the scope check. */
+function testStepIsolationViolations(workflow: Workflow, step: Step): string[] {
+  const violations: string[] = []
+  if (step.if !== undefined) violations.push(`the test step must not be conditional: ${step.if}`)
+  if (step['continue-on-error'] !== undefined) {
+    violations.push('the test step must not set continue-on-error')
+  }
+  for (const other of releaseSteps(workflow)) {
+    if (other !== step && other.run !== undefined && OTHER_TEST_RUN.test(other.run)) {
+      violations.push(`only the test step may run tests, also found in: ${other.name ?? other.run}`)
+    }
+  }
+  return violations
+}
+
+function testStepScopeViolations(workflow: Workflow): string[] {
+  const step = findStep(workflow, (candidate) => candidate.name === TEST_STEP_NAME)
+  if (step?.run === undefined) return [`missing step: ${TEST_STEP_NAME}`]
+  const { selectors, violations } = filterSelectors(step.run)
+  violations.push(...testStepIsolationViolations(workflow, step))
+  for (const selector of selectors.filter((s) => s.includes('...') || s.includes('^'))) {
+    violations.push(`selector widens to a dependency/dependent closure: ${selector}`)
+  }
+  const selected = [...new Set(selectors.map((s) => s.replaceAll(/\^|\.{3}/g, '')))].sort()
+  if (selected.join(',') !== TEST_STEP_SELECTORS.join(',')) {
+    violations.push(`must select exactly ${TEST_STEP_SELECTORS.join(' and ')}, got: ${step.run}`)
+  }
+  return violations
+}
+
 describe('cli release workflow contract (Story 43.6 AC-5)', () => {
   it('runs only for published releases or an explicit manual recovery dispatch', () => {
     expect(triggerViolations(parseWorkflow(workflowText()))).toEqual([])
@@ -583,9 +649,9 @@ describe('cli release workflow contract (Story 43.6 AC-5)', () => {
       `ref: ${TAG_REF}`,
       `if: ${DRY_RUN_CHECKOUT_CONDITION}\n        uses: actions/checkout@`,
       'pnpm install --frozen-lockfile',
-      'pnpm --filter "@project-vault/cli..." test',
+      TEST_STEP_COMMAND,
       'scripts/stamp-build-info.ts --version',
-      'pnpm --filter "@project-vault/cli..." build',
+      BUILD_STEP_COMMAND,
       'ncc build',
       'Self-verify --version',
       'sha256sum',
@@ -749,4 +815,66 @@ describe('cli release workflow dry-run path (Story 43.10 AC-2)', () => {
       expect(run.stderr).toContain('Expected vMAJOR.MINOR.PATCH')
     }
   )
+})
+
+describe('cli release workflow test-step scope (Story 43.21 AC-1)', () => {
+  it('tests exactly the CLI and its agent, with no pnpm dependency or dependent closure', () => {
+    expect(testStepScopeViolations(parseWorkflow(workflowText()))).toEqual([])
+  })
+
+  it('keeps the dependency closure on the build step (the bundle needs every workspace dependency)', () => {
+    expect(workflowText()).toContain(BUILD_STEP_COMMAND)
+  })
+
+  it.each<[string, string]>([
+    [
+      'the CLI with its dependency closure (the 36368061666 regression)',
+      'pnpm --filter "@project-vault/cli..." test',
+    ],
+    [
+      'the closure next to the agent',
+      'pnpm --filter "@project-vault/cli..." --filter @project-vault/agent test',
+    ],
+    ['the CLI with its dependents', 'pnpm --filter "...@project-vault/cli" test'],
+    ['the CLI alone (agent dropped)', 'pnpm --filter @project-vault/cli test'],
+    ['a recursive run', 'pnpm -r test'],
+    ['a whole-repo run', 'pnpm test'],
+    ['only the dependencies of the CLI', 'pnpm --filter "@project-vault/cli^..." test'],
+  ])('the scope check rejects a test step running %s', (_label, command) => {
+    const text = workflowText()
+    expect(text).toContain(`run: ${TEST_STEP_COMMAND}\n`)
+    const mutated = text.replace(`run: ${TEST_STEP_COMMAND}\n`, `run: ${command}\n`)
+    expect(testStepScopeViolations(parseWorkflow(mutated))).not.toEqual([])
+  })
+
+  const BUILD_LINE = `          ${BUILD_STEP_COMMAND}\n`
+  it.each<[string, string, string]>([
+    [
+      'a skipped test step',
+      `name: ${TEST_STEP_NAME}\n`,
+      `name: ${TEST_STEP_NAME}\n        if: false\n`,
+    ],
+    [
+      'a failure-tolerant test step',
+      `name: ${TEST_STEP_NAME}\n`,
+      `name: ${TEST_STEP_NAME}\n        continue-on-error: true\n`,
+    ],
+    ['a whole-repo test run in another step', BUILD_LINE, `${BUILD_LINE}          pnpm -r test\n`],
+    [
+      'a turbo test run in another step',
+      BUILD_LINE,
+      `${BUILD_LINE}          pnpm turbo test --filter=@project-vault/api\n`,
+    ],
+  ])('the scope check rejects %s', (_label, from, to) => {
+    const text = workflowText()
+    expect(text).toContain(from)
+    expect(testStepScopeViolations(parseWorkflow(text.replace(from, to)))).not.toEqual([])
+  })
+
+  it('reports a missing test step', () => {
+    const mutated = workflowText().replace(`name: ${TEST_STEP_NAME}`, 'name: Test something else')
+    expect(testStepScopeViolations(parseWorkflow(mutated))).toEqual([
+      `missing step: ${TEST_STEP_NAME}`,
+    ])
+  })
 })
