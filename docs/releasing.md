@@ -212,8 +212,9 @@ node /tmp/pvault-dry/pvault-X.Y.Z.mjs --version   # commit = short SHA of <branc
 ```
 
 What a dry-run does: validates the tag string with the same regex, checks out **the dispatching
-commit** (`github.sha`; the tag need not exist yet), runs the same test, stamp, build, bundle and
-Node 20/24 self-verify steps, and writes
+commit** (`github.sha`; the tag need not exist yet) through its own checkout step with no `ref:`
+(a real run takes the other, mutually exclusive checkout step, pinned to the validated tag), runs
+the same test, stamp, build, bundle and Node 20/24 self-verify steps, and writes
 `DRY RUN: nothing uploaded; bundle kept as artifact pvault-bundle (1 day); do not distribute` to
 the job summary.
 

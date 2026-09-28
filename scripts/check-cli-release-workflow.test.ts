@@ -344,11 +344,60 @@ function usesAction(prefix: string): (step: Step) => boolean {
   return (step) => step.uses?.startsWith(prefix) === true
 }
 
+const REAL_CHECKOUT_CONDITION = "steps.release.outputs.dry_run != 'true'"
+const DRY_RUN_CHECKOUT_CONDITION = SUMMARY_CONDITION
+const TAG_REF = '${{ steps.release.outputs.tag }}'
+/** The dry-run checkout step's text up to its (ref-less) `with:` block, for mutation cases. */
+const DRY_RUN_CHECKOUT_HEAD = `        if: ${DRY_RUN_CHECKOUT_CONDITION}\n        uses: actions/checkout@v7\n`
+const DRY_RUN_CHECKOUT_WITH = `${DRY_RUN_CHECKOUT_HEAD}        with:\n`
+
+/** The validate step's `dry_run` output, as the checkout `if:` conditions read it. */
+function stepsContextFor(dryRun: string): ExprObject {
+  return { steps: { release: { outputs: { dry_run: dryRun } } } }
+}
+
+/**
+ * Two mutually exclusive checkouts, never one computed ref: a real run checks out the validated tag
+ * (exactly as before 43.10), a dry-run takes the default checkout of the dispatching commit with no
+ * `ref:` at all. A step-output-computed ref that can resolve to the dispatching commit is what
+ * CodeQL's actions/cache-poisoning query flags as a privileged checkout of untrusted code.
+ */
+function checkoutShapeViolations(real: Step | undefined, dry: Step | undefined): string[] {
+  const violations: string[] = []
+  if (real?.with?.ref !== TAG_REF) {
+    violations.push(`the real-run checkout (if: ${REAL_CHECKOUT_CONDITION}) must ref ${TAG_REF}`)
+  }
+  if (dry?.with === undefined || 'ref' in dry.with) {
+    violations.push(`the dry-run checkout (if: ${DRY_RUN_CHECKOUT_CONDITION}) must have no ref:`)
+  }
+  return violations
+}
+
+/** The checkouts that run for a given `dry_run` output; a step without `if:` always runs. */
+function runningCheckouts(checkouts: Step[], dryRun: string): Step[] {
+  return checkouts.filter(
+    (step) =>
+      step.if === undefined ||
+      truthy(evaluate(step.if, stepsContextFor(dryRun), { condition: true }))
+  )
+}
+
 function checkoutRefViolations(workflow: Workflow): string[] {
-  const checkout = findStep(workflow, usesAction('actions/checkout@'))
-  return checkout?.with?.ref === '${{ steps.release.outputs.ref }}'
-    ? []
-    : ['the checkout ref must be the validate step output steps.release.outputs.ref']
+  const checkouts = releaseSteps(workflow).filter(usesAction('actions/checkout@'))
+  if (checkouts.length !== 2) return ['the release job must have exactly two checkout steps']
+  const real = checkouts.find((step) => step.if === REAL_CHECKOUT_CONDITION)
+  const dry = checkouts.find((step) => step.if === DRY_RUN_CHECKOUT_CONDITION)
+  const violations = checkoutShapeViolations(real, dry)
+  for (const [dryRun, expected] of [
+    ['true', dry],
+    ['false', real],
+  ] as const) {
+    const running = runningCheckouts(checkouts, dryRun)
+    if (running.length !== 1 || running[0] !== expected) {
+      violations.push(`exactly the right checkout must run when dry_run is '${dryRun}'`)
+    }
+  }
+  return violations
 }
 
 function retentionViolations(workflow: Workflow): string[] {
@@ -498,8 +547,9 @@ describe('cli release workflow contract (Story 43.6 AC-5)', () => {
     const checkouts = Object.values(parseWorkflow(workflow).jobs ?? {})
       .flatMap((job) => job.steps ?? [])
       .filter(usesAction('actions/checkout@'))
-    expect(checkouts.length).toBeGreaterThan(0)
+    expect(checkouts.length).toBeGreaterThanOrEqual(2)
     for (const checkout of checkouts) {
+      expect(checkout.with?.['fetch-depth']).toBe(1)
       expect(checkout.with?.['persist-credentials']).toBe(false)
     }
   })
@@ -529,6 +579,9 @@ describe('cli release workflow contract (Story 43.6 AC-5)', () => {
   it('tests the unstamped tree, then stamps, builds, bundles, self-verifies and uploads in order', () => {
     const workflow = workflowText()
     const order = [
+      'id: release',
+      `ref: ${TAG_REF}`,
+      `if: ${DRY_RUN_CHECKOUT_CONDITION}\n        uses: actions/checkout@`,
       'pnpm install --frozen-lockfile',
       'pnpm --filter "@project-vault/cli..." test',
       'scripts/stamp-build-info.ts --version',
@@ -588,9 +641,31 @@ describe('cli release workflow dry-run path (Story 43.10 AC-2)', () => {
       '        required: true\n        default: false',
     ],
     [
-      'the checkout ref back on the tag',
+      'the dry-run checkout given the tag ref',
+      DRY_RUN_CHECKOUT_WITH,
+      `${DRY_RUN_CHECKOUT_WITH}          ref: ${TAG_REF}\n`,
+    ],
+    [
+      'the dry-run checkout given an explicit github.sha ref',
+      DRY_RUN_CHECKOUT_WITH,
+      `${DRY_RUN_CHECKOUT_WITH}          ref: \${{ github.sha }}\n`,
+    ],
+    ['the real checkout without the tag ref', `          ref: ${TAG_REF}\n`, ''],
+    [
+      'the real checkout on a computed ref',
+      `ref: ${TAG_REF}`,
       'ref: ${{ steps.release.outputs.ref }}',
-      'ref: ${{ steps.release.outputs.tag }}',
+    ],
+    ['the real checkout without its if:', `        if: ${REAL_CHECKOUT_CONDITION}\n`, ''],
+    [
+      'the dry-run checkout without its if:',
+      DRY_RUN_CHECKOUT_HEAD,
+      '        uses: actions/checkout@v7\n',
+    ],
+    [
+      'both checkouts running for a real run',
+      `        if: ${REAL_CHECKOUT_CONDITION}\n`,
+      "        if: steps.release.outputs.dry_run != 'yes'\n",
     ],
     [
       'a 7-day dry-run artifact',
@@ -605,8 +680,8 @@ describe('cli release workflow dry-run path (Story 43.10 AC-2)', () => {
     ],
     [
       'the summary written on every run',
-      "if: steps.release.outputs.dry_run == 'true'",
-      'if: always()',
+      "job summary\n        if: steps.release.outputs.dry_run == 'true'",
+      'job summary\n        if: always()',
     ],
   ])('the dry-run check rejects a workflow with %s', (_label, from, to) => {
     const text = workflowText()
@@ -648,12 +723,11 @@ describe('cli release workflow dry-run path (Story 43.10 AC-2)', () => {
     expect(Object.fromEntries(dry.outputs)).toEqual({
       tag: CANDIDATE_TAG,
       version: '1.3.0',
-      ref: FAKE_SHA,
       dry_run: 'true',
     })
   })
 
-  it('checks out the tag for a release event and a real dispatch from main', () => {
+  it('validates the tag and reports dry_run false for a release event and a real dispatch', () => {
     const workflow = parseWorkflow(workflowText())
     for (const kind of REAL_RUNS) {
       const run = runValidateStep(workflow, kind)
@@ -662,7 +736,6 @@ describe('cli release workflow dry-run path (Story 43.10 AC-2)', () => {
       expect(Object.fromEntries(run.outputs), kind).toEqual({
         tag: CANDIDATE_TAG,
         version: '1.3.0',
-        ref: CANDIDATE_TAG,
         dry_run: 'false',
       })
     }

@@ -102,24 +102,28 @@ jobs:
             echo "Expected vMAJOR.MINOR.PATCH without leading zeroes, received '$TAG'" >&2
             exit 1
           fi
-          # A real run builds the tag; a dry-run builds the dispatching commit (the tag may not
-          # exist yet), so its bundle embeds that commit and never matches a Release checksum.
-          if [[ "$DRY_RUN" == "true" ]]; then
-            REF="$GITHUB_SHA"
-          else
-            REF="$TAG"
-          fi
           {
             echo "tag=$TAG"
             echo "version=${TAG#v}"
-            echo "ref=$REF"
             echo "dry_run=$DRY_RUN"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Check out the release tag (or, for a dry-run, the dispatching commit)
+      # Exactly one of the two checkouts runs. A real run builds the validated tag; a dry-run takes
+      # the default checkout of the dispatching commit (github.sha; the tag may not exist yet), so
+      # its bundle embeds that commit and never matches a Release checksum. Two fixed checkouts,
+      # never one step-output-computed ref, so no run can check out a ref chosen at runtime.
+      - name: Check out the release tag
+        if: steps.release.outputs.dry_run != 'true'
         uses: actions/checkout@v7
         with:
-          ref: ${{ steps.release.outputs.ref }}
+          ref: ${{ steps.release.outputs.tag }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Check out the dispatching commit (dry-run)
+        if: steps.release.outputs.dry_run == 'true'
+        uses: actions/checkout@v7
+        with:
           fetch-depth: 1
           persist-credentials: false
 
