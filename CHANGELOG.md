@@ -9,6 +9,15 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+### Security
+
+- `pvault` now strips Unicode bidi controls, zero-width characters and other invisible format
+  characters (as well as control characters) from every string it prints, so a hostile server,
+  credential name or command cannot visually reorder or hide what you read. Error text that comes
+  from the server or a library is now printed on one line and capped at 500 characters.
+- The API now drops an `x-vault-target-command` audit value that contains such characters (the
+  reveal itself still succeeds and is still audited), and the agent strips them before sending it.
+
 ## [1.3.0] - 2026-09-27
 
 Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.3.0`
