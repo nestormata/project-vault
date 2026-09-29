@@ -283,6 +283,9 @@ describe('checkHandoffCorsBootWarning', () => {
     expect(warnSpy).toHaveBeenCalledTimes(1)
     expect(warnSpy.mock.calls[0]?.[0]).toContain('[handoff] WARN')
     expect(warnSpy.mock.calls[0]?.[0]).toContain('CORS_ALLOWED_ORIGINS')
+    // Story 60.7: under Compose the env-file CORS_ALLOWED_ORIGINS is ignored, so the warning must
+    // name the knob a Compose operator can actually turn.
+    expect(warnSpy.mock.calls[0]?.[0]).toContain('CORS_EXTRA_ORIGINS')
   })
 
   it('warns when handoff is enabled and the allowlist is empty', () => {

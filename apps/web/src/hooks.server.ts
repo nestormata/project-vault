@@ -37,7 +37,8 @@ export function checkHandoffCorsBootWarning(rawEnv: HandoffCorsBootEnv): void {
   console.warn(
     '[handoff] WARN: VAULT_HANDOFF_ENABLED is true but CORS_ALLOWED_ORIGINS contains no ' +
       "non-PV origin — CentralizeMe's cross-origin handoff prepare call will be rejected. " +
-      'See docs/configuration.md # Handoff & service integration.'
+      "Under Docker Compose, add CentralizeMe's origin with CORS_EXTRA_ORIGINS (the env-file " +
+      'CORS_ALLOWED_ORIGINS is ignored there). See docs/configuration.md # Handoff & service integration.'
   )
 }
 
