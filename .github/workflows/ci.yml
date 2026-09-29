@@ -89,6 +89,9 @@ jobs:
       - name: Check e2e stack script contract (Story 66.1 AC-7)
         run: pnpm vitest run scripts/e2e-stack.test.ts
 
+      - name: Check docker compose config contract (Story 60.1/43.7/60.4/60.7)
+        run: pnpm vitest run scripts/check-compose-config.test.ts
+
       - name: Check base image digest lockstep guard (Story 64.1 AC-2)
         run: pnpm vitest run scripts/check-base-image-digest.test.ts
 

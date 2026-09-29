@@ -166,6 +166,10 @@ ci: ## Full local quality gates — runs inside Docker (isolated per-worktree; s
 	# apps/api image and exercises docker-entrypoint.sh's backup-volume chown-then-drop-privileges
 	# behavior end-to-end, both the fresh-named-volume and unfixable-bind-mount cases.
 	$(MAKE) docker-backup-permission-smoke
+	# Story 60.7: runs on the HOST; the ci container has no Docker CLI, so inside ci-inner this
+	# suite would only print SKIPPED. Needs host `pnpm install`. Renders with its own --env-file,
+	# so the local config fix-ports just touched cannot affect it.
+	pnpm vitest run scripts/check-compose-config.test.ts
 
 ci-inner: ## The actual CI steps — only meant to run inside the `ci` container (make ci), not directly
 	DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_ADMIN) pnpm turbo typecheck
