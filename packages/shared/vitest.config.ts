@@ -31,6 +31,10 @@ export default mergeConfig(baseVitestConfig, {
         'src/schemas/vault.ts',
         // Story 43.13 AC-5: fourth addition to this manual allowlist (see the comment above).
         'src/constants/cli-version-policy.ts',
+        // Story 43.16: the node-only internal-TLS decoder and its test PKI helper (both exercised
+        // by src/node/*.test.ts).
+        'src/node/internal-tls-pem.ts',
+        'src/node/test-pki-test-helpers.ts',
       ],
       thresholds: {
         lines: 80,

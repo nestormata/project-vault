@@ -11,12 +11,19 @@
 // of truth ... do not invent a second, separately-configured allowlist") — this file does not
 // introduce a second allowlist, it independently parses the one logical value an operator sets
 // for both processes.
+//
+// Story 60.7 (AC1, R3): `*` and `null` entries are dropped. api's env.ts refuses to boot on either
+// (a wildcard cannot pair with credentials; `Origin: null` is what sandboxed iframes and file://
+// pages send, so a `null` entry would admit any attacker page that sandboxes itself). Dropping
+// them here keeps web from ever matching them, even when it boots without api's validation.
+const NEVER_ALLOWED_ENTRIES = new Set(['*', 'null'])
+
 export function parseAllowedOrigins(raw: string | undefined): Set<string> {
   return new Set(
     (raw ?? '')
       .split(',')
       .map((origin) => origin.trim())
-      .filter((origin) => origin.length > 0)
+      .filter((origin) => origin.length > 0 && !NEVER_ALLOWED_ENTRIES.has(origin.toLowerCase()))
   )
 }
 

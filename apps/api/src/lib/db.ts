@@ -1,5 +1,6 @@
 import postgres from 'postgres'
 import { drizzle } from 'drizzle-orm/postgres-js'
+import { pgTlsOptions } from '@project-vault/db/pg-tls'
 import { env } from '../config/env.js'
 
 let _adminDb: ReturnType<typeof drizzle> | null = null
@@ -15,7 +16,7 @@ export function getAdminDb(): ReturnType<typeof drizzle> {
     if (!env.ADMIN_DATABASE_URL) {
       throw new Error('ADMIN_DATABASE_URL is required before creating the admin database pool')
     }
-    const pgClient = postgres(env.ADMIN_DATABASE_URL)
+    const pgClient = postgres(env.ADMIN_DATABASE_URL, pgTlsOptions())
     _adminDb = drizzle(pgClient)
   }
   return _adminDb

@@ -98,6 +98,13 @@ import type { FastifyApp } from './lib/fastify-app.js'
 import { getReleaseVersion } from './lib/package-version.js'
 import { HandoffEvent, OperationalEvent } from '@project-vault/shared'
 import type { FastifyRequest } from 'fastify'
+import type { X509Certificate } from 'node:crypto'
+import {
+  resolveApiListenerTls,
+  resolveDatabaseClientLeaf,
+  type ApiListenerTls,
+} from './config/internal-tls.js'
+import { setInternalTlsLeaves, watchTlsHandshakeFailures } from './lib/internal-tls-status.js'
 
 // RFC 4122 UUID v4: version nibble = 4, variant nibble ∈ {8,9,a,b}. Do NOT loosen
 // this regex — nil UUID and non-v4 formats are intentionally rejected so a caller
@@ -118,6 +125,39 @@ export type AppOptions = {
   logger?: boolean | object
   metricsBindHost?: string
   vaultGuardEnabled?: boolean
+  /**
+   * Story 43.16: the Fly demo's internal TLS. Omitted means resolved from the environment
+   * (`API_TLS_*`, `DATABASE_TLS_*`); tests pass it explicitly. `listener: null` is plain HTTP.
+   */
+  internalTls?: { listener: ApiListenerTls | null; dbClientLeaf?: X509Certificate | null }
+}
+
+/** Resolves (and records for /ready and /metrics) the internal TLS this app instance uses. */
+function resolveAppInternalTls(options: AppOptions): ApiListenerTls | null {
+  const internalTls = options.internalTls ?? {
+    listener: resolveApiListenerTls(env),
+    dbClientLeaf: resolveDatabaseClientLeaf(env),
+  }
+  setInternalTlsLeaves({
+    apiServer: internalTls.listener?.leaf ?? null,
+    dbClient: internalTls.dbClientLeaf ?? null,
+  })
+  return internalTls.listener
+}
+
+/** Story 43.16 AC-1: TLS 1.3 minimum; with a client CA, a verified client certificate is required
+ * during the handshake, so no route handler, vault guard or audit hook ever runs without one. */
+function listenerHttpsOptions(listener: ApiListenerTls | null) {
+  if (!listener) return {}
+  const https = {
+    key: listener.key,
+    cert: listener.cert,
+    minVersion: 'TLSv1.3' as const,
+    ...(listener.clientCa === undefined
+      ? {}
+      : { ca: [listener.clientCa], requestCert: true, rejectUnauthorized: true }),
+  }
+  return { https }
 }
 
 function shouldNormalizeMfaParserError(
@@ -352,7 +392,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // ignoreTrailingSlash: Fastify's router treats "/health" and "/health/" as distinct
   // routes by default, which would 404 before the vault guard's own normalizePath() ever
   // runs (AC-5 requires /health/ to behave identically to /health while sealed).
+  const listener = resolveAppInternalTls(options)
+
   const fastify: FastifyApp = Fastify({
+    ...listenerHttpsOptions(listener),
     logger,
     // Disable Fastify's blind header trust; genReqId validates X-Request-ID itself.
     requestIdHeader: false,
@@ -373,6 +416,8 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
     routerOptions: { ignoreTrailingSlash: true, maxParamLength: 300 },
     trustProxy: resolveTrustProxy(env.TRUST_PROXY, env.TRUST_PROXY_HOPS),
   }) as unknown as FastifyApp
+
+  if (listener) watchTlsHandshakeFailures(fastify.server, fastify.log)
 
   fastify.setValidatorCompiler(validatorCompiler)
   fastify.setSerializerCompiler(serializerCompiler)

@@ -1,13 +1,16 @@
 # Fly.io self-hosted Postgres for the project-vault demo stack (db app).
 # Deliberately private-only (no `fly ips allocate-v4/v6` for this app) — only the api
 # app should ever reach it, over Fly's internal 6PN network at <app>.internal:5432.
-# No custom Dockerfile: this app deploys the stock upstream image directly, matching
-# the postgres:16-alpine pin already used by docker-compose.yml's db service.
+# Story 43.16: a thin Dockerfile over the same postgres:16-alpine tag docker-compose.yml's db
+# service uses (so the major version and the existing volume stay compatible) that terminates
+# TLS 1.3 with the demo's private CA and requires a client certificate on every network
+# connection. It needs the DB_TLS_* secrets staged by scripts/fly-internal-tls.sh and fails
+# closed without them. See docs/runbooks/fly-internal-tls.md. Build context: the repo root.
 app = "project-vault-demo-db"
 primary_region = "iad"
 
 [build]
-  image = "postgres:16-alpine"
+  dockerfile = "deploy/fly/db/Dockerfile"
 
 [env]
   POSTGRES_DB = "project_vault"

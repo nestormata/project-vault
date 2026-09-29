@@ -92,9 +92,11 @@ jobs:
       - name: Install psql
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
 
-      # db rarely changes (stock postgres:16-alpine image, no Dockerfile) — deploy it
-      # too so a first-time bootstrap or a fly.db.toml edit still lands, but it's
-      # normally a no-op.
+      # db rarely changes — deploy it too so a first-time bootstrap or a fly.db.toml /
+      # deploy/fly/db edit still lands. Story 43.16: it builds deploy/fly/db/Dockerfile
+      # (postgres:16-alpine + TLS 1.3 and client-certificate pg_hba), so it runs on Fly's
+      # remote builder like api/web; it applies the DB_TLS_* secrets staged by
+      # scripts/fly-internal-tls.sh, which is why db deploys before migrate/api/web.
       - name: Deploy db
         run: flyctl deploy -c fly.db.toml -a project-vault-demo-db --ha=false --remote-only
         env:
@@ -115,6 +117,10 @@ jobs:
           ADMIN_PG_PASSWORD: ${{ secrets.FLY_DEMO_PG_SUPERUSER_PASSWORD }}
           VAULT_APP_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_APP_PASSWORD }}
           VAULT_ADMIN_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_ADMIN_PASSWORD }}
+          # Story 43.16: the internal CA mints the TLS leaves / the per-run operator certificate.
+          # Scoped to this step only — never to a deploy step (docs/runbooks/fly-internal-tls.md).
+          FLY_INTERNAL_CA_CERT_B64: ${{ secrets.FLY_DEMO_INTERNAL_CA_CERT_B64 }}
+          FLY_INTERNAL_CA_KEY_B64: ${{ secrets.FLY_DEMO_INTERNAL_CA_KEY_B64 }}
 
       - name: Deploy api
         run: flyctl deploy -c fly.api.toml -a project-vault-demo-api --ha=false --remote-only --build-arg RELEASE_VERSION=${{ needs.prepare.outputs.version }}

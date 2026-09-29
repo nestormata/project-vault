@@ -50,7 +50,11 @@ const WEB_SIZE_CHECK = 'project-vault-web:size-check'
 // Beyond AC-3's api+web: the published `migrate` image is built and scanned on PRs too, so a
 // broken or vulnerable migrate stage surfaces before a release rather than at the release gate.
 const MIGRATE_SIZE_CHECK = 'project-vault-migrate:size-check'
-const SIZE_CHECK_IMAGES = [API_SIZE_CHECK, MIGRATE_SIZE_CHECK, WEB_SIZE_CHECK]
+// Story 43.16 AC-13: the Fly demo's db image (deploy/fly/db) is built and scanned on PRs too. It is
+// deployed by `flyctl deploy` from source, never published to GHCR, so it has no release gate.
+const FLY_DB_SIZE_CHECK = 'project-vault-fly-db:size-check'
+const FLY_DB_DOCKERFILE = 'deploy/fly/db/Dockerfile'
+const SIZE_CHECK_IMAGES = [API_SIZE_CHECK, FLY_DB_SIZE_CHECK, MIGRATE_SIZE_CHECK, WEB_SIZE_CHECK]
 const GATE_STEP = 'Enforce image scan gate'
 const DOCKER_BUILD_JOB = 'docker-build'
 
@@ -65,7 +69,10 @@ const IMAGE_INPUTS = [
   'pnpm-workspace.yaml',
   'scripts/materialize-deploy-runtime.mjs',
   TRIVYIGNORE,
+  'fly.db.toml',
 ]
+// Story 43.16 AC-13: any file under this directory is a fly-db image input.
+const IMAGE_INPUT_DIRS = ['deploy/fly/db/']
 
 // The workflows and Makefile under test, read at transform time by Vite (vitest's module graph) as
 // raw text: the same lint-clean loading pattern as check-action-pins.test.ts (Story 64.2).
@@ -168,7 +175,8 @@ describe('Story 64.3 AC-1: nightly scans every image and reports all of them', (
     expect(trivyImage.strategy?.['fail-fast']).toBe(false)
     const names = (trivyImage.strategy?.matrix?.include ?? []).map((entry) => entry.name).sort()
     // migrate is published and release-gated too; nightly is its only blocking gate on main.
-    expect(names).toEqual(['api', 'migrate', 'web'])
+    // fly-db (Story 43.16 AC-13) is nightly + PR only: fly deploy builds it from source.
+    expect(names).toEqual(['api', 'fly-db', 'migrate', 'web'])
   })
 
   it('no scan step masks another within a leg', () => {
@@ -190,7 +198,14 @@ describe('Story 64.3 AC-1: nightly scans every image and reports all of them', (
   it('builds every image at the target that actually ships (Story 9.10 trap)', () => {
     const include = trivyImage.strategy?.matrix?.include ?? []
     const targets = Object.fromEntries(include.map((entry) => [entry.name, entry.target]))
-    expect(targets).toEqual({ api: 'runner', migrate: 'migrate', web: 'runner' })
+    expect(targets).toEqual({
+      api: 'runner',
+      'fly-db': 'runner',
+      migrate: 'migrate',
+      web: 'runner',
+    })
+    const files = Object.fromEntries(include.map((entry) => [entry.name, entry.file]))
+    expect(files['fly-db']).toBe(FLY_DB_DOCKERFILE)
     const builds = (trivyImage.steps ?? []).filter((step) => /docker build/.test(step.run ?? ''))
     expect(builds.length).toBeGreaterThan(0)
     for (const step of builds) {
@@ -222,7 +237,7 @@ describe('Story 64.3 AC-3: PR-time image scan in ci.yml docker-build', () => {
       /git diff --name-only --no-renames "origin\/\$\{BASE_REF\}\.\.\.HEAD"/
     )
     expect(detect?.run).toMatch(/images_changed=/)
-    for (const input of IMAGE_INPUTS) expect(detect?.run).toContain(input)
+    for (const input of [...IMAGE_INPUTS, ...IMAGE_INPUT_DIRS]) expect(detect?.run).toContain(input)
   })
 
   it('passes github.* contexts through env:, never interpolated into the run: script', () => {
@@ -259,6 +274,13 @@ describe('Story 64.3 AC-3: PR-time image scan in ci.yml docker-build', () => {
     expect(ifText(load)).toMatch(/matrix\.arch == 'amd64'/)
     // Reuses the api build's buildx cache: migrate shares its builder/db-builder stages.
     expect(String(inputs['cache-from'])).toContain('scope=api-${{ matrix.arch }}')
+  })
+
+  it('builds the Fly db image (Story 43.16 AC-13) on the amd64 leg, loaded for the scan', () => {
+    const load = steps.find((step) => step.with?.tags === FLY_DB_SIZE_CHECK) ?? {}
+    expect(load.uses).toMatch(/^docker\/build-push-action@/)
+    expect(load.with ?? {}).toMatchObject({ file: FLY_DB_DOCKERFILE, target: 'runner', load: true })
+    expect(ifText(load)).toMatch(/matrix\.arch == 'amd64'/)
   })
 
   it('gates each scan on the outcome of the step that loaded its own image', () => {
@@ -317,6 +339,12 @@ describe('Story 64.3 AC-3: PR-time image scan in ci.yml docker-build', () => {
       }
     })
 
+    it('blocks on a fly-db finding when an image input changed (Story 43.16 AC-13)', () => {
+      const result = runGate({ changed: 'true', outcomes: { 'fly-db': 'failure' } })
+      expect(result.status).toBe(1)
+      expect(result.stdout).toMatch(/::error title=Image scan \(fly-db\)::/)
+    })
+
     it('passes when every scan succeeded or was skipped', () => {
       const result = runGate({
         changed: 'true',
@@ -329,14 +357,24 @@ describe('Story 64.3 AC-3: PR-time image scan in ci.yml docker-build', () => {
 
   describe('change-detection script behaviour', () => {
     it('reports images_changed=true for a PR that touches an image input', () => {
-      for (const input of [WEB_DOCKERFILE, TRIVYIGNORE, LOCKFILE]) {
+      for (const input of [
+        WEB_DOCKERFILE,
+        TRIVYIGNORE,
+        LOCKFILE,
+        'fly.db.toml',
+        'deploy/fly/db/pg_hba.conf',
+        'deploy/fly/db/entrypoint-tls.sh',
+      ]) {
         expect(runDetect({ event: PULL_REQUEST, changed: [input] }), input).toBe('true')
       }
     })
 
     it('reports images_changed=false for a PR that touches no image input', () => {
       expect(
-        runDetect({ event: PULL_REQUEST, changed: ['README.md', 'apps/api/src/Dockerfile.md'] })
+        runDetect({
+          event: PULL_REQUEST,
+          changed: ['README.md', 'apps/api/src/Dockerfile.md', 'docs/deploy/fly/db/notes.md'],
+        })
       ).toBe('false')
     })
 
@@ -427,7 +465,7 @@ function runDetect(options: { event: string; changed: string[] }): string {
  */
 function runGate(options: {
   changed: string
-  outcomes: Partial<Record<'api' | 'migrate' | 'web', string>>
+  outcomes: Partial<Record<'api' | 'fly-db' | 'migrate' | 'web', string>>
 }): { status: number | null; stdout: string } {
   const gate = job(loadWorkflow(CI_WORKFLOW), DOCKER_BUILD_JOB).steps?.find(
     (step) => step.name === GATE_STEP
@@ -440,6 +478,7 @@ function runGate(options: {
       ...process.env,
       IMAGES_CHANGED: options.changed,
       SCAN_API: options.outcomes.api ?? '',
+      SCAN_FLY_DB: options.outcomes['fly-db'] ?? '',
       SCAN_MIGRATE: options.outcomes.migrate ?? '',
       SCAN_WEB: options.outcomes.web ?? '',
     },

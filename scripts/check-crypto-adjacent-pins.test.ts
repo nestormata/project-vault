@@ -43,11 +43,11 @@ const FIXED_CODEOWNERS_LINES =
 
 /** A clean, fully-compliant `.github/CODEOWNERS` fixture — covers the fixed infra paths this
  * script always requires plus the one dynamic package.json path (`apps/svc/package.json`) that
- * `writeCleanBaseFixture` declares all five canonical packages in. */
+ * `writeCleanBaseFixture` declares all six canonical packages in. */
 const CLEAN_CODEOWNERS = `${FIXED_CODEOWNERS_LINES}${SVC_CODEOWNERS_LINE}`
 
 /** A clean, fully-compliant `.github/dependabot.yml` fixture — the two group lists both match the
- * real canonical list exactly (argon2, bcrypt, @fastify/jwt, fast-jwt, otpauth). */
+ * real canonical list exactly (argon2, bcrypt, @fastify/jwt, fast-jwt, otpauth, undici). */
 const CLEAN_DEPENDABOT_YML = `version: 2
 updates:
   - package-ecosystem: "npm"
@@ -62,6 +62,7 @@ updates:
           - "@fastify/jwt"
           - "fast-jwt"
           - "otpauth"
+          - "undici"
         labels:
           - "crypto-adjacent"
       pnpm-workspace:
@@ -73,6 +74,7 @@ updates:
           - "@fastify/jwt"
           - "fast-jwt"
           - "otpauth"
+          - "undici"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -106,6 +108,7 @@ function writeCleanBaseFixture(root: string, appDeps: Record<string, string> = {
           '@fastify/jwt': '10.2.2',
           'fast-jwt': '6.3.3',
           otpauth: '9.5.2',
+          undici: '7.29.1',
           ...appDeps,
         },
       },
@@ -210,6 +213,7 @@ describe('scanCryptoAdjacentPins', () => {
             '@fastify/jwt': '10.2.2',
             'fast-jwt': '6.3.3',
             otpauth: '9.5.2',
+            undici: '7.29.1',
           },
         },
         null,
@@ -239,6 +243,7 @@ describe('scanCryptoAdjacentPins', () => {
               '@fastify/jwt': '10.2.2',
               'fast-jwt': '6.3.3',
               otpauth: '9.5.2',
+              undici: '7.29.1',
             },
           },
           null,
@@ -268,6 +273,7 @@ describe('scanCryptoAdjacentPins', () => {
               '@fastify/jwt': '10.2.2',
               'fast-jwt': '6.3.3',
               otpauth: '9.5.2',
+              undici: '7.29.1',
             },
           },
           null,
@@ -379,6 +385,40 @@ describe('scanCryptoAdjacentPins', () => {
     )
   })
 
+  it.each([
+    ['"@actions/http-client>undici"', 'undici'],
+    ['"parent@^1>undici@^7"', 'undici'],
+    ['"@scope/parent>argon2"', 'argon2'],
+    ['"a>b@1>@fastify/jwt@>=10.0.0 <11.0.0"', '@fastify/jwt'],
+  ])(
+    'flags a parent-scoped override key %s whose target package is crypto-adjacent',
+    (key, packageName) => {
+      const root = makeFixtureRoot()
+      writeCleanBaseFixture(root)
+      writeFixture(
+        root,
+        WORKSPACE_YAML_REL,
+        `${CLEAN_WORKSPACE_YAML}overrides:\n  ${key}: 7.29.1\n`
+      )
+
+      const { violations } = scanCryptoAdjacentPins(root)
+      expect(violations).toContainEqual(
+        expect.objectContaining({ kind: 'override', packageName, overrideValue: '7.29.1' })
+      )
+    }
+  )
+
+  it.each(['undici-types', '"foo>bar"', '"undici>foo"', '"@types/undici@^1"'])(
+    'does not flag override key %s whose target package is not crypto-adjacent',
+    (key) => {
+      const root = makeFixtureRoot()
+      writeCleanBaseFixture(root)
+      writeFixture(root, WORKSPACE_YAML_REL, `${CLEAN_WORKSPACE_YAML}overrides:\n  ${key}: 1.0.0\n`)
+
+      expect(scanCryptoAdjacentPins(root)).toEqual({ violations: [] })
+    }
+  )
+
   it('flags a crypto-adjacent package declared under peerDependencies with a range (not just dependencies/devDependencies)', () => {
     const root = makeFixtureRoot()
     writeCleanBaseFixture(root)
@@ -394,6 +434,7 @@ describe('scanCryptoAdjacentPins', () => {
             '@fastify/jwt': '10.2.2',
             'fast-jwt': '6.3.3',
             otpauth: '9.5.2',
+            undici: '7.29.1',
           },
           peerDependencies: { bcrypt: '^6.0.0' },
         },
@@ -453,9 +494,10 @@ updates:
           - "@fastify/jwt"
           - "fast-jwt"
           - "otpauth"
+          - "undici"
       pnpm-workspace:
         patterns: ["*"]
-        exclude-patterns: [argon2, bcrypt, "@fastify/jwt", fast-jwt, otpauth]
+        exclude-patterns: [argon2, bcrypt, "@fastify/jwt", fast-jwt, otpauth, undici]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -477,7 +519,7 @@ updates:
     writeFixture(
       root,
       DEPENDABOT_YML_REL,
-      CLEAN_DEPENDABOT_YML.replace('          - "otpauth"\n        labels:', '        labels:')
+      CLEAN_DEPENDABOT_YML.replace('          - "undici"\n        labels:', '        labels:')
     )
 
     const { violations } = scanCryptoAdjacentPins(root)
@@ -626,6 +668,7 @@ describe('check-crypto-adjacent-pins CLI', () => {
             '@fastify/jwt': '10.2.2',
             'fast-jwt': '6.3.3',
             otpauth: '9.5.2',
+            undici: '7.29.1',
           },
         },
         null,

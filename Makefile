@@ -166,6 +166,10 @@ ci: ## Full local quality gates — runs inside Docker (isolated per-worktree; s
 	# apps/api image and exercises docker-entrypoint.sh's backup-volume chown-then-drop-privileges
 	# behavior end-to-end, both the fresh-named-volume and unfixable-bind-mount cases.
 	$(MAKE) docker-backup-permission-smoke
+	# Story 60.7: runs on the HOST; the ci container has no Docker CLI, so inside ci-inner this
+	# suite would only print SKIPPED. Needs host `pnpm install`. Renders with its own --env-file,
+	# so the local config fix-ports just touched cannot affect it.
+	pnpm vitest run scripts/check-compose-config.test.ts
 
 ci-inner: ## The actual CI steps — only meant to run inside the `ci` container (make ci), not directly
 	DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_ADMIN) pnpm turbo typecheck
@@ -218,6 +222,8 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-native-credential-surface
 	pnpm check-no-sonar-suppressions # Story 43.9 AC-9: no unsigned Sonar suppressions
 	pnpm vitest run scripts/check-no-sonar-suppressions.test.ts scripts/lib/trusted-executable.test.ts
+	# Story 43.16 AC-3/AC-5: Fly demo internal TLS — PKI script, fly-setup wiring, pinned-CA call sites.
+	pnpm vitest run scripts/fly-setup.test.ts scripts/fly-internal-tls.test.ts scripts/check-pg-tls-call-sites.test.ts
 	pnpm check-build-info-unstamped # Story 43.6 AC-5
 	# Story 43.14: the CLI docs guard raw-loads an apps/web .ts file, whose tsconfig extends the
 	# generated .svelte-kit/tsconfig.json. A turbo cache hit on typecheck above does not regenerate it.

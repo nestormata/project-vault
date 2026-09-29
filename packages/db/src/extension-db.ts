@@ -1,4 +1,5 @@
 import postgres from 'postgres'
+import { pgTlsOptions } from './pg-tls.js'
 
 export const EXTENSION_DB_DEFAULT_MAX = 3
 export const EXTENSION_DB_PLACEHOLDER_CREDENTIAL = 'dev-only-change-in-prod'
@@ -72,7 +73,7 @@ export function getExtensionDbHandle(
   const key = `${url}\u0000${max}`
   if (!extensionClient || extensionClientKey !== key) {
     extensionClient?.end({ timeout: 1 }).catch(() => undefined)
-    extensionClient = postgres(url, { max })
+    extensionClient = postgres(url, { ...pgTlsOptions(), max })
     extensionClientKey = key
   }
   return createExtensionDbHandle(extensionClient)

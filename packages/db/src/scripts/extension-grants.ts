@@ -1,4 +1,5 @@
 import postgres from 'postgres'
+import { pgTlsOptions } from '../pg-tls.js'
 import {
   EXTENSION_DB_SCOPE_DENYLIST,
   buildGrantStatements,
@@ -202,7 +203,7 @@ export async function main(): Promise<void> {
   const extension = (await import(packageName)) as {
     default: { manifest: { name: string; dbScope?: ExtensionDbScopeEntry[] } }
   }
-  const sql = postgres(url, { max: 1 })
+  const sql = postgres(url, { ...pgTlsOptions(), max: 1 })
   try {
     await reconcileExtensionGrants({
       sql,

@@ -1,6 +1,7 @@
 import { env } from '$env/dynamic/private'
 import type { RequestHandler } from './$types'
 import { proxyApiRequest } from '$lib/server/api-proxy.js'
+import { internalApiFetch } from '$lib/server/internal-api-tls.js'
 import {
   corsResponseHeaders,
   isOriginAllowed,
@@ -48,7 +49,7 @@ export const POST: RequestHandler = async ({ request }) => {
   }
 
   const response = await proxyApiRequest({
-    fetchFn: globalThis.fetch,
+    fetchFn: internalApiFetch,
     request,
     path: 'auth/handoff/prepare',
     apiBaseUrl: env.API_BASE_URL,

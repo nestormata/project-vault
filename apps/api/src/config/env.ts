@@ -1,6 +1,7 @@
 import { z } from 'zod/v4'
 import { EXTENSION_DB_PLACEHOLDER_CREDENTIAL } from '@project-vault/db'
 import { DEV_AUTH_DUMMY_PASSWORD_HASH } from './dev-dummy-hash.js'
+import { validateInternalTlsEnv } from './internal-tls.js'
 import {
   CLI_MAX_VERSION_LENGTH,
   isCliAcceptedReleaseVersion,
@@ -974,6 +975,17 @@ const envSchema = z
       z.string().url('FATAL: EXTENSION_DATABASE_URL must be a parseable PostgreSQL URL').optional()
     ),
     EXTENSION_DATABASE_POOL_MAX: z.coerce.number().int().min(1).default(3),
+    // Story 43.16 AC-1 / AC-3 / AC-12: Fly demo internal TLS, single-line base64 of PEM. All
+    // optional and off by default (docker-compose/CI/local dev never set them). Decoding, pairing
+    // and key/cert matching are validated in superRefine via validateInternalTlsEnv; empty values
+    // count as unset. API_TLS_* = the api listener (TLS; mTLS when the client CA is set);
+    // DATABASE_TLS_* = the pinned DB CA plus the api's DB client cert.
+    API_TLS_CERT_B64: z.string().optional(),
+    API_TLS_KEY_B64: z.string().optional(),
+    API_TLS_CLIENT_CA_B64: z.string().optional(),
+    DATABASE_TLS_CA_B64: z.string().optional(),
+    DATABASE_TLS_CLIENT_CERT_B64: z.string().optional(),
+    DATABASE_TLS_CLIENT_KEY_B64: z.string().optional(),
     CORS_ALLOWED_ORIGINS: z
       .string()
       .min(1)
@@ -984,6 +996,17 @@ const envSchema = z
             .map((item) => item.trim())
             .includes('*'),
         'CORS_ALLOWED_ORIGINS cannot contain "*"'
+      )
+      // Story 60.7 (AC1, R3): browsers send the literal `Origin: null` from sandboxed iframes,
+      // file:// pages and some redirects, so a `null` entry would grant credentialed CORS to any
+      // attacker page that sandboxes itself. Compose now appends operator CORS_EXTRA_ORIGINS here.
+      .refine(
+        (value) =>
+          !value
+            .split(',')
+            .map((item) => item.trim().toLowerCase())
+            .includes('null'),
+        'CORS_ALLOWED_ORIGINS cannot contain "null"'
       )
       .default('http://localhost:5173'),
     METRICS_BIND_HOST: z.string().default('127.0.0.1'),
@@ -1469,7 +1492,13 @@ const envSchema = z
     // Story 30.2: the exact configured CM router issuer (claim contract "Instance identity
     // decision" table row `iss`) — a mismatch rejects `handoff_malformed_claim`. Defaults to the
     // production router identifier the contract cites; overridable for staging/test issuers.
-    VAULT_HANDOFF_ISSUER: z.string().min(1).default('https://app.centralizeme.com'),
+    // Story 60.7 AC4.2: empty means "use the default" (the `.env.example` ships it empty so a
+    // copied config does not switch on the web "Return to CentralizeMe" link). No trimming: the
+    // `iss` compare in handoff-verify.ts is exact.
+    VAULT_HANDOFF_ISSUER: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().min(1).default('https://app.centralizeme.com')
+    ),
     // Story 43.6 (D5) — operator tightening of the CLI version policy served publicly by
     // GET /api/v1/client-version-policy. Versions only, never free text; merged tighten-only with
     // the baked upstream policy (modules/client-versions/cli-version-policy.ts).
@@ -1546,6 +1575,7 @@ const envSchema = z
     }
     validateBackupEnv(env, ctx)
     validateHandoffVerifyKeys(env.VAULT_HANDOFF_VERIFY_KEYS, ctx)
+    validateInternalTlsEnv(env, ctx)
   })
 
 type RawEnv = z.infer<typeof envSchema>

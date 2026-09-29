@@ -1,6 +1,7 @@
 import { dev } from '$app/environment'
 import { env } from '$env/dynamic/private'
 import { proxyApiRequest } from '$lib/server/api-proxy.js'
+import { internalApiFetch } from '$lib/server/internal-api-tls.js'
 import { resolveCentralizeMeOrigin } from '$lib/server/handoff-return-origin.js'
 import type { PageServerLoad } from './$types'
 
@@ -89,7 +90,7 @@ async function exchangeClaimIntoCookie(event: Parameters<PageServerLoad>[0]): Pr
   const claim = event.url.searchParams.get('claim')
   if (!pendingId || !claim) return
 
-  const response = await exchangeClaim(globalThis.fetch, env.API_BASE_URL, pendingId, claim)
+  const response = await exchangeClaim(internalApiFetch, env.API_BASE_URL, pendingId, claim)
   const result = response && (await parseExchangeResult(response))
   if (!result) return
 

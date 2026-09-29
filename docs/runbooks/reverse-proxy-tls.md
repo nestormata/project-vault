@@ -9,7 +9,9 @@
 
 Putting this application behind Traefik, nginx, Caddy, or any load balancer — which you must do for
 any deployment reachable from outside the host. Neither the API nor the web app terminates TLS
-itself.
+itself — except the Fly demo's internal hop (web → api over mTLS, api → db over TLS with client
+certificates), which is opt-in and off everywhere else: see
+[`fly-internal-tls.md`](fly-internal-tls.md).
 
 ---
 
@@ -50,6 +52,9 @@ setting these three separately. Compose feeds that one value to the API's `CORS_
 and `WEB_BASE_URL` and to the web service's `ORIGIN`, so the three cannot drift apart. Set
 `WEB_BASE_URL` explicitly only when outbound links must point somewhere other than the browser
 origin. `COOKIE_SECURE`, `TRUST_PROXY` and `TRUST_PROXY_HOPS` pass through from `.env` as well.
+Under Compose, a `CORS_ALLOWED_ORIGINS` line in `.env` is ignored; to allow an extra trusted origin
+(e.g. CentralizeMe's), set `CORS_EXTRA_ORIGINS`, which Compose appends to `PUBLIC_WEB_ORIGIN` for
+both the api and web services (Story 60.7).
 
 After a change, verify from a real browser: sign in, confirm the session survives a reload
 (`COOKIE_SECURE` + TLS), and confirm no CORS error appears in the console
@@ -115,8 +120,9 @@ services:
       - traefik.http.middlewares.pv-deny.ipallowlist.sourcerange=127.0.0.1/32
 ```
 
-With this in front of the stack, set `TRUST_PROXY=true`, `TRUST_PROXY_HOPS=1`, `COOKIE_SECURE=true`,
-`CORS_ALLOWED_ORIGINS=https://vault.example.com` and `WEB_BASE_URL=https://vault.example.com`.
+With this in front of the stack, set `TRUST_PROXY=true`, `TRUST_PROXY_HOPS=1`, `COOKIE_SECURE=true`
+and `PUBLIC_WEB_ORIGIN=https://vault.example.com` (Compose derives `CORS_ALLOWED_ORIGINS`,
+`WEB_BASE_URL` and the web `ORIGIN` from it).
 
 Also stop publishing the container ports to the host once the proxy is on the same Docker network:
 `API_HOST_PORT` and `WEB_HOST_PORT` publish to `0.0.0.0` by default, which bypasses the proxy

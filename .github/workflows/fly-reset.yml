@@ -104,3 +104,7 @@ jobs:
           DEMO_LOGIN_EMAIL: ${{ secrets.FLY_DEMO_LOGIN_EMAIL }}
           DEMO_LOGIN_PASSWORD: ${{ secrets.FLY_DEMO_LOGIN_PASSWORD }}
           VAULT_BOOTSTRAP_TOKEN: ${{ secrets.FLY_DEMO_VAULT_BOOTSTRAP_TOKEN }}
+          # Story 43.16: the internal CA mints the TLS leaves / the per-run operator certificate.
+          # Scoped to this step only — never to a deploy step (docs/runbooks/fly-internal-tls.md).
+          FLY_INTERNAL_CA_CERT_B64: ${{ secrets.FLY_DEMO_INTERNAL_CA_CERT_B64 }}
+          FLY_INTERNAL_CA_KEY_B64: ${{ secrets.FLY_DEMO_INTERNAL_CA_KEY_B64 }}

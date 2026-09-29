@@ -87,6 +87,12 @@ import { runKeyCustodyCheck } from './workers/key-custody-check.js'
 import { runResourceUsageCheck } from './workers/resource-usage-check.js'
 import { runClockSkewCheck } from './workers/clock-skew-check.js'
 import { env } from './config/env.js'
+import {
+  isDatabaseTlsPinned,
+  resolveApiListenerTls,
+  resolveDatabaseClientLeaf,
+} from './config/internal-tls.js'
+import { logInternalTlsStartup } from './lib/internal-tls-status.js'
 import { instrumentDbPool } from './lib/db-pool-metrics.js'
 import { withJobLogging } from './lib/job-logging.js'
 import { operationalLog, serializeLogError } from './lib/logger.js'
@@ -95,6 +101,7 @@ import { adminPoolIdentityFailure, inspectConfiguredAdminPool } from './lib/admi
 import { getReleaseVersion } from './lib/package-version.js'
 import type { FastifyBaseLogger } from 'fastify'
 import postgres from 'postgres'
+import { pgTlsOptions } from '@project-vault/db/pg-tls'
 
 const NOTIFICATION_CATCHUP_CRON = '*/10 * * * *'
 // Story 20.8: shared by every 5-minute-cadence cleanup job (this constant's introduction fixed a
@@ -125,7 +132,7 @@ async function main(): Promise<void> {
   // 2. createRingBuffer(emitter) — stub in Story 1.1
   const _ringBuffer = null
 
-  const sql = postgres(env.DATABASE_URL)
+  const sql = postgres(env.DATABASE_URL, pgTlsOptions())
   const dbPool = instrumentDbPool({
     query: async (statement: string) => sql.unsafe(statement),
   })
@@ -478,6 +485,17 @@ async function main(): Promise<void> {
   // default, so IPv4 callers (docker-compose, local dev, tests hitting localhost) are
   // unaffected.
   await fastify.listen({ port: env.API_PORT, host: '::' })
+  // Story 43.16 AC-9: one line describing the internal TLS posture (off/tls/mtls, pinned DB CA),
+  // plus a warn per leaf under 30 days from notAfter. Never carries certificate/key material.
+  logInternalTlsStartup(
+    fastify.log,
+    {
+      listener: resolveApiListenerTls(env),
+      dbClientLeaf: resolveDatabaseClientLeaf(env),
+      dbPinned: isDatabaseTlsPinned(env),
+    },
+    new Date()
+  )
   operationalLog(fastify.log, 'info', OperationalEvent.STARTUP_COMPLETE, 'API startup complete', {
     nodeVersion: process.version,
     // Story 9.10 AC-1: the release identity, not package.json's 0.0.1 placeholder — log-based

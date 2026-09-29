@@ -2,7 +2,7 @@
  * Story 43.9 (typescript:S4036) — resolve the executables that root `scripts/` spawn without ever
  * consulting `$PATH`.
  *
- * - System tools (`git`, `docker`, `bash`) are looked up in a fixed list of root-owned
+ * - System tools (`git`, `docker`, `bash`, `openssl`, `find`) are looked up in a fixed list of root-owned
  *   directories. A missing tool fails loudly; there is deliberately no fallback to the bare name, because that
  *   would reintroduce the PATH lookup.
  * - Workspace-local tools (`tsc`, `ncc`) are resolved from the consuming package's own
@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path'
 /** Root-owned system binary directories, searched in order. Never user-writable locations. */
 export const TRUSTED_EXECUTABLE_DIRS: readonly string[] = ['/usr/bin', '/usr/local/bin', '/bin']
 
-export type TrustedExecutable = 'git' | 'docker' | 'bash'
+export type TrustedExecutable = 'git' | 'docker' | 'bash' | 'openssl' | 'find'
 
 function isExecutableFile(path: string): boolean {
   try {

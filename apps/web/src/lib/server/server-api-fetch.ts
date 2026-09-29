@@ -1,4 +1,5 @@
 import { getTrustedApiBase } from '$lib/security/hardening.js'
+import { internalApiFetch } from './internal-api-tls.js'
 
 const DEFAULT_API_BASE_URL = 'http://localhost:3000'
 
@@ -17,7 +18,8 @@ export function apiUrl(path: string, apiBaseUrl?: string) {
 
 export function createServerApiFetch({
   apiBaseUrl,
-  fetchFn = globalThis.fetch,
+  // Story 43.16 AC-2: the internal-TLS choke point (plain fetch when no API_TLS_* is set).
+  fetchFn = internalApiFetch,
 }: ServerApiFetchOptions = {}): typeof fetch {
   return ((input: RequestInfo | URL, init?: RequestInit) => {
     if (typeof input === 'string' && input.startsWith('/')) {

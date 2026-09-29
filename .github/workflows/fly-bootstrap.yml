@@ -92,6 +92,11 @@ jobs:
 
       - name: Create apps, volume, secrets, deploy db
         run: ./scripts/fly-setup.sh
+        env:
+          # Story 43.16: the internal CA mints the TLS leaves / the per-run operator certificate.
+          # Scoped to this step only — never to a deploy step (docs/runbooks/fly-internal-tls.md).
+          FLY_INTERNAL_CA_CERT_B64: ${{ secrets.FLY_DEMO_INTERNAL_CA_CERT_B64 }}
+          FLY_INTERNAL_CA_KEY_B64: ${{ secrets.FLY_DEMO_INTERNAL_CA_KEY_B64 }}
 
       - name: Deploy api
         run: flyctl deploy -c fly.api.toml -a project-vault-demo-api --ha=false --remote-only --build-arg RELEASE_VERSION=${{ steps.release.outputs.version }}
@@ -101,3 +106,8 @@ jobs:
 
       - name: First reset (migrate + seed + vault init/unseal)
         run: ./scripts/fly-reset.sh
+        env:
+          # Story 43.16: the internal CA mints the TLS leaves / the per-run operator certificate.
+          # Scoped to this step only — never to a deploy step (docs/runbooks/fly-internal-tls.md).
+          FLY_INTERNAL_CA_CERT_B64: ${{ secrets.FLY_DEMO_INTERNAL_CA_CERT_B64 }}
+          FLY_INTERNAL_CA_KEY_B64: ${{ secrets.FLY_DEMO_INTERNAL_CA_KEY_B64 }}

@@ -1,5 +1,6 @@
 import { PgBoss } from 'pg-boss'
 import type { WorkConcurrencyOptions } from 'pg-boss'
+import { pgBossConnectionOptions } from '@project-vault/db/pg-tls'
 
 type BossSendOptions = {
   retryLimit?: number
@@ -35,7 +36,7 @@ export class BossService {
   constructor(connectionStringOrFactory: string | BossFactory) {
     this.#createBoss =
       typeof connectionStringOrFactory === 'string'
-        ? () => new PgBoss(connectionStringOrFactory)
+        ? () => new PgBoss(pgBossConnectionOptions(connectionStringOrFactory))
         : connectionStringOrFactory
   }
 

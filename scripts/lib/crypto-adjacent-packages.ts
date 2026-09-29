@@ -40,6 +40,12 @@
  *     Missed by the original grep list because it searches for the literal substring `totp`, which
  *     does not appear in the package name `otpauth`.
  * See this story's Dev Agent Record for the full Task 1 re-verification trail.
+ *
+ * Added 2026-09-29 (Story 43.16 AC-15): `undici`. apps/web's `internalApiFetch` builds an undici
+ * `Agent` that carries the Fly demo's private-CA pin and mTLS client certificate for the web → api
+ * hop, and apps/api uses it for SSRF-guarded outbound fetches. Both declare it exactly; the former
+ * workspace-wide `undici` override was removed because this gate forbids overriding a listed
+ * package (transitive users such as `@actions/http-client` now resolve their own patched ranges).
  */
 export const CRYPTO_ADJACENT_PACKAGES: readonly string[] = [
   'argon2',
@@ -47,4 +53,5 @@ export const CRYPTO_ADJACENT_PACKAGES: readonly string[] = [
   '@fastify/jwt',
   'fast-jwt',
   'otpauth',
+  'undici',
 ]
