@@ -23,16 +23,16 @@ describe('parseAllowedOrigins', () => {
   // Story 60.7 AC1: Compose appends operator CORS_EXTRA_ORIGINS to PV's own origin; a `null`
   // entry (the Origin browsers send from sandboxed iframes and file:// pages) must never match.
   it('drops a null entry, case-insensitively', () => {
-    expect(parseAllowedOrigins('http://localhost:5173,null')).toEqual(
-      new Set(['http://localhost:5173'])
+    expect(parseAllowedOrigins('https://vault.example.test,null')).toEqual(
+      new Set(['https://vault.example.test'])
     )
-    expect(parseAllowedOrigins('http://localhost:5173, NULL ').size).toBe(1)
+    expect(parseAllowedOrigins('https://vault.example.test, NULL ').size).toBe(1)
   })
 
   // Story 60.7 AC1: mirrors env.ts's no-wildcard rule; `*` is never an allowlist entry here.
   it('drops a wildcard entry', () => {
-    expect(parseAllowedOrigins('http://localhost:5173,*')).toEqual(
-      new Set(['http://localhost:5173'])
+    expect(parseAllowedOrigins('https://vault.example.test,*')).toEqual(
+      new Set(['https://vault.example.test'])
     )
   })
 })
