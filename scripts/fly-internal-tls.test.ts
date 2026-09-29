@@ -368,6 +368,10 @@ describe('usage', () => {
 
 // The operator helpers scripts/fly-migrate.sh and fly-reset.sh share (Decision 6).
 describe('fly-proxy-lib.sh operator TLS helpers', () => {
+  // The `flyctl proxy` endpoint the operator scripts dial (the db cert carries DNS:localhost).
+  const PROXY_HOST = 'localhost'
+  const PROXY_PORT = 15432
+
   it('mint into a mktemp dir, build a verify-full psql URL, scope DATABASE_TLS_* to the child, and clean up', () => {
     const program = [
       'set -euo pipefail',
@@ -375,7 +379,7 @@ describe('fly-proxy-lib.sh operator TLS helpers', () => {
       // open_fly_db_proxy normally defines cleanup (proxy kill + OP_DIR removal); no proxy here.
       'cleanup() { if [[ -n "${OP_DIR:-}" ]]; then rm -rf "$OP_DIR"; fi; return 0; }',
       `issue_operator_tls "${import.meta.dirname}" >/dev/null`,
-      'printf "URL %s\\n" "$(operator_psql_url postgres pw 15432)"',
+      `printf "URL %s\\n" "$(operator_psql_url postgres pw ${PROXY_PORT})"`,
       'with_operator_tls bash -c \'printf "CHILD %s %s %s\\n" "${#DATABASE_TLS_CA_B64}" "${#DATABASE_TLS_CLIENT_CERT_B64}" "${#DATABASE_TLS_CLIENT_KEY_B64}"\'',
       'printf "PARENT %s\\n" "${DATABASE_TLS_CA_B64:-unset}"',
       'printf "OPDIR %s\\n" "$OP_DIR"',
@@ -395,7 +399,7 @@ describe('fly-proxy-lib.sh operator TLS helpers', () => {
     expect(result.status).toBe(0)
     const opDir = /OPDIR (\S+)/.exec(result.stdout)?.[1] ?? ''
     expect(result.stdout).toContain(
-      `URL postgresql://postgres:pw@localhost:15432/project_vault?sslmode=verify-full&sslrootcert=${opDir}/ca.crt&sslcert=${opDir}/operator.crt&sslkey=${opDir}/operator.key`
+      `URL postgresql://postgres:pw@${PROXY_HOST}:${PROXY_PORT}/project_vault?sslmode=verify-full&sslrootcert=${opDir}/ca.crt&sslcert=${opDir}/operator.crt&sslkey=${opDir}/operator.key`
     )
     const [, caLen, certLen, keyLen] = /CHILD (\d+) (\d+) (\d+)/.exec(result.stdout) ?? []
     for (const length of [caLen, certLen, keyLen]) expect(Number(length)).toBeGreaterThan(100)

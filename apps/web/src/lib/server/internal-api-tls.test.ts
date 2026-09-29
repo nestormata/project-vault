@@ -78,7 +78,7 @@ const ROUTES = new Map<string, (cookie: string) => Reply>([
     '/api/v1/auth/me',
     (cookie) =>
       cookie.includes('session=S2') || cookie.includes('pv_session=abc')
-        ? { status: 200, body: { data: { id: 'user-1', email: 'user@example.test' } } }
+        ? { status: 200, body: { data: { id: 'user-1', email: 'user@invalid' } } }
         : UNAUTHENTICATED,
   ],
   [
@@ -264,6 +264,19 @@ describe('Story 43.16 AC-2: createInternalApiFetch', () => {
     expect(baseFetch).not.toHaveBeenCalled()
   })
 
+  it('⚠️ unset API_BASE_URL is the plain-http dev default: off without TLS vars, an error with them', async () => {
+    const baseFetch = vi.fn(async () => new Response('ok'))
+    await createInternalApiFetch({}, { baseFetch, log: captureLog().log })('/x')
+    expect(baseFetch).toHaveBeenCalledWith('/x', undefined)
+    const withCa = createInternalApiFetch(
+      { API_TLS_CA_B64: pki.ca.certB64 },
+      { baseFetch, log: captureLog().log }
+    )
+    await expect(withCa('/x')).rejects.toThrow(
+      'API_BASE_URL must be https:// when API_TLS_* is set'
+    )
+  })
+
   it('⚠️ https://*.internal without API_TLS_CA_B64 is a config error, not a deep cert failure', async () => {
     const baseFetch = vi.fn(async () => new Response('ok'))
     const internal = createInternalApiFetch(
@@ -346,7 +359,7 @@ describe('Story 43.16 AC-2: createInternalApiFetch', () => {
       request: new Request('http://web.test/api/v1/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: 'user@example.test' }),
+        body: JSON.stringify({ email: 'user@invalid' }),
       }),
       path: 'auth/login',
       apiBaseUrl: server.baseUrl,

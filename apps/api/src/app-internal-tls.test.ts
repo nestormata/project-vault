@@ -20,8 +20,8 @@ vi.mock('./config/env.js', () => ({
   env: {
     NODE_ENV: 'test',
     API_PORT: 3000,
-    DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
-    CORS_ALLOWED_ORIGINS: 'http://localhost:5173',
+    DATABASE_URL: 'postgresql://test:test@db.invalid:5432/test',
+    CORS_ALLOWED_ORIGINS: 'https://web.invalid',
     METRICS_BIND_HOST: '127.0.0.1',
     LOG_LEVEL: 'silent',
     SERVICE_NAME: 'api',

@@ -28,7 +28,6 @@ export const WEB_API_TLS_SPEC: TlsMaterialSpec = {
   role: 'client',
 }
 
-const DEFAULT_API_BASE_URL = 'http://localhost:3000'
 const EXPIRY_WARN_INTERVAL_MS = 24 * 3_600_000
 
 export type InternalApiLogLine = {
@@ -56,15 +55,20 @@ function writeLogLine(line: InternalApiLogLine): void {
   process.stderr.write(`${JSON.stringify({ ...line, service: 'web' })}\n`)
 }
 
+/** An empty API_BASE_URL means server-api-fetch's plain-http local-dev default. */
 function assertBaseUrl(apiBaseUrl: string, material: ResolvedTlsMaterial): void {
-  const url = new URL(apiBaseUrl)
   const tlsConfigured = material.ca !== undefined
-  if (tlsConfigured && url.protocol !== 'https:') {
+  const protocol = apiBaseUrl === '' ? 'http:' : new URL(apiBaseUrl).protocol
+  if (tlsConfigured && protocol !== 'https:') {
     throw new Error('API_BASE_URL must be https:// when API_TLS_* is set')
   }
   // Public roots can never validate a private-CA certificate. This rule is about API_BASE_URL's
   // own host only — never a synthetic request URL such as the handoff route's placeholder.
-  if (url.protocol === 'https:' && url.hostname.endsWith('.internal') && !tlsConfigured) {
+  if (
+    protocol === 'https:' &&
+    new URL(apiBaseUrl).hostname.endsWith('.internal') &&
+    !tlsConfigured
+  ) {
     throw new Error('API_TLS_CA_B64 is required when API_BASE_URL is an https://*.internal URL')
   }
 }
@@ -72,9 +76,7 @@ function assertBaseUrl(apiBaseUrl: string, material: ResolvedTlsMaterial): void 
 function resolve(env: EnvLike, createAgent: (options: AgentOptions) => Agent): Resolved {
   const material = resolveTlsMaterial(env, WEB_API_TLS_SPEC)
   const rawBase = new Map(Object.entries(env)).get('API_BASE_URL')
-  const apiBaseUrl =
-    typeof rawBase === 'string' && rawBase.trim() ? rawBase.trim() : DEFAULT_API_BASE_URL
-  assertBaseUrl(apiBaseUrl, material)
+  assertBaseUrl(typeof rawBase === 'string' ? rawBase.trim() : '', material)
   if (material.ca === undefined) return { mode: 'off', material }
   const connect: AgentOptions['connect'] = {
     ca: material.ca,

@@ -25,10 +25,13 @@ export class InternalTlsConfigError extends Error {
 /** `id-kp-clientAuth`. Node exposes a certificate's extended key usages as `x509.keyUsage`. */
 export const CLIENT_AUTH_EKU_OID = '1.3.6.1.5.5.7.3.2'
 
+const ENCRYPTED_KEY_ERROR_CODES = new Set([
+  'ERR_MISSING_PASSPHRASE',
+  'ERR_OSSL_CRYPTO_INTERRUPTED_OR_CANCELLED',
+])
 const STRICT_BASE64 = /^[A-Za-z0-9+/]+={0,2}$/
 const CERT_BEGIN = '-----BEGIN CERTIFICATE-----'
 const CERT_END = '-----END CERTIFICATE-----'
-const ENCRYPTED_KEY_MARKERS = ['-----BEGIN ENCRYPTED PRIVATE KEY-----', 'Proc-Type: 4,ENCRYPTED']
 
 /** Any env-shaped object; only string values are read (parsed env objects carry numbers too). */
 export type EnvLike = Readonly<Record<string, unknown>>
@@ -84,13 +87,14 @@ export type ParsedPrivateKey = { pem: string; key: KeyObject }
 
 export function parsePrivateKeyB64(name: string, value: string): ParsedPrivateKey {
   const text = decodeStrictBase64(name, value)
-  if (ENCRYPTED_KEY_MARKERS.some((marker) => text.includes(marker))) {
-    throw new InternalTlsConfigError(name, `${name}: encrypted private keys are not supported`)
-  }
-  if (!text.includes('PRIVATE KEY-----')) throw invalid(name)
   try {
     return { pem: text, key: createPrivateKey(text) }
-  } catch {
+  } catch (error) {
+    // A passphrase-protected key (PKCS#8 or legacy PEM) fails without a passphrase with one of
+    // these codes: Node's own check, or OpenSSL's cancelled passphrase callback.
+    if (ENCRYPTED_KEY_ERROR_CODES.has(String((error as NodeJS.ErrnoException).code))) {
+      throw new InternalTlsConfigError(name, `${name}: encrypted private keys are not supported`)
+    }
     throw invalid(name)
   }
 }
