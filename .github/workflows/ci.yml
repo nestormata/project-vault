@@ -664,9 +664,16 @@ jobs:
             CHANGED=$(git diff --name-only --no-renames "origin/${BASE_REF}...HEAD")
             for INPUT in apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci .dockerignore \
               apps/api/docker-entrypoint.sh pnpm-lock.yaml pnpm-workspace.yaml \
-              scripts/materialize-deploy-runtime.mjs .trivyignore; do
+              scripts/materialize-deploy-runtime.mjs .trivyignore fly.db.toml; do
               if grep -Fxq -- "$INPUT" <<<"$CHANGED"; then
                 echo "Image input changed: $INPUT"
+                IMAGES_CHANGED=true
+              fi
+            done
+            # Story 43.16 AC-13: every file under these directories is an image input (fly-db).
+            for INPUT_DIR in deploy/fly/db/; do
+              if grep -q -- "^${INPUT_DIR}" <<<"$CHANGED"; then
+                echo "Image input changed under: $INPUT_DIR"
                 IMAGES_CHANGED=true
               fi
             done
@@ -756,6 +763,22 @@ jobs:
             type=gha,scope=migrate-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=migrate-${{ matrix.arch }}
 
+      # Story 43.16 AC-13: the Fly demo's db image (deploy/fly/db). amd64 only — it is deployed to
+      # Fly's amd64 machines by `flyctl deploy` from source (never published to GHCR, so there is
+      # no release gate for it; nightly.yml is its gate on main).
+      - name: Load fly-db image for scan
+        id: load-fly-db
+        if: matrix.arch == 'amd64'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: deploy/fly/db/Dockerfile
+          target: runner
+          load: true
+          tags: project-vault-fly-db:size-check
+          cache-from: type=gha,scope=fly-db-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=fly-db-${{ matrix.arch }}
+
       - name: Check extension-api deployed tree
         if: matrix.arch == 'amd64'
         run: |
@@ -826,6 +849,22 @@ jobs:
           severity: CRITICAL,HIGH
           trivyignores: .trivyignore
 
+      - name: Scan fly-db image for vulnerabilities
+        id: scan-fly-db
+        if: ${{ !cancelled() && matrix.arch == 'amd64' && steps.load-fly-db.outcome == 'success' }}
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          # Pinned Trivy binary (trivy-action v0.36.0's default); never v0.69.4-v0.69.6 (Story 64.2).
+          version: 'v0.70.0'
+          image-ref: project-vault-fly-db:size-check
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          trivyignores: .trivyignore
+
       - name: Scan web image for vulnerabilities
         id: scan-web
         if: ${{ !cancelled() && matrix.arch == 'amd64' && steps.load-web.outcome == 'success' }}
@@ -849,12 +888,13 @@ jobs:
         env:
           IMAGES_CHANGED: ${{ steps.image-inputs.outputs.images_changed }}
           SCAN_API: ${{ steps.scan-api.outcome }}
+          SCAN_FLY_DB: ${{ steps.scan-fly-db.outcome }}
           SCAN_MIGRATE: ${{ steps.scan-migrate.outcome }}
           SCAN_WEB: ${{ steps.scan-web.outcome }}
         run: |
           set -euo pipefail
           FAILED=0
-          for PAIR in "api:${SCAN_API}" "migrate:${SCAN_MIGRATE}" "web:${SCAN_WEB}"; do
+          for PAIR in "api:${SCAN_API}" "fly-db:${SCAN_FLY_DB}" "migrate:${SCAN_MIGRATE}" "web:${SCAN_WEB}"; do
             IMAGE="${PAIR%%:*}"
             OUTCOME="${PAIR#*:}"
             if [[ "$OUTCOME" != "failure" ]]; then
