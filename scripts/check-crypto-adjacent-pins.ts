@@ -18,6 +18,8 @@
  *     negative example, pinning at the declaration site is the only correct mechanism here; an
  *     override can silently force a resolution above an exactly-pinned `package.json` entry without
  *     that entry's own version string ever changing (Red Team Attack 2 in this story's Dev Notes).
+ *     A parent-scoped key (`"@actions/http-client>undici"`) counts too: the key's target — its last
+ *     `>`-separated selector — is what gets checked, not its leading parent name.
  *  3. `.github/dependabot.yml`'s `groups.crypto-adjacent.patterns` and
  *     `groups.pnpm-workspace.exclude-patterns` must each match the canonical list exactly. YAML
  *     cannot `import` a `.ts` const, so this is a hand-parsed structural cross-check (see this
@@ -332,6 +334,22 @@ function extractOverrideBaseName(key: string): string {
   return atIndex === -1 ? key : key.slice(0, atIndex)
 }
 
+/** A `>` that separates pnpm override selectors (`parent>child`, `parent@^1>child@^7`) always
+ * directly follows a package-name or version character. A `>` inside a semver range instead follows
+ * the range's `@`, whitespace, `|`, or another comparator character (`@>=10`, `<2 || >3`), so it is
+ * never mistaken for a separator. */
+const OVERRIDE_SELECTOR_SEPARATOR = /(?<=[^@\s|<>=])>/
+
+/** Extracts the package an override key actually re-resolves: the LAST `>`-separated selector
+ * (pnpm's parent-scoped syntax, e.g. `"@actions/http-client>undici"` or `"parent@^1>undici@^7"`),
+ * with its optional `@<range>` qualifier stripped. Keying on the target — not on the whole key —
+ * is what stops a parent-scoped override from forcing a crypto-adjacent package's resolution while
+ * slipping past this gate under a key that merely starts with an unlisted parent name. */
+function extractOverrideTargetName(key: string): string {
+  const selectors = key.split(OVERRIDE_SELECTOR_SEPARATOR)
+  return extractOverrideBaseName(selectors.at(-1) ?? key)
+}
+
 function scanWorkspaceOverrides(root: string): OverrideViolation[] {
   const workspaceYamlPath = resolve(root, WORKSPACE_YAML_PATH)
   let raw: string
@@ -345,7 +363,7 @@ function scanWorkspaceOverrides(root: string): OverrideViolation[] {
   const overrides = parseWorkspaceOverrides(raw)
   const byBaseName = new Map<string, string>()
   for (const [key, value] of overrides) {
-    byBaseName.set(extractOverrideBaseName(key), value)
+    byBaseName.set(extractOverrideTargetName(key), value)
   }
 
   const violations: OverrideViolation[] = []

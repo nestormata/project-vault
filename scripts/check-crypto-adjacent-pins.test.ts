@@ -385,6 +385,40 @@ describe('scanCryptoAdjacentPins', () => {
     )
   })
 
+  it.each([
+    ['"@actions/http-client>undici"', 'undici'],
+    ['"parent@^1>undici@^7"', 'undici'],
+    ['"@scope/parent>argon2"', 'argon2'],
+    ['"a>b@1>@fastify/jwt@>=10.0.0 <11.0.0"', '@fastify/jwt'],
+  ])(
+    'flags a parent-scoped override key %s whose target package is crypto-adjacent',
+    (key, packageName) => {
+      const root = makeFixtureRoot()
+      writeCleanBaseFixture(root)
+      writeFixture(
+        root,
+        WORKSPACE_YAML_REL,
+        `${CLEAN_WORKSPACE_YAML}overrides:\n  ${key}: 7.29.1\n`
+      )
+
+      const { violations } = scanCryptoAdjacentPins(root)
+      expect(violations).toContainEqual(
+        expect.objectContaining({ kind: 'override', packageName, overrideValue: '7.29.1' })
+      )
+    }
+  )
+
+  it.each(['undici-types', '"foo>bar"', '"undici>foo"', '"@types/undici@^1"'])(
+    'does not flag override key %s whose target package is not crypto-adjacent',
+    (key) => {
+      const root = makeFixtureRoot()
+      writeCleanBaseFixture(root)
+      writeFixture(root, WORKSPACE_YAML_REL, `${CLEAN_WORKSPACE_YAML}overrides:\n  ${key}: 1.0.0\n`)
+
+      expect(scanCryptoAdjacentPins(root)).toEqual({ violations: [] })
+    }
+  )
+
   it('flags a crypto-adjacent package declared under peerDependencies with a range (not just dependencies/devDependencies)', () => {
     const root = makeFixtureRoot()
     writeCleanBaseFixture(root)
