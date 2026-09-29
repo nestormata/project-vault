@@ -1,10 +1,11 @@
 import { env } from '$env/dynamic/private'
 import type { RequestHandler } from './$types'
 import { proxyApiRequest } from '$lib/server/api-proxy.js'
+import { internalApiFetch } from '$lib/server/internal-api-tls.js'
 
 const proxy: RequestHandler = ({ params, request }) =>
   proxyApiRequest({
-    fetchFn: globalThis.fetch,
+    fetchFn: internalApiFetch,
     request,
     path: params.path ?? '',
     apiBaseUrl: env.API_BASE_URL,
