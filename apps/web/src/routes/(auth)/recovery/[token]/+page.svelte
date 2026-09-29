@@ -170,6 +170,7 @@
     {/if}
 
     <form
+      method="post"
       class="space-y-5"
       onsubmit={(event) => {
         event.preventDefault()

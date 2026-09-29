@@ -1,19 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
  * Story 66.3 AC-11 (Red Team): a `<form>` without `method` submits with GET. If a submit lands
  * before hydration attaches the Svelte `onsubmit` handler (or the JS never loads), the browser
  * navigates to `<current-url>?<name>=<value>…` — so every NAMED input ends up in the URL, the
- * browser history, access/proxy logs and later `Referer` headers. A secret input must therefore
- * never carry a `name` unless its form posts (`method="post"` sends the body, not the URL).
+ * browser history, access/proxy logs and later `Referer` headers.
  *
- * Chosen pattern (recorded in Story 66.3's Dev Notes): secret inputs stay unnamed. The forms
- * submit through their `onsubmit` handler reading bound state, so `name` served no purpose, and
- * dropping it changes nothing a user sees — unlike `method="post"` on a route with no form
- * actions, which would answer a pre-hydration submit with a 405 error page.
+ * Two layers, both enforced here (decision recorded in Story 66.3's Dev Notes; Nestor asked for
+ * the second on top of the first):
+ * 1. Secret inputs never carry a `name` — nothing secret is ever part of a native submission.
+ *    The forms submit through `onsubmit` handlers that read bound state, so `name` had no use.
+ * 2. Every form that contains a secret input — directly, or through a component that renders one
+ *    outside a form of its own (e.g. `FieldSetEditor`) — declares `method="post"`, so even a
+ *    future named input would go into the request body, never the URL. None of these routes has
+ *    a form action, so a pre-hydration native POST gets SvelteKit's 405 rendered as the app's
+ *    error page: no echo, no 500, no secret anywhere.
  */
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -96,57 +100,145 @@ function isSecretInput(tag: string): boolean {
   )
 }
 
-function enclosingFormPosts(source: string, tags: Tag[], position: number): boolean {
-  const form = tags.filter((tag) => tag.name === 'form' && tag.start < position).at(-1)
-  if (!form || source.slice(form.start, position).includes('</form>')) return false
-  return /^post$/i.test(attribute(form.source, 'method') ?? '')
-}
-
-/** Named secret inputs that are not inside a `method="post"` form in the same component. */
-function namedSecretInputsOutsidePostForms(source: string): string[] {
-  const tags = openingTags(source)
-  return tags
+/** Secret inputs that carry a `name` (layer 1). */
+function namedSecretInputs(source: string): string[] {
+  return openingTags(source)
     .filter((tag) => tag.name !== 'form')
     .filter((tag) => isSecretInput(tag.source) && attribute(tag.source, 'name') !== null)
-    .filter((tag) => !enclosingFormPosts(source, tags, tag.start))
     .map((tag) => attribute(tag.source, 'name') ?? '')
 }
 
-describe('secret inputs never reach a URL through a native GET form submission (AC-11)', () => {
-  it('flags a named password input in a method-less form, and nothing else', () => {
+type FormSpan = { start: number; end: number; opening: string }
+
+function formSpans(source: string): FormSpan[] {
+  return openingTags(source)
+    .filter((tag) => tag.name === 'form')
+    .map((tag) => {
+      const close = source.indexOf('</form>', tag.start)
+      return { start: tag.start, end: close === -1 ? source.length : close, opening: tag.source }
+    })
+}
+
+function componentUsed(body: string, component: string): boolean {
+  const opening = `<${component}`
+  for (let at = body.indexOf(opening); at !== -1; at = body.indexOf(opening, at + 1)) {
+    const next = body.charAt(at + opening.length)
+    if (next === '' || /[\s/>]/.test(next)) return true
+  }
+  return false
+}
+
+/** True when `body` holds a secret input, or renders one of `exposingComponents`. */
+function holdsSecret(body: string, exposingComponents: ReadonlySet<string>): boolean {
+  return (
+    openingTags(body).some((tag) => tag.name !== 'form' && isSecretInput(tag.source)) ||
+    [...exposingComponents].some((component) => componentUsed(body, component))
+  )
+}
+
+/** Forms holding a secret that do not declare `method="post"` (layer 2); `formIndex` names them. */
+function secretFormsWithoutPost(
+  source: string,
+  exposingComponents: ReadonlySet<string> = new Set()
+): number[] {
+  return formSpans(source)
+    .map((form, formIndex) => ({ form, formIndex }))
+    .filter(({ form }) => holdsSecret(source.slice(form.start, form.end), exposingComponents))
+    .filter(({ form }) => !/^post$/i.test(attribute(form.opening, 'method') ?? ''))
+    .map(({ formIndex }) => formIndex)
+}
+
+/** Source with every `<form>…</form>` span removed. */
+function outsideForms(source: string): string {
+  return formSpans(source)
+    .reverse()
+    .reduce((rest, form) => rest.slice(0, form.start) + rest.slice(form.end), source)
+}
+
+/** Components that render a secret input outside a form of their own — so the form they are
+ * placed in holds that secret. Resolved to a fixed point (a wrapper of such a component is one
+ * too). */
+function secretExposingComponents(files: ReadonlyMap<string, string>): Set<string> {
+  const exposing = new Set<string>()
+  let grew = true
+  while (grew) {
+    grew = false
+    for (const [file, source] of files) {
+      const component = basename(file, '.svelte')
+      if (component.startsWith('+') || exposing.has(component)) continue
+      if (holdsSecret(outsideForms(source), exposing)) {
+        exposing.add(component)
+        grew = true
+      }
+    }
+  }
+  return exposing
+}
+
+describe('secret inputs never reach a URL through a native form submission (AC-11)', () => {
+  it('layer 1 flags every named secret input, and nothing else', () => {
     expect(
-      namedSecretInputsOutsidePostForms(
+      namedSecretInputs(
         '<form onsubmit={() => submit()}><input type="password" name="passphrase" /></form>'
       )
     ).toEqual(['passphrase'])
     expect(
-      namedSecretInputsOutsidePostForms(
+      namedSecretInputs(
         `<form><input id="x" type={reveal ? 'text' : 'password'} name="credential-value" /></form>`
       )
     ).toEqual(['credential-value'])
+    expect(namedSecretInputs('<form><input id="vault-bootstrap-token" name="t" /></form>')).toEqual(
+      ['t']
+    )
     expect(
-      namedSecretInputsOutsidePostForms(
-        '<form><input id="vault-bootstrap-token" name="t" /></form>'
-      )
-    ).toEqual(['t'])
+      namedSecretInputs('<form method="POST"><input type="password" name="passphrase" /></form>')
+    ).toEqual(['passphrase'])
     expect(
-      namedSecretInputsOutsidePostForms(
-        '<form method="POST"><input type="password" name="passphrase" /></form>'
-      )
-    ).toEqual([])
-    expect(
-      namedSecretInputsOutsidePostForms(
+      namedSecretInputs(
         '<form><input type="password" /><input type="radio" name="kmsType" /></form>'
       )
     ).toEqual([])
   })
 
-  it('holds for every Svelte component in apps/web/src', () => {
-    const offenders = svelteFiles(sourceRoot).flatMap((file) =>
-      namedSecretInputsOutsidePostForms(readFileSync(file, 'utf-8')).map(
-        (name) => `${relative(sourceRoot, file)}: name="${name}"`
-      )
+  it('layer 2 flags a form holding a secret without method="post", directly or via a component', () => {
+    expect(secretFormsWithoutPost('<form><input type="password" /></form>')).toEqual([0])
+    expect(secretFormsWithoutPost('<form method="post"><input type="password" /></form>')).toEqual(
+      []
     )
+    expect(
+      secretFormsWithoutPost(
+        '<form method="post"><input type="text" /></form><form><input type="text" /></form>'
+      )
+    ).toEqual([])
+    expect(
+      secretFormsWithoutPost(
+        '<form><Editor bind:fields /></form><form><Other /></form>',
+        new Set(['Editor'])
+      )
+    ).toEqual([0])
+    expect(
+      secretExposingComponents(
+        new Map([
+          ['a/Editor.svelte', '<input type="password" />'],
+          ['a/Wrapper.svelte', '<div><Editor /></div>'],
+          ['a/OwnForm.svelte', '<form method="post"><input type="password" /></form>'],
+          ['a/+page.svelte', '<input type="password" />'],
+        ])
+      )
+    ).toEqual(new Set(['Editor', 'Wrapper']))
+  })
+
+  it('holds for every Svelte component in apps/web/src', () => {
+    const files = new Map(
+      svelteFiles(sourceRoot).map((file) => [file, readFileSync(file, 'utf-8')])
+    )
+    const exposing = secretExposingComponents(files)
+    const offenders = [...files].flatMap(([file, source]) => [
+      ...namedSecretInputs(source).map((name) => `${relative(sourceRoot, file)}: name="${name}"`),
+      ...secretFormsWithoutPost(source, exposing).map(
+        (index) => `${relative(sourceRoot, file)}: form #${index + 1} has no method="post"`
+      ),
+    ])
     expect(offenders).toEqual([])
   })
 })

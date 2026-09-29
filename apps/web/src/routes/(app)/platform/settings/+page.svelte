@@ -276,6 +276,7 @@
       {/if}
 
       <form
+        method="post"
         class="mt-6 space-y-8"
         onsubmit={(e) => {
           e.preventDefault()

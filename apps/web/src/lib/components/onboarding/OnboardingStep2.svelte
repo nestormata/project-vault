@@ -88,6 +88,7 @@
       Add your first secret
     </h2>
     <form
+      method="post"
       class="mt-4 space-y-4"
       onsubmit={(event) => {
         event.preventDefault()

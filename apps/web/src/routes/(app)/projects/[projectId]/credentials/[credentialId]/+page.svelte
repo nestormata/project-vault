@@ -1507,6 +1507,7 @@
               </button>
             {:else}
               <form
+                method="post"
                 class="mt-3 space-y-3"
                 onsubmit={(event) => {
                   event.preventDefault()
