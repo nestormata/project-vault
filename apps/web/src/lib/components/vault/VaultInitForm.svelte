@@ -57,7 +57,6 @@
     <input
       class="w-full rounded-xl border border-slate-300 px-3 py-2"
       id="vault-bootstrap-token"
-      name="bootstrapToken"
       type="password"
       autocomplete="off"
       bind:value={bootstrapToken}
@@ -113,7 +112,6 @@
       <input
         class="w-full rounded-xl border border-slate-300 px-3 py-2"
         id="vault-init-passphrase"
-        name="passphrase"
         type="password"
         autocomplete="new-password"
         bind:value={passphrase}

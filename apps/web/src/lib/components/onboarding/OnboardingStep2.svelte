@@ -123,7 +123,6 @@
             id="credential-value"
             class="w-full rounded-xl border border-slate-300 px-3 py-3"
             type={revealValue ? 'text' : 'password'}
-            name="credential-value"
             autocomplete="new-password"
             inputmode="text"
             aria-label="Secret value"
