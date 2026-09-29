@@ -33,11 +33,15 @@ import {
  * check (`assertDummyPasswordHashSafe`, apps/api native-login-policy.ts) refuses to boot while the
  * value is the in-repo default. A fresh Argon2id PHC string over a random, discarded message and
  * salt satisfies it without any real secret: nothing can ever verify against it. Its m/t/p must
- * equal the isolated API's ARGON2_* settings (env.ts's own defaults, 65536/3/4: this harness sets
- * none), or env validation rejects it. Generated once per test-runner process.
+ * equal the isolated API's ARGON2_* settings or env validation rejects it, so `startEnvelopeApi`
+ * pins ARGON2_* to these same values (code review: relying on env.ts's defaults and on nothing
+ * in the runner's inherited env overriding them would re-break boot silently under NODE_ENV=test).
+ * Generated once per test-runner process.
  */
+const JOURNEY_ONLY_ARGON2_PARAMS = { memory: 65536, passes: 3, parallelism: 4 } as const
+
 function journeyOnlyDummyPasswordHash(): string {
-  const params = { memory: 65536, passes: 3, parallelism: 4 }
+  const params = JOURNEY_ONLY_ARGON2_PARAMS
   const salt = randomBytes(16)
   const hash = argon2Sync('argon2id', {
     message: randomBytes(32),
@@ -81,6 +85,9 @@ export async function startEnvelopeApi(options: {
       VAULT_EXTENSIONS_PACKAGE: '@project-vault/mock-envelope-extension',
       MOCK_ENVELOPE_EXPECTED_AUDIENCE: options.envAudience,
       AUTH_DUMMY_PASSWORD_HASH: JOURNEY_ONLY_DUMMY_PASSWORD_HASH,
+      ARGON2_MEMORY_COST: String(JOURNEY_ONLY_ARGON2_PARAMS.memory),
+      ARGON2_TIME_COST: String(JOURNEY_ONLY_ARGON2_PARAMS.passes),
+      ARGON2_PARALLELISM: String(JOURNEY_ONLY_ARGON2_PARAMS.parallelism),
     },
   })
   return {
