@@ -1,3 +1,4 @@
+import pino from 'pino'
 import { describe, expect, it } from 'vitest'
 import {
   BODY_SENSITIVE_LOG_FIELDS,
@@ -29,6 +30,25 @@ describe('sensitive log field registry coverage', () => {
     expect(PINO_REDACT_PATHS).toEqual(
       expect.arrayContaining(['*.adminDatabaseUrl', '*.ADMIN_DATABASE_URL'])
     )
+  })
+
+  // Story 43.16 review follow-up: the api's internal-TLS private keys (listener key, DB client
+  // key) follow the ADMIN_DATABASE_URL precedent for env-shaped diagnostic objects.
+  it('redacts the internal-TLS private-key env variables in an env-shaped payload', () => {
+    const sentinel = 'tls-key-review-sentinel'
+    for (const field of ['API_TLS_KEY_B64', 'DATABASE_TLS_CLIENT_KEY_B64']) {
+      expect(BODY_SENSITIVE_LOG_FIELDS).toContain(field)
+      expect(REDACTED_BODY_FIELDS.has(field)).toBe(true)
+      expect(PINO_REDACT_PATHS).toContain(`*.${field}`)
+    }
+    const lines: string[] = []
+    const logger = pino(
+      { redact: { paths: [...PINO_REDACT_PATHS], censor: '[REDACTED]' } },
+      { write: (line: string) => lines.push(line) }
+    )
+    logger.info({ env: { API_TLS_KEY_B64: sentinel, DATABASE_TLS_CLIENT_KEY_B64: sentinel } })
+    expect(lines.join('')).not.toContain(sentinel)
+    expect(lines.join('')).toContain('[REDACTED]')
   })
 
   it('keeps header sensitive fields covered by Pino redaction', () => {

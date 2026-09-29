@@ -36,10 +36,13 @@ open_fly_db_proxy() {
 }
 
 # issue_operator_tls <script-dir>: needs FLY_INTERNAL_CA_CERT_B64 / FLY_INTERNAL_CA_KEY_B64.
+# Once the operator certificate is minted the CA is no longer needed, so both variables are
+# unset: no later child (pnpm/postgres.js, psql, flyctl, curl) ever inherits the CA key.
 issue_operator_tls() {
   local script_dir="$1"
   OP_DIR="$(mktemp -d)"
   "${script_dir}/fly-internal-tls.sh" issue-operator --out "$OP_DIR"
+  unset FLY_INTERNAL_CA_CERT_B64 FLY_INTERNAL_CA_KEY_B64
   return 0
 }
 

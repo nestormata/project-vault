@@ -1,10 +1,8 @@
 import { generateKeyPairSync } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
-  CLIENT_AUTH_EKU_OID,
   InternalTlsConfigError,
   certificateExpiry,
-  hasClientAuthEku,
   parseCertBundleB64,
   parsePrivateKeyB64,
   readB64Var,
@@ -223,14 +221,5 @@ describe('certificate helpers', () => {
     expect(expiry.daysRemaining).toBeGreaterThanOrEqual(396)
     expect(expiry.daysRemaining).toBeLessThanOrEqual(397)
     expect(expiry.secondsRemaining).toBeGreaterThan(396 * 86400)
-  })
-
-  it('detects the clientAuth EKU', () => {
-    const client = parseCertBundleB64('X', pki.client.certB64).certs[0]
-    const server = parseCertBundleB64('X', pki.server.certB64).certs[0]
-    if (!client || !server) throw new Error('missing leaf')
-    expect(client.keyUsage).toContain(CLIENT_AUTH_EKU_OID)
-    expect(hasClientAuthEku(client)).toBe(true)
-    expect(hasClientAuthEku(server)).toBe(false)
   })
 })

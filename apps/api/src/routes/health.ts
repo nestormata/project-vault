@@ -36,17 +36,6 @@ const HealthResponseSchema = z.object({
 const ReadyResponseSchema = z.object({
   status: z.literal('ready'),
   warnings: z.array(z.string()).optional(),
-  // Story 43.16 AC-14: present only alongside the `internal_tls_cert_expiring` warning — which
-  // Fly demo internal-TLS leaf is under 30 days from notAfter. Degraded, never not-ready: an
-  // expiring certificate still works.
-  internalTlsCertExpiring: z
-    .array(
-      z.object({
-        which: z.enum(['api-server', 'db-client']),
-        daysRemaining: z.number().int(),
-      })
-    )
-    .optional(),
 })
 
 const ReadyUnavailableResponseSchema = z.union([
@@ -165,14 +154,12 @@ export async function healthRoutes(
       try {
         await options.dbPool.query('SELECT 1')
         const warnings = await resolveReadyWarnings(options.dbPool)
-        const expiring = internalTlsExpiring()
-        if (expiring.length > 0) warnings.push('internal_tls_cert_expiring')
-        if (warnings.length === 0) return reply.send({ status: 'ready' })
-        return reply.send(
-          expiring.length > 0
-            ? { status: 'ready', warnings, internalTlsCertExpiring: expiring }
-            : { status: 'ready', warnings }
-        )
+        // Story 43.16 AC-14: a Fly demo internal-TLS leaf under 30 days from notAfter is degraded,
+        // never not-ready (an expiring certificate still works). Generic token only, like Story
+        // 56.2's: /ready is unauthenticated, so which leaf and how many days stay on the
+        // loopback-only pv_internal_tls_cert_expiry_seconds gauge and the startup warn log.
+        if (internalTlsExpiring().length > 0) warnings.push('internal_tls_cert_expiring')
+        return reply.send(warnings.length > 0 ? { status: 'ready', warnings } : { status: 'ready' })
       } catch (err) {
         req.log.error(
           { eventType: OperationalEvent.DB_ERROR, err: serializeError(err) },

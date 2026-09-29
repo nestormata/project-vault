@@ -149,14 +149,19 @@ cmd_init_ca() {
 }
 
 # stage_secrets <app> <NAME=file-to-base64>...
+# Every value is encoded and checked BEFORE flyctl runs: callers invoke this in an `if !` context,
+# where `set -e` is off, so a failed or empty encode is caught explicitly and nothing is staged for
+# that app rather than an empty secret.
 stage_secrets() {
   local app="$1"; shift
-  local pair
-  {
-    for pair in "$@"; do
-      printf '%s=%s\n' "${pair%%=*}" "$(b64 "${pair#*=}")"
-    done
-  } | flyctl secrets import --stage -a "$app" >/dev/null
+  local pair name value payload=""
+  for pair in "$@"; do
+    name="${pair%%=*}"
+    value="$(b64 "${pair#*=}")" || { echo "failed to encode ${name}; nothing staged to ${app}" >&2; return 1; }
+    [[ -n "$value" ]] || { echo "${name} encoded to an empty value; nothing staged to ${app}" >&2; return 1; }
+    payload+="${name}=${value}"$'\n'
+  done
+  printf '%s' "$payload" | flyctl secrets import --stage -a "$app" >/dev/null
 }
 
 cmd_issue_leaves() {

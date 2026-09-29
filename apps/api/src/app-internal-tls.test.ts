@@ -335,7 +335,10 @@ describe('Story 43.16 AC-14: /ready expiry reason and the expiry gauge', () => {
     )
   }
 
-  it('10-day server cert: ready + internal_tls_cert_expiring (api-server, ≈10 days), gauge ≈ 864000', async () => {
+  // Story 56-2 precedent (review follow-up): /ready is unauthenticated and reachable through the
+  // public web, so it carries only the generic reason token — which leaf and how many days stay on
+  // the loopback-only gauge and in the startup warn log.
+  it('10-day server cert: ready + only the generic internal_tls_cert_expiring token; gauge ≈ 864000', async () => {
     const app = await createApp({
       logger: false,
       dbPool,
@@ -344,24 +347,13 @@ describe('Story 43.16 AC-14: /ready expiry reason and the expiry gauge', () => {
     apps.push(app)
     const response = await app.inject({ method: 'GET', url: '/ready' })
     expect(response.statusCode).toBe(200)
-    const body = response.json<{
-      status: string
-      warnings?: string[]
-      internalTlsCertExpiring?: { which: string; daysRemaining: number }[]
-    }>()
-    expect(body.status).toBe('ready')
-    expect(body.warnings).toContain('internal_tls_cert_expiring')
-    expect(body.internalTlsCertExpiring).toHaveLength(1)
-    expect(body.internalTlsCertExpiring?.[0]?.which).toBe('api-server')
-    expect(
-      Math.abs((body.internalTlsCertExpiring?.[0]?.daysRemaining ?? 0) - 10)
-    ).toBeLessThanOrEqual(1)
+    expect(response.json()).toEqual({ status: 'ready', warnings: ['internal_tls_cert_expiring'] })
     const gauge = await gaugeValues()
     expect(Math.abs((gauge['api-server'] ?? 0) - 864_000)).toBeLessThan(120)
     expect(gauge).not.toHaveProperty('db-client')
   })
 
-  it('10-day DB client cert: the reason names db-client', async () => {
+  it('10-day DB client cert: the same generic token; the gauge names db-client', async () => {
     const app = await createApp({
       logger: false,
       dbPool,
@@ -371,10 +363,8 @@ describe('Story 43.16 AC-14: /ready expiry reason and the expiry gauge', () => {
       },
     })
     apps.push(app)
-    const body = (await app.inject({ method: 'GET', url: '/ready' })).json<{
-      internalTlsCertExpiring?: { which: string }[]
-    }>()
-    expect(body.internalTlsCertExpiring?.map((entry) => entry.which)).toEqual(['db-client'])
+    const response = await app.inject({ method: 'GET', url: '/ready' })
+    expect(response.json()).toEqual({ status: 'ready', warnings: ['internal_tls_cert_expiring'] })
     const gauge = await gaugeValues()
     expect(Math.abs((gauge['api-server'] ?? 0) - 397 * 86_400)).toBeLessThan(120)
     expect(Math.abs((gauge['db-client'] ?? 0) - 864_000)).toBeLessThan(120)

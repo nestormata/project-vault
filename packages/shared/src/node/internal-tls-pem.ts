@@ -22,9 +22,6 @@ export class InternalTlsConfigError extends Error {
   }
 }
 
-/** `id-kp-clientAuth`. Node exposes a certificate's extended key usages as `x509.keyUsage`. */
-export const CLIENT_AUTH_EKU_OID = '1.3.6.1.5.5.7.3.2'
-
 const ENCRYPTED_KEY_ERROR_CODES = new Set([
   'ERR_MISSING_PASSPHRASE',
   'ERR_OSSL_CRYPTO_INTERRUPTED_OR_CANCELLED',
@@ -186,10 +183,6 @@ export function certificateExpiry(cert: X509Certificate, now: Date): Certificate
     secondsRemaining,
     daysRemaining: Math.floor(secondsRemaining / 86_400),
   }
-}
-
-export function hasClientAuthEku(cert: X509Certificate): boolean {
-  return (cert.keyUsage ?? []).includes(CLIENT_AUTH_EKU_OID)
 }
 
 /** The Story 43.16 AC-9 / AC-14 expiry-warning threshold. */

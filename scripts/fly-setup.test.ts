@@ -16,7 +16,22 @@ import { resolveTrustedExecutable } from './lib/trusted-executable.js'
 
 const SCRIPTS_DIR = import.meta.dirname
 const SCRIPT = resolve(SCRIPTS_DIR, 'fly-setup.sh')
-const RESET_SCRIPT = resolve(SCRIPTS_DIR, 'fly-reset.sh')
+const RESET_NAME = 'fly-reset.sh'
+const MIGRATE_NAME = 'fly-migrate.sh'
+const RESET_SCRIPT = resolve(SCRIPTS_DIR, RESET_NAME)
+const MIGRATE_SCRIPT = resolve(SCRIPTS_DIR, MIGRATE_NAME)
+// fly-reset.sh's required demo inputs (only presence is checked before the guards under test, so
+// any non-empty value will do) and the operator DB passwords both operator scripts need.
+const RESET_DEMO_ENV = {
+  DEMO_VAULT_PASSPHRASE: 'passphrase-test-value',
+  DEMO_LOGIN_EMAIL: 'demo-login-email-test-value',
+  DEMO_LOGIN_PASSWORD: 'demo-test-value',
+  VAULT_BOOTSTRAP_TOKEN: 'bootstrap-test-value',
+}
+const OPERATOR_PASSWORDS = {
+  ADMIN_PG_PASSWORD: 'pg-test-value',
+  VAULT_APP_PASSWORD: 'app-test-value',
+}
 const MISSING_APP_PASSWORD = 'Set VAULT_APP_PASSWORD'
 const BASH = resolveTrustedExecutable('bash')
 // Bash imports `BASH_FUNC_<name>%%` environment entries as exported functions.
@@ -126,14 +141,8 @@ describe('fly-setup.sh VAULT_APP_PASSWORD (Story 43.9 AC-13)', () => {
 // there to the migration's publicly known default would both break the api (its DATABASE_URL,
 // set by fly-setup.sh, carries the real password) and re-arm that public password on the demo DB.
 describe('fly-reset.sh VAULT_APP_PASSWORD (Story 43.9 AC-13 consistency)', () => {
-  const RESET_ENV = {
-    ADMIN_PG_PASSWORD: 'pg-test-value',
-    DEMO_VAULT_PASSPHRASE: 'passphrase-test-value',
-    // Only presence is checked before the VAULT_APP_PASSWORD guard, so any non-empty value will do.
-    DEMO_LOGIN_EMAIL: 'demo-login-email-test-value',
-    DEMO_LOGIN_PASSWORD: 'demo-test-value',
-    VAULT_BOOTSTRAP_TOKEN: 'bootstrap-test-value',
-  }
+  // Only presence is checked before the VAULT_APP_PASSWORD guard, so any non-empty value will do.
+  const RESET_ENV = { ADMIN_PG_PASSWORD: OPERATOR_PASSWORDS.ADMIN_PG_PASSWORD, ...RESET_DEMO_ENV }
 
   it.each([
     ['unset', {}],
@@ -237,30 +246,61 @@ describe('fly-setup.sh internal TLS (Story 43.16 AC-5)', () => {
 // Story 43.16 Decision 6: the operator path needs the CA to mint its per-run client certificate,
 // so both operator scripts fail closed without it — before any flyctl call.
 describe('fly-migrate.sh / fly-reset.sh internal CA (Story 43.16)', () => {
-  const MIGRATE_SCRIPT = resolve(SCRIPTS_DIR, 'fly-migrate.sh')
   const COMMON = {
-    ADMIN_PG_PASSWORD: 'pg-test-value',
-    VAULT_APP_PASSWORD: 'app-test-value',
+    ...OPERATOR_PASSWORDS,
     FLY_INTERNAL_CA_CERT_B64: '',
     FLY_INTERNAL_CA_KEY_B64: '',
   }
 
   it.each([
-    ['fly-migrate.sh', MIGRATE_SCRIPT, {}],
-    [
-      'fly-reset.sh',
-      RESET_SCRIPT,
-      {
-        DEMO_VAULT_PASSPHRASE: 'passphrase-test-value',
-        DEMO_LOGIN_EMAIL: 'demo-login-email-test-value',
-        DEMO_LOGIN_PASSWORD: 'demo-test-value',
-        VAULT_BOOTSTRAP_TOKEN: 'bootstrap-test-value',
-      },
-    ],
+    [MIGRATE_NAME, MIGRATE_SCRIPT, {}],
+    [RESET_NAME, RESET_SCRIPT, RESET_DEMO_ENV],
   ])('%s without FLY_INTERNAL_CA_CERT_B64 exits before any flyctl call', (_name, script, extra) => {
     const { status, stderr, flyctlCalls } = runFlyScript(script, { ...COMMON, ...extra })
     expect(status).not.toBe(0)
     expect(stderr).toContain('FLY_INTERNAL_CA_CERT_B64')
     expect(flyctlCalls).toEqual([])
+  })
+})
+
+// Review follow-up (43-16 #2): once the per-run operator certificate is minted, the CA material is
+// dropped from the environment, so no pnpm (postgres.js), psql, flyctl or curl child ever inherits
+// the CA key. A shell function would also see unexported shell variables, so the pnpm/psql stubs
+// ask a REAL child bash whether each name is set — a child only receives exported variables — and
+// record the answer (names only, never values) on fd 3.
+describe('fly-migrate.sh / fly-reset.sh drop the CA from child environments (Story 43.16)', () => {
+  const CHILD_PROBE = [
+    '() {',
+    '  local found opkey="${DATABASE_TLS_CLIENT_KEY_B64:-}"',
+    `  found="$("$BASH" -c 'for n in FLY_INTERNAL_CA_CERT_B64 FLY_INTERNAL_CA_KEY_B64; do [[ -n "\${!n+x}" ]] && printf "%s " "$n"; done; true')"`,
+    `  printf 'CHILD %s ca=[%s] opkey=%s\\n' "$1" "$found" "\${#opkey}" >&${FLYCTL_CALL_FD}`,
+    '  return 0',
+    '}',
+  ].join('\n')
+  const STUBS = {
+    'BASH_FUNC_pnpm%%': CHILD_PROBE,
+    'BASH_FUNC_psql%%': CHILD_PROBE,
+    'BASH_FUNC_pg_isready%%': '() { return 0; }',
+    // fly-reset.sh's post-proxy vault init: /ready answers, init returns 200, no network.
+    'BASH_FUNC_curl%%': '() { if [[ "$*" == *-w* ]]; then printf 200; fi; return 0; }',
+    'BASH_FUNC_jq%%': '() { if [[ "$1" == -n ]]; then printf "{}"; fi; return 0; }',
+  }
+  it.each([
+    [MIGRATE_NAME, MIGRATE_SCRIPT, {}, 3],
+    [RESET_NAME, RESET_SCRIPT, RESET_DEMO_ENV, 5],
+  ])('%s: no pnpm/psql child inherits FLY_INTERNAL_CA_*_B64', (_name, script, extra, count) => {
+    const { status, flyctlCalls } = runFlyScript(script, {
+      ...STUBS,
+      ...OPERATOR_PASSWORDS,
+      ...extra,
+    })
+    expect(status).toBe(0)
+    const children = flyctlCalls.filter((call) => call.startsWith('CHILD '))
+    expect(children).toHaveLength(count)
+    for (const child of children) expect(child).toContain('ca=[]')
+    // The postgres.js children still receive the operator TLS material (with_operator_tls).
+    const pnpmChildren = children.filter((child) => child.startsWith('CHILD --filter'))
+    expect(pnpmChildren.length).toBeGreaterThan(0)
+    for (const child of pnpmChildren) expect(child).not.toContain('opkey=0')
   })
 })

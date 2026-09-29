@@ -135,11 +135,13 @@ may be inconsistent across apps": re-run it; a clean run overwrites every staged
 
 ## Expiry alerting
 
-- **api `/ready`:** stays `ready` but adds the warning `internal_tls_cert_expiring` plus
-  `internalTlsCertExpiring: [{ which: "api-server" | "db-client", daysRemaining }]` when a leaf the
-  api holds is under **30 days** from `notAfter`. Evaluated on each call; never flips `/ready` to
-  not-ready (an expiring certificate still works). An already-expired certificate cannot be
-  reported here: the api would not be reachable, or would have no DB pool.
+- **api `/ready`:** stays `ready` but adds the generic warning token `internal_tls_cert_expiring`
+  when a leaf the api holds is under **30 days** from `notAfter`. Nothing else: `/ready` is
+  unauthenticated and the public web passes it through, so (like Story 56.2's watchdog token) it
+  never says which leaf or how many days — read those from the gauge or the warn log below.
+  Evaluated on each call; never flips `/ready` to not-ready (an expiring certificate still works).
+  An already-expired certificate cannot be reported here: the api would not be reachable, or would
+  have no DB pool.
 - **api `/metrics`** (loopback only): `pv_internal_tls_cert_expiry_seconds{which="api-server"|"db-client"}`,
   seconds until `notAfter`. No series at all when TLS is off. Alert threshold: `< 2592000` (30 days).
 - **Logs:** the api logs `internal_tls.configured` once at startup (`internalTls: off|tls|mtls`,
@@ -187,7 +189,7 @@ private CA with EKU clientAuth, so the listener accepts it, and it never leaves 
 | api exits at boot: `API_TLS_KEY_B64 is required when API_TLS_CERT_B64 is set` (or similar)                                                | half-staged secrets                                                                                    | re-run `issue-leaves`, redeploy                               |
 | db machine crash-loops: `DB_TLS_KEY_B64 is required`                                                                                      | db deployed before `issue-leaves` staged its secrets                                                   | run `issue-leaves` (or `fly-setup.sh`), redeploy db           |
 | `fly-migrate.sh`/`fly-reset.sh`: `Set FLY_INTERNAL_CA_CERT_B64`                                                                           | CA GitHub secrets missing or not passed to that step                                                   | set the secrets; check the workflow step `env:`               |
-| `internal_tls_cert_expiring` on `/ready`                                                                                                  | a leaf is < 30 days from `notAfter`                                                                    | leaf rotation                                                 |
+| `internal_tls_cert_expiring` on `/ready`                                                                                                  | a leaf is < 30 days from `notAfter` (which one: the gauge or the `internal_tls.cert_expiring` log)     | leaf rotation                                                 |
 
 Expired certificates: the first signature is web `503 api_unreachable` on every page (web ↔ api),
 then api `/ready` failing on the DB (api ↔ db).

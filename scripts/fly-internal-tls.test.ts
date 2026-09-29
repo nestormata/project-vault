@@ -330,6 +330,25 @@ describe('issue-leaves', () => {
     expect(run.output).toContain(RERUN_MESSAGE)
     expect(listing(run.tmp)).toEqual([])
   })
+
+  // Review follow-up (43-16 #8): an encode step that fails or yields nothing must never stage an
+  // empty secret. `base64` is stubbed (decoding still goes to the real binary, so the CA loads)
+  // to either fail or print nothing when encoding.
+  it.each([
+    ['fails', 'return 1'],
+    ['prints nothing', 'return 0'],
+  ])('encoding that %s stages nothing and exits with the re-run message', (_label, outcome) => {
+    const run = runScript([ISSUE_LEAVES], {
+      ...ca1.env,
+      'BASH_FUNC_base64%%': `() { if [[ "$1" == -d ]]; then /usr/bin/base64 "$@"; return; fi; ${outcome}; }`,
+    })
+    expect(run.status).not.toBe(0)
+    expect(run.output).toContain(RERUN_MESSAGE)
+    expect(run.output).toContain('DB_TLS_CERT_B64')
+    expect(run.calls.filter((call) => call.includes('secrets import'))).toEqual([])
+    expect(run.staged.size).toBe(0)
+    expect(listing(run.tmp)).toEqual([])
+  })
 })
 
 describe('issue-operator', () => {

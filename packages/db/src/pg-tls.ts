@@ -44,6 +44,16 @@ export function pgTlsOptions(
   return { ssl }
 }
 
+// WHATWG URL's TypeError carries the raw input — password included — on its `input` property, so
+// it is never rethrown or chained: the replacement names the variable only (NFR-SEC4).
+function parseConnectionUrl(connectionString: string): URL {
+  try {
+    return new URL(connectionString)
+  } catch {
+    throw new Error('DATABASE_URL is not a parseable URL')
+  }
+}
+
 /**
  * pg-boss uses node-postgres, which (unlike postgres.js) lets `ssl*` parameters parsed from the
  * connection string OVERRIDE the `ssl` option. With TLS configured, every `ssl*` query parameter
@@ -55,7 +65,7 @@ export function pgBossConnectionOptions(
 ): { connectionString: string; ssl?: PgTlsSsl } {
   const tls = pgTlsOptions(env)
   if (!('ssl' in tls)) return { connectionString }
-  const url = new URL(connectionString)
+  const url = parseConnectionUrl(connectionString)
   for (const name of [...url.searchParams.keys()]) {
     if (name.toLowerCase().startsWith('ssl')) url.searchParams.delete(name)
   }
