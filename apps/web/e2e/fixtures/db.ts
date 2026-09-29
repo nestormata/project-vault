@@ -186,3 +186,28 @@ export async function createProjectsViaDb(input: {
 
   return projects.map(({ id, name }) => ({ id, name }))
 }
+
+/**
+ * J1 AC-J1-2: read-only proof that a refused or collapsed registration wrote nothing — how many
+ * `users` rows carry `email` and how many `organizations` rows carry `orgName`. Registration's
+ * self-signup response is deliberately identical for a new and an already-registered email (Story
+ * 1.20's anti-enumeration contract), so the database is the only place "no user/org was created"
+ * can be observed.
+ */
+export async function countRegistrationRows(input: {
+  email: string
+  orgName: string
+}): Promise<{ users: number; organizations: number }> {
+  const sql = postgres(superuserDatabaseUrl(), { max: 1 })
+  try {
+    const [row] = await sql<{ users: number; organizations: number }[]>`
+      select
+        (select count(*)::int from users where email = ${input.email}) as users,
+        (select count(*)::int from organizations where name = ${input.orgName}) as organizations
+    `
+    if (!row) throw new Error('countRegistrationRows: query returned no row')
+    return row
+  } finally {
+    await sql.end({ timeout: 5 })
+  }
+}

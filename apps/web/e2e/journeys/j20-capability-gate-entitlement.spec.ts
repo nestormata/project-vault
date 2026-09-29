@@ -51,7 +51,6 @@ async function registerAndLogin(
     data: { email, password: PASSWORD, orgName: `J20 ${label} Org ${randomUUID()}` },
   })
   expect(register.ok(), await register.text()).toBeTruthy()
-  const registerBody = (await register.json()) as { data: { userId: string; orgId: string } }
 
   // Log in BEFORE enrolling MFA — enrolling first would make this login demand a TOTP challenge
   // this helper cannot answer (it only sets mfa_enrolled_at directly, it doesn't go through real
@@ -60,10 +59,14 @@ async function registerAndLogin(
     data: { email, password: PASSWORD },
   })
   expect(login.ok(), await login.text()).toBeTruthy()
+  // Story 1.20 (5a5959c1): self-signup now answers with the same generic "accepted" body for a new
+  // and an already-registered email, so it no longer carries userId/orgId — the login response
+  // does (the same recovery fixtures/auth.ts's registerAndLoginViaApi uses).
+  const loginBody = (await login.json()) as { data: { userId: string; orgId: string } }
 
-  await enrollMfaDirect(registerBody.data.userId, DB_NAME)
+  await enrollMfaDirect(loginBody.data.userId, DB_NAME)
 
-  return registerBody.data
+  return loginBody.data
 }
 
 test.describe
