@@ -1,4 +1,5 @@
 import { createSigner, createVerifier } from 'fast-jwt'
+import { EXTENSION_API_VERSION } from '@project-vault/extension-api'
 import type {
   AuthResult,
   AuthStrategy,
@@ -189,7 +190,7 @@ export function signFixtureEnvelope(
 
 const manifest: ExtensionManifest = {
   name: MOCK_ENVELOPE_PROVIDER_NAME,
-  apiVersion: '1.2.0',
+  apiVersion: EXTENSION_API_VERSION,
   capabilities: ['auth-provider'],
   replacesNativeLogin: true,
 }

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { createSigner } from 'fast-jwt'
 import { beforeEach, describe, expect, it } from 'vitest'
-import {
+import { EXTENSION_API_VERSION, isExtensionApiVersionSupported } from '@project-vault/extension-api'
+import mockEnvelopeExtension, {
   __resetBurnedJtiForTests,
   createEnvelopeAuthStrategy,
   signFixtureEnvelope,
@@ -199,5 +200,14 @@ describe('mock-envelope-extension (Story 23.2 AC-14/AC-15)', () => {
 
     expect(err1?.message).toBe(err2?.message)
     expect(err1?.name).toBe(err2?.name)
+  })
+
+  // Story 66.3: this fixture hardcoded apiVersion '1.2.0' and went stale when #331 (7825930a)
+  // bumped the extension API to 2.x — the host gate then refused to load it (`load_failed`) and
+  // J19 could not prove native-login exclusion at all. Declare the canonical version, like the
+  // sibling fixtures do.
+  it('declares the canonical version consumed by the host gate', () => {
+    expect(mockEnvelopeExtension.manifest.apiVersion).toBe(EXTENSION_API_VERSION)
+    expect(isExtensionApiVersionSupported(mockEnvelopeExtension.manifest.apiVersion)).toBe(true)
   })
 })
