@@ -222,7 +222,8 @@ pnpm --filter @project-vault/api-contract-tests test
 
 ## First-party clients
 
-These clients ship in this repository. Each uses only the schemes listed above:
+These clients ship in this repository. The machine-user clients use the schemes listed above;
+`pvault login` uses its own bearer-token routes instead, which are not one of those schemes:
 
 - **`packages/vault-action`** and **`packages/agent`**: `apiKey` → `machineBearer` (the
   [machine-user flow](machine-users.md)).
@@ -235,7 +236,8 @@ These clients ship in this repository. Each uses only the schemes listed above:
   - Before `get`, `run`, `write-env` and `login` make any other call, the CLI reads the public,
     unauthenticated `GET /api/v1/client-version-policy` with no credential. A successful answer is
     cached for up to 1 hour per server. `logout`, `--version`, `--help` and a `dev` build never
-    read it, and an unreachable policy never blocks a command. `PVAULT_NO_VERSION_CHECK` silences
+    read it. An unreachable policy never blocks a command, except when the last successful check for
+    that server said this version is withdrawn (a sticky refusal). `PVAULT_NO_VERSION_CHECK` silences
     only the advisory notices, never the request or the withdrawn refusal. Details:
     [`packages/cli/README.md` "Version check"](../packages/cli/README.md#version-check-story-436).
 

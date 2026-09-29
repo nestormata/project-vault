@@ -17,6 +17,9 @@ import { describe, expect, it } from 'vitest'
 // Read at transform time by Vite as raw text: the lint-clean loading pattern of
 // check-action-pins.test.ts (no non-literal fs paths). `**` stands in for the `(app)` route group:
 // `(`/`)` are extglob syntax and must never be written in a glob.
+// Vite resolves apps/web's tsconfig even for a ?raw .ts import, and it extends the generated
+// .svelte-kit/tsconfig.json: on a fresh checkout run `pnpm --filter @project-vault/web exec
+// svelte-kit sync` first (CI and `make ci-inner` do).
 const SCANNED_FILES: Record<string, string> = import.meta.glob(
   [
     '../README.md',

@@ -9,6 +9,11 @@ Story 43.5 added `write-env`, the explicit, opt-in fallback that materializes na
 `.env`-style file for tooling that can only read from a file. Story 43.6 added the startup version
 check and `pvault --version`.
 
+This package is a thin wrapper around
+[`@project-vault/agent`](../agent/README.md) — it consumes that package as a plain pnpm workspace
+dependency (`workspace:*`) and never re-implements or vendors its token-exchange/credential-fetch
+logic (Story 43.1 AC-1).
+
 ## Commands
 
 | Command                                       | What it does                                                                                      | Identity         | Section                                                                    |
@@ -18,11 +23,6 @@ check and `pvault --version`.
 | `pvault write-env --secret … --output <file>` | An owner-only `.env`/shell file, for tools that only read files                                   | machine-user key | [`pvault write-env`](#pvault-write-env-story-435)                          |
 | `pvault login` / `pvault logout`              | Human session (email, password, TOTP); no data command uses it yet                                | human            | [`pvault login` / `pvault logout`](#pvault-login--pvault-logout-story-432) |
 | `pvault --version`                            | CLI and bundled agent versions, no network                                                        | none             | [`pvault --version`](#pvault---version)                                    |
-
-This package is a thin wrapper around
-[`@project-vault/agent`](../agent/README.md) — it consumes that package as a plain pnpm workspace
-dependency (`workspace:*`) and never re-implements or vendors its token-exchange/credential-fetch
-logic (Story 43.1 AC-1).
 
 ## Installation
 
@@ -137,7 +137,8 @@ served, if stale, value is not itself a failure this CLI hard-fails on.
 
 Chosen over hand-rolled `process.argv` parsing in Story 43.1, when `login`, `run -- <cmd>` and
 `.env` materialization (`write-env`) were still planned, all multi-command, multi-flag surfaces.
-Story 43.1 shipped on commander 14; the dependency is now `^15` (see `package.json`). `commander` was already resolved elsewhere in this monorepo's lockfile. The
+Story 43.1 shipped on commander 14; the dependency is now `^15` (see `package.json`). `commander`
+was already resolved elsewhere in this monorepo's lockfile. The
 startup version check has since shipped as one `preAction` hook (Story 43.6, see "Version check"
 below).
 

@@ -219,6 +219,9 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-no-sonar-suppressions # Story 43.9 AC-9: no unsigned Sonar suppressions
 	pnpm vitest run scripts/check-no-sonar-suppressions.test.ts scripts/lib/trusted-executable.test.ts
 	pnpm check-build-info-unstamped # Story 43.6 AC-5
+	# Story 43.14: the CLI docs guard raw-loads an apps/web .ts file, whose tsconfig extends the
+	# generated .svelte-kit/tsconfig.json. A turbo cache hit on typecheck above does not regenerate it.
+	pnpm --filter @project-vault/web exec svelte-kit sync
 	pnpm vitest run scripts/check-build-info-unstamped.test.ts scripts/stamp-build-info.test.ts scripts/check-cli-release-workflow.test.ts scripts/check-cli-docs-naming.test.ts
 	pnpm check-audit-insert-sites
 	$(MAKE) test
