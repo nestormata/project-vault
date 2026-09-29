@@ -6,13 +6,13 @@ import {
   createIsolatedDatabase,
   initIsolatedVault,
   teardownIsolatedStack,
+  type WebHandle,
 } from '../fixtures/isolated-stack-shared.js'
 import {
   restartCapabilityGateApi,
   startCapabilityGateApi,
   startCapabilityGateWeb,
   type ApiHandle,
-  type WebHandle,
 } from '../fixtures/isolated-capability-gate-stack.js'
 
 /**

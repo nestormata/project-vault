@@ -14,7 +14,7 @@ import { RegisterPage } from '../pages/RegisterPage.js'
 // deterministic stand-in for "hydration has not happened (yet)". It is scoped to
 // `/_app/immutable/` requests of this test's page only; no API route is mocked.
 
-const SECRET = 'j32-Native-Submit-Canary-Password-91'
+const CANARY_SECRET = 'j32-Native-Submit-Canary-Password-91'
 
 test.describe('J32 — secret forms submitted without JavaScript (Story 66.3 AC-11)', () => {
   test('a native submit of the register form posts no secret and does not reflect it', async ({
@@ -25,7 +25,7 @@ test.describe('J32 — secret forms submitted without JavaScript (Story 66.3 AC-
     await page.goto('/register')
     await registerPage.emailInput().fill(uniqueEmail('j32'))
     await registerPage.orgNameInput().fill(uniqueOrgName('J32 Org'))
-    await registerPage.passwordInput().fill(SECRET)
+    await registerPage.passwordInput().fill(CANARY_SECRET)
 
     const submission = page.waitForRequest(
       (request: Request) =>
@@ -39,11 +39,11 @@ test.describe('J32 — secret forms submitted without JavaScript (Story 66.3 AC-
     expect(request.method()).toBe('POST')
     expect(new URL(request.url()).search).toBe('')
     // Layer 1: the unnamed password input is never serialized into the body.
-    expect(request.postData() ?? '').not.toContain(SECRET)
+    expect(request.postData() ?? '').not.toContain(CANARY_SECRET)
     // No form action on /register: a clean 405 through the app's error page — not a 500, and
     // nothing from the request echoed back.
     expect(response?.status()).toBe(405)
     await expect(page).toHaveURL(/\/register$/)
-    expect(await page.content()).not.toContain(SECRET)
+    expect(await page.content()).not.toContain(CANARY_SECRET)
   })
 })

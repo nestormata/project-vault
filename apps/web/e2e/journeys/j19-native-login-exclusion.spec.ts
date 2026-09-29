@@ -7,13 +7,13 @@ import {
   createIsolatedDatabase,
   initIsolatedVault,
   teardownIsolatedStack,
+  type WebHandle,
 } from '../fixtures/isolated-stack-shared.js'
 import {
   restartEnvelopeApi,
   startEnvelopeApi,
   startEnvelopeWeb,
   type ApiHandle,
-  type WebHandle,
 } from '../fixtures/isolated-envelope-stack.js'
 
 /**

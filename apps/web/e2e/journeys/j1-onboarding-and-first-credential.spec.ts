@@ -22,6 +22,9 @@ import { LoginPage } from '../pages/LoginPage.js'
 import { OnboardingPage } from '../pages/OnboardingPage.js'
 import { RegisterPage } from '../pages/RegisterPage.js'
 
+// Meets RegisterForm's minlength=12 but fails the server's zxcvbn strength check (AC-J1-2).
+const WEAK_TWELVE_CHAR_PASSWORD = 'password1234'
+
 // J1: Register -> onboard -> create first credential -> reveal value.
 // See story AC-J1-1/AC-J1-2/AC-J1-3.
 
@@ -97,7 +100,7 @@ test.describe('J1 — onboarding and first credential', () => {
 
     const registerPage = new RegisterPage(page)
     await registerPage.goto()
-    await registerPage.fillAndSubmit({ email, password: 'password1234', orgName })
+    await registerPage.fillAndSubmit({ email, password: WEAK_TWELVE_CHAR_PASSWORD, orgName })
     await expect(registerPage.errorAlert()).toBeVisible()
     await expect(registerPage.errorAlert()).not.toHaveText('Registration failed.')
     await expect(page).toHaveURL(/\/register$/)
