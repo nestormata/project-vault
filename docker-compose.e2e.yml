@@ -41,6 +41,32 @@ services:
       # page's self-contradiction warnings cannot fire — the seed has no side effects.
       CLI_MINIMUM_SUPPORTED_VERSION: '1.1.0'
       CLI_WITHDRAWN_VERSIONS: '1.2.1,1.2.2-rc.1'
+      # Story 60.6 (e2e-only): the CentralizeMe -> PV handoff runs for real so j31 can drive a
+      # signed token through prepare -> claim exchange -> Confirm -> session. The verify key is a
+      # TEST-ONLY Ed25519 key derived from a public fixed seed (apps/web/e2e/fixtures/
+      # handoff-test-key.ts; only the public half is here, the private half is derived at test
+      # time). It is trusted only for `aud = pv:pv-e2e`, an instance id that exists nowhere but this
+      # file. Never copy these four lines into docker-compose.yml, fly*.toml or any real instance's
+      # config (scripts/e2e-stack.test.ts fails CI if they appear there). The issuer is a literal,
+      # not `${VAULT_HANDOFF_ISSUER:-…}`, so a stray shell value cannot change the expected `iss`.
+      VAULT_HANDOFF_ENABLED: 'true'
+      VAULT_HANDOFF_INSTANCE_ID: pv-e2e
+      VAULT_HANDOFF_ISSUER: https://app.centralizeme.com
+      VAULT_HANDOFF_VERIFY_KEYS: '[{"kid":"pv-e2e-test-only-1","publicKeyPem":"-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEASnLkA1u0NdCqQtQ7iHPZ8Hy5v0dv4q3gq6SZg+69Ql4=\n-----END PUBLIC KEY-----\n"}]'
+  web:
+    environment:
+      # Story 60.6: handoff on, so the web's boot check evaluates the real allowlist, and the
+      # allowlist also admits j31's fake CentralizeMe interstitial on 127.0.0.1 (a different SITE
+      # from PV's http://localhost:<port>, so the cross-site cookie drop of bug F2 really happens).
+      # The allowlist is fixed at compose-up: if you override E2E_HANDOFF_STUB_PORT, set it in the
+      # shell for the whole `make e2e` run so the stack and the Playwright listener agree.
+      # VAULT_HANDOFF_ISSUER is pinned EMPTY on the web (j28 asserts the plain-text guidance an
+      # unset issuer produces). Without this line the base file's `${VAULT_HANDOFF_ISSUER:-}` picks
+      # up a worktree's local config, which `make fix-ports` creates from the example file (it sets
+      # the issuer), and the consent page then renders a "Return to CentralizeMe" link instead.
+      VAULT_HANDOFF_ISSUER: ''
+      VAULT_HANDOFF_ENABLED: 'true'
+      CORS_ALLOWED_ORIGINS: ${PUBLIC_WEB_ORIGIN:-http://localhost:${WEB_HOST_PORT:-5173}},http://127.0.0.1:${E2E_HANDOFF_STUB_PORT:-48999}
   # Story 66.1 D-5: no host ports for mailpit under the e2e override, so two worktrees can run
   # `make e2e` at the same time (the base file publishes fixed loopback ports 8025/1025, which the
   # second stack cannot bind). No e2e journey reads mailpit from the host; the api reaches it on the

@@ -1,8 +1,15 @@
 import { spawnSync } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
+import { createPublicKey, randomBytes } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import {
+  HANDOFF_E2E_INSTANCE_ID,
+  HANDOFF_E2E_ISSUER,
+  HANDOFF_E2E_KID,
+  HANDOFF_E2E_STUB_DEFAULT_PORT,
+  handoffE2ePublicKeyPem,
+} from '../apps/web/e2e/fixtures/handoff-test-key.js'
 
 // The repository root has no YAML dependency; reuse the `yaml` package apps/api already depends on.
 const { parse: parseYaml } = createRequire(resolve(process.cwd(), 'apps/api/package.json'))(
@@ -68,6 +75,11 @@ const REPO_TEXT: Record<string, string> = import.meta.glob(
     '../docker-compose.e2e.yml',
     './e2e-stack.sh',
   ],
+  { query: '?raw', import: 'default', eager: true }
+)
+// Story 60.6 AC7: production-facing config that must never carry the e2e handoff wiring.
+const PROD_CONFIG_TEXT: Record<string, string> = import.meta.glob(
+  ['../fly.*.toml', '../.env.example'],
   { query: '?raw', import: 'default', eager: true }
 )
 // `[e]` makes this a glob: vite:import-glob rejects the bare, extension-less `../Makefile` literal.
@@ -564,5 +576,87 @@ describe('Story 66.1 AC-7.7/7.9: compose files', () => {
     expect(Object.keys(compose.services?.api?.build?.args ?? {})).toEqual([
       'INCLUDE_MOCK_SSO_EXTENSION',
     ])
+  })
+})
+
+// --- Story 60.6 AC7: the e2e-only handoff wiring ----------------------------------------------
+
+type HandoffVerifyKey = { kid?: unknown; publicKeyPem?: unknown }
+
+function e2eServiceEnv(service: 'api' | 'web'): Record<string, unknown> {
+  const compose = parseYaml(repoText(E2E_COMPOSE), { logLevel: 'error' }) as Compose
+  const entry = service === 'api' ? compose.services?.api : compose.services?.web
+  return entry?.environment ?? {}
+}
+
+function parseVerifyKeys(raw: unknown): HandoffVerifyKey[] {
+  expect(typeof raw, 'VAULT_HANDOFF_VERIFY_KEYS must be a string').toBe('string')
+  const parsed = JSON.parse(String(raw)) as unknown
+  expect(Array.isArray(parsed), 'VAULT_HANDOFF_VERIFY_KEYS must be a JSON array').toBe(true)
+  return parsed as HandoffVerifyKey[]
+}
+
+/** Production-facing files that must never carry the e2e key, instance id or stub port. */
+function productionConfigTexts(): Array<[string, string]> {
+  const flyFiles = Object.entries(PROD_CONFIG_TEXT).filter(([path]) =>
+    /\/fly\.[^/]*\.toml$/.test(path)
+  )
+  expect(flyFiles.length, 'expected at least fly.api.toml and fly.web.toml').toBeGreaterThanOrEqual(
+    2
+  )
+  const example = Object.entries(PROD_CONFIG_TEXT).find(([path]) => path.endsWith('.example'))
+  expect(example, 'the example env file must be loaded').toBeDefined()
+  return [[BASE_COMPOSE, repoText(BASE_COMPOSE)], ...flyFiles, ...(example ? [example] : [])]
+}
+
+describe('Story 60.6 AC7: e2e-only handoff wiring', () => {
+  it('enables handoff on the e2e api with the test-only instance id and a pinned issuer', () => {
+    const api = e2eServiceEnv('api')
+    expect(api['VAULT_HANDOFF_ENABLED']).toBe('true')
+    expect(api['VAULT_HANDOFF_INSTANCE_ID']).toBe(HANDOFF_E2E_INSTANCE_ID)
+    // A literal, never `${VAULT_HANDOFF_ISSUER:-…}`: a stray shell value must not change `iss`.
+    expect(api['VAULT_HANDOFF_ISSUER']).toBe(HANDOFF_E2E_ISSUER)
+  })
+
+  it('trusts exactly one ed25519 key: the kid and public key derived from the fixture seed', () => {
+    const keys = parseVerifyKeys(e2eServiceEnv('api')['VAULT_HANDOFF_VERIFY_KEYS'])
+    expect(keys).toHaveLength(1)
+    const [key] = keys
+    expect(key?.kid).toBe(HANDOFF_E2E_KID)
+    const publicKey = createPublicKey(String(key?.publicKeyPem))
+    expect(publicKey.asymmetricKeyType).toBe('ed25519')
+    expect(key?.publicKeyPem).toBe(handoffE2ePublicKeyPem())
+  })
+
+  it('allowlists PV itself and the stub origin on the web, with handoff enabled and an empty issuer', () => {
+    const web = e2eServiceEnv('web')
+    expect(web['VAULT_HANDOFF_ENABLED']).toBe('true')
+    expect(web['CORS_ALLOWED_ORIGINS']).toBe(
+      '${PUBLIC_WEB_ORIGIN:-http://localhost:${WEB_HOST_PORT:-5173}},' +
+        `http://127.0.0.1:\${E2E_HANDOFF_STUB_PORT:-${HANDOFF_E2E_STUB_DEFAULT_PORT}}`
+    )
+    // j28's 60.4 tests assert the plain-text guidance an unset web issuer produces. Pinned empty,
+    // not omitted: the base file's `${VAULT_HANDOFF_ISSUER:-}` would otherwise pick up the
+    // worktree's local config (created from the example file, which sets it) and render a link.
+    expect(web['VAULT_HANDOFF_ISSUER']).toBe('')
+  })
+
+  it('pins the fixture defaults to the override (stub port, issuer, instance id, kid)', () => {
+    expect(HANDOFF_E2E_STUB_DEFAULT_PORT).toBe(48999)
+    expect(HANDOFF_E2E_ISSUER).toBe('https://app.centralizeme.com')
+    expect(HANDOFF_E2E_INSTANCE_ID).toBe('pv-e2e')
+    expect(HANDOFF_E2E_KID).toBe('pv-e2e-test-only-1')
+    expect(repoText(E2E_COMPOSE)).toContain(
+      `E2E_HANDOFF_STUB_PORT:-${HANDOFF_E2E_STUB_DEFAULT_PORT}`
+    )
+  })
+
+  it('keeps the e2e key, instance id and stub port out of every production-facing config', () => {
+    for (const [path, text] of productionConfigTexts()) {
+      for (const marker of [HANDOFF_E2E_KID, HANDOFF_E2E_INSTANCE_ID, 'E2E_HANDOFF_STUB_PORT']) {
+        expect(text, `${path} must not contain ${marker}`).not.toContain(marker)
+      }
+    }
+    expect(repoText(BASE_COMPOSE)).not.toContain('VAULT_HANDOFF_ENABLED')
   })
 })

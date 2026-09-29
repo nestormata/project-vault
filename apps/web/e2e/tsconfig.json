@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "//": "Story 60.6: a standalone config for the Playwright e2e tree. apps/web/tsconfig.json extends ./.svelte-kit/tsconfig.json, which only exists after `svelte-kit sync`, so without this file Vite cannot transform an e2e module imported from elsewhere (scripts/e2e-stack.test.ts imports fixtures/handoff-test-key.ts in PR CI, where nothing has synced). Also lets `tsc -p apps/web/e2e` type-check e2e files locally.",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["**/*.ts"]
+}
