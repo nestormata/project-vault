@@ -9,6 +9,26 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+### Upgrade notes (read before `docker compose pull`)
+
+- **`CORS_ALLOWED_ORIGINS` entries equal to `null` now stop the api from booting** (and web ignores
+  them). This is the only change in this release section that can stop an existing config from
+  booting. Browsers send `Origin: null` from sandboxed iframes and `file://` pages, so such an
+  entry would have let any page that sandboxes itself make credentialed requests. Remove the entry.
+
+### Added
+
+- New Compose-only `CORS_EXTRA_ORIGINS`: a comma-separated list of extra trusted origins (e.g.
+  CentralizeMe's real origin) appended to PV's own origin for both the api and web services. Under
+  Docker Compose, `CORS_ALLOWED_ORIGINS` in `.env` is still ignored; use this variable instead.
+
+### Changed
+
+- `.env.example` no longer sets `VAULT_HANDOFF_ISSUER`, so new configs do not show the "Return to
+  CentralizeMe" link on the handoff consent page. Existing configs that set it keep the link. An
+  empty `VAULT_HANDOFF_ISSUER` now means the default issuer (`https://app.centralizeme.com`)
+  instead of an api boot failure.
+
 ### Security
 
 - `pvault` now strips Unicode bidi controls, zero-width characters and other invisible format
