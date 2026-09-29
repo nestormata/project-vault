@@ -100,30 +100,19 @@ test.describe('J28 — handoff confirmation page', () => {
 
   // Story 60.3 AC6 — Option 1's claim-exchange regression coverage.
   //
-  // IMPORTANT scope note (recorded per AC6's own explicit instruction to say so rather than
-  // silently under-deliver): the claim-exchange consumption itself runs inside `/handoff`'s new
-  // SvelteKit `load` (`+page.server.ts`), which calls apps/api's `exchange-claim` endpoint with a
-  // plain server-to-server `fetch` — a call this SUITE's Playwright browser context never
-  // originates and therefore CANNOT intercept with `page.route` (unlike the CONFIRM_URL stub
-  // above, which works because `+page.svelte`'s confirm call is a real in-browser fetch). Proving
-  // the happy-path/replay round trip for real additionally requires `VAULT_HANDOFF_ENABLED=true`
-  // plus a real Ed25519 signing keypair wired into the e2e stack's `apps/api` — neither is
-  // configured for this repo's `make e2e`/`make docker-up` stack today (`.env.example` ships
-  // `VAULT_HANDOFF_ENABLED=false`), and standing that up is a meaningfully larger, separate piece
-  // of e2e infrastructure work than this story's test-only task. That full round trip (happy path,
-  // replay-fails-second-time) is instead already covered, against a real Postgres database, by
-  // `apps/api/src/modules/auth/handoff-routes.test.ts`'s `POST /exchange-claim` suite (happy path,
-  // replay, expired, malformed/missing claim, unmatched claim, mismatched pendingId/claim pair,
-  // rolling-deploy skew, disabled) and by this app's own
-  // `apps/web/src/routes/(auth)/handoff/page-server.test.ts` (the `load`'s own branching, mocking
-  // the proxied call). This journey instead verifies what IS observable from the browser in the
-  // current, unmodified e2e stack: with `VAULT_HANDOFF_ENABLED` off, a `claim` query parameter
-  // present on `/handoff` always fails the exchange closed (no `handoff-confirm` cookie from the
-  // `load`), and — because `prepare()` unconditionally keeps setting its own cookie (AC6/
-  // elicitation Round 5) — the page still renders and completes via the existing, unmodified
-  // confirm flow exactly as it did before this story. Per AC6's own instruction: this gap (no real
-  // browser-driven happy-path/replay round trip, and no true two-origin cross-site variant either)
-  // is being stated explicitly here and in the story's Dev Notes, not silently left uncovered.
+  // Scope note. The claim exchange runs inside `/handoff`'s SvelteKit `load` (`+page.server.ts`),
+  // which calls apps/api's `exchange-claim` server-to-server: this browser context never sends
+  // that request and so cannot stub it with `page.route` (unlike CONFIRM_URL above, a real
+  // in-browser fetch). These tests use bogus, never-prepared claims, so the exchange always fails
+  // closed (`handoff_replay`) whether or not handoff is enabled, and they check that a failed
+  // exchange never sets a `handoff-confirm` cookie and never breaks the pendingId-driven page.
+  //
+  // Since Story 60.6 the e2e stack runs with handoff ENABLED and a test-only Ed25519 key
+  // (docker-compose.e2e.yml). The real round trip (a signed token, a genuinely cross-site
+  // `prepare` from a second site, the claim exchange, Confirm, a session, and replay rejection) is
+  // covered by `j31-handoff-cross-site-real-token.spec.ts`. The api-level edge cases stay in
+  // `apps/api/src/modules/auth/handoff-routes.test.ts` and the `load`'s branching in
+  // `apps/web/src/routes/(auth)/handoff/page-server.test.ts`.
   test('a claim query param that fails to exchange never sets a handoff-confirm cookie, and the existing confirm flow still completes unaffected', async ({
     page,
     context,
@@ -134,7 +123,7 @@ test.describe('J28 — handoff confirmation page', () => {
       '/handoff?pendingId=e2e-fixture-pending-id-claim&claim=e2e-fixture-claim-does-not-exchange&organizationName=Acme%20Corp&accountLabel=alex%40acme.com'
     )
 
-    // The load's own exchange attempt fails closed (handoff disabled in this stack) — it must
+    // The load's own exchange attempt fails closed (the claim was never prepared) — it must
     // never set the handoff-confirm cookie itself.
     await assertNoHandoffCookie(context)
 
