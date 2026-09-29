@@ -1,3 +1,5 @@
+import type { Server } from 'node:net'
+
 export type FastifyInjectResponse = {
   statusCode: number
   headers: Record<string, string | string[] | undefined>
@@ -16,6 +18,8 @@ type FastifyLogger = {
 
 export type FastifyApp = {
   log: FastifyLogger
+  // Story 43.16: the underlying http/https server (tlsClientError watch; tests read address()).
+  server: Server
   setValidatorCompiler: (compiler: unknown) => FastifyApp
   setSerializerCompiler: (compiler: unknown) => FastifyApp
   setErrorHandler: (handler: unknown) => FastifyApp

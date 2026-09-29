@@ -20709,6 +20709,31 @@
                       "items": {
                         "type": "string"
                       }
+                    },
+                    "internalTlsCertExpiring": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "which": {
+                            "type": "string",
+                            "enum": [
+                              "api-server",
+                              "db-client"
+                            ]
+                          },
+                          "daysRemaining": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "which",
+                          "daysRemaining"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [

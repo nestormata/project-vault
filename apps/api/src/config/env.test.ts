@@ -1,4 +1,15 @@
-import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest'
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  beforeAll,
+  afterAll,
+  vi,
+  type MockInstance,
+} from 'vitest'
+import { createTestPki, type TestPki } from '@project-vault/shared/test-pki'
 
 const VAULT_APP_DATABASE_URL = 'postgresql://vault_app:secret@localhost:5432/project_vault'
 const ADMIN_DATABASE_URL = 'postgresql://vault_admin:secret@localhost:5432/project_vault'
@@ -1914,5 +1925,117 @@ describe('env', () => {
       }
       await expectInvalidEnv(exitSpy)
     })
+  })
+})
+
+// Story 43.16 AC-1 / AC-3 / AC-7: opt-in internal TLS material for the Fly demo. Test PKI minted
+// at runtime by openssl (never committed); every value below is test-only material.
+describe('env internal TLS (Story 43.16)', () => {
+  let pki: TestPki
+  let exitSpy: MockInstance<(...args: never[]) => unknown>
+  let originalEnv: NodeJS.ProcessEnv
+
+  beforeAll(async () => {
+    pki = await createTestPki()
+  })
+
+  afterAll(async () => {
+    await pki.cleanup()
+  })
+
+  beforeEach(() => {
+    originalEnv = process.env
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    vi.resetModules()
+  })
+
+  afterEach(() => {
+    process.env = originalEnv
+    vi.restoreAllMocks()
+  })
+
+  const stderrText = () =>
+    (process.stderr.write as unknown as MockInstance).mock.calls.map(String).join('\n')
+
+  function tlsEnv(overrides: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    return { ...BASE_ENV, DATABASE_URL: VAULT_APP_DATABASE_URL, ...overrides }
+  }
+
+  it('AC-1 off: accepts no TLS variables, and empty/whitespace values as unset', async () => {
+    process.env = tlsEnv({ API_TLS_CERT_B64: '', API_TLS_KEY_B64: '  ', DATABASE_TLS_CA_B64: '' })
+    const { env } = await import('./env.js')
+    expect(exitSpy).not.toHaveBeenCalled()
+    expect(env.API_PORT).toBe(3000)
+  })
+
+  it('AC-1 mTLS: accepts the full server triple, including wrapped base64', async () => {
+    process.env = tlsEnv({
+      API_TLS_CERT_B64: pki.server.certB64.replace(/(.{64})/g, '$1\n'),
+      API_TLS_KEY_B64: pki.server.keyB64,
+      API_TLS_CLIENT_CA_B64: pki.ca.certB64,
+    })
+    await import('./env.js')
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('AC-1 edge (half config): only the cert fails with an issue on API_TLS_KEY_B64', async () => {
+    process.env = tlsEnv({ API_TLS_CERT_B64: pki.server.certB64 })
+    await expectInvalidEnv(exitSpy)
+    expect(stderrText()).toContain('API_TLS_KEY_B64: API_TLS_KEY_B64 is required')
+  })
+
+  it('AC-1 edge (CA without pair): fails naming API_TLS_CLIENT_CA_B64', async () => {
+    process.env = tlsEnv({ API_TLS_CLIENT_CA_B64: pki.ca.certB64 })
+    await expectInvalidEnv(exitSpy)
+    expect(stderrText()).toContain('API_TLS_CLIENT_CA_B64: API_TLS_CLIENT_CA_B64 requires')
+  })
+
+  it('AC-1 edge (mismatch): a key from another keypair fails with "does not match"', async () => {
+    process.env = tlsEnv({
+      API_TLS_CERT_B64: pki.server.certB64,
+      API_TLS_KEY_B64: pki.client.keyB64,
+    })
+    await expectInvalidEnv(exitSpy)
+    expect(stderrText()).toContain('API_TLS_KEY_B64 does not match API_TLS_CERT_B64')
+    expect(stderrText()).not.toContain(pki.client.keyB64)
+  })
+
+  it.each([['not-base64!!'], [Buffer.from('definitely not a PEM document').toString('base64')]])(
+    'AC-1 edge (garbage): %s fails naming the variable, never echoing it',
+    async (value) => {
+      process.env = tlsEnv({ API_TLS_CERT_B64: value, API_TLS_KEY_B64: pki.server.keyB64 })
+      await expectInvalidEnv(exitSpy)
+      expect(stderrText()).toContain('API_TLS_CERT_B64 is not valid base64 PEM')
+      expect(stderrText()).not.toContain(value)
+    }
+  )
+
+  it('AC-3: accepts a DATABASE_TLS CA with the client pair and verify-full URLs', async () => {
+    process.env = tlsEnv({
+      DATABASE_URL: `${VAULT_APP_DATABASE_URL}?sslmode=verify-full`,
+      ADMIN_DATABASE_URL: `${ADMIN_DATABASE_URL}?sslmode=verify-full`,
+      DATABASE_TLS_CA_B64: pki.ca.certB64,
+      DATABASE_TLS_CLIENT_CERT_B64: pki.client.certB64,
+      DATABASE_TLS_CLIENT_KEY_B64: pki.client.keyB64,
+    })
+    await import('./env.js')
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('AC-3: rejects a DATABASE_TLS client pair without the CA', async () => {
+    process.env = tlsEnv({
+      DATABASE_TLS_CLIENT_CERT_B64: pki.client.certB64,
+      DATABASE_TLS_CLIENT_KEY_B64: pki.client.keyB64,
+    })
+    await expectInvalidEnv(exitSpy)
+    expect(stderrText()).toContain('DATABASE_TLS_CA_B64: DATABASE_TLS_CA_B64 is required')
+  })
+
+  it('AC-3: rejects an invalid DATABASE_TLS_CA_B64 without echoing it', async () => {
+    process.env = tlsEnv({ DATABASE_TLS_CA_B64: '%%%' })
+    await expectInvalidEnv(exitSpy)
+    expect(stderrText()).toContain('DATABASE_TLS_CA_B64 is not valid base64 PEM')
+    expect(stderrText()).not.toContain('%%%')
   })
 })
