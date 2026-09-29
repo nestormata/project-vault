@@ -12,21 +12,14 @@
 // a missing CLI is a named failing test instead, and this suite runs on the HOST side of `make ci`
 // plus in ci.yml's `checks` job (the self-wiring test at the bottom of this file guards both).
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { afterAll, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { makeRecipe, recipeRunsCommand, workflowRunCommands } from './lib/ci-wiring.js'
 import { COMPOSE_REQUIRED_IN_CI_MESSAGE, resolveComposeGuard } from './lib/compose-guard.js'
 
 const repoRoot = resolve(process.cwd())
 const COMPOSE_FILE_NAME = 'docker-compose.yml'
 const composeFile = join(repoRoot, COMPOSE_FILE_NAME)
-
-const tempDirs: string[] = []
-afterAll(() => {
-  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true })
-})
 
 // Story 60.7: repo files read at transform time by Vite as raw text (the lint-clean loading
 // pattern of check-action-pins.test.ts / e2e-stack.test.ts). Compose itself still renders from
@@ -52,23 +45,13 @@ function composeText(): string {
   return repoText('../docker-compose.yml')
 }
 
-/** The one write site: a fresh test-owned temp file (env files and regressed compose copies). */
-function tempFileWith(fileName: string, contents: string): string {
-  const dir = mkdtempSync(join(tmpdir(), 'pv-compose-config-'))
-  tempDirs.push(dir)
-  const path = join(dir, fileName)
-  writeFileSync(path, contents)
-  return path
-}
-
 /** Elicitation finding (Boundary & Edge Case Sweep, integrated into AC5) — Compose auto-loads a
  * project-root `.env` if present, which would make a naive default-value assertion flaky
- * depending on the caller's ambient `.env`. This creates a fresh, empty, test-owned `--env-file`
- * so the rendered defaults are deterministic in every environment, regardless of what the caller's
- * own `.env` (if any) contains. */
-function emptyEnvFile(): string {
-  return tempFileWith('empty.env', '')
-}
+ * depending on the caller's ambient `.env`. Pointing `--env-file` at the always-empty null device
+ * keeps the rendered defaults deterministic in every environment, regardless of what the caller's
+ * own `.env` (if any) contains. Nothing is written to disk: test variables go through the child
+ * environment and modified compose YAML through stdin (see renderComposeConfig). */
+const NO_ENV_FILE = '/dev/null'
 
 /** Code review (60-4): Compose gives the caller's shell environment precedence over `--env-file`,
  * so a variable exported in a developer's or CI shell (e.g. `VAULT_HANDOFF_ISSUER`) would silently
@@ -80,14 +63,15 @@ function emptyEnvFile(): string {
 // the real process.env); `files` allows a merged `-f base -f override` render.
 function isolatedComposeEnv(
   fileArgs: string[],
-  source: NodeJS.ProcessEnv = process.env
+  source: NodeJS.ProcessEnv = process.env,
+  input?: string
 ): NodeJS.ProcessEnv {
   let interpolated: Set<string>
   try {
     const stdout = execFileSync(
       'docker',
       ['compose', ...fileArgs, 'config', '--variables', '--format', 'json'],
-      { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+      { cwd: repoRoot, encoding: 'utf8', input, stdio: ['pipe', 'pipe', 'ignore'] }
     )
     interpolated = new Set(Object.keys(JSON.parse(stdout) as Record<string, unknown>))
   } catch {
@@ -96,16 +80,41 @@ function isolatedComposeEnv(
   return Object.fromEntries(Object.entries(source).filter(([key]) => !interpolated.has(key)))
 }
 
-function renderComposeConfig(
-  files: string | string[],
-  envFile: string,
+interface ComposeRender {
+  /** Compose files to merge (`-f a -f b`); defaults to the real docker-compose.yml. */
+  files?: string[]
+  /** Compose YAML piped on stdin (`-f -`) instead of `files` — the regression fixtures, so a
+   * modified copy never has to be written to disk. */
+  yaml?: string
+  /** Test interpolation variables. Compose gives the process environment precedence over
+   * `--env-file`, so they are layered on top of the isolated environment. */
+  vars?: Record<string, string>
+  /** A real repository env file to interpolate from (defaults to none — see NO_ENV_FILE). */
+  envFile?: string
+  /** The caller environment to isolate (see isolatedComposeEnv). */
   source?: NodeJS.ProcessEnv
-): Record<string, unknown> {
-  const fileArgs = [files].flat().flatMap((file) => ['-f', file])
+}
+
+function renderComposeConfig({
+  files = [composeFile],
+  yaml,
+  vars = {},
+  envFile = NO_ENV_FILE,
+  source,
+}: ComposeRender = {}): Record<string, unknown> {
+  const fileArgs =
+    yaml === undefined
+      ? files.flatMap((file) => ['-f', file])
+      : ['-f', '-', '--project-directory', repoRoot]
   const stdout = execFileSync(
     'docker',
     ['compose', ...fileArgs, '--env-file', envFile, 'config', '--format', 'json'],
-    { cwd: repoRoot, encoding: 'utf8', env: isolatedComposeEnv(fileArgs, source) }
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      input: yaml,
+      env: { ...isolatedComposeEnv(fileArgs, source, yaml), ...vars },
+    }
   )
   return JSON.parse(stdout) as Record<string, unknown>
 }
@@ -164,8 +173,7 @@ describe('resolveComposeGuard (Story 60.7 AC3.3)', () => {
 
 describeOrSkip('docker compose config — web service CORS_ALLOWED_ORIGINS (Story 60.1 AC5)', () => {
   it('renders a CORS_ALLOWED_ORIGINS key on the web service, unconditionally', () => {
-    const envFile = emptyEnvFile()
-    const rendered = renderComposeConfig(composeFile, envFile)
+    const rendered = renderComposeConfig()
     const services = rendered['services'] as Record<
       string,
       { environment?: Record<string, string> }
@@ -175,8 +183,7 @@ describeOrSkip('docker compose config — web service CORS_ALLOWED_ORIGINS (Stor
   })
 
   it('defaults web.environment.CORS_ALLOWED_ORIGINS to the same value as api, under an isolated empty env-file', () => {
-    const envFile = emptyEnvFile()
-    const rendered = renderComposeConfig(composeFile, envFile)
+    const rendered = renderComposeConfig()
     const services = rendered['services'] as Record<
       string,
       { environment?: Record<string, string> }
@@ -200,10 +207,8 @@ describeOrSkip('docker compose config — web service CORS_ALLOWED_ORIGINS (Stor
     // Guard the fixture itself: if the replace didn't match, this test would pass for the wrong
     // reason (a no-op edit), so fail loudly here instead.
     expect(regressed).not.toBe(original)
-    const regressedFile = tempFileWith(COMPOSE_FILE_NAME, regressed)
 
-    const envFile = emptyEnvFile()
-    const rendered = renderComposeConfig(regressedFile, envFile)
+    const rendered = renderComposeConfig({ yaml: regressed })
     const services = rendered['services'] as Record<
       string,
       { environment?: Record<string, string> }
@@ -221,12 +226,13 @@ const CLI_POLICY_KEYS = ['CLI_MINIMUM_SUPPORTED_VERSION', 'CLI_WITHDRAWN_VERSION
 // A trusted CentralizeMe origin/issuer fixture (Stories 60.4 and 60.7).
 const CM_ORIGIN = 'https://cm.example.test'
 
-function envFileWith(contents: string): string {
-  return tempFileWith('cli.env', contents)
+const CLI_POLICY_VARS = {
+  CLI_MINIMUM_SUPPORTED_VERSION: '1.1.0',
+  CLI_WITHDRAWN_VERSIONS: '1.2.1,1.2.2',
 }
 
-function renderedServices(file: string, envFile: string) {
-  return renderComposeConfig(file, envFile)['services'] as Record<
+function renderedServices(render: ComposeRender = {}) {
+  return renderComposeConfig(render)['services'] as Record<
     string,
     { environment?: Record<string, string> }
   >
@@ -236,7 +242,7 @@ describeOrSkip(
   'docker compose config — api CLI version policy passthrough (Story 43.7 AC-6)',
   () => {
     it('passes both keys to the api service as empty strings when unset (env.ts treats empty as no policy)', () => {
-      const services = renderedServices(composeFile, emptyEnvFile())
+      const services = renderedServices()
 
       expect(services['api']?.environment).toMatchObject(
         Object.fromEntries(CLI_POLICY_KEYS.map((key) => [key, '']))
@@ -244,20 +250,14 @@ describeOrSkip(
     })
 
     it('passes the operator values through verbatim', () => {
-      const envFile = envFileWith(
-        'CLI_MINIMUM_SUPPORTED_VERSION=1.1.0\nCLI_WITHDRAWN_VERSIONS=1.2.1,1.2.2\n'
-      )
-      const services = renderedServices(composeFile, envFile)
+      const services = renderedServices({ vars: CLI_POLICY_VARS })
 
       expect(services['api']?.environment?.['CLI_MINIMUM_SUPPORTED_VERSION']).toBe('1.1.0')
       expect(services['api']?.environment?.['CLI_WITHDRAWN_VERSIONS']).toBe('1.2.1,1.2.2')
     })
 
     it('does not pass either key to the web service (it never needs them)', () => {
-      const envFile = envFileWith(
-        'CLI_MINIMUM_SUPPORTED_VERSION=1.1.0\nCLI_WITHDRAWN_VERSIONS=1.2.1,1.2.2\n'
-      )
-      const services = renderedServices(composeFile, envFile)
+      const services = renderedServices({ vars: CLI_POLICY_VARS })
 
       for (const key of CLI_POLICY_KEYS) {
         expect(services['web']?.environment).not.toHaveProperty(key)
@@ -272,9 +272,8 @@ describeOrSkip(
         .replace(/\n\s*CLI_MINIMUM_SUPPORTED_VERSION: \$\{CLI_MINIMUM_SUPPORTED_VERSION:-\}/, '')
         .replace(/\n\s*CLI_WITHDRAWN_VERSIONS: \$\{CLI_WITHDRAWN_VERSIONS:-\}/, '')
       expect(regressed).not.toBe(original)
-      const regressedFile = tempFileWith(COMPOSE_FILE_NAME, regressed)
 
-      const services = renderedServices(regressedFile, emptyEnvFile())
+      const services = renderedServices({ yaml: regressed })
 
       for (const key of CLI_POLICY_KEYS) {
         expect(services['api']?.environment).not.toHaveProperty(key)
@@ -292,14 +291,14 @@ describeOrSkip(
   'docker compose config — VAULT_HANDOFF_ISSUER on web and api (Story 60.4 AC6)',
   () => {
     it('renders web.environment.VAULT_HANDOFF_ISSUER as an empty string by default', () => {
-      const services = renderedServices(composeFile, emptyEnvFile())
+      const services = renderedServices()
 
       expect(services['web']?.environment).toHaveProperty('VAULT_HANDOFF_ISSUER')
       expect(services['web']?.environment?.['VAULT_HANDOFF_ISSUER']).toBe('')
     })
 
     it("renders api.environment.VAULT_HANDOFF_ISSUER as the api's own default", () => {
-      const services = renderedServices(composeFile, emptyEnvFile())
+      const services = renderedServices()
 
       expect(services['api']?.environment?.['VAULT_HANDOFF_ISSUER']).toBe(
         'https://app.centralizeme.com'
@@ -307,10 +306,7 @@ describeOrSkip(
     })
 
     it('passes an operator-set issuer to both services', () => {
-      const services = renderedServices(
-        composeFile,
-        envFileWith(`VAULT_HANDOFF_ISSUER=${CM_ORIGIN}\n`)
-      )
+      const services = renderedServices({ vars: { VAULT_HANDOFF_ISSUER: CM_ORIGIN } })
 
       expect(services['web']?.environment?.['VAULT_HANDOFF_ISSUER']).toBe(CM_ORIGIN)
       expect(services['api']?.environment?.['VAULT_HANDOFF_ISSUER']).toBe(CM_ORIGIN)
@@ -340,62 +336,63 @@ function corsOf(services: RenderedServices): { api?: string; web?: string } {
 }
 
 /** Renders a copy of docker-compose.yml with `edit` applied, after proving the edit changed it. */
-function renderedRegressed(edit: (original: string) => string, envFile: string): RenderedServices {
+function renderedRegressed(
+  edit: (original: string) => string,
+  vars: Record<string, string>
+): RenderedServices {
   const original = composeText()
   const regressed = edit(original)
   expect(regressed).not.toBe(original)
-  return renderedServices(tempFileWith(COMPOSE_FILE_NAME, regressed), envFile)
+  return renderedServices({ yaml: regressed, vars })
 }
 
 describeOrSkip('docker compose config — CORS_EXTRA_ORIGINS passthrough (Story 60.7 AC1)', () => {
-  it.each([
-    ['1: default', '', DEFAULT_ORIGIN],
-    ['2: CM appended', `CORS_EXTRA_ORIGINS=${CM_ORIGIN}\n`, `${DEFAULT_ORIGIN},${CM_ORIGIN}`],
+  it.each<[string, Record<string, string>, string]>([
+    ['1: default', {}, DEFAULT_ORIGIN],
+    ['2: CM appended', { CORS_EXTRA_ORIGINS: CM_ORIGIN }, `${DEFAULT_ORIGIN},${CM_ORIGIN}`],
     [
       '3: list + port bump',
-      `WEB_HOST_PORT=6100\nCORS_EXTRA_ORIGINS=${CM_ORIGIN},https://b.example.test\n`,
+      { WEB_HOST_PORT: '6100', CORS_EXTRA_ORIGINS: `${CM_ORIGIN},https://b.example.test` },
       `http://localhost:6100,${CM_ORIGIN},https://b.example.test`,
     ],
     [
       '4: public origin',
-      `PUBLIC_WEB_ORIGIN=https://vault.example.com\nCORS_EXTRA_ORIGINS=${CM_ORIGIN}\n`,
+      { PUBLIC_WEB_ORIGIN: 'https://vault.example.com', CORS_EXTRA_ORIGINS: CM_ORIGIN },
       `https://vault.example.com,${CM_ORIGIN}`,
     ],
-    ['5: empty extra, no trailing comma', 'CORS_EXTRA_ORIGINS=\n', DEFAULT_ORIGIN],
+    ['5: empty extra, no trailing comma', { CORS_EXTRA_ORIGINS: '' }, DEFAULT_ORIGIN],
     [
       '6: the copied fix-ports literal never leaks through',
-      `WEB_HOST_PORT=6137\nCORS_ALLOWED_ORIGINS=${DEFAULT_ORIGIN}\n`,
+      { WEB_HOST_PORT: '6137', CORS_ALLOWED_ORIGINS: DEFAULT_ORIGIN },
       'http://localhost:6137',
     ],
-  ])('example %s renders the same list on api and web', (_label, contents, expected) => {
-    const services = renderedServices(composeFile, envFileWith(contents))
+  ])('example %s renders the same list on api and web', (_label, vars, expected) => {
+    const services = renderedServices({ vars })
 
     expect(corsOf(services)).toEqual({ api: expected, web: expected })
   })
 
   it('example 7: keeps web ORIGIN (the CSRF origin) a single origin', () => {
-    const services = renderedServices(composeFile, envFileWith(`CORS_EXTRA_ORIGINS=${CM_ORIGIN}\n`))
+    const services = renderedServices({ vars: { CORS_EXTRA_ORIGINS: CM_ORIGIN } })
 
     expect(services['web']?.environment?.['ORIGIN']).toBe(DEFAULT_ORIGIN)
   })
 
   it('example 8: keeps api WEB_BASE_URL (email links) a single origin', () => {
-    const services = renderedServices(composeFile, envFileWith(`CORS_EXTRA_ORIGINS=${CM_ORIGIN}\n`))
+    const services = renderedServices({ vars: { CORS_EXTRA_ORIGINS: CM_ORIGIN } })
 
     expect(services['api']?.environment?.['WEB_BASE_URL']).toBe(DEFAULT_ORIGIN)
   })
 
   it('isolates a CORS_EXTRA_ORIGINS exported in the caller shell', () => {
     const shellEnv = { ...process.env, CORS_EXTRA_ORIGINS: 'https://shell-leak.example.test' }
-    const services = renderComposeConfig(composeFile, emptyEnvFile(), shellEnv)[
-      'services'
-    ] as RenderedServices
+    const services = renderedServices({ source: shellEnv })
 
     expect(corsOf(services)).toEqual({ api: DEFAULT_ORIGIN, web: DEFAULT_ORIGIN })
   })
 
   it('renders the real .env.example without the issuer link or the CORS literal (AC4.3)', () => {
-    const services = renderedServices(composeFile, join(repoRoot, '.env.example'))
+    const services = renderedServices({ envFile: join(repoRoot, '.env.example') })
 
     expect(services['web']?.environment?.['VAULT_HANDOFF_ISSUER']).toBe('')
     expect(services['api']?.environment?.['VAULT_HANDOFF_ISSUER']).toBe(
@@ -405,10 +402,9 @@ describeOrSkip('docker compose config — CORS_EXTRA_ORIGINS passthrough (Story 
   })
 
   it('keeps the e2e override web allowlist stub-inclusive (AC7)', () => {
-    const services = renderComposeConfig(
-      [composeFile, join(repoRoot, 'docker-compose.e2e.yml')],
-      emptyEnvFile()
-    )['services'] as RenderedServices
+    const services = renderedServices({
+      files: [composeFile, join(repoRoot, 'docker-compose.e2e.yml')],
+    })
 
     expect(corsOf(services).web).toBe(`${DEFAULT_ORIGIN},http://127.0.0.1:48999`)
   })
@@ -416,7 +412,7 @@ describeOrSkip('docker compose config — CORS_EXTRA_ORIGINS passthrough (Story 
   it('(a) detects the passthrough being removed: example 2 loses the CM origin', () => {
     const services = renderedRegressed(
       (original) => original.split(CORS_LINE).join(`CORS_ALLOWED_ORIGINS: ${PV_ORIGIN_EXPR}`),
-      envFileWith(`CORS_EXTRA_ORIGINS=${CM_ORIGIN}\n`)
+      { CORS_EXTRA_ORIGINS: CM_ORIGIN }
     )
 
     expect(corsOf(services)).toEqual({ api: DEFAULT_ORIGIN, web: DEFAULT_ORIGIN })
@@ -425,7 +421,7 @@ describeOrSkip('docker compose config — CORS_EXTRA_ORIGINS passthrough (Story 
   it('(b) detects the naive passthrough: example 6 leaks the copied literal', () => {
     const services = renderedRegressed(
       (original) => original.split(CORS_LINE).join(`CORS_ALLOWED_ORIGINS: ${NAIVE_CORS_EXPR}`),
-      envFileWith(`WEB_HOST_PORT=6137\nCORS_ALLOWED_ORIGINS=${DEFAULT_ORIGIN}\n`)
+      { WEB_HOST_PORT: '6137', CORS_ALLOWED_ORIGINS: DEFAULT_ORIGIN }
     )
 
     expect(corsOf(services)).toEqual({ api: DEFAULT_ORIGIN, web: DEFAULT_ORIGIN })
@@ -437,7 +433,7 @@ describeOrSkip('docker compose config — CORS_EXTRA_ORIGINS passthrough (Story 
         const at = original.lastIndexOf(CORS_LINE)
         return `${original.slice(0, at)}CORS_ALLOWED_ORIGINS: ${PV_ORIGIN_EXPR}${original.slice(at + CORS_LINE.length)}`
       },
-      envFileWith(`CORS_EXTRA_ORIGINS=${CM_ORIGIN}\n`)
+      { CORS_EXTRA_ORIGINS: CM_ORIGIN }
     )
     const { api, web } = corsOf(services)
 
