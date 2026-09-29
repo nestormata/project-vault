@@ -1749,6 +1749,72 @@ describe('env', () => {
     })
   })
 
+  // Story 60.7 AC4.2: `.env.example` ships `VAULT_HANDOFF_ISSUER=` (empty) so a copied config no
+  // longer turns on the web "Return to CentralizeMe" link; empty must mean "use the default".
+  describe('Story 60.7: VAULT_HANDOFF_ISSUER empty-means-default', () => {
+    const DEFAULT_ISSUER = 'https://app.centralizeme.com'
+
+    async function parsedIssuer(value: string | undefined): Promise<string> {
+      process.env = { ...BASE_ENV, DATABASE_URL: VAULT_APP_DATABASE_URL }
+      if (value !== undefined) process.env['VAULT_HANDOFF_ISSUER'] = value
+      const { env } = await import('./env.js')
+      expect(exitSpy).not.toHaveBeenCalled()
+      return env.VAULT_HANDOFF_ISSUER
+    }
+
+    it('parses an empty value to the default issuer', async () => {
+      expect(await parsedIssuer('')).toBe(DEFAULT_ISSUER)
+    })
+
+    it('parses an unset value to the default issuer', async () => {
+      expect(await parsedIssuer(undefined)).toBe(DEFAULT_ISSUER)
+    })
+
+    it('passes an explicit issuer through verbatim', async () => {
+      expect(await parsedIssuer('https://cm.example.test')).toBe('https://cm.example.test')
+    })
+
+    // Kept as-is (no trimming): handoff-verify.ts compares `iss` exactly, so trimming here would
+    // silently change which tokens verify.
+    it('keeps a whitespace-only value verbatim (current behaviour, no trimming)', async () => {
+      expect(await parsedIssuer('   ')).toBe('   ')
+    })
+  })
+
+  // Story 60.7 AC1: CORS_EXTRA_ORIGINS is appended to PV's own origin under Compose, so an
+  // operator-supplied `*` or `null` entry reaches this refine as part of a list.
+  describe('Story 60.7: CORS_ALLOWED_ORIGINS rejects wildcard and null entries', () => {
+    function corsEnv(value: string): NodeJS.ProcessEnv {
+      return { ...BASE_ENV, DATABASE_URL: VAULT_APP_DATABASE_URL, CORS_ALLOWED_ORIGINS: value }
+    }
+
+    function stderrText(): string {
+      return (process.stderr.write as unknown as MockInstance).mock.calls.join('\n')
+    }
+
+    it('refuses to boot with an appended "*" entry', async () => {
+      process.env = corsEnv('http://localhost:5173,*')
+      await expectInvalidEnv(exitSpy)
+      expect(stderrText()).toContain('CORS_ALLOWED_ORIGINS cannot contain "*"')
+    })
+
+    it.each(['null', ' NULL ', 'Null'])(
+      'refuses to boot with an appended %j entry (sandboxed-iframe origin)',
+      async (entry) => {
+        process.env = corsEnv(`http://localhost:5173,${entry}`)
+        await expectInvalidEnv(exitSpy)
+        expect(stderrText()).toContain('CORS_ALLOWED_ORIGINS cannot contain "null"')
+      }
+    )
+
+    it('accepts a list with an appended trusted origin', async () => {
+      process.env = corsEnv('http://localhost:5173,https://cm.example.test')
+      const { env } = await import('./env.js')
+      expect(env.CORS_ALLOWED_ORIGINS).toBe('http://localhost:5173,https://cm.example.test')
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+  })
+
   // Story 56.2 AC8: missed-tick watchdog threshold N (window = max(N × interval, 10 min)).
   describe('Story 56.2: SCHEDULED_TASK_MISSED_TICK_THRESHOLD', () => {
     it('defaults to 3', async () => {

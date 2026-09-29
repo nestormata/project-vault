@@ -985,6 +985,17 @@ const envSchema = z
             .includes('*'),
         'CORS_ALLOWED_ORIGINS cannot contain "*"'
       )
+      // Story 60.7 (AC1, R3): browsers send the literal `Origin: null` from sandboxed iframes,
+      // file:// pages and some redirects, so a `null` entry would grant credentialed CORS to any
+      // attacker page that sandboxes itself. Compose now appends operator CORS_EXTRA_ORIGINS here.
+      .refine(
+        (value) =>
+          !value
+            .split(',')
+            .map((item) => item.trim().toLowerCase())
+            .includes('null'),
+        'CORS_ALLOWED_ORIGINS cannot contain "null"'
+      )
       .default('http://localhost:5173'),
     METRICS_BIND_HOST: z.string().default('127.0.0.1'),
     LOG_LEVEL: z
@@ -1469,7 +1480,13 @@ const envSchema = z
     // Story 30.2: the exact configured CM router issuer (claim contract "Instance identity
     // decision" table row `iss`) — a mismatch rejects `handoff_malformed_claim`. Defaults to the
     // production router identifier the contract cites; overridable for staging/test issuers.
-    VAULT_HANDOFF_ISSUER: z.string().min(1).default('https://app.centralizeme.com'),
+    // Story 60.7 AC4.2: empty means "use the default" (the `.env.example` ships it empty so a
+    // copied config does not switch on the web "Return to CentralizeMe" link). No trimming: the
+    // `iss` compare in handoff-verify.ts is exact.
+    VAULT_HANDOFF_ISSUER: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().min(1).default('https://app.centralizeme.com')
+    ),
     // Story 43.6 (D5) — operator tightening of the CLI version policy served publicly by
     // GET /api/v1/client-version-policy. Versions only, never free text; merged tighten-only with
     // the baked upstream policy (modules/client-versions/cli-version-policy.ts).
