@@ -31,15 +31,15 @@ The base stack is `docker-compose.yml` (`db`, `migrate`, `admin-provision`, `api
 `mailpit`). Overlays are layered with additional `-f` flags, and order matters — Compose merges
 `environment:` key-by-key with the last file winning.
 
-| Overlay                         | Applied by                                        | What it does                                                                                                                                                                                |
-| ------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docker-compose.dev.yml`        | manual                                            | Bind-mounts `apps/*/src`, runs the API with `pnpm dev` (hot reload) and sets `VAULT_ALLOW_REMOTE_INIT=true`. `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d` |
-| `docker-compose.images.yml`     | manual                                            | Runs the published GHCR images instead of building from source (`build: !reset null`; needs Compose v2.24+). See [container-images.md](container-images.md)                                 |
-| `docker-compose.prod.yml`       | `make docker-prod`                                | Resource limits, log rotation, `vault_keys` volume, and hard-required production secrets. **Must be last**                                                                                  |
-| `docker-compose.nfs.yml`        | manual                                            | Bind-mounts an NFS export at `/var/backups/vault`; requires `BACKUP_NFS_PATH`                                                                                                               |
-| `docker-compose.e2e.yml`        | `make e2e`, nightly CI                            | Raises the auth rate limits, enables `VAULT_ALLOW_REMOTE_INIT`, and builds the API with the mock SSO extension so the Playwright suite can run unattended                                   |
-| `docker-compose.ci.yml`         | `make ci`                                         | The containerized quality-gate runner (see below)                                                                                                                                           |
-| `docker-compose.ci-overlay.yml` | `make ci`, only when the private overlay resolves | Mounts the private overlay repo read-only at its own absolute host path (see below)                                                                                                         |
+| Overlay                         | Applied by                                        | What it does                                                                                                                                                                                                                                                                     |
+| ------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docker-compose.dev.yml`        | manual                                            | Bind-mounts `apps/*/src`, runs the API with `pnpm dev` (hot reload) and sets `VAULT_ALLOW_REMOTE_INIT=true`. `docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d`                                                                                      |
+| `docker-compose.images.yml`     | manual                                            | Runs the published GHCR images instead of building from source (`build: !reset null`; needs Compose v2.24+). See [container-images.md](container-images.md)                                                                                                                      |
+| `docker-compose.prod.yml`       | `make docker-prod`                                | Resource limits, log rotation, `vault_keys` volume, and hard-required production secrets. **Must be last**                                                                                                                                                                       |
+| `docker-compose.nfs.yml`        | manual                                            | Bind-mounts an NFS export at `/var/backups/vault`; requires `BACKUP_NFS_PATH`                                                                                                                                                                                                    |
+| `docker-compose.e2e.yml`        | `make e2e`, nightly CI                            | Raises the auth rate limits, enables `VAULT_ALLOW_REMOTE_INIT`, builds the API with the mock SSO extension, and enables the CentralizeMe handoff with a **test-only** key so the Playwright suite can run unattended (see [Handoff on the E2E stack](#handoff-on-the-e2e-stack)) |
+| `docker-compose.ci.yml`         | `make ci`                                         | The containerized quality-gate runner (see below)                                                                                                                                                                                                                                |
+| `docker-compose.ci-overlay.yml` | `make ci`, only when the private overlay resolves | Mounts the private overlay repo read-only at its own absolute host path (see below)                                                                                                                                                                                              |
 
 ## Running the Playwright E2E suite locally
 
@@ -93,6 +93,27 @@ before failing, so the cause is in the output.
   **every** journey. Also go through `test:e2e`, not `pnpm exec playwright test`: j26's isolated
   stack needs the `npm_execpath` a pnpm script sets.
 
+### Handoff on the E2E stack
+
+Since Story 60.6 the E2E stack runs the CentralizeMe -> PV handoff for real, so
+`j31-handoff-cross-site-real-token.spec.ts` can drive a signed token through a cross-site
+`prepare`, the claim exchange, Confirm and a session:
+
+- The api gets `VAULT_HANDOFF_ENABLED=true`, `VAULT_HANDOFF_INSTANCE_ID=pv-e2e`, a literal
+  `VAULT_HANDOFF_ISSUER`, and `VAULT_HANDOFF_VERIFY_KEYS` with one **test-only** Ed25519 public key
+  (kid `pv-e2e-test-only-1`). Its private half is derived at test time from a fixed, public seed in
+  `apps/web/e2e/fixtures/handoff-test-key.ts`; no private key is committed.
+- That key is public by design and is trusted only for `aud = pv:pv-e2e`. **Never reuse the E2E
+  override, this kid or this instance id outside the E2E stack.** `scripts/e2e-stack.test.ts` (run in
+  PR CI) fails if any of them appears in `docker-compose.yml`, a `fly*.toml` or the example
+  configuration file, and pins the override to the fixture's constants.
+- The web gets `VAULT_HANDOFF_ENABLED=true`, an empty `VAULT_HANDOFF_ISSUER` (so j28 sees the
+  plain-text guidance whatever your local config says) and a `CORS_ALLOWED_ORIGINS` that also admits j31's
+  fake CentralizeMe page on `http://127.0.0.1:${E2E_HANDOFF_STUB_PORT:-48999}`. j31 starts that
+  listener itself (127.0.0.1 only). The allowlist is fixed when the stack starts, so if you
+  override `E2E_HANDOFF_STUB_PORT`, set it in your shell for the whole `make e2e` run, not just for
+  Playwright. j31 also uses the next port up (`48999 + 1`) as a deliberately non-allowlisted site.
+
 ### Re-runs and concurrency
 
 - Re-running `make e2e` while the worktree's stack is up generates new secrets, so compose
@@ -103,7 +124,9 @@ before failing, so the cause is in the output.
   differ per worktree, and the E2E overlay publishes no Mailpit host ports. The one shared step is
   the Chromium install step (`playwright install --with-deps` runs `apt-get` on every run): if two
   runs reach it at the same moment, one can fail with `Could not get lock /var/lib/apt/lists/lock`.
-  Stagger the starts, or re-run the one that failed. Each worktree's images
+  Stagger the starts, or re-run the one that failed. j31's fake CentralizeMe listener is also
+  host-wide: two worktrees running j31 at the same moment collide on `E2E_HANDOFF_STUB_PORT`
+  (the second fails fast naming the variable); give one of them a different port. Each worktree's images
   cost about 1.6 GB; `docker compose -f docker-compose.yml -f docker-compose.e2e.yml down -v --rmi local`
   removes a finished worktree's stack, volumes and images.
 - Two `make e2e` runs in the **same** worktree at once are unsupported: they share one compose
