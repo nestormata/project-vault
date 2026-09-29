@@ -6,10 +6,18 @@
 # secret the api/web apps need at boot. Safe to re-run: `flyctl apps create`/`flyctl volumes
 # create`/`flyctl secrets set` are all idempotent or explicitly guarded below.
 #
-# Usage: FLY_ORG=personal VAULT_APP_PASSWORD=... VAULT_ADMIN_PASSWORD=... ./scripts/fly-setup.sh
+# Usage: FLY_ORG=personal VAULT_APP_PASSWORD=... VAULT_ADMIN_PASSWORD=... \
+#          FLY_INTERNAL_CA_CERT_B64=... FLY_INTERNAL_CA_KEY_B64=... ./scripts/fly-setup.sh
+#
+# Story 43.16: the internal hops are TLS 1.3 with a private CA (web -> api mTLS, api/operator -> db
+# with client certificates). FLY_INTERNAL_CA_*_B64 are the GitHub secrets
+# FLY_DEMO_INTERNAL_CA_CERT_B64 / FLY_DEMO_INTERNAL_CA_KEY_B64 (docs/runbooks/fly-internal-tls.md);
+# scripts/fly-internal-tls.sh issues and stages every leaf from them.
 #
 # Requires: flyctl authenticated (`flyctl auth login`), openssl.
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 DB_APP="${FLY_DB_APP:-project-vault-demo-db}"
 API_APP="${FLY_API_APP:-project-vault-demo-api}"
@@ -19,6 +27,10 @@ ORG="${FLY_ORG:?Set FLY_ORG to your Fly.io org slug (flyctl orgs list)}"
 # Required, checked before any flyctl call: there is no default, because the only possible one is
 # the migration's publicly known dev password (see the api secrets section below).
 : "${VAULT_APP_PASSWORD:?Set VAULT_APP_PASSWORD to the vault_app password (fly-reset.sh ALTERs vault_app to this value; it must match)}"
+# Required, checked before any flyctl call (Story 43.16): without the CA no internal leaf can be
+# issued, and the db image and api refuse to start without their TLS material.
+: "${FLY_INTERNAL_CA_CERT_B64:?Set FLY_INTERNAL_CA_CERT_B64 (GitHub secret FLY_DEMO_INTERNAL_CA_CERT_B64; see docs/runbooks/fly-internal-tls.md)}"
+: "${FLY_INTERNAL_CA_KEY_B64:?Set FLY_INTERNAL_CA_KEY_B64 (GitHub secret FLY_DEMO_INTERNAL_CA_KEY_B64; see docs/runbooks/fly-internal-tls.md)}"
 
 command -v flyctl >/dev/null 2>&1 || { echo "flyctl not found — see https://fly.io/docs/flyctl/install/" >&2; exit 1; }
 
@@ -42,8 +54,14 @@ flyctl secrets set -a "$DB_APP" \
   POSTGRES_USER=postgres \
   POSTGRES_PASSWORD="$PG_PASSWORD"
 
+echo "== internal TLS: issue + stage leaves for db, api and web =="
+# Before the db deploy: the db image (deploy/fly/db) fails closed without DB_TLS_*. Staged secrets
+# apply on each app's next deploy.
+FLY_API_APP="$API_APP" FLY_WEB_APP="$WEB_APP" FLY_DB_APP="$DB_APP" \
+  "${SCRIPT_DIR}/fly-internal-tls.sh" issue-leaves
+
 echo "== db: deploy =="
-flyctl deploy -c fly.db.toml -a "$DB_APP" --ha=false
+flyctl deploy -c fly.db.toml -a "$DB_APP" --ha=false --remote-only
 
 echo "== api: secrets =="
 # NODE_ENV=production (fly.api.toml) means apps/api/src/config/env.ts enforces distinct,
@@ -60,9 +78,13 @@ BOOTSTRAP_TOKEN="${VAULT_BOOTSTRAP_TOKEN:-$(openssl rand -base64 32)}"
 # DATABASE_URL below points at the final password from the start. VAULT_APP_PASSWORD is
 # required (checked at the top): it must be the value you pass to fly-reset.sh (and, if you're
 # wiring up the nightly cron, FLY_DEMO_VAULT_APP_PASSWORD).
+# sslmode=verify-full documents intent; the pin itself is DATABASE_TLS_CA_B64 (plus the api's DB
+# client certificate), staged above and applied by packages/db's pgTlsOptions (Story 43.16).
+# NOTE: unlike the staged TLS secrets, these apply immediately and restart running api machines —
+# on a live demo, run the full deploy (db -> api -> web) right after (see the runbook).
 flyctl secrets set -a "$API_APP" \
-  DATABASE_URL="postgresql://vault_app:${VAULT_APP_PASSWORD}@${DB_APP}.internal:5432/project_vault" \
-  ADMIN_DATABASE_URL="postgresql://vault_admin:${VAULT_ADMIN_PASSWORD}@${DB_APP}.internal:5432/project_vault" \
+  DATABASE_URL="postgresql://vault_app:${VAULT_APP_PASSWORD}@${DB_APP}.internal:5432/project_vault?sslmode=verify-full" \
+  ADMIN_DATABASE_URL="postgresql://vault_admin:${VAULT_ADMIN_PASSWORD}@${DB_APP}.internal:5432/project_vault?sslmode=verify-full" \
   CORS_ALLOWED_ORIGINS="https://${WEB_APP}.fly.dev" \
   SESSION_SECRET="$(openssl rand -hex 32)" \
   REFRESH_TOKEN_HMAC_SECRET="$(openssl rand -hex 32)" \
@@ -80,13 +102,10 @@ flyctl secrets set -a "$API_APP" \
   DEMO_VAULT_PASSPHRASE="$VAULT_PASSPHRASE"
 
 echo "== web: secrets =="
-# http:// (not https://), intentional: this URL is only ever dialed over Fly's private 6PN
-# network (<app>.internal), which is itself an encrypted WireGuard overlay — api has no public
-# IP and terminates no TLS, so https:// here would just fail. This is a signed-off exception
-# (see sonar-project.properties); TLS on this hop is tracked as story
-# 43-16-epic-43-completion-tls-on-the-fly-internal-api-hop.
+# The api listener terminates TLS 1.3 and requires the web's client certificate (mTLS); the web
+# pins the private CA via API_TLS_CA_B64 (staged above).
 flyctl secrets set -a "$WEB_APP" \
-  API_BASE_URL="http://${API_APP}.internal:3000"
+  API_BASE_URL="https://${API_APP}.internal:3000"
 
 cat <<EOF
 

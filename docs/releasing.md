@@ -36,6 +36,12 @@ says yes.
 | H3 | Publishing the GitHub Release, which fires all three release workflows | **No**: immutable GHCR tags, demo migrations, public downloads |
 | H4 | Any write after publishing: a real (non-dry-run) re-dispatch, replacing assets, a `fly-deploy`/`fly-reset` dispatch, deleting GHCR versions, withdrawing a CLI version, a patch release | Varies; decided per action |
 
+**H4 note (Story 43.16):** the first `fly-deploy` of a release containing Story 43.16 needs the
+internal CA GitHub secrets (`FLY_DEMO_INTERNAL_CA_CERT_B64` / `_KEY_B64`) set and
+`scripts/fly-internal-tls.sh` run (through `scripts/fly-setup.sh` or the Fly Demo Bootstrap
+workflow) **before** the deploy; `fly-migrate.sh` fails closed without the CA. Order and outage
+window: [`runbooks/fly-internal-tls.md`](runbooks/fly-internal-tls.md) § First rollout.
+
 Confirming H2 does not confirm H3. One message may confirm both only if it names both.
 
 ## 1. Pre-flight (on a clean `main` checkout)

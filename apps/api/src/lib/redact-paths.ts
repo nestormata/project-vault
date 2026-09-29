@@ -38,6 +38,11 @@ export const BODY_SENSITIVE_LOG_FIELDS = [
   'EXTENSION_DATABASE_URL',
   'extensionGrantDatabaseUrl',
   'EXTENSION_GRANT_DATABASE_URL',
+  // Story 43.16: the Fly demo internal-TLS private keys the api holds (its listener key and its
+  // Postgres client key), base64 PEM, covered for the same env-shaped-diagnostic reason as the
+  // database URLs above. The certificates and CAs are public material and stay loggable.
+  'API_TLS_KEY_B64',
+  'DATABASE_TLS_CLIENT_KEY_B64',
   // Epic 17 retro (2026-07-29) Finding: story 17-2's step-up body carries `totpCode` (not `totp`,
   // the pre-existing field name), so it fell outside this registry despite AC-18 requiring it be
   // redacted by name — no live leak found (no request-logging call currently dumps req.body

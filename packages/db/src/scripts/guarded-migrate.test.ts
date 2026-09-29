@@ -25,7 +25,9 @@ const FINDING_DROP_COLUMN_LEGACY_FIELD = 'DROP COLUMN "legacy_field" (line 3)'
 
 const tempDirs: string[] = []
 
-function makeFixtureMigrationsDir(entries: { tag: string; sql: string; when: number }[]): string {
+/** Writes only `meta/_journal.json` (no `.sql` files), so a test can prove the journal is rejected
+ * before any migration file is read: reading would fail with ENOENT instead of the tag error. */
+function makeJournalOnlyFixtureDir(entries: { tag: string; when: number }[]): string {
   const dir = mkdtempSync(join(tmpdir(), 'guarded-migrate-fixture-'))
   tempDirs.push(dir)
   mkdirSync(join(dir, 'meta'), { recursive: true })
@@ -43,6 +45,11 @@ function makeFixtureMigrationsDir(entries: { tag: string; sql: string; when: num
       })),
     })
   )
+  return dir
+}
+
+function makeFixtureMigrationsDir(entries: { tag: string; sql: string; when: number }[]): string {
+  const dir = makeJournalOnlyFixtureDir(entries)
   for (const entry of entries) {
     writeFileSync(join(dir, `${entry.tag}.sql`), entry.sql)
   }
@@ -69,6 +76,22 @@ describe('readLocalMigrations', () => {
       { tag: '0001_second', sql: 'CREATE TABLE b (id int);', folderMillis: 200 },
     ])
   })
+
+  it.each(['../x', '0001_Bad-Tag', '0001_ok/../../x', '001_short', '0001_trailing\n'])(
+    'rejects journal tag %j before reading any migration file',
+    (badTag) => {
+      // The valid first entry has no .sql file either: if validation ran lazily per entry, the
+      // read of 0000_first.sql would throw ENOENT first instead of the tag error.
+      const dir = makeJournalOnlyFixtureDir([
+        { tag: '0000_first', when: 100 },
+        { tag: badTag, when: 200 },
+      ])
+
+      expect(() => readLocalMigrations(dir)).toThrow(
+        `Invalid migration tag ${JSON.stringify(badTag)} in drizzle journal`
+      )
+    }
+  )
 })
 
 describe('resolvePendingMigrations', () => {

@@ -179,6 +179,12 @@ jobs:
           - name: web
             file: apps/web/Dockerfile
             target: runner
+          # Story 43.16 AC-13: the Fly demo's db image (postgres:16-alpine + TLS entrypoint). Nightly
+          # + PR only: `flyctl deploy` builds it from source and it is never published to GHCR, so
+          # container-publish.yml has no release gate for it.
+          - name: fly-db
+            file: deploy/fly/db/Dockerfile
+            target: runner
     steps:
       - uses: actions/checkout@v7
 

@@ -1,6 +1,7 @@
 import { z } from 'zod/v4'
 import { EXTENSION_DB_PLACEHOLDER_CREDENTIAL } from '@project-vault/db'
 import { DEV_AUTH_DUMMY_PASSWORD_HASH } from './dev-dummy-hash.js'
+import { validateInternalTlsEnv } from './internal-tls.js'
 import {
   CLI_MAX_VERSION_LENGTH,
   isCliAcceptedReleaseVersion,
@@ -974,6 +975,17 @@ const envSchema = z
       z.string().url('FATAL: EXTENSION_DATABASE_URL must be a parseable PostgreSQL URL').optional()
     ),
     EXTENSION_DATABASE_POOL_MAX: z.coerce.number().int().min(1).default(3),
+    // Story 43.16 AC-1 / AC-3 / AC-12: Fly demo internal TLS, single-line base64 of PEM. All
+    // optional and off by default (docker-compose/CI/local dev never set them). Decoding, pairing
+    // and key/cert matching are validated in superRefine via validateInternalTlsEnv; empty values
+    // count as unset. API_TLS_* = the api listener (TLS; mTLS when the client CA is set);
+    // DATABASE_TLS_* = the pinned DB CA plus the api's DB client cert.
+    API_TLS_CERT_B64: z.string().optional(),
+    API_TLS_KEY_B64: z.string().optional(),
+    API_TLS_CLIENT_CA_B64: z.string().optional(),
+    DATABASE_TLS_CA_B64: z.string().optional(),
+    DATABASE_TLS_CLIENT_CERT_B64: z.string().optional(),
+    DATABASE_TLS_CLIENT_KEY_B64: z.string().optional(),
     CORS_ALLOWED_ORIGINS: z
       .string()
       .min(1)
@@ -1546,6 +1558,7 @@ const envSchema = z
     }
     validateBackupEnv(env, ctx)
     validateHandoffVerifyKeys(env.VAULT_HANDOFF_VERIFY_KEYS, ctx)
+    validateInternalTlsEnv(env, ctx)
   })
 
 type RawEnv = z.infer<typeof envSchema>

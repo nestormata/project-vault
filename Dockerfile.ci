@@ -17,7 +17,9 @@ RUN npm install -g pnpm@11.21.0 --ignore-scripts
 # g++/make/python3: argon2 (packages/crypto) native rebuild, same as apps/api/Dockerfile.
 # git: generated-spec/openapi checks shell out to git against the bind-mounted .git.
 # bash: the root Makefile sets `SHELL := /usr/bin/env bash`; Alpine's base image only ships `sh`.
-RUN apk add --no-cache g++ make python3 git postgresql16-client bash
+# Story 43.16: openssl mints the runtime test PKI (no key/cert fixtures are committed); GNU
+# findutils/coreutils give the Fly TLS script tests `find -printf` and `base64 -w0`.
+RUN apk add --no-cache g++ make python3 git postgresql16-client bash openssl findutils coreutils
 
 WORKDIR /app
 

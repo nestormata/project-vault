@@ -9,9 +9,13 @@ import { findSonarSuppressions } from './check-no-sonar-suppressions.js'
 
 // Built by concatenation so this test file never contains the token it hunts for (Story 43.9 AC-9).
 const TOKEN = 'NO' + 'SONAR'
-const FLY_STORY = '43-16-epic-43-completion-tls-on-the-fly-internal-api-hop'
-const MARKER = '# AGENTS.md exception: signed off by Nestor 2026-09-27'
-const SIGNED_KEYS = [
+// Story 43.16 AC-6: the block Story 43.9 once accepted under Nestor's interim sign-off, verbatim
+// (marker and tracking-story reference included). With TLS on the Fly internal hop it is gone, and
+// the guard now rejects it like any other scanner-level ignore.
+const FORMER_SIGNED_OFF_BLOCK = [
+  '# AGENTS.md exception: signed off by Nestor 2026-09-27',
+  '# Story 43.9, "Decisions (Nestor, 2026-09-27)" item 2.',
+  '# Real fix tracked as 43-16-epic-43-completion-tls-on-the-fly-internal-api-hop.',
   'sonar.issue.ignore.multicriteria=e1',
   'sonar.issue.ignore.multicriteria.e1.ruleKey=shell:S5332',
   'sonar.issue.ignore.multicriteria.e1.resourceKey=scripts/fly-setup.sh',
@@ -44,16 +48,6 @@ function repo(files: Record<string, string>): string {
   run(root, ['add', '-A'])
   return root
 }
-
-function signedBlock(commentLines: string[]): string {
-  return [BASE_PROPERTIES, ...commentLines, ...SIGNED_KEYS, ''].join('\n')
-}
-
-const GOOD_COMMENT = [
-  MARKER,
-  '# Story 43.9, "Decisions (Nestor, 2026-09-27)" item 2.',
-  `# Real fix tracked as ${FLY_STORY}.`,
-]
 
 describe('findSonarSuppressions — inline token', () => {
   it('a clean tree passes', () => {
@@ -120,71 +114,18 @@ describe('findSonarSuppressions — workflow scanner args', () => {
 })
 
 describe('findSonarSuppressions — sonar-project.properties ignores', () => {
-  it('the signed-off e1 block with the marker and the 43-16 reference passes', () => {
-    const root = repo({ [PROPERTIES]: signedBlock(GOOD_COMMENT) })
-    expect(findSonarSuppressions(root)).toEqual([])
+  it('a properties file with no ignore keys passes', () => {
+    expect(findSonarSuppressions(repo({ [PROPERTIES]: BASE_PROPERTIES }))).toEqual([])
   })
 
-  it('the e1 block with no marker fails', () => {
-    // lines 1-3 base, line 4 the comment, line 5 the first ignore key
-    const root = repo({ [PROPERTIES]: signedBlock(['# a false positive, trust me']) })
-    expect(findSonarSuppressions(root)).toEqual([
-      expect.objectContaining({ location: `${PROPERTIES}:5` }),
+  it('the formerly signed-off e1 block (marker and 43-16 reference included) is now rejected', () => {
+    const content = [BASE_PROPERTIES, ...FORMER_SIGNED_OFF_BLOCK, ''].join('\n')
+    // lines 1-3 base, 4-6 the comment, 7-9 the three ignore keys
+    expect(findSonarSuppressions(repo({ [PROPERTIES]: content }))).toEqual([
+      expect.objectContaining({ location: `${PROPERTIES}:7` }),
+      expect.objectContaining({ location: `${PROPERTIES}:8` }),
+      expect.objectContaining({ location: `${PROPERTIES}:9` }),
     ])
-  })
-
-  it('the marker without the 43-16 reference fails', () => {
-    const root = repo({ [PROPERTIES]: signedBlock([MARKER]) })
-    expect(findSonarSuppressions(root)).toHaveLength(1)
-  })
-
-  it('a marker with a malformed date fails', () => {
-    const comment = [
-      '# AGENTS.md exception: signed off by Nestor 2026-9-27',
-      `# Real fix tracked as ${FLY_STORY}.`,
-    ]
-    expect(findSonarSuppressions(repo({ [PROPERTIES]: signedBlock(comment) }))).toHaveLength(1)
-  })
-
-  it('a marker with an impossible calendar date fails', () => {
-    const comment = [
-      '# AGENTS.md exception: signed off by Nestor 2026-02-30',
-      `# Real fix tracked as ${FLY_STORY}.`,
-    ]
-    expect(findSonarSuppressions(repo({ [PROPERTIES]: signedBlock(comment) }))).toHaveLength(1)
-  })
-
-  it('a marker placed below the keys fails', () => {
-    const content = [BASE_PROPERTIES, ...SIGNED_KEYS, ...GOOD_COMMENT, ''].join('\n')
-    expect(findSonarSuppressions(repo({ [PROPERTIES]: content }))).toHaveLength(1)
-  })
-
-  it('a marker separated from the keys by a blank line fails', () => {
-    const content = [BASE_PROPERTIES, ...GOOD_COMMENT, '', ...SIGNED_KEYS, ''].join('\n')
-    expect(findSonarSuppressions(repo({ [PROPERTIES]: content }))).toHaveLength(1)
-  })
-
-  it('the same marker with a different ruleKey fails', () => {
-    const content = signedBlock(GOOD_COMMENT).replace('shell:S5332', 'typescript:S1313')
-    expect(findSonarSuppressions(repo({ [PROPERTIES]: content }))).toHaveLength(1)
-  })
-
-  it('the same marker with a widened resourceKey fails', () => {
-    const content = signedBlock(GOOD_COMMENT).replace('scripts/fly-setup.sh', 'scripts/**')
-    expect(findSonarSuppressions(repo({ [PROPERTIES]: content }))).toHaveLength(1)
-  })
-
-  it('an extra e2 entry fails', () => {
-    const content = signedBlock(GOOD_COMMENT)
-      .replace('multicriteria=e1', 'multicriteria=e1,e2')
-      .concat(
-        [
-          'sonar.issue.ignore.multicriteria.e2.ruleKey=typescript:S1313',
-          'sonar.issue.ignore.multicriteria.e2.resourceKey=**/*.ts',
-          '',
-        ].join('\n')
-      )
-    expect(findSonarSuppressions(repo({ [PROPERTIES]: content })).length).toBeGreaterThan(0)
   })
 
   it('any other sonar.issue ignore/enforce key fails', () => {

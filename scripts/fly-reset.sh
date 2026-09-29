@@ -24,6 +24,8 @@
 #                         before it ever touches the database
 #   VAULT_BOOTSTRAP_TOKEN same value set on the api app's VAULT_BOOTSTRAP_TOKEN secret by
 #                         fly-setup.sh — required by POST /api/v1/vault/init
+#   FLY_INTERNAL_CA_CERT_B64 / FLY_INTERNAL_CA_KEY_B64  the internal CA (Story 43.16); a 1-day
+#                         operator client certificate is minted from it for this run only.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -43,18 +45,24 @@ PROXY_PORT="${FLY_DB_PROXY_PORT:-15432}"
 : "${VAULT_BOOTSTRAP_TOKEN:?Set VAULT_BOOTSTRAP_TOKEN (same value set on the api app by fly-setup.sh)}"
 : "${VAULT_ADMIN_PASSWORD:?Set VAULT_ADMIN_PASSWORD (same value set on the api app by fly-setup.sh)}"
 : "${VAULT_APP_PASSWORD:?Set VAULT_APP_PASSWORD (the vault_app password fly-setup.sh put in the api DATABASE_URL; this script ALTERs vault_app to it)}"
+# Story 43.16: the db requires a client certificate; one is minted per run from the internal CA
+# (GitHub secrets FLY_DEMO_INTERNAL_CA_CERT_B64 / FLY_DEMO_INTERNAL_CA_KEY_B64).
+: "${FLY_INTERNAL_CA_CERT_B64:?Set FLY_INTERNAL_CA_CERT_B64 (see docs/runbooks/fly-internal-tls.md)}"
+: "${FLY_INTERNAL_CA_KEY_B64:?Set FLY_INTERNAL_CA_KEY_B64 (see docs/runbooks/fly-internal-tls.md)}"
 
 for bin in flyctl pnpm jq psql curl; do
   command -v "$bin" >/dev/null 2>&1 || { echo "missing required binary: $bin" >&2; exit 1; }
 done
 
 open_fly_db_proxy "$DB_APP" "$PROXY_PORT"
+issue_operator_tls "$SCRIPT_DIR"
 
-SUPERUSER_URL="postgresql://postgres:${ADMIN_PG_PASSWORD}@localhost:${PROXY_PORT}/project_vault"
-APP_URL="postgresql://vault_app:${VAULT_APP_PASSWORD}@localhost:${PROXY_PORT}/project_vault"
+SUPERUSER_URL="postgresql://postgres:${ADMIN_PG_PASSWORD}@localhost:${PROXY_PORT}/project_vault?sslmode=verify-full"
+SUPERUSER_PSQL_URL="$(operator_psql_url postgres "$ADMIN_PG_PASSWORD" "$PROXY_PORT")"
+APP_URL="postgresql://vault_app:${VAULT_APP_PASSWORD}@localhost:${PROXY_PORT}/project_vault?sslmode=verify-full"
 
 echo "== Wiping schema =="
-psql "$SUPERUSER_URL" -v ON_ERROR_STOP=1 <<'SQL'
+psql "$SUPERUSER_PSQL_URL" -v ON_ERROR_STOP=1 <<'SQL'
 DROP SCHEMA IF EXISTS public CASCADE;
 CREATE SCHEMA public;
 GRANT ALL ON SCHEMA public TO postgres;
@@ -77,19 +85,19 @@ END $$;
 SQL
 
 echo "== Running migrations (creates vault_app role + RLS + schema) =="
-DATABASE_URL="$SUPERUSER_URL" pnpm --filter @project-vault/db db:migrate
+DATABASE_URL="$SUPERUSER_URL" with_operator_tls pnpm --filter @project-vault/db db:migrate
 
 echo "== Hardening vault_admin password to match VAULT_ADMIN_PASSWORD =="
-psql "$SUPERUSER_URL" -v ON_ERROR_STOP=1 -c \
+psql "$SUPERUSER_PSQL_URL" -v ON_ERROR_STOP=1 -c \
   "ALTER ROLE vault_admin PASSWORD '${VAULT_ADMIN_PASSWORD}';"
 
 echo "== Hardening vault_app password to match VAULT_APP_PASSWORD =="
-psql "$SUPERUSER_URL" -v ON_ERROR_STOP=1 -c \
+psql "$SUPERUSER_PSQL_URL" -v ON_ERROR_STOP=1 -c \
   "ALTER ROLE vault_app PASSWORD '${VAULT_APP_PASSWORD}';"
 
 echo "== Seeding demo data (including a login-able user) =="
 DATABASE_URL="$APP_URL" DEMO_LOGIN_EMAIL="$DEMO_LOGIN_EMAIL" DEMO_LOGIN_PASSWORD="$DEMO_LOGIN_PASSWORD" \
-  pnpm --filter @project-vault/db db:seed:demo
+  with_operator_tls pnpm --filter @project-vault/db db:seed:demo
 
 echo "== Closing db proxy =="
 cleanup

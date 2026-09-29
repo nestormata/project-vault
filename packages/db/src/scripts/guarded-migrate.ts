@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
+import { pgTlsOptions } from '../pg-tls.js'
 import { OperationalEvent } from '@project-vault/shared'
 import {
   findDestructiveStatements,
@@ -66,14 +67,29 @@ export function validateMigrationRole(state: MigrationRoleState): MigrationRoleD
   }
 }
 
+/** drizzle-kit's generated tag shape: a 4-digit index, `_`, then a lowercase snake_case name. */
+const MIGRATION_TAG_PATTERN = /^\d{4}_[a-z0-9_]+$/
+
+/** Defence in depth: a journal tag becomes part of a filesystem path, so a tampered or corrupted
+ * journal entry (`../x`, `0001_ok/../../x`) must be rejected before it is ever joined into one. */
+function assertValidMigrationTag(tag: unknown): void {
+  if (typeof tag !== 'string' || !MIGRATION_TAG_PATTERN.test(tag)) {
+    throw new Error(
+      `Invalid migration tag ${JSON.stringify(tag)} in drizzle journal: expected ${String(MIGRATION_TAG_PATTERN)}`
+    )
+  }
+}
+
 /** Reads every migration file listed in `${migrationsDir}/meta/_journal.json`, in journal (idx)
- * order — the full local migration history, not filtered to pending ones. */
+ * order — the full local migration history, not filtered to pending ones. Every tag is validated
+ * up front, before any migration file is read. */
 export function readLocalMigrations(migrationsDir: string): LocalMigration[] {
   const journalPath = resolve(migrationsDir, 'meta', '_journal.json')
   if (!existsSync(journalPath)) {
     throw new Error(`Cannot find ${journalPath}`)
   }
   const journal = JSON.parse(readFileSync(journalPath, 'utf-8')) as Journal
+  for (const entry of journal.entries) assertValidMigrationTag(entry.tag)
   return journal.entries
     .slice()
     .sort((a, b) => a.idx - b.idx)
@@ -187,7 +203,7 @@ export async function applyMigrations(
   databaseUrl: string,
   migrationsFolder: string
 ): Promise<void> {
-  const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined })
+  const sql = postgres(databaseUrl, { ...pgTlsOptions(), max: 1, onnotice: () => undefined })
   try {
     await migrate(drizzle(sql), { migrationsFolder })
   } finally {
@@ -200,7 +216,7 @@ export async function applyMigrations(
  * never creates the table, since a refused destructive migration must leave the database
  * completely untouched (AC-3). */
 export async function fetchLastAppliedMillis(databaseUrl: string): Promise<number | null> {
-  const sql = postgres(databaseUrl, { max: 1 })
+  const sql = postgres(databaseUrl, { ...pgTlsOptions(), max: 1 })
   try {
     const rows = await sql<{ created_at: string }[]>`
       select created_at from drizzle.__drizzle_migrations order by created_at desc limit 1
@@ -216,7 +232,7 @@ export async function fetchLastAppliedMillis(databaseUrl: string): Promise<numbe
 }
 
 export async function fetchMigrationRoleState(databaseUrl: string): Promise<MigrationRoleState> {
-  const sql = postgres(databaseUrl, { max: 1 })
+  const sql = postgres(databaseUrl, { ...pgTlsOptions(), max: 1 })
   try {
     const rows = await sql<MigrationRoleState[]>`
       SELECT current_user AS rolname, rolsuper, rolbypassrls

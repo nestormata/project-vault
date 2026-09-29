@@ -8,6 +8,7 @@ import { getExtensionsHealthField } from '../extensions/loader.js'
 import { getThemesHealthField } from '../modules/theming/service.js'
 import { getReleaseVersion } from '../lib/package-version.js'
 import { isNativeLoginEnabled } from '../modules/auth/native-login-policy.js'
+import { internalTlsExpiring } from '../lib/internal-tls-status.js'
 
 // Story 14.2 AC-1/2/3/6: additive field, always present, never causes /health to deviate from
 // its existing unconditional-200 liveness contract — extension state is informational only.
@@ -153,6 +154,11 @@ export async function healthRoutes(
       try {
         await options.dbPool.query('SELECT 1')
         const warnings = await resolveReadyWarnings(options.dbPool)
+        // Story 43.16 AC-14: a Fly demo internal-TLS leaf under 30 days from notAfter is degraded,
+        // never not-ready (an expiring certificate still works). Generic token only, like Story
+        // 56.2's: /ready is unauthenticated, so which leaf and how many days stay on the
+        // loopback-only pv_internal_tls_cert_expiry_seconds gauge and the startup warn log.
+        if (internalTlsExpiring().length > 0) warnings.push('internal_tls_cert_expiring')
         return reply.send(warnings.length > 0 ? { status: 'ready', warnings } : { status: 'ready' })
       } catch (err) {
         req.log.error(

@@ -10,6 +10,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./pg-tls": {
+      "types": "./dist/pg-tls.d.ts",
+      "default": "./dist/pg-tls.js"
+    },
     "./test-helpers": {
       "types": "./dist/test-helpers.d.ts",
       "default": "./dist/test-helpers.js"

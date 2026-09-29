@@ -1,6 +1,14 @@
 import postgres from 'postgres'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import { sql } from 'drizzle-orm'
+import { pgTlsOptions } from './pg-tls.js'
+
+export {
+  DATABASE_TLS_SPEC,
+  pgBossConnectionOptions,
+  pgTlsOptions,
+  type PgTlsSsl,
+} from './pg-tls.js'
 
 export type Tx = Parameters<Parameters<ReturnType<typeof drizzle>['transaction']>[0]>[0]
 
@@ -17,7 +25,8 @@ let _db: ReturnType<typeof drizzle> | null = null
 function getPgClient(): ReturnType<typeof postgres> {
   if (!_pgClient) {
     _pgClient = postgres(
-      process.env['DATABASE_URL'] ?? 'postgresql://postgres:password@localhost:5432/project_vault'
+      process.env['DATABASE_URL'] ?? 'postgresql://postgres:password@localhost:5432/project_vault',
+      pgTlsOptions()
     )
   }
   return _pgClient

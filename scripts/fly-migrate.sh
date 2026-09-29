@@ -21,6 +21,8 @@
 #                       FLY_DEMO_VAULT_APP_PASSWORD; alternatively set RLS_CHECK_DATABASE_URL to
 #                       an arbitrary vault_app connection string.
 #   VAULT_ADMIN_PASSWORD vault_admin password provisioned for ADMIN_DATABASE_URL.
+#   FLY_INTERNAL_CA_CERT_B64 / FLY_INTERNAL_CA_KEY_B64  the internal CA (Story 43.16); a 1-day
+#                       operator client certificate is minted from it for this run only.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -32,25 +34,31 @@ PROXY_PORT="${FLY_DB_PROXY_PORT:-15432}"
 
 : "${ADMIN_PG_PASSWORD:?Set ADMIN_PG_PASSWORD (postgres superuser password)}"
 : "${VAULT_ADMIN_PASSWORD:?Set VAULT_ADMIN_PASSWORD (vault_admin password)}"
+# Story 43.16: the db requires a client certificate; one is minted per run from the internal CA
+# (GitHub secrets FLY_DEMO_INTERNAL_CA_CERT_B64 / FLY_DEMO_INTERNAL_CA_KEY_B64).
+: "${FLY_INTERNAL_CA_CERT_B64:?Set FLY_INTERNAL_CA_CERT_B64 (see docs/runbooks/fly-internal-tls.md)}"
+: "${FLY_INTERNAL_CA_KEY_B64:?Set FLY_INTERNAL_CA_KEY_B64 (see docs/runbooks/fly-internal-tls.md)}"
 
 for bin in flyctl pnpm psql; do
   command -v "$bin" >/dev/null 2>&1 || { echo "missing required binary: $bin" >&2; exit 1; }
 done
 
 open_fly_db_proxy "$DB_APP" "$PROXY_PORT"
+issue_operator_tls "$SCRIPT_DIR"
 
-SUPERUSER_URL="postgresql://postgres:${ADMIN_PG_PASSWORD}@localhost:${PROXY_PORT}/project_vault"
-RLS_CHECK_URL="${RLS_CHECK_DATABASE_URL:-postgresql://vault_app:${VAULT_APP_PASSWORD:?Set VAULT_APP_PASSWORD or RLS_CHECK_DATABASE_URL}@localhost:${PROXY_PORT}/project_vault}"
+SUPERUSER_URL="postgresql://postgres:${ADMIN_PG_PASSWORD}@localhost:${PROXY_PORT}/project_vault?sslmode=verify-full"
+SUPERUSER_PSQL_URL="$(operator_psql_url postgres "$ADMIN_PG_PASSWORD" "$PROXY_PORT")"
+RLS_CHECK_URL="${RLS_CHECK_DATABASE_URL:-postgresql://vault_app:${VAULT_APP_PASSWORD:?Set VAULT_APP_PASSWORD or RLS_CHECK_DATABASE_URL}@localhost:${PROXY_PORT}/project_vault?sslmode=verify-full}"
 
 echo "== Applying pending migrations =="
-DATABASE_URL="$SUPERUSER_URL" pnpm --filter @project-vault/db db:migrate
+DATABASE_URL="$SUPERUSER_URL" with_operator_tls pnpm --filter @project-vault/db db:migrate
 
 echo "== Provisioning vault_admin credential =="
-psql "$SUPERUSER_URL" -v ON_ERROR_STOP=1 -c \
+psql "$SUPERUSER_PSQL_URL" -v ON_ERROR_STOP=1 -c \
   "ALTER ROLE vault_admin PASSWORD '${VAULT_ADMIN_PASSWORD}';"
 
 echo "== Verifying RLS as vault_app =="
-DATABASE_URL="$RLS_CHECK_URL" pnpm check-rls
+DATABASE_URL="$RLS_CHECK_URL" with_operator_tls pnpm check-rls
 
 echo "== Closing db proxy =="
 cleanup

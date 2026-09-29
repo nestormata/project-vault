@@ -16,6 +16,7 @@ table below.
 | The migration wrapper refused a destructive migration | [`upgrades.md`](upgrades.md) § Offline migration path |
 | `/health` reports the wrong version, or a release-publish verification step failed | [`upgrades.md`](upgrades.md) § Release-identity source |
 | The API refuses to boot on `ADMIN_DATABASE_URL` | [`upgrade-notes.md`](upgrade-notes.md) § Migration `0071` |
+| Fly demo: internal TLS setup/rotation, `internal_tls_cert_expiring` on `/ready`, or web `503 api_unreachable` after a rotation | [`fly-internal-tls.md`](fly-internal-tls.md) |
 | Taking, validating, or restoring a backup on a working instance | [`backup-restore.md`](backup-restore.md) |
 | `backup.missed` / `backup.failure` alert | [`backup-restore.md`](backup-restore.md) § Backup missed |
 | `backup.storage_init_failed`, or a backup failing with a permission error | [`backup-restore.md`](backup-restore.md) § Backup permission remediation |
