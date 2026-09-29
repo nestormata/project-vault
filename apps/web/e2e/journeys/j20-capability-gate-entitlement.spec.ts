@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test, type BrowserContext } from '@playwright/test'
 import { enrollMfaDirect } from '../fixtures/db.js'
+import { gotoHydrated } from '../fixtures/hydration.js'
 import {
   createIsolatedDatabase,
   initIsolatedVault,
@@ -38,6 +39,8 @@ const WEB_PORT = 34821
 const DB_NAME = 'project_vault_j20_capgate_e2e'
 const PASSWORD = 'j20-capability-gate-e2e-Password-1'
 const BASE_URL = `http://localhost:${WEB_PORT}`
+const CAPABILITY_DENIED_HELP =
+  "Your organization's plan doesn't include public status pages. Contact your administrator to upgrade."
 
 let apiHandle: ApiHandle
 let webHandle: WebHandle
@@ -111,27 +114,36 @@ test.describe
     const project = (await createProject.json()) as { data: { id: string } }
     const projectId = project.data.id
 
-    // --- Step 1: Priya clicks Publish. The control is NOT pre-gated (renders exactly as today —
-    // the story's own persona-journey text) — this real 403 IS the enforcement.
-    await page.goto(`${BASE_URL}/projects/${projectId}/status-page`)
-    await expect(page.getByRole('heading', { name: 'Public status page' })).toBeVisible()
-    // Vite dev mode serves an unbundled module graph — a web-first assertion on the button itself
-    // (rather than a blanket networkidle heuristic, matching J19's own documented rationale for
-    // the same class of race) is what actually waits for hydration to attach the click handler;
-    // clicking too early falls through to a no-op.
+    // --- Step 1: Priya opens the status page. Since Story 23-7 (#339, 02f6f55c) the control IS
+    // pre-gated from the capability map: "Enable public status page" renders disabled, with PV's
+    // own fallback copy wired as its accessible description (23-7's Priya persona journey, step
+    // 1). The page is loaded hydration-armed so the assertions read the hydrated state.
     const enableButton = page.getByRole('button', { name: 'Enable public status page' })
-    await expect(enableButton).toBeEnabled()
-    await enableButton.click()
+    await gotoHydrated(page, `${BASE_URL}/projects/${projectId}/status-page`, enableButton)
+    await expect(page.getByRole('heading', { name: 'Public status page' })).toBeVisible()
+    await expect(enableButton).toBeDisabled()
+    await expect(enableButton).toHaveAccessibleDescription(CAPABILITY_DENIED_HELP)
 
-    // The extension's own message ("This fixture org is not entitled to publish a public status
-    // page.") must render verbatim as ESCAPED PLAIN TEXT — Svelte's default `{expr}` interpolation
-    // does this automatically; asserting the text is visible (not raw HTML executing) is the
-    // behavioral proof available from the DOM.
+    // The UI gate is cosmetic; Story 23.3's backend gate is the enforcement (23-7 step 3, AC-11).
+    // Bypassing the UI must still get a real 403 carrying the extension's own message verbatim.
+    const bypass = await context.request.post(
+      `http://localhost:${API_PORT}/api/v1/projects/${projectId}/status-page`,
+      { data: {} }
+    )
+    expect(bypass.status(), await bypass.text()).toBe(403)
+    const bypassBody = (await bypass.json()) as { code: string; message: string }
+    expect(bypassBody.code).toBe('capability_denied')
+    expect(bypassBody.message).toBe(
+      'This fixture org is not entitled to publish a public status page.'
+    )
+    // No status page was actually created — the "enabled" state (a code/copy link) never appears,
+    // and the raw extension message is never rendered by the UI (it shows PV's own copy).
+    await page.reload()
+    await expect(enableButton).toBeDisabled()
+    await expect(page.locator('code')).toHaveCount(0)
     await expect(
       page.getByText('This fixture org is not entitled to publish a public status page.')
-    ).toBeVisible()
-    // No status page was actually created — the "enabled" state (a code/copy link) never appears.
-    await expect(page.locator('code')).toHaveCount(0)
+    ).toHaveCount(0)
 
     // --- Step 2: an org that never published has no token, so there is nothing meaningful to
     // check on the public route for THIS org — instead confirm the general "unknown token"
@@ -160,9 +172,9 @@ test.describe
     })
     expect(unseal.ok(), await unseal.text()).toBeTruthy()
 
-    await page.goto(`${BASE_URL}/projects/${projectId}/status-page`)
-    await expect(page.getByRole('heading', { name: 'Public status page' })).toBeVisible()
     const retryEnableButton = page.getByRole('button', { name: 'Enable public status page' })
+    await gotoHydrated(page, `${BASE_URL}/projects/${projectId}/status-page`, retryEnableButton)
+    await expect(page.getByRole('heading', { name: 'Public status page' })).toBeVisible()
     await expect(retryEnableButton).toBeEnabled()
     await retryEnableButton.click()
 
