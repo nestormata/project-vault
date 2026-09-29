@@ -16,7 +16,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { makeRecipe, workflowRunCommands } from './lib/ci-wiring.js'
+import { makeRecipe, recipeRunsCommand, workflowRunCommands } from './lib/ci-wiring.js'
 import { COMPOSE_REQUIRED_IN_CI_MESSAGE, resolveComposeGuard } from './lib/compose-guard.js'
 
 const repoRoot = resolve(process.cwd())
@@ -454,11 +454,12 @@ describeOrSkip('docker compose config — CORS_EXTRA_ORIGINS passthrough (Story 
 // side of `make ci` (the ci container has no Docker CLI, so inside ci-inner it would only print
 // SKIPPED) and into a ci.yml job.
 const COMPOSE_SUITE_COMMAND = 'pnpm vitest run scripts/check-compose-config.test.ts'
+const MAKE_CI_MISSING = 'Makefile `ci` recipe must run the compose-config suite on the host'
 
 function composeSuiteWiringProblems(makefile: string, ciWorkflow: string): string[] {
   const problems: string[] = []
-  if (!makeRecipe(makefile, 'ci').includes(COMPOSE_SUITE_COMMAND)) {
-    problems.push('Makefile `ci` recipe must run the compose-config suite on the host')
+  if (!recipeRunsCommand(makeRecipe(makefile, 'ci'), COMPOSE_SUITE_COMMAND)) {
+    problems.push(MAKE_CI_MISSING)
   }
   if (makeRecipe(makefile, 'ci-inner').includes('scripts/check-compose-config.test.ts')) {
     problems.push('Makefile `ci-inner` must not run the compose-config suite (no Docker CLI there)')
@@ -481,9 +482,19 @@ describe('check-compose-config wiring (Story 60.7 AC3.4)', () => {
     const fixture = makefile.replace(`\t${COMPOSE_SUITE_COMMAND}\n`, '')
     expect(fixture).not.toBe(makefile)
 
-    expect(composeSuiteWiringProblems(fixture, ciWorkflow)).toContain(
-      'Makefile `ci` recipe must run the compose-config suite on the host'
-    )
+    expect(composeSuiteWiringProblems(fixture, ciWorkflow)).toContain(MAKE_CI_MISSING)
+  })
+
+  // Code review (60-7): a commented-out line, or make's `-` ignore-errors prefix, would keep the
+  // text in the recipe while the suite no longer runs (or no longer fails `make ci`).
+  it.each([
+    ['commented out', `\t# ${COMPOSE_SUITE_COMMAND}\n`],
+    ['ignore-errors prefixed', `\t-${COMPOSE_SUITE_COMMAND}\n`],
+  ])('reports a Makefile ci recipe whose suite line is %s', (_label, replacement) => {
+    const fixture = makefile.replace(`\t${COMPOSE_SUITE_COMMAND}\n`, replacement)
+    expect(fixture).not.toBe(makefile)
+
+    expect(composeSuiteWiringProblems(fixture, ciWorkflow)).toContain(MAKE_CI_MISSING)
   })
 
   it('reports the suite moved into ci-inner', () => {

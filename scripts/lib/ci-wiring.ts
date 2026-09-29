@@ -30,6 +30,13 @@ export function makeRecipe(makefile: string, target: string): string {
   return body.join('\n')
 }
 
+/** Whether a recipe (from `makeRecipe`) runs `command` as its own live line: not commented out
+ * and without make's `-` ignore-errors prefix (a failure would then not fail the target). A `@`
+ * echo-suppression prefix is allowed. */
+export function recipeRunsCommand(recipe: string, command: string): boolean {
+  return recipe.split('\n').some((line) => line.trim().replace(/^@/, '') === command)
+}
+
 /** Every step `run` command across every job of a GitHub Actions workflow. */
 export function workflowRunCommands(workflowText: string): string[] {
   const workflow = parseYaml(workflowText) as WorkflowFile
