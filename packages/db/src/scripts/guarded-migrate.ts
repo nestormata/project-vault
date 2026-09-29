@@ -67,14 +67,29 @@ export function validateMigrationRole(state: MigrationRoleState): MigrationRoleD
   }
 }
 
+/** drizzle-kit's generated tag shape: a 4-digit index, `_`, then a lowercase snake_case name. */
+const MIGRATION_TAG_PATTERN = /^\d{4}_[a-z0-9_]+$/
+
+/** Defence in depth: a journal tag becomes part of a filesystem path, so a tampered or corrupted
+ * journal entry (`../x`, `0001_ok/../../x`) must be rejected before it is ever joined into one. */
+function assertValidMigrationTag(tag: unknown): void {
+  if (typeof tag !== 'string' || !MIGRATION_TAG_PATTERN.test(tag)) {
+    throw new Error(
+      `Invalid migration tag ${JSON.stringify(tag)} in drizzle journal: expected ${String(MIGRATION_TAG_PATTERN)}`
+    )
+  }
+}
+
 /** Reads every migration file listed in `${migrationsDir}/meta/_journal.json`, in journal (idx)
- * order — the full local migration history, not filtered to pending ones. */
+ * order — the full local migration history, not filtered to pending ones. Every tag is validated
+ * up front, before any migration file is read. */
 export function readLocalMigrations(migrationsDir: string): LocalMigration[] {
   const journalPath = resolve(migrationsDir, 'meta', '_journal.json')
   if (!existsSync(journalPath)) {
     throw new Error(`Cannot find ${journalPath}`)
   }
   const journal = JSON.parse(readFileSync(journalPath, 'utf-8')) as Journal
+  for (const entry of journal.entries) assertValidMigrationTag(entry.tag)
   return journal.entries
     .slice()
     .sort((a, b) => a.idx - b.idx)
