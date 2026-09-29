@@ -168,17 +168,34 @@ export async function createProjectsViaDb(input: {
   }))
 
   try {
+    // One multi-row insert per table (not one round trip per project): the memberships reference
+    // the projects, so the project insert runs first inside the same transaction.
     await sql.begin(async (transaction) => {
-      for (const project of projects) {
-        await transaction`
-          insert into projects (id, org_id, name, slug, description, tags, created_by, created_at, updated_at)
-          values (${project.id}, ${input.orgId}, ${project.name}, ${project.slug}, null, '[]'::jsonb, ${input.userId}, ${project.createdAt}, ${project.createdAt})
-        `
-        await transaction`
-          insert into project_memberships (org_id, project_id, user_id, role)
-          values (${input.orgId}, ${project.id}, ${input.userId}, 'owner')
-        `
-      }
+      await transaction`
+        insert into projects ${transaction(
+          projects.map((project) => ({
+            id: project.id,
+            org_id: input.orgId,
+            name: project.name,
+            slug: project.slug,
+            description: null,
+            tags: transaction.json([]),
+            created_by: input.userId,
+            created_at: project.createdAt,
+            updated_at: project.createdAt,
+          }))
+        )}
+      `
+      await transaction`
+        insert into project_memberships ${transaction(
+          projects.map((project) => ({
+            org_id: input.orgId,
+            project_id: project.id,
+            user_id: input.userId,
+            role: 'owner',
+          }))
+        )}
+      `
     })
   } finally {
     await sql.end({ timeout: 5 })

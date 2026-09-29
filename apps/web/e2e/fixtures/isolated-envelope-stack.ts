@@ -49,7 +49,8 @@ function journeyOnlyDummyPasswordHash(): string {
     tagLength: 32,
     ...params,
   })
-  const b64 = (buffer: Buffer) => buffer.toString('base64').replace(/=+$/, '')
+  // PHC strings use unpadded standard base64; '=' only ever appears as trailing padding.
+  const b64 = (buffer: Buffer) => buffer.toString('base64').replaceAll('=', '')
   return `$argon2id$v=19$m=${params.memory},t=${params.passes},p=${params.parallelism}$${b64(salt)}$${b64(hash)}`
 }
 
