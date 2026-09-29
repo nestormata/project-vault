@@ -1,10 +1,13 @@
 import type { Page } from '@playwright/test'
+import { gotoHydrated } from '../fixtures/hydration.js'
 
 export class CredentialsPage {
   constructor(private readonly page: Page) {}
 
+  // Hydration-armed: the Template <select>'s `onchange` builds the Field rows, so a
+  // selectOption() that lands before hydration leaves no "Field 1 value" input at all.
   async gotoNew(projectId: string): Promise<void> {
-    await this.page.goto(`/projects/${projectId}/credentials/new`)
+    await gotoHydrated(this.page, `/projects/${projectId}/credentials/new`, this.nameInput())
   }
 
   async gotoDetail(projectId: string, credentialId: string): Promise<void> {

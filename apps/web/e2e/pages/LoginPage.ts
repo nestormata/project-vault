@@ -1,10 +1,12 @@
 import type { Page } from '@playwright/test'
+import { gotoHydrated } from '../fixtures/hydration.js'
 
 export class LoginPage {
   constructor(private readonly page: Page) {}
 
-  async goto(): Promise<void> {
-    await this.page.goto('/login')
+  // `url` lets the isolated-stack journeys (J19) reach their own web port.
+  async goto(url = '/login'): Promise<void> {
+    await gotoHydrated(this.page, url, this.emailInput())
   }
 
   emailInput() {
