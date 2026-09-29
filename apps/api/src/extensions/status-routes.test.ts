@@ -103,6 +103,26 @@ describe('GET /api/v1/admin/extensions/status', () => {
     ).toBe(true)
   })
 
+  // Story 66.3: the contract-layer pin of the metadata-only boundary (AC-12). Exact key sets on
+  // purpose — a new key on this admin envelope must force a conscious review of what it exposes,
+  // rather than passing silently. J24 keeps the browser-path leak assertion on top of this.
+  it('AC-12: the envelope carries exactly extension, nativeLoginPolicy and clockSkew', async () => {
+    const admin = await createDirectAuthenticatedUser(suite.app, 'status-key-set', 'admin')
+    await enrollMfa(admin.userId)
+
+    const res = await getStatus(suite.app, admin.cookies)
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json<Record<string, Record<string, unknown> | null>>()
+    expect(Object.keys(body).sort()).toEqual(['clockSkew', 'extension', 'nativeLoginPolicy'])
+    expect(Object.keys(body['clockSkew'] ?? {}).sort()).toEqual([
+      'lastMeasuredMs',
+      'measuredAt',
+      'status',
+      'warnThresholdMs',
+    ])
+  })
+
   it('AC-2/AC-12: returns the manifest under extension when an extension is loaded', async () => {
     await loadExtension(VALID_PACKAGE_NAME, {
       importFn: async () => ({

@@ -53,7 +53,16 @@ test.describe.serial('J24 — extension database access boundary', () => {
     const response = await context.request.get(`${apiBaseUrl()}/api/v1/admin/extensions/status`)
     expect(response.ok(), await response.text()).toBeTruthy()
     const body = (await response.json()) as Record<string, unknown>
-    expect(Object.keys(body).sort()).toEqual(['extension', 'nativeLoginPolicy'])
+    // Exact key set on purpose: any new key on this admin envelope must force a conscious review
+    // of the metadata-only boundary. `clockSkew` is Story 30.1's (4aa9e73f) additive AC9 field —
+    // a measurement, not connection material; its own keys are pinned below too.
+    expect(Object.keys(body).sort()).toEqual(['clockSkew', 'extension', 'nativeLoginPolicy'])
+    expect(Object.keys(body['clockSkew'] as Record<string, unknown>).sort()).toEqual([
+      'lastMeasuredMs',
+      'measuredAt',
+      'status',
+      'warnThresholdMs',
+    ])
     expect(JSON.stringify(body)).not.toMatch(
       /EXTENSION_DATABASE_URL|EXTENSION_GRANT_DATABASE_URL|dbScope|vault_extension|dev-only-change-in-prod|postgresql:\/\//i
     )
