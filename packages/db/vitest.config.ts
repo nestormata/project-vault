@@ -30,6 +30,8 @@ export default mergeConfig(baseVitestConfig, {
         'src/extension-db-scope.ts',
         'src/extension-db.ts',
         'src/scripts/extension-grants.ts',
+        // Story 43.16 AC-3: the pinned-CA Postgres TLS options.
+        'src/pg-tls.ts',
       ],
       // See apps/api/vitest.config.ts for why this is conditional: CI splits this package's
       // suite across 2 parallel shards (ci.yml's test-api-db matrix), and each shard's own

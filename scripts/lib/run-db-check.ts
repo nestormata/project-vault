@@ -1,4 +1,5 @@
 import postgres from 'postgres'
+import { pgTlsOptions } from '@project-vault/db/pg-tls'
 
 /**
  * Shared CLI-script boilerplate for a one-shot DB integrity check (`check-rls-coverage.ts`,
@@ -19,7 +20,7 @@ export async function runDbCheck(options: {
     return
   }
 
-  const sql = postgres(databaseUrl)
+  const sql = postgres(databaseUrl, pgTlsOptions())
   try {
     await options.check(sql)
     process.stdout.write(`${options.successMessage}\n`)

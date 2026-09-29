@@ -18,7 +18,7 @@ import { randomUUID } from 'node:crypto'
 import { and, eq, isNull } from 'drizzle-orm'
 import postgres from 'postgres'
 import { drizzle } from 'drizzle-orm/postgres-js'
-import { getDb, withOrg } from '@project-vault/db'
+import { getDb, pgTlsOptions, withOrg } from '@project-vault/db'
 import {
   externalIdentities,
   organizations,
@@ -34,7 +34,7 @@ export const PROVIDER_NAME = 'test.mock-sso-extension'
 // This manual-QA-only cleanup must not widen the production vault_admin grant set. Supply a
 // separately provisioned QA connection explicitly when running this script; there is no fallback.
 const qaDatabaseUrl = process.env['QA_DATABASE_URL']
-const qaDb = qaDatabaseUrl ? drizzle(postgres(qaDatabaseUrl)) : null
+const qaDb = qaDatabaseUrl ? drizzle(postgres(qaDatabaseUrl, pgTlsOptions())) : null
 
 export async function ensureUnsealed(): Promise<void> {
   if (!isSealed()) return

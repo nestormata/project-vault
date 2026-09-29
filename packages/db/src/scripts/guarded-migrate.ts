@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
+import { pgTlsOptions } from '../pg-tls.js'
 import { OperationalEvent } from '@project-vault/shared'
 import {
   findDestructiveStatements,
@@ -187,7 +188,7 @@ export async function applyMigrations(
   databaseUrl: string,
   migrationsFolder: string
 ): Promise<void> {
-  const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined })
+  const sql = postgres(databaseUrl, { ...pgTlsOptions(), max: 1, onnotice: () => undefined })
   try {
     await migrate(drizzle(sql), { migrationsFolder })
   } finally {
@@ -200,7 +201,7 @@ export async function applyMigrations(
  * never creates the table, since a refused destructive migration must leave the database
  * completely untouched (AC-3). */
 export async function fetchLastAppliedMillis(databaseUrl: string): Promise<number | null> {
-  const sql = postgres(databaseUrl, { max: 1 })
+  const sql = postgres(databaseUrl, { ...pgTlsOptions(), max: 1 })
   try {
     const rows = await sql<{ created_at: string }[]>`
       select created_at from drizzle.__drizzle_migrations order by created_at desc limit 1
@@ -216,7 +217,7 @@ export async function fetchLastAppliedMillis(databaseUrl: string): Promise<numbe
 }
 
 export async function fetchMigrationRoleState(databaseUrl: string): Promise<MigrationRoleState> {
-  const sql = postgres(databaseUrl, { max: 1 })
+  const sql = postgres(databaseUrl, { ...pgTlsOptions(), max: 1 })
   try {
     const rows = await sql<MigrationRoleState[]>`
       SELECT current_user AS rolname, rolsuper, rolbypassrls
