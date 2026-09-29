@@ -39,6 +39,12 @@ describe('OperationalEvent', () => {
     )
   })
 
+  it('exposes the Story 43.16 internal TLS event types', () => {
+    expect(OperationalEvent.INTERNAL_TLS_CONFIGURED).toBe('internal_tls.configured')
+    expect(OperationalEvent.INTERNAL_TLS_CERT_EXPIRING).toBe('internal_tls.cert_expiring')
+    expect(OperationalEvent.INTERNAL_TLS_HANDSHAKE_FAILED).toBe('internal_tls.handshake_failed')
+  })
+
   it('exposes the migrated vault eventType values', () => {
     expect(OperationalEvent.VAULT_INIT).toBe('vault.init')
     expect(OperationalEvent.VAULT_UNSEAL).toBe('vault.unseal')

@@ -13,6 +13,13 @@ export const OperationalEvent = {
   ADMIN_POOL_IDENTITY_VERIFIED: 'admin_pool.identity_verified',
   ADMIN_POOL_IDENTITY_DRIFTED: 'admin_pool.identity_drifted',
   STARTUP_METRICS_EXPOSED: 'startup.metrics_exposed',
+  // Story 43.16 AC-9 / AC-14: Fly demo internal TLS. CONFIGURED is the one startup line (listener
+  // mode, cert SAN/notAfter, DB TLS mode); CERT_EXPIRING warns under 30 days to notAfter;
+  // HANDSHAKE_FAILED is a rate-limited (1 per 60 s per remote address) warn carrying only
+  // remoteAddress and the TLS error code — never certificate or key material.
+  INTERNAL_TLS_CONFIGURED: 'internal_tls.configured',
+  INTERNAL_TLS_CERT_EXPIRING: 'internal_tls.cert_expiring',
+  INTERNAL_TLS_HANDSHAKE_FAILED: 'internal_tls.handshake_failed',
   // Story 43.6: boot-time resolution of the served CLI client-version policy.
   CLI_VERSION_POLICY_EFFECTIVE: 'cli_version_policy.effective',
   CLI_VERSION_POLICY_ENV_MINIMUM_IGNORED: 'cli_version_policy.env_minimum_ignored',

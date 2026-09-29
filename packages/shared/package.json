@@ -10,6 +10,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./node-tls": {
+      "types": "./dist/node/internal-tls-pem.d.ts",
+      "default": "./dist/node/internal-tls-pem.js"
+    },
+    "./test-pki": {
+      "types": "./dist/node/test-pki-test-helpers.d.ts",
+      "default": "./dist/node/test-pki-test-helpers.js"
     }
   },
   "scripts": {
