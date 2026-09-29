@@ -79,15 +79,32 @@ export type CryptoAdjacentPinScanResult = {
   violations: CryptoAdjacentPinViolation[]
 }
 
-/** Allow-list of what an "exact pin" looks like — not a deny-list of range-operator characters. */
-const EXACT_SEMVER_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z-.]+)?$/
+/** Allow-list of what an "exact pin" looks like — not a deny-list of range-operator characters.
+ * Two flat patterns (release, pre-release) instead of one with an optional repeated group, so
+ * neither nests a quantifier inside another. */
+const EXACT_RELEASE_PATTERN = /^\d+\.\d+\.\d+$/
+const EXACT_PRERELEASE_PATTERN = /^\d+\.\d+\.\d+-[0-9A-Za-z.-]+$/
 
-const DEPENDENCY_FIELDS = [
-  'dependencies',
-  'devDependencies',
-  'peerDependencies',
-  'optionalDependencies',
-] as const
+function isExactSemverPin(version: unknown): version is string {
+  return (
+    typeof version === 'string' &&
+    (EXACT_RELEASE_PATTERN.test(version) || EXACT_PRERELEASE_PATTERN.test(version))
+  )
+}
+
+type DependencyField =
+  'dependencies' | 'devDependencies' | 'peerDependencies' | 'optionalDependencies'
+
+/** Every dependency field of a parsed `package.json`, read by literal property name (never a
+ * computed `pkg[field]` lookup) and paired with its field name for violation messages. */
+function dependencyFieldEntries(pkg: Record<string, unknown>): [DependencyField, unknown][] {
+  return [
+    ['dependencies', pkg.dependencies],
+    ['devDependencies', pkg.devDependencies],
+    ['peerDependencies', pkg.peerDependencies],
+    ['optionalDependencies', pkg.optionalDependencies],
+  ]
+}
 
 const WORKSPACE_YAML_PATH = 'pnpm-workspace.yaml'
 
@@ -227,14 +244,14 @@ const NOT_AN_EXACT_PIN_EXPLANATION =
 function scanDependencyField(
   violations: PinViolation[],
   repoRelativePath: string,
-  field: (typeof DEPENDENCY_FIELDS)[number],
+  field: DependencyField,
   deps: unknown
 ): void {
   if (typeof deps !== 'object' || deps === null || Array.isArray(deps)) return
 
   for (const [name, version] of Object.entries(deps as Record<string, unknown>)) {
     if (!CRYPTO_ADJACENT_PACKAGES.includes(name)) continue
-    if (typeof version === 'string' && EXACT_SEMVER_PATTERN.test(version)) continue
+    if (isExactSemverPin(version)) continue
 
     violations.push({
       kind: 'pin',
@@ -266,8 +283,8 @@ function scanPackageJsonPins(rootDir: string, packageJsonPath: string): PinViola
     return violations
   }
 
-  for (const field of DEPENDENCY_FIELDS) {
-    scanDependencyField(violations, repoRelativePath, field, pkg[field])
+  for (const [field, deps] of dependencyFieldEntries(pkg)) {
+    scanDependencyField(violations, repoRelativePath, field, deps)
   }
 
   return violations
@@ -383,46 +400,58 @@ function scanWorkspaceOverrides(root: string): OverrideViolation[] {
 // dependabot.yml cross-check (hand-parsed, per this story's ADR — see Dev Notes)
 // ---------------------------------------------------------------------------------------------
 
-/** Collects `- "item"` list entries starting at `lines[startIndex]`, all indented at exactly
- * `itemIndent` spaces, stopping at the first line that doesn't match that shape. */
-function collectListItems(lines: string[], startIndex: number, itemIndent: number): string[] {
+/** Width of `line`'s leading whitespace run (the same character class as a regex `\s`). */
+function leadingWhitespaceWidth(line: string): number {
+  return line.length - line.trimStart().length
+}
+
+/** True if `line` is exactly `<indent whitespace chars>key:` plus optional trailing whitespace.
+ * A plain string comparison rather than a RegExp built from `key`, so a key is always matched
+ * literally. */
+function isYamlKeyLine(line: string, indent: number, key: string): boolean {
+  return leadingWhitespaceWidth(line) === indent && line.slice(indent).trimEnd() === `${key}:`
+}
+
+const LIST_ITEM_BODY_PATTERN = /^-\s*"?([^"\s]+)"?\s*$/
+
+/** Collects `- "item"` list entries from `lines` (in order), all indented at exactly `itemIndent`
+ * whitespace characters, stopping at the first line that doesn't match that shape. */
+function collectListItems(lines: string[], itemIndent: number): string[] {
   const items: string[] = []
-  const itemPattern = new RegExp(String.raw`^\s{${itemIndent}}-\s*"?([^"\s]+)"?\s*$`)
-  for (let i = startIndex; i < lines.length; i++) {
-    const line = lines[i] as string
-    const match = itemPattern.exec(line)
+  for (const line of lines) {
+    if (leadingWhitespaceWidth(line) !== itemIndent) break
+    const match = LIST_ITEM_BODY_PATTERN.exec(line.slice(itemIndent))
     if (!match) break
     items.push(match[1] as string)
   }
   return items
 }
 
-/** Finds a `- "item"` list under a `<parentKeyIndent>parentKey:` block that itself contains a
- * `<listKeyIndent>listKey:` line, e.g. `groups: > crypto-adjacent: > patterns: > - "argon2"`. Both
- * the parent key and the list key must be found in order, within a bounded lookahead window, or
- * `undefined` is returned (fail closed — a rename/reformat is a violation, not a silent empty
- * match). */
-/** Searches forward from just after a `parentKey:` line (at `startIndex`) for a `listKey:` line
- * nested inside it, stopping (returning `undefined`) if the block dedents back to or past
+/** Searches `blockLines` (the lines just after a `parentKey:` line) for a `listKey:` line nested
+ * inside that block, stopping (returning `undefined`) if the block dedents back to or past
  * `parentIndent` first — i.e. we've left the parent's block without finding the list key. */
 function findListKeyWithinBlock(
-  lines: string[],
-  startIndex: number,
+  blockLines: string[],
   parentIndent: number,
-  listPattern: RegExp,
+  listKey: string,
   listIndent: number
 ): string[] | undefined {
-  for (let j = startIndex; j < lines.length; j++) {
-    const line = lines[j] as string
+  for (const [offset, line] of blockLines.entries()) {
     if (line.length > 0 && !/^\s/.test(line)) return undefined
     const dedentMatch = /^(\s*)\S/.exec(line)
     if (dedentMatch && (dedentMatch[1] as string).length <= parentIndent) return undefined
 
-    if (listPattern.test(line)) return collectListItems(lines, j + 1, listIndent + 2)
+    if (isYamlKeyLine(line, listIndent, listKey)) {
+      return collectListItems(blockLines.slice(offset + 1), listIndent + 2)
+    }
   }
   return undefined
 }
 
+/** Finds a `- "item"` list under a `<parentKeyIndent>parentKey:` block that itself contains a
+ * `<listKeyIndent>listKey:` line, e.g. `groups: > crypto-adjacent: > patterns: > - "argon2"`. Both
+ * the parent key and the list key must be found in order, or `undefined` is returned (fail
+ * closed — a rename/reformat is a violation, not a silent empty match). */
 function findNestedYamlList(
   content: string,
   parentKey: string,
@@ -431,18 +460,15 @@ function findNestedYamlList(
   listIndent: number
 ): string[] | undefined {
   const lines = content.split('\n')
-  const parentPattern = new RegExp(String.raw`^\s{${parentIndent}}${parentKey}:\s*$`)
-  const listPattern = new RegExp(String.raw`^\s{${listIndent}}${listKey}:\s*$`)
 
-  for (let i = 0; i < lines.length; i++) {
-    if (!parentPattern.test(lines[i] as string)) continue
+  for (const [index, line] of lines.entries()) {
+    if (!isYamlKeyLine(line, parentIndent, parentKey)) continue
 
-    const found = findListKeyWithinBlock(lines, i + 1, parentIndent, listPattern, listIndent)
+    const found = findListKeyWithinBlock(lines.slice(index + 1), parentIndent, listKey, listIndent)
     if (found !== undefined) return found
   }
   return undefined
 }
-
 const DEPENDABOT_CROSS_CHECK = 'dependabot-cross-check' as const
 const DEPENDABOT_YML_PATH = '.github/dependabot.yml'
 
@@ -555,8 +581,7 @@ export function parseCodeowners(content: string): Map<string, string[]> {
  * declares at least one canonical-list package (any version — this check is about CODEOWNERS
  * coverage, not pin exactness, which `scanPackageJsonPins` above already covers separately). */
 function packageJsonDeclaresCanonicalPackage(pkg: RawPackageJson): boolean {
-  for (const field of DEPENDENCY_FIELDS) {
-    const deps = pkg[field]
+  for (const [, deps] of dependencyFieldEntries(pkg)) {
     if (typeof deps !== 'object' || deps === null || Array.isArray(deps)) continue
     for (const name of Object.keys(deps as Record<string, unknown>)) {
       if (CRYPTO_ADJACENT_PACKAGES.includes(name)) return true
