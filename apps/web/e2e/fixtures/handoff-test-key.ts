@@ -28,11 +28,13 @@ export const HANDOFF_E2E_STUB_DEFAULT_PORT = 48999
 
 const HANDOFF_E2E_SEED = Buffer.alloc(32, 0x60)
 // The fixed DER header of an Ed25519 PKCS#8 private key (RFC 8410); the 32-byte seed follows it.
-const ED25519_PKCS8_PREFIX = Buffer.from([
-  ...[0x30, 0x2e], // SEQUENCE, 46 bytes
-  ...[0x02, 0x01, 0x00], // INTEGER version 0
-  ...[0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70], // AlgorithmIdentifier: OID 1.3.101.112 (Ed25519)
-  ...[0x04, 0x22, 0x04, 0x20], // OCTET STRING wrapping the 32-byte seed OCTET STRING
+// Grouped per DER element: SEQUENCE (46 bytes); INTEGER version 0; AlgorithmIdentifier with OID
+// 1.3.101.112 (Ed25519); OCTET STRING wrapping the 32-byte seed OCTET STRING.
+const ED25519_PKCS8_PREFIX = Buffer.concat([
+  Buffer.from([0x30, 0x2e]),
+  Buffer.from([0x02, 0x01, 0x00]),
+  Buffer.from([0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70]),
+  Buffer.from([0x04, 0x22, 0x04, 0x20]),
 ])
 
 export function handoffE2ePrivateKey(): KeyObject {
