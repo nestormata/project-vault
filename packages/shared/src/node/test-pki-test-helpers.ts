@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
+import { accessSync, constants } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -11,11 +12,31 @@ import { promisify } from 'node:util'
  * `*.pem`/`*.key`). openssl writes its files into a `mkdtemp` directory that `cleanup()` removes;
  * every PEM is read back from openssl's own stdout, never echoed anywhere.
  *
- * `openssl` must be on PATH (the ubuntu CI runners and the dev containers ship it). If it is
- * missing, `createTestPki()` rejects loudly — tests never skip silently.
+ * `openssl` is resolved from fixed root-owned directories, never through `$PATH` (typescript:S4036,
+ * the Story 43.9 AC-4 precedent): the ubuntu CI runners, the CI container (apk `openssl`) and the
+ * dev boxes all install it into /usr/bin. If it is missing, `createTestPki()` rejects loudly —
+ * tests never skip silently.
  */
 
 const run = promisify(execFile)
+
+/** Root-owned directories searched, in order, for `openssl`. Never user-writable locations. */
+export const OPENSSL_SEARCH_DIRS: readonly string[] = ['/usr/bin', '/usr/local/bin', '/bin']
+
+/** The absolute path of `openssl` from `dirs`. There is deliberately no fallback to the bare name,
+ * which would bring the `$PATH` lookup back. */
+export function resolveOpensslBinary(dirs: readonly string[] = OPENSSL_SEARCH_DIRS): string {
+  for (const dir of dirs) {
+    const candidate = path.join(dir, 'openssl')
+    try {
+      accessSync(candidate, constants.X_OK)
+    } catch {
+      continue
+    }
+    return candidate
+  }
+  throw new Error(`test PKI: openssl not found in ${dirs.join(', ')}`)
+}
 
 export type TestPkiLeaf = {
   certPem: string
@@ -69,9 +90,9 @@ function toB64(pem: string): string {
 
 /** Runs openssl and returns its stdout. Never includes stdout/stderr in an error: openssl can
  * print key material on some failure paths. */
-async function openssl(args: string[]): Promise<string> {
+async function openssl(bin: string, args: string[]): Promise<string> {
   try {
-    const { stdout } = await run('openssl', args, { encoding: 'utf8' })
+    const { stdout } = await run(bin, args, { encoding: 'utf8' })
     return stdout
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
@@ -81,9 +102,13 @@ async function openssl(args: string[]): Promise<string> {
 
 type CaFiles = { certPath: string; keyPath: string }
 
-async function createCa(dir: string, name: string): Promise<CaFiles & { certPem: string }> {
+async function createCa(
+  bin: string,
+  dir: string,
+  name: string
+): Promise<CaFiles & { certPem: string }> {
   const files = { certPath: path.join(dir, `${name}.crt`), keyPath: path.join(dir, `${name}.pk8`) }
-  await openssl([
+  await openssl(bin, [
     'req',
     '-x509',
     ...EC_KEY_ARGS,
@@ -100,10 +125,15 @@ async function createCa(dir: string, name: string): Promise<CaFiles & { certPem:
     '-addext',
     'keyUsage=critical,keyCertSign,cRLSign',
   ])
-  return { ...files, certPem: await openssl(['x509', '-in', files.certPath]) }
+  return { ...files, certPem: await openssl(bin, ['x509', '-in', files.certPath]) }
 }
 
-async function signLeaf(dir: string, ca: CaFiles, options: IssueLeafOptions): Promise<TestPkiLeaf> {
+async function signLeaf(
+  bin: string,
+  dir: string,
+  ca: CaFiles,
+  options: IssueLeafOptions
+): Promise<TestPkiLeaf> {
   const stem = path.join(dir, `leaf-${randomBytes(8).toString('hex')}`)
   const extensions = [
     'basicConstraints=CA:FALSE',
@@ -111,7 +141,7 @@ async function signLeaf(dir: string, ca: CaFiles, options: IssueLeafOptions): Pr
     `extendedKeyUsage=${options.eku}`,
     ...(options.subjectAltName ? [`subjectAltName=${options.subjectAltName}`] : []),
   ].flatMap((extension) => ['-addext', extension])
-  await openssl([
+  await openssl(bin, [
     'req',
     '-new',
     ...EC_KEY_ARGS,
@@ -123,7 +153,7 @@ async function signLeaf(dir: string, ca: CaFiles, options: IssueLeafOptions): Pr
     `/CN=${options.commonName}`,
     ...extensions,
   ])
-  const certPem = await openssl([
+  const certPem = await openssl(bin, [
     'x509',
     '-req',
     '-in',
@@ -139,18 +169,21 @@ async function signLeaf(dir: string, ca: CaFiles, options: IssueLeafOptions): Pr
     '-days',
     String(options.days ?? 397),
   ])
-  const keyPem = await openssl(['pkey', '-in', `${stem}.pk8`])
+  const keyPem = await openssl(bin, ['pkey', '-in', `${stem}.pk8`])
   return { certPem, keyPem, certB64: toB64(certPem), keyB64: toB64(keyPem) }
 }
 
-export async function createTestPki(options: { clientCommonName?: string } = {}): Promise<TestPki> {
+export async function createTestPki(
+  options: { clientCommonName?: string; opensslSearchDirs?: readonly string[] } = {}
+): Promise<TestPki> {
+  const bin = resolveOpensslBinary(options.opensslSearchDirs)
   const dir = await mkdtemp(path.join(tmpdir(), 'pv-test-pki-'))
   const cleanup = () => rm(dir, { recursive: true, force: true })
   try {
-    const mainCa = await createCa(dir, 'pv-test-ca')
-    const otherCa = await createCa(dir, 'pv-foreign-ca')
+    const mainCa = await createCa(bin, dir, 'pv-test-ca')
+    const otherCa = await createCa(bin, dir, 'pv-foreign-ca')
     const issueLeaf = (leaf: IssueLeafOptions) =>
-      signLeaf(dir, leaf.foreign ? otherCa : mainCa, leaf)
+      signLeaf(bin, dir, leaf.foreign ? otherCa : mainCa, leaf)
     const [server, client, foreignClient, foreignServer] = await Promise.all([
       issueLeaf({
         commonName: 'localhost',
