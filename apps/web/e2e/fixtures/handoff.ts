@@ -116,7 +116,13 @@ export function mintHandoffToken(
 /** The stub port, shared with docker-compose.e2e.yml's web allowlist (E1a). */
 export function handoffStubPort(): number {
   const raw = process.env['E2E_HANDOFF_STUB_PORT']
-  return raw ? Number.parseInt(raw, 10) : HANDOFF_E2E_STUB_DEFAULT_PORT
+  if (!raw) return HANDOFF_E2E_STUB_DEFAULT_PORT
+  const port = Number(raw)
+  // j31 also listens on port + 1 (the non-allowlisted site), so the last usable port is 65534.
+  if (!Number.isInteger(port) || port < 1 || port > 65534) {
+    throw new Error(`E2E_HANDOFF_STUB_PORT must be an integer port in 1..65534, got "${raw}"`)
+  }
+  return port
 }
 
 // The fake interstitial. It reads the token from the URL FRAGMENT (never sent to this server, so

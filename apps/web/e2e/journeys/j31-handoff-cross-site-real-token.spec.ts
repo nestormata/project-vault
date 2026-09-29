@@ -291,8 +291,10 @@ test.describe('J31 — real-token cross-site handoff: golden path and replay', (
     await expect(page).toHaveURL(/\/handoff\?/)
     await expect(page.getByRole('heading', { name: CONFIRM_BUTTON })).toBeVisible()
 
-    // The exchange is rejected (claim burned) and so is confirm (the golden cookie still maps to
-    // the pending row, but its jti is already burned).
+    // The exchange is rejected (claim burned) and so is confirm: the golden cookie still maps to
+    // the live pending row, but its jti is already burned. Pin the cookie's presence so this case
+    // can't silently degrade into AC4a's "no cookie" path (both emit handoff_replay).
+    expect(await hasHandoffCookie(goldenContext)).toBe(true)
     await confirmAndExpectReplayRejected(page, since)
     await page.close()
   })

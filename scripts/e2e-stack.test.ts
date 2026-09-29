@@ -652,8 +652,18 @@ describe('Story 60.6 AC7: e2e-only handoff wiring', () => {
   })
 
   it('keeps the e2e key, instance id and stub port out of every production-facing config', () => {
+    // The public key's base64 body too, so it can't be copied in under a different kid.
+    const publicKeyBody = handoffE2ePublicKeyPem()
+      .replace(/-----(BEGIN|END) PUBLIC KEY-----/g, '')
+      .replace(/\s/g, '')
+    const markers = [
+      HANDOFF_E2E_KID,
+      HANDOFF_E2E_INSTANCE_ID,
+      'E2E_HANDOFF_STUB_PORT',
+      publicKeyBody,
+    ]
     for (const [path, text] of productionConfigTexts()) {
-      for (const marker of [HANDOFF_E2E_KID, HANDOFF_E2E_INSTANCE_ID, 'E2E_HANDOFF_STUB_PORT']) {
+      for (const marker of markers) {
         expect(text, `${path} must not contain ${marker}`).not.toContain(marker)
       }
     }
