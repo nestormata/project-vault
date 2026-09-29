@@ -219,7 +219,7 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-no-sonar-suppressions # Story 43.9 AC-9: no unsigned Sonar suppressions
 	pnpm vitest run scripts/check-no-sonar-suppressions.test.ts scripts/lib/trusted-executable.test.ts
 	pnpm check-build-info-unstamped # Story 43.6 AC-5
-	pnpm vitest run scripts/check-build-info-unstamped.test.ts scripts/stamp-build-info.test.ts scripts/check-cli-release-workflow.test.ts
+	pnpm vitest run scripts/check-build-info-unstamped.test.ts scripts/stamp-build-info.test.ts scripts/check-cli-release-workflow.test.ts scripts/check-cli-docs-naming.test.ts
 	pnpm check-audit-insert-sites
 	$(MAKE) test
 	pnpm jscpd

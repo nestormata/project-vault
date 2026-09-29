@@ -220,8 +220,28 @@ make db-up
 pnpm --filter @project-vault/api-contract-tests test
 ```
 
+## First-party clients
+
+These clients ship in this repository. Each uses only the schemes listed above:
+
+- **`packages/vault-action`** and **`packages/agent`**: `apiKey` → `machineBearer` (the
+  [machine-user flow](machine-users.md)).
+- **`pvault`** ([`packages/cli`](../packages/cli/README.md)):
+  - `get`, `run` and `write-env` use `apiKey` → `machineBearer`, like the agent they wrap.
+  - `pvault login` uses the CLI's JSON bearer-token routes `POST /api/v1/auth/cli-login`,
+    `/api/v1/auth/cli/mfa/verify-login`, `/api/v1/auth/cli/refresh` and `/api/v1/auth/cli/logout`
+    (per-IP limits in [`configuration.md`](configuration.md)). No data route accepts that session
+    yet.
+  - Before `get`, `run`, `write-env` and `login` make any other call, the CLI reads the public,
+    unauthenticated `GET /api/v1/client-version-policy` with no credential. A successful answer is
+    cached for up to 1 hour per server. `logout`, `--version`, `--help` and a `dev` build never
+    read it, and an unreachable policy never blocks a command. `PVAULT_NO_VERSION_CHECK` silences
+    only the advisory notices, never the request or the withdrawn refusal. Details:
+    [`packages/cli/README.md` "Version check"](../packages/cli/README.md#version-check-story-436).
+
 ## See also
 
 - [`machine-users.md`](machine-users.md) — machine users, API keys, and the CI/CD retrieval flow.
 - [`packages/vault-action/README.md`](../packages/vault-action/README.md) — the GitHub Action.
+- [`packages/cli/README.md`](../packages/cli/README.md) — the `pvault` terminal CLI.
 - [`extensions/README.md`](extensions/README.md) — extending the API surface from an extension.

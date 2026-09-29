@@ -11,7 +11,10 @@ a machine user:
 
 If you're setting up GitHub Actions specifically, prefer
 [`packages/vault-action`](../packages/vault-action/README.md), which wraps this flow for you.
-This document covers both halves of the story:
+From any other CI system or a terminal, the `pvault` CLI ([`packages/cli`](../packages/cli/README.md))
+wraps the same flow and adds injection into a child process (see
+[Using the `pvault` CLI instead of curl](#using-the-pvault-cli-instead-of-curl)). This document
+covers the raw HTTP flow underneath both, in two halves:
 
 - the **management API** an administrator uses to create machine users and issue, rotate, and
   revoke their keys (session-authenticated), and
@@ -132,6 +135,25 @@ curl -sf "$VAULT_URL/api/v1/machine/projects/$PROJECT_ID/credentials/DB_CREDS/va
   -H "Authorization: Bearer $TOKEN" | jq -r '.data.fields[] | select(.key == "password") | .value'
 ```
 
+### Using the `pvault` CLI instead of curl
+
+The `pvault` CLI runs the same two steps for you. It reads the same variables as the curl example,
+except that the project is `VAULT_PROJECT_ID` (not `PROJECT_ID`):
+
+```bash
+export VAULT_URL=https://vault.example.com VAULT_PROJECT_ID=<project uuid>
+# VAULT_API_KEY comes from your CI secret store, never a literal in the script
+pvault run --secret DATABASE_URL -- ./migrate.sh     # preferred: value only in the child's env
+pvault get DATABASE_URL > /dev/null                  # smoke test that the key can read it
+```
+
+- `pvault get` refuses to print a secret to an interactive terminal unless you pass `--stdout`;
+  `pvault run --` is the intended path.
+- Multi-field credentials are not supported by the CLI: it exits `7`
+  (`multi_field_secret_unsupported`). Use the curl `?field=` example above for those.
+- Flags, every exit code, `write-env` and installation are in
+  [`packages/cli/README.md`](../packages/cli/README.md).
+
 ### Token TTL and rotation
 
 - The access token issued in Step 1 is a JWT valid for `MACHINE_JWT_TTL_SECONDS` (default
@@ -202,6 +224,13 @@ immediately.
 | 429 | `rate_limit_exceeded` | Either the overall per-key budget (300 requests / 60s, keyed by the API key's `keyId`) or the tighter anti-enumeration budget (20 **failed** lookups — not-found, ambiguous, or unknown-field responses — per 60s) is exceeded. |
 | 500 | `internal_error` | Only ever seen here for the malformed-percent-encoding bug noted above. |
 | 503 | `audit_write_failed` | The credential was resolved but the required audit-log entry could not be written; the request fails closed rather than releasing a secret value without an audit trail. |
+
+**`pvault` exit codes for these errors** (`get`, `run` and `write-env`; see
+[`packages/cli/README.md`](../packages/cli/README.md) for the full table): 403
+`insufficient_role` → `4`, 404 `credential_not_found` → `3`, 409 `ambiguous_credential_name` →
+`5`. A Step 1 failure of any status, including its 429, exits `2` (`token_exchange_failed`); any
+other non-2xx on Step 2, including its 429, exits `6` (`vault_request_failed`). Exit `30`
+(rate limited) is only used by `pvault login`, not by these commands.
 
 Both of Step 2's 429s come from the same shared helper, so both bodies carry `retryAfter`:
 
@@ -478,6 +507,8 @@ It is an acknowledgement, not a renewal: it changes nothing about the key's vali
 
 - [`packages/vault-action/README.md`](../packages/vault-action/README.md) — GitHub Actions
   integration built on this same flow.
+- [`packages/cli/README.md`](../packages/cli/README.md) — the `pvault` terminal CLI built on this
+  same flow (`get`, `run`, `write-env`).
 - [`packages/agent/README.md`](../packages/agent/README.md) — the programmatic Node client and
   its offline cache.
 - [`docs/api-consumers.md`](api-consumers.md) — auth modes, pagination, error envelope, and the

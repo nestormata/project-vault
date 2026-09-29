@@ -1,12 +1,23 @@
 # `@project-vault/cli`
 
-Terminal CLI for fetching and injecting [Project Vault](https://github.com/nestormata/project-vault)
-secrets, for a developer or CI engineer using a machine-user API key. Story 43.1 implemented the
-first command, `get`; Story 43.2 added `login`/`logout`; Story 43.3 added `run -- <cmd>` (per
-UX-DR16, the documented default injection path); Story 43.4 hardened it and made it generally
-available. Story 43.5 added `write-env`, the explicit, opt-in fallback that materializes named
-secrets as a `.env`-style file for tooling that can only read from a file. Later Epic 43 stories
-build on the foundation these establish.
+Terminal CLI, `pvault`, for fetching and injecting
+[Project Vault](https://github.com/nestormata/project-vault) secrets from a terminal or a CI job
+with a machine-user API key, plus a human `login` session. Story 43.1 implemented the first
+command, `get`; Story 43.2 added `login`/`logout`; Story 43.3 added `run -- <cmd>` (per UX-DR16,
+the documented default injection path); Story 43.4 hardened it and made it generally available.
+Story 43.5 added `write-env`, the explicit, opt-in fallback that materializes named secrets as a
+`.env`-style file for tooling that can only read from a file. Story 43.6 added the startup version
+check and `pvault --version`.
+
+## Commands
+
+| Command                                       | What it does                                                                                      | Identity         | Section                                                                    |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------- |
+| `pvault get <name>`                           | One secret to stdout (refuses an interactive terminal without `--stdout`)                         | machine-user key | [Usage](#usage)                                                            |
+| `pvault run --secret NAME[=VAR] … -- <cmd>`   | The default path: secrets in the child's environment, or on file descriptor 3 with `--secrets-fd` | machine-user key | [`pvault run --`](#pvault-run----story-433)                                |
+| `pvault write-env --secret … --output <file>` | An owner-only `.env`/shell file, for tools that only read files                                   | machine-user key | [`pvault write-env`](#pvault-write-env-story-435)                          |
+| `pvault login` / `pvault logout`              | Human session (email, password, TOTP); no data command uses it yet                                | human            | [`pvault login` / `pvault logout`](#pvault-login--pvault-logout-story-432) |
+| `pvault --version`                            | CLI and bundled agent versions, no network                                                        | none             | [`pvault --version`](#pvault---version)                                    |
 
 This package is a thin wrapper around
 [`@project-vault/agent`](../agent/README.md) — it consumes that package as a plain pnpm workspace
@@ -60,7 +71,7 @@ VAULT_PROJECT_ID=a1c2d3e4-0000-0000-0000-000000000000 \
 
 Piped/redirected output carries only the resolved value, with no banner, decoration, or log line
 (AC-4). Running `pvault get` directly in an interactive terminal refuses to print unless you pass
-`--stdout` (AC-3 / UX-DR16 — `pv run --`, this epic's default injection path, ships in Story 43.3).
+`--stdout` (AC-3 / UX-DR16: `pvault run --` is the default injection path).
 
 ## Design decisions (Dev Notes, Story 43.1)
 
@@ -70,16 +81,16 @@ This story made six decisions epics.md deliberately left open. They're recorded 
 ### 1. Package/binary name: `@project-vault/cli` / `pvault` (not `pv`)
 
 `pv` ("Pipe Viewer") is a widely pre-installed/packaged Unix utility, and also collides with
-LVM2's `pv*` command family. Every epics.md example command uses `pv` (`pv get`, `pv run --`,
-`pv login`) — this is a deliberate, documented divergence from those illustrative examples, not an
-oversight. The binary is `pvault`; later stories' example commands should say `pvault`, not `pv`.
+LVM2's `pv*` command family. The binary is `pvault`. The planning text originally used `pv` in its
+examples; Story 43.14 renamed them to `pvault`, so the planning artifacts and this package now
+agree.
 
 ### 2. Config resolution: `VAULT_*` env vars, CLI flags override
 
 `VAULT_API_KEY`, `VAULT_URL`, `VAULT_PROJECT_ID` — kept under the same prefix
 `@project-vault/agent` itself already uses (`VAULT_CACHE_PATH`, `VAULT_FALLBACK_THRESHOLD`) rather
-than inventing a second `PV_*` prefix (epics.md's own illustrative examples use `PV_*`; this is
-the same deliberate divergence as decision #1, for the same reason). `--api-key`/`--url`/
+than inventing a second `PV_*` prefix (an early draft of Story 43.1 used `PV_*`; this is the same
+deliberate divergence as decision #1, for the same reason). `--api-key`/`--url`/
 `--project-id` flags override the corresponding env var. A missing required value fails
 synchronously, before any network call, naming exactly which value(s) are missing.
 
@@ -122,11 +133,11 @@ relies on internally — a network-level `fetch()` `TypeError` — for the durat
 be stale` to stderr (never stdout) whenever that happened. Exit code stays `0`: a successfully
 served, if stale, value is not itself a failure this CLI hard-fails on.
 
-### 6. Argument-parsing framework: [`commander`](https://www.npmjs.com/package/commander) `^14`
+### 6. Argument-parsing framework: [`commander`](https://www.npmjs.com/package/commander) `^15`
 
-Chosen over hand-rolled `process.argv` parsing because this is the first story of a six-story epic
-whose later stories add `login`, `run -- <cmd>` and `.env` materialization, all multi-command,
-multi-flag surfaces. `commander` was already resolved elsewhere in this monorepo's lockfile. The
+Chosen over hand-rolled `process.argv` parsing in Story 43.1, when `login`, `run -- <cmd>` and
+`.env` materialization (`write-env`) were still planned, all multi-command, multi-flag surfaces.
+Story 43.1 shipped on commander 14; the dependency is now `^15` (see `package.json`). `commander` was already resolved elsewhere in this monorepo's lockfile. The
 startup version check has since shipped as one `preAction` hook (Story 43.6, see "Version check"
 below).
 
@@ -361,7 +372,9 @@ underlying `VaultAgentError` code.
 
 ### 4. Commander's `--` passthrough: verified working, no manual fallback needed
 
-Verified directly against the installed `commander@^14`: `.argument('<command...>')` correctly
+Verified in Story 43.3 against commander 14, and covered by `src/cli.test.ts`'s "passes everything
+after '--' through to the child untouched, including flags that look like pvault's own options"
+test, which passes on the installed commander 15: `.argument('<command...>')` correctly
 captures everything after a literal `--` token verbatim (including flags that look like `pvault`'s
 own options, e.g. `ls --help` after `--`), with no manual `process.argv`-split fallback required.
 What commander's default parsing does **not** give a clean error for are two edge cases — a missing
