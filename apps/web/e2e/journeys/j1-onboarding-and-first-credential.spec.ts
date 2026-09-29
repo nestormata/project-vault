@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test'
-import { enrollMfaViaApi, registerAndLoginViaApi, registerViaUiAndLogin } from '../fixtures/auth.js'
+import {
+  enrollMfaViaApi,
+  registerAndLoginViaApi,
+  registerViaInvitation,
+  registerViaUiAndLogin,
+} from '../fixtures/auth.js'
 import { createInvitationViaApi } from '../fixtures/api.js'
 import {
   countRegistrationRows,
@@ -13,7 +18,6 @@ import {
   uniqueProjectName,
 } from '../fixtures/ids.js'
 import { CredentialsPage } from '../pages/CredentialsPage.js'
-import { InvitationAcceptPage } from '../pages/InvitationAcceptPage.js'
 import { LoginPage } from '../pages/LoginPage.js'
 import { OnboardingPage } from '../pages/OnboardingPage.js'
 import { RegisterPage } from '../pages/RegisterPage.js'
@@ -173,14 +177,9 @@ test.describe('J1 — onboarding and first credential', () => {
 
     const viewerContext = await browser.newContext()
     const viewerPage = await viewerContext.newPage()
-    const acceptPage = new InvitationAcceptPage(viewerPage)
-    await acceptPage.goto(token)
-    // No account exists yet for this email — redirects to /register?invitationToken=...
-    await expect(viewerPage).toHaveURL(/\/register\?/)
     const viewerPassword = 'e2e-Viewer-Password-123'
-    const registerPage = new RegisterPage(viewerPage)
-    await registerPage.passwordInput().fill(viewerPassword)
-    await registerPage.submitButton().click()
+    // No account exists yet for this email — the link redirects to /register?invitationToken=...
+    await registerViaInvitation(viewerPage, token, viewerPassword)
     // Invited registration redirects to /projects/{projectId} (getPostRegisterPath), but
     // registration itself still does not auto-login (docs/runbook.md) — a subsequent explicit
     // login is always required regardless of where that initial redirect transiently lands.

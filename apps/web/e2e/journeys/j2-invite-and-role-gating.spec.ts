@@ -1,12 +1,11 @@
 import { expect, test } from '@playwright/test'
-import { enrollMfaViaApi, registerAndLoginViaApi } from '../fixtures/auth.js'
+import { enrollMfaViaApi, registerAndLoginViaApi, registerViaInvitation } from '../fixtures/auth.js'
 import { createInvitationViaApi, createProjectViaApi } from '../fixtures/api.js'
 import { extractTokenFromAcceptUrl, readLatestInvitationAcceptUrl } from '../fixtures/db.js'
 import { uniqueEmail, uniqueOrgName, uniqueProjectName } from '../fixtures/ids.js'
 import { InvitationAcceptPage } from '../pages/InvitationAcceptPage.js'
 import { LoginPage } from '../pages/LoginPage.js'
 import { MembersPage } from '../pages/MembersPage.js'
-import { RegisterPage } from '../pages/RegisterPage.js'
 
 // J2: Invite team member -> accept invite -> role-gated action allow/deny.
 // See story AC-J2-1/AC-J2-2/AC-J2-3.
@@ -45,15 +44,9 @@ test.describe('J2 — invite and role gating', () => {
     // Fresh, unauthenticated context — not the owner's session.
     const inviteeContext = await browser.newContext()
     const inviteePage = await inviteeContext.newPage()
-    const acceptPage = new InvitationAcceptPage(inviteePage)
-    await acceptPage.goto(token)
-
     // No account exists yet for the invited email -> redirects to /register?invitationToken=...
-    await expect(inviteePage).toHaveURL(/\/register\?/)
     const memberPassword = 'e2e-Member-Password-123'
-    const registerPage = new RegisterPage(inviteePage)
-    await registerPage.passwordInput().fill(memberPassword)
-    await registerPage.submitButton().click()
+    await registerViaInvitation(inviteePage, token, memberPassword)
     // Registration itself still does not auto-login (docs/runbook.md) regardless of where the
     // invited-registration redirect transiently lands — always follow up with an explicit login.
     const loginPage = new LoginPage(inviteePage)
@@ -125,12 +118,7 @@ test.describe('J2 — invite and role gating', () => {
     const memberContext = await browser.newContext()
     const memberPage = await memberContext.newPage()
     const memberPassword = 'e2e-Member-Password-123'
-    const acceptPage = new InvitationAcceptPage(memberPage)
-    await acceptPage.goto(token)
-    await expect(memberPage).toHaveURL(/\/register\?/)
-    const registerPage = new RegisterPage(memberPage)
-    await registerPage.passwordInput().fill(memberPassword)
-    await registerPage.submitButton().click()
+    await registerViaInvitation(memberPage, token, memberPassword)
     // Registration itself still does not auto-login (docs/runbook.md) regardless of where the
     // invited-registration redirect transiently lands — always follow up with an explicit login.
     const loginPage = new LoginPage(memberPage)

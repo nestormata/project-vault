@@ -71,6 +71,14 @@ export async function waitForHydration(page: Page, locator: Locator): Promise<vo
 // document, so registering it once per page is enough (and avoids stacking wrappers).
 const instrumentedPages = new WeakSet<Page>()
 
+/** `instrumentHydrationDetection`, at most once per page. Call before a navigation whose landing
+ * page is only known after a redirect (e.g. an invitation link), then `waitForHydration`. */
+export async function armHydrationDetection(page: Page): Promise<void> {
+  if (instrumentedPages.has(page)) return
+  await instrumentHydrationDetection(page)
+  instrumentedPages.add(page)
+}
+
 /**
  * Story 66.3 (AC-4): full-load navigation that only resolves once the page is safe to interact
  * with — arms `instrumentHydrationDetection` (first call per page only), navigates, then waits
@@ -83,10 +91,7 @@ const instrumentedPages = new WeakSet<Page>()
  * navigation, where the flag is already `true`: wait on the new route's own content there.
  */
 export async function gotoHydrated(page: Page, url: string, firstTarget: Locator): Promise<void> {
-  if (!instrumentedPages.has(page)) {
-    await instrumentHydrationDetection(page)
-    instrumentedPages.add(page)
-  }
+  await armHydrationDetection(page)
   await page.goto(url)
   await waitForHydration(page, firstTarget)
 }

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { enrollMfaViaApi, registerAndLoginViaApi } from '../fixtures/auth.js'
+import { enrollMfaViaApi, registerAndLoginViaApi, registerViaInvitation } from '../fixtures/auth.js'
 import {
   createInvitationViaApi,
   createProjectViaApi,
@@ -11,9 +11,7 @@ import {
   setOrganizationRoleViaDb,
 } from '../fixtures/db.js'
 import { uniqueEmail, uniqueOrgName, uniqueProjectName } from '../fixtures/ids.js'
-import { InvitationAcceptPage } from '../pages/InvitationAcceptPage.js'
 import { LoginPage } from '../pages/LoginPage.js'
-import { RegisterPage } from '../pages/RegisterPage.js'
 
 const MONITORING_ACTIVE = 'Monitoring active'
 
@@ -91,10 +89,7 @@ test.describe('Epic 20.3 — paused monitoring controls', () => {
     const token = extractTokenFromAcceptUrl(await readLatestInvitationAcceptUrl(viewerEmail))
     const viewerContext = await browser.newContext()
     const viewerPage = await viewerContext.newPage()
-    await new InvitationAcceptPage(viewerPage).goto(token)
-    await expect(viewerPage).toHaveURL(/\/register\?/)
-    await new RegisterPage(viewerPage).passwordInput().fill(viewerPassword)
-    await new RegisterPage(viewerPage).submitButton().click()
+    await registerViaInvitation(viewerPage, token, viewerPassword)
     await new LoginPage(viewerPage).goto()
     await new LoginPage(viewerPage).fillAndSubmit({
       email: viewerEmail,
