@@ -10,6 +10,7 @@ import {
   HANDOFF_E2E_STUB_DEFAULT_PORT,
   handoffE2ePublicKeyPem,
 } from '../apps/web/e2e/fixtures/handoff-test-key.js'
+import { makeRecipe, workflowRunCommands } from './lib/ci-wiring.js'
 
 // The repository root has no YAML dependency; reuse the `yaml` package apps/api already depends on.
 const { parse: parseYaml } = createRequire(resolve(process.cwd(), 'apps/api/package.json'))(
@@ -201,18 +202,6 @@ function nightlyE2eProblems(workflowText: string): string[] {
 
 // --- AC-7.3 / 7.10: Makefile e2e recipe -----------------------------------------------------------
 
-function makeRecipe(makefile: string, target: string): string {
-  const lines = makefile.split('\n')
-  const start = lines.findIndex((line) => line.startsWith(`${target}:`))
-  if (start === -1) return ''
-  const body: string[] = []
-  for (const line of lines.slice(start + 1)) {
-    if (!line.startsWith('\t')) break
-    body.push(line)
-  }
-  return body.join('\n')
-}
-
 function makeE2eProblems(makefile: string): string[] {
   const recipe = makeRecipe(makefile, E2E_JOB)
   const problems: string[] = []
@@ -401,9 +390,9 @@ describe('Story 66.1 AC-7.3/7.10: Makefile e2e recipe', () => {
 
   it('is wired into both make ci and ci.yml', () => {
     expect(makeRecipe(makefileText(), 'ci-inner')).toContain('scripts/e2e-stack.test.ts')
-    const ci = parseYaml(repoText('.github/workflows/ci.yml')) as Workflow
-    const runs = Object.values(ci.jobs ?? {}).flatMap((job) => (job.steps ?? []).map((s) => s.run))
-    expect(runs).toContain('pnpm vitest run scripts/e2e-stack.test.ts')
+    expect(workflowRunCommands(repoText('.github/workflows/ci.yml'))).toContain(
+      'pnpm vitest run scripts/e2e-stack.test.ts'
+    )
   })
 })
 

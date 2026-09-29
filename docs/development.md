@@ -139,6 +139,11 @@ generated-spec freshness checks inside the CI Docker service. It does not requir
 BMAD artifacts. Private story and sprint governance checks live in the companion
 `project-vault-private` repository.
 
+After the container run, `make ci` runs two checks on the **host**, because the CI container has no
+Docker CLI: `docker-backup-permission-smoke` and the `docker compose config` contract suite
+(`scripts/check-compose-config.test.ts`, Story 60.7). The second needs a host `pnpm install`; without
+it `make ci` fails loudly rather than skipping.
+
 When the private `project-vault-private` overlay is attached, `make ci` also mounts it
 **read-only at its own absolute host path** (`docker-compose.ci-overlay.yml`), so the overlay
 symlinks that `Dockerfile.ci`'s `COPY . .` carries into `/app` resolve inside the container and the
