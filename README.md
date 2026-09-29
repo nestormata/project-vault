@@ -99,6 +99,7 @@ Full walkthrough, readiness states, production hardening, and troubleshooting: *
 | Deploying prebuilt images | [docs/container-images.md](docs/container-images.md) |
 | Configuring it | [docs/configuration.md](docs/configuration.md) |
 | Fetching secrets from CI/CD | [docs/machine-users.md](docs/machine-users.md), [packages/vault-action](packages/vault-action/README.md) |
+| Using secrets from a terminal | [packages/cli](packages/cli/README.md) (`pvault`) |
 | Calling the API directly | [docs/api-consumers.md](docs/api-consumers.md) |
 | Developing Project Vault | [docs/development.md](docs/development.md) |
 | Writing an extension | [docs/extensions/README.md](docs/extensions/README.md), [packages/extension-api](packages/extension-api/README.md) |

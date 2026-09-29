@@ -13,6 +13,7 @@ codebase, start with the [architecture overview](architecture.md).
 | Deploy prebuilt images | [Container images](container-images.md) |
 | Configure it | [Configuration reference](configuration.md) |
 | Fetch secrets from a CI/CD job | [Machine users](machine-users.md), [GitHub Action](../packages/vault-action/README.md) |
+| Use secrets from a terminal or script | [`pvault` CLI](../packages/cli/README.md), [Machine users](machine-users.md) |
 | Call the API directly | [API consumers](api-consumers.md) |
 | Respond to an incident or run a procedure | [Runbooks index](runbooks/README.md) |
 | Understand how it works | [Architecture](architecture.md), [glossary](glossary.md), [FAQ](faq.md) |
@@ -68,6 +69,7 @@ a trigger to the file that handles it.
 | [handoff-instance-identity.md](runbooks/handoff-instance-identity.md) | Configuring the instance identity, key set, and clock-skew signal for browser-handoff SSO |
 | [handoff-key-rotation.md](runbooks/handoff-key-rotation.md) | Rotating handoff signing keys, and responding to a suspected key compromise |
 | [service-revocation-token-rotation.md](runbooks/service-revocation-token-rotation.md) | Rotating the service revocation token, and responding to its compromise |
+| [cli-version-policy.md](runbooks/cli-version-policy.md) | Withdrawing a known-bad `pvault` CLI version, or users report CLI exit `29` |
 
 ## Design notes
 
@@ -85,6 +87,7 @@ Rationale rather than procedure — why a subsystem works the way it does.
 | [machine-users.md](machine-users.md) | Non-interactive project-scoped identities: API key to token to credential fetch, with a worked example and an error reference |
 | [api-consumers.md](api-consumers.md) | Calling the REST API directly: authentication, the register/login/refresh flow, and the OpenAPI spec |
 | [../packages/vault-action/README.md](../packages/vault-action/README.md) | The GitHub Action that fetches credentials into a workflow, including the offline cache fallback |
+| [../packages/cli/README.md](../packages/cli/README.md) | The `pvault` terminal CLI: `get`, `run`, `write-env`, `login`/`logout`, exit codes, and the startup version check |
 | [../packages/extension-api/README.md](../packages/extension-api/README.md) | The published extension contract package: hooks, host services, and a minimal extension |
 
 ## Extending

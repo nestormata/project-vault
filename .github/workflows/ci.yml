@@ -104,6 +104,15 @@ jobs:
       - name: Check pvault CLI release workflow contract (Story 43.6 AC-5)
         run: pnpm vitest run scripts/check-cli-release-workflow.test.ts
 
+      # Story 43.14 AC-8: the guard raw-loads apps/web's cli-version-policy-view.ts, and Vite
+      # resolves that file's tsconfig (which extends the generated .svelte-kit/tsconfig.json) even
+      # for a ?raw import. Generate it first, as the SonarCloud job does.
+      - name: Generate SvelteKit config for the CLI docs guard
+        run: pnpm --filter @project-vault/web exec svelte-kit sync
+
+      - name: Check CLI docs name the pvault binary and document every command (Story 43.14)
+        run: pnpm vitest run scripts/check-cli-docs-naming.test.ts
+
       - name: Check extension-api version-skew guard's own test suite (Story 24.4)
         run: pnpm vitest run scripts/check-extension-api-version-skew.test.ts
 

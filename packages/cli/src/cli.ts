@@ -189,7 +189,7 @@ export function buildProgram(runtime: CliRuntime): Command {
       writeErr: (str) => runtime.streams.stderr.write(str),
     })
 
-  // Story 43.3 Dev Notes decision #4 — verified directly against the installed commander@^14:
+  // Story 43.3 Dev Notes decision #4 — verified against commander 14; the dependency is now ^15:
   // its own built-in `--` handling correctly treats everything after a literal `--` token as the
   // `run` subcommand's `<command...>` variadic argument, without attempting to parse the user's
   // own flags (e.g. `ls --help` after `--` is passed through untouched) — no manual
