@@ -106,8 +106,8 @@ describe('pgBossConnectionOptions', () => {
   // Review follow-up (43-16 #11): WHATWG URL's TypeError carries the raw input (password
   // included) on `input`; the rethrown error names the variable only and chains nothing.
   it('rejects an unparseable URL naming DATABASE_URL, never echoing the URL', () => {
-    const secret = 'pw-review-sentinel'
-    const unparseable = `not a url vault_app:${secret}@db.internal`
+    const passwordSentinel = 'pw-review-sentinel'
+    const unparseable = `not a url vault_app:${passwordSentinel}@db.internal`
     let caught: unknown
     try {
       pgBossConnectionOptions(unparseable, { DATABASE_TLS_CA_B64: pki.ca.certB64 })
@@ -119,6 +119,6 @@ describe('pgBossConnectionOptions', () => {
     expect(error.message).toBe('DATABASE_URL is not a parseable URL')
     expect(error.input).toBeUndefined()
     expect(error.cause).toBeUndefined()
-    expect(JSON.stringify(error, Object.getOwnPropertyNames(error))).not.toContain(secret)
+    expect(JSON.stringify(error, Object.getOwnPropertyNames(error))).not.toContain(passwordSentinel)
   })
 })
