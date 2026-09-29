@@ -51,6 +51,7 @@ operator_psql_url() {
   local user="$1" password="$2" port="$3"
   printf 'postgresql://%s:%s@localhost:%s/project_vault?sslmode=verify-full&sslrootcert=%s&sslcert=%s&sslkey=%s' \
     "$user" "$password" "$port" "${OP_DIR}/ca.crt" "${OP_DIR}/operator.crt" "${OP_DIR}/operator.key"
+  return 0
 }
 
 # with_operator_tls <command...>: runs a postgres.js child with the operator TLS material in the
@@ -60,4 +61,5 @@ with_operator_tls() {
     DATABASE_TLS_CLIENT_CERT_B64="$(base64 -w0 <"${OP_DIR}/operator.crt")" \
     DATABASE_TLS_CLIENT_KEY_B64="$(base64 -w0 <"${OP_DIR}/operator.key")" \
     "$@"
+  return $?
 }

@@ -78,11 +78,18 @@ write_ext() {
   } >"$file"
 }
 
-public_key_of_cert() { "$OPENSSL" x509 -in "$1" -noout -pubkey 2>/dev/null; }
-public_key_of_key() { "$OPENSSL" pkey -in "$1" -pubout 2>/dev/null; }
+public_key_of_cert() {
+  local cert="$1"
+  "$OPENSSL" x509 -in "$cert" -noout -pubkey 2>/dev/null
+}
+public_key_of_key() {
+  local key="$1"
+  "$OPENSSL" pkey -in "$key" -pubout 2>/dev/null
+}
 
 key_matches_cert() {
-  [[ "$(public_key_of_cert "$2")" == "$(public_key_of_key "$1")" ]]
+  local key="$1" cert="$2"
+  [[ "$(public_key_of_cert "$cert")" == "$(public_key_of_key "$key")" ]]
 }
 
 verify_leaf() {
@@ -100,7 +107,10 @@ describe_cert() {
   echo "    $("$OPENSSL" x509 -in "$cert" -noout -enddate 2>/dev/null)"
 }
 
-b64() { base64 -w0 <"$1"; }
+b64() {
+  local file="$1"
+  base64 -w0 <"$file"
+}
 
 # Decodes the CA from the environment into <dir>/ca.crt and <dir>/ca.key (0600) and checks the pair.
 load_ca() {
@@ -181,6 +191,10 @@ cmd_issue_leaves() {
       api-db-client) subject="/CN=${API_APP}" ;;
       web-client) subject="/CN=${WEB_APP}" ;;
       db-server) subject="/CN=${DB_APP}.internal" ;;
+      *)
+        echo "internal error: unknown leaf ${leaf}" >&2
+        return 1
+        ;;
     esac
     new_ec_key_and_csr "${TLS_DIR}/${leaf}" "$subject"
     sign_leaf "${TLS_DIR}/${leaf}" "$TLS_DIR" "$LEAF_DAYS" "${TLS_DIR}/${leaf}.ext"

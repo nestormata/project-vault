@@ -66,8 +66,10 @@ export function pgBossConnectionOptions(
   const tls = pgTlsOptions(env)
   if (!('ssl' in tls)) return { connectionString }
   const url = parseConnectionUrl(connectionString)
-  for (const name of [...url.searchParams.keys()]) {
-    if (name.toLowerCase().startsWith('ssl')) url.searchParams.delete(name)
-  }
+  // Collected first: deleting while iterating the live keys() iterator would skip entries.
+  const sslParamNames = Array.from(url.searchParams.keys()).filter((name) =>
+    name.toLowerCase().startsWith('ssl')
+  )
+  for (const name of sslParamNames) url.searchParams.delete(name)
   return { connectionString: url.toString(), ssl: tls.ssl }
 }
