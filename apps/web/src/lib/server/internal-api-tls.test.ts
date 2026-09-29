@@ -56,40 +56,33 @@ type Reply = { status: number; body: unknown; setCookie?: string[] }
 
 const UNAUTHENTICATED: Reply = { status: 401, body: { code: 'unauthenticated' } }
 
+const OK_BODY = { data: { ok: true } }
+
 /** A tiny stand-in for the api's session routes: login → me (401 until refreshed) → refresh →
- * logout, all returning Set-Cookie exactly as the real api does. */
-const ROUTES = new Map<string, (cookie: string) => Reply>([
-  [
-    '/api/v1/auth/login',
-    () => ({
-      status: 200,
-      body: { data: { ok: true } },
-      setCookie: ['session=S1; Path=/; HttpOnly', 'refresh-token=R1; Path=/; HttpOnly'],
-    }),
-  ],
-  [
-    '/api/v1/auth/refresh',
-    (cookie) =>
-      cookie.includes('refresh-token=R1')
-        ? { status: 200, body: { data: { ok: true } }, setCookie: ['session=S2; Path=/; HttpOnly'] }
-        : UNAUTHENTICATED,
-  ],
-  [
-    '/api/v1/auth/me',
-    (cookie) =>
-      cookie.includes('session=S2') || cookie.includes('pv_session=abc')
+ * logout, all returning Set-Cookie exactly as the real api does. An explicit switch (not a
+ * url-keyed map of handlers) so the request URL never selects which function runs. */
+function sessionRouteReply(url: string, cookie: string): Reply | null {
+  switch (url) {
+    case '/api/v1/auth/login':
+      return {
+        status: 200,
+        body: OK_BODY,
+        setCookie: ['session=S1; Path=/; HttpOnly', 'refresh-token=R1; Path=/; HttpOnly'],
+      }
+    case '/api/v1/auth/refresh':
+      return cookie.includes('refresh-token=R1')
+        ? { status: 200, body: OK_BODY, setCookie: ['session=S2; Path=/; HttpOnly'] }
+        : UNAUTHENTICATED
+    case '/api/v1/auth/me':
+      return cookie.includes('session=S2') || cookie.includes('pv_session=abc')
         ? { status: 200, body: { data: { id: 'user-1', email: 'user@invalid' } } }
-        : UNAUTHENTICATED,
-  ],
-  [
-    '/api/v1/auth/logout',
-    () => ({
-      status: 200,
-      body: { data: { ok: true } },
-      setCookie: ['session=; Path=/; Max-Age=0'],
-    }),
-  ],
-])
+        : UNAUTHENTICATED
+    case '/api/v1/auth/logout':
+      return { status: 200, body: OK_BODY, setCookie: ['session=; Path=/; Max-Age=0'] }
+    default:
+      return null
+  }
+}
 
 function peerCommonName(req: IncomingMessage): string | null {
   const socket = req.socket as TLSSocket
@@ -111,10 +104,10 @@ function apiHandler(seen: Seen[]) {
         body,
         peerCn: peerCommonName(req),
       })
-      const route = ROUTES.get(req.url ?? '')
-      const reply = route
-        ? route(req.headers.cookie ?? '')
-        : { status: 200, body: { status: 'ok', echoBytes: body.length } }
+      const reply = sessionRouteReply(req.url ?? '', req.headers.cookie ?? '') ?? {
+        status: 200,
+        body: { status: 'ok', echoBytes: body.length },
+      }
       res.writeHead(reply.status, {
         'content-type': 'application/json',
         ...(reply.setCookie ? { 'set-cookie': reply.setCookie } : {}),
