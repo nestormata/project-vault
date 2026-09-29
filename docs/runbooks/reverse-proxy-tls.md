@@ -9,7 +9,9 @@
 
 Putting this application behind Traefik, nginx, Caddy, or any load balancer — which you must do for
 any deployment reachable from outside the host. Neither the API nor the web app terminates TLS
-itself.
+itself — except the Fly demo's internal hop (web → api over mTLS, api → db over TLS with client
+certificates), which is opt-in and off everywhere else: see
+[`fly-internal-tls.md`](fly-internal-tls.md).
 
 ---
 
