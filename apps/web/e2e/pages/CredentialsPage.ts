@@ -24,8 +24,22 @@ export class CredentialsPage {
     return this.page.getByLabel('Value', { exact: true })
   }
 
+  templateSelect() {
+    return this.page.getByLabel('Template', { exact: true })
+  }
+
+  fieldNameInput(index: number) {
+    return this.page.getByLabel(`Field ${index} name`, { exact: true })
+  }
+
+  fieldValueInput(index: number) {
+    return this.page.getByLabel(`Field ${index} value`, { exact: true })
+  }
+
+  // PR #334 (0a98af30) renamed the visible copy Credential -> Secret (FormSubmitRow's
+  // submitLabel on credentials/new/+page.svelte). The one place every journey reads it from.
   submitButton() {
-    return this.page.getByRole('button', { name: 'Create credential' })
+    return this.page.getByRole('button', { name: 'Create secret', exact: true })
   }
 
   async createCredential(opts: { name: string; value: string }): Promise<void> {

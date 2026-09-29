@@ -1,11 +1,13 @@
 import { expect, test } from '@playwright/test'
 import { registerAndLoginViaApi } from '../fixtures/auth.js'
-import { createLoginTemplateCredentialViaUi } from '../fixtures/credentials-ui.js'
+import {
+  createLoginTemplateCredentialViaUi,
+  fillLoginTemplateCredentialForm,
+} from '../fixtures/credentials-ui.js'
 import { uniqueEmail, uniqueOrgName, uniqueProjectName } from '../fixtures/ids.js'
 
 const OWNER_PASSWORD = 'e2e-Owner-Password-123'
 const FIELD_1_VALUE = 'Field 1 value'
-const FIELD_2_VALUE = 'Field 2 value'
 
 // J5 (Story 13.2): create a multi-field secret from the Login template, view it on the detail
 // page, then edit it to add a `notes` field and save — the persona journey (Morgan-member) from
@@ -75,14 +77,14 @@ test.describe('J5 — multi-field secret via templates', () => {
     })
     const projectId = (await projectRes.json()).data.id as string
 
-    await page.goto(`/projects/${projectId}/credentials/new`)
-    await page.getByLabel('Name', { exact: true }).fill('j5-collision')
-    await page.getByLabel('Template', { exact: true }).selectOption('login')
-    await page.getByLabel(FIELD_1_VALUE).fill('u')
-    await page.getByLabel(FIELD_2_VALUE).fill('p')
-    // Rename password -> username (case-insensitive collision) client-side before submit.
-    await page.getByLabel('Field 2 name').fill('Username')
-    await page.getByRole('button', { name: 'Create credential' }).click()
+    const credentialsPage = await fillLoginTemplateCredentialForm(page, projectId, {
+      name: 'j5-collision',
+      field1Value: 'u',
+      field2Value: 'p',
+      // Rename password -> username (case-insensitive collision) client-side before submit.
+      beforeSubmit: () => page.getByLabel('Field 2 name').fill('Username'),
+    })
+    await credentialsPage.submitButton().click()
 
     // The client duplicate-key affordance blocks the save with an inline error on the colliding row.
     await expect(page.getByText(/duplicate field name/i)).toBeVisible()
