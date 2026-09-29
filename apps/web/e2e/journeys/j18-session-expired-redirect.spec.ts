@@ -37,30 +37,16 @@ test.describe('J18 — a client mutation that hits a dead session redirects to /
     await page.getByRole('button', { name: 'Edit fields' }).click()
     await expect(page.getByRole('button', { name: 'Save fields' })).toBeVisible()
 
-    // The mutation's first attempt reports the access token as invalid, and the subsequent
-    // refresh attempt is answered as a genuinely dead refresh token — the session is not
-    // recoverable, unlike J14's concurrent-rotation race.
-    await page.route(`**/api/v1/projects/${projectId}/credentials/*/versions`, async (route) => {
-      if (route.request().method() !== 'POST') {
-        await route.continue()
-        return
-      }
-      await route.fulfill({
-        status: 401,
-        contentType: 'application/json',
-        body: JSON.stringify({ code: 'access_token_invalid', message: 'Access token is invalid' }),
-      })
-    })
-    await page.route('**/api/v1/auth/refresh', async (route) => {
-      await route.fulfill({
-        status: 401,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          code: 'refresh_token_invalid',
-          message: 'Refresh token is invalid',
-        }),
-      })
-    })
+    // Kill the session for real, server-side, while the tab still holds its (now stale) cookies —
+    // the "session died while the page was open" case. An earlier version faked the two 401s with
+    // `page.route` and left the real session alive; since #314 (5d9c33c6, Story 23.2) gave /login a
+    // server `load`, the client-side redirect to /login consults the server, which saw that live
+    // session and (correctly) bounced the user to /dashboard. With a genuinely revoked session the
+    // mutation's 401 and the refresh's 401 are both the real API's answers — no mocks.
+    const staleCookies = await context.cookies()
+    const logout = await context.request.post('/api/v1/auth/logout')
+    expect(logout.status(), await logout.text()).toBe(204)
+    await context.addCookies(staleCookies)
 
     await page.getByRole('button', { name: 'Save fields' }).click()
 
