@@ -34,6 +34,19 @@ COPY packages/extension-api/package.json ./packages/extension-api/
 COPY packages/db/package.json ./packages/db/
 COPY packages/crypto/package.json ./packages/crypto/
 
+# pnpm >= 11.28 refuses `--frozen-lockfile` when any workspace member recorded in
+# pnpm-lock.yaml lacks its package.json, even if this image never builds that member.
+# Copy the remaining members' manifests (manifests only, no sources) so the install
+# validates the whole lockfile. The sources stay out of this image.
+COPY apps/api/package.json ./apps/api/
+COPY fixtures/mock-audit-event-source-extension/package.json ./fixtures/mock-audit-event-source-extension/
+COPY fixtures/mock-capability-gate-extension/package.json ./fixtures/mock-capability-gate-extension/
+COPY fixtures/mock-sso-extension/package.json ./fixtures/mock-sso-extension/
+COPY fixtures/mock-ui-panel-extension/package.json ./fixtures/mock-ui-panel-extension/
+COPY packages/agent/package.json ./packages/agent/
+COPY packages/api-contract-tests/package.json ./packages/api-contract-tests/
+COPY packages/cli/package.json ./packages/cli/
+COPY packages/vault-action/package.json ./packages/vault-action/
 RUN pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm rebuild esbuild
 

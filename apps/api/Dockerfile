@@ -67,6 +67,14 @@ COPY fixtures/mock-audit-event-source-extension/package.json ./fixtures/mock-aud
 # built opt-in-only below.
 COPY fixtures/mock-ui-panel-extension/package.json ./fixtures/mock-ui-panel-extension/
 
+# pnpm >= 11.28 refuses `--frozen-lockfile` when any workspace member recorded in
+# pnpm-lock.yaml lacks its package.json, even if this image never builds that member.
+# Copy the remaining members' manifests (manifests only, no sources) so the install
+# validates the whole lockfile. The sources stay out of this image.
+COPY apps/web/package.json ./apps/web/
+COPY packages/api-contract-tests/package.json ./packages/api-contract-tests/
+COPY packages/cli/package.json ./packages/cli/
+COPY packages/vault-action/package.json ./packages/vault-action/
 RUN pnpm install --frozen-lockfile --ignore-scripts \
  && pnpm rebuild argon2 esbuild
 
