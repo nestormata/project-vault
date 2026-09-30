@@ -231,4 +231,19 @@ describe('/platform/settings/orgs +page.svelte', () => {
     await screen.findByText(/an invitation was sent/i)
     await waitFor(() => expect(submitButton.disabled).toBe(false))
   })
+
+  // Story 68.1 AC-3: SvelteKit reuses this component when `data` changes (invalidate/reload),
+  // so the list and the load error must follow the new `data` without a remount.
+  it('stale state: the org list and load error follow a new load without remounting', async () => {
+    const { rerender } = render(OrgsPage, {
+      props: { data: allowedData({ orgs: [], errorMessage: 'Failed to load organizations' }) },
+    })
+    expect(screen.getByText('Failed to load organizations')).toBeTruthy()
+
+    const beta = { ...SAMPLE_ORG, id: 'org-2', name: 'Beta Inc', slug: 'beta-inc' }
+    await rerender({ data: allowedData({ orgs: [beta] }) })
+
+    expect(screen.queryByText('Failed to load organizations')).toBeNull()
+    expect(screen.getByText('Beta Inc')).toBeTruthy()
+  })
 })

@@ -462,4 +462,25 @@ describe('/platform/audit +page.svelte', () => {
     expect(screen.getByText(/org = org-1/)).toBeTruthy()
     expect(screen.getByText(/user = user-1/)).toBeTruthy()
   })
+
+  // Story 68.1 AC-3: a filter change (same route, new search params) or an invalidate hands this
+  // same component a new `data`; the maintenance banner must follow it without a remount.
+  it('stale state: the maintenance banner follows a new load (filter navigation) without remounting', async () => {
+    const { rerender } = render(AuditPage, {
+      props: { data: allowedData({ maintenanceStatus: INACTIVE_STATUS }) },
+    })
+    expect(screen.queryByText(/maintenance mode is active/i)).toBeNull()
+
+    await rerender({ data: allowedData({ maintenanceStatus: ACTIVE_STATUS }) })
+    expect(screen.getAllByText(/maintenance mode is active/i).length).toBeGreaterThan(0)
+
+    await rerender({
+      data: allowedData({
+        maintenanceStatus: null,
+        maintenanceStatusError: 'Maintenance mode status unavailable',
+      }),
+    })
+    expect(screen.getAllByText(/maintenance mode status unavailable/i).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/maintenance mode is active/i)).toBeNull()
+  })
 })

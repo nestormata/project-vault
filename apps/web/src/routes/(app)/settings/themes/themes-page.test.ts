@@ -348,4 +348,38 @@ describe('/settings/themes +page.svelte org default theme section — save (Stor
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toMatch(/no longer available/i)
   })
+
+  // Story 68.1 AC-3: after "Reload themes" (invalidateAll) or any reload, SvelteKit hands this
+  // same component a new `data`; the personal selection and the org default must follow it.
+  it('stale state: the personal selection and org default follow a new load without remounting', async () => {
+    const { rerender } = render(ThemesPage, {
+      props: {
+        data: baseData({
+          orgRole: 'admin',
+          canReload: true,
+          selected: null,
+          orgDefaultThemeName: null,
+        }),
+      },
+    })
+    expect(screen.getByRole('radio', { name: /Default/ })).toHaveProperty('checked', true)
+    const orgDefaultSelect = screen.getByLabelText(
+      'Default theme for this organization'
+    ) as HTMLSelectElement
+    expect(orgDefaultSelect.value).toBe('')
+
+    await rerender({
+      data: baseData({
+        orgRole: 'admin',
+        canReload: true,
+        selected: 'acme-brand',
+        orgDefaultThemeName: 'acme-brand',
+      }),
+    })
+
+    expect(screen.getByRole('radio', { name: /acme-brand/ })).toHaveProperty('checked', true)
+    expect(
+      (screen.getByLabelText('Default theme for this organization') as HTMLSelectElement).value
+    ).toBe('acme-brand')
+  })
 })

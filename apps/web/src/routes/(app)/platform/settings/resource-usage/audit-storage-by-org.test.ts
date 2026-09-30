@@ -273,4 +273,42 @@ describe('Story 22.3: Audit Storage by Organization table', () => {
       render(ResourceUsagePage, { props: { data: allowedData(malformed as never) } })
     ).not.toThrow()
   })
+
+  // Story 68.1 AC-3: an invalidate/reload hands this same component a new `data`; the per-org
+  // rows must follow it without a remount.
+  it('stale state: the per-org rows follow a new load without remounting', async () => {
+    const { rerender } = render(ResourceUsagePage, {
+      props: { data: allowedData(usageWith([OK_ORG])) },
+    })
+    expect(screen.getByText('Ok Org')).toBeTruthy()
+
+    await rerender({ data: allowedData(usageWith([BLOCKED_ORG])) })
+
+    expect(screen.queryByText('Ok Org')).toBeNull()
+    expect(screen.getByText('Blocked Org')).toBeTruthy()
+  })
+
+  // Story 68.1 AC-3 (in-flight race): a refresh that lands while a quota save is pending must
+  // not duplicate or resurrect rows; the save result replaces the refreshed row in place.
+  it('stale state: a refresh landing before a quota save resolves does not duplicate the row', async () => {
+    let resolveSave: (row: typeof OK_ORG) => void = () => {}
+    setOrgAuditQuotaMock.mockReturnValue(
+      new Promise<typeof OK_ORG>((resolve) => {
+        resolveSave = resolve
+      })
+    )
+    const { rerender } = render(ResourceUsagePage, {
+      props: { data: allowedData(usageWith([OK_ORG])) },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /edit/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    await waitFor(() => expect(setOrgAuditQuotaMock).toHaveBeenCalledTimes(1))
+
+    await rerender({ data: allowedData(usageWith([OK_ORG, STALE_ORG])) })
+    resolveSave({ ...OK_ORG, orgName: 'Ok Org (saved)' })
+
+    expect(await screen.findByText('Ok Org (saved)')).toBeTruthy()
+    expect(screen.getAllByText(/^Ok Org/)).toHaveLength(1)
+    expect(screen.getByText('Stale Org')).toBeTruthy()
+  })
 })

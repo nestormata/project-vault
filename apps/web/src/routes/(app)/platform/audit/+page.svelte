@@ -22,10 +22,12 @@
 
   let { data }: { data: PageData } = $props()
 
-  let maintenanceStatus = $state<MaintenanceModeStatus | null>(
+  // Story 68.1 AC-3: writable $derived, so a filter navigation or invalidate resets these from
+  // the new load, while refreshMaintenanceStatus() below can still update them locally.
+  let maintenanceStatus = $derived<MaintenanceModeStatus | null>(
     data.allowed ? data.maintenanceStatus : null
   )
-  let maintenanceStatusError = $state<string | null>(
+  let maintenanceStatusError = $derived<string | null>(
     data.allowed ? data.maintenanceStatusError : null
   )
 

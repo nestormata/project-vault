@@ -22,7 +22,9 @@
 
   // Story 22.3 AC-6: defensive against a malformed/missing auditStorageByOrg in an otherwise-200
   // response — never crash the page over an additive field.
-  let auditRows = $state<AuditStorageOrgRow[]>(
+  // Story 68.1 AC-3: writable $derived, so a new load resets the rows while a successful quota
+  // save can still replace its row in place (mapping over the current, possibly refreshed, rows).
+  let auditRows = $derived<AuditStorageOrgRow[]>(
     data.allowed && data.usage ? (data.usage.auditStorageByOrg ?? []) : []
   )
 

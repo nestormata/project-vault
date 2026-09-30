@@ -475,4 +475,19 @@ describe('/platform/backups +page.svelte', () => {
 
     expect(await screen.findByText(/validation failed/i)).toBeTruthy()
   })
+
+  // Story 68.1 AC-3: SvelteKit reuses this component when `data` changes (invalidate/reload),
+  // so the backup list and the load error must follow the new `data` without a remount.
+  it('stale state: the backup list and load error follow a new load without remounting', async () => {
+    const { rerender } = render(BackupsPage, {
+      props: { data: allowedData({ backups: [], errorMessage: 'Failed to load backups' }) },
+    })
+    expect(screen.getByText('Failed to load backups')).toBeTruthy()
+
+    const next = { ...SAMPLE_BACKUP, filename: 'backup_20260702T030000Z_org-abc.vault' }
+    await rerender({ data: allowedData({ backups: [next] }) })
+
+    expect(screen.queryByText('Failed to load backups')).toBeNull()
+    expect(screen.getByText('backup_20260702T030000Z_org-abc.vault')).toBeTruthy()
+  })
 })
