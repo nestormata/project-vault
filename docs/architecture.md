@@ -168,15 +168,17 @@ short-lived ephemeral state — so an extension never reaches into the database 
 When an extension does need its own tables, it connects through the least-privilege
 `vault_extension` role.
 
-> **UI panels are the runtime UI extension API.** The UI panel hooks above (`uiPanel`/`onRenderPanel`
-> returning HTML strings, `uiPanelSlots`, typed module actions via `moduleActions`/`data-pv-action`,
-> the `/extensions/panels/[slot]/[...subpath]` route that renders host-sanitized panel HTML inline,
-> and append-only `navItems`, a general-purpose, capability-free manifest field that the panel
-> tier commonly uses) are a supported extension API. (`panelDataPaths` and its DATA relay
-> are already retired: the field has been `@deprecated` since Story 29.4 and only its type and
-> validator survive.) A separate build-time composition tier is planned for a first-party, trusted
-> UI package: Svelte code composed into a dedicated web image by a Project Vault-owned
-> Vite/SvelteKit plugin and component registry, with page overrides including `load` and form
+> **UI panels are the legacy runtime UI extension API: deprecated and frozen.** The UI panel
+> hooks above (`uiPanel`/`onRenderPanel` returning HTML strings, `uiPanelSlots`, typed module
+> actions via `moduleActions`/`data-pv-action`, and the `/extensions/panels/[slot]/[...subpath]`
+> route that renders host-sanitized panel HTML inline) get no new features or fixes, and are kept
+> until they are replaced or removed. Security issues in them are resolved by replacing or removing
+> the affected functionality, not by patching it. Append-only `navItems` is a general-purpose,
+> capability-free manifest field that the panel tier commonly uses. (`panelDataPaths` and its DATA
+> relay are already retired: the field has been `@deprecated` since Story 29.4 and only its type
+> and validator survive.) A separate build-time composition tier, the planned forward path, is
+> for a first-party, trusted UI package: Svelte code composed into a dedicated web image by a
+> Project Vault-owned Vite/SvelteKit plugin and component registry, with page overrides including `load` and form
 > actions, new routes at any path, injection points, component replacement, customizable
 > navigation, and theme tokens. It is not built yet. API routes are a separate concern from both:
 > today's mechanism is `moduleDataRoutes`, which is not part of the panel API.

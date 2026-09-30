@@ -1,8 +1,9 @@
 # @project-vault/mock-ui-panel-extension
 
-> This fixture exercises the runtime UI extension API (HTML panels): the `ui-panel` capability,
-> `onRenderPanel` returning `UIPanelResult` HTML strings, declared `uiPanelSlots`, and the
-> `/extensions/panels/[slot]/[...subpath]` route. See
+> This fixture exercises the legacy runtime UI extension API (HTML panels), which is deprecated
+> and frozen (no new features or fixes; kept until it is replaced or removed): the `ui-panel`
+> capability, `onRenderPanel` returning `UIPanelResult` HTML strings, declared `uiPanelSlots`,
+> and the `/extensions/panels/[slot]/[...subpath]` route. See
 > [UI extension tiers](../../docs/extensions/README.md#ui-extension-tiers).
 
 A self-contained, in-process mock UI-panel extension, built to exercise Story 25.1's `UIPanel`

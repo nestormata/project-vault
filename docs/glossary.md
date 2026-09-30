@@ -53,9 +53,12 @@ authentication strategies, notification channels and delivery providers, UI pane
 routes and typed actions, capability gates, audit-event sources, and project lifecycle hooks.
 Loading is fail-safe: a broken extension never blocks boot.
 
-The UI-panel hooks (HTML-string panels in named slots, typed module actions, append-only
-navigation entries) are the supported **runtime UI extension API**. A separate build-time
-composition tier for a first-party, trusted UI package is planned and not built yet.
+The UI-panel hooks (HTML-string panels in named slots, typed module actions) are the **legacy
+runtime UI extension API**: deprecated and frozen (no new features or fixes; kept until it is
+replaced or removed; security issues are resolved by replacing or removing the affected
+functionality). Append-only navigation entries (`navItems`) are a general-purpose manifest field
+that panels commonly use. A separate build-time composition tier for a first-party,
+trusted UI package is the planned forward path and is not built yet.
 
 **"Module pack"** is CentralizeMe's name for the same thing — an extension packaged for
 installation into a hosted instance. The lifecycle runbook uses that term; everywhere else,
