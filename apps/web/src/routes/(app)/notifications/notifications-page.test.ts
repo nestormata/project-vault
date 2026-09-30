@@ -1,22 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
 import { tick } from 'svelte'
+import type { ActionResult, SubmitFunction } from '@sveltejs/kit'
 import { routeExists } from '$lib/test/route-exists.js'
 
-type EnhancedSubmitCallback = (input: { cancel?: () => void }) => {
-  update: (input: { result: { type: string }; update: () => void }) => void
-}
+// Story 68.1 AC-5 (C4): results shaped like SvelteKit's real ActionResult union.
+const successResult: ActionResult = { type: 'success', status: 200 }
+const failureResult: ActionResult = { type: 'failure', status: 400 }
+const errorResult: ActionResult = { type: 'error', error: new Error('boom') }
 
-const successResult = { type: 'success' }
-const failureResult = { type: 'failure' }
-
-const enhanceCallbacks = vi.hoisted(() => new Map<HTMLFormElement, EnhancedSubmitCallback>())
+const enhanceCallbacks = vi.hoisted(() => new Map<HTMLFormElement, SubmitFunction>())
 const markAllReadLocallyMock = vi.hoisted(() => vi.fn())
 const decrementUnreadMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$app/forms', () => ({
-  enhance: (form: HTMLFormElement, callback?: EnhancedSubmitCallback) => {
-    if (callback) enhanceCallbacks.set(form, callback)
+  enhance: (form: HTMLFormElement, submit?: SubmitFunction) => {
+    if (submit) enhanceCallbacks.set(form, submit)
     return { destroy: () => enhanceCallbacks.delete(form) }
   },
 }))
@@ -60,10 +59,49 @@ function formFor(button: HTMLElement): HTMLFormElement {
   return form
 }
 
-function enhancedSubmit(button: HTMLElement) {
-  const callback = enhanceCallbacks.get(formFor(button))
-  if (!callback) throw new Error('Expected enhanced form callback')
-  return callback
+function submitInput(button: HTMLElement, cancel: () => void = () => {}) {
+  const formElement = formFor(button)
+  return {
+    action: new URL(formElement.action),
+    formData: new FormData(formElement),
+    formElement,
+    controller: new AbortController(),
+    submitter: button,
+    cancel,
+  }
+}
+
+function submitFunctionFor(button: HTMLElement): SubmitFunction {
+  const submit = enhanceCallbacks.get(formFor(button))
+  if (!submit) throw new Error('Expected enhanced form callback')
+  return submit
+}
+
+// Runs only the submit phase (the part that may call `cancel()`), as SvelteKit does before POSTing.
+async function startEnhancedSubmit(button: HTMLElement, cancel: () => void) {
+  await submitFunctionFor(button)(submitInput(button, cancel))
+}
+
+// Story 68.1 AC-5 (C4): models @sveltejs/kit's own enhance() (runtime/app/forms.js): the value the
+// submit function returns IS the post-response callback (`undefined` means the default
+// behaviour); SvelteKit calls it with the action result and its default `update`. The previous
+// mock called `.update(...)` on a returned object, which SvelteKit never does, so it hid the bug
+// where the page returned `{ update }` and SvelteKit threw `callback is not a function`.
+async function submitEnhanced(
+  button: HTMLElement,
+  result: ActionResult,
+  update: () => Promise<void> = vi.fn(async () => {})
+) {
+  const input = submitInput(button)
+  const returned = await submitFunctionFor(button)(input)
+  const callback = returned ?? (async (opts: { update: () => Promise<void> }) => opts.update())
+  await callback({
+    action: input.action,
+    formData: input.formData,
+    formElement: input.formElement,
+    result,
+    update,
+  })
 }
 
 function baseData(overrides: Record<string, unknown> = {}) {
@@ -132,7 +170,7 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
     expect(screen.queryByText(/machine key dormancy alerts/i)).toBeNull()
   })
 
-  it('renders unread known notifications with a project link and local mark/dismiss updates', () => {
+  it('renders unread known notifications with a project link and local mark/dismiss updates', async () => {
     render(NotificationsPage, {
       props: { data: baseData({ notifications: [unreadNotification], total: 1 }) },
     })
@@ -143,47 +181,81 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
       '/projects/project-1'
     )
 
-    const update = vi.fn()
-    const markAllResult = enhancedSubmit(screen.getByRole('button', { name: /mark all as read/i }))(
-      {}
+    const update = vi.fn(async () => {})
+    await submitEnhanced(
+      screen.getByRole('button', { name: /mark all as read/i }),
+      successResult,
+      update
     )
-    markAllResult.update({ result: successResult, update })
     expect(markAllReadLocallyMock).toHaveBeenCalledTimes(1)
     expect(update).toHaveBeenCalledTimes(1)
+    await tick()
+    expect(screen.queryByTitle('Unread')).toBeNull()
 
-    enhancedSubmit(screen.getByRole('button', { name: /^mark as read$/i }))({}).update({
-      result: successResult,
-      update,
+    // Fresh page (mark-all just made the row read, which hides its own "Mark as read" button).
+    cleanup()
+    render(NotificationsPage, {
+      props: { data: baseData({ notifications: [unreadNotification], total: 1 }) },
     })
-    enhancedSubmit(screen.getByRole('button', { name: /^dismiss$/i }))({}).update({
-      result: successResult,
-      update,
-    })
-    expect(decrementUnreadMock).toHaveBeenCalledTimes(2)
+    await submitEnhanced(
+      screen.getByRole('button', { name: /^mark as read$/i }),
+      successResult,
+      update
+    )
+    await submitEnhanced(screen.getByRole('button', { name: /^dismiss$/i }), successResult, update)
+    expect(decrementUnreadMock).toHaveBeenCalledTimes(1)
+    expect(update).toHaveBeenCalledTimes(3)
+    await tick()
+    expect(screen.queryByText('Service Down')).toBeNull()
   })
 
-  it('bug fix: a failed mark-all-read/mark-read/dismiss action leaves the list untouched (no optimistic rollback needed)', () => {
+  it('bug fix: a failed mark-all-read/mark-read/dismiss action leaves the list untouched (no optimistic rollback needed)', async () => {
     render(NotificationsPage, {
       props: { data: baseData({ notifications: [unreadNotification], total: 1 }) },
     })
 
-    const update = vi.fn()
-    enhancedSubmit(screen.getByRole('button', { name: /mark all as read/i }))({}).update({
-      result: failureResult,
-      update,
-    })
-    enhancedSubmit(screen.getByRole('button', { name: /^mark as read$/i }))({}).update({
-      result: failureResult,
-      update,
-    })
-    enhancedSubmit(screen.getByRole('button', { name: /^dismiss$/i }))({}).update({
-      result: failureResult,
-      update,
-    })
+    const update = vi.fn(async () => {})
+    await submitEnhanced(
+      screen.getByRole('button', { name: /mark all as read/i }),
+      failureResult,
+      update
+    )
+    await submitEnhanced(
+      screen.getByRole('button', { name: /^mark as read$/i }),
+      failureResult,
+      update
+    )
+    await submitEnhanced(screen.getByRole('button', { name: /^dismiss$/i }), failureResult, update)
 
     expect(markAllReadLocallyMock).not.toHaveBeenCalled()
     expect(decrementUnreadMock).not.toHaveBeenCalled()
     // The server's own result (error message, etc.) must still be applied either way.
+    expect(update).toHaveBeenCalledTimes(3)
+    expect(screen.getByTitle('Unread')).toBeTruthy()
+    expect(screen.getByText('Service Down')).toBeTruthy()
+  })
+
+  it('an error result (network/server exception) applies no optimistic change but still runs the default update', async () => {
+    render(NotificationsPage, {
+      props: { data: baseData({ notifications: [unreadNotification], total: 1 }) },
+    })
+
+    const update = vi.fn(async () => {})
+    await submitEnhanced(
+      screen.getByRole('button', { name: /mark all as read/i }),
+      errorResult,
+      update
+    )
+    await submitEnhanced(
+      screen.getByRole('button', { name: /^mark as read$/i }),
+      errorResult,
+      update
+    )
+    await submitEnhanced(screen.getByRole('button', { name: /^dismiss$/i }), errorResult, update)
+    await tick()
+
+    expect(markAllReadLocallyMock).not.toHaveBeenCalled()
+    expect(decrementUnreadMock).not.toHaveBeenCalled()
     expect(update).toHaveBeenCalledTimes(3)
     expect(screen.getByTitle('Unread')).toBeTruthy()
     expect(screen.getByText('Service Down')).toBeTruthy()
@@ -199,11 +271,12 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
 
     // Deliberately never resolves `update` — proves the row updates from local state alone,
     // not because `invalidateAll()` happened to already come back.
-    const neverResolvingUpdate = vi.fn()
-    enhancedSubmit(screen.getByRole('button', { name: /^mark as read$/i }))({}).update({
-      result: successResult,
-      update: neverResolvingUpdate,
-    })
+    const neverResolvingUpdate = vi.fn(() => new Promise<void>(() => {}))
+    await submitEnhanced(
+      screen.getByRole('button', { name: /^mark as read$/i }),
+      successResult,
+      neverResolvingUpdate
+    )
     await tick()
 
     expect(screen.queryByTitle('Unread')).toBeNull()
@@ -217,11 +290,12 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
 
     expect(screen.getByText('Service Down')).toBeTruthy()
 
-    const neverResolvingUpdate = vi.fn()
-    enhancedSubmit(screen.getByRole('button', { name: /^dismiss$/i }))({}).update({
-      result: successResult,
-      update: neverResolvingUpdate,
-    })
+    const neverResolvingUpdate = vi.fn(() => new Promise<void>(() => {}))
+    await submitEnhanced(
+      screen.getByRole('button', { name: /^dismiss$/i }),
+      successResult,
+      neverResolvingUpdate
+    )
     await tick()
 
     expect(screen.queryByText('Service Down')).toBeNull()
@@ -235,18 +309,19 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
 
     expect(screen.getAllByTitle('Unread')).toHaveLength(2)
 
-    const neverResolvingUpdate = vi.fn()
-    enhancedSubmit(screen.getByRole('button', { name: /mark all as read/i }))({}).update({
-      result: successResult,
-      update: neverResolvingUpdate,
-    })
+    const neverResolvingUpdate = vi.fn(() => new Promise<void>(() => {}))
+    await submitEnhanced(
+      screen.getByRole('button', { name: /mark all as read/i }),
+      successResult,
+      neverResolvingUpdate
+    )
     await tick()
 
     expect(screen.queryByTitle('Unread')).toBeNull()
     expect(screen.queryByRole('button', { name: /mark all as read/i })).toBeNull()
   })
 
-  it('renders read unknown notifications with fallbacks and no read or project action', () => {
+  it('renders read unknown notifications with fallbacks and no read or project action', async () => {
     render(NotificationsPage, {
       props: {
         data: baseData({
@@ -268,11 +343,8 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
     expect(screen.queryByTitle('Unread')).toBeNull()
     expect(screen.queryByRole('button', { name: /mark as read/i })).toBeNull()
     expect(screen.queryByRole('link', { name: /view project/i })).toBeNull()
-    const update = vi.fn()
-    enhancedSubmit(screen.getByRole('button', { name: /^dismiss$/i }))({}).update({
-      result: successResult,
-      update,
-    })
+    const update = vi.fn(async () => {})
+    await submitEnhanced(screen.getByRole('button', { name: /^dismiss$/i }), successResult, update)
     expect(decrementUnreadMock).not.toHaveBeenCalled()
     expect(update).toHaveBeenCalled()
   })
@@ -309,7 +381,7 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
     expect(screen.queryByRole('link', { name: /next/i })).toBeNull()
   })
 
-  it('renders machine-key dormancy variants and cancels or accepts key revocation', () => {
+  it('renders machine-key dormancy variants and cancels or accepts key revocation', async () => {
     const alerts = [
       {
         id: 'machine-alert-1',
@@ -338,12 +410,12 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
     ).toBe('/projects/project-1/machine-users/machine-1')
     const revokeButtons = screen.getAllByRole('button', { name: /revoke key/i })
     const cancel = vi.fn()
-    enhancedSubmit(revokeButtons[0] as HTMLElement)({ cancel })
-    enhancedSubmit(revokeButtons[1] as HTMLElement)({ cancel })
+    await startEnhancedSubmit(revokeButtons[0] as HTMLElement, cancel)
+    await startEnhancedSubmit(revokeButtons[1] as HTMLElement, cancel)
     expect(cancel).toHaveBeenCalledTimes(1)
   })
 
-  it('cancels or accepts dormant-user deactivation confirmation', () => {
+  it('cancels or accepts dormant-user deactivation confirmation', async () => {
     vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
     render(NotificationsPage, {
       props: {
@@ -358,8 +430,8 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
     expect(screen.getByText(/never active/i)).toBeTruthy()
     const buttons = screen.getAllByRole('button', { name: /deactivate account/i })
     const cancel = vi.fn()
-    enhancedSubmit(buttons[0] as HTMLElement)({ cancel })
-    enhancedSubmit(buttons[1] as HTMLElement)({ cancel })
+    await startEnhancedSubmit(buttons[0] as HTMLElement, cancel)
+    await startEnhancedSubmit(buttons[1] as HTMLElement, cancel)
     expect(cancel).toHaveBeenCalledTimes(1)
   })
 })
