@@ -4,6 +4,7 @@
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=nestormata_project-vault&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=nestormata_project-vault)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=nestormata_project-vault&metric=coverage)](https://sonarcloud.io/summary/new_code?id=nestormata_project-vault)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE)
+[![extension-api license: MIT](https://img.shields.io/badge/extension--api-MIT-blue.svg)](packages/extension-api/LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D24-brightgreen)](package.json)
 [![pnpm](https://img.shields.io/badge/pnpm-%3E%3D11.21.0-brightgreen)](package.json)
 [![Known Vulnerabilities](https://snyk.io/test/github/nestormata/project-vault/badge.svg)](https://snyk.io/test/github/nestormata/project-vault)
@@ -132,11 +133,13 @@ Released versions and their upgrade notes are in [CHANGELOG.md](CHANGELOG.md).
 
 ## Open-core model and license
 
-Project Vault is free and open source under the **AGPL-3.0** license. The core — secrets storage, versioning, access control, audit logs, encryption at rest, the extension interface, manual rotation, and monitoring — will always be open. Self-hosted deployments are free, forever.
+Project Vault is free and open source under the **AGPL-3.0-or-later** license. The core — secrets storage, versioning, access control, audit logs, encryption at rest, the extension interface, manual rotation, and monitoring — will always be open. Self-hosted deployments are free, forever.
+
+The interfaces that extensions and UI packages build against are licensed separately under the permissive **MIT** license, so code written against them can use any license: [`@project-vault/extension-api`](packages/extension-api) is MIT from version 3.24.2 onward (earlier published versions remain AGPL-3.0-or-later), the CI/CD client packages [`@project-vault/agent`](packages/agent) and the [vault GitHub Action](packages/vault-action) are MIT, and the planned UI composition kit (build-time composer, Vite plugins, component registry and route-override types) will be MIT too. Each MIT package carries its own `LICENSE` file. Project Vault's application source — the API, the web application, and any future web-host source package — stays AGPL-3.0-or-later.
 
 A commercial SaaS tier is planned, adding managed hosting, enterprise/managed SSO, and compliance reporting. It is distinct from the self-hosted, organization-configured SSO available today.
 
-**CentralizeMe** is the maintainer's commercial hosted SaaS product, which is built on Project Vault: Project Vault hosts CentralizeMe's first-party module pack. It is the first consumer of the extension API and the issuer of the browser-handoff tokens Project Vault accepts. It is not required for self-hosting, and nothing in this repository depends on it.
+**CentralizeMe** is the maintainer's commercial hosted SaaS product, which is built on Project Vault: Project Vault hosts CentralizeMe's first-party module pack. It is the first consumer of the extension API and the issuer of the browser-handoff tokens Project Vault accepts. It is not required for self-hosting, and nothing in this repository depends on it. Throughout this repository, "the maintainer" means Nestor Mata Cuthbert or a legal entity he controls or designates.
 
 Copyright (C) 2026 Nestor Mata Cuthbert. This program is distributed WITHOUT ANY WARRANTY; see [LICENSE](LICENSE) for the full text and <https://www.gnu.org/licenses/>.
 
@@ -153,7 +156,7 @@ Project Vault handles credentials, certificates, and sensitive operational data.
 
 ## Contributing
 
-External code contributions are governed by [CONTRIBUTING.md](CONTRIBUTING.md), which covers branching and commit conventions, the local quality gates, and the Contributor License Agreement that every external pull request must satisfy — including a plain-language disclosure that contributions may be used in a closed-source commercial product built on top of this AGPLv3 core. The full text is in [CLA.md](CLA.md). Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+External code contributions are governed by [CONTRIBUTING.md](CONTRIBUTING.md), which covers branching and commit conventions, the local quality gates, and the Contributor License Agreement that every external pull request must satisfy — including a plain-language disclosure that contributions may be used in a closed-source commercial product built on top of this AGPL-3.0-or-later core, and that the maintainer's license under the CLA can be transferred to a company he controls or designates. The full text is in [CLA.md](CLA.md). Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 Other ways to help without opening a pull request:
 

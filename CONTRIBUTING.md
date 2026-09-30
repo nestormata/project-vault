@@ -21,27 +21,38 @@ logic.
 
 **What signing means — read this before you open a PR:**
 
-1. Your contribution stays licensed under AGPLv3 in this repository, forever, exactly like the
-   rest of the codebase — the CLA does not take that away.
+1. Your contribution stays licensed to the public under this repository's open-source license,
+   forever, exactly like the code around it — the CLA does not take that away. Most of the
+   repository is licensed under AGPL-3.0-or-later (root [LICENSE](./LICENSE)). The exception is
+   packages the repository explicitly licenses under MIT: today that is
+   [`packages/extension-api`](./packages/extension-api) (`@project-vault/extension-api`),
+   [`packages/agent`](./packages/agent) and [`packages/vault-action`](./packages/vault-action),
+   and in future any package whose own `LICENSE` file is MIT, such as the planned UI composition kit.
+   A contribution to an MIT-licensed package is licensed to the public under MIT.
 2. Separately, **you also grant the project maintainer a broad license — including the right to
-   sublicense — to use your contribution outside the AGPLv3 terms, including in a closed-source
-   commercial product.** Concretely: Project Vault's open-source core is AGPLv3, and the
-   maintainer intends to build a commercial hosted SaaS extension on top of it. Contributions
-   accepted into this repository may be incorporated into that closed-source commercial product,
-   not only into the open-source codebase. This is disclosed here, up front, precisely so no
-   contributor is surprised by it later.
+   sublicense, transfer, and assign it — to use your contribution outside the AGPL and MIT
+   terms, including in a closed-source commercial product.** "The maintainer" means Nestor Mata
+   Cuthbert and his successors and assigns, including any legal entity he controls or designates
+   (for example a company he forms to operate commercial products built on Project Vault).
+   Concretely: Project Vault's open-source core is AGPL-3.0-or-later, and the maintainer builds
+   a commercial hosted SaaS product, CentralizeMe, on top of it. Contributions accepted into this
+   repository may be incorporated into that closed-source commercial product, not only into the
+   open-source codebase. This is disclosed here, up front, precisely so no contributor is
+   surprised by it later.
 
-The full legal text, including both of these clauses in detail, is in [CLA.md](./CLA.md).
-Please read it before your first PR.
+The full legal text, including both of these clauses in detail, is in [CLA.md](./CLA.md)
+(version 2). Please read it before your first PR.
 
 **This CLA governs contributions back to this repository only.** It does not restrict what you
-or anyone else does with Project Vault's own AGPLv3 source code in a self-hosted deployment or a
-fork — that remains governed solely by the AGPLv3 license terms in [LICENSE](./LICENSE),
-unaffected by whether you've ever signed the CLA.
+or anyone else does with Project Vault's own source code in a self-hosted deployment or a fork —
+that remains governed solely by the open-source license terms that apply to it
+(AGPL-3.0-or-later in the root [LICENSE](./LICENSE), or MIT for an MIT-licensed package's own
+`LICENSE`), unaffected by whether you've ever signed the CLA.
 
 > **Not legal advice.** The CLA text is a solid starting draft but has not yet been reviewed by
-> an attorney; see the caveat at the top of [CLA.md](./CLA.md). It also currently covers
-> individual contributors only — a corporate variant is a documented future addition.
+> an attorney; version 2 is pending legal review. See the caveat at the top of
+> [CLA.md](./CLA.md). It also currently covers individual contributors only — a corporate
+> variant is a documented future addition.
 
 ## How to contribute
 

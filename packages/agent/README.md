@@ -150,5 +150,6 @@ security-relevant change to it must follow the checklist in
 
 ## License
 
-Part of the [Project Vault](https://github.com/nestormata/project-vault) monorepo, covered by the
-repository's root [`LICENSE`](../../LICENSE) (GNU AGPLv3).
+Licensed under the MIT License; see this package's own [`LICENSE`](./LICENSE). The rest of the
+[Project Vault](https://github.com/nestormata/project-vault) monorepo is AGPL-3.0-or-later (root
+[`LICENSE`](../../LICENSE)).

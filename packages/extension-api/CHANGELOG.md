@@ -15,6 +15,12 @@ contract-hash: sha256:ecc23ef5d6ff5de2836a615eb5013ae1f41feb5b62bc8d79f654c8d2c4
 Per `docs/extension-api-versioning-policy.md`'s semver discipline, a change to the contract
 source's documentation with no surface or behaviour change is a PATCH. The floor stays `>=3.0.0`.
 
+### Licence
+
+- The package is licensed under the MIT License from this version onward (`package.json`
+  `"license": "MIT"` and an MIT `LICENSE` file). Earlier versions remain licensed under
+  `AGPL-3.0-or-later`. Licensing does not change the contract surface or behaviour.
+
 ## 3.24.1 — 2026-09-27
 
 contract-hash: sha256:16e271aec98de2ab772d4bb80239abc10c59313e052f6823fb58fdf29d50d30a
