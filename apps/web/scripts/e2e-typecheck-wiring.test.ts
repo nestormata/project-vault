@@ -12,7 +12,7 @@ import { globSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 // Loaded through Vite (vitest's module graph), not `readFileSync(path)`: a computed fs path trips
 // eslint `security/detect-non-literal-fs-filename`, which fails under `--max-warnings=0`.
 import webPackage from '../package.json'
@@ -58,30 +58,41 @@ function parseE2eConfig(): ts.ParsedCommandLine {
   return parsed
 }
 
-const PROBE_PATH = join(E2E_ROOT, '__probe__.spec.ts')
-
 /**
- * Type-checks one virtual `e2e/__probe__.spec.ts` (served from memory, never written to disk) with the
- * real e2e compiler options, and returns the diagnostics that belong to the probe file.
+ * Type-checks virtual `e2e/<name>.spec.ts` probes (served from memory, never written to disk) in ONE
+ * program built with the real e2e compiler options, and returns each probe's own diagnostics keyed by
+ * the same name. One shared program checks lib and `@playwright/test` declarations once for all probes.
  */
-function checkProbe(source: string): readonly ts.Diagnostic[] {
+function checkProbes(sources: Record<string, string>): Map<string, readonly ts.Diagnostic[]> {
+  const probes = new Map(
+    Object.entries(sources).map(([name, source]) => [join(E2E_ROOT, `${name}.spec.ts`), source])
+  )
   const { options } = parseE2eConfig()
   const host = ts.createCompilerHost(options, true)
-  const isProbe = (fileName: string): boolean => fileName === PROBE_PATH
   const baseFileExists = host.fileExists.bind(host)
   const baseReadFile = host.readFile.bind(host)
   const baseGetSourceFile = host.getSourceFile.bind(host)
-  host.fileExists = (fileName) => isProbe(fileName) || baseFileExists(fileName)
-  host.readFile = (fileName) => (isProbe(fileName) ? source : baseReadFile(fileName))
-  host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) =>
-    isProbe(fileName)
-      ? ts.createSourceFile(fileName, source, languageVersion, true)
-      : baseGetSourceFile(fileName, languageVersion, onError, shouldCreate)
+  host.fileExists = (fileName) => probes.has(fileName) || baseFileExists(fileName)
+  host.readFile = (fileName) => probes.get(fileName) ?? baseReadFile(fileName)
+  host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) => {
+    const source = probes.get(fileName)
+    return source === undefined
+      ? baseGetSourceFile(fileName, languageVersion, onError, shouldCreate)
+      : ts.createSourceFile(fileName, source, languageVersion, true)
+  }
 
-  const program = ts.createProgram({ rootNames: [PROBE_PATH], options, host })
-  const probe = program.getSourceFile(PROBE_PATH)
-  if (probe === undefined) throw new Error('probe source file was not loaded')
-  return [...program.getSyntacticDiagnostics(probe), ...program.getSemanticDiagnostics(probe)]
+  const program = ts.createProgram({ rootNames: [...probes.keys()], options, host })
+  return new Map(
+    Object.keys(sources).map((name) => {
+      const probe = program.getSourceFile(join(E2E_ROOT, `${name}.spec.ts`))
+      if (probe === undefined) throw new Error(`probe ${name} was not loaded`)
+      const diagnostics = [
+        ...program.getSyntacticDiagnostics(probe),
+        ...program.getSemanticDiagnostics(probe),
+      ]
+      return [name, diagnostics] as const
+    })
+  )
 }
 
 describe('66.2 (a): the web typecheck script runs the e2e program', () => {
@@ -167,10 +178,26 @@ describe('66.2 (c): a Playwright API misuse fails the e2e program', () => {
   const probeFor = (call: string): string =>
     `import { test } from '@playwright/test'\ntest('p', async ({ page }) => {\n  await ${call}\n})\n`
 
+  let diagnosticsByProbe = new Map<string, readonly ts.Diagnostic[]>()
+  const diagnosticsFor = (name: string): readonly ts.Diagnostic[] => {
+    const diagnostics = diagnosticsByProbe.get(name)
+    if (diagnostics === undefined) throw new Error(`no diagnostics recorded for probe ${name}`)
+    return diagnostics
+  }
+
+  // A real in-process tsc program: ~1s alone, several times that under the full parallel coverage run,
+  // so it is built once here with its own budget instead of per test under the 5s default.
+  beforeAll(() => {
+    diagnosticsByProbe = checkProbes({
+      __probe_misuse__: probeFor("page.getByLabelText('x')"),
+      __probe_valid__: probeFor("page.getByLabel('x')"),
+    })
+  }, 60_000)
+
   // getByLabelText is a Testing Library API Playwright has never had (the j28 bug, PR #456), so this
   // probe does not rot with Playwright releases.
   it('reports exactly one TS2551 for page.getByLabelText', () => {
-    const diagnostics = checkProbe(probeFor("page.getByLabelText('x')"))
+    const diagnostics = diagnosticsFor('__probe_misuse__')
     expect(diagnostics.map((diagnostic) => diagnostic.code)).toEqual([2551])
     const [only] = diagnostics
     expect(ts.flattenDiagnosticMessageText(only?.messageText, '\n')).toContain('getByLabelText')
@@ -178,9 +205,10 @@ describe('66.2 (c): a Playwright API misuse fails the e2e program', () => {
 
   // Positive twin: proves the host resolves @playwright/test, so a TS2307 can never pass the probe above.
   it('reports no diagnostics for page.getByLabel', () => {
-    const diagnostics = checkProbe(probeFor("page.getByLabel('x')"))
     expect(
-      diagnostics.map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'))
+      diagnosticsFor('__probe_valid__').map((diagnostic) =>
+        ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')
+      )
     ).toEqual([])
   })
 })
