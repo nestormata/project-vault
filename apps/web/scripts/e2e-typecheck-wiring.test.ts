@@ -25,6 +25,19 @@ const PLAYWRIGHT_CONFIG = fileURLToPath(new URL('../playwright.config.ts', impor
 /** Gitignored Playwright output (`.gitignore`); never holds source, so every listing skips it. */
 const IGNORED_DIRS = ['test-results/**']
 
+/** Flags `strict: true` turns on; each can still be set to `false` individually. */
+const STRICT_FAMILY = [
+  'alwaysStrict',
+  'noImplicitAny',
+  'noImplicitThis',
+  'strictBindCallApply',
+  'strictBuiltinIteratorReturn',
+  'strictFunctionTypes',
+  'strictNullChecks',
+  'strictPropertyInitialization',
+  'useUnknownInCatchVariables',
+] as const satisfies readonly (keyof ts.CompilerOptions)[]
+
 const webScripts: Record<string, string> = webPackage.scripts
 
 /** Files under `apps/web/e2e/` matching `patterns` (outside `test-results/`), as absolute paths. */
@@ -109,11 +122,29 @@ describe('66.2 (b): the e2e program covers every e2e source and stays strict', (
     const raw = parsed.raw as Record<string, unknown>
     expect(Object.keys(raw)).not.toContain('exclude')
   })
+
+  // `strict: true` still lets a single member of the strict family be switched off next to it.
+  it('switches off no strict-family flag', () => {
+    const { options } = parseE2eConfig()
+    const strictFamily = new Set<string>(STRICT_FAMILY)
+    const loosened = Object.entries(options)
+      .filter(([flag, value]) => strictFamily.has(flag) && value === false)
+      .map(([flag]) => flag)
+    expect(loosened).toEqual([])
+  })
 })
 
 describe('66.2 (b2): no e2e source escapes the program by extension', () => {
-  it('has no .js/.mjs/.cjs/.mts/.cts file under e2e/ (outside test-results/)', () => {
-    const optOuts = listE2eFiles(['**/*.js', '**/*.mjs', '**/*.cjs', '**/*.mts', '**/*.cts'])
+  it('has no .js/.mjs/.cjs/.mts/.cts/.jsx/.tsx file under e2e/ (outside test-results/)', () => {
+    const optOuts = listE2eFiles([
+      '**/*.js',
+      '**/*.mjs',
+      '**/*.cjs',
+      '**/*.mts',
+      '**/*.cts',
+      '**/*.jsx',
+      '**/*.tsx',
+    ])
     expect(optOuts.map((path) => path.slice(WEB_ROOT.length))).toEqual([])
   })
 })
