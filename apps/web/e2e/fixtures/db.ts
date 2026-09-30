@@ -168,21 +168,63 @@ export async function createProjectsViaDb(input: {
   }))
 
   try {
+    // One multi-row insert per table (not one round trip per project): the memberships reference
+    // the projects, so the project insert runs first inside the same transaction.
     await sql.begin(async (transaction) => {
-      for (const project of projects) {
-        await transaction`
-          insert into projects (id, org_id, name, slug, description, tags, created_by, created_at, updated_at)
-          values (${project.id}, ${input.orgId}, ${project.name}, ${project.slug}, null, '[]'::jsonb, ${input.userId}, ${project.createdAt}, ${project.createdAt})
-        `
-        await transaction`
-          insert into project_memberships (org_id, project_id, user_id, role)
-          values (${input.orgId}, ${project.id}, ${input.userId}, 'owner')
-        `
-      }
+      await transaction`
+        insert into projects ${transaction(
+          projects.map((project) => ({
+            id: project.id,
+            org_id: input.orgId,
+            name: project.name,
+            slug: project.slug,
+            description: null,
+            tags: transaction.json([]),
+            created_by: input.userId,
+            created_at: project.createdAt,
+            updated_at: project.createdAt,
+          }))
+        )}
+      `
+      await transaction`
+        insert into project_memberships ${transaction(
+          projects.map((project) => ({
+            org_id: input.orgId,
+            project_id: project.id,
+            user_id: input.userId,
+            role: 'owner',
+          }))
+        )}
+      `
     })
   } finally {
     await sql.end({ timeout: 5 })
   }
 
   return projects.map(({ id, name }) => ({ id, name }))
+}
+
+/**
+ * J1 AC-J1-2: read-only proof that a refused or collapsed registration wrote nothing — how many
+ * `users` rows carry `email` and how many `organizations` rows carry `orgName`. Registration's
+ * self-signup response is deliberately identical for a new and an already-registered email (Story
+ * 1.20's anti-enumeration contract), so the database is the only place "no user/org was created"
+ * can be observed.
+ */
+export async function countRegistrationRows(input: {
+  email: string
+  orgName: string
+}): Promise<{ users: number; organizations: number }> {
+  const sql = postgres(superuserDatabaseUrl(), { max: 1 })
+  try {
+    const [row] = await sql<{ users: number; organizations: number }[]>`
+      select
+        (select count(*)::int from users where email = ${input.email}) as users,
+        (select count(*)::int from organizations where name = ${input.orgName}) as organizations
+    `
+    if (!row) throw new Error('countRegistrationRows: query returned no row')
+    return row
+  } finally {
+    await sql.end({ timeout: 5 })
+  }
 }

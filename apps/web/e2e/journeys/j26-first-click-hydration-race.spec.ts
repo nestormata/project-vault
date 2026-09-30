@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto'
-import { test, expect, type Page, type BrowserContext } from '@playwright/test'
+import {
+  test,
+  expect,
+  type Page,
+  type BrowserContext,
+  type Request,
+  type Response,
+} from '@playwright/test'
 import {
   createIsolatedDatabase,
   dropIsolatedDatabase,
@@ -65,7 +72,13 @@ async function instrumentHydrationTiming(page: Page): Promise<void> {
       listener: EventListenerOrEventListenerObject | null,
       options?: boolean | AddEventListenerOptions
     ) {
-      if (w.__hydrationRace.firstListenerAt === null && (type === 'click' || type === 'submit')) {
+      // DOM Nodes only: Playwright's injected script attaches `click` listeners on `window` for
+      // hit-target interception (see fixtures/hydration.ts) — not the page's own hydration.
+      if (
+        w.__hydrationRace.firstListenerAt === null &&
+        this instanceof Node &&
+        (type === 'click' || type === 'submit')
+      ) {
         w.__hydrationRace.firstListenerAt = performance.now()
       }
       return original.call(this, type, listener, options)
@@ -104,81 +117,99 @@ async function registerAndLoginViaWebProxy(
   expect(onboarding.ok(), await onboarding.text()).toBeTruthy()
 }
 
+type SubmissionKind = 'native' | 'enhanced'
+
 type ClickOutcome = {
   dispatchedAt: number
   requests: string[]
   /** True when the raw click fell through to the form's NATIVE (JS-free) submission — the
    * browser's default `<form method="POST">` behavior when no `submit` listener (e.g.
-   * `use:enhance`) has attached yet. This tears down the page's JS execution context (a real,
-   * full navigation), so no post-click `page.evaluate()` against the pre-click page is possible —
-   * that crash IS the observation, not a test bug. Confirmed once via direct reproduction; not a
-   * hypothesis. */
+   * `use:enhance`) has attached yet. Observed directly (Story 66.3 AC-5): the click produced a
+   * main-frame `document` POST to `?/updateLocale`, and that navigation committed. */
   nativeFormFallbackFired: boolean
-  /** Hydration timing read from the PRE-click page context; `null` whenever
-   * `nativeFormFallbackFired` is true (that context no longer exists to read from). */
+  /** Hydration timing read from the page after the enhanced submission settled; `null` whenever
+   * `nativeFormFallbackFired` is true (the pre-click document no longer exists to read from). */
   timing: HydrationTiming | null
+}
+
+/** Classifies a request as one of the two ways the clicked `?/updateLocale` form can submit: a
+ * main-frame `document` POST is the browser's own native (JS-free) submission, a `fetch` POST is
+ * `use:enhance`'s enhanced one. Anything else is not this form's submission. */
+function classifyLocaleSubmission(page: Page, request: Request): SubmissionKind | null {
+  if (request.method() !== 'POST' || !request.url().includes('?/updateLocale')) return null
+  if (request.resourceType() === 'document' && request.frame() === page.mainFrame()) {
+    return 'native'
+  }
+  return request.resourceType() === 'fetch' ? 'enhanced' : null
 }
 
 /** Raw-coordinate, immediate click on the (non-current) language "Select" button — bypasses
  * Playwright's actionability wait entirely (see file header). Returns the timestamp
  * (`performance.now()`, same clock as the instrumentation) the click was dispatched at, the
- * network activity observed in the following short window, and (when the pre-click page context
- * survived) the hydration-timing instrumentation read from it. Reading the timing is folded into
- * this same function, under the same try/catch, because a native-form-fallback navigation can
- * tear down the execution context at any point during or shortly after the click — not
- * necessarily synchronously with `page.mouse.click()` itself. */
+ * non-GET requests observed until the outcome settled, which submission the click produced, and
+ * (for the enhanced one) the hydration timing.
+ *
+ * Story 66.3 AC-5: the outcome is classified from a direct observation of the submission request
+ * and then waits for that submission's own terminal state — the native navigation committing, or
+ * the enhanced submit's `Selected` state. The previous version inferred "race" from an
+ * `Execution context was destroyed` exception inside a fixed 300 ms window; on a slow CI runner
+ * the native navigation committed after that window, so a real race was reported as "no race"
+ * and the URL assertion failed (Nightly 36499598560). */
 async function fireRawImmediateClick(
   page: Page,
   target: ReturnType<Page['getByRole']>
 ): Promise<ClickOutcome> {
   const requests: string[] = []
-  const onRequest = (req: { method: () => string; url: () => string }) => {
-    if (req.method() !== 'GET') requests.push(`${req.method()} ${req.url()}`)
+  const submissions = new Set<SubmissionKind>()
+  const responses: Response[] = []
+  const onRequest = (request: Request) => {
+    if (request.method() !== 'GET') requests.push(`${request.method()} ${request.url()}`)
+    const kind = classifyLocaleSubmission(page, request)
+    if (kind) submissions.add(kind)
+  }
+  const onResponse = (response: Response) => {
+    if (classifyLocaleSubmission(page, response.request())) responses.push(response)
   }
   page.on('request', onRequest)
+  page.on('response', onResponse)
 
   const box = await target.boundingBox()
   if (!box) throw new Error('J26: target button never rendered in the DOM')
   const dispatchedAt = await page.evaluate(() => performance.now())
 
-  let nativeFormFallbackFired = false
-  let timing: HydrationTiming | null = null
-  try {
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
-    // Wait for the actual, specific readiness condition this measurement needs: the instrumented
-    // flag (set by `instrumentHydrationTiming` above) telling us a click/submit listener has
-    // attached. SonarCloud (S9332) flagged an earlier `networkidle` wait here as still not
-    // specific enough — and it was right: network activity is incidental to what this test cares
-    // about (listener-attachment timing), so polling the actual flag is both more correct *and*
-    // satisfies "synchronize on a specific readiness condition." Bounded to 300ms so the swallow
-    // case (listener never attaches before the window closes) doesn't hang.
-    await page
-      .waitForFunction(
-        () =>
-          (window as unknown as { __hydrationRace: HydrationTiming }).__hydrationRace
-            .firstListenerAt !== null,
-        undefined,
-        { timeout: 300 }
-      )
-      .catch(() => {})
-    timing = await readHydrationTiming(page)
-  } catch (error) {
-    // A raw click landing on a `type="submit"` button before `use:enhance`'s `submit` listener
-    // has attached falls through to the browser's native, JS-free form submission — a real full
-    // navigation that destroys this page's JS execution context (whether the click itself, the
-    // 300ms settle window, or the timing read is what observes the destruction). This is itself
-    // direct, positive proof the race was hit (see AC1's own Investigation-section reasoning); it
-    // is not a test failure.
-    if (String(error).includes('Execution context was destroyed')) {
-      nativeFormFallbackFired = true
-      await page.waitForLoadState('load').catch(() => {})
-    } else {
-      throw error
-    }
-  }
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+  // Wait for the submission's response (bounded by the expect timeout). No submission at all is
+  // the silent first-click swallow QA finding 7 reported — neither benign outcome, so it fails.
+  await expect
+    .poll(() => responses.length, {
+      message: 'J26: the raw click produced no ?/updateLocale submission (a swallowed click)',
+    })
+    .toBeGreaterThan(0)
+  const response = responses[0] as Response
+  const submission = classifyLocaleSubmission(page, response.request())
+  // Neither benign outcome: the server refused the submission (e.g. a 422 `fail()` or a 5xx).
+  expect(
+    response.status(),
+    `J26: the ${String(submission)} ?/updateLocale submission was answered ${response.status()}`
+  ).toBeLessThan(400)
 
+  let timing: HydrationTiming | null = null
+  if (submission === 'native') {
+    // The native POST renders the action's page in place: wait for that navigation to commit.
+    await page.waitForURL((url) => url.search === '?/updateLocale')
+  } else {
+    await expect(target).toHaveText('Selected')
+    timing = await readHydrationTiming(page)
+  }
   page.off('request', onRequest)
-  return { dispatchedAt, requests, nativeFormFallbackFired, timing }
+  page.off('response', onResponse)
+
+  // One click, one form: both submissions at once is impossible by design — fail loudly.
+  expect(
+    [...submissions],
+    `J26: expected exactly one submission kind, requests=${JSON.stringify(requests)}`
+  ).toHaveLength(1)
+  return { dispatchedAt, requests, nativeFormFallbackFired: submission === 'native', timing }
 }
 
 /** Records AC1's measurement (annotation + console log) for one test's click outcome, and returns
@@ -227,7 +258,7 @@ async function reportClickOutcome(options: {
   console.log(
     `${logPrefix} click dispatched at ${dispatchedAt.toFixed(2)}ms, first click/submit listener ` +
       `attached at ${timing?.firstListenerAt?.toFixed(2) ?? 'never'}ms, ` +
-      `gap=${gapMs?.toFixed(2) ?? 'n/a'}ms, requests-in-300ms-window=${JSON.stringify(requests)}`
+      `gap=${gapMs?.toFixed(2) ?? 'n/a'}ms, requests-until-settled=${JSON.stringify(requests)}`
   )
   return false
 }
@@ -385,8 +416,8 @@ test.describe.serial('J26 — first-click hydration race reproduction (Story 28.
 
     // A successful, non-swallowed click: the enhanced `use:enhance` fetch handles the submit —
     // the clicked button's own label flips from "Select" to "Selected" without a full native
-    // navigation ever tearing down the page (unlike the first test in this file, which crashes
-    // with "Execution context was destroyed" the instant that happens).
+    // navigation ever tearing down the page (unlike the first test in this file's
+    // native-form-fallback outcome, a document POST that replaces the page).
     await expect(target).toHaveText('Selected')
     expect(page.url()).toContain('/settings/language')
     await page.close()

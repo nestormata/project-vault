@@ -44,7 +44,7 @@ export class RotationPage {
 
   acknowledgeNoDependenciesCheckbox() {
     return this.page.getByRole('checkbox', {
-      name: 'I confirm this credential is updated in all consuming systems',
+      name: 'I confirm this secret is updated in all consuming systems',
     })
   }
 

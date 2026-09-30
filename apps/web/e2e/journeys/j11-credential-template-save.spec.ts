@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { registerAndLoginViaApi } from '../fixtures/auth.js'
 import { createProjectViaApi } from '../fixtures/api.js'
 import { uniqueEmail, uniqueOrgName, uniqueProjectName } from '../fixtures/ids.js'
+import { CredentialsPage } from '../pages/CredentialsPage.js'
 
 const OWNER_PASSWORD = 'e2e-Owner-Password-123'
 
@@ -25,16 +26,17 @@ test.describe('J11 — credential template saves', () => {
     })
     await context.request.post('/api/v1/users/me/onboarding', { data: { completed: true } })
 
-    await page.goto(`/projects/${project.id}/credentials/new`)
-    await page.getByLabel('Name', { exact: true }).fill('j11-custom')
-    await page.getByLabel('Template', { exact: true }).selectOption('custom')
+    const credentialsPage = new CredentialsPage(page)
+    await credentialsPage.gotoNew(project.id)
+    await credentialsPage.nameInput().fill('j11-custom')
+    await credentialsPage.templateSelect().selectOption('custom')
     await page.getByRole('button', { name: /add field/i }).click()
     await page.getByRole('button', { name: /add field/i }).click()
-    await page.getByLabel('Field 1 name', { exact: true }).fill('access-token')
-    await page.getByLabel('Field 1 value', { exact: true }).fill('token')
-    await page.getByLabel('Field 2 name', { exact: true }).fill('region')
-    await page.getByLabel('Field 2 value', { exact: true }).fill('us-east-1')
-    await page.getByRole('button', { name: 'Create credential' }).click()
+    await credentialsPage.fieldNameInput(1).fill('access-token')
+    await credentialsPage.fieldValueInput(1).fill('token')
+    await credentialsPage.fieldNameInput(2).fill('region')
+    await credentialsPage.fieldValueInput(2).fill('us-east-1')
+    await credentialsPage.submitButton().click()
     await page.waitForURL((url) => {
       const pathname = typeof url === 'string' ? new URL(url).pathname : url.pathname
       return (

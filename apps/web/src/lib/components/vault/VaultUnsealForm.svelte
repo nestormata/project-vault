@@ -38,6 +38,7 @@
 </script>
 
 <form
+  method="post"
   class="space-y-5"
   onsubmit={(event) => {
     event.preventDefault()
@@ -87,7 +88,6 @@
       <input
         class="w-full rounded-xl border border-slate-300 px-3 py-2"
         id="vault-unseal-passphrase"
-        name="passphrase"
         type="password"
         autocomplete="current-password"
         bind:value={passphrase}

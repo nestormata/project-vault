@@ -1,9 +1,11 @@
 import type { BrowserContext, Page } from '@playwright/test'
 import { expect } from '@playwright/test'
 import * as OTPAuth from 'otpauth'
+import { InvitationAcceptPage } from '../pages/InvitationAcceptPage.js'
 import { LoginPage } from '../pages/LoginPage.js'
 import { RegisterPage } from '../pages/RegisterPage.js'
 import { SecurityPage } from '../pages/SecurityPage.js'
+import { armHydrationDetection, waitForHydration } from './hydration.js'
 
 export type RegisterOptions = {
   email: string
@@ -26,6 +28,28 @@ export async function registerViaUiAndLogin(page: Page, opts: RegisterOptions): 
   await expect(page).toHaveURL(/\/login/)
   const loginPage = new LoginPage(page)
   await loginPage.fillAndSubmit({ email: opts.email, password: opts.password })
+}
+
+// Story 66.3: the invited-registration step shared by J1, J2, J11 (paused monitoring) and J30 —
+// open the invitation link (it redirects a new email to /register?invitationToken=...), wait for
+// hydration, submit the password, and wait for the registration itself to finish (it leaves
+// /register). Callers log in next with a full navigation; before this helper that navigation
+// could overtake a submit that landed pre-hydration or was still in flight, which only surfaced
+// later as a failed login (J30 found it first; J11 flaked on it in a CI=1 run).
+export async function registerViaInvitation(
+  page: Page,
+  token: string,
+  password: string
+): Promise<void> {
+  await armHydrationDetection(page)
+  await new InvitationAcceptPage(page).goto(token)
+  // No account exists yet for the invited email -> redirects to /register?invitationToken=...
+  await expect(page).toHaveURL(/\/register\?/)
+  const registerPage = new RegisterPage(page)
+  await waitForHydration(page, registerPage.submitButton())
+  await registerPage.passwordInput().fill(password)
+  await registerPage.submitButton().click()
+  await expect(page).not.toHaveURL(/\/register/)
 }
 
 // AC-I4: registerAndLoginViaApi is the "UI is for validation only, not setup" primitive used by

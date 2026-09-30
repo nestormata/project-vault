@@ -1,4 +1,5 @@
 import type { ChildProcess } from 'node:child_process'
+import { argon2Sync, randomBytes } from 'node:crypto'
 import {
   spawnIsolatedApiProcess,
   spawnIsolatedWebProcess,
@@ -25,6 +26,35 @@ import {
  * rest of E2E uses, so this journey can genuinely kill and respawn the API process between
  * assertions — the one thing that actually matters here.
  */
+
+/**
+ * Story 66.3 (F11d): a journey-only `AUTH_DUMMY_PASSWORD_HASH`. The envelope fixture declares
+ * `replacesNativeLogin: true`, so the policy is never plain 'enabled', and Story 23.2 AC-6e's boot
+ * check (`assertDummyPasswordHashSafe`, apps/api native-login-policy.ts) refuses to boot while the
+ * value is the in-repo default. A fresh Argon2id PHC string over a random, discarded message and
+ * salt satisfies it without any real secret: nothing can ever verify against it. Its m/t/p must
+ * equal the isolated API's ARGON2_* settings or env validation rejects it, so `startEnvelopeApi`
+ * pins ARGON2_* to these same values (code review: relying on env.ts's defaults and on nothing
+ * in the runner's inherited env overriding them would re-break boot silently under NODE_ENV=test).
+ * Generated once per test-runner process.
+ */
+const JOURNEY_ONLY_ARGON2_PARAMS = { memory: 65536, passes: 3, parallelism: 4 } as const
+
+function journeyOnlyDummyPasswordHash(): string {
+  const params = JOURNEY_ONLY_ARGON2_PARAMS
+  const salt = randomBytes(16)
+  const hash = argon2Sync('argon2id', {
+    message: randomBytes(32),
+    nonce: salt,
+    tagLength: 32,
+    ...params,
+  })
+  // PHC strings use unpadded standard base64; '=' only ever appears as trailing padding.
+  const b64 = (buffer: Buffer) => buffer.toString('base64').replaceAll('=', '')
+  return `$argon2id$v=19$m=${params.memory},t=${params.passes},p=${params.parallelism}$${b64(salt)}$${b64(hash)}`
+}
+
+const JOURNEY_ONLY_DUMMY_PASSWORD_HASH = journeyOnlyDummyPasswordHash()
 
 export type ApiHandle = {
   process: ChildProcess
@@ -55,6 +85,10 @@ export async function startEnvelopeApi(options: {
     extraEnv: {
       VAULT_EXTENSIONS_PACKAGE: '@project-vault/mock-envelope-extension',
       MOCK_ENVELOPE_EXPECTED_AUDIENCE: options.envAudience,
+      AUTH_DUMMY_PASSWORD_HASH: JOURNEY_ONLY_DUMMY_PASSWORD_HASH,
+      ARGON2_MEMORY_COST: String(JOURNEY_ONLY_ARGON2_PARAMS.memory),
+      ARGON2_TIME_COST: String(JOURNEY_ONLY_ARGON2_PARAMS.passes),
+      ARGON2_PARALLELISM: String(JOURNEY_ONLY_ARGON2_PARAMS.parallelism),
     },
   })
   return {

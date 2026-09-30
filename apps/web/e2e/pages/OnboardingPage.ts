@@ -21,7 +21,7 @@ export class OnboardingPage {
   }
 
   step1ContinueButton() {
-    return this.page.getByRole('button', { name: "Got it — Let's add a credential" })
+    return this.page.getByRole('button', { name: "Got it — Let's add a secret" })
   }
 
   async completeStep1(projectName: string): Promise<void> {
@@ -35,12 +35,14 @@ export class OnboardingPage {
     return this.page.getByLabel('Name (public identifier)')
   }
 
+  // PR #334 (0a98af30) renamed the visible copy Credential -> Secret; the input's accessible name
+  // comes from its `aria-label="Secret value"` (OnboardingStep2.svelte), not its <label>.
   credentialValueInput() {
-    return this.page.getByLabel('Credential value')
+    return this.page.getByLabel('Secret value', { exact: true })
   }
 
   saveCredentialButton() {
-    return this.page.getByRole('button', { name: 'Save Credential' })
+    return this.page.getByRole('button', { name: 'Save Secret' })
   }
 
   nextButton() {

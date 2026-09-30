@@ -41,7 +41,13 @@ export async function instrumentHydrationDetection(page: Page): Promise<void> {
       listener: EventListenerOrEventListenerObject | null,
       options?: boolean | AddEventListenerOptions
     ) {
-      if (!w.__pvHydrated && (type === 'click' || type === 'submit')) {
+      // Only listeners on a DOM Node count. Playwright's own injected script (installed by the
+      // first locator call, e.g. `waitForHydration`'s own `waitFor`) attaches `click` listeners
+      // on `window` for its hit-target interception — counting those flipped this flag before
+      // Svelte hydrated anything (Story 66.3 reproduced it: J19 still natively GET-submitted
+      // `/login?` behind this helper). Svelte attaches to Nodes: the form's own `submit` listener
+      // and its delegated root listeners.
+      if (!w.__pvHydrated && this instanceof Node && (type === 'click' || type === 'submit')) {
         w.__pvHydrated = true
       }
       return original.call(this, type, listener, options)
@@ -59,4 +65,33 @@ export async function instrumentHydrationDetection(page: Page): Promise<void> {
 export async function waitForHydration(page: Page, locator: Locator): Promise<void> {
   await locator.waitFor({ state: 'attached' })
   await page.waitForFunction(() => (window as unknown as HydrationWindow).__pvHydrated === true)
+}
+
+// Pages that already carry the instrumentation init script: `addInitScript` re-runs on every
+// document, so registering it once per page is enough (and avoids stacking wrappers).
+const instrumentedPages = new WeakSet<Page>()
+
+/** `instrumentHydrationDetection`, at most once per page. Call before a navigation whose landing
+ * page is only known after a redirect (e.g. an invitation link), then `waitForHydration`. */
+export async function armHydrationDetection(page: Page): Promise<void> {
+  if (instrumentedPages.has(page)) return
+  await instrumentHydrationDetection(page)
+  instrumentedPages.add(page)
+}
+
+/**
+ * Story 66.3 (AC-4): full-load navigation that only resolves once the page is safe to interact
+ * with — arms `instrumentHydrationDetection` (first call per page only), navigates, then waits
+ * for Svelte's hydration and for `firstTarget` (the element the caller will interact with
+ * next). The init script resets `__pvHydrated` to `false` on every new document, so the wait is
+ * per full load, never satisfied by an earlier page. Page objects' `goto()` use this, so a
+ * journey's first fill/click/selectOption after a full load cannot race hydration (a click that
+ * lands first falls through to a native, JS-free form submission — the `/login?` and
+ * `/register?` signatures 66.3 found). It gives no protection after an in-app (client-side)
+ * navigation, where the flag is already `true`: wait on the new route's own content there.
+ */
+export async function gotoHydrated(page: Page, url: string, firstTarget: Locator): Promise<void> {
+  await armHydrationDetection(page)
+  await page.goto(url)
+  await waitForHydration(page, firstTarget)
 }

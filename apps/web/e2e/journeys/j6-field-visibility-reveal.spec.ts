@@ -1,11 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { registerAndLoginViaApi } from '../fixtures/auth.js'
 import { createProjectViaApi } from '../fixtures/api.js'
+import { createLoginTemplateCredentialViaUi } from '../fixtures/credentials-ui.js'
 import { uniqueEmail, uniqueOrgName, uniqueProjectName } from '../fixtures/ids.js'
 
 const OWNER_PASSWORD = 'e2e-Owner-Password-123'
-const FIELD_1_VALUE = 'Field 1 value'
-const FIELD_2_VALUE = 'Field 2 value'
 const USERNAME_VALUE = 'svc-account'
 const PASSWORD_VALUE = 'initial-password'
 
@@ -32,13 +31,11 @@ test.describe('J6 — per-field visibility and reveal', () => {
     })
     const projectId = project.id
 
-    await page.goto(`/projects/${projectId}/credentials/new`)
-    await page.getByLabel('Name', { exact: true }).fill('j6-db-login')
-    await page.getByLabel('Template', { exact: true }).selectOption('login')
-    await page.getByLabel(FIELD_1_VALUE).fill(USERNAME_VALUE)
-    await page.getByLabel(FIELD_2_VALUE).fill(PASSWORD_VALUE)
-    await page.getByRole('button', { name: 'Create credential' }).click()
-    await page.waitForURL(`**/projects/${projectId}/credentials/*`)
+    await createLoginTemplateCredentialViaUi(page, projectId, {
+      name: 'j6-db-login',
+      field1Value: USERNAME_VALUE,
+      field2Value: PASSWORD_VALUE,
+    })
 
     // AC-1/AC-2: username's value is visible immediately, no reveal click required.
     const usernameRow = page.getByTestId('field-row-username')

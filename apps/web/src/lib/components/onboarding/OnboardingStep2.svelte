@@ -88,6 +88,7 @@
       Add your first secret
     </h2>
     <form
+      method="post"
       class="mt-4 space-y-4"
       onsubmit={(event) => {
         event.preventDefault()
@@ -123,7 +124,6 @@
             id="credential-value"
             class="w-full rounded-xl border border-slate-300 px-3 py-3"
             type={revealValue ? 'text' : 'password'}
-            name="credential-value"
             autocomplete="new-password"
             inputmode="text"
             aria-label="Secret value"

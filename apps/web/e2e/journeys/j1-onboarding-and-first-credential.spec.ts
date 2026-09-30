@@ -1,7 +1,16 @@
 import { expect, test } from '@playwright/test'
-import { enrollMfaViaApi, registerAndLoginViaApi, registerViaUiAndLogin } from '../fixtures/auth.js'
+import {
+  enrollMfaViaApi,
+  registerAndLoginViaApi,
+  registerViaInvitation,
+  registerViaUiAndLogin,
+} from '../fixtures/auth.js'
 import { createInvitationViaApi } from '../fixtures/api.js'
-import { extractTokenFromAcceptUrl, readLatestInvitationAcceptUrl } from '../fixtures/db.js'
+import {
+  countRegistrationRows,
+  extractTokenFromAcceptUrl,
+  readLatestInvitationAcceptUrl,
+} from '../fixtures/db.js'
 import {
   uniqueCredentialValue,
   uniqueEmail,
@@ -9,10 +18,12 @@ import {
   uniqueProjectName,
 } from '../fixtures/ids.js'
 import { CredentialsPage } from '../pages/CredentialsPage.js'
-import { InvitationAcceptPage } from '../pages/InvitationAcceptPage.js'
 import { LoginPage } from '../pages/LoginPage.js'
 import { OnboardingPage } from '../pages/OnboardingPage.js'
 import { RegisterPage } from '../pages/RegisterPage.js'
+
+// Meets RegisterForm's minlength=12 but fails the server's zxcvbn strength check (AC-J1-2).
+const WEAK_TWELVE_CHAR_PASSWORD = 'password1234'
 
 // J1: Register -> onboard -> create first credential -> reveal value.
 // See story AC-J1-1/AC-J1-2/AC-J1-3.
@@ -74,33 +85,54 @@ test.describe('J1 — onboarding and first credential', () => {
   test('AC-J1-2: failure path — invalid registration shows the real inline error, no navigation, no user created', async ({
     page,
   }) => {
-    // Discovered while implementing this story (documented here, not silently worked around):
-    // the password input carries a real `minlength="12"` HTML attribute (RegisterForm.svelte),
-    // matching the server's own PasswordSchema (min(12).max(256), packages/shared/src/schemas/
-    // auth.ts) exactly. A too-short password therefore never reaches the server at all — the
-    // browser's own native constraint validation blocks the `submit` event before RegisterForm's
-    // JS handler (and therefore any fetch call) ever runs, so there is no *server*-side
-    // validation-error path reachable through the real UI for this specific rule. AC-J1-2's own
-    // "Example (edge — duplicate email)" is used as this test's primary scenario instead — a
-    // failure that genuinely reaches the server and has no client-side pre-check, giving real,
-    // no-mock coverage of RegisterForm's error-rendering path.
+    // The password input carries a real `minlength="12"` (RegisterForm.svelte), so a too-short
+    // password never reaches the server. A 12-character but weak password does: it passes the
+    // browser's constraint validation and is refused by the server's own PasswordSchema strength
+    // check (zxcvbn, packages/shared/src/schemas/password-strength.ts) — a real server-side
+    // failure with no client pre-check, giving no-mock coverage of RegisterForm's error path.
+    //
+    // History: this test used to register the same email twice and expect an "already
+    // registered" error. Story 1.20 (5a5959c1) deliberately closed that enumeration oracle — a
+    // duplicate self-signup is now indistinguishable from a new one — so that scenario moved to
+    // its own test below, asserting the new contract instead.
+    const email = uniqueEmail('j1-weak')
+    const orgName = uniqueOrgName('J1 Weak Org')
+
+    const registerPage = new RegisterPage(page)
+    await registerPage.goto()
+    await registerPage.fillAndSubmit({ email, password: WEAK_TWELVE_CHAR_PASSWORD, orgName })
+    await expect(registerPage.errorAlert()).toBeVisible()
+    await expect(registerPage.errorAlert()).not.toHaveText('Registration failed.')
+    await expect(page).toHaveURL(/\/register$/)
+    expect(await countRegistrationRows({ email, orgName })).toEqual({ users: 0, organizations: 0 })
+  })
+
+  test('AC-J1-2 (Story 1.20): re-registering an existing email looks exactly like a new signup and creates nothing', async ({
+    page,
+  }) => {
     const email = uniqueEmail('j1-dup')
     const password = 'e2e-J1-Dup-Password-123'
     const orgName = uniqueOrgName('J1 Dup Org')
+    const secondOrgName = uniqueOrgName('dup')
 
     const registerPage = new RegisterPage(page)
     await registerPage.goto()
     await registerPage.fillAndSubmit({ email, password, orgName })
-    await expect(page).toHaveURL(/\/login/)
+    await expect(page).toHaveURL(/\/login\?reason=registered$/)
+    const firstOutcome = await page.getByRole('main').innerText()
 
-    // Registering the SAME email again surfaces a real "already registered"-class error inline —
-    // not a crash, blank page, or RegisterForm's generic catch-all fallback text — and no
-    // navigation away from /register occurs.
+    // Same email again: the response must not reveal that the account exists — same landing URL,
+    // same page text, no inline error — and the second organization must not be created.
     await registerPage.goto()
-    await registerPage.fillAndSubmit({ email, password, orgName: uniqueOrgName('dup') })
-    await expect(registerPage.errorAlert()).toBeVisible()
-    await expect(registerPage.errorAlert()).not.toHaveText('Registration failed.')
-    await expect(page).toHaveURL(/\/register$/)
+    await registerPage.fillAndSubmit({ email, password, orgName: secondOrgName })
+    await expect(page).toHaveURL(/\/login\?reason=registered$/)
+    await expect(page.getByRole('alert')).toHaveCount(0)
+    expect(await page.getByRole('main').innerText()).toBe(firstOutcome)
+    expect(await countRegistrationRows({ email, orgName })).toEqual({ users: 1, organizations: 1 })
+    expect(await countRegistrationRows({ email, orgName: secondOrgName })).toEqual({
+      users: 1,
+      organizations: 0,
+    })
   })
 
   test('AC-J1-3: failure path — reveal is denied at the UI for a role without reveal permission', async ({
@@ -148,14 +180,9 @@ test.describe('J1 — onboarding and first credential', () => {
 
     const viewerContext = await browser.newContext()
     const viewerPage = await viewerContext.newPage()
-    const acceptPage = new InvitationAcceptPage(viewerPage)
-    await acceptPage.goto(token)
-    // No account exists yet for this email — redirects to /register?invitationToken=...
-    await expect(viewerPage).toHaveURL(/\/register\?/)
     const viewerPassword = 'e2e-Viewer-Password-123'
-    const registerPage = new RegisterPage(viewerPage)
-    await registerPage.passwordInput().fill(viewerPassword)
-    await registerPage.submitButton().click()
+    // No account exists yet for this email — the link redirects to /register?invitationToken=...
+    await registerViaInvitation(viewerPage, token, viewerPassword)
     // Invited registration redirects to /projects/{projectId} (getPostRegisterPath), but
     // registration itself still does not auto-login (docs/runbook.md) — a subsequent explicit
     // login is always required regardless of where that initial redirect transiently lands.

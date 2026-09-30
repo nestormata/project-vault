@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { registerAndLoginViaApi } from '../fixtures/auth.js'
 import { createProjectViaApi } from '../fixtures/api.js'
+import { createLoginTemplateCredentialViaUi } from '../fixtures/credentials-ui.js'
 import { uniqueEmail, uniqueOrgName, uniqueProjectName } from '../fixtures/ids.js'
 
 const OWNER_PASSWORD = 'e2e-Owner-Password-123'
@@ -31,13 +32,11 @@ test.describe('J12 — bounded/scoped credential sharing', () => {
     })
     const projectId = project.id
 
-    await page.goto(`/projects/${projectId}/credentials/new`)
-    await page.getByLabel('Name', { exact: true }).fill('j12-login')
-    await page.getByLabel('Template', { exact: true }).selectOption('login')
-    await page.getByLabel('Field 1 value').fill(USERNAME_VALUE)
-    await page.getByLabel('Field 2 value').fill(PASSWORD_VALUE)
-    await page.getByRole('button', { name: 'Create credential' }).click()
-    await page.waitForURL(`**/projects/${projectId}/credentials/*`)
+    await createLoginTemplateCredentialViaUi(page, projectId, {
+      name: 'j12-login',
+      field1Value: USERNAME_VALUE,
+      field2Value: PASSWORD_VALUE,
+    })
 
     // --- Share #1: default selection (attributeKeys omitted — sensitivity-default-exclusion) ---
     await page.getByRole('button', { name: 'External (email)' }).click()

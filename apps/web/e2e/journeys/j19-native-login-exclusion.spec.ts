@@ -7,13 +7,13 @@ import {
   createIsolatedDatabase,
   initIsolatedVault,
   teardownIsolatedStack,
+  type WebHandle,
 } from '../fixtures/isolated-stack-shared.js'
 import {
   restartEnvelopeApi,
   startEnvelopeApi,
   startEnvelopeWeb,
   type ApiHandle,
-  type WebHandle,
 } from '../fixtures/isolated-envelope-stack.js'
 
 /**
@@ -115,13 +115,14 @@ test.describe.serial('J19 — native-login exclusion end-to-end (Story 23.2)', (
   test('AC-4a: declared-but-unproven — the extension is loaded but has never authenticated anyone, so the password form still renders', async ({
     page,
   }) => {
-    await page.goto(`http://localhost:${WEB_PORT}/login`)
     const loginPage = new LoginPage(page)
     // Vite dev mode serves an unbundled module graph (200+ requests), and SvelteKit's route chunk
-    // is fetched via a dynamic import() that resolves after the page's 'load' event — a web-first
-    // assertion on the email input (rather than a blanket networkidle heuristic) is what actually
-    // proves hydration reached this component and attached the form's onsubmit handler; clicking
-    // too early falls through to a native, unhandled form GET-submit/reload.
+    // is fetched via a dynamic import() that resolves after the page's 'load' event. A click
+    // before hydration attaches the form's onsubmit handler falls through to a native GET submit
+    // (`/login?`). The SSR'd email input is visible long before that, so `toBeVisible()` was not a
+    // readiness signal (Story 66.3 reproduced exactly this `/login?` failure); `goto()` waits for
+    // the deterministic hydration signal instead (fixtures/hydration.ts).
+    await loginPage.goto(`http://localhost:${WEB_PORT}/login`)
     await expect(loginPage.emailInput()).toBeVisible()
     await loginPage.emailInput().fill(NO_MAPPING_EMAIL)
     await loginPage.continueButton().click()
@@ -165,11 +166,9 @@ test.describe.serial('J19 — native-login exclusion end-to-end (Story 23.2)', (
     // Same still-running process: the latch was just written, but AC-4 says it is applied only
     // at the NEXT boot — re-navigating to /login in this process must still show the password
     // form.
-    await page.goto(`http://localhost:${WEB_PORT}/login`)
+    // Hydration-armed full load — see the first test in this file.
     const loginPage = new LoginPage(page)
-    // See the identical comment in the previous test — web-first assertion on the email input in
-    // place of a blanket networkidle heuristic, waiting for the actual hydration-dependent
-    // readiness condition this step needs.
+    await loginPage.goto(`http://localhost:${WEB_PORT}/login`)
     await expect(loginPage.emailInput()).toBeVisible()
     await loginPage.emailInput().fill('someone-else@example.test')
     await loginPage.continueButton().click()
@@ -196,11 +195,9 @@ test.describe.serial('J19 — native-login exclusion end-to-end (Story 23.2)', (
     expect(healthBody.nativeLoginEnabled).toBe(false)
 
     // Real Chrome, fresh navigation against the restarted process.
-    await page.goto(`http://localhost:${WEB_PORT}/login`)
+    // Hydration-armed full load — see the first test in this file.
     const loginPage = new LoginPage(page)
-    // See the identical comment in the first test in this file — web-first assertion on the email
-    // input in place of a blanket networkidle heuristic, waiting for the actual
-    // hydration-dependent readiness condition this step needs before the subsequent fill/click.
+    await loginPage.goto(`http://localhost:${WEB_PORT}/login`)
     await expect(loginPage.emailInput()).toBeVisible()
     // AC-13: Register/Recovery links are gone from the page immediately (nativeLoginEnabled is
     // resolved server-side, before the user does anything) — the SSO-only/honest-placeholder

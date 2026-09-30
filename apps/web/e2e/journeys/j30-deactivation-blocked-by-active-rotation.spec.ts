@@ -1,6 +1,6 @@
 import postgres from 'postgres'
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
-import { enrollMfaViaApi, registerAndLoginViaApi } from '../fixtures/auth.js'
+import { enrollMfaViaApi, registerAndLoginViaApi, registerViaInvitation } from '../fixtures/auth.js'
 import {
   createCredentialViaApi,
   createInvitationViaApi,
@@ -18,10 +18,7 @@ import {
   uniqueOrgName,
   uniqueProjectName,
 } from '../fixtures/ids.js'
-import { instrumentHydrationDetection, waitForHydration } from '../fixtures/hydration.js'
-import { InvitationAcceptPage } from '../pages/InvitationAcceptPage.js'
 import { LoginPage } from '../pages/LoginPage.js'
-import { RegisterPage } from '../pages/RegisterPage.js'
 import { RotationPage } from '../pages/RotationPage.js'
 
 // J30 (Story 43-15, FR102): deactivating a user who still owns an unfinished rotation is refused
@@ -72,15 +69,8 @@ async function setup(browser: Browser, label: string): Promise<Fixture> {
   const xContext = await browser.newContext()
   const xPage = await xContext.newPage()
   // The first-click hydration race (J26) can drop the register submit, which only surfaces later
-  // as a failed login — wait for hydration, then for the registration to actually leave /register.
-  await instrumentHydrationDetection(xPage)
-  await new InvitationAcceptPage(xPage).goto(token)
-  await expect(xPage).toHaveURL(/\/register\?/)
-  const register = new RegisterPage(xPage)
-  await waitForHydration(xPage, register.submitButton())
-  await register.passwordInput().fill(X_PASSWORD)
-  await register.submitButton().click()
-  await expect(xPage).not.toHaveURL(/\/register/)
+  // as a failed login — the shared helper waits for hydration and for the registration to finish.
+  await registerViaInvitation(xPage, token, X_PASSWORD)
   await new LoginPage(xPage).goto()
   await new LoginPage(xPage).fillAndSubmit({ email: xEmail, password: X_PASSWORD })
   await expect(xPage).toHaveURL(/\/dashboard/)
