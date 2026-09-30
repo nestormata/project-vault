@@ -220,7 +220,13 @@ allocation, and supply-chain expectations — is published at
 
 ## Licensing status
 
-The package is licensed `AGPL-3.0-or-later`. Source is included in the package tarball alongside
-the compiled output and the license. Publishing to a registry is a distribution decision, not a
-legal clearance: if you intend to link this package in-process from a closed-source or hosted
-service, evaluate AGPLv3 (including §13) against your own deployment with your own counsel.
+From version 3.24.2 onward the package is licensed under the MIT License; see [`LICENSE`](./LICENSE).
+Versions published before 3.24.2 were released under `AGPL-3.0-or-later` and remain under that
+license. Source is included in the package tarball alongside the compiled output and the license.
+
+The MIT license covers this package only. Project Vault itself — the host application that loads
+extensions — stays licensed under `AGPL-3.0-or-later` (see the repository's root
+[`LICENSE`](https://github.com/nestormata/project-vault/blob/main/LICENSE)). Publishing to a
+registry is a distribution decision, not a legal clearance: if you ship an extension that
+Project Vault loads in-process, or run a modified Project Vault as a network service, evaluate
+the AGPL (including section 13) against your own deployment with your own counsel.

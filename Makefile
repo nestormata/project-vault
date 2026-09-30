@@ -218,6 +218,8 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-extension-api-version-skew
 	pnpm vitest run scripts/check-policy-doc-structure.test.ts scripts/check-policy-doc-content.test.ts scripts/check-extension-api-behaviour.test.ts scripts/check-extension-api-markers.test.ts scripts/check-extension-api-contract-changelog.test.ts
 	pnpm vitest run scripts/check-extension-api-version-skew.test.ts
+	pnpm check-extension-api-license # extension-api is MIT; the repository root stays AGPL-3.0-or-later
+	pnpm vitest run scripts/check-extension-api-license.test.ts
 	pnpm vitest run scripts/extension-authoring-docs.test.ts # Story 59.2 AC-3 authoring-doc drift guard
 	pnpm check-native-credential-surface
 	pnpm check-no-sonar-suppressions # Story 43.9 AC-9: no unsigned Sonar suppressions

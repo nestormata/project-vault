@@ -186,8 +186,10 @@ jobs:
       - name: Check extension-api version-skew (Story 14.1 AC7 / Story 24.4)
         run: pnpm check-extension-api-version-skew
 
-      - name: Check extension-api LICENSE freshness (Story 23.1 AC6)
-        run: pnpm check-extension-api-license-fresh
+      - name: Check extension-api is MIT and the repository root stays AGPL
+        run: |
+          pnpm check-extension-api-license &&
+          pnpm vitest run scripts/check-extension-api-license.test.ts
 
       - name: Check native-credential surface (Story 23.2 AC19)
         run: pnpm check-native-credential-surface
