@@ -92,6 +92,6 @@ is informational — it reports the running release and migration state, and doe
 
 ## Where do I report a vulnerability?
 
-Privately, never in a public issue. Use GitHub's private vulnerability reporting form; the full
-policy, including scope, supported versions, and the response and disclosure timeline, is in
-[SECURITY.md](../SECURITY.md).
+Privately, never in a public issue. Use GitHub's private vulnerability reporting form (or the email
+fallback listed in [SECURITY.md](../SECURITY.md) if you cannot use the form). The full policy,
+including scope, supported versions, and the response and disclosure timeline, is in SECURITY.md.

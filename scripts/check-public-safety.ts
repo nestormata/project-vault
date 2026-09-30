@@ -54,7 +54,26 @@ const SECRET_ASSIGNMENT_PATTERNS = [
   /\bclient[_-]?secret\b\s*[:=]\s*["'`][^"'`\n]{8,200}["'`]/i,
 ]
 const NO_NEWLINE_MARKER = String.raw`\ No newline at end of file`
-const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i
+const EMAIL_PATTERN = /\b([A-Z0-9._%+-]+)@([A-Z0-9.-]+\.[A-Z]{2,})\b/gi
+// --- published project contact mailboxes ----------------------------------------------------
+//
+// The personal-email rule exists to keep personal contact information out of public history. A
+// role mailbox the project publishes on purpose (security@, conduct@ on the project's own domain)
+// is not personal contact information: it names a function, not a person, it is expected to be
+// read by whoever holds that role, and publishing it is the point. PV's product requirements call
+// for a publicly listed security contact, so SECURITY.md (and the Code of Conduct's reporting
+// section) must be able to carry one without the checker blocking it.
+//
+// The carve-out is deliberately narrow. An address is not personal only when ALL of these hold:
+// the file is one of CONTACT_POLICY_FILES (repo-relative, exact match), the local part is one of
+// ROLE_LOCAL_PARTS and the domain is exactly one of PROJECT_CONTACT_DOMAINS (no suffix match, so
+// `centralizeme.com.evil.io` does not qualify). Each address on a line is judged on its own, so a
+// role address cannot launder a personal one written next to it. Adding a domain, role name or
+// file here is a reviewed policy decision about what the project publishes, not a way to clear a
+// finding.
+const PROJECT_CONTACT_DOMAINS = new Set(['centralizeme.com'])
+const ROLE_LOCAL_PARTS = new Set(['security', 'conduct'])
+const CONTACT_POLICY_FILES = new Set(['SECURITY.md', 'CODE_OF_CONDUCT.md'])
 const CONNECTION_STRING_SCHEME_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\//i
 const LOCAL_PATH_PATTERN = /(?:\/home\/[^\s/]+\/|\.claude\/worktrees|\.worktrees\/)/
 const LOCAL_ENDPOINT_PATTERN = /\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d{2,5}\b/
@@ -300,9 +319,26 @@ function hasConnectionStringUserinfo(text: string): boolean {
   return authority.lastIndexOf('@') > 0
 }
 
+function isPublishedProjectContact(file: string, localPart: string, domain: string): boolean {
+  return (
+    CONTACT_POLICY_FILES.has(file) &&
+    ROLE_LOCAL_PARTS.has(localPart.toLowerCase()) &&
+    PROJECT_CONTACT_DOMAINS.has(domain.toLowerCase())
+  )
+}
+
+function hasPersonalEmail(file: string, text: string): boolean {
+  if (hasConnectionStringUserinfo(text)) return false
+  for (const match of text.matchAll(EMAIL_PATTERN)) {
+    const [, localPart = '', domain = ''] = match
+    if (!isPublishedProjectContact(file, localPart, domain)) return true
+  }
+  return false
+}
+
 function scanMetadata(file: string, line: number, text: string): PublicSafetyFinding[] {
   const findings: PublicSafetyFinding[] = []
-  if (EMAIL_PATTERN.test(text) && !hasConnectionStringUserinfo(text)) {
+  if (hasPersonalEmail(file, text)) {
     findings.push(
       makeFinding(
         file,

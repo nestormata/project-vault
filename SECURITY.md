@@ -17,12 +17,11 @@ Report it privately through **GitHub's private vulnerability reporting** on this
 That form creates a private advisory visible only to you and the maintainers, and it is the
 preferred channel because it keeps the report, the fix, and the eventual advisory in one place.
 
-> **Email fallback — placeholder.** No security contact email address is currently published for
-> this project, and none could be verified while writing this policy. If you cannot use GitHub's
-> private reporting form, open a public issue that contains **no vulnerability details** — just
-> "requesting a private security contact" — and a maintainer will follow up with a channel.
-> A maintainer should replace this paragraph with a real address (for example
-> `security@<domain>`) and the corresponding PGP key, if any.
+**Email.** If you cannot use GitHub's private reporting form, email
+**[security@centralizeme.com](mailto:security@centralizeme.com)** with the same information. No
+PGP key is published at the moment. If your report contains exploit details or sensitive data,
+send a short first message without them and a maintainer will arrange a secure channel.
+Otherwise, include everything needed to reproduce the issue.
 
 Please give the maintainers a reasonable opportunity to ship a fix before disclosing publicly.
 We will not take legal action against good-faith research that follows this policy.

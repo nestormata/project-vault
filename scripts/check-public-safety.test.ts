@@ -5,6 +5,7 @@ const LOCAL_ENDPOINT_RULE = 'local-endpoint'
 const SECRET_VALUE_RULE = 'secret-environment-value'
 const CREDENTIAL_LITERAL_RULE = 'credential-literal-assignment'
 const SECRET_ASSIGNMENT_RULE = 'secret-assignment'
+const PERSONAL_EMAIL_RULE = 'personal-email'
 
 const ENV_EXAMPLE = '.env.example'
 const DOC_FILE = 'docs/example.md'
@@ -45,7 +46,7 @@ describe('check-public-safety', () => {
       'Contact nestor@example.com; local worktree: /home/nestor/project/.worktrees/story; http://localhost:5173'
     )
     expect(findings.map((finding) => finding.rule)).toEqual(
-      expect.arrayContaining(['personal-email', 'local-path', LOCAL_ENDPOINT_RULE])
+      expect.arrayContaining([PERSONAL_EMAIL_RULE, 'local-path', LOCAL_ENDPOINT_RULE])
     )
   })
 
@@ -65,7 +66,58 @@ describe('check-public-safety', () => {
         'packages/db/src/test-db-urls.ts',
         'postgresql://vault_admin@admin-db.invalid:5432/project_vault'
       )
-    ).not.toContainEqual(expect.objectContaining({ rule: 'personal-email' }))
+    ).not.toContainEqual(expect.objectContaining({ rule: PERSONAL_EMAIL_RULE }))
+  })
+
+  describe('published project contact mailboxes', () => {
+    const SECURITY_POLICY = 'SECURITY.md'
+    const CODE_OF_CONDUCT = 'CODE_OF_CONDUCT.md'
+    const SECURITY_CONTACT = 'security@centralizeme.com'
+
+    it('does not flag the role mailboxes in the contact policy files', () => {
+      expect(rules(SECURITY_POLICY, `Email ${SECURITY_CONTACT} privately.`)).not.toContain(
+        PERSONAL_EMAIL_RULE
+      )
+      expect(
+        rules(
+          SECURITY_POLICY,
+          `**[${SECURITY_CONTACT}](mailto:${SECURITY_CONTACT})** with the same information.`
+        )
+      ).not.toContain(PERSONAL_EMAIL_RULE)
+      expect(
+        rules(CODE_OF_CONDUCT, '[conduct@centralizeme.com](mailto:conduct@centralizeme.com)')
+      ).not.toContain(PERSONAL_EMAIL_RULE)
+      expect(
+        rules(
+          CODE_OF_CONDUCT,
+          `You can also email [${SECURITY_CONTACT}](mailto:${SECURITY_CONTACT})`
+        )
+      ).not.toContain(PERSONAL_EMAIL_RULE)
+    })
+
+    it('flags a personal local part on the project domain', () => {
+      expect(rules(SECURITY_POLICY, 'Email nestor@centralizeme.com')).toContain(PERSONAL_EMAIL_RULE)
+    })
+
+    it('flags a role local part on any other domain, including a suffix look-alike', () => {
+      expect(rules(SECURITY_POLICY, 'Email security@gmail.com')).toContain(PERSONAL_EMAIL_RULE)
+      expect(rules(SECURITY_POLICY, 'Email security@centralizeme.com.evil.io')).toContain(
+        PERSONAL_EMAIL_RULE
+      )
+    })
+
+    it('flags the role mailbox outside the contact policy files', () => {
+      expect(rules('docs/faq.md', `Email ${SECURITY_CONTACT}`)).toContain(PERSONAL_EMAIL_RULE)
+      expect(rules('apps/api/src/x.ts', `const contact = '${SECURITY_CONTACT}'`)).toContain(
+        PERSONAL_EMAIL_RULE
+      )
+    })
+
+    it('judges each address separately so a role mailbox cannot launder a personal one', () => {
+      expect(
+        rules(SECURITY_POLICY, `Email ${SECURITY_CONTACT} or nestor@example.com directly.`)
+      ).toContain(PERSONAL_EMAIL_RULE)
+    })
   })
 
   describe(SECRET_VALUE_RULE, () => {
