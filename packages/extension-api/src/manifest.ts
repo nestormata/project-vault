@@ -557,7 +557,10 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // deprecated `panelDataPaths` field once, from the manifest viewed as untrusted input, validates
 // it exactly as before, and passes the validated value through. No exported type, validation
 // rule, error code or message, or registered-manifest shape changes.
-export const EXTENSION_API_VERSION = '3.24.1'
+// Bumped as a patch (3.24.1 -> 3.24.2): documentation only — JSDoc and comments across the
+// contract source were reworded to generic UI-extension wording. No exported type, runtime
+// behaviour, validation rule, error code or registered-manifest shape changes.
+export const EXTENSION_API_VERSION = '3.24.2'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built
