@@ -1,5 +1,6 @@
 {
   "$schema": "https://v2-10-2.turborepo.dev/schema.json",
+  "agentGuidance": false,
   "ui": "tui",
   "globalEnv": [
     "ADMIN_DATABASE_URL",
