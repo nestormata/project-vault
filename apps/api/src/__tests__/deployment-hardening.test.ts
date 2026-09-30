@@ -138,7 +138,7 @@ describe('deployment hardening configuration', () => {
     // flag to appear somewhere in the image's RUN commands.
     const commands = dockerRunCommands(readRepoFile(path)).join('\n')
 
-    expect(commands).toContain('npm install -g pnpm@11.21.0 --ignore-scripts')
+    expect(commands).toContain('npm install -g pnpm@11.28.3 --ignore-scripts')
     expect(commands).toContain('pnpm install --frozen-lockfile --ignore-scripts')
   })
 

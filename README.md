@@ -6,7 +6,7 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE)
 [![extension-api license: MIT](https://img.shields.io/badge/extension--api-MIT-blue.svg)](packages/extension-api/LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D24-brightgreen)](package.json)
-[![pnpm](https://img.shields.io/badge/pnpm-%3E%3D11.21.0-brightgreen)](package.json)
+[![pnpm](https://img.shields.io/badge/pnpm-%3E%3D11.28.3-brightgreen)](package.json)
 [![Known Vulnerabilities](https://snyk.io/test/github/nestormata/project-vault/badge.svg)](https://snyk.io/test/github/nestormata/project-vault)
 
 _Run complex projects. Miss nothing._
@@ -77,7 +77,7 @@ Disclosed up front rather than discovered later:
 
 ## Quick start (Docker)
 
-Requires Node.js 24 LTS, pnpm 11.21.0+, Docker 24+ with Buildx, and Docker Compose v2. macOS and Linux natively; Windows needs WSL2.
+Requires Node.js 24 LTS, pnpm 11.28.3+, Docker 24+ with Buildx, and Docker Compose v2. macOS and Linux natively; Windows needs WSL2.
 
 ```bash
 cp .env.example .env
