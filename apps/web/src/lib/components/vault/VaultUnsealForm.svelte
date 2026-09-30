@@ -1,16 +1,22 @@
-<script>
-  import { buildVaultUnsealRequest, clearVaultUnsealFields } from './form-model.js'
+<script lang="ts">
+  import {
+    buildVaultUnsealRequest,
+    clearVaultUnsealFields,
+    type VaultUnsealFields,
+    type VaultUnsealMode,
+  } from './form-model.js'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+  import type { VaultUnsealRequest } from '$lib/api/vault.js'
 
-  let { onSubmit } = $props()
-  let mode = $state('passphrase')
+  let { onSubmit }: { onSubmit?: (request: VaultUnsealRequest) => void | Promise<void> } = $props()
+  let mode = $state<VaultUnsealMode>('passphrase')
   let passphrase = $state('')
   let envelopeKeyPath = $state('')
   let masterKeyPath = $state('')
-  let errorMessage = $state(null)
+  let errorMessage = $state<string | null>(null)
   let isSubmitting = $state(false)
 
-  function currentFields() {
+  function currentFields(): VaultUnsealFields {
     return { mode, passphrase, envelopeKeyPath, masterKeyPath }
   }
 
