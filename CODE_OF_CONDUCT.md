@@ -61,8 +61,8 @@ details of the incident, and a maintainer will follow up privately. If the repor
 maintainer, or you need a private channel immediately, use GitHub's private reporting form at
 <https://github.com/nestormata/project-vault/security/advisories/new> and mark the report as a
 conduct matter — the same private channel [SECURITY.md](SECURITY.md) uses for vulnerability
-reports. No dedicated conduct email address is currently published; a maintainer should replace
-this paragraph with one when it exists.
+reports. You can also email [security@centralizeme.com](mailto:security@centralizeme.com) with
+the subject "Code of Conduct report". No separate conduct-only address is published.
 
 All complaints will be reviewed and investigated promptly and fairly. All community leaders are
 obligated to respect the privacy and security of the reporter of any incident.
