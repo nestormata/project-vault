@@ -2,6 +2,19 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.24.2 — 2026-09-30
+
+contract-hash: sha256:ecc23ef5d6ff5de2836a615eb5013ae1f41feb5b62bc8d79f654c8d2c4b2e962
+
+### Changed
+
+- Documentation only: JSDoc and comments in the contract source were reworded (generic
+  UI-extension wording, no references to non-public planning documents). No exported type,
+  runtime behaviour, validation rule, error code or registered-manifest shape changes.
+
+Per `docs/extension-api-versioning-policy.md`'s semver discipline, a change to the contract
+source's documentation with no surface or behaviour change is a PATCH. The floor stays `>=3.0.0`.
+
 ## 3.24.1 — 2026-09-27
 
 contract-hash: sha256:16e271aec98de2ab772d4bb80239abc10c59313e052f6823fb58fdf29d50d30a

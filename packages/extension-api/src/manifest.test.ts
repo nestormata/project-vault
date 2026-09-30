@@ -65,8 +65,9 @@ describe('EXTENSION_API_VERSION', () => {
     // CredentialSharingHost's listSharesForCredential/listSharesForOrganization (also
     // additive-minor): 3.22.1 -> 3.23.0. Story 59.1 — optional `html` on every ActionResult
     // variant (also additive-minor): 3.23.0 -> 3.24.0. Story 43.9 — internal-only
-    // panelDataPaths read (patch): 3.24.0 -> 3.24.1.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.24.1')
+    // panelDataPaths read (patch): 3.24.0 -> 3.24.1. Documentation-only JSDoc/comment rewording
+    // of the contract source (patch): 3.24.1 -> 3.24.2.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.24.2')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {
