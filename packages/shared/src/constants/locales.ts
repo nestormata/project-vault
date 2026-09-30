@@ -12,7 +12,7 @@
  * Adding a locale here alone is NOT sufficient — it requires a coordinated update of the CHECK
  * constraint (a new migration) and `project.inlang/settings.json`, plus a deploy/rebuild. This is
  * intentional: the *set* of supported locales is build-time, while *selecting* among them is
- * runtime (see Story 15.1 Dev Notes, "Build-time locale set vs. runtime selection boundary").
+ * runtime (Story 15.1).
  */
 export const SUPPORTED_LOCALES = ['en', 'es'] as const
 

@@ -51,8 +51,8 @@ describe('getExtensionPanelCspHeaders', () => {
 
   // Story 29.2 AC14 — Story 29.1's own shipped CSP set `connect-src 'none'`, which would silently
   // block this story's own same-origin action fetch (dead code at the time 29.1 shipped, since no
-  // iframe existed to originate the postMessage that used to gate reaching that fetch call — see
-  // this story's Dev Notes "Cross-story contradiction caught at story-creation time"). Widened to
+  // iframe existed to originate the postMessage that used to gate reaching that fetch call — a
+  // cross-story contradiction caught at story-creation time). Widened to
   // `'self'` — same-origin only, matching this route's `credentials: 'same-origin'` fetch. This is
   // a regression pin: a future revert back to `'none'` must fail this test immediately, not
   // silently reintroduce a live CSP-blocked-action bug.

@@ -16,7 +16,7 @@ export const EXCLUDED_TABLES = new Set([
   'failed_auth_attempts',
   'pending_mfa_sessions',
   'platform_security_events',
-  // Story 30.2 (DW-128): instance-level replay-burn ledger / pending-handoff state — no tenant is
+  // Story 30.2: instance-level replay-burn ledger / pending-handoff state — no tenant is
   // known/trusted at ingestion time (handoff_pending_states.organization_id is untrusted claimed
   // input until the confirm route's org cross-check runs). Same reasoning as
   // sso_login_states/platform_security_events above.

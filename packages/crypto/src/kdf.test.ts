@@ -12,7 +12,7 @@ describe('Story 42.4: deriveKey — determinism and context-separation (load-bea
     expect(first.equals(second)).toBe(true)
   })
 
-  // This is the single most load-bearing property in this file — architecture.md's "vault and
+  // This is the single most load-bearing property in this file — docs/architecture.md's "vault and
   // the key hierarchy" section states that "compromising a backup archive... does not yield the
   // key that would let an attacker forge audit rows" — that guarantee rests entirely on different
   // HKDF_INFO labels producing different keys from the same ikm. Zero prior test coverage before

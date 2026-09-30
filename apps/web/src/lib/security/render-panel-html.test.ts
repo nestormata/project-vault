@@ -3,7 +3,7 @@ import DOMPurify from 'dompurify'
 import { renderPanelHtml } from './render-panel-html.js'
 
 // Story 29.1 — the sanitize-and-inject Svelte action. This is the highest-value test file in
-// this story (Dev Notes "Testing Standards"): it is the only thing standing between an
+// this story: it is the only thing standing between an
 // extension HTML-generation bug and a real XSS in PV's own session, since there is no iframe
 // sandbox boundary any more (AC4/AC13).
 
@@ -137,7 +137,7 @@ describe('renderPanelHtml action (Story 29.1)', () => {
     spy.mockRestore()
   })
 
-  it('(k) a realistic fixture of CM panel HTML survives sanitization with its legitimate content intact', () => {
+  it('(k) a realistic fixture of extension panel HTML survives sanitization with its legitimate content intact', () => {
     const el = makeContainer()
     // Story 29.2 — modeled on fixtures/mock-ui-panel-extension/src/index.ts's real
     // onRenderPanel() output shape: inline style using a --pv-ext-* CSS var with a fallback, and

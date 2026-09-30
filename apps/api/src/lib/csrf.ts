@@ -18,8 +18,7 @@ function timingSafeStringsEqual(a: string, b: string): boolean {
 }
 
 /**
- * Story 25.6 AC1/AC2/AC8 — the double-submit-cookie CSRF check (Task 1 decision, see this
- * story's Dev Notes/Elicitation Log), mirroring `isRejectedBySecFetchSite()`'s own
+ * Story 25.6 AC1/AC2/AC8 — the double-submit-cookie CSRF check (Task 1 decision), mirroring `isRejectedBySecFetchSite()`'s own
  * small-exported-directly-testable-function shape so it's trivially reusable by any *future*
  * mutating extension route (AC8) — see `apps/api/src/__tests__/extension-csrf-guard.test.ts` for
  * the structural CI guard that enforces every such route actually calls this.
@@ -33,7 +32,7 @@ function timingSafeStringsEqual(a: string, b: string): boolean {
  *
  * Deliberately stateless (no server-side token registry/single-use tracking) — verification is
  * pure cookie-vs-header equality, so two concurrent legitimate requests from the same session
- * both succeed (Dev Notes "Testing requirements": a naive single-use-token design would break
+ * both succeed (a naive single-use-token design would break
  * this), and the check works identically for every request without any per-request bookkeeping.
  */
 export function isRejectedByCsrfToken(

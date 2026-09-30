@@ -95,7 +95,7 @@ function checkParent(path: string, safePath: string): EntryFailure | null {
 }
 
 /**
- * Pre-flight (Dev Notes decision #6): fast, pre-network feedback. `lstat`, never `stat`/`exists`,
+ * Pre-flight (decision #6): fast, pre-network feedback. `lstat`, never `stat`/`exists`,
  * so a symlink (even a dangling one) is seen as itself. The atomic commit re-enforces the
  * "exists" rule race-safely; this is not the guarantee, only the early answer.
  */

@@ -9,7 +9,7 @@ import { isBlank, looksLikeUuid } from './validate.js'
 
 export type GetArgs = {
   name: string
-  /** AC-3 — the interactive-print override flag (Dev Notes decision #3). */
+  /** AC-3 — the interactive-print override flag (decision #3). */
   stdout: boolean
 }
 
@@ -69,7 +69,7 @@ export async function runGet(
   )
 
   try {
-    // Dev Notes decision #5 / AC-4a — participates in packages/agent's default offline-cache
+    // Decision #5 / AC-4a — participates in packages/agent's default offline-cache
     // fallback, but signals on stderr when the resolved value was actually served from cache.
     // Story 43.4 AC-3 / decision #2 — `invocation: 'get'` lets the audit trail tell "a value was
     // printed" apart from "a value was handed to a child process" (`run`).

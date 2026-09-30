@@ -34,7 +34,7 @@ export const REQUIRED_POLICY_CONTENT: Record<string, readonly string[]> = {
   'AC-14': ['since:', 'two-gates', 'lower bound'],
   'AC-15': ['permanent', 'attested', 'files` allowlist', 'npm unpublish'],
   'AC-16': ['v1', 'Distribution & immutability', 'Story 23.1'],
-  'AC-17': ['centralizeme-sass/docs/adr/0005', 'Story 14.9', 'Story 24.4'],
+  'AC-17': ['public cross-product contract', 'Story 14.9', 'Story 24.4'],
 }
 
 export type PolicyContentResult = { ok: true } | { ok: false; errors: string[] }

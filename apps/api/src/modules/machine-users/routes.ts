@@ -448,7 +448,7 @@ export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
         return reply.status(409).send(MACHINE_USER_DEACTIVATED)
       }
 
-      // AC-9/Dev Notes: the plaintext key must never reach a log or the audit payload — it is
+      // AC-9: the plaintext key must never reach a log or the audit payload — it is
       // only ever placed into this single 201 response body below.
       const plaintextKey = generateApiKey()
       const keyHash = hashApiKey(plaintextKey)

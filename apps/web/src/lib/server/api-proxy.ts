@@ -13,7 +13,7 @@ const HOP_BY_HOP_HEADERS = new Set([
   'upgrade',
 ])
 
-// DW-237: `Origin`/`Referer` are browser-attached security headers describing the *browser's*
+// `Origin`/`Referer` are browser-attached security headers describing the *browser's*
 // same-origin/cross-origin relationship to this SvelteKit app — they say nothing about, and were
 // never meant to describe, this app's own separate server-to-server hop to the real API. Forwarding
 // them verbatim makes a same-origin browser POST (which Chromium legitimately tags with an `Origin`

@@ -1,7 +1,7 @@
 import { createInterface } from 'node:readline/promises'
 
 /**
- * AC-2/Dev Notes decision #3 — the interactive-prompt seam `login`'s tests inject a fake
+ * AC-2/decision #3 — the interactive-prompt seam `login`'s tests inject a fake
  * implementation of, exactly the way `get`'s tests inject fake streams (see `GetStreams` in
  * get-command.ts). `mask: true` is used for the password prompt (no local echo); the TOTP prompt
  * uses `mask: false` (a TOTP code is not a long-lived secret the way a password is, and plain

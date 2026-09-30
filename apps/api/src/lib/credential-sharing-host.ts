@@ -35,7 +35,7 @@ import { operationalLog } from './logger.js'
 /**
  * Story 20.12 AC5 — a per-extension in-flight cap for every `credentialSharing` method. Distinct
  * accounting map and budget from `monitoring-host.ts`'s own and every other hook's own — never
- * shared. Per Elicitation Findings #3 (this story's own ADR), this file owns a structurally
+ * shared. Per this story's own design decision, this file owns a structurally
  * identical, sibling wrapper rather than importing/extracting a shared cross-hook abstraction out
  * of `monitoring-host.ts` — matching this codebase's established per-hook-file autonomy.
  */

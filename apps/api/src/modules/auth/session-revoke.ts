@@ -379,7 +379,7 @@ export type RevokeAllSessionsForOrgResult = {
 }
 
 /**
- * Story 31.1 (DW-130) Decision 4/Decision 6 — the org-wide fan-out for the
+ * Story 31.1 Decision 4/Decision 6 — the org-wide fan-out for the
  * machine-authenticated CentralizeMe revocation route. Deliberately NOT a wrapper around
  * `revokeSessionById()`/`revokeTargetSessions()` (see Decision 2's original, since-amended
  * framing): a per-session application loop means N round-trips for a large org, each paying full

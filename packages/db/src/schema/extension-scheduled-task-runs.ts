@@ -23,8 +23,8 @@ import { orgScoped } from './helpers.js'
  * NOT cascade-delete this table's rows for the old `extensionId` (there is nothing to cascade
  * from) — those rows become inert (no `(org, task)` due-tuple query will ever match a
  * no-longer-loaded `extensionId` again) but are not actively cleaned up; accepted, unbounded-growth
- * debt of the same class already accepted elsewhere in this codebase (see this story's Dev Notes
- * Elicitation Findings), revisit only if it becomes operationally visible.
+ * debt of the same class already accepted elsewhere in this codebase; revisit only if it becomes
+ * operationally visible.
  *
  * All due-check comparisons MUST use the database server's clock (SQL `now()`), never
  * application-server wall-clock time (Task 3) — see `extension-scheduled-tasks.ts`'s due-tuple

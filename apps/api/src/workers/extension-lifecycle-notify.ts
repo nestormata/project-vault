@@ -35,7 +35,7 @@ export const EXTENSION_LIFECYCLE_NOTIFY_MAX_ATTEMPTS = 5
 // implementation Task decision, not a value with independent significance — a pathologically
 // slow (but technically compliant, never-timing-out) extension still degrades delivery latency
 // for every org's pending rows behind it within a cycle; this is an accepted consequence of the
-// existing single-extension-per-process model (Story 34.1's own Dev Notes precedent), not a
+// existing single-extension-per-process model (Story 34.1's precedent), not a
 // security boundary violation.
 const BATCH_SIZE_PER_ORG = 25
 
@@ -43,7 +43,7 @@ const BATCH_SIZE_PER_ORG = 25
 // mechanism for delivered/failed rows to mirror (confirmed by repo-wide grep during this story's
 // implementation: no DELETE/purge job of any kind touches notification_queue's resolved rows
 // today). Rather than leave extension_lifecycle_events' own resolved-row retention unbounded too
-// (the exact "unbounded-growth incident" Dev Notes warns against), this adds a minimal periodic
+// (an "unbounded-growth incident" waiting to happen), this adds a minimal periodic
 // purge of this story's own new table — deliberately NOT extended to notification_queue itself,
 // which is out of this story's scope.
 const RESOLVED_ROW_RETENTION_DAYS = 30
@@ -59,8 +59,8 @@ type PendingRow = {
 type DispatchOutcome = { kind: 'claimed'; id: string } | { kind: 'empty' }
 
 /**
- * Mirrors `getProjectCreatePolicy()`'s existing lookup pattern (routes.ts:321-326) exactly, per
- * this story's own Dev Notes — "reuse the pattern, do not invent a second one." Independent of
+ * Mirrors `getProjectCreatePolicy()`'s existing lookup pattern (routes.ts:321-326) exactly —
+ * reuse the pattern, do not invent a second one. Independent of
  * `getProjectCreatePolicy()`: a manifest declaring `'project-lifecycle'` but not
  * `'project-archive-notify'` (or vice versa) correctly yields `undefined` here.
  */

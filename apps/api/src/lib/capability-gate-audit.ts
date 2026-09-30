@@ -35,11 +35,11 @@ import { getAuditKey } from '../modules/vault/key-service.js'
  * *magnitude* of a burst can be delayed. The undampened operational log (AC-26) always carries
  * per-event detail regardless.
  *
- * **Per-replica honesty:** this bookkeeping is in-process. Under ADR 0003's multi-instance
- * topology, N replicas each hold their own dampener state, so up to N rows may be written per
+ * **Per-replica honesty:** this bookkeeping is in-process. Under a multi-instance
+ * (multi-replica) topology, N replicas each hold their own dampener state, so up to N rows may be written per
  * window across the fleet — this is a single-process property, not a global guarantee.
  *
- * **Divergence from `secureRoute`'s own audit convention (deliberate, record in Dev Notes):** a
+ * **Divergence from `secureRoute`'s own audit convention (deliberate):** a
  * gate denial is NOT routed through `secure-route.ts`'s `audit_write_failed` 503 path. A denial is
  * a completed authorization outcome, not a partially-applied mutation; downgrading it to a 503
  * would turn an audit hiccup into a *less* restrictive outcome. If the audit write fails, the

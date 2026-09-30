@@ -39,7 +39,7 @@ function runViaWorkerThread(action: WorkerAction, data: Buffer, key: Buffer): Pr
 
 /**
  * Story 9.1 D5/AC-5: offloads CPU-bound AES-256-GCM backup encryption/decryption to a
- * `worker_thread` (architecture.md's mandate for CPU-bound crypto handlers — "backup encryption,
+ * `worker_thread` (the architecture's mandate for CPU-bound crypto handlers — "backup encryption,
  * audit log hash chain verification... run via worker_threads"). This is the first story to
  * actually implement that pattern (no prior story had CPU-bound crypto workers).
  *

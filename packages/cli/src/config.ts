@@ -16,13 +16,13 @@ export type ResolvedConfig = {
 type EnvLike = Record<string, string | undefined>
 
 /**
- * Dev Notes decision #2 — config resolution order for apiKey/baseUrl/projectId.
+ * Decision #2 — config resolution order for apiKey/baseUrl/projectId.
  *
  * Primary mechanism: environment variables, kept under the SAME `VAULT_*` prefix
  * `@project-vault/agent` itself already uses (`VAULT_CACHE_PATH`, `VAULT_FALLBACK_THRESHOLD`)
  * rather than inventing a second prefix — `VAULT_API_KEY`, `VAULT_URL`, `VAULT_PROJECT_ID`. This
- * is a deliberate divergence from epics.md's illustrative `PV_*` example commands (see this
- * story's Dev Agent Record); the binary itself is `pvault`, not `pv`, for the same reason (see
+ * is a deliberate divergence from the original requirement text's illustrative `PV_*` example
+ * commands; the binary itself is `pvault`, not `pv`, for the same reason (see
  * README's "Package/binary name" decision).
  *
  * An explicit CLI flag (`--api-key`/`--url`/`--project-id`) always overrides the corresponding
@@ -75,7 +75,7 @@ export type LoginConfig = { baseUrl: string }
 
 /**
  * Story 43.2 — `pvault login`/`logout` only need `VAULT_URL` (no `--api-key`, since that's the
- * machine-user path — see Dev Notes "Architecture & prior art"). Same flag-overrides-env
+ * machine-user path). Same flag-overrides-env
  * precedence as `resolveConfig()` above, deliberately kept as a separate function rather than
  * widening `resolveConfig()` itself, since `apiKey`/`projectId` are not optional inputs to that
  * function's contract and login has no use for either.
@@ -93,7 +93,7 @@ export function resolveLoginConfig(flags: LoginFlags, env: EnvLike = process.env
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
 
 /**
- * AC-2 hardening (Red Team vs Blue Team elicitation, 2026-09-22) — packages/agent never enforces
+ * AC-2 hardening (red-team review, 2026-09-22) — packages/agent never enforces
  * a TLS scheme, so a misconfigured `http://` baseUrl would send the machine-user API key and the
  * fetched secret value in plaintext. This is a defensive WARNING, not a hard failure (so
  * legitimate `http://localhost`/`127.0.0.1` local-dev use keeps working), and does not require

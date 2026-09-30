@@ -3,7 +3,7 @@ import { generateOpaqueToken, hashOpaqueToken, opaqueTokenMatches } from '../../
 
 // Story 6.3 ADR-6.3-06: reuses the shared opaque-token-plus-HMAC-hash primitives verbatim,
 // mirroring recovery-tokens.ts's exact shape. generateOpaqueToken(32) yields 256 bits of entropy
-// encoded as 43 base64url characters — exceeding epics.md's literal "22+ base62 chars / 128-bit
+// encoded as 43 base64url characters — exceeding the original requirement's literal "22+ base62 chars / 128-bit
 // minimum" requirement in both entropy and length, and base64url is URL-safe by construction.
 export function generateStatusPageToken(): string {
   return generateOpaqueToken(32)

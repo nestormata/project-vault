@@ -59,7 +59,7 @@ describe('auth schemas', () => {
 
   it('does not apply the strength check to LoginRequestSchema.password (verifies an existing credential, not a new one)', () => {
     // LoginRequestSchema must stay a bare length bound — a user with an already-set weak
-    // password must still be able to log in (Story 1.21 Background/Dev Notes).
+    // password must still be able to log in (Story 1.21).
     expect(
       LoginRequestSchema.safeParse({ email: OWNER_EMAIL, password: 'passwordpassword' }).success
     ).toBe(true)

@@ -1,4 +1,4 @@
-// Story 31.1 (DW-130) AC7.26: the machine-authenticated org-wide revocation route's static
+// Story 31.1 AC7.26: the machine-authenticated org-wide revocation route's static
 // shared-secret header — never logged, on the same header-redaction surface as authorization/
 // cookie, even though (unlike them) no existing request-logging call currently dumps req.headers
 // wholesale; this closes the gap defensively, exactly as Story 28.9's res.headers['x-export-key']
@@ -43,7 +43,7 @@ export const BODY_SENSITIVE_LOG_FIELDS = [
   // database URLs above. The certificates and CAs are public material and stay loggable.
   'API_TLS_KEY_B64',
   'DATABASE_TLS_CLIENT_KEY_B64',
-  // Epic 17 retro (2026-07-29) Finding: story 17-2's step-up body carries `totpCode` (not `totp`,
+  // Story 17-2's step-up body carries `totpCode` (not `totp`,
   // the pre-existing field name), so it fell outside this registry despite AC-18 requiring it be
   // redacted by name — no live leak found (no request-logging call currently dumps req.body
   // wholesale on the step-up path), but the durable safeguard was missing. Added here rather than

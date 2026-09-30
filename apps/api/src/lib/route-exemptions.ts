@@ -220,7 +220,7 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
   {
     route: 'POST /api/v1/service/organizations/:centralizemeOrganizationId/revoke-sessions',
     reason:
-      "Story 31.1 (DW-130) -- machine-authenticated, org-wide handoff-session (and machine-user API key) revocation endpoint for a trusted platform partner (CentralizeMe), used when CM deprovisions/deletes an organization. The caller has no PV session and cannot have one -- SecureRoute's org-authenticated path structurally cannot apply here, exactly like POST /api/v1/service/organizations above.",
+      "Story 31.1 -- machine-authenticated, org-wide handoff-session (and machine-user API key) revocation endpoint for a trusted platform partner (CentralizeMe), used when CM deprovisions/deletes an organization. The caller has no PV session and cannot have one -- SecureRoute's org-authenticated path structurally cannot apply here, exactly like POST /api/v1/service/organizations above.",
     securityOwner: SECURITY_OWNER,
     compensatingControls: [
       STATIC_SERVICE_TOKEN_TIMING_SAFE_COMPARE,
@@ -244,7 +244,7 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
   {
     route: 'PATCH /api/v1/service/organizations/:organizationId/centralizeme-link',
     reason:
-      "Story 33.1 (DW-256) -- machine-authenticated backfill of organizations.centralizeme_organization_id for a pre-existing organization, for a trusted platform partner (CentralizeMe). The caller has no PV session and cannot have one -- SecureRoute's org-authenticated path structurally cannot apply here, exactly like POST /api/v1/service/organizations above (Decision 3: reuses SERVICE_PROVISIONING_TOKEN, a strictly SMALLER blast radius than that route's own org+user+membership creation and than 32.1's own admin-role-member grant -- see the story's Security section).",
+      "Story 33.1 -- machine-authenticated backfill of organizations.centralizeme_organization_id for a pre-existing organization, for a trusted platform partner (CentralizeMe). The caller has no PV session and cannot have one -- SecureRoute's org-authenticated path structurally cannot apply here, exactly like POST /api/v1/service/organizations above (Decision 3: reuses SERVICE_PROVISIONING_TOKEN, a strictly SMALLER blast radius than that route's own org+user+membership creation and than 32.1's own admin-role-member grant).",
     securityOwner: SECURITY_OWNER,
     compensatingControls: [
       STATIC_SERVICE_TOKEN_TIMING_SAFE_COMPARE,
@@ -313,7 +313,7 @@ export const PUBLIC_ROUTE_EXEMPTIONS: PublicRouteExemption[] = [
   {
     route: 'POST /api/v1/auth/sso/callback/:providerName',
     reason:
-      'Story 14.3 AC-4/AC-11 — pre-auth SSO callback. The caller has no session yet (that is exactly what this endpoint issues on success); the handler validates the server-stored, single-use state token before ever invoking the registered onAuthenticate() strategy, and is independently rate-limited from /start per the Red Team vs Blue Team elicitation finding.',
+      'Story 14.3 AC-4/AC-11 — pre-auth SSO callback. The caller has no session yet (that is exactly what this endpoint issues on success); the handler validates the server-stored, single-use state token before ever invoking the registered onAuthenticate() strategy, and is independently rate-limited from /start per a Red Team vs Blue Team review finding.',
     securityOwner: SECURITY_OWNER,
     compensatingControls: [
       IP_RATE_LIMIT,
@@ -704,9 +704,9 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
     auditOmissionReason: 'Rotation-recommended nudge state is metadata only; no secret values.',
     reviewer: SECURITY_OWNER,
   },
-  // Story 17.3 AC-15: dismissal is a security-relevant action (FR125's own threat model — see the
-  // story's Security Audit Personas elicitation: an unaudited/unauthenticated dismissal would let
-  // a share go undetected) — audited the same way share creation/revocation are.
+  // Story 17.3 AC-15: dismissal is a security-relevant action (FR125's own threat model: an
+  // unaudited/unauthenticated dismissal would let a share go undetected) — audited the same way
+  // share creation/revocation are.
   'POST /api/v1/projects/:projectId/credentials/:credentialId/nudge/dismiss': {
     action: SECURITY_ACTION,
     auditEvent: 'credential.share_nudge_dismissed',
@@ -933,16 +933,16 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   },
   // Story 25.5 AC1-AC6: dispatches a typed action to the loaded extension's own `moduleAction`
   // hook. This route itself mutates no PV-owned state and stores nothing — whatever the
-  // extension's own handler persists (CM's `handleAccessGroupAction()` -> `store.ts`) is entirely
-  // CM-side, and CM's own handler already writes its own classification-event audit rows (per
-  // this story's Dependencies section, referencing CM's own AC9/CM-E14.6 scope) — duplicating
+  // extension's own handler persists is entirely extension-side, and that handler is
+  // responsible for its own business-event audit rows (the existing consumer already writes
+  // classification-event audit rows) — duplicating
   // that here would double-log the same business event under two different audit trails. No
   // secureCtx.tx exists to audit through regardless (writeAuditEvent: false, matching the GET
   // panel route's own convention one row above).
   'POST /api/v1/extensions/panels/:slot/actions': {
     action: 'mutation',
     auditOmissionReason:
-      "Dispatches to the extension's own moduleAction hook; the extension's own handler (CM's handleAccessGroupAction()) already writes its own business-event audit trail for whatever it persists. This route never touches PV-owned data directly, so there is no PV-side transition to audit.",
+      "Dispatches to the extension's own moduleAction hook; the extension's own handler already writes its own business-event audit trail for whatever it persists. This route never touches PV-owned data directly, so there is no PV-side transition to audit.",
     reviewer: SECURITY_OWNER,
   },
   // Story 39.1 AC1: authenticated, in-app mutation — dispatches to the loaded extension's own
@@ -1337,7 +1337,7 @@ export const ROUTE_ACTION_CLASSIFICATIONS: Record<string, RouteActionClassificat
   'GET /api/v1/status-pages/:token': {
     action: 'read',
     auditOmissionReason:
-      'Public, unauthenticated, high-frequency status page view — auditing every view would create unbounded audit-log growth from external, non-actor traffic; see Known Scope Boundaries in 6-3 story file.',
+      'Public, unauthenticated, high-frequency status page view — auditing every view would create unbounded audit-log growth from external, non-actor traffic (a known scope boundary of Story 6.3).',
     reviewer: SECURITY_OWNER,
   },
   // Story 7.1 — machine user identity and API key management.

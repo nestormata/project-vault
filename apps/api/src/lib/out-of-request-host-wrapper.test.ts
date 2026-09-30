@@ -6,8 +6,8 @@ import {
 } from './out-of-request-host-wrapper.js'
 
 /**
- * Story 58.2 Task 5 — two `describe` blocks per the story's own ADR (see "Elicitation Findings" /
- * Open Design Question 2 in the story file): direct unit coverage of the shared module in
+ * Story 58.2 Task 5 — two `describe` blocks per the story's own design decision
+ * (Open Design Question 2): direct unit coverage of the shared module in
  * isolation, then a cross-host independence proof that imports both real host-building functions.
  *
  * The cross-host block mocks `@project-vault/db`'s `withOrg` and

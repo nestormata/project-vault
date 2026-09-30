@@ -37,7 +37,7 @@ export function shareRecipientAndTimingFields(share: CredentialShareRow) {
  * pattern: only the HMAC digest is ever persisted, the raw token is returned to the caller once.
  * Reuses the existing `INVITATION_TOKEN_HMAC_SECRET` with a domain-separation prefix (rather than
  * introducing a brand-new dedicated secret and its full env/production-validation/docker-compose
- * surface for this story) — a deliberate scope decision, documented in the Dev Agent Record.
+ * surface for this story) — a deliberate scope decision to keep the secret surface small.
  */
 export function generateShareToken(): string {
   return randomBytes(32).toString('base64url')

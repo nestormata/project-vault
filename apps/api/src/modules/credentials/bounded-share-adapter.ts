@@ -6,7 +6,7 @@ import { fieldMetaForResponse } from './field-set.js'
 import { revealCurrentValue, selectCurrentVersionMeta } from './service.js'
 
 /**
- * Story 20.5 AC-3: the `credential` adapter for architecture.md's Scoped/Bounded Sharing
+ * Story 20.5 AC-3: the `credential` adapter for the Scoped/Bounded Sharing
  * Contract (decided by Story 20.4). Exactly the three functions the contract requires —
  * `attributeKeys`, `serializeBounded`, `resourceExists` — each RLS/org-scoped and read-only via
  * an already org-scoped `tx` the caller (the `credential-shares` sharing layer, never this

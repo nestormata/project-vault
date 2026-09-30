@@ -12,7 +12,7 @@ import { currentPlatformAuditKeyVersion } from './key-version.js'
  * `computeAuditHmac`, but a distinct signing key so blast radius between the two logs is
  * isolated (D3). Story 1.25 closed the "no hash chain" gap this comment used to flag: the
  * digest input now includes `previousEntryHmac` (see `writePlatformAuditEntry` below), making
- * architecture.md/prd.md's "cryptographic chaining" language accurate rather than aspirational. */
+ * the architecture's "cryptographic chaining" language accurate rather than aspirational. */
 /** Story 1.26 (CodeQL js/insufficient-password-hash, alerts #1/#10 — DISMISSED as false
  * positives, see the longer comment above `computeAuditHmac` in `modules/audit/write-entry.ts`
  * for the full root-cause and why no code fix exists): same type-narrowing treatment as

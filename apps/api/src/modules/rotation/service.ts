@@ -207,7 +207,7 @@ function validateTargetFields(
 // twice) — two DISTINCT raw keys that merely differ in case/whitespace (`"Password"` and
 // `"password "`) both survive parsing as separate object entries. Silently letting the
 // later-iterated one win would hide an ambiguous request behind an unintended write, contradicting
-// this story's exact-match/fail-loudly design (Dev Notes) — see
+// this story's exact-match/fail-loudly design — see
 // `findDuplicateNormalizedFieldValueKey()`, which callers must run before trusting this map.
 function normalizeFieldValues(
   fieldValues: Record<string, string> | undefined
@@ -244,8 +244,8 @@ type FieldValuesValidation = { ok: true } | { ok: false; missing: string[]; extr
 
 // Story 13.5 AC-7 — `fieldValues`' normalized key set must be EXACTLY equal to the normalized
 // `targetFields` set (whole-secret rotation has an empty target-fields set, so any `fieldValues`
-// there is entirely "extra"). Exact-match, not subset/superset-tolerant — see the story's Dev
-// Notes for why (fail loudly on request-shape ambiguity rather than guess intent).
+// there is entirely "extra"). Exact-match, not subset/superset-tolerant, to fail loudly on
+// request-shape ambiguity rather than guess intent.
 function validateFieldValues(
   normalizedFieldValues: Map<string, string> | undefined,
   normalizedTargetFields: string[] | undefined
@@ -368,7 +368,7 @@ async function computeSameValueAsPrevious(
   }
 }
 
-// Story 13.4 AC-5 (Dev Notes — "Promote vs. retire: where the field-set snapshot lands"): field
+// Story 13.4 AC-5 (promote vs. retire: where the field-set snapshot lands): field
 // substitution happens HERE, at initiation, not at promote/retire — the new version already
 // contains a full field-set snapshot (FR12) the moment it's created. Whole-secret rotation
 // (normalizedTargetFields undefined) keeps today's existing single-value replacement behavior,
@@ -2269,7 +2269,7 @@ async function createBreakGlassVersion(
     `breakGlassRotation: credential ${input.credentialId} has no non-purged/non-abandoned version to supersede`
   )
 
-  // Anti-pattern guard (Dev Notes): see nextCredentialVersionNumber — supersedeActiveRotation may
+  // Anti-pattern guard: see nextCredentialVersionNumber — supersedeActiveRotation may
   // just have abandoned an existing rotation's new version above, whose number stays used.
   const nextVersionNumber = await nextCredentialVersionNumber(tx, input.credentialId)
 
@@ -2301,7 +2301,7 @@ async function createBreakGlassVersion(
 /** AC-2/AC-5/AC-6: break-glass emergency rotation — immediately writes a new live value,
  *  supersedes (auto-abandons) any existing active rotation for the credential (CR6), and puts
  *  the superseded version into a purge-protected overlap window (CR1) rather than retiring it
- *  immediately (contradicting PRD FR108's literal "immediately retires" text — see ADR-5.3-01).
+ *  immediately (contradicting FR108's literal "immediately retires" text — see ADR-5.3-01).
  *  No checklist items are created — break-glass's entire premise is skipping the checklist. */
 export async function breakGlassRotation(
   tx: Tx,
@@ -2441,7 +2441,7 @@ export type ResumeRotationResult =
   | { outcome: 'resumed'; rotation: RotationRow; checklistItems: ChecklistItemRow[] }
 
 /** AC-11: stale_recovery -> in_progress. Checklist items are left exactly as they are — "checklist
- *  preserved" per epics.md; no additional item mutation happens on resume. Reuses the shared
+ *  preserved" per the AC; no additional item mutation happens on resume. Reuses the shared
  *  casTransitionRotation() helper (AC-11/AC-12/AC-15) with the `fromStatus: 'stale_recovery'`
  *  guard — resume and abandon both leave stale_recovery via an identical UPDATE...RETURNING
  *  shape, differing only in the target status. A zero-row result means either a lost CAS race or

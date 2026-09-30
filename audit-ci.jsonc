@@ -1,8 +1,8 @@
 {
   // $schema: https://github.com/IBM/audit-ci/raw/main/docs/schema.json
   //
-  // audit-ci's real config schema (Story 42.2 — see that story's Dev Agent Record for the
-  // root-cause finding this reshape fixes): the severity keys below are BOOLEANS meaning "gate
+  // audit-ci's real config schema (Story 42.2 — this reshape fixes an earlier config that
+  // misread the schema as suppression-entry arrays): the severity keys below are BOOLEANS meaning "gate
   // on this severity or above", not arrays of suppression entries. Setting "high": true also
   // gates "critical" via audit-ci's low->moderate->high->critical fallthrough, i.e. this repo
   // gates on high-or-above. "moderate"/"low"/"critical" are intentionally omitted (omitted ->

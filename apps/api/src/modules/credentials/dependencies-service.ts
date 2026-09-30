@@ -85,8 +85,8 @@ async function hasActiveDependencies(tx: Tx, credentialId: string): Promise<bool
 // Story 13.5 AC-5 — reuses the same normalizeFieldKey()/fieldMetaForResponse() helpers
 // validateTargetFields() in rotation/service.ts already uses, loaded via the credential's
 // current version's field_meta (the same source rotation's own validation reads). Legacy/
-// single-field credentials validate uniformly against their synthetic DEFAULT_FIELD_KEY — see
-// the story's Dev Notes for why this is intentional, not a bug.
+// single-field credentials validate uniformly against their synthetic DEFAULT_FIELD_KEY — this
+// is intentional, not a bug.
 async function validateDependencyFieldKey(
   tx: Tx,
   credentialId: string,

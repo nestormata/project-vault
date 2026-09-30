@@ -13,7 +13,7 @@ export type DbTransaction = Parameters<Parameters<ReturnType<typeof getDb>['tran
 /**
  * Shared "at most one tick at a time" wrapper, extracted from `monitoring-health-check.ts` and
  * `extension-scheduled-tasks.ts` (both independently implemented the identical
- * `pg_try_advisory_xact_lock`-in-a-transaction pattern per this story's own Dev Notes instruction
+ * `pg_try_advisory_xact_lock`-in-a-transaction pattern, the second deliberately written
  * to mirror that worker's shape — jscpd flagged the resulting duplication).
  *
  * Wraps `body` in a single transaction that also holds the non-blocking advisory lock keyed by

@@ -54,14 +54,14 @@ async function confirmAndExpectMfaChallenge(page: Page): Promise<void> {
   await expect(page.getByLabel(/authenticator code/i)).toBeVisible()
 }
 
-// J28 — Story 30.5's own Testing Requirements: "No true end-to-end CM->PV browser test is
-// possible in this repository" (CM is external, not present here, and DW-153 means even a
-// fully-wired confirm call against a real database would fail closed for any newly-provisioned
-// test org). This journey exercises the actual page-level flow this repo CAN verify: a real
-// browser rendering `/handoff` from a hand-built query string (mirroring what CM's interstitial
-// is documented, in this story's Background, to produce) and driving the Confirm click against a
+// J28 — Story 30.5's own testing constraint: no true end-to-end CM->PV browser test is possible
+// in this repository (CM is external, not present here, and a newly-provisioned test org has no
+// centralizeme_organization_id yet, so even a fully-wired confirm call against a real database
+// would fail closed for it). This journey exercises the actual page-level flow this repo CAN
+// verify: a real browser rendering `/handoff` from a hand-built query string (mirroring what
+// CM's interstitial is documented to produce) and driving the Confirm click against a
 // stubbed `POST /api/v1/auth/handoff/confirm` response — the backend contract itself is Story
-// 30.2's already-tested responsibility, not this story's (see Dev Notes' Testing Requirements).
+// 30.2's already-tested responsibility, not this story's.
 test.describe('J28 — handoff confirmation page', () => {
   test('renders the resolved account/org and completes a stubbed MFA-challenge login', async ({
     page,

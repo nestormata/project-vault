@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest'
 
 /**
  * Story 23.3 AC-14 — the sole mechanism bounding the gated surface's blast radius.
- * `UNGATABLE_URL_PREFIXES` is deliberately NOT implemented (every reading of it was broken — see
- * the story's Dev Notes). Instead: the complete list of routes annotated with
+ * `UNGATABLE_URL_PREFIXES` is deliberately NOT implemented (every reading of it was broken).
+ * Instead: the complete list of routes annotated with
  * `security.capability` must deep-equal this literal golden array. Growing the gated surface, on
  * any route, of any sensitivity, requires an explicit, reviewable diff to THIS array.
  *
@@ -20,7 +20,7 @@ import { describe, expect, it } from 'vitest'
 const GOLDEN_GATED_ROUTES = [
   'POST /api/v1/projects/:projectId/status-page', // AC-23, declarative
   'GET /api/v1/status-pages/:token', // AC-24, imperative (assertCapability)
-  // Story 23.7 Dev Notes judgment call #5 (scope extension): "Save services" is now
+  // Story 23.7 judgment call #5 (scope extension): "Save services" is now
   // backend-enforced exactly like "Enable" — closes the cosmetic-only asymmetry.
   'PUT /api/v1/projects/:projectId/status-page', // Story 23.7, declarative
 ] as const

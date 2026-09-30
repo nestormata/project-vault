@@ -94,7 +94,7 @@ Rationale rather than procedure — why a subsystem works the way it does.
 
 | Document | What it covers |
 |---|---|
-| [extensions/README.md](extensions/README.md) | What an extension is, the hook and host-service catalogue, how to author one, and the versioning and deprecation policy for the contract |
+| [extensions/README.md](extensions/README.md) | What an extension is, the hook and host-service catalogue, how to author one, and the versioning and deprecation policy for the contract. Its [UI extension tiers](extensions/README.md#ui-extension-tiers) section covers the supported runtime UI extension API (HTML panels) and the planned build-time composition tier for a first-party UI package |
 
 ## Developing and releasing
 

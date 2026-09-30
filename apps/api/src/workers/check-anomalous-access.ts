@@ -11,7 +11,7 @@ import {
 import type { BossService } from '../lib/boss.js'
 import { writeSystemAuditRow } from '../lib/system-audit-row.js'
 
-// ADR-6.2-06: `credential.value_revealed` is the closest, most literal match to epics.md's
+// ADR-6.2-06: `credential.value_revealed` is the closest, most literal match to the requirement's
 // "credential access events" — metadata-only reads (list/search) don't reveal plaintext and are
 // a much weaker anomaly signal. Not the existing 'security.failed_auth_threshold' alert type.
 const ALERT_TYPE = 'security.anomalous_access'
@@ -48,7 +48,7 @@ function payloadFor(breach: Breach, windowStart: Date, windowEnd: Date) {
  * set), not "all orgs' rows". Mirrors the health-check worker's per-org RLS-scoped due-query:
  * one `runOrgScopedJob` transaction per org, never a single query bypassing RLS. Counts
  * credential.value_revealed audit rows per actor_token_id in the trailing window ("per project"
- * in epics.md's literal prose is dropped in favor of per-org, matching
+ * in the requirement's literal prose is dropped in favor of per-org, matching
  * check-failed-auth-threshold.ts's existing org-scoped precedent).
  */
 async function findAccessBreachesForOrg(orgId: string, windowStart: Date): Promise<Breach[]> {

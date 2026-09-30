@@ -412,7 +412,7 @@ function validateServiceProvisioningTokenProductionSecret(
   }
 }
 
-// Story 31.1 (DW-130) AC2.7/AC2.8: SERVICE_REVOCATION_TOKEN's own dedicated cross-secret-reuse
+// Story 31.1 AC2.7/AC2.8: SERVICE_REVOCATION_TOKEN's own dedicated cross-secret-reuse
 // and placeholder rejection, mirroring MACHINE_JWT_SECRET's validateMachineJwtProductionSecret
 // shape exactly, plus the SERVICE_PROVISIONING_TOKEN comparison Decision 1 requires (a leak of
 // one must never compromise the other).
@@ -1129,7 +1129,7 @@ const envSchema = z
     // rotation) — same env-var-as-admin-configurable-threshold convention as
     // FAILED_AUTH_THRESHOLD_COUNT/MFA_LOGIN_MAX_ATTEMPTS.
     ROTATION_MAX_RETRIES: z.coerce.number().int().min(1).max(10).default(3),
-    // Story 5.3 AC-8/CR1: the break-glass "emergency overlap" window (epics.md AC-E5c) — how
+    // Story 5.3 AC-8/CR1: the break-glass "emergency overlap" window (AC-E5c) — how
     // long the superseded credential version stays purge-protected before the overlap-expiry
     // job auto-retires it. Read fresh at break-glass time only (AC-8's edge case: lowering this
     // later never retroactively shortens an already-stored break_glass_overlap_expires_at).
@@ -1141,7 +1141,7 @@ const envSchema = z
     // Story 5.5 AC-4: break-glass double-submit idempotency window — a second break-glass call
     // for the same credential within this many seconds of the first returns the already-created
     // rotation instead of creating an independent second one. Deliberately short: the endpoint's
-    // entire premise is acting "in seconds" during an incident (epics.md AC-E5c) — this only
+    // entire premise is acting "in seconds" during an incident (AC-E5c) — this only
     // needs to cover an accidental double-click/client-retry, not a legitimate follow-up
     // break-glass minutes later. Read fresh on every call, same convention as
     // ROTATION_MAX_RETRIES/STALE_ROTATION_THRESHOLD_MINUTES.
@@ -1216,7 +1216,7 @@ const envSchema = z
       z.string().min(32).optional()
     ),
 
-    // Story 31.1 (DW-130) Decision 1/AC2: static shared-secret gate for
+    // Story 31.1 Decision 1/AC2: static shared-secret gate for
     // POST /api/v1/service/organizations/:centralizemeOrganizationId/revoke-sessions, mirroring
     // SERVICE_PROVISIONING_TOKEN's exact shape/threat model — but a DEDICATED, never-shared
     // secret (see validateServiceRevocationTokenProductionSecret above): a leak of one must never
@@ -1274,7 +1274,7 @@ const envSchema = z
 
     // Story 10-1: the global /register+/login IP rate limiter (auth/routes.ts) defaults to 60
     // req/min, which a single serial E2E run's ~7-9 real registrations/logins from one
-    // container/CI-runner IP can trip (flagged as a known risk in that story's Dev Notes, since
+    // container/CI-runner IP can trip (flagged as a known risk during that story, since
     // confirmed empirically). Overridable only via this env var — never hardcoded lower in
     // production config — and set higher ONLY in docker-compose.e2e.yml's E2E-only override, the
     // same scoping convention as VAULT_ALLOW_REMOTE_INIT above.
@@ -1387,7 +1387,7 @@ const envSchema = z
 
     // Story 9.2 D5/AC-15/AC-21: daily audit-log-storage-pressure monitoring threshold —
     // pg_total_relation_size('audit_log_entries') is compared against this (the real table
-    // name; epics.md's literal 'audit_events' has never existed in this codebase, see D5).
+    // name; the original requirement's literal 'audit_events' has never existed in this codebase, see D5).
     AUDIT_LOG_STORAGE_LIMIT_GB: z.coerce.number().positive().default(50),
     // Story 22.3 AC-1: caps + sorts GET /admin/resource-usage's per-org audit-storage array so an
     // instance with hundreds of orgs can't force the operator's own browser to render an
@@ -1453,11 +1453,10 @@ const envSchema = z
     AUDIT_ORG_DEFAULT_WRITE_RATE_PER_MIN: z.coerce.number().min(0).default(0),
     AUDIT_ORG_WRITE_RATE_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
 
-    // Story 30.1 (DW-129): handoff instance identity, key-set, and clock-skew config group —
-    // Story 30.2 (DW-128) extends this same grouping with its own VAULT_HANDOFF_*-prefixed
-    // request-time verification config. See claim contract
-    // (_bmad-output/planning-artifacts/handoff-token-claim-contract.md) "Instance identity
-    // decision" / "Key provisioning, rotation, and compromise response". Optional at this stage
+    // Story 30.1: handoff instance identity, key-set, and clock-skew config group —
+    // Story 30.2 extends this same grouping with its own VAULT_HANDOFF_*-prefixed
+    // request-time verification config (the handoff claim contract's instance-identity and
+    // key provisioning/rotation/compromise-response decisions). Optional at this stage
     // (AC1.3/AC2.6) — no route or strategy in this repo consumes these yet; Story 30.2 owns
     // registering the handoff AuthStrategy and refusing to register it when unset.
     VAULT_HANDOFF_INSTANCE_ID: z.preprocess(

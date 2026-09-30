@@ -12,7 +12,7 @@
   // Notes) of reading `page.url.searchParams` directly in the component rather than adding a
   // `+page.ts`/`+page.server.ts` `load` — the validation here is trivial (shape checks only, no
   // server-only data needed) and every other `(auth)` query-param-driven page already does this
-  // inline. Documented here as the deliberate choice Dev Notes asked to record.
+  // inline. Documented here as a deliberate choice.
   // Story 60.3 later added a `+page.server.ts` `load` for the claim exchange; Story 60.4 has it
   // return `centralizeMeOrigin` (server-side config only). `data` is optional so the page still
   // renders — with plain-text guidance — when no load data is supplied.
@@ -72,8 +72,8 @@
   // equivalent here. Extracting a shared helper would mean either widening it with a flag/option
   // that only this page uses, or risking `LoginForm.svelte`'s own behavior/tests — neither is
   // justified for the couple of lines this page actually needs, so this duplicates the small,
-  // safe subset (`getCurrentUser` + navigate to `/dashboard`) instead, per Dev Notes' explicit
-  // "otherwise duplicate" guidance.
+  // safe subset (`getCurrentUser` + navigate to `/dashboard`) instead, as an explicit
+  // "otherwise duplicate" decision.
   async function completeSession() {
     await getCurrentUser(fetch)
     // AC5.19: always the hardcoded `/dashboard`, mirroring `LoginForm.svelte` — never a

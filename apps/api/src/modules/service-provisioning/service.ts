@@ -89,7 +89,7 @@ async function insertNewProvisioning(
         name: input.organizationName,
         serviceProvisioningRequestId: input.requestId,
         // Story 30.2: only set when the caller sends it — CM's provisioning client doesn't send
-        // it yet (deferred follow-up, see deferred-work.md), so this stays `undefined` (Drizzle
+        // it yet (a tracked follow-up), so this stays `undefined` (Drizzle
         // leaves the column untouched) for today's unmodified caller.
         centralizemeOrganizationId: input.centralizemeOrganizationId,
       })
@@ -218,9 +218,9 @@ async function selectOrgForCentralizemeLink(
 // via this route — a materially larger blast radius than sibling Story 26.1's route (which only
 // ever creates brand-new, empty orgs) justifies the stricter check, even though it means CM's
 // real current caller (which may not yet send centralizemeOrganizationId on every org — Story
-// 30.2 deferred follow-up) could get blocked until CM's own side is updated. See story Dev Notes
-// for the 403-vs-404 status code rationale (distinct from Decision 4, which is about
-// CM-membership/role trust, not PV-side org scope).
+// 30.2 deferred follow-up) could get blocked until CM's own side is updated. 403, not 404: the
+// org's existence is already confirmed above (a missing org is 404), so this is a policy refusal
+// on a real org (distinct from Decision 4, which is CM-membership/role trust, not PV org scope).
 export function organizationNotCentralizemeManagedError(): AppError {
   return new AppError(
     'organization_not_centralizeme_managed',
@@ -414,7 +414,7 @@ export class ServiceProvisioningForbiddenError extends AppError {
 }
 
 /**
- * Story 31.1 (DW-130) AC1.2/AC1.3/AC1.4: mirrors ServiceProvisioningForbiddenError exactly —
+ * Story 31.1 AC1.2/AC1.3/AC1.4: mirrors ServiceProvisioningForbiddenError exactly —
  * same shape/status for every failure mode (missing header, wrong token, unset env var), never
  * distinguishable which case occurred.
  */
@@ -430,7 +430,7 @@ export class ServiceRevocationForbiddenError extends AppError {
 
 /**
  * Story 31.1 AC3.11/AC3.12: zero rows match (no such CM org, or a real org with a still-null
- * centralizeme_organization_id per DW-153) — and a defensive fail-closed guard for the
+ * centralizeme_organization_id, i.e. one created before that column was populated) — and a defensive fail-closed guard for the
  * structurally-impossible-today case of the unique index returning more than one row. Never
  * leaks whether the org exists in PV under a different/unset CM id.
  */
@@ -439,7 +439,7 @@ export function serviceOrgNotFound(): AppError {
 }
 
 /**
- * Story 31.1 (DW-130) AC3.10: resolves the CM-supplied :centralizemeOrganizationId URL param to
+ * Story 31.1 AC3.10: resolves the CM-supplied :centralizemeOrganizationId URL param to
  * PV's internal organizations.id via the existing partial unique index (migration 0088, Story
  * 30-2) — no new migration. `organizations` carries no RLS policy (it is the tenant root, not
  * tenant-scoped), so this is a plain, unscoped lookup — mirroring findExistingProvisioning's own
@@ -640,7 +640,7 @@ async function backfillCentralizemeOrgLinkReal(
 }
 
 /**
- * Story 33.1 (DW-256) AC1-AC19: backfills `organizations.centralizeme_organization_id` for a
+ * Story 33.1 AC1-AC19: backfills `organizations.centralizeme_organization_id` for a
  * pre-existing organization whose value is still `null` (Decision 1-3) — set-if-null, idempotent
  * on an exact-match replay (AC5), fail-closed 409 on any mismatch (AC6) or an id claimed by a
  * different org (AC7), with an optional `dryRun` preview that never mutates (AC8-10). The

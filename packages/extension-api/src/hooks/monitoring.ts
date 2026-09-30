@@ -6,7 +6,7 @@
  * extension implementing behavior for PV.
  *
  * Named `PvMonitoringHost` (not `MonitoringHost`) specifically to avoid colliding with
- * `centralizeme-sass`'s own already-written `MonitoringHost` type name if both are ever imported
+ * CentralizeMe's own already-written `MonitoringHost` type name if both are ever imported
  * side-by-side (Story 34.1 AC1).
  *
  * **Org/transaction-context binding is split by invocation context (Design Decision 2), not

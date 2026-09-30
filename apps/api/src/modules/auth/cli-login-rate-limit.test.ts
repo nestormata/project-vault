@@ -21,7 +21,7 @@ import {
 /**
  * Story 43.8: the four CLI auth routes (Story 43.2) are registered by `cliLoginRoutes`, a SIBLING
  * of `authRoutes` in app.ts — so `authRoutes`' own `@fastify/rate-limit` registration never saw
- * them, and their `config.rateLimit` blocks were inert (epic-43 retro Finding 3). Every case here
+ * them, and their `config.rateLimit` blocks were inert. Every case here
  * drives the real `createApp()` (the bug is in app.ts's plugin wiring, which a hand-built Fastify
  * instance would not exercise) with `RATE_LIMIT_TEST_BYPASS=false` set BEFORE `createApp()` —
  * `isRateLimitEnforced()` is read at plugin-register time, so flipping it afterwards tests nothing.

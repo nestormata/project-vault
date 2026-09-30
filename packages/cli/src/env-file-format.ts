@@ -1,5 +1,5 @@
 /**
- * Story 43.5 Dev Notes decision #1 — the `.env` serialization format (Grounding finding G1:
+ * Story 43.5 decision #1 — the `.env` serialization format (Grounding finding G1:
  * `packages/vault-action` has no `.env` quoting/escaping rules to reuse, so this module defines
  * them). Pure: no I/O, no CLI imports. Shared home for any future consumer of the same wire format
  * (Story 43.4's `--secrets-fd` reader, Epic 50's `write_env_file`).

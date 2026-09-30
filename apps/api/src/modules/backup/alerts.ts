@@ -87,7 +87,7 @@ export async function deliverAdminAlertAcrossOrgs(
 }
 
 /**
- * Story 31.1 (DW-130) Decision 5/AC14.46: unlike `deliverAdminAlertAcrossOrgs` above (correct for
+ * Story 31.1 Decision 5/AC14.46: unlike `deliverAdminAlertAcrossOrgs` above (correct for
  * whole-instance-affecting events like key-custody risk), this route's alert is about ONE specific
  * org's revocation — broadcasting it via `deliverAdminAlertAcrossOrgs` would notify every OTHER
  * org's own admins of a tenant-specific event they have no business seeing (org id, CM org id,

@@ -4,7 +4,7 @@ import ConfirmDeleteButton from './ConfirmDeleteButton.svelte'
 
 afterEach(() => cleanup())
 
-describe('ConfirmDeleteButton (Story 6.4 Dev Notes: shared two-step confirm, no window.confirm())', () => {
+describe('ConfirmDeleteButton (Story 6.4: shared two-step confirm, no window.confirm())', () => {
   it('AC-B5 happy path: first click relabels to confirm, second click invokes onConfirm', async () => {
     const onConfirm = vi.fn().mockResolvedValue(undefined)
     render(ConfirmDeleteButton, { props: { onConfirm } })

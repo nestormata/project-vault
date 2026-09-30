@@ -138,7 +138,7 @@ describe('unsealVault: file-mode key material — crash/partial-write coverage (
     expect(getPrimaryKey()).toHaveLength(32)
   })
 
-  it('positive boundary (5-round elicitation, Boundary & Edge Case Sweep): a key file of exactly MAX_KEY_FILE_BYTES (4096) bytes is accepted', async () => {
+  it('positive boundary: a key file of exactly MAX_KEY_FILE_BYTES (4096) bytes is accepted', async () => {
     const keyBytes = randomBytes(MAX_KEY_FILE_BYTES)
     const keyPath = join(keyDir, 'master-max.key')
     writeFileSync(keyPath, keyBytes)
@@ -172,7 +172,7 @@ describe('unsealVault: file-mode key material — crash/partial-write coverage (
       statusCode: 400,
       message: expect.stringContaining('32'),
     })
-    // Security assertion (5-round elicitation, Security Audit Personas): the error message names
+    // Security assertion: the error message names
     // only metadata about the bad key material (its length), never the raw bytes read from disk.
     expect((caught as Error).message).not.toContain(truncatedBytes.toString('hex'))
     // The vault must never have been unsealed from partial key material — the error is thrown
@@ -345,7 +345,7 @@ describe('unsealVault: content-corruption-with-correct-size key file (hardest AC
     expect((caught as Error).message).not.toContain(corruptedButCorrectSizeBytes.toString('hex'))
     expect((caught as Error).message).not.toContain(trueKeyBytes.toString('hex'))
 
-    // Behavioral proof (5-round elicitation, Pre-mortem Analysis): primaryKey/auditKey have no
+    // Behavioral proof: primaryKey/auditKey have no
     // raw-buffer test getters, so the reliable assertion is behavioral — the vault stays sealed
     // and both getters still throw the normal "sealed" error rather than ever returning a key
     // derived from the bad input.

@@ -210,7 +210,7 @@ describe('Story 23.3 AC-29 — real boot with mock-capability-gate-extension', (
     expect(crossOrgRead.statusCode).toBe(404)
   })
 
-  // Story 23.7 Dev Notes judgment call #5 (scope extension) / AC-10 / AC-11 — "Save services" is
+  // Story 23.7 judgment call #5 (scope extension) / AC-10 / AC-11 — "Save services" is
   // now backed by real backend enforcement exactly like "Enable": a denied org's PUT request must
   // 403 capability_denied too, a genuinely symmetric enforcement proof, not a documented asymmetry.
   it('Story 23.7 AC-11: PUT /:projectId/status-page (Save services) now also 403s capability_denied for a denied org', async () => {

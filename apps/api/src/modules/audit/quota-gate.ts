@@ -238,8 +238,8 @@ export async function assertOrgMayWriteAudit(
 // alongside (not merged into) assertOrgMayWriteAudit above, at each of the same nine insert
 // sites, immediately BEFORE the storage gate (the documented ordering decision — a rate-refused
 // request never has its size estimated or attributed to the storage counter). Colocated on the
-// SAME `audit_org_storage_usage` row (no new table — see the Design Decision section of Story
-// 22.2's story file / docs/design/audit-quota.md's addendum).
+// SAME `audit_org_storage_usage` row (no new table — Story 22.2's design decision; see
+// docs/design/audit-quota.md's addendum).
 // ---------------------------------------------------------------------------------------------
 
 type RateGateResult = { admitted: boolean; preauth: boolean }
@@ -250,7 +250,7 @@ type RateGateResult = { admitted: boolean; preauth: boolean }
  * the same predicate (the NF-20 fix, applied fresh here rather than copy-pasted from an earlier,
  * unguarded draft), zero rows returned means refused. All window-boundary comparisons use the
  * DATABASE server's clock (`now()`), never the API process's clock, computed entirely inside this
- * one statement — see the story's clock-consistency requirement.
+ * one statement, so every boundary comparison uses one consistent clock.
  */
 async function runRateGateStatement(
   tx: Tx,

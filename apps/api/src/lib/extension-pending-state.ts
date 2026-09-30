@@ -14,7 +14,7 @@ export { generateOpaqueId, hashCookieValue } from './opaque-cookie-token.js'
  * `apps/api/src/modules/auth/handoff-routes.ts`'s `handoffPendingStates` established first. This
  * module covers the STORAGE/crypto layer only — it deliberately does NOT attempt to unify
  * `handoffPendingStates`' auth-handoff-specific row shape (WorkOS claim fields) with these two
- * extension-scoped tables' generic `state_json` shape (see this story's Dev Notes); refactoring
+ * extension-scoped tables' generic `state_json` shape; refactoring
  * `handoff-routes.ts` itself onto this module is explicitly OUT of this story's scope.
  */
 
@@ -125,7 +125,7 @@ export async function burnPendingStateRow(
  * Story 40.1 AC2/AC11 — the non-destructive sibling of `burnPendingStateRow()`: the identical
  * WHERE clause, but a plain SELECT that never touches `consumed_at`. 39.1's table has no
  * non-destructive read path at all (extending it to add one would change 39.1's own shipped AC3
- * security property for an unrelated use case — see this story's Finding section) — this
+ * security property for an unrelated use case) — this
  * function exists for `extension_request_states` only in practice, but is written generically
  * alongside `burnPendingStateRow()` since both share the identical query shape.
  */

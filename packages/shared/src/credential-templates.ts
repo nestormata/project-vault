@@ -4,7 +4,7 @@
 // both `apps/api` (server-side default-field synthesis + `template` enum validation) and
 // `apps/web` (client-side template-selector rendering). The API and web MUST NOT independently
 // hardcode these field lists — a drift here (e.g. web adds a field the API doesn't validate) is
-// exactly the inconsistency this shared registry exists to prevent (see story Dev Notes).
+// exactly the inconsistency this shared registry exists to prevent.
 
 export const CREDENTIAL_TEMPLATES = [
   'login',

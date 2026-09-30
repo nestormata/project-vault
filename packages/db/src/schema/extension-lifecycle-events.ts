@@ -17,8 +17,8 @@ import { projects } from './projects.js'
  * Design Decision 7 — so a future, wholly separate hard-delete event type can reuse this same
  * outbox/worker additively), every row this story's own code ever inserts has
  * `eventType = 'project_archived'`, corresponding to PV's own ARCHIVE (non-destructive,
- * reversible) operation — never a deletion. A future reader who finds only this table's name,
- * without reading Story 35.1's own Dev Notes, should not assume "lifecycle event" implies
+ * reversible) operation — never a deletion. A future reader who finds only this table's name
+ * should not assume "lifecycle event" implies
  * "deletion" — it does not.
  *
  * `projectId` FK is `onDelete: 'cascade'` — note this only ever fires if a `projects` row is

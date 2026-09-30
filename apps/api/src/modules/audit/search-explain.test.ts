@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm'
 import { getDb, withOrg } from '@project-vault/db'
 
 /**
- * AC-1's "practical scale note": epics.md cites 1M rows (NFR-PERF6), but seeding a literal 1M
+ * AC-1's "practical scale note": the requirement cites 1M rows (NFR-PERF6), but seeding a literal 1M
  * rows in every CI run is impractical for suite runtime. This test seeds a representative volume
  * (below) sufficient to force the query planner off a sequential scan, and asserts an index scan
  * appears in EXPLAIN ANALYZE output for each single-dimension filter this story adds/relies on

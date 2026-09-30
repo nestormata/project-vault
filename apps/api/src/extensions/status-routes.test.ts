@@ -80,7 +80,7 @@ describe('GET /api/v1/admin/extensions/status', () => {
     expect(body.nativeLoginPolicy.sessionsLive).toBeGreaterThanOrEqual(0)
   })
 
-  // Story 30.1 (DW-129) AC9: additive `clockSkew` field on this same diagnostics envelope.
+  // Story 30.1 AC9: additive `clockSkew` field on this same diagnostics envelope.
   it('Story 30.1 AC9: includes a well-formed clockSkew diagnostics field', async () => {
     const admin = await createDirectAuthenticatedUser(suite.app, 'status-clock-skew', 'admin')
     await enrollMfa(admin.userId)

@@ -71,8 +71,7 @@ async function updateOrgDormancyColumn<
 }
 
 /**
- * Story 15.2 AC 1/6 — Task 2.4's explicit decision (post-elicitation Pre-Mortem Analysis, see the
- * story's Dev Notes): do NOT widen `updateOrgDormancyColumn<K>`'s `Record<K, number>` constraint
+ * Story 15.2 AC 1/6 — Task 2.4's explicit decision (from a pre-mortem analysis): do NOT widen `updateOrgDormancyColumn<K>`'s `Record<K, number>` constraint
  * to `number | string` to accommodate this new string-typed column. That helper is already relied
  * on by two `done` stories' routes; a small parallel handler here, following the identical shape,
  * avoids any regression risk to those routes for the sake of saving a few lines on this third
@@ -134,7 +133,7 @@ function unknownThemeResponse(themeName: string) {
  * — this setting's validation is a dynamic live-list-membership check against `getCompiledThemes()`
  * (mirroring `PATCH /themes/selection`'s own validation exactly), not a numeric enum or a fixed
  * `z.enum`, so it doesn't fit either existing helper's shape. Same "don't touch a helper two/three
- * already-`done` stories' routes depend on" reasoning Story 15.2's Dev Notes already established
+ * already-`done` stories' routes depend on" reasoning Story 15.2 already established
  * for this exact file.
  */
 async function updateOrgDefaultThemeColumn(
@@ -311,8 +310,8 @@ export async function organizationSettingsRoutes(fastify: FastifyApp): Promise<v
   // Story 15.2 AC 1/5/6/7 — third registration in this shared file, mirroring the two dormancy
   // handlers above (rate limit, minimumRole, requireMfa, and the inline fail-closed audit-write
   // convention route-audit.test.ts's assertAuditedActionOptOutsAreJustified check requires). No
-  // GET readback route is added — see the story's Dev Notes ADR "no GET readback for the org
-  // default": this page's two existing settings already establish set-only as the deliberate
+  // GET readback route is added (a deliberate "no GET readback for the org default" decision):
+  // this page's two existing settings already establish set-only as the deliberate
   // precedent.
   secureRoute(fastify, {
     method: 'PATCH',

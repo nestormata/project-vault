@@ -193,7 +193,7 @@ describe('POST /register self-signup enumeration fix (Story 1.20)', () => {
     }
   )
 
-  // Story 1.21 Dev Notes "Enumeration independence": the new refine runs as part of the
+  // Story 1.21, enumeration independence: the new refine runs as part of the
   // top-level Zod parse, before registerUser()/email-existence branching is ever reached — a
   // password_too_weak rejection must therefore be byte-identical for a novel vs.
   // already-registered email, creating no new enumeration signal alongside Story 1.20's fix.

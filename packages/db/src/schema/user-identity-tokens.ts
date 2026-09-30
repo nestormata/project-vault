@@ -1,7 +1,7 @@
 import { pgTable, uuid, text, timestamp } from 'drizzle-orm/pg-core'
 import { users } from './users.js'
 
-// Not org-scoped: platform-level identity table shared across orgs (see Dev Notes).
+// Not org-scoped: platform-level identity table shared across orgs.
 export const userIdentityTokens = pgTable('user_identity_tokens', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),

@@ -6,14 +6,14 @@
  * `@fastify/type-provider-zod`'s serializer silently strips any key a route's Zod response schema
  * doesn't declare, so "the response matches its own schema" can be trivially true even when a
  * required field is missing from the wire response entirely (the exact class of bug this rule
- * exists to catch — see the pre-fix machine-users example in the story's D7/D8 notes).
+ * exists to catch, e.g. the pre-fix machine-users list).
  */
 
 /**
  * Exemption allowlist for genuinely different pagination styles, plus a small set of pre-existing,
  * confirmed FR97 gaps this story's D8 didn't cover. Story 8.2's cursor-paginated audit search
  * (`{ items, nextCursor, hasMore }` or similar) is one anticipated future entry; add it here (by
- * `METHOD /path` key) when that story ships, per the story's own Open Questions. `GET
+ * `METHOD /path` key) when that story ships. `GET
  * /api/v1/auth/sessions` does not need an entry: it returns a bare top-level array (`{ data: [...]
  * }`), not an array nested inside a `data` object, so D7's heuristic ("an array-typed *property* of
  * the `data` object") does not structurally match it at all — confirmed by inspecting its generated

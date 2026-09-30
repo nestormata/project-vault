@@ -5,7 +5,7 @@ import { users } from './users.js'
 import { projects } from './projects.js'
 
 // Story 6.2 (ADR-6.2-01): a new, standalone table — deliberately NOT linked to
-// payment_records (no FK). architecture.md's canonical schema names this table
+// payment_records (no FK). The architecture's canonical schema names this table
 // service_endpoints ("HTTP uptime monitoring") as a distinct entity from payment_records
 // ("Payment/subscription records"). Route: POST/GET/PATCH/DELETE
 // /api/v1/projects/:projectId/service-endpoints (not /services, which is payment_records' path).

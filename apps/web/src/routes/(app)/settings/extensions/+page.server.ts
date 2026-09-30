@@ -4,7 +4,7 @@ import { fetchHealth, type HealthResponse } from '$lib/api/platform.js'
 import { requireUser } from '$lib/server/require-user.js'
 import type { PageServerLoad } from './$types.js'
 
-// Story 14.5 AC-5 / Dev Notes RBAC judgment call: mirrors Story 14.2's API-side
+// Story 14.5 AC-5 / RBAC judgment call: mirrors Story 14.2's API-side
 // `allowedRoles: ['admin']` exactly — 'owner' is deliberately NOT admin-equivalent here.
 const EXTENSIONS_PAGE_ROLE = 'admin'
 

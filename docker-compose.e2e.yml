@@ -2,7 +2,7 @@
 # global-setup.ts (apps/web/e2e/global-setup.ts) can call POST /api/v1/vault/init without a
 # bootstrap token, plus a raised AUTH_RATE_LIMIT_MAX (see apps/api/src/config/env.ts) so this
 # suite's real registrations/logins/MFA calls don't trip the default 60/min global auth rate
-# limiter (empirically confirmed necessary, not speculative — see this story's Dev Notes). The
+# limiter (empirically confirmed necessary, not speculative). The
 # same fastify plugin instance also covers GET /api/v1/auth/me, which every `(app)` route's
 # server-side load function calls once per navigation — across 13 specs' worth of page loads this
 # adds up well past even a few hundred/minute, hence the generous headroom below rather than a

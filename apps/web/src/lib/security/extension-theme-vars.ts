@@ -7,7 +7,7 @@ import type { ExtensionThemeCssVar } from '@project-vault/extension-api'
  * composition function (`compose-panel-document.ts`) can inject them as a `:root {}` block.
  *
  * Deliberately does not use `packages/shared`'s `THEME_TOKENS` registry keys directly as the
- * published contract's own names (see Open Design Question 2 in the story file — a naming
+ * published contract's own names (a deliberate open design choice — a naming
  * contract between PV's own token names and any extension's names does not exist and this story
  * does not invent one) — instead each `--pv-ext-*` property maps to exactly one PV-compiled CSS
  * custom property, chosen for the closest matching semantics:

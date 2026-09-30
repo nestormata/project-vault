@@ -30,7 +30,7 @@ import { instrumentHydrationDetection, waitForHydration } from '../fixtures/hydr
  * second, independently-checkable "zero requests of either kind" signal per the story's
  * Investigation section).
  *
- * Methodology, per the story's own Failure Mode Analysis (round 5 of its elicitation log):
+ * Methodology, per the story's own failure-mode analysis:
  * `page.click()` already waits for the target to be "actionable," which can itself wait long
  * enough for hydration to finish and silently defeat the very race this journey exists to catch.
  * Every click here is therefore `page.mouse.click()` at a raw coordinate, fired the instant
@@ -240,7 +240,7 @@ async function reportClickOutcome(options: {
     )
     if (expectNoRace) {
       // Code-review finding (high): AC1's own measurement established this mode is consistently
-      // NOT raced (a consistently-negative gap over 5+ runs — see Dev Agent Record). Fail loudly
+      // NOT raced (a consistently-negative gap over 5+ runs). Fail loudly
       // here rather than merely logging, so a future regression is caught by CI instead of
       // silently passing.
       expect(

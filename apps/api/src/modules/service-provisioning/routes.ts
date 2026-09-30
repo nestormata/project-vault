@@ -59,7 +59,7 @@ function assertServiceProvisioningAuthorized(headers: FastifyRequestHeaders): vo
 }
 
 /**
- * Story 31.1 (DW-130) Decision 1/AC1.2/AC1.3/AC1.4/AC1.5: the exact same pattern as
+ * Story 31.1 Decision 1/AC1.2/AC1.3/AC1.4/AC1.5: the exact same pattern as
  * assertServiceProvisioningAuthorized above, against a DEDICATED, never-shared secret
  * (SERVICE_REVOCATION_TOKEN — see env.ts's validateServiceRevocationTokenProductionSecret). Fail-
  * closed when unset; timingSafeHeaderTokenMatches already handles the length-mismatch case
@@ -123,7 +123,7 @@ function parseOrReply<T>(
 }
 
 /**
- * Story 31.1 (DW-130) Decision 5/AC14.46/AC14.47 — fires a real-time operator-facing alert on
+ * Story 31.1 Decision 5/AC14.46/AC14.47 — fires a real-time operator-facing alert on
  * EVERY successful call to the revocation route (even at zero counts), reusing this codebase's
  * existing operational-event/notification mechanism (createAdminAlert +
  * deliverAdminAlertToPlatformOperator) rather than inventing a new delivery path. Deliberately NOT
@@ -179,7 +179,7 @@ async function dispatchOrgSessionsRevokedAlert(
 }
 
 export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<void> {
-  // Story 31.1 (DW-130) Decision 5/AC8.28/AC14.45: @fastify/rate-limit must actually be
+  // Story 31.1 Decision 5/AC8.28/AC14.45: @fastify/rate-limit must actually be
   // registered somewhere for a route's `config: { rateLimit: {...} }` to have any effect at all
   // — mirrors auth/routes.ts's own per-module registration (this module's provisioning route
   // above stays unaffected via its own `rateLimit: false`). Same isRateLimitEnforced() test-bypass
@@ -292,8 +292,8 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
     },
   })
 
-  // Story 31.1 (DW-130): machine-authenticated, org-wide handoff-session (+ machine-user API key)
-  // revocation — see the story's Decisions 1-6 for the full rationale. Registered via
+  // Story 31.1: machine-authenticated, org-wide handoff-session (+ machine-user API key)
+  // revocation. Registered via
   // fastify.route() directly (never secureRoute()) for the same reason as the provisioning route
   // above: there is no PV session to authenticate.
   fastify.route({
@@ -380,12 +380,12 @@ export async function serviceProvisioningRoutes(fastify: FastifyApp): Promise<vo
     },
   })
 
-  // Story 33.1 (DW-256): machine-authenticated backfill of
+  // Story 33.1: machine-authenticated backfill of
   // organizations.centralizeme_organization_id for a pre-existing organization — extends this
   // same module with a fourth route (Decision 1). Same auth mechanism/no-new-secret convention
   // (assertServiceProvisioningAuthorized, SERVICE_PROVISIONING_TOKEN) and same
   // `rateLimit: false` provisioning-class convention as the org-bootstrap/per-member routes above
-  // (not 31.1's rate-limited revocation route) — see the story's Security section for why.
+  // (not 31.1's rate-limited revocation route).
   fastify.route({
     method: 'PATCH',
     url: '/api/v1/service/organizations/:organizationId/centralizeme-link',

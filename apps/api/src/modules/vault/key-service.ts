@@ -151,7 +151,7 @@ function readKeyMaterialFile(
 
   // O_NOFOLLOW prevents an attacker from swapping the file for a symlink between stat and
   // read (Linux). It does NOT prevent a regular-file content swap in that same window —
-  // production deployments mitigate that via read-only secrets mounts (see Dev Notes).
+  // production deployments mitigate that via read-only secrets mounts.
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- validated regular file inside VAULT_KEY_DIR; O_NOFOLLOW hardens the open.
   const fd = openSync(resolved, constants.O_RDONLY | constants.O_NOFOLLOW)
   try {

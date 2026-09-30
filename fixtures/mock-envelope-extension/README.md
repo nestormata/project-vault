@@ -28,7 +28,7 @@ via the `fast-jwt` library) carrying `sub`/`aud`/`iat`/`exp`/`jti` and an option
 tests and for a single local `pnpm dev` process, and it is **exactly wrong** for anything beyond
 that:
 
-- **Multi-worker / multi-replica deployments** (ADR 0003's sharded topology, or any ordinary
+- **Multi-worker / multi-replica deployments** (a sharded multi-instance topology, or any ordinary
   Docker Compose deployment running more than one API process): each worker has its own `Set`, so
   the *same* signed envelope can be replayed once per worker before any of them notices.
 - **A restart clears it entirely.** A captured, still-unexpired envelope is fully replayable again
@@ -37,8 +37,8 @@ that:
 **A real extension implementing this contract MUST use a DB-backed atomic conditional write**
 (`INSERT ... ON CONFLICT DO NOTHING`, exactly like this story's own
 `apps/api/src/modules/auth/native-login-latch.ts` uses for its proving latch) keyed on `jti`, not
-an in-memory structure. This is stated here, in the source comment on `burnedJti`, and in Story
-23.2's own Dev Notes so nobody mistakes this fixture's shortcut for a production-ready pattern.
+an in-memory structure. This is stated here and in the source comment on `burnedJti` so nobody
+mistakes this fixture's shortcut for a production-ready pattern.
 
 ## Failure modes this fixture deliberately makes testable (AC-14/AC-15)
 

@@ -26,7 +26,7 @@ type CountRow = { key: string; attempt_count: string | number }
 type UserRow = { user_id: string }
 
 // RLS forces org_memberships lookups to run per-org (no cross-org query is possible
-// through the app role) — see Story 1.9 Dev Agent Record. Returns ALL active orgs for
+// through the app role, since RLS scopes each query to one org). Returns ALL active orgs for
 // the user, not just the first match, so a multi-org user's breach alerts every org.
 async function activeOrgsForUser(orgIds: string[], userId: string): Promise<string[]> {
   const matches: string[] = []

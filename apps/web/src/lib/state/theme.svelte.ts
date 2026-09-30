@@ -53,7 +53,7 @@ export function setPreAuthTheme(themeName: string | null, css: string | null): v
  * browser successfully resolved", written through from `resolvePreAuthTheme()`
  * (`apps/web/src/lib/components/auth/form-model.ts`) and read once, optimistically, on
  * `(auth)/+layout.svelte` mount (Task 3). Deliberately versioned (`v1`) so a future format change
- * ships as a new key rather than a migration — see Dev Notes "Design rationale".
+ * ships as a new key rather than a migration.
  */
 export const PRE_AUTH_THEME_CACHE_KEY = 'pv:preAuthTheme:v1'
 export const PRE_AUTH_THEME_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -61,7 +61,7 @@ export const PRE_AUTH_THEME_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 // Deliberately unambiguous, short deny-list — a defense-in-depth backstop for an
 // already-tampered/compromised browser replaying a `localStorage` entry, NOT a reuse of
 // Story 16.1's server-only `validateAndCompileTokens` (Node-only dependencies; cannot run in
-// `apps/web` — see Dev Notes "Pre-mortem" correction and Task 1.3).
+// `apps/web` — Task 1.3).
 const UNSAFE_CSS_SUBSTRINGS = ['expression(', '@import', 'javascript:', '<script', 'behavior:']
 const CSS_URL_FUNCTION_START = /url\(/gi
 const CSS_URL_FUNCTION = /url\(([^)]*)\)/gi

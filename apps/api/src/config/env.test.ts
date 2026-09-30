@@ -1606,7 +1606,7 @@ describe('env', () => {
     })
   })
 
-  // Story 30.1 (DW-129) AC1: VAULT_HANDOFF_INSTANCE_ID strict-format boot validation.
+  // Story 30.1 AC1: VAULT_HANDOFF_INSTANCE_ID strict-format boot validation.
   describe('Story 30.1: VAULT_HANDOFF_INSTANCE_ID', () => {
     it('AC1.3: is unset by default and boot succeeds', async () => {
       process.env = { ...BASE_ENV, DATABASE_URL: VAULT_APP_DATABASE_URL }
@@ -1643,7 +1643,7 @@ describe('env', () => {
     })
   })
 
-  // Story 30.1 (DW-129) AC2: VAULT_HANDOFF_VERIFY_KEYS shape/format boot validation (parsing
+  // Story 30.1 AC2: VAULT_HANDOFF_VERIFY_KEYS shape/format boot validation (parsing
   // only — no crypto use, see parseHandoffVerifyKeys's own unit tests for the pure-function
   // contract).
   describe('Story 30.1: VAULT_HANDOFF_VERIFY_KEYS', () => {
@@ -1739,7 +1739,7 @@ describe('env', () => {
     })
   })
 
-  // Story 30.1 (DW-129) AC3: clock-skew warn-threshold config.
+  // Story 30.1 AC3: clock-skew warn-threshold config.
   describe('Story 30.1: VAULT_HANDOFF_CLOCK_SKEW_WARN_MS', () => {
     it('defaults to 20000ms', async () => {
       process.env = { ...BASE_ENV, DATABASE_URL: VAULT_APP_DATABASE_URL }

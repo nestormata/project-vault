@@ -110,7 +110,7 @@ export function getHandoffSecurityHeaders() {
 }
 
 /**
- * Story 60.3 AC4 (elicitation Round 3, Cascading Failure Simulation) — an exact match, never a
+ * Story 60.3 AC4 (cascading-failure analysis) — an exact match, never a
  * prefix/substring match. A loose match here could either strip frame-protection headers from an
  * unrelated route (e.g. a hypothetical `/handoff-admin`) or fail to apply the new Referrer-Policy
  * to a real `/handoff` sub-path, silently weakening the security posture this AC exists to add.

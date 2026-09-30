@@ -264,7 +264,7 @@ describe('hooks.server handle', () => {
 // AC4 (Story 60.1) — boot-time warning when handoff is enabled but apps/web's own
 // CORS_ALLOWED_ORIGINS has no non-PV origin (F1's "no PV-side log line" gap). Tested directly
 // against the extracted function, not only through hooks.server's module-scope call site, per
-// the story's own elicitation finding: the function itself must be pure/non-throwing/silent by
+// the story's own review finding: the function itself must be pure/non-throwing/silent by
 // default, since a bare top-level call re-executes on every test-file import.
 describe('checkHandoffCorsBootWarning', () => {
   let warnSpy: ReturnType<typeof vi.spyOn>
@@ -327,7 +327,7 @@ describe('checkHandoffCorsBootWarning', () => {
     expect(warnSpy).not.toHaveBeenCalled()
   })
 
-  // Elicitation finding (Pre-mortem, integrated) — the fourth required case: with every relevant
+  // Pre-mortem finding — the fourth required case: with every relevant
   // env var absent/undefined (the default state in a bare vitest run with no .env loaded), the
   // call must throw nothing and print nothing.
   it('throws nothing and warns nothing when every relevant env var is absent', () => {

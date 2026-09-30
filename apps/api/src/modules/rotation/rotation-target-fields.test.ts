@@ -472,7 +472,7 @@ describe('rotation target_fields — field-scoped rotation (Story 13.4)', () => 
     expect(retire.json()).toMatchObject({ data: { status: 'retired' } })
   })
 
-  // Dev Notes ADR: selecting every field explicitly stays a materialized list, distinct from NULL
+  // Design decision: selecting every field explicitly stays a materialized list, distinct from NULL
   it('selecting every field key explicitly produces a materialized target_fields list, not NULL', async () => {
     const projectId = await createCredentialTestProject(app, owner.cookies, 'ac-all-fields')
     const credential = await createMultiFieldCredential(app, owner.cookies, projectId)

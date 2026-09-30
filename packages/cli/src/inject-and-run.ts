@@ -14,7 +14,7 @@
  * pvault's own `VAULT_API_KEY` from the child env, the audit invocation context sent on every
  * fetch, and `hardenProcessDiagnostics()`.
  *
- * Code-review guidance (Story 43.4 Dev Notes decision #7): no error path in this module may
+ * Code-review guidance (Story 43.4 decision #7): no error path in this module may
  * serialize a fetched value, the `injected`/child-env map, the FD JSON payload, or the parent's
  * environment into a message — e.g. a debugging `console.error(childEnv)` or `JSON.stringify(deps)`
  * on an error path would violate AC-1 even though it has nothing to do with the child's own crash
@@ -64,7 +64,7 @@ export type SpawnFn = (
 export type SecretsDelivery = 'env' | 'fd'
 
 /**
- * Story 43.4 AC-1 / Dev Notes decision #5 — pvault's OWN credential, stripped from the env the
+ * Story 43.4 AC-1 / decision #5 — pvault's OWN credential, stripped from the env the
  * child inherits in both delivery modes. Without this, `VAULT_API_KEY=… pvault run --secret X --
  * app` would hand the child a key able to fetch every credential the machine user can reach — a
  * secondary-disclosure path strictly worse than the one this story closes. Non-secret config
@@ -128,7 +128,7 @@ export type InjectAndRunDeps = {
   /** The environment the child inherits, layered with the injected vars on top — defaults to
    * `{}` when omitted (a real CLI caller always passes the real `process.env`). */
   baseEnv?: NodeJS.ProcessEnv
-  /** Per-secret provenance/warning sink (Dev Notes decision #7). Optional — a non-CLI caller that
+  /** Per-secret provenance/warning sink (decision #7). Optional — a non-CLI caller that
    * doesn't care about stderr-style diagnostics can simply omit it. */
   writeStderr?: (chunk: string) => void
   /** Story 43.4 AC-2 — defaults to `'env'`. */
@@ -319,7 +319,7 @@ export async function injectAndRun(
         // deps.parentProcess.kill) terminates the real process itself before any exit code this
         // function resolves with could ever be observed by a real caller.
         //
-        // Windows edge case (Dev Notes decision #5) — Node's signal model on Windows is limited
+        // Windows edge case (decision #5) — Node's signal model on Windows is limited
         // (no real signal re-raise), so this documents the Windows-fallback: a plain non-zero
         // exit code (`childSignalTerminated`) rather than attempting an unsupported re-raise.
         if (deps.parentProcess.platform === 'win32') {

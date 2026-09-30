@@ -2,8 +2,7 @@ import semver from 'semver'
 import type { ExtensionDbScopeEntry } from './db-access.js'
 
 /**
- * AC1 — the manifest shape an extension author declares, per architecture.md
- * § Extension Manifest Shape.
+ * AC1 — the manifest shape an extension author declares.
  */
 export type ExtensionCapability =
   | 'auth-provider'
@@ -92,7 +91,7 @@ export type ExtensionManifest = {
    * @deprecated Story 29.4 — superseded by `moduleDataRoutes`, which mounts real Fastify routes
    * directly on PV's own API router instead of relaying through the (now-deleted) DATA relay.
    * Kept, unused, purely to avoid an unplanned MAJOR `EXTENSION_API_VERSION` bump for removing a
-   * public type field (see Story 29.4 AC8's Dev Notes) — every consumer of this field has been
+   * public type field (Story 29.4 AC8) — every consumer of this field has been
    * deleted; only the type/validator survive.
    */
   panelDataPaths?: string[]
@@ -104,7 +103,7 @@ export type ExtensionManifest = {
    * *rendering* mechanism, while a nav entry is a general-purpose capability — a link to anywhere
    * in PV, potentially contributed by an extension that only implements `'auth-provider'` or
    * `'notification-channel'`. Do not "fix" this into matching the other fields' capability gate;
-   * this divergence is intentional (see this story's Dev Notes). Omitted (or `undefined`) is
+   * this divergence is intentional. Omitted (or `undefined`) is
    * fully backward-compatible: the host renders zero extension-contributed nav entries. When
    * present, must be a non-empty array of unique-`id` items, capped at `MAX_NAV_ITEMS`, each
    * validated by `registerExtension()`'s `validateNavItemsShape()` — see that function for the
@@ -130,7 +129,7 @@ export type ExtensionManifest = {
    * value (on EITHER `onOAuthStart` or `onOAuthCallback`) is permitted to redirect to. PV
    * validates every extension-supplied `url`'s origin against this list before ever issuing a
    * `302` — including the very first redirect (the provider's own authorize URL), since even
-   * that is extension-supplied data (defense in depth, see this story's AC9 Dev Notes). Only
+   * that is extension-supplied data (defense in depth, AC9). Only
    * legal alongside `'oauth-handoff'` in `capabilities[]`; REQUIRED (non-empty) whenever that
    * capability is declared — validated by `registerExtension()`'s
    * `validateRedirectOriginsShape()`.
@@ -181,8 +180,8 @@ export type ScheduledTaskDeclaration = {
 
 /**
  * Story 29.4 AC1 — a single manifest-declared module-data route. `method` is currently always the
- * literal `'GET'` (not a union) — this story is scoped to the data-fetch half of ADR 0005's
- * addendum item 3; a future story may widen this to other read-shaped methods. `path` is a
+ * literal `'GET'` (not a union) — this story is scoped to the data-fetch half of module API
+ * routes; a future story may widen this to other read-shaped methods. `path` is a
  * `/`-separated route path (Fastify-native `:param` syntax, no translation needed) matching
  * `MODULE_DATA_ROUTE_PATH_PATTERN`.
  */
@@ -214,7 +213,7 @@ export type ExtensionNavItem = {
  * field may use. The host maps each token to one of its own pre-existing icon glyphs at render
  * time; no SVG, image URL, or other extension-supplied visual content is ever accepted. Extending
  * this set is a deliberate, additive-minor `EXTENSION_API_VERSION` change — never a freeform
- * string, even for a "just this once" new extension request (see this story's Dev Notes).
+ * string, even for a "just this once" new extension request.
  */
 export const NAV_ITEM_ICON_TOKENS = ['puzzle-piece', 'link', 'grid'] as const
 export type NavItemIconToken = (typeof NAV_ITEM_ICON_TOKENS)[number]
@@ -223,8 +222,8 @@ export type NavItemIconToken = (typeof NAV_ITEM_ICON_TOKENS)[number]
  * Story 25.2 AC1 — the charset a declared `uiPanelSlots` entry must match. Lowercase
  * alphanumerics and hyphens only, 1-64 chars: excludes `/`, `.`, and every other structural
  * character by construction, closing the path-traversal/route-confusion angle considered during
- * this story's own Red Team vs Blue Team elicitation round without any extra code. This is new
- * code (see AC1's Assumption Audit correction) — Story 25.1's request-side `slot` check is a
+ * this story's own red-team review without any extra code. This is new
+ * code (AC1 assumption-audit correction) — Story 25.1's request-side `slot` check is a
  * plain exact-match against `knownSlots`, not a standalone regex.
  */
 export const UI_PANEL_SLOT_NAME_PATTERN = /^[a-z0-9-]{1,64}$/
@@ -390,20 +389,20 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // Story 23.11 AC6 — bumped as a genuine BREAKING major (2.2.0 -> 3.0.0), not additive-minor:
 // removing `organizationId` from `OrgAuthorizationCheckContext` is safe at the JS-structural
 // level but not at the TypeScript level for an existing caller that passes an inline object
-// literal (excess-property check rejects the now-unknown field at compile time). See this
-// story's Dev Notes/PR description for the coordinated centralizeme-sass follow-up this requires.
+// literal (excess-property check rejects the now-unknown field at compile time), which
+// requires a coordinated CentralizeMe follow-up.
 // Story 25.2 AC1/Task 1 — bumped as an additive-minor (3.0.0 -> 3.1.0), not a major: the new
 // optional `uiPanelSlots` field is backward-compatible by construction (AC2's fallback), and
 // `HOST_SUPPORTED_EXTENSION_API_RANGE`'s floor stays `>=3.0.0`, so CM's real, currently-shipped
 // manifest (declared exact version "3.0.0") keeps loading with zero coordinated cross-repo
 // change required — confirmed against `isAboveHostButSameMajor`/the range's actual floor/ceiling
-// logic (see this story's Dev Notes Pre-mortem Analysis).
+// logic (pre-mortem analysis).
 // Story 25.3 AC1/Task 1 — bumped as an additive-minor (3.1.0 -> 3.2.0) and merged to main first:
 // `UIPanelContext` gains `resourceId?`, `identity`, `orgId`, `projectId?`, `locale`, `theme` (see
 // `hooks/ui-panel.ts`). TypeScript's bivariant parameter checking for method-shorthand object
 // literals (`onRenderPanel(context) {...}`) means an existing extension's narrower-typed
 // implementation stays structurally assignable to the widened `UIPanel` type without a
-// coordinated update — confirmed during this story's own Pre-mortem Analysis elicitation round —
+// coordinated update — confirmed during this story's own pre-mortem analysis —
 // so an additive-minor bump (not a major) remains correct.
 // Story 25.4 AC4/Task 4 — this branch independently bumped 3.1.0 -> 3.2.0 too (developed in
 // parallel with 25.3, before either merged), for its own additive-minor change: the new

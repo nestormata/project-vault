@@ -45,8 +45,8 @@ type PublicRouteOutcome = PublicRouteResult | ActionResult
 const MIN_HTTP_STATUS = 100
 const MAX_HTTP_STATUS = 599
 // Code review fix (High finding) — `PublicRouteResult`'s own doc comment states "there is no
-// redirect outcome in v1" (closing the SSRF-proxy/cache-poisoning angle from this story's Red
-// Team vs Blue Team elicitation round), but nothing previously enforced that: a hook could return
+// redirect outcome in v1" (closing the SSRF-proxy/cache-poisoning angle raised in this story's
+// Red Team vs Blue Team review), but nothing previously enforced that: a hook could return
 // `{ outcome: 'response', status: 302, headers: { location: '...' } }` and it would have passed
 // straight through to `reply.status(outcome.status).send(...)`. Rejecting the whole 3xx range here
 // makes the documented v1 restriction structurally true instead of merely documented.

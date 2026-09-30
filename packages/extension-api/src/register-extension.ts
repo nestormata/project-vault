@@ -53,7 +53,7 @@ const REVERSE_DNS_NAME_PATTERN = /^[a-z0-9]+(\.[a-z0-9-]+)+$/
  * The bag of hooks an extension provides, keyed by capability. All optional — an extension only
  * implements the hooks matching the capabilities it declared in its manifest.
  *
- * Story 23.8 Dev Notes § Why `HostServices` is a new concept, not a fifth `ExtensionHooks` field:
+ * Story 23.8 — why `HostServices` is a new concept, not a fifth `ExtensionHooks` field:
  * `audit-event-source` is deliberately NOT a field here. Every field below is something the
  * extension implements and PV calls; `audit-event-source` is the reverse (PV implements it, the
  * extension calls it), so it lives in `HostServices` instead (`host-services.ts`). Do not "fix"
@@ -367,7 +367,7 @@ const DEFAULT_RUNTIME_HOST: ExtensionRuntimeContext & HostServices = {
  * (keys only, never values), and returns `true` iff an unrecognized key is an exact
  * case-insensitive match of a known field name but not an exact case-sensitive match — the one
  * deterministic case that fails the load. The edit-distance heuristic the first draft specified
- * is deliberately not implemented (see AC-2's Dev Notes rationale).
+ * is deliberately not implemented (AC-2).
  */
 function checkUnknownManifestKeys(
   manifest: ExtensionManifest,

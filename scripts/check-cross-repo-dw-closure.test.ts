@@ -183,6 +183,5 @@ describe('scanCrossRepoDwClosure', () => {
 })
 
 // The real-repository regression run (AC-3 scenario 10) is deliberately NOT a Vitest test here —
-// it depends on this specific machine's local centralizeme-sass checkout existing, and is instead
-// run manually and its actual output recorded in this story's Dev Agent Record (see
-// 20-15-cross-repo-dw-closure-verification-check.md).
+// it depends on a local checkout of the consumer repo existing on this specific machine, and is
+// instead run manually.

@@ -1,6 +1,6 @@
 /**
  * AC2/AC3 — `NotificationChannel` is one of the three typed hook interfaces this package
- * exports. Serializable-data-only payload per architecture.md § Data Boundaries.
+ * exports. Serializable-data-only payload per the architecture's data-boundary rule.
  */
 export type NotificationPayload = {
   subject: string

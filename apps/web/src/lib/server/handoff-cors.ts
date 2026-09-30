@@ -1,6 +1,5 @@
 // Story 30.5 — scoped CORS support for the CM->PV `POST /api/v1/auth/handoff/prepare` proxy
-// route only (see Background's "Architecture decision" in
-// _bmad-output/implementation-artifacts/30-5-handoff-confirmation-ui.md). This module
+// route only. This module
 // deliberately mirrors `apps/api/src/config/env.ts`'s `CORS_ALLOWED_ORIGINS` parsing
 // (comma-separated, trimmed origin set) rather than delegating the CORS decision to `apps/api`
 // itself: `apps/api`'s `@fastify/cors` plugin is registered once, globally, in its own process,

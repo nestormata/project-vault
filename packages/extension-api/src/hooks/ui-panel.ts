@@ -1,6 +1,6 @@
 /**
  * AC2/AC3 — `UIPanel` is one of the three typed hook interfaces this package exports.
- * Serializable-data-only render result per architecture.md § Data Boundaries — an extension
+ * Serializable-data-only render result per the architecture's data-boundary rule — an extension
  * returns markup/data for core to render, it never receives a live DOM/component reference.
  *
  * ### Story 25.4 AC5 — accessibility expectations for `onRenderPanel()`'s returned markup
@@ -13,13 +13,12 @@
  * guidance, not an enforced contract. Panel authors should:
  *
  * - Return semantic HTML: real heading elements, labelled form controls, and `aria-live` regions
- *   for asynchronous status updates (CM's real `access-group/ui-panel.ts` is the positive example
- *   this guidance is calibrated against — its form handling, confirm `<dialog>`, and
- *   `aria-live="polite"` status region already follow this).
+ *   for asynchronous status updates (for example, a confirm `<dialog>` and an
+ *   `aria-live="polite"` status region).
  * - Not assume any ambient stylesheet: the panel document is isolated (see AC3) and receives only
  *   PV's small `--pv-ext-*` custom-property theming contract (`EXTENSION_THEME_CSS_VARS` /
  *   `ExtensionThemeCssVar`, `theme-contract.ts`) — consume those via `var(--pv-ext-ink, #yourFallback)`
- *   with a hardcoded fallback, exactly like CM's existing `var(--cm-access-ink, #24323b)` pattern.
+ *   with a hardcoded fallback, the same pattern as an extension-local `var(--ext-ink, #24323b)`.
  */
 export type UIPanelContext = {
   /** Which named panel slot core is asking the extension to render into. */
@@ -78,8 +77,8 @@ export type UIPanelContext = {
    * Story 25.5 AC4/Task 1 — additive field only, `UIPanelResult` stays untouched (Story 25.5
    * AC6). The absolute path to this story's new `POST /extensions/panels/:slot/actions` route,
    * present only when the currently loaded extension declares `moduleActions` for this slot —
-   * `undefined` (never `''`), not populated, when it does not, matching CM's own
-   * `root.dataset.actionEndpoint` truthiness check (`if (endpoint)`) exactly. Wiring this field's
+   * `undefined` (never `''`), not populated, when it does not, so a panel script can use a
+   * plain truthiness check (`if (endpoint)`) on it. Wiring this field's
    * resolution into `resolvePanelContextAndRender()` is Story 25.5's Task 4, gated on Story
    * 25.4's `EXTENSION_PANEL_CSP`/`composePanelDocument()` landing on `main` first — the field
    * exists here now (type-level, additive, backward-compatible) but is not yet populated by any
@@ -94,7 +93,7 @@ export type UIPanelContext = {
    * anything about its contents (identical posture to `resourceId` above), and it is NEVER
    * concatenated into the `GET /api/v1/extensions/panels/:slot` route's own `:slot` path
    * parameter (that parameter's `knownSlots.includes(slot)` exact-match validation stays
-   * untouched — see this story's Dev Notes). Present only when the matched URL actually has a
+   * untouched). Present only when the matched URL actually has a
    * non-empty sub-path segment; `undefined` (never `''`) otherwise, matching `resourceId`'s own
    * documented `undefined`-vs-`''` contract.
    */

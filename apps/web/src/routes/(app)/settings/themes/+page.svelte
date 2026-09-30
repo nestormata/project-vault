@@ -15,7 +15,7 @@
   let errorMessage = $state<string | null>(null)
 
   // Story 16.3 — "Reload themes" admin/owner section. The button is shown to every admin/owner
-  // (AC-4 Dev Notes: there is no side-effect-free way to know MFA-enrollment status ahead of
+  // (AC-4: there is no side-effect-free way to know MFA-enrollment status ahead of
   // time for this endpoint), and MFA-required state is detected reactively from the click's own
   // 403 mfa_required response, not a load-time precheck.
   let reloading = $state(false)

@@ -1,5 +1,5 @@
 /**
- * Dev Notes decision #4 — exit-code scheme for AC-5. Every `.code` string
+ * Decision #4 — exit-code scheme for AC-5. Every `.code` string
  * `@project-vault/agent`'s `VaultAgentError` (and subclasses) can throw gets its own distinct
  * exit code, so a CI pipeline can branch on `$?` reliably (e.g. retry-worthy "vault unreachable"
  * family vs. non-retry-worthy "credential not found"). This table is also reproduced in
@@ -30,7 +30,7 @@ export const EXIT_CODES = {
   cacheDecryptionFailed: 11,
   cacheCorrupted: 12,
   unexpected: 13,
-  // Story 43.2 (Dev Notes decision #4) — append-only, `pvault login`/`logout`/session-consuming
+  // Story 43.2 (decision #4) — append-only, `pvault login`/`logout`/session-consuming
   // command failure modes. Never renumber the block above.
   notLoggedIn: 14,
   sessionExpired: 15,
@@ -39,12 +39,12 @@ export const EXIT_CODES = {
   webauthnOnlyUnsupported: 18,
   insecureSessionFilePermissions: 19,
   nativeLoginDisabled: 20,
-  // Not one of Dev Notes decision #4's originally-named codes, but a plain "email/password was
+  // Not one of decision #4's originally-named codes, but a plain "email/password was
   // wrong" outcome needs its own distinguishable code too (append-only, same discipline as the
   // rest of this table) — reusing `usageError` would misleadingly suggest a bad CLI invocation
   // rather than a rejected credential.
   invalidCredentials: 21,
-  // Story 43.3 (Dev Notes decision #5) — append-only, `pvault run --` failure modes. Never
+  // Story 43.3 (decision #5) — append-only, `pvault run --` failure modes. Never
   // renumber the blocks above.
   /** Zero `--secret` flags passed (AC-1's edge case) — deliberately distinct from `usageError` so
    * a wrapper script can branch on "forgot the injection flags" specifically. */
@@ -60,7 +60,7 @@ export const EXIT_CODES = {
    * re-raise succeeds, this code is never actually observed — the process dies via the signal
    * itself, not via `setExitCode()`. */
   childSignalTerminated: 24,
-  // Story 43.5 (Dev Notes decision #5) — append-only, `pvault write-env` failure modes. Never
+  // Story 43.5 (decision #5) — append-only, `pvault write-env` failure modes. Never
   // renumber the blocks above.
   /** The `--output` target already exists (including a symlink, even a dangling one) and
    * `--force` was not passed — checked before any network call and again atomically at commit. */

@@ -9,11 +9,11 @@ import { VaultCacheCorruptedError } from './errors.js'
 
 // Story 8-6 AC-6 — 7.2's adversarial review (high) flagged that the shared agent cache file has no
 // documented protection against multiple concurrent CI processes on the same host writing to it
-// simultaneously, and the story's own Completion Notes admitted a true multi-process race test was
-// never run "given time constraints." This spawns genuinely separate OS processes (not
-// worker_threads, not Promise.all within one process) against the same cache file, each calling
-// the real writeCacheFile()/readCacheFile() path, and asserts the atomic-rename write pattern
-// actually holds up under real concurrent load: no crash, no VaultCacheCorruptedError.
+// simultaneously, and a true multi-process race test had never been run. This spawns genuinely
+// separate OS processes (not worker_threads, not Promise.all within one process) against the same
+// cache file, each calling the real writeCacheFile()/readCacheFile() path, and asserts the
+// atomic-rename write pattern actually holds up under real concurrent load: no crash, no
+// VaultCacheCorruptedError.
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const WORKER_SCRIPT = join(__dirname, '__fixtures__', 'cache-concurrency-worker.ts')
@@ -79,7 +79,7 @@ describe('cache-store concurrent multi-process writes (AC-6)', () => {
     // entry's `versionNumber`/`ciphertext` must exactly match what its own key's writer/iteration
     // encoded, proving no cross-write mixing at the entry level. Some entries are legitimately
     // absent (an expected, accepted lost-update outcome of last-snapshot-wins with no per-key
-    // merge or lock — not a correctness bug per AC-6's Dev Notes), but none may be corrupted.
+    // merge or lock — not a correctness bug per AC-6), but none may be corrupted.
     for (const key of keys) {
       const match = /^WORKER_(\d+)_KEY_(\d+)$/.exec(key)
       expect(match).not.toBeNull()

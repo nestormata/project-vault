@@ -53,7 +53,7 @@ export const RotationChecklistItemSchema = z
 
 // Story 5.3 AC-2/AC-5: present only on a break-glass rotation's response — describes the
 // superseded (previous) version's purge-protected overlap window (CR1's non-blocking
-// "emergency overlap" design, not the immediate-retirement PRD text — see ADR-5.3-01).
+// "emergency overlap" design, not the original immediate-retirement requirement — ADR-5.3-01).
 export const RotationPreviousVersionOverlapSchema = z
   .object({
     versionNumber: z.number().int().positive(),

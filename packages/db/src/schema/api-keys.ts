@@ -30,7 +30,7 @@ export const apiKeys = pgTable(
     hmacKeyVersion: integer('hmac_key_version').notNull().default(1),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
-    // Default [14, 3] per epics.md AC (epics.md:1784). See expiry-alert-shared.ts / D6.
+    // Default [14, 3] per the original acceptance criteria. See expiry-alert-shared.ts / D6.
     alertLeadDays: jsonb('alert_lead_days')
       .notNull()
       .default(sql`'[14, 3]'::jsonb`)

@@ -500,7 +500,7 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1, rewired inli
       expect(panelContainer()?.innerHTML).toContain('navigated away')
     })
 
-    // Story 30.3 — DW-141 non-security edge-case hardening for handleActionClick.
+    // Story 30.3 — non-security edge-case hardening for handleActionClick.
     describe('Story 30.3: action-dispatch edge-case hardening', () => {
       it('AC1 (Story 30.3): a data-pv-action-kind attribute cannot override the real action kind', async () => {
         const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { message: 'done' }))

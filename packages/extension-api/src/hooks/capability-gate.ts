@@ -1,8 +1,8 @@
 /**
  * AC1/AC2 — `CapabilityGate` is the fourth typed hook interface this package exports, alongside
  * `AuthStrategy`, `NotificationChannel`, and `UIPanel`. It answers exactly one question: "may this
- * organization use capability X at all?" (entitlement). It cannot express quota — see the story's
- * Dev Notes § Rejected alternatives.
+ * organization use capability X at all?" (entitlement). It cannot express quota (a rejected
+ * alternative).
  *
  * **`gateCallId`, not `requestId` — mandatory security rationale.** `apps/api/src/app.ts` sets
  * `requestIdHeader: false` and a custom `genReqId()` that accepts a caller-supplied `X-Request-ID`
@@ -20,8 +20,8 @@
  * entirely inside the extension's `onCheckCapability()` implementation. Adding a paid tier,
  * changing tier names, or replacing the billing system requires zero PV changes. The invariant is
  * enforced by (a) `capability-gate.test.ts`'s exact-key shape tests and (b)
- * `capability-ids.test.ts`'s golden id list — never by a token grep (see AC-3's Dev Notes for why
- * every grep variant, at every scope, was tried and removed).
+ * `capability-ids.test.ts`'s golden id list — never by a token grep (every grep variant, at every
+ * scope, was tried and removed).
  */
 
 /** An opaque, PV-domain capability identifier — never a tier/plan name. */

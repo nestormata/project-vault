@@ -619,8 +619,8 @@ export async function createOrg(
   })
 }
 
-/** D6: write-without-read is unusable — this endpoint is an addition beyond epics.md's literal
- * scope, justified in the story's D6. Uses the admin (RLS-bypassing) connection because
+/** D6: write-without-read is unusable — this endpoint is an addition beyond the story's literal
+ * scope, justified by exactly that gap. Uses the admin (RLS-bypassing) connection because
  * memberCount spans every org, and org_memberships is org-scoped/RLS-protected. */
 export async function listOrgs(): Promise<OrgListResponse> {
   const rows = await getAdminDb()

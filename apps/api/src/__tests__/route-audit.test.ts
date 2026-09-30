@@ -386,7 +386,7 @@ function helperRegistrars(source: string): string[] {
 }
 
 // --- Story 43.8 AC-8: a claimed `ip-rate-limit` compensating control must be machine-verifiable ---
-// Epic-43 retro Finding 3: the CLI routes listed IP_RATE_LIMIT while no @fastify/rate-limit was
+// Motivation: the CLI routes once listed IP_RATE_LIMIT while no @fastify/rate-limit was
 // registered in their plugin scope, so their `config.rateLimit` blocks were inert. The checker is a
 // pure function over source text (AST only — never substring matches, so comments/strings never
 // count) so it can be proven against fixtures that reproduce each way a lenient check would pass.
@@ -690,7 +690,7 @@ describe('route audit', () => {
 
     expect(source).toContain("url: '/users/:userId/sessions'")
     // Story 14.8: allowedRoles reordered to descending rank order (owner, admin) per
-    // architecture.md's RBAC role-gate convention — same two roles authorized, order only.
+    // the RBAC role-gate convention — same two roles authorized, order only.
     expect(source).toMatch(/allowedRoles:\s*\['owner', 'admin'\]/)
     expect(source).toMatch(/requireMfa:\s*true/)
   })

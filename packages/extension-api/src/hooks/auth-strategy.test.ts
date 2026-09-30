@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AuthResult, AuthStrategy } from './auth-strategy.js'
 
 describe('AuthStrategy', () => {
-  it('onAuthenticate resolves an AuthResult shaped per architecture.md (externalSubject, providerName, optional email/displayName)', async () => {
+  it('onAuthenticate resolves an AuthResult shaped per the extension contract (externalSubject, providerName, optional email/displayName)', async () => {
     const strategy: AuthStrategy = {
       onAuthenticate: (credential: string) =>
         Promise.resolve({

@@ -270,7 +270,7 @@ async function checkPlatformAuditStorage(limitGbOverride?: number): Promise<void
 /**
  * Story 9.2 D5/AC-15 through AC-17: daily `audit-storage/check` job.
  *
- * D5: queries `pg_total_relation_size('audit_log_entries')` — the REAL table (epics.md's literal
+ * D5: queries `pg_total_relation_size('audit_log_entries')` — the REAL table (the original requirement's literal
  * 'audit_events' has never existed in this codebase). Do not "correct" this to 'audit_events'.
  *
  * AC-16: tiered alerts at 80/90/95% (idempotent per-threshold via upsertThresholdAlert), fanned

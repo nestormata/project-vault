@@ -68,7 +68,7 @@ const IDENTITY = { userId: 'user_1', orgId: 'org_1', orgRole: 'member' as const 
  * `HANG_TRIGGER_SLOT` fixture) racing against a real, concurrently dispatched `GET /health`
  * request — not a mocked/faked timeout, per the story's own Testing Requirements.
  *
- * Dev Notes "Synchronous-blocking limitation": this proves isolation against an ASYNC hang
+ * Synchronous-blocking limitation: this proves isolation against an ASYNC hang
  * specifically (the realistic "slow/hanging extension" case, since Node's event loop is only
  * blocked by synchronous CPU work). It does not and cannot prove isolation against a
  * synchronous, CPU-bound hook — that is an accepted, explicitly out-of-scope limitation of

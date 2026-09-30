@@ -11,7 +11,7 @@ vi.mock('../config/env.js', () => ({
   env: { VAULT_HANDOFF_CLOCK_SKEW_WARN_MS: 20000 },
 }))
 
-describe('Story 30.1 (DW-129) AC3: runClockSkewCheck', () => {
+describe('Story 30.1 AC3: runClockSkewCheck', () => {
   let dateNowSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(async () => {

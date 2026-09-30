@@ -10,7 +10,7 @@ Installing a module pack for the first time, deploying a new version of one, rol
 back, or reading the loaded pack's health and version status.
 
 A **module pack** (a.k.a. "extension") is an npm package this instance loads at boot to extend core
-behaviour — for example CentralizeMe's SSO / UI-panel / audit-source extension.
+behaviour — for example an SSO strategy, UI panels, or an audit event source.
 
 ## The model in one sentence
 
@@ -81,6 +81,10 @@ Rollback is **symmetric to deploy**, not a distinct mechanism: point `VAULT_EXTE
 resolution back at the prior known-good version and restart. Nothing in the loader retains state
 across a process restart, so a rollback restart behaves identically to installing that older version
 fresh — there is no migration-order or stale-state hazard on this application's side to reason about.
+
+If a first-party UI package has been composed into the web image at build time (a planned tier,
+not built yet), roll that composed web image back together with the module pack so the composed UI
+and its server-side hooks stay in lockstep.
 
 **Verify the rollback actually took**, rather than assuming it did: compare the admin status
 endpoint's `packageVersion` before and after the restart (below). `/health`'s `extensions_status`

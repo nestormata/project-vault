@@ -4,9 +4,8 @@
  * hand-built `entries`/`command`/`deps` argument list, exactly as a hypothetical Epic 50 broker
  * (FR177's `inject_env`) would once its own gated design pass completes. This is the concrete,
  * executable proof that the injection primitive is structurally consumable without going through
- * `pvault`'s argv/commander surface — see this story's Origin section and Open Question #1 for why
- * this is a structural proof, not a real cross-package integration (Epic 50 has zero
- * implementation stories today).
+ * `pvault`'s argv/commander surface. It is a structural proof, not a real cross-package integration
+ * (Epic 50 has zero implementation stories today).
  */
 import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'

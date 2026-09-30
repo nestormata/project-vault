@@ -196,7 +196,7 @@ async function handleRestoreOutcome(input: {
 /**
  * Story 9.1 D1/AC-1/AC-7/AC-8/AC-9/AC-10/AC-16: all four backup/restore routes are instance-wide
  * (not org-scoped, D2) — `requireOrgScope: false` paired with the new, explicit
- * `requirePlatformOperator: true` flag (architecture.md's "concerns opted out explicitly with
+ * `requirePlatformOperator: true` flag (the architecture's "concerns opted out explicitly with
  * named flags" principle). `writeAuditEvent: false` because these routes have no
  * `secureCtx.tx` to write an org-scoped audit_log_entries row through in the first place (D6) —
  * backup/restore actions are logged via structured operational logging instead (D6, AC-18). The

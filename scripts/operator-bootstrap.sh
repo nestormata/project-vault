@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Operator bootstrap — database migrate + optional vault init/unseal (Epic 1 retro D2).
+# Operator bootstrap — database migrate + optional vault init/unseal.
 # See docs/operator-quickstart.md
 set -euo pipefail
 

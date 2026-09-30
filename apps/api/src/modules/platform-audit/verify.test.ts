@@ -110,7 +110,7 @@ describe('Story 9.4 AC-11/D11: verifyPlatformAuditRange', () => {
     }
   })
 
-  // Dev Notes test-isolation gotcha: platform_audit_events is append-only exactly like
+  // Test-isolation gotcha: platform_audit_events is append-only exactly like
   // audit_log_entries, and GET /platform/audit/verify has NO org filter (D11) — a permanently
   // tampered row (unlike the org-scoped precedent's accepted permanent-row pattern) would poison
   // every subsequent test that verifies a range including it. The forged INSERT and the verify

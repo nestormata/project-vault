@@ -86,7 +86,7 @@ async function sweepOrg(orgId: string, logger?: WorkerLogger): Promise<void> {
 }
 
 /** `credential-shares/expire` (AC-7) — pg-boss job, registered on an hourly cron
- *  (apps/api/src/main.ts). Recommended cadence documented in the Dev Agent Record: hourly, not
+ *  (apps/api/src/main.ts). Recommended cadence: hourly, not
  *  5.6's daily stale-staged cadence, because share `expiresAt` windows in this epic are measured
  *  in hours (17.1 default 24h/cap 7d, 17.2 default 1h/cap 72h) — a daily sweep would leave a
  *  share showing stale `active` status in Share History for up to 24h after it actually expired.

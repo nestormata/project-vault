@@ -112,7 +112,7 @@ function refreshAccessSession(fetchFn: typeof fetch, signal?: AbortSignal): Prom
   // tokens) leak into a different, concurrently in-flight user's request. So every SSR call
   // performs its own independent refresh instead of joining a shared promise. The extra redundant
   // `/api/v1/auth/refresh` calls this can cause within a single request are safe, thanks to the
-  // server's 30-second rotation grace window (architecture.md:353) — a second refresh call just
+  // server's 30-second rotation grace window — a second refresh call just
   // re-issues the same already-rotated tokens idempotently.
   if (!browser) return performRefreshRequest(fetchFn, signal)
 

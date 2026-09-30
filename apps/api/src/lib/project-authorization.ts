@@ -176,8 +176,7 @@ function safeAuditFields(context: unknown): {
  * AC3.2 — the single query this hook's cross-tenant-enumeration defense depends on: a
  * `projects LEFT JOIN project_memberships` that returns in the same shape (and takes the same
  * time) regardless of which denial reason ultimately applies, closing a timing side-channel a
- * two-sequential-query implementation would otherwise have (see this story's Dev Notes
- * Architecture Decision 2). Returns `undefined` when `projectId` does not belong to `orgId` at
+ * two-sequential-query implementation would otherwise have (Architecture Decision 2). Returns `undefined` when `projectId` does not belong to `orgId` at
  * all (or does not exist); returns `{ role: null }` when the project belongs to `orgId` but
  * `userId` holds no explicit `project_memberships` row for it; returns `{ role: <string> }` when
  * an explicit row exists.
@@ -255,7 +254,7 @@ async function resolveEffectiveProjectRole(
  * Story 37.1 — `HostServices.projectAuthorization.checkProjectMembership()`'s real
  * implementation, bound to the loading extension by `loader.ts`'s `buildHostServices()`.
  *
- * **CRITICAL ORDERING INVARIANT** (see this story's Dev Notes Architecture Decision 1): AC3's
+ * **CRITICAL ORDERING INVARIANT** (Architecture Decision 1): AC3's
  * project-in-ambient-org validation (`queryProjectInOrgAndMembershipRole()` above) MUST run
  * first, unconditionally, before ANY role resolution — including before the org-owner/admin
  * bypass `effectiveProjectRole()` reuses (AC2.2). That bypass returns the caller's org role with

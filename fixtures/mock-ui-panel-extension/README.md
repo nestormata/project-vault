@@ -1,9 +1,14 @@
 # @project-vault/mock-ui-panel-extension
 
+> This fixture exercises the runtime UI extension API (HTML panels): the `ui-panel` capability,
+> `onRenderPanel` returning `UIPanelResult` HTML strings, declared `uiPanelSlots`, and the
+> `/extensions/panels/[slot]/[...subpath]` route. See
+> [UI extension tiers](../../docs/extensions/README.md#ui-extension-tiers).
+
 A self-contained, in-process mock UI-panel extension, built to exercise Story 25.1's `UIPanel`
 hook end-to-end through the real boot path (`loadExtension()` -> `GET
-/api/v1/extensions/panels/:slot` -> `onRenderPanel()`) — **without ever standing up
-CentralizeMe's real `access-group/ui-panel.ts`**.
+/api/v1/extensions/panels/:slot` -> `onRenderPanel()`) — **without depending on any real
+consumer's panel extension**.
 
 **Story 25.3 update:** `UIPanelContext` now carries `resourceId`, `identity`, `orgId`,
 `projectId`, `locale`, and `theme` (previously just `{ slot }`) — this fixture's own
@@ -51,7 +56,8 @@ The API's boot sequence (`apps/api/src/app.ts` -> `loadExtension()`) picks it up
 other extension. Once loaded, `GET /api/v1/extensions/nav` reports `{ uiPanelSlot: 'group' }`, the
 app shell's nav bar shows the generic "Extension" entry, and `GET
 /api/v1/extensions/panels/group` (and the corresponding `/extensions/panels/group` web page)
-render this fixture's static HTML fragment inside the sandboxed iframe.
+render this fixture's static HTML fragment, which the host sanitizes and renders inline (the
+sandboxed iframe this README used to describe was retired in Story 29.1).
 
 ## Production-safety
 

@@ -170,8 +170,8 @@ export const apiEnforcement = [
   // repo-wide dry run (Subtask 5.5) found ~14 pre-existing contiguous-allowedRoles-without-comment
   // sites in OTHER files (admin/routes.ts, credentials/routes.ts, notifications/routes.ts,
   // security-alert-actions-routes.ts, theming/routes.ts, users/routes.ts) that predate this
-  // convention and are out of this story's scope to convert or annotate (see Dev Notes: ~140+
-  // other minimumRole/allowedRoles sites are explicitly out of scope). Enabling 'error' repo-wide
+  // convention and are out of this story's scope to convert or annotate (~140+ other
+  // minimumRole/allowedRoles sites are explicitly out of scope). Enabling 'error' repo-wide
   // today would break `make ci` on code this story must not touch. Flagged as a candidate for
   // deferred-work.md: a follow-up story should review those sites and either add the required
   // exception comment or convert to minimumRole, then widen this rule's `files` glob to

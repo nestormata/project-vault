@@ -6,7 +6,7 @@ const PROJECT_ID = 'a1c2d3e4-0000-0000-0000-000000000000'
 const VAULT_URL = 'https://vault.example.com'
 
 describe('resolveConfig', () => {
-  it('resolves apiKey/baseUrl/projectId from VAULT_* env vars (Dev Notes decision #2)', () => {
+  it('resolves apiKey/baseUrl/projectId from VAULT_* env vars (decision #2)', () => {
     const env = {
       VAULT_API_KEY: 'pk_abc123',
       VAULT_URL,

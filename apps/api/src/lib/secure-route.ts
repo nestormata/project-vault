@@ -86,7 +86,7 @@ export type SecureRouteRegistrationOptions = {
     rateLimit?: false | { max: number; timeWindowMs?: number; key?: string }
     // Story 9.1 D1: an explicit, named opt-out from org-role authorization in favor of the
     // instance-wide `users.is_platform_operator` flag — used by backup/restore routes, which pair
-    // this with `requireOrgScope: false` (architecture.md's "concerns opted out explicitly with
+    // this with `requireOrgScope: false` (the architecture's "concerns opted out explicitly with
     // named flags" principle). Mutually exclusive in practice with minimumRole/allowedRoles: when
     // set, org-role checks are skipped entirely (org role has no meaning for a whole-instance
     // operation) and only the platform-operator check applies.

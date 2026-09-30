@@ -59,7 +59,7 @@ describe('Story 9.2 D5/AC-15 through AC-17: audit-storage-check worker', () => {
     await clearAuditStorageAlerts()
   })
 
-  it("D5 regression guard: the job queries the real table name, not epics.md's literal (wrong) one", () => {
+  it("D5 regression guard: the job queries the real table name, not the original requirement's literal (wrong) one", () => {
     const source = readFileSync(new URL('./audit-storage-check.ts', import.meta.url), 'utf8')
     expect(source).toContain("pg_total_relation_size('audit_log_entries')")
     expect(source).not.toContain("pg_total_relation_size('audit_events')")

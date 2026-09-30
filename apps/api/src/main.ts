@@ -118,7 +118,7 @@ const ROTATION_STALE_STAGED_ALERT_JOB = 'rotation/stale-staged-alert'
 // Story 17.3 AC-7: hourly, materially more frequent than the rotation jobs above — share
 // `expiresAt` windows in this epic are measured in hours (17.1 default 24h/cap 7d, 17.2 default
 // 1h/cap 72h), so an hourly sweep is the appropriate cadence for keeping Share History accurate
-// (see credential-share-expire.ts's own doc comment and the story's Dev Agent Record).
+// (see credential-share-expire.ts's own doc comment for why a daily sweep is too coarse).
 const CREDENTIAL_SHARE_EXPIRE_JOB = 'credential-shares/expire'
 
 let startupLogger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'> | undefined
@@ -282,7 +282,7 @@ async function main(): Promise<void> {
       // Story 9.4 AC-17: daily platform-audit-log retention prune (independent of the org-scoped
       // audit/retention-prune schedule above — the two logs have unrelated retention policies).
       'platform-audit/retention': { cron: '0 2 * * *' },
-      // Story 30.1 (DW-129) AC8/AC11: clock-drift magnitude signal — a lightweight `SELECT
+      // Story 30.1 AC8/AC11: clock-drift magnitude signal — a lightweight `SELECT
       // now()` round-trip, reusing the shared 5-minute cadence (also run once at boot below, so
       // the diagnostics signal is available immediately rather than only after the first
       // interval elapses).

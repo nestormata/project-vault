@@ -3,9 +3,9 @@ import fp from 'fastify-plugin'
 import type { FastifyInstance } from 'fastify'
 import { env } from '../config/env.js'
 
-// Story 7.2 D3 — machine token exchange JWT. epics.md's literal AC text says RS256, but no RS256
-// keypair infrastructure exists anywhere in this codebase and architecture.md never actually
-// mandates it for machine tokens — see the story's D3 for the full resolution. The story's
+// Story 7.2 D3 — machine token exchange JWT. The story's literal AC text says RS256, but no RS256
+// keypair infrastructure exists anywhere in this codebase and the architecture never actually
+// mandates it for machine tokens. The story's
 // preferred implementation (a second, namespaced `@fastify/jwt` registration) is unavailable:
 // the installed `@fastify/jwt@10.1.0` does not support the `namespace` option (confirmed by
 // inspecting its shipped type definitions/source — no `namespace` occurrences anywhere).
@@ -41,7 +41,7 @@ export const machineJwtPlugin = fp(async function machineJwtPlugin(
   const sign = createSigner({
     key: secret,
     algorithm: ALGORITHM,
-    // D3: exp - iat <= 3600 (<=1h TTL), matching epics.md and architecture.md's agreed value.
+    // D3: exp - iat <= 3600 (<=1h TTL), matching the requirements' agreed value.
     expiresIn: env.MACHINE_JWT_TTL_SECONDS * 1000,
   })
   // Mandatory explicit single-algorithm allowlist — never omit `algorithms`, and never widen it

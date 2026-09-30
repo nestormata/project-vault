@@ -115,7 +115,7 @@ const DEFAULT_HOST_CONTEXT: CheckOrgAuthorizationHostContext = {
 const INTERNAL_ERROR_REASON_CODE = 'resolution-failed'
 
 // Story 23.11 AC4: no ambient per-request context bound (e.g. this is called from code that
-// isn't running inside a request lifecycle at all — see request-context.ts's Dev Notes on
+// isn't running inside a request lifecycle at all — see request-context.ts's notes on
 // machine-authenticated routes, which never populate request.authContext and therefore never
 // bind this context) fails closed with this fixed reasonCode. Never thrown, never falls back to
 // any other org id.
@@ -176,7 +176,7 @@ async function resolveOrgAuthorizationOutcome(
   if (roleRank(role) < roleRank(context.minimumRole)) {
     // Code review finding (2026-08-22): deliberately reuses AC3's 'not-a-member' reasonCode
     // rather than a distinct 'insufficient-role' string. reasonCode is documented as
-    // diagnostic-only, not a stable contract (see Dev Notes), and no AC pins a distinct value for
+    // diagnostic-only, not a stable contract, and no AC pins a distinct value for
     // this branch — but a distinct value here would let a caller distinguish "no active
     // membership at all" from "active member, role too low" purely by reading reasonCode, which
     // is a membership-existence oracle for an (organizationId, viewerIdentityId) pair the caller

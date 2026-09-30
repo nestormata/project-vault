@@ -10,7 +10,7 @@ const UUID_PATTERN = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const FILENAME_PATTERN = /^backup_(\d{8}T\d{9}Z)_([0-9a-f-]+)\.vault$/i
 
 /**
- * Story 9.1 D2 (deviation from epics.md:2017 — orgId → instanceId): backup is whole-instance, not
+ * Story 9.1 D2 (deviation from the original requirement — orgId → instanceId): backup is whole-instance, not
  * per-org, so the `_<orgId>` filename component is replaced with `_<instanceId>` — a random UUID
  * generated once (on the very first backup this instance ever takes) and thereafter kept
  * consistent by reading it back out of the most recent existing `backup_runs.filename` row,

@@ -244,11 +244,10 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	# Blocking, matching ci.yml's `audit-ci` step on this same command (Story 42.2 — the
 	# formerly non-blocking `pnpm audit --audit-level=high || true` is superseded by this
 	# schema-correct, high-or-above-only audit-ci invocation; see audit-ci.jsonc and
-	# scripts/check-audit-baseline.ts for the config shape and hygiene checks, and Story
-	# 42.2's Dev Agent Record for the root-cause finding and verification evidence). The
+	# scripts/check-audit-baseline.ts for the config shape and hygiene checks). The
 	# undici advisory formerly accepted here via packages/vault-action's @actions/core
-	# dependency is resolved (undici@7.29.0, no advisory as of Story 42.1, 2026-09-19) — see
-	# that story's Dev Agent Record for the current high-or-above advisory inventory.
+	# dependency is resolved (undici@7.29.0, no advisory as of Story 42.1, 2026-09-19); run
+	# `pnpm exec audit-ci --config audit-ci.jsonc` for the current high-or-above inventory.
 	pnpm exec audit-ci --config audit-ci.jsonc
 	DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_ADMIN) pnpm generate-spec
 	git diff --exit-code packages/shared/openapi.json

@@ -69,8 +69,7 @@ describe('pseudonymizeUserIdentityToken (D3)', () => {
 
   // Corrected from this story's original AC-E8d wording after discovering
   // migration 0001_rls_and_triggers.sql's `enforce_pseudonym_immutability` trigger, which already
-  // rejects ANY display_name change once pseudonymized_at is set ("GDPR erasure is permanent" —
-  // see this story's Dev Notes "Discovered contradiction" entry). Idempotent therefore means a
+  // rejects ANY display_name change once pseudonymized_at is set ("GDPR erasure is permanent"). Idempotent therefore means a
   // true no-op (same alias returned, no second write attempted), not "generates a fresh alias
   // every call" — the DB makes the latter impossible by design.
   it('is idempotent: re-running returns the SAME existing alias without a second write (DB trigger enforces this)', async () => {

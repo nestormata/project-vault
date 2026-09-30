@@ -178,7 +178,7 @@ export const AddDependencyBodySchema = z
     // InitiateRotationBodySchema.targetFields's entries. Normalized via normalizeFieldKey() and
     // validated against the credential's current declared field keys in
     // addCredentialDependency(); omitted means whole-credential (field_key: NULL), unchanged
-    // default. Dependency field-key EDITING (PATCH) is out of scope — see the story's Dev Notes.
+    // default. Dependency field-key EDITING (PATCH) is out of scope.
     fieldKey: z.string().trim().min(1).max(64).optional(),
   })
   .strict()

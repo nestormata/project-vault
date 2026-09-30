@@ -7,7 +7,7 @@ import { getAuditKey, VaultSealedError } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from './key-version.js'
 import { computeAuditHmac, GENESIS_SENTINEL } from './write-entry.js'
 
-/** D4 — no stated bound in epics.md; this story adds one to prevent an unbounded, CPU-bound
+/** D4 — no stated bound in the original requirement; this story adds one to prevent an unbounded, CPU-bound
  * per-row HMAC recompute from being a self-inflicted availability risk. */
 export const AUDIT_VERIFY_MAX_RANGE_DAYS = 90
 export const AUDIT_VERIFY_MAX_ROWS = 50_000

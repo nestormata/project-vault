@@ -310,7 +310,7 @@ describe('isPrivateIPv4 boundary parity (Story 43.9 AC-3)', () => {
     ['0.0.0.0', true],
     ['0.255.255.255', true],
     ['1.0.0.0', false],
-    ['100.64.0.1', false], // CGNAT: unchanged (not blocked) — broadening is deferred work
+    ['100.64.0.1', false], // CGNAT: unchanged (not blocked) — broadening is out of scope
     ['224.0.0.1', false], // multicast: unchanged (not blocked)
     ['8.8.8.8', false],
     ['1.1.1.1', false],

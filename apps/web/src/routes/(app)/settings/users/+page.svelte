@@ -99,7 +99,7 @@
 
   // Story 15.2 AC 1 — org default display-language for newly invited/self-signed-up users. Same
   // "set a new value, no GET readback" shape as the two dormancy-threshold controls above (this
-  // page's own established, deliberate precedent — see the story's Dev Notes ADR): the API only
+  // page's own established, deliberate precedent): the API only
   // ships a PATCH for this setting, so the org's current default cannot be displayed here.
   let defaultLocaleChoice = $state<SupportedLocale | ''>('')
   let defaultLocaleSaving = $state(false)

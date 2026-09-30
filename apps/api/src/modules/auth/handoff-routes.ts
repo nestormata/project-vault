@@ -210,7 +210,7 @@ async function handlePrepare(request: FastifyRequest, reply: FastifyReply): Prom
     return rejectHandoff(reply, HandoffEvent.HANDOFF_REPLAY_STORE_UNAVAILABLE, meta)
   }
 
-  // Story 60.3/60.2 elicitation Round 5: this cookie-set is KEPT unconditionally, even though the
+  // Story 60.3/60.2: this cookie-set is KEPT unconditionally, even though the
   // new claim-exchange mechanism below makes it redundant for cross-site deployments — removing it
   // would break every cross-site handoff during the rollout gap before CentralizeMe ships its own
   // claim-aware interstitial (AC5), and would needlessly affect same-site deployments that have no
@@ -413,7 +413,7 @@ async function burnAndResolveOrg(pending: PendingRow): Promise<OrgResolution> {
     if (linked.kind === 'none') {
       return { ok: false, eventType: HandoffEvent.HANDOFF_ORG_MISMATCH }
     }
-    // Design decision (documented in Dev Notes): the token's `organizationId` claim is CM's own
+    // Design decision: the token's `organizationId` claim is CM's own
     // WorkOS-directory-shaped org identifier (e.g. "org_synthetic_acme") — NEVER PV's own org
     // UUID. It is compared against `organizations.centralizeme_organization_id`, the value PV
     // stores for that org at service-provisioning time (see
@@ -606,7 +606,7 @@ export async function handoffRoutes(fastify: FastifyApp): Promise<void> {
   })
 
   // Story 60.3 AC3: same public/unauthenticated/replay-sensitive shape as prepare/confirm above,
-  // so it gets the same rate-limit treatment (Dev Notes' explicit recommendation).
+  // so it gets the same rate-limit treatment.
   secureRoute(fastify, {
     method: 'POST',
     url: '/exchange-claim',

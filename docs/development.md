@@ -135,21 +135,21 @@ Since Story 60.6 the E2E stack runs the CentralizeMe -> PV handoff for real, so
 ## Local quality gates
 
 `make ci` runs the public build, typecheck, lint, migration, RLS, security, test, duplication, and
-generated-spec freshness checks inside the CI Docker service. It does not require private planning or
-BMAD artifacts. Private story and sprint governance checks live in the companion
-`project-vault-private` repository.
+generated-spec freshness checks inside the CI Docker service. It does not require the maintainer's
+private planning overlay. Story and sprint governance checks over that overlay's data run only when
+it is attached.
 
 After the container run, `make ci` runs two checks on the **host**, because the CI container has no
 Docker CLI: `docker-backup-permission-smoke` and the `docker compose config` contract suite
 (`scripts/check-compose-config.test.ts`, Story 60.7). The second needs a host `pnpm install`; without
 it `make ci` fails loudly rather than skipping.
 
-When the private `project-vault-private` overlay is attached, `make ci` also mounts it
+When the private planning overlay is attached, `make ci` also mounts it
 **read-only at its own absolute host path** (`docker-compose.ci-overlay.yml`), so the overlay
 symlinks that `Dockerfile.ci`'s `COPY . .` carries into `/app` resolve inside the container and the
 overlay guards (`check-story-status-sync`, `check-sprint-status-rollup`, `check-deferred-work-ids`,
-and the other `_bmad-output` scans) check real data. The Makefile derives the root from
-`readlink -f _bmad-output/implementation-artifacts/sprint-status.yaml` and prints which case applies
+and the other overlay scans) check real data. The Makefile derives the overlay root by resolving
+one of the overlay's symlinked files and prints which case applies
 (`make ci: private overlay mounted read-only from ...` or `... not found; overlay guards will print
 SKIPPED`). Without the overlay (a public-only clone, public GitHub CI, a cloud session without it)
 those guards print `SKIPPED — <path> not found ...; nothing checked` and exit 0; they never print a

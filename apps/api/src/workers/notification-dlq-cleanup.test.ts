@@ -91,7 +91,7 @@ describe('runNotificationDlqCleanup', () => {
     })
   })
 
-  // Story 28.6 AC4 — architecture.md's existing pg-boss DLQ-monitoring rule (rotation:*/audit:*)
+  // Story 28.6 AC4 — the architecture's existing pg-boss DLQ-monitoring rule (rotation:*/audit:*)
   // is extended to notification:* dead-letters: a per-row error log + pgboss_dlq_entries_total
   // counter increment, alongside (not instead of) the existing count-only summary warn log.
   it('increments pgboss_dlq_entries_total and emits a per-row error log for each exhausted entry', async () => {

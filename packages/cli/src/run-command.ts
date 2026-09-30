@@ -38,7 +38,7 @@ export async function runRun(
   deps: RunDeps
 ): Promise<number> {
   // AC-1 edge cases (zero/malformed `--secret`, non-UUID project id) and agent creation — shared
-  // with `pvault write-env` (Story 43.5 Dev Notes decision #9).
+  // with `pvault write-env` (Story 43.5 decision #9).
   const prepared = prepareSecretsCommand(
     args.secrets,
     { commandName: 'run', usage: 'pvault run --secret NAME -- <command> [args...]' },

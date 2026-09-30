@@ -177,7 +177,7 @@ export type CmStub = { origin: string; close: () => Promise<void> }
  * PV's `http://localhost:<port>` (D2). Binds 127.0.0.1 only, never 0.0.0.0 (nightly runners are
  * shared, E3b), and fails fast on a busy port.
  *
- * DW-336 item 1: CentralizeMe's real navigation mechanism is unconfirmed. This models a top-level
+ * CentralizeMe's real navigation mechanism is unconfirmed. This models a top-level
  * navigation (a link click); if CM turns out to use an iframe or an SPA route, revisit this harness.
  */
 export async function startCmStub(options: { port: number; pvOrigin: string }): Promise<CmStub> {

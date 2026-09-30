@@ -1,5 +1,5 @@
 /**
- * Story 43.3 Dev Notes decision #1 — CLI-local port (not a vendored import) of
+ * Story 43.3 decision #1 — CLI-local port (not a vendored import) of
  * `packages/vault-action/src/parse-secrets.ts`'s `RESERVED_ENV_VAR_NAMES` protection, minus the
  * two GitHub-Actions-specific entries (`GITHUB_TOKEN`, and the `GITHUB_`/`ACTIONS_` prefix rules)
  * that don't apply to a terminal context — a `pvault run --` target command has no reason to be

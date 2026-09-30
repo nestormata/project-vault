@@ -220,8 +220,7 @@ describe('org user management routes', () => {
       // Owner tries to remove the only owner? Self-removal check fires first; instead a co-owner
       // scenario: owner removes a *second* owner is blocked by rank. To hit last_org_owner we need
       // a caller who outranks the target owner — impossible with a single owner. This guard is
-      // verified structurally: an admin cannot even reach it (rank check first). Documented in
-      // Dev Notes. We assert the rank guard protects the sole owner instead.
+      // verified structurally: an admin cannot even reach it (rank check first). We assert the rank guard protects the sole owner instead.
       const owner = await registerOwner(app, 'del-sole-owner')
       const admin = await addUserToOrg(app, owner.orgId, 'del-sole-admin', { orgRole: 'admin' })
       const res = await removeOrgUser(app, admin.cookies, owner.userId)

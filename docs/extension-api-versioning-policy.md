@@ -16,7 +16,7 @@ This policy answers contract classification, runtime compatibility, deprecation,
 version allocation, public surface, and supply-chain expectations. It does not answer the exact
 distribution channel, publish immutability implementation, unpublish availability, consumer pin
 syntax, or the exact event that starts the notice-window clock. Those channel-specific questions
-belong to Story 23.1's publishing mechanism and its follow-up acceptance criteria. The separate
+belong to Story 23.1's publishing mechanism. The separate
 `## Distribution & immutability` section is intentionally a visible handoff, not an implied
 promise.
 
@@ -182,7 +182,7 @@ channels: (i) a CHANGELOG entry, (ii) a GitHub Release on `nestormata/project-va
 
 For example, a deprecation published `2026-09-01` in `1.5.0` for
 `AuthResult.providerName` records `notice-window-ends: 2026-11-30` and
-`Notified: 2026-09-01, GitHub issue centralizeme-sass#NNN`; a `2.0.0` removal cannot publish on
+`Notified: 2026-09-01, GitHub issue <consumer-repo>#NNN`; a `2.0.0` removal cannot publish on
 `2026-10-01`. A non-security break before the window does not ship: redesign it as additive, mark
 the old shape deprecated, and remove it later. The clock starts when the deprecation is published,
 not when its branch is merged.
@@ -191,6 +191,16 @@ not when its branch is merged.
 
 The known consumer is **CentralizeMe (`centralizeme-sass`)**. Onboarding another consumer requires
 adding it and its contact/issue location here before the first contract dependency is merged.
+
+As of 2026-09-29, the UI-panel surface of this contract (`UIPanel`/`onRenderPanel`,
+`UIPanelContext`, `UIPanelResult`, `uiPanelSlots`, `moduleActions`/`ModuleAction`/`ActionResult`
+html, `navItems`) is the supported **runtime UI extension API** for extensions. `panelDataPaths` is
+already retired: it has carried a field-level `@deprecated` tag since Story 29.4 and has no
+consumers. `moduleDataRoutes` is not part of the panel surface; it is today's API-route mechanism
+(`GET`-only, under a fixed prefix). A build-time composition tier for a first-party, trusted UI
+package is planned separately and is not part of this contract today. No removal of the panel types
+is planned. If that ever changes, removal would follow this policy's deprecation lifecycle and
+notice window (`@deprecated` markers, a `### Deprecated` CHANGELOG entry, then a later major).
 
 ## Version allocation
 
@@ -297,18 +307,17 @@ visible; they do not replace release attestation.
 
 ## Distribution & immutability
 
-v1 does not answer this. Story 23.1 fills it—see that story's acceptance criteria for the exact
-channel, immutable publication, package `files` allowlist, and publication-clock decision.
+v1 does not answer this. Story 23.1 fills it by deciding the exact channel, immutable
+publication, the package `files` allowlist, and the publication clock.
 
 ## Cross-references and ownership
 
-This policy originated from `centralizeme-sass/docs/adr/0005-pv-host-cm-module-pack-architecture.md`,
-Consequences, the bullet stating that `packages/extension-api` becomes a public cross-product
-contract. It constrains Story 23.1's publishing mechanism, Stories 23.2 and 23.3's additive surface
-changes, Story 23.4 if envelope claims become package types, and Story 14.9's historical Publish
-Readiness decision. Epic 24 Story 24.3 owns the load-time gate and is complete; Story 24.4 owns the
-CI skew guard and is complete. The AC-16 handoff is recorded on Story 23.1 in the private planning
-overlay. This document does not edit or require changes in `centralizeme-sass`.
+This policy originated from the decision to make `packages/extension-api` a
+public cross-product contract for in-process module packs. It constrains Story 23.1's publishing
+mechanism, Stories 23.2 and 23.3's additive surface changes, Story 23.4 if envelope claims become
+package types, and Story 14.9's historical Publish Readiness decision. Epic 24 Story 24.3 owns the
+load-time gate and is complete; Story 24.4 owns the CI skew guard and is complete. Story 23.1 owns
+the AC-16 handoff. This document does not require changes in any consumer.
 
 ## Evidence and maintenance
 

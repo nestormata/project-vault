@@ -52,7 +52,7 @@ export const notificationQueue = pgTable(
     // means "counts against the in-request `enqueueNotification()` budget"; `true` means "counts
     // against the separate out-of-request `enqueueNotificationForOrg()` budget." A future third
     // notification entry point that needs its own independent budget MUST add a new column, never
-    // overload this one with a third meaning — see ADR-58.1-2 in the story file.
+    // overload this one with a third meaning (Story 58.1 decision ADR-58.1-2).
     enqueuedOutOfRequest: boolean('enqueued_out_of_request').notNull().default(false),
   },
   (t) => ({

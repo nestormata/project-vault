@@ -6,17 +6,18 @@ import { orgScoped } from './helpers.js'
  * pre-auth domain-lookup route should route into. Org-scoped (RLS via the same
  * `NULLIF(current_setting('app.current_org_id', true), '')::uuid` pattern used by every other
  * org-scoped table — see `external-identities.ts`) even though the *lookup* itself happens
- * pre-auth via `getAdminDb()` (Dev Notes RLS/pre-auth-tension judgment call, mirroring Story
+ * pre-auth via `getAdminDb()` (RLS/pre-auth-tension judgment call, mirroring Story
  * 14.3's `external_identities`/`project_invitations` pre-auth exception).
  *
  * Unique index on `domain` alone: Task 1.1 treats "one org per domain" as the safe default
- * (epics.md's singular-mapping framing) — a domain can only ever route to one org/provider.
+ * (the original requirement's singular-mapping framing) — a domain can only ever route to one
+ * org/provider.
  *
  * Normalization: `domain` is stored lowercased on write (normalize-on-write, not normalize-on-read)
  * so the lookup route stays a trivial indexed equality query rather than needing a `lower()`
- * comparison on every request (Dev Notes).
+ * comparison on every request.
  *
- * OPERATIONAL HAZARD (pre-mortem finding, Dev Notes): because there is no admin UI or
+ * OPERATIONAL HAZARD (pre-mortem finding): because there is no admin UI or
  * domain-ownership-verification layer for this table yet, nothing today stops an operator from
  * mistakenly (or a self-service OrgAdmin from maliciously, in a future story) mapping a shared
  * PUBLIC email domain (e.g. `gmail.com`, `outlook.com`) to one org's SSO strategy. Because the

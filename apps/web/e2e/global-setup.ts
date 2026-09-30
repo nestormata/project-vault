@@ -8,10 +8,10 @@ import { superuserDatabaseUrl } from './fixtures/db.js'
 import { pollUntilOk } from './fixtures/poll-until-ready.js'
 
 // AC-I3: global-setup.ts's job is readiness-polling + DB-reset + vault-init ONLY — it does NOT
-// start the API/DB itself (unlike architecture.md's original illustrative comment). This story
-// deliberately reuses `make docker-up`/`make bootstrap-docker` as the stack-startup mechanism;
-// the stack must already be running before Playwright is invoked (see Makefile's `e2e: docker-up`
-// target and the nightly.yml `e2e` job).
+// start the API/DB itself (unlike the original architecture plan's illustrative comment). This
+// story deliberately reuses `make docker-up`/`make bootstrap-docker` as the stack-startup
+// mechanism; the stack must already be running before Playwright is invoked (see Makefile's `e2e:
+// docker-up` target and the nightly.yml `e2e` job).
 
 function apiBaseUrl(): string {
   const apiHostPort = process.env['API_HOST_PORT'] ?? '3000'

@@ -14,7 +14,7 @@ flow end-to-end in CI and by hand — **without ever standing up a real third-pa
   lookup table (`FIXTURE_IDENTITIES` in `src/index.ts`), simulating "the IdP already authenticated
   this user and handed back an assertion."
 - There is **no real redirect-to-IdP / assertion-verification mechanic** here at all. Per Story
-  14.3's Dev Notes judgment call #1, the `start` route only mints and stores a CSRF-style `state`
+  14.3's judgment call #1, the `start` route only mints and stores a CSRF-style `state`
   value — building the actual authorization-redirect URL is out of scope for the locked
   `AuthStrategy` contract. This fixture's "simulated redirect" is just directly constructing the
   callback payload (`{ credential: '<fixture-id>' }`) that `onAuthenticate()` expects — it

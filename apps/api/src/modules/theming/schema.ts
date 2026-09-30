@@ -24,9 +24,8 @@ export const ThemeListItemSchema = z.object({
   css: z.string().nullable(),
 })
 
-// Story 16.2 AC-1/AC-2 — deliberately a flat, non-paginated-envelope shape (see Dev Notes'
-// Self-Consistency Validation note): the compiled-themes list is small and bounded, consistent
-// with 16.1's own flat `{ loaded, failed }` reload response.
+// Story 16.2 AC-1/AC-2 — deliberately a flat, non-paginated-envelope shape: the compiled-themes
+// list is small and bounded, consistent with 16.1's own flat `{ loaded, failed }` reload response.
 export const ThemeListResponseSchema = z.object({
   themes: z.array(ThemeListItemSchema),
   // The caller's own raw stored selection — may reference a theme name that is no longer in

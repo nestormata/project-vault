@@ -227,8 +227,8 @@ describe('/platform/settings +page.svelte', () => {
 
   it('save: filling the schedule override and Slack webhook sends exactly those patches', async () => {
     // NOTE: retentionCountOverride/maxOrgs/maxUsersPerOrg/sessionIdleTimeoutMinutes are
-    // deliberately not exercised here — see the Dev Agent Record's residual-debt ledger for a
-    // discovered pre-existing runtime defect on those `type="number"` bound fields.
+    // deliberately not exercised here because of a discovered pre-existing runtime defect on those
+    // `type="number"` bound fields (tracked as follow-up work).
     updateSettingsMock.mockResolvedValue(SAMPLE_SETTINGS)
     render(SettingsPage, { props: { data: allowedData() } })
 

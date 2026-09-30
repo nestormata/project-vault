@@ -36,7 +36,7 @@ export const MachineUserSummarySchema = z
   .meta({ id: 'MachineUserSummary' })
 
 // AC-9: the one-time plaintext-key-issue response. `key` is the plaintext and must never be
-// persisted or logged (see Dev Notes) — this schema exists only to shape this single response.
+// persisted or logged — this schema exists only to shape this single response.
 export const ApiKeyIssuedSchema = z
   .object({
     id: z.uuid(),

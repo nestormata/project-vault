@@ -268,8 +268,8 @@ describe('pruneCredentialVersions', () => {
   // ---------------------------------------------------------------------------------------
   // Story 5.6 AC-3: the FR105 retention exemption now clears only at explicit `retire`, not at
   // `promote` — a promoted-but-unretired version must survive the ordinary retention job
-  // indefinitely (the literal reproduction of the sprint-change-proposal's highest-severity
-  // Round-3 elicitation finding).
+  // indefinitely (the literal reproduction of the highest-severity finding that motivated
+  // this change).
   // ---------------------------------------------------------------------------------------
 
   it('AC-3.2: a promoted-but-unretired version survives the pruning job at retentionCount=1', async () => {
