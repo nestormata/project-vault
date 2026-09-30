@@ -25,8 +25,9 @@ logic.
    forever, exactly like the code around it — the CLA does not take that away. Most of the
    repository is licensed under AGPL-3.0-or-later (root [LICENSE](./LICENSE)). The exception is
    packages the repository explicitly licenses under MIT: today that is
-   [`packages/extension-api`](./packages/extension-api) (`@project-vault/extension-api`), and in
-   future any package whose own `LICENSE` file is MIT, such as the planned UI composition kit.
+   [`packages/extension-api`](./packages/extension-api) (`@project-vault/extension-api`),
+   [`packages/agent`](./packages/agent) and [`packages/vault-action`](./packages/vault-action),
+   and in future any package whose own `LICENSE` file is MIT, such as the planned UI composition kit.
    A contribution to an MIT-licensed package is licensed to the public under MIT.
 2. Separately, **you also grant the project maintainer a broad license — including the right to
    sublicense, transfer, and assign it — to use your contribution outside the AGPL and MIT

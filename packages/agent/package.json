@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "description": "Machine-user authentication and secret retrieval for Project Vault. Consumed as a workspace dependency by @project-vault/vault-action (which bundles it) and @project-vault/cli; not published to any registry.",
-  "license": "AGPL-3.0-or-later",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

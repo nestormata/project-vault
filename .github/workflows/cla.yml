@@ -48,10 +48,11 @@ jobs:
           # given to one version is never counted as agreement to another. version1 collected no
           # signatures before it was replaced. Bump this path whenever CLA.md's version changes.
           path-to-signatures: "signatures/version2/cla.json"
-          # The action takes a fully qualified link to the document. It points at CLA.md on
-          # main, which always shows the current version; the version a contributor signed is
-          # recorded by the signature file path above and by the version line in CLA.md itself.
-          path-to-document: "https://github.com/nestormata/project-vault/blob/main/CLA.md"
+          # The action takes a fully qualified link to the document. It points at the immutable
+          # `cla-v2` tag, so the link always shows exactly the version 2 text a contributor
+          # signs, even after CLA.md on main changes. The tag is created on the commit that
+          # merges CLA version 2; a future version 3 gets its own tag, signature path and link.
+          path-to-document: "https://github.com/nestormata/project-vault/blob/cla-v2/CLA.md"
           # NOT "main": the action commits signature records directly to this branch, and the
           # action's own docs warn "branch should not be protected". This repo's `main` has
           # branch protection enabled (required PR reviews) — a direct push there would be

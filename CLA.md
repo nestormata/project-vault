@@ -25,8 +25,8 @@ signing flow works).
 - **"MIT-Licensed Package"** means a package in this repository that the repository explicitly
   licenses under the MIT License: its own directory contains a `LICENSE` file with the MIT
   License text, and its package manifest declares `"license": "MIT"`. As of this version, the
-  only MIT-Licensed Package is `packages/extension-api` (published as
-  `@project-vault/extension-api`). Any future package whose own `LICENSE` file is the MIT
+  MIT-Licensed Packages are `packages/extension-api` (published as
+  `@project-vault/extension-api`), `packages/agent` and `packages/vault-action`. Any future package whose own `LICENSE` file is the MIT
   License, such as the planned UI composition kit, is also an MIT-Licensed Package.
 - **"AGPL Portions"** means everything in the Project that is not an MIT-Licensed Package. The
   AGPL Portions are licensed under the GNU Affero General Public License, version 3 or (at your
@@ -140,7 +140,7 @@ need to do anything before that point.
 - **Version 2 (2026-09-30).** Defines the Maintainer to include Nestor Mata Cuthbert's
   successors, assigns, and any legal entity he controls or designates; makes the section 3 grant
   expressly transferable, assignable, and sublicensable to them; and recognizes the MIT-Licensed
-  Packages (starting with `packages/extension-api`) alongside the AGPL Portions. Signatures are
+  Packages (`packages/extension-api`, `packages/agent` and `packages/vault-action`) alongside the AGPL Portions. Signatures are
   recorded separately from version 1.
 - **Version 1 (2026-07-24).** Initial version. It collected no signatures before version 2
   replaced it.

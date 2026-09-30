@@ -325,7 +325,7 @@ action's release — GitHub is migrating all Actions to Node 24 by default; see
 
 ## License
 
-This package is distributed as part of the
-[Project Vault](https://github.com/nestormata/project-vault) monorepo and is covered by the
-repository's root
-[`LICENSE`](https://github.com/nestormata/project-vault/blob/main/LICENSE) (GNU AGPLv3).
+Licensed under the MIT License; see this package's own
+[`LICENSE`](https://github.com/nestormata/project-vault/blob/main/packages/vault-action/LICENSE).
+The bundled `@project-vault/agent` is MIT as well. The rest of the
+[Project Vault](https://github.com/nestormata/project-vault) monorepo is AGPL-3.0-or-later.
