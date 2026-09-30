@@ -109,7 +109,7 @@ export default { manifest, hooksFactory }
 | `apiVersion` | Exactly one version, never a range. **Always write `EXTENSION_API_VERSION`, never a literal** — see below. |
 | `capabilities` | A non-empty array. Each declared capability unlocks its matching hook; returning a hook you did not declare is a manifest error. |
 | `replacesNativeLogin` | Optional. Only legal alongside `auth-provider` **and** an actual `authStrategy` hook. Declaring it alone disables nothing — the host also requires a proving latch before it will turn native login off. |
-| `uiPanelSlots`, `moduleActions` | Optional, and only legal alongside `ui-panel`. Part of the runtime UI extension API (HTML panels; see [Module actions and ActionResult](#module-actions-and-actionresult)). |
+| `uiPanelSlots`, `moduleActions` | Optional, and only legal alongside `ui-panel`. Part of the legacy runtime UI extension API (HTML panels; deprecated and frozen; see [Module actions and ActionResult](#module-actions-and-actionresult)). |
 | `moduleDataRoutes` | Optional, and not gated on any capability (`registerExtension()` deliberately does not require `ui-panel` for it). Mounts real `GET` routes on Project Vault's own API router under `/api/v1/extensions/data`. It is the current API-route mechanism: `GET`-only, under a fixed prefix, so it adds routes but cannot override or wrap existing ones. It does not belong to the panel API. |
 | `dbScope` | Optional and operator-approved: a request for a separate least-privilege database handle. |
 
@@ -339,11 +339,14 @@ distribution channel for your denial text.
 
 ### Module actions and ActionResult
 
-> This section describes the runtime UI extension API (HTML panels): `uiPanel`/`onRenderPanel`,
+> This section describes the legacy runtime UI extension API (HTML panels), which is deprecated
+> and frozen: it gets no new features or fixes, it is kept until it is replaced or removed, and
+> security issues in it are resolved by replacing or removing the affected functionality. It
+> covers `uiPanel`/`onRenderPanel`,
 > `UIPanelResult` HTML strings, `uiPanelSlots`, `moduleActions` and `data-pv-action`, host DOMPurify
 > sanitization, and the `/extensions/panels/[slot]/[...subpath]` route, which renders
 > host-sanitized panel HTML inline. A separate build-time composition tier for a first-party,
-> trusted UI package is planned and not built yet; see
+> trusted UI package is the planned forward path and is not built yet; see
 > [UI extension tiers](README.md#ui-extension-tiers).
 
 A panel first renders through your `uiPanel` hook. When the user clicks a control in it, Project

@@ -4,7 +4,8 @@ Project Vault can load exactly one **extension package** per instance. An extens
 npm package that the API process imports at boot and hands a set of typed hooks to. Once loaded,
 its hooks participate in real request handling: it can be the instance's identity provider, gate
 capabilities against an external entitlement system, render panels into the web shell (the
-runtime UI extension API; see [UI extension tiers](#ui-extension-tiers)), deliver
+legacy runtime UI extension API, deprecated and frozen; see
+[UI extension tiers](#ui-extension-tiers)), deliver
 notifications, veto project creation, and write into Project Vault's audit log.
 
 An extension is **in-process, fully trusted code**. It is not a plugin sandbox: there is no
@@ -44,7 +45,7 @@ acceptable. Declaring a capability is what makes the corresponding hook legal in
 |---|---|
 | `auth-provider` | An `authStrategy` hook — an external identity provider that Project Vault delegates login to. Pairs with the optional `replacesNativeLogin` manifest flag. |
 | `notification-channel` | A `notificationChannel` hook — an additional destination for notifications. |
-| `ui-panel` | A `uiPanel` hook — server-rendered HTML that the host sanitizes and renders inline in Project Vault's shell. Also unlocks the `uiPanelSlots` and `moduleActions` manifest fields, and with them the `moduleAction` hook. This is the runtime UI extension API (HTML panels). The `moduleDataRoutes` manifest field and its `moduleData` hook are **not** part of this capability: they need no capability declaration (they are the current API-route mechanism; see [UI extension tiers](#ui-extension-tiers)). |
+| `ui-panel` | A `uiPanel` hook — server-rendered HTML that the host sanitizes and renders inline in Project Vault's shell. Also unlocks the `uiPanelSlots` and `moduleActions` manifest fields, and with them the `moduleAction` hook. This is the legacy runtime UI extension API (HTML panels), which is deprecated and frozen. The `moduleDataRoutes` manifest field and its `moduleData` hook are **not** part of this capability: they need no capability declaration (they are the current API-route mechanism; see [UI extension tiers](#ui-extension-tiers)). |
 | `capability-gate` | A `capabilityGate` hook — an external entitlement decision consulted on every gated check. |
 | `audit-event-source` | Permission to *call* `host.auditEventSource.writeAuditEvent()`. Inverted: Project Vault implements it, the extension calls it, and nothing is returned from `hooksFactory()` for it. |
 | `project-lifecycle` | A `projectLifecycle` hook (`ProjectCreatePolicy`) that may veto project creation. |
@@ -60,23 +61,23 @@ whose capability you declared.
 |---|---|---|
 | `authStrategy` | `onAuthenticate(credential) => AuthResult` | The only hook that can replace native login, and only alongside `replacesNativeLogin: true` plus a host-side proving latch. |
 | `notificationChannel` | receives a `NotificationPayload` | |
-| `uiPanel` | `onRenderPanel(context) => UIPanelResult` | Fails closed on throw, timeout, or a malformed result. Part of the runtime UI extension API (HTML panels). |
+| `uiPanel` | `onRenderPanel(context) => UIPanelResult` | Fails closed on throw, timeout, or a malformed result. Part of the legacy runtime UI extension API (HTML panels; deprecated and frozen). |
 | `capabilityGate` | `onCheckCapability(context) => CapabilityDecision` | Never cached by the host: every gated check calls it. Fails closed. |
 | `projectLifecycle` | `onBeforeCreateProject(...)` | May veto. Runs in-request. |
 | `projectArchiveNotifier` | notification of a committed archive | Never in-request, never vetoing. |
-| `moduleAction` | dispatch target for panel actions | Legal only when the manifest declares `moduleActions`. See [Module actions and ActionResult](authoring.md#module-actions-and-actionresult). Part of the runtime UI extension API (HTML panels). |
+| `moduleAction` | dispatch target for panel actions | Legal only when the manifest declares `moduleActions`. See [Module actions and ActionResult](authoring.md#module-actions-and-actionresult). Part of the legacy runtime UI extension API (HTML panels; deprecated and frozen). |
 | `moduleData` | `Record<"GET <path>", handler>` | Every declared `moduleDataRoutes` entry must have exactly one matching handler. |
 | `deliveryProvider` | `Record<channelName, DeliveryProvider>` | Registering the same channel twice in one process is a loud conflict error, not last-one-wins. |
 
 ## UI extension tiers
 
-There are two ways for extension-supplied UI to reach the user. They are not interchangeable, and
-only the first exists today.
+There are two ways for extension-supplied UI to reach the user. They are not interchangeable. Only
+the first exists today, and it is deprecated and frozen; the second is the planned forward path.
 
 | Tier | Status | What it is |
 |---|---|---|
-| **Runtime UI extension API (HTML panels)** | Shipped and supported. | The `ui-panel` capability. `uiPanel.onRenderPanel()` returns an HTML string (`UIPanelResult`); the host sanitizes it with DOMPurify and renders it inline under `/extensions/panels/<slot>/...` for the slots declared in `uiPanelSlots`. Panel controls post typed actions through `moduleActions`/`data-pv-action`, and nav contributions (`navItems`) are append-only. The host treats panel HTML as untrusted output and confines it to its slot. |
-| **First-party trusted composition** | **Planned, not built.** | A first-party UI package of Svelte components and SvelteKit route modules, plus a manifest, composed into a dedicated web image at build time by a Project Vault-owned Vite/SvelteKit plugin and component registry. Target capabilities: override any page, including its server `load` and form `actions`; add routes at any path; inject components at named injection points in native pages; replace individual components by name; fully customize navigation (add, remove, hide, rename, reorder, nest, including native items); theme through Project Vault's theme tokens. The package is reviewed to the same bar as Project Vault's own UI, and nothing at the boundary sanitizes, CSP-restricts, iframes or slot-confines it. Project Vault's own image stays free of it. |
+| **Legacy runtime UI extension API (HTML panels)** | **Deprecated and frozen.** No new features or fixes. Kept until it is replaced or removed. Security issues are resolved by replacing or removing the affected functionality, not by patching it. | The `ui-panel` capability. `uiPanel.onRenderPanel()` returns an HTML string (`UIPanelResult`); the host sanitizes it with DOMPurify and renders it inline under `/extensions/panels/<slot>/...` for the slots declared in `uiPanelSlots`. Panel controls post typed actions through `moduleActions`/`data-pv-action`, and nav contributions (`navItems`) are append-only. The host treats panel HTML as untrusted output and confines it to its slot. Do not start new UI work on this tier. |
+| **First-party trusted composition** | **Planned, not built.** The forward path for extension UI. | A first-party UI package of Svelte components and SvelteKit route modules, plus a manifest, composed into a dedicated web image at build time by a Project Vault-owned Vite/SvelteKit plugin and component registry. Target capabilities: override any page, including its server `load` and form `actions`; add routes at any path; inject components at named injection points in native pages; replace individual components by name; fully customize navigation (add, remove, hide, rename, reorder, nest, including native items); theme through Project Vault's theme tokens. The package is reviewed to the same bar as Project Vault's own UI, and nothing at the boundary sanitizes, CSP-restricts, iframes or slot-confines it. Project Vault's own image stays free of it. |
 
 API routes are a separate concern from either tier: `moduleDataRoutes`/`moduleData` mount `GET`
 routes on Project Vault's own API router under `/api/v1/extensions/data` and need no capability
@@ -141,4 +142,4 @@ with the real manifest shape, and every one of them declares `apiVersion: EXTENS
 | `mock-envelope-extension` | `authStrategy` with `replacesNativeLogin` |
 | `mock-capability-gate-extension` | `capabilityGate` |
 | `mock-audit-event-source-extension` | Calling `host.auditEventSource` |
-| `mock-ui-panel-extension` | `uiPanel` and declared slots (runtime UI extension API) |
+| `mock-ui-panel-extension` | `uiPanel` and declared slots (legacy runtime UI extension API; deprecated and frozen) |

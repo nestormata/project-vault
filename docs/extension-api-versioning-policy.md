@@ -192,15 +192,20 @@ not when its branch is merged.
 The known consumer is **CentralizeMe (`centralizeme-sass`)**. Onboarding another consumer requires
 adding it and its contact/issue location here before the first contract dependency is merged.
 
-As of 2026-09-29, the UI-panel surface of this contract (`UIPanel`/`onRenderPanel`,
+As of 2026-09-30, the UI-panel surface of this contract (`UIPanel`/`onRenderPanel`,
 `UIPanelContext`, `UIPanelResult`, `uiPanelSlots`, `moduleActions`/`ModuleAction`/`ActionResult`
-html, `navItems`) is the supported **runtime UI extension API** for extensions. `panelDataPaths` is
-already retired: it has carried a field-level `@deprecated` tag since Story 29.4 and has no
-consumers. `moduleDataRoutes` is not part of the panel surface; it is today's API-route mechanism
-(`GET`-only, under a fixed prefix). A build-time composition tier for a first-party, trusted UI
-package is planned separately and is not part of this contract today. No removal of the panel types
-is planned. If that ever changes, removal would follow this policy's deprecation lifecycle and
-notice window (`@deprecated` markers, a `### Deprecated` CHANGELOG entry, then a later major).
+html, and the host's `/extensions/panels/[slot]/[...subpath]` route and DOMPurify panel sanitizer)
+is the **legacy runtime UI extension API**, and it is deprecated and frozen: it gets no new
+features and no fixes, and it is kept until it is replaced or removed. Security issues in it are
+resolved by replacing or removing the affected functionality, not by patching it.
+`panelDataPaths` is already retired: it has carried a field-level `@deprecated` tag since Story
+29.4 and has no consumers. `moduleDataRoutes` is not part of the panel surface; it is today's API-route mechanism
+(`GET`-only, under a fixed prefix). `navItems` is a general-purpose, capability-free manifest field
+that the panel tier commonly uses. A build-time composition tier for a first-party, trusted UI
+package is the planned forward path and is not part of this contract today. Removing the panel
+types follows this policy's deprecation lifecycle and notice window (`@deprecated` markers, a
+`### Deprecated` CHANGELOG entry, then a later major); a security issue may force earlier removal
+of the affected functionality, as for any other security break.
 
 ## Version allocation
 

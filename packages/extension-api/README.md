@@ -87,7 +87,7 @@ capability is what makes the matching hook legal in the object returned by `hook
 |---|---|
 | `auth-provider` | `authStrategy` — an external identity provider PV delegates login to. |
 | `notification-channel` | `notificationChannel` — an additional notification destination. |
-| `ui-panel` | `uiPanel` — server-rendered HTML panels composed into PV's shell. Also enables the optional `uiPanelSlots` and `moduleActions` manifest fields. This is the runtime UI extension API (HTML panels). The `moduleDataRoutes` manifest field (and its `moduleData` hook) is **not** gated on this capability: it is the current API-route mechanism. |
+| `ui-panel` | `uiPanel` — server-rendered HTML panels composed into PV's shell. Also enables the optional `uiPanelSlots` and `moduleActions` manifest fields. This is the legacy runtime UI extension API (HTML panels), which is deprecated and frozen. The `moduleDataRoutes` manifest field (and its `moduleData` hook) is **not** gated on this capability: it is the current API-route mechanism. |
 | `capability-gate` | `capabilityGate` — an external entitlement decision for gated capabilities. |
 | `audit-event-source` | Permission to call `host.auditEventSource.writeAuditEvent()`. This is an inverted hook: PV implements it, the extension calls it, so nothing is returned from `hooksFactory()` for it. |
 | `project-lifecycle` | `projectLifecycle` — a `ProjectCreatePolicy` that may veto project creation. |
@@ -95,12 +95,15 @@ capability is what makes the matching hook legal in the object returned by `hook
 | `project-archive-notify` | `projectArchiveNotifier` — a non-vetoing notification of an already-committed project archive. Deliberately independent of `project-lifecycle`, so an extension that only wants archive notifications is not forced to implement `onBeforeCreateProject`. |
 | `scheduled-task` | `scheduledTask` — a dispatch target for manifest-declared periodic background work. Also enables the `scheduledTasks` manifest field (`name`/`intervalMinutes`/`handler`). PV's own job runner invokes `onScheduledTask` once per org that has the extension active, on each task's declared interval, tracked server-side (never application wall-clock time). |
 
-**UI panels are the runtime UI extension API.** The `ui-panel` capability, everything it gates
-(`uiPanel`, `UIPanelResult` HTML strings, `uiPanelSlots`, `moduleActions`), and the append-only
-`navItems` manifest field are supported. A separate build-time composition tier for a first-party,
-trusted UI package (Svelte components and route modules composed into the web image: page
-overrides, new routes at any path, injection points, component replacement, navigation
-customization) is planned and is not part of this package today. See
+**UI panels are the legacy runtime UI extension API: deprecated and frozen.** The `ui-panel`
+capability and everything it gates (`uiPanel`, `UIPanelResult` HTML strings, `uiPanelSlots`,
+`moduleActions`/`data-pv-action`, host DOMPurify sanitization of panel HTML) get no new features or
+fixes. They are kept until they are replaced or removed, and security issues in them are resolved
+by replacing or removing the affected functionality, not by patching it. A separate build-time
+composition tier for a first-party, trusted UI package (Svelte components and route modules
+composed into the web image: page overrides, new routes at any path, injection points, component
+replacement, navigation customization) is the planned forward path and is not part of this
+package today. See
 [UI extension tiers](https://github.com/nestormata/project-vault/blob/main/docs/extensions/README.md#ui-extension-tiers).
 `navItems` is a general-purpose, capability-free manifest field that the panel tier commonly uses.
 `moduleDataRoutes` also needs no capability declaration.
