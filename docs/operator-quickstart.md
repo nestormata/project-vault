@@ -85,7 +85,7 @@ Hot reload for both apps (`pnpm turbo dev`), with Postgres in Docker.
 ### Prerequisites
 
 * Node.js 24 LTS (`.nvmrc` pins 24 — `nvm use`)
-* pnpm **11.21.0+** — `corepack enable && corepack prepare pnpm@11.21.0 --activate` picks up the
+* pnpm **11.28.3+** — `corepack enable && corepack prepare pnpm@11.28.3 --activate` picks up the
   version pinned in `package.json`. pnpm 9 will refuse this lockfile.
 * Docker 24+ (Compose v2.24+ for the prebuilt-image path)
 * `curl`, `openssl`, and `jq` (only `--init-vault` needs `jq`)
@@ -95,7 +95,7 @@ Hot reload for both apps (`pnpm turbo dev`), with Postgres in Docker.
 ### Steps
 
 ```bash
-corepack enable && corepack prepare pnpm@11.21.0 --activate
+corepack enable && corepack prepare pnpm@11.28.3 --activate
 pnpm install
 
 cp .env.example .env

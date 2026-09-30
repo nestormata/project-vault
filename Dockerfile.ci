@@ -13,7 +13,7 @@
 # commit just to keep `.git` current.
 FROM node@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
 
-RUN npm install -g pnpm@11.21.0 --ignore-scripts
+RUN npm install -g pnpm@11.28.3 --ignore-scripts
 # g++/make/python3: argon2 (packages/crypto) native rebuild, same as apps/api/Dockerfile.
 # git: generated-spec/openapi checks shell out to git against the bind-mounted .git.
 # bash: the root Makefile sets `SHELL := /usr/bin/env bash`; Alpine's base image only ships `sh`.
@@ -37,6 +37,15 @@ COPY packages/tsconfig/package.json ./packages/tsconfig/
 COPY packages/vault-action/package.json ./packages/vault-action/
 COPY fixtures/mock-sso-extension/package.json ./fixtures/mock-sso-extension/
 
+# pnpm >= 11.28 refuses `--frozen-lockfile` when any workspace member recorded in
+# pnpm-lock.yaml lacks its package.json, even if this image never builds that member.
+# Copy the remaining members' manifests (manifests only, no sources) so the install
+# validates the whole lockfile. The sources stay out of this image.
+COPY fixtures/mock-audit-event-source-extension/package.json ./fixtures/mock-audit-event-source-extension/
+COPY fixtures/mock-capability-gate-extension/package.json ./fixtures/mock-capability-gate-extension/
+COPY fixtures/mock-envelope-extension/package.json ./fixtures/mock-envelope-extension/
+COPY fixtures/mock-ui-panel-extension/package.json ./fixtures/mock-ui-panel-extension/
+COPY packages/cli/package.json ./packages/cli/
 RUN pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm rebuild argon2 esbuild
 

@@ -5,7 +5,7 @@ FROM node@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c
 # argon2 (packages/crypto) is a native module. node-gyp-build falls back to compiling
 # from source when no bundled prebuild matches this platform, so these tools are
 # installed unconditionally rather than detected at build time (Story 1.5 AC-30).
-RUN npm install -g pnpm@11.21.0 --ignore-scripts \
+RUN npm install -g pnpm@11.28.3 --ignore-scripts \
  && apk add --no-cache g++ make python3
 
 WORKDIR /app
@@ -67,6 +67,14 @@ COPY fixtures/mock-audit-event-source-extension/package.json ./fixtures/mock-aud
 # built opt-in-only below.
 COPY fixtures/mock-ui-panel-extension/package.json ./fixtures/mock-ui-panel-extension/
 
+# pnpm >= 11.28 refuses `--frozen-lockfile` when any workspace member recorded in
+# pnpm-lock.yaml lacks its package.json, even if this image never builds that member.
+# Copy the remaining members' manifests (manifests only, no sources) so the install
+# validates the whole lockfile. The sources stay out of this image.
+COPY apps/web/package.json ./apps/web/
+COPY packages/api-contract-tests/package.json ./packages/api-contract-tests/
+COPY packages/cli/package.json ./packages/cli/
+COPY packages/vault-action/package.json ./packages/vault-action/
 RUN pnpm install --frozen-lockfile --ignore-scripts \
  && pnpm rebuild argon2 esbuild
 
