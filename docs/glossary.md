@@ -56,8 +56,10 @@ Loading is fail-safe: a broken extension never blocks boot.
 The UI-panel hooks (HTML-string panels in named slots, typed module actions) are the **legacy
 runtime UI extension API**: deprecated and frozen (no new features or fixes; kept until it is
 replaced or removed; security issues are resolved by replacing or removing the affected
-functionality). Append-only navigation entries (`navItems`) are a general-purpose manifest field
-that panels commonly use. A separate build-time composition tier for a first-party,
+functionality). Append-only navigation entries (`navItems`) and module data routes
+(`moduleDataRoutes`) are separate manifest fields, not part of the panel API, and are also
+deprecated and frozen in their own right; their forward paths are build-time UI composition
+navigation and first-party API route composition. A separate build-time composition tier for a first-party,
 trusted UI package is the planned forward path and is not built yet.
 
 **"Module pack"** is CentralizeMe's name for the same thing — an extension packaged for

@@ -66,7 +66,7 @@ whose capability you declared.
 | `projectLifecycle` | `onBeforeCreateProject(...)` | May veto. Runs in-request. |
 | `projectArchiveNotifier` | notification of a committed archive | Never in-request, never vetoing. |
 | `moduleAction` | dispatch target for panel actions | Legal only when the manifest declares `moduleActions`. See [Module actions and ActionResult](authoring.md#module-actions-and-actionresult). Part of the legacy runtime UI extension API (HTML panels; deprecated and frozen). |
-| `moduleData` | `Record<"GET <path>", handler>` | Every declared `moduleDataRoutes` entry must have exactly one matching handler. |
+| `moduleData` | `Record<"GET <path>", handler>` | Every declared `moduleDataRoutes` entry must have exactly one matching handler. Deprecated and frozen with `moduleDataRoutes` (a separate surface, not part of the panel API; see [UI extension tiers](#ui-extension-tiers)). |
 | `deliveryProvider` | `Record<channelName, DeliveryProvider>` | Registering the same channel twice in one process is a loud conflict error, not last-one-wins. |
 
 ## UI extension tiers
@@ -76,13 +76,22 @@ the first exists today, and it is deprecated and frozen; the second is the plann
 
 | Tier | Status | What it is |
 |---|---|---|
-| **Legacy runtime UI extension API (HTML panels)** | **Deprecated and frozen.** No new features or fixes. Kept until it is replaced or removed. Security issues are resolved by replacing or removing the affected functionality, not by patching it. | The `ui-panel` capability. `uiPanel.onRenderPanel()` returns an HTML string (`UIPanelResult`); the host sanitizes it with DOMPurify and renders it inline under `/extensions/panels/<slot>/...` for the slots declared in `uiPanelSlots`. Panel controls post typed actions through `moduleActions`/`data-pv-action`, and nav contributions (`navItems`) are append-only. The host treats panel HTML as untrusted output and confines it to its slot. Do not start new UI work on this tier. |
+| **Legacy runtime UI extension API (HTML panels)** | **Deprecated and frozen.** No new features or fixes. Kept until it is replaced or removed. Security issues are resolved by replacing or removing the affected functionality, not by patching it. | The `ui-panel` capability. `uiPanel.onRenderPanel()` returns an HTML string (`UIPanelResult`); the host sanitizes it with DOMPurify and renders it inline under `/extensions/panels/<slot>/...` for the slots declared in `uiPanelSlots`. Panel controls post typed actions through `moduleActions`/`data-pv-action`. The host treats panel HTML as untrusted output and confines it to its slot. Do not start new UI work on this tier. |
 | **First-party trusted composition** | **Planned, not built.** The forward path for extension UI. | A first-party UI package of Svelte components and SvelteKit route modules, plus a manifest, composed into a dedicated web image at build time by a Project Vault-owned Vite/SvelteKit plugin and component registry. Target capabilities: override any page, including its server `load` and form `actions`; add routes at any path; inject components at named injection points in native pages; replace individual components by name; fully customize navigation (add, remove, hide, rename, reorder, nest, including native items); theme through Project Vault's theme tokens. The package is reviewed to the same bar as Project Vault's own UI, and nothing at the boundary sanitizes, CSP-restricts, iframes or slot-confines it. Project Vault's own image stays free of it. |
 
-API routes are a separate concern from either tier: `moduleDataRoutes`/`moduleData` mount `GET`
-routes on Project Vault's own API router under `/api/v1/extensions/data` and need no capability
-declaration. `navItems` is a general-purpose, capability-free manifest field that the panel tier
-commonly uses.
+`navItems` and `moduleDataRoutes` are separate extension surfaces, not part of either tier, and
+neither needs a capability declaration. Both are deprecated and frozen (no new features or
+fixes; kept until removed; security issues resolved by replacement or removal), each in its own
+right:
+
+- `navItems` adds append-only navigation entries to Project Vault's shell. Its forward path is
+  build-time UI composition navigation (the composition tier's add, remove, hide, rename, reorder
+  and nest operations over native items).
+- `moduleDataRoutes`/`moduleData` mount `GET` routes on Project Vault's own API router under
+  `/api/v1/extensions/data`. Its forward path is first-party API route composition (adding,
+  overriding and wrapping API routes inside the host's own security pipeline).
+
+Both stay in place until they are removed, after their replacements ship.
 
 ## Host services
 

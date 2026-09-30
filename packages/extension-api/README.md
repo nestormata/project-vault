@@ -87,7 +87,7 @@ capability is what makes the matching hook legal in the object returned by `hook
 |---|---|
 | `auth-provider` | `authStrategy` — an external identity provider PV delegates login to. |
 | `notification-channel` | `notificationChannel` — an additional notification destination. |
-| `ui-panel` | `uiPanel` — server-rendered HTML panels composed into PV's shell. Also enables the optional `uiPanelSlots` and `moduleActions` manifest fields. This is the legacy runtime UI extension API (HTML panels), which is deprecated and frozen. The `moduleDataRoutes` manifest field (and its `moduleData` hook) is **not** gated on this capability: it is the current API-route mechanism. |
+| `ui-panel` | `uiPanel` — server-rendered HTML panels composed into PV's shell. Also enables the optional `uiPanelSlots` and `moduleActions` manifest fields. This is the legacy runtime UI extension API (HTML panels), which is deprecated and frozen. The `moduleDataRoutes` manifest field (and its `moduleData` hook) is **not** gated on this capability: it is a separate surface, deprecated and frozen in its own right (see below). |
 | `capability-gate` | `capabilityGate` — an external entitlement decision for gated capabilities. |
 | `audit-event-source` | Permission to call `host.auditEventSource.writeAuditEvent()`. This is an inverted hook: PV implements it, the extension calls it, so nothing is returned from `hooksFactory()` for it. |
 | `project-lifecycle` | `projectLifecycle` — a `ProjectCreatePolicy` that may veto project creation. |
@@ -105,8 +105,12 @@ composed into the web image: page overrides, new routes at any path, injection p
 replacement, navigation customization) is the planned forward path and is not part of this
 package today. See
 [UI extension tiers](https://github.com/nestormata/project-vault/blob/main/docs/extensions/README.md#ui-extension-tiers).
-`navItems` is a general-purpose, capability-free manifest field that the panel tier commonly uses.
-`moduleDataRoutes` also needs no capability declaration.
+**`navItems` and `moduleDataRoutes` are deprecated and frozen too, each in its own right** (no new
+features or fixes; kept until removed; security issues resolved by replacement or removal). They
+are separate, capability-free manifest fields, not part of the panel API. `navItems` (append-only
+navigation entries) will be replaced by build-time UI composition navigation, and
+`moduleDataRoutes` (`GET`-only routes under `/api/v1/extensions/data`, with the `moduleData` hook)
+by first-party API route composition. Removal comes later, after the replacements ship.
 
 ## Hooks returned by `hooksFactory()`
 
@@ -122,7 +126,7 @@ the hooks whose capability you declared.
 | `projectLifecycle` | `ProjectCreatePolicy` | `onBeforeCreateProject` — may veto creation. |
 | `projectArchiveNotifier` | `ProjectArchiveNotifier` | Dispatched by a background worker after a project archive commits; never in-request, never vetoing. |
 | `moduleAction` | `ModuleAction` | Dispatch target for panel actions. Legal only when the manifest declares `moduleActions`. |
-| `moduleData` | `Record<string, ModuleDataRouteHandler>` | Keyed by the exact `"GET <path>"` string of each `moduleDataRoutes` entry; every declared route must have exactly one handler. |
+| `moduleData` | `Record<string, ModuleDataRouteHandler>` | Keyed by the exact `"GET <path>"` string of each `moduleDataRoutes` entry; every declared route must have exactly one handler. Deprecated and frozen with `moduleDataRoutes`. |
 | `deliveryProvider` | `Record<string, DeliveryProvider>` | Keyed by notification channel name. Registering the same channel key twice in one process is a loud conflict error, not last-one-wins. |
 | `scheduledTask` | `ScheduledTaskHooks` | `onScheduledTask(context)` — dispatch target for every due `(org, task)` tuple across this extension's declared `scheduledTasks`. `context` is `{ organizationId, taskName, hostServices }` only — no `Tx`, no raw DB handle; `hostServices` is the same instance bound at load time, safe to reuse with no live request in flight. |
 

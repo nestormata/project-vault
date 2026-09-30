@@ -199,11 +199,13 @@ is the **legacy runtime UI extension API**, and it is deprecated and frozen: it 
 features and no fixes, and it is kept until it is replaced or removed. Security issues in it are
 resolved by replacing or removing the affected functionality, not by patching it.
 `panelDataPaths` is already retired: it has carried a field-level `@deprecated` tag since Story
-29.4 and has no consumers. `moduleDataRoutes` is not part of the panel surface; it is today's API-route mechanism
-(`GET`-only, under a fixed prefix). `navItems` is a general-purpose, capability-free manifest field
-that the panel tier commonly uses. A build-time composition tier for a first-party, trusted UI
+29.4 and has no consumers. `moduleDataRoutes` (`GET`-only API routes under a fixed prefix) and
+`navItems` (append-only navigation entries) are not part of the panel surface, but as of
+2026-09-30 each is also deprecated and frozen in its own right: no new features or fixes, kept
+until removed, and security issues resolved by replacement or removal. Their forward paths are
+first-party API route composition and build-time UI composition navigation. A build-time composition tier for a first-party, trusted UI
 package is the planned forward path and is not part of this contract today. Removing the panel
-types follows this policy's deprecation lifecycle and notice window (`@deprecated` markers, a
+types, `navItems` or `moduleDataRoutes` follows this policy's deprecation lifecycle and notice window (`@deprecated` markers, a
 `### Deprecated` CHANGELOG entry, then a later major); a security issue may force earlier removal
 of the affected functionality, as for any other security break.
 

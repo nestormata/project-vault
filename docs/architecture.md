@@ -160,8 +160,8 @@ instance boots without the extension rather than refusing to start. The result i
 administrators on the extension status page and written to the audit log.
 
 A loaded extension registers hooks the host calls at defined points: authentication strategies,
-notification channels and delivery providers, UI panels with their navigation entries, module
-data routes and typed actions, capability gates, audit-event sources, and project lifecycle and
+notification channels and delivery providers, UI panels and typed actions, navigation entries,
+module data routes, capability gates, audit-event sources, and project lifecycle and
 archive notifications. In the other direction, the host passes in a `HostServices` object —
 monitoring, notification origination, organization and project authorization checks, and
 short-lived ephemeral state — so an extension never reaches into the database directly for those.
@@ -173,15 +173,21 @@ When an extension does need its own tables, it connects through the least-privil
 > actions via `moduleActions`/`data-pv-action`, and the `/extensions/panels/[slot]/[...subpath]`
 > route that renders host-sanitized panel HTML inline) get no new features or fixes, and are kept
 > until they are replaced or removed. Security issues in them are resolved by replacing or removing
-> the affected functionality, not by patching it. Append-only `navItems` is a general-purpose,
-> capability-free manifest field that the panel tier commonly uses. (`panelDataPaths` and its DATA
+> the affected functionality, not by patching it. (`panelDataPaths` and its DATA
 > relay are already retired: the field has been `@deprecated` since Story 29.4 and only its type
 > and validator survive.) A separate build-time composition tier, the planned forward path, is
 > for a first-party, trusted UI package: Svelte code composed into a dedicated web image by a
 > Project Vault-owned Vite/SvelteKit plugin and component registry, with page overrides including `load` and form
 > actions, new routes at any path, injection points, component replacement, customizable
-> navigation, and theme tokens. It is not built yet. API routes are a separate concern from both:
-> today's mechanism is `moduleDataRoutes`, which is not part of the panel API.
+> navigation, and theme tokens. It is not built yet.
+>
+> **`navItems` and `moduleDataRoutes` are deprecated and frozen** (no new features or fixes; kept
+> until removed; security issues resolved by replacement or removal). They are separate extension
+> surfaces, deprecated in their own right, not part of the panel API: neither needs the `ui-panel`
+> capability. `navItems` adds append-only navigation entries; its forward path is build-time UI
+> composition navigation. `moduleDataRoutes` mounts `GET`-only routes under a fixed prefix; its
+> forward path is first-party API route composition (adding, overriding and wrapping API routes
+> inside the host's own security pipeline). Removal comes later, after the replacements ship.
 
 Extension calls are bounded by timeouts and are not allowed to block the request path
 indefinitely. The compatibility contract, its versioning rules, and the deprecation notice window
