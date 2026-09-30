@@ -39,7 +39,7 @@ const CheckResultSchema = z.object({
 // Story 23.3 AC-26: gate health, on this token-gated operational surface only — never on the
 // public /health payload. Absent entirely when no gate is registered (not present-with-zeros),
 // so AC-5's byte-identical guarantee holds for this endpoint too. Counters and gate identity are
-// in-process — under ADR 0003's multi-instance topology this reports whichever replica answered,
+// in-process — under a multi-instance (multi-replica) topology this reports whichever replica answered,
 // not a fleet-wide aggregate.
 const CapabilityGateStatusSchema = z.object({
   gate: z.object({ name: z.string() }).nullable(),
@@ -84,8 +84,8 @@ const UnauthorizedResponseSchema = z.object({
 })
 
 // AC-4: when no token is configured, a non-loopback caller gets a generic 404 rather than a
-// distinguishable "this endpoint exists but you're not allowed" signal (undiscoverability, see
-// Completion Notes for the 404-vs-401 rationale).
+// distinguishable "this endpoint exists but you're not allowed" signal (undiscoverability is why
+// this is 404 rather than 401).
 const NotFoundResponseSchema = z.object({
   code: z.literal('not_found'),
   message: z.string(),
@@ -158,7 +158,7 @@ async function resolveStatusAuth(req: FastifyRequest): Promise<AuthOutcome> {
 /**
  * Story 1.19: `GET /status` — the aggregate operational endpoint, distinct from the existing
  * unconditional `/health` liveness probe and `/ready` readiness probe (AC-2). Not registered via
- * secureRoute() (Dev Notes): its auth model (bearer token / loopback) is unrelated to org-scoped
+ * secureRoute(): its auth model (bearer token / loopback) is unrelated to org-scoped
  * session auth, so it is a plain fastify.route() with its own rate-limit plugin instance, same
  * shape as healthRoutes but with bespoke auth in the handler.
  */

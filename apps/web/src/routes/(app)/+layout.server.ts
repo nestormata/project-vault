@@ -33,7 +33,7 @@ async function resolveThemeLoad(fetchFn: typeof fetch): Promise<ThemeLoadResult>
     const availableThemeNames = themesResponse.themes.map((theme) => theme.name)
     // Story 16.4 AC-2's own edge case: the orphaned-selection *notice* is still keyed off the
     // personal selection alone (a member never chose the org default themselves, so a notice
-    // about a setting they don't control would be noise — see the story's Dev Notes) — only the
+    // about a setting they don't control would be noise) — only the
     // *applied theme* resolution itself (below) additionally falls through to the org default.
     const orphanedNotice = isOrphaned(themesResponse.selected, availableThemeNames)
     return {

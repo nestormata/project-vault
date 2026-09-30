@@ -109,7 +109,8 @@ export default { manifest, hooksFactory }
 | `apiVersion` | Exactly one version, never a range. **Always write `EXTENSION_API_VERSION`, never a literal** — see below. |
 | `capabilities` | A non-empty array. Each declared capability unlocks its matching hook; returning a hook you did not declare is a manifest error. |
 | `replacesNativeLogin` | Optional. Only legal alongside `auth-provider` **and** an actual `authStrategy` hook. Declaring it alone disables nothing — the host also requires a proving latch before it will turn native login off. |
-| `uiPanelSlots`, `moduleActions`, `moduleDataRoutes` | Optional, and only legal alongside `ui-panel`. |
+| `uiPanelSlots`, `moduleActions` | Optional, and only legal alongside `ui-panel`. Part of the runtime UI extension API (HTML panels; see [Module actions and ActionResult](#module-actions-and-actionresult)). |
+| `moduleDataRoutes` | Optional, and not gated on any capability (`registerExtension()` deliberately does not require `ui-panel` for it). Mounts real `GET` routes on Project Vault's own API router under `/api/v1/extensions/data`. It is the current API-route mechanism: `GET`-only, under a fixed prefix, so it adds routes but cannot override or wrap existing ones. It does not belong to the panel API. |
 | `dbScope` | Optional and operator-approved: a request for a separate least-privilege database handle. |
 
 ### Why `EXTENSION_API_VERSION` rather than a version string
@@ -338,6 +339,13 @@ distribution channel for your denial text.
 
 ### Module actions and ActionResult
 
+> This section describes the runtime UI extension API (HTML panels): `uiPanel`/`onRenderPanel`,
+> `UIPanelResult` HTML strings, `uiPanelSlots`, `moduleActions` and `data-pv-action`, host DOMPurify
+> sanitization, and the `/extensions/panels/[slot]/[...subpath]` route, which renders
+> host-sanitized panel HTML inline. A separate build-time composition tier for a first-party,
+> trusted UI package is planned and not built yet; see
+> [UI extension tiers](README.md#ui-extension-tiers).
+
 A panel first renders through your `uiPanel` hook. When the user clicks a control in it, Project
 Vault dispatches the action to your `moduleAction` hook's `onAction(context, request)` and
 re-renders the panel from the `ActionResult` it returns.
@@ -420,6 +428,11 @@ other hook that package provides — SSO login, notification channels, UI panels
 providers, and audit fanout. Local login is unaffected and cannot be removed, so you will not be
 locked out. This is a wider outage accepted deliberately during an incident, not a like-for-like
 swap.
+
+Unsetting the package does not remove UI that a first-party UI package has had composed into the
+web image at build time (the planned composition tier, not built yet). Once that tier exists,
+recovering such an instance also means rolling the composed web image back in lockstep with the
+extension package.
 
 ## See also
 

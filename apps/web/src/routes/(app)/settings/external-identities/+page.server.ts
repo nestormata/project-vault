@@ -5,10 +5,9 @@ import { requireUser } from '$lib/server/require-user.js'
 import type { PageServerLoad } from './$types.js'
 
 // Story 14.7 AC-4 Judgment Call: reuse the existing POST route's allowedRoles: ['admin'] exactly
-// (owner excluded) — NOT 14-6's minimumRole: 'admin' (owner included). See the story's Dev Notes
-// for the full rationale: this file's sibling POST route already made this choice (Story 14.3),
-// diverging the new GET/DELETE routes would let 'owner' create-but-not-list-or-delete on the
-// same resource.
+// (owner excluded) — NOT 14-6's minimumRole: 'admin' (owner included). Rationale: this file's
+// sibling POST route already made this choice (Story 14.3), diverging the new GET/DELETE routes
+// would let 'owner' create-but-not-list-or-delete on the same resource.
 const EXTERNAL_IDENTITIES_PAGE_ROLE = 'admin'
 
 const GENERIC_FETCH_ERROR = 'Failed to load external identities, try again.'

@@ -73,10 +73,10 @@ Piped/redirected output carries only the resolved value, with no banner, decorat
 (AC-4). Running `pvault get` directly in an interactive terminal refuses to print unless you pass
 `--stdout` (AC-3 / UX-DR16: `pvault run --` is the default injection path).
 
-## Design decisions (Dev Notes, Story 43.1)
+## Design decisions (Story 43.1)
 
-This story made six decisions epics.md deliberately left open. They're recorded here so Stories
-43.2–43.6 build on a settled foundation instead of each guessing independently.
+This story made six decisions the original requirements deliberately left open. They're recorded
+here so Stories 43.2–43.6 build on a settled foundation instead of each guessing independently.
 
 ### 1. Package/binary name: `@project-vault/cli` / `pvault` (not `pv`)
 
@@ -147,9 +147,8 @@ below).
 `VAULT_API_KEY` (like any credential passed via environment variable to a CLI) is readable by any
 other process of the same OS user via `/proc/<pid>/environ` on Linux for as long as the process is
 running. This is the same class of exposure every AWS CLI/`gcloud`/similar tool accepts, and is
-**not** something this story engineers around — see Story 43.1's Dev Notes "Accepted residual
-risk". The analogous limitation on _injected_ secrets, and the hardening that shipped for it, is
-covered in [Story 43.4's accepted residual risk](#accepted-residual-risk-story-434) below. Since
+**not** something this story engineers around; Story 43.1 accepts it as a residual risk. The
+analogous limitation on _injected_ secrets, and the hardening that shipped for it, is covered in [Story 43.4's accepted residual risk](#accepted-residual-risk-story-434) below. Since
 Story 43.4, `VAULT_API_KEY` is **no longer inherited** by a `pvault run` child — it stays in
 `pvault`'s own process only.
 
@@ -196,7 +195,7 @@ message or the raw `Retry-After` value; only a plain integer 1–3600 is shown. 
 reverse proxy in front of the vault (HTML body, no header) is handled the same way. CI jobs that
 share one NAT IP should prefer machine-user keys (`pvault get`/`run` with `VAULT_API_KEY`).
 
-## Design decisions (Dev Notes, Story 43.2)
+## Design decisions (Story 43.2)
 
 Story 43.2 adds three more decisions, appended to Story 43.1's six above. **Decision #2 below is
 binding on Story 51.2** (the browser extension's own login) — see its own note on exactly what
@@ -296,17 +295,17 @@ real global `fetch`.
 
 ### Exit-code additions (append-only, extends Story 43.1's table)
 
-| Exit code | Meaning                                                                                                                                                                                             |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `14`      | `notLoggedIn` — a session-consuming command found no session file where one was expected                                                                                                            |
-| `15`      | `sessionExpired` — the stored session is expired and the silent refresh also failed/expired (AC-4)                                                                                                  |
-| `16`      | `invalidTotp` — surfaced during the login MFA round trip, not a stored-session failure                                                                                                              |
-| `17`      | `mfaTokenExpired` — the pending-MFA token itself died mid-login; the whole login flow restarts                                                                                                      |
-| `18`      | `webauthnOnlyUnsupported` — AC-3's fail-closed case for a non-TOTP MFA challenge                                                                                                                    |
-| `19`      | `insecureSessionFilePermissions` — AC-5's hard refusal to use a group/world-readable session file                                                                                                   |
-| `20`      | `nativeLoginDisabled` — this vault instance has native (password) login disabled (SSO-only)                                                                                                         |
-| `21`      | `invalidCredentials` — plain wrong email/password (not one of Dev Notes decision #4's originally-named codes, added because this needed its own distinguishable code too — see `src/exit-codes.ts`) |
-| `30`      | `rateLimited` — the server (or a proxy) answered `429` to `login`, MFA verification or a session refresh; retry after the printed delay (Story 43.8, appended after `29`; never auto-retried)       |
+| Exit code | Meaning                                                                                                                                                                                       |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `14`      | `notLoggedIn` — a session-consuming command found no session file where one was expected                                                                                                      |
+| `15`      | `sessionExpired` — the stored session is expired and the silent refresh also failed/expired (AC-4)                                                                                            |
+| `16`      | `invalidTotp` — surfaced during the login MFA round trip, not a stored-session failure                                                                                                        |
+| `17`      | `mfaTokenExpired` — the pending-MFA token itself died mid-login; the whole login flow restarts                                                                                                |
+| `18`      | `webauthnOnlyUnsupported` — AC-3's fail-closed case for a non-TOTP MFA challenge                                                                                                              |
+| `19`      | `insecureSessionFilePermissions` — AC-5's hard refusal to use a group/world-readable session file                                                                                             |
+| `20`      | `nativeLoginDisabled` — this vault instance has native (password) login disabled (SSO-only)                                                                                                   |
+| `21`      | `invalidCredentials` — plain wrong email/password (not one of decision #4's originally-named codes, added because this needed its own distinguishable code too — see `src/exit-codes.ts`)     |
+| `30`      | `rateLimited` — the server (or a proxy) answered `429` to `login`, MFA verification or a session refresh; retry after the printed delay (Story 43.8, appended after `29`; never auto-retried) |
 
 ## `pvault run --` (Story 43.3)
 
@@ -330,7 +329,7 @@ option). The command's own stdout/stderr never echo a fetched
 value (AC-1); the child's stdin/stdout/stderr connect directly to the terminal (`stdio: 'inherit'`),
 so interactive commands (`psql`, `python -i`, a dev server) behave exactly as if launched directly.
 
-## Design decisions (Dev Notes, Story 43.3)
+## Design decisions (Story 43.3)
 
 Seven more decisions, appended to Stories 43.1/43.2's above.
 
@@ -494,7 +493,7 @@ crash); a payload larger than the OS pipe buffer (64 KiB on Linux) never blocks 
 settling on the child's exit; any other write error prints one stderr line built only from the
 error code, never the payload.
 
-### Design decisions (Dev Notes, Story 43.4)
+### Design decisions (Story 43.4)
 
 1. **FD delivery: boolean `--secrets-fd`, fixed FD 3, JSON, then EOF; `PVAULT_SECRETS_FD=3`
    marker; no extra opt-in.** A named pipe/FIFO was rejected: its filesystem path is `open()`-able
@@ -599,7 +598,7 @@ pvault write-env -s DATABASE_URL -o env.sh --format shell  # for `source env.sh`
 
 `packages/vault-action` has no `.env` quoting/escaping rules to reuse (it hands values to the
 GitHub runner's `GITHUB_ENV` heredoc protocol, which no general tool reads), so this story defines
-the format in `src/env-file-format.ts`. epics.md AC-2's "the same quoting and escaping rules apply"
+the format in `src/env-file-format.ts`. AC-2's "the same quoting and escaping rules apply"
 is satisfied by reusing vault-action-derived **parse** (the `--secret` grammar, identifier
 validation, reserved names), **classify** (error wording/exit codes), and **mask** (never-print
 policy) semantics, plus a defined, documented, tested serialization that round-trips losslessly

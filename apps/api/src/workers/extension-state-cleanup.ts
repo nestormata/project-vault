@@ -8,11 +8,11 @@ import { operationalLog } from '../lib/logger.js'
 type WorkerLogger = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
 
 /** Story 20.8 AC-7 — the pg-boss job name. Slash-separated (`extension-state/cleanup`), NOT
- * colon-separated, per this story's own drift-check finding: `architecture.md`'s documented
+ * colon-separated, per this story's own drift-check finding: the architecture's documented
  * `{domain}:{action}` "pg-boss Job Naming" convention (and the `session:cleanup` example it
  * cites) does not exist anywhere in this codebase's real, shipped `main.ts` job registrations —
  * every real job (`'mfa/prune-pending'`, `'notification/dlq-cleanup'`, `'audit/retention-prune'`,
- * etc.) uses `{domain}/{action}` instead. This is documentation drift in architecture.md, not a
+ * etc.) uses `{domain}/{action}` instead. This is documentation drift in the architecture, not a
  * precedent to follow literally. */
 export const EXTENSION_STATE_CLEANUP_JOB = 'extension-state/cleanup'
 

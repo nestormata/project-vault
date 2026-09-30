@@ -98,7 +98,7 @@
       return
     }
 
-    // Second-Order Thinking finding (elicitation round 4): a fat-fingered low quota immediately
+    // Second-order-thinking review finding: a fat-fingered low quota immediately
     // blocks the org's audit writes — confirm before submitting, client-side only (the API itself
     // must still accept the request unconditionally per AC-3's own required test).
     if (!opts.skipBelowUsageCheck && quotaBytes !== null && quotaBytes < row.bytesUsed) {

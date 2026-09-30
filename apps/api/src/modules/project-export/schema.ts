@@ -8,7 +8,7 @@ export const EXPORT_FORMAT_VERSION = 1 as const
 
 // Story 28.9 AC-3 Red Team round: hard caps on every collection in the payload, checked by Zod
 // BEFORE any database write begins, so a validly-encrypted-but-maliciously-shaped file (the
-// attacker already had the real key, per the Elicitation Log) cannot exhaust import-time
+// attacker already has the real key in this threat model) cannot exhaust import-time
 // resources. Sized generously above any real project's plausible size (mirrors
 // `pending_imports.item_count`'s existing BETWEEN 0 AND 500 precedent, scaled up since a whole-
 // project export legitimately has many more rows than a single bulk-secret-import batch).

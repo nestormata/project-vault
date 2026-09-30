@@ -145,7 +145,7 @@ describe('Vault lifecycle (passphrase mode)', () => {
     expect(res.json()).toMatchObject({ error: 'unseal_failed' })
   })
 
-  // Story 42.4 Task 8.5 (5-round elicitation, Cascading Failure Simulation): AC1's "fails
+  // Story 42.4 Task 8.5 (cascading-failure analysis): AC1's "fails
   // loudly" is ambiguous between "rejects the one request, process stays up" and "crashes the
   // process." Traced by reading routes.ts's handler for POST /vault/unseal: unsealVault()'s thrown
   // AppError is caught in a try/catch (routes.ts ~lines 122-141) and mapped to an HTTP error

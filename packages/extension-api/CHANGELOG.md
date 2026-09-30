@@ -116,7 +116,7 @@ contract-hash: sha256:1d0a09c98bf7844295a5fb192891a9ba090c82f1d48a4c87fde242d30f
 type uuid` failure. `createServiceEndpoint`'s own existing check is unchanged in behavior, only
   refactored to share the same underlying `validateIdentityUuids`/`validateIdentityUuidArray`
   helpers (internal to `apps/api`, not part of this package's exported surface). No exported type,
-  method signature, or public shape changes (Story 41.2, closing Epic 41 retro Finding 2).
+  method signature, or public shape changes (Story 41.2).
 
 Per `docs/extension-api-versioning-policy.md`'s "Runtime behaviour in the contract" section, this is
 a bug fix that makes behaviour match this documented contract — a PATCH, not a MINOR, carrying this
@@ -165,7 +165,7 @@ contract-hash: sha256:3cc73e97ed02e06b2615597380ade20be02a42bbe3d404c7b5173bd108
   (Story 58.1 AC1-AC6) and a new sibling params type `NotificationOriginatorEnqueueForOrgParams`
   (`NotificationOriginatorEnqueueParams & { organizationId: string }`) — the out-of-request-capable
   sibling of `enqueueNotification()`, letting an installed extension (specifically
-  `centralizeme-sass`'s module pack) enqueue a notification through PV's own email/inbox delivery
+  CentralizeMe's module pack) enqueue a notification through PV's own email/inbox delivery
   queue from inside an out-of-request `onScheduledTask` handler (Story 56.1), with no ambient
   request context available. Same insert shape, same `recipientUserId`-resolves-to-an-active-org-
   member validation (reusing `assertRecipientIsOrgMember` verbatim, scoped to the explicit
@@ -193,7 +193,7 @@ contract-hash: sha256:9a16f2f41682f84867de1d2c1dbdcba7dec7dabb3a55879b9e4082191f
 
 - Added `PvMonitoringHost.listServiceEndpointsForScheduling(params): Promise<MonitoringServiceEndpointForScheduling[]>`
   (Story 57.1 AC1-AC6) — the tenth `HostServices.monitoring` method, letting an installed extension
-  (specifically `centralizeme-sass`'s module pack) list every active service endpoint for an org
+  (specifically CentralizeMe's module pack) list every active service endpoint for an org
   from inside an out-of-request `onScheduledTask` handler (Story 56.1), with the full set of
   scheduling-relevant fields (`checkFrequencyMinutes`, `healthCheckPausedAt`, `consecutiveFailures`,
   `status`, `lastCheckedAt`) it needs to decide which endpoints are due for a probe, in one
@@ -266,7 +266,7 @@ contract-hash: sha256:60ff63212b02f1f5b827e756212f14070a0dc56f52a9f2ac22a43f4bcc
 
 - Added `PvMonitoringHost.createServiceEndpoint(params): Promise<MonitoringServiceEndpointRecord>`
   (Story 41.1 AC1-AC6) — the ninth `HostServices.monitoring` method, letting an installed
-  extension (specifically `centralizeme-sass`'s module pack) create a new monitored service
+  extension (specifically CentralizeMe's module pack) create a new monitored service
   endpoint on behalf of an authenticated org member. A thin closure over PV's existing, internal
   `apps/api/src/modules/monitoring/service.ts#createServiceEndpoint` — no parallel
   reimplementation of its cap-checking, SSRF-guarding, or insert logic. New exports:
@@ -500,8 +500,7 @@ contract-hash: sha256:e12c8c32651f6ed4d9a812061449779d200575bf1a1863b681d4db3332
 ### Added
 
 - Added `HostServices.ephemeralState: EphemeralStateHost` (Story 20.8 AC-1), the delivery of the
-  "Ephemeral Extension State Store & Cleanup Hook Contract" decision approved in `architecture.md`
-  by Story 20-7. `EphemeralStateHost` exposes `get`/`set`/`delete`/`compareAndSwap` plus a new
+  "Ephemeral Extension State Store & Cleanup Hook Contract" decision approved by Story 20-7. `EphemeralStateHost` exposes `get`/`set`/`delete`/`compareAndSwap` plus a new
   `compareAndDelete(key, expectedValue): Promise<boolean>` (Story 20.8 AC-2 — resolves 20-7 AC-3's
   explicitly deferred gap: an atomic, race-free conditional discard). Backed by a dedicated,
   RLS-isolated, TTL-bounded (`(0, 3600]` seconds) Postgres table, encrypted at rest, with a
@@ -605,7 +604,7 @@ userId, orgRole }, orgId, projectId?, locale, theme: { name } }`. All new fields
   `identity`/`orgId`/`locale`/`theme` are required (a request that reaches `onRenderPanel()`
   always has them resolved), which is backward-compatible for existing method-shorthand
   `onRenderPanel(context) {...}` implementations via TypeScript's bivariant parameter checking
-  for object literals (see this story's Dev Notes Pre-mortem Analysis) — no coordinated
+  for object literals — no coordinated
   consumer-side type change is required to keep compiling. `identity` deliberately carries only
   `userId`/`orgRole` — never `sessionId`/`jti`/`sessionVersion`/`isPlatformOperator`.
 
@@ -636,7 +635,7 @@ contract-hash: sha256:7d5ca8c29a7fb4d21f40a2328a51cc22d478f8e9f76d6fe1e2ae712523
   previously ask "is identity X a member of org Y" for an arbitrary org Y it had no legitimate
   involvement in. `viewerIdentityId` is unchanged and remains an explicit, caller-supplied
   parameter. This is a genuine TypeScript-breaking change for an existing caller that passes an
-  inline object literal (e.g. `centralizeme-sass`'s `createHostBackedPvAuthorizationChecker`) —
+  inline object literal (e.g. CentralizeMe's `createHostBackedPvAuthorizationChecker`) —
   TypeScript's excess-property check on object-literal call arguments rejects the now-unknown
   `organizationId` field at compile time, even though the change is JS-runtime-harmless. That
   call site must drop `organizationId` from its call in a coordinated follow-up on that repo's

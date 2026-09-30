@@ -85,7 +85,7 @@ describe('server API proxy', () => {
     })
   })
 
-  it('DW-237: strips the browser Origin/Referer headers before the server-to-server hop', async () => {
+  it('strips the browser Origin/Referer headers before the server-to-server hop', async () => {
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ data: { ok: true } }))
     await proxyApiRequest({
       fetchFn,

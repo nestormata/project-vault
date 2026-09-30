@@ -38,7 +38,7 @@ export const AuditEvent = {
   PROJECT_INVITATION_ACCEPTED: 'project.invitation_accepted',
   PROJECT_INVITATION_REVOKED: 'project.invitation_revoked',
   ORG_USER_REMOVED: 'org.user_removed',
-  // Story 31.1 (DW-130) AC7.24: written once per call to the machine-authenticated org-wide
+  // Story 31.1 AC7.24: written once per call to the machine-authenticated org-wide
   // handoff-session-revocation route (revokeAllSessionsForOrg), inside the SAME transaction as
   // the bulk session/refresh-token/revoked-token/api-key revoke statements, always — even at
   // zero counts (AC7.25). actorType is 'system' (writeSystemAuditEntry), never 'human'/
@@ -64,7 +64,7 @@ export const AuditEvent = {
   // `'admin'` grant via this route must be reviewable later, not folded into an undifferentiated
   // event).
   ORG_MEMBER_PROVISIONED: 'org.member_provisioned',
-  // Story 33.1 (DW-256) AC4: written by the backfill route
+  // Story 33.1 AC4: written by the backfill route
   // (PATCH /api/v1/service/organizations/:organizationId/centralizeme-link), inside the SAME
   // transaction as the `organizations.centralizeme_organization_id` UPDATE, on a genuine
   // first-time link only — never on an idempotent no-op replay (AC5) or a `dryRun: true` call
@@ -136,7 +136,7 @@ export const AuditEvent = {
   EXTENSION_LOADED: 'extension.loaded',
   EXTENSION_LOAD_FAILED: 'extension.load_failed',
   // Story 14.3 Task 8: SSO/external-identity linking audit events — SSO_LOGIN_REJECTED is written
-  // on every AC-4/AC-7/AC-9 rejection path (mandatory, per Security Audit Personas elicitation),
+  // on every AC-4/AC-7/AC-9 rejection path (mandatory, per a security-audit review),
   // never only on success.
   EXTERNAL_IDENTITY_LINKED: 'external_identity.linked',
   SSO_LOGIN_SUCCEEDED: 'sso_login.succeeded',
@@ -237,7 +237,7 @@ export type AuditEvent = {
 }
 
 /**
- * Story 30.2 (DW-128) AC6.21: the full `handoff_*` rejection-matrix/lifecycle event taxonomy for
+ * Story 30.2 AC6.21: the full `handoff_*` rejection-matrix/lifecycle event taxonomy for
  * the CentralizeMe->PV handoff-token landing flow. A new dedicated grouping (not folded into
  * `AuditEvent` above) because these are 22 distinctly-named events, not one event with a `reason`
  * payload field (unlike `SSO_LOGIN_REJECTED`'s single-event-plus-reason convention) — the claim
@@ -252,7 +252,7 @@ export type AuditEvent = {
  * and membership already known) use the existing org-scoped `writeHumanAuditEntry()` audit-log
  * path instead — never mixed, and never fabricated org_id for a pre-resolution event.
  * `HANDOFF_SESSION_CLAIMS_UNAVAILABLE` is defined here for the future session-claims sidecar
- * (DW-131, explicitly out of this story's scope) to use — this story does not itself write it.
+ * (explicitly out of this story's scope) to use — this story does not itself write it.
  */
 export const HandoffEvent = {
   HANDOFF_MALFORMED_CLAIM: 'handoff_malformed_claim',

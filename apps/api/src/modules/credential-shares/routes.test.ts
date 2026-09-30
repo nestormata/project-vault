@@ -336,8 +336,8 @@ describe('credential-shares routes', () => {
     })
 
     // Story 20.5 AC-1's prose names 400; this codebase uniformly maps every Zod schema-validation
-    // failure (including this module's own existing `status` enum filter) to 422, never 400 — see
-    // the story's Dev Agent Record for the note reconciling this. The request must be rejected and
+    // failure (including this module's own existing `status` enum filter) to 422, never 400, so
+    // 422 is the consistent status asserted here. The request must be rejected and
     // the literal, invalid value must never be coerced into a persisted row.
     expect(response.statusCode).toBe(422)
   })

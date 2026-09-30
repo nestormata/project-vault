@@ -82,7 +82,7 @@ describe('notification routing service', () => {
 
 /**
  * Story 8.3 D12/AC-16 (resolves finding-16): FR71 says dormant-user alerts go to "Organization
- * Admins" (the PRD's broader term covering both owner and admin roles), but epics.md's own AC
+ * Admins" (the broader requirement term covering both owner and admin roles), but the story's own AC
  * text narrows this to "org owners" — resolveUserDormancyRecipients reconciles the two by
  * defaulting to the UNION of owner+admin (unless an org has configured an explicit
  * org_notification_routing override for 'user.dormant', which is always honored as a single

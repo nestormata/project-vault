@@ -17,14 +17,14 @@ import { currentKeyVersion } from '../modules/credentials/db-helpers.js'
  * module implements against.
  */
 
-// AC-16 (found during this story's own elicitation pass — 20-7's contract bounds abuse only by
+// AC-16 (found during this story's own review — 20-7's contract bounds abuse only by
 // *count* (AC-11), never by per-entry size). No pre-existing payload-size-bounding constant was
 // found in `audit-event-source.ts` — its own bound (`MAX_EVENT_TYPE_LENGTH`) covers `eventType`
-// string length, not a `payload` byte-size limit, so despite this story's own Dev Notes text
+// string length, not a `payload` byte-size limit, so despite this story's own planning text
 // pointing at that file for a limit constant to reuse, no such constant actually exists there.
-// This is the same class of documentation-vs-shipped-code drift the story's own Context section
-// already flags for the job-naming convention — noted in the Dev Agent Record and resolved by
-// using AC-16's own literal numbers directly.
+// This is a documentation-vs-shipped-code drift (the same class as the job-naming convention's),
+// resolved by using AC-16's own literal numbers directly rather than inventing a shared
+// constant.
 export const MAX_KEY_LENGTH = 256
 export const MAX_VALUE_BYTES = 16 * 1024
 export const MAX_TTL_SECONDS = 3600
@@ -382,7 +382,7 @@ export function createEphemeralStateHost(
 
         return withOrg(orgId, async (tx) => {
           if (expectedValue === null) {
-            // Dev Notes "Implementation Note" — the unique constraint (not a row lock) is the
+            // The unique constraint (not a row lock) is the
             // source of atomicity for the create-if-absent path. The `setWhere` guard treats an
             // existing-but-expired row as logically absent (revival succeeds); an existing LIVE
             // row causes the conditional update to no-op, so RETURNING yields no row (false).

@@ -168,7 +168,7 @@ async function promptEmailPassword(
 }
 
 // AC-3 — fail closed on any non-TOTP challenge shape rather than assuming every challenge is a
-// TOTP challenge. No live server path can produce this today (see AC-3's Dev Notes), but a
+// TOTP challenge. No live server path can produce this today, but a
 // synthetic challenge exercises this branch in tests.
 function checkTotpMethodSupported(
   challenge: MfaChallengeData,

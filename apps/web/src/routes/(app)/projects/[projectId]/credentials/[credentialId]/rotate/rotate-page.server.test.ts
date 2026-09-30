@@ -98,7 +98,7 @@ describe('/rotate +page.server.ts', () => {
 
   // Story 13.4 Task 6 — a staged/promoted rotation doesn't redirect away from /rotate (unlike
   // in_progress/stale_recovery) but must surface an activeRotationId so the form can render a
-  // pre-emptive banner and disable submission before a 409 (Dev Notes pre-mortem elicitation).
+  // pre-emptive banner and disable submission before a 409 (pre-mortem finding).
   it('Story 13.4: exposes activeRotationId for a staged rotation without redirecting away', async () => {
     listRotationsMock.mockResolvedValueOnce({
       items: [{ id: rotationId, status: 'staged' }],

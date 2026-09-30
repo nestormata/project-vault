@@ -20,7 +20,7 @@ export const credentialDependencies = pgTable(
     linkUrl: text('link_url'),
     // Story 13.4: nullable, purely additive. NULL = whole-credential dependency (default for
     // every dependency created before and during this story — this story does not add a UI/API
-    // surface for setting this on creation, a deliberate judgment call, see story Dev Notes).
+    // surface for setting this on creation, a deliberate judgment call).
     // When set, a field-scoped rotation's checklist only includes this dependency if the
     // rotation's targetFields includes this key (or the rotation is whole-secret).
     fieldKey: text('field_key'),

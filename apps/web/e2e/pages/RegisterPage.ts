@@ -2,8 +2,8 @@ import type { Page } from '@playwright/test'
 import { gotoHydrated } from '../fixtures/hydration.js'
 
 // Page Object Model — thin wrapper over page.getByRole(...)/getByLabel(...) locators, matching
-// this repo's existing apps/web Vitest convention (see Dev Notes: "Role-based, accessible-first
-// locators"). Deliberately no data-testid.
+// this repo's existing apps/web Vitest convention (role-based, accessible-first locators).
+// Deliberately no data-testid.
 export class RegisterPage {
   constructor(private readonly page: Page) {}
 

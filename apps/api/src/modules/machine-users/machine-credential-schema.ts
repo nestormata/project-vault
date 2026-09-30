@@ -6,7 +6,7 @@ export const MachineCredentialParamsSchema = z
   .meta({ id: 'MachineCredentialParams' })
 
 // Story 13.3 — mirrors CredentialValueQuerySchema (human route) for the machine reveal route's
-// own `?field=` support (architecture.md's explicit statement this route gains it too).
+// own `?field=` support (the architecture states this route gains it too).
 export const MachineCredentialValueQuerySchema = z
   .object({
     field: z.string().trim().min(1).max(FIELD_KEY_MAX_LENGTH).regex(FIELD_KEY_PATTERN).optional(),

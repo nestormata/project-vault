@@ -342,7 +342,7 @@ export async function createCredentialWithFirstVersion(
 /**
  * Story 13.3 AC-2 — eagerly decrypts values for `sensitive: false` fields only, alongside the
  * existing field_meta-only detail response. This does NOT go through the audited `/value` route
- * (Dev Notes: "eager non-sensitive fetch is not an audited reveal") and must never write a
+ * (an eager non-sensitive fetch is not an audited reveal) and must never write a
  * CREDENTIAL_VALUE_REVEALED entry.
  *
  * Failure Mode Analysis (AC-2 negative example): if the decrypt/parse throws (e.g. a corrupted

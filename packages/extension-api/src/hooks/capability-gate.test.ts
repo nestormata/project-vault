@@ -3,7 +3,7 @@ import type { CapabilityDecision, CapabilityGateContext } from './capability-gat
 
 /**
  * AC3(a) — exact-key shape tests. These are the enforcement mechanism for tier-agnosticism (no
- * token grep is written, at any scope — see AC-3's Dev Notes for why).
+ * token grep is written, at any scope — every grep variant was tried and removed as unreliable).
  */
 describe('CapabilityGateContext / CapabilityDecision — exact-shape tests (AC3)', () => {
   it('CapabilityGateContext has exactly the five keys the story specifies', () => {

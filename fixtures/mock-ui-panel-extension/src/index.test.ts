@@ -107,7 +107,7 @@ describe('mock-ui-panel-extension (Story 25.1 Task 7)', () => {
     expect(navLinkMarkup).not.toContain('data-pv-action')
   })
 
-  it('Story 25.4 AC4 Task 4: the happy-path html consumes at least one --pv-ext-* custom property with a CM-style fallback', async () => {
+  it('Story 25.4 AC4 Task 4: the happy-path html consumes at least one --pv-ext-* custom property with a hardcoded fallback', async () => {
     const hooks = mockUiPanelExtension.hooksFactory()
     const result = await hooks.uiPanel?.onRenderPanel(context({ slot: HAPPY_SLOT }))
 

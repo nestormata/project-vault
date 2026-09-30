@@ -6,7 +6,7 @@ import { Agent, buildConnector, type Dispatcher } from 'undici'
 /**
  * Story 6.2 AC 1/2, ADR-6.2-08: registration-time and check-time SSRF validation for
  * service_endpoints URLs, plus ADR-6.2-11's URL redaction for any credential-bearing URL
- * component. architecture.md mandates rejecting RFC1918 private ranges, loopback, link-local
+ * component. The architecture mandates rejecting RFC1918 private ranges, loopback, link-local
  * (including cloud metadata addresses), and IPv6 equivalents at registration time — and,
  * per the adversarial review, re-validating every redirect hop and pinning every outbound
  * connection to its validated address at check time (closing the DNS-rebinding TOCTOU gap a
@@ -32,7 +32,7 @@ export class UrlNotMonitorableError extends Error {
 // - IPv6: loopback ::1, unique-local fc00::/7, link-local fe80::/10 and unspecified ::
 //   (Story 43.9 AC-12, same reason). IPv4-mapped addresses (::ffff:a.b.c.d, in dotted or hex
 //   form) are unwrapped and checked against the IPv4 set.
-// Deliberately NOT blocked (unchanged, see the deferred-work ledger): CGNAT, multicast, 240/4.
+// Deliberately NOT blocked (unchanged; broadening is a tracked follow-up): CGNAT, multicast, 240/4.
 const BLOCKED_V4_RANGES: ReadonlySet<string> = new Set([
   'private',
   'loopback',

@@ -172,7 +172,7 @@ describe('/rotate +page.svelte (Story 13.4)', () => {
     await vi.waitFor(() => expect(screen.getByText(/unknown field key/i)).toBeTruthy())
   })
 
-  // Task 6 — active-rotation banner pre-empting AC-6's 409, per the pre-mortem elicitation note.
+  // Task 6 — active-rotation banner pre-empting AC-6's 409, per the pre-mortem finding.
   it('disables the field selector and submit button when a rotation is already active', () => {
     render(RotatePage, {
       props: {

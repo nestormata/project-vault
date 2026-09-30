@@ -86,7 +86,7 @@ export const CredentialDetailSchema = z
     fields: z.array(FieldMetaSchema),
     // Story 13.3 AC-2 — eagerly-decrypted values for NON-sensitive fields only, keyed by field
     // key. Populated server-side from a decrypt limited to `sensitive: false` keys; never
-    // includes a sensitive field's value. Not an audited reveal (see Dev Notes) — masking/
+    // includes a sensitive field's value. Not an audited reveal — masking/
     // existence determination still comes from `fields` (field_meta) alone; this is additive
     // data alongside it. Empty object (not omitted) when there are no non-sensitive fields, or
     // when the eager decrypt failed (graceful degradation — that field renders masked instead).

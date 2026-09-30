@@ -3,7 +3,7 @@ import { SUPPORTED_LOCALES } from '@project-vault/shared'
 
 export const OrgSettingsParamsSchema = z.object({ orgId: z.uuid() })
 
-// D8/FR110 — epics.md's exact enum (AC-E7b).
+// D8/FR110 — the requirement's exact enum (AC-E7b).
 export const MachineKeySettingsBodySchema = z
   .object({
     machineKeyDormancyThresholdDays: z.union([

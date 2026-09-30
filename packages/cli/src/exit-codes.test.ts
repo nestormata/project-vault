@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { CliUsageError, EXIT_CODES, exitCodeForAgentErrorCode } from './exit-codes.js'
 
 describe('exitCodeForAgentErrorCode', () => {
-  // Dev Notes decision #4 — every one of packages/agent's actual VaultAgentError .code values
+  // Decision #4 — every one of packages/agent's actual VaultAgentError .code values
   // (read directly from packages/agent/src/errors.ts) must map to its own distinct exit code.
   const cases: Array<[string, number]> = [
     ['token_exchange_failed', EXIT_CODES.tokenExchangeFailed],

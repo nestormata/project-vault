@@ -20,7 +20,7 @@
     domains?: MonitoringCardInput
   } = $props()
 
-  // Story 28.4 Dev Notes "Pluralization approach": no ICU/CLDR plural-selector machinery exists
+  // Story 28.4 pluralization approach: no ICU/CLDR plural-selector machinery exists
   // in this codebase — two translated message keys per countable noun (singular/plural), selected
   // by the existing count === 1 ? singular : plural branching, matching current sophistication.
   function countLabel(count: number, singular: string, plural: string): string {

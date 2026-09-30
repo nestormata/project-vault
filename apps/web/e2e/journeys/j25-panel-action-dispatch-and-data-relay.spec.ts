@@ -170,7 +170,7 @@ test.describe
     await expect(runButton).not.toHaveAttribute('aria-busy', 'true')
   })
 
-  // Story 59.1 Task 10 (DW-308) — the full SvelteKit shell (layout, `+page.server.ts` load, `/api`
+  // Story 59.1 Task 10 — the full SvelteKit shell (layout, `+page.server.ts` load, `/api`
   // proxy) end to end for a non-ok outcome: the fixture's `test-denied-action` resolves `denied`
   // with its own banner html plus an internal `message`. PV must forward the html (rendered in
   // the panel) and suppress the denial `message` (the status region shows the generic text).

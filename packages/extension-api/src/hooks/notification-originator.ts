@@ -90,8 +90,8 @@ export type NotificationOriginatorEnqueueResult = {
 export type NotificationOriginatorEnqueueForOrgParams = NotificationOriginatorEnqueueParams & {
   /** The org to enqueue the notification for. Trusted caller input, scoped only by the host's
    * own `withOrg()` RLS transaction and `recipientUserId`'s membership check (AC2/AC3) — mirrors
-   * every existing out-of-request `HostServices` method's own accepted trust boundary (see the
-   * story's Elicitation Finding 1: the scheduled-task runner only ever invokes an extension's
+   * every existing out-of-request `HostServices` method's own accepted trust boundary (the
+   * scheduled-task runner only ever invokes an extension's
    * `onScheduledTask` for orgs where it is actually installed, so this is never
    * attacker-controlled in practice). */
   organizationId: string

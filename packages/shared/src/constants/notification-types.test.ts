@@ -37,7 +37,7 @@ describe('Story 6.2 HTTP endpoint monitoring alert types (ADR-6.2-02)', () => {
     expect(NOTIFICATION_ALERT_TYPES).toContain('security.anomalous_access')
   })
 
-  it('does NOT register the misspelled epics.md prose variant "service.recovered"', () => {
+  it('does NOT register the misspelled requirement-prose variant "service.recovered"', () => {
     expect(NOTIFICATION_ALERT_TYPES).not.toContain('service.recovered')
   })
 })

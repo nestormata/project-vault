@@ -113,10 +113,10 @@ const ExtensionPanelUnavailableSchema = z.object({
  * Story 25.5 AC1/AC5/Task 5 — the OpenAPI-facing shapes for `POST /extensions/panels/:slot/actions`
  * (regenerated into `packages/shared/openapi.json`). Mirrors `ExtensionPanelOkSchema`/
  * `ExtensionPanelUnavailableSchema`'s existing pattern, but the success shape is deliberately NOT
- * wrapped in `{ ok: true, ... }` the way the GET panel route is — CM's real, already-shipped
- * `replaceWithResponse(root, payload)` (see this story's Finding) reads the JSON body directly as
- * `{ html }` or `{ message }`, not through an `ok`/`reason` envelope; PV conforms to that existing
- * wire shape rather than inventing its own (matching Elicitation Log #4's own precedent).
+ * wrapped in `{ ok: true, ... }` the way the GET panel route is — an already-shipped panel
+ * script reads the JSON body directly as `{ html }` or `{ message }`, not through an
+ * `ok`/`reason` envelope; PV conforms to that existing wire shape rather than inventing its
+ * own.
  */
 const ExtensionActionOkSchema = z.object({
   html: z.string().optional(),
@@ -353,8 +353,8 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
       writeAuditEvent: false,
       // Story 25.5 AC6/Task 3 — 30 actions/minute/user. This route is a genuinely new,
       // authenticated MUTATION surface with no purpose-built CSRF defense yet (Story 25.6, not
-      // this story's job — see Open Design Question 1); the Security Audit Personas elicitation
-      // round's own finding was that an authenticated user hammering a mutation route with ZERO
+      // this story's job — Open Design Question 1); the security review's
+      // finding was that an authenticated user hammering a mutation route with ZERO
       // rate limiting is a materially worse gap than an imperfectly-tuned limit. 30/min is
       // generous for legitimate interactive use (a human clicking buttons in a panel) while
       // bounding the cost of a compromised/malicious same-origin caller looping requests — an
@@ -374,7 +374,7 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
       }
 
       // Story 25.6 AC1/AC2/AC4 — the real CSRF token check, at the exact same early position as
-      // the Sec-Fetch-Site check above (Dev Notes cross-reference): before any DB lookup or
+      // the Sec-Fetch-Site check above: before any DB lookup or
       // `handleModuleAction()`/`onAction()` call. Double-submit-cookie pattern (Task 1) — the
       // client (`+page.svelte`'s postMessage-relay fetch, AC5) must echo the CSRF cookie's own
       // value back as the `x-csrf-token` header. Detail is never leaked to the client (AC4) —

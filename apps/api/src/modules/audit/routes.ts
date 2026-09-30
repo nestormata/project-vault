@@ -494,8 +494,8 @@ export async function auditRoutes(fastify: FastifyApp): Promise<void> {
   })
 
   // D3 — OpenAPI-description-equivalent note (this codebase's generate-spec.ts does not yet
-  // document any /audit/* route, including Story 8.1's /audit/verify, so this comment plus the
-  // story's Dev Notes are the documented record of this trade-off): webhook delivery runs on an
+  // document any /audit/* route, including Story 8.1's /audit/verify, so this comment is the
+  // documented record of this trade-off): webhook delivery runs on an
   // every-minute watermark-cursor catchup cron, so the delivery SLA is "within ~60-120 seconds
   // of insertion, best-effort" — not a literal sub-60-second guarantee. S3 forwarding is a daily
   // batch (`audit/s3-forward-daily`), not a webhook and not delivered per-row at all.

@@ -8,7 +8,7 @@ import { users } from './users.js'
  * identity-scoped tables in check-rls-coverage.ts's EXCLUDED_TABLES (mfa_recovery_codes,
  * account_recovery_tokens, etc.), this table gets a normal RLS policy (AC-19).
  *
- * No cascade delete on `userId` — `users` rows are never hard-deleted by erasure (Dev Notes),
+ * No cascade delete on `userId` — `users` rows are never hard-deleted by erasure,
  * so this FK stays stable for the lifetime of the erasure record.
  */
 export const dataErasureRequests = pgTable(

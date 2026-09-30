@@ -8,9 +8,8 @@ export default defineConfig({
     tailwindcss(),
     // Story 15.1 — compiles project.inlang/settings.json + messages/{locale}.json into
     // src/lib/paraglide/* (typesafe, tree-shaken message functions). Cookie-based locale
-    // strategy per the story's ADR (see story Dev Notes "Architecture Decision Record — locale
-    // routing strategy"): no URL prefixing, so no route in the app changes shape when a user
-    // switches locale.
+    // strategy per the story's locale-routing architecture decision: no URL prefixing, so no route
+    // in the app changes shape when a user switches locale.
     paraglideVitePlugin({
       project: './project.inlang',
       outdir: './src/lib/paraglide',

@@ -13,9 +13,8 @@ type WorkerResult =
 
 /**
  * Story 9.1 D5/AC-5: worker_threads entry point for CPU-bound AES-256-GCM backup
- * encryption/decryption — architecture.md's explicit mandate for CPU-bound crypto handlers, and
- * the first story to actually implement that pattern (see packages/crypto/src/workers/README
- * intent in architecture.md's structure listing). One worker per task (not a long-lived pool) —
+ * encryption/decryption — the architecture's explicit mandate for CPU-bound crypto handlers, and
+ * the first story to actually implement that pattern. One worker per task (not a long-lived pool) —
  * simple and sufficient for the low frequency of backup/restore/validate operations.
  */
 function run(): void {

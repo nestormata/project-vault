@@ -1,5 +1,5 @@
 /**
- * Story 43.5 Dev Notes decision #9 — the shared CLI-adapter preamble for every command that takes
+ * Story 43.5 decision #9 — the shared CLI-adapter preamble for every command that takes
  * repeatable `--secret NAME[=ENV_VAR]` flags with a machine-user key (`pvault run --`,
  * `pvault write-env`): zero-`--secret` check → `parseRunSecrets` → `looksLikeUuid` →
  * `warnAndCreateAgent`. Consolidated rather than repeated per command (jscpd is a hard CI gate, and

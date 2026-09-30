@@ -4,9 +4,9 @@ import { orgScoped } from './helpers.js'
 import { projects } from './projects.js'
 import { users } from './users.js'
 
-// Story 7.1 — machine user identity (FR32/FR33/FR36/FR68). See story "Key Design Decisions &
-// Open Questions" D4: role lives as a direct column here rather than in project_memberships to
-// avoid a high-risk schema change to a table load-bearing for Stories 2.1/4.1/4.2/4.3/4.4.
+// Story 7.1 — machine user identity (FR32/FR33/FR36/FR68). Story decision D4: role lives as a
+// direct column here rather than in project_memberships to avoid a high-risk schema change to a
+// table load-bearing for Stories 2.1/4.1/4.2/4.3/4.4.
 export const machineUsers = pgTable(
   'machine_users',
   {

@@ -9,10 +9,9 @@ import { index, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
  * story's read side needs a non-destructive, repeatable peek (`context.requestState`, AC2) AND a
  * separate, single-use, destructive consume (`HostServices.extensionRequestState.consume()`,
  * AC3) against the SAME underlying row — extending 39.1's table to add a non-burning read path
- * would change 39.1's own shipped AC3 security property for an unrelated use case (see this
- * story's Finding section).
+ * would change 39.1's own shipped AC3 security property for an unrelated use case.
  *
- * `orgId`/`identityId` (AC12, Red Team elicitation finding) are captured at mint time from the
+ * `orgId`/`identityId` (AC12, red-team review finding) are captured at mint time from the
  * AUTHENTICATED callback session — unlike 39.1's table (whose mint route runs pre-session and
  * therefore has no org/identity to scope by), this story's mint route (the SAME `onOAuthCallback`
  * handler) DOES have a session at that point, since the callback leg completes an authenticated

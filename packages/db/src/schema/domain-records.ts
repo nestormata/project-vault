@@ -18,7 +18,8 @@ export const domainRecords = pgTable(
       .references(() => projects.id, { onDelete: 'cascade' }),
     domainName: text('domain_name').notNull(),
     renewalDate: timestamp('renewal_date', { withTimezone: true }),
-    // Default [30] per epics.md AC body for domain registrations (single threshold).
+    // Default [30] per the original acceptance criteria for domain registrations (single
+    // threshold).
     alertLeadDays: jsonb('alert_lead_days')
       .notNull()
       .default(sql`'[30]'::jsonb`)

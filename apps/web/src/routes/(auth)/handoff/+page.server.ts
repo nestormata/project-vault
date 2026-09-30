@@ -6,7 +6,7 @@ import { resolveCentralizeMeOrigin } from '$lib/server/handoff-return-origin.js'
 import type { PageServerLoad } from './$types'
 
 // Matches handoff-routes.ts's own HANDOFF_COOKIE_NAME constant exactly — apps/web does not
-// import from apps/api's internals anywhere else in this codebase (Dev Notes), so this is a
+// import from apps/api's internals anywhere else in this codebase, so this is a
 // deliberate duplicated literal, not an import.
 const HANDOFF_COOKIE_NAME = 'handoff-confirm'
 
@@ -63,7 +63,7 @@ async function parseExchangeResult(
  * `prepare()`'s own cookie-set, which is dropped by the browser on the cross-site response that
  * bug F2 is about.
  *
- * Design decision (AC3, Dev Notes): calls apps/api directly via the same `proxyApiRequest()`
+ * Design decision (AC3): calls apps/api directly via the same `proxyApiRequest()`
  * pattern `prepare/+server.ts` already uses, rather than talking to the DB/`SSO_STATE_HMAC_SECRET`
  * from apps/web directly — apps/web has neither today, and giving it either would be a new,
  * unreviewed cross-service coupling. All of the insert-first-burn consumption, the org-scoped

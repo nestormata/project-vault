@@ -5,7 +5,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 // EventEmitter from the `child` process object). Node delivers an EPIPE on that stream as an
 // unhandled 'error' event if there's no listener attached to it specifically — a listener on
 // `child` itself does NOT cover it. This file establishes this module's first direct test
-// coverage (see Dev Notes) and pins the fix plus the two behaviors it must not regress.
+// coverage and pins the fix plus the two behaviors it must not regress.
 
 type FakeChildProcess = EventEmitter & {
   stdout: EventEmitter

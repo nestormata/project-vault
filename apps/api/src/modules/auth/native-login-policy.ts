@@ -140,7 +140,7 @@ async function logBootWarnings(
 
 /**
  * Story 23.2 AC-6e item 3: a boot check scoped to this story's blast radius. The whole
- * exclusion story's safety premise (AC-8a, AC-6b, and the security-posture Dev Notes) is that
+ * exclusion story's safety premise (AC-8a, AC-6b, and its security posture) is that
  * extension/SSO-provisioned users hold an UNUSABLE credential, so re-opening `POST /login` via
  * break-glass "recovers nobody and discloses nothing." That premise depends on
  * `env.AUTH_DUMMY_PASSWORD_HASH` never being stored as a real credential (AC-6e items 1-2) AND

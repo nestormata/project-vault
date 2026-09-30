@@ -21,8 +21,7 @@ async function bootVault(): Promise<void> {
  * Story 23.8 AC-21 — CM-E14.6's own AC-C4 concern was "does PV's erasure machinery cover
  * cross-domain, extension-authored rows the same way it covers host-originated rows." The
  * story's literal text described `erasure-service.ts:267-279` as a lookup that "redacts" a
- * matched row. Real behavior (verified while writing this test, see the Dev Notes citation this
- * test's own commit message and the story file record): `audit_log_entries` is immutable and
+ * matched row. Real behavior (verified while writing this test): `audit_log_entries` is immutable and
  * append-only by design (Story 8.1) and is NEVER content-redacted for ANY actor type — it is
  * explicitly listed in `buildErasureReport()`'s `piiRetained` with the justification "audit log
  * integrity — tamper-evident log; identity pseudonymized via user_identity_tokens, not this

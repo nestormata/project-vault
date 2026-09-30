@@ -68,8 +68,8 @@ the primary trust path, not a downgrade.
 
 A commercial hosted tier is on the roadmap, adding managed hosting, enterprise and managed single
 sign-on, and compliance reporting. Separately, **CentralizeMe** is the maintainer's commercial
-hosted SaaS product, which embeds Project Vault as a module; it is not required to self-host and
-nothing here depends on it.
+hosted SaaS product, built on Project Vault (Project Vault hosts its first-party module pack); it
+is not required to self-host and nothing here depends on it.
 
 The [public demo](https://project-vault-demo-web.fly.dev) is a real deployment you can register
 on and explore, but its database resets nightly. It is a scratchpad, not hosting.

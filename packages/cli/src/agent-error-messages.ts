@@ -40,8 +40,8 @@ const MESSAGE_BUILDERS: ReadonlyMap<string, MessageBuilder> = new Map<string, Me
 
 /** Per-code message builders for AC-5's mapping table, mirroring
  * packages/vault-action/src/classify.ts's perEntryMessage() wording pattern (reused, not
- * reinvented — see Story 43.1's Dev Notes "Architecture & prior art"). Shared between `pvault get`
- * and `pvault run --` (Story 43.3 Dev Notes decision #3) so the two never diverge in wording. */
+ * reinvented, per Story 43.1). Shared between `pvault get`
+ * and `pvault run --` (Story 43.3 decision #3) so the two never diverge in wording. */
 export function messageForAgentError(error: VaultAgentError, safeName: string): string {
   // `error.message` (from packages/agent) can itself embed the raw, unsanitized credential name
   // for several codes (see packages/agent/src/errors.ts) — sanitize it too, not just `safeName`,

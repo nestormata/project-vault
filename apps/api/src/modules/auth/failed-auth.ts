@@ -55,7 +55,7 @@ function normalizeAttemptedEmail(email: string): string {
 // (filters on lower(attempted_email) + attempted_at, matching that index's column order) — no
 // new migration/index needed. Deliberately unlocked/racy under concurrency (AC-11): a plain
 // COUNT(*), no SELECT ... FOR UPDATE/advisory lock, matching check-failed-auth-threshold.ts's own
-// counting approach — see Dev Notes "Concurrent access" for the trade-off rationale.
+// counting approach (an accepted concurrent-access trade-off).
 export async function isLoginLockedOut(email: string): Promise<boolean> {
   const normalizedEmail = normalizeAttemptedEmail(email)
   const windowStartIso = new Date(

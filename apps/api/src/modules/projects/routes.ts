@@ -100,7 +100,7 @@ function projectReadResponseSchema<T>(schema200: T) {
 // cross-module resolver yet; 3rd cross-story occurrence as of 4.2, consider extracting if a 4th
 // consumer appears. This module-local helper only dedupes the identical query across this file's
 // three new handlers (AC-5/AC-6/AC-10); it is not the shared resolver D8 defers.
-// Epic 4 retro P4-1: delegates to the same `getProjectMembershipRole` helper org/routes.ts uses,
+// Delegates to the same `getProjectMembershipRole` helper org/routes.ts uses,
 // scoped to the caller, so the (projectId, userId, orgId) lookup lives in exactly one place.
 // Exported (Story 6.3 ADR-6.3-07) so the status-page admin routes reuse this exact query shape
 // instead of diverging on a second "who is this project's owner" answer.

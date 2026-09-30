@@ -168,7 +168,7 @@ async function handleStart(request: FastifyRequest, reply: FastifyReply): Promis
     httpOnly: true,
     // AC-3: deliberately `Lax`, NOT `strict` — this cookie must survive the top-level
     // cross-site redirect back from the IdP, unlike setAuthCookies()'s strict access/refresh
-    // cookies. See Dev Notes judgment call #5.
+    // cookies. See judgment call #5.
     sameSite: 'lax',
     secure: env.COOKIE_SECURE,
     path: '/',

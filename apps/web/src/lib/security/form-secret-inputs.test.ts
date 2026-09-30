@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
  * navigates to `<current-url>?<name>=<value>…` — so every NAMED input ends up in the URL, the
  * browser history, access/proxy logs and later `Referer` headers.
  *
- * Two layers, both enforced here (decision recorded in Story 66.3's Dev Notes; Nestor asked for
+ * Two layers, both enforced here (Story 66.3 decision; Nestor asked for
  * the second on top of the first):
  * 1. Secret inputs never carry a `name` — nothing secret is ever part of a native submission.
  *    The forms submit through `onsubmit` handlers that read bound state, so `name` had no use.

@@ -406,7 +406,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
       return randomUUID()
     },
     disableRequestLogging: true,
-    // Story 31.1 (DW-130) AC3.13: find-my-way's default maxParamLength (100) is shorter than
+    // Story 31.1 AC3.13: find-my-way's default maxParamLength (100) is shorter than
     // this story's own :centralizemeOrganizationId param's documented max (256, matching
     // ProvisionServiceOrganizationRequestSchema's existing centralizemeOrganizationId body-field
     // bound) — a 257+ char value must be rejected by THIS route's own Zod validation (422), never
@@ -612,24 +612,24 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(serviceProvisioningRoutes)
   await fastify.register(authRoutes, { prefix: AUTH_ROUTE_PREFIX })
   // Story 43.2 — CLI JSON-bearer-token login/refresh/logout, distinct from authRoutes' cookie-
-  // based routes above (same prefix, separate route file per Dev Notes decision #2).
+  // based routes above (same prefix, separate route file per Story 43.2 decision #2).
   await fastify.register(cliLoginRoutes, { prefix: AUTH_ROUTE_PREFIX })
   await fastify.register(machineTokenExchangeRoutes, { prefix: AUTH_ROUTE_PREFIX })
   // Story 14.3: start/callback are public (unauthenticated) SSO routes, mounted alongside local
-  // auth at the same public prefix — see Dev Notes judgment call #6 on file/module placement.
+  // auth at the same public prefix — see judgment call #6 on file/module placement.
   await fastify.register(ssoRoutes, { prefix: '/api/v1/auth/sso' })
-  // Story 30.2 (DW-128): dedicated CM->PV handoff-token landing routes — public/pre-auth like
+  // Story 30.2: dedicated CM->PV handoff-token landing routes — public/pre-auth like
   // ssoRoutes above, but a separate module/prefix (not reusing sso-routes.ts's generic
   // start/callback dispatch — see handoff-boot.ts's doc comment on why).
   await fastify.register(handoffRoutes, { prefix: '/api/v1/auth/handoff' })
   // Story 14.4: domain-lookup is also public/pre-auth (the caller has no session yet) — mounted
-  // at the same prefix as start/callback, in its own module (Dev Notes Project Structure Notes).
+  // at the same prefix as start/callback, in its own module.
   await fastify.register(domainLookupRoutes, { prefix: '/api/v1/auth/sso' })
   /* eslint-disable sonarjs/no-duplicate-string -- route-audit.test.ts statically parses these
      literal prefix strings; a shared constant would make them invisible to that parser. */
   await fastify.register(orgRoutes, { prefix: '/api/v1/org' })
   // Story 14.6: authenticated, org-scoped SSO-domain admin CRUD — a separate, stricter-validation
-  // sibling to the pre-auth domainLookupRoutes above (see Dev Notes scope boundaries).
+  // sibling to the pre-auth domainLookupRoutes above.
   await fastify.register(orgSsoDomainsRoutes, { prefix: '/api/v1/org' })
   await fastify.register(auditRoutes, { prefix: '/api/v1/org' })
   await fastify.register(erasureRoutes, { prefix: '/api/v1/org' })
@@ -685,12 +685,12 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   await fastify.register(statusTokenRoutes, { prefix: ADMIN_PREFIX, dbPool: options.dbPool })
   // Story 14.2: functionally an admin-status read, so mounted at ADMIN_PREFIX alongside the
   // routes above even though the implementation file lives under extensions/ (conceptually part
-  // of the extension subsystem, not modules/admin/'s "system config only" scope) — see Dev Notes.
+  // of the extension subsystem, not modules/admin/'s "system config only" scope).
   await fastify.register(extensionStatusRoutes, { prefix: ADMIN_PREFIX })
   // Story 14.3 Task 7: OrgAdmin-initiated external-identity linking endpoint.
   await fastify.register(externalIdentityRoutes, { prefix: ADMIN_PREFIX })
   // Story 16.1: flat module (not nested under modules/admin/), matching the existing
-  // backup/admin sibling convention — see architecture.md's file-structure tree.
+  // backup/admin sibling module convention.
   await fastify.register(themingRoutes, { prefix: ADMIN_PREFIX })
   // Story 9.4 AC-10: a distinct sibling module to platform-admin (audit-log read/verify vs.
   // instance administration) under its own '/api/v1/platform' prefix, not nested under

@@ -6,7 +6,7 @@
  * `assertOrgMayWriteAuditGates()` (Story 22.1/22.2's quota+rate gate) and any cross-tenant
  * latency coupling it introduces through the shared connection pool / shared usage row / shared
  * cluster. This is a MANUAL/OPERATIONAL bench, not a CI gate — it is never invoked by `make ci`
- * (see this story's frontmatter warning and Dev Notes "Testing Requirements Summary"). It
+ * (by design: it is a manual operational measurement, not a regression test). It
  * intentionally saturates a meaningful fraction of the shared connection pool for its
  * measurement window — run it only against a dedicated local or disposable Postgres instance,
  * NEVER against a shared dev/staging database or production.
@@ -16,7 +16,7 @@
  *   tsx scripts/audit-quota-isolation-bench.ts --arm=disabled   # single-arm child mode (internal)
  *   tsx scripts/audit-quota-isolation-bench.ts --arm=enabled    # single-arm child mode (internal)
  *
- * Design Decision D1 (see story Dev Notes): `apps/api/src/config/env.ts` exports `env` as a
+ * Design Decision D1: `apps/api/src/config/env.ts` exports `env` as a
  * module-level singleton parsed once from `process.env` at import time. Mutating
  * `process.env.AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED` after that module has been imported does NOT
  * change the already-parsed `env` object — there is no DI seam. The orchestrator therefore never
@@ -442,7 +442,7 @@ async function createBenchUser(db: ReturnType<typeof getDb>, label: string): Pro
  * mirrors `@project-vault/db/test-helpers`'s own `cleanupTestOrg()` precedent exactly (append-only
  * audit rows make full org deletion impossible by design, matching production). That residual
  * `organizations` row (with its cascade-target config/usage rows also therefore not deleted) is a
- * known, accepted limitation — see the story's Dev Agent Record — not a bug in this sweep.
+ * known, accepted limitation of append-only audit storage — not a bug in this sweep.
  */
 async function sweepStaleBenchOrgs(db: ReturnType<typeof getDb>): Promise<number> {
   const cutoff = new Date(Date.now() - STALE_ORG_MAX_AGE_MS).toISOString()

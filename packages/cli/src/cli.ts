@@ -21,7 +21,7 @@ import { runVersionCheck } from './version-check.js'
 import { noVersionCheckWarning, parseNoVersionCheck } from './version-check-opt-out.js'
 import { sessionDir } from './session-store.js'
 
-// Dev Notes decision #6 — CLI argument-parsing/command framework: commander (already resolved
+// Decision #6 — CLI argument-parsing/command framework: commander (already resolved
 // elsewhere in this monorepo's lockfile), a real subcommand framework rather than hand-rolled
 // `process.argv` parsing, chosen because this is the first story of a six-story epic whose later
 // stories (`login`, `run -- <cmd>`, `.env` materialization, a startup version check) all add more
@@ -33,9 +33,9 @@ export type CliRuntime = {
   env: Record<string, string | undefined>
   createVaultAgent: (config: VaultAgentConfig) => VaultAgent
   setExitCode: (code: number) => void
-  /** Story 43.2 Dev Notes decision #3 — the interactive-prompt seam `login` needs. */
+  /** Story 43.2 decision #3 — the interactive-prompt seam `login` needs. */
   prompt: PromptFn
-  /** Story 43.2 Dev Notes decision #2 — `login`/`logout` talk to the new auth endpoints directly
+  /** Story 43.2 decision #2 — `login`/`logout` talk to the new auth endpoints directly
    * via `fetch`, independent of `@project-vault/agent` (a human session is a different token type
    * than a machine-user key — see that decision's scope-boundary note). */
   fetchFn: typeof fetch
@@ -68,7 +68,7 @@ export const VERSION_CHECKED_COMMANDS: ReadonlySet<string> = new Set([
 export const VERSION_CHECK_EXEMPT_COMMANDS: ReadonlySet<string> = new Set(['logout'])
 
 // Shared machine-user-key flag definitions, reused by `get` and `run` (both stay on the
-// VAULT_API_KEY path — see config.ts's Dev Notes decision #2) — avoids duplicating the same
+// VAULT_API_KEY path — see config.ts's decision #2) — avoids duplicating the same
 // flag/description literals across command definitions.
 const API_KEY_FLAG = '--api-key <key>'
 const API_KEY_DESCRIPTION = 'overrides VAULT_API_KEY'
@@ -189,7 +189,7 @@ export function buildProgram(runtime: CliRuntime): Command {
       writeErr: (str) => runtime.streams.stderr.write(str),
     })
 
-  // Story 43.3 Dev Notes decision #4 — verified against commander 14; the dependency is now ^15:
+  // Story 43.3 decision #4 — verified against commander 14; the dependency is now ^15:
   // its own built-in `--` handling correctly treats everything after a literal `--` token as the
   // `run` subcommand's `<command...>` variadic argument, without attempting to parse the user's
   // own flags (e.g. `ls --help` after `--` is passed through untouched) — no manual
@@ -335,7 +335,7 @@ export function buildProgram(runtime: CliRuntime): Command {
       }
     )
 
-  // Story 43.5 — `pvault write-env`. Dev Notes decision #8: positioned as the fallback to
+  // Story 43.5 — `pvault write-env`. Decision #8: positioned as the fallback to
   // `run --` (which never writes secrets to disk); deliberately no alias/shortcut. `--output` is
   // declared optional here and validated in `runWriteEnv()` so a missing value gets this command's
   // own usage error (exit 1) rather than commander's generic one.

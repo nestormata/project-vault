@@ -10,8 +10,8 @@ const pageBasedPaginationQueryFields = {
   page: z.coerce.number().int().min(1).default(1),
 }
 
-// Arbitrary reasonable cap (not specified numerically in epics.md/architecture.md) bounding
-// worst-case daily-job iteration per asset — see Dev Notes in the 6.1 story file.
+// Arbitrary reasonable cap (not specified numerically in the requirements) bounding
+// worst-case daily-job iteration per asset (Story 6.1).
 export const MAX_ALERT_LEAD_DAYS = 10
 
 const alertLeadDaysSchema = z.array(z.number().int().positive()).max(MAX_ALERT_LEAD_DAYS)
@@ -262,7 +262,7 @@ export const MonitoringAlertStatusSchema = z.enum([
 ])
 
 // AC 17: page-based pagination (mirrors AC 7's convention and SecurityAlertsQuerySchema); the
-// literal `cursor=` in epics.md's URL example is prose imprecision from the now-superseded
+// literal `cursor=` in the original requirement's URL example is prose imprecision from the now-superseded
 // unified-assetId model — `page` is the real, already-established pagination mechanism.
 export const AlertListQuerySchema = z.object({
   status: MonitoringAlertStatusSchema.optional(),
@@ -321,15 +321,15 @@ export type AlertParams = z.infer<typeof AlertParamsSchema>
 export { CHECK_FREQUENCY_MINUTES }
 
 // --- Status pages (status_pages/status_page_services) — Story 6.3 ---
-// Request-body schemas stay module-local (Dev Notes: 6.1 already established this exception to
-// architecture.md's general "import from packages/shared" guidance for request bodies). Response
+// Request-body schemas stay module-local (6.1 already established this exception to
+// the architecture's general "import from packages/shared" guidance for request bodies). Response
 // types the web app must consume live in packages/shared/src/schemas/status-page.ts instead.
 
 export const StatusPageProjectParamsSchema = z
   .object({ projectId: z.uuid() })
   .meta({ id: 'StatusPageProjectParams' })
 
-// AC 15: arbitrary reasonable cap (undocumented in epics.md/architecture.md, same style of
+// AC 15: arbitrary reasonable cap (undocumented in the requirements, same style of
 // documented-but-unsourced bound as 6.1's alertLeadDays max-10 cap) bounding public-page
 // rendering size.
 export const MAX_STATUS_PAGE_SERVICES = 50

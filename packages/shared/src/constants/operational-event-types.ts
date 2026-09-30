@@ -24,7 +24,7 @@ export const OperationalEvent = {
   CLI_VERSION_POLICY_EFFECTIVE: 'cli_version_policy.effective',
   CLI_VERSION_POLICY_ENV_MINIMUM_IGNORED: 'cli_version_policy.env_minimum_ignored',
   CLI_VERSION_POLICY_SELF_CONTRADICTION: 'cli_version_policy.self_contradiction',
-  // Story 30.1 (DW-129) AC3: clock-drift magnitude signal (W2 mitigation) — measured at boot and
+  // Story 30.1 AC3: clock-drift magnitude signal (W2 mitigation) — measured at boot and
   // on a periodic interval by comparing this process's Date.now() against Postgres's own
   // SELECT now(). CLOCK_SKEW_CHECK_FAILED fires when the round-trip itself fails (DB
   // unreachable/pool exhausted) — a diagnostic-signal failure, never fatal.
@@ -261,7 +261,7 @@ export const OperationalEvent = {
   // A single org's boot-time audit-fanout row failed to write — log-and-continue, distinct
   // from an actual extension load failure so the two are never conflated in monitoring.
   EXTENSION_AUDIT_FANOUT_ROW_FAILED: 'extension.audit_fanout_row_failed',
-  // Dev Notes judgment call #5: a second loadExtension() invocation after state already
+  // Judgment call #5: a second loadExtension() invocation after state already
   // resolved (loaded or load_failed) is ignored rather than re-run — warn-logged so a
   // regression that double-invokes the loader is still visible in monitoring.
   EXTENSION_LOAD_DOUBLE_INVOCATION_IGNORED: 'extension.load_double_invocation_ignored',
@@ -358,7 +358,7 @@ export const OperationalEvent = {
   // present but unreadable" operational-log distinction — never fired for the (silent, expected)
   // "directory absent" case.
   THEME_DIRECTORY_UNREADABLE: 'theme.directory_unreadable',
-  // Dev Notes "Operational logging": info-level summary line on every reload (loaded/failed
+  // Operational logging: info-level summary line on every reload (loaded/failed
   // counts + failed filenames), independent of the audit trail.
   THEME_RELOAD_SUMMARY: 'theme.reload_summary',
   // AC-7 edge case: mirrors EXTENSION_AUDIT_FANOUT_ROW_FAILED for the startup auto-reload pass's
@@ -447,7 +447,7 @@ export const OperationalEvent = {
   ORG_USER_DEACTIVATE_DENIED: 'org_user.deactivate_denied',
   ORG_USER_REMOVE_DENIED: 'org_user.remove_denied',
 
-  // Story 30.2 (DW-128) AC2.5: boot-time handoff AuthStrategy registration gate
+  // Story 30.2 AC2.5: boot-time handoff AuthStrategy registration gate
   // (apps/api/src/modules/auth/handoff-boot.ts). Mirrors native-login-policy.ts's exact
   // two-branch fail-safe (native login still enabled — log fatal, keep serving local login) /
   // fail-loud (native login excluded — refuse to boot) pattern for the case where
@@ -456,7 +456,7 @@ export const OperationalEvent = {
   HANDOFF_BOOT_MISCONFIGURED_FAIL_SAFE: 'handoff_boot.misconfigured_fail_safe',
   HANDOFF_STRATEGY_REGISTERED: 'handoff_boot.strategy_registered',
 
-  // Story 31.1 (DW-130) AC14.47: dispatch failure for the real-time operator-facing alert fired
+  // Story 31.1 AC14.47: dispatch failure for the real-time operator-facing alert fired
   // on every successful call to the machine-authenticated org-wide revocation route (AC14.46) —
   // logged, never allowed to fail or roll back an otherwise-successful revocation (the alert is a
   // detection aid, not a correctness gate, unlike the audit write in AC7.27).

@@ -9,7 +9,7 @@ export const organizations = pgTable(
     slug: text('slug').notNull().unique(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-    // Story 7.2 D8/FR110 — configurable machine-key dormancy threshold (epics.md AC-E7b).
+    // Story 7.2 D8/FR110 — configurable machine-key dormancy threshold (AC-E7b).
     machineKeyDormancyThresholdDays: integer('machine_key_dormancy_threshold_days')
       .notNull()
       .default(90),
@@ -41,7 +41,7 @@ export const organizations = pgTable(
     // Story 30.2 (org-mismatch critical-bug fix): CM's own organizationId claim — a
     // WorkOS-directory-shaped identifier (e.g. "org_synthetic_acme"), NEVER PV's own org UUID.
     // Nullable because pre-existing organizations, and any organization provisioned before CM's
-    // provisioning client is updated to send this field (deferred — see deferred-work.md), have
+    // provisioning client is updated to send this field (tracked as follow-up work), have
     // no value here. A handoff token's `organizationId` claim must be compared against THIS
     // stored value, never against `organizations.id` directly. Mirrors
     // serviceProvisioningRequestId's exact shape: a nullable column backed by a partial unique

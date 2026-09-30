@@ -9,8 +9,8 @@ import { contrastRatio, isValidColorGrammar, kebabCase, LENGTH_GRAMMAR } from '.
  * Story 29.5 AC7 — registry-completeness AND grammar-validity test for `apps/web/src/app.css`'s
  * base theme-token defaults (Story 29.5 AC1/AC2/AC8).
  *
- * Package-boundary judgment call (documented in the story's Dev Agent Record, per AC7's explicit
- * "record whichever choice is made" instruction): this test lives here, in `apps/api`, and reads
+ * Package-boundary judgment call (recorded here, per AC7's explicit "record whichever choice
+ * is made" instruction): this test lives here, in `apps/api`, and reads
  * `apps/web/src/app.css`'s raw file content directly with `fs.readFileSync`, rather than:
  *   (a) `apps/web` importing this module's `isValidColorGrammar`/`LENGTH_GRAMMAR`/`kebabCase` —
  *       `apps/web` is a SvelteKit frontend app and must not depend on `apps/api`'s server-only
@@ -26,8 +26,8 @@ import { contrastRatio, isValidColorGrammar, kebabCase, LENGTH_GRAMMAR } from '.
 const APP_CSS_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../web/src/app.css')
 
 function parseDeclaredCustomProperties(css: string): Map<string, string> {
-  // Strip comments first so a property name/value mentioned only in prose (e.g. this story's own
-  // Dev Notes-style comments in app.css) can never false-positive-satisfy the presence check.
+  // Strip comments first so a property name/value mentioned only in prose (e.g. explanatory
+  // comments in app.css) can never false-positive-satisfy the presence check.
   const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '')
   const declarations = new Map<string, string>()
   const pattern = /--([a-z0-9-]+):\s*([^;]+);/g

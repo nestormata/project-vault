@@ -12,8 +12,7 @@ import { ThemeReloadResponseSchema } from './schema.js'
  * mirrors modules/admin/routes.ts's POST /notifications/test wiring (same minimumRole/requireMfa
  * shape, same { max: 10 } rate-limit precedent given this endpoint also does real filesystem +
  * validation work per call). Uses `minimumRole: 'admin'` per Story 14-8's documented RBAC
- * convention (originally shipped as `allowedRoles: ['owner','admin']`, fixed during the epic-16
- * retro — see epic-16-retro-2026-07-28.md Finding 5).
+ * convention (originally shipped as `allowedRoles: ['owner','admin']`, later corrected).
  *
  * `writeAuditEvent: false` + a direct `writeHumanAuditEntryOrFailClosed(secureCtx.tx, ...)` call
  * (rather than SecureRoute's generic `writeAuditEvent: <AuditConfig>` mechanism) because the audit
@@ -44,7 +43,7 @@ export async function themingRoutes(fastify: FastifyApp): Promise<void> {
       const result = await reloadThemes(env.VAULT_THEMES_DIR)
 
       // AC-7: never include raw theme file contents in the audit payload — filenames and counts
-      // only (Dev Notes "audit payload sanitization").
+      // only (audit payload sanitization).
       await writeHumanAuditEntryOrFailClosed(ctx.tx, {
         orgId: ctx.auth.orgId,
         actorUserId: ctx.auth.userId,

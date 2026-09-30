@@ -1,6 +1,6 @@
 import { z } from 'zod/v4'
 
-// Story 17.1 AC-4: default 24h, cap 7 days — a judgment call documented in the Dev Agent Record,
+// Story 17.1 AC-4: default 24h, cap 7 days — a deliberate judgment call,
 // informed by the sensitivity of secret material (no other product guidance existed at dev time).
 export const SHARE_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000
 export const SHARE_MAX_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -12,7 +12,7 @@ export const EXTERNAL_SHARE_DEFAULT_TTL_MS = 60 * 60 * 1000
 export const EXTERNAL_SHARE_MAX_TTL_MS = 72 * 60 * 60 * 1000
 
 // Story 17.2 AC-16: a fixed code constant (no per-org-configurable settings surface exists that
-// fits this cleanly — see Dev Notes) capping concurrent, not-yet-resolved external shares per
+// fits this cleanly) capping concurrent, not-yet-resolved external shares per
 // (credentialId, fieldKey) bucket (fieldKey IS NULL is its own bucket).
 export const MAX_PENDING_EXTERNAL_SHARES_PER_FIELD = 5
 
@@ -38,7 +38,7 @@ export const CredentialShareRevokeParamsSchema = CredentialShareParamsSchema.ext
   shareId: z.uuid(),
 })
 
-// Story 20.5 AC-1 (Scoped/Bounded Sharing Contract, decided by Story 20.4 in architecture.md):
+// Story 20.5 AC-1 (Scoped/Bounded Sharing Contract, decided by Story 20.4):
 // `attributeKeys: string[] | null` generalizes `fieldKey` without narrowing its existing behavior
 // — `null` (or omitted) means "whole-resource, sensitivity-default-exclusion applies" (AC-2); a
 // non-empty array is an explicit allow-list of attribute/field keys, included whether sensitive

@@ -1,6 +1,6 @@
 // Story 8-6 AC-6 — worker process spawned by cache-store-concurrency.test.ts. Runs in a genuinely
 // separate OS process (via `node`, not a worker_thread sharing the parent's event loop) so the
-// concurrent file writes below exercise the real cross-process race the retro flagged: multiple CI
+// concurrent file writes below exercise the real cross-process race previously flagged: multiple CI
 // processes on the same host calling the real `readCacheFile()`/`writeCacheFile()` against the same
 // shared cache file. Deliberately imports the real production module, not a reimplementation.
 import { buildCacheEntry, readCacheFile, withEntry, writeCacheFile } from '../cache-store.js'

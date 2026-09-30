@@ -48,8 +48,7 @@ export const auditLogEntries = pgTable(
     // Story 1.25: true insertion-order sequence — NOT createdAt (see platform-audit-events.ts's
     // identical column for why createdAt is unsafe as a chain-ordering key for its sibling
     // table; audit_log_entries has no such drain feature today, but this story deliberately
-    // uses one ordering convention across both tables — see Dev Notes "Row ordering" section of
-    // story 1-25).
+    // uses one ordering convention across both tables — story 1-25).
     chainSeq: bigint('chain_seq', { mode: 'number' }).notNull().generatedAlwaysAsIdentity(),
     // NO updated_at: immutable table
   },
@@ -58,7 +57,7 @@ export const auditLogEntries = pgTable(
     projectIdx: index('idx_audit_log_entries_project').on(t.projectId, t.createdAt.desc()),
     eventTypeIdx: index('idx_audit_log_entries_event_type').on(t.eventType, t.createdAt.desc()),
     resourceIdx: index('idx_audit_log_entries_resource').on(t.resourceId, t.createdAt.desc()),
-    // D5 (Story 8.2) — epics.md's literal AC requires an (actor_id, timestamp)-shaped index;
+    // D5 (Story 8.2) — the original literal AC requires an (actor_id, timestamp)-shaped index;
     // this codebase's equivalent column is actor_token_id, and it was previously unindexed on
     // its own (only reachable as a prefix of the composite orgActorEventIdx below, which isn't
     // useful for an actorId-only filter with no orgId/eventType narrowing).

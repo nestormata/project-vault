@@ -25,7 +25,7 @@ export type RegisterAcceptedResponse = {
 }
 
 // Story 14.4 Task 3.5: reuses Story 14.3's existing start/callback contract — no hosted
-// external-IdP-redirect mechanism exists yet (see LoginForm.svelte's Dev Notes), so the SSO step
+// external-IdP-redirect mechanism exists yet, so the SSO step
 // collects a credential in-page and exchanges it via these two calls.
 export type SsoStartResponse = {
   state: string
@@ -173,9 +173,8 @@ export function getCurrentUser(fetchFn: typeof fetch) {
 
 // Story 30.5: the CM->PV handoff Confirm call. Reuses `AuthSessionResponse`/`MfaLoginChallenge`
 // (already defined above for `login`/`ssoCallback`) rather than a third distinct response type —
-// `handleConfirm`'s success shapes are identical. Deliberately takes no request body (see
-// `_bmad-output/implementation-artifacts/30-5-handoff-confirmation-ui.md`'s "Depends on" section:
-// the backend route reads the `handoff-confirm` httpOnly cookie, not a JSON payload) and goes
+// `handleConfirm`'s success shapes are identical. Deliberately takes no request body (the
+// backend route reads the `handoff-confirm` httpOnly cookie, not a JSON payload) and goes
 // through the existing, unmodified `/api/v1/[...path]` catch-all proxy — this call is always
 // same-origin by the time the confirmation page can render it (see Background's revised design),
 // so it needs no new CORS handling, unlike the sibling `prepare` proxy route.

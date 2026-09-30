@@ -1,8 +1,7 @@
 export const MFA_ENROLLMENT_EXEMPT_ROUTES = [
   'GET /api/v1/org/security-alerts',
   // Story 8.1 D5 — owner-only integrity-verification GET; same "security-visibility read stays
-  // reachable during MFA grace period" rationale as GET /org/security-alerts above, per
-  // mfa-policy-matrix.md:62.
+  // reachable during MFA grace period" rationale as GET /org/security-alerts above.
   'GET /api/v1/org/audit/verify',
   // Story 8.2 — same rationale as GET /audit/verify above: owner-only, read/status-polling
   // endpoints stay reachable during an owner's MFA grace period. POST /audit/export and the two

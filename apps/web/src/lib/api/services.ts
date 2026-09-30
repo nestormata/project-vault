@@ -3,7 +3,7 @@ import { apiFetch } from './client.js'
 // Story 6.4: web UI wrapper for Story 6.1's payment_records-backed "services" resource. Named
 // after the user-facing domain language ("Services"), not the physical table name
 // (payment_records) — mirrors how service-endpoints.ts already names itself after its route
-// rather than the table (TD6-1, Dev Notes).
+// rather than the table (TD6-1).
 export type PaymentRecord = {
   id: string
   orgId: string

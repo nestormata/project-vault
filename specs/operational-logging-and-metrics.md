@@ -2,7 +2,7 @@
 
 **Version:** 1.0
 **Date:** 2026-06-25
-**Status:** Implementation-ready — derived from Story 1.10 elicitation (ADR-1.10-01 through ADR-1.10-04)
+**Status:** Implementation-ready — derived from Story 1.10 design decisions (ADR-1.10-01 through ADR-1.10-04)
 **Covers:** `apps/api` (Fastify 5 + Pino 9 + prom-client 15); FR82, NFR-MAINT4
 
 ---

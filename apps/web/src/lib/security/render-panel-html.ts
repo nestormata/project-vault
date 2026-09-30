@@ -3,10 +3,10 @@ import type { Action } from 'svelte/action'
 
 /**
  * Story 29.1 — the sanitize-and-inject Svelte action that replaces the `<iframe sandbox
- * srcdoc={...}>` mechanism (Story 25.1/25.4) for rendering a CentralizeMe extension panel's raw
+ * srcdoc={...}>` mechanism (Story 25.1/25.4) for rendering an extension panel's raw
  * HTML inline into PV's own DOM. This is the primary security control now that the panel shares
  * PV's own origin/session — there is no sandbox boundary absorbing an XSS-shaped bug in the
- * extension's HTML-generation code any more (see this story's Dev Notes "Why sanitize now").
+ * extension's HTML-generation code any more.
  *
  * Deliberately a `use:` action backing an imperative `element.innerHTML = sanitized` assignment,
  * never a Svelte template at-html directive — `svelte/no-at-html-tags` (error, zero
@@ -16,9 +16,9 @@ import type { Action } from 'svelte/action'
  * already established when it chose the iframe specifically to sidestep this same lint rule.
  *
  * AC13 — DOMPurify is configured explicitly, never left to its bare defaults:
- * - `FORBID_TAGS: ['iframe', 'object', 'embed']` — CentralizeMe's HTML could otherwise
+ * - `FORBID_TAGS: ['iframe', 'object', 'embed']` — an extension's panel HTML could otherwise
  *   re-introduce a nested browsing context inside the very surface this story removes an iframe
- *   from (Security Audit Personas, Elicitation Log #1).
+ *   from.
  * - `SANITIZE_DOM: true` (DOMPurify's own default) is left enabled — mXSS-hardening must not be
  *   disabled.
  * - `afterSanitizeAttributes` hook forces `rel="noopener noreferrer"` on any surviving
@@ -48,10 +48,9 @@ const SANITIZE_CONFIG = {
   // selector. Forbidding both tags forces extension styling through inline `style` attributes
   // only (which every real panel already uses — see `fixtures/mock-ui-panel-extension`'s
   // `var(--pv-ext-ink, ...)` pattern) — a real, testable mitigation for the highest-severity part
-  // of the lost isolation guarantee, though not a full restoration of it (see that test file's
-  // Dev Notes cross-reference for what remains an accepted, documented regression: PV's own
-  // compiled CSS cascade now reaches panel-rendered elements, and vice versa, for anything not
-  // scoped via a `<style>`/`<link>` tag specifically).
+  // of the lost isolation guarantee, though not a full restoration of it (what remains is an
+  // accepted, documented regression: PV's own compiled CSS cascade now reaches panel-rendered
+  // elements, and vice versa, for anything not scoped via a `<style>`/`<link>` tag specifically).
   FORBID_TAGS: ['iframe', 'object', 'embed', 'style', 'link'],
   SANITIZE_DOM: true,
   // Code-review hardening (2026-08-29) — DOMPurify's bare default `ALLOWED_TAGS` spans HTML, SVG,

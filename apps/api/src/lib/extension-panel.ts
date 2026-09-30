@@ -14,9 +14,8 @@ import { operationalLog } from './logger.js'
 import { raceWithTimeout } from './race-with-timeout.js'
 
 /**
- * Story 25.1 AC5/Dev Notes: the legacy fixed single-slot list, matching a real slot name
- * CentralizeMe's own `access-group/ui-panel.ts` consumer already expects ('group', not a
- * generic placeholder like 'default'). Story 25.2 AC2 turns this into the backward-compatible
+ * Story 25.1 AC5: the legacy fixed single-slot list, using a real slot name an existing
+ * consumer already expects ('group', not a generic placeholder like 'default'). Story 25.2 AC2 turns this into the backward-compatible
  * fallback used when a loaded extension's manifest omits `uiPanelSlots` — never mutated, never
  * grown; `resolveKnownUiPanelSlots` below is what derives the real, extension-declared list.
  */
@@ -160,7 +159,7 @@ export type PanelQuery = {
    * Story 25.8 AC1/Task 1 — the URL sub-path `apps/web`'s deep-linkable
    * `extensions/panels/[slot]/[...subpath]` route matched, forwarded on the SAME existing
    * `GET /api/v1/extensions/panels/:slot` call as a separate query field (never concatenated
-   * into `:slot` itself — see this story's Dev Notes). Passed through verbatim with no PV-side
+   * into `:slot` itself). Passed through verbatim with no PV-side
    * lookup or authorization, identical posture to `resourceId` above.
    */
   subpath?: string

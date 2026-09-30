@@ -4,11 +4,12 @@ import { orgScoped } from './helpers.js'
 import { users } from './users.js'
 import { projects } from './projects.js'
 
-// Story 6.1 (ADR-6.1-01): architecture.md's canonical schema names this table `payment_records`
+// Story 6.1 (ADR-6.1-01): the architecture's canonical schema names this table `payment_records`
 // ("hosting providers, payment subscriptions, SaaS tools" — FR24's literal description) while the
-// API route stays `/services` (epics.md's literal, already-referenced-by-placeholder-copy path).
-// `alertLeadDays`/`notifiedLeadDays` are jsonb number[] (ADR-6.1-02), not architecture.md's single
-// `alert_threshold_days` integer — a single column can't represent multi-threshold alerting.
+// API route stays `/services` (the original requirement's literal,
+// already-referenced-by-placeholder-copy path). `alertLeadDays`/`notifiedLeadDays` are jsonb
+// number[] (ADR-6.1-02), not the architecture's single `alert_threshold_days` integer — a single
+// column can't represent multi-threshold alerting.
 export const paymentRecords = pgTable(
   'payment_records',
   {
@@ -20,7 +21,7 @@ export const paymentRecords = pgTable(
     name: text('name').notNull(),
     url: text('url'),
     renewalDate: timestamp('renewal_date', { withTimezone: true }),
-    // Default [14, 3] per epics.md AC-E6b-adjacent body text for services.
+    // Default [14, 3] per the original AC-E6b-adjacent requirement text for services.
     alertLeadDays: jsonb('alert_lead_days')
       .notNull()
       .default(sql`'[14, 3]'::jsonb`)

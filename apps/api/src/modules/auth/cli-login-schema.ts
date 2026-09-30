@@ -1,6 +1,6 @@
 import { z } from 'zod/v4'
 
-// Story 43.2 (Dev Notes decision #2) — new JSON-bearer-token login endpoints, mirroring
+// Story 43.2 (decision #2) — new JSON-bearer-token login endpoints, mirroring
 // `machine-users/token-exchange-schema.ts`'s response shape rather than the existing cookie-based
 // `/login`/`/mfa/verify-login` routes. Reuses `LoginRequestSchema`/`mfaVerifyLoginBodySchema`
 // (the request bodies are identical — only the *reply* carries tokens instead of `Set-Cookie`).

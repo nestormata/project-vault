@@ -14,7 +14,7 @@ import type { PageServerLoad } from './$types.js'
 // to ever start another rotation on a credential once it had been break-glass rotated.
 const REDIRECT_AWAY_ROTATION_STATUSES = new Set(['in_progress', 'stale_recovery'])
 
-// Story 13.4 Task 6 (Dev Notes pre-mortem elicitation) — the FULL active set (matching the
+// Story 13.4 Task 6 (pre-mortem finding) — the FULL active set (matching the
 // credential detail page's ACTIVE_ROTATION_STATUSES and the backend's own
 // ACTIVE_ROTATION_STATUSES in rotation/service.ts). A staged/promoted-but-unretired rotation
 // doesn't redirect away from /rotate (REDIRECT_AWAY_ROTATION_STATUSES above is narrower, kept

@@ -591,8 +591,7 @@ describe('getExtensionStatus / getExtensionsHealthField', () => {
 // field (distinct from `manifest.apiVersion`, the extension-API *contract* version) and threads
 // it through ExtensionState. `readPackageVersion` is an injectable dep (mirrors `importFn`) so
 // these tests can exercise both the real on-disk resolution (against this project's own
-// workspace-symlinked fixture — Elicitation Log #1) and synthetic failure modes (Elicitation Log
-// #4) without needing a real npm-installed package.
+// workspace-symlinked fixture) and synthetic failure modes without needing a real npm-installed package.
 describe('loadExtension — package version read (AC4)', () => {
   it('happy path: threads a well-formed readPackageVersion() result into ExtensionState', async () => {
     const importFn = validImportFn()
@@ -638,7 +637,7 @@ describe('loadExtension — package version read (AC4)', () => {
 
     // No readPackageVersion override — exercises the real default implementation. A synthetic
     // package name unrelated to any real dependency must resolve to `undefined`, never throw and
-    // never crash the load (Dev Notes: "this must never become a new load-failure mode").
+    // never crash the load (this must never become a new load-failure mode).
     await loadExtension('@definitely-not-a-real-package/does-not-exist', baseDeps({ importFn }))
 
     const status = getExtensionStatus()
@@ -649,7 +648,7 @@ describe('loadExtension — package version read (AC4)', () => {
   })
 
   it(
-    'workspace-symlinked fixture (Elicitation Log #1): the real default resolver reads this ' +
+    'workspace-symlinked fixture: the real default resolver reads this ' +
       "project's own pnpm-workspace-symlinked mock-ui-panel-extension fixture's package.json " +
       'version, following the symlink rather than assuming a flat node_modules/<pkg>/package.json layout',
     async () => {
@@ -669,7 +668,7 @@ describe('loadExtension — package version read (AC4)', () => {
   )
 })
 
-// Story 25.9 AC4/Task 1, Elicitation Log #4 (Failure Mode Analysis): the walk-up-and-parse core
+// Story 25.9 AC4/Task 1 (failure-mode analysis): the walk-up-and-parse core
 // of the default `readPackageVersion()` implementation, exercised directly against real
 // temp-directory fixtures so the missing/malformed-package.json edge cases don't depend on
 // contriving an actual resolvable npm specifier.

@@ -1,7 +1,7 @@
 /**
  * AC2/AC3 — `AuthStrategy` is one of the three typed hook interfaces this package exports. Its
- * return type carries only serializable data across the extension boundary (architecture.md
- * § Data Boundaries): no `Tx`, no `SecretValue`, no `AuthContext`. Runtime dispatch against a
+ * return type carries only serializable data across the extension boundary (the architecture's
+ * data-boundary rule): no `Tx`, no `SecretValue`, no `AuthContext`. Runtime dispatch against a
  * real auth provider lands in Story 14.3 — this story only defines the contract shape.
  */
 export type AuthResult = {

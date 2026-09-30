@@ -3,7 +3,7 @@
 **Version:** 1.0
 **Date:** 2026-06-27
 **Status:** Implemented (Epic 1 done); authoritative for Epic 2 story planning
-**Scope:** What the *running codebase* actually does — for audit, route security, migrations, and the vault guard. Where the research/architecture docs disagree, **this spec describes the merged code** and the planning docs defer to it.
+**Scope:** What the *running codebase* actually does — for audit, route security, migrations, and the vault guard. Where the research/architecture docs disagree, **this spec describes the merged code**.
 
 > Created during the Epic 2 story-spec readiness pass (Stories 2.0–2.2). It records facts that were being mis-stated in story drafts (e.g. "HMAC-chained" audit, hardcoded migration numbers, "Story 1.12 not done"). Verified against the source files cited below.
 

@@ -9,7 +9,7 @@
  *
  * Makes zero network calls and imports nothing from `commander` — every validation here runs
  * before any fetch is attempted, mirroring `packages/vault-action/src/parse-secrets.ts`'s
- * "validate everything first" discipline (Story 43.3 Dev Notes "Architecture & prior art").
+ * "validate everything first" discipline (Story 43.3).
  */
 import type { InjectEntry } from './inject-and-run.js'
 import { isValidEnvVarIdentifier } from './reserved-env-vars.js'

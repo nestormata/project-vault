@@ -147,7 +147,7 @@ export async function moduleDataRoutes(fastify: FastifyApp): Promise<void> {
       // AC4: the SAME auth middleware/session-resolution path every native PV route uses
       // (`request.authContext`, resolved from the session cookie) — no bespoke auth check
       // written for this mechanism. No explicit `rateLimit` override: `secureRoute()`'s own
-      // default (60/min/route-key) applies, a deliberate choice (Dev Notes), not an oversight.
+      // default (60/min/route-key) applies, a deliberate choice, not an oversight.
       security: { requireAuth: true, writeAuditEvent: false },
       handler: async (ctx, req: FastifyRequest, reply) => {
         const secureCtx = ctx as SecureRouteContext

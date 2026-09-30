@@ -59,7 +59,7 @@ const NativeLoginPolicySchema = z.object({
   sessionsLive: z.number().int().nonnegative(),
 })
 
-// Story 30.1 (DW-129) AC9: additive extension of this existing diagnostics envelope — the
+// Story 30.1 AC9: additive extension of this existing diagnostics envelope — the
 // clock-skew magnitude signal, following the nativeLoginPolicy.state precedent above. `status`
 // stays 'unknown' until the first measurement completes (boot runs one immediately — see
 // main.ts); a failed measurement (DB unreachable) leaves the previous snapshot in place rather
@@ -85,7 +85,7 @@ export async function extensionStatusRoutes(fastify: FastifyApp): Promise<void> 
       response: {
         200: ExtensionStatusEnvelopeSchema,
         // AC-5 / secure-route.ts: 401 (unauthenticated) and 403 (authenticated but not org-role
-        // 'admin' — including 'owner', see the Dev Notes comment below) are both real, tested
+        // 'admin' — including 'owner', see the comment below) are both real, tested
         // outcomes for this route, not schema-less framework fallthrough — document them like
         // every other secureRoute()-gated route in this codebase (e.g.
         // modules/platform-admin/route-common.ts's PLATFORM_ADMIN_ERROR_RESPONSES) so the
@@ -96,7 +96,7 @@ export async function extensionStatusRoutes(fastify: FastifyApp): Promise<void> 
       },
     },
     security: {
-      // Dev Notes: epics.md/architecture.md's "OrgAdmin" maps 1:1 to this codebase's literal
+      // The requirements' "OrgAdmin" maps 1:1 to this codebase's literal
       // `'admin'` org role — not `['owner', 'admin']` (see AC-5, secure-route.ts's
       // `allowedRoles` semantics).
       allowedRoles: ['admin'],

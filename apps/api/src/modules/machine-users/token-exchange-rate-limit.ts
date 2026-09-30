@@ -3,8 +3,7 @@ import { isRateLimitEnforced } from '../../lib/route-helpers.js'
 // AC-4 — a second, key-hash-scoped rate-limit bucket independent of the IP-based one
 // (`secureRoute`'s built-in public-route limiter already covers the IP bucket). This bucket only
 // defends against repeated verification attempts against ONE already-known, already-fabricated-
-// or-leaked exact key string — see AC-4's Dev Notes on what this bucket does and does not defend
-// against. Deliberately NOT reset by a successful exchange with a different key.
+// or-leaked exact key string (AC-4). Deliberately NOT reset by a successful exchange with a different key.
 const failedAttemptWindows = new Map<string, { count: number; resetAt: number }>()
 
 export const KEY_HASH_FAILED_ATTEMPT_MAX = 10

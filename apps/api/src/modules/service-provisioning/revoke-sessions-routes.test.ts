@@ -167,7 +167,7 @@ describe('POST /api/v1/service/organizations/:centralizemeOrganizationId/revoke-
     await app.close()
   })
 
-  it('AC3.11 (DW-153 gap): an org whose centralizeme_organization_id is still null returns 404', async () => {
+  it('AC3.11: an org whose centralizeme_organization_id is still null returns 404', async () => {
     const app = await freshApp()
     const owner = await registerOrgWithCmId(app, 'null-cm-id')
     await setCentralizemeOrgId(owner.orgId, null)

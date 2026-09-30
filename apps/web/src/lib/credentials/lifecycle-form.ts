@@ -1,6 +1,6 @@
 // Credential-local date <-> ISO helpers for the Lifecycle edit form (AC-L1). Deliberately not
 // importing `$lib/monitoring/form-helpers.ts` — same shape, but that module belongs to a
-// different domain (certificates/domains) and this story's Dev Notes call out avoiding that
+// different domain (certificates/domains) and this story deliberately avoids that
 // cross-domain coupling.
 
 export function toLifecycleDateInputValue(value: string | null): string {

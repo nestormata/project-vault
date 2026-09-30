@@ -1,7 +1,7 @@
 /**
- * Story 20.8 — the delivery half of `20-7-pv-ephemeral-extension-state-store-and-cleanup-hook`,
- * which shipped only the approved "Ephemeral Extension State Store & Cleanup Hook Contract"
- * decision text in `architecture.md`; this type is that decision's first concrete code artifact.
+ * Story 20.8 — the delivery half of Story 20.7, which shipped only the approved "Ephemeral
+ * Extension State Store & Cleanup Hook Contract" architecture decision; this type is that
+ * decision's first concrete code artifact.
  *
  * Same directionality as `AuditEventSourceHost` (Story 23.8) and `OrgAuthorizationHost`
  * (Story 23.9): PV implements every method here and hands a bound instance to the extension via

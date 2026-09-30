@@ -84,7 +84,7 @@ const defaultAuditWriter: AuditWriterFn = (orgId, eventType, payload) =>
   withOrg(orgId, (tx) => writeSystemAuditRow(tx, { orgId, eventType, payload }))
 
 // AC-4: constrained color grammar — hex or a tightly-bounded rgb()/rgba()/hsl()/hsla() function
-// form. No `url(`, no `;`, no `}`, no nesting — the exact breakout characters architecture.md
+// form. No `url(`, no `;`, no `}`, no nesting — the exact breakout characters the architecture
 // names are structurally impossible to match this pattern.
 const HEX_COLOR_GRAMMAR = /^#[0-9a-fA-F]{3,8}$/
 const COLOR_FUNCTION_GRAMMAR = /^([a-z]+)\(([^()]*)\)$/
@@ -401,8 +401,8 @@ const THEME_TOKEN_REGISTRY = THEME_TOKENS as Record<string, ThemeTokenDefinition
 
 // Story 30.4 AC2/AC3: `colorPrimary600`/`colorPrimary700` are the only two tokens actually
 // rendered as a button *background* behind fixed `text-white` app-wide (Story 29.5 AC3's
-// `--color-brand-600`/`-700` indirection) — see this story's Background section for the full
-// scoping rationale. No other token (`colorBackground`, `colorForeground`, `colorBorder`) is
+// `--color-brand-600`/`-700` indirection), which is why the check is scoped to them.
+// No other token (`colorBackground`, `colorForeground`, `colorBorder`) is
 // contrast- or opacity-checked by this story.
 const BUTTON_BACKGROUND_CONTRAST_KEYS = new Set(['colorPrimary600', 'colorPrimary700'])
 const FIXED_BUTTON_TEXT_COLOR = '#ffffff'
@@ -469,7 +469,7 @@ async function validateAssets(
   const declarations: string[] = []
   for (const [key, rawValue] of Object.entries(assets)) {
     if (typeof rawValue !== 'string') return { reason: `asset '${key}': must be a URL string` }
-    // AC-5 Dev Notes judgment call: HTTPS-only, for defense-in-depth consistency with the rest of
+    // AC-5 judgment call: HTTPS-only, for defense-in-depth consistency with the rest of
     // this codebase's outbound-URL conventions, even though the server never fetches it.
     if (!rawValue.startsWith('https://')) return { reason: `asset '${key}': must use https://` }
     if (ASSET_URL_UNSAFE_CHARS.test(rawValue)) {
@@ -695,7 +695,7 @@ export async function reloadThemes(
 }
 
 /**
- * Dev Notes "audit fanout": mirrors `apps/api/src/extensions/loader.ts`'s `runAuditFanout()` for
+ * Audit fanout: mirrors `apps/api/src/extensions/loader.ts`'s `runAuditFanout()` for
  * the startup automatic reload pass, which has no single org / no authenticated caller. Per-org
  * write failures are logged and never crash boot.
  */

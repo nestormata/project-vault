@@ -3,10 +3,9 @@ import { listOrgSsoDomains, type OrgSsoDomain } from '$lib/api/org-sso-domains.j
 import { requireUser } from '$lib/server/require-user.js'
 import type { PageServerLoad } from './$types.js'
 
-// Story 14.6 AC-5 Dev Notes judgment call: `minimumRole: 'admin'` on the API (rank-based, admits
+// Story 14.6 AC-5 judgment call: `minimumRole: 'admin'` on the API (rank-based, admits
 // both 'admin' and 'owner') — mirrored here so the page's own gate agrees with the API it calls.
-// Deliberately NOT Story 14.5's exact-match allowedRoles: ['admin'] (which excludes owner) — see
-// the story's Dev Notes for the full rationale.
+// Deliberately NOT Story 14.5's exact-match allowedRoles: ['admin'] (which excludes owner).
 function canManageSsoDomains(orgRole: string): boolean {
   return orgRole === 'admin' || orgRole === 'owner'
 }

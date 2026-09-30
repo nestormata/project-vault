@@ -3,9 +3,9 @@ import { sql } from 'drizzle-orm'
 import { orgScoped } from './helpers.js'
 import { serviceEndpoints } from './service-endpoints.js'
 
-// IMMUTABLE: append-only — matches architecture.md's secret_versions/audit_log_entries
+// IMMUTABLE: append-only — matches the architecture's secret_versions/audit_log_entries
 // convention for check-history rows. No updated_at column, no set_updated_at trigger.
-// architecture.md's anti-pattern list explicitly forbids storing the response body — only
+// The architecture's anti-pattern list explicitly forbids storing the response body — only
 // status code, latency, and result boolean are stored (AC 4).
 export const endpointHealthChecks = pgTable(
   'endpoint_health_checks',

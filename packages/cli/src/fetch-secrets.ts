@@ -79,7 +79,7 @@ export function checkEntryTargets(entries: InjectEntry[], action: string): Entry
 }
 
 /**
- * Fail-closed, all-or-nothing sequential fetch (Story 43.3 Dev Notes decision #3). Every requested
+ * Fail-closed, all-or-nothing sequential fetch (Story 43.3 decision #3). Every requested
  * secret is fetched, in order, before the caller does anything with any of them. The first failure
  * aborts immediately — remaining secrets are never fetched, and the error returned is built ONLY
  * from the failing entry's own error, never from the partially-built map of already-fetched values
@@ -105,7 +105,7 @@ export async function fetchAllOrNothing(
   for (const entry of entries) {
     const safeName = sanitizeForTerminal(entry.credentialName)
     try {
-      // Story 43.3 Dev Notes decision #7 — participates in the same offline-cache fallback `get`
+      // Story 43.3 decision #7 — participates in the same offline-cache fallback `get`
       // does, with a mandatory per-secret provenance warning (never a silent, possibly-stale value).
       // Story 43.4 decision #6 — a cache-served value makes no HTTP request, so the server writes no
       // audit entry for it: say so rather than refuse (accepted residual risk, see the README).

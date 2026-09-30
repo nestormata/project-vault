@@ -13,6 +13,6 @@
 /packages/api-contract-tests/package.json      @nestormata
 /fixtures/mock-envelope-extension/package.json @nestormata
 
-# Story 64.3 (DW-345 item 2): CI/release workflows hold the image-scan, release and pinning gates,
+# Story 64.3: CI/release workflows hold the image-scan, release and pinning gates,
 # so every change to them requires @nestormata's review.
 /.github/workflows/                            @nestormata

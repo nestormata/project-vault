@@ -38,8 +38,8 @@ export const credentialShares = pgTable(
     // not). `fieldKey` is left fully intact for existing (Epic 17) call paths — this column is
     // strictly additive, never a replacement.
     attributeKeys: text('attribute_keys').array(),
-    // Story 20.5: `BoundedShareScope.action` — `'read'` only in this contract version (see
-    // architecture.md's Scoped/Bounded Sharing Contract). Persisted (not merely validated at the
+    // Story 20.5: `BoundedShareScope.action` — `'read'` only in this contract version (per
+    // the architecture's Scoped/Bounded Sharing Contract). Persisted (not merely validated at the
     // API layer) so a future contract revision that adds a second action value has a real column
     // to migrate rather than an implicit default with no persisted record of the decision.
     action: text('action').notNull().default('read').$type<'read'>(),
@@ -54,12 +54,11 @@ export const credentialShares = pgTable(
     // Only the hash is ever persisted (mirrors session/refresh-token bearer-secret handling) —
     // the raw token is returned to the sharer exactly once, at creation time, and never stored.
     tokenHash: text('token_hash').notNull(),
-    // Dev Notes reconciliation: AC-6's literal column list (sprint-change-proposal-2026-07-24.md
-    // §4.3) omits a single-use/multi-view flag, but AC-4 requires distinguishing the two — a
+    // Reconciliation: AC-6's literal column list omits a single-use/multi-view flag, but AC-4
+    // requires distinguishing the two — a
     // `singleUse: false` share must remain viewable (re-incrementing view_count) until expiry
     // instead of transitioning to the terminal 'viewed' status on its first reveal. Added as a
-    // necessary, additive column rather than silently guessing the behavior from `status` alone
-    // (see story Dev Agent Record for the full reconciliation note).
+    // necessary, additive column rather than silently guessing the behavior from `status` alone.
     singleUse: boolean('single_use').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -71,10 +70,9 @@ export const credentialShares = pgTable(
     // Story 17.2 AC-22: per-token reveal-attempt cap for the external/unauthenticated path — a
     // claim-attempt that resolves to this row but loses (not a hash-mismatch) increments this;
     // exceeding EXTERNAL_SHARE_MAX_REVEAL_ATTEMPTS auto-revokes the share. Additive column, same
-    // reconciliation precedent as 17.1's own `single_use` column (see that story's Dev Agent
-    // Record) — the story's "no new migration" Dev Notes text predates AC-22, which was added by
-    // a later advanced-elicitation pass and genuinely needs persisted, cross-request state.
-    // Unused (always 0) for `recipient_type = 'user'` rows.
+    // reconciliation precedent as 17.1's own `single_use` column — the story's original "no new
+    // migration" note predates AC-22, which was added by a later review pass and genuinely needs
+    // persisted, cross-request state. Unused (always 0) for `recipient_type = 'user'` rows.
     revealAttemptCount: integer('reveal_attempt_count').notNull().default(0),
   },
   (t) => ({

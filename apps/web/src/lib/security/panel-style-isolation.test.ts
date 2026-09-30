@@ -25,7 +25,7 @@ import { renderPanelHtml } from './render-panel-html.js'
 //   not, since CSS inheritance was never something the iframe boundary blocked in the first
 //   place; document-scoped rules (selectors, `!important` overrides, page-wide side effects) are
 //   the part the iframe boundary WAS blocking and this story cannot fully restore without
-//   reintroducing an isolation boundary (Shadow DOM, out of scope — see Dev Notes/AC9).
+//   reintroducing an isolation boundary (Shadow DOM, out of scope — AC9).
 //
 // The concrete, testable mitigation this story DOES add (`render-panel-html.ts`'s `FORBID_TAGS`
 // including `style`/`link`, beyond AC13's own `iframe`/`object`/`embed` requirement): an
@@ -60,7 +60,7 @@ describe('panel style isolation (Story 25.4 AC3, re-evaluated by Story 29.1 Task
     // The pattern below used to be scoped to "iframe descendant selectors" specifically, since
     // an iframe was the only element that could ever wrap panel content. Now that the panel
     // renders into a plain container, the equivalent, still-meaningful check is: no apps/web
-    // stylesheet targets the panel's own container class or a CentralizeMe-authored class name
+    // stylesheet targets the panel's own container class or an extension-authored class name
     // (see (b edge) below) — apps/web's own hand-authored source contains no such selector today.
     const panelTargetingSelectorPattern = /\.mt-6\.overflow-hidden\s*(>|\s)\s*[a-zA-Z.#[]/
 
@@ -99,7 +99,7 @@ describe('panel style isolation (Story 25.4 AC3, re-evaluated by Story 29.1 Task
     }
   })
 
-  it('(b edge) a class name collision with a real CentralizeMe class (.cm-button) does not cause apps/web to emit any panel-targeting selector', () => {
+  it('(b edge) a class name collision with an extension-authored class (.cm-button) does not cause apps/web to emit any panel-targeting selector', () => {
     const collidingSelectorPattern = /\.cm-button\b/
 
     const offendingFiles = sourceFiles(sourceRoot)

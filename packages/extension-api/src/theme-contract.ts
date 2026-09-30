@@ -12,13 +12,13 @@
  * CSS `var()` with its own hardcoded fallback, e.g.:
  *
  * ```css
- * .cm-access-ink { color: var(--pv-ext-ink, #24323b); }
+ * .panel-ink { color: var(--pv-ext-ink, #24323b); }
  * ```
  *
  * This is a one-way, read-only contract: PV publishes the properties and their values; an
  * extension is never required to consume them, and PV never reads anything back from the
- * extension's own CSS. See this story's Dev Agent Record for the concrete PV-token-to-`--pv-ext-*`
- * mapping the host composition function uses.
+ * extension's own CSS. The concrete PV-token-to-`--pv-ext-*` mapping lives in the host
+ * composition function.
  */
 export const EXTENSION_THEME_CSS_VARS = [
   '--pv-ext-surface',

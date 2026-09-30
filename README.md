@@ -54,7 +54,7 @@ Project Vault makes _project_ a real object instead: its own roles and permissio
 | Machine users and CI/CD | Scoped API keys with zero-downtime rotation, emergency revoke, and a dormancy policy; offline encrypted cache fallback; [GitHub Action](packages/vault-action/README.md) |
 | Command-line client | [`pvault`](packages/cli/README.md) (Node.js 20+, a single file attached to each release): `get` a secret, `run` a command with secrets in its environment or on a file descriptor, `write-env` to an owner-only file, `login` as a human user with TOTP; warns when it is out of date with the server and refuses withdrawn versions |
 | Audit and compliance | Append-only audit log with chain-linked HMAC integrity (detects modified *and* deleted rows), search, export, external forwarding, retention, access reports, dormant-user detection, GDPR erasure, per-organization storage quotas and write-rate limits |
-| Extensions | [`@project-vault/extension-api`](packages/extension-api/README.md) 3.x: auth providers, notification channels, delivery providers, UI panels with nav merge, module data routes and typed actions, capability-tier gating, audit-event sources, project-lifecycle hooks; OAuth-style redirect handoffs, scheduled background tasks, and anonymous public routes; host services for monitoring, notifications, authorization, credential sharing, and ephemeral state; fail-safe loading and a least-privilege extension database role |
+| Extensions | [`@project-vault/extension-api`](packages/extension-api/README.md) 3.x: auth providers, notification channels, delivery providers, runtime UI extension API (HTML panels with nav merge and typed actions), module data routes, capability-tier gating, audit-event sources, project-lifecycle hooks; OAuth-style redirect handoffs, scheduled background tasks, and anonymous public routes; host services for monitoring, notifications, authorization, credential sharing, and ephemeral state; fail-safe loading and a least-privilege extension database role |
 | Localization and theming | English and Spanish UI with per-user and organization-default locale; custom theme packs (`VAULT_THEMES_DIR`) with organization default, per-user selection, pre-auth branding, and a contrast-validated token contract |
 | Project export/import | Encrypted, portable project export (reveal-once key); import re-encrypts every secret under the destination vault's own master key |
 | Vault unsealing | Master passphrase, split-key envelope (default), key file, or an external key management service |
@@ -124,8 +124,8 @@ The Compose stack is four moving parts: **db** (PostgreSQL), a one-shot **migrat
 
 | Version | Target | Status |
 |---|---|---|
-| **Current** | Self-hosted Docker, full secrets lifecycle, multi-field secrets, credential sharing, manual rotation, monitoring, teams, notifications, machine users, chain-linked audit logs, per-organization audit quotas, backup, in-place upgrades, extension architecture with UI panels and module packs, pluggable and self-hosted SSO, CentralizeMe handoff SSO, English/Spanish localization, custom theming, project export/import, service-provisioning API, `pvault` command-line client | Shipped |
-| **Next** | First-party outbound HTTP webhook channel (webhook-style delivery is already possible via an extension), project wiki | Planned |
+| **Current** | Self-hosted Docker, full secrets lifecycle, multi-field secrets, credential sharing, manual rotation, monitoring, teams, notifications, machine users, chain-linked audit logs, per-organization audit quotas, backup, in-place upgrades, extension architecture with runtime UI panels and module packs, pluggable and self-hosted SSO, CentralizeMe handoff SSO, English/Spanish localization, custom theming, project export/import, service-provisioning API, `pvault` command-line client | Shipped |
+| **Next** | Build-time UI composition for a first-party, trusted UI package (page overrides, new routes at any path, injection points in native pages, component replacement through a registry, navigation customization), alongside the runtime HTML-panel API; first-party outbound HTTP webhook channel (webhook-style delivery is already possible via an extension), project wiki | Planned |
 | **Later** | Commercial SaaS tier, automated provider plugins (AWS, GCP, Azure, databases), enterprise SSO, compliance reporting | Planned |
 
 Released versions and their upgrade notes are in [CHANGELOG.md](CHANGELOG.md).
@@ -136,7 +136,7 @@ Project Vault is free and open source under the **AGPL-3.0** license. The core â
 
 A commercial SaaS tier is planned, adding managed hosting, enterprise/managed SSO, and compliance reporting. It is distinct from the self-hosted, organization-configured SSO available today.
 
-**CentralizeMe** is the maintainer's commercial hosted SaaS product, which embeds Project Vault as a module. It is the first consumer of the extension API and the issuer of the browser-handoff tokens Project Vault accepts. It is not required for self-hosting, and nothing in this repository depends on it.
+**CentralizeMe** is the maintainer's commercial hosted SaaS product, which is built on Project Vault: Project Vault hosts CentralizeMe's first-party module pack. It is the first consumer of the extension API and the issuer of the browser-handoff tokens Project Vault accepts. It is not required for self-hosting, and nothing in this repository depends on it.
 
 Copyright (C) 2026 Nestor Mata Cuthbert. This program is distributed WITHOUT ANY WARRANTY; see [LICENSE](LICENSE) for the full text and <https://www.gnu.org/licenses/>.
 

@@ -96,8 +96,8 @@ describe('sonar-project.properties coverage classification', () => {
     }
 
     // An imprecise `**/scripts/**` rule would also swallow `apps/api/src/scripts/**`, a runtime
-    // production directory (see Dev Notes: "distinguish root scripts/** from runtime
-    // apps/api/src/scripts/**"). Only the precise root-relative rule is allowed.
+    // production directory (root scripts/** must stay distinct from runtime
+    // apps/api/src/scripts/**). Only the precise root-relative rule is allowed.
     expect(coverageExclusions).not.toContain('**/scripts/**')
   })
 

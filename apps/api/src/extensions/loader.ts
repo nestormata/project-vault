@@ -42,8 +42,8 @@ import type { Tx } from '@project-vault/db'
 /**
  * Story 14.2 AC-3: fixed, exhaustive failure-reason enum — never the raw exception
  * message/stack (see loadExtension()'s mapFailureReason()). `hooksFactory()` crashes and
- * load timeouts (AC-3d/3e, Dev Notes judgment call #2) both map to `'import_error'` — the
- * closest semantic fit — rather than inventing a 4th value not sanctioned by epics.md's
+ * load timeouts (AC-3d/3e, judgment call #2) both map to `'import_error'` — the
+ * closest semantic fit — rather than inventing a 4th value not sanctioned by the story's
  * literal AC text.
  */
 export type ExtensionLoadFailureReason = 'import_error' | 'manifest_invalid' | 'capability_mismatch'
@@ -59,7 +59,7 @@ export type ExtensionState =
        * Story 25.9 AC4: the loaded package's own release version, read from its `package.json`
        * `version` field — distinct from `manifest.apiVersion` (the extension-API *contract*
        * version). `undefined`/omitted whenever the field is missing, unreadable, or not a string;
-       * never a load-failure mode (Dev Notes). Optional (not required) so the many pre-existing
+       * never a load-failure mode. Optional (not required) so the many pre-existing
        * `__setExtensionStateForTests()` call sites across this codebase that construct a 'loaded'
        * state directly for unrelated test scenarios are not forced to supply it.
        */
@@ -287,7 +287,7 @@ async function buildHostServices(
         checkProjectAuthorization(context, { extensionName: manifest.name, logger }),
     },
     // Story 20.8 — bound once at extension-load time, same as auditEventSource/orgAuthorization
-    // above (see this story's Dev Notes "Construction Lifecycle" section: Story 23.11 shipped an
+    // above (construction lifecycle: Story 23.11 shipped an
     // ambient per-request context, closing 20-7's assumption that this needed per-request
     // rebinding). Its methods internally call getRequestContext() at invocation time for the
     // current request's orgId.
@@ -316,7 +316,7 @@ async function buildHostServices(
     extensionRequestState: createExtensionRequestStateHost(manifest.name),
     // Story 20.12 — bound once at extension-load time, same as every field above. A thin facade
     // over PV's already-shipped credential-shares service layer (Epic 17/20.4/20.5). No
-    // capability-gating enumeration update needed (57.1's own Dev Notes finding: HostServices
+    // capability-gating enumeration update needed (Story 57.1's finding: HostServices
     // fields are not enumerated anywhere for that purpose — credentialSharing is wired as a whole
     // object, same as monitoring/notificationOriginator above). See lib/credential-sharing-host.ts.
     credentialSharing: buildCredentialSharingHost(manifest, logger),
@@ -332,8 +332,7 @@ async function buildHostServices(
 }
 
 /**
- * Story 25.9 AC4 (Dev Notes / Elicitation Log #2 — "worth verifying directly before writing to
- * the story as fact"): verified directly during implementation (not merely assumed) that neither
+ * Story 25.9 AC4: verified directly during implementation (not merely assumed) that neither
  * of the two "obvious" resolution primitives works everywhere this loader actually runs:
  *
  * - `import.meta.resolve('<pkg>/package.json')` throws `ERR_PACKAGE_PATH_NOT_EXPORTED` for any
@@ -349,7 +348,7 @@ async function buildHostServices(
  * callable from ESM) resolves correctly under `node`, `tsx`, AND vitest's module runner, and —
  * unlike `import.meta.resolve` in this environment — it follows a pnpm workspace symlink through
  * to the real source directory rather than leaving the `node_modules/<scope>/<pkg>` path in place
- * (Elicitation Log #1), which only *simplifies* the walk-up below (fewer directories to search,
+ * — which only *simplifies* the walk-up below (fewer directories to search,
  * not a different code path). Once the main entry file is resolved, walk up from its directory to
  * find the nearest `package.json` — symlink-safe either way, since `fs.existsSync`/
  * `fs.readFileSync` follow symlinks transparently regardless of which path shape the resolver
@@ -361,7 +360,7 @@ const resolveRequire = createRequire(import.meta.url)
 
 /**
  * Pure, synchronous walk-up/parse/validate core — exported for direct unit testing against real
- * temp-directory fixtures (Elicitation Log #4: missing/malformed/non-string `version` must never
+ * temp-directory fixtures (missing/malformed/non-string `version` must never
  * throw or become a load-failure mode, only ever resolve to `undefined`).
  */
 export function readVersionFromPackageDir(startDir: string): string | undefined {
@@ -485,7 +484,7 @@ function mapFailureReason(error: unknown): ExtensionLoadFailureReason {
 }
 
 /**
- * Dev Notes judgment call #1/#4: boot-time extension load has no natural single org — fan the
+ * Judgment call #1/#4: boot-time extension load has no natural single org — fan the
  * audit write out to every existing org, isolating each org's write failure (log-and-continue)
  * so neither a single bad org nor a wholesale enumeration failure can affect loadExtension()'s
  * own resolution or crash boot.
@@ -534,11 +533,11 @@ type LoadOutcome = {
 type RaceResult = { outcome?: LoadOutcome; reason: ExtensionLoadFailureReason; message?: string }
 
 /**
- * Dev Notes judgment call #2/#3: races the import()+registerExtension() chain against a bounded
+ * Judgment call #2/#3: races the import()+registerExtension() chain against a bounded
  * timeout, via the shared `raceWithTimeout()` primitive (`lib/race-with-timeout.ts`) also used by
  * `lib/capability-gate.ts`'s gate invocation. A timeout maps to `'import_error'` — the closest
- * semantic fit — rather than inventing a 4th failure reason not sanctioned by epics.md's literal
- * AC text (Dev Notes judgment call #2).
+ * semantic fit — rather than inventing a 4th failure reason not sanctioned by the story's literal
+ * AC text (judgment call #2).
  */
 async function raceWithTimeout(
   packageName: string,
@@ -576,7 +575,7 @@ async function raceWithTimeout(
 
 function isDoubleInvocation(logger: LoaderLogger): boolean {
   if (state.status === 'not_configured') return false
-  // Dev Notes judgment call #5: idempotency guard — a second invocation while state is already
+  // Judgment call #5: idempotency guard — a second invocation while state is already
   // resolved (loaded or load_failed) no-ops rather than re-running hooksFactory() or
   // overwriting state.
   operationalLog(

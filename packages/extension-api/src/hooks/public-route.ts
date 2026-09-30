@@ -36,8 +36,8 @@ import type { ActionResult } from './module-action.js'
  * extension explicitly sets here ever reach the response (Security Audit finding, Round 2). There
  * is no redirect outcome in v1 (Security Audit finding, Round 2) — `PublicRouteResult` is always a
  * structured status/headers/body instruction the extension constructs, never a raw response
- * passthrough, closing the SSRF-proxy/cache-poisoning angle considered during this story's Red
- * Team vs Blue Team elicitation round.
+ * passthrough, closing the SSRF-proxy/cache-poisoning angle considered during this story's
+ * red-team review.
  */
 export type PublicRouteResult = {
   outcome: 'response'

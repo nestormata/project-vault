@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
 // AC-I1: v1 deliberately targets Chromium only — fewer moving parts for the first suite;
-// Firefox/WebKit are a natural follow-up once the 4 journeys are stable (see Dev Notes).
+// Firefox/WebKit are a natural follow-up once the 4 journeys are stable.
 //
 // baseURL/WEB_HOST_PORT: the web app is a thin server-side proxy for every /api/v1/* request
 // (apps/web/src/routes/api/v1/[...path]/+server.ts), so Playwright only ever needs ONE origin —

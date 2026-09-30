@@ -3,15 +3,15 @@
  *
  * Interpretation notes (read before modifying):
  *
- * 1. "Against a running instance" (epics.md) is satisfied by `createApp()` + Fastify's
- *    `app.inject()` — the exact mechanism every `apps/api/src/__tests__/*.integration.test.ts`
- *    file already uses — rather than binding a real TCP listener. `app.inject()` exercises the
- *    complete real pipeline (routing, auth middleware, Zod validation, the real
- *    service/repository/DB-transaction layer against a real migrated test Postgres, and response
- *    serialization) with no meaningful gap versus a bound socket. The absence of
- *    `docker compose up` from this suite's CI step does not mean it isn't testing "a running
- *    instance" — it means it's testing the same in-process instance every other integration test
- *    in this codebase already relies on.
+ * 1. "Against a running instance" (the original requirement text) is satisfied by `createApp()` +
+ *    Fastify's `app.inject()` — the exact mechanism every
+ *    `apps/api/src/__tests__/*.integration.test.ts` file already uses — rather than binding a real
+ *    TCP listener. `app.inject()` exercises the complete real pipeline (routing, auth middleware,
+ *    Zod validation, the real service/repository/DB-transaction layer against a real migrated test
+ *    Postgres, and response serialization) with no meaningful gap versus a bound socket. The
+ *    absence of `docker compose up` from this suite's CI step does not mean it isn't testing "a
+ *    running instance" — it means it's testing the same in-process instance every other integration
+ *    test in this codebase already relies on.
  *
  * 2. This suite enumerates every `path`+`method` from the freshly-generated
  *    `packages/shared/openapi.json` (AC-8) and, for each, asserts the actual response status is

@@ -115,7 +115,7 @@ export async function resolveRoutingRecipients(
 }
 
 /**
- * Story 8.3 D12/AC-16 (resolves finding-16): FR71 ("Organization Admins") vs. epics.md's narrower
+ * Story 8.3 D12/AC-16 (resolves finding-16): FR71 ("Organization Admins") vs. the AC's narrower
  * "org owners" AC text — reconciled by defaulting `user.dormant`'s unconfigured recipient set to
  * the UNION of owner+admin (satisfying FR71's broader wording literally), while an org that has
  * configured an explicit `org_notification_routing` override for `user.dormant` gets that single

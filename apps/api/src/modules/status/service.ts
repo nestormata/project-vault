@@ -110,7 +110,7 @@ export function checkVault(): CheckResult {
  * AC-1/AC-3: disk-capacity check — only meaningful when filesystem-backed backup storage is
  * configured (`BACKUP_STORAGE_PATH`). No such env var exists for S3-backed or unconfigured
  * backup destinations, so this check reports 'skipped' rather than failing the aggregate
- * response — it is optional/skippable by design, documented in Completion Notes.
+ * response — it is optional/skippable by design.
  */
 export async function checkDisk(logger: FastifyBaseLogger): Promise<CheckResult> {
   const path = env.BACKUP_STORAGE_PATH

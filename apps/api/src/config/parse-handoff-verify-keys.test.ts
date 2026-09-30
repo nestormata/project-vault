@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { HandoffVerifyKeysParseError, parseHandoffVerifyKeys } from './env.js'
 
-// Story 30.1 (DW-129) Task 2: parseHandoffVerifyKeys in isolation — pure function, no DB/network.
+// Story 30.1 Task 2: parseHandoffVerifyKeys in isolation — pure function, no DB/network.
 // The env.ts superRefine validation (env.test.ts) exercises the same function via boot; these
 // tests exercise the shared implementation directly.
 const VALID_PEM = [

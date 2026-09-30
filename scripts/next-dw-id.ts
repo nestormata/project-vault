@@ -7,7 +7,7 @@
  * `refs/heads/*` and `refs/remotes/*` ref of the git repo that actually holds it (the private
  * overlay repo, followed through the overlay symlink), plus the working tree, and prints the
  * next free plain numeric ID. It narrows the race window; it cannot close it alone. The
- * `check-deferred-work-ids` guard on every push is the backstop (see the story's Resolved Q1).
+ * `check-deferred-work-ids` guard on every push is the backstop.
  *
  * Usage: `pnpm -s next-dw-id [--fetch]` (do not pipe it: a pipe masks the exit code). Line 1 of stdout is the ID, line 2 says
  * where the current max was seen; warnings go to stderr. Read-only apart from `--fetch`.

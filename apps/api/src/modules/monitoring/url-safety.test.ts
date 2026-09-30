@@ -196,7 +196,7 @@ describe('isPrivateOrReservedIp boundary parity (Story 43.9 AC-3, AC-12)', () =>
     ['0.0.0.0', true], // newly blocked (AC-12)
     ['0.255.255.255', true], // newly blocked (AC-12)
     ['1.0.0.0', false],
-    ['100.64.0.1', false], // CGNAT: unchanged (allowed) — broadening is deferred work
+    ['100.64.0.1', false], // CGNAT: unchanged (allowed) — broadening is out of scope
     ['224.0.0.1', false], // multicast: unchanged (allowed)
     ['8.8.8.8', false],
     ['1.1.1.1', false],

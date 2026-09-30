@@ -84,7 +84,7 @@
       // shape (userId present) — unchanged. Self-signup (novel email or already-registered
       // email, indistinguishable by design) now always returns the generic accepted shape
       // instead, which never carries userId, so markRegistrationLocalePending() is skipped for
-      // that path (documented, accepted minor UX regression — see Dev Notes) and its message is
+      // that path (documented, accepted minor UX regression) and its message is
       // shown instead of silently redirecting with no feedback.
       if ('userId' in result) {
         markRegistrationLocalePending(result.userId, getLocale())

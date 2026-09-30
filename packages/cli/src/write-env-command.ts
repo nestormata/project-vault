@@ -17,7 +17,7 @@ import { writeEnvFile } from './write-env-file.js'
 export type WriteEnvArgs = {
   /** Raw `--secret` flag values (`NAME` or `NAME=ENV_VAR`). */
   secrets: string[]
-  /** `--output`; required (Dev Notes decision #7: never a default path). */
+  /** `--output`; required (decision #7: never a default path). */
   output: string | undefined
   force: boolean
   /** `--format`, unvalidated; must be exactly `dotenv` or `shell`. */

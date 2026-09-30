@@ -85,7 +85,7 @@ export function getPrimaryNavItems(
   }
 
   // Story 25.1 AC5: a single, generic nav entry — not something hardcoded to any one extension's
-  // specific use case (e.g. CentralizeMe's access-group panel). `ExtensionManifest` carries no
+  // specific use case (e.g. one extension's own panel). `ExtensionManifest` carries no
   // display-name field today, so the label is the fixed, generic "Extension" — not the extension's
   // own name. Points at this story's one hardcoded slot ('group'); Story 25.2 introduces real
   // named-slot enumeration.

@@ -6,7 +6,7 @@
 
   let heading: HTMLHeadingElement | undefined
 
-  // Story 25.8 Task 2a — Boundary & Edge Case Sweep finding (Elicitation Log #3): a
+  // Story 25.8 Task 2a — Boundary & Edge Case Sweep finding: a
   // navigation-triggered content swap could resolve a stale in-flight response into content that
   // no longer belongs on screen. `panelGeneration` is bumped every time the panel's resolved HTML
   // actually changes (see the `$effect` keyed on `data.html` below); Story 29.2's
@@ -383,7 +383,7 @@
       `use:` action only runs client-side, after hydration — unlike the old `srcdoc` attribute
       (SSR-rendered directly into the initial HTML response), this container is visibly empty
       until client-side JS hydrates and the action runs. ACCEPTED, not mitigated with a loading
-      skeleton: CentralizeMe panels already require an authenticated client-side app shell (this
+      skeleton: extension panels already require an authenticated client-side app shell (this
       whole route is behind `requireUser()` in `+page.server.ts`) and are not indexed/SEO-relevant,
       so the brief flash-of-empty-content window this introduces has no meaningful user-facing or
       SEO cost worth the added complexity of a skeleton state.

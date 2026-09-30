@@ -504,7 +504,7 @@ function assertRegistrationWonFirstUserRace(
 /**
  * This is the single riskiest diff in Story 4.1 (D4) — it changes a Story 1.6 auth-critical
  * function to also support joining an existing org via invitation token instead of always
- * creating a new org. Adversarial review mandatory per Epic 1 retro P5.
+ * creating a new org. Adversarial review is mandatory for changes here.
  */
 export async function registerUser(
   input: RegisterInput,
@@ -742,7 +742,7 @@ export async function createLoginSessionInTx(
   orgId: string,
   meta: RequestMeta
 ): Promise<LoginResult> {
-  // Story 31.1 (DW-130) Decision 4/AC11.37-38: acquires the identical
+  // Story 31.1 Decision 4/AC11.37-38: acquires the identical
   // pg_advisory_xact_lock(hashtext(orgId)) that revokeAllSessionsForOrg()
   // (session-revoke.ts) takes as its own first statement — as this function's first statement
   // too, before its own sessions insert. This creates real mutual exclusion with no

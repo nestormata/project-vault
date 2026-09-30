@@ -21,7 +21,7 @@ const NOT_FOUND = { code: 'not_found', message: 'External identity not found' } 
 /**
  * Story 14.3 AC-10: explicit OrgAdmin-initiated linking action. Uses `secureRoute()` with
  * `allowedRoles: ['admin']` (not `['owner', 'admin']`, per Story 14.2's reused RBAC judgment
- * call) and `requireMfa: true`, matching architecture.md's "OrgAdmin" → literal `'admin'` role
+ * call) and `requireMfa: true`, matching the architecture's "OrgAdmin" → literal `'admin'` role
  * string convention.
  */
 export async function externalIdentityRoutes(fastify: FastifyApp): Promise<void> {

@@ -10,9 +10,9 @@ import { EXTENSION_API_VERSION } from '@project-vault/extension-api'
 /**
  * Story 25.1 Task 7 — a self-contained, in-process mock UI-panel extension. Exists so the real
  * boot path (`loadExtension()` -> `GET /api/v1/extensions/panels/:slot` -> `onRenderPanel()`) can
- * be exercised end-to-end, in Chrome-driven manual verification, without wiring up
- * CentralizeMe's real `access-group/ui-panel.ts` (which cannot render meaningfully until Story
- * 25.3 adds `resourceId` to `UIPanelContext` — see this story's Dev Notes Assumption Audit).
+ * be exercised end-to-end, in Chrome-driven manual verification, without wiring up a real
+ * consumer's panel extension (which could not render meaningfully until Story 25.3 added
+ * `resourceId` to `UIPanelContext`).
  *
  * It declares only the `ui-panel` capability and implements exactly one hook. Its
  * `onRenderPanel()` result is driven by the requested `slot`, deterministically, with no
@@ -95,9 +95,9 @@ export const TEST_MODULE_DATA_PATH = '/fixture-echo'
  * manual verification and the new Playwright e2e coverage (AC13) something real to click.
  * Rendered from the `group` slot's own panel HTML as a plain `<a href="...">` pointing at this
  * same route's own `[...subpath]` shape (Story 25.8 AC1) — deliberately a bare `<a href>` with no
- * `data-pv-action` attribute anywhere in its subtree (pre-dev elicitation finding, Failure Mode
- * Analysis): combining the two on one element races the delegated action-click fetch against a
- * real navigation, with neither handler calling `preventDefault()` on the other's behalf.
+ * `data-pv-action` attribute anywhere in its subtree (pre-dev failure-mode analysis finding):
+ * combining the two on one element races the delegated action-click fetch against a real
+ * navigation, with neither handler calling `preventDefault()` on the other's behalf.
  */
 export const TEST_NAV_LINK_SUBPATH = '/extensions/panels/group/detail'
 
@@ -174,8 +174,8 @@ const uiPanel: UIPanel = {
       }
     }
     // Story 25.4 AC4 Task 4 — consumes PV's small, published `--pv-ext-*` theming contract
-    // (`EXTENSION_THEME_CSS_VARS`, `@project-vault/extension-api`) the same way CentralizeMe's
-    // real `access-group/ui-panel.ts` already does for its own `--cm-*` custom properties: a CSS
+    // (`EXTENSION_THEME_CSS_VARS`, `@project-vault/extension-api`) the way any extension consumes
+    // its own custom properties: a CSS
     // `var()` reference with a hardcoded fallback, so this fixture still renders sensibly even
     // outside PV's host (e.g. a standalone preview) and visibly picks up PV's real theme colors
     // once composed by `apps/web`'s panel-document composition function.
@@ -189,8 +189,8 @@ const uiPanel: UIPanel = {
     // the panel no longer knows or needs `actionEndpoint`'s URL at all, exactly as before, but
     // now via a data-attribute contract Story 29.1's DOMPurify sanitizer actually lets survive
     // (unlike the inline `<script>` this markup used to require, which that sanitizer strips
-    // unconditionally — see this fixture's own git history / Story 29.1's Dev Notes "AC7
-    // disposition" for the interim regression this story fixes). The host also owns rendering the
+    // unconditionally — see this fixture's own git history for the interim regression this story
+    // fixes). The host also owns rendering the
     // action's result generically (a status message, or a replaced panel `html`) — this fixture
     // needs no result-echoing markup of its own any more.
     //

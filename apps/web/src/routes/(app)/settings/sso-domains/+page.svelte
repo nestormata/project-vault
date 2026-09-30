@@ -35,7 +35,7 @@
   // there is currently no authenticated "list registered strategies" endpoint exposed to the web
   // app (/settings/extensions's status endpoint only returns the single currently-loaded
   // extension's manifest, not a full strategies list), and building one is explicitly out of
-  // scope for this story (Dev Notes judgment call #2) — a text input with inline server-validated
+  // scope for this story (judgment call #2) — a text input with inline server-validated
   // error display is the documented, honest fallback.
   let newDomain = $state('')
   let newProvider = $state('')
@@ -124,7 +124,7 @@
     password.
   </p>
 
-  <!-- AC-5: minimumRole 'admin' includes 'owner' — see Dev Notes judgment call. -->
+  <!-- AC-5: minimumRole 'admin' includes 'owner' (deliberate judgment call). -->
   <SettingsFormGate
     allowed={data.allowed}
     mfaRequired={data.mfaRequired}

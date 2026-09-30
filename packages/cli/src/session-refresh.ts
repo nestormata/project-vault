@@ -4,8 +4,8 @@ import { retryAfterFromResponse, retryDelayPhrase } from './retry-after.js'
 import { sanitizeForTerminal } from './sanitize.js'
 
 /**
- * AC-4/Dev Notes decision #2 — reusable by any future session-consuming command (none exists yet
- * in this story's own scope; see Dev Notes decision #2's explicit scope boundary — `pvault get`
+ * AC-4/decision #2 — reusable by any future session-consuming command (none exists yet
+ * in this story's own scope; per decision #2's explicit scope boundary, `pvault get`
  * still only consumes `VAULT_API_KEY`). `ensureFreshSession()` is the one seam that
  * decision/AC-7's browser-extension inheritor (Story 51.2) and any future CLI command should
  * call before using a stored session, so the silent-refresh/re-prompt logic is decided and
@@ -96,7 +96,7 @@ function rereadFresherSession(sessionEnv: EnvLike, now: number): SessionData | n
 
 /**
  * AC-4 — returns the usable session (refreshing it silently first if the access token is expired
- * or about to be, per Dev Notes decision #2), or a distinguishable reason it could not. Never
+ * or about to be, per decision #2), or a distinguishable reason it could not. Never
  * throws for an expired/dead session — callers translate the result via
  * `messageForSessionFailure()` below.
  */

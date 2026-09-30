@@ -2,7 +2,7 @@ import type { ActionResult, ModuleActionContext } from './module-action.js'
 
 /**
  * Story 39.1 — the "extension supplies data, PV owns the actual HTTP response" mechanism an
- * OAuth-shaped connect/callback journey needs (see this story's Recommended Mechanism Decision).
+ * OAuth-shaped connect/callback journey needs (this story's recommended mechanism decision).
  * PV's own route layer (`apps/api/src/modules/extensions/oauth-handoff-routes.ts`) is the ONLY
  * code that ever issues a real `302`/`Set-Cookie` — this hook's two methods return plain,
  * serializable data for PV to translate, mirroring `ModuleAction.onAction()`'s "PV
@@ -16,8 +16,8 @@ import type { ActionResult, ModuleActionContext } from './module-action.js'
  * in the extension's manifest `redirectOrigins` allow-list (AC9) — PV rejects any URL whose origin
  * is not listed, generically, before ever issuing a redirect. `state` is a plain,
  * JSON-serializable object PV signs/stores/looks up server-side (never trusting the extension's
- * own cookie mechanics) and hands back verbatim to `onOAuthCallback()` — see this story's
- * Assumption Audit for the size cap PV enforces on it before insert.
+ * own cookie mechanics) and hands back verbatim to `onOAuthCallback()`. PV enforces a size cap
+ * on it before insert.
  */
 export type OAuthHandoffRedirectResult = {
   outcome: 'redirect'

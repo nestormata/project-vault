@@ -14,7 +14,7 @@ type LoadResult = {
 }
 
 // AC-1: the list endpoint (MachineUserSummarySchema) does not itself carry a key count — this
-// story does not add a new backend endpoint (Dev Notes), so the per-row key count the AC calls
+// story does not add a new backend endpoint, so the per-row key count the AC calls
 // for is derived here with one `listApiKeys` call per machine user rather than changing the API
 // contract. Project-scoped machine-user lists are expected to be small (admin-provisioned CI/CD
 // identities, not an end-user-facing high-cardinality list).

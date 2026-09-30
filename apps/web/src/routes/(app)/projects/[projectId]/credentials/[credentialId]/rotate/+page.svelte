@@ -24,7 +24,7 @@
   const showFieldSelector = $derived(fieldMeta.length > 1)
 
   // Default mode is whole-secret — byte-identical to pre-13.4 behavior unless the user
-  // explicitly opts into field-scoping (Dev Notes judgment call: the safer default preserves
+  // explicitly opts into field-scoping (judgment call: the safer default preserves
   // existing behavior rather than forcing an explicit choice).
   let rotationMode = $state<'whole' | 'specific'>('whole')
   let selectedFields = $state<string[]>([])
@@ -53,7 +53,7 @@
   let showSameValueConfirm = $state(false)
   let pendingConfirmBody = $state<InitiateRotationRequest | null>(null)
 
-  // Task 6 (Dev Notes pre-mortem elicitation) — pre-empts AC-6's 409 by disabling the field
+  // Task 6 (pre-mortem finding) — pre-empts AC-6's 409 by disabling the field
   // selector and submit button whenever the loader already found an active rotation, instead of
   // only surfacing the conflict after a failed POST.
   const rotationActive = $derived(Boolean(data.activeRotationId))

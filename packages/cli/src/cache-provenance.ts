@@ -1,5 +1,5 @@
 /**
- * Dev Notes decision #5 (offline-cache participation) + AC-4a — `pvault get` participates in
+ * Decision #5 (offline-cache participation) + AC-4a — `pvault get` participates in
  * packages/agent's default offline-cache fallback (its own default `cachePath`/
  * `fallbackThreshold` are left untouched, exactly as documented in packages/agent/README.md), but
  * a served-from-cache value must be signaled on stderr, never silent (AC-4a).

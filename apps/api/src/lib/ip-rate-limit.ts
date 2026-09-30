@@ -48,8 +48,8 @@ export function createExceededLogDeduper(cap: number = DEDUPE_CAP) {
  * Story 43.8: registers `@fastify/rate-limit` as a per-IP limiter for every route the calling
  * plugin declares AFTER this call (the plugin's `onRoute` hook only sees later routes in the same
  * encapsulation context — call it as the plugin's first statement). Built for route plugins that
- * are siblings of `authRoutes` in app.ts and therefore never inherit its limiter (epic-43 retro
- * Finding 3: `cliLoginRoutes`' `config.rateLimit` blocks were inert).
+ * are siblings of `authRoutes` in app.ts and therefore never inherit its limiter (previously
+ * `cliLoginRoutes`' `config.rateLimit` blocks were inert for exactly this reason).
  *
  * - **Key:** no `keyGenerator` is passed on purpose (Decision D2). The plugin's default key is
  *   `normalizeIP(req.ip, 64)`: IPv4-mapped IPv6 collapses to IPv4 and IPv6 is grouped by /64, so

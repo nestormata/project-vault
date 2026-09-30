@@ -16,7 +16,7 @@ const MAX_RESPONSE_BODY_BYTES = 64 * 1024
 // D4's required ranges — RFC 1918 private (10/8, 172.16/12, 192.168/16), loopback 127/8 and
 // link-local 169.254/16 — plus 0.0.0.0/8 (unspecified/"this network"), which reaches the local
 // host on Linux. Classified by ipaddr.js's IANA special-purpose registry (`range()`) rather than a
-// hand-maintained CIDR table. Deliberately NOT blocked (unchanged, see the deferred-work ledger):
+// hand-maintained CIDR table. Deliberately NOT blocked (unchanged; broadening is a tracked follow-up):
 // CGNAT 100.64/10, multicast, 240/4 and the benchmarking ranges.
 const BLOCKED_V4_RANGES: ReadonlySet<string> = new Set([
   'private',

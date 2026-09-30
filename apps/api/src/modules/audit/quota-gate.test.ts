@@ -40,7 +40,7 @@ async function setQuota(orgId: string, quotaBytes: number | null): Promise<void>
 // SQL-template param) so boundary tests near the new 2 GiB default never need to pass a
 // >2^31-1 `sizeBytes` value into `runGateStatement()`'s own bare (non-cast) SQL params, which
 // overflow Postgres `integer` binding — a pre-existing latent limit on the per-write size
-// estimate, orthogonal to this story's scope (see this story's Dev Agent Record).
+// estimate, orthogonal to this story's scope and deliberately left unchanged here.
 async function seedUsage(orgId: string, bytesUsed: number): Promise<void> {
   await withOrg(orgId, (tx) =>
     tx

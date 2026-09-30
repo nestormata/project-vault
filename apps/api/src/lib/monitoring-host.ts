@@ -108,7 +108,7 @@ function recordMonitoringHostAudit(
  * `method`-keyed field shape). `classifyOutcome` is wired explicitly to `() => 'error'` — matching
  * the shared default, but written out so a future reader sees the flat classification is an
  * intentional, named choice for this host, not an oversight or a missed default (Design Decision
- * 1 / Elicitation Finding 1).
+ * 1).
  */
 async function callOutOfRequestMethod<T>(
   methodName: string,

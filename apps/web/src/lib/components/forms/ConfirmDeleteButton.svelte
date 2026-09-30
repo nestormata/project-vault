@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Story 6.4 Dev Notes: a shared two-step confirm control (same-button relabel-and-reclick, not
+  // Story 6.4: a shared two-step confirm control (same-button relabel-and-reclick, not
   // a modal, not native window.confirm()) for the ~5 destructive/permanent actions this story
   // introduces (services/certificates/domains/service-endpoints delete, alert dismiss). State is
   // component-local ($state), so clicking "Delete" on one row never arms a different row's button.

@@ -9,7 +9,7 @@ export function formatBytes(bytes: number | null): string {
 export type ByteInputUnit = 'MB' | 'GB'
 
 /**
- * Story 22.3 AC-5 (Assumption Audit finding, elicitation round 5) \u2014 the natural counterpart to
+ * Story 22.3 AC-5 (assumption-audit finding) \u2014 the natural counterpart to
  * `formatBytes()`: converts a human-friendly value + unit selector into an exact byte integer,
  * so an operator editing a quota never has to type a raw byte count. `MB`/`GB` only (matching the
  * unit selector's own scope \u2014 quotas are never usefully expressed in KB/TB on this page).

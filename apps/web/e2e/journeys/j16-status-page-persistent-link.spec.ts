@@ -11,7 +11,7 @@ import { enablePublicStatusPageViaUi } from '../fixtures/status-page-ui.js'
 // journey only: enable -> reload persists the same link -> copy gives visible feedback -> the
 // two-step regenerate confirm genuinely gates the rotation. Legacy-row and sealed-vault distinct
 // copy are deliberately NOT covered here (already covered by API service tests and web component
-// tests per the story's Dev Notes) — forcing those states into a live e2e run would add fragile
+// tests) — forcing those states into a live e2e run would add fragile
 // setup for no real marginal coverage.
 test.describe.serial('J16 — public status page persistent link journey', () => {
   test('AC-1/AC-3/AC-6/AC-7: enable, reload persistence, copy, explicit two-step rotation', async ({

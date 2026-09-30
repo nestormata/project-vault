@@ -35,8 +35,8 @@ import {
 //
 // Rules for this file (E5): no page.route/context.route on /api/v1/auth/handoff/** (the real round
 // trip is the point); every DB assertion is keyed by the seeded user/org, a pendingId or the
-// minted jti; a rendered page is never evidence on its own. Chromium only (DW-315). The stub
-// models a top-level navigation; CM's real mechanism is unconfirmed (DW-336 item 1).
+// minted jti; a rendered page is never evidence on its own. Chromium only. The stub
+// models a top-level navigation; CM's real mechanism is unconfirmed.
 //
 // Traces/videos kept on failure contain a token and a claim. That is acceptable: test-only key,
 // 30 s token, 120 s claim, audience pv:pv-e2e only (E3d).

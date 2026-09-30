@@ -223,7 +223,7 @@ export async function runPgRestore(connectionString: string, sql: Buffer): Promi
     // relying on it by accident, and prevents duplicate side effects (logging, etc.).
     const guard: SettleGuard = { settled: false }
     child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk))
-    // Story 28.11: `runPgRestore` never reads `psql`'s stdout (see Dev Notes' scope note), so no
+    // Story 28.11: `runPgRestore` never reads `psql`'s stdout (out of scope), so no
     // '.on(\'data\', ...)' is added here, only the 'error' listener needed to close the crash hazard.
     attachStreamErrorReject(child.stdout, guard, reject, 'psql restore: stdout read failed')
     attachStreamErrorReject(child.stderr, guard, reject, 'psql restore: stderr read failed')

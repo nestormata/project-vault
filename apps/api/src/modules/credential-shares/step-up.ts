@@ -8,8 +8,8 @@ import { isNativeLoginEnabled } from '../auth/native-login-policy.js'
 /**
  * Story 17.2 AC-3: sharer step-up re-authentication for external-share creation. This is a
  * synchronous, stateless re-check on a single request — no new "step-up session"/short-lived
- * elevated-privilege token is introduced (a deliberate, documented scope decision; see the
- * story's Dev Agent Record). No existing precedent in this codebase for this pattern — the
+ * elevated-privilege token is introduced (a deliberate scope decision: a per-request re-check
+ * adds no new token or session state to protect or expire). No existing precedent in this codebase for this pattern — the
  * closest analogues (reused here rather than reinvented) are login-time password verification
  * (`verifyUserPassword`) and login-time TOTP verification (`verifyConfirmedLoginTotp`, which
  * already enforces `totpUsedCodes` replay-prevention).

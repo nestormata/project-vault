@@ -3,7 +3,7 @@ import { pgTable, uuid, text, timestamp } from 'drizzle-orm/pg-core'
 /**
  * Story 14.3 AC-3/AC-4: server-side CSRF-style state for the SSO start/callback round trip.
  * Deliberately NOT org-scoped (no `orgId` column, no RLS policy) — the caller isn't authenticated
- * and no org is known yet at mint time; see Task 2's Dev Notes. `stateHash` stores an HMAC-SHA256
+ * and no org is known yet at mint time (Task 2). `stateHash` stores an HMAC-SHA256
  * of the raw cookie value only — never the raw value itself — mirroring
  * `refresh_tokens.tokenHash`/`recovery-tokens.ts`'s existing hashing precedent.
  */

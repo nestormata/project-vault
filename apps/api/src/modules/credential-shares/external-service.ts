@@ -28,8 +28,8 @@ import {
 /**
  * Story 17.2 AC-7/AC-8, Task 1.1: RLS exception — module-level documentation of the "org unknown
  * until the token resolves" problem. `credential_shares` DOES have `org_id` (unlike the
- * `sessions`/`refresh_tokens` conceptual precedent cited in architecture.md's "RLS exception
- * tables", which have no `org_id` column at all and are wholesale-excluded from RLS coverage via
+ * `sessions`/`refresh_tokens` conceptual precedent (the architecture's "RLS exception
+ * tables"), which have no `org_id` column at all and are wholesale-excluded from RLS coverage via
  * `EXCLUDED_TABLES`), so this module must NOT add `credential_shares` there — that would remove
  * RLS protection for 17.1's session-authenticated rows too. Instead this follows the mechanically
  * correct precedent already implemented in this codebase: Story 6.3's public status page
@@ -164,7 +164,7 @@ export async function createExternalCredentialShare(
         eq(credentialShares.recipientType, 'external'),
         fieldCondition,
         // AC-16: "status IN ('active','pending')" — this schema's real initial-status value is
-        // 'active' (there is no literal 'pending' status; see Dev Notes' status-enum note), so
+        // 'active' (there is no literal 'pending' status), so
         // the not-yet-resolved bucket this cap counts is exactly `status = 'active'`. Also
         // excludes rows that are already past their `expiresAt` but haven't been lazily swept to
         // `expired` yet — AC-16 explicitly says "letting one expire immediately frees a slot",

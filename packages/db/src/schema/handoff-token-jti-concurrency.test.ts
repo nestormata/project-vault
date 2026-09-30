@@ -8,8 +8,8 @@ import { handoffTokenJti } from './index.js'
  * Story 30.2 AC1.3/AC4.13: the `jti` primary key IS the replay-burn mechanism. Two concurrent
  * inserts of the same jti must produce exactly one success and one primary-key violation — never
  * two successes, never a deadlock. This uses two independent DB connections racing real
- * concurrent transactions, not two sequential calls dressed up as "concurrent" (Dev Notes'
- * explicit testing requirement).
+ * concurrent transactions, not two sequential calls dressed up as "concurrent" (an explicit testing
+ * requirement).
  */
 describe('handoff_token_jti concurrent insert (Story 30.2 AC1.3)', () => {
   afterEach(async () => {

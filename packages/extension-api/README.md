@@ -87,13 +87,23 @@ capability is what makes the matching hook legal in the object returned by `hook
 |---|---|
 | `auth-provider` | `authStrategy` — an external identity provider PV delegates login to. |
 | `notification-channel` | `notificationChannel` — an additional notification destination. |
-| `ui-panel` | `uiPanel` — server-rendered HTML panels composed into PV's shell. Also enables the optional `uiPanelSlots`, `moduleActions`, and `moduleDataRoutes` manifest fields. |
+| `ui-panel` | `uiPanel` — server-rendered HTML panels composed into PV's shell. Also enables the optional `uiPanelSlots` and `moduleActions` manifest fields. This is the runtime UI extension API (HTML panels). The `moduleDataRoutes` manifest field (and its `moduleData` hook) is **not** gated on this capability: it is the current API-route mechanism. |
 | `capability-gate` | `capabilityGate` — an external entitlement decision for gated capabilities. |
 | `audit-event-source` | Permission to call `host.auditEventSource.writeAuditEvent()`. This is an inverted hook: PV implements it, the extension calls it, so nothing is returned from `hooksFactory()` for it. |
 | `project-lifecycle` | `projectLifecycle` — a `ProjectCreatePolicy` that may veto project creation. |
 | `delivery-provider` | `deliveryProvider` — per-channel delivery implementations replacing PV's built-in transport for those channels. |
 | `project-archive-notify` | `projectArchiveNotifier` — a non-vetoing notification of an already-committed project archive. Deliberately independent of `project-lifecycle`, so an extension that only wants archive notifications is not forced to implement `onBeforeCreateProject`. |
 | `scheduled-task` | `scheduledTask` — a dispatch target for manifest-declared periodic background work. Also enables the `scheduledTasks` manifest field (`name`/`intervalMinutes`/`handler`). PV's own job runner invokes `onScheduledTask` once per org that has the extension active, on each task's declared interval, tracked server-side (never application wall-clock time). |
+
+**UI panels are the runtime UI extension API.** The `ui-panel` capability, everything it gates
+(`uiPanel`, `UIPanelResult` HTML strings, `uiPanelSlots`, `moduleActions`), and the append-only
+`navItems` manifest field are supported. A separate build-time composition tier for a first-party,
+trusted UI package (Svelte components and route modules composed into the web image: page
+overrides, new routes at any path, injection points, component replacement, navigation
+customization) is planned and is not part of this package today. See
+[UI extension tiers](https://github.com/nestormata/project-vault/blob/main/docs/extensions/README.md#ui-extension-tiers).
+`navItems` is a general-purpose, capability-free manifest field that the panel tier commonly uses.
+`moduleDataRoutes` also needs no capability declaration.
 
 ## Hooks returned by `hooksFactory()`
 
@@ -104,7 +114,7 @@ the hooks whose capability you declared.
 |---|---|---|
 | `authStrategy` | `AuthStrategy` | `onAuthenticate(credential)` → `AuthResult`. |
 | `notificationChannel` | `NotificationChannel` | Receives a `NotificationPayload` for a channel this extension owns. |
-| `uiPanel` | `UIPanel` | `onRenderPanel(context)` → `UIPanelResult` (HTML rendered into a sandboxed iframe). |
+| `uiPanel` | `UIPanel` | `onRenderPanel(context)` → `UIPanelResult` (HTML the host sanitizes and renders inline). |
 | `capabilityGate` | `CapabilityGate` | `onCheckCapability(context)` → `CapabilityDecision`. Fails closed on throw, timeout, or a malformed decision. |
 | `projectLifecycle` | `ProjectCreatePolicy` | `onBeforeCreateProject` — may veto creation. |
 | `projectArchiveNotifier` | `ProjectArchiveNotifier` | Dispatched by a background worker after a project archive commits; never in-request, never vetoing. |
@@ -153,14 +163,14 @@ Both files are regenerated and gated in CI, so they cannot drift from `src/index
 
 ### Panel theming contract (`ui-panel` capability)
 
-PV's host injects a `:root { ... }` `<style>` block declaring `EXTENSION_THEME_CSS_VARS`
-(`--pv-ext-surface`, `--pv-ext-ink`, `--pv-ext-muted`, `--pv-ext-brand`, `--pv-ext-line`) into
-every composed panel document, resolved from the requesting user's actually-applied PV theme
-(base/default chrome colors when no theme is applied). A panel consumes these purely via CSS
+PV's host sets the `EXTENSION_THEME_CSS_VARS` custom properties (`--pv-ext-surface`,
+`--pv-ext-ink`, `--pv-ext-muted`, `--pv-ext-brand`, `--pv-ext-line`) as an inline `style` on the
+panel container that wraps each rendered panel (there is no separate panel document or injected
+`<style>` block), resolved from the requesting user's actually-applied PV theme (base/default chrome colors when no theme is applied). A panel consumes these purely via CSS
 `var()` with its own hardcoded fallback:
 
 ```css
-.cm-access-ink {
+.panel-ink {
   color: var(--pv-ext-ink, #24323b);
 }
 ```

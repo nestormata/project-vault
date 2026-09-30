@@ -1,12 +1,12 @@
 /**
  * Story 58.2 — shared extraction of the identical in-flight-cap-plus-audit-logging-on-every-outcome
  * wrapper shape independently hand-implemented by `monitoring-host.ts`'s `callOutOfRequestMethod`
- * (Story 34.1) and `notification-originator-host.ts`'s `callOutOfRequestEnqueue` (Story 58.1). See
- * `epic-58-retro-2026-09-19.md` Finding 2 for the motivating duplication finding.
+ * (Story 34.1) and `notification-originator-host.ts`'s `callOutOfRequestEnqueue` (Story 58.1); this
+ * module removes that duplication.
  *
  * This module is deliberately domain-agnostic: it has no knowledge of `OperationalEvent` constants,
  * audit field shapes, or any specific `RateLimitedError` subclass. Every host-specific behavior is
- * supplied by the caller as a hook (see Design Decision 1 in the story file).
+ * supplied by the caller as a hook (Story 58.2 Design Decision 1).
  */
 
 /**
@@ -30,8 +30,8 @@ export type InFlightSlotAccounting = {
 }
 
 /** Module-scope registry of every `namespace` string `createInFlightSlotAccounting` has been
- * called with, in this process. Story 58.2 Design Decision 2 (added via Pre-mortem Analysis
- * elicitation) — guards against a future caller accidentally wiring two hosts to the same
+ * called with, in this process. Story 58.2 Design Decision 2 (added after a pre-mortem
+ * analysis) — guards against a future caller accidentally wiring two hosts to the same
  * namespace, which would silently merge two previously-independent in-flight budgets. */
 const usedNamespaces = new Set<string>()
 

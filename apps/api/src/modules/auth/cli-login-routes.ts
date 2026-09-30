@@ -30,17 +30,17 @@ import {
   cliRefreshResponseSchema,
 } from './cli-login-schema.js'
 
-// Story 43.2 (Dev Notes decision #2) — dedicated CLI-facing login/refresh/logout routes,
+// Story 43.2 (decision #2) — dedicated CLI-facing login/refresh/logout routes,
 // mirroring `machine-users/token-exchange-routes.ts`'s JSON-bearer-token shape. These call the
 // exact same `loginUser()`/`verifyLogin()`/`refreshSession()` functions the cookie-based routes
 // in routes.ts use (no duplicated auth logic) — only the reply shape differs (JSON body instead
-// of `Set-Cookie`). Kept in this own file rather than a mode flag on `/login`, per this story's
-// Dev Notes: a header-gated dual-mode route is a subtler, easier-to-regress surface (a missing
+// of `Set-Cookie`). Kept in this own file rather than a mode flag on `/login`, because
+// a header-gated dual-mode route is a subtler, easier-to-regress surface (a missing
 // header silently falls back to cookie mode) than two explicitly separate, testable routes.
 //
 // Story 43.8: this plugin registers its OWN per-IP limiter because it is a sibling of
 // `authRoutes` in app.ts, not a child — `authRoutes`' @fastify/rate-limit never saw these routes,
-// so their `config.rateLimit` blocks were inert and /cli-login was unthrottled (retro Finding 3).
+// so their `config.rateLimit` blocks were inert and /cli-login was unthrottled.
 
 function sendAppError(reply: FastifyReply, error: AppError): unknown {
   return reply.status(error.statusCode).send({ code: error.code, message: error.message })
