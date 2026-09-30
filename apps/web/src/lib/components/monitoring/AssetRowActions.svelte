@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
   import { resolve } from '$app/paths'
+  import type { ProjectPath } from '$lib/app-paths.js'
   import ConfirmDeleteButton from '$lib/components/forms/ConfirmDeleteButton.svelte'
 
   let {
@@ -11,7 +12,7 @@
     confirmLabel,
     onDelete,
   }: {
-    editHref: string
+    editHref: ProjectPath
     confirmLabel?: string
     onDelete: () => void | Promise<void>
   } = $props()

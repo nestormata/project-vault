@@ -52,6 +52,16 @@ function baseUser(overrides: Record<string, unknown> = {}) {
 }
 
 describe('AppShell.svelte', () => {
+  // Story 68.1 AC-5: the logo moved from resolve() to asset() (the SvelteKit API for static/
+  // files); with no paths.base/paths.assets configured the rendered src must stay byte-identical.
+  it('renders the logo mark from the static asset path', () => {
+    const { container } = render(AppShell, {
+      props: { user: baseUser(), children: childrenSnippet(), hidePrimaryNav: false },
+    })
+
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('/logo-mark.png')
+  })
+
   it('shows a plain title (no dashboard link) and hides PrimaryNav when hidePrimaryNav is true', () => {
     render(AppShell, {
       props: {

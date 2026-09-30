@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render } from '@testing-library/svelte'
 import { createRawSnippet } from 'svelte'
 
-vi.mock('$app/paths', () => ({ resolve: (path: string) => path }))
+vi.mock('$app/paths', () => ({
+  resolve: (path: string) => path,
+  asset: (path: string) => path,
+}))
 
 import {
   getPreAuthThemeName,

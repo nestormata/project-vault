@@ -4,6 +4,7 @@
   so this is the one place that's declared.
 -->
 <script lang="ts">
+  import type { ProjectPath } from '$lib/app-paths.js'
   import FormSubmitRow from '$lib/components/forms/FormSubmitRow.svelte'
   import FormErrorBanner from './FormErrorBanner.svelte'
 
@@ -13,7 +14,7 @@
     submitting,
   }: {
     errorMessage: string | null
-    cancelHref: string
+    cancelHref: ProjectPath
     submitting: boolean
   } = $props()
 </script>

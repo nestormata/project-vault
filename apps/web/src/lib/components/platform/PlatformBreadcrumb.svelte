@@ -1,11 +1,12 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
+  import type { PlatformPath } from '$lib/app-paths.js'
   import PlatformOperatorRequiredNotice from '$lib/components/PlatformOperatorRequiredNotice.svelte'
   import type { Snippet } from 'svelte'
 
   interface Crumb {
     label: string
-    href?: string
+    href?: PlatformPath
   }
 
   interface Props {
