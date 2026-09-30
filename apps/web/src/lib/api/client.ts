@@ -83,7 +83,7 @@ function redirectToSessionExpired(): void {
   // resolve() only accepts a known route/pathname, not a route plus an appended query string —
   // the base path segment is still resolved, only the "?reason=..." suffix is a plain string.
   // eslint-disable-next-line svelte/no-navigation-without-resolve
-  void goto(`${resolve('/login', {})}?reason=session-expired`).then(reset, reset)
+  void goto(`${resolve('/login')}?reason=session-expired`).then(reset, reset)
 }
 
 function performRefreshRequest(fetchFn: typeof fetch, signal?: AbortSignal): Promise<boolean> {
@@ -189,7 +189,7 @@ export async function apiFetch<T>(
       // `goto()` (used by redirectToSessionExpired above) is a client-side-only API and would
       // throw if called here. SvelteKit's own `redirect()` is the SSR-safe equivalent — it throws
       // a special value SvelteKit's routing understands and turns into a real 303 response.
-      redirect(303, `${resolve('/login', {})}?reason=session-expired`)
+      redirect(303, `${resolve('/login')}?reason=session-expired`)
     }
     response = await fetchFn(path, requestInit)
     return parseApiEnvelope<T>(response)
