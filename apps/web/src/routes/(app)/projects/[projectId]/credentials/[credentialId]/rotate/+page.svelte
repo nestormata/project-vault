@@ -67,13 +67,15 @@
     // Story 13.5 AC-8 (edge — unchecking a field back down to 1): moving from 2+ fields down to
     // exactly 1 reverts to the single textarea, preloaded with whatever was already typed for
     // the remaining field — no data loss on selection change.
-    if (previousSelection.length >= 2 && nextSelection.length === 1) {
-      newValue = fieldValues[nextSelection[0]] ?? newValue
+    const remainingField = nextSelection.length === 1 ? nextSelection[0] : undefined
+    if (previousSelection.length >= 2 && remainingField !== undefined) {
+      newValue = fieldValues[remainingField] ?? newValue
     }
     // Moving from 0/1 field into 2+: seed the multi-value map from the single textarea's current
     // value for whichever field it represented, so that value isn't lost.
-    if (previousSelection.length === 1 && nextSelection.length >= 2) {
-      fieldValues = { ...fieldValues, [previousSelection[0]]: newValue }
+    const previousField = previousSelection.length === 1 ? previousSelection[0] : undefined
+    if (previousField !== undefined && nextSelection.length >= 2) {
+      fieldValues = { ...fieldValues, [previousField]: newValue }
     }
 
     selectedFields = nextSelection
@@ -86,7 +88,8 @@
       return null
     }
 
-    if (targetFields.length >= 2) {
+    const [firstField] = targetFields
+    if (targetFields.length >= 2 && firstField !== undefined) {
       const missing = targetFields.find((key) => !(fieldValues[key] ?? '').trim())
       if (missing) {
         valueError = `Enter a new value for '${missing}'`
@@ -96,7 +99,7 @@
         // AC-8: newValue is set to the first field's value purely to satisfy the schema's
         // required-field constraint — never read server-side once fieldValues covers every
         // targeted field (AC-7).
-        newValue: fieldValues[targetFields[0]] ?? '',
+        newValue: fieldValues[firstField] ?? '',
         notes: notes.trim() ? notes.trim() : undefined,
         targetFields,
         fieldValues: Object.fromEntries(targetFields.map((key) => [key, fieldValues[key] ?? ''])),

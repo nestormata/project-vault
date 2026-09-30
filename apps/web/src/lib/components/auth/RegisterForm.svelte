@@ -24,11 +24,11 @@
   let email = $state(prefillEmail)
   let password = $state('')
   let orgName = $state('')
-  let errorMessage = $state(null)
+  let errorMessage = $state<string | null>(null)
   // Story 1.20 AC-6: self-signup success/collision both resolve to the same generic-accepted
   // response now — this surfaces its message so the user isn't silently redirected to /login
   // with no feedback at all.
-  let infoMessage = $state(null)
+  let infoMessage = $state<string | null>(null)
   let localeRevision = $state(0)
   let emailInputEl: HTMLInputElement | undefined = $state()
 

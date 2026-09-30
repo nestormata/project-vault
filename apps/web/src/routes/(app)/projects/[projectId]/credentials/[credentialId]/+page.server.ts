@@ -10,6 +10,7 @@ import { listCredentialShares, listRotationRecommendedNudges } from '$lib/api/cr
 import { listOrgUsers } from '$lib/api/org-users.js'
 import { ApiClientError } from '$lib/api/client.js'
 import { requireUser } from '$lib/server/require-user.js'
+import type { OrgRole } from '$lib/credentials/permissions.js'
 import type { PageServerLoad } from './$types.js'
 
 // AC-2: a credential is treated as having an active rotation whenever its most recent rotation
@@ -55,7 +56,7 @@ function resolveTrustedOrigin(url: URL): string {
 function emptyCredentialPageResult(
   projectId: string,
   credentialId: string,
-  orgRole: string,
+  orgRole: OrgRole,
   origin: string
 ) {
   return {
@@ -86,7 +87,7 @@ function handleCredentialLoadError(
   loadError: unknown,
   projectId: string,
   credentialId: string,
-  orgRole: string,
+  orgRole: OrgRole,
   origin: string
 ) {
   if (!(loadError instanceof ApiClientError)) throw loadError

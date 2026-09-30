@@ -34,10 +34,9 @@
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
       )
     ).filter((element) => !element.hasAttribute('disabled'))
-    if (focusable.length === 0) return
-
-    const first = focusable[0]
-    const last = focusable[focusable.length - 1]
+    const first = focusable.at(0)
+    const last = focusable.at(-1)
+    if (first === undefined || last === undefined) return
     if (event.shiftKey && document.activeElement === first) {
       event.preventDefault()
       last.focus()

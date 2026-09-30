@@ -389,9 +389,8 @@
     // inherited `Object.prototype` properties, so a field literally named `constructor`/
     // `toString`/`hasOwnProperty`/etc. would get a false-positive "overridden" state via
     // prototype inheritance rather than falling through to the sensitivity-based default.
-    return Object.hasOwn(effectiveShareAttributeOverrides, field.key)
-      ? effectiveShareAttributeOverrides[field.key]
-      : !field.sensitive
+    if (!Object.hasOwn(effectiveShareAttributeOverrides, field.key)) return !field.sensitive
+    return effectiveShareAttributeOverrides[field.key] ?? !field.sensitive
   }
 
   function toggleShareAttribute(field: FieldMeta): void {
@@ -814,7 +813,9 @@
     revealError = null
     try {
       const result = await revealCredentialValue(fetch, data.projectId, data.credentialId)
-      revealedValue = result.value
+      // A single-field secret's reveal returns `{ value }`; narrow on the response union the same
+      // way revealSingleField() does.
+      revealedValue = isFieldsValue(result) ? (result.fields[0]?.value ?? '') : result.value
       revealVersion = result.versionNumber
     } catch (error) {
       revealedValue = null

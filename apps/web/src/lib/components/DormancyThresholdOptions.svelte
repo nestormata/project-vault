@@ -4,6 +4,11 @@
   Story 8.6's machine-key control exactly) — matches RoleSelectOptions.svelte's "shared <option>
   set, differing onchange stays on the parent <select>" precedent.
 -->
+<script lang="ts">
+  // Story 68.1 AC-7: no props or logic; the TypeScript script block lets svelte-check type this
+  // component and its importers (a script-less component has no type declaration).
+</script>
+
 <option value="">Choose a new threshold…</option>
 <option value={30}>30 days</option>
 <option value={60}>60 days</option>

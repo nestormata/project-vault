@@ -40,9 +40,9 @@
   let password = $state('')
   let ssoProviderName = $state<string | null>(null)
   let ssoCredential = $state('')
-  let mfaToken = $state(null)
-  let statusMessage = $state(null)
-  let errorMessage = $state(null)
+  let mfaToken = $state<string | null>(null)
+  let statusMessage = $state<string | null>(null)
+  let errorMessage = $state<string | null>(null)
   let isSubmitting = $state(false)
   let localeRevision = $state(0)
   // Story 14.4 AC-8/AC-11: tracks which email a domain-lookup is currently in flight for.

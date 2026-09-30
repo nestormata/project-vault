@@ -16,7 +16,9 @@ export function buildRegisterRequest(fields: RegisterRequest): RegisterRequest {
     : { email: fields.email, password: fields.password, orgName: fields.orgName }
 }
 
-export function clearRegisterFields(_fields: RegisterRequest): RegisterRequest {
+export function clearRegisterFields(
+  _fields: RegisterRequest
+): Required<Pick<RegisterRequest, 'email' | 'password' | 'orgName'>> {
   return { email: '', password: '', orgName: '' }
 }
 

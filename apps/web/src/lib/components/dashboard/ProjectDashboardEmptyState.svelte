@@ -1,8 +1,9 @@
 <script lang="ts">
   import { getSuggestedActionLabels } from './dashboard-copy.js'
   import DashboardPlaceholderGrid from './DashboardPlaceholderGrid.svelte'
+  import type { PreviewProject } from '$lib/state/preview-project.svelte.js'
 
-  let { project } = $props()
+  let { project }: { project: PreviewProject } = $props()
 </script>
 
 <section class="space-y-6">
