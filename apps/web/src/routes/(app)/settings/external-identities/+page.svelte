@@ -11,6 +11,10 @@
 
   let { data } = $props()
 
+  // Story 68.1: the loader only returns these fields when the viewer is allowed; derive them once
+  // so the template reads a non-optional value (SettingsFormGate renders the body only then).
+  const identities = $derived(data.allowed ? data.identities : [])
+
   // AC-2/AC-3 error contract — mirrors /settings/sso-domains's typed ApiClientError.code
   // branching rather than blindly relaying error.message for any error (the exact High finding
   // 14-6's code review caught and fixed — do not reintroduce it here). Only the codes this
@@ -95,8 +99,8 @@
 
   <SettingsFormGate
     allowed={data.allowed}
-    mfaRequired={data.mfaRequired}
-    errorMessage={data.errorMessage}
+    mfaRequired={data.allowed && data.mfaRequired}
+    errorMessage={data.allowed ? data.errorMessage : null}
     deniedMessage="You need the Admin role to manage external identities."
     mfaMessage="Enable multi-factor authentication to manage external identities."
   >
@@ -168,7 +172,7 @@
     {/if}
 
     <div class="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      {#if data.identities.length === 0}
+      {#if identities.length === 0}
         <p class="p-6 text-center text-slate-600">No external identities linked yet.</p>
       {:else}
         <table class="min-w-full text-left text-sm">
@@ -182,7 +186,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each data.identities as row (row.id)}
+            {#each identities as row (row.id)}
               <tr class="border-b border-slate-100 align-top last:border-b-0">
                 <td class="px-4 py-3 font-medium text-slate-900">{row.email}</td>
                 <td class="px-4 py-3 text-slate-600">{row.providerName}</td>

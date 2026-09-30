@@ -192,7 +192,10 @@
   <h1 class="text-2xl font-bold text-gray-900">Resource Usage</h1>
   <p class="mt-1 text-gray-500">Monitor instance-wide resource consumption and limits.</p>
 
-  <PlatformWarningsBanner warnings={data.warnings} messages={WARNING_MESSAGES} />
+  <PlatformWarningsBanner
+    warnings={data.allowed ? data.warnings : []}
+    messages={WARNING_MESSAGES}
+  />
 
   {#if data.errorMessage}
     <MfaAwareErrorAlert

@@ -10,8 +10,12 @@ import {
 } from '$lib/api/platform.js'
 import { ApiClientError } from '$lib/api/client.js'
 
-function readFilters(url: URL): PlatformAuditFilters {
-  const filters: PlatformAuditFilters = {}
+// Story 68.1: the search filters read from the URL never carry pagination (page/limit are
+// passed separately), so the page gets a string-only filter shape.
+type PlatformAuditSearchFilters = Omit<PlatformAuditFilters, 'page' | 'limit'>
+
+function readFilters(url: URL): PlatformAuditSearchFilters {
+  const filters: PlatformAuditSearchFilters = {}
   const operatorId = url.searchParams.get('operatorId')
   const actionType = url.searchParams.get('actionType')
   const targetOrgId = url.searchParams.get('targetOrgId')
