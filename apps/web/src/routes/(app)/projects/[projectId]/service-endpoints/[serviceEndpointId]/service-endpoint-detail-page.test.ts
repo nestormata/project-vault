@@ -21,7 +21,10 @@ vi.mock('$lib/api/service-endpoints.js', async () => {
   }
 })
 
+import type { ComponentProps } from 'svelte'
+import { projectLayoutData } from '$lib/test/page-data.js'
 import ServiceEndpointDetailPage from './+page.svelte'
+import type { ServiceEndpointDetail } from '$lib/api/service-endpoints.js'
 
 afterEach(() => {
   cleanup()
@@ -30,7 +33,7 @@ afterEach(() => {
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
-const ENDPOINT = {
+const ENDPOINT: ServiceEndpointDetail = {
   id: 'ep-1',
   name: 'API health',
   url: 'https://api.example.com/health (redacted)',
@@ -40,16 +43,34 @@ const ENDPOINT = {
   healthCheckPaused: false,
   healthCheckPausedAt: null,
   healthCheckPausedBy: null,
+  orgId: 'org-1',
+  projectId: projectId,
+  consecutiveFailures: 0,
+  lastCheckedAt: null,
+  createdBy: null,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
 }
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof ServiceEndpointDetailPage>['data']
+
+/** The loaded page (not the not-found fallback). */
+type LoadedData = Exclude<Data, { notFound: true }>
+
+function baseData(overrides: Partial<LoadedData> = {}): LoadedData {
   return {
+    ...projectLayoutData(),
     projectId,
     orgRole: 'owner',
     endpoint: ENDPOINT,
     notFound: false,
     ...overrides,
   }
+}
+
+/** The loader's not-found fallback. */
+function notFoundData(): Data {
+  return { ...projectLayoutData(), projectId, orgRole: 'owner', endpoint: null, notFound: true }
 }
 
 function emptyHistory() {
@@ -59,7 +80,7 @@ function emptyHistory() {
 describe('service-endpoint detail +page.svelte', () => {
   it('shows an honest not-found banner instead of the form', () => {
     render(ServiceEndpointDetailPage, {
-      props: { data: baseData({ endpoint: null, notFound: true }) },
+      props: { data: notFoundData() },
     })
 
     expect(screen.getByText(/endpoint not found/i)).toBeTruthy()

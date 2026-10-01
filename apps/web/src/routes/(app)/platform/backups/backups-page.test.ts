@@ -15,6 +15,9 @@ vi.mock('$lib/api/platform.js', () => ({
   listBackups: listBackupsMock,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData, deniedPageData } from '$lib/test/page-data.js'
+import { nth } from '$lib/test/dom.js'
 import BackupsPage from './+page.svelte'
 
 afterEach(() => {
@@ -32,9 +35,12 @@ const SAMPLE_BACKUP = {
   errorMessage: null,
 }
 
-function allowedData(overrides: Record<string, unknown> = {}) {
+type AllowedData = Extract<ComponentProps<typeof BackupsPage>['data'], { allowed: true }>
+
+function allowedData(overrides: Partial<AllowedData> = {}): AllowedData {
   return {
-    allowed: true as const,
+    ...appLayoutData(),
+    allowed: true,
     backups: [SAMPLE_BACKUP],
     errorMessage: null,
     ...overrides,
@@ -53,7 +59,7 @@ describe('/platform/backups +page.svelte', () => {
   })
 
   it('a non-operator sees the platform-operator-required notice', () => {
-    render(BackupsPage, { props: { data: { allowed: false } } })
+    render(BackupsPage, { props: { data: deniedPageData() } })
 
     expect(screen.getByRole('heading', { name: /platform operator access required/i })).toBeTruthy()
     expect(screen.queryByText(/no backups yet/i)).toBeNull()
@@ -250,7 +256,7 @@ describe('/platform/backups +page.svelte', () => {
       target: { value: 'Recovering from bad deploy' },
     })
     const restoreButtons = screen.getAllByRole('button', { name: /^restore$/i })
-    await fireEvent.click(restoreButtons[restoreButtons.length - 1])
+    await fireEvent.click(nth(restoreButtons, -1))
 
     expect(await screen.findByText(/restore complete/i)).toBeTruthy()
     const unsealLink = screen.getByRole('link', { name: /unseal vault/i })
@@ -275,7 +281,7 @@ describe('/platform/backups +page.svelte', () => {
       target: { value: 'Recovering from bad deploy' },
     })
     const restoreButtons = screen.getAllByRole('button', { name: /^restore$/i })
-    await fireEvent.click(restoreButtons[restoreButtons.length - 1])
+    await fireEvent.click(nth(restoreButtons, -1))
 
     expect(
       await screen.findByText(/refusing to restore a potentially corrupted or tampered backup/i)
@@ -296,7 +302,7 @@ describe('/platform/backups +page.svelte', () => {
       target: { value: 'Recovering from bad deploy' },
     })
     const restoreButtons = screen.getAllByRole('button', { name: /^restore$/i })
-    await fireEvent.click(restoreButtons[restoreButtons.length - 1])
+    await fireEvent.click(nth(restoreButtons, -1))
 
     expect(
       await screen.findByText(/could not be decrypted with the current master key/i)
@@ -317,7 +323,7 @@ describe('/platform/backups +page.svelte', () => {
       target: { value: 'Recovering from bad deploy' },
     })
     const restoreButtons = screen.getAllByRole('button', { name: /^restore$/i })
-    await fireEvent.click(restoreButtons[restoreButtons.length - 1])
+    await fireEvent.click(nth(restoreButtons, -1))
 
     expect(await screen.findByText(/another restore is already in progress/i)).toBeTruthy()
   })
@@ -335,7 +341,7 @@ describe('/platform/backups +page.svelte', () => {
       target: { value: 'Recovering from bad deploy' },
     })
     const restoreButtons = screen.getAllByRole('button', { name: /^restore$/i })
-    await fireEvent.click(restoreButtons[restoreButtons.length - 1])
+    await fireEvent.click(nth(restoreButtons, -1))
 
     expect(await screen.findByText(/no backup found with that filename/i)).toBeTruthy()
     expect(listBackupsMock).toHaveBeenCalledTimes(1)
@@ -355,7 +361,7 @@ describe('/platform/backups +page.svelte', () => {
       target: { value: 'Recovering from bad deploy' },
     })
     const restoreButtons = screen.getAllByRole('button', { name: /^restore$/i })
-    await fireEvent.click(restoreButtons[restoreButtons.length - 1])
+    await fireEvent.click(nth(restoreButtons, -1))
 
     expect(await screen.findByText('weird conflict')).toBeTruthy()
   })
@@ -374,7 +380,7 @@ describe('/platform/backups +page.svelte', () => {
       target: { value: 'Recovering from bad deploy' },
     })
     const restoreButtons = screen.getAllByRole('button', { name: /^restore$/i })
-    await fireEvent.click(restoreButtons[restoreButtons.length - 1])
+    await fireEvent.click(nth(restoreButtons, -1))
 
     expect(
       await screen.findByText(/confirmRestore: true and a reason are both required/i)
@@ -399,7 +405,7 @@ describe('/platform/backups +page.svelte', () => {
       target: { value: 'Recovering from bad deploy' },
     })
     const restoreButtons = screen.getAllByRole('button', { name: /^restore$/i })
-    await fireEvent.click(restoreButtons[restoreButtons.length - 1])
+    await fireEvent.click(nth(restoreButtons, -1))
 
     expect(await screen.findByText('Bad filename shape')).toBeTruthy()
   })
@@ -416,7 +422,7 @@ describe('/platform/backups +page.svelte', () => {
       target: { value: 'Recovering from bad deploy' },
     })
     const restoreButtons = screen.getAllByRole('button', { name: /^restore$/i })
-    await fireEvent.click(restoreButtons[restoreButtons.length - 1])
+    await fireEvent.click(nth(restoreButtons, -1))
 
     expect(await screen.findByText(/restore failed unexpectedly/i)).toBeTruthy()
   })
@@ -433,7 +439,7 @@ describe('/platform/backups +page.svelte', () => {
       target: { value: 'Recovering from bad deploy' },
     })
     const restoreButtons = screen.getAllByRole('button', { name: /^restore$/i })
-    await fireEvent.click(restoreButtons[restoreButtons.length - 1])
+    await fireEvent.click(nth(restoreButtons, -1))
 
     expect(await screen.findByText(/^restore failed\.$/i)).toBeTruthy()
   })
@@ -474,5 +480,20 @@ describe('/platform/backups +page.svelte', () => {
     await fireEvent.click(screen.getByRole('button', { name: /^validate$/i }))
 
     expect(await screen.findByText(/validation failed/i)).toBeTruthy()
+  })
+
+  // Story 68.1 AC-3: SvelteKit reuses this component when `data` changes (invalidate/reload),
+  // so the backup list and the load error must follow the new `data` without a remount.
+  it('stale state: the backup list and load error follow a new load without remounting', async () => {
+    const { rerender } = render(BackupsPage, {
+      props: { data: allowedData({ backups: [], errorMessage: 'Failed to load backups' }) },
+    })
+    expect(screen.getByText('Failed to load backups')).toBeTruthy()
+
+    const next = { ...SAMPLE_BACKUP, filename: 'backup_20260702T030000Z_org-abc.vault' }
+    await rerender({ data: allowedData({ backups: [next] }) })
+
+    expect(screen.queryByText('Failed to load backups')).toBeNull()
+    expect(screen.getByText('backup_20260702T030000Z_org-abc.vault')).toBeTruthy()
   })
 })

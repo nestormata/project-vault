@@ -9,6 +9,8 @@ vi.mock('$lib/api/audit.js', () => ({
   auditExportDownloadUrl: (jobId: string) => `/api/v1/org/audit/exports/${jobId}/download`,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import AuditPage from './+page.svelte'
 
 afterEach(() => cleanup())
@@ -24,10 +26,13 @@ const SAMPLE_EVENT = {
   createdAt: '2026-06-14T10:03:00.000Z',
 }
 
-function allowedData(overrides: Record<string, unknown> = {}) {
+type AllowedData = Extract<ComponentProps<typeof AuditPage>['data'], { allowed: true }>
+
+function allowedData(overrides: Partial<AllowedData> = {}): AllowedData {
   return {
+    ...appLayoutData(),
     orgRole: 'owner',
-    allowed: true as const,
+    allowed: true,
     filters: {},
     events: [SAMPLE_EVENT],
     total: 340,
@@ -45,14 +50,16 @@ describe('/settings/audit +page.svelte', () => {
   })
 
   it('AC-B4: a non-owner, non-admin role sees an honest role notice, no forwarding link', () => {
-    render(AuditPage, { props: { data: { orgRole: 'member', allowed: false } } })
+    render(AuditPage, {
+      props: { data: { ...appLayoutData(), orgRole: 'member', allowed: false } },
+    })
 
     expect(screen.getByText(/requires the owner role/i)).toBeTruthy()
     expect(screen.queryByRole('link', { name: /forwarding & retention/i })).toBeNull()
   })
 
   it('AC-B4: an admin sees the role notice plus a link to Forwarding & Retention', () => {
-    render(AuditPage, { props: { data: { orgRole: 'admin', allowed: false } } })
+    render(AuditPage, { props: { data: { ...appLayoutData(), orgRole: 'admin', allowed: false } } })
 
     expect(screen.getByText(/requires the owner role/i)).toBeTruthy()
     const link = screen.getByRole('link', { name: /forwarding & retention/i })

@@ -37,6 +37,10 @@ vi.mock('$lib/api/org-users.js', () => ({
 }))
 
 import { ApiClientError } from '$lib/api/client.js'
+import { apiClientError } from '$lib/test/api-error.js'
+import type { ComponentProps } from 'svelte'
+import type { OrgUser } from '$lib/api/org-users.js'
+import { appLayoutData } from '$lib/test/page-data.js'
 import UsersPage from './+page.svelte'
 
 beforeEach(() => {
@@ -63,7 +67,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const ownerUser = {
+const ownerUser: OrgUser = {
   userId: 'u-owner',
   email: 'dana@example.com',
   displayName: 'Dana Smith',
@@ -72,7 +76,7 @@ const ownerUser = {
   projects: [],
 }
 
-const memberUser = {
+const memberUser: OrgUser = {
   userId: 'u-member',
   email: 'jsmith@example.com',
   displayName: 'J Smith',
@@ -81,7 +85,7 @@ const memberUser = {
   projects: [],
 }
 
-const projectMemberUser = {
+const projectMemberUser: OrgUser = {
   ...memberUser,
   projects: [
     {
@@ -92,7 +96,7 @@ const projectMemberUser = {
   ],
 }
 
-const deactivatedUser = {
+const deactivatedUser: OrgUser = {
   ...memberUser,
   userId: 'u-deactivated',
   email: 'disabled@example.com',
@@ -100,12 +104,16 @@ const deactivatedUser = {
   status: 'deactivated' as const,
 }
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof UsersPage>['data']
+
+function baseData(overrides: Partial<Data> = {}): Data {
   return {
+    ...appLayoutData(),
     canManage: true,
     orgRole: 'admin',
     orgId: 'org-1',
     users: [ownerUser, memberUser],
+    nativeLoginEnabled: true,
     ...overrides,
   }
 }
@@ -365,7 +373,7 @@ describe('/settings/users +page.svelte (Story 8.7 AC groups A4/I/J/K)', () => {
 
     it('AC-K3: a 409 already-pending response navigates to the existing request', async () => {
       createErasureRequestMock.mockRejectedValue(
-        new ApiClientError(
+        apiClientError(
           409,
           {
             code: 'erasure_request_already_pending',
@@ -391,7 +399,7 @@ describe('/settings/users +page.svelte (Story 8.7 AC groups A4/I/J/K)', () => {
 
     it('AC-K4: a 410 already-erased response navigates to the completed request', async () => {
       createErasureRequestMock.mockRejectedValue(
-        new ApiClientError(
+        apiClientError(
           410,
           {
             code: 'user_already_erased',
@@ -691,7 +699,7 @@ describe('/settings/users +page.svelte (Story 8.7 AC groups A4/I/J/K)', () => {
 
     it.each([
       [
-        new ApiClientError(
+        apiClientError(
           409,
           {
             code: 'sole_owner_of_projects',

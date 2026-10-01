@@ -18,6 +18,8 @@ vi.mock('$lib/api/organization-settings.js', () => ({
 vi.mock('$lib/state/theme.svelte.js', () => ({ setAppliedTheme: setAppliedThemeMock }))
 vi.mock('$app/navigation', () => ({ invalidateAll: invalidateAllMock }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import ThemesPage from './+page.svelte'
 
 afterEach(() => cleanup())
@@ -30,8 +32,11 @@ beforeEach(() => {
   updateOrgDefaultThemeMock.mockReset()
 })
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof ThemesPage>['data']
+
+function baseData(overrides: Partial<Data> = {}): Data {
   return {
+    ...appLayoutData(),
     themes: [
       { name: 'base', label: 'Default', css: null },
       { name: 'acme-brand', label: 'acme-brand', css: '[data-theme="acme-brand"] {}' },
@@ -347,5 +352,39 @@ describe('/settings/themes +page.svelte org default theme section — save (Stor
 
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toMatch(/no longer available/i)
+  })
+
+  // Story 68.1 AC-3: after "Reload themes" (invalidateAll) or any reload, SvelteKit hands this
+  // same component a new `data`; the personal selection and the org default must follow it.
+  it('stale state: the personal selection and org default follow a new load without remounting', async () => {
+    const { rerender } = render(ThemesPage, {
+      props: {
+        data: baseData({
+          orgRole: 'admin',
+          canReload: true,
+          selected: null,
+          orgDefaultThemeName: null,
+        }),
+      },
+    })
+    expect(screen.getByRole('radio', { name: /Default/ })).toHaveProperty('checked', true)
+    const orgDefaultSelect = screen.getByLabelText(
+      'Default theme for this organization'
+    ) as HTMLSelectElement
+    expect(orgDefaultSelect.value).toBe('')
+
+    await rerender({
+      data: baseData({
+        orgRole: 'admin',
+        canReload: true,
+        selected: 'acme-brand',
+        orgDefaultThemeName: 'acme-brand',
+      }),
+    })
+
+    expect(screen.getByRole('radio', { name: /acme-brand/ })).toHaveProperty('checked', true)
+    expect(
+      (screen.getByLabelText('Default theme for this organization') as HTMLSelectElement).value
+    ).toBe('acme-brand')
   })
 })

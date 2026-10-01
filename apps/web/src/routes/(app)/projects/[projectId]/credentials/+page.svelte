@@ -7,6 +7,7 @@
   import RotationBadge from '$lib/components/rotations/RotationBadge.svelte'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import type { CredentialStatus } from '@project-vault/shared'
+  import type { ProjectPath } from '$lib/app-paths.js'
 
   let { data } = $props()
 
@@ -39,7 +40,7 @@
     tags?: string
     page?: number
     includeArchived?: boolean
-  }): string {
+  }): ProjectPath {
     const params = new URLSearchParams()
     const q = overrides.q ?? data.filters.q
     const status = overrides.status ?? data.filters.status
@@ -52,7 +53,7 @@
     if (page > 1) params.set('page', String(page))
     if (includeArchived) params.set('includeArchived', 'true')
     const query = params.toString()
-    return resolve(`/projects/${data.projectId}/credentials${query ? `?${query}` : ''}`)
+    return `/projects/${data.projectId}/credentials${query ? `?${query}` : ''}`
   }
 
   // Story 28.5 AC6: mirrors the project list's togglingArchived re-entrancy guard exactly.

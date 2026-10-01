@@ -51,7 +51,7 @@
     return detail
   }
 
-  async function onSaveTags(project: { id: string }): Promise<void> {
+  async function onSaveTags(project: { id: string; tags: string[] }): Promise<void> {
     if (savingTagsProjectId) return
     savingTagsProjectId = project.id
     tagErrors = { ...tagErrors, [project.id]: null }

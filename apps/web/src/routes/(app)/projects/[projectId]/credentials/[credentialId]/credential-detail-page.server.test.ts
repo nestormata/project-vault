@@ -35,6 +35,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const credentialId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
@@ -96,7 +97,7 @@ describe('credential detail +page.server.ts rotation section', () => {
       ],
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(listRotationRecommendedNudgesMock).toHaveBeenCalledWith(
       expect.anything(),
@@ -147,7 +148,7 @@ describe('credential detail +page.server.ts rotation section', () => {
       hasMore: false,
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(listCredentialDependenciesMock).toHaveBeenCalledWith(
       expect.anything(),
@@ -176,7 +177,7 @@ describe('credential detail +page.server.ts rotation section', () => {
       hasMore: false,
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.activeRotationId).toBeNull()
     expect(result.rotations).toHaveLength(1)
@@ -209,7 +210,7 @@ describe('credential detail +page.server.ts rotation section', () => {
       hasMore: false,
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.activeRotationId).toBe(rotationId)
   })
@@ -230,7 +231,7 @@ describe('credential detail +page.server.ts rotation section', () => {
       hasMore: false,
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.activeRotationId).toBeNull()
   })
@@ -251,7 +252,7 @@ describe('credential detail +page.server.ts rotation section', () => {
       hasMore: false,
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.activeRotationId).toBeNull()
   })
@@ -272,7 +273,7 @@ describe('credential detail +page.server.ts rotation section', () => {
       hasMore: false,
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.activeRotationId).toBeNull()
     expect(result.rotations).toHaveLength(0)
@@ -309,7 +310,7 @@ describe('credential detail +page.server.ts rotation section', () => {
   it('returns notFound when the credential 404s, without fetching rotations', async () => {
     getCredentialMock.mockRejectedValueOnce(new ApiClientError(404, null, 'not found'))
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.notFound).toBe(true)
     expect(result.activeRotationId).toBeNull()
@@ -329,7 +330,7 @@ describe('credential detail +page.server.ts rotation section', () => {
       )
     )
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.vaultSealed).toBe(true)
     expect(result.credential).toBeNull()
@@ -352,7 +353,7 @@ describe('credential detail +page.server.ts rotation section', () => {
       )
     )
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.vaultSealed).toBe(true)
   })
@@ -383,8 +384,10 @@ describe('credential detail +page.server.ts rotation section', () => {
         hasMore: false,
       })
 
-      const result = await load(
-        makeEvent(`https://vault.example.com/projects/${projectId}/credentials/${credentialId}`)
+      const result = expectLoaded(
+        await load(
+          makeEvent(`https://vault.example.com/projects/${projectId}/credentials/${credentialId}`)
+        )
       )
 
       expect(result.origin).toBe('https://vault.example.com')
@@ -393,7 +396,7 @@ describe('credential detail +page.server.ts rotation section', () => {
     it('AC-2: still returns data.origin on the notFound (404) branch', async () => {
       getCredentialMock.mockRejectedValueOnce(new ApiClientError(404, null, 'not found'))
 
-      const result = await load(makeEvent())
+      const result = expectLoaded(await load(makeEvent()))
 
       expect(result.notFound).toBe(true)
       expect(result.origin).toBe('https://vault.example.com')
@@ -408,7 +411,7 @@ describe('credential detail +page.server.ts rotation section', () => {
         )
       )
 
-      const result = await load(makeEvent())
+      const result = expectLoaded(await load(makeEvent()))
 
       expect(result.vaultSealed).toBe(true)
       expect(result.origin).toBe('https://vault.example.com')

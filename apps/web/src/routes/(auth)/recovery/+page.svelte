@@ -15,7 +15,7 @@
   let email = $state('')
   let isSubmitting = $state(false)
   let submitted = $state(false)
-  let disabledMessage = $state(null)
+  let disabledMessage = $state<string | null>(null)
 
   async function submitForm() {
     if (isSubmitting) return

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
 import { ApiClientError } from '$lib/api/client.js'
+import { apiClientError } from '$lib/test/api-error.js'
 import type { RotationChecklistItem } from '@project-vault/shared'
 
 const confirmChecklistItemMock = vi.hoisted(() => vi.fn())
@@ -104,7 +105,7 @@ describe('ChecklistItemRow', () => {
 
   it('AC-8 edge: 409 already_confirmed shows a notice and treats the row as confirmed', async () => {
     confirmChecklistItemMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         409,
         {
           code: 'already_confirmed',
@@ -187,7 +188,7 @@ describe('ChecklistItemRow', () => {
 
   it('AC-10: max_retries_exceeded shows the cap message and still renders Confirm (not Retry)', async () => {
     retryChecklistItemMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         422,
         {
           code: 'max_retries_exceeded',
@@ -218,7 +219,7 @@ describe('ChecklistItemRow', () => {
 
   it('AC-15: 409 concurrent_modification calls onConcurrentModification and does not update the row locally', async () => {
     confirmChecklistItemMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         409,
         { code: 'concurrent_modification', message: 'Retry', currentVersion: 5 },
         'Retry'

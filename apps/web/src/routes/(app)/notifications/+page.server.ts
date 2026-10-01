@@ -88,7 +88,7 @@ export const load: PageServerLoad = async ({ fetch, url, locals }) => {
   }
 }
 
-export const actions: Actions = {
+export const actions = {
   markRead: async ({ request, fetch }) => {
     const data = await request.formData()
     const id = String(data.get('id'))
@@ -179,4 +179,4 @@ export const actions: Actions = {
     }
     return { success: true }
   },
-}
+} satisfies Actions

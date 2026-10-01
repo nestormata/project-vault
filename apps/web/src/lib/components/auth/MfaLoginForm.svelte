@@ -15,7 +15,7 @@
     onAuthenticated?: () => Promise<void>
   } = $props()
   let totp = $state('')
-  let errorMessage = $state(null)
+  let errorMessage = $state<string | null>(null)
   let isSubmitting = $state(false)
 
   function clearFields(clearToken = false) {

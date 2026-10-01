@@ -14,6 +14,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
@@ -60,7 +61,7 @@ describe('project overview +page.server.ts (AC-1 through AC-5)', () => {
     getProjectMock.mockResolvedValueOnce(project)
     getProjectDashboardMock.mockResolvedValueOnce(dashboard)
 
-    const result = await load(makeEvent('owner'))
+    const result = expectLoaded(await load(makeEvent('owner')))
 
     expect(result.project).toEqual(project)
     expect(result.dashboard).toEqual(dashboard)
@@ -70,7 +71,7 @@ describe('project overview +page.server.ts (AC-1 through AC-5)', () => {
   it('AC-3: a nonexistent or foreign-org project 404s to an honest not-found result without leaking data', async () => {
     getProjectMock.mockRejectedValueOnce(new ApiClientError(404, null, 'not found'))
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.notFound).toBe(true)
     expect(result.project).toBeNull()
@@ -91,7 +92,7 @@ describe('project overview +page.server.ts (AC-1 through AC-5)', () => {
     getProjectMock.mockResolvedValueOnce(archivedProject)
     getProjectDashboardMock.mockResolvedValueOnce(dashboard)
 
-    const result = await load(makeEvent('owner'))
+    const result = expectLoaded(await load(makeEvent('owner')))
 
     expect(result.project?.archivedAt).toBe('2026-06-01T00:00:00.000Z')
     expect(result.notFound).toBe(false)

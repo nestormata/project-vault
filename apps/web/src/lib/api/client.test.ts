@@ -76,7 +76,8 @@ describe('apiFetch', () => {
     const refreshGate = new Promise<void>((resolve) => {
       releaseRefresh = resolve
     })
-    const fetchFn = vi.fn(async (path: string) => {
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const path = String(input)
       if (path === '/api/v1/auth/refresh') {
         refreshCalls += 1
         await refreshGate
@@ -316,7 +317,8 @@ describe('fetchWithSessionRefresh', () => {
 
   it('builds a fresh RequestInit per attempt via the buildInit factory, passed through unchanged', async () => {
     let csrf = 'old'
-    const fetchFn = vi.fn(async (path: string) => {
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const path = String(input)
       if (path === '/api/v1/auth/refresh') {
         csrf = 'new'
         return REFRESH_OK()

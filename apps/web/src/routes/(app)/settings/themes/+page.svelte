@@ -10,7 +10,10 @@
 
   const { data }: { data: ThemesPageData } = $props()
 
-  let selected = $state(data.selected)
+  // Story 68.1 AC-3: writable $derived — both selections save immediately on change, so a new
+  // load (invalidateAll after a reload, or navigation) resets them from the server's values while
+  // a successful save below still updates them locally.
+  let selected = $derived(data.selected)
   let saving = $state<string | null>(null)
   let errorMessage = $state<string | null>(null)
 
@@ -67,7 +70,7 @@
   // personal-selection list, this section's `orgDefault` is pre-selected on load (Task 5.1's Dev
   // Notes: a GET already exists for a different reason, so, unlike locale/dormancy, there is no
   // reason to withhold the current value).
-  let orgDefault = $state(data.orgDefaultThemeName)
+  let orgDefault = $derived(data.orgDefaultThemeName)
   let orgDefaultSaving = $state(false)
   let orgDefaultMessage = $state<string | null>(null)
   let orgDefaultError = $state<string | null>(null)

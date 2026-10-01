@@ -9,10 +9,11 @@ vi.mock('$lib/api/auth.js', () => ({
   regenerateMfaRecoveryCodes: vi.fn(),
 }))
 
+import { appLayoutData, testAuthUser } from '$lib/test/page-data.js'
 import SecurityPage from './(app)/settings/security/+page.svelte'
 
 function baseUser(overrides: Partial<AuthUser> = {}): AuthUser {
-  return {
+  return testAuthUser({
     userId: 'u1',
     orgId: 'o1',
     sessionId: 's1',
@@ -20,15 +21,8 @@ function baseUser(overrides: Partial<AuthUser> = {}): AuthUser {
     mfaEnrolled: false,
     mfaEnrolledAt: null,
     remainingRecoveryCodesCount: null,
-    mfaStatus: {
-      enrollmentRequired: false,
-      gracePeriodActive: false,
-      gracePeriodExpiresAt: null,
-      gracePeriodDaysRemaining: null,
-      bannerMessage: null,
-    },
     ...overrides,
-  }
+  })
 }
 
 describe('/settings/security +page.svelte', () => {
@@ -39,7 +33,7 @@ describe('/settings/security +page.svelte', () => {
   })
 
   it('renders the MFA enrollment call to action for an unenrolled user', () => {
-    render(SecurityPage, { props: { data: { user: baseUser() } } })
+    render(SecurityPage, { props: { data: { ...appLayoutData(), user: baseUser() } } })
 
     expect(screen.getByRole('heading', { name: 'Security' })).toBeTruthy()
     expect(screen.getByRole('button', { name: /set up authenticator app/i })).toBeTruthy()
@@ -49,6 +43,7 @@ describe('/settings/security +page.svelte', () => {
     render(SecurityPage, {
       props: {
         data: {
+          ...appLayoutData(),
           user: baseUser({
             mfaEnrolled: true,
             mfaEnrolledAt: '2026-06-01T00:00:00.000Z',
@@ -62,7 +57,7 @@ describe('/settings/security +page.svelte', () => {
   })
 
   it('links back to the settings hub', () => {
-    render(SecurityPage, { props: { data: { user: baseUser() } } })
+    render(SecurityPage, { props: { data: { ...appLayoutData(), user: baseUser() } } })
 
     const link = screen.getByRole('link', { name: /settings/i })
     expect(link.getAttribute('href')).toBe('/settings')

@@ -12,6 +12,7 @@ vi.mock('$lib/api/platform.js', () => ({
 }))
 
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const platformUser = {
   userId: '00000000-0000-4000-8000-000000000001',
@@ -59,7 +60,7 @@ describe('/platform/backups +page.server.ts', () => {
   it('AC-A3: returns allowed=false for non-platform-operator without fetching backups', async () => {
     platformOperatorGateMock.mockReturnValue({ allowed: false })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(false)
     expect(listBackupsMock).not.toHaveBeenCalled()
@@ -69,7 +70,7 @@ describe('/platform/backups +page.server.ts', () => {
     platformOperatorGateMock.mockReturnValue({ allowed: true, user: platformUser })
     listBackupsMock.mockResolvedValue(SAMPLE_BACKUPS)
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -84,7 +85,7 @@ describe('/platform/backups +page.server.ts', () => {
     platformOperatorGateMock.mockReturnValue({ allowed: true, user: platformUser })
     listBackupsMock.mockResolvedValue({ items: [] })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -97,7 +98,7 @@ describe('/platform/backups +page.server.ts', () => {
     platformOperatorGateMock.mockReturnValue({ allowed: true, user: platformUser })
     listBackupsMock.mockRejectedValue(new Error('Network error'))
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {

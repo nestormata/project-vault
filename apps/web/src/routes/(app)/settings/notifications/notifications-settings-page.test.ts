@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import NotificationsPage from './+page.svelte'
 
 afterEach(() => cleanup())
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof NotificationsPage>['data']
+
+function baseData(overrides: Partial<Data> = {}): Data {
   return {
+    ...appLayoutData(),
     preferences: [
       {
         alertType: 'credential.expiry',
@@ -64,7 +69,7 @@ describe('/settings/notifications +page.svelte', () => {
             },
             {
               alertType: 'service.down',
-              channel: 'sms',
+              channel: 'slack',
               frequency: 'digest_daily',
               minSeverity: 'critical',
             },
@@ -81,10 +86,10 @@ describe('/settings/notifications +page.svelte', () => {
       screen.getByRole('combobox', { name: 'Minimum severity for Secret Expiry via email' })
     ).toBeTruthy()
     expect(
-      screen.getByRole('combobox', { name: 'Frequency for Service Down via sms' })
+      screen.getByRole('combobox', { name: 'Frequency for Service Down via slack' })
     ).toBeTruthy()
     expect(
-      screen.getByRole('combobox', { name: 'Minimum severity for Service Down via sms' })
+      screen.getByRole('combobox', { name: 'Minimum severity for Service Down via slack' })
     ).toBeTruthy()
   })
 

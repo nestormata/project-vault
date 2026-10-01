@@ -1,5 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
+  import type { ProjectPath } from '$lib/app-paths.js'
   import { rotationBadgeLabel, rotationStatusBadgeClass } from './rotation-copy.js'
   import type { RotationStatus } from '@project-vault/shared'
 
@@ -9,7 +10,7 @@
   // markup, and pairs color with an icon + distinct label text (never color alone). `href` is an
   // unresolved app-relative path (mirrors PageAlertBanner's `backHref`/FormSubmitRow's
   // `cancelHref` convention) — resolved here, not by the caller.
-  let { status, href }: { status: RotationStatus; href: string } = $props()
+  let { status, href }: { status: RotationStatus; href: ProjectPath } = $props()
 </script>
 
 <a

@@ -1,9 +1,10 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
+  import type { PlatformPath } from '$lib/app-paths.js'
 
   interface WarningInfo {
     message: string
-    linkHref?: string
+    linkHref?: PlatformPath
     linkText?: string
   }
 

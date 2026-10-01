@@ -24,12 +24,18 @@
   // Story 1.19 AC-5/AC-6: GET /status bearer-token settings — separate from the SMTP/backup/
   // notifications/instance-policy form above (its own POST actions, not part of the settings
   // PUT payload).
-  let statusTokenConfigured = $state(data.allowed ? (data.statusToken?.configured ?? false) : false)
-  let statusTokenCreatedAt = $state(data.allowed ? data.statusToken?.createdAt : undefined)
-  let statusTokenLastUsedAt = $state(data.allowed ? data.statusToken?.lastUsedAt : undefined)
+  // Story 68.1 AC-3: writable $derived — a new load replaces these, while the generate/rotate/
+  // revoke handlers below still update them locally.
+  let statusTokenConfigured = $derived(
+    data.allowed ? (data.statusToken?.configured ?? false) : false
+  )
+  let statusTokenCreatedAt = $derived(data.allowed ? data.statusToken?.createdAt : undefined)
+  let statusTokenLastUsedAt = $derived(data.allowed ? data.statusToken?.lastUsedAt : undefined)
   // Adversarial review fix: distinct from "not configured" — a load failure (network/5xx) must
   // never silently render as if the token simply doesn't exist yet.
-  let statusTokenLoadFailed = $state(data.allowed ? (data.statusTokenLoadFailed ?? false) : false)
+  const statusTokenLoadFailed = $derived(
+    data.allowed ? (data.statusTokenLoadFailed ?? false) : false
+  )
   // Secure-display-once: the plaintext only ever lives in this ephemeral, component-local state
   // — never re-fetchable, never part of `data` (mirrors machine-users' revealedKey pattern).
   let revealedStatusToken = $state<string | null>(null)
@@ -119,30 +125,45 @@
     }
   }
 
-  let settings = $state(data.allowed ? data.settings : null)
+  // Story 68.1 AC-3: writable $derived — a new load replaces it; a successful save updates it.
+  let settings = $derived(data.allowed ? data.settings : null)
   let saving = $state(false)
   let saveError = $state<string | null>(null)
   let saveMfaError = $state<string | null>(null)
   let saveSuccess = $state(false)
   let fieldErrors = $state<Record<string, string>>({})
 
-  // Form fields — initialized from settings
-  let smtpHost = $state(settings?.smtp.host ?? '')
-  let smtpPort = $state(settings?.smtp.port?.toString() ?? '')
-  let smtpUser = $state(settings?.smtp.user ?? '')
-  let smtpFrom = $state(settings?.smtp.from ?? '')
+  // Form fields — initialized from settings.
+  // Story 68.1 AC-3: each editable field is a writable $derived of a *primitive* persisted value.
+  // A primitive $derived only notifies when its value actually changes, so a reload that returns
+  // the same persisted settings leaves an in-progress edit alone, while a changed persisted value
+  // (after a save, or another operator's change) re-seeds the field.
+  const persistedSmtpHost = $derived(settings?.smtp.host ?? '')
+  const persistedSmtpPort = $derived(settings?.smtp.port?.toString() ?? '')
+  const persistedSmtpUser = $derived(settings?.smtp.user ?? '')
+  const persistedSmtpFrom = $derived(settings?.smtp.from ?? '')
+  const persistedSlackWebhook = $derived(settings?.notifications.defaultSlackWebhook ?? '')
+  const persistedMaxOrgs = $derived(settings?.instancePolicy.maxOrgs?.toString() ?? '')
+  const persistedMaxUsersPerOrg = $derived(
+    settings?.instancePolicy.maxUsersPerOrg?.toString() ?? ''
+  )
+  const persistedSessionIdleTimeout = $derived(
+    settings?.instancePolicy.sessionIdleTimeoutMinutes?.toString() ?? ''
+  )
+  let smtpHost = $derived(persistedSmtpHost)
+  let smtpPort = $derived(persistedSmtpPort)
+  let smtpUser = $derived(persistedSmtpUser)
+  let smtpFrom = $derived(persistedSmtpFrom)
   let smtpPassword = $state('')
 
   let scheduleOverride = $state('')
   const cronLocale = getLocale() === 'es' ? 'es' : 'en'
   const scheduleInterpretation = $derived(describeBackupCron(scheduleOverride.trim(), cronLocale))
   let retentionCountOverride = $state('')
-  let defaultSlackWebhook = $state(settings?.notifications.defaultSlackWebhook ?? '')
-  let maxOrgs = $state(settings?.instancePolicy.maxOrgs?.toString() ?? '')
-  let maxUsersPerOrg = $state(settings?.instancePolicy.maxUsersPerOrg?.toString() ?? '')
-  let sessionIdleTimeoutMinutes = $state(
-    settings?.instancePolicy.sessionIdleTimeoutMinutes?.toString() ?? ''
-  )
+  let defaultSlackWebhook = $derived(persistedSlackWebhook)
+  let maxOrgs = $derived(persistedMaxOrgs)
+  let maxUsersPerOrg = $derived(persistedMaxUsersPerOrg)
+  let sessionIdleTimeoutMinutes = $derived(persistedSessionIdleTimeout)
 
   async function handleSave() {
     saving = true

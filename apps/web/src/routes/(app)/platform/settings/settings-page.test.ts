@@ -9,6 +9,9 @@ vi.mock('$lib/api/platform.js', () => ({
   updateSettings: updateSettingsMock,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData, deniedPageData } from '$lib/test/page-data.js'
+import { nth } from '$lib/test/dom.js'
 import SettingsPage from './+page.svelte'
 
 afterEach(() => {
@@ -29,11 +32,16 @@ const SAMPLE_SETTINGS = {
   instancePolicy: { maxOrgs: 10, maxUsersPerOrg: 50, sessionIdleTimeoutMinutes: 30 },
 }
 
-function allowedData(overrides: Record<string, unknown> = {}) {
+type AllowedData = Extract<ComponentProps<typeof SettingsPage>['data'], { allowed: true }>
+
+function allowedData(overrides: Partial<AllowedData> = {}): AllowedData {
   return {
-    allowed: true as const,
+    ...appLayoutData(),
+    allowed: true,
     settings: SAMPLE_SETTINGS,
     errorMessage: null,
+    statusToken: null,
+    statusTokenLoadFailed: false,
     ...overrides,
   }
 }
@@ -44,7 +52,7 @@ describe('/platform/settings +page.svelte', () => {
   })
 
   it('a non-operator sees the platform-operator-required notice', () => {
-    render(SettingsPage, { props: { data: { allowed: false } } })
+    render(SettingsPage, { props: { data: deniedPageData() } })
 
     expect(screen.getByRole('heading', { name: /platform operator access required/i })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: /^smtp$/i })).toBeNull()
@@ -74,7 +82,7 @@ describe('/platform/settings +page.svelte', () => {
     await fireEvent.input(schedule, { target: { value: '0 4 * * *' } })
 
     expect(screen.getByText(/every day at 04:00 utc/i)).toBeTruthy()
-    await fireEvent.click(screen.getAllByRole('button', { name: /show cron field help/i })[0])
+    await fireEvent.click(nth(screen.getAllByRole('button', { name: /show cron field help/i }), 0))
     expect(screen.getByRole('dialog', { name: /cron schedule fields/i })).toBeTruthy()
   })
 
@@ -268,5 +276,40 @@ describe('/platform/settings +page.svelte', () => {
     resolveFn(SAMPLE_SETTINGS)
     await screen.findByText(/settings saved successfully/i)
     expect(saveButton.disabled).toBe(false)
+  })
+
+  // Story 68.1 AC-3: a form field re-seeds when the persisted setting changes in a new load...
+  it('stale state: a form field follows a changed persisted value from a new load', async () => {
+    const { rerender } = render(SettingsPage, { props: { data: allowedData() } })
+    expect((screen.getByLabelText(/^host$/i) as HTMLInputElement).value).toBe('smtp.example.com')
+
+    await rerender({
+      data: allowedData({
+        settings: {
+          ...SAMPLE_SETTINGS,
+          smtp: { ...SAMPLE_SETTINGS.smtp, host: 'smtp.new.example' },
+        },
+      }),
+    })
+
+    expect((screen.getByLabelText(/^host$/i) as HTMLInputElement).value).toBe('smtp.new.example')
+  })
+
+  // ...but an unrelated reload that returns the same persisted values does not wipe an edit.
+  it('stale state: an unrelated reload with unchanged settings keeps a dirty input', async () => {
+    const { rerender } = render(SettingsPage, { props: { data: allowedData() } })
+    const hostInput = screen.getByLabelText(/^host$/i) as HTMLInputElement
+    await fireEvent.input(hostInput, { target: { value: 'typing-in-progress.example' } })
+
+    await rerender({
+      data: allowedData({
+        settings: structuredClone(SAMPLE_SETTINGS),
+        statusToken: { configured: true, createdAt: new Date().toISOString() },
+      }),
+    })
+
+    expect((screen.getByLabelText(/^host$/i) as HTMLInputElement).value).toBe(
+      'typing-in-progress.example'
+    )
   })
 })

@@ -390,4 +390,18 @@ describe('RegisterForm', () => {
       expect(lookupSsoDomainMock).not.toHaveBeenCalled()
     })
   })
+
+  // Story 68.1 AC-3: `prefillEmail` comes from the /register URL (a $derived in the page), so it
+  // only changes when the user opens a different link (e.g. another invitation); the email then
+  // follows the new link. Nothing else on the page re-derives it mid-edit.
+  it('stale state: the email follows a new prefillEmail (a different link) without remounting', async () => {
+    const { rerender } = render(RegisterForm, {
+      props: { invitationToken: 'invite-1', prefillEmail: 'first@example.com' },
+    })
+    expect((screen.getByLabelText(/email/i) as HTMLInputElement).value).toBe('first@example.com')
+
+    await rerender({ invitationToken: 'invite-2', prefillEmail: 'second@example.com' })
+
+    expect((screen.getByLabelText(/email/i) as HTMLInputElement).value).toBe('second@example.com')
+  })
 })

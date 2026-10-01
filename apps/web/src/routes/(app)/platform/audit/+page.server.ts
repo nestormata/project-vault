@@ -10,8 +10,12 @@ import {
 } from '$lib/api/platform.js'
 import { ApiClientError } from '$lib/api/client.js'
 
-function readFilters(url: URL): PlatformAuditFilters {
-  const filters: PlatformAuditFilters = {}
+// Story 68.1: the search filters read from the URL never carry pagination (page/limit are
+// passed separately), so the page gets a string-only filter shape.
+type PlatformAuditSearchFilters = Omit<PlatformAuditFilters, 'page' | 'limit'>
+
+function readFilters(url: URL): PlatformAuditSearchFilters {
+  const filters: PlatformAuditSearchFilters = {}
   const operatorId = url.searchParams.get('operatorId')
   const actionType = url.searchParams.get('actionType')
   const targetOrgId = url.searchParams.get('targetOrgId')
@@ -27,14 +31,22 @@ function readFilters(url: URL): PlatformAuditFilters {
   return filters
 }
 
-function extractEventsData(result: PromiseSettledResult<PlatformAuditEventsResponse>) {
+type EventsData = {
+  events: PlatformAuditEventItem[]
+  total: number
+  limit: number
+  hasNext: boolean
+  eventsErrorMessage: string | null
+}
+
+function extractEventsData(result: PromiseSettledResult<PlatformAuditEventsResponse>): EventsData {
   if (result.status === 'fulfilled') {
     return {
       events: result.value.items,
       total: result.value.total,
       limit: result.value.limit,
       hasNext: result.value.hasNext,
-      eventsErrorMessage: null as string | null,
+      eventsErrorMessage: null,
     }
   }
   const msg =
@@ -42,7 +54,7 @@ function extractEventsData(result: PromiseSettledResult<PlatformAuditEventsRespo
       ? (result.reason.message ?? 'Failed to load audit events')
       : 'Failed to load audit events'
   return {
-    events: [] as PlatformAuditEventItem[],
+    events: [],
     total: 0,
     limit: 20,
     hasNext: false,
@@ -50,12 +62,15 @@ function extractEventsData(result: PromiseSettledResult<PlatformAuditEventsRespo
   }
 }
 
-function extractMaintenanceData(result: PromiseSettledResult<MaintenanceModeStatus>) {
+function extractMaintenanceData(result: PromiseSettledResult<MaintenanceModeStatus>): {
+  maintenanceStatus: MaintenanceModeStatus | null
+  maintenanceStatusError: string | null
+} {
   if (result.status === 'fulfilled') {
-    return { maintenanceStatus: result.value, maintenanceStatusError: null as string | null }
+    return { maintenanceStatus: result.value, maintenanceStatusError: null }
   }
   return {
-    maintenanceStatus: null as MaintenanceModeStatus | null,
+    maintenanceStatus: null,
     maintenanceStatusError: 'Maintenance mode status unavailable',
   }
 }

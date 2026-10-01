@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
+import { projectLayoutData } from '$lib/test/page-data.js'
 import ProjectOverviewPage from './+page.svelte'
+import { sampleProjectDashboard } from '$lib/test/fixtures.js'
 
 afterEach(() => cleanup())
 
@@ -24,11 +26,13 @@ describe('project overview +page.svelte (AC-1/AC-2/AC-5)', () => {
     render(ProjectOverviewPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           project: { ...baseProject, description: 'Stripe + billing webhooks' },
-          dashboard: {
+          dashboard: sampleProjectDashboard({
             credentialStats: { active: 0, expiringSoon: 2, expired: 0 },
             monitoredServiceHealth: { healthy: 1, degraded: 0, down: 0 },
-          },
+          }),
           notFound: false,
         },
       },
@@ -42,11 +46,13 @@ describe('project overview +page.svelte (AC-1/AC-2/AC-5)', () => {
     render(ProjectOverviewPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           project: { ...baseProject, memberCount: 4 },
-          dashboard: {
+          dashboard: sampleProjectDashboard({
             credentialStats: { active: 1, expiringSoon: 2, expired: 0 },
             monitoredServiceHealth: { healthy: 1, degraded: 0, down: 0 },
-          },
+          }),
           notFound: false,
         },
       },
@@ -60,11 +66,13 @@ describe('project overview +page.svelte (AC-1/AC-2/AC-5)', () => {
     render(ProjectOverviewPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           project: { ...baseProject, memberCount: 1 },
-          dashboard: {
+          dashboard: sampleProjectDashboard({
             credentialStats: { active: 0, expiringSoon: 0, expired: 0 },
             monitoredServiceHealth: { healthy: 0, degraded: 0, down: 0 },
-          },
+          }),
           notFound: false,
         },
       },
@@ -79,11 +87,13 @@ describe('project overview +page.svelte (AC-1/AC-2/AC-5)', () => {
     render(ProjectOverviewPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           project: { ...baseProject, archivedAt: '2026-06-01T00:00:00.000Z' },
-          dashboard: {
+          dashboard: sampleProjectDashboard({
             credentialStats: { active: 0, expiringSoon: 0, expired: 0 },
             monitoredServiceHealth: { healthy: 0, degraded: 0, down: 0 },
-          },
+          }),
           notFound: false,
         },
       },
@@ -94,7 +104,7 @@ describe('project overview +page.svelte (AC-1/AC-2/AC-5)', () => {
 
   it('AC-3: renders an honest not-found state instead of leaking any project data', () => {
     render(ProjectOverviewPage, {
-      props: { data: { project: null, dashboard: null, notFound: true } },
+      props: { data: { ...projectLayoutData(), project: null, dashboard: null, notFound: true } },
     })
 
     expect(screen.getByText(/project not found/i)).toBeTruthy()

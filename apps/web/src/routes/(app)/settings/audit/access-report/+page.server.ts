@@ -23,7 +23,22 @@ function normalizeAsOf(raw: string | null): string | undefined {
   return raw.includes('T') ? raw : toIsoRangeStart(raw)
 }
 
-export const load: PageServerLoad = async ({ fetch, url, locals }) => {
+type AccessReportPageData =
+  | { orgRole: string; allowed: false }
+  | {
+      orgRole: string
+      allowed: true
+      asOf: string | undefined
+      page: number
+      report: AccessReportResult | null
+      errorMessage: string | null
+    }
+
+export const load: PageServerLoad = async ({
+  fetch,
+  url,
+  locals,
+}): Promise<AccessReportPageData> => {
   const user = requireUser(locals)
   const orgRole = user.orgRole
 
@@ -44,7 +59,7 @@ export const load: PageServerLoad = async ({ fetch, url, locals }) => {
       asOf,
       page,
       report,
-      errorMessage: null as string | null,
+      errorMessage: null,
     }
   } catch (err) {
     const message =

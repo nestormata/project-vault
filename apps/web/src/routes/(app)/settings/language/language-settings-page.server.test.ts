@@ -7,6 +7,7 @@ vi.mock('$lib/api/inbox.js', () => ({ getUsersMe: getUsersMeMock }))
 vi.mock('$lib/api/locale.js', () => ({ patchUserLocale: patchUserLocaleMock }))
 
 import { actions, load } from './+page.server.js'
+import { expectAction, expectLoaded } from '$lib/test/page-data.js'
 
 function makeEvent(user: { orgRole: string } | null) {
   return { fetch: vi.fn(), locals: { user } } as unknown as Parameters<typeof load>[0]
@@ -30,7 +31,7 @@ describe('/settings/language +page.server.ts load (AC 1/7)', () => {
   it('builds locale options from the current users.locale value, redirecting anonymous users', async () => {
     getUsersMeMock.mockResolvedValue({ locale: 'es' })
 
-    const result = await load(makeEvent({ orgRole: 'member' }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'member' })))
 
     expect(result.options).toEqual([
       { locale: 'en', label: 'English', isCurrent: false },
@@ -47,14 +48,14 @@ describe('/settings/language +page.server.ts actions (AC 2/6/8)', () => {
   it('updateLocale succeeds and forwards the chosen locale', async () => {
     patchUserLocaleMock.mockResolvedValue({ locale: 'es' })
 
-    const result = await actions.updateLocale(actionEvent({ locale: 'es' }))
+    const result = await expectAction(actions, 'updateLocale')(actionEvent({ locale: 'es' }))
 
     expect(patchUserLocaleMock).toHaveBeenCalledWith(expect.any(Function), 'es')
     expect(result).toEqual({ success: true, locale: 'es' })
   })
 
   it('rejects an unsupported locale with a 422 before ever calling the API (AC 6 edge)', async () => {
-    const result = await actions.updateLocale(actionEvent({ locale: 'xx' }))
+    const result = await expectAction(actions, 'updateLocale')(actionEvent({ locale: 'xx' }))
 
     expect(patchUserLocaleMock).not.toHaveBeenCalled()
     expect(result).toEqual({ status: 422, data: { error: 'Unsupported locale' } })
@@ -63,7 +64,7 @@ describe('/settings/language +page.server.ts actions (AC 2/6/8)', () => {
   it('returns a 422 failure when the API call rejects', async () => {
     patchUserLocaleMock.mockRejectedValue(new Error('network down'))
 
-    const result = await actions.updateLocale(actionEvent({ locale: 'es' }))
+    const result = await expectAction(actions, 'updateLocale')(actionEvent({ locale: 'es' }))
 
     expect(result).toEqual({
       status: 422,

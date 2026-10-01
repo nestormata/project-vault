@@ -21,6 +21,7 @@ vi.mock('$lib/api/service-endpoints.js', async (importOriginal) => {
   }
 })
 
+import { projectLayoutData } from '$lib/test/page-data.js'
 import ServiceEndpointsListPage from './(app)/projects/[projectId]/service-endpoints/+page.svelte'
 import NewServiceEndpointPage from './(app)/projects/[projectId]/service-endpoints/new/+page.svelte'
 import ServiceEndpointDetailPage from './(app)/projects/[projectId]/service-endpoints/[serviceEndpointId]/+page.svelte'
@@ -61,7 +62,14 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
   it('AC-E1 viewer: empty state, no create control', () => {
     render(ServiceEndpointsListPage, {
       props: {
-        data: { projectId, orgRole: 'viewer', endpoints: [], alerts: [], notFound: false },
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'viewer',
+          endpoints: [],
+          alerts: [],
+          notFound: false,
+        },
       },
     })
     expect(screen.getByText('No service endpoints registered yet.')).toBeTruthy()
@@ -72,6 +80,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     render(ServiceEndpointsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'viewer',
           endpoints: [makeEndpoint()],
@@ -90,6 +100,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     render(ServiceEndpointsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'viewer',
           endpoints: [makeEndpoint({ status: 'down', healthCheckPaused: true })],
@@ -106,6 +118,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     render(ServiceEndpointsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'member',
           endpoints: [makeEndpoint()],
@@ -136,6 +150,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     render(ServiceEndpointsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'member',
           endpoints: [makeEndpoint()],
@@ -166,6 +182,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     render(ServiceEndpointsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'member',
           endpoints: [makeEndpoint()],
@@ -187,6 +205,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     render(ServiceEndpointsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'member',
           endpoints: [makeEndpoint()],
@@ -205,6 +225,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     const { container } = render(ServiceEndpointsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'member',
           endpoints: [makeEndpoint()],
@@ -237,6 +259,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     const { container } = render(ServiceEndpointsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'member',
           endpoints: [makeEndpoint({ healthCheckPaused: false })],
@@ -256,6 +280,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     const { container } = render(ServiceEndpointsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'viewer',
           endpoints: [makeEndpoint({ healthCheckPaused: true })],
@@ -284,6 +310,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     const { container } = render(ServiceEndpointsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'viewer',
           endpoints: [makeEndpoint({ healthCheckPaused: undefined })],
@@ -303,6 +331,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     const { container } = render(ServiceEndpointsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'member',
           endpoints: [makeEndpoint({ name: longName, url: longUrl })],
@@ -324,6 +354,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     const { container } = render(ServiceEndpointsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'member',
           endpoints: [
@@ -356,6 +388,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     render(ServiceEndpointsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'viewer',
           endpoints: [
@@ -388,6 +422,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
       const { container } = render(ServiceEndpointsListPage, {
         props: {
           data: {
+            ...projectLayoutData(),
+            ...projectLayoutData(),
             projectId,
             orgRole: 'viewer',
             endpoints: [makeEndpoint({ status })],
@@ -408,6 +444,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     render(ServiceEndpointsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'member',
           endpoints: [makeEndpoint({ healthCheckPaused: false })],
@@ -435,6 +473,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     const { container } = render(ServiceEndpointsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'member',
           endpoints: [
@@ -461,6 +501,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     const { container } = render(ServiceEndpointsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'member',
           endpoints: [makeEndpoint({ id: 'e-1', name: 'Only mine' })],
@@ -480,7 +522,14 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
   it('renders project-not-found and all endpoint status/date variants', () => {
     render(ServiceEndpointsListPage, {
       props: {
-        data: { projectId, orgRole: 'member', endpoints: [], alerts: [], notFound: true },
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          endpoints: [],
+          alerts: [],
+          notFound: true,
+        },
       },
     })
     expect(screen.getByText(/project.*not found/i)).toBeTruthy()
@@ -488,6 +537,8 @@ describe('/projects/:projectId/service-endpoints list (AC-E1/E2, AC-F1 embedded 
     render(ServiceEndpointsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'viewer',
           endpoints: [
@@ -515,7 +566,9 @@ describe('/projects/:projectId/service-endpoints/new (AC-E3)', () => {
 
   it('happy path: name+url only (frequency/threshold left at defaults 5/2)', async () => {
     createServiceEndpointMock.mockResolvedValue(makeEndpoint())
-    render(NewServiceEndpointPage, { props: { data: { projectId, orgRole: 'member' } } })
+    render(NewServiceEndpointPage, {
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'member' } },
+    })
 
     await fireEvent.input(screen.getByLabelText(/^Name$/i), { target: { value: 'API health' } })
     await fireEvent.input(screen.getByLabelText(/URL/i), {
@@ -538,7 +591,9 @@ describe('/projects/:projectId/service-endpoints/new (AC-E3)', () => {
 
   it('edge: non-default frequency/threshold are submitted', async () => {
     createServiceEndpointMock.mockResolvedValue(makeEndpoint())
-    render(NewServiceEndpointPage, { props: { data: { projectId, orgRole: 'member' } } })
+    render(NewServiceEndpointPage, {
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'member' } },
+    })
 
     await fireEvent.input(screen.getByLabelText(/^Name$/i), { target: { value: 'API health' } })
     await fireEvent.input(screen.getByLabelText(/URL/i), {
@@ -569,7 +624,9 @@ describe('/projects/:projectId/service-endpoints/new (AC-E3)', () => {
         'This project has reached its maximum of 25 monitored endpoints'
       )
     )
-    render(NewServiceEndpointPage, { props: { data: { projectId, orgRole: 'member' } } })
+    render(NewServiceEndpointPage, {
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'member' } },
+    })
     await fireEvent.input(screen.getByLabelText(/^Name$/i), { target: { value: 'API health' } })
     await fireEvent.input(screen.getByLabelText(/URL/i), {
       target: { value: 'https://api.example.com/health' },
@@ -593,7 +650,9 @@ describe('/projects/:projectId/service-endpoints/new (AC-E3)', () => {
         'URL resolves to a private, loopback, or reserved address and cannot be monitored'
       )
     )
-    render(NewServiceEndpointPage, { props: { data: { projectId, orgRole: 'member' } } })
+    render(NewServiceEndpointPage, {
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'member' } },
+    })
     await fireEvent.input(screen.getByLabelText(/^Name$/i), { target: { value: 'Metadata' } })
     await fireEvent.input(screen.getByLabelText(/URL/i), {
       target: { value: 'http://169.254.169.254/' },
@@ -625,7 +684,15 @@ describe('/projects/:projectId/service-endpoints/:serviceEndpointId (AC-E4/E5/E6
 
   it('AC-E4: the url field starts blank (fresh entry), not pre-filled with the redacted value', () => {
     render(ServiceEndpointDetailPage, {
-      props: { data: { projectId, orgRole: 'member', endpoint: makeEndpoint(), notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          endpoint: makeEndpoint(),
+          notFound: false,
+        },
+      },
     })
     const urlInput = screen.getByLabelText(/New URL/i) as HTMLInputElement
     expect(urlInput.value).toBe('')
@@ -636,7 +703,15 @@ describe('/projects/:projectId/service-endpoints/:serviceEndpointId (AC-E4/E5/E6
       makeEndpoint({ url: 'https://api.example.com/healthz' })
     )
     render(ServiceEndpointDetailPage, {
-      props: { data: { projectId, orgRole: 'member', endpoint: makeEndpoint(), notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          endpoint: makeEndpoint(),
+          notFound: false,
+        },
+      },
     })
 
     await fireEvent.input(screen.getByLabelText(/New URL/i), {
@@ -656,7 +731,15 @@ describe('/projects/:projectId/service-endpoints/:serviceEndpointId (AC-E4/E5/E6
 
   it('AC-E5: delete confirmation copy mentions resolving active alerts', () => {
     render(ServiceEndpointDetailPage, {
-      props: { data: { projectId, orgRole: 'member', endpoint: makeEndpoint(), notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          endpoint: makeEndpoint(),
+          notFound: false,
+        },
+      },
     })
     expect(screen.getByText(/resolve any active alerts/i)).toBeTruthy()
   })
@@ -678,7 +761,15 @@ describe('/projects/:projectId/service-endpoints/:serviceEndpointId (AC-E4/E5/E6
       hasNext: false,
     })
     render(ServiceEndpointDetailPage, {
-      props: { data: { projectId, orgRole: 'member', endpoint: makeEndpoint(), notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          endpoint: makeEndpoint(),
+          notFound: false,
+        },
+      },
     })
 
     expect(await screen.findByText('Blocked (unsafe address)')).toBeTruthy()
@@ -686,14 +777,30 @@ describe('/projects/:projectId/service-endpoints/:serviceEndpointId (AC-E4/E5/E6
 
   it('failure: not-found shows the not-found notice', () => {
     render(ServiceEndpointDetailPage, {
-      props: { data: { projectId, orgRole: 'member', endpoint: null, notFound: true } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          endpoint: null,
+          notFound: true,
+        },
+      },
     })
     expect(screen.getByText(/endpoint.*not found/i)).toBeTruthy()
   })
 
   it('code-review finding (AC-I1): viewer sees a read-only view, not disabled-but-visible form inputs', () => {
     render(ServiceEndpointDetailPage, {
-      props: { data: { projectId, orgRole: 'viewer', endpoint: makeEndpoint(), notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'viewer',
+          endpoint: makeEndpoint(),
+          notFound: false,
+        },
+      },
     })
     expect(screen.queryByLabelText(/^Name$/i)).toBeNull()
     expect(screen.queryByLabelText(/New URL/i)).toBeNull()

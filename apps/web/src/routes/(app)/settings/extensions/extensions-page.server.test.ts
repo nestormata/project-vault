@@ -18,6 +18,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 import { ApiClientError } from '$lib/api/client.js'
 import { requireUser } from '$lib/server/require-user.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const requireUserMock = vi.mocked(requireUser)
 
@@ -68,7 +69,7 @@ describe('/settings/extensions +page.server.ts', () => {
       extensions_status: 'loaded',
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -88,7 +89,7 @@ describe('/settings/extensions +page.server.ts', () => {
       extensions_status: 'not_configured',
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -107,7 +108,7 @@ describe('/settings/extensions +page.server.ts', () => {
       extensions_status: 'load_failed',
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -122,7 +123,7 @@ describe('/settings/extensions +page.server.ts', () => {
     async (orgRole) => {
       requireUserMock.mockReturnValue({ orgRole } as ReturnType<typeof requireUser>)
 
-      const result = await load(makeEvent())
+      const result = expectLoaded(await load(makeEvent()))
 
       expect(result).toEqual({ allowed: false, orgRole })
       expect(getExtensionStatusMock).not.toHaveBeenCalled()
@@ -151,7 +152,7 @@ describe('/settings/extensions +page.server.ts', () => {
       extensions_status: 'loaded',
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -166,7 +167,7 @@ describe('/settings/extensions +page.server.ts', () => {
     getExtensionStatusMock.mockResolvedValue(envelope(null))
     fetchHealthMock.mockRejectedValue(new Error('boom'))
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -185,7 +186,7 @@ describe('/settings/extensions +page.server.ts', () => {
       extensions_status: 'loaded',
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -204,7 +205,7 @@ describe('/settings/extensions +page.server.ts', () => {
     })
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -225,7 +226,7 @@ describe('/settings/extensions +page.server.ts', () => {
     })
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {

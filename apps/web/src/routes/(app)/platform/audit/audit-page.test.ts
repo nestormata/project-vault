@@ -13,6 +13,8 @@ vi.mock('$lib/api/platform.js', () => ({
   getMaintenanceModeStatus: getMaintenanceModeStatusMock,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData, deniedPageData } from '$lib/test/page-data.js'
 import AuditPage from './+page.svelte'
 
 afterEach(() => {
@@ -28,6 +30,7 @@ const SAMPLE_EVENT = {
   targetUserId: null,
   ipAddress: '203.0.113.4',
   timestamp: '2026-07-08T00:00:00.000Z',
+  payload: {},
 }
 
 const INACTIVE_STATUS = {
@@ -46,9 +49,12 @@ const ACTIVE_STATUS = {
   pendingEntriesCount: 4,
 }
 
-function allowedData(overrides: Record<string, unknown> = {}) {
+type AllowedData = Extract<ComponentProps<typeof AuditPage>['data'], { allowed: true }>
+
+function allowedData(overrides: Partial<AllowedData> = {}): AllowedData {
   return {
-    allowed: true as const,
+    ...appLayoutData(),
+    allowed: true,
     filters: {},
     page: 1,
     events: [SAMPLE_EVENT],
@@ -68,7 +74,7 @@ describe('/platform/audit +page.svelte', () => {
   })
 
   it('a non-operator sees the platform-operator-required notice, no panels', () => {
-    render(AuditPage, { props: { data: { allowed: false } } })
+    render(AuditPage, { props: { data: deniedPageData() } })
 
     expect(screen.getByRole('heading', { name: /platform operator access required/i })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: /verify integrity/i })).toBeNull()
@@ -461,5 +467,26 @@ describe('/platform/audit +page.svelte', () => {
     expect(screen.getByText(/operator = op-1/)).toBeTruthy()
     expect(screen.getByText(/org = org-1/)).toBeTruthy()
     expect(screen.getByText(/user = user-1/)).toBeTruthy()
+  })
+
+  // Story 68.1 AC-3: a filter change (same route, new search params) or an invalidate hands this
+  // same component a new `data`; the maintenance banner must follow it without a remount.
+  it('stale state: the maintenance banner follows a new load (filter navigation) without remounting', async () => {
+    const { rerender } = render(AuditPage, {
+      props: { data: allowedData({ maintenanceStatus: INACTIVE_STATUS }) },
+    })
+    expect(screen.queryByText(/maintenance mode is active/i)).toBeNull()
+
+    await rerender({ data: allowedData({ maintenanceStatus: ACTIVE_STATUS }) })
+    expect(screen.getAllByText(/maintenance mode is active/i).length).toBeGreaterThan(0)
+
+    await rerender({
+      data: allowedData({
+        maintenanceStatus: null,
+        maintenanceStatusError: 'Maintenance mode status unavailable',
+      }),
+    })
+    expect(screen.getAllByText(/maintenance mode status unavailable/i).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/maintenance mode is active/i)).toBeNull()
   })
 })

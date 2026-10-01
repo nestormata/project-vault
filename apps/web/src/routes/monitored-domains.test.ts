@@ -18,6 +18,7 @@ vi.mock('$lib/api/domains.js', async (importOriginal) => {
   }
 })
 
+import { projectLayoutData } from '$lib/test/page-data.js'
 import DomainsListPage from './(app)/projects/[projectId]/domains/+page.svelte'
 import NewDomainPage from './(app)/projects/[projectId]/domains/new/+page.svelte'
 import DomainDetailPage from './(app)/projects/[projectId]/domains/[domainId]/+page.svelte'
@@ -50,7 +51,15 @@ describe('/projects/:projectId/domains list (AC-D1)', () => {
 
   it('viewer: empty state, no create control', () => {
     render(DomainsListPage, {
-      props: { data: { projectId, orgRole: 'viewer', domains: [], notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'viewer',
+          domains: [],
+          notFound: false,
+        },
+      },
     })
     expect(screen.getByText('No domains registered yet.')).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'Add domain' })).toBeNull()
@@ -60,6 +69,8 @@ describe('/projects/:projectId/domains list (AC-D1)', () => {
     render(DomainsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'viewer',
           domains: [
@@ -78,7 +89,13 @@ describe('/projects/:projectId/domains list (AC-D1)', () => {
   it('gives the table a non-empty accessible caption', () => {
     const { container } = render(DomainsListPage, {
       props: {
-        data: { projectId, orgRole: 'viewer', domains: [makeDomain()], notFound: false },
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'viewer',
+          domains: [makeDomain()],
+          notFound: false,
+        },
       },
     })
     const caption = container.querySelector('caption')
@@ -88,7 +105,15 @@ describe('/projects/:projectId/domains list (AC-D1)', () => {
   it('two-step delete removes the row without a full reload', async () => {
     deleteDomainMock.mockResolvedValue(undefined)
     render(DomainsListPage, {
-      props: { data: { projectId, orgRole: 'member', domains: [makeDomain()], notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          domains: [makeDomain()],
+          notFound: false,
+        },
+      },
     })
     await fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
     await fireEvent.click(screen.getByRole('button', { name: 'Confirm delete?' }))
@@ -108,7 +133,9 @@ describe('/projects/:projectId/domains/new (AC-D1)', () => {
 
   it('happy path: submits domainName+renewalDate and navigates to the created domain', async () => {
     createDomainMock.mockResolvedValue(makeDomain())
-    render(NewDomainPage, { props: { data: { projectId, orgRole: 'member' } } })
+    render(NewDomainPage, {
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'member' } },
+    })
 
     await fireEvent.input(screen.getByLabelText(/Domain name/i), {
       target: { value: 'example.com' },
@@ -128,7 +155,9 @@ describe('/projects/:projectId/domains/new (AC-D1)', () => {
   })
 
   it('failure: missing required renewalDate blocks submission client-side', async () => {
-    render(NewDomainPage, { props: { data: { projectId, orgRole: 'member' } } })
+    render(NewDomainPage, {
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'member' } },
+    })
     await fireEvent.input(screen.getByLabelText(/Domain name/i), {
       target: { value: 'example.com' },
     })
@@ -146,7 +175,15 @@ describe('/projects/:projectId/domains/:domainId (AC-D1 edit)', () => {
   it('allows renaming domainName via edit', async () => {
     updateDomainMock.mockResolvedValue(makeDomain({ domainName: 'example.org' }))
     render(DomainDetailPage, {
-      props: { data: { projectId, orgRole: 'member', domain: makeDomain(), notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          domain: makeDomain(),
+          notFound: false,
+        },
+      },
     })
 
     await fireEvent.input(screen.getByLabelText(/Domain name/i), {
@@ -166,7 +203,15 @@ describe('/projects/:projectId/domains/:domainId (AC-D1 edit)', () => {
   it('code-review finding: clearing the alert-lead-days field omits it from the PATCH instead of silently zeroing it out', async () => {
     updateDomainMock.mockResolvedValue(makeDomain())
     render(DomainDetailPage, {
-      props: { data: { projectId, orgRole: 'member', domain: makeDomain(), notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          domain: makeDomain(),
+          notFound: false,
+        },
+      },
     })
 
     const alertLeadDaysInput = screen.getByLabelText(/Alert me before renewal/i)
@@ -180,14 +225,30 @@ describe('/projects/:projectId/domains/:domainId (AC-D1 edit)', () => {
 
   it('failure: not-found shows the not-found notice', () => {
     render(DomainDetailPage, {
-      props: { data: { projectId, orgRole: 'member', domain: null, notFound: true } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          domain: null,
+          notFound: true,
+        },
+      },
     })
     expect(screen.getByText(/domain.*not found/i)).toBeTruthy()
   })
 
   it('code-review finding (AC-I1): viewer sees a read-only view, not disabled-but-visible form inputs', () => {
     render(DomainDetailPage, {
-      props: { data: { projectId, orgRole: 'viewer', domain: makeDomain(), notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'viewer',
+          domain: makeDomain(),
+          notFound: false,
+        },
+      },
     })
     expect(screen.queryByLabelText(/Domain name/i)).toBeNull()
     expect(screen.queryByLabelText(/Renewal date/i)).toBeNull()

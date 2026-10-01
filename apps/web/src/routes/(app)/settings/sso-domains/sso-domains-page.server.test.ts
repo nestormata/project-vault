@@ -13,6 +13,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 import { ApiClientError } from '$lib/api/client.js'
 import { requireUser } from '$lib/server/require-user.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const requireUserMock = vi.mocked(requireUser)
 
@@ -37,7 +38,7 @@ describe('/settings/sso-domains +page.server.ts', () => {
     requireUserMock.mockReturnValue({ orgRole: 'admin' } as ReturnType<typeof requireUser>)
     listOrgSsoDomainsMock.mockResolvedValue([SAMPLE_DOMAIN])
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -51,7 +52,7 @@ describe('/settings/sso-domains +page.server.ts', () => {
     requireUserMock.mockReturnValue({ orgRole: 'owner' } as ReturnType<typeof requireUser>)
     listOrgSsoDomainsMock.mockResolvedValue([])
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) expect(result.domains).toEqual([])
@@ -61,7 +62,7 @@ describe('/settings/sso-domains +page.server.ts', () => {
     requireUserMock.mockReturnValue({ orgRole: 'admin' } as ReturnType<typeof requireUser>)
     listOrgSsoDomainsMock.mockResolvedValue([])
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -75,7 +76,7 @@ describe('/settings/sso-domains +page.server.ts', () => {
     async (orgRole) => {
       requireUserMock.mockReturnValue({ orgRole } as ReturnType<typeof requireUser>)
 
-      const result = await load(makeEvent())
+      const result = expectLoaded(await load(makeEvent()))
 
       expect(result).toEqual({ allowed: false, orgRole })
       expect(listOrgSsoDomainsMock).not.toHaveBeenCalled()
@@ -86,7 +87,7 @@ describe('/settings/sso-domains +page.server.ts', () => {
     requireUserMock.mockReturnValue({ orgRole: 'admin' } as ReturnType<typeof requireUser>)
     listOrgSsoDomainsMock.mockRejectedValue(new Error('boom'))
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -102,7 +103,7 @@ describe('/settings/sso-domains +page.server.ts', () => {
       new ApiClientError(403, { code: 'mfa_required', message: 'MFA required' }, 'MFA required')
     )
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {

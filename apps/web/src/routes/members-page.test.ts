@@ -25,6 +25,9 @@ vi.mock('$lib/api/org-users.js', () => ({
   transferOwnership: transferOwnershipMock,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { projectLayoutData } from '$lib/test/page-data.js'
+import type { ProjectInvitation } from '$lib/api/invitations.js'
 import MembersPage from './(app)/projects/[projectId]/members/+page.svelte'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -41,8 +44,11 @@ const member = {
   role: 'member' as const,
 }
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof MembersPage>['data']
+
+function baseData(overrides: Partial<Data> = {}): Data {
   return {
+    ...projectLayoutData(),
     projectId,
     userId: 'u1',
     canManage: true as const,
@@ -270,23 +276,26 @@ describe('/projects/[projectId]/members +page.svelte', () => {
         resolveRevoke = resolve
       })
     )
-    const invitations = [
+    const invitations: ProjectInvitation[] = [
       {
         id: 'expired',
         email: 'expired@example.com',
         roleToAssign: 'viewer',
+        invitedBy: 'user-1',
         expiresAt: '2026-07-10T11:00:00.000Z',
       },
       {
         id: 'hours',
         email: 'hours@example.com',
         roleToAssign: 'member',
+        invitedBy: 'user-1',
         expiresAt: '2026-07-11T11:00:00.000Z',
       },
       {
         id: 'days',
         email: 'days@example.com',
         roleToAssign: 'admin',
+        invitedBy: 'user-1',
         expiresAt: '2026-07-12T12:00:00.000Z',
       },
     ]

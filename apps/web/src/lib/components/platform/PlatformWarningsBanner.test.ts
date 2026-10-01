@@ -2,11 +2,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
 import { routeExists } from '$lib/test/route-exists.js'
 
+import type { ComponentProps } from 'svelte'
 import PlatformWarningsBanner from './PlatformWarningsBanner.svelte'
 
 afterEach(() => cleanup())
 
-const MESSAGES = {
+const MESSAGES: ComponentProps<typeof PlatformWarningsBanner>['messages'] = {
   audit_storage_critical: {
     message: 'Audit log storage is at critical capacity.',
     linkHref: '/platform/settings/resource-usage',

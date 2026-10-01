@@ -71,8 +71,11 @@
       <form
         method="POST"
         action="?/markAllRead"
-        use:enhance={() => ({
-          update: ({ result, update }) => {
+        use:enhance={() =>
+          // Story 68.1 (C4): SvelteKit calls the value returned here as the post-response
+          // callback. It used to be an `{ update }` object, which SvelteKit tried to call and
+          // threw `callback is not a function`, so the list never updated until a reload.
+          async ({ result, update }) => {
             // Only apply the optimistic mutation once the server actually confirms success —
             // otherwise a failed action (e.g. a downstream error) would leave the UI showing a
             // false success state with no way back short of a manual reload.
@@ -81,8 +84,7 @@
               markAllReadLocally()
             }
             void update()
-          },
-        })}
+          }}
       >
         <button
           type="submit"
@@ -310,15 +312,14 @@
                   <form
                     method="POST"
                     action="?/markRead"
-                    use:enhance={() => ({
-                      update: ({ result, update }) => {
+                    use:enhance={() =>
+                      async ({ result, update }) => {
                         if (result.type === 'success') {
                           markReadLocally(notification.id)
                           decrementUnread(1)
                         }
                         void update()
-                      },
-                    })}
+                      }}
                   >
                     <input type="hidden" name="id" value={notification.id} />
                     <button
@@ -332,15 +333,14 @@
                 <form
                   method="POST"
                   action="?/dismiss"
-                  use:enhance={() => ({
-                    update: ({ result, update }) => {
+                  use:enhance={() =>
+                    async ({ result, update }) => {
                       if (result.type === 'success') {
                         if (!notification.readAt) decrementUnread(1)
                         dismissLocally(notification.id)
                       }
                       void update()
-                    },
-                  })}
+                    }}
                 >
                   <input type="hidden" name="id" value={notification.id} />
                   <button

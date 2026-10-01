@@ -2,13 +2,14 @@
   import { resolve } from '$app/paths'
   import PlatformOperatorRequiredNotice from '$lib/components/PlatformOperatorRequiredNotice.svelte'
   import PlatformWarningsBanner from '$lib/components/platform/PlatformWarningsBanner.svelte'
+  import type { PlatformPath } from '$lib/app-paths.js'
   import type { PageData } from './$types.js'
 
   let { data }: { data: PageData } = $props()
 
   const WARNING_MESSAGES: Record<
     string,
-    { message: string; linkHref?: string; linkText?: string }
+    { message: string; linkHref?: PlatformPath; linkText?: string }
   > = {
     audit_storage_critical: {
       message:

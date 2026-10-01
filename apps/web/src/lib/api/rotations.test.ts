@@ -34,6 +34,7 @@ const sampleDetail: RotationDetail = {
   initiatedAt: '2026-07-01T14:10:00.000Z',
   completedAt: null,
   notes: null,
+  targetFields: null,
   checklistItems: [],
 }
 
@@ -367,18 +368,16 @@ describe('rotation API helpers', () => {
   })
 
   it('promoteRotation surfaces 409 rotation_not_promotable with currentStatus', async () => {
-    const fetchFn = vi
-      .fn()
-      .mockResolvedValue(
-        jsonResponse(
-          {
-            code: 'rotation_not_promotable',
-            message: 'Already promoted.',
-            currentStatus: 'promoted',
-          },
-          { status: 409 }
-        )
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse(
+        {
+          code: 'rotation_not_promotable',
+          message: 'Already promoted.',
+          currentStatus: 'promoted',
+        },
+        { status: 409 }
       )
+    )
 
     await expect(
       promoteRotation(fetchFn, projectId, credentialId, rotationId, {})

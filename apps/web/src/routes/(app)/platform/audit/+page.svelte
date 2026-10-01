@@ -22,10 +22,12 @@
 
   let { data }: { data: PageData } = $props()
 
-  let maintenanceStatus = $state<MaintenanceModeStatus | null>(
+  // Story 68.1 AC-3: writable $derived, so a filter navigation or invalidate resets these from
+  // the new load, while refreshMaintenanceStatus() below can still update them locally.
+  let maintenanceStatus = $derived<MaintenanceModeStatus | null>(
     data.allowed ? data.maintenanceStatus : null
   )
-  let maintenanceStatusError = $state<string | null>(
+  let maintenanceStatusError = $derived<string | null>(
     data.allowed ? data.maintenanceStatusError : null
   )
 
@@ -252,56 +254,61 @@
       />
     </form>
 
-    {#if data.eventsErrorMessage}
-      <MfaAwareErrorAlert
-        message={data.eventsErrorMessage}
-        class="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-      />
-    {:else}
-      <div class="mt-4">
-        {#if data.events.length === 0}
-          <p class="py-6 text-center text-slate-600">
-            {hasFilters
-              ? 'No platform audit events match these filters.'
-              : 'No platform audit events yet.'}
-          </p>
-        {:else}
-          <DataTable
-            columns={[
-              'Action type',
-              'Operator',
-              'Target org',
-              'Target user',
-              'IP address',
-              'Timestamp',
-            ]}
-          >
-            {#each data.events as event (event.id)}
-              <tr class="border-b border-slate-100 last:border-b-0">
-                <td class="px-4 py-3 font-medium text-slate-900">{event.actionType}</td>
-                <td class="px-4 py-3 font-mono text-xs text-slate-600">{event.operatorId}</td>
-                <td class="px-4 py-3 font-mono text-xs text-slate-600"
-                  >{event.targetOrgId ?? '—'}</td
-                >
-                <td class="px-4 py-3 font-mono text-xs text-slate-600"
-                  >{event.targetUserId ?? '—'}</td
-                >
-                <td class="px-4 py-3 text-sm text-slate-600">{event.ipAddress ?? '—'}</td>
-                <td class="px-4 py-3 text-sm text-slate-600"
-                  >{new Date(event.timestamp).toLocaleString()}</td
-                >
-              </tr>
-            {/each}
-          </DataTable>
+    <!-- Story 68.1: the loader returns these fields only when allowed; PlatformBreadcrumb
+         renders this body only then too, so this guard narrows the type without a
+         rendering change. -->
+    {#if data.allowed}
+      {#if data.eventsErrorMessage}
+        <MfaAwareErrorAlert
+          message={data.eventsErrorMessage}
+          class="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+        />
+      {:else}
+        <div class="mt-4">
+          {#if data.events.length === 0}
+            <p class="py-6 text-center text-slate-600">
+              {hasFilters
+                ? 'No platform audit events match these filters.'
+                : 'No platform audit events yet.'}
+            </p>
+          {:else}
+            <DataTable
+              columns={[
+                'Action type',
+                'Operator',
+                'Target org',
+                'Target user',
+                'IP address',
+                'Timestamp',
+              ]}
+            >
+              {#each data.events as event (event.id)}
+                <tr class="border-b border-slate-100 last:border-b-0">
+                  <td class="px-4 py-3 font-medium text-slate-900">{event.actionType}</td>
+                  <td class="px-4 py-3 font-mono text-xs text-slate-600">{event.operatorId}</td>
+                  <td class="px-4 py-3 font-mono text-xs text-slate-600"
+                    >{event.targetOrgId ?? '—'}</td
+                  >
+                  <td class="px-4 py-3 font-mono text-xs text-slate-600"
+                    >{event.targetUserId ?? '—'}</td
+                  >
+                  <td class="px-4 py-3 text-sm text-slate-600">{event.ipAddress ?? '—'}</td>
+                  <td class="px-4 py-3 text-sm text-slate-600"
+                    >{new Date(event.timestamp).toLocaleString()}</td
+                  >
+                </tr>
+              {/each}
+            </DataTable>
 
-          <AuditPaginationControls
-            page={data.page}
-            total={data.total}
-            hasNext={data.hasNext}
-            {pageHref}
-          />
-        {/if}
-      </div>
+            <AuditPaginationControls
+              page={data.page}
+              total={data.total}
+              hasNext={data.hasNext}
+              {pageHref}
+            />
+          {/if}
+        </div>
+      {/if}
     {/if}
   </div>
 

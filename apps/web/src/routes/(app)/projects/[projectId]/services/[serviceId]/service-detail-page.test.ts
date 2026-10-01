@@ -13,6 +13,9 @@ vi.mock('$lib/api/services.js', async () => {
   return { ...actual, updateService: updateServiceMock, deleteService: deleteServiceMock }
 })
 
+import type { ComponentProps } from 'svelte'
+import type { PaymentRecord } from '$lib/api/services.js'
+import { projectLayoutData } from '$lib/test/page-data.js'
 import ServiceDetailPage from './+page.svelte'
 
 afterEach(() => {
@@ -22,21 +25,43 @@ afterEach(() => {
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
-const SERVICE = {
+const SERVICE: PaymentRecord = {
   id: 'svc-1',
+  orgId: 'org-1',
+  projectId,
   name: 'Payments API',
   url: 'https://payments.example.com',
   renewalDate: '2026-12-01T00:00:00.000Z',
   alertLeadDays: [7, 30],
+  notifiedLeadDays: [],
+  createdBy: null,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
 }
 
-function baseData(overrides: Record<string, unknown> = {}) {
-  return { projectId, orgRole: 'owner', service: SERVICE, notFound: false, ...overrides }
+type Data = ComponentProps<typeof ServiceDetailPage>['data']
+/** The loaded page (not the not-found fallback). */
+type LoadedData = Exclude<Data, { notFound: true }>
+
+function baseData(overrides: Partial<LoadedData> = {}): LoadedData {
+  return {
+    ...projectLayoutData(),
+    projectId,
+    orgRole: 'owner',
+    service: SERVICE,
+    notFound: false,
+    ...overrides,
+  }
+}
+
+/** The loader's not-found fallback. */
+function notFoundData(): Data {
+  return { ...projectLayoutData(), projectId, orgRole: 'owner', service: null, notFound: true }
 }
 
 describe('service detail +page.svelte', () => {
   it('shows an honest not-found banner instead of the form', () => {
-    render(ServiceDetailPage, { props: { data: baseData({ service: null, notFound: true }) } })
+    render(ServiceDetailPage, { props: { data: notFoundData() } })
     expect(screen.getByText(/service not found/i)).toBeTruthy()
   })
 

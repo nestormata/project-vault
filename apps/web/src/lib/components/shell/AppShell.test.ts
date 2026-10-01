@@ -18,6 +18,8 @@ vi.mock('$app/state', () => ({
   page: { url: new URL('http://localhost/dashboard') },
 }))
 
+import type { AuthUser } from '$lib/api/auth.js'
+import { testAuthUser } from '$lib/test/page-data.js'
 import AppShell from './AppShell.svelte'
 
 afterEach(async () => {
@@ -34,24 +36,21 @@ function childrenSnippet(text = 'page body') {
   }))
 }
 
-function baseUser(overrides: Record<string, unknown> = {}) {
-  return {
-    orgId: 'org-1',
-    orgName: 'Acme Inc',
-    orgRole: 'owner',
-    isPlatformOperator: false,
-    mfaStatus: {
-      enrollmentRequired: false,
-      gracePeriodActive: false,
-      gracePeriodExpiresAt: null,
-      gracePeriodDaysRemaining: null,
-      bannerMessage: null,
-    },
-    ...overrides,
-  }
+function baseUser(overrides: Partial<AuthUser> = {}): AuthUser {
+  return testAuthUser({ orgId: 'org-1', orgName: 'Acme Inc', orgRole: 'owner', ...overrides })
 }
 
 describe('AppShell.svelte', () => {
+  // Story 68.1 AC-5: the logo moved from resolve() to asset() (the SvelteKit API for static/
+  // files); with no paths.base/paths.assets configured the rendered src must stay byte-identical.
+  it('renders the logo mark from the static asset path', () => {
+    const { container } = render(AppShell, {
+      props: { user: baseUser(), children: childrenSnippet(), hidePrimaryNav: false },
+    })
+
+    expect(container.querySelector('img')?.getAttribute('src')).toBe('/logo-mark.png')
+  })
+
   it('shows a plain title (no dashboard link) and hides PrimaryNav when hidePrimaryNav is true', () => {
     render(AppShell, {
       props: {

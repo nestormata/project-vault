@@ -18,8 +18,10 @@ vi.mock('$lib/server/require-user.js', () => ({
 }))
 
 import { ApiClientError } from '$lib/api/client.js'
+import { apiClientError } from '$lib/test/api-error.js'
 import { requireUser } from '$lib/server/require-user.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const requireUserMock = vi.mocked(requireUser)
 
@@ -67,7 +69,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.server.ts (D6)', ()
   it('AC-M1: a 200 report response yields state=completed with the full report', async () => {
     getErasureReportMock.mockResolvedValue(COMPLETED_REPORT)
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.state).toBe('completed')
     if (result.state === 'completed') expect(result.report).toEqual(COMPLETED_REPORT)
@@ -82,7 +84,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.server.ts (D6)', ()
       )
     )
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
     expect(result.userEmail).toBe('contractor@example.com')
   })
 
@@ -96,7 +98,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.server.ts (D6)', ()
     )
     listOrgUsersMock.mockResolvedValue([])
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
     expect(result.userEmail).toBeNull()
   })
 
@@ -109,7 +111,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.server.ts (D6)', ()
       )
     )
     createErasureRequestMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         409,
         {
           code: 'erasure_request_already_pending',
@@ -121,7 +123,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.server.ts (D6)', ()
       )
     )
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(createErasureRequestMock).toHaveBeenCalledWith(
       expect.anything(),
@@ -141,7 +143,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.server.ts (D6)', ()
       )
     )
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(createErasureRequestMock).not.toHaveBeenCalled()
     expect(result.state).toBe('in_progress')
@@ -156,7 +158,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.server.ts (D6)', ()
       )
     )
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.state).toBe('not_found')
   })
@@ -164,7 +166,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.server.ts (D6)', ()
   it('(regression) a member/viewer role gets state=not_allowed without ever calling the API — every sibling page in this story checks role before its first API call, this page was missing that', async () => {
     requireUserMock.mockReturnValue({ orgRole: 'member' } as ReturnType<typeof requireUser>)
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.state).toBe('not_allowed')
     expect(getErasureReportMock).not.toHaveBeenCalled()

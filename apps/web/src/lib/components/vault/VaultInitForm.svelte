@@ -1,19 +1,29 @@
-<script>
-  import { buildVaultInitRequest, clearVaultInitFields } from './form-model.js'
+<script lang="ts">
+  import {
+    buildVaultInitRequest,
+    clearVaultInitFields,
+    type VaultInitFields,
+    type VaultInitMode,
+  } from './form-model.js'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+  import type { VaultInitRequest } from '$lib/api/vault.js'
 
-  let { onSubmit } = $props()
-  let mode = $state('passphrase')
+  let {
+    onSubmit,
+  }: {
+    onSubmit?: (request: VaultInitRequest, bootstrapToken: string) => void | Promise<void>
+  } = $props()
+  let mode = $state<VaultInitMode>('passphrase')
   let bootstrapToken = $state('')
   let passphrase = $state('')
   let envelopeKeyPath = $state('')
   let masterKeyPath = $state('')
   let acknowledgeSplitKeyModel = $state(false)
   let acknowledgeCoLocationRisk = $state(false)
-  let errorMessage = $state(null)
+  let errorMessage = $state<string | null>(null)
   let isSubmitting = $state(false)
 
-  function currentFields() {
+  function currentFields(): VaultInitFields {
     return { bootstrapToken, mode, passphrase, envelopeKeyPath, masterKeyPath }
   }
 

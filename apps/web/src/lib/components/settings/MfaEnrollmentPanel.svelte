@@ -17,7 +17,10 @@
 
   let { initialUser }: { initialUser: AuthUser } = $props()
 
-  let user = $state(initialUser)
+  // Story 68.1 AC-3: writable $derived — a newer user from the parent (a fresh load) replaces the
+  // local copy, while a successful verification below still updates it in place. The enrollment
+  // flow's own state (QR, code, recovery codes) is separate and is not reset by a new user.
+  let user = $derived(initialUser)
   let enrollment = $state<MfaEnrollResponse | null>(null)
   let recoveryCodes = $state<string[] | null>(null)
   let totp = $state('')

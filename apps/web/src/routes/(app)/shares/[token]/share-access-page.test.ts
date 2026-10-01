@@ -8,7 +8,9 @@ vi.mock('$lib/api/credential-shares.js', () => ({
 }))
 
 import { ApiClientError } from '$lib/api/client.js'
+import { appLayoutData } from '$lib/test/page-data.js'
 import ShareAccessPage from './+page.svelte'
+import type { ShareMetadata } from '$lib/api/credential-shares.js'
 
 afterEach(() => {
   cleanup()
@@ -17,12 +19,14 @@ afterEach(() => {
 
 const token = 'raw-token-value'
 
-const METADATA = {
+const METADATA: ShareMetadata = {
   credentialId: 'cred-1',
   credentialName: 'Stripe Secret Key',
   sharedBy: 'sharer-1',
   sharedByEmail: 'morgan@example.com',
   fieldKey: null,
+  attributeKeys: null,
+  action: 'read',
   expiresAt: '2026-08-01T00:00:00.000Z',
   singleUse: true,
   status: 'active' as const,
@@ -30,7 +34,9 @@ const METADATA = {
 
 describe('/shares/[token] +page.svelte', () => {
   it('AC-8: shows the two-step consent screen — never the value on first render', () => {
-    render(ShareAccessPage, { props: { data: { token, metadata: METADATA, error: null } } })
+    render(ShareAccessPage, {
+      props: { data: { ...appLayoutData(), token, metadata: METADATA, error: null } },
+    })
 
     expect(screen.getByText(/Stripe Secret Key/)).toBeTruthy()
     expect(screen.getByRole('button', { name: /^reveal$/i })).toBeTruthy()
@@ -43,7 +49,9 @@ describe('/shares/[token] +page.svelte', () => {
       value: 'sentinel-value',
       viewedAt: '2026-07-28T00:00:00.000Z',
     })
-    render(ShareAccessPage, { props: { data: { token, metadata: METADATA, error: null } } })
+    render(ShareAccessPage, {
+      props: { data: { ...appLayoutData(), token, metadata: METADATA, error: null } },
+    })
 
     await fireEvent.click(screen.getByRole('button', { name: /^reveal$/i }))
 
@@ -55,7 +63,9 @@ describe('/shares/[token] +page.svelte', () => {
     revealCredentialShareMock.mockRejectedValue(
       new ApiClientError(410, { code: 'share_already_viewed' }, 'already viewed')
     )
-    render(ShareAccessPage, { props: { data: { token, metadata: METADATA, error: null } } })
+    render(ShareAccessPage, {
+      props: { data: { ...appLayoutData(), token, metadata: METADATA, error: null } },
+    })
 
     await fireEvent.click(screen.getByRole('button', { name: /^reveal$/i }))
 
@@ -66,7 +76,9 @@ describe('/shares/[token] +page.svelte', () => {
     revealCredentialShareMock.mockRejectedValue(
       new ApiClientError(410, { code: 'share_expired' }, 'expired')
     )
-    render(ShareAccessPage, { props: { data: { token, metadata: METADATA, error: null } } })
+    render(ShareAccessPage, {
+      props: { data: { ...appLayoutData(), token, metadata: METADATA, error: null } },
+    })
 
     await fireEvent.click(screen.getByRole('button', { name: /^reveal$/i }))
 
@@ -74,13 +86,15 @@ describe('/shares/[token] +page.svelte', () => {
   })
 
   it('AC-7: renders an honest not-found state', () => {
-    render(ShareAccessPage, { props: { data: { token, metadata: null, error: 'not_found' } } })
+    render(ShareAccessPage, {
+      props: { data: { ...appLayoutData(), token, metadata: null, error: 'not_found' } },
+    })
     expect(screen.getByText(/invalid, or has already expired/i)).toBeTruthy()
   })
 
   it('AC-7: renders an honest session-mismatch state (not a generic error)', () => {
     render(ShareAccessPage, {
-      props: { data: { token, metadata: null, error: 'session_mismatch' } },
+      props: { data: { ...appLayoutData(), token, metadata: null, error: 'session_mismatch' } },
     })
     expect(screen.getByText(/not addressed to your account/i)).toBeTruthy()
   })

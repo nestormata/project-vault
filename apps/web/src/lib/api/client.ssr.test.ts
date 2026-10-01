@@ -80,7 +80,8 @@ describe('apiFetch during SSR (browser: false)', () => {
     let userARefreshCalls = 0
     let userBRefreshCalls = 0
 
-    const fetchFnUserA = vi.fn(async (path: string) => {
+    const fetchFnUserA = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const path = String(input)
       if (path === '/api/v1/auth/refresh') {
         userARefreshCalls += 1
         return jsonResponse({ data: { expiresAt: '2026-08-08T02:00:00.000Z' } })
@@ -94,7 +95,8 @@ describe('apiFetch during SSR (browser: false)', () => {
       return jsonResponse({ data: { userId: 'user-a' } })
     })
 
-    const fetchFnUserB = vi.fn(async (path: string) => {
+    const fetchFnUserB = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const path = String(input)
       if (path === '/api/v1/auth/refresh') {
         userBRefreshCalls += 1
         return jsonResponse({ data: { expiresAt: '2026-08-08T02:00:00.000Z' } })

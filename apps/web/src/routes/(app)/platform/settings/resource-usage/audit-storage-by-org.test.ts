@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import { ApiClientError } from '$lib/api/client.js'
+import { apiClientError } from '$lib/test/api-error.js'
 
 const setOrgAuditQuotaMock = vi.hoisted(() => vi.fn())
 
@@ -12,6 +13,9 @@ vi.mock('$lib/api/platform.js', async () => {
   }
 })
 
+import type { ComponentProps } from 'svelte'
+import type { AuditStorageOrgRow, ResourceUsageResponse } from '$lib/api/platform.js'
+import { appLayoutData } from '$lib/test/page-data.js'
 import ResourceUsagePage from './+page.svelte'
 
 afterEach(() => {
@@ -28,7 +32,7 @@ const BASE_USAGE = {
   auditLogStorage: { currentBytes: 1_000_000_000, limitBytes: 50_000_000_000, utilizationPct: 2 },
 }
 
-const OK_ORG = {
+const OK_ORG: AuditStorageOrgRow = {
   orgId: 'org-ok',
   orgName: 'Ok Org',
   bytesUsed: 100_000_000,
@@ -44,7 +48,7 @@ const OK_ORG = {
   state: 'ok' as const,
 }
 
-const UNLIMITED_ORG = {
+const UNLIMITED_ORG: AuditStorageOrgRow = {
   ...OK_ORG,
   orgId: 'org-unlimited',
   orgName: 'Unlimited Org',
@@ -53,7 +57,7 @@ const UNLIMITED_ORG = {
   state: 'unlimited' as const,
 }
 
-const STALE_ORG = {
+const STALE_ORG: AuditStorageOrgRow = {
   ...OK_ORG,
   orgId: 'org-stale',
   orgName: 'Stale Org',
@@ -61,7 +65,7 @@ const STALE_ORG = {
   state: 'stale' as const,
 }
 
-const BLOCKED_ORG = {
+const BLOCKED_ORG: AuditStorageOrgRow = {
   ...OK_ORG,
   orgId: 'org-blocked',
   orgName: 'Blocked Org',
@@ -71,7 +75,10 @@ const BLOCKED_ORG = {
   state: 'blocked' as const,
 }
 
-function usageWith(rows: (typeof OK_ORG)[], overrides: Record<string, unknown> = {}) {
+function usageWith(
+  rows: AuditStorageOrgRow[],
+  overrides: Partial<ResourceUsageResponse> = {}
+): ResourceUsageResponse {
   return {
     ...BASE_USAGE,
     auditStorageByOrg: rows,
@@ -84,8 +91,10 @@ function usageWith(rows: (typeof OK_ORG)[], overrides: Record<string, unknown> =
   }
 }
 
-function allowedData(usage: ReturnType<typeof usageWith>) {
-  return { allowed: true as const, usage, warnings: [] as string[], errorMessage: null }
+type AllowedData = Extract<ComponentProps<typeof ResourceUsagePage>['data'], { allowed: true }>
+
+function allowedData(usage: ResourceUsageResponse): AllowedData {
+  return { ...appLayoutData(), allowed: true, usage, warnings: [], errorMessage: null }
 }
 
 describe('Story 22.3: Audit Storage by Organization table', () => {
@@ -226,7 +235,7 @@ describe('Story 22.3: Audit Storage by Organization table', () => {
   it('AC-5: an overcommit 422 shows the confirm-and-acknowledge flow, and acknowledging resubmits with acknowledgeOvercommit: true', async () => {
     setOrgAuditQuotaMock
       .mockRejectedValueOnce(
-        new ApiClientError(
+        apiClientError(
           422,
           {
             code: 'quota_overcommit',
@@ -272,5 +281,43 @@ describe('Story 22.3: Audit Storage by Organization table', () => {
     expect(() =>
       render(ResourceUsagePage, { props: { data: allowedData(malformed as never) } })
     ).not.toThrow()
+  })
+
+  // Story 68.1 AC-3: an invalidate/reload hands this same component a new `data`; the per-org
+  // rows must follow it without a remount.
+  it('stale state: the per-org rows follow a new load without remounting', async () => {
+    const { rerender } = render(ResourceUsagePage, {
+      props: { data: allowedData(usageWith([OK_ORG])) },
+    })
+    expect(screen.getByText('Ok Org')).toBeTruthy()
+
+    await rerender({ data: allowedData(usageWith([BLOCKED_ORG])) })
+
+    expect(screen.queryByText('Ok Org')).toBeNull()
+    expect(screen.getByText('Blocked Org')).toBeTruthy()
+  })
+
+  // Story 68.1 AC-3 (in-flight race): a refresh that lands while a quota save is pending must
+  // not duplicate or resurrect rows; the save result replaces the refreshed row in place.
+  it('stale state: a refresh landing before a quota save resolves does not duplicate the row', async () => {
+    let resolveSave: (row: typeof OK_ORG) => void = () => {}
+    setOrgAuditQuotaMock.mockReturnValue(
+      new Promise<typeof OK_ORG>((resolve) => {
+        resolveSave = resolve
+      })
+    )
+    const { rerender } = render(ResourceUsagePage, {
+      props: { data: allowedData(usageWith([OK_ORG])) },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /edit/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    await waitFor(() => expect(setOrgAuditQuotaMock).toHaveBeenCalledTimes(1))
+
+    await rerender({ data: allowedData(usageWith([OK_ORG, STALE_ORG])) })
+    resolveSave({ ...OK_ORG, orgName: 'Ok Org (saved)' })
+
+    expect(await screen.findByText('Ok Org (saved)')).toBeTruthy()
+    expect(screen.getAllByText(/^Ok Org/)).toHaveLength(1)
+    expect(screen.getByText('Stale Org')).toBeTruthy()
   })
 })

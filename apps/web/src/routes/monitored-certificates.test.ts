@@ -18,6 +18,7 @@ vi.mock('$lib/api/certificates.js', async (importOriginal) => {
   }
 })
 
+import { projectLayoutData } from '$lib/test/page-data.js'
 import CertificatesListPage from './(app)/projects/[projectId]/certificates/+page.svelte'
 import NewCertificatePage from './(app)/projects/[projectId]/certificates/new/+page.svelte'
 import CertificateDetailPage from './(app)/projects/[projectId]/certificates/[certificateId]/+page.svelte'
@@ -50,7 +51,15 @@ describe('/projects/:projectId/certificates list (AC-C1/C2)', () => {
 
   it('AC-B1-equivalent viewer: empty state, no create control', () => {
     render(CertificatesListPage, {
-      props: { data: { projectId, orgRole: 'viewer', certificates: [], notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'viewer',
+          certificates: [],
+          notFound: false,
+        },
+      },
     })
     expect(screen.getByText('No certificates registered yet.')).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'Add certificate' })).toBeNull()
@@ -59,7 +68,13 @@ describe('/projects/:projectId/certificates list (AC-C1/C2)', () => {
   it('AC-C2: labels the expiry column "Expires on," not "Renews on"', () => {
     render(CertificatesListPage, {
       props: {
-        data: { projectId, orgRole: 'viewer', certificates: [makeCertificate()], notFound: false },
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'viewer',
+          certificates: [makeCertificate()],
+          notFound: false,
+        },
       },
     })
     expect(screen.getByText('Expires on')).toBeTruthy()
@@ -71,7 +86,13 @@ describe('/projects/:projectId/certificates list (AC-C1/C2)', () => {
   it('gives the table a non-empty accessible caption', () => {
     const { container } = render(CertificatesListPage, {
       props: {
-        data: { projectId, orgRole: 'viewer', certificates: [makeCertificate()], notFound: false },
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'viewer',
+          certificates: [makeCertificate()],
+          notFound: false,
+        },
       },
     })
     const caption = container.querySelector('caption')
@@ -81,7 +102,13 @@ describe('/projects/:projectId/certificates list (AC-C1/C2)', () => {
   it('member sees Edit/Delete controls', () => {
     render(CertificatesListPage, {
       props: {
-        data: { projectId, orgRole: 'member', certificates: [makeCertificate()], notFound: false },
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          certificates: [makeCertificate()],
+          notFound: false,
+        },
       },
     })
     expect(screen.getByRole('link', { name: 'Edit' })).toBeTruthy()
@@ -92,7 +119,13 @@ describe('/projects/:projectId/certificates list (AC-C1/C2)', () => {
     deleteCertificateMock.mockResolvedValue(undefined)
     render(CertificatesListPage, {
       props: {
-        data: { projectId, orgRole: 'member', certificates: [makeCertificate()], notFound: false },
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          certificates: [makeCertificate()],
+          notFound: false,
+        },
       },
     })
     await fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
@@ -117,7 +150,9 @@ describe('/projects/:projectId/certificates/new (AC-C1)', () => {
 
   it('happy path: submits domain+expiresAt and navigates to the created certificate', async () => {
     createCertificateMock.mockResolvedValue(makeCertificate())
-    render(NewCertificatePage, { props: { data: { projectId, orgRole: 'member' } } })
+    render(NewCertificatePage, {
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'member' } },
+    })
 
     await fireEvent.input(screen.getByLabelText(/Domain/i), {
       target: { value: 'api.example.com' },
@@ -137,7 +172,9 @@ describe('/projects/:projectId/certificates/new (AC-C1)', () => {
   })
 
   it('failure: missing required expiresAt blocks submission client-side', async () => {
-    render(NewCertificatePage, { props: { data: { projectId, orgRole: 'member' } } })
+    render(NewCertificatePage, {
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'member' } },
+    })
     await fireEvent.input(screen.getByLabelText(/Domain/i), {
       target: { value: 'api.example.com' },
     })
@@ -148,7 +185,9 @@ describe('/projects/:projectId/certificates/new (AC-C1)', () => {
   })
 
   it('failure: missing required domain blocks submission client-side', async () => {
-    render(NewCertificatePage, { props: { data: { projectId, orgRole: 'member' } } })
+    render(NewCertificatePage, {
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'member' } },
+    })
     await fireEvent.input(screen.getByLabelText(/Expiry date/i), {
       target: { value: '2026-08-15' },
     })
@@ -169,7 +208,13 @@ describe('/projects/:projectId/certificates/:certificateId (AC-C1 edit)', () => 
     updateCertificateMock.mockResolvedValue(makeCertificate({ domain: 'api-v2.example.com' }))
     render(CertificateDetailPage, {
       props: {
-        data: { projectId, orgRole: 'member', certificate: makeCertificate(), notFound: false },
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          certificate: makeCertificate(),
+          notFound: false,
+        },
       },
     })
 
@@ -195,7 +240,13 @@ describe('/projects/:projectId/certificates/:certificateId (AC-C1 edit)', () => 
     updateCertificateMock.mockResolvedValue(makeCertificate())
     render(CertificateDetailPage, {
       props: {
-        data: { projectId, orgRole: 'member', certificate: makeCertificate(), notFound: false },
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          certificate: makeCertificate(),
+          notFound: false,
+        },
       },
     })
 
@@ -210,7 +261,15 @@ describe('/projects/:projectId/certificates/:certificateId (AC-C1 edit)', () => 
 
   it('failure: not-found shows the not-found notice', () => {
     render(CertificateDetailPage, {
-      props: { data: { projectId, orgRole: 'member', certificate: null, notFound: true } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          certificate: null,
+          notFound: true,
+        },
+      },
     })
     expect(screen.getByText(/certificate.*not found/i)).toBeTruthy()
   })
@@ -218,7 +277,13 @@ describe('/projects/:projectId/certificates/:certificateId (AC-C1 edit)', () => 
   it('code-review finding (AC-I1): viewer sees a read-only view, not disabled-but-visible form inputs', () => {
     render(CertificateDetailPage, {
       props: {
-        data: { projectId, orgRole: 'viewer', certificate: makeCertificate(), notFound: false },
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'viewer',
+          certificate: makeCertificate(),
+          notFound: false,
+        },
       },
     })
     expect(screen.queryByLabelText(/^Domain$/i)).toBeNull()

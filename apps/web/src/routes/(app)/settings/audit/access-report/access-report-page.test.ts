@@ -13,6 +13,8 @@ vi.mock('$lib/download.js', () => ({
   triggerTextDownload: triggerTextDownloadMock,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import AccessReportPage from './+page.svelte'
 
 afterEach(() => cleanup())
@@ -49,10 +51,13 @@ const SAMPLE_REPORT = {
   hasNext: false,
 }
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type AllowedData = Extract<ComponentProps<typeof AccessReportPage>['data'], { allowed: true }>
+
+function baseData(overrides: Partial<AllowedData> = {}): AllowedData {
   return {
+    ...appLayoutData(),
     orgRole: 'owner',
-    allowed: true as const,
+    allowed: true,
     asOf: undefined,
     page: 1,
     report: SAMPLE_REPORT,
@@ -67,7 +72,9 @@ describe('/settings/audit/access-report +page.svelte', () => {
   })
 
   it('AC-B4 equivalent: non-owner sees a role notice', () => {
-    render(AccessReportPage, { props: { data: { orgRole: 'admin', allowed: false } } })
+    render(AccessReportPage, {
+      props: { data: { ...appLayoutData(), orgRole: 'admin', allowed: false } },
+    })
     expect(screen.getByText(/requires the owner role/i)).toBeTruthy()
   })
 

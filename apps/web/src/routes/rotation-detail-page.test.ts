@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
 import { ApiClientError } from '$lib/api/client.js'
+import { apiClientError } from '$lib/test/api-error.js'
 import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
 import { routeExists } from '$lib/test/route-exists.js'
 import type { RotationChecklistItem, RotationDetail } from '@project-vault/shared'
@@ -23,6 +24,8 @@ vi.mock('$lib/api/rotations.js', () => ({
   abandonRotation: abandonRotationMock,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { projectLayoutData } from '$lib/test/page-data.js'
 import RotationDetailPage from './(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]/+page.svelte'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -57,20 +60,54 @@ function makeRotation(overrides: Partial<RotationDetail> = {}): RotationDetail {
     initiatedAt: '2026-07-01T14:10:00.000Z',
     completedAt: null,
     notes: null,
+    targetFields: null,
     checklistItems: [],
     ...overrides,
   }
 }
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof RotationDetailPage>['data']
+
+/** The loaded page (not the not-found or sealed-vault fallbacks). */
+type LoadedData = Exclude<Data, { notFound: true } | { vaultSealed: true }>
+
+function baseData(overrides: Partial<LoadedData> = {}): LoadedData {
   return {
+    ...projectLayoutData(),
     projectId,
     credentialId,
     rotationId,
-    orgRole: 'admin' as const,
+    orgRole: 'admin',
     rotation: makeRotation(),
-    notFound: false as const,
+    notFound: false,
     ...overrides,
+  }
+}
+
+/** The loader's 404 fallback. */
+function notFoundData(): Data {
+  return {
+    ...projectLayoutData(),
+    projectId,
+    credentialId,
+    rotationId,
+    orgRole: 'admin',
+    rotation: null,
+    notFound: true,
+  }
+}
+
+/** The loader's sealed-vault (503) fallback. */
+function sealedData(): Data {
+  return {
+    ...projectLayoutData(),
+    projectId,
+    credentialId,
+    rotationId,
+    orgRole: 'admin',
+    rotation: null,
+    notFound: false,
+    vaultSealed: true,
   }
 }
 
@@ -122,7 +159,7 @@ describe('/rotations/[rotationId] +page.svelte', () => {
 
   it('AC-7 edge: renders the not-found block when notFound is true', () => {
     render(RotationDetailPage, {
-      props: { data: baseData({ notFound: true as const, rotation: null }) },
+      props: { data: notFoundData() },
     })
 
     expect(screen.getByRole('alert')).toBeTruthy()
@@ -132,7 +169,7 @@ describe('/rotations/[rotationId] +page.svelte', () => {
   it('AC-3: renders the sealed-vault message (not "Rotation not found") when data.vaultSealed is true', () => {
     render(RotationDetailPage, {
       props: {
-        data: baseData({ vaultSealed: true as const, notFound: false as const, rotation: null }),
+        data: sealedData(),
       },
     })
 
@@ -218,7 +255,7 @@ describe('/rotations/[rotationId] +page.svelte', () => {
 
   it('AC-12: 422 checklist_incomplete lists pending systems and triggers a refetch', async () => {
     completeRotationMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         422,
         {
           code: 'checklist_incomplete',
@@ -289,7 +326,7 @@ describe('/rotations/[rotationId] +page.svelte', () => {
 
   it('AC-13 edge: 422 acknowledgement_required shows the message and re-shows the unchecked checkbox', async () => {
     completeRotationMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         422,
         {
           code: 'acknowledgement_required',
@@ -320,7 +357,7 @@ describe('/rotations/[rotationId] +page.svelte', () => {
 
   it('AC-15: concurrent_modification on complete triggers a single refetch and clears after refresh', async () => {
     completeRotationMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         409,
         { code: 'concurrent_modification', message: 'Retry', currentVersion: 5 },
         'Retry'

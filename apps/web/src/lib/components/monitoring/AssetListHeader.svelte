@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
   import { resolve } from '$app/paths'
+  import type { ProjectPath } from '$lib/app-paths.js'
 
   let {
     eyebrow,
@@ -16,7 +17,7 @@
   }: {
     eyebrow: string
     title: string
-    addHref: string
+    addHref: ProjectPath
     addLabel: string
     canManage: boolean
     children: import('svelte').Snippet

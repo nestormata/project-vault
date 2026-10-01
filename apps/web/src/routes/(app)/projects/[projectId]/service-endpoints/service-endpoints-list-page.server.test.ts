@@ -17,6 +17,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
@@ -57,11 +58,13 @@ describe('service-endpoints list +page.server.ts (AC-E1/E2/F1/AC-I2)', () => {
       }
     )
 
-    const result = await load(makeEvent('viewer'))
+    const result = expectLoaded(await load(makeEvent('viewer')))
 
     expect(result.endpoints).toEqual([{ id: 'e1', name: 'API health' }])
     expect(result.alerts).toHaveLength(2)
-    expect(result.alerts.map((a) => a.id)).toEqual(expect.arrayContaining(['a1', 'a2']))
+    expect(result.alerts.map((a: { id: string }) => a.id)).toEqual(
+      expect.arrayContaining(['a1', 'a2'])
+    )
     expect(result.notFound).toBe(false)
   })
 
@@ -69,7 +72,7 @@ describe('service-endpoints list +page.server.ts (AC-E1/E2/F1/AC-I2)', () => {
     listServiceEndpointDetailsMock.mockRejectedValueOnce(new ApiClientError(404, null, 'not found'))
     listAlertsMock.mockResolvedValue({ items: [], page: 1, limit: 50, total: 0, hasNext: false })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.notFound).toBe(true)
     expect(result.endpoints).toEqual([])

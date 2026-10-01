@@ -65,19 +65,17 @@ describe('compliance API client', () => {
     })
 
     it('throws ApiClientError with code user_already_erased on 410', async () => {
-      const fetchFn = vi
-        .fn()
-        .mockResolvedValue(
-          jsonResponse(
-            {
-              code: 'user_already_erased',
-              message: 'Already erased',
-              requestId,
-              completedAt: '2026-07-01T00:00:00.000Z',
-            },
-            { status: 410 }
-          )
+      const fetchFn = vi.fn().mockResolvedValue(
+        jsonResponse(
+          {
+            code: 'user_already_erased',
+            message: 'Already erased',
+            requestId,
+            completedAt: '2026-07-01T00:00:00.000Z',
+          },
+          { status: 410 }
         )
+      )
 
       await expect(
         createErasureRequest(fetchFn, userId, { reason: 'x', requestedBy: 'y' })

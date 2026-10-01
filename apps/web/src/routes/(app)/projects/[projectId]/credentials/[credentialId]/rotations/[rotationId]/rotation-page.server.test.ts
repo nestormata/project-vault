@@ -8,6 +8,7 @@ vi.mock('$lib/api/rotations.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const credentialId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
@@ -29,7 +30,7 @@ describe('/rotations/[rotationId] +page.server.ts', () => {
   it('AC-7: returns the rotation detail and orgRole', async () => {
     getRotationMock.mockResolvedValue({ id: rotationId, status: 'in_progress', checklistItems: [] })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.rotation?.id).toBe(rotationId)
     expect(result.orgRole).toBe('admin')
@@ -39,7 +40,7 @@ describe('/rotations/[rotationId] +page.server.ts', () => {
   it('AC-7 edge: returns notFound on a 404', async () => {
     getRotationMock.mockRejectedValue(new ApiClientError(404, null, 'not found'))
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.notFound).toBe(true)
     expect(result.rotation).toBeNull()
@@ -57,7 +58,7 @@ describe('/rotations/[rotationId] +page.server.ts', () => {
       )
     )
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.vaultSealed).toBe(true)
     expect(result.notFound).toBe(false)

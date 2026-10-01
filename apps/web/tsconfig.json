@@ -7,6 +7,13 @@
     "verbatimModuleSyntax": true,
     "rootDirs": [".", ".svelte-kit/types"]
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte", ".svelte-kit/ambient.d.ts", ".svelte-kit/types/**/*.d.ts"],
-  "exclude": ["node_modules", "src/**/*.test.ts", "src/**/*.spec.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.svelte",
+    ".svelte-kit/ambient.d.ts",
+    ".svelte-kit/non-ambient.d.ts",
+    ".svelte-kit/env.d.ts",
+    ".svelte-kit/types/**/*.d.ts"
+  ],
+  "exclude": ["node_modules"]
 }

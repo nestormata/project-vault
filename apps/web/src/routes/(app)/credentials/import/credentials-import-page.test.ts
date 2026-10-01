@@ -5,15 +5,21 @@ vi.mock('$app/paths', () => ({
   resolve: (path: string) => path,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import CredentialsImportPage from './+page.svelte'
+import { sampleProjectSummary } from '$lib/test/fixtures.js'
 
 afterEach(() => cleanup())
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof CredentialsImportPage>['data']
+
+function baseData(overrides: Partial<Data> = {}): Data {
   return {
+    ...appLayoutData(),
     canImport: true,
     orgRole: 'admin',
-    projects: { items: [], total: 0 },
+    projects: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
     ...overrides,
   }
 }
@@ -39,8 +45,11 @@ describe('credentials/import +page.svelte', () => {
       props: {
         data: baseData({
           projects: {
-            items: [{ id: 'p-1', name: 'Proj A', slug: 'proj-a' }],
+            items: [sampleProjectSummary({ id: 'p-1', name: 'Proj A', slug: 'proj-a' })],
             total: 1,
+            page: 1,
+            limit: 20,
+            hasNext: false,
           },
         }),
       },

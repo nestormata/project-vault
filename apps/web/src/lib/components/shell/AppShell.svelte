@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
-  import { resolve } from '$app/paths'
+  import { asset, resolve } from '$app/paths'
   import { m } from '$lib/paraglide/messages.js'
   import { logout } from '$lib/api/auth.js'
   import type { ResolvedExtensionNavItem } from '$lib/api/extension-panel.js'
@@ -61,7 +61,7 @@
     >
       <div>
         <div class="flex items-center gap-2">
-          <img src={resolve('/logo-mark.png')} alt="" width="276" height="240" class="h-8 w-auto" />
+          <img src={asset('/logo-mark.png')} alt="" width="276" height="240" class="h-8 w-auto" />
           {#if hidePrimaryNav}
             <p class="text-xl font-bold text-brand-600">Project Vault</p>
           {:else}

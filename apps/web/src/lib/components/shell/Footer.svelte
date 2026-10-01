@@ -1,3 +1,8 @@
+<script lang="ts">
+  // Story 68.1 AC-7: no props or logic; the TypeScript script block lets svelte-check type this
+  // component and its importers (a script-less component has no type declaration).
+</script>
+
 <footer
   class="flex flex-col items-center justify-center gap-2 px-4 py-4 text-sm text-slate-500 sm:flex-row sm:gap-4"
 >

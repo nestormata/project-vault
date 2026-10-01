@@ -16,6 +16,7 @@ vi.mock('$lib/api/rotations.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const credentialId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
@@ -41,7 +42,7 @@ describe('/rotate +page.server.ts', () => {
   })
 
   it('AC-6: member/viewer never triggers the dependencies, rotations, or credential fetch', async () => {
-    const result = await load(makeEvent('member'))
+    const result = expectLoaded(await load(makeEvent('member')))
 
     expect(listCredentialDependenciesMock).not.toHaveBeenCalled()
     expect(listRotationsMock).not.toHaveBeenCalled()
@@ -62,7 +63,7 @@ describe('/rotate +page.server.ts', () => {
       hasDependencies: true,
     })
 
-    const result = await load(makeEvent('admin'))
+    const result = expectLoaded(await load(makeEvent('admin')))
 
     expect(result.canManage).toBe(true)
     expect(result.dependencies?.hasDependencies).toBe(true)
@@ -87,7 +88,7 @@ describe('/rotate +page.server.ts', () => {
       ],
     })
 
-    const result = await load(makeEvent('admin'))
+    const result = expectLoaded(await load(makeEvent('admin')))
 
     expect(result.canManage).toBe(true)
     expect(result.fieldMeta).toEqual([
@@ -109,7 +110,7 @@ describe('/rotate +page.server.ts', () => {
     })
     listCredentialDependenciesMock.mockResolvedValueOnce({ items: [], hasDependencies: false })
 
-    const result = await load(makeEvent('admin'))
+    const result = expectLoaded(await load(makeEvent('admin')))
 
     expect(result.canManage).toBe(true)
     expect(result.activeRotationId).toBe(rotationId)
@@ -152,7 +153,7 @@ describe('/rotate +page.server.ts', () => {
       hasDependencies: false,
     })
 
-    const result = await load(makeEvent('admin'))
+    const result = expectLoaded(await load(makeEvent('admin')))
 
     expect(result.canManage).toBe(true)
     expect(listCredentialDependenciesMock).toHaveBeenCalled()
@@ -169,7 +170,7 @@ describe('/rotate +page.server.ts', () => {
       )
     )
 
-    const result = await load(makeEvent('admin'))
+    const result = expectLoaded(await load(makeEvent('admin')))
 
     expect(result.vaultSealed).toBe(true)
     expect(result.canManage).toBe(true)
@@ -193,14 +194,14 @@ describe('/rotate +page.server.ts', () => {
       )
     )
 
-    const result = await load(makeEvent('owner'))
+    const result = expectLoaded(await load(makeEvent('owner')))
 
     expect(result.vaultSealed).toBe(true)
     expect(result.dependencies).toBeNull()
   })
 
   it('AC-2 edge: member/viewer never triggers any fetch even when the vault is sealed — they still see the role gate, not the sealed message', async () => {
-    const result = await load(makeEvent('viewer'))
+    const result = expectLoaded(await load(makeEvent('viewer')))
 
     expect(result.canManage).toBe(false)
     expect(result.vaultSealed).toBeFalsy()

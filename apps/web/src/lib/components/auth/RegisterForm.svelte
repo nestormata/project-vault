@@ -21,14 +21,17 @@
     onLocaleChange,
   }: { invitationToken?: string; prefillEmail?: string; onLocaleChange?: () => void } = $props()
 
-  let email = $state(prefillEmail)
+  // Story 68.1 AC-3: writable $derived — `prefillEmail` comes from the /register URL, so it only
+  // changes when a different link is opened (the email then follows it); typing overrides it
+  // locally, and an unrelated prop update leaves the typed value alone.
+  let email = $derived(prefillEmail)
   let password = $state('')
   let orgName = $state('')
-  let errorMessage = $state(null)
+  let errorMessage = $state<string | null>(null)
   // Story 1.20 AC-6: self-signup success/collision both resolve to the same generic-accepted
   // response now — this surfaces its message so the user isn't silently redirected to /login
   // with no feedback at all.
-  let infoMessage = $state(null)
+  let infoMessage = $state<string | null>(null)
   let localeRevision = $state(0)
   let emailInputEl: HTMLInputElement | undefined = $state()
 

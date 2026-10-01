@@ -14,6 +14,10 @@
 
   let { data } = $props()
 
+  // Story 68.1: the loader only returns these fields when the viewer is allowed; derive them once
+  // so the template reads a non-optional value (SettingsFormGate renders the body only then).
+  const domains = $derived(data.allowed ? data.domains : [])
+
   // AC-2/AC-3 error contract — mirrors /settings/users's onRemoveOrgUser pattern: branch on the
   // typed ApiClientError.code rather than blindly relaying error.message for any error. Only the
   // five contract codes from ORG_SSO_DOMAIN_ERROR_CODES are trusted to surface their server
@@ -127,8 +131,8 @@
   <!-- AC-5: minimumRole 'admin' includes 'owner' (deliberate judgment call). -->
   <SettingsFormGate
     allowed={data.allowed}
-    mfaRequired={data.mfaRequired}
-    errorMessage={data.errorMessage}
+    mfaRequired={data.allowed && data.mfaRequired}
+    errorMessage={data.allowed ? data.errorMessage : null}
     deniedMessage="You need the Admin role to manage SSO domains."
     mfaMessage="Enable multi-factor authentication to manage SSO domains."
   >
@@ -190,7 +194,7 @@
     {/if}
 
     <div class="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      {#if data.domains.length === 0}
+      {#if domains.length === 0}
         <p class="p-6 text-center text-slate-600">No SSO domains configured yet.</p>
       {:else}
         <table class="min-w-full text-left text-sm">
@@ -203,7 +207,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each data.domains as row (row.id)}
+            {#each domains as row (row.id)}
               <tr
                 class="border-b border-slate-100 align-top last:border-b-0"
                 data-testid={editId === row.id ? `edit-row-${row.id}` : undefined}

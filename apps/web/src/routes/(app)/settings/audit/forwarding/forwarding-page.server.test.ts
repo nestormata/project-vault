@@ -6,6 +6,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 
 import { requireUser } from '$lib/server/require-user.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const requireUserMock = vi.mocked(requireUser)
 
@@ -29,7 +30,7 @@ describe('/settings/audit/forwarding +page.server.ts', () => {
     { orgRole: 'viewer', allowed: false },
   ])('$allowed for orgRole=$orgRole', async ({ orgRole, allowed }) => {
     requireUserMock.mockReturnValue({ orgRole, orgId: 'org-1' } as ReturnType<typeof requireUser>)
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
     expect(result.allowed).toBe(allowed)
   })
 })

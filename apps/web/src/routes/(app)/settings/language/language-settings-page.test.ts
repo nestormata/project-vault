@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import LanguagePage from './+page.svelte'
 
 afterEach(() => cleanup())
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof LanguagePage>['data']
+
+function baseData(overrides: Partial<Data> = {}): Data {
   return {
+    ...appLayoutData(),
     options: [
       { locale: 'en', label: 'English', isCurrent: true },
       { locale: 'es', label: 'Español', isCurrent: false },

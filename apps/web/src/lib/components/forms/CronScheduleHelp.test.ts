@@ -38,4 +38,14 @@ describe('CronScheduleHelp', () => {
     await fireEvent.keyDown(close, { key: 'Tab' })
     expect(document.activeElement).toBe(close)
   })
+
+  it('wraps Shift+Tab from the first focusable element back inside the modal', async () => {
+    render(CronScheduleHelp)
+    await fireEvent.click(screen.getByRole('button', { name: /show cron field help/i }))
+    const close = screen.getByRole('button', { name: /close/i })
+
+    close.focus()
+    await fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(close)
+  })
 })

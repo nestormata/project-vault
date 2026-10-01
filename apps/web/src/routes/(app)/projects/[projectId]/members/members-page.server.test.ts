@@ -16,6 +16,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 }))
 
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const userId = 'user-1'
@@ -38,7 +39,7 @@ describe('project members +page.server.ts (AC-10)', () => {
     listInvitationsMock.mockResolvedValueOnce([{ id: 'inv-1' }])
     listProjectMembersMock.mockResolvedValueOnce([{ userId, role: 'owner' }])
 
-    const result = await load(makeEvent('owner'))
+    const result = expectLoaded(await load(makeEvent('owner')))
 
     expect(listInvitationsMock).toHaveBeenCalledWith(expect.any(Function), projectId)
     expect(result.canManage).toBe(true)
@@ -52,7 +53,7 @@ describe('project members +page.server.ts (AC-10)', () => {
     listInvitationsMock.mockRejectedValueOnce(new Error('boom'))
     listProjectMembersMock.mockResolvedValueOnce([])
 
-    const result = await load(makeEvent('admin'))
+    const result = expectLoaded(await load(makeEvent('admin')))
 
     expect(result.canManage).toBe(true)
     expect(result.invitations).toEqual([])
@@ -61,7 +62,7 @@ describe('project members +page.server.ts (AC-10)', () => {
   it('a plain org member never calls listInvitations, and without a matching project role has no manage/transfer rights', async () => {
     listProjectMembersMock.mockResolvedValueOnce([{ userId: 'someone-else', role: 'member' }])
 
-    const result = await load(makeEvent('member'))
+    const result = expectLoaded(await load(makeEvent('member')))
 
     expect(listInvitationsMock).not.toHaveBeenCalled()
     expect(result.canManage).toBe(false)
@@ -73,7 +74,7 @@ describe('project members +page.server.ts (AC-10)', () => {
   it('degrades members to [] when listProjectMembers throws', async () => {
     listProjectMembersMock.mockRejectedValueOnce(new Error('down'))
 
-    const result = await load(makeEvent('viewer'))
+    const result = expectLoaded(await load(makeEvent('viewer')))
 
     expect(result.members).toEqual([])
     expect(result.canManageMembers).toBe(false)
@@ -82,7 +83,7 @@ describe('project members +page.server.ts (AC-10)', () => {
   it('a project admin (but only an org member) still gets canManageMembers via the project-role axis, without transfer rights', async () => {
     listProjectMembersMock.mockResolvedValueOnce([{ userId, role: 'admin' }])
 
-    const result = await load(makeEvent('member'))
+    const result = expectLoaded(await load(makeEvent('member')))
 
     expect(result.canManageMembers).toBe(true)
     expect(result.canTransferOwnership).toBe(false)
@@ -91,7 +92,7 @@ describe('project members +page.server.ts (AC-10)', () => {
   it('a project owner who is only an org member still gets transfer rights via the project-role axis', async () => {
     listProjectMembersMock.mockResolvedValueOnce([{ userId, role: 'owner' }])
 
-    const result = await load(makeEvent('viewer'))
+    const result = expectLoaded(await load(makeEvent('viewer')))
 
     expect(result.canManageMembers).toBe(true)
     expect(result.canTransferOwnership).toBe(true)

@@ -23,7 +23,10 @@ export type ExternalIdentitiesPageData =
       errorMessage: string | null
     }
 
-export const load: PageServerLoad = async ({ fetch, locals }) => {
+export const load: PageServerLoad = async ({
+  fetch,
+  locals,
+}): Promise<ExternalIdentitiesPageData> => {
   const user = requireUser(locals)
   const orgRole = user.orgRole
 

@@ -2,13 +2,18 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
 import { routeExists } from '$lib/test/route-exists.js'
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData, deniedPageData } from '$lib/test/page-data.js'
 import PlatformPage from './+page.svelte'
 
 afterEach(() => cleanup())
 
-function allowedData(overrides: Record<string, unknown> = {}) {
+type AllowedData = Extract<ComponentProps<typeof PlatformPage>['data'], { allowed: true }>
+
+function allowedData(overrides: Partial<AllowedData> = {}): AllowedData {
   return {
-    allowed: true as const,
+    ...appLayoutData(),
+    allowed: true,
     warnings: [] as string[],
     ...overrides,
   }
@@ -20,7 +25,7 @@ describe('/platform +page.svelte', () => {
   })
 
   it('a non-operator sees the platform-operator-required notice, no admin links', () => {
-    render(PlatformPage, { props: { data: { allowed: false, warnings: [] } } })
+    render(PlatformPage, { props: { data: deniedPageData() } })
 
     expect(screen.getByRole('heading', { name: /platform operator access required/i })).toBeTruthy()
     expect(screen.queryByRole('link', { name: /backups/i })).toBeNull()

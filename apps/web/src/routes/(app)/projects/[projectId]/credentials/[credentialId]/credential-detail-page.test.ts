@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte'
 import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
 import { rotationCopy } from '$lib/components/rotations/rotation-copy.js'
@@ -52,7 +52,21 @@ vi.mock('$lib/api/rotations.js', async () => {
 })
 
 import { ApiClientError } from '$lib/api/client.js'
+import { apiClientError } from '$lib/test/api-error.js'
+import type { ComponentProps } from 'svelte'
+import type { CredentialDetail } from '@project-vault/shared'
+import type { OrgRole } from '$lib/credentials/permissions.js'
+import { appLayoutData } from '$lib/test/page-data.js'
 import CredentialDetailPage from './+page.svelte'
+import {
+  sampleCredential,
+  sampleDependency,
+  sampleOrgUser,
+  sampleProject,
+  sampleRotation,
+  sampleShare,
+  sampleVersion,
+} from '$lib/test/fixtures.js'
 
 afterEach(() => {
   cleanup()
@@ -62,8 +76,9 @@ afterEach(() => {
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const credentialId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 
-const CREDENTIAL = {
+const CREDENTIAL = sampleCredential({
   id: credentialId,
+  projectId,
   name: 'Stripe Secret Key',
   description: 'Payments processor secret',
   tags: ['payments', 'prod'],
@@ -71,28 +86,73 @@ const CREDENTIAL = {
   rotationSchedule: '0 0 1 * *',
   cacheable: true,
   currentVersionNumber: 3,
+  // A legacy single-value secret (schema v1, one implicit sensitive `value` field).
+  schemaVersion: 1,
   updatedAt: '2026-07-01T00:00:00.000Z',
-  archivedAt: null as string | null,
-}
+})
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof CredentialDetailPage>['data']
+/** The loaded page (not the notFound / vaultSealed fallbacks). */
+type LoadedData = Exclude<Data, { notFound: boolean }>
+
+function baseData(overrides: Partial<LoadedData> = {}): LoadedData {
   return {
+    ...appLayoutData(),
     projectId,
     credentialId,
     orgRole: 'member',
-    project: { role: 'member' },
+    project: sampleProject({ id: projectId, role: 'member' }),
     origin: 'https://vault.example.com',
-    vaultSealed: false,
-    notFound: false,
     credential: CREDENTIAL,
     dependencies: { items: [], hasDependencies: false, hasStagedRotation: false },
     versions: [],
     rotations: [],
+    rotationsPage: 1,
+    rotationsHasMore: false,
     activeRotationId: null,
     shares: [],
-    orgMembers: [{ userId: 'recipient-1', email: 'riley@example.com', displayName: 'Riley' }],
+    sharesTotal: 0,
+    sharesPage: 1,
+    sharesStatus: null,
+    rotationRecommendedNudges: [],
+    orgMembers: [
+      sampleOrgUser({ userId: 'recipient-1', email: 'riley@example.com', displayName: 'Riley' }),
+    ],
     ...overrides,
   }
+}
+
+/** The sections the loader returns empty when the secret itself could not be loaded. */
+function emptySections(orgRole: OrgRole = 'member') {
+  return {
+    ...appLayoutData(),
+    projectId,
+    credentialId,
+    orgRole,
+    project: sampleProject({ id: projectId, role: 'member' }),
+    origin: 'https://vault.example.com',
+    credential: null,
+    versions: [],
+    dependencies: { items: [], hasDependencies: false, hasStagedRotation: false },
+    rotations: [],
+    rotationsPage: 1,
+    rotationsHasMore: false,
+    activeRotationId: null,
+    shares: [],
+    sharesTotal: 0,
+    rotationRecommendedNudges: [],
+    orgMembers: [],
+  }
+}
+
+/** The loader's 404 fallback. */
+function notFoundData(): Data {
+  return { ...emptySections(), notFound: true }
+}
+
+/** The loader's sealed-vault (503) fallback. */
+function sealedData(): Data {
+  return { ...emptySections(), notFound: false, vaultSealed: true }
 }
 
 describe('credential detail +page.svelte — archive/unarchive (Story 28.5 AC6)', () => {
@@ -104,20 +164,25 @@ describe('credential detail +page.svelte — archive/unarchive (Story 28.5 AC6)'
 
   it('a project-owner sees the Archive button; a member does not', () => {
     render(CredentialDetailPage, {
-      props: { data: baseData({ project: { role: 'owner' } }) },
+      props: { data: baseData({ project: sampleProject({ id: projectId, role: 'owner' }) }) },
     })
     expect(screen.getByRole('button', { name: /archive secret/i })).toBeTruthy()
 
     cleanup()
     render(CredentialDetailPage, {
-      props: { data: baseData({ project: { role: 'member' } }) },
+      props: { data: baseData({ project: sampleProject({ id: projectId, role: 'member' }) }) },
     })
     expect(screen.queryByRole('button', { name: /archive secret/i })).toBeNull()
   })
 
   it('an org-owner (not project owner) also sees the Archive button', () => {
     render(CredentialDetailPage, {
-      props: { data: baseData({ orgRole: 'owner', project: { role: 'member' } }) },
+      props: {
+        data: baseData({
+          orgRole: 'owner',
+          project: sampleProject({ id: projectId, role: 'member' }),
+        }),
+      },
     })
     expect(screen.getByRole('button', { name: /archive secret/i })).toBeTruthy()
   })
@@ -131,7 +196,7 @@ describe('credential detail +page.svelte — archive/unarchive (Story 28.5 AC6)'
       isArchived: true,
     })
     render(CredentialDetailPage, {
-      props: { data: baseData({ project: { role: 'owner' } }) },
+      props: { data: baseData({ project: sampleProject({ id: projectId, role: 'owner' }) }) },
     })
 
     await fireEvent.click(screen.getByRole('button', { name: /archive secret/i }))
@@ -143,7 +208,7 @@ describe('credential detail +page.svelte — archive/unarchive (Story 28.5 AC6)'
   it('does not archive when the confirm dialog is dismissed', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false)
     render(CredentialDetailPage, {
-      props: { data: baseData({ project: { role: 'owner' } }) },
+      props: { data: baseData({ project: sampleProject({ id: projectId, role: 'owner' }) }) },
     })
 
     await fireEvent.click(screen.getByRole('button', { name: /archive secret/i }))
@@ -154,14 +219,14 @@ describe('credential detail +page.svelte — archive/unarchive (Story 28.5 AC6)'
   it('shows an inline active_shares error and does not treat the secret as archived', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     archiveCredentialMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         409,
         { error: 'active_shares', shareIds: ['dddddddd-dddd-4ddd-8ddd-dddddddddddd'] },
         'active_shares'
       )
     )
     render(CredentialDetailPage, {
-      props: { data: baseData({ project: { role: 'owner' } }) },
+      props: { data: baseData({ project: sampleProject({ id: projectId, role: 'owner' }) }) },
     })
 
     await fireEvent.click(screen.getByRole('button', { name: /archive secret/i }))
@@ -179,7 +244,7 @@ describe('credential detail +page.svelte — archive/unarchive (Story 28.5 AC6)'
     render(CredentialDetailPage, {
       props: {
         data: baseData({
-          project: { role: 'owner' },
+          project: sampleProject({ id: projectId, role: 'owner' }),
           credential: { ...CREDENTIAL, archivedAt: '2026-08-29T00:00:00.000Z' },
         }),
       },
@@ -204,7 +269,7 @@ describe('credential detail +page.svelte — archive/unarchive (Story 28.5 AC6)'
     render(CredentialDetailPage, {
       props: {
         data: baseData({
-          project: { role: 'owner' },
+          project: sampleProject({ id: projectId, role: 'owner' }),
           credential: { ...CREDENTIAL, archivedAt: '2026-08-29T00:00:00.000Z' },
         }),
       },
@@ -291,13 +356,13 @@ describe('credential detail +page.svelte', () => {
   })
 
   it('shows the sealed-vault message when the vault is sealed', () => {
-    render(CredentialDetailPage, { props: { data: baseData({ vaultSealed: true }) } })
+    render(CredentialDetailPage, { props: { data: sealedData() } })
     expect(screen.getByText(onboardingCopy.vaultSealedMessage)).toBeTruthy()
   })
 
   it('shows a not-found banner instead of the detail sections', () => {
     render(CredentialDetailPage, {
-      props: { data: baseData({ credential: null, notFound: true }) },
+      props: { data: notFoundData() },
     })
     expect(screen.getByText(/secret not found/i)).toBeTruthy()
   })
@@ -735,7 +800,7 @@ describe('credential detail +page.svelte', () => {
       props: {
         data: baseData({
           orgRole: 'member',
-          project: { role: 'viewer' },
+          project: sampleProject({ id: projectId, role: 'viewer' }),
           credential: MULTI_FIELD_CREDENTIAL_WITH_VISIBLE,
         }),
       },
@@ -829,8 +894,16 @@ describe('credential detail +page.svelte', () => {
       props: {
         data: baseData({
           versions: [
-            { versionNumber: 2, createdAt: '2026-06-01T00:00:00.000Z', isCurrent: false },
-            { versionNumber: 3, createdAt: '2026-07-01T00:00:00.000Z', isCurrent: true },
+            sampleVersion({
+              versionNumber: 2,
+              createdAt: '2026-06-01T00:00:00.000Z',
+              isCurrent: false,
+            }),
+            sampleVersion({
+              versionNumber: 3,
+              createdAt: '2026-07-01T00:00:00.000Z',
+              isCurrent: true,
+            }),
           ],
         }),
       },
@@ -951,7 +1024,7 @@ describe('credential detail +page.svelte', () => {
 
   // Story 13.5 AC-6: field-scope selector for multi-field credentials + scope badge.
   describe('Story 13.5 AC-6: dependency field-scope selector and badge', () => {
-    const MULTI_FIELD_FOR_DEPS = {
+    const MULTI_FIELD_FOR_DEPS: CredentialDetail = {
       ...CREDENTIAL,
       schemaVersion: 2,
       fields: [
@@ -1003,20 +1076,20 @@ describe('credential detail +page.svelte', () => {
           data: baseData({
             dependencies: {
               items: [
-                {
+                sampleDependency({
                   id: 'dep-1',
                   systemName: 'backup-script',
                   systemType: 'service',
                   fieldKey: 'password',
                   checklistStatus: null,
-                },
-                {
+                }),
+                sampleDependency({
                   id: 'dep-2',
                   systemName: 'ci-pipeline',
                   systemType: 'ci_pipeline',
                   fieldKey: null,
                   checklistStatus: null,
-                },
+                }),
               ],
               hasDependencies: true,
               hasStagedRotation: false,
@@ -1036,7 +1109,15 @@ describe('credential detail +page.svelte', () => {
       props: {
         data: baseData({
           dependencies: {
-            items: [{ id: 'dep-1', systemName: 'billing-worker', systemType: 'service' }],
+            items: [
+              sampleDependency({
+                id: 'dep-1',
+                systemName: 'billing-worker',
+                systemType: 'service',
+              }),
+            ],
+            hasDependencies: true,
+            hasStagedRotation: false,
           },
         }),
       },
@@ -1053,7 +1134,15 @@ describe('credential detail +page.svelte', () => {
       props: {
         data: baseData({
           dependencies: {
-            items: [{ id: 'dep-1', systemName: 'billing-worker', systemType: 'service' }],
+            items: [
+              sampleDependency({
+                id: 'dep-1',
+                systemName: 'billing-worker',
+                systemType: 'service',
+              }),
+            ],
+            hasDependencies: true,
+            hasStagedRotation: false,
           },
         }),
       },
@@ -1070,13 +1159,13 @@ describe('credential detail +page.svelte', () => {
         data: baseData({
           dependencies: {
             items: [
-              {
+              sampleDependency({
                 id: 'dep-1',
                 systemName: 'billing-worker',
                 systemType: 'service',
                 linkUrl: 'https://example.com/billing-worker',
                 checklistStatus: null,
-              },
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: false,
@@ -1095,13 +1184,13 @@ describe('credential detail +page.svelte', () => {
         data: baseData({
           dependencies: {
             items: [
-              {
+              sampleDependency({
                 id: 'dep-1',
                 systemName: 'billing-worker',
                 systemType: 'service',
                 linkUrl: null,
                 checklistStatus: null,
-              },
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: false,
@@ -1122,12 +1211,12 @@ describe('credential detail +page.svelte', () => {
         data: baseData({
           dependencies: {
             items: [
-              {
+              sampleDependency({
                 id: 'dep-1',
                 systemName: 'billing-worker',
                 systemType: 'service',
                 checklistStatus: null,
-              },
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: false,
@@ -1145,7 +1234,12 @@ describe('credential detail +page.svelte', () => {
         data: baseData({
           dependencies: {
             items: [
-              { id: 'dep-1', systemName: 'delta', systemType: 'service', checklistStatus: null },
+              sampleDependency({
+                id: 'dep-1',
+                systemName: 'delta',
+                systemType: 'service',
+                checklistStatus: null,
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: true,
@@ -1161,7 +1255,7 @@ describe('credential detail +page.svelte', () => {
     vi.useFakeTimers()
     listCredentialDependenciesMock.mockResolvedValue({
       items: [
-        {
+        sampleDependency({
           id: 'dep-1',
           systemName: 'billing-worker',
           systemType: 'service',
@@ -1172,7 +1266,7 @@ describe('credential detail +page.svelte', () => {
             confirmedBy: null,
             confirmedAt: null,
           },
-        },
+        }),
       ],
       hasDependencies: true,
       hasStagedRotation: true,
@@ -1182,12 +1276,12 @@ describe('credential detail +page.svelte', () => {
         data: baseData({
           dependencies: {
             items: [
-              {
+              sampleDependency({
                 id: 'dep-1',
                 systemName: 'billing-worker',
                 systemType: 'service',
                 checklistStatus: null,
-              },
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: false,
@@ -1212,7 +1306,12 @@ describe('credential detail +page.svelte', () => {
     vi.useFakeTimers()
     listCredentialDependenciesMock.mockResolvedValue({
       items: [
-        { id: 'dep-1', systemName: 'billing-worker', systemType: 'service', checklistStatus: null },
+        sampleDependency({
+          id: 'dep-1',
+          systemName: 'billing-worker',
+          systemType: 'service',
+          checklistStatus: null,
+        }),
       ],
       hasDependencies: true,
       hasStagedRotation: false,
@@ -1222,7 +1321,7 @@ describe('credential detail +page.svelte', () => {
         data: baseData({
           dependencies: {
             items: [
-              {
+              sampleDependency({
                 id: 'dep-1',
                 systemName: 'billing-worker',
                 systemType: 'service',
@@ -1233,7 +1332,7 @@ describe('credential detail +page.svelte', () => {
                   confirmedBy: null,
                   confirmedAt: null,
                 },
-              },
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: true,
@@ -1258,7 +1357,7 @@ describe('credential detail +page.svelte', () => {
         data: baseData({
           dependencies: {
             items: [
-              {
+              sampleDependency({
                 id: 'dep-1',
                 systemName: 'billing-worker',
                 systemType: 'service',
@@ -1269,7 +1368,7 @@ describe('credential detail +page.svelte', () => {
                   confirmedBy: null,
                   confirmedAt: null,
                 },
-              },
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: true,
@@ -1295,7 +1394,7 @@ describe('credential detail +page.svelte', () => {
 
   it('a 409 already_confirmed reconciles the checkbox to checked instead of showing an error', async () => {
     confirmChecklistItemMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         409,
         {
           code: 'already_confirmed',
@@ -1310,7 +1409,7 @@ describe('credential detail +page.svelte', () => {
         data: baseData({
           dependencies: {
             items: [
-              {
+              sampleDependency({
                 id: 'dep-1',
                 systemName: 'billing-worker',
                 systemType: 'service',
@@ -1321,7 +1420,7 @@ describe('credential detail +page.svelte', () => {
                   confirmedBy: null,
                   confirmedAt: null,
                 },
-              },
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: true,
@@ -1344,7 +1443,7 @@ describe('credential detail +page.svelte', () => {
           orgRole: 'viewer',
           dependencies: {
             items: [
-              {
+              sampleDependency({
                 id: 'dep-1',
                 systemName: 'billing-worker',
                 systemType: 'service',
@@ -1355,7 +1454,7 @@ describe('credential detail +page.svelte', () => {
                   confirmedBy: null,
                   confirmedAt: null,
                 },
-              },
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: true,
@@ -1394,12 +1493,12 @@ describe('credential detail +page.svelte', () => {
       props: {
         data: baseData({
           rotations: [
-            {
+            sampleRotation({
               id: 'rot-1',
               status: 'completed',
               initiatedAt: '2026-06-01T00:00:00.000Z',
               completedAt: '2026-06-02T00:00:00.000Z',
-            },
+            }),
           ],
         }),
       },
@@ -1409,7 +1508,7 @@ describe('credential detail +page.svelte', () => {
 
   // -------- Story 13.2: multi-field secrets --------
 
-  const MULTI_FIELD_CREDENTIAL = {
+  const MULTI_FIELD_CREDENTIAL: CredentialDetail = {
     ...CREDENTIAL,
     schemaVersion: 2,
     fields: [
@@ -1511,7 +1610,7 @@ describe('credential detail +page.svelte', () => {
 
   // -------- Story 13.3: per-field reveal/mask, Reveal all --------
 
-  const MULTI_FIELD_CREDENTIAL_WITH_VISIBLE = {
+  const MULTI_FIELD_CREDENTIAL_WITH_VISIBLE: CredentialDetail = {
     ...MULTI_FIELD_CREDENTIAL,
     visibleFieldValues: { host: 'db.example.com' },
   }
@@ -2046,7 +2145,7 @@ describe('credential detail +page.svelte', () => {
         props: {
           data: baseData({
             shares: [
-              {
+              sampleShare({
                 id: 'share-1',
                 credentialId,
                 fieldKey: null,
@@ -2059,7 +2158,7 @@ describe('credential detail +page.svelte', () => {
                 firstViewedAt: null,
                 viewCount: 0,
                 status: 'active',
-              },
+              }),
             ],
           }),
         },
@@ -2119,7 +2218,7 @@ describe('credential detail +page.svelte', () => {
       })
 
       it('AC2: creating a share when N shares already exist shows "Showing N+1 of N+1"', async () => {
-        const existingShare = {
+        const existingShare = sampleShare({
           id: 'share-existing',
           credentialId,
           fieldKey: null,
@@ -2132,7 +2231,7 @@ describe('credential detail +page.svelte', () => {
           firstViewedAt: null,
           viewCount: 0,
           status: 'active',
-        }
+        })
         createCredentialShareMock.mockResolvedValue({
           id: 'share-new',
           credentialId,
@@ -2164,7 +2263,7 @@ describe('credential detail +page.svelte', () => {
       })
 
       it('AC3: creating a share while a non-matching status filter is active does not splice it into the list or bump the total', async () => {
-        const revokedShare = {
+        const revokedShare = sampleShare({
           id: 'share-revoked',
           credentialId,
           fieldKey: null,
@@ -2177,7 +2276,7 @@ describe('credential detail +page.svelte', () => {
           firstViewedAt: null,
           viewCount: 0,
           status: 'revoked',
-        }
+        })
         // A new share is always created with status 'active', which never matches a 'revoked'
         // filter — mirrors what a full reload against the same filtered URL would return.
         createCredentialShareMock.mockResolvedValue({
@@ -2239,7 +2338,7 @@ describe('credential detail +page.svelte', () => {
           props: {
             data: baseData({
               shares: [
-                {
+                sampleShare({
                   id: 'share-1',
                   credentialId,
                   fieldKey: null,
@@ -2252,7 +2351,7 @@ describe('credential detail +page.svelte', () => {
                   firstViewedAt: null,
                   viewCount: 0,
                   status: 'active',
-                },
+                }),
               ],
               sharesTotal: 1,
             }),
@@ -2340,6 +2439,335 @@ describe('credential detail +page.svelte', () => {
       await vi.waitFor(() => {
         expect(screen.queryByText(/rotation recommended/i)).toBeNull()
       })
+    })
+  })
+})
+
+// Story 68.1 AC-3: SvelteKit reuses this page component when navigating from credential A to
+// credential B (same route, new params) and after invalidateAll(); none of A's per-credential
+// state may survive onto B, and the optimistic local lists must still work and never duplicate.
+describe('credential detail +page.svelte — stale state across loads (Story 68.1 AC-3)', () => {
+  const credentialBId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+  const CREDENTIAL_B: CredentialDetail = {
+    ...CREDENTIAL,
+    id: credentialBId,
+    name: 'Twilio Token',
+    expiresAt: '2027-03-15T00:00:00.000Z',
+    rotationSchedule: '0 0 * * 1',
+    cacheable: false,
+  }
+  const SHARE_A = sampleShare({
+    id: 'share-a',
+    credentialId,
+    fieldKey: null,
+    sharedBy: 'sharer-1',
+    recipientUserId: 'recipient-1',
+    singleUse: true,
+    createdAt: '2026-07-28T00:00:00.000Z',
+    expiresAt: '2026-07-29T00:00:00.000Z',
+    revokedAt: null,
+    firstViewedAt: null,
+    viewCount: 0,
+    status: 'active',
+  })
+  const DEP = (id: string, systemName: string) => sampleDependency({ id, systemName })
+
+  function dataA() {
+    return baseData({
+      dependencies: {
+        items: [DEP('dep-a1', 'billing-worker'), DEP('dep-a2', 'invoice-cron')],
+        hasDependencies: true,
+        hasStagedRotation: false,
+      },
+      shares: [SHARE_A],
+      sharesTotal: 1,
+      rotationRecommendedNudges: [
+        {
+          fieldKey: null,
+          active: true,
+          mostRecentShareAt: new Date().toISOString(),
+          mostRecentSharedWith: 'riley@example.com',
+        },
+      ],
+    })
+  }
+
+  function dataB() {
+    return baseData({
+      credentialId: credentialBId,
+      credential: CREDENTIAL_B,
+      dependencies: { items: [], hasDependencies: false, hasStagedRotation: false },
+      shares: [],
+      sharesTotal: 0,
+      rotationRecommendedNudges: [],
+    })
+  }
+
+  it("credential A -> B: A's dependencies, shares and nudge disappear and B's lifecycle values show", async () => {
+    const { rerender } = render(CredentialDetailPage, { props: { data: dataA() } })
+    expect(screen.getByText(/billing-worker \(service\)/)).toBeTruthy()
+    expect(screen.getByText(/invoice-cron \(service\)/)).toBeTruthy()
+    expect(screen.getByText(/rotation recommended/i)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^revoke$/i })).toBeTruthy()
+
+    await rerender({ data: dataB() })
+
+    expect(screen.queryByText(/billing-worker \(service\)/)).toBeNull()
+    expect(screen.queryByText(/invoice-cron \(service\)/)).toBeNull()
+    expect(screen.queryByText(/rotation recommended/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: /^revoke$/i })).toBeNull()
+    expect((screen.getByLabelText(/expiry date/i) as HTMLInputElement).value).toBe('2027-03-15')
+    expect((screen.getByLabelText(/rotation schedule/i) as HTMLInputElement).value).toBe(
+      '0 0 * * 1'
+    )
+    expect(
+      (screen.getByLabelText(/cacheable by offline agents/i) as HTMLInputElement).checked
+    ).toBe(false)
+  })
+
+  it("credential A -> B: A's revealed secret value is not shown on B", async () => {
+    revealCredentialValueMock.mockResolvedValue({ value: 'sk_live_secret_of_a', versionNumber: 3 })
+    const { rerender } = render(CredentialDetailPage, { props: { data: dataA() } })
+    await fireEvent.click(screen.getByRole('button', { name: /^reveal value$/i }))
+    expect(await screen.findByText('sk_live_secret_of_a')).toBeTruthy()
+
+    await rerender({ data: dataB() })
+
+    expect(screen.queryByText('sk_live_secret_of_a')).toBeNull()
+    expect(screen.getByRole('button', { name: /^reveal value$/i })).toBeTruthy()
+  })
+
+  it('an unrelated reload of the same credential keeps a dirty lifecycle input', async () => {
+    const { rerender } = render(CredentialDetailPage, { props: { data: dataA() } })
+    const schedule = screen.getByLabelText(/rotation schedule/i) as HTMLInputElement
+    await fireEvent.input(schedule, { target: { value: '0 6 * * *' } })
+
+    // e.g. invalidateAll() after adding a version: same credential, same lifecycle values.
+    await rerender({ data: { ...dataA(), credential: { ...CREDENTIAL, currentVersionNumber: 4 } } })
+
+    expect((screen.getByLabelText(/rotation schedule/i) as HTMLInputElement).value).toBe(
+      '0 6 * * *'
+    )
+  })
+
+  it('adding a dependency still updates the list in place after an A -> B navigation', async () => {
+    addCredentialDependencyMock.mockResolvedValue(DEP('dep-b1', 'sms-gateway'))
+    const { rerender } = render(CredentialDetailPage, { props: { data: dataA() } })
+    await rerender({ data: dataB() })
+
+    await fireEvent.click(screen.getByText(/^add dependent system$/i, { selector: 'summary' }))
+    await fireEvent.input(screen.getByLabelText(/system name/i), {
+      target: { value: 'sms-gateway' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /^add dependent system$/i }))
+
+    expect(await screen.findByText(/sms-gateway \(service\)/)).toBeTruthy()
+    expect(screen.queryByText(/billing-worker \(service\)/)).toBeNull()
+  })
+
+  it('a refresh that lands before the add-dependency POST resolves does not duplicate the row', async () => {
+    let resolveAdd: (dep: ReturnType<typeof DEP>) => void = () => {}
+    addCredentialDependencyMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveAdd = resolve
+      })
+    )
+    const { rerender } = render(CredentialDetailPage, { props: { data: baseData() } })
+    await fireEvent.click(screen.getByText(/^add dependent system$/i, { selector: 'summary' }))
+    await fireEvent.input(screen.getByLabelText(/system name/i), {
+      target: { value: 'billing-worker' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /^add dependent system$/i }))
+
+    await rerender({
+      data: baseData({
+        dependencies: {
+          items: [DEP('dep-new', 'billing-worker')],
+          hasDependencies: true,
+          hasStagedRotation: false,
+        },
+      }),
+    })
+    resolveAdd(DEP('dep-new', 'billing-worker'))
+
+    await vi.waitFor(() =>
+      expect(screen.getAllByText(/billing-worker \(service\)/)).toHaveLength(1)
+    )
+  })
+
+  it('a refresh that lands before the create-share POST resolves does not duplicate the share', async () => {
+    let resolveShare: (share: typeof SHARE_A & { token: string }) => void = () => {}
+    createCredentialShareMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveShare = resolve
+      })
+    )
+    const { rerender } = render(CredentialDetailPage, {
+      props: { data: baseData({ shares: [], sharesTotal: 0 }) },
+    })
+    await fireEvent.change(screen.getByLabelText(/recipient/i), {
+      target: { value: 'recipient-1' },
+    })
+    await fireEvent.click(screen.getByRole('checkbox', { name: /value/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+
+    await rerender({ data: baseData({ shares: [SHARE_A], sharesTotal: 1 }) })
+    resolveShare({ ...SHARE_A, token: 'raw-one-time-token' })
+
+    expect(await screen.findByText(/raw-one-time-token/)).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: /^revoke$/i })).toHaveLength(1)
+  })
+
+  // Code review 68-1: a reveal / edit / share request started on credential A that resolves after
+  // SvelteKit reused the page for credential B must not write A's secret material into B's view.
+  describe('a request started on A that resolves after A -> B is discarded', () => {
+    const MULTI_A: CredentialDetail = {
+      ...CREDENTIAL,
+      schemaVersion: 2,
+      fields: [
+        { key: 'host', sensitive: false, template: 'db_connection' },
+        { key: 'password', sensitive: true, template: 'db_connection' },
+      ],
+    }
+    const MULTI_B: CredentialDetail = { ...MULTI_A, id: credentialBId, name: 'Twilio Token' }
+    const multiA = () => baseData({ credential: MULTI_A })
+    const multiB = () => baseData({ credentialId: credentialBId, credential: MULTI_B })
+    const fieldsOfA = {
+      fields: [
+        { key: 'host', value: 'db-of-a.example.com', sensitive: false },
+        { key: 'password', value: 'password-of-a', sensitive: true },
+      ],
+      schemaVersion: 2,
+      versionNumber: 3,
+      retrievedAt: '2026-07-26T00:00:00.000Z',
+    }
+
+    /** Lets the page's own continuation run and Svelte flush the DOM. */
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+    // The staged-rotation poll tests above switch to fake timers without switching back.
+    beforeEach(() => {
+      vi.useRealTimers()
+    })
+
+    function deferred<T>() {
+      let resolve: (value: T) => void = () => {}
+      const promise = new Promise<T>((r) => {
+        resolve = r
+      })
+      return { promise, resolve }
+    }
+
+    it('whole-value reveal', async () => {
+      const reveal = deferred<{ value: string; versionNumber: number }>()
+      revealCredentialValueMock.mockReturnValue(reveal.promise)
+      const { rerender } = render(CredentialDetailPage, { props: { data: dataA() } })
+      await fireEvent.click(screen.getByRole('button', { name: /^reveal value$/i }))
+
+      await rerender({ data: dataB() })
+      reveal.resolve({ value: 'sk_live_secret_of_a', versionNumber: 3 })
+      await settle()
+      await vi.waitFor(() =>
+        expect(screen.getByRole('button', { name: /^reveal value$/i })).toBeTruthy()
+      )
+
+      expect(screen.queryByText('sk_live_secret_of_a')).toBeNull()
+    })
+
+    it('whole-value reveal failure does not show an error banner on B', async () => {
+      let reject: (error: unknown) => void = () => {}
+      revealCredentialValueMock.mockReturnValue(
+        new Promise((_, r) => {
+          reject = r
+        })
+      )
+      const { rerender } = render(CredentialDetailPage, { props: { data: dataA() } })
+      await fireEvent.click(screen.getByRole('button', { name: /^reveal value$/i }))
+
+      await rerender({ data: dataB() })
+      reject(new Error('reveal of A failed'))
+      await settle()
+      await vi.waitFor(() =>
+        expect(screen.getByRole('button', { name: /^reveal value$/i })).toBeTruthy()
+      )
+
+      expect(screen.queryByText('reveal of A failed')).toBeNull()
+    })
+
+    it('single-field reveal', async () => {
+      const reveal = deferred<typeof fieldsOfA>()
+      revealCredentialValueMock.mockReturnValue(reveal.promise)
+      const { rerender } = render(CredentialDetailPage, { props: { data: multiA() } })
+      await fireEvent.click(
+        within(screen.getByTestId('field-row-password')).getByRole('button', { name: /^reveal$/i })
+      )
+
+      expect(revealCredentialValueMock).toHaveBeenCalledTimes(1)
+      await rerender({ data: multiB() })
+      reveal.resolve({
+        ...fieldsOfA,
+        fields: [{ key: 'password', value: 'password-of-a', sensitive: true }],
+      })
+      await settle()
+      await vi.waitFor(() => expect(screen.getByTestId('field-masked-password')).toBeTruthy())
+
+      expect(screen.queryByTestId('field-value-password')).toBeNull()
+      expect(screen.queryByText('password-of-a')).toBeNull()
+    })
+
+    it('reveal all', async () => {
+      const reveal = deferred<typeof fieldsOfA>()
+      revealCredentialValueMock.mockReturnValue(reveal.promise)
+      const { rerender } = render(CredentialDetailPage, { props: { data: multiA() } })
+      await fireEvent.click(screen.getByRole('button', { name: /reveal all/i }))
+      expect(revealCredentialValueMock).toHaveBeenCalledTimes(1)
+
+      await rerender({ data: multiB() })
+      reveal.resolve(fieldsOfA)
+      await settle()
+      await vi.waitFor(() => expect(screen.getByTestId('field-masked-password')).toBeTruthy())
+
+      expect(screen.queryByText('password-of-a')).toBeNull()
+    })
+
+    it("the field-set editor is not opened on B with A's values", async () => {
+      const reveal = deferred<typeof fieldsOfA>()
+      revealCredentialValueMock.mockReturnValue(reveal.promise)
+      const { rerender } = render(CredentialDetailPage, { props: { data: multiA() } })
+      await fireEvent.click(screen.getByRole('button', { name: /edit fields/i }))
+
+      await rerender({ data: multiB() })
+      reveal.resolve(fieldsOfA)
+      await settle()
+      await vi.waitFor(() =>
+        expect(screen.getByRole('button', { name: /edit fields/i })).toBeTruthy()
+      )
+
+      expect(screen.queryByLabelText('Field 2 value')).toBeNull()
+      expect(screen.queryByDisplayValue('password-of-a')).toBeNull()
+    })
+
+    it('a share created on A is not listed on B and its one-time token is not shown there', async () => {
+      const create = deferred<typeof SHARE_A & { token: string }>()
+      createCredentialShareMock.mockReturnValue(create.promise)
+      const { rerender } = render(CredentialDetailPage, {
+        props: { data: baseData({ shares: [], sharesTotal: 0 }) },
+      })
+      await fireEvent.change(screen.getByLabelText(/recipient/i), {
+        target: { value: 'recipient-1' },
+      })
+      await fireEvent.click(screen.getByRole('checkbox', { name: /value/i }))
+      await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+
+      await rerender({ data: dataB() })
+      create.resolve({ ...SHARE_A, token: 'raw-token-of-a' })
+      await settle()
+      await vi.waitFor(() =>
+        expect(screen.getByRole('button', { name: /create share link/i })).toBeTruthy()
+      )
+
+      expect(screen.queryByText(/raw-token-of-a/)).toBeNull()
+      expect(screen.queryByRole('button', { name: /^revoke$/i })).toBeNull()
     })
   })
 })

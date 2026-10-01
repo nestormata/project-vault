@@ -1,9 +1,20 @@
-<script>
+<script lang="ts">
   import VaultInitForm from './VaultInitForm.svelte'
   import VaultUnsealForm from './VaultUnsealForm.svelte'
   import { getVaultGateModel } from './gate-model.js'
+  import type { VaultInitRequest, VaultReadiness, VaultUnsealRequest } from '$lib/api/vault.js'
 
-  let { readiness, onRetry, onInit, onUnseal } = $props()
+  let {
+    readiness,
+    onRetry,
+    onInit,
+    onUnseal,
+  }: {
+    readiness: VaultReadiness
+    onRetry: () => void | Promise<void>
+    onInit: (request: VaultInitRequest, bootstrapToken: string) => void | Promise<void>
+    onUnseal: (request: VaultUnsealRequest) => void | Promise<void>
+  } = $props()
   let model = $derived(getVaultGateModel(readiness))
 </script>
 

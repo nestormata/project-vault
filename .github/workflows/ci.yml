@@ -147,7 +147,10 @@ jobs:
           pnpm check-build-info-unstamped &&
           pnpm vitest run scripts/check-build-info-unstamped.test.ts scripts/stamp-build-info.test.ts
 
-      - name: Typecheck
+      - name: Check web svelte-check wiring (Story 68.1 AC-4)
+        run: pnpm vitest run scripts/check-web-svelte-check-wiring.test.ts
+
+      - name: Typecheck (tsc + svelte-check)
         run: pnpm turbo typecheck
 
       - name: Lint

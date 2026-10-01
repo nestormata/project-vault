@@ -7,9 +7,11 @@ import { BASE_EXTENSION_THEME_VARS } from '$lib/security/extension-theme-vars.js
 
 // Story 61.1 E1 — must return a promise: client.ts's redirectToSessionExpired() chains
 // `.then(reset, reset)` onto goto()'s result.
-const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
+const gotoMock = vi.hoisted(() => vi.fn(async (_url: string | URL) => {}))
 vi.mock('$app/navigation', () => ({ goto: gotoMock }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import ExtensionPanelPage from './+page.svelte'
 
 afterEach(() => {
@@ -17,10 +19,15 @@ afterEach(() => {
   gotoMock.mockReset()
 })
 
-const baseData = {
+type Data = ComponentProps<typeof ExtensionPanelPage>['data']
+
+const baseData: Data = {
+  ...appLayoutData(),
   slot: 'group',
-  html: null as string | null,
+  subpath: undefined,
+  html: null,
   themeVars: BASE_EXTENSION_THEME_VARS,
+  actionEndpoint: undefined,
 }
 
 // Story 29.1 — the panel's HTML now renders into this plain, same-origin `<div>` (the

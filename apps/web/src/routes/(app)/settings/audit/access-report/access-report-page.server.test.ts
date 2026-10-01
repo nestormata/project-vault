@@ -13,6 +13,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 import { ApiClientError } from '$lib/api/client.js'
 import { requireUser } from '$lib/server/require-user.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const requireUserMock = vi.mocked(requireUser)
 
@@ -56,7 +57,7 @@ describe('/settings/audit/access-report +page.server.ts', () => {
   it('AC-B4/N1 equivalent: non-owner does not call the API', async () => {
     requireUserMock.mockReturnValue({ orgRole: 'admin' } as ReturnType<typeof requireUser>)
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(false)
     expect(runAccessReportMock).not.toHaveBeenCalled()
@@ -66,7 +67,7 @@ describe('/settings/audit/access-report +page.server.ts', () => {
     requireUserMock.mockReturnValue({ orgRole: 'owner' } as ReturnType<typeof requireUser>)
     runAccessReportMock.mockResolvedValue(SAMPLE_REPORT)
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(runAccessReportMock).toHaveBeenCalledWith(
       expect.anything(),
@@ -128,7 +129,7 @@ describe('/settings/audit/access-report +page.server.ts', () => {
       )
     )
 
-    const result = await load(makeEvent({ asOf: '2099-01-01T00:00:00.000Z' }))
+    const result = expectLoaded(await load(makeEvent({ asOf: '2099-01-01T00:00:00.000Z' })))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -147,7 +148,7 @@ describe('/settings/audit/access-report +page.server.ts', () => {
       )
     )
 
-    const result = await load(makeEvent({ asOf: '2000-01-01T00:00:00.000Z' }))
+    const result = expectLoaded(await load(makeEvent({ asOf: '2000-01-01T00:00:00.000Z' })))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
+  import type { ProjectPath } from '$lib/app-paths.js'
 
   let {
     title,
@@ -9,7 +10,7 @@
   }: {
     title: string
     message: string
-    backHref: string
+    backHref: ProjectPath
     backLabel?: string
   } = $props()
 </script>

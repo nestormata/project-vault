@@ -1,24 +1,33 @@
-<script>
+<script lang="ts">
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import AuthBrandHeader from '$lib/components/shell/AuthBrandHeader.svelte'
   import VaultGate from '$lib/components/vault/VaultGate.svelte'
-  import { getVaultReadiness, initVault, unsealVault } from '$lib/api/vault.js'
+  import {
+    getVaultReadiness,
+    initVault,
+    unsealVault,
+    type VaultInitRequest,
+    type VaultReadiness,
+    type VaultUnsealRequest,
+  } from '$lib/api/vault.js'
+  import type { PageData } from './$types.js'
 
-  let { data } = $props()
-  let readiness = $state(null)
+  let { data }: { data: PageData } = $props()
+  let readiness = $state<VaultReadiness | null>(null)
 
   async function refreshReadiness() {
-    readiness = await getVaultReadiness(fetch)
-    if (readiness.state === 'ready') await goto(resolve('/login'))
+    const next = await getVaultReadiness(fetch)
+    readiness = next
+    if (next.state === 'ready') await goto(resolve('/login'))
   }
 
-  async function handleInit(request, bootstrapToken) {
+  async function handleInit(request: VaultInitRequest, bootstrapToken: string) {
     await initVault(fetch, request, bootstrapToken)
     await refreshReadiness()
   }
 
-  async function handleUnseal(request) {
+  async function handleUnseal(request: VaultUnsealRequest) {
     await unsealVault(fetch, request)
     await refreshReadiness()
   }

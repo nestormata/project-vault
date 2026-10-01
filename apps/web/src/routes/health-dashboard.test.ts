@@ -16,6 +16,8 @@ vi.mock('$lib/api/health-dashboard.js', async (importOriginal) => {
 })
 
 import { load } from './(app)/health/+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
+import { appLayoutData } from '$lib/test/page-data.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
@@ -35,24 +37,24 @@ describe('/health +page.server.ts (AC-A2)', () => {
 
   it('resolves singleProjectId when exactly one project exists in the org', async () => {
     listProjectsMock.mockResolvedValue({ items: [{ id: projectId, name: 'Payments' }], total: 1 })
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
     expect(result.singleProjectId).toBe(projectId)
   })
 
   it('leaves singleProjectId null when zero or multiple projects exist', async () => {
     listProjectsMock.mockResolvedValue({ items: [], total: 0 })
-    expect((await load(makeEvent())).singleProjectId).toBeNull()
+    expect(expectLoaded(await load(makeEvent())).singleProjectId).toBeNull()
 
     listProjectsMock.mockResolvedValue({
       items: [{ id: 'p1' }, { id: 'p2' }],
       total: 2,
     })
-    expect((await load(makeEvent())).singleProjectId).toBeNull()
+    expect(expectLoaded(await load(makeEvent())).singleProjectId).toBeNull()
   })
 
   it('code-review finding: a listProjects failure does not take down the whole /health page', async () => {
     listProjectsMock.mockRejectedValue(new Error('transient upstream failure'))
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
     expect(result.dashboard).toEqual({
       summary: { healthy: 0, degraded: 0, down: 0 },
       projects: [],
@@ -68,6 +70,7 @@ describe('/health +page.svelte (AC-A2)', () => {
     render(HealthPage, {
       props: {
         data: {
+          ...appLayoutData(),
           dashboard: { summary: { healthy: 0, degraded: 0, down: 0 }, projects: [] },
           singleProjectId: null,
         },
@@ -83,6 +86,7 @@ describe('/health +page.svelte (AC-A2)', () => {
     render(HealthPage, {
       props: {
         data: {
+          ...appLayoutData(),
           dashboard: { summary: { healthy: 0, degraded: 0, down: 0 }, projects: [] },
           singleProjectId: projectId,
         },
@@ -98,6 +102,7 @@ describe('/health +page.svelte (AC-A2)', () => {
     render(HealthPage, {
       props: {
         data: {
+          ...appLayoutData(),
           dashboard: {
             summary: { healthy: 2, degraded: 0, down: 0 },
             projects: [

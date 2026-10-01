@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { connectSse, emitSseEventForTesting, onSseEvent } from './sse.svelte.js'
+import { nth } from '$lib/test/dom.js'
 
 class FakeEventSource {
   static instances: FakeEventSource[] = []
@@ -65,8 +66,8 @@ describe('sse.svelte.ts', () => {
     const disconnect = connectSse()
 
     expect(FakeEventSource.instances).toHaveLength(1)
-    expect(FakeEventSource.instances[0].url).toBe('/api/v1/stream')
-    expect(FakeEventSource.instances[0].opts).toEqual({ withCredentials: true })
+    expect(nth(FakeEventSource.instances, 0).url).toBe('/api/v1/stream')
+    expect(nth(FakeEventSource.instances, 0).opts).toEqual({ withCredentials: true })
 
     disconnect()
   })
@@ -78,15 +79,15 @@ describe('sse.svelte.ts', () => {
     expect(FakeEventSource.instances).toHaveLength(1)
     expect(() => disconnectSecond()).not.toThrow()
     // the first instance is still open (second connect didn't close it)
-    expect(FakeEventSource.instances[0].closed).toBe(false)
+    expect(nth(FakeEventSource.instances, 0).closed).toBe(false)
 
     disconnectFirst()
-    expect(FakeEventSource.instances[0].closed).toBe(true)
+    expect(nth(FakeEventSource.instances, 0).closed).toBe(true)
   })
 
   it('dispatches a well-formed notification.inbox event only to matching listeners', () => {
     const disconnect = connectSse()
-    const instance = FakeEventSource.instances[0]
+    const instance = nth(FakeEventSource.instances, 0)
     const inboxListener = vi.fn()
     const secretListener = vi.fn()
     const unsubInbox = onSseEvent('notification.inbox', inboxListener)
@@ -107,7 +108,7 @@ describe('sse.svelte.ts', () => {
 
   it('silently ignores a message with invalid JSON', () => {
     const disconnect = connectSse()
-    const instance = FakeEventSource.instances[0]
+    const instance = nth(FakeEventSource.instances, 0)
     const listener = vi.fn()
     const unsub = onSseEvent('notification.inbox', listener)
 
@@ -120,7 +121,7 @@ describe('sse.svelte.ts', () => {
 
   it('ignores an envelope missing an event field', () => {
     const disconnect = connectSse()
-    const instance = FakeEventSource.instances[0]
+    const instance = nth(FakeEventSource.instances, 0)
     const listener = vi.fn()
     const unsub = onSseEvent('notification.inbox', listener)
 
@@ -134,7 +135,7 @@ describe('sse.svelte.ts', () => {
 
   it('ignores an envelope whose data is undefined', () => {
     const disconnect = connectSse()
-    const instance = FakeEventSource.instances[0]
+    const instance = nth(FakeEventSource.instances, 0)
     const listener = vi.fn()
     const unsub = onSseEvent('notification.inbox', listener)
 

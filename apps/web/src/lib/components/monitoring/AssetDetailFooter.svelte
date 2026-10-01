@@ -4,6 +4,7 @@
   pages.
 -->
 <script lang="ts">
+  import type { ProjectPath } from '$lib/app-paths.js'
   import AssetDeletePanel from './AssetDeletePanel.svelte'
   import BackLink from './BackLink.svelte'
 
@@ -21,7 +22,7 @@
     onDelete: () => void | Promise<void>
     deleteNote?: string
     confirmLabel?: string
-    backHref: string
+    backHref: ProjectPath
     backLabel: string
   } = $props()
 </script>

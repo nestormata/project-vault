@@ -5,14 +5,19 @@ vi.mock('$app/paths', () => ({
   resolve: (path: string) => path,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { projectLayoutData } from '$lib/test/page-data.js'
 import MachineUsersListPage from './+page.svelte'
 
 afterEach(() => cleanup())
 
 const projectId = 'proj-1'
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof MachineUsersListPage>['data']
+
+function baseData(overrides: Partial<Data> = {}): Data {
   return {
+    ...projectLayoutData(),
     projectId,
     orgRole: 'admin',
     machineUsers: { items: [], total: 0 },
@@ -54,6 +59,9 @@ describe('machine-users list +page.svelte', () => {
               {
                 id: 'mu-1',
                 name: 'ci-bot',
+                projectId,
+                description: null,
+                createdBy: null,
                 role: 'member',
                 keyCount: 2,
                 createdAt: '2026-01-15T00:00:00.000Z',
@@ -62,6 +70,9 @@ describe('machine-users list +page.svelte', () => {
               {
                 id: 'mu-2',
                 name: 'old-bot',
+                projectId,
+                description: null,
+                createdBy: null,
                 role: 'viewer',
                 keyCount: 0,
                 createdAt: '2026-02-20T00:00:00.000Z',

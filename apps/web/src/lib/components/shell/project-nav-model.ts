@@ -1,8 +1,9 @@
+import type { ProjectPath } from '$lib/app-paths.js'
 import { isActiveNavItem } from './nav-model.js'
 
 export type ProjectNavItem = {
   label: string
-  href: string
+  href: ProjectPath
   // AC-9: Overview's own href (`/projects/:id`) has no further path segments, so it needs a
   // strict-equality match — reusing isActiveNavItem's prefix rule for it would also light up
   // Overview on every deeper project screen (e.g. `/projects/:id/credentials`), since every one
@@ -35,7 +36,7 @@ const PROJECT_NAV_ITEM_DEFS: ProjectNavItemDef[] = [
   { label: 'Status Page', suffix: 'status-page' },
 ]
 
-export function projectNavHref(projectId: string, suffix: string): string {
+export function projectNavHref(projectId: string, suffix: string): ProjectPath {
   return suffix ? `/projects/${projectId}/${suffix}` : `/projects/${projectId}`
 }
 

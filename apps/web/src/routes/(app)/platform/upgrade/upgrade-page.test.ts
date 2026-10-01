@@ -6,13 +6,18 @@ import { cleanup, render, screen, within } from '@testing-library/svelte'
 import { routeExists } from '$lib/test/route-exists.js'
 import type { CliVersionPolicy, CliVersionPolicyResult } from '$lib/api/platform.js'
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData, deniedPageData } from '$lib/test/page-data.js'
 import UpgradePage from './+page.svelte'
 
 afterEach(() => cleanup())
 
-function allowedData(overrides: Record<string, unknown> = {}) {
+type AllowedData = Extract<ComponentProps<typeof UpgradePage>['data'], { allowed: true }>
+
+function allowedData(overrides: Partial<AllowedData> = {}): AllowedData {
   return {
-    allowed: true as const,
+    ...appLayoutData(),
+    allowed: true,
     version: '0.9.0',
     versionSource: 'release' as const,
     apiDocsEnabled: false,
@@ -86,7 +91,7 @@ describe('/platform/upgrade +page.svelte', () => {
   })
 
   it('a non-operator sees the platform-operator-required notice', () => {
-    render(UpgradePage, { props: { data: { allowed: false } } })
+    render(UpgradePage, { props: { data: deniedPageData() } })
 
     expect(screen.getByRole('heading', { name: /platform operator access required/i })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: /current version/i })).toBeNull()
@@ -451,7 +456,7 @@ describe('/platform/upgrade +page.svelte', () => {
     })
 
     it('AC-5: a non-operator sees no CLI Version Policy heading', () => {
-      render(UpgradePage, { props: { data: { allowed: false } } })
+      render(UpgradePage, { props: { data: deniedPageData() } })
 
       expect(screen.queryByRole('heading', { name: /cli version policy/i })).toBeNull()
     })

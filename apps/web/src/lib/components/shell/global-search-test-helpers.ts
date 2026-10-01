@@ -1,7 +1,7 @@
 import { vi } from 'vitest'
 import type { SearchResultItem } from '$lib/api/search.js'
 
-export const credentialResult: SearchResultItem = {
+export const credentialResult: Extract<SearchResultItem, { type: 'credential' }> = {
   type: 'credential',
   id: 'cred-1',
   name: 'Stripe API Key',

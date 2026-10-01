@@ -22,7 +22,9 @@
 
   // Story 22.3 AC-6: defensive against a malformed/missing auditStorageByOrg in an otherwise-200
   // response — never crash the page over an additive field.
-  let auditRows = $state<AuditStorageOrgRow[]>(
+  // Story 68.1 AC-3: writable $derived, so a new load resets the rows while a successful quota
+  // save can still replace its row in place (mapping over the current, possibly refreshed, rows).
+  let auditRows = $derived<AuditStorageOrgRow[]>(
     data.allowed && data.usage ? (data.usage.auditStorageByOrg ?? []) : []
   )
 
@@ -192,7 +194,10 @@
   <h1 class="text-2xl font-bold text-gray-900">Resource Usage</h1>
   <p class="mt-1 text-gray-500">Monitor instance-wide resource consumption and limits.</p>
 
-  <PlatformWarningsBanner warnings={data.warnings} messages={WARNING_MESSAGES} />
+  <PlatformWarningsBanner
+    warnings={data.allowed ? data.warnings : []}
+    messages={WARNING_MESSAGES}
+  />
 
   {#if data.errorMessage}
     <MfaAwareErrorAlert

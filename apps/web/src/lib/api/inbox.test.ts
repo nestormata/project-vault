@@ -80,17 +80,20 @@ describe('inbox mutations', () => {
   })
 
   it.each([
-    [markInboxEntryRead, ['notification-1']],
-    [markAllInboxRead, []],
-  ] as const)('accepts ordinary success and 204, but rejects failures', async (operation, args) => {
+    [
+      'markInboxEntryRead',
+      (fetchFn: typeof fetch) => markInboxEntryRead(fetchFn, 'notification-1'),
+    ],
+    ['markAllInboxRead', (fetchFn: typeof fetch) => markAllInboxRead(fetchFn)],
+  ])('%s accepts ordinary success and 204, but rejects failures', async (_name, operation) => {
     await expect(
-      operation(vi.fn().mockResolvedValue(new Response(null, { status: 200 })), ...args)
+      operation(vi.fn().mockResolvedValue(new Response(null, { status: 200 })))
     ).resolves.toBeUndefined()
     await expect(
-      operation(vi.fn().mockResolvedValue(new Response(null, { status: 204 })), ...args)
+      operation(vi.fn().mockResolvedValue(new Response(null, { status: 204 })))
     ).resolves.toBeUndefined()
     await expect(
-      operation(vi.fn().mockResolvedValue(new Response(null, { status: 500 })), ...args)
+      operation(vi.fn().mockResolvedValue(new Response(null, { status: 500 })))
     ).rejects.toThrow(/failed/i)
   })
 

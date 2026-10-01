@@ -10,8 +10,10 @@
 
   let { data }: { data: PageData } = $props()
 
-  let orgs = $state<OrgListItem[]>(data.allowed ? data.orgs : [])
-  let pageError = $state<string | null>(data.allowed ? data.errorMessage : null)
+  // Story 68.1 AC-3: writable $derived, so a new load (invalidate/navigation) resets the list
+  // while the post-create refresh below can still replace it locally.
+  let orgs = $derived<OrgListItem[]>(data.allowed ? data.orgs : [])
+  const pageError = $derived<string | null>(data.allowed ? data.errorMessage : null)
 
   let newOrgName = $state('')
   let newOrgOwnerEmail = $state('')

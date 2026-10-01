@@ -15,7 +15,7 @@ const writePreAuthThemeCacheMock = vi.hoisted(() => vi.fn())
 const setLocaleMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const getLocaleMock = vi.hoisted(() => vi.fn(() => 'es'))
 const patchUserLocaleMock = vi.hoisted(() => vi.fn())
-const consumeRegistrationLocalePendingMock = vi.hoisted(() => vi.fn(() => null))
+const consumeRegistrationLocalePendingMock = vi.hoisted(() => vi.fn((): string | null => null))
 
 vi.mock('$lib/api/auth.js', () => ({
   login: loginMock,

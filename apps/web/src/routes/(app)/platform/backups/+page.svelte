@@ -18,8 +18,10 @@
 
   let { data }: { data: PageData } = $props()
 
-  let backups = $state<BackupListItem[]>(data.allowed ? data.backups : [])
-  let pageError = $state<string | null>(data.allowed ? data.errorMessage : null)
+  // Story 68.1 AC-3: writable $derived, so a new load resets the list while refreshBackups()
+  // can still replace it locally.
+  let backups = $derived<BackupListItem[]>(data.allowed ? data.backups : [])
+  const pageError = $derived<string | null>(data.allowed ? data.errorMessage : null)
   let triggerMessage = $state<string | null>(null)
   let triggerError = $state<string | null>(null)
 

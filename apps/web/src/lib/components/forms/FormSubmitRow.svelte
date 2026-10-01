@@ -1,5 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
+  import type { ProjectPath } from '$lib/app-paths.js'
 
   let {
     submitLabel,
@@ -9,7 +10,7 @@
   }: {
     submitLabel: string
     pendingLabel: string
-    cancelHref: string
+    cancelHref: ProjectPath
     submitting?: boolean
   } = $props()
 </script>

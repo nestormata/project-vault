@@ -26,6 +26,7 @@ vi.mock('$lib/api/domains.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
@@ -59,7 +60,7 @@ describe('/dashboard +page.server.ts', () => {
     getOrgDashboardMock.mockResolvedValue(null)
     getProjectDashboardMock.mockResolvedValue({ upcomingRotations: [] })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.selectedProject?.id).toBe(projectId)
     expect(result.dashboard).toEqual({ upcomingRotations: [] })
@@ -77,7 +78,7 @@ describe('/dashboard +page.server.ts', () => {
     listCertificatesMock.mockResolvedValue([{ id: 'certificate-1' }])
     listDomainsMock.mockResolvedValue([{ id: 'domain-1' }])
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.monitoringAssets.certificates).toBeInstanceOf(Promise)
     await expect(result.monitoringAssets.certificates).resolves.toEqual({
@@ -106,7 +107,7 @@ describe('/dashboard +page.server.ts', () => {
     listCertificatesMock.mockResolvedValue([{ id: 'certificate-2' }])
     listDomainsMock.mockResolvedValue([{ id: 'domain-2' }])
 
-    const result = await load(makeEvent({ projectId: secondProjectId }))
+    const result = expectLoaded(await load(makeEvent({ projectId: secondProjectId })))
 
     expect(result.selectedProject?.id).toBe(secondProjectId)
     expect(getProjectDashboardMock).toHaveBeenCalledWith(expect.anything(), secondProjectId)
@@ -132,7 +133,7 @@ describe('/dashboard +page.server.ts', () => {
       hasNext: false,
     })
 
-    const result = await load(makeEvent({ projectId: laterProjectId }))
+    const result = expectLoaded(await load(makeEvent({ projectId: laterProjectId })))
 
     expect(result.selectedProject?.id).toBe(laterProjectId)
     expect(getProjectDashboardMock).toHaveBeenCalledWith(expect.anything(), laterProjectId)
@@ -151,7 +152,7 @@ describe('/dashboard +page.server.ts', () => {
     })
     getProjectDashboardMock.mockResolvedValue({ upcomingRotations: [] })
 
-    const result = await load(makeEvent({ projectId: 'not-accessible' }))
+    const result = expectLoaded(await load(makeEvent({ projectId: 'not-accessible' })))
 
     expect(result.selectedProject?.id).toBe(projectId)
     expect(getProjectDashboardMock).toHaveBeenCalledWith(expect.anything(), projectId)
@@ -169,7 +170,7 @@ describe('/dashboard +page.server.ts', () => {
     listCertificatesMock.mockRejectedValue(new Error('certificates unavailable'))
     listDomainsMock.mockResolvedValue([{ id: 'domain-1' }, { id: 'domain-2' }])
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.dashboard).toEqual({ unresolvedAlertCount: 3, upcomingRotations: [] })
     await expect(result.monitoringAssets.certificates).resolves.toEqual({
@@ -192,7 +193,7 @@ describe('/dashboard +page.server.ts', () => {
     listCertificatesMock.mockResolvedValue([{ id: 'certificate-1' }])
     listDomainsMock.mockResolvedValue([{ id: 'domain-1' }])
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.selectedProject?.id).toBe(projectId)
     expect(result.dashboard).toBeNull()
@@ -221,7 +222,7 @@ describe('/dashboard +page.server.ts', () => {
       )
     )
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.vaultSealed).toBe(true)
     expect(result.dashboard).toBeNull()
@@ -246,7 +247,7 @@ describe('/dashboard +page.server.ts', () => {
       )
     )
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.vaultSealed).toBeFalsy()
     expect(result.dashboard).toEqual({ upcomingRotations: [] })
@@ -271,7 +272,7 @@ describe('/dashboard +page.server.ts', () => {
       )
     )
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.vaultSealed).toBeFalsy()
     expect(result.dashboard).toBeNull()
@@ -291,7 +292,7 @@ describe('/dashboard +page.server.ts', () => {
     getOrgDashboardMock.mockRejectedValue(new ApiClientError(404, null, 'not found'))
     getProjectDashboardMock.mockRejectedValue(new ApiClientError(404, null, 'not found'))
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.vaultSealed).toBeFalsy()
     expect(result.orgDashboard).toBeNull()

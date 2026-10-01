@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
 import { setLocale } from '$lib/paraglide/runtime.js'
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
+import { sampleProjectDashboard, sampleProjectSummary } from '$lib/test/fixtures.js'
 import DashboardPage from './+page.svelte'
 import CrossProjectEmptyState from '$lib/components/dashboard/CrossProjectEmptyState.svelte'
 
@@ -9,31 +12,60 @@ afterEach(async () => {
   await setLocale('en', { reload: false })
 })
 
-const selectedProject = {
+const selectedProject = sampleProjectSummary({
   id: 'p1',
   name: 'Payments API',
   description: 'Stripe + billing webhooks',
+})
+
+const dashboard = sampleProjectDashboard({
+  credentialStats: { active: 3, expiringSoon: 1, expired: 0 },
+  monitoredServiceHealth: { healthy: 1, degraded: 0, down: 0 },
+})
+
+type Data = ComponentProps<typeof DashboardPage>['data']
+/** The loaded dashboard (not the sealed-vault fallback). */
+type LoadedData = Exclude<Data, { vaultSealed: true }>
+
+/** The loader's sealed-vault (503) fallback. */
+function sealedDashboardData(): Data {
+  return {
+    ...appLayoutData(),
+    projects: { items: [] },
+    selectedProject: null,
+    dashboard: null,
+    orgDashboard: null,
+    vaultSealed: true,
+  }
 }
 
-const dashboard = {
-  credentialStats: { active: 3, expiringSoon: 1, expired: 0 },
-  unresolvedAlertCount: 0,
-  monitoredServiceHealth: { healthy: 1, degraded: 0, down: 0 },
-  upcomingRotations: [],
-  recentAccessEvents: [],
-  suggestedActions: [],
+function dashboardData(overrides: Partial<LoadedData> = {}): LoadedData {
+  return {
+    ...appLayoutData(),
+    projects: { items: [selectedProject], total: 1, page: 1, limit: 100, hasNext: false },
+    selectedProject,
+    dashboard,
+    orgDashboard: null,
+    orgDashboardError: false,
+    dashboardError: false,
+    alertStatus: 'ready',
+    monitoringAssets: {
+      certificates: Promise.resolve({ status: 'ready', count: 0 }),
+      domains: Promise.resolve({ status: 'ready', count: 0 }),
+    },
+    ...overrides,
+  }
 }
 
 describe('/dashboard +page.svelte (AC-13)', () => {
   it('the selected project name links to its overview page, not a credential deep link', () => {
     render(DashboardPage, {
       props: {
-        data: {
-          vaultSealed: false,
+        data: dashboardData({
           orgDashboard: null,
           selectedProject,
           dashboard,
-        },
+        }),
       },
     })
 
@@ -47,8 +79,7 @@ describe('/dashboard +page.svelte upcoming-rotations active badge (Story 18.5)',
   it('AC-2/AC-7: an "active" entry renders the rotation-in-progress badge instead of Overdue/Scheduled', () => {
     render(DashboardPage, {
       props: {
-        data: {
-          vaultSealed: false,
+        data: dashboardData({
           orgDashboard: null,
           selectedProject,
           dashboard: {
@@ -62,7 +93,7 @@ describe('/dashboard +page.svelte upcoming-rotations active badge (Story 18.5)',
               },
             ],
           },
-        },
+        }),
       },
     })
 
@@ -74,8 +105,7 @@ describe('/dashboard +page.svelte upcoming-rotations active badge (Story 18.5)',
   it("AC-6: the active badge links to the rotation detail page using the credential detail page's link pattern", () => {
     render(DashboardPage, {
       props: {
-        data: {
-          vaultSealed: false,
+        data: dashboardData({
           orgDashboard: null,
           selectedProject,
           dashboard: {
@@ -89,7 +119,7 @@ describe('/dashboard +page.svelte upcoming-rotations active badge (Story 18.5)',
               },
             ],
           },
-        },
+        }),
       },
     })
 
@@ -100,8 +130,7 @@ describe('/dashboard +page.svelte upcoming-rotations active badge (Story 18.5)',
   it('still renders the pre-existing Overdue/Scheduled badges for non-active entries', () => {
     render(DashboardPage, {
       props: {
-        data: {
-          vaultSealed: false,
+        data: dashboardData({
           orgDashboard: null,
           selectedProject,
           dashboard: {
@@ -121,7 +150,7 @@ describe('/dashboard +page.svelte upcoming-rotations active badge (Story 18.5)',
               },
             ],
           },
-        },
+        }),
       },
     })
 
@@ -140,16 +169,16 @@ describe('Story 28.4 AC1: Dashboard copy translates under the Spanish locale', (
 
     render(DashboardPage, {
       props: {
-        data: {
-          vaultSealed: false,
+        data: dashboardData({
           orgDashboard: {
             totalCredentials: 4,
             expiringWithin30Days: { count: 1, items: [] },
+            projectsWithOverdueRotations: { count: 0, items: [] },
             unresolvedAlertCount: 0,
           },
           selectedProject: null,
           dashboard: null,
-        },
+        }),
       },
     })
 
@@ -164,12 +193,11 @@ describe('Story 28.4 AC1: Dashboard copy translates under the Spanish locale', (
 
     render(DashboardPage, {
       props: {
-        data: {
-          vaultSealed: false,
+        data: dashboardData({
           orgDashboard: null,
           selectedProject,
           dashboard,
-        },
+        }),
       },
     })
 
@@ -184,12 +212,7 @@ describe('Story 28.4 AC1: Dashboard copy translates under the Spanish locale', (
 
     render(DashboardPage, {
       props: {
-        data: {
-          vaultSealed: true,
-          orgDashboard: null,
-          selectedProject: null,
-          dashboard: null,
-        },
+        data: sealedDashboardData(),
       },
     })
 
@@ -220,8 +243,7 @@ describe('Story 28.4 Task 3: dashboard-copy labels are reactive to a no-reload l
   it('re-renders the "Recent activity" event label in Spanish after setLocale, with no remount', async () => {
     const { rerender } = render(DashboardPage, {
       props: {
-        data: {
-          vaultSealed: false,
+        data: dashboardData({
           orgDashboard: null,
           selectedProject,
           dashboard: {
@@ -236,7 +258,7 @@ describe('Story 28.4 Task 3: dashboard-copy labels are reactive to a no-reload l
               },
             ],
           },
-        },
+        }),
       },
     })
 
@@ -244,8 +266,7 @@ describe('Story 28.4 Task 3: dashboard-copy labels are reactive to a no-reload l
 
     await setLocale('es', { reload: false })
     await rerender({
-      data: {
-        vaultSealed: false,
+      data: dashboardData({
         orgDashboard: null,
         selectedProject,
         dashboard: {
@@ -260,7 +281,7 @@ describe('Story 28.4 Task 3: dashboard-copy labels are reactive to a no-reload l
             },
           ],
         },
-      },
+      }),
     })
 
     expect(screen.getByText('Valor revelado')).toBeTruthy()

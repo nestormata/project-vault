@@ -17,6 +17,9 @@ vi.mock('$lib/download.js', () => ({
 }))
 
 import { ApiClientError } from '$lib/api/client.js'
+import { apiClientError } from '$lib/test/api-error.js'
+import type { ComponentProps } from 'svelte'
+import { appLayoutData, type AppLayoutData } from '$lib/test/page-data.js'
 import ErasurePage from './+page.svelte'
 
 const userId = 'u-1'
@@ -49,16 +52,26 @@ const COMPLETED_REPORT = {
   auditEventId: 'evt-1',
 }
 
-function baseData(overrides: Record<string, unknown> = {}) {
-  return {
-    orgRole: 'admin',
-    userId,
-    requestId,
-    state: 'pending' as const,
-    piiInventory: PII_INVENTORY,
-    userEmail,
-    ...overrides,
-  }
+type Data = ComponentProps<typeof ErasurePage>['data']
+type CommonField = 'orgRole' | 'userId' | 'requestId' | 'userEmail'
+/** One `state` variant of the page data, without the fields every variant shares. */
+type StateVariant = Data extends unknown ? Omit<Data, CommonField | keyof AppLayoutData> : never
+
+function commonData(common: Partial<Pick<Data, CommonField>>) {
+  return { ...appLayoutData(), orgRole: 'admin', userId, requestId, userEmail, ...common }
+}
+
+/** The default `pending` state, with the PII inventory loaded. */
+function baseData(common: Partial<Pick<Data, CommonField>> = {}): Data {
+  return { ...commonData(common), state: 'pending', piiInventory: PII_INVENTORY }
+}
+
+/** Any other `state` variant; the call site checks the result against the page data. */
+function stateData<V extends StateVariant>(
+  variant: V,
+  common: Partial<Pick<Data, CommonField>> = {}
+) {
+  return { ...commonData(common), ...variant }
 }
 
 describe('/settings/users/[userId]/erasure/[requestId] +page.svelte (AC groups K/L/M)', () => {
@@ -111,7 +124,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.svelte (AC groups K
 
   it('AC-L3: a 409 user_has_other_org_memberships shows the exact remediation, stays on the pending screen', async () => {
     executeErasureMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         409,
         {
           code: 'user_has_other_org_memberships',
@@ -158,7 +171,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.svelte (AC groups K
 
   it('state=in_progress: shows a "currently being processed" notice', () => {
     render(ErasurePage, {
-      props: { data: baseData({ state: 'in_progress', piiInventory: undefined }) },
+      props: { data: stateData({ state: 'in_progress' }) },
     })
     expect(screen.getByText(/currently being processed/i)).toBeTruthy()
   })
@@ -166,7 +179,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.svelte (AC groups K
   it('(regression) state=not_allowed: shows an honest role notice, matching sibling audit pages', () => {
     render(ErasurePage, {
       props: {
-        data: baseData({ orgRole: 'member', state: 'not_allowed', piiInventory: undefined }),
+        data: stateData({ state: 'not_allowed' }, { orgRole: 'member' }),
       },
     })
     expect(screen.getByText(/requires the admin role/i)).toBeTruthy()
@@ -174,7 +187,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.svelte (AC groups K
 
   it('state=not_found: shows a "not found" notice with a link back to /settings/users', () => {
     render(ErasurePage, {
-      props: { data: baseData({ state: 'not_found', piiInventory: undefined }) },
+      props: { data: stateData({ state: 'not_found' }) },
     })
     const link = screen.getByRole('link', { name: /settings.*users|back/i })
     expect(link.getAttribute('href')).toBe('/settings/users')
@@ -184,7 +197,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.svelte (AC groups K
   it('AC-M1: state=completed renders piiRemoved/piiRetained/retentionJustification/auditEventId in the exact response shape', () => {
     render(ErasurePage, {
       props: {
-        data: baseData({ state: 'completed', report: COMPLETED_REPORT, piiInventory: undefined }),
+        data: stateData({ state: 'completed', report: COMPLETED_REPORT }),
       },
     })
 
@@ -197,7 +210,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.svelte (AC groups K
   it('AC-M2: clicking Download compliance report triggers a JSON download of the exact report data', async () => {
     render(ErasurePage, {
       props: {
-        data: baseData({ state: 'completed', report: COMPLETED_REPORT, piiInventory: undefined }),
+        data: stateData({ state: 'completed', report: COMPLETED_REPORT }),
       },
     })
 
@@ -226,7 +239,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.svelte (AC groups K
 
   it('a remediation error pluralizes "organizations" when otherOrgCount > 1', async () => {
     executeErasureMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         409,
         {
           code: 'user_has_other_org_memberships',
