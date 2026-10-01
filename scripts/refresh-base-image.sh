@@ -45,7 +45,9 @@ select_image() {
     *) die "unknown image '$IMAGE' (known: ${IMAGE_NAMES[*]})" ;;
   esac
   REGISTRY="https://registry-1.docker.io/v2/${REPO}"
-  FROM_RE="^FROM ${IMAGE}(:[^@[:space:]]+)?@sha256:[0-9a-f]{64}"
+  # Same FROM shapes the guard accepts: any case, optional leading --flag options (--platform=...).
+  FROM_PREFIX="^FROM( --[^[:space:]]+)* ${IMAGE}(:[^@[:space:]]+)?@"
+  FROM_RE="${FROM_PREFIX}sha256:[0-9a-f]{64}"
 }
 
 require_digest() {
@@ -64,7 +66,7 @@ cmd_current() {
     [[ -f "$root/$file" ]] || die "missing $root/$file"
     while IFS= read -r line; do
       found+=("$(grep -Eo 'sha256:[0-9a-f]{64}' <<<"$line")")
-    done < <(grep -E "$FROM_RE" "$root/$file" || true)
+    done < <(grep -Ei "$FROM_RE" "$root/$file" || true)
   done
   [[ ${#found[@]} -gt 0 ]] || die "no FROM ${IMAGE}@sha256 lines found"
   local unique
@@ -78,9 +80,9 @@ cmd_rewrite() {
   require_digest "$new"
   for file in "${FILES[@]}"; do
     [[ -f "$root/$file" ]] || die "missing $root/$file"
-    count=$(grep -Ec "$FROM_RE" "$root/$file" || true)
+    count=$(grep -Eic "$FROM_RE" "$root/$file" || true)
     [[ "$count" -gt 0 ]] || die "$file has no FROM ${IMAGE}@sha256 line to rewrite"
-    sed -E -i "s#^(FROM ${IMAGE}(:[^@[:space:]]+)?@)sha256:[0-9a-f]{64}#\\1${new}#" "$root/$file"
+    sed -E -i "s#(${FROM_PREFIX})sha256:[0-9a-f]{64}#\\1${new}#I" "$root/$file"
     total=$((total + count))
   done
   echo "rewrote $total FROM lines to $new"

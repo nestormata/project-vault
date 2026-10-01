@@ -26,7 +26,7 @@ const DOCKERFILE_TEXT = new Map<string, string>(
   Object.entries(
     import.meta.glob<string>(
       [
-        '../**/Dockerfile*',
+        '../**/[Dd]ockerfile*',
         '../**/*.[Dd]ockerfile',
         '../**/[Cc]ontainerfile*',
         '!../**/node_modules/**',
@@ -221,20 +221,20 @@ function checkExternal(ref: string, pins: Pin[], invalid: InvalidRef[], context:
   else invalid.push({ ref, reason: `${context} is not pinned as <image>@sha256:<64 hex>` })
 }
 
-/** `--from=<x>` of a COPY, or `from=<x>` inside a RUN `--mount=` option; undefined when absent. */
-function copyOrMountSource(tokens: string[]): string | undefined {
+/** Every `--from=<x>` of a COPY and every `from=<x>` inside a RUN `--mount=` option. */
+function copyOrMountSources(tokens: string[]): string[] {
   const instruction = tokens.at(0)?.toUpperCase()
+  const sources: string[] = []
   for (const token of tokens.slice(1)) {
-    if (instruction === 'COPY' && token.startsWith('--from=')) return token.slice('--from='.length)
-    if (instruction === 'RUN' && token.startsWith('--mount=')) {
-      const part = token
-        .slice('--mount='.length)
-        .split(',')
-        .find((option) => option.startsWith('from='))
-      if (part) return part.slice('from='.length)
+    if (instruction === 'COPY' && token.startsWith('--from=')) {
+      sources.push(token.slice('--from='.length))
+    } else if (instruction === 'RUN' && token.startsWith('--mount=')) {
+      for (const option of token.slice('--mount='.length).split(',')) {
+        if (option.startsWith('from=')) sources.push(option.slice('from='.length))
+      }
     }
   }
-  return undefined
+  return sources
 }
 
 /** Validates one Dockerfile: every external `FROM`, `COPY --from=` and `RUN --mount from=` must be
@@ -269,10 +269,10 @@ function checkCopySource(
   pins: Pin[],
   invalid: InvalidRef[]
 ): void {
-  const source = copyOrMountSource(tokens)
-  if (source === undefined) return
-  if (declaredStages.has(source.toLowerCase()) || /^\d+$/.test(source)) return
-  checkExternal(source, pins, invalid, `${tokens.at(0)?.toUpperCase()} from=`)
+  for (const source of copyOrMountSources(tokens)) {
+    if (declaredStages.has(source.toLowerCase()) || /^\d+$/.test(source)) continue
+    checkExternal(source, pins, invalid, `${tokens.at(0)?.toUpperCase()} from=`)
+  }
 }
 
 interface AggregateValidation {
@@ -434,6 +434,11 @@ describe('base image pin guard', () => {
         validateDockerfile(`${head}RUN --mount=type=bind,from=alpine:3,target=/x true\n`)
           .invalidRefs
       ).toEqual(['alpine:3'])
+      expect(
+        validateDockerfile(
+          `${head}RUN --mount=type=bind,from=builder,target=/a --mount=type=bind,from=alpine:3,target=/b true\n`
+        ).invalidRefs
+      ).toEqual(['alpine:3'])
     })
 
     it('T17: tag+digest and bare digest are the same family and digest, with ports in names', () => {
@@ -512,6 +517,10 @@ describe('base image pin guard', () => {
   })
 
   describe('discovery', () => {
+    it('matches a lowercase dockerfile name', () => {
+      expect(isDockerfilePath('services/x/dockerfile')).toBe(true)
+    })
+
     it('T9: matches Dockerfile names but not documentation named like one', () => {
       for (const ok of [
         'Dockerfile',

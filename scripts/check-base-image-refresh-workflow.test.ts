@@ -255,6 +255,17 @@ describe('refresh-base-image.sh', () => {
     expect(readFixture(dir, POSTGRES_DOCKERFILE)).toBe(before)
   })
 
+  it('rewrites FROM lines the guard accepts: --platform option and lowercase from', () => {
+    const dir = fixture()
+    const file = join(dir, POSTGRES_DOCKERFILE)
+    spawnSync('sed', ['-i', 's#^FROM postgres@#from --platform=linux/amd64 postgres@#', file])
+    expect(run('current', '--image', 'postgres', dir).stdout.trim()).toBe(OLD_PG)
+    expect(run('rewrite', '--image', 'postgres', NEW_PG, dir).status).toBe(0)
+    expect(readFixture(dir, POSTGRES_DOCKERFILE)).toContain(
+      `from --platform=linux/amd64 postgres@${NEW_PG}`
+    )
+  })
+
   it('keeps the postgres pin a bare digest and is a no-op when the digest is unchanged', () => {
     const dir = fixture()
     const before = readFixture(dir, POSTGRES_DOCKERFILE)
