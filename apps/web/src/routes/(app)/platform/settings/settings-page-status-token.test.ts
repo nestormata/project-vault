@@ -168,4 +168,43 @@ describe('/platform/settings status-token section (Story 1.19 AC-5/AC-6)', () =>
     })
     expect(screen.queryByRole('button', { name: /copied/i })).toBeNull()
   })
+
+  // Story 68.1 AC-3: the status-token metadata follows a new load (no remount).
+  it('stale state: the status-token metadata follows a new load without remounting', async () => {
+    const { rerender } = render(SettingsPage, { props: { data: allowedData() } })
+    expect(screen.getByTestId('status-token-state').textContent).toMatch(/not configured/i)
+
+    await rerender({
+      data: allowedData({
+        statusToken: { configured: true, createdAt: new Date().toISOString() },
+      }),
+    })
+
+    expect(screen.getByTestId('status-token-state').textContent).toMatch(/^configured$/i)
+    expect(screen.getByRole('button', { name: /rotate token/i })).toBeTruthy()
+  })
+
+  // Story 68.1 AC-3 (secure-display-once): the plaintext is never part of `data`; once cleared
+  // (by revoke, as today) a later load must not bring it back.
+  it('stale state: a cleared revealed token is not re-shown after a new load', async () => {
+    generateStatusTokenMock.mockResolvedValue({
+      token: 'plaintext-secret-token-value',
+      createdAt: new Date().toISOString(),
+    })
+    revokeStatusTokenMock.mockResolvedValue(undefined)
+    const { rerender } = render(SettingsPage, { props: { data: allowedData() } })
+    await fireEvent.click(screen.getByRole('button', { name: /generate token/i }))
+    await waitFor(() => expect(screen.getByText('plaintext-secret-token-value')).toBeTruthy())
+    await fireEvent.click(screen.getByRole('button', { name: /^revoke$/i }))
+    await waitFor(() => expect(screen.queryByText('plaintext-secret-token-value')).toBeNull())
+
+    await rerender({
+      data: allowedData({
+        statusToken: { configured: true, createdAt: new Date().toISOString() },
+      }),
+    })
+
+    expect(screen.queryByText('plaintext-secret-token-value')).toBeNull()
+    expect(screen.getByTestId('status-token-state').textContent).toMatch(/^configured$/i)
+  })
 })

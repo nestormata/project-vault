@@ -269,4 +269,39 @@ describe('/platform/settings +page.svelte', () => {
     await screen.findByText(/settings saved successfully/i)
     expect(saveButton.disabled).toBe(false)
   })
+
+  // Story 68.1 AC-3: a form field re-seeds when the persisted setting changes in a new load...
+  it('stale state: a form field follows a changed persisted value from a new load', async () => {
+    const { rerender } = render(SettingsPage, { props: { data: allowedData() } })
+    expect((screen.getByLabelText(/^host$/i) as HTMLInputElement).value).toBe('smtp.example.com')
+
+    await rerender({
+      data: allowedData({
+        settings: {
+          ...SAMPLE_SETTINGS,
+          smtp: { ...SAMPLE_SETTINGS.smtp, host: 'smtp.new.example' },
+        },
+      }),
+    })
+
+    expect((screen.getByLabelText(/^host$/i) as HTMLInputElement).value).toBe('smtp.new.example')
+  })
+
+  // ...but an unrelated reload that returns the same persisted values does not wipe an edit.
+  it('stale state: an unrelated reload with unchanged settings keeps a dirty input', async () => {
+    const { rerender } = render(SettingsPage, { props: { data: allowedData() } })
+    const hostInput = screen.getByLabelText(/^host$/i) as HTMLInputElement
+    await fireEvent.input(hostInput, { target: { value: 'typing-in-progress.example' } })
+
+    await rerender({
+      data: allowedData({
+        settings: structuredClone(SAMPLE_SETTINGS),
+        statusToken: { configured: true, createdAt: new Date().toISOString() },
+      }),
+    })
+
+    expect((screen.getByLabelText(/^host$/i) as HTMLInputElement).value).toBe(
+      'typing-in-progress.example'
+    )
+  })
 })
