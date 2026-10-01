@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import ts from 'typescript'
 import semver from 'semver'
 
@@ -319,8 +320,45 @@ export function validateSinceIndex(snapshot: string, currentVersion = '2.0.0'): 
   return errors
 }
 
+const CONTRACT_CHANGED =
+  'public contract changed: update api-surface.snapshot.md and classify the change against AC-2'
+const REGENERATE_HINT =
+  'regenerate with `pnpm tsx tests/api-surface.ts --write` from packages/extension-api (CONTRIBUTING.md), then classify the change'
+const MAX_DIFF_LINES = 20
+
+// Story 66-6 AC-7: show the first differing lines (unified-diff style, `-` committed, `+`
+// generated) so a CI log alone explains the mismatch; never dump the full ~97 KB snapshot.
+function firstDifferingLines(committed: string, generated: string): string[] {
+  const before = committed.split('\n')
+  const after = generated.split('\n')
+  const diff: string[] = []
+  let hidden = 0
+  for (let index = 0; index < Math.max(before.length, after.length); index += 1) {
+    const left = before.at(index)
+    const right = after.at(index)
+    if (left === right) continue
+    const pair = [left, right].flatMap((line, side) =>
+      line === undefined ? [] : [`${side === 0 ? '-' : '+'} ${line}`]
+    )
+    if (diff.length + pair.length > MAX_DIFF_LINES) {
+      hidden += pair.length
+      continue
+    }
+    diff.push(`@@ line ${index + 1} @@`, ...pair)
+  }
+  return hidden > 0 ? [...diff, `… ${hidden} more differing lines not shown`] : diff
+}
+
+/**
+ * Compares a generated surface against the committed `api-surface.snapshot.md`.
+ *
+ * Story 66-6: the caller passes the generated snapshot in. The test path produces it once in an
+ * uninstrumented child process (tests/surface-runner.ts); this function reads the committed file
+ * itself and does the comparison, so a child that prints nothing or "ok" can never pass.
+ */
 export function assertSurfaceSnapshotIsFresh(
-  root: string
+  root: string,
+  generated: string
 ): { ok: true } | { ok: false; errors: string[] } {
   const snapshot = readFileSync(join(root, SNAPSHOT_NAME), 'utf8')
   const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
@@ -328,18 +366,47 @@ export function assertSurfaceSnapshotIsFresh(
   }
   const errors = validateSinceIndex(snapshot, packageJson.version)
   if (errors.length > 0) return { ok: false, errors }
-  const expected = generateSurfaceSnapshot(root)
-  return expected === snapshot
+  return generated === snapshot
     ? { ok: true }
     : {
         ok: false,
-        errors: [
-          'public contract changed: update api-surface.snapshot.md and classify the change against AC-2',
-        ],
+        errors: [CONTRACT_CHANGED, REGENERATE_HINT, ...firstDifferingLines(snapshot, generated)],
       }
 }
 
-if (import.meta.url === `file://${process.argv[1]}` && process.argv.includes('--write')) {
-  const root = process.cwd()
-  writeFileSync(join(root, SNAPSHOT_NAME), generateSurfaceSnapshot(root))
+interface CliStream {
+  write(chunk: string): boolean
+}
+
+/**
+ * `--emit` writes the generated snapshot to stdout (used by the surface runner's child process);
+ * `--write` regenerates the committed snapshot in place (CONTRIBUTING.md).
+ */
+export function runSurfaceCli(
+  argv: readonly string[],
+  root: string,
+  io: { stdout: CliStream; stderr: CliStream } = process
+): number {
+  if (argv.includes('--emit')) {
+    try {
+      io.stdout.write(generateSurfaceSnapshot(root))
+      return 0
+    } catch (error) {
+      io.stderr.write(
+        `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`
+      )
+      return 1
+    }
+  }
+  if (argv.includes('--write')) {
+    writeFileSync(join(root, SNAPSHOT_NAME), generateSurfaceSnapshot(root))
+    return 0
+  }
+  io.stderr.write('usage: tsx tests/api-surface.ts --emit | --write\n')
+  return 2
+}
+
+const entryPoint = process.argv[1]
+if (entryPoint !== undefined && import.meta.url === pathToFileURL(entryPoint).href) {
+  process.exitCode = runSurfaceCli(process.argv, process.cwd())
 }

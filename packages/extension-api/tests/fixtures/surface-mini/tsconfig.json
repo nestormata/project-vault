@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "lib": ["es5"],
+    "types": [],
+    "noEmit": true
+  },
+  "files": ["src/index.ts"]
+}
