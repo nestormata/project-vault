@@ -380,25 +380,44 @@ const MAX_DIFF_LINES = 20
 
 // Story 66-6 AC-7: show the first differing lines (unified-diff style, `-` committed, `+`
 // generated) so a CI log alone explains the mismatch; never dump the full ~97 KB snapshot.
+function commonPrefixLength(before: readonly string[], after: readonly string[]): number {
+  let length = 0
+  while (length < Math.min(before.length, after.length) && before.at(length) === after.at(length))
+    length += 1
+  return length
+}
+
+function commonSuffixLength(
+  before: readonly string[],
+  after: readonly string[],
+  prefix: number
+): number {
+  let length = 0
+  while (
+    length < Math.min(before.length, after.length) - prefix &&
+    before.at(-1 - length) === after.at(-1 - length)
+  )
+    length += 1
+  return length
+}
+
 function firstDifferingLines(committed: string, generated: string): string[] {
   const before = committed.split('\n')
   const after = generated.split('\n')
-  const diff: string[] = []
-  let hidden = 0
-  for (let index = 0; index < Math.max(before.length, after.length); index += 1) {
-    const left = before.at(index)
-    const right = after.at(index)
-    if (left === right) continue
-    const pair = [left, right].flatMap((line, side) =>
-      line === undefined ? [] : [`${side === 0 ? '-' : '+'} ${line}`]
-    )
-    if (diff.length + pair.length > MAX_DIFF_LINES) {
-      hidden += pair.length
-      continue
-    }
-    diff.push(`@@ line ${index + 1} @@`, ...pair)
-  }
-  return hidden > 0 ? [...diff, `… ${hidden} more differing lines not shown`] : diff
+  const prefix = commonPrefixLength(before, after)
+  const suffix = commonSuffixLength(before, after, prefix)
+  const removed = before.slice(prefix, before.length - suffix).map((line) => `- ${line}`)
+  const added = after.slice(prefix, after.length - suffix).map((line) => `+ ${line}`)
+  // Split the line budget between both sides so a large removal cannot hide every addition.
+  const removedShown = removed.slice(0, Math.max(MAX_DIFF_LINES / 2, MAX_DIFF_LINES - added.length))
+  const addedShown = added.slice(0, MAX_DIFF_LINES - removedShown.length)
+  const hidden = removed.length + added.length - removedShown.length - addedShown.length
+  return [
+    `@@ committed line ${prefix + 1}, generated line ${prefix + 1} @@`,
+    ...removedShown,
+    ...addedShown,
+    ...(hidden > 0 ? [`… ${hidden} more differing lines not shown`] : []),
+  ]
 }
 
 /**

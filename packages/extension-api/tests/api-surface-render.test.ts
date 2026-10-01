@@ -19,6 +19,7 @@ const tempRoots: string[] = []
 const NO_LIB_TSCONFIG = '{"compilerOptions":{"noLib":true,"types":[]}}'
 const SNAPSHOT_FILE = 'api-surface.snapshot.md'
 const INDEX_FILE = 'src/index.ts'
+const TRUNCATION_NOTE = 'more differing lines not shown'
 const EMIT_ARGV = ['node', 'api-surface.ts', '--emit']
 
 // One read and one write call site keep the fs access to temp roots and the committed fixture.
@@ -222,7 +223,27 @@ describe('assertSurfaceSnapshotIsFresh (parent-side compare)', () => {
     expect(diffLines.length).toBeGreaterThan(0)
     expect(diffLines.length).toBeLessThanOrEqual(20)
     expect(errors.join('\n')).toContain('+ ## export `Extra0`')
-    expect(errors.join('\n')).toContain('more differing lines not shown')
+    expect(errors.join('\n')).toContain(TRUNCATION_NOTE)
+  })
+
+  it('shows an inserted export as added lines only, not as every following line shifting', () => {
+    const committed = readText(fixtureRoot, SNAPSHOT_FILE)
+    const anchor = '## export `Both`'
+    const inserted = '## export `Added`\n\n- since: 1.0.0\n- kind: value\n- type: `1`\n\n'
+    const generated = committed.replace(anchor, `${inserted}${anchor}`)
+
+    const result = assertSurfaceSnapshotIsFresh(fixtureRoot, generated)
+
+    const errors = result.ok ? [] : result.errors
+    expect(errors.filter((line) => line.startsWith('- '))).toEqual([])
+    expect(errors.filter((line) => line.startsWith('+ '))).toEqual(
+      inserted
+        .split('\n')
+        .slice(0, -1)
+        .map((line) => `+ ${line}`)
+    )
+    expect(errors.join('\n')).toMatch(/@@ committed line \d+, generated line \d+ @@/)
+    expect(errors.join('\n')).not.toContain(TRUNCATION_NOTE)
   })
 
   it('shows both sides of a changed line', () => {
@@ -234,7 +255,7 @@ describe('assertSurfaceSnapshotIsFresh (parent-side compare)', () => {
     const text = result.ok ? '' : result.errors.join('\n')
     expect(text).toContain('- - member: `tags?`')
     expect(text).toContain('+ - member: `tags`')
-    expect(text).not.toContain('more differing lines not shown')
+    expect(text).not.toContain(TRUNCATION_NOTE)
   })
 })
 
