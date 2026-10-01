@@ -9,70 +9,42 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
-### Upgrade notes (read before `docker compose pull`)
-
-- **`CORS_ALLOWED_ORIGINS` entries equal to `null` now stop the api from booting** (and web ignores
-  them). This is the only change in this release section that can stop an existing config from
-  booting. Browsers send `Origin: null` from sandboxed iframes and `file://` pages, so such an
-  entry would have let any page that sandboxes itself make credentialed requests. Remove the entry.
-
-### Added
-
-- New Compose-only `CORS_EXTRA_ORIGINS`: a comma-separated list of extra trusted origins (e.g.
-  CentralizeMe's real origin) appended to PV's own origin for both the api and web services. Under
-  Docker Compose, `CORS_ALLOWED_ORIGINS` in `.env` is still ignored; use this variable instead.
-
-### Changed
-
-- Notifications enqueued through `HostServices.notificationOriginator` are now dispatched right after
-  the enqueue commits, so the first send happens in seconds instead of waiting 5 to 15 minutes for
-  the periodic catch-up. If the immediate dispatch is unavailable, the catch-up still delivers the
-  row.
-- `.env.example` no longer sets `VAULT_HANDOFF_ISSUER`, so new configs do not show the "Return to
-  CentralizeMe" link on the handoff consent page. Existing configs that set it keep the link. An
-  empty `VAULT_HANDOFF_ISSUER` now means the default issuer (`https://app.centralizeme.com`)
-  instead of an api boot failure.
-- An API startup failure (`startup.failed`) is now written to **stderr** instead of stdout, in
-  every environment. Log shippers that read only stdout for this event must also read stderr.
-  An `ADMIN_DATABASE_URL` that cannot be reached now names the reason (`auth_failed`,
-  `database_missing`, `permission_denied`, `connection_failed`, `role_row_missing` or `unknown`),
-  and `pnpm check-admin-pool` prints it too. (Story 66.4)
-
-### Security
-
-- `pvault` now strips Unicode bidi controls, zero-width characters and other invisible format
-  characters (as well as control characters) from every string it prints, so a hostile server,
-  credential name or command cannot visually reorder or hide what you read. Error text that comes
-  from the server or a library is now printed on one line and capped at 500 characters.
-- The API now drops an `x-vault-target-command` audit value that contains such characters (the
-  reveal itself still succeeds and is still audited), and the agent strips them before sending it.
-
-### Fixed
-
-- The API now always reports why it refused to start: one redacted `startup.failed` JSON line on
-  stderr, whatever `NODE_ENV` and `LOG_LEVEL` say. Before, `LOG_LEVEL=silent` or `fatal` in any
-  environment, and every `NODE_ENV=test` process, exited 1 with no output. (Story 66.4)
-
-## [1.3.0] - 2026-09-27
+## [1.3.0] - 2026-10-01
 
 Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.3.0`
-(aliases `1.3`, `1`, `latest`). Extension API contract: `@project-vault/extension-api@3.24.1`;
-this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
+(aliases `1.3`, `1`, `latest`). Extension API contract: `@project-vault/extension-api@3.25.0`;
+this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.25.0`
 (`HOST_SUPPORTED_EXTENSION_API_RANGE`). CLI: `pvault-1.3.0.mjs` on this release's assets.
 
 ### Upgrade notes (read before `docker compose pull`)
 
-- **Migrations 0094-0100 run automatically** via the `migrate` service. All seven are additive
+- **Migrations 0094-0101 run automatically** via the `migrate` service. All eight are additive
   (three new tables, nullable or defaulted new columns, new indexes), and the migration guard
   refuses none of them. None backfills existing rows. Migration 0098 builds a partial index on
   `notification_queue`, which briefly blocks writes to that table in proportion to its size.
-  Images on `latest`, `1` or `1.3` pick these migrations up on the next pull.
+  Migration 0101 adds two nullable columns to `notification_queue` (`claim_expires_at`,
+  `send_started_at`) with no default and no index. Images on `latest`, `1` or `1.3` pick these
+  migrations up on the next pull.
+- **`CORS_ALLOWED_ORIGINS` entries equal to `null` now stop the api from booting** (and web ignores
+  them). This is the only 1.3.0 change that can stop an existing self-hosted config from booting.
+  Browsers send `Origin: null` from sandboxed iframes and `file://` pages, so such an entry would
+  have let any page that sandboxes itself make credentialed requests. Remove the entry. The same
+  rule applies to the new Compose-only `CORS_EXTRA_ORIGINS` (see Added). (Story 60-7, #478)
 - **No new required environment variables.** Four new optional API variables tune the
   scheduled-task extension hook: `MIN_SCHEDULED_TASK_INTERVAL_MINUTES` (default `1`),
   `MAX_SCHEDULED_TASKS_PER_EXTENSION` (default `32`), `SCHEDULED_TASK_MAX_CONCURRENCY`
   (default `20`) and `SCHEDULED_TASK_MISSED_TICK_THRESHOLD` (default `3`, range `2`-`100`; see
   the missed-tick alert under Added). `docker-compose.yml` does not forward them; to change one under Compose, add it
   to the `api` service's `environment`.
+- **Internal TLS variables (optional, off by default):** the api reads `API_TLS_CERT_B64`,
+  `API_TLS_KEY_B64`, `API_TLS_CLIENT_CA_B64`, `DATABASE_TLS_CA_B64`, `DATABASE_TLS_CLIENT_CERT_B64`
+  and `DATABASE_TLS_CLIENT_KEY_B64`, and the web reads `API_TLS_CA_B64`, `API_TLS_CLIENT_CERT_B64`
+  and `API_TLS_CLIENT_KEY_B64` (single-line base64 of PEM; empty means unset). Docker Compose does
+  not set them and nothing changes when they are unset. A value that does not decode, a cert
+  without its key, or a key that does not match its cert stops the api from booting; on the web,
+  any of them set requires an `https://` `API_BASE_URL`, and a bad value fails the first
+  server-side api call with an error naming the variable. See Added and
+  [`docs/runbooks/fly-internal-tls.md`](docs/runbooks/fly-internal-tls.md). (Story 43-16, #477)
 - **CLI:** new optional API variables `CLI_MINIMUM_SUPPORTED_VERSION` and `CLI_WITHDRAWN_VERSIONS`
   tighten the `pvault` version policy. Both are unset by default, and an invalid value fails boot.
   See [`docs/runbooks/cli-version-policy.md`](docs/runbooks/cli-version-policy.md).
@@ -85,6 +57,22 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
 - **Fly.io demo scripts:** `scripts/fly-setup.sh` and `scripts/fly-reset.sh` now require
   `VAULT_APP_PASSWORD` and no longer fall back to the migration's publicly known development
   password.
+- **Fly.io demo internal TLS:** 1.3.0 is the first release whose Fly demo runs TLS 1.3 with client
+  certificates on every internal hop (see Security). Its new `db` image refuses to start without
+  the `DB_TLS_*` certificate secrets, which only `scripts/fly-setup.sh` from a 1.3.0 checkout
+  issues. Before the first 1.3.0 deploy, set the CA secrets `FLY_DEMO_INTERNAL_CA_CERT_B64` and
+  `FLY_DEMO_INTERNAL_CA_KEY_B64`, then run the Fly Demo Bootstrap workflow with
+  `release_tag=v1.3.0` (it issues the certificates, switches the database URLs to
+  `sslmode=verify-full` and the web's `API_BASE_URL` to `https://`, redeploys and resets the demo
+  data). Docker Compose deployments are unaffected. See
+  [`docs/runbooks/fly-internal-tls.md`](docs/runbooks/fly-internal-tls.md). (Story 43-16, #477)
+- **Log shippers:** the API's `startup.failed` line is now written to stderr, not stdout, in every
+  environment (see Changed). Read stderr too if you alert on it. (Story 66-4, #495)
+- **Delivery-provider extensions:** a notification whose `send()` resolved, or whose outcome is
+  unknown (the process stopped mid-send), is now marked `failed` instead of being sent again;
+  `send()` is retried only after it rejected. Providers whose `send()` can reject after the
+  message was accepted should deduplicate on `queueRowId` (see Changed). (Story 70-1, #489)
+- **Building from source** needs pnpm 11.28.3 or newer (was 11.21.0). (#484)
 - **Handoff SSO (CentralizeMe):** `POST /api/v1/auth/handoff/prepare` now also returns a
   single-use `claim`, which `/handoff` exchanges same-origin for the `handoff-confirm` cookie. The
   existing cookie is still set, so a caller that ignores `claim` keeps working exactly as before.
@@ -144,7 +132,7 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
 - Audit entries for secret reads made by `pvault` record which command asked for them
   (`clientInvocation`, and for `run` the target command's basename as `clientTargetCommand`). An
   invalid value is dropped and flagged, never failing the request. (#444)
-- Extension API 3.16.0 through 3.24.1 (see
+- Extension API 3.16.0 through 3.25.0 (see
   [its changelog](packages/extension-api/CHANGELOG.md)):
   - `oauthHandoff` hook: an extension can run an OAuth-style redirect and provider callback
     through PV-hosted routes, limited to the origins in its manifest's `redirectOrigins`. (#415)
@@ -172,6 +160,21 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
     the `public-route` capability. Undeclared and denied paths return the same 404, and
     redirects are rejected. (#435)
   - `ActionResult.html` is now shown for every outcome, not only `ok`, after sanitization. (#447)
+  - `DeliveryProviderSendPayload.attemptNumber` (3.25.0), the 1-based attempt number for logs and
+    metrics, and `queueRowId` documented as the provider idempotency key: the same on every retry
+    of one notification and never reused. (Story 70-1, #489)
+- New Compose-only `CORS_EXTRA_ORIGINS`: a comma-separated list of extra trusted origins (e.g.
+  CentralizeMe's real origin) appended to PV's own origin for both the api and web services. Under
+  Docker Compose, `CORS_ALLOWED_ORIGINS` in `.env` is still ignored; use this variable instead.
+  (Story 60-7, #478)
+- Opt-in TLS 1.3 for the api listener (mutual TLS when `API_TLS_CLIENT_CA_B64` is set), a pinned
+  private CA plus a client certificate on every api Postgres connection (pools, pg-boss,
+  migrations), and the same for the web's server-side calls to the api, configured by the
+  variables in Upgrade notes. When it is on, the api logs one `internal_tls.configured` line at
+  startup, `/ready` adds the generic warning `internal_tls_cert_expiring` when a certificate is
+  under 30 days from expiry, and the loopback `/metrics` exposes
+  `pv_internal_tls_cert_expiry_seconds`. The Fly.io demo uses it; Docker Compose does not.
+  (Story 43-16, #477)
 
 ### Changed
 
@@ -196,6 +199,50 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
   dependencies only: `guarded-migrate` now applies migrations with drizzle-orm's migrator instead
   of spawning drizzle-kit. Its invocation and the resulting schema are unchanged.
   (Story 64-3, #465)
+- Notification delivery claims each `notification_queue` row exclusively with a lease, so two
+  workers can no longer send the same notification twice. One `notification/deliver-catchup` job
+  replaces the overlapping per-channel email, Slack and inbox catch-ups, whose old schedules are
+  removed at startup. A row whose send started but whose outcome was never recorded is marked
+  `failed` (logged as `notification.delivery_outcome_unknown`) instead of being sent again, and
+  every notification email carries a stable `Message-ID` (`<pv-nq-<queueRowId>@<domain>>`).
+  (Story 70-1, #489)
+- Notifications enqueued through `HostServices.notificationOriginator` are dispatched right after
+  the enqueue commits, so the first send happens in seconds instead of waiting 5 to 15 minutes for
+  the periodic catch-up. If the immediate dispatch is unavailable, the catch-up still delivers the
+  row. (Story 70-2, #493)
+- The handoff consent page (`/handoff`) shows a "Sign-in couldn't be completed" heading on every
+  error state, a "Not me" link to the login page beside "Confirm sign-in", and a "Return to
+  CentralizeMe" link only when the web process has `VAULT_HANDOFF_ISSUER` set (its origin only;
+  otherwise plain-text guidance). A CentralizeMe-provisioned account's internal placeholder email
+  is shown as "your account". Docker Compose now passes `VAULT_HANDOFF_ISSUER` to both services
+  (web: empty by default). (Story 60-4, #469)
+- The example env file no longer sets `VAULT_HANDOFF_ISSUER`, so new configs do not show the
+  "Return to CentralizeMe" link. Configs copied from an older example that still set it show the
+  link. An empty `VAULT_HANDOFF_ISSUER` now means the default issuer
+  (`https://app.centralizeme.com`) instead of an api boot failure. (Story 60-7, #478)
+- An API startup failure (`startup.failed`) is now written to **stderr** instead of stdout, in
+  every environment. Log shippers that read only stdout for this event must also read stderr.
+  An `ADMIN_DATABASE_URL` that cannot be reached now names the reason (`auth_failed`,
+  `database_missing`, `permission_denied`, `connection_failed`, `role_row_missing` or `unknown`),
+  and `pnpm check-admin-pool` prints it too. (Story 66-4, #495)
+- Licensing: `@project-vault/extension-api` is MIT-licensed from 3.24.2 (earlier published
+  versions stay AGPL-3.0-or-later), and `@project-vault/agent` and the vault GitHub Action are
+  MIT-licensed. Project Vault itself (API, web) stays AGPL-3.0-or-later. The Contributor License
+  Agreement that external pull requests sign is now version 2 ([CLA.md](CLA.md)). (#482)
+- The web app is built with Vite 8 (an override had kept it on Vite 6). (#484)
+
+### Deprecated
+
+- The runtime HTML panel extension API (`onRenderPanel`/`UIPanelResult`, `uiPanelSlots`,
+  `moduleActions` and `data-pv-action`, `panelDataPaths`, the `/extensions/panels` route and its
+  DOMPurify sanitizer) is deprecated and frozen: no new features or fixes, kept until it is
+  replaced or removed, and security issues are resolved by replacing or removing the affected
+  part rather than patching it. A build-time UI composition tier is the planned replacement.
+  (#485)
+- The `navItems` and `moduleDataRoutes` manifest fields are deprecated and frozen on the same
+  terms; their planned replacements are build-time UI composition navigation and first-party API
+  route composition. No code or contract changes; removal follows the
+  [extension API versioning policy](docs/extension-api-versioning-policy.md). (#486)
 
 ### Fixed
 
@@ -212,6 +259,23 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
   cookie with `SameSite=Strict` intact. `/handoff` now sends `Referrer-Policy: strict-origin`, and
   the claim is redacted from security-event logs. Migration 0099 adds the claim column.
   (Story 60-3, #455)
+- The handoff claim exchange now burns the claim and re-keys the confirmation cookie in one
+  database transaction. Before, a failure between the two used up the link, so retrying the same
+  `/handoff` link could never succeed; now a failed exchange leaves the claim usable. A database
+  outage during the claim lookup returns the generic rejection instead of an error. (Story 60-5,
+  #472)
+- Notifications: mark as read, mark all as read and dismiss update the list again. They threw
+  `callback is not a function` in the browser, so nothing changed until a reload. (Story 68-1,
+  #490)
+- Moving from one credential's page to another's (without a full reload) no longer keeps the
+  first credential's dependencies, shares, nudges, lifecycle values, revealed secret value or
+  one-time share token on screen, and a reveal or share started on one credential can no longer
+  land on the next. The status-page settings, platform settings and theme pages likewise follow
+  the project or data they are showing, and a just-issued status-page token is only shown for the
+  project it belongs to. (Story 68-1, #490)
+- The API now always reports why it refused to start: one redacted `startup.failed` JSON line on
+  stderr, whatever `NODE_ENV` and `LOG_LEVEL` say. Before, `LOG_LEVEL=silent` or `fatal` in any
+  environment, and every `NODE_ENV=test` process, exited 1 with no output. (Story 66-4, #495)
 
 ### Security
 
@@ -242,6 +306,27 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.24.1`
   and nightly runs, and a release scans each pushed image on `linux/amd64` and `linux/arm64`
   before moving `latest` and the semver aliases; a finding leaves the aliases on the previous
   release. The migrate image went from 53 scanner findings to 0. (Story 64-3, #465)
+- `pvault` strips Unicode bidi controls, zero-width characters and other invisible format
+  characters (as well as control characters) from every string it prints, so a hostile server,
+  credential name or command cannot visually reorder or hide what you read. Error text that comes
+  from the server or a library is printed on one line and capped at 500 characters. The API drops
+  an `x-vault-target-command` audit value that contains such characters (the reveal itself still
+  succeeds and is still audited), and the agent strips them before sending it. (Story 43-13, #473)
+- On the Fly.io demo, every internal hop now uses TLS 1.3 with a pinned private CA and client
+  certificates: web to api (before: plain HTTP on Fly's private network, carrying cookies,
+  passwords and secrets), api to Postgres, and the CI operator path for migrations and resets.
+  Another app in the same Fly organization can no longer talk to the api or the database. (Story
+  43-16, #477)
+- Forms that hold a secret (vault passphrase, bootstrap token, credential value and the other
+  password fields) submit with `POST` and their secret inputs carry no `name`, so a submit made
+  before the page's JavaScript loaded can no longer put the secret in the URL, browser history or
+  proxy logs. (Story 66-3, #479)
+- The `fast-uri` transitive dependency (used by the API's request validation) is patched for the
+  high-severity advisories `GHSA-58mr-gqgx-xq4g` and `GHSA-qw65-cvwx-89v3`. (#475)
+- The `migrate` image's pnpm is updated to 11.28.3, whose bundled `undici` fixes CVE-2026-19534
+  (HIGH, denial of service). (#484)
+- `SECURITY.md` now publishes a private email address for security reports, as a fallback to
+  GitHub's private vulnerability reporting. (#483)
 
 ## [1.2.0] - 2026-09-10
 
