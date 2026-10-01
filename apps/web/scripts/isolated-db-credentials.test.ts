@@ -15,7 +15,9 @@ import {
   isProvisionablePassword,
   isSafeProvisioningTarget,
   passwordFromUrl,
+  provisionPasswordlessVaultAdmin,
   redactDsn,
+  requireParseableUrl,
   scramSha256Verifier,
 } from '../e2e/fixtures/isolated-db-credentials.js'
 import { StderrTail, earlyExitMessage } from '../e2e/fixtures/isolated-api-exit.js'
@@ -30,6 +32,7 @@ const SENTINEL = 'e2e-sentinel-9f3c'
 const ADMIN_URL_VAR = 'E2E_ADMIN_DATABASE_URL'
 const URL_SAFE_PASSWORD = 'abc.DEF_1~-'
 const PORT_VAR = 'DB_HOST_PORT'
+const LOCAL_HOST_PORT = 'localhost:20785'
 const ADMIN_PASSWORD_VAR = 'VAULT_ADMIN_PASSWORD'
 
 /** Builds a Postgres DSN from parts (keeps credential-shaped URL literals out of the source). */
@@ -133,23 +136,52 @@ describe('fixture error messages never carry a credential or DSN', () => {
     expect(describeHostPort(`postgresql://u:${SENTINEL}@[::1]/x`)).toBe('[::1]:5432')
   })
 
+  it('describes an unparseable URL without throwing (a URL TypeError carries the raw input)', () => {
+    expect(describeHostPort(`postgresql://u:${SENTINEL}@bad host:x/y`)).toBe('an unparseable URL')
+  })
+
+  it('rejects an unparseable DSN with the env var name only, never its value', () => {
+    const bad = `postgresql://u:${SENTINEL}@bad host:x/y`
+    expect(() => requireParseableUrl(bad, 'E2E_APP_DATABASE_URL')).toThrow(
+      'isolated stack: E2E_APP_DATABASE_URL is not a valid Postgres URL'
+    )
+    let caught: unknown
+    try {
+      requireParseableUrl(bad, 'E2E_APP_DATABASE_URL')
+    } catch (err) {
+      caught = err
+    }
+    expect(JSON.stringify(caught, Object.getOwnPropertyNames(caught))).not.toContain(SENTINEL)
+    expect(requireParseableUrl(dsn('u', 'p', 'localhost:1/x'), 'X')).toBeUndefined()
+  })
+
   it('names the env var to fix for an app-role auth failure', () => {
-    const message = connectFailureMessage('vault_app', 'e2e_j21', 'auth_failed', '20785')
+    const message = connectFailureMessage('vault_app', 'e2e_j21', 'auth_failed', LOCAL_HOST_PORT)
     expect(message).toBe(
       'isolated stack: vault_app cannot log in to e2e_j21 (auth_failed). Export E2E_APP_DATABASE_URL to match your stack.'
     )
   })
 
   it('points at the e2e stack and DB_HOST_PORT when nothing listens', () => {
-    expect(connectFailureMessage('vault_admin', 'e2e_j21', 'connection_failed', '20785')).toBe(
+    expect(
+      connectFailureMessage('vault_admin', 'e2e_j21', 'connection_failed', LOCAL_HOST_PORT)
+    ).toBe(
       "isolated stack: no Postgres on localhost:20785. Is the e2e stack up (make e2e) and DB_HOST_PORT this worktree's port?"
     )
   })
 
   it('reports any other reason with role, database and reason only', () => {
-    expect(connectFailureMessage('vault_admin', 'e2e_j21', 'database_missing', '20785')).toBe(
+    expect(
+      connectFailureMessage('vault_admin', 'e2e_j21', 'database_missing', LOCAL_HOST_PORT)
+    ).toBe(
       'isolated stack: vault_admin cannot connect to e2e_j21 on localhost:20785 (database_missing)'
     )
+  })
+
+  it('names the host:port the role URL actually targets (an E2E_*_DATABASE_URL override)', () => {
+    expect(
+      connectFailureMessage('vault_app', 'e2e_j21', 'connection_failed', 'db.internal:6543')
+    ).toContain('no Postgres on db.internal:6543.')
   })
 
   it('explains a differing vault_admin password', () => {
@@ -184,6 +216,27 @@ describe('vault_admin provisioning guards (AC-6)', () => {
     ['not a url', '5432', false],
   ])('isSafeProvisioningTarget(%s, DB_HOST_PORT=%s) = %s', (url, port, expected) => {
     expect(isSafeProvisioningTarget(url, port)).toBe(expected)
+  })
+})
+
+describe('provisionPasswordlessVaultAdmin target guard (AC-6 (d), before any connection)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('refuses when the vault_admin URL is not the same loopback DB_HOST_PORT cluster', async () => {
+    vi.stubEnv('E2E_CONFIRM_DB_RESET', 'true')
+    vi.stubEnv(PORT_VAR, '20785')
+    vi.stubEnv('E2E_SUPERUSER_DATABASE_URL', dsn('postgres', 'x', 'localhost:20785/project_vault'))
+    await expect(
+      provisionPasswordlessVaultAdmin({
+        dbName: 'e2e_j21',
+        password: URL_SAFE_PASSWORD,
+        adminUrl: dsn('vault_admin', SENTINEL, 'db.example.com:20785/e2e_j21'),
+      })
+    ).rejects.toThrow(
+      "isolated stack: refusing to provision vault_admin: its URL (db.example.com:20785) is not this worktree's loopback DB_HOST_PORT=20785"
+    )
   })
 })
 

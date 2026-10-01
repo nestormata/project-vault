@@ -56,10 +56,19 @@ export function redactDsn(url: string): string {
   return url.replace(/:[^:@]*@/, ':***@')
 }
 
-/** host:port of a Postgres URL, never its credentials. */
+/** host:port of a Postgres URL, never its credentials. Never throws: Node's invalid-URL
+ * TypeError carries the raw input (password included) on its `input` property. */
 export function describeHostPort(url: string): string {
+  if (!URL.canParse(url)) return 'an unparseable URL'
   const parsed = new URL(url)
   return `${parsed.hostname}:${parsed.port || '5432'}`
+}
+
+/** Throws a credential-free error naming only `source` when `url` cannot be parsed. */
+export function requireParseableUrl(url: string, source: string): void {
+  if (!URL.canParse(url)) {
+    throw new Error(`isolated stack: ${source} is not a valid Postgres URL`)
+  }
 }
 
 /** The (decoded) password of a Postgres URL. */
@@ -79,15 +88,15 @@ export function connectFailureMessage(
   role: IsolatedRole,
   dbName: string,
   reason: PgFailureReason,
-  port: string
+  hostPort: string
 ): string {
   if (reason === 'connection_failed') {
-    return `isolated stack: no Postgres on localhost:${port}. Is the e2e stack up (make e2e) and DB_HOST_PORT this worktree's port?`
+    return `isolated stack: no Postgres on ${hostPort}. Is the e2e stack up (make e2e) and DB_HOST_PORT this worktree's port?`
   }
   if (reason === 'auth_failed') {
     return `isolated stack: ${role} cannot log in to ${dbName} (auth_failed). Export ${roleOverrideVar(role)} to match your stack.`
   }
-  return `isolated stack: ${role} cannot connect to ${dbName} on localhost:${port} (${reason})`
+  return `isolated stack: ${role} cannot connect to ${dbName} on ${hostPort} (${reason})`
 }
 
 export function adminAuthFailedMessage(dbName: string): string {
@@ -188,6 +197,9 @@ const CONFIRM_HINT =
 export async function provisionPasswordlessVaultAdmin(options: {
   dbName: string
   password: string
+  /** The vault_admin URL the API will use: must target the same local cluster as the superuser
+   * URL, or the fixture would set the local role's credential to one meant for another server. */
+  adminUrl: string
 }): Promise<boolean> {
   const port = dbHostPort()
   if (process.env['E2E_CONFIRM_DB_RESET'] !== 'true') {
@@ -199,6 +211,11 @@ export async function provisionPasswordlessVaultAdmin(options: {
   if (!isSafeProvisioningTarget(superuserUrl, port)) {
     throw new Error(
       `isolated stack: refusing to provision vault_admin on a non-loopback or non-DB_HOST_PORT superuser URL (${describeHostPort(superuserUrl)}, DB_HOST_PORT=${port})`
+    )
+  }
+  if (!isSafeProvisioningTarget(options.adminUrl, port)) {
+    throw new Error(
+      `isolated stack: refusing to provision vault_admin: its URL (${describeHostPort(options.adminUrl)}) is not this worktree's loopback DB_HOST_PORT=${port}`
     )
   }
   if (!isProvisionablePassword(options.password)) {
@@ -263,19 +280,28 @@ export async function ensureIsolatedDbCredentials(dbName: string): Promise<{
   const port = dbHostPort()
   const appUrl = withDatabase(appDatabaseUrl(), dbName)
   const adminUrl = withDatabase(adminDatabaseUrl(), dbName)
+  requireParseableUrl(appUrl, 'E2E_APP_DATABASE_URL')
+  requireParseableUrl(adminUrl, 'E2E_ADMIN_DATABASE_URL')
 
   const appFailure = await preflightRole(appUrl)
-  if (appFailure) throw new Error(connectFailureMessage('vault_app', dbName, appFailure, port))
+  if (appFailure) {
+    throw new Error(
+      connectFailureMessage('vault_app', dbName, appFailure, describeHostPort(appUrl))
+    )
+  }
 
   const adminFailure = await preflightRole(adminUrl)
   if (adminFailure === null) return { appUrl, adminUrl }
   if (adminFailure !== 'auth_failed') {
-    throw new Error(connectFailureMessage('vault_admin', dbName, adminFailure, port))
+    throw new Error(
+      connectFailureMessage('vault_admin', dbName, adminFailure, describeHostPort(adminUrl))
+    )
   }
 
   const provisioned = await provisionPasswordlessVaultAdmin({
     dbName,
     password: passwordFromUrl(adminUrl),
+    adminUrl,
   })
   if (!provisioned) throw new Error(adminAuthFailedMessage(dbName))
   process.stdout.write(

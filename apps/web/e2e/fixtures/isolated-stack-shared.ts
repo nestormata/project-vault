@@ -207,6 +207,8 @@ export async function spawnIsolatedApiProcess(
     // observe a stale process that silently kept holding the port.
     detached: true,
   })
+  // Decode as UTF-8 once, so a multi-byte character split across chunks is not mangled.
+  child.stderr?.setEncoding('utf8')
   pipeChildDiagnostics(child, options.logLabel, options.port)
   const stderrTail = new StderrTail()
   child.stderr?.on('data', (chunk) => stderrTail.push(String(chunk)))

@@ -87,6 +87,22 @@ describe('serializeLogError', () => {
     expect(serialized.message).toContain('[REDACTED]')
     expect(serialized.stack).toContain('[REDACTED]')
   })
+
+  it('redacts user-only and multi-colon userinfo, and leaves credential-free URLs alone', () => {
+    const serialized = serializeLogError(
+      new Error('a redis://only-user@h b://u:p:q@h https://example.invalid/path')
+    )
+    expect(serialized.message).toBe(
+      'a redis://[REDACTED]@h b://[REDACTED]@h https://example.invalid/path'
+    )
+  })
+
+  it('scans a long scheme-prefixed message without "@" in linear time (no ReDoS)', () => {
+    const started = performance.now()
+    const serialized = serializeLogError(new Error(`postgresql://${'a'.repeat(100_000)}`))
+    expect(performance.now() - started).toBeLessThan(1000)
+    expect(serialized.message).toHaveLength('postgresql://'.length + 100_000)
+  })
 })
 
 describe('operationalLog', () => {

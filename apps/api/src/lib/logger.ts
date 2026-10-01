@@ -8,7 +8,10 @@ export type LoggerConfig = ReturnType<typeof buildPinoOptions>
 export type SerializedLogError = { message: string; name?: string; stack?: string }
 type LoggerEnv = Pick<Env, 'NODE_ENV' | 'LOG_LEVEL' | 'SERVICE_NAME'>
 
-const CONNECTION_STRING_RE = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:?[^\s/@]*@/gi
+// `user@` or `user:secret@`. The two userinfo branches are disjoint (the user part cannot contain
+// ':'), so a scheme-prefixed string with no '@' is rejected in linear time (no ReDoS), and no
+// quantified group nests another quantifier (security/detect-unsafe-regex).
+const CONNECTION_STRING_RE = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+(?:@|:[^\s/@]*@)/gi
 
 function redactConnectionStrings(value: string | undefined): string | undefined {
   return value?.replace(CONNECTION_STRING_RE, '$1[REDACTED]@')

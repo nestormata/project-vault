@@ -114,8 +114,9 @@ database on the e2e Postgres (Story 66.4):
 - If `vault_admin` has no password yet (a freshly migrated DB) and `E2E_CONFIRM_DB_RESET=true`,
   the fixture sets it once and prints
   `[isolated-stack] provisioned vault_admin credential on localhost:<port> (role had no password)`.
-  It only does so on a loopback superuser URL on this worktree's `DB_HOST_PORT`, never overwrites
-  an existing password, and never touches `vault_app`.
+  It only does so when both the superuser URL and the `vault_admin` URL are loopback on this
+  worktree's `DB_HOST_PORT`, never overwrites an existing password, and never touches
+  `vault_app`.
 
 ### Handoff on the E2E stack
 
