@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { ZxcvbnFactory } from '@zxcvbn-ts/core'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   MIN_PASSWORD_STRENGTH_SCORE,
   passwordMeetsStrengthRequirement,
@@ -28,42 +29,76 @@ describe('passwordMeetsStrengthRequirement', () => {
     }
   )
 
-  it('bounds scoring cost beyond the 100-character cap (DoS mitigation)', () => {
-    // Decision 4: only the first 100 characters are scored. A long run of a repeated substring is
-    // a documented zxcvbn worst case for pattern-matching cost, so this asserts that the
-    // slice(0, 100) cap actually bounds the cost rather than merely being documented.
-    //
-    // The assertion is a RATIO, not a wall-clock budget. An absolute millisecond threshold
-    // measures the machine, not the cap: the previous `toBeLessThan(200)` passed locally at ~37ms
-    // and failed on GitHub runners at ~228ms, consistently. Comparing an input beyond the cap
-    // against one exactly at the cap is speed-independent, and it tests the claim directly —
-    // both slice to the same 100 characters, so the cost must be the same. Measured here: 1.02x
-    // with the cap in place, against 2.08x for a genuine length increase below it, so a removed
-    // cap would push this well past the tolerance.
-    const beyondCap = 'ab'.repeat(128) // 256 characters
-    const atCap = 'ab'.repeat(50) // 100 characters
+  describe('100-character scoring cap (DoS mitigation, Story 1.21 Decision 4)', () => {
+    // The claim is structural: the scorer is never handed more than 100 characters. Asserting the
+    // argument handed to zxcvbn proves that deterministically; a wall-clock ratio only measured
+    // scheduler noise (DW-416, Story 66-8). Call-through spies keep the real scorer, so verdicts
+    // below are genuine.
+    const CAP = 100
 
-    // Warm up first, so lazy initialisation inside the scorer is not charged to the first sample.
-    for (let index = 0; index < 5; index += 1) passwordMeetsStrengthRequirement(atCap)
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
 
-    const bestOf = (input: string): number => {
-      let fastest = Infinity
-      for (let index = 0; index < 15; index += 1) {
-        const start = performance.now()
-        passwordMeetsStrengthRequirement(input)
-        fastest = Math.min(fastest, performance.now() - start)
-      }
-      return fastest
+    const scoredArguments = (password: string) => {
+      const check = vi.spyOn(ZxcvbnFactory.prototype, 'check')
+      const checkAsync = vi.spyOn(ZxcvbnFactory.prototype, 'checkAsync')
+      const verdict = passwordMeetsStrengthRequirement(password)
+      // Assert the spy fired exactly once before reading arguments, so the test cannot pass
+      // vacuously, and that no second (async) full-length scoring path exists.
+      expect(check).toHaveBeenCalledTimes(1)
+      expect(checkAsync).toHaveBeenCalledTimes(0)
+      return { argument: check.mock.calls[0]?.[0], verdict }
     }
 
-    const atCapMs = bestOf(atCap)
-    expect(bestOf(beyondCap) / atCapMs).toBeLessThan(1.5)
-    // A generous absolute ceiling as well, to catch a pathological blow-up that scales both
-    // inputs equally. Sized far above the slowest observed CI sample so it cannot flake.
-    expect(atCapMs).toBeLessThan(1000)
-    // 40 scorer calls in total (warm-up plus two best-of-15 samples). Under v8 coverage on a GitHub
-    // runner they exceeded vitest's 5s default and failed on time alone, never on the ratio, which
-    // aborted the whole turbo test job. The budget covers the sampling; the assertions above are
-    // what test the cap.
-  }, 30_000)
+    it('spies on a real prototype method', () => {
+      expect(typeof ZxcvbnFactory.prototype.check).toBe('function')
+    })
+
+    it('hands the scorer only the first 100 characters of a 256-character input', () => {
+      const input = 'ab'.repeat(128)
+      expect(input).toHaveLength(256)
+      const { argument } = scoredArguments(input)
+      expect(argument).toHaveLength(CAP)
+      expect(argument).toBe(input.slice(0, CAP))
+    })
+
+    it.each([
+      { length: 0, expected: 0 },
+      { length: 99, expected: 99 },
+      { length: 100, expected: 100 },
+      { length: 101, expected: 100 },
+      { length: 256, expected: 100 },
+    ])('scores $expected characters for a $length-character input', ({ length, expected }) => {
+      const input = 'x'.repeat(length)
+      const { argument } = scoredArguments(input)
+      expect(argument).toHaveLength(expected)
+      expect(argument).toBe(input.slice(0, expected))
+    })
+
+    it('caps by UTF-16 code unit, so a surrogate pair straddling index 100 is split (documented behaviour)', () => {
+      const input = `${'a'.repeat(99)}\u{1F600}${'b'.repeat(49)}`
+      expect(input).toHaveLength(150)
+      const { argument } = scoredArguments(input)
+      expect(argument).toHaveLength(CAP)
+      expect(argument).toBe(input.slice(0, CAP))
+    })
+
+    it('gives a weak 256-character input the same verdict as its own 100-character prefix', () => {
+      const input = 'ab'.repeat(128)
+      expect(scoredArguments(input).verdict).toBe(false)
+      vi.restoreAllMocks()
+      expect(scoredArguments(input.slice(0, CAP)).verdict).toBe(false)
+    })
+
+    it('does not let characters beyond the cap change a strong verdict', () => {
+      const strongPrefix = `correct-horse-battery-staple-${'Zq7!kP'.repeat(20)}`.slice(0, CAP)
+      expect(strongPrefix).toHaveLength(CAP)
+      const input = `${strongPrefix}${'a'.repeat(156)}`
+      expect(input).toHaveLength(256)
+      expect(scoredArguments(input).verdict).toBe(true)
+      vi.restoreAllMocks()
+      expect(scoredArguments(strongPrefix).verdict).toBe(true)
+    })
+  })
 })
