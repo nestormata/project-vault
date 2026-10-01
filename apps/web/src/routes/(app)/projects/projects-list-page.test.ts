@@ -11,11 +11,17 @@ vi.mock('$app/state', () => ({
 }))
 
 import { goto } from '$app/navigation'
+import type { ProjectSummary } from '@project-vault/shared'
+import { appLayoutData } from '$lib/test/page-data.js'
 import ProjectsListPage from './+page.svelte'
+
+function listPage(items: ProjectSummary[]) {
+  return { items, total: items.length, page: 1, limit: 20, hasNext: false }
+}
 
 afterEach(() => cleanup())
 
-const project = {
+const project: ProjectSummary = {
   id: 'p1',
   name: 'Payments API',
   slug: 'payments-api',
@@ -33,7 +39,9 @@ const project = {
 describe('projects list +page.svelte (AC-12)', () => {
   it('the project name links to the overview page, and "View secrets" stays a separate secondary link', () => {
     render(ProjectsListPage, {
-      props: { data: { projects: { items: [project] }, includeArchived: false } },
+      props: {
+        data: { ...appLayoutData(), projects: listPage([project]), includeArchived: false },
+      },
     })
 
     const nameLink = screen.getByRole('link', { name: 'Payments API' })
@@ -67,7 +75,7 @@ describe('projects list +page.svelte — "Show archived" toggle double-click rac
     vi.mocked(goto).mockReturnValue(pendingGoto)
 
     render(ProjectsListPage, {
-      props: { data: { projects: { items: [] }, includeArchived: false } },
+      props: { data: { ...appLayoutData(), projects: listPage([]), includeArchived: false } },
     })
 
     const button = screen.getByRole('button', { name: 'Show archived' })
@@ -92,7 +100,7 @@ describe('projects list +page.svelte — "Show archived" toggle double-click rac
     vi.mocked(goto).mockReturnValueOnce(pendingGoto).mockReturnValue(Promise.resolve())
 
     render(ProjectsListPage, {
-      props: { data: { projects: { items: [] }, includeArchived: false } },
+      props: { data: { ...appLayoutData(), projects: listPage([]), includeArchived: false } },
     })
 
     const button = screen.getByRole('button', { name: 'Show archived' })
@@ -109,14 +117,14 @@ describe('projects list +page.svelte — "Show archived" toggle double-click rac
 
   it('AC-6: exposes aria-pressed reflecting the current archived-filter state', () => {
     const { rerender } = render(ProjectsListPage, {
-      props: { data: { projects: { items: [] }, includeArchived: false } },
+      props: { data: { ...appLayoutData(), projects: listPage([]), includeArchived: false } },
     })
 
     expect(screen.getByRole('button', { name: 'Show archived' }).getAttribute('aria-pressed')).toBe(
       'false'
     )
 
-    rerender({ data: { projects: { items: [] }, includeArchived: true } })
+    rerender({ data: { ...appLayoutData(), projects: listPage([]), includeArchived: true } })
     expect(screen.getByRole('button', { name: 'Hide archived' }).getAttribute('aria-pressed')).toBe(
       'true'
     )
@@ -126,7 +134,7 @@ describe('projects list +page.svelte — "Show archived" toggle double-click rac
     vi.mocked(goto).mockResolvedValue(undefined)
 
     render(ProjectsListPage, {
-      props: { data: { projects: { items: [] }, includeArchived: false } },
+      props: { data: { ...appLayoutData(), projects: listPage([]), includeArchived: false } },
     })
 
     await fireEvent.click(screen.getByRole('button', { name: 'Show archived' }))

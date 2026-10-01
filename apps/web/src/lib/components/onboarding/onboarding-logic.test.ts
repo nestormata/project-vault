@@ -204,7 +204,7 @@ describe('field-set form logic (Story 13.2)', () => {
       ],
     ],
   ] as const)('validates a populated %s template field set', (_template, fields) => {
-    expect(validateFieldSet(fields).ok).toBe(true)
+    expect(validateFieldSet([...fields]).ok).toBe(true)
   })
 
   it('buildTemplateFieldDrafts pre-populates a template with empty values (AC-1/AC-2)', () => {

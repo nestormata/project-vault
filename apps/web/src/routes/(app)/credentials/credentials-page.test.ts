@@ -6,12 +6,21 @@ vi.mock('$app/paths', () => ({
 }))
 
 import CredentialsPage from './+page.svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
+import { sampleProjectSummary } from '$lib/test/fixtures.js'
 
 afterEach(() => cleanup())
 
 describe('/credentials +page.svelte', () => {
   it('shows the no-projects empty state with a Create project link', () => {
-    render(CredentialsPage, { props: { data: { projects: { items: [], total: 0 } } } })
+    render(CredentialsPage, {
+      props: {
+        data: {
+          ...appLayoutData(),
+          projects: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
+        },
+      },
+    })
 
     expect(screen.getByText(/no projects yet/i)).toBeTruthy()
     const links = screen.getAllByRole('link', { name: /create project/i })
@@ -25,18 +34,22 @@ describe('/credentials +page.svelte', () => {
     render(CredentialsPage, {
       props: {
         data: {
+          ...appLayoutData(),
           projects: {
             items: [
-              {
+              sampleProjectSummary({
                 id: 'p-1',
                 name: 'Proj A',
                 slug: 'proj-a',
                 credentialCount: 5,
                 expiringCount: 2,
                 alertCount: 1,
-              },
+              }),
             ],
             total: 1,
+            page: 1,
+            limit: 20,
+            hasNext: false,
           },
         },
       },

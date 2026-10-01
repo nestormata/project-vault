@@ -21,15 +21,17 @@ const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const credentialId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 
 type Data = ComponentProps<typeof RotatePage>['data']
+/** The loaded form (an admin, vault unsealed). */
+type ManageData = Exclude<Data, { canManage: false } | { vaultSealed: true }>
 
-function data(overrides: Partial<Data> = {}): Data {
+function data(overrides: Partial<ManageData> = {}): ManageData {
   return {
     ...projectLayoutData(),
     projectId,
     credentialId,
     orgRole: 'admin',
     canManage: true,
-    dependencies: { items: [], hasDependencies: false },
+    dependencies: { items: [], hasDependencies: false, hasStagedRotation: false },
     fieldMeta: [{ key: 'value', sensitive: true }],
     activeRotationId: null,
     ...overrides,

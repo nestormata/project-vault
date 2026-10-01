@@ -59,6 +59,9 @@ describe('machine-users list +page.svelte', () => {
               {
                 id: 'mu-1',
                 name: 'ci-bot',
+                projectId,
+                description: null,
+                createdBy: null,
                 role: 'member',
                 keyCount: 2,
                 createdAt: '2026-01-15T00:00:00.000Z',
@@ -67,6 +70,9 @@ describe('machine-users list +page.svelte', () => {
               {
                 id: 'mu-2',
                 name: 'old-bot',
+                projectId,
+                description: null,
+                createdBy: null,
                 role: 'viewer',
                 keyCount: 0,
                 createdAt: '2026-02-20T00:00:00.000Z',

@@ -62,7 +62,9 @@ describe('service-endpoints list +page.server.ts (AC-E1/E2/F1/AC-I2)', () => {
 
     expect(result.endpoints).toEqual([{ id: 'e1', name: 'API health' }])
     expect(result.alerts).toHaveLength(2)
-    expect(result.alerts.map((a) => a.id)).toEqual(expect.arrayContaining(['a1', 'a2']))
+    expect(result.alerts.map((a: { id: string }) => a.id)).toEqual(
+      expect.arrayContaining(['a1', 'a2'])
+    )
     expect(result.notFound).toBe(false)
   })
 

@@ -13,10 +13,11 @@ vi.mock('$lib/api/auth.js', () => ({
   regenerateMfaRecoveryCodes: regenerateMfaRecoveryCodesMock,
 }))
 
+import { testAuthUser } from '$lib/test/page-data.js'
 import MfaEnrollmentPanel from './MfaEnrollmentPanel.svelte'
 
 function unenrolledUser(overrides: Partial<AuthUser> = {}): AuthUser {
-  return {
+  return testAuthUser({
     userId: 'u1',
     orgId: 'o1',
     sessionId: 's1',
@@ -24,15 +25,8 @@ function unenrolledUser(overrides: Partial<AuthUser> = {}): AuthUser {
     mfaEnrolled: false,
     mfaEnrolledAt: null,
     remainingRecoveryCodesCount: null,
-    mfaStatus: {
-      enrollmentRequired: false,
-      gracePeriodActive: false,
-      gracePeriodExpiresAt: null,
-      gracePeriodDaysRemaining: null,
-      bannerMessage: null,
-    },
     ...overrides,
-  }
+  })
 }
 
 const enrollResponse = {

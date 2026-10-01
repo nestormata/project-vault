@@ -17,6 +17,7 @@ vi.mock('$lib/api/health-dashboard.js', async (importOriginal) => {
 
 import { load } from './(app)/health/+page.server.js'
 import { expectLoaded } from '$lib/test/page-data.js'
+import { appLayoutData } from '$lib/test/page-data.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
@@ -69,6 +70,7 @@ describe('/health +page.svelte (AC-A2)', () => {
     render(HealthPage, {
       props: {
         data: {
+          ...appLayoutData(),
           dashboard: { summary: { healthy: 0, degraded: 0, down: 0 }, projects: [] },
           singleProjectId: null,
         },
@@ -84,6 +86,7 @@ describe('/health +page.svelte (AC-A2)', () => {
     render(HealthPage, {
       props: {
         data: {
+          ...appLayoutData(),
           dashboard: { summary: { healthy: 0, degraded: 0, down: 0 }, projects: [] },
           singleProjectId: projectId,
         },
@@ -99,6 +102,7 @@ describe('/health +page.svelte (AC-A2)', () => {
     render(HealthPage, {
       props: {
         data: {
+          ...appLayoutData(),
           dashboard: {
             summary: { healthy: 2, degraded: 0, down: 0 },
             projects: [

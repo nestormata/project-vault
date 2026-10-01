@@ -15,36 +15,31 @@ vi.mock('$lib/api/status-page.js', () => ({
 }))
 
 import type { ComponentProps } from 'svelte'
+import type { ServiceEndpoint } from '$lib/api/service-endpoints.js'
 import { projectLayoutData } from '$lib/test/page-data.js'
 import StatusPageAdminPage from './(app)/projects/[projectId]/status-page/+page.svelte'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-const endpoints = [
+const endpoints: ServiceEndpoint[] = [
   {
     id: 'endpoint-1',
-    projectId,
     name: 'API',
     url: 'https://api.example.com/health',
-    method: 'GET',
-    intervalSeconds: 60,
-    timeoutSeconds: 10,
-    expectedStatusCodes: [200],
-    status: 'up',
-    createdAt: '2026-07-01T00:00:00.000Z',
-    updatedAt: '2026-07-01T00:00:00.000Z',
+    status: 'healthy',
+    lastCheckedAt: null,
+    healthCheckPaused: false,
+    healthCheckPausedAt: null,
+    healthCheckPausedBy: null,
   },
   {
     id: 'endpoint-2',
-    projectId,
     name: 'Web',
     url: 'https://example.com',
-    method: 'GET',
-    intervalSeconds: 60,
-    timeoutSeconds: 10,
-    expectedStatusCodes: [200],
-    status: 'up',
-    createdAt: '2026-07-01T00:00:00.000Z',
-    updatedAt: '2026-07-01T00:00:00.000Z',
+    status: 'healthy',
+    lastCheckedAt: null,
+    healthCheckPaused: false,
+    healthCheckPausedAt: null,
+    healthCheckPausedBy: null,
   },
 ]
 
@@ -56,7 +51,8 @@ function pageData(overrides: Partial<Data> = {}): Data {
     projectId,
     origin: 'https://vault.example.com',
     canManage: true,
-    config: { enabled: true, token: null, services: [] },
+    config: { enabled: true, token: undefined, services: [] },
+    capabilities: {},
     serviceEndpoints: endpoints,
     ...overrides,
   }
@@ -97,7 +93,7 @@ describe('/projects/:projectId/status-page', () => {
       })
     )
     render(StatusPageAdminPage, {
-      props: { data: pageData({ config: { enabled: false, token: null, services: [] } }) },
+      props: { data: pageData({ config: { enabled: false, token: undefined, services: [] } }) },
     })
 
     const enable = screen.getByRole('button', { name: /enable public status page/i })
@@ -139,7 +135,7 @@ describe('/projects/:projectId/status-page', () => {
   // implied error.
   it('shows an honest fallback when enabled but no token is available (legacy row / sealed vault)', () => {
     render(StatusPageAdminPage, {
-      props: { data: pageData({ config: { enabled: true, token: null, services: [] } }) },
+      props: { data: pageData({ config: { enabled: true, token: undefined, services: [] } }) },
     })
 
     expect(screen.getByText(/temporarily unavailable/i)).toBeTruthy()
@@ -155,7 +151,7 @@ describe('/projects/:projectId/status-page', () => {
   ])('maps enable failures without exposing a URL', async (failure, expected) => {
     enableStatusPageMock.mockRejectedValue(failure)
     render(StatusPageAdminPage, {
-      props: { data: pageData({ config: { enabled: false, token: null, services: [] } }) },
+      props: { data: pageData({ config: { enabled: false, token: undefined, services: [] } }) },
     })
 
     await fireEvent.click(screen.getByRole('button', { name: /enable public status page/i }))
@@ -170,7 +166,7 @@ describe('/projects/:projectId/status-page', () => {
       new ApiClientError(403, { code: 'mfa_required', message: 'MFA required' }, 'MFA required')
     )
     render(StatusPageAdminPage, {
-      props: { data: pageData({ config: { enabled: false, token: null, services: [] } }) },
+      props: { data: pageData({ config: { enabled: false, token: undefined, services: [] } }) },
     })
 
     await fireEvent.click(screen.getByRole('button', { name: /enable public status page/i }))
@@ -279,7 +275,7 @@ describe('/projects/:projectId/status-page', () => {
         data: pageData({
           config: {
             enabled: true,
-            token: null,
+            token: undefined,
             services: [
               { serviceId: 'endpoint-1', displayName: 'API', sortOrder: 0 },
               { serviceId: 'endpoint-2', displayName: 'Web', sortOrder: 1 },
@@ -317,7 +313,7 @@ describe('/projects/:projectId/status-page', () => {
         data: pageData({
           config: {
             enabled: true,
-            token: null,
+            token: undefined,
             services: [
               { serviceId: 'endpoint-1', displayName: 'API', sortOrder: 0 },
               { serviceId: 'endpoint-2', displayName: 'Web', sortOrder: 1 },
@@ -343,7 +339,7 @@ describe('/projects/:projectId/status-page', () => {
         data: pageData({
           config: {
             enabled: true,
-            token: null,
+            token: undefined,
             services: [{ serviceId: 'endpoint-1', displayName: 'API', sortOrder: 0 }],
           },
         }),

@@ -33,6 +33,7 @@ vi.mock('svelte', async (importOriginal) => {
   }
 })
 
+import { nth } from '$lib/test/dom.js'
 import BreakGlassPanel from './BreakGlassPanel.svelte'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -285,7 +286,7 @@ describe('BreakGlassPanel', () => {
     // Invoke the real registered teardown callback directly, without unmounting, so the
     // still-mounted component's reactive DOM proves the callback itself clears the secret —
     // rather than merely proving a fresh instance starts empty.
-    capturedOnDestroyCallbacks[0]()
+    nth(capturedOnDestroyCallbacks, 0)()
     await waitFor(() => expect(valueInput.value).toBe(''))
     expect(reasonInput.value).toBe('')
 

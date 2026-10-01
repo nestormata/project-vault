@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { nth } from '$lib/test/dom.js'
 import { jsonResponse } from '$lib/test/json-response.js'
 import {
   fetchHealth,
@@ -69,7 +70,7 @@ describe('listPlatformAuditEvents filter params', () => {
   it('sends no query string when no filters are given', async () => {
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ data: { items: [] } }))
     await listPlatformAuditEvents(fetchFn)
-    const url = fetchFn.mock.calls[0][0] as string
+    const [url] = nth(fetchFn.mock.calls, 0)
     expect(url).toBe('/api/v1/platform/audit/events')
   })
 
@@ -85,7 +86,7 @@ describe('listPlatformAuditEvents filter params', () => {
       page: 2,
       limit: 50,
     })
-    const url = fetchFn.mock.calls[0][0] as string
+    const [url] = nth(fetchFn.mock.calls, 0)
     expect(url).toContain('operatorId=op-1')
     expect(url).toContain('actionType=org.create')
     expect(url).toContain('targetOrgId=org-1')
@@ -99,7 +100,7 @@ describe('listPlatformAuditEvents filter params', () => {
   it('omits page/limit from the query string when they are falsy (e.g. page 0)', async () => {
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ data: { items: [] } }))
     await listPlatformAuditEvents(fetchFn, { page: 0, limit: 0 })
-    const url = fetchFn.mock.calls[0][0] as string
+    const [url] = nth(fetchFn.mock.calls, 0)
     expect(url).toBe('/api/v1/platform/audit/events')
   })
 })

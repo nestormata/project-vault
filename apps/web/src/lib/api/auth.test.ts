@@ -45,7 +45,7 @@ describe('auth API helpers', () => {
         orgName: 'Example Org',
       }),
     })
-    expect(result.email).toBe('alex@example.com')
+    expect(result).toMatchObject({ email: 'alex@example.com' })
   })
 
   it('login success returns session data without exposing tokens', async () => {

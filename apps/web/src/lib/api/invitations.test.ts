@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { nth } from '$lib/test/dom.js'
 import { jsonResponse } from '$lib/test/json-response.js'
 import {
   acceptInvitation,
@@ -42,7 +43,7 @@ describe('invitations API helpers', () => {
 
     const result = await acceptInvitation(fetchFn, 'tok en')
 
-    const [url, init] = fetchFn.mock.calls[0]
+    const [url, init] = nth(fetchFn.mock.calls, 0)
     expect(url).toBe('/api/v1/invitations/tok%20en/accept')
     expect(init).toEqual(expect.objectContaining({ method: 'POST', credentials: 'include' }))
     expect('body' in init).toBe(false)

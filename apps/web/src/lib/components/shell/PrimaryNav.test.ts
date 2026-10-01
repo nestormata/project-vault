@@ -6,6 +6,8 @@ vi.mock('$app/state', () => ({
 }))
 
 import { setLocale } from '$lib/paraglide/runtime.js'
+import { getExtensionNav } from '$lib/api/extension-panel.js'
+import { jsonResponse } from '$lib/test/json-response.js'
 import PrimaryNav from './PrimaryNav.svelte'
 
 afterEach(async () => {
@@ -113,19 +115,25 @@ describe('Story 29.3 AC12: manifest-declared navItems rendering (icon + disclosu
     expect(document.querySelector('[data-nav-icon="grid"]')).toBeTruthy()
   })
 
-  it('renders no icon element for an item with an unrecognized icon token (render layer must not assume the load-time invariant holds forever)', () => {
-    render(PrimaryNav, {
-      props: {
-        extensionNavItems: [
-          {
-            id: 'settings-page',
-            label: 'Extension Settings',
-            href: '/ext/settings',
-            icon: 'not-a-real-token',
-          },
-        ],
-      },
-    })
+  it('renders no icon element for an item with an unrecognized icon token (render layer must not assume the load-time invariant holds forever)', async () => {
+    // The out-of-contract token arrives the only way it could in production: inside a degraded
+    // /extensions/nav response, read through the real API client (Story 68.1: no cast needed).
+    const nav = await getExtensionNav(async () =>
+      jsonResponse({
+        data: {
+          uiPanelSlot: null,
+          navItems: [
+            {
+              id: 'settings-page',
+              label: 'Extension Settings',
+              href: '/ext/settings',
+              icon: 'not-a-real-token',
+            },
+          ],
+        },
+      })
+    )
+    render(PrimaryNav, { props: { extensionNavItems: nav.navItems } })
 
     expect(document.querySelector('[data-nav-icon]')).toBeNull()
   })

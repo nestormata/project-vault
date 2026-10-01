@@ -23,22 +23,56 @@ vi.mock('$lib/api/rotations.js', async (importOriginal) => {
 import type { ComponentProps } from 'svelte'
 import { projectLayoutData } from '$lib/test/page-data.js'
 import RotatePage from './(app)/projects/[projectId]/credentials/[credentialId]/rotate/+page.svelte'
+import { sampleDependency } from '$lib/test/fixtures.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const credentialId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 const rotationId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 
 type Data = ComponentProps<typeof RotatePage>['data']
+/** The loaded form (an admin, vault unsealed). */
+type ManageData = Exclude<Data, { canManage: false } | { vaultSealed: true }>
 
-function baseData(overrides: Partial<Data> = {}): Data {
+function baseData(overrides: Partial<ManageData> = {}): ManageData {
   return {
     ...projectLayoutData(),
     projectId,
     credentialId,
-    orgRole: 'admin' as const,
-    canManage: true as const,
-    dependencies: { items: [], hasDependencies: false },
+    orgRole: 'admin',
+    canManage: true,
+    dependencies: { items: [], hasDependencies: false, hasStagedRotation: false },
+    fieldMeta: [{ key: 'value', sensitive: true }],
+    activeRotationId: null,
     ...overrides,
+  }
+}
+
+/** The loader's member/viewer variant: no fetches, AccessNotice only. */
+function noAccessData(): Data {
+  return {
+    ...projectLayoutData(),
+    projectId,
+    credentialId,
+    orgRole: 'member',
+    canManage: false,
+    dependencies: null,
+    fieldMeta: null,
+    activeRotationId: null,
+  }
+}
+
+/** The loader's sealed-vault (503) variant for an admin. */
+function sealedData(): Data {
+  return {
+    ...projectLayoutData(),
+    projectId,
+    credentialId,
+    orgRole: 'admin',
+    canManage: true,
+    dependencies: null,
+    fieldMeta: null,
+    activeRotationId: null,
+    vaultSealed: true,
   }
 }
 
@@ -52,11 +86,7 @@ describe('/rotate +page.svelte', () => {
   it('AC-6: renders AccessNotice for member/viewer instead of the form', () => {
     render(RotatePage, {
       props: {
-        data: baseData({
-          orgRole: 'member' as const,
-          canManage: false as const,
-          dependencies: null,
-        }),
+        data: noAccessData(),
       },
     })
 
@@ -71,10 +101,11 @@ describe('/rotate +page.svelte', () => {
         data: baseData({
           dependencies: {
             items: [
-              { id: 'd1', systemName: 'billing-worker (production)' },
-              { id: 'd2', systemName: 'GitHub Actions' },
+              sampleDependency({ id: 'd1', systemName: 'billing-worker (production)' }),
+              sampleDependency({ id: 'd2', systemName: 'GitHub Actions' }),
             ],
             hasDependencies: true,
+            hasStagedRotation: false,
           },
         }),
       },
@@ -201,11 +232,7 @@ describe('/rotate +page.svelte', () => {
   it('AC-2: renders the sealed-vault message (checked before the AccessNotice gate) with a link back to the credential', () => {
     render(RotatePage, {
       props: {
-        data: baseData({
-          vaultSealed: true as const,
-          canManage: true as const,
-          dependencies: null,
-        }),
+        data: sealedData(),
       },
     })
 
@@ -272,12 +299,7 @@ describe('/rotate +page.svelte', () => {
   it('AC-2 edge: member/viewer on a sealed vault still sees the role-gate AccessNotice, not the sealed message', () => {
     render(RotatePage, {
       props: {
-        data: baseData({
-          orgRole: 'member' as const,
-          canManage: false as const,
-          dependencies: null,
-          vaultSealed: undefined,
-        }),
+        data: noAccessData(),
       },
     })
 

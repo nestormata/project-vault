@@ -9,11 +9,11 @@ vi.mock('$lib/api/auth.js', () => ({
   regenerateMfaRecoveryCodes: vi.fn(),
 }))
 
-import { appLayoutData } from '$lib/test/page-data.js'
+import { appLayoutData, testAuthUser } from '$lib/test/page-data.js'
 import SecurityPage from './(app)/settings/security/+page.svelte'
 
 function baseUser(overrides: Partial<AuthUser> = {}): AuthUser {
-  return {
+  return testAuthUser({
     userId: 'u1',
     orgId: 'o1',
     sessionId: 's1',
@@ -21,15 +21,8 @@ function baseUser(overrides: Partial<AuthUser> = {}): AuthUser {
     mfaEnrolled: false,
     mfaEnrolledAt: null,
     remainingRecoveryCodesCount: null,
-    mfaStatus: {
-      enrollmentRequired: false,
-      gracePeriodActive: false,
-      gracePeriodExpiresAt: null,
-      gracePeriodDaysRemaining: null,
-      bannerMessage: null,
-    },
     ...overrides,
-  }
+  })
 }
 
 describe('/settings/security +page.svelte', () => {
@@ -50,6 +43,7 @@ describe('/settings/security +page.svelte', () => {
     render(SecurityPage, {
       props: {
         data: {
+          ...appLayoutData(),
           user: baseUser({
             mfaEnrolled: true,
             mfaEnrolledAt: '2026-06-01T00:00:00.000Z',

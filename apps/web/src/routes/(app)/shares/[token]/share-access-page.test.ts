@@ -10,6 +10,7 @@ vi.mock('$lib/api/credential-shares.js', () => ({
 import { ApiClientError } from '$lib/api/client.js'
 import { appLayoutData } from '$lib/test/page-data.js'
 import ShareAccessPage from './+page.svelte'
+import type { ShareMetadata } from '$lib/api/credential-shares.js'
 
 afterEach(() => {
   cleanup()
@@ -18,12 +19,14 @@ afterEach(() => {
 
 const token = 'raw-token-value'
 
-const METADATA = {
+const METADATA: ShareMetadata = {
   credentialId: 'cred-1',
   credentialName: 'Stripe Secret Key',
   sharedBy: 'sharer-1',
   sharedByEmail: 'morgan@example.com',
   fieldKey: null,
+  attributeKeys: null,
+  action: 'read',
   expiresAt: '2026-08-01T00:00:00.000Z',
   singleUse: true,
   status: 'active' as const,

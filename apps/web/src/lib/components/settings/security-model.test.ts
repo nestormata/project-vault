@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { nth } from '$lib/test/dom.js'
 import {
   describeRemainingRecoveryCodes,
   formatEnrolledAt,
@@ -55,7 +56,7 @@ describe('qrCodeDataUri', () => {
     const uri = qrCodeDataUri(svg)
 
     expect(uri).toMatch(/^data:image\/svg\+xml;base64,/)
-    const decoded = decodeURIComponent(escape(atob(uri.split(',')[1])))
+    const decoded = decodeURIComponent(escape(atob(nth(uri.split(','), 1))))
     expect(decoded).toBe(svg)
   })
 })

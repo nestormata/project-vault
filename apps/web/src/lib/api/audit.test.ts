@@ -154,13 +154,11 @@ describe('audit API client', () => {
 
   describe('updateAuditForwarding (AC-E1/E3)', () => {
     it('PUTs a webhook config', async () => {
-      const fetchFn = vi
-        .fn()
-        .mockResolvedValue(
-          jsonResponse({
-            data: { type: 'webhook', enabled: true, configuredAt: '2026-07-07T14:02:00.000Z' },
-          })
-        )
+      const fetchFn = vi.fn().mockResolvedValue(
+        jsonResponse({
+          data: { type: 'webhook', enabled: true, configuredAt: '2026-07-07T14:02:00.000Z' },
+        })
+      )
 
       const result = await updateAuditForwarding(fetchFn, {
         type: 'webhook',
@@ -175,13 +173,11 @@ describe('audit API client', () => {
     })
 
     it('PUTs an s3 config', async () => {
-      const fetchFn = vi
-        .fn()
-        .mockResolvedValue(
-          jsonResponse({
-            data: { type: 's3', enabled: true, configuredAt: '2026-07-07T14:02:00.000Z' },
-          })
-        )
+      const fetchFn = vi.fn().mockResolvedValue(
+        jsonResponse({
+          data: { type: 's3', enabled: true, configuredAt: '2026-07-07T14:02:00.000Z' },
+        })
+      )
 
       await updateAuditForwarding(fetchFn, {
         type: 's3',

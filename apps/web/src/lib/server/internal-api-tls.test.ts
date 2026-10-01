@@ -302,7 +302,8 @@ describe('Story 43.16 AC-2: createInternalApiFetch', () => {
       },
       { log: captureLog().log }
     )
-    const error = await noCa('https://localhost:1/x').catch((caught: unknown) => caught as Error)
+    const error = await noCa('https://localhost:1/x').catch((caught: unknown) => caught)
+    if (!(error instanceof Error)) throw new Error('expected the request to reject with an Error')
     expect(error.message).toBe('API_TLS_CA_B64 is required when API_TLS_CLIENT_CERT_B64 is set')
     expect(error.message).not.toContain(pki.client.keyB64)
   })

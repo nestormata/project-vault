@@ -60,6 +60,7 @@ function makeRotation(overrides: Partial<RotationDetail> = {}): RotationDetail {
     initiatedAt: '2026-07-01T14:10:00.000Z',
     completedAt: null,
     notes: null,
+    targetFields: null,
     checklistItems: [],
     ...overrides,
   }
@@ -67,16 +68,46 @@ function makeRotation(overrides: Partial<RotationDetail> = {}): RotationDetail {
 
 type Data = ComponentProps<typeof RotationDetailPage>['data']
 
-function baseData(overrides: Partial<Data> = {}): Data {
+/** The loaded page (not the not-found or sealed-vault fallbacks). */
+type LoadedData = Exclude<Data, { notFound: true } | { vaultSealed: true }>
+
+function baseData(overrides: Partial<LoadedData> = {}): LoadedData {
   return {
     ...projectLayoutData(),
     projectId,
     credentialId,
     rotationId,
-    orgRole: 'admin' as const,
+    orgRole: 'admin',
     rotation: makeRotation(),
-    notFound: false as const,
+    notFound: false,
     ...overrides,
+  }
+}
+
+/** The loader's 404 fallback. */
+function notFoundData(): Data {
+  return {
+    ...projectLayoutData(),
+    projectId,
+    credentialId,
+    rotationId,
+    orgRole: 'admin',
+    rotation: null,
+    notFound: true,
+  }
+}
+
+/** The loader's sealed-vault (503) fallback. */
+function sealedData(): Data {
+  return {
+    ...projectLayoutData(),
+    projectId,
+    credentialId,
+    rotationId,
+    orgRole: 'admin',
+    rotation: null,
+    notFound: false,
+    vaultSealed: true,
   }
 }
 
@@ -128,7 +159,7 @@ describe('/rotations/[rotationId] +page.svelte', () => {
 
   it('AC-7 edge: renders the not-found block when notFound is true', () => {
     render(RotationDetailPage, {
-      props: { data: baseData({ notFound: true as const, rotation: null }) },
+      props: { data: notFoundData() },
     })
 
     expect(screen.getByRole('alert')).toBeTruthy()
@@ -138,7 +169,7 @@ describe('/rotations/[rotationId] +page.svelte', () => {
   it('AC-3: renders the sealed-vault message (not "Rotation not found") when data.vaultSealed is true', () => {
     render(RotationDetailPage, {
       props: {
-        data: baseData({ vaultSealed: true as const, notFound: false as const, rotation: null }),
+        data: sealedData(),
       },
     })
 
