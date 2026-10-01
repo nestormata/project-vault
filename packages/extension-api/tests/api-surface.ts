@@ -144,6 +144,12 @@ export function applySinceAnnotations(
   )
 }
 
+/** The target's default lib without DOM/ScriptHost: lib.es2022.full.d.ts -> lib.es2022.d.ts. */
+function ecmaScriptLib(options: TypeScript.CompilerOptions): string {
+  const full = ts.getDefaultLibFileName(options)
+  return full === 'lib.d.ts' ? 'lib.es5.d.ts' : full.replace(/\.full\.d\.ts$/, '.d.ts')
+}
+
 function compiler(root: string): {
   program: TypeScript.Program
   checker: TypeScript.TypeChecker
@@ -153,13 +159,20 @@ function compiler(root: string): {
   if (config.error) throw new Error(ts.flattenDiagnosticMessageText(config.error.messageText, '\n'))
   const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, root)
   const sourcePath = join(root, 'src/index.ts')
-  // Story 66-6: `types: []` skips the ~83 ambient @types/node files (259 -> 130 files, output
-  // byte-identical) because the public surface must not depend on Node globals. The
-  // diagnostics guard (assertNoSourceDiagnostics, run by generateSurfaceSnapshot after
-  // rendering) makes that fail closed instead of rendering an unresolved type.
+  // Story 66-6: `types: []` skips the ~83 ambient @types/node files (259 -> 130 files) and the
+  // ECMAScript-only default lib skips lib.dom.d.ts, the largest lib file (child CPU 1.3 s ->
+  // 0.9 s). Output stays byte-identical because the public surface must not depend on Node or
+  // DOM globals. The diagnostics guard (assertNoSourceDiagnostics, run by
+  // generateSurfaceSnapshot after rendering) makes that fail closed instead of rendering an
+  // unresolved type.
   const program = ts.createProgram(
     [sourcePath],
-    { ...parsed.options, noEmit: true, types: [] },
+    {
+      ...parsed.options,
+      noEmit: true,
+      types: [],
+      lib: parsed.options.lib ?? [ecmaScriptLib(parsed.options)],
+    },
     undefined
   )
   const source = program.getSourceFile(sourcePath)

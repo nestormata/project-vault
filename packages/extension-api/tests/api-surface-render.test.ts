@@ -169,6 +169,22 @@ describe('surface renderer over the surface-mini fixture package', () => {
       /src\/helper\.ts.*Cannot find name 'Buffer'/
     )
   })
+
+  // Without an explicit `lib`, the generator uses the target's ECMAScript lib without the DOM
+  // (lib.dom.d.ts is the largest lib file). A src file that needs a DOM type fails closed.
+  it('builds without the DOM lib when tsconfig has no explicit lib, and fails closed on DOM names', () => {
+    const root = tempCopy({ withSnapshot: false })
+    writeText(
+      root,
+      'tsconfig.json',
+      '{"compilerOptions":{"strict":true,"target":"es5","types":[]},"files":["src/index.ts"]}'
+    )
+    writeText(root, INDEX_FILE, `${readText(root, INDEX_FILE)}export type Element = HTMLElement\n`)
+
+    expect(() => generateSurfaceSnapshot(root)).toThrow(
+      /src\/index\.ts.*Cannot find name 'HTMLElement'/
+    )
+  })
 })
 
 describe('assertSurfaceSnapshotIsFresh (parent-side compare)', () => {
