@@ -133,8 +133,8 @@ export function tsconfigExcludesTests(tsconfigJson: string): boolean {
 
 /** Every `<script>` opening tag in a .svelte file must declare lang="ts" (AC-7). */
 export function hasUntypedScript(svelteSource: string): boolean {
-  const openingTags = svelteSource.match(/<script\b[^>]*>/g) ?? []
-  return openingTags.some((tag) => !/\blang=["']ts["']/.test(tag))
+  const openingTags = svelteSource.match(/<script\b[^>]*>/gi) ?? []
+  return openingTags.some((tag) => !/\blang=["']ts["']/i.test(tag))
 }
 
 describe('web svelte-check wiring guard: parsers (Story 68.1 AC-4)', () => {
@@ -208,6 +208,8 @@ describe('web svelte-check wiring guard: parsers (Story 68.1 AC-4)', () => {
     expect(hasUntypedScript('<script module>\n</script>\n<script lang="ts">\n</script>')).toBe(true)
     expect(hasUntypedScript('<script lang="ts">\n  let a = 1\n</script>')).toBe(false)
     expect(hasUntypedScript('<p>no script at all</p>')).toBe(false)
+    expect(hasUntypedScript('<SCRIPT>\n  let a = 1\n</SCRIPT>')).toBe(true)
+    expect(hasUntypedScript('<SCRIPT LANG="ts">\n</SCRIPT>')).toBe(false)
   })
 
   it('detects a tsconfig that excludes unit test files', () => {
