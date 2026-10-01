@@ -81,7 +81,7 @@ base_versions() {
   [[ -n "$manifest" ]] || die "no $arch manifest in $index"
   layer=$(curl -fsS "${CURL_HTTPS[@]}" -H "Authorization: Bearer $t" -H "Accept: $MANIFEST_ACCEPT" "$REGISTRY/manifests/$manifest" | jq -r '.layers[0].digest')
   tmp=$(mktemp)
-  curl -fsSL "${CURL_HTTPS[@]}" -H "Authorization: Bearer $t" "$REGISTRY/blobs/$layer" -o "$tmp"
+  curl -fsSL --proto "$HTTPS_ONLY" --proto-redir '=https' -H "Authorization: Bearer $t" "$REGISTRY/blobs/$layer" -o "$tmp"
   alpine=$(tar -xzOf "$tmp" etc/alpine-release)
   # Read the package db once and let awk consume all of it: an early `exit` would SIGPIPE tar and,
   # under `set -o pipefail`, abort the script nondeterministically.
