@@ -3,8 +3,10 @@ import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import postgres from 'postgres'
 import { expect, type APIRequestContext } from '@playwright/test'
-import { superuserDatabaseUrl } from './db.js'
+import { superuserDatabaseUrl, withDatabase } from './db.js'
 import { pollUntilOk } from './poll-until-ready.js'
+import { ensureIsolatedDbCredentials } from './isolated-db-credentials.js'
+import { StderrTail, earlyExitMessage } from './isolated-api-exit.js'
 
 /**
  * Shared plumbing for "isolated stack" E2E fixtures — self-contained, non-Docker
@@ -17,10 +19,6 @@ import { pollUntilOk } from './poll-until-ready.js'
 
 export const REPO_ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
 const require = createRequire(import.meta.url)
-
-export function dbHostPort(): string {
-  return process.env['DB_HOST_PORT'] ?? '5432'
-}
 
 export function tsxExecutable(): { executable: string; tsxCliPath: string } {
   return { executable: process.execPath, tsxCliPath: require.resolve('tsx/cli') }
@@ -47,7 +45,7 @@ export async function createIsolatedDatabase(dbName: string): Promise<void> {
   const migrationScript = fileURLToPath(
     new URL('../../../../packages/db/src/scripts/guarded-migrate.ts', import.meta.url)
   )
-  const isolatedSuperuserUrl = superuserDatabaseUrl().replace(/\/[^/]+$/, `/${dbName}`)
+  const isolatedSuperuserUrl = withDatabase(superuserDatabaseUrl(), dbName)
   execFileSync(executable, [tsxCliPath, migrationScript], {
     cwd: REPO_ROOT,
     env: { ...process.env, DATABASE_URL: isolatedSuperuserUrl },
@@ -72,12 +70,51 @@ export async function dropIsolatedDatabase(dbName: string): Promise<void> {
   }
 }
 
-export async function waitForHttp(url: string, attempts = 40, delayMs = 500): Promise<void> {
+export async function waitForHttp(
+  url: string,
+  attempts = 40,
+  delayMs = 500,
+  signal?: AbortSignal
+): Promise<void> {
   await pollUntilOk(url, {
     attempts,
     delayMs,
+    signal,
     onExhausted: (lastError) => new Error(`Timed out waiting for ${url}: ${String(lastError)}`),
   })
+}
+
+/**
+ * Story 66.4 AC-7: waits for `/health`, but rejects as soon as the child exits instead of
+ * spending the whole poll budget, with the reason from its stderr. Listens on `close` (not
+ * `exit`): `exit` can fire before the stdio pipes drain, losing the very line that says why.
+ * The poll and the listener are both cleaned up on either outcome.
+ */
+async function waitForHealthOrExit(
+  child: ChildProcess,
+  url: string,
+  label: string,
+  port: number,
+  stderrTail: StderrTail
+): Promise<void> {
+  const controller = new AbortController()
+  let onClose: ((code: number | null, signal: NodeJS.Signals | null) => void) | undefined
+  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+    onClose = (code, signal) => resolve({ code, signal })
+    child.once('close', onClose)
+  })
+  const healthy = waitForHttp(url, 40, 500, controller.signal).then(() => undefined)
+  try {
+    const outcome = await Promise.race([healthy, exited])
+    if (outcome !== undefined) {
+      throw new Error(
+        earlyExitMessage(label, port, outcome.code, outcome.signal, stderrTail.reason())
+      )
+    }
+  } finally {
+    controller.abort()
+    if (onClose) child.off('close', onClose)
+  }
 }
 
 /**
@@ -141,8 +178,8 @@ export type SpawnIsolatedApiOptions = {
 export async function spawnIsolatedApiProcess(
   options: SpawnIsolatedApiOptions
 ): Promise<ChildProcess> {
-  const dbUrl = `postgresql://vault_app:dev-only-change-in-prod@localhost:${dbHostPort()}/${options.dbName}`
-  const adminUrl = `postgresql://vault_admin:password@localhost:${dbHostPort()}/${options.dbName}`
+  // Story 66.4 AC-5/AC-6: verify (and on a fresh local DB provision) both credentials first.
+  const { appUrl: dbUrl, adminUrl } = await ensureIsolatedDbCredentials(options.dbName)
   const { executable, tsxCliPath } = tsxExecutable()
   const mainPath = fileURLToPath(new URL('../../../api/src/main.ts', import.meta.url))
 
@@ -171,8 +208,16 @@ export async function spawnIsolatedApiProcess(
     detached: true,
   })
   pipeChildDiagnostics(child, options.logLabel, options.port)
+  const stderrTail = new StderrTail()
+  child.stderr?.on('data', (chunk) => stderrTail.push(String(chunk)))
 
-  await waitForHttp(`http://localhost:${options.port}/health`)
+  await waitForHealthOrExit(
+    child,
+    `http://localhost:${options.port}/health`,
+    options.logLabel,
+    options.port,
+    stderrTail
+  )
   return child
 }
 

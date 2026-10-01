@@ -92,11 +92,10 @@ import {
 import { logInternalTlsStartup } from './lib/internal-tls-status.js'
 import { instrumentDbPool } from './lib/db-pool-metrics.js'
 import { withJobLogging } from './lib/job-logging.js'
-import { operationalLog, serializeLogError } from './lib/logger.js'
-import { createStartupLogger, logStartupFailure } from './lib/startup-logging.js'
+import { createEntrypointLoggerConfig, operationalLog } from './lib/logger.js'
+import { reportStartupFailure } from './lib/startup-logging.js'
 import { adminPoolIdentityFailure, inspectConfiguredAdminPool } from './lib/admin-pool-identity.js'
 import { getReleaseVersion } from './lib/package-version.js'
-import type { FastifyBaseLogger } from 'fastify'
 import postgres from 'postgres'
 import { pgTlsOptions } from '@project-vault/db/pg-tls'
 
@@ -118,10 +117,7 @@ const ROTATION_STALE_STAGED_ALERT_JOB = 'rotation/stale-staged-alert'
 // (see credential-share-expire.ts's own doc comment for why a daily sweep is too coarse).
 const CREDENTIAL_SHARE_EXPIRE_JOB = 'credential-shares/expire'
 
-let startupLogger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'> | undefined
-
 async function main(): Promise<void> {
-  startupLogger = createStartupLogger(env)
   // Architecture mandates this exact startup ORDER:
   // 1. createEventEmitter()
   const emitter = createEventEmitter()
@@ -141,12 +137,14 @@ async function main(): Promise<void> {
   if (adminPoolIdentity.status !== 'ok') throw adminPoolIdentityFailure(adminPoolIdentity)
 
   // 3. createApp({ emitter, ringBuffer })
+  // Story 66.4 AC-3: the real entrypoint honours an explicit LOG_LEVEL even under NODE_ENV=test
+  // (in-process tests never import this file and keep createLoggerConfig's silent default).
   const fastify = await createApp({
     dbPool,
     vaultGuardEnabled: true,
+    logger: createEntrypointLoggerConfig(env),
   })
   fastify.decorate?.('emitter', emitter)
-  startupLogger = fastify.log
   operationalLog(
     fastify.log,
     'info',
@@ -515,10 +513,7 @@ async function main(): Promise<void> {
 try {
   await main()
 } catch (err) {
-  if (startupLogger) {
-    await logStartupFailure(startupLogger, err).finally(() => process.exit(1))
-  } else {
-    process.stderr.write(`Fatal error: ${serializeLogError(err).message}\n`)
-    process.exit(1)
-  }
+  // Story 66.4 AC-2: one redacted startup.failed line on stderr whatever NODE_ENV/LOG_LEVEL say,
+  // before or after createApp(); reportStartupFailure never rejects, so the exit code stays 1.
+  await reportStartupFailure(env, err).finally(() => process.exit(1))
 }

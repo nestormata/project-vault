@@ -8,7 +8,7 @@ export type LoggerConfig = ReturnType<typeof buildPinoOptions>
 export type SerializedLogError = { message: string; name?: string; stack?: string }
 type LoggerEnv = Pick<Env, 'NODE_ENV' | 'LOG_LEVEL' | 'SERVICE_NAME'>
 
-const CONNECTION_STRING_RE = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+(?::[^\s/@]*)?@/gi
+const CONNECTION_STRING_RE = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:?[^\s/@]*@/gi
 
 function redactConnectionStrings(value: string | undefined): string | undefined {
   return value?.replace(CONNECTION_STRING_RE, '$1[REDACTED]@')
@@ -56,6 +56,26 @@ export function createLoggerConfig(
   const level = !destination && env.NODE_ENV === 'test' ? 'silent' : env.LOG_LEVEL
   const config = buildPinoOptions(env, level)
   return destination ? pino(config, destination) : config
+}
+
+/**
+ * Story 66.4 AC-3: the logger config for the real process entrypoint (`main.ts`). Unlike
+ * `createLoggerConfig(env)`, it honours `env.LOG_LEVEL` under NODE_ENV=test as well: test-mode
+ * quietness is a property of in-process test suites (which never import main.ts), not of a real
+ * process boot such as the isolated e2e API, whose `J*_DEBUG_LOG_LEVEL` knobs set LOG_LEVEL.
+ */
+export function createEntrypointLoggerConfig(env: LoggerEnv): LoggerConfig {
+  return buildPinoOptions(env, env.LOG_LEVEL)
+}
+
+/** A pino logger with every standard option (redaction, service, message key) at a fixed
+ * level, writing to an explicit destination. Used by the startup-failure reporter. */
+export function createFixedLevelLogger(
+  env: LoggerEnv,
+  level: pino.Level,
+  destination: pino.DestinationStream
+): pino.Logger {
+  return pino(buildPinoOptions(env, level), destination)
 }
 
 /**

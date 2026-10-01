@@ -28,6 +28,11 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   CentralizeMe" link on the handoff consent page. Existing configs that set it keep the link. An
   empty `VAULT_HANDOFF_ISSUER` now means the default issuer (`https://app.centralizeme.com`)
   instead of an api boot failure.
+- An API startup failure (`startup.failed`) is now written to **stderr** instead of stdout, in
+  every environment. Log shippers that read only stdout for this event must also read stderr.
+  An `ADMIN_DATABASE_URL` that cannot be reached now names the reason (`auth_failed`,
+  `database_missing`, `permission_denied`, `connection_failed`, `role_row_missing` or `unknown`),
+  and `pnpm check-admin-pool` prints it too. (Story 66.4)
 
 ### Security
 
@@ -37,6 +42,12 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   from the server or a library is now printed on one line and capped at 500 characters.
 - The API now drops an `x-vault-target-command` audit value that contains such characters (the
   reveal itself still succeeds and is still audited), and the agent strips them before sending it.
+
+### Fixed
+
+- The API now always reports why it refused to start: one redacted `startup.failed` JSON line on
+  stderr, whatever `NODE_ENV` and `LOG_LEVEL` say. Before, `LOG_LEVEL=silent` or `fatal` in any
+  environment, and every `NODE_ENV=test` process, exited 1 with no output. (Story 66.4)
 
 ## [1.3.0] - 2026-09-27
 
