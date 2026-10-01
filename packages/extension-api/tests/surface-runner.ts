@@ -68,11 +68,22 @@ export interface SurfaceRunner {
   buildCount(): number
 }
 
+/**
+ * A generation settled outside the test worker (tests/surface-global-setup.ts, before any test
+ * file starts) and handed to the test with vitest's provide/inject. Plain data, so it survives
+ * serialization to the workers; a failure travels as its formatted message.
+ */
+export type SettledSurface = { root: string; builds: number } & (
+  { ok: true; snapshot: string; durationMs: number } | { ok: false; message: string }
+)
+
 export interface SurfaceRunnerOptions {
   execute?: SurfaceExecutor
   now?: () => number
   nodeVersion?: string
   env?: NodeJS.ProcessEnv
+  /** Outcome provided by the vitest globalSetup; used only for the root it was generated for. */
+  provided?: SettledSurface
 }
 
 interface ChildFailure {
@@ -197,6 +208,8 @@ export function createSurfaceRunner(options: SurfaceRunnerOptions = {}): Surface
   // Module-scoped per runner (never globalThis, never on disk), so watch-mode reruns rebuild.
   const settled = new Map<string, Settled>()
   let builds = 0
+  const provided = options.provided
+  let providedServed = false
 
   function run(root: string): SurfaceGeneration {
     const args = childArgs(nodeVersion)
@@ -242,6 +255,12 @@ export function createSurfaceRunner(options: SurfaceRunnerOptions = {}): Surface
 
   return {
     generate(root) {
+      if (provided?.root === root) {
+        // Never falls back to spawning here: a provided failure fails every caller as-is.
+        providedServed = true
+        if (!provided.ok) throw new Error(provided.message)
+        return { snapshot: provided.snapshot, durationMs: provided.durationMs }
+      }
       let outcome = settled.get(root)
       if (!outcome) {
         try {
@@ -254,7 +273,17 @@ export function createSurfaceRunner(options: SurfaceRunnerOptions = {}): Surface
       if (!outcome.ok) throw outcome.error
       return outcome.value
     },
-    buildCount: () => builds,
+    buildCount: () => builds + (providedServed && provided ? provided.builds : 0),
+  }
+}
+
+/** Runs the generation for `root` and settles it into plain data; never throws. */
+export function settleSurfaceGeneration(runner: SurfaceRunner, root: string): SettledSurface {
+  try {
+    const { snapshot, durationMs } = runner.generate(root)
+    return { root, builds: runner.buildCount(), ok: true, snapshot, durationMs }
+  } catch (error) {
+    return { root, builds: runner.buildCount(), ok: false, message: (error as Error).message }
   }
 }
 

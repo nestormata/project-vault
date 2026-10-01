@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, inject, it } from 'vitest'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import {
@@ -7,6 +7,7 @@ import {
   checkSurfaceFreshness,
   childEnvironment,
   createSurfaceRunner,
+  settleSurfaceGeneration,
   type SurfaceExecutor,
 } from './surface-runner.js'
 
@@ -18,6 +19,8 @@ const VALID_SNAPSHOT = `${HEADER}\n\n## export \`Foo\`\n\n- since: 1.0.0\n`
 const root = '/virtual/extension-api'
 // Node 20 has no native type stripping, so the runner uses the tsx loader there.
 const TSX_NODE = '20.20.2'
+const PHASE_EXIT = 'phase: exit'
+const PHASE_TIMEOUT = 'phase: timeout'
 const NATIVE_ARGS = ['tests/api-surface.ts', '--emit']
 const TSX_ARGS = ['--import', 'tsx', ...NATIVE_ARGS]
 
@@ -132,7 +135,7 @@ describe('surface runner (child-process generation)', () => {
 
     const message = failureOf(() => runner.generate(root)).message
 
-    expect(message).toContain('phase: exit')
+    expect(message).toContain(PHASE_EXIT)
     expect(message).toContain('duration: 2500ms')
     expect(message).toContain('exit: code 1')
     expect(message).toContain('command: node --import tsx tests/api-surface.ts --emit')
@@ -153,7 +156,7 @@ describe('surface runner (child-process generation)', () => {
 
     const message = failureOf(() => runner.generate(root)).message
 
-    expect(message).toContain('phase: timeout')
+    expect(message).toContain(PHASE_TIMEOUT)
     expect(message).toContain('duration: 12004ms')
     expect(message).toContain('exit: signal SIGTERM')
     expect(message).toContain(`exceeded ${CHILD_TIMEOUT_MS}ms`)
@@ -170,7 +173,7 @@ describe('surface runner (child-process generation)', () => {
 
     const message = failureOf(() => runner.generate(root)).message
 
-    expect(message).toContain('phase: exit')
+    expect(message).toContain(PHASE_EXIT)
     expect(message).toContain('exit: signal SIGKILL')
     expect(message).toContain('killed')
   })
@@ -313,6 +316,101 @@ describe('child environment', () => {
 
   it('passes the rest of the parent environment through', () => {
     expect(childEnvironment({ HOME: '/home/x' })).toEqual({ HOME: '/home/x', NODE_V8_COVERAGE: '' })
+  })
+})
+
+describe('generation settled before the test workers start (vitest globalSetup)', () => {
+  it('settles a successful generation into a serializable outcome', () => {
+    const runner = createSurfaceRunner({
+      execute: () => VALID_SNAPSHOT,
+      now: clock(0, 1_500),
+      env: {},
+    })
+
+    expect(settleSurfaceGeneration(runner, root)).toEqual({
+      root,
+      builds: 1,
+      ok: true,
+      snapshot: VALID_SNAPSHOT,
+      durationMs: 1_500,
+    })
+  })
+
+  it('settles a failed generation into an outcome instead of throwing', () => {
+    const runner = createSurfaceRunner({
+      execute: () => {
+        throw execFailure({ status: 1, stderr: 'boom\n' })
+      },
+      env: {},
+    })
+
+    const settled = settleSurfaceGeneration(runner, root)
+
+    expect(settled).toMatchObject({ root, builds: 1, ok: false })
+    expect(settled.ok ? '' : settled.message).toContain(PHASE_EXIT)
+  })
+
+  it('serves a provided generation for the same root without spawning, and counts its build', () => {
+    let builds = 0
+    const runner = createSurfaceRunner({
+      execute: () => {
+        builds += 1
+        return VALID_SNAPSHOT
+      },
+      provided: { root, builds: 1, ok: true, snapshot: VALID_SNAPSHOT, durationMs: 900 },
+      env: {},
+    })
+
+    expect(runner.generate(root)).toEqual({ snapshot: VALID_SNAPSHOT, durationMs: 900 })
+    expect(builds).toBe(0)
+    expect(runner.buildCount()).toBe(1)
+  })
+
+  it('fails every caller with the provided failure and never falls back to spawning', () => {
+    let builds = 0
+    const runner = createSurfaceRunner({
+      execute: () => {
+        builds += 1
+        return VALID_SNAPSHOT
+      },
+      provided: { root, builds: 1, ok: false, message: 'phase: timeout\nduration: 12004ms' },
+      env: {},
+    })
+
+    expect(() => runner.generate(root)).toThrow(PHASE_TIMEOUT)
+    expect(() => checkSurfaceFreshness(root, runner)).toThrow(PHASE_TIMEOUT)
+    expect(builds).toBe(0)
+    expect(runner.buildCount()).toBe(1)
+  })
+
+  // This file only ever runs under the package vitest config, which registers the globalSetup.
+  it('receives one settled generation for this package from the vitest globalSetup', () => {
+    const packageRoot = fileURLToPath(new URL('..', import.meta.url))
+
+    expect(inject('apiSurfaceGeneration')).toMatchObject({ root: packageRoot, builds: 1, ok: true })
+  })
+
+  it('generates in the worker when nothing was provided for that root', () => {
+    let builds = 0
+    const runner = createSurfaceRunner({
+      execute: () => {
+        builds += 1
+        return VALID_SNAPSHOT
+      },
+      provided: {
+        root: '/another/root',
+        builds: 1,
+        ok: true,
+        snapshot: VALID_SNAPSHOT,
+        durationMs: 1,
+      },
+      env: {},
+    })
+
+    runner.generate(root)
+
+    expect(builds).toBe(1)
+    expect(runner.buildCount()).toBe(1)
   })
 })
 

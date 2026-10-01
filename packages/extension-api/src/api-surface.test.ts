@@ -1,17 +1,21 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, inject, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import { applySinceAnnotations, validateSinceIndex } from '../tests/api-surface.js'
 import { checkSurfaceFreshness, createSurfaceRunner } from '../tests/surface-runner.js'
 
-// Story 66-6: the real public-surface program (src/index.ts + TypeScript libs + @types/node) is
-// built exactly once per file run, in a child process that V8 coverage does not instrument. The
-// three compiler-backed assertions below read that single, lazily produced result, so any one of
-// them can run on its own (`-t readonly`). See tests/surface-runner.ts for why the build must
-// never run in-process here (symbol-id drift, DW-310).
+// Story 66-6: the real public-surface program (src/index.ts + TypeScript's ECMAScript libs) is
+// built exactly once per run, in a child process that V8 coverage does not instrument: by the
+// package's vitest globalSetup before the workers start, or lazily here when the file runs
+// without that config. The three compiler-backed assertions below read that single result, so
+// any one of them can run on its own (`-t readonly`). See tests/surface-runner.ts for why the
+// build must never run in-process here (symbol-id drift, DW-310).
 describe('extension API public type surface snapshot', () => {
   const packageRoot = fileURLToPath(new URL('..', import.meta.url))
   const compilerTestTimeoutMs = 15_000
-  const surfaceRunner = createSurfaceRunner()
+  // Generated once by the package's vitest globalSetup before the workers start; when this file
+  // runs without that config (repo-root Checks job), nothing is provided and the runner
+  // generates lazily on first use.
+  const surfaceRunner = createSurfaceRunner({ provided: inject('apiSurfaceGeneration') })
   const surfaceSection = (exportName: string): string => {
     const { snapshot } = surfaceRunner.generate(packageRoot)
     const start = snapshot.indexOf(`## export \`${exportName}\``)
