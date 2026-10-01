@@ -288,9 +288,7 @@ async function main(): Promise<void> {
     // be removed explicitly (idempotent). A rolling-deploy old instance that restarts can
     // re-create them; the next new-code boot removes them again, and the exclusive claim keeps
     // any duplicate jobs harmless in between.
-    for (const name of RETIRED_NOTIFICATION_CATCHUP_SCHEDULES) {
-      await boss.unschedule(name)
-    }
+    await Promise.all(RETIRED_NOTIFICATION_CATCHUP_SCHEDULES.map((name) => boss.unschedule(name)))
     operationalLog(
       fastify.log,
       'info',

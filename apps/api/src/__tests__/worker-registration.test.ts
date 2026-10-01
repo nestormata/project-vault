@@ -206,7 +206,7 @@ describe('notification catch-up ownership (Story 70.1 AC3)', () => {
     ])
     const mainSource = readFileSync(MAIN_TS_MODULE_PATH, 'utf-8')
     expect(mainSource).toMatch(
-      /for \(const name of RETIRED_NOTIFICATION_CATCHUP_SCHEDULES\)\s*{\s*await boss\.unschedule\(name\)/
+      /await Promise\.all\(\s*RETIRED_NOTIFICATION_CATCHUP_SCHEDULES\.map\(\(name\) => boss\.unschedule\(name\)\)\s*\)/
     )
   })
 })

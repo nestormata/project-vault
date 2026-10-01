@@ -1,8 +1,9 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { register } from 'prom-client'
 import { withOrg } from '@project-vault/db'
-import { notificationQueue } from '@project-vault/db/schema'
+import { auditLogEntries, notificationQueue } from '@project-vault/db/schema'
+import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import { withTwoTestOrgs } from '@project-vault/db/test-helpers'
 import { getNotificationQueueEntry } from '../__tests__/helpers/notification-test-helpers.js'
 import {
@@ -48,6 +49,21 @@ async function insertQueueEntry(
   )
   if (!row) throw new Error('expected notification queue row')
   return row.id
+}
+
+async function countStatusAudits(orgId: string, queueId: string): Promise<number> {
+  const rows = await withOrg(orgId, (tx) =>
+    tx
+      .select({ id: auditLogEntries.id })
+      .from(auditLogEntries)
+      .where(
+        and(
+          eq(auditLogEntries.eventType, AuditEvent.NOTIFICATION_DELIVERY_STATUS_UPDATED),
+          eq(auditLogEntries.resourceId, queueId)
+        )
+      )
+  )
+  return rows.length
 }
 
 describe('runNotificationDlqCleanup', () => {
@@ -166,6 +182,79 @@ describe('runNotificationDlqCleanup', () => {
 
       expect(logger.warn).not.toHaveBeenCalled()
       expect(logger.info).not.toHaveBeenCalled()
+    })
+  })
+
+  // Story 70.1 — outcome-unknown and exhausted rows across several orgs in ONE run: each row is
+  // failed exactly once with exactly one status audit row, its own per-kind log, and one summary.
+  it('fails outcome-unknown and exhausted rows across orgs once each, with one audit row per transition', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+
+    await withTwoTestOrgs(async ({ orgAId, orgBId }) => {
+      const pastLease = new Date(Date.now() - 5 * 60 * 1000)
+      const unknownA = await insertQueueEntry(orgAId, {
+        channel: 'email',
+        attemptCount: 1,
+        lastAttemptAt: pastLease,
+        sendStartedAt: pastLease,
+        claimExpiresAt: pastLease,
+      })
+      const unknownB = await insertQueueEntry(orgBId, {
+        channel: 'slack',
+        attemptCount: 2,
+        lastAttemptAt: pastLease,
+        sendStartedAt: pastLease,
+        claimExpiresAt: pastLease,
+      })
+      const exhaustedA = await insertQueueEntry(orgAId, {
+        channel: 'inbox',
+        attemptCount: NOTIFICATION_MAX_ATTEMPTS,
+        lastAttemptAt: new Date(Date.now() - 31 * 60 * 1000),
+      })
+      const exhaustedB = await insertQueueEntry(orgBId, {
+        channel: 'email',
+        attemptCount: NOTIFICATION_MAX_ATTEMPTS,
+        lastAttemptAt: new Date(Date.now() - 31 * 60 * 1000),
+      })
+      const ids: Array<[string, string]> = [
+        [orgAId, unknownA],
+        [orgBId, unknownB],
+        [orgAId, exhaustedA],
+        [orgBId, exhaustedB],
+      ]
+
+      await runNotificationDlqCleanup(logger)
+      // A second tick finds nothing left to transition.
+      await runNotificationDlqCleanup(logger)
+
+      const finalStates = await Promise.all(
+        ids.map(async ([orgId, id]) => ({
+          status: (await getNotificationQueueEntry(orgId, id))?.status,
+          audits: await countStatusAudits(orgId, id),
+        }))
+      )
+      expect(finalStates).toEqual(ids.map(() => ({ status: 'failed', audits: 1 })))
+
+      const errorEvents = logger.error.mock.calls.map(
+        ([fields]) => [fields.eventType, fields.notificationQueueId] as const
+      )
+      expect(errorEvents).toHaveLength(4)
+      expect(errorEvents).toEqual(
+        expect.arrayContaining([
+          [OperationalEvent.NOTIFICATION_DELIVERY_OUTCOME_UNKNOWN, unknownA],
+          [OperationalEvent.NOTIFICATION_DELIVERY_OUTCOME_UNKNOWN, unknownB],
+          [OperationalEvent.NOTIFICATION_DLQ_ENTRY_FAILED, exhaustedA],
+          [OperationalEvent.NOTIFICATION_DLQ_ENTRY_FAILED, exhaustedB],
+        ])
+      )
+      expect(logger.warn).toHaveBeenCalledTimes(1)
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: OperationalEvent.NOTIFICATION_DLQ_CLEANUP_SUMMARY,
+          count: 4,
+        }),
+        expect.any(String)
+      )
     })
   })
 
