@@ -48,6 +48,7 @@ export interface SurfaceExecOptions {
   encoding: 'utf8'
   timeout: number
   maxBuffer: number
+  killSignal: 'SIGKILL'
   stdio: ['ignore', 'pipe', 'pipe']
 }
 
@@ -105,6 +106,9 @@ interface FailureDetails {
 const defaultExecutor: SurfaceExecutor = (file, args, options) => execFileSync(file, args, options)
 
 const DROPPED_NODE_OPTION = /^--(inspect|experimental-test-coverage|cpu-prof|heap-prof)/
+// Dropped options that take their value as the next token (`--cpu-prof-dir /tmp/p`); the value
+// must go too, or it would be left behind as a stray positional that Node rejects.
+const DROPPED_OPTION_WITH_VALUE = /^--(inspect-port|(cpu|heap)-prof-(dir|name|interval))$/
 
 /**
  * The parent environment minus anything that would re-instrument or debug the child.
@@ -115,9 +119,17 @@ const DROPPED_NODE_OPTION = /^--(inspect|experimental-test-coverage|cpu-prof|hea
  */
 export function childEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const { NODE_V8_COVERAGE: _coverage, NODE_OPTIONS: nodeOptions, ...rest } = env
-  const kept = (nodeOptions ?? '')
-    .split(/\s+/)
-    .filter((option) => option.length > 0 && !DROPPED_NODE_OPTION.test(option))
+  const kept: string[] = []
+  let skipValue = false
+  for (const option of (nodeOptions ?? '').split(/\s+/)) {
+    if (option.length === 0) continue
+    if (skipValue && !option.startsWith('-')) {
+      skipValue = false
+      continue
+    }
+    skipValue = DROPPED_OPTION_WITH_VALUE.test(option)
+    if (!DROPPED_NODE_OPTION.test(option)) kept.push(option)
+  }
   const options = kept.length > 0 ? { NODE_OPTIONS: kept.join(' ') } : {}
   return { ...rest, ...options, NODE_V8_COVERAGE: '' }
 }
@@ -232,6 +244,8 @@ export function createSurfaceRunner(options: SurfaceRunnerOptions = {}): Surface
         encoding: 'utf8',
         timeout: CHILD_TIMEOUT_MS,
         maxBuffer: CHILD_MAX_BUFFER_BYTES,
+        // A timeout must end the child even if a loader ever traps SIGTERM.
+        killSignal: 'SIGKILL',
         stdio: ['ignore', 'pipe', 'pipe'],
       })
     } catch (error) {

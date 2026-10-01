@@ -153,11 +153,17 @@ export function applySinceAnnotations(
   )
 }
 
+// The two DOM-inclusive default libs whose names do not follow the `.full.d.ts` pattern.
+const LEGACY_FULL_LIBS: ReadonlyMap<string, string> = new Map([
+  ['lib.d.ts', 'lib.es5.d.ts'],
+  ['lib.es6.d.ts', 'lib.es2015.d.ts'],
+])
+
 /** The target's default lib without DOM/ScriptHost: lib.es2022.full.d.ts -> lib.es2022.d.ts. */
 function ecmaScriptLib(options: TypeScript.CompilerOptions): string {
   const ts = typescript()
   const full = ts.getDefaultLibFileName(options)
-  return full === 'lib.d.ts' ? 'lib.es5.d.ts' : full.replace(/\.full\.d\.ts$/, '.d.ts')
+  return LEGACY_FULL_LIBS.get(full) ?? full.replace(/\.full\.d\.ts$/, '.d.ts')
 }
 
 function compiler(root: string): {

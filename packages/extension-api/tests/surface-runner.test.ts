@@ -24,6 +24,7 @@ const PHASE_EXIT = 'phase: exit'
 const PHASE_TIMEOUT = 'phase: timeout'
 const NATIVE_ARGS = ['tests/api-surface.ts', '--emit']
 const TSX_ARGS = ['--import', 'tsx', ...NATIVE_ARGS]
+const HEAP_OPTION = '--max-old-space-size=4096'
 
 interface ExecFailure extends Error {
   code?: string
@@ -79,6 +80,7 @@ describe('surface runner (child-process generation)', () => {
         encoding: 'utf8',
         timeout: CHILD_TIMEOUT_MS,
         maxBuffer: CHILD_MAX_BUFFER_BYTES,
+        killSignal: 'SIGKILL',
       })
       expect(CHILD_TIMEOUT_MS).toBeLessThanOrEqual(12_000)
       expect(CHILD_MAX_BUFFER_BYTES).toBeGreaterThanOrEqual(8 * 1024 * 1024)
@@ -283,7 +285,7 @@ describe('surface runner (child-process generation)', () => {
       },
       env: {
         DATABASE_URL: 'postgres://user:hunter2@db/x',
-        NODE_OPTIONS: '--max-old-space-size=4096',
+        NODE_OPTIONS: HEAP_OPTION,
       },
     })
 
@@ -301,12 +303,24 @@ describe('child environment', () => {
     const env = childEnvironment({
       PATH: '/usr/bin',
       NODE_V8_COVERAGE: '/tmp/66-6-cov',
-      NODE_OPTIONS: '--max-old-space-size=4096 --inspect-brk=9229 --experimental-test-coverage',
+      NODE_OPTIONS: `${HEAP_OPTION} --inspect-brk=9229 --experimental-test-coverage`,
     })
 
     expect(env).toEqual({
       PATH: '/usr/bin',
-      NODE_OPTIONS: '--max-old-space-size=4096',
+      NODE_OPTIONS: HEAP_OPTION,
+      NODE_V8_COVERAGE: '',
+    })
+  })
+
+  it('drops the separate value token of a dropped profiling or inspector option', () => {
+    expect(
+      childEnvironment({
+        NODE_OPTIONS: `--cpu-prof --cpu-prof-dir /tmp/prof --heap-prof-name heap.prof --inspect-port 9230 ${HEAP_OPTION} --cpu-prof-dir=/tmp/x`,
+      })
+    ).toEqual({ NODE_OPTIONS: HEAP_OPTION, NODE_V8_COVERAGE: '' })
+    expect(childEnvironment({ NODE_OPTIONS: '--cpu-prof-dir --enable-source-maps' })).toEqual({
+      NODE_OPTIONS: '--enable-source-maps',
       NODE_V8_COVERAGE: '',
     })
   })
