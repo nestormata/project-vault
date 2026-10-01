@@ -8,7 +8,10 @@ import {
 } from '$lib/components/dashboard/dashboard-copy.js'
 import { m } from '$lib/paraglide/messages.js'
 import { formatDateTime } from '$lib/datetime.js'
-import { EMPTY_PROJECT_DASHBOARD } from '@project-vault/shared'
+import { EMPTY_PROJECT_DASHBOARD, type ProjectDashboard } from '@project-vault/shared'
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
+import { sampleProjectSummary } from '$lib/test/fixtures.js'
 import DashboardPage from './(app)/dashboard/+page.svelte'
 
 describe('dashboard empty state', () => {
@@ -61,37 +64,36 @@ describe('dashboard empty state', () => {
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
-function baseDashboardData(dashboardOverrides: Record<string, unknown> = {}) {
+const PAYMENTS = sampleProjectSummary({
+  id: projectId,
+  name: 'Payments',
+  slug: 'payments',
+  createdAt: '2026-01-01T00:00:00.000Z',
+})
+
+type Data = ComponentProps<typeof DashboardPage>['data']
+/** The loaded dashboard (not the sealed-vault fallback). */
+type LoadedData = Exclude<Data, { vaultSealed: true }>
+type MonitoringAssets = LoadedData['monitoringAssets']
+
+/** Streamed monitoring card states, already settled (the loader streams these promises). */
+function readyAssets(certificates: number, domains: number): MonitoringAssets {
   return {
-    projects: {
-      items: [
-        {
-          id: projectId,
-          name: 'Payments',
-          description: null,
-          slug: 'payments',
-          role: 'owner',
-          credentialCount: 0,
-          expiringCount: 0,
-          alertCount: 0,
-          tags: [],
-          createdAt: '2026-01-01T00:00:00.000Z',
-          archivedAt: null,
-          isArchived: false,
-        },
-      ],
-      total: 1,
-      page: 1,
-      limit: 20,
-      hasNext: false,
-    },
+    certificates: Promise.resolve({ status: 'ready', count: certificates }),
+    domains: Promise.resolve({ status: 'ready', count: domains }),
+  }
+}
+
+function baseDashboardData(dashboardOverrides: Partial<ProjectDashboard> = {}): LoadedData {
+  return {
+    ...appLayoutData(),
+    projects: { items: [PAYMENTS], total: 1, page: 1, limit: 20, hasNext: false },
     orgDashboard: null,
-    selectedProject: { id: projectId, name: 'Payments', description: null },
+    orgDashboardError: false,
+    dashboardError: false,
+    selectedProject: PAYMENTS,
     dashboard: { ...EMPTY_PROJECT_DASHBOARD, ...dashboardOverrides },
-    monitoringAssets: {
-      certificates: { status: 'ready', count: 0 },
-      domains: { status: 'ready', count: 0 },
-    },
+    monitoringAssets: readyAssets(0, 0),
     alertStatus: 'ready',
   }
 }
@@ -107,9 +109,9 @@ describe('/dashboard project selection (Story 18.12 AC-1b/AC-7)', () => {
           projects: {
             ...baseDashboardData().projects,
             items: [
-              baseDashboardData().projects.items[0],
+              PAYMENTS,
               {
-                ...baseDashboardData().projects.items[0],
+                ...PAYMENTS,
                 id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
                 name: 'Inventory',
                 slug: 'inventory',
@@ -135,7 +137,7 @@ describe('/dashboard project selection (Story 18.12 AC-1b/AC-7)', () => {
 describe('/dashboard independent monitoring states (Story 18.12 AC-4/AC-6)', () => {
   afterEach(() => cleanup())
 
-  it('keeps certificate/domain counts visible and marks the single Alerts source unavailable when the dashboard call fails', () => {
+  it('keeps certificate/domain counts visible and marks the single Alerts source unavailable when the dashboard call fails', async () => {
     render(DashboardPage, {
       props: {
         data: {
@@ -143,18 +145,15 @@ describe('/dashboard independent monitoring states (Story 18.12 AC-4/AC-6)', () 
           dashboard: null,
           dashboardError: true,
           alertStatus: 'error',
-          monitoringAssets: {
-            certificates: { status: 'ready', count: 2 },
-            domains: { status: 'ready', count: 1 },
-          },
+          monitoringAssets: readyAssets(2, 1),
         },
       },
     })
 
     expect(screen.getByText('Alerts')).toBeTruthy()
     expect(screen.getByText('Unavailable right now.')).toBeTruthy()
-    expect(screen.getByText('2 certificates')).toBeTruthy()
-    expect(screen.getByText('1 domain')).toBeTruthy()
+    expect(await screen.findByText('2 certificates')).toBeTruthy()
+    expect(await screen.findByText('1 domain')).toBeTruthy()
   })
 })
 
@@ -426,8 +425,8 @@ describe('/dashboard +page.svelte — DashboardPlaceholderGrid wiring (AC-G1, AC
     render(DashboardPage, {
       props: {
         data: {
+          ...baseDashboardData(),
           projects: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
-          orgDashboard: null,
           selectedProject: null,
           dashboard: null,
         },
@@ -447,11 +446,12 @@ describe('/dashboard +page.svelte — sealed vault on page load (AC-4)', () => {
     render(DashboardPage, {
       props: {
         data: {
+          ...appLayoutData(),
           projects: { items: [] },
           orgDashboard: null,
           selectedProject: null,
           dashboard: null,
-          vaultSealed: true as const,
+          vaultSealed: true,
         },
       },
     })

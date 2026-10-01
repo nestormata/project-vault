@@ -6,7 +6,9 @@ import type {
   CredentialDependency,
   CredentialDetail,
   CredentialVersionSummary,
+  ProjectDashboard,
   ProjectOverview,
+  ProjectSummary,
   RotationSummary,
 } from '@project-vault/shared'
 import type { CredentialDependencyWithChecklistStatus } from '$lib/api/credentials.js'
@@ -153,6 +155,40 @@ export function sampleOrgUser(overrides: Partial<OrgUser> = {}): OrgUser {
     orgRole: 'member',
     status: 'active',
     projects: [],
+    ...overrides,
+  }
+}
+
+export function sampleProjectSummary(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
+  return {
+    id: SAMPLE_PROJECT_ID,
+    name: 'Sample project',
+    slug: 'sample-project',
+    description: null,
+    role: 'owner',
+    credentialCount: 0,
+    expiringCount: 0,
+    alertCount: 0,
+    tags: [],
+    createdAt: CREATED_AT,
+    archivedAt: null,
+    isArchived: false,
+    ...overrides,
+  }
+}
+
+/** A non-empty project dashboard with every section present and nothing outstanding. */
+export function sampleProjectDashboard(
+  overrides: Partial<ProjectDashboard> = {}
+): ProjectDashboard {
+  return {
+    credentialStats: { active: 0, expiringSoon: 0, expired: 0 },
+    upcomingRotations: [],
+    monitoredServiceHealth: { healthy: 0, degraded: 0, down: 0 },
+    recentAccessEvents: [],
+    unresolvedAlertCount: 0,
+    isEmpty: false,
+    suggestedActions: [],
     ...overrides,
   }
 }
