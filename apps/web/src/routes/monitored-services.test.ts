@@ -19,6 +19,7 @@ vi.mock('$lib/api/services.js', async (importOriginal) => {
   }
 })
 
+import { projectLayoutData } from '$lib/test/page-data.js'
 import ServicesListPage from './(app)/projects/[projectId]/services/+page.svelte'
 import NewServicePage from './(app)/projects/[projectId]/services/new/+page.svelte'
 import ServiceDetailPage from './(app)/projects/[projectId]/services/[serviceId]/+page.svelte'
@@ -54,7 +55,15 @@ describe('/projects/:projectId/services list (AC-B1/B2/B5)', () => {
 
   it('AC-B1 viewer: shows the empty state with no create control', () => {
     render(ServicesListPage, {
-      props: { data: { projectId, orgRole: 'viewer', services: [], notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'viewer',
+          services: [],
+          notFound: false,
+        },
+      },
     })
     expect(screen.getByText('No services registered yet.')).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'Add service' })).toBeNull()
@@ -62,7 +71,15 @@ describe('/projects/:projectId/services list (AC-B1/B2/B5)', () => {
 
   it('AC-B1 member: shows the empty state plus a visible "Add service" link', () => {
     render(ServicesListPage, {
-      props: { data: { projectId, orgRole: 'member', services: [], notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          services: [],
+          notFound: false,
+        },
+      },
     })
     const link = screen.getByRole('link', { name: 'Add service' })
     expect(link.getAttribute('href')).toBe(`/projects/${projectId}/services/new`)
@@ -72,6 +89,8 @@ describe('/projects/:projectId/services list (AC-B1/B2/B5)', () => {
     render(ServicesListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
+          ...projectLayoutData(),
           projectId,
           orgRole: 'viewer',
           services: [makeService({ renewalDate: null, url: null })],
@@ -89,7 +108,13 @@ describe('/projects/:projectId/services list (AC-B1/B2/B5)', () => {
   it('gives the table a non-empty accessible caption', () => {
     const { container } = render(ServicesListPage, {
       props: {
-        data: { projectId, orgRole: 'viewer', services: [makeService()], notFound: false },
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'viewer',
+          services: [makeService()],
+          notFound: false,
+        },
       },
     })
     const caption = container.querySelector('caption')
@@ -98,14 +123,30 @@ describe('/projects/:projectId/services list (AC-B1/B2/B5)', () => {
 
   it('AC-I1: viewer sees no Edit/Delete controls; member sees both', () => {
     const { unmount } = render(ServicesListPage, {
-      props: { data: { projectId, orgRole: 'viewer', services: [makeService()], notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'viewer',
+          services: [makeService()],
+          notFound: false,
+        },
+      },
     })
     expect(screen.queryByRole('link', { name: 'Edit' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull()
     unmount()
 
     render(ServicesListPage, {
-      props: { data: { projectId, orgRole: 'member', services: [makeService()], notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          services: [makeService()],
+          notFound: false,
+        },
+      },
     })
     expect(screen.getByRole('link', { name: 'Edit' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy()
@@ -114,7 +155,15 @@ describe('/projects/:projectId/services list (AC-B1/B2/B5)', () => {
   it('AC-B5: two-step delete removes the row without a full page reload', async () => {
     deleteServiceMock.mockResolvedValue(undefined)
     render(ServicesListPage, {
-      props: { data: { projectId, orgRole: 'member', services: [makeService()], notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          services: [makeService()],
+          notFound: false,
+        },
+      },
     })
 
     await fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
@@ -129,7 +178,15 @@ describe('/projects/:projectId/services list (AC-B1/B2/B5)', () => {
 
   it('AC-A1 edge: project-not-found renders the not-found notice', () => {
     render(ServicesListPage, {
-      props: { data: { projectId, orgRole: 'viewer', services: [], notFound: true } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'viewer',
+          services: [],
+          notFound: true,
+        },
+      },
     })
     expect(screen.getByText(/project was not found/i)).toBeTruthy()
   })
@@ -143,14 +200,18 @@ describe('/projects/:projectId/services/new (AC-B3)', () => {
   afterEach(() => cleanup())
 
   it('AC-I1: renders AccessNotice for a viewer instead of the form', () => {
-    render(NewServicePage, { props: { data: { projectId, orgRole: 'viewer' } } })
+    render(NewServicePage, {
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'viewer' } },
+    })
     expect(screen.getByText('Create not available')).toBeTruthy()
     expect(screen.queryByLabelText(/Name/i)).toBeNull()
   })
 
   it('AC-B3 happy path: submits name/url/renewalDate and navigates to the created service', async () => {
     createServiceMock.mockResolvedValue(makeService())
-    render(NewServicePage, { props: { data: { projectId, orgRole: 'member' } } })
+    render(NewServicePage, {
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'member' } },
+    })
 
     await fireEvent.input(screen.getByLabelText(/Name/i), { target: { value: 'AWS Hosting' } })
     await fireEvent.input(screen.getByLabelText(/URL/i), {
@@ -173,7 +234,9 @@ describe('/projects/:projectId/services/new (AC-B3)', () => {
 
   it('AC-B3 edge: all optional fields left blank still submits name-only', async () => {
     createServiceMock.mockResolvedValue(makeService({ url: null, renewalDate: null }))
-    render(NewServicePage, { props: { data: { projectId, orgRole: 'member' } } })
+    render(NewServicePage, {
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'member' } },
+    })
 
     await fireEvent.input(screen.getByLabelText(/Name/i), { target: { value: 'GitHub SaaS seat' } })
     await fireEvent.click(screen.getByRole('button', { name: 'Create service' }))
@@ -186,7 +249,9 @@ describe('/projects/:projectId/services/new (AC-B3)', () => {
   })
 
   it('AC-B3 failure: blank name shows an inline error before any network call', async () => {
-    render(NewServicePage, { props: { data: { projectId, orgRole: 'member' } } })
+    render(NewServicePage, {
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'member' } },
+    })
 
     await fireEvent.click(screen.getByRole('button', { name: 'Create service' }))
 
@@ -202,7 +267,9 @@ describe('/projects/:projectId/services/new (AC-B3)', () => {
         'Too many alert lead days'
       )
     )
-    render(NewServicePage, { props: { data: { projectId, orgRole: 'member' } } })
+    render(NewServicePage, {
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'member' } },
+    })
 
     await fireEvent.input(screen.getByLabelText(/Name/i), { target: { value: 'AWS Hosting' } })
     await fireEvent.click(screen.getByRole('button', { name: 'Create service' }))
@@ -214,7 +281,9 @@ describe('/projects/:projectId/services/new (AC-B3)', () => {
     createServiceMock.mockRejectedValue(
       new ApiClientError(410, { code: 'project_archived', message: 'Archived' }, 'Archived')
     )
-    render(NewServicePage, { props: { data: { projectId, orgRole: 'member' } } })
+    render(NewServicePage, {
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'member' } },
+    })
 
     await fireEvent.input(screen.getByLabelText(/Name/i), { target: { value: 'AWS Hosting' } })
     await fireEvent.click(screen.getByRole('button', { name: 'Create service' }))
@@ -232,7 +301,15 @@ describe('/projects/:projectId/services/:serviceId (AC-B4)', () => {
 
   it('AC-B4 edge: the edit form has no editable Name input, only a read-only label', () => {
     render(ServiceDetailPage, {
-      props: { data: { projectId, orgRole: 'member', service: makeService(), notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          service: makeService(),
+          notFound: false,
+        },
+      },
     })
     expect(screen.getByText('AWS Hosting')).toBeTruthy()
     expect(screen.queryByLabelText(/^Name$/i)).toBeNull()
@@ -241,7 +318,15 @@ describe('/projects/:projectId/services/:serviceId (AC-B4)', () => {
   it('AC-B4 happy path: changing renewalDate PATCHes only the three allowed fields', async () => {
     updateServiceMock.mockResolvedValue(makeService({ renewalDate: '2027-01-01T00:00:00.000Z' }))
     render(ServiceDetailPage, {
-      props: { data: { projectId, orgRole: 'member', service: makeService(), notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          service: makeService(),
+          notFound: false,
+        },
+      },
     })
 
     const renewalInput = screen.getByLabelText(/Renewal date/i)
@@ -260,7 +345,15 @@ describe('/projects/:projectId/services/:serviceId (AC-B4)', () => {
   it('code-review finding: clearing the alert-lead-days field omits it from the PATCH instead of silently zeroing it out', async () => {
     updateServiceMock.mockResolvedValue(makeService())
     render(ServiceDetailPage, {
-      props: { data: { projectId, orgRole: 'member', service: makeService(), notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          service: makeService(),
+          notFound: false,
+        },
+      },
     })
 
     const alertLeadDaysInput = screen.getByLabelText(/Alert me before renewal/i)
@@ -274,14 +367,30 @@ describe('/projects/:projectId/services/:serviceId (AC-B4)', () => {
 
   it('AC-B4 failure: a not-found service shows the not-found notice', () => {
     render(ServiceDetailPage, {
-      props: { data: { projectId, orgRole: 'member', service: null, notFound: true } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'member',
+          service: null,
+          notFound: true,
+        },
+      },
     })
     expect(screen.getByText(/service.*not found/i)).toBeTruthy()
   })
 
   it('AC-I1: viewer sees no Save/Delete controls on the detail page', () => {
     render(ServiceDetailPage, {
-      props: { data: { projectId, orgRole: 'viewer', service: makeService(), notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'viewer',
+          service: makeService(),
+          notFound: false,
+        },
+      },
     })
     expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull()
@@ -289,7 +398,15 @@ describe('/projects/:projectId/services/:serviceId (AC-B4)', () => {
 
   it('code-review finding (AC-I1): viewer sees a read-only view, not disabled-but-visible form inputs', () => {
     render(ServiceDetailPage, {
-      props: { data: { projectId, orgRole: 'viewer', service: makeService(), notFound: false } },
+      props: {
+        data: {
+          ...projectLayoutData(),
+          projectId,
+          orgRole: 'viewer',
+          service: makeService(),
+          notFound: false,
+        },
+      },
     })
     expect(screen.queryByLabelText(/^URL$/i)).toBeNull()
     expect(screen.queryByLabelText(/Renewal date/i)).toBeNull()

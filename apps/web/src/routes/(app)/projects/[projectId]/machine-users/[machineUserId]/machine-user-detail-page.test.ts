@@ -26,7 +26,7 @@ vi.mock('$lib/api/machine-users.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import type { ComponentProps } from 'svelte'
-import { appLayoutData } from '$lib/test/page-data.js'
+import { projectLayoutData } from '$lib/test/page-data.js'
 import MachineUserDetailPage from './+page.svelte'
 
 afterEach(() => {
@@ -61,7 +61,7 @@ type Data = ComponentProps<typeof MachineUserDetailPage>['data']
 
 function baseData(overrides: Partial<Data> = {}): Data {
   return {
-    ...appLayoutData(),
+    ...projectLayoutData(),
     projectId,
     machineUserId,
     orgRole: 'admin',

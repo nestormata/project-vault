@@ -25,7 +25,7 @@ vi.mock('$lib/api/rotations.js', () => ({
 }))
 
 import type { ComponentProps } from 'svelte'
-import { appLayoutData } from '$lib/test/page-data.js'
+import { projectLayoutData } from '$lib/test/page-data.js'
 import RotationDetailPage from './(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]/+page.svelte'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -69,7 +69,7 @@ type Data = ComponentProps<typeof RotationDetailPage>['data']
 
 function baseData(overrides: Partial<Data> = {}): Data {
   return {
-    ...appLayoutData(),
+    ...projectLayoutData(),
     projectId,
     credentialId,
     rotationId,

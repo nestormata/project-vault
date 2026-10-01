@@ -12,7 +12,7 @@ vi.mock('$lib/api/status-page.js', () => ({
 }))
 
 import type { ComponentProps } from 'svelte'
-import { appLayoutData } from '$lib/test/page-data.js'
+import { projectLayoutData } from '$lib/test/page-data.js'
 import StatusPage from './+page.svelte'
 
 afterEach(() => {
@@ -36,7 +36,7 @@ type Data = ComponentProps<typeof StatusPage>['data']
 
 function data(overrides: Partial<Data> = {}): Data {
   return {
-    ...appLayoutData(),
+    ...projectLayoutData(),
     projectId,
     origin: 'https://vault.example.com',
     canManage: true,

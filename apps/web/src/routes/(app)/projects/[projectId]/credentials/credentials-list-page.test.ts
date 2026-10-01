@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
 import type { ComponentProps } from 'svelte'
-import { appLayoutData } from '$lib/test/page-data.js'
+import { projectLayoutData } from '$lib/test/page-data.js'
 import CredentialsListPage from './+page.svelte'
 
 afterEach(() => cleanup())
@@ -12,7 +12,7 @@ type Data = ComponentProps<typeof CredentialsListPage>['data']
 
 function baseData(overrides: Partial<Data> = {}): Data {
   return {
-    ...appLayoutData(),
+    ...projectLayoutData(),
     projectId,
     orgRole: 'owner',
     filters: { q: '', status: '', tags: '', page: 1 },

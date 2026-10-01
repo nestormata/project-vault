@@ -26,7 +26,7 @@ vi.mock('$lib/api/org-users.js', () => ({
 }))
 
 import type { ComponentProps } from 'svelte'
-import { appLayoutData } from '$lib/test/page-data.js'
+import { projectLayoutData } from '$lib/test/page-data.js'
 import MembersPage from './(app)/projects/[projectId]/members/+page.svelte'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -47,7 +47,7 @@ type Data = ComponentProps<typeof MembersPage>['data']
 
 function baseData(overrides: Partial<Data> = {}): Data {
   return {
-    ...appLayoutData(),
+    ...projectLayoutData(),
     projectId,
     userId: 'u1',
     canManage: true as const,

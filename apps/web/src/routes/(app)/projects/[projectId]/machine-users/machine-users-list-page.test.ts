@@ -6,7 +6,7 @@ vi.mock('$app/paths', () => ({
 }))
 
 import type { ComponentProps } from 'svelte'
-import { appLayoutData } from '$lib/test/page-data.js'
+import { projectLayoutData } from '$lib/test/page-data.js'
 import MachineUsersListPage from './+page.svelte'
 
 afterEach(() => cleanup())
@@ -17,7 +17,7 @@ type Data = ComponentProps<typeof MachineUsersListPage>['data']
 
 function baseData(overrides: Partial<Data> = {}): Data {
   return {
-    ...appLayoutData(),
+    ...projectLayoutData(),
     projectId,
     orgRole: 'admin',
     machineUsers: { items: [], total: 0 },

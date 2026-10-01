@@ -22,7 +22,7 @@ vi.mock('$lib/api/service-endpoints.js', async () => {
 })
 
 import type { ComponentProps } from 'svelte'
-import { appLayoutData } from '$lib/test/page-data.js'
+import { projectLayoutData } from '$lib/test/page-data.js'
 import ServiceEndpointDetailPage from './+page.svelte'
 
 afterEach(() => {
@@ -48,7 +48,7 @@ type Data = ComponentProps<typeof ServiceEndpointDetailPage>['data']
 
 function baseData(overrides: Partial<Data> = {}): Data {
   return {
-    ...appLayoutData(),
+    ...projectLayoutData(),
     projectId,
     orgRole: 'owner',
     endpoint: ENDPOINT,
