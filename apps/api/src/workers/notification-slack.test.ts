@@ -122,4 +122,57 @@ describe('sendSlackNotification', () => {
       expect(updated?.attemptCount).toBe(1)
     })
   })
+
+  it('Story 70.1 AC1: two concurrent sends POST exactly once; a non-2xx releases for the retry', async () => {
+    let releaseGate!: () => void
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve
+    })
+    let entered = 0
+    const fetchMock = vi.fn(async () => {
+      entered++
+      await gate
+      return { ok: true, status: 200, text: async () => 'ok' }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const sendSlackNotification = await loadSendSlackNotification(SLACK_WEBHOOK_TEST_URL)
+
+    await withTestOrg(async ({ orgId }) => {
+      const queueId = await seedSlackQueueEntry(orgId)
+      let settled = 0
+      const running = [0, 1].map(() =>
+        sendSlackNotification(queueId, orgId).finally(() => {
+          settled++
+        })
+      )
+      await vi.waitFor(() => expect(entered + settled).toBeGreaterThanOrEqual(2))
+      releaseGate()
+      await Promise.all(running)
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      const updated = await getNotificationQueueEntry(orgId, queueId)
+      expect(updated?.status).toBe('delivered')
+      expect(updated?.attemptCount).toBe(1)
+    })
+  })
+
+  it('Story 70.1 AC2: a non-2xx response releases the claim so the immediate retry posts again', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status: 503, text: async () => 'unavailable' })
+        .mockResolvedValueOnce({ ok: true, status: 200, text: async () => 'ok' })
+    )
+    const sendSlackNotification = await loadSendSlackNotification(SLACK_WEBHOOK_TEST_URL)
+
+    await withTestOrg(async ({ orgId }) => {
+      const queueId = await seedSlackQueueEntry(orgId)
+      await expect(sendSlackNotification(queueId, orgId)).rejects.toThrow('503')
+      await sendSlackNotification(queueId, orgId)
+      const updated = await getNotificationQueueEntry(orgId, queueId)
+      expect(updated?.status).toBe('delivered')
+      expect(updated?.attemptCount).toBe(2)
+    })
+  })
 })

@@ -6,7 +6,8 @@ import { notificationInbox, notificationQueue } from '@project-vault/db/schema'
 import { emitSseEvent } from '../lib/events.js'
 import { renderTemplate } from '../notifications/templates/index.js'
 import { env } from '../config/env.js'
-import { claimPendingNotificationEntry } from './notification-queue-ops.js'
+import { withClaimedNotification } from './notification-claim.js'
+import type { NotificationQueueRow } from './notification-queue-ops.js'
 
 let _emitterOverride: EventEmitter | null | undefined
 
@@ -18,17 +19,36 @@ export function resetEmitterForTesting(): void {
   _emitterOverride = undefined
 }
 
+/**
+ * Story 70.1 AC1/AC2 — the inbox write goes through withClaimedNotification: exactly one caller
+ * claims the row, and a failed transaction (no inbox row, row still pending) releases the claim so
+ * the pg-boss retry writes exactly one inbox row. The inbox insert and the `delivered` status are
+ * one DB transaction (no external side effect), so this channel does not use `externalSend`.
+ */
 export async function deliverInboxNotification(
   notificationQueueId: string,
   orgId: string,
   emitter: EventEmitter,
-  logger?: Pick<FastifyBaseLogger, 'error'>
+  logger?: Pick<FastifyBaseLogger, 'error'> & Partial<Pick<FastifyBaseLogger, 'warn'>>
 ): Promise<void> {
   const activeEmitter = _emitterOverride === undefined ? emitter : _emitterOverride
   if (!activeEmitter) return
 
-  const entry = await claimPendingNotificationEntry(notificationQueueId, orgId)
-  if (entry?.channel !== 'inbox') return
+  await withClaimedNotification(
+    notificationQueueId,
+    orgId,
+    (entry) => writeClaimedInboxEntry(entry, orgId, activeEmitter, logger),
+    logger
+  )
+}
+
+async function writeClaimedInboxEntry(
+  entry: NotificationQueueRow,
+  orgId: string,
+  activeEmitter: EventEmitter,
+  logger?: Pick<FastifyBaseLogger, 'error'>
+): Promise<void> {
+  if (entry.channel !== 'inbox') return
   if (!entry.recipientUserId) return
   const recipientUserId = entry.recipientUserId
 

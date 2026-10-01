@@ -2,6 +2,32 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.25.0 — 2026-09-30
+
+contract-hash: sha256:facb311006a33162b6e99a403709602a394f5a97f522dbc1ead815bb1f949d97
+
+### Added
+
+- `DeliveryProviderSendPayload.attemptNumber` (required, `number`, Story 70.1): the 1-based number
+  of this attempt, equal to the row's attempt count after this attempt's claim. Strictly
+  increasing per row, never reset, never above 5. It counts PV claims, not provider calls, so gaps
+  are normal (a provider can see `attemptNumber: 2` on its first call). For logging and metrics
+  only; never part of an idempotency key.
+
+### Changed
+
+- `DeliveryProviderSendPayload.queueRowId` is now the documented provider idempotency key: stable
+  for the life of the notification across every retry, reclaim and restart, unique per
+  notification, and an opaque correlation value (never a capability; webhooks still resolve rows
+  only by `providerMessageId`). Delivery semantics are documented on it and on `send()`: PV calls
+  `send()` again for the same `queueRowId` only after an earlier call rejected; once `send()`
+  resolves, or while its outcome is unknown, PV never calls it again for that row and marks the
+  row `failed` instead (at most once for an ambiguous outcome). Providers whose `send()` can
+  reject after acceptance should deduplicate on `queueRowId`.
+
+Per `docs/extension-api-versioning-policy.md` row 2 ("adding a required field to a type PV passes
+to the extension"), this change is NON-BREAKING — a MINOR. The floor stays `>=3.0.0`.
+
 ## 3.24.2 — 2026-09-30
 
 contract-hash: sha256:ecc23ef5d6ff5de2836a615eb5013ae1f41feb5b62bc8d79f654c8d2c4b2e962

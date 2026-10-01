@@ -16,6 +16,7 @@ describe('DeliveryProvider', () => {
         body: 'hello',
         templateId: 'test.template',
         queueRowId: 'row-1',
+        attemptNumber: 1,
       })
     ).resolves.toEqual({ providerMessageId: 'sent:row-1' })
   })

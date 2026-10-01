@@ -15,7 +15,7 @@ type BossSendOptions = {
 }
 
 type BossClient = Pick<PgBoss, 'start' | 'stop'> &
-  Partial<Pick<PgBoss, 'createQueue' | 'schedule' | 'work' | 'send'>>
+  Partial<Pick<PgBoss, 'createQueue' | 'schedule' | 'unschedule' | 'work' | 'send'>>
 type BossFactory = () => BossClient
 
 export type BossJob = { id?: string; data?: Record<string, unknown> }
@@ -90,6 +90,18 @@ export class BossService {
       await this.ensureQueue(name)
       await this.#boss.schedule(name, cron, null, { tz: 'UTC' })
     }
+  }
+
+  /**
+   * Story 70.1 AC3 — removes a cron schedule. pg-boss persists schedules in Postgres across
+   * deploys, so deleting a key from `registerSchedules` does not stop it; it must be removed
+   * explicitly. pg-boss's `unschedule` is an idempotent DELETE (a no-op when absent). A failure
+   * propagates (boot fails, like a `registerSchedules` failure).
+   */
+  async unschedule(name: string): Promise<void> {
+    if (!this.#boss) throw new Error(BOSS_NOT_STARTED_ERROR)
+    if (!this.#boss.unschedule) throw new Error('BossService unschedule API unavailable')
+    await this.#boss.unschedule(name)
   }
 
   async registerWorker(

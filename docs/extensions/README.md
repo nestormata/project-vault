@@ -67,7 +67,7 @@ whose capability you declared.
 | `projectArchiveNotifier` | notification of a committed archive | Never in-request, never vetoing. |
 | `moduleAction` | dispatch target for panel actions | Legal only when the manifest declares `moduleActions`. See [Module actions and ActionResult](authoring.md#module-actions-and-actionresult). Part of the legacy runtime UI extension API (HTML panels; deprecated and frozen). |
 | `moduleData` | `Record<"GET <path>", handler>` | Every declared `moduleDataRoutes` entry must have exactly one matching handler. Deprecated and frozen with `moduleDataRoutes` (a separate surface, not part of the panel API; see [UI extension tiers](#ui-extension-tiers)). |
-| `deliveryProvider` | `Record<channelName, DeliveryProvider>` | Registering the same channel twice in one process is a loud conflict error, not last-one-wins. |
+| `deliveryProvider` | `Record<channelName, DeliveryProvider>` | Registering the same channel twice in one process is a loud conflict error, not last-one-wins. `send()` is retried only after it rejects; deduplicate on `queueRowId` (the idempotency key, see [authoring.md](authoring.md#delivery-providers-delivery-semantics)). |
 
 ## UI extension tiers
 

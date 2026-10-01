@@ -1,21 +1,20 @@
 import { env } from '../config/env.js'
 import { renderSlackTemplate } from '../notifications/templates/index.js'
-import type { BossService } from '../lib/boss.js'
 import type { FastifyBaseLogger } from 'fastify'
-import {
-  claimPendingNotificationEntry,
-  markNotificationDelivered,
-  markNotificationSuppressed,
-} from './notification-queue-ops.js'
-import {
-  createNotificationJobHandler,
-  runNotificationCatchup,
-} from './notification-worker-common.js'
+import { markNotificationDelivered, markNotificationSuppressed } from './notification-queue-ops.js'
+import { withClaimedNotification } from './notification-claim.js'
+import { createNotificationJobHandler } from './notification-worker-common.js'
 
+/**
+ * Story 70.1 AC1/AC2 — the Slack POST goes through withClaimedNotification: one caller claims the
+ * row; a non-2xx response or a fetch error is a definite failure (released, retried by pg-boss);
+ * a 2xx response is never re-posted even if the `delivered` commit fails (Decisions 2026-09-30).
+ * Suppression when no webhook is configured stays BEFORE the claim, as before.
+ */
 export async function sendSlackNotification(
   notificationQueueId: string,
   orgId: string,
-  logger?: Pick<FastifyBaseLogger, 'error'>
+  logger?: Pick<FastifyBaseLogger, 'error'> & Partial<Pick<FastifyBaseLogger, 'warn'>>
 ): Promise<void> {
   const webhookUrl = env.SLACK_WEBHOOK_URL
   if (!webhookUrl) {
@@ -23,44 +22,34 @@ export async function sendSlackNotification(
     return
   }
 
-  const entry = await claimPendingNotificationEntry(notificationQueueId, orgId)
-  if (!entry) return
+  await withClaimedNotification(
+    notificationQueueId,
+    orgId,
+    async (entry, claim) => {
+      const { text, blocks } = renderSlackTemplate(
+        entry.templateId,
+        entry.payload as Record<string, unknown>,
+        logger
+      )
 
-  const { text, blocks } = renderSlackTemplate(
-    entry.templateId,
-    entry.payload as Record<string, unknown>,
+      await claim.externalSend(async () => {
+        const response = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, blocks }),
+        })
+        if (!response.ok) {
+          throw new Error(`Slack webhook returned ${response.status}`)
+        }
+      })
+
+      await markNotificationDelivered(notificationQueueId, orgId)
+    },
     logger
   )
-
-  const response = await fetch(webhookUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, blocks }),
-  })
-
-  if (!response.ok) {
-    throw new Error(`Slack webhook returned ${response.status}`)
-  }
-
-  await markNotificationDelivered(notificationQueueId, orgId)
 }
 
 export const notificationSlackHandler = createNotificationJobHandler(
   'notification/slack',
   sendSlackNotification
 )
-
-export async function notificationSlackCatchupHandler(
-  boss: BossService,
-  logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
-): Promise<void> {
-  await runNotificationCatchup(
-    boss,
-    {
-      channel: 'slack',
-      jobName: 'notification/slack',
-      logMessage: 'Notification catchup found stale pending slack entries',
-    },
-    logger
-  )
-}

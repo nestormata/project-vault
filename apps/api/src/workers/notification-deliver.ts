@@ -13,7 +13,7 @@ export async function deliverNotification(
   notificationQueueId: string,
   orgId: string,
   emitter?: EventEmitter,
-  logger?: Pick<FastifyBaseLogger, 'error'>
+  logger?: Pick<FastifyBaseLogger, 'error'> & Partial<Pick<FastifyBaseLogger, 'warn'>>
 ): Promise<void> {
   const [entry] = await withOrg(orgId, (tx) =>
     tx
@@ -55,14 +55,19 @@ export async function deliverNotification(
 }
 
 export function createDeliverNotificationHandler(emitter: EventEmitter) {
-  return createNotificationJobHandler('notification/deliver', (notificationQueueId, orgId) =>
-    deliverNotification(notificationQueueId, orgId, emitter)
+  // Story 70.1 AC9 — the job logger is threaded down so the claim-release-failure warn line
+  // actually reaches the production log.
+  return createNotificationJobHandler(
+    'notification/deliver',
+    (notificationQueueId, orgId, logger) =>
+      deliverNotification(notificationQueueId, orgId, emitter, logger)
   )
 }
 
 export const notificationDeliverHandler = createNotificationJobHandler(
   'notification/deliver',
-  (notificationQueueId, orgId) => deliverNotification(notificationQueueId, orgId)
+  (notificationQueueId, orgId, logger) =>
+    deliverNotification(notificationQueueId, orgId, undefined, logger)
 )
 
 export function wrapDeliverHandler(

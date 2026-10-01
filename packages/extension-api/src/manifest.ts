@@ -560,7 +560,10 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // Bumped as a patch (3.24.1 -> 3.24.2): documentation only — JSDoc and comments across the
 // contract source were reworded to generic UI-extension wording. No exported type, runtime
 // behaviour, validation rule, error code or registered-manifest shape changes.
-export const EXTENSION_API_VERSION = '3.24.2'
+// Story 70.1 AC4 — bumped as a minor (3.24.2 -> 3.25.0): `DeliveryProviderSendPayload` gains the
+// required `attemptNumber` (a required field on a type PV passes to the extension: non-breaking,
+// policy table row 2) and `queueRowId` is documented as the provider idempotency key.
+export const EXTENSION_API_VERSION = '3.25.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

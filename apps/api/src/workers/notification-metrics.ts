@@ -14,3 +14,16 @@ export const pgbossDlqEntriesTotal = getOrCreateCounter<'job_type'>({
   help: 'Total number of pg-boss dead-letter entries for security-sensitive job types, labeled by job_type',
   labelNames: ['job_type'],
 })
+
+// Story 70.1 Decisions 2026-09-30 (DW-252) — rows whose send started but whose outcome was never
+// recorded (crash mid-send, or a failed status commit after a resolved send). They are moved to
+// `failed` instead of re-sent (at-most-once); each one also counts in pgbossDlqEntriesTotal above
+// so the existing DLQ alerting covers it. Label: channel only (never a recipient).
+export const NOTIFICATION_DELIVERY_OUTCOME_UNKNOWN_TOTAL_METRIC_NAME =
+  'notification_delivery_outcome_unknown_total'
+
+export const notificationDeliveryOutcomeUnknownTotal = getOrCreateCounter<'channel'>({
+  name: NOTIFICATION_DELIVERY_OUTCOME_UNKNOWN_TOTAL_METRIC_NAME,
+  help: 'Total notification_queue rows failed because their send started but its outcome was never recorded (not re-sent), labeled by channel',
+  labelNames: ['channel'],
+})

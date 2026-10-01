@@ -3,21 +3,18 @@ import { withOrg } from '@project-vault/db'
 import { users } from '@project-vault/db/schema'
 import { renderEmailTemplate } from '../notifications/templates/index.js'
 import { escapeHtml } from '../notifications/templates/html-safety.js'
-import type { BossService } from '../lib/boss.js'
 import type { FastifyBaseLogger } from 'fastify'
 import nodemailer from 'nodemailer'
 import { resolveSmtpTransportConfig } from '../modules/platform-admin/service.js'
 import { getDeliveryProviderForChannel } from '../lib/delivery-provider.js'
 import { applyDeliveryStatusUpdate } from '../notifications/delivery-status.js'
 import {
-  claimPendingNotificationEntry,
   markNotificationDelivered,
   markNotificationSuppressed,
+  type NotificationQueueRow,
 } from './notification-queue-ops.js'
-import {
-  createNotificationJobHandler,
-  runNotificationCatchup,
-} from './notification-worker-common.js'
+import { withClaimedNotification, type NotificationClaimContext } from './notification-claim.js'
+import { createNotificationJobHandler } from './notification-worker-common.js'
 
 const EMAIL_CHANNEL = 'email'
 
@@ -67,35 +64,37 @@ export function resetEmailTransportForTesting(): void {
  * Story 20.11 AC1/AC8 — sends via the registered `DeliveryProvider` for the `email` channel
  * instead of the built-in SMTP transport. Only the same class of already-permitted
  * notification-template metadata `NotificationChannel` already carries crosses this boundary
- * (AC7) — never a decrypted credential, a raw share token, or a DB handle. Throwing here (a
- * rejected `send()`, or the provider hanging past the caller's own job-level timeout) propagates
- * unchanged to the pg-boss job handler, so the existing retry/backoff behavior applies identically
- * to a provider-backed send as to the SMTP path (AC1 edge case) — this function does not itself
- * add a bounding timeout beyond what pg-boss's job execution already imposes.
+ * (AC7) — never a decrypted credential, a raw share token, or a DB handle. A rejected `send()`
+ * propagates unchanged to the pg-boss job handler (after withClaimedNotification releases the
+ * claim), so the existing retry/backoff behavior applies identically to a provider-backed send as
+ * to the SMTP path. Story 70.1 AC4: `queueRowId` is the documented provider idempotency key and
+ * `attemptNumber` the post-claim attempt count; the send runs through `claim.externalSend` so a
+ * resolved send is never repeated even if the `sent` commit below fails (Decisions 2026-09-30).
  */
 async function sendViaDeliveryProvider(
-  notificationQueueId: string,
+  entry: NotificationQueueRow,
   orgId: string,
-  toAddress: string,
-  templateId: string,
-  subject: string,
-  body: string
+  claim: NotificationClaimContext,
+  message: { toAddress: string; subject: string; body: string }
 ): Promise<void> {
   const provider = getDeliveryProviderForChannel(EMAIL_CHANNEL)
   if (!provider) throw new Error('sendViaDeliveryProvider called with no registered provider')
 
-  const { providerMessageId } = await provider.send({
-    recipientAddress: toAddress,
-    subject,
-    body,
-    templateId,
-    queueRowId: notificationQueueId,
-  })
+  const { providerMessageId } = await claim.externalSend(() =>
+    provider.send({
+      recipientAddress: message.toAddress,
+      subject: message.subject,
+      body: message.body,
+      templateId: entry.templateId,
+      queueRowId: entry.id,
+      attemptNumber: entry.attemptCount,
+    })
+  )
 
   // AC2/AC4: even the initial send-time transition goes through the single rank-based guard —
   // pending (rank 0) -> sent (rank 1) is always forward progress, so this always applies.
   await applyDeliveryStatusUpdate({
-    notificationQueueId,
+    notificationQueueId: entry.id,
     orgId,
     newStatus: 'sent',
     providerId: EMAIL_CHANNEL,
@@ -122,12 +121,10 @@ function buildExtensionOriginatedEmailContent(payload: Record<string, unknown>):
   }
 }
 
-type QueueEntry = Awaited<ReturnType<typeof claimPendingNotificationEntry>>
-
 /** Extracted from `sendEmailNotification` purely to keep its own cyclomatic complexity under
  * this repo's lint budget — the Story 36.1 originExtensionName rendering-branch decision. */
 function renderOutboundEmailContent(
-  entry: NonNullable<QueueEntry>,
+  entry: NotificationQueueRow,
   logger?: Pick<FastifyBaseLogger, 'error'>
 ): { subject: string; text: string | undefined; html: string | undefined } {
   return entry.originExtensionName
@@ -140,7 +137,7 @@ function renderOutboundEmailContent(
  * (looked up fresh, never trusting a stale denormalized copy) or the entry's own recorded
  * recipientEmail. */
 async function resolveToAddress(
-  entry: NonNullable<QueueEntry>,
+  entry: NotificationQueueRow,
   orgId: string
 ): Promise<string | null> {
   if (entry.recipientUserId) {
@@ -153,51 +150,99 @@ async function resolveToAddress(
   return entry.recipientEmail ?? null
 }
 
+/** Story 70.1 Decisions 2026-09-30 — the fallback Message-ID domain when no usable SMTP
+ * from-address is configured (`.invalid` is reserved by RFC 2606, so it can never collide). */
+export const NOTIFICATION_MESSAGE_ID_FALLBACK_DOMAIN = 'project-vault.invalid'
+
+const MESSAGE_ID_DOMAIN_MAX_LENGTH = 253
+const MESSAGE_ID_LABEL_CHARSET = /^[a-z0-9-]{1,63}$/i
+
+/** A conservative hostname check for the Message-ID right-hand side: total length, and every
+ * dot-separated label non-empty, LDH-only and not starting/ending with `-` (so no `..`, no
+ * leading/trailing `.`). Anything else falls back. */
+function isUsableMessageIdDomain(domain: string): boolean {
+  if (domain.length === 0 || domain.length > MESSAGE_ID_DOMAIN_MAX_LENGTH) return false
+  return domain
+    .split('.')
+    .every(
+      (label) =>
+        MESSAGE_ID_LABEL_CHARSET.test(label) && !label.startsWith('-') && !label.endsWith('-')
+    )
+}
+
+/**
+ * Story 70.1 Decisions 2026-09-30 — the deterministic SMTP `Message-ID` for a queue row:
+ * `<pv-nq-<queueRowId>@<domain>>`. The same row always yields the same id, so a receiving system
+ * (or an operator) can correlate a message to its row. `<domain>` is the part after the last `@`
+ * of the effective SMTP from-address (a display name and angle brackets are tolerated); anything
+ * unusable falls back to NOTIFICATION_MESSAGE_ID_FALLBACK_DOMAIN.
+ */
+export function buildNotificationMessageId(
+  queueRowId: string,
+  from: string | null | undefined
+): string {
+  const candidate = (from ?? '').trim().replace(/>$/, '')
+  const at = candidate.lastIndexOf('@')
+  const domain = at === -1 ? '' : candidate.slice(at + 1).trim()
+  const safeDomain = isUsableMessageIdDomain(domain)
+    ? domain.toLowerCase()
+    : NOTIFICATION_MESSAGE_ID_FALLBACK_DOMAIN
+  return `<pv-nq-${queueRowId}@${safeDomain}>`
+}
+
 /** Extracted from `sendEmailNotification` for the same complexity-budget reason as
- * `resolveToAddress` above: the built-in SMTP send path, unchanged from Story 3.1. */
+ * `resolveToAddress` above: the built-in SMTP send path (Story 3.1), plus Story 70.1's
+ * deterministic Message-ID and at-most-once `claim.externalSend`. */
 async function sendViaSmtp(
-  notificationQueueId: string,
+  entry: NotificationQueueRow,
   orgId: string,
-  toAddress: string,
-  subject: string,
-  text: string | undefined,
-  html: string | undefined,
+  claim: NotificationClaimContext,
+  message: {
+    toAddress: string
+    subject: string
+    text: string | undefined
+    html: string | undefined
+  },
   transport: NonNullable<Awaited<ReturnType<typeof getEmailTransport>>>
 ): Promise<void> {
   // D3 precedence: the "from" address honors a system_settings override the same way host/port
   // do — resolveSmtpTransportConfig() is the single source of truth, so a second, independent
   // lookup isn't cached alongside the transport itself (kept simple: one extra DB read per send).
   const smtpConfig = await resolveSmtpTransportConfig()
+  const from = smtpConfig?.from ?? undefined
 
-  await transport.sendMail({
-    from: smtpConfig?.from ?? undefined,
-    to: toAddress,
-    subject,
-    text,
-    html,
-  })
+  await claim.externalSend(() =>
+    transport.sendMail({
+      from,
+      messageId: buildNotificationMessageId(entry.id, from),
+      to: message.toAddress,
+      subject: message.subject,
+      text: message.text,
+      html: message.html,
+    })
+  )
 
-  await markNotificationDelivered(notificationQueueId, orgId)
+  await markNotificationDelivered(entry.id, orgId)
 }
 
-export async function sendEmailNotification(
-  notificationQueueId: string,
-  orgId: string,
-  logger?: Pick<FastifyBaseLogger, 'error'>
-): Promise<void> {
-  const provider = getDeliveryProviderForChannel(EMAIL_CHANNEL)
-  const transport = provider ? null : await getEmailTransport()
-  const entry = await claimPendingNotificationEntry(notificationQueueId, orgId)
-  if (!entry) return
+type EmailLogger = Pick<FastifyBaseLogger, 'error'> & Partial<Pick<FastifyBaseLogger, 'warn'>>
 
-  if (!provider && !transport) {
-    await markNotificationSuppressed(notificationQueueId, orgId)
+/** Story 70.1 — the body of one claimed email attempt (suppression, address, render, send). */
+async function deliverClaimedEmail(
+  entry: NotificationQueueRow,
+  orgId: string,
+  claim: NotificationClaimContext,
+  route: { hasProvider: boolean; transport: Awaited<ReturnType<typeof getEmailTransport>> },
+  logger?: EmailLogger
+): Promise<void> {
+  if (!route.hasProvider && !route.transport) {
+    await markNotificationSuppressed(entry.id, orgId)
     return
   }
 
   const toAddress = await resolveToAddress(entry, orgId)
   if (!toAddress) {
-    await markNotificationSuppressed(notificationQueueId, orgId)
+    await markNotificationSuppressed(entry.id, orgId)
     return
   }
 
@@ -209,40 +254,42 @@ export async function sendEmailNotification(
   // string unescaped, matching every existing template's own text/html split.
   const { subject, text, html } = renderOutboundEmailContent(entry, logger)
 
-  if (provider) {
-    await sendViaDeliveryProvider(
-      notificationQueueId,
-      orgId,
+  if (route.hasProvider) {
+    await sendViaDeliveryProvider(entry, orgId, claim, {
       toAddress,
-      entry.templateId,
       subject,
-      text ?? html ?? ''
-    )
+      body: text ?? html ?? '',
+    })
     return
   }
 
-  // transport is non-null here: provider is falsy (checked above) and the !provider && !transport
-  // suppression branch already returned when transport was null.
-  if (!transport) return
-  await sendViaSmtp(notificationQueueId, orgId, toAddress, subject, text, html, transport)
+  // transport is non-null here: hasProvider is false and the suppression branch above already
+  // returned when transport was null.
+  if (!route.transport) return
+  await sendViaSmtp(entry, orgId, claim, { toAddress, subject, text, html }, route.transport)
+}
+
+/**
+ * Story 70.1 AC1/AC2 — the email send goes through withClaimedNotification: exactly one caller
+ * claims the row, a failure before the send resolved releases it for the pg-boss retry, and a
+ * resolved send is never repeated (Decisions 2026-09-30).
+ */
+export async function sendEmailNotification(
+  notificationQueueId: string,
+  orgId: string,
+  logger?: EmailLogger
+): Promise<void> {
+  const hasProvider = getDeliveryProviderForChannel(EMAIL_CHANNEL) !== undefined
+  const transport = hasProvider ? null : await getEmailTransport()
+  await withClaimedNotification(
+    notificationQueueId,
+    orgId,
+    (entry, claim) => deliverClaimedEmail(entry, orgId, claim, { hasProvider, transport }, logger),
+    logger
+  )
 }
 
 export const notificationEmailHandler = createNotificationJobHandler(
   'notification/email',
   sendEmailNotification
 )
-
-export async function notificationEmailCatchupHandler(
-  boss: BossService,
-  logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
-): Promise<void> {
-  await runNotificationCatchup(
-    boss,
-    {
-      channel: 'email',
-      jobName: 'notification/email',
-      logMessage: 'Notification catchup found stale pending email entries',
-    },
-    logger
-  )
-}

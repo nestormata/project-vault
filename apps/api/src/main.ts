@@ -55,22 +55,19 @@ import {
 } from './workers/machine-key-overlap-revoke.js'
 import { runMachineKeyDormancyCheckJob } from './workers/machine-key-dormancy-check.js'
 import { runUserDormancyCheckJob } from './workers/user-dormancy-check.js'
-import {
-  notificationEmailCatchupHandler,
-  notificationEmailHandler,
-} from './workers/notification-email.js'
-import {
-  notificationSlackCatchupHandler,
-  notificationSlackHandler,
-} from './workers/notification-slack.js'
+// Story 70.1 AC3 — the notification/email and notification/slack workers stay registered only to
+// drain jobs already queued at deploy time; nothing enqueues new ones (removal tracked in the
+// deferred-work ledger).
+import { notificationEmailHandler } from './workers/notification-email.js'
+import { notificationSlackHandler } from './workers/notification-slack.js'
 import { notificationBackfillHandler } from './workers/notification-backfill.js'
-import { notificationDeliverCatchupJobHandler } from './workers/notification-deliver-catchup.js'
+import {
+  notificationDeliverCatchupJobHandler,
+  RETIRED_NOTIFICATION_CATCHUP_SCHEDULES,
+} from './workers/notification-deliver-catchup.js'
 import { wrapDeliverHandler } from './workers/notification-deliver.js'
 import { runNotificationDlqCleanup } from './workers/notification-dlq-cleanup.js'
-import {
-  notificationInboxCatchupHandler,
-  notificationInboxPurgeHandler,
-} from './workers/notification-inbox-purge.js'
+import { notificationInboxPurgeHandler } from './workers/notification-inbox-purge.js'
 import { notificationDigestHandler } from './workers/notification-digest.js'
 import { pruneExpiredAuditLogEntries } from './workers/audit-retention-prune.js'
 import { prunePlatformAuditEvents } from './workers/platform-audit-retention-prune.js'
@@ -248,9 +245,8 @@ async function main(): Promise<void> {
       'machine-key/dormancy-check': { cron: '0 9 * * *' },
       // Story 8.3 AC-10: daily user-dormancy detection job, same cadence as machine-key's.
       'user/dormancy-check': { cron: '0 9 * * *' },
-      'notification/email-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
-      'notification/slack-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
-      'notification/inbox-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
+      // Story 70.1 AC3 — the single catch-up owner for every channel (the per-channel
+      // email/slack/inbox catch-ups are retired and unscheduled right after this call).
       'notification/deliver-catchup': { cron: NOTIFICATION_CATCHUP_CRON },
       'notification/dlq-cleanup': { cron: '*/30 * * * *' },
       'notification/inbox-purge': { cron: '0 3 * * *' },
@@ -288,6 +284,18 @@ async function main(): Promise<void> {
       // interval elapses).
       'handoff/clock-skew-check': { cron: EVERY_FIVE_MINUTES_CRON },
     })
+    // Story 70.1 AC3 — schedules persist in pg-boss across deploys, so the retired catch-ups must
+    // be removed explicitly (idempotent). A rolling-deploy old instance that restarts can
+    // re-create them; the next new-code boot removes them again, and the exclusive claim keeps
+    // any duplicate jobs harmless in between.
+    await Promise.all(RETIRED_NOTIFICATION_CATCHUP_SCHEDULES.map((name) => boss.unschedule(name)))
+    operationalLog(
+      fastify.log,
+      'info',
+      OperationalEvent.NOTIFICATION_CATCHUP_RETIRED_SCHEDULES,
+      'Retired notification catch-up schedules unscheduled',
+      { names: [...RETIRED_NOTIFICATION_CATCHUP_SCHEDULES] }
+    )
     await boss.registerWorkers({
       'prune-revoked-tokens': () => pruneRevokedTokens(),
       'prune-handoff-token-jti': () => pruneHandoffTokenJti(),
@@ -383,9 +391,6 @@ async function main(): Promise<void> {
       },
       'notification/backfill-pending-delivery': () =>
         notificationBackfillHandler(boss, fastify.log),
-      'notification/email-catchup': () => notificationEmailCatchupHandler(boss, fastify.log),
-      'notification/slack-catchup': () => notificationSlackCatchupHandler(boss, fastify.log),
-      'notification/inbox-catchup': () => notificationInboxCatchupHandler(boss, fastify.log),
       'notification/deliver': {
         handler: (job) => wrapDeliverHandler(fastify.log, emitter)(job),
         options: { localConcurrency: 5, localGroupConcurrency: 3 },

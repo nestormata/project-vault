@@ -578,6 +578,9 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.11.0
 - kind: type
 - type: `DeliveryProviderSendPayload`
+- member: `attemptNumber`
+  - since: 3.25.0
+  - type: `number`
 - member: `body`
   - since: 3.11.0
   - type: `string`
@@ -653,7 +656,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.24.2"`
+- type: `"3.25.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 

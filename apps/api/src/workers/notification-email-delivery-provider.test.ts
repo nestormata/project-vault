@@ -106,6 +106,8 @@ describe('sendEmailNotification — Story 20.11 AC1 DeliveryProvider dispatch', 
           recipientAddress: 'recipient@example.com',
           queueRowId: queueId,
           templateId: 'security.failed_auth_threshold',
+          // Story 70.1 AC4 — the 1-based post-claim attempt number.
+          attemptNumber: 1,
         })
       )
 

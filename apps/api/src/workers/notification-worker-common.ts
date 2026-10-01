@@ -6,6 +6,15 @@ import type { FastifyBaseLogger } from 'fastify'
 
 export const NOTIFICATION_MAX_ATTEMPTS = 5
 
+/** Story 70.1 AC2 — the exclusive-claim lease. Must stay <= pg-boss's default queue
+ * `expire_seconds` (900), so a hung job is expired by pg-boss no later than its lease, and below
+ * NOTIFICATION_DLQ_GRACE_SECONDS, so the DLQ can never fail a row whose lease is still live. */
+export const NOTIFICATION_CLAIM_LEASE_SECONDS = 900
+
+/** Story 70.1 AC2 — how long after its last attempt an exhausted `pending` row waits before the
+ * DLQ cleanup marks it `failed` (was the `'30 minutes'` literal in notification-dlq-cleanup.ts). */
+export const NOTIFICATION_DLQ_GRACE_SECONDS = 1800
+
 type WorkerLogger = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
 
 export function createNotificationJobHandler(
@@ -27,46 +36,38 @@ export function createNotificationJobHandler(
   }
 }
 
+/**
+ * Re-enqueues stale `pending` rows of every channel to `jobName`. Story 70.1 AC3: the only caller
+ * is `notification/deliver-catchup` (the single catch-up owner). Rows with a live lease, a started
+ * send (Decisions 2026-09-30), an exhausted attempt budget, a future `deliver_at`, or inside the
+ * 5-minute grace are skipped; a backlog drains oldest-first. The per-org loop and per-org
+ * `LIMIT 100` are deliberate (AC9 Red Team): one tenant's backlog cannot starve another's.
+ */
 export async function runNotificationCatchup(
   boss: BossService,
-  options: {
-    jobName: string
-    channel?: 'email' | 'slack' | 'inbox'
-    deliverAtAware?: boolean
-    logMessage: string
-  },
+  options: { jobName: string; logMessage: string },
   logger: WorkerLogger
 ): Promise<void> {
   const { fetchAllOrgIds } = await import('../middleware/rls.js')
   const orgIds = await fetchAllOrgIds()
   let total = 0
-  const { jobName, channel, deliverAtAware = false, logMessage } = options
+  const { jobName, logMessage } = options
 
   for (const orgId of orgIds) {
     const staleEntries = await withOrg(orgId, (tx) =>
-      tx.execute<{ id: string }>(
-        deliverAtAware
-          ? sql`
-              SELECT id::text AS id
-              FROM notification_queue
-              WHERE org_id = ${orgId}::uuid
-                AND status = 'pending'
-                AND attempt_count < ${NOTIFICATION_MAX_ATTEMPTS}
-                AND (deliver_at IS NULL OR deliver_at <= NOW())
-                AND created_at < NOW() - INTERVAL '5 minutes'
-              LIMIT 100
-            `
-          : sql`
-              SELECT id::text AS id
-              FROM notification_queue
-              WHERE org_id = ${orgId}::uuid
-                AND channel = ${channel}
-                AND status = 'pending'
-                AND attempt_count < ${NOTIFICATION_MAX_ATTEMPTS}
-                AND created_at < NOW() - INTERVAL '5 minutes'
-              LIMIT 100
-            `
-      )
+      tx.execute<{ id: string }>(sql`
+        SELECT id::text AS id
+        FROM notification_queue
+        WHERE org_id = ${orgId}::uuid
+          AND status = 'pending'
+          AND attempt_count < ${NOTIFICATION_MAX_ATTEMPTS}
+          AND (deliver_at IS NULL OR deliver_at <= NOW())
+          AND (claim_expires_at IS NULL OR claim_expires_at <= NOW())
+          AND send_started_at IS NULL
+          AND created_at < NOW() - INTERVAL '5 minutes'
+        ORDER BY created_at
+        LIMIT 100
+      `)
     )
     for (const entry of staleEntries) {
       await boss.send(
