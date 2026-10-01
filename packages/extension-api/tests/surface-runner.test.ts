@@ -15,6 +15,10 @@ import {
 const HEADER = '# @project-vault/extension-api public type surface'
 const VALID_SNAPSHOT = `${HEADER}\n\n## export \`Foo\`\n\n- since: 1.0.0\n`
 const root = '/virtual/extension-api'
+// Node 20 has no native type stripping, so the runner uses the tsx loader there.
+const TSX_NODE = '20.20.2'
+const NATIVE_ARGS = ['tests/api-surface.ts', '--emit']
+const TSX_ARGS = ['--import', 'tsx', ...NATIVE_ARGS]
 
 interface ExecFailure extends Error {
   code?: string
@@ -42,29 +46,39 @@ function failureOf(run: () => unknown): Error {
 }
 
 describe('surface runner (child-process generation)', () => {
-  it('spawns node --import tsx on the emit mode with a bounded timeout and buffer', () => {
-    const calls: Array<{ file: string; args: readonly string[]; options: unknown }> = []
-    const execute: SurfaceExecutor = (file, args, options) => {
-      calls.push({ file, args, options })
-      return VALID_SNAPSHOT
+  it.each([
+    ['24.18.0', NATIVE_ARGS],
+    ['23.6.0', NATIVE_ARGS],
+    ['22.18.0', NATIVE_ARGS],
+    ['22.17.1', TSX_ARGS],
+    ['23.5.0', TSX_ARGS],
+    ['20.20.2', TSX_ARGS],
+  ])(
+    'on Node %s spawns the emit mode with %j, a bounded timeout and buffer',
+    (nodeVersion, expectedArgs) => {
+      const calls: Array<{ file: string; args: readonly string[]; options: unknown }> = []
+      const execute: SurfaceExecutor = (file, args, options) => {
+        calls.push({ file, args, options })
+        return VALID_SNAPSHOT
+      }
+      const runner = createSurfaceRunner({ execute, now: clock(100, 1_943), nodeVersion, env: {} })
+
+      const generation = runner.generate(root)
+
+      expect(generation).toEqual({ snapshot: VALID_SNAPSHOT, durationMs: 1_843 })
+      expect(calls).toHaveLength(1)
+      expect(calls[0]?.file).toBe(process.execPath)
+      expect(calls[0]?.args).toEqual(expectedArgs)
+      expect(calls[0]?.options).toMatchObject({
+        cwd: root,
+        encoding: 'utf8',
+        timeout: CHILD_TIMEOUT_MS,
+        maxBuffer: CHILD_MAX_BUFFER_BYTES,
+      })
+      expect(CHILD_TIMEOUT_MS).toBeLessThanOrEqual(12_000)
+      expect(CHILD_MAX_BUFFER_BYTES).toBeGreaterThanOrEqual(8 * 1024 * 1024)
     }
-    const runner = createSurfaceRunner({ execute, now: clock(100, 1_943), env: {} })
-
-    const generation = runner.generate(root)
-
-    expect(generation).toEqual({ snapshot: VALID_SNAPSHOT, durationMs: 1_843 })
-    expect(calls).toHaveLength(1)
-    expect(calls[0]?.file).toBe(process.execPath)
-    expect(calls[0]?.args).toEqual(['--import', 'tsx', 'tests/api-surface.ts', '--emit'])
-    expect(calls[0]?.options).toMatchObject({
-      cwd: root,
-      encoding: 'utf8',
-      timeout: CHILD_TIMEOUT_MS,
-      maxBuffer: CHILD_MAX_BUFFER_BYTES,
-    })
-    expect(CHILD_TIMEOUT_MS).toBeLessThanOrEqual(12_000)
-    expect(CHILD_MAX_BUFFER_BYTES).toBeGreaterThanOrEqual(8 * 1024 * 1024)
-  })
+  )
 
   it('memoizes the settled result per root so the full build runs exactly once', () => {
     let builds = 0
@@ -111,6 +125,7 @@ describe('surface runner (child-process generation)', () => {
         throw execFailure({ status: 1, signal: null, stderr: `${stderr}\n` })
       },
       now: clock(0, 2_500),
+      nodeVersion: TSX_NODE,
       env: {},
     })
 
@@ -178,6 +193,7 @@ describe('surface runner (child-process generation)', () => {
       execute: () => {
         throw execFailure({ code: 'ENOENT' }, 'spawnSync /missing/node ENOENT')
       },
+      nodeVersion: TSX_NODE,
       env: {},
     })
 
@@ -187,6 +203,20 @@ describe('surface runner (child-process generation)', () => {
     expect(message).toContain('exit: n/a')
     expect(message).toContain('spawnSync /missing/node ENOENT')
     expect(message).toContain('command: node --import tsx tests/api-surface.ts --emit')
+  })
+
+  it('names the native type-stripping command on Node versions that strip types', () => {
+    const runner = createSurfaceRunner({
+      execute: () => {
+        throw execFailure({ status: 1, stderr: 'boom\n' })
+      },
+      nodeVersion: '24.18.0',
+      env: {},
+    })
+
+    expect(failureOf(() => runner.generate(root)).message).toContain(
+      'command: node tests/api-surface.ts --emit'
+    )
   })
 
   it('adds a tsx install hint when the child cannot load the tsx loader', () => {

@@ -20,17 +20,21 @@ import { assertSurfaceSnapshotIsFresh } from './api-surface.js'
  * The child only generates; the parent reads the committed snapshot and compares
  * (assertSurfaceSnapshotIsFresh), so a child that prints nothing or "ok" can never pass.
  *
- * `node --import <specifier>` needs Node >= 20.6; tsx is the TS loader because Node 20 cannot
- * strip types natively. tsx is an explicit devDependency of this package.
+ * How the child runs TypeScript: Node >= 22.18 / >= 23.6 strips types natively (no flag), so
+ * the child is plain `node tests/api-surface.ts --emit`. Older Node (the Node 20 compatibility
+ * and release jobs) uses `node --import tsx …`; `--import <specifier>` needs Node >= 20.6, and
+ * tsx is an explicit devDependency of this package. Measured 2026-09-30: the tsx loader adds
+ * ~0.25 s CPU per run, which matters under nightly's 4-vCPU contention.
  */
 
 export const CHILD_TIMEOUT_MS = 12_000
 export const CHILD_MAX_BUFFER_BYTES = 16 * 1024 * 1024
-const CHILD_ARGS = ['--import', 'tsx', 'tests/api-surface.ts', '--emit'] as const
-const COMMAND_LABEL = `node ${CHILD_ARGS.join(' ')}`
+const EMIT_ARGS = ['tests/api-surface.ts', '--emit'] as const
+const TSX_ARGS = ['--import', 'tsx'] as const
 const SNAPSHOT_HEADER = '# @project-vault/extension-api public type surface'
 const MAX_STDERR_LINES = 40
 const MIN_NODE = { major: 20, minor: 6 }
+const NATIVE_TYPE_STRIPPING: Readonly<Record<number, number>> = { 22: 18, 23: 6 }
 
 export type SurfacePhase = 'spawn' | 'timeout' | 'exit' | 'parse' | 'compare'
 
@@ -120,13 +124,13 @@ function hintFor(stderr: string | undefined): string[] {
     : []
 }
 
-function formatFailure(root: string, details: FailureDetails): string {
+function formatFailure(root: string, args: readonly string[], details: FailureDetails): string {
   return [
     `[api-surface] child surface generation failed: ${details.reason}`,
     `phase: ${details.phase}`,
     `duration: ${details.durationMs}ms`,
     `exit: ${details.exit}`,
-    `command: ${COMMAND_LABEL} (cwd ${root})`,
+    `command: node ${args.join(' ')} (cwd ${root})`,
     ...hintFor(details.stderr),
     stderrTail(details.stderr),
   ].join('\n')
@@ -161,9 +165,22 @@ function malformedReason(stdout: string): string | undefined {
   return undefined
 }
 
-function nodeVersionTooOld(version: string): boolean {
+function parseNodeVersion(version: string): { major: number; minor: number } {
   const [major = 0, minor = 0] = version.split('.').map(Number)
+  return { major, minor }
+}
+
+function nodeVersionTooOld(version: string): boolean {
+  const { major, minor } = parseNodeVersion(version)
   return major < MIN_NODE.major || (major === MIN_NODE.major && minor < MIN_NODE.minor)
+}
+
+/** Child argv: native type stripping where Node has it unflagged, the tsx loader otherwise. */
+function childArgs(version: string): readonly string[] {
+  const { major, minor } = parseNodeVersion(version)
+  const strippingMinor = NATIVE_TYPE_STRIPPING[major]
+  const native = major >= 24 || (strippingMinor !== undefined && minor >= strippingMinor)
+  return native ? EMIT_ARGS : [...TSX_ARGS, ...EMIT_ARGS]
 }
 
 type Settled = { ok: true; value: SurfaceGeneration } | { ok: false; error: Error }
@@ -178,9 +195,10 @@ export function createSurfaceRunner(options: SurfaceRunnerOptions = {}): Surface
   let builds = 0
 
   function run(root: string): SurfaceGeneration {
+    const args = childArgs(nodeVersion)
     if (nodeVersionTooOld(nodeVersion))
       throw new Error(
-        formatFailure(root, {
+        formatFailure(root, args, {
           phase: 'spawn',
           durationMs: 0,
           exit: 'n/a',
@@ -191,7 +209,7 @@ export function createSurfaceRunner(options: SurfaceRunnerOptions = {}): Surface
     let stdout: string
     builds += 1
     try {
-      stdout = execute(process.execPath, CHILD_ARGS, {
+      stdout = execute(process.execPath, args, {
         cwd: root,
         env: childEnvironment(env),
         encoding: 'utf8',
@@ -201,14 +219,14 @@ export function createSurfaceRunner(options: SurfaceRunnerOptions = {}): Surface
       })
     } catch (error) {
       throw new Error(
-        formatFailure(root, classify(error as ChildFailure, Math.round(now() - started)))
+        formatFailure(root, args, classify(error as ChildFailure, Math.round(now() - started)))
       )
     }
     const durationMs = Math.round(now() - started)
     const malformed = malformedReason(stdout)
     if (malformed)
       throw new Error(
-        formatFailure(root, {
+        formatFailure(root, args, {
           phase: 'parse',
           durationMs,
           exit: 'code 0',

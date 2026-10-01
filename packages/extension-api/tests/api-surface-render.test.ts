@@ -18,6 +18,7 @@ const fixtureRoot = fileURLToPath(new URL('./fixtures/surface-mini/', import.met
 const tempRoots: string[] = []
 const NO_LIB_TSCONFIG = '{"compilerOptions":{"noLib":true,"types":[]}}'
 const SNAPSHOT_FILE = 'api-surface.snapshot.md'
+const INDEX_FILE = 'src/index.ts'
 const EMIT_ARGV = ['node', 'api-surface.ts', '--emit']
 
 // One read and one write call site keep the fs access to temp roots and the committed fixture.
@@ -147,9 +148,26 @@ describe('surface renderer over the surface-mini fixture package', () => {
 
   it('throws when src/index.ts is not a module', () => {
     const root = tempCopy({ withSnapshot: false })
-    writeText(root, 'src/index.ts', 'const notExported = 1\n')
+    writeText(root, INDEX_FILE, 'const notExported = 1\n')
 
     expect(() => generateSurfaceSnapshot(root)).toThrow('could not resolve index.ts module symbol')
+  })
+
+  // The generator builds with `types: []` (no @types/node) for speed. A source that starts to
+  // depend on a Node global would otherwise render it as an unresolved type silently, so any
+  // semantic diagnostic in the package's own src files must fail the generation.
+  it('fails closed when a src file references a name the narrowed program cannot resolve', () => {
+    const root = tempCopy({ withSnapshot: false })
+    writeText(
+      root,
+      'src/helper.ts',
+      'export function size(input: string): number {\n  return Buffer.byteLength(input)\n}\n'
+    )
+    writeText(root, INDEX_FILE, `${readText(root, INDEX_FILE)}import './helper'\n`)
+
+    expect(() => generateSurfaceSnapshot(root)).toThrow(
+      /src\/helper\.ts.*Cannot find name 'Buffer'/
+    )
   })
 })
 

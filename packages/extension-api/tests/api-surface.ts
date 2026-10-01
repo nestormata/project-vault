@@ -1,8 +1,14 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import ts from 'typescript'
+import type * as TypeScript from 'typescript'
 import semver from 'semver'
+
+// Story 66-6: `typescript` is a CommonJS package without a "type" field, so an ESM `import`
+// makes Node syntax-scan the 9 MB typescript.js to detect its module format (~135 ms of the
+// child's ~940 ms CPU profile). `require` loads it as CommonJS directly.
+const ts: typeof TypeScript = createRequire(import.meta.url)('typescript')
 
 const SNAPSHOT_NAME = 'api-surface.snapshot.md'
 
@@ -139,21 +145,49 @@ export function applySinceAnnotations(
 }
 
 function compiler(root: string): {
-  program: ts.Program
-  checker: ts.TypeChecker
-  source: ts.SourceFile
+  program: TypeScript.Program
+  checker: TypeScript.TypeChecker
+  source: TypeScript.SourceFile
 } {
   const config = ts.readConfigFile(join(root, 'tsconfig.json'), ts.sys.readFile)
   if (config.error) throw new Error(ts.flattenDiagnosticMessageText(config.error.messageText, '\n'))
   const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, root)
   const sourcePath = join(root, 'src/index.ts')
-  const program = ts.createProgram([sourcePath], { ...parsed.options, noEmit: true }, undefined)
+  // Story 66-6: `types: []` skips the ~83 ambient @types/node files (259 -> 130 files, output
+  // byte-identical) because the public surface must not depend on Node globals. The
+  // diagnostics guard (assertNoSourceDiagnostics, run by generateSurfaceSnapshot after
+  // rendering) makes that fail closed instead of rendering an unresolved type.
+  const program = ts.createProgram(
+    [sourcePath],
+    { ...parsed.options, noEmit: true, types: [] },
+    undefined
+  )
   const source = program.getSourceFile(sourcePath)
   if (!source) throw new Error('could not load extension-api src/index.ts')
   return { program, checker: program.getTypeChecker(), source }
 }
 
-function typeText(checker: ts.TypeChecker, type: ts.Type, source: ts.Node): string {
+function assertNoSourceDiagnostics(program: TypeScript.Program, sourceDir: string): void {
+  const prefix = `${sourceDir.replaceAll('\\', '/').replace(/\/$/, '')}/`
+  const messages = program
+    .getSourceFiles()
+    .filter((file) => file.fileName.startsWith(prefix))
+    .flatMap((file) => program.getSemanticDiagnostics(file))
+    .map((diagnostic) => {
+      const where = diagnostic.file?.fileName.slice(prefix.length - 'src/'.length) ?? '(global)'
+      return `${where}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')}`
+    })
+  if (messages.length > 0)
+    throw new Error(
+      `public surface sources do not type-check without @types (types: []):\n${messages.join('\n')}`
+    )
+}
+
+function typeText(
+  checker: TypeScript.TypeChecker,
+  type: TypeScript.Type,
+  source: TypeScript.Node
+): string {
   return checker.typeToString(
     type,
     source,
@@ -163,9 +197,9 @@ function typeText(checker: ts.TypeChecker, type: ts.Type, source: ts.Node): stri
 
 // eslint-disable-next-line complexity -- renders properties, index signatures, and nested members
 function renderTypeMembers(
-  checker: ts.TypeChecker,
-  type: ts.Type,
-  source: ts.Node,
+  checker: TypeScript.TypeChecker,
+  type: TypeScript.Type,
+  source: TypeScript.Node,
   indent: string,
   seen: Set<number>
 ): string[] {
@@ -183,7 +217,9 @@ function renderTypeMembers(
     const propertyType = checker.getTypeOfSymbolAtLocation(property, declaration)
     const optional = (property.flags & ts.SymbolFlags.Optional) !== 0 ? '?' : ''
     const readonly =
-      (ts.getCombinedModifierFlags(declaration as ts.Declaration) & ts.ModifierFlags.Readonly) !== 0
+      (ts.getCombinedModifierFlags(declaration as TypeScript.Declaration) &
+        ts.ModifierFlags.Readonly) !==
+      0
         ? 'readonly '
         : ''
     lines.push(
@@ -205,9 +241,9 @@ function renderTypeMembers(
 }
 
 function renderSignatures(
-  checker: ts.TypeChecker,
-  type: ts.Type,
-  source: ts.Node,
+  checker: TypeScript.TypeChecker,
+  type: TypeScript.Type,
+  source: TypeScript.Node,
   indent: string
 ): string[] {
   return checker
@@ -219,9 +255,9 @@ function renderSignatures(
 }
 
 function renderType(
-  checker: ts.TypeChecker,
-  type: ts.Type,
-  source: ts.Node,
+  checker: TypeScript.TypeChecker,
+  type: TypeScript.Type,
+  source: TypeScript.Node,
   indent: string,
   seen: Set<number>
 ): string[] {
@@ -240,7 +276,7 @@ function renderType(
       .join(', ')
     lines.push(`${indent}- intersection-members: ${members}`)
   }
-  const id = (type as ts.Type & { id?: number }).id
+  const id = (type as TypeScript.Type & { id?: number }).id
   if (id !== undefined && seen.has(id)) return lines
   if (id !== undefined) seen.add(id)
   lines.push(
@@ -251,7 +287,7 @@ function renderType(
 }
 
 export function generateSurfaceSnapshot(root: string): string {
-  const { checker, source } = compiler(root)
+  const { program, checker, source } = compiler(root)
   const moduleSymbol = checker.getSymbolAtLocation(source)
   if (!moduleSymbol) throw new Error('could not resolve index.ts module symbol')
   const lines = [
@@ -278,6 +314,9 @@ export function generateSurfaceSnapshot(root: string): string {
       ''
     )
   }
+  // Only after rendering: a full check first creates checker symbols in a different order and
+  // shifts the `__@match@<id>` ids in the output (DW-310), breaking byte-identity.
+  assertNoSourceDiagnostics(program, join(root, 'src'))
   const generated = `${lines.join('\n').trimEnd()}\n`
   const previous = existsSync(join(root, SNAPSHOT_NAME))
     ? readFileSync(join(root, SNAPSHOT_NAME), 'utf8')
