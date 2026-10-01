@@ -148,7 +148,7 @@ export function scramSha256Verifier(password: string, salt: Buffer = randomBytes
 
 const SCRAM_VERIFIER_RE = /^SCRAM-SHA-256\$4096:[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/
 // Fixed key for pg_advisory_xact_lock: serialises concurrent fixtures provisioning one cluster.
-const PROVISION_LOCK_KEY = 6604_0001
+const PROVISION_LOCK_KEY = 66_040_001
 
 const PREFLIGHT_OPTIONS = { max: 1, connect_timeout: 5, idle_timeout: 1 } as const
 

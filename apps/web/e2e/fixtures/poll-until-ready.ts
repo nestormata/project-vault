@@ -28,23 +28,36 @@ async function pause(ms: number, signal: AbortSignal | undefined): Promise<void>
  * Story 66.4 AC-7: an optional `signal` stops the loop early (the caller no longer cares, e.g. the
  * polled process already exited): it then resolves quietly, leaving no timer or rejection behind.
  */
-export async function pollUntilOk(
+export async function pollUntilOk(url: string, options: PollOptions): Promise<void> {
+  const outcome = await pollRemaining(url, options, options.attempts, undefined)
+  if (outcome.done) return
+  throw options.onExhausted(outcome.lastError)
+}
+
+interface PollOptions {
+  attempts: number
+  delayMs: number
+  onExhausted: (lastError: unknown) => Error
+  signal?: AbortSignal
+}
+
+type PollOutcome = { done: true } | { done: false; lastError: unknown }
+
+/**
+ * Each attempt chains the next one (strictly sequential: an attempt must finish and wait before the
+ * next starts). `done` means answered ok or aborted; otherwise the budget ran out.
+ */
+async function pollRemaining(
   url: string,
-  options: {
-    attempts: number
-    delayMs: number
-    onExhausted: (lastError: unknown) => Error
-    signal?: AbortSignal
-  }
-): Promise<void> {
+  options: PollOptions,
+  remaining: number,
+  lastError: unknown
+): Promise<PollOutcome> {
   const { signal } = options
-  let lastError: unknown
-  for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
-    if (signal?.aborted) return
-    lastError = await pollOnce(url, signal)
-    if (lastError === undefined || signal?.aborted) return
-    await pause(options.delayMs, signal)
-  }
-  if (signal?.aborted) return
-  throw options.onExhausted(lastError)
+  if (signal?.aborted) return { done: true }
+  if (remaining <= 0) return { done: false, lastError }
+  const error = await pollOnce(url, signal)
+  if (error === undefined || signal?.aborted) return { done: true }
+  await pause(options.delayMs, signal)
+  return pollRemaining(url, options, remaining - 1, error)
 }
