@@ -323,6 +323,9 @@ this host loads extensions whose manifest `apiVersion` is in `>=3.0.0 <=3.25.0`
   proxy logs. (Story 66-3, #479)
 - The `fast-uri` transitive dependency (used by the API's request validation) is patched for the
   high-severity advisories `GHSA-58mr-gqgx-xq4g` and `GHSA-qw65-cvwx-89v3`. (#475)
+- The `devalue` transitive dependency (used by the web app's SvelteKit to serialize page data) is
+  updated to 5.9.4 for the high-severity advisories `GHSA-j22f-vq7h-c4qm`,
+  `GHSA-mcm9-63f2-9j32` and `GHSA-x5rw-q4pp-hg5g`. (#499)
 - The `migrate` image's pnpm is updated to 11.28.3, whose bundled `undici` fixes CVE-2026-19534
   (HIGH, denial of service). (#484)
 - `SECURITY.md` now publishes a private email address for security reports, as a fallback to
