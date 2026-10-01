@@ -18,6 +18,8 @@ DIGEST_RE='^sha256:[0-9a-f]{64}$'
 FROM_RE='^FROM node(:[^@[:space:]]+)?@sha256:[0-9a-f]{64}'
 INDEX_ACCEPT='application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json'
 MANIFEST_ACCEPT='application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json'
+HTTPS_ONLY='=https'
+CURL_HTTPS=(--proto "$HTTPS_ONLY" --proto-redir "$HTTPS_ONLY")
 
 die() {
   echo "refresh-base-image: $*" >&2
@@ -59,13 +61,13 @@ cmd_rewrite() {
 }
 
 token() {
-  curl -fsS --proto '=https' "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/node:pull" | jq -r .token
+  curl -fsS "${CURL_HTTPS[@]}" "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/node:pull" | jq -r .token
 }
 
 cmd_resolve() {
   local t digest
   t=$(token)
-  digest=$(curl -fsSI --proto '=https' -H "Authorization: Bearer $t" -H "Accept: $INDEX_ACCEPT" "$REGISTRY/manifests/$TAG" \
+  digest=$(curl -fsSI "${CURL_HTTPS[@]}" -H "Authorization: Bearer $t" -H "Accept: $INDEX_ACCEPT" "$REGISTRY/manifests/$TAG" \
     | tr -d '\r' | awk 'tolower($1)=="docker-content-digest:"{print $2}')
   require_digest "$digest"
   echo "$digest"
@@ -74,12 +76,12 @@ cmd_resolve() {
 # Prints "<alpine-release> <libssl3> <libcrypto3>" for one platform of an index digest.
 base_versions() {
   local t="$1" index="$2" arch="$3" manifest layer tmp alpine db ssl crypto
-  manifest=$(curl -fsS --proto '=https' -H "Authorization: Bearer $t" -H "Accept: $INDEX_ACCEPT" "$REGISTRY/manifests/$index" \
+  manifest=$(curl -fsS "${CURL_HTTPS[@]}" -H "Authorization: Bearer $t" -H "Accept: $INDEX_ACCEPT" "$REGISTRY/manifests/$index" \
     | jq -r --arg a "$arch" '.manifests[] | select(.platform.architecture==$a and .platform.os=="linux") | .digest' | head -n1)
   [[ -n "$manifest" ]] || die "no $arch manifest in $index"
-  layer=$(curl -fsS --proto '=https' -H "Authorization: Bearer $t" -H "Accept: $MANIFEST_ACCEPT" "$REGISTRY/manifests/$manifest" | jq -r '.layers[0].digest')
+  layer=$(curl -fsS "${CURL_HTTPS[@]}" -H "Authorization: Bearer $t" -H "Accept: $MANIFEST_ACCEPT" "$REGISTRY/manifests/$manifest" | jq -r '.layers[0].digest')
   tmp=$(mktemp)
-  curl -fsSL --proto '=https' --proto-redir '=https' -H "Authorization: Bearer $t" "$REGISTRY/blobs/$layer" -o "$tmp"
+  curl -fsSL "${CURL_HTTPS[@]}" -H "Authorization: Bearer $t" "$REGISTRY/blobs/$layer" -o "$tmp"
   alpine=$(tar -xzOf "$tmp" etc/alpine-release)
   # Read the package db once and let awk consume all of it: an early `exit` would SIGPIPE tar and,
   # under `set -o pipefail`, abort the script nondeterministically.
