@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Pulls node:24-alpine and gets its digest for Dockerfile pinning
-# Run weekly and update Dockerfiles with the new digest
+# Pulls node:24-alpine and prints its digest, for a manual look at the local image.
+# Normal refreshes are automated (Story 64.4): .github/workflows/base-image-refresh.yml opens a PR
+# weekly (run it on demand with `gh workflow run base-image-refresh.yml`), using
+# scripts/refresh-base-image.sh to rewrite every `FROM node@sha256:` line. Prefer that over editing
+# the Dockerfiles by hand.
 
 IMAGE="node:24-alpine"
 echo "Pulling ${IMAGE}..."

@@ -1,19 +1,41 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-// Story 64.1 AC-2: the node:24-alpine base digest appears in five `FROM` lines across three
-// files (apps/api/Dockerfile builder+runner, apps/web/Dockerfile builder+runner, Dockerfile.ci).
+// Story 64.1 AC-2: the node:24-alpine base digest appears in six `FROM` lines across three
+// files (apps/api/Dockerfile builder+runner+migrate, apps/web/Dockerfile builder+runner,
+// Dockerfile.ci).
 // A partial digest bump is the easiest way to regress — this guard parses every `FROM` line in
 // those three files and asserts every external (non-stage) base is pinned to the same
 // `node@sha256:<64 hex>` (or `node:<tag>@sha256:<64 hex>`) reference.
 
 const DOCKERFILE_PATHS = ['apps/api/Dockerfile', 'apps/web/Dockerfile', 'Dockerfile.ci']
 
-const FROM_LINE_RE = /^FROM\s+(\S+)(?:\s+AS\s+(\S+))?/gim
+// Loaded at transform time (bracketed names keep the glob literal and non-dynamic) rather than via
+// a non-literal readFileSync, which security/detect-non-literal-fs-filename flags.
+const DOCKERFILE_TEXT: Record<string, string> = import.meta.glob(
+  ['../apps/api/Dockerfil[e]', '../apps/web/Dockerfil[e]', '../Dockerfile.c[i]'],
+  { query: '?raw', import: 'default', eager: true }
+)
 
-// Matches `node@sha256:<64hex>` or `node:<tag>@sha256:<64hex>`.
-const VALID_NODE_DIGEST_RE = /^node(?::[^@\s]+)?@sha256:[0-9a-f]{64}$/i
+const SHA256_DIGEST_RE = /^sha256:[0-9a-f]{64}$/i
+
+function dockerfileText(path: string): string {
+  const text = DOCKERFILE_TEXT[`../${path}`]
+  expect(text, `${path} must be loadable`).toBeDefined()
+  return text ?? ''
+}
+
+/** Returns the lowercase `sha256:<64 hex>` digest when `ref` is `node@sha256:<digest>` or
+ * `node:<tag>@sha256:<digest>`, otherwise undefined. Plain string parsing, no backtracking regex. */
+function nodeDigestOf(ref: string): string | undefined {
+  const at = ref.indexOf('@')
+  if (at === -1) return undefined
+  const image = ref.slice(0, at)
+  const digest = ref.slice(at + 1)
+  const validImage =
+    image === 'node' || (image.startsWith('node:') && image.length > 'node:'.length)
+  if (!validImage || image.includes('@') || /\s/.test(image)) return undefined
+  return SHA256_DIGEST_RE.test(digest) ? digest.toLowerCase() : undefined
+}
 
 interface ParsedFrom {
   /** The raw reference after `FROM ` (before any `AS <name>`). */
@@ -30,15 +52,17 @@ interface ParsedFrom {
  */
 export function parseFromLines(dockerfileText: string): ParsedFrom[] {
   const declaredStageNames = new Set<string>()
-  const matches = [...dockerfileText.matchAll(FROM_LINE_RE)]
+  const parsed: ParsedFrom[] = []
 
-  const parsed: ParsedFrom[] = matches.map((match) => {
-    const ref = match[1]
+  for (const line of dockerfileText.split('\n')) {
+    const tokens = line.trim().split(/\s+/)
+    if (tokens[0]?.toUpperCase() !== 'FROM' || tokens.length < 2) continue
+    const ref = tokens[1]
     const isInternalStageRef = declaredStageNames.has(ref.toLowerCase())
-    const stageName = match[2]
+    const stageName = tokens[2]?.toUpperCase() === 'AS' ? tokens[3] : undefined
     if (stageName) declaredStageNames.add(stageName.toLowerCase())
-    return { ref, isInternalStageRef }
-  })
+    parsed.push({ ref, isInternalStageRef })
+  }
 
   return parsed
 }
@@ -58,13 +82,9 @@ export function validateDockerfile(dockerfileText: string): DockerfileValidation
   for (const { ref, isInternalStageRef } of parseFromLines(dockerfileText)) {
     if (isInternalStageRef) continue
 
-    if (!VALID_NODE_DIGEST_RE.test(ref)) {
-      invalidRefs.push(ref)
-      continue
-    }
-
-    const digestMatch = ref.match(/sha256:[0-9a-f]{64}$/i)
-    digests.push((digestMatch?.[0] ?? '').toLowerCase())
+    const digest = nodeDigestOf(ref)
+    if (digest) digests.push(digest)
+    else invalidRefs.push(ref)
   }
 
   return { digests, invalidRefs }
@@ -149,11 +169,9 @@ describe('base image digest lockstep guard', () => {
   })
 
   describe('real files', () => {
-    const repositoryRoot = resolve(__dirname, '..')
-
     it('pins every external base in apps/api/Dockerfile, apps/web/Dockerfile and Dockerfile.ci to one identical, validly-formed node digest', () => {
       const filesByPath = Object.fromEntries(
-        DOCKERFILE_PATHS.map((path) => [path, readFileSync(resolve(repositoryRoot, path), 'utf8')])
+        DOCKERFILE_PATHS.map((path) => [path, dockerfileText(path)])
       )
 
       const { invalidRefs, uniqueDigests } = validateAll(filesByPath)
@@ -164,15 +182,15 @@ describe('base image digest lockstep guard', () => {
     })
 
     it('finds exactly three external FROM lines in apps/api/Dockerfile, two in apps/web/Dockerfile, and one in Dockerfile.ci', () => {
-      const apiFrom = parseFromLines(
-        readFileSync(resolve(repositoryRoot, 'apps/api/Dockerfile'), 'utf8')
-      ).filter((f) => !f.isInternalStageRef)
-      const webFrom = parseFromLines(
-        readFileSync(resolve(repositoryRoot, 'apps/web/Dockerfile'), 'utf8')
-      ).filter((f) => !f.isInternalStageRef)
-      const ciFrom = parseFromLines(
-        readFileSync(resolve(repositoryRoot, 'Dockerfile.ci'), 'utf8')
-      ).filter((f) => !f.isInternalStageRef)
+      const apiFrom = parseFromLines(dockerfileText('apps/api/Dockerfile')).filter(
+        (f) => !f.isInternalStageRef
+      )
+      const webFrom = parseFromLines(dockerfileText('apps/web/Dockerfile')).filter(
+        (f) => !f.isInternalStageRef
+      )
+      const ciFrom = parseFromLines(dockerfileText('Dockerfile.ci')).filter(
+        (f) => !f.isInternalStageRef
+      )
 
       // api: builder, runner, and (Story 64.3) the minimal migrate image's own fresh base.
       expect(apiFrom).toHaveLength(3)

@@ -5,6 +5,9 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main]
+  # Story 64.4: base-image-refresh.yml dispatches CI on its refresh branch, because a PR opened with
+  # GITHUB_TOKEN does not trigger `pull_request` workflows. Also handy for a manual re-run.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -94,6 +97,9 @@ jobs:
 
       - name: Check base image digest lockstep guard (Story 64.1 AC-2)
         run: pnpm vitest run scripts/check-base-image-digest.test.ts
+
+      - name: Check base image refresh workflow contract (Story 64.4)
+        run: pnpm vitest run scripts/check-base-image-refresh-workflow.test.ts
 
       - name: Check third-party action SHA pins (Story 64.2 AC-3)
         run: pnpm vitest run scripts/check-action-pins.test.ts
@@ -666,11 +672,17 @@ jobs:
         if: matrix.arch == 'amd64'
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
+          # Empty on workflow_dispatch; falls back to the default branch (Story 64.4).
+          BASE_REF: ${{ github.base_ref || github.event.repository.default_branch }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           IMAGES_CHANGED=false
-          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+          # Story 64.4: a workflow_dispatch run on a non-default branch (the base-image refresh
+          # branch) is gated like a PR against the default branch; on the default branch itself it
+          # is advisory, like a push.
+          if [[ "$EVENT_NAME" == "pull_request" ]] \
+            || [[ "$EVENT_NAME" == "workflow_dispatch" && "${REF_NAME:-}" != "$BASE_REF" ]]; then
             git fetch --no-tags origin "$BASE_REF"
             CHANGED=$(git diff --name-only --no-renames "origin/${BASE_REF}...HEAD")
             for INPUT in apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci .dockerignore \

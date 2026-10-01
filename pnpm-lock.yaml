@@ -14,6 +14,7 @@ overrides:
   fast-uri@<3.1.7: ^3.1.7
   fast-uri@>=4.0.0 <4.1.4: ^4.1.4
   find-my-way@<9.7.0: ^9.7.0
+  devalue@<5.9.3: ^5.9.3
 
 patchedDependencies:
   '@stryker-mutator/vitest-runner': 261003fb6deb93c8524f261aef408dfaa49cb418fb327aee47f23510339c6ee4
@@ -3331,9 +3332,6 @@ packages:
   detect-libc@2.1.2:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
-
-  devalue@5.9.1:
-    resolution: {integrity: sha512-+17vil3EVQRzvtDJSFuTWEb8XJRvXqAiV3qZyQWD398QeXUa6CxsUyMdD1fxzEhUrd4FojitFz7lhIHBTlV4fw==}
 
   devalue@5.9.4:
     resolution: {integrity: sha512-sPAT4pztbu6586/hrhOnMKS17IJrvg12mXiSPSS3W5qDeN2RGgvZ0diZCm31dBbnevfVmujNO3IM2wrS4Y2Rhg==}
@@ -7006,7 +7004,7 @@ snapshots:
       '@types/cookie': 0.6.0
       acorn: 8.18.0
       cookie: 0.6.0
-      devalue: 5.9.1
+      devalue: 5.9.4
       esm-env: 1.2.2
       kleur: 4.1.5
       magic-string: 0.30.21
@@ -7644,8 +7642,6 @@ snapshots:
       minimalistic-assert: 1.0.1
 
   detect-libc@2.1.2: {}
-
-  devalue@5.9.1: {}
 
   devalue@5.9.4: {}
 
