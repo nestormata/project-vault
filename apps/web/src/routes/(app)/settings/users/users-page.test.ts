@@ -37,6 +37,9 @@ vi.mock('$lib/api/org-users.js', () => ({
 }))
 
 import { ApiClientError } from '$lib/api/client.js'
+import type { ComponentProps } from 'svelte'
+import type { OrgUser } from '$lib/api/org-users.js'
+import { appLayoutData } from '$lib/test/page-data.js'
 import UsersPage from './+page.svelte'
 
 beforeEach(() => {
@@ -63,7 +66,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const ownerUser = {
+const ownerUser: OrgUser = {
   userId: 'u-owner',
   email: 'dana@example.com',
   displayName: 'Dana Smith',
@@ -72,7 +75,7 @@ const ownerUser = {
   projects: [],
 }
 
-const memberUser = {
+const memberUser: OrgUser = {
   userId: 'u-member',
   email: 'jsmith@example.com',
   displayName: 'J Smith',
@@ -81,7 +84,7 @@ const memberUser = {
   projects: [],
 }
 
-const projectMemberUser = {
+const projectMemberUser: OrgUser = {
   ...memberUser,
   projects: [
     {
@@ -92,7 +95,7 @@ const projectMemberUser = {
   ],
 }
 
-const deactivatedUser = {
+const deactivatedUser: OrgUser = {
   ...memberUser,
   userId: 'u-deactivated',
   email: 'disabled@example.com',
@@ -100,12 +103,16 @@ const deactivatedUser = {
   status: 'deactivated' as const,
 }
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof UsersPage>['data']
+
+function baseData(overrides: Partial<Data> = {}): Data {
   return {
+    ...appLayoutData(),
     canManage: true,
     orgRole: 'admin',
     orgId: 'org-1',
     users: [ownerUser, memberUser],
+    nativeLoginEnabled: true,
     ...overrides,
   }
 }

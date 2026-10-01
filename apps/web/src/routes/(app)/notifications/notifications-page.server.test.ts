@@ -38,7 +38,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 import { ApiClientError } from '$lib/api/client.js'
 import { requireUser } from '$lib/server/require-user.js'
 import { load, actions } from './+page.server.js'
-import { expectLoaded } from '$lib/test/page-data.js'
+import { expectAction, expectLoaded } from '$lib/test/page-data.js'
 
 const requireUserMock = vi.mocked(requireUser)
 
@@ -238,22 +238,35 @@ describe('notifications form actions', () => {
 
   it('dismiss returns success or not-found from the API boolean', async () => {
     dismissInboxEntryMock.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
-    expect(await actions.dismiss(actionEvent({ id: 'notification-1' }))).toEqual({ success: true })
-    expect(await actions.dismiss(actionEvent({ id: 'missing' }))).toMatchObject({ status: 404 })
+    expect(await expectAction(actions, 'dismiss')(actionEvent({ id: 'notification-1' }))).toEqual({
+      success: true,
+    })
+    expect(await expectAction(actions, 'dismiss')(actionEvent({ id: 'missing' }))).toMatchObject({
+      status: 404,
+    })
   })
 
   it('dismissDormancyAlert validates, succeeds, and maps failure', async () => {
     expect(
-      await actions.dismissDormancyAlert(actionEvent({ alertId: 'alert-1', reason: '   ' }))
+      await expectAction(
+        actions,
+        'dismissDormancyAlert'
+      )(actionEvent({ alertId: 'alert-1', reason: '   ' }))
     ).toMatchObject({ status: 422 })
     dismissSecurityAlertMock.mockResolvedValueOnce({})
     expect(
-      await actions.dismissDormancyAlert(actionEvent({ alertId: 'alert-1', reason: ' resolved ' }))
+      await expectAction(
+        actions,
+        'dismissDormancyAlert'
+      )(actionEvent({ alertId: 'alert-1', reason: ' resolved ' }))
     ).toEqual({ success: true })
     expect(dismissSecurityAlertMock).toHaveBeenCalledWith(expect.anything(), 'alert-1', 'resolved')
     dismissSecurityAlertMock.mockRejectedValueOnce(new Error('offline'))
     expect(
-      await actions.dismissDormancyAlert(actionEvent({ alertId: 'alert-1', reason: 'resolved' }))
+      await expectAction(
+        actions,
+        'dismissDormancyAlert'
+      )(actionEvent({ alertId: 'alert-1', reason: 'resolved' }))
     ).toMatchObject({ status: 422 })
   })
 
@@ -261,9 +274,10 @@ describe('notifications form actions', () => {
     'extendDormancy rejects the invalid days boundary %s',
     async (days) => {
       expect(
-        await actions.extendDormancy(
-          actionEvent({ machineUserId: 'machine-1', keyId: 'key-1', days })
-        )
+        await expectAction(
+          actions,
+          'extendDormancy'
+        )(actionEvent({ machineUserId: 'machine-1', keyId: 'key-1', days }))
       ).toMatchObject({ status: 422 })
       expect(extendKeyDormancyMock).not.toHaveBeenCalled()
     }
@@ -272,33 +286,43 @@ describe('notifications form actions', () => {
   it('extendDormancy succeeds and maps API failure', async () => {
     extendKeyDormancyMock.mockResolvedValueOnce({})
     expect(
-      await actions.extendDormancy(
-        actionEvent({ machineUserId: 'machine-1', keyId: 'key-1', days: '365' })
-      )
+      await expectAction(
+        actions,
+        'extendDormancy'
+      )(actionEvent({ machineUserId: 'machine-1', keyId: 'key-1', days: '365' }))
     ).toEqual({ success: true })
     expect(extendKeyDormancyMock).toHaveBeenCalledWith(expect.anything(), 'machine-1', 'key-1', 365)
     extendKeyDormancyMock.mockRejectedValueOnce(new Error('offline'))
     expect(
-      await actions.extendDormancy(
-        actionEvent({ machineUserId: 'machine-1', keyId: 'key-1', days: '1' })
-      )
+      await expectAction(
+        actions,
+        'extendDormancy'
+      )(actionEvent({ machineUserId: 'machine-1', keyId: 'key-1', days: '1' }))
     ).toMatchObject({ status: 422 })
   })
 
   it('revokeDormantKey succeeds and maps API failure', async () => {
     revokeApiKeyMock.mockResolvedValueOnce({})
     expect(
-      await actions.revokeDormantKey(actionEvent({ machineUserId: 'machine-1', keyId: 'key-1' }))
+      await expectAction(
+        actions,
+        'revokeDormantKey'
+      )(actionEvent({ machineUserId: 'machine-1', keyId: 'key-1' }))
     ).toEqual({ success: true })
     revokeApiKeyMock.mockRejectedValueOnce(new Error('offline'))
     expect(
-      await actions.revokeDormantKey(actionEvent({ machineUserId: 'machine-1', keyId: 'key-1' }))
+      await expectAction(
+        actions,
+        'revokeDormantKey'
+      )(actionEvent({ machineUserId: 'machine-1', keyId: 'key-1' }))
     ).toMatchObject({ status: 422 })
   })
 
   it('deactivateDormantUser maps unknown failures to 422', async () => {
     deactivateOrgUserMock.mockRejectedValueOnce(new Error('offline'))
-    expect(await actions.deactivateDormantUser(actionEvent({ userId: 'user-1' }))).toMatchObject({
+    expect(
+      await expectAction(actions, 'deactivateDormantUser')(actionEvent({ userId: 'user-1' }))
+    ).toMatchObject({
       status: 422,
     })
   })
@@ -383,7 +407,10 @@ describe('notifications +page.server.ts (Story 8.7 AC group H: user dormancy ale
       formData.set('userId', 'user-1')
       const request = { formData: async () => formData } as unknown as Request
 
-      const result = await actions.deactivateDormantUser({
+      const result = await expectAction(
+        actions,
+        'deactivateDormantUser'
+      )({
         request,
         fetch: vi.fn(),
       } as unknown as Parameters<typeof actions.deactivateDormantUser>[0])
@@ -404,7 +431,10 @@ describe('notifications +page.server.ts (Story 8.7 AC group H: user dormancy ale
       formData.set('userId', 'user-1')
       const request = { formData: async () => formData } as unknown as Request
 
-      const result = await actions.deactivateDormantUser({
+      const result = await expectAction(
+        actions,
+        'deactivateDormantUser'
+      )({
         request,
         fetch: vi.fn(),
       } as unknown as Parameters<typeof actions.deactivateDormantUser>[0])

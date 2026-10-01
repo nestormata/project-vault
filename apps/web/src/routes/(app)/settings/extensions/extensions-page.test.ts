@@ -1,14 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
 import { routeExists } from '$lib/test/route-exists.js'
+import type { ExtensionStatus } from '$lib/api/extensions.js'
+import { appLayoutData } from '$lib/test/page-data.js'
 import ExtensionsPage from './+page.svelte'
 
 afterEach(() => cleanup())
 
-const SAMPLE_MANIFEST = {
+const SAMPLE_MANIFEST: ExtensionStatus = {
   name: 'com.acme.sso-extension',
   apiVersion: '1.2.0',
-  capabilities: ['auth-provider'] as const,
+  capabilities: ['auth-provider'],
   loadedAt: '2026-07-20T10:00:00.000Z',
   packageVersion: '3.4.5',
 }
@@ -19,13 +21,17 @@ describe('/settings/extensions +page.svelte', () => {
   })
 
   it('AC-5: a non-admin role sees the permission message, not a crash', () => {
-    render(ExtensionsPage, { props: { data: { allowed: false, orgRole: 'member' } } })
+    render(ExtensionsPage, {
+      props: { data: { ...appLayoutData(), allowed: false, orgRole: 'member' } },
+    })
 
     expect(screen.getByText(/need the admin role/i)).toBeTruthy()
   })
 
   it('AC-5: owner is explicitly blocked too, same as member/viewer', () => {
-    render(ExtensionsPage, { props: { data: { allowed: false, orgRole: 'owner' } } })
+    render(ExtensionsPage, {
+      props: { data: { ...appLayoutData(), allowed: false, orgRole: 'owner' } },
+    })
 
     expect(screen.getByText(/need the admin role/i)).toBeTruthy()
   })
@@ -34,6 +40,7 @@ describe('/settings/extensions +page.svelte', () => {
     render(ExtensionsPage, {
       props: {
         data: {
+          ...appLayoutData(),
           allowed: true,
           orgRole: 'admin',
           mfaRequired: false,
@@ -55,6 +62,7 @@ describe('/settings/extensions +page.svelte', () => {
     render(ExtensionsPage, {
       props: {
         data: {
+          ...appLayoutData(),
           allowed: true,
           orgRole: 'admin',
           mfaRequired: false,
@@ -74,6 +82,7 @@ describe('/settings/extensions +page.svelte', () => {
     render(ExtensionsPage, {
       props: {
         data: {
+          ...appLayoutData(),
           allowed: true,
           orgRole: 'admin',
           mfaRequired: false,
@@ -91,6 +100,7 @@ describe('/settings/extensions +page.svelte', () => {
     render(ExtensionsPage, {
       props: {
         data: {
+          ...appLayoutData(),
           allowed: true,
           orgRole: 'admin',
           mfaRequired: false,
@@ -108,6 +118,7 @@ describe('/settings/extensions +page.svelte', () => {
     render(ExtensionsPage, {
       props: {
         data: {
+          ...appLayoutData(),
           allowed: true,
           orgRole: 'admin',
           mfaRequired: false,
@@ -131,6 +142,7 @@ describe('/settings/extensions +page.svelte', () => {
       render(ExtensionsPage, {
         props: {
           data: {
+            ...appLayoutData(),
             allowed: true,
             orgRole: 'admin',
             mfaRequired: false,
@@ -149,6 +161,7 @@ describe('/settings/extensions +page.svelte', () => {
     render(ExtensionsPage, {
       props: {
         data: {
+          ...appLayoutData(),
           allowed: true,
           orgRole: 'admin',
           mfaRequired: false,
@@ -170,6 +183,7 @@ describe('/settings/extensions +page.svelte', () => {
     render(ExtensionsPage, {
       props: {
         data: {
+          ...appLayoutData(),
           allowed: true,
           orgRole: 'admin',
           mfaRequired: false,
@@ -189,6 +203,7 @@ describe('/settings/extensions +page.svelte', () => {
     render(ExtensionsPage, {
       props: {
         data: {
+          ...appLayoutData(),
           allowed: true,
           orgRole: 'admin',
           mfaRequired: false,
@@ -207,6 +222,7 @@ describe('/settings/extensions +page.svelte', () => {
     render(ExtensionsPage, {
       props: {
         data: {
+          ...appLayoutData(),
           allowed: true,
           orgRole: 'admin',
           mfaRequired: true,
@@ -229,6 +245,7 @@ describe('/settings/extensions +page.svelte', () => {
     render(ExtensionsPage, {
       props: {
         data: {
+          ...appLayoutData(),
           allowed: true,
           orgRole: 'admin',
           mfaRequired: false,
@@ -249,6 +266,7 @@ describe('/settings/extensions +page.svelte', () => {
     render(ExtensionsPage, {
       props: {
         data: {
+          ...appLayoutData(),
           allowed: true,
           orgRole: 'admin',
           mfaRequired: false,
@@ -270,6 +288,7 @@ describe('/settings/extensions +page.svelte', () => {
     render(ExtensionsPage, {
       props: {
         data: {
+          ...appLayoutData(),
           allowed: true,
           orgRole: 'admin',
           mfaRequired: false,
@@ -289,6 +308,7 @@ describe('/settings/extensions +page.svelte', () => {
     render(ExtensionsPage, {
       props: {
         data: {
+          ...appLayoutData(),
           allowed: true,
           orgRole: 'admin',
           mfaRequired: false,
@@ -306,6 +326,7 @@ describe('/settings/extensions +page.svelte', () => {
     render(ExtensionsPage, {
       props: {
         data: {
+          ...appLayoutData(),
           allowed: true,
           orgRole: 'admin',
           mfaRequired: false,
@@ -324,6 +345,7 @@ describe('/settings/extensions +page.svelte', () => {
     render(ExtensionsPage, {
       props: {
         data: {
+          ...appLayoutData(),
           allowed: true,
           orgRole: 'admin',
           mfaRequired: false,
@@ -339,6 +361,7 @@ describe('/settings/extensions +page.svelte', () => {
     render(ExtensionsPage, {
       props: {
         data: {
+          ...appLayoutData(),
           allowed: true,
           orgRole: 'admin',
           mfaRequired: false,

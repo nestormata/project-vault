@@ -77,3 +77,16 @@ export function expectLoaded<R>(result: R): Exclude<R, VoidResult> {
   if (!isLoaded(result)) throw new Error('load() returned no data')
   return result
 }
+
+/**
+ * A named form action, failing the test when it is not defined. `Actions` is a string-keyed record,
+ * so `actions.name` is possibly undefined under `noUncheckedIndexedAccess`.
+ */
+export function expectAction<A extends Record<string, unknown>, K extends keyof A & string>(
+  actions: A,
+  name: K
+): NonNullable<A[K]> {
+  const action = actions[name]
+  if (action === undefined || action === null) throw new Error(`no "${name}" action`)
+  return action
+}

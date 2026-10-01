@@ -18,6 +18,8 @@ vi.mock('$lib/api/organization-settings.js', () => ({
 vi.mock('$lib/state/theme.svelte.js', () => ({ setAppliedTheme: setAppliedThemeMock }))
 vi.mock('$app/navigation', () => ({ invalidateAll: invalidateAllMock }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import ThemesPage from './+page.svelte'
 
 afterEach(() => cleanup())
@@ -30,8 +32,11 @@ beforeEach(() => {
   updateOrgDefaultThemeMock.mockReset()
 })
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof ThemesPage>['data']
+
+function baseData(overrides: Partial<Data> = {}): Data {
   return {
+    ...appLayoutData(),
     themes: [
       { name: 'base', label: 'Default', css: null },
       { name: 'acme-brand', label: 'acme-brand', css: '[data-theme="acme-brand"] {}' },

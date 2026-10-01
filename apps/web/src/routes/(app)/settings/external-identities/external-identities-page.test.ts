@@ -16,6 +16,9 @@ vi.mock('$lib/api/external-identities.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { routeExists } from '$lib/test/route-exists.js'
+import type { ComponentProps } from 'svelte'
+import type { OrgUser } from '$lib/api/org-users.js'
+import { appLayoutData } from '$lib/test/page-data.js'
 import ExternalIdentitiesPage from './+page.svelte'
 
 beforeEach(() => {
@@ -39,7 +42,7 @@ const SAMPLE_IDENTITY = {
   createdAt: '2026-07-28T14:03:11.000Z',
 }
 
-const SAMPLE_ORG_USER = {
+const SAMPLE_ORG_USER: OrgUser = {
   userId: 'user-1',
   email: 'alex@acme.com',
   displayName: 'alex@acme.com',
@@ -48,8 +51,11 @@ const SAMPLE_ORG_USER = {
   projects: [],
 }
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type AllowedData = Extract<ComponentProps<typeof ExternalIdentitiesPage>['data'], { allowed: true }>
+
+function baseData(overrides: Partial<AllowedData> = {}): AllowedData {
   return {
+    ...appLayoutData(),
     allowed: true,
     orgRole: 'admin',
     mfaRequired: false,
@@ -66,7 +72,9 @@ describe('/settings/external-identities +page.svelte (Story 14.7)', () => {
   })
 
   it('AC-4: a non-admin role sees the permission message, not a crash', () => {
-    render(ExternalIdentitiesPage, { props: { data: { allowed: false, orgRole: 'owner' } } })
+    render(ExternalIdentitiesPage, {
+      props: { data: { ...appLayoutData(), allowed: false, orgRole: 'owner' } },
+    })
     expect(screen.getByText(/need the admin role/i)).toBeTruthy()
   })
 

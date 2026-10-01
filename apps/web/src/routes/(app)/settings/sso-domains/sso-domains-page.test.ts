@@ -18,6 +18,8 @@ vi.mock('$lib/api/org-sso-domains.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { routeExists } from '$lib/test/route-exists.js'
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import SsoDomainsPage from './+page.svelte'
 
 beforeEach(() => {
@@ -40,8 +42,11 @@ const SAMPLE_DOMAIN = {
   createdAt: '2026-07-20T10:00:00.000Z',
 }
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type AllowedData = Extract<ComponentProps<typeof SsoDomainsPage>['data'], { allowed: true }>
+
+function baseData(overrides: Partial<AllowedData> = {}): AllowedData {
   return {
+    ...appLayoutData(),
     allowed: true,
     orgRole: 'admin',
     mfaRequired: false,
@@ -77,7 +82,9 @@ describe('/settings/sso-domains +page.svelte (Story 14.6)', () => {
   })
 
   it('AC-5: a non-admin role sees the permission message, not a crash', () => {
-    render(SsoDomainsPage, { props: { data: { allowed: false, orgRole: 'member' } } })
+    render(SsoDomainsPage, {
+      props: { data: { ...appLayoutData(), allowed: false, orgRole: 'member' } },
+    })
     expect(screen.getByText(/need the admin role/i)).toBeTruthy()
   })
 

@@ -16,7 +16,7 @@ vi.mock('$lib/api/notifications.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { actions, load } from './+page.server.js'
-import { expectLoaded } from '$lib/test/page-data.js'
+import { expectAction, expectLoaded } from '$lib/test/page-data.js'
 
 function makeEvent(user: { orgRole: string; mfaEnrolled: boolean } | null) {
   return { fetch: vi.fn(), locals: { user } } as unknown as Parameters<typeof load>[0]
@@ -106,7 +106,10 @@ describe('/settings/notifications +page.server.ts actions', () => {
   it('updatePreference succeeds and forwards the exact patch payload', async () => {
     patchNotificationPreferencesMock.mockResolvedValue(undefined)
 
-    const result = await actions.updatePreference(
+    const result = await expectAction(
+      actions,
+      'updatePreference'
+    )(
       actionEvent({
         alertType: 'credential.expiring',
         channel: 'email',
@@ -129,7 +132,7 @@ describe('/settings/notifications +page.server.ts actions', () => {
   it('updatePreference returns a 422 failure when the API call rejects', async () => {
     patchNotificationPreferencesMock.mockRejectedValue(new Error('network down'))
 
-    const result = await actions.updatePreference(actionEvent({}))
+    const result = await expectAction(actions, 'updatePreference')(actionEvent({}))
 
     expect(result).toEqual({ status: 422, data: { error: 'Failed to update preference' } })
   })
@@ -137,9 +140,10 @@ describe('/settings/notifications +page.server.ts actions', () => {
   it('updateRouting succeeds and forwards the routing selections', async () => {
     putOrgNotificationRoutingMock.mockResolvedValue(undefined)
 
-    const result = await actions.updateRouting(
-      actionEvent({ routeTo_credential_expiring: 'admin' })
-    )
+    const result = await expectAction(
+      actions,
+      'updateRouting'
+    )(actionEvent({ routeTo_credential_expiring: 'admin' }))
 
     expect(putOrgNotificationRoutingMock).toHaveBeenCalled()
     expect(result).toEqual({ success: true })
@@ -148,13 +152,16 @@ describe('/settings/notifications +page.server.ts actions', () => {
   it('updateRouting returns a 422 failure when the API call rejects', async () => {
     putOrgNotificationRoutingMock.mockRejectedValue(new Error('network down'))
 
-    const result = await actions.updateRouting(actionEvent({}))
+    const result = await expectAction(actions, 'updateRouting')(actionEvent({}))
 
     expect(result).toEqual({ status: 422, data: { error: 'Failed to update routing' } })
   })
 
   it('sendTest is denied for a non-admin or non-MFA-enrolled user', async () => {
-    const result = await actions.sendTest(actionEvent({}, { orgRole: 'member', mfaEnrolled: true }))
+    const result = await expectAction(
+      actions,
+      'sendTest'
+    )(actionEvent({}, { orgRole: 'member', mfaEnrolled: true }))
 
     expect(result).toEqual({
       status: 403,
@@ -166,7 +173,10 @@ describe('/settings/notifications +page.server.ts actions', () => {
   it('sendTest succeeds for an MFA-enrolled admin and returns the test result', async () => {
     postAdminNotificationTestMock.mockResolvedValue({ delivered: true })
 
-    const result = await actions.sendTest(actionEvent({}, { orgRole: 'admin', mfaEnrolled: true }))
+    const result = await expectAction(
+      actions,
+      'sendTest'
+    )(actionEvent({}, { orgRole: 'admin', mfaEnrolled: true }))
 
     expect(result).toEqual({ testResult: { delivered: true } })
   })
@@ -174,7 +184,10 @@ describe('/settings/notifications +page.server.ts actions', () => {
   it('sendTest returns a 429 rate-limit failure distinctly from other errors', async () => {
     postAdminNotificationTestMock.mockRejectedValue(new ApiClientError(429, null, 'rate limited'))
 
-    const result = await actions.sendTest(actionEvent({}, { orgRole: 'owner', mfaEnrolled: true }))
+    const result = await expectAction(
+      actions,
+      'sendTest'
+    )(actionEvent({}, { orgRole: 'owner', mfaEnrolled: true }))
 
     expect(result).toEqual({
       status: 429,
@@ -186,7 +199,10 @@ describe('/settings/notifications +page.server.ts actions', () => {
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     postAdminNotificationTestMock.mockRejectedValue(new Error('smtp socket reset by peer'))
 
-    const result = await actions.sendTest(actionEvent({}, { orgRole: 'owner', mfaEnrolled: true }))
+    const result = await expectAction(
+      actions,
+      'sendTest'
+    )(actionEvent({}, { orgRole: 'owner', mfaEnrolled: true }))
 
     expect(result).toEqual({ status: 422, data: { error: 'Failed to send test notification' } })
     // The real cause is still logged server-side for diagnosis, just not exposed to the client.

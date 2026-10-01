@@ -11,6 +11,8 @@ vi.mock('$lib/api/audit.js', () => ({
 }))
 
 import { ApiClientError } from '$lib/api/client.js'
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import ForwardingPage from './+page.svelte'
 
 beforeEach(() => {
@@ -20,8 +22,10 @@ beforeEach(() => {
 
 afterEach(() => cleanup())
 
-function baseData(overrides: Record<string, unknown> = {}) {
-  return { orgRole: 'admin', allowed: true as const, orgId: 'org-1', ...overrides }
+type AllowedData = Extract<ComponentProps<typeof ForwardingPage>['data'], { allowed: true }>
+
+function baseData(overrides: Partial<AllowedData> = {}): AllowedData {
+  return { ...appLayoutData(), orgRole: 'admin', allowed: true, orgId: 'org-1', ...overrides }
 }
 
 describe('/settings/audit/forwarding +page.svelte', () => {
@@ -30,7 +34,9 @@ describe('/settings/audit/forwarding +page.svelte', () => {
   })
 
   it('AC-N1: a member/viewer sees a role notice, no forms', () => {
-    render(ForwardingPage, { props: { data: { orgRole: 'member', allowed: false } } })
+    render(ForwardingPage, {
+      props: { data: { ...appLayoutData(), orgRole: 'member', allowed: false } },
+    })
     expect(screen.getByText(/requires the admin role|requires .* admin/i)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /save webhook/i })).toBeNull()
   })
