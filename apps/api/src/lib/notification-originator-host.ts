@@ -24,6 +24,8 @@ import {
   callOutOfRequestHostMethod,
   createInFlightSlotAccounting,
 } from './out-of-request-host-wrapper.js'
+import { getNotificationDispatchBoss } from './notification-dispatch-boss.js'
+import { dispatchPendingJobs } from '../notifications/dispatcher.js'
 
 /**
  * Story 36.1 — the real `HostServices.notificationOriginator` implementation, bound to the
@@ -31,15 +33,21 @@ import {
  * `buildHostServices()`. See `packages/extension-api/src/hooks/notification-originator.ts` for
  * the full contract doc comment this module implements against.
  *
- * **Reliance on the existing notification catch-up mechanism.** Unlike PV's own internal call
- * sites (`notifications/dispatcher.ts`), this host does not call `boss.send('notification/deliver',
- * ...)` after inserting the row — `buildHostServices()` runs at extension-load time, well before
- * any `BossService` instance exists for this process (see `loader.ts`'s `raceWithTimeout()`).
- * This is safe: inserting a `status: 'pending'` row is already durable, and PV's existing
- * notification catch-up cron (`notification/backfill-pending-delivery`) picks up any pending row
- * whose job was never enqueued or was missed — the exact same "a missed boss.send() is safe"
- * property `notifications/dispatcher.ts`'s own `dispatchPendingJobs()` doc comment already relies
- * on for post-commit, best-effort dispatch.
+ * **Post-commit dispatch (Story 70.2).** After the `notification_queue` row commits, both enqueue
+ * methods send a `notification/deliver` job through `dispatchPendingJobs()` (label
+ * `extension-notification-originator`), so the first send happens in seconds. `buildHostServices()`
+ * runs at extension-load time, well before any `BossService` exists for this process (see
+ * `loader.ts`), so the boss is never captured here: it is resolved at call time through
+ * `notification-dispatch-boss.ts`, which `main.ts` fills right after `new BossService(...)`.
+ *
+ * **Dispatch is best-effort and never changes the enqueue result.** The durable `status: 'pending'`
+ * row is the correctness guarantee; the job is only a latency hint. If the registry is empty, the
+ * boss is not started (sealed vault), `boss.send` rejects, or the process dies between commit and
+ * send, the row is picked up by the periodic `notification/deliver-catchup` job (a 10-minute cron
+ * over rows older than a 5-minute grace, so first send within about 15 minutes). Note that
+ * `notification/backfill-pending-delivery` is NOT a fallback here: it backfills `security_alerts`
+ * rows only and never reads `notification_queue`. Story 70.1's exclusive claim keeps an immediate
+ * job and a later catch-up job from double-sending the same row.
  */
 
 export const MAX_SUBJECT_LENGTH = 500
@@ -357,6 +365,32 @@ async function callOutOfRequestEnqueue(
   })
 }
 
+const DISPATCH_LABEL = 'extension-notification-originator'
+
+/** Story 70.2 — post-commit, best-effort dispatch of the `notification/deliver` job for a row the
+ * caller just committed. Resolves the process's `BossService` lazily (never at host-build time) and
+ * reuses `dispatchPendingJobs`, which already warns instead of throwing when the boss is missing,
+ * not started, or `send` fails. The outer try/catch additionally covers a throwing registry read or
+ * logger, so a dispatch problem can never fail the enqueue or alter its result; the
+ * `notification/deliver-catchup` cron remains the fallback for the durable row. The job carries
+ * ids only, and the dispatcher's warn payload carries ids only (no recipient, subject or body). */
+async function dispatchEnqueuedNotification(
+  result: NotificationOriginatorEnqueueResult,
+  orgId: string,
+  logger: AuditLogger
+): Promise<void> {
+  try {
+    await dispatchPendingJobs(
+      getNotificationDispatchBoss(),
+      { log: { warn: (payload, message) => logger.warn?.(payload, message) } },
+      [{ id: result.notificationQueueId, orgId, deliverAt: null }],
+      DISPATCH_LABEL
+    )
+  } catch {
+    // Best-effort: never let dispatch surface to the extension caller.
+  }
+}
+
 export function buildNotificationOriginatorHost(
   manifest: ExtensionManifest,
   logger: AuditLogger = {},
@@ -411,6 +445,7 @@ export function buildNotificationOriginatorHost(
           channel: params.channel,
           outcome: OUTCOME_OK,
         })
+        await dispatchEnqueuedNotification(result, orgId, logger)
         return result
       } catch (error) {
         const outcome = classifyEnqueueOutcome(error)
@@ -473,8 +508,8 @@ export function buildNotificationOriginatorHost(
         params.organizationId,
         params.channel,
         { extensionName: manifest.name, logger, maxInFlight: outOfRequestMaxInFlight },
-        () =>
-          withOrg(params.organizationId, async (tx) => {
+        async () => {
+          const result = await withOrg(params.organizationId, async (tx) => {
             if (params.recipientUserId !== undefined) {
               // AC2/AC3 — reuses `assertRecipientIsOrgMember` verbatim, scoped to the EXPLICIT
               // `params.organizationId` rather than any ambient org.
@@ -494,6 +529,11 @@ export function buildNotificationOriginatorHost(
             if (!row?.id) throw new Error('notificationOriginator: insert returned no row')
             return { notificationQueueId: row.id }
           })
+          // Story 70.2 — post-commit, best-effort; the in-flight slot is held across this one
+          // pg-boss insert (~ms), see the dispatch helper's doc comment.
+          await dispatchEnqueuedNotification(result, params.organizationId, logger)
+          return result
+        }
       )
     },
   }
