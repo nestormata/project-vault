@@ -171,7 +171,8 @@ describe('surface renderer over the surface-mini fixture package', () => {
 
 describe('assertSurfaceSnapshotIsFresh (parent-side compare)', () => {
   it('reports since-index errors before comparing', () => {
-    // missing-since holds the surface-mini snapshot without the `readonly id` member's since.
+    // missing-since holds a tiny snapshot whose only export has no `since` line. It stays small on
+    // purpose: a copy of the surface-mini snapshot is a jscpd clone.
     const result = assertSurfaceSnapshotIsFresh(
       join(variantsRoot, 'missing-since'),
       COMMITTED_SNAPSHOT
