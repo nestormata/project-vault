@@ -2,6 +2,7 @@ import { OperationalEvent } from '@project-vault/shared'
 import { createEventEmitter } from './lib/events.js'
 import { createApp } from './app.js'
 import { BossService } from './lib/boss.js'
+import { registerNotificationDispatchBoss } from './lib/notification-dispatch-boss.js'
 import { registerShutdown } from './lib/shutdown.js'
 import {
   loadInitialVaultState,
@@ -175,6 +176,9 @@ async function main(): Promise<void> {
 
   // 4. registerWorkers(emitter) — pg-boss workers, BossService stub in Story 1.1
   const boss = new BossService(env.DATABASE_URL)
+  // Story 70.2: the extension notificationOriginator host resolves this boss lazily at enqueue
+  // time to dispatch notification/deliver right after commit (it is built before this line runs).
+  registerNotificationDispatchBoss(boss)
   fastify.decorate?.('boss', boss)
   let bossRegistered = false
   async function startBossAndRegisterWorkers(): Promise<void> {

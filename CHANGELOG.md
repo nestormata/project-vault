@@ -24,6 +24,10 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Changed
 
+- Notifications enqueued through `HostServices.notificationOriginator` are now dispatched right after
+  the enqueue commits, so the first send happens in seconds instead of waiting 5 to 15 minutes for
+  the periodic catch-up. If the immediate dispatch is unavailable, the catch-up still delivers the
+  row.
 - `.env.example` no longer sets `VAULT_HANDOFF_ISSUER`, so new configs do not show the "Return to
   CentralizeMe" link on the handoff consent page. Existing configs that set it keep the link. An
   empty `VAULT_HANDOFF_ISSUER` now means the default issuer (`https://app.centralizeme.com`)
