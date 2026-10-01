@@ -15,5 +15,5 @@
     ".svelte-kit/env.d.ts",
     ".svelte-kit/types/**/*.d.ts"
   ],
-  "exclude": ["node_modules", "src/**/*.test.ts", "src/**/*.spec.ts"]
+  "exclude": ["node_modules"]
 }

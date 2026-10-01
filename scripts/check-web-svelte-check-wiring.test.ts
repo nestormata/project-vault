@@ -5,6 +5,7 @@
 // pattern of check-action-pins.test.ts / check-compose-config.test.ts).
 import { describe, expect, it } from 'vitest'
 
+const WEB_TSCONFIG = '../apps/web/tsconfig.json'
 const GUARD_TEST_COMMAND = 'pnpm vitest run scripts/check-web-svelte-check-wiring.test.ts'
 const CHECK_SVELTE = '"check:svelte"'
 const FORBIDDEN_SVELTE_CHECK_FLAGS = [
@@ -124,6 +125,12 @@ export function ciInnerRecipe(makefile: string): string {
   return lines.slice(start, end === -1 ? undefined : end).join('\n')
 }
 
+/** Whether a tsconfig's `exclude` drops `*.test.ts` / `*.spec.ts` files from the check. */
+export function tsconfigExcludesTests(tsconfigJson: string): boolean {
+  const { exclude = [] } = JSON.parse(tsconfigJson) as { exclude?: string[] }
+  return exclude.some((pattern) => /\.(test|spec)\.ts$/.test(pattern))
+}
+
 /** Every `<script>` opening tag in a .svelte file must declare lang="ts" (AC-7). */
 export function hasUntypedScript(svelteSource: string): boolean {
   const openingTags = svelteSource.match(/<script\b[^>]*>/g) ?? []
@@ -203,6 +210,12 @@ describe('web svelte-check wiring guard: parsers (Story 68.1 AC-4)', () => {
     expect(hasUntypedScript('<p>no script at all</p>')).toBe(false)
   })
 
+  it('detects a tsconfig that excludes unit test files', () => {
+    expect(tsconfigExcludesTests('{"exclude": ["node_modules", "src/**/*.test.ts"]}')).toBe(true)
+    expect(tsconfigExcludesTests('{"exclude": ["node_modules"]}')).toBe(false)
+    expect(tsconfigExcludesTests('{}')).toBe(false)
+  })
+
   it('finds the checks job and the ci-inner recipe', () => {
     const workflow = [
       'jobs:',
@@ -258,8 +271,13 @@ describe('web svelte-check wiring guard: the real repository files (Story 68.1 A
   })
 
   it('apps/web/tsconfig.json includes the generated route types', () => {
-    const tsconfig = JSON.parse(repoText('../apps/web/tsconfig.json')) as { include?: string[] }
+    const tsconfig = JSON.parse(repoText(WEB_TSCONFIG)) as { include?: string[] }
     expect(tsconfig.include).toContain('.svelte-kit/non-ambient.d.ts')
+  })
+
+  // Story 68.1 Q2 (Nestor 2026-09-30): unit tests are type-checked by the same gate.
+  it('apps/web/tsconfig.json does not exclude unit test files from the check', () => {
+    expect(tsconfigExcludesTests(repoText(WEB_TSCONFIG))).toBe(false)
   })
 
   it('no warning filter hides Svelte warnings from the build or svelte-check', () => {
