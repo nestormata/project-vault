@@ -2343,3 +2343,185 @@ describe('credential detail +page.svelte', () => {
     })
   })
 })
+
+// Story 68.1 AC-3: SvelteKit reuses this page component when navigating from credential A to
+// credential B (same route, new params) and after invalidateAll(); none of A's per-credential
+// state may survive onto B, and the optimistic local lists must still work and never duplicate.
+describe('credential detail +page.svelte — stale state across loads (Story 68.1 AC-3)', () => {
+  const credentialBId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+  const CREDENTIAL_B = {
+    ...CREDENTIAL,
+    id: credentialBId,
+    name: 'Twilio Token',
+    expiresAt: '2027-03-15T00:00:00.000Z',
+    rotationSchedule: '0 0 * * 1',
+    cacheable: false,
+  }
+  const SHARE_A = {
+    id: 'share-a',
+    credentialId,
+    fieldKey: null,
+    sharedBy: 'sharer-1',
+    recipientUserId: 'recipient-1',
+    singleUse: true,
+    createdAt: '2026-07-28T00:00:00.000Z',
+    expiresAt: '2026-07-29T00:00:00.000Z',
+    revokedAt: null,
+    firstViewedAt: null,
+    viewCount: 0,
+    status: 'active',
+  }
+  const DEP = (id: string, systemName: string) => ({
+    id,
+    systemName,
+    systemType: 'service',
+    notes: null,
+    checklistStatus: null,
+  })
+
+  function dataA() {
+    return baseData({
+      dependencies: {
+        items: [DEP('dep-a1', 'billing-worker'), DEP('dep-a2', 'invoice-cron')],
+        hasDependencies: true,
+        hasStagedRotation: false,
+      },
+      shares: [SHARE_A],
+      sharesTotal: 1,
+      rotationRecommendedNudges: [
+        {
+          fieldKey: null,
+          active: true,
+          mostRecentShareAt: new Date().toISOString(),
+          mostRecentSharedWith: 'riley@example.com',
+        },
+      ],
+    })
+  }
+
+  function dataB() {
+    return baseData({
+      credentialId: credentialBId,
+      credential: CREDENTIAL_B,
+      dependencies: { items: [], hasDependencies: false, hasStagedRotation: false },
+      shares: [],
+      sharesTotal: 0,
+      rotationRecommendedNudges: [],
+    })
+  }
+
+  it("credential A -> B: A's dependencies, shares and nudge disappear and B's lifecycle values show", async () => {
+    const { rerender } = render(CredentialDetailPage, { props: { data: dataA() } })
+    expect(screen.getByText(/billing-worker \(service\)/)).toBeTruthy()
+    expect(screen.getByText(/invoice-cron \(service\)/)).toBeTruthy()
+    expect(screen.getByText(/rotation recommended/i)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^revoke$/i })).toBeTruthy()
+
+    await rerender({ data: dataB() })
+
+    expect(screen.queryByText(/billing-worker \(service\)/)).toBeNull()
+    expect(screen.queryByText(/invoice-cron \(service\)/)).toBeNull()
+    expect(screen.queryByText(/rotation recommended/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: /^revoke$/i })).toBeNull()
+    expect((screen.getByLabelText(/expiry date/i) as HTMLInputElement).value).toBe('2027-03-15')
+    expect((screen.getByLabelText(/rotation schedule/i) as HTMLInputElement).value).toBe(
+      '0 0 * * 1'
+    )
+    expect(
+      (screen.getByLabelText(/cacheable by offline agents/i) as HTMLInputElement).checked
+    ).toBe(false)
+  })
+
+  it("credential A -> B: A's revealed secret value is not shown on B", async () => {
+    revealCredentialValueMock.mockResolvedValue({ value: 'sk_live_secret_of_a', versionNumber: 3 })
+    const { rerender } = render(CredentialDetailPage, { props: { data: dataA() } })
+    await fireEvent.click(screen.getByRole('button', { name: /^reveal value$/i }))
+    expect(await screen.findByText('sk_live_secret_of_a')).toBeTruthy()
+
+    await rerender({ data: dataB() })
+
+    expect(screen.queryByText('sk_live_secret_of_a')).toBeNull()
+    expect(screen.getByRole('button', { name: /^reveal value$/i })).toBeTruthy()
+  })
+
+  it('an unrelated reload of the same credential keeps a dirty lifecycle input', async () => {
+    const { rerender } = render(CredentialDetailPage, { props: { data: dataA() } })
+    const schedule = screen.getByLabelText(/rotation schedule/i) as HTMLInputElement
+    await fireEvent.input(schedule, { target: { value: '0 6 * * *' } })
+
+    // e.g. invalidateAll() after adding a version: same credential, same lifecycle values.
+    await rerender({ data: { ...dataA(), credential: { ...CREDENTIAL, currentVersionNumber: 4 } } })
+
+    expect((screen.getByLabelText(/rotation schedule/i) as HTMLInputElement).value).toBe(
+      '0 6 * * *'
+    )
+  })
+
+  it('adding a dependency still updates the list in place after an A -> B navigation', async () => {
+    addCredentialDependencyMock.mockResolvedValue(DEP('dep-b1', 'sms-gateway'))
+    const { rerender } = render(CredentialDetailPage, { props: { data: dataA() } })
+    await rerender({ data: dataB() })
+
+    await fireEvent.click(screen.getByText(/^add dependent system$/i, { selector: 'summary' }))
+    await fireEvent.input(screen.getByLabelText(/system name/i), {
+      target: { value: 'sms-gateway' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /^add dependent system$/i }))
+
+    expect(await screen.findByText(/sms-gateway \(service\)/)).toBeTruthy()
+    expect(screen.queryByText(/billing-worker \(service\)/)).toBeNull()
+  })
+
+  it('a refresh that lands before the add-dependency POST resolves does not duplicate the row', async () => {
+    let resolveAdd: (dep: ReturnType<typeof DEP>) => void = () => {}
+    addCredentialDependencyMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveAdd = resolve
+      })
+    )
+    const { rerender } = render(CredentialDetailPage, { props: { data: baseData() } })
+    await fireEvent.click(screen.getByText(/^add dependent system$/i, { selector: 'summary' }))
+    await fireEvent.input(screen.getByLabelText(/system name/i), {
+      target: { value: 'billing-worker' },
+    })
+    await fireEvent.click(screen.getByRole('button', { name: /^add dependent system$/i }))
+
+    await rerender({
+      data: baseData({
+        dependencies: {
+          items: [DEP('dep-new', 'billing-worker')],
+          hasDependencies: true,
+          hasStagedRotation: false,
+        },
+      }),
+    })
+    resolveAdd(DEP('dep-new', 'billing-worker'))
+
+    await vi.waitFor(() =>
+      expect(screen.getAllByText(/billing-worker \(service\)/)).toHaveLength(1)
+    )
+  })
+
+  it('a refresh that lands before the create-share POST resolves does not duplicate the share', async () => {
+    let resolveShare: (share: typeof SHARE_A & { token: string }) => void = () => {}
+    createCredentialShareMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveShare = resolve
+      })
+    )
+    const { rerender } = render(CredentialDetailPage, {
+      props: { data: baseData({ shares: [], sharesTotal: 0 }) },
+    })
+    await fireEvent.change(screen.getByLabelText(/recipient/i), {
+      target: { value: 'recipient-1' },
+    })
+    await fireEvent.click(screen.getByRole('checkbox', { name: /value/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+
+    await rerender({ data: baseData({ shares: [SHARE_A], sharesTotal: 1 }) })
+    resolveShare({ ...SHARE_A, token: 'raw-one-time-token' })
+
+    expect(await screen.findByText(/raw-one-time-token/)).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: /^revoke$/i })).toHaveLength(1)
+  })
+})

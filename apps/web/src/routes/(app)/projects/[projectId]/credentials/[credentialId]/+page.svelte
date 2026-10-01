@@ -52,6 +52,7 @@
   import PageAlertBanner from '$lib/components/PageAlertBanner.svelte'
   import { m } from '$lib/paraglide/messages.js'
   import { getLocale } from '$lib/paraglide/runtime.js'
+  import { resetOn, withItem } from '$lib/utils/reset-on.js'
   import { canManageRotations } from '$lib/components/rotations/rotation-permissions.js'
   import {
     formatDateTime,
@@ -79,8 +80,16 @@
       : ARCHIVED_PROJECT_BANNER
   }
 
-  let revealedValue = $state<string | null>(null)
-  let revealVersion = $state<number | null>(null)
+  // Story 68.1 AC-3: SvelteKit reuses this component when navigating from credential A to
+  // credential B (same route, new params) and after invalidateAll(). `credentialKey` is a
+  // primitive $derived, so it only notifies when the record actually changes. Per-credential
+  // local state below is either a writable $derived of the loaded data (server lists: a new load
+  // is the truth) or reset with resetOn(credentialKey, ...) (display-once secrets and in-progress
+  // forms: never sourced from `data`, only cleared when the record changes).
+  const credentialKey = $derived(`${data.projectId}/${data.credentialId}`)
+
+  let revealedValue = $derived(resetOn(credentialKey, null as string | null))
+  let revealVersion = $derived(resetOn(credentialKey, null as number | null))
   let revealing = $state(false)
   let revealError = $state<string | null>(null)
 
@@ -88,7 +97,7 @@
   // holds explicitly-revealed sensitive field values (and any non-sensitive field whose eager
   // decrypt degraded — AC-2 Failure Mode). "Hide" clears a key client-side only, no API call,
   // mirroring the existing whole-secret `revealedValue = null` convention.
-  let revealedFields = $state<Record<string, string>>({})
+  let revealedFields = $derived(resetOn(credentialKey, {} as Record<string, string>))
   let revealingField = $state<string | null>(null)
   let fieldRevealError = $state<Record<string, string>>({})
   let revealAllLoading = $state(false)
@@ -96,15 +105,21 @@
 
   // AC-L1: local override applied after a successful lifecycle save so the read-only summary
   // grid above updates without a full page reload; null means "show data.credential's value".
-  let lifecycleOverride = $state<{
-    expiresAt: string | null
-    rotationSchedule: string | null
-  } | null>(null)
-  let lifecycleExpiresAt = $state(toLifecycleDateInputValue(data.credential?.expiresAt ?? null))
-  let lifecycleRotationSchedule = $state(data.credential?.rotationSchedule ?? '')
+  type LifecycleOverride = { expiresAt: string | null; rotationSchedule: string | null }
+  let lifecycleOverride = $derived(resetOn(credentialKey, null as LifecycleOverride | null))
+  // Story 68.1 AC-3: the editable lifecycle inputs re-seed when the record or its persisted value
+  // changes (primitive $deriveds), but keep an in-progress edit across an unrelated reload of the
+  // same credential (e.g. invalidateAll() after adding a version).
+  const persistedExpiresAt = $derived(data.credential?.expiresAt ?? null)
+  const persistedRotationSchedule = $derived(data.credential?.rotationSchedule ?? '')
   // AC-L1: pre-fill from the credential detail's real cacheable flag (defaults only when the
   // detail is missing — never hardcode `true`, which would silently re-enable caching on save).
-  let lifecycleCacheable = $state(data.credential?.cacheable ?? true)
+  const persistedCacheable = $derived(data.credential?.cacheable ?? true)
+  let lifecycleExpiresAt = $derived(
+    resetOn(credentialKey, toLifecycleDateInputValue(persistedExpiresAt))
+  )
+  let lifecycleRotationSchedule = $derived(resetOn(credentialKey, persistedRotationSchedule))
+  let lifecycleCacheable = $derived(resetOn(credentialKey, persistedCacheable))
   let lifecycleSubmitting = $state(false)
   let lifecycleFieldError = $state<string | null>(null)
   let lifecycleBanner = $state<string | null>(null)
@@ -231,10 +246,10 @@
     }
   }
 
-  // AC-D1: local list so a successful add/archive updates the UI immediately without a reload;
-  // seeded once from the loader's data, same "state_referenced_locally" convention used elsewhere
-  // on this page (see lifecycleExpiresAt above) and on the projects list page's tag inputs.
-  let dependencyItems = $state<CredentialDependencyWithChecklistStatus[]>(data.dependencies.items)
+  // AC-D1: local list so a successful add/archive updates the UI immediately without a reload.
+  // Story 68.1 AC-3: a writable $derived of the loader's list — a new load (credential A -> B,
+  // invalidateAll) replaces it, local mutations and the background poll below still assign it.
+  let dependencyItems = $derived<CredentialDependencyWithChecklistStatus[]>(data.dependencies.items)
   let depSystemName = $state('')
   let depSystemType = $state<SystemType>('other')
   let depNotes = $state('')
@@ -250,25 +265,24 @@
   // AC-5: authoritative server-computed flag — never inferred from whether any item has a
   // non-null checklistStatus (ADR-2.10-02, see the story's "Challenge from Critical Perspective"
   // finding for why the naive inference is wrong when every dependency post-dates staging).
-  // Story 18.7: promoted to local $state (same "state_referenced_locally" convention as
-  // `dependencyItems` above) so the background poll below can update it in place without a full
-  // page reload.
-  let hasStagedRotation = $state(data.dependencies.hasStagedRotation)
+  // Story 18.7: local and writable (same pattern as `dependencyItems` above) so the background
+  // poll below can update it in place without a full page reload.
+  let hasStagedRotation = $derived(data.dependencies.hasStagedRotation)
   let confirmingDependencyId = $state<string | null>(null)
   let checklistError = $state<string | null>(null)
   // Story 18.7 AC-5: "Add dependent system" starts collapsed behind a native <details>/<summary>
   // disclosure — simple client-side UI state, not persisted across reloads (AC-6).
   let dependencyFormOpen = $state(false)
 
-  // Story 17.1 AC-11: local list, same "state_referenced_locally" convention the dependency
-  // section above uses — updated in place on create/revoke so the Shares tab reflects a mutation
-  // immediately without a full reload.
-  let shareItems = $state<CredentialShareSummary[]>(data.shares ?? [])
+  // Story 17.1 AC-11: local list, same writable-$derived pattern the dependency section above
+  // uses — updated in place on create/revoke so the Shares tab reflects a mutation immediately
+  // without a full reload.
+  let shareItems = $derived<CredentialShareSummary[]>(data.shares ?? [])
   // Story 28.7 AC1/AC2: a real local counter, seeded from the SSR-load `data.sharesTotal`, kept
   // in sync by onCreateShare/onRevokeShare alongside `shareItems` above — replaces rendering
   // `data.sharesTotal ?? shareItems.length` directly, whose `??` fallback never fires for a
   // legitimate `0` (the exact "Showing 1 of 0" bug this fixes).
-  let sharesTotalCount = $state(data.sharesTotal ?? shareItems.length)
+  let sharesTotalCount = $derived(data.sharesTotal ?? (data.shares ?? []).length)
   // Story 17.2 AC-21: recipient-type toggle — swaps the org-member typeahead for a plain email
   // input, and surfaces the tighter 1h default/72h cap plus the step-up prompt when 'external'.
   let shareRecipientType = $state<'user' | 'external'>('user')
@@ -291,13 +305,14 @@
   let shareError = $state<string | null>(null)
   // Story 17.1 AC-11: the raw token is shown exactly once, right after creation (copy-once
   // affordance) — never persisted, never re-fetchable once this local state is cleared/replaced.
-  let lastCreatedShareToken = $state<string | null>(null)
-  let lastCreatedShareIsExternal = $state(false)
+  // Story 68.1 AC-3: cleared when the record changes (never sourced from `data`).
+  let lastCreatedShareToken = $derived(resetOn(credentialKey, null as string | null))
+  let lastCreatedShareIsExternal = $derived(resetOn(credentialKey, false))
   let revokingShareId = $state<string | null>(null)
 
   // Story 17.3 AC-11/AC-16: local list, same convention as `shareItems` above — updated in place
   // on dismiss so the badge disappears immediately without a full reload.
-  let nudgeBuckets = $state<RotationRecommendedBucket[]>(data.rotationRecommendedNudges ?? [])
+  let nudgeBuckets = $derived<RotationRecommendedBucket[]>(data.rotationRecommendedNudges ?? [])
   let dismissingBucketKey = $state<string | null>(null)
   let dismissReason = $state('')
   let dismissError = $state<string | null>(null)
@@ -335,6 +350,14 @@
   // (optionally filtered) Shares-tab list — no active filter means everything matches.
   function matchesActiveSharesFilter(status: CredentialShareStatus): boolean {
     return !data.sharesStatus || status === data.sharesStatus
+  }
+
+  // Story 68.1 AC-3: a refresh that landed while the create request was in flight may already
+  // list the new share (and count it in the total), so only add and count it once.
+  function addShareLocally(summary: CredentialShareSummary): void {
+    if (shareItems.some((item) => item.id === summary.id)) return
+    shareItems = withItem(shareItems, summary, 'start')
+    sharesTotalCount += 1
   }
 
   function nudgeBadgeLabel(bucket: RotationRecommendedBucket): string {
@@ -481,10 +504,7 @@
         // Story 28.7 AC3: a newly created share is never 'revoked' — if an active status filter
         // wouldn't match it, splicing it into `shareItems` (and bumping the total) would show
         // something a full reload against the same filtered URL never would.
-        if (matchesActiveSharesFilter(summary.status)) {
-          shareItems = [summary, ...shareItems]
-          sharesTotalCount += 1
-        }
+        if (matchesActiveSharesFilter(summary.status)) addShareLocally(summary)
         lastCreatedShareToken = token
         lastCreatedShareIsExternal = true
         shareRecipientEmail = ''
@@ -496,10 +516,7 @@
           singleUse: shareSingleUse,
         })
         const { token, ...summary } = created
-        if (matchesActiveSharesFilter(summary.status)) {
-          shareItems = [summary, ...shareItems]
-          sharesTotalCount += 1
-        }
+        if (matchesActiveSharesFilter(summary.status)) addShareLocally(summary)
         lastCreatedShareToken = token
         lastCreatedShareIsExternal = false
         shareRecipientUserId = ''
@@ -554,7 +571,7 @@
         ...(linkUrl ? { linkUrl } : {}),
         ...(depFieldKey ? { fieldKey: depFieldKey } : {}),
       })
-      dependencyItems = [...dependencyItems, { ...created, checklistStatus: null }]
+      dependencyItems = withItem(dependencyItems, { ...created, checklistStatus: null }, 'end')
       depSystemName = ''
       depSystemType = 'other'
       depNotes = ''
@@ -990,8 +1007,10 @@
     data.credential?.visibleFieldValues ?? {}
   )
 
-  let editingFieldSet = $state(false)
-  let editFields = $state<FieldDraft[]>([])
+  // Story 68.1 AC-3: the field-set editor is pre-filled with this credential's revealed values,
+  // so it closes and clears when the record changes (never sourced from `data`).
+  let editingFieldSet = $derived(resetOn(credentialKey, false))
+  let editFields = $derived(resetOn(credentialKey, [] as FieldDraft[]))
   let fieldSetErrors = $state<Record<number, string>>({})
   let fieldSetFormError = $state<string | null>(null)
   let loadingFieldSet = $state(false)
