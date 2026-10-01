@@ -16,7 +16,8 @@
     "test": "vitest run --coverage",
     "test:coverage-buffer": "rm -rf coverage && vitest run --coverage && tsx scripts/check-coverage-buffer.ts",
     "test:e2e": "playwright test",
-    "typecheck": "pnpm run paraglide:compile && svelte-kit sync && tsc --noEmit"
+    "check:svelte": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "typecheck": "pnpm run paraglide:compile && svelte-kit sync && tsc --noEmit && pnpm run check:svelte"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

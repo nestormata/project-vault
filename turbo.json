@@ -51,6 +51,9 @@
     "@project-vault/vault-action#typecheck": {
       "dependsOn": ["^build"]
     },
+    "@project-vault/web#typecheck": {
+      "dependsOn": ["^build"]
+    },
     "dev": {
       "cache": false,
       "persistent": true
