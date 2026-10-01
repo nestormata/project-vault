@@ -99,7 +99,9 @@ export function expectAction<A extends Record<string, unknown>, K extends keyof 
   actions: A,
   name: K
 ): NonNullable<A[K]> {
-  const action = actions[name]
+  // Own properties only: an inherited `Object.prototype` member is never a form action.
+  if (!Object.hasOwn(actions, name)) throw new Error(`no "${name}" action`)
+  const { [name]: action } = actions
   if (action === undefined || action === null) throw new Error(`no "${name}" action`)
   return action
 }
