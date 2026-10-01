@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import {
   CHILD_MAX_BUFFER_BYTES,
@@ -312,6 +313,18 @@ describe('child environment', () => {
 
   it('passes the rest of the parent environment through', () => {
     expect(childEnvironment({ HOME: '/home/x' })).toEqual({ HOME: '/home/x', NODE_V8_COVERAGE: '' })
+  })
+})
+
+describe('parent-side module cost', () => {
+  // The coverage-instrumented workers that only compare snapshots must not load the 9 MB
+  // TypeScript compiler: under nightly contention they would compete for CPU with the child.
+  it('loads the runner and the snapshot compare without loading the TypeScript compiler', () => {
+    const loaded = Object.keys(createRequire(import.meta.url).cache).filter((path) =>
+      path.endsWith('/typescript/lib/typescript.js')
+    )
+
+    expect(loaded).toEqual([])
   })
 })
 

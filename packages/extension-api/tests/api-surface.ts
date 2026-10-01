@@ -7,8 +7,17 @@ import semver from 'semver'
 
 // Story 66-6: `typescript` is a CommonJS package without a "type" field, so an ESM `import`
 // makes Node syntax-scan the 9 MB typescript.js to detect its module format (~135 ms of the
-// child's ~940 ms CPU profile). `require` loads it as CommonJS directly.
-const ts: typeof TypeScript = createRequire(import.meta.url)('typescript')
+// child's ~940 ms CPU profile). `require` loads it as CommonJS directly. It is also loaded
+// lazily, only by the generator: the coverage-instrumented workers that merely compare
+// snapshots (src/api-surface.test.ts, tests/surface-runner.test.ts) never pay for it, so they
+// do not compete for CPU with the generation child under nightly contention.
+const requireFromHere = createRequire(import.meta.url)
+let typescriptModule: typeof TypeScript | undefined
+
+function typescript(): typeof TypeScript {
+  typescriptModule ??= requireFromHere('typescript') as typeof TypeScript
+  return typescriptModule
+}
 
 const SNAPSHOT_NAME = 'api-surface.snapshot.md'
 
@@ -146,6 +155,7 @@ export function applySinceAnnotations(
 
 /** The target's default lib without DOM/ScriptHost: lib.es2022.full.d.ts -> lib.es2022.d.ts. */
 function ecmaScriptLib(options: TypeScript.CompilerOptions): string {
+  const ts = typescript()
   const full = ts.getDefaultLibFileName(options)
   return full === 'lib.d.ts' ? 'lib.es5.d.ts' : full.replace(/\.full\.d\.ts$/, '.d.ts')
 }
@@ -155,6 +165,7 @@ function compiler(root: string): {
   checker: TypeScript.TypeChecker
   source: TypeScript.SourceFile
 } {
+  const ts = typescript()
   const config = ts.readConfigFile(join(root, 'tsconfig.json'), ts.sys.readFile)
   if (config.error) throw new Error(ts.flattenDiagnosticMessageText(config.error.messageText, '\n'))
   const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, root)
@@ -181,6 +192,7 @@ function compiler(root: string): {
 }
 
 function assertNoSourceDiagnostics(program: TypeScript.Program, sourceDir: string): void {
+  const ts = typescript()
   const prefix = `${sourceDir.replaceAll('\\', '/').replace(/\/$/, '')}/`
   const messages = program
     .getSourceFiles()
@@ -201,6 +213,7 @@ function typeText(
   type: TypeScript.Type,
   source: TypeScript.Node
 ): string {
+  const ts = typescript()
   return checker.typeToString(
     type,
     source,
@@ -216,6 +229,7 @@ function renderTypeMembers(
   indent: string,
   seen: Set<number>
 ): string[] {
+  const ts = typescript()
   if (
     (type.flags & ts.TypeFlags.Object) === 0 ||
     checker.isArrayType(type) ||
@@ -259,6 +273,7 @@ function renderSignatures(
   source: TypeScript.Node,
   indent: string
 ): string[] {
+  const ts = typescript()
   return checker
     .getSignaturesOfType(type, ts.SignatureKind.Call)
     .map(
@@ -300,6 +315,7 @@ function renderType(
 }
 
 export function generateSurfaceSnapshot(root: string): string {
+  const ts = typescript()
   const { program, checker, source } = compiler(root)
   const moduleSymbol = checker.getSymbolAtLocation(source)
   if (!moduleSymbol) throw new Error('could not resolve index.ts module symbol')
