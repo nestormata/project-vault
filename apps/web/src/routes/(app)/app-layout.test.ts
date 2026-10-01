@@ -25,6 +25,7 @@ vi.mock('$lib/api/auth.js', () => ({
   logout: vi.fn(async () => undefined),
 }))
 
+import { appLayoutData, type AppLayoutData } from '$lib/test/page-data.js'
 import Layout from './+layout.svelte'
 
 beforeEach(() => {
@@ -44,13 +45,13 @@ describe('/(app) +layout.svelte', () => {
   it('renders the onboarding wizard (not children) when onboarding is not completed', () => {
     render(Layout, {
       props: {
-        data: {
+        data: appLayoutData({
           user: onboardingTestUser,
           onboardingCompleted: false,
           projects: [onboardingTestProject],
           importRouteLive: true,
           unreadCount: 2,
-        },
+        }),
         children: childrenSnippet(),
       },
     })
@@ -62,13 +63,13 @@ describe('/(app) +layout.svelte', () => {
   it('renders the page children (not the wizard) when onboarding is completed', () => {
     render(Layout, {
       props: {
-        data: {
+        data: appLayoutData({
           user: onboardingTestUser,
           onboardingCompleted: true,
           projects: [],
           importRouteLive: false,
           unreadCount: 0,
-        },
+        }),
         children: childrenSnippet(),
       },
     })
@@ -80,12 +81,12 @@ describe('/(app) +layout.svelte', () => {
   it('defaults the initial unread count to 0 when data.unreadCount is undefined', () => {
     render(Layout, {
       props: {
-        data: {
+        data: appLayoutData({
           user: onboardingTestUser,
           onboardingCompleted: true,
           projects: [],
           importRouteLive: false,
-        },
+        }),
         children: childrenSnippet(),
       },
     })
@@ -99,13 +100,13 @@ describe('/(app) +layout.svelte', () => {
   it('passes through a defined unread count to AppShell (badge visible)', () => {
     render(Layout, {
       props: {
-        data: {
+        data: appLayoutData({
           user: onboardingTestUser,
           onboardingCompleted: true,
           projects: [],
           importRouteLive: false,
           unreadCount: 9,
-        },
+        }),
         children: childrenSnippet(),
       },
     })
@@ -141,13 +142,13 @@ describe('/(app) +layout.svelte', () => {
 
     render(Layout, {
       props: {
-        data: {
+        data: appLayoutData({
           user: onboardingTestUser,
           onboardingCompleted: false,
           projects: [onboardingTestProject],
           importRouteLive: false,
           unreadCount: 0,
-        },
+        }),
         children: childrenSnippet(),
       },
     })
@@ -182,13 +183,13 @@ describe('/(app) +layout.svelte', () => {
 
     render(Layout, {
       props: {
-        data: {
+        data: appLayoutData({
           user: onboardingTestUser,
           onboardingCompleted: false,
           projects: [onboardingTestProject],
           importRouteLive: false,
           unreadCount: 0,
-        },
+        }),
         children: childrenSnippet(),
       },
     })
@@ -209,19 +210,8 @@ describe('/(app) +layout.svelte', () => {
       sessionStorage.clear()
     })
 
-    function baseData(overrides: Record<string, unknown> = {}) {
-      return {
-        user: onboardingTestUser,
-        onboardingCompleted: true,
-        projects: [],
-        importRouteLive: false,
-        unreadCount: 0,
-        appliedTheme: null,
-        orphanedNotice: false,
-        orphanedThemeName: null,
-        themeCss: '',
-        ...overrides,
-      }
+    function baseData(overrides: Partial<AppLayoutData> = {}): AppLayoutData {
+      return appLayoutData({ user: onboardingTestUser, ...overrides })
     }
 
     it('AC-2: renders the applied theme as a data-theme attribute (no FOUC — set directly, not after mount)', () => {
@@ -299,19 +289,19 @@ describe('/(app) +layout.svelte', () => {
   // from a later load (e.g. onboarding finished in another tab, then a navigation/invalidate)
   // must replace the value captured at first mount.
   it('stale state: a later load reporting onboarding completed reveals the page without a remount', async () => {
-    const pending = {
+    const pending = appLayoutData({
       user: onboardingTestUser,
       onboardingCompleted: false,
       projects: [onboardingTestProject],
       importRouteLive: true,
       unreadCount: 0,
-    }
+    })
     const { rerender } = render(Layout, {
       props: { data: pending, children: childrenSnippet() },
     })
     expect(screen.getByText(/Welcome to Project Vault/i)).toBeTruthy()
 
-    await rerender({ data: { ...pending, onboardingCompleted: true } })
+    await rerender({ data: appLayoutData({ ...pending, onboardingCompleted: true }) })
 
     expect(screen.getByText('protected app content')).toBeTruthy()
     expect(screen.queryByText(/Welcome to Project Vault/i)).toBeNull()

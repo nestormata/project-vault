@@ -18,6 +18,8 @@ vi.mock('$app/state', () => ({
   page: { url: new URL('http://localhost/dashboard') },
 }))
 
+import type { AuthUser } from '$lib/api/auth.js'
+import { testAuthUser } from '$lib/test/page-data.js'
 import AppShell from './AppShell.svelte'
 
 afterEach(async () => {
@@ -34,21 +36,8 @@ function childrenSnippet(text = 'page body') {
   }))
 }
 
-function baseUser(overrides: Record<string, unknown> = {}) {
-  return {
-    orgId: 'org-1',
-    orgName: 'Acme Inc',
-    orgRole: 'owner',
-    isPlatformOperator: false,
-    mfaStatus: {
-      enrollmentRequired: false,
-      gracePeriodActive: false,
-      gracePeriodExpiresAt: null,
-      gracePeriodDaysRemaining: null,
-      bannerMessage: null,
-    },
-    ...overrides,
-  }
+function baseUser(overrides: Partial<AuthUser> = {}): AuthUser {
+  return testAuthUser({ orgId: 'org-1', orgName: 'Acme Inc', orgRole: 'owner', ...overrides })
 }
 
 describe('AppShell.svelte', () => {

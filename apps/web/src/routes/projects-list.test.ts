@@ -4,7 +4,7 @@ import { ApiClientError } from '$lib/api/client.js'
 import { apiClientError } from '$lib/test/api-error.js'
 
 const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
-const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
+const gotoMock = vi.hoisted(() => vi.fn(async (_url: string | URL) => {}))
 const updateProjectTagsMock = vi.hoisted(() => vi.fn())
 const archiveProjectMock = vi.hoisted(() => vi.fn())
 const unarchiveProjectMock = vi.hoisted(() => vi.fn())
@@ -24,28 +24,29 @@ vi.mock('$lib/api/projects.js', async (importOriginal) => {
   }
 })
 
+import type { ComponentProps } from 'svelte'
+import type { ProjectSummary } from '@project-vault/shared'
+import { appLayoutData } from '$lib/test/page-data.js'
+import { sampleProjectSummary } from '$lib/test/fixtures.js'
 import ProjectsListPage from './(app)/projects/+page.svelte'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
-function makeProject(overrides: Record<string, unknown> = {}) {
-  return {
+function makeProject(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
+  return sampleProjectSummary({
     id: projectId,
     name: 'Payments API',
     slug: 'payments-api',
-    description: null,
-    role: 'member' as const,
-    credentialCount: 0,
-    expiringCount: 0,
-    alertCount: 0,
-    tags: [] as string[],
-    isArchived: false,
+    role: 'member',
     ...overrides,
-  }
+  })
 }
 
-function baseData(items: ReturnType<typeof makeProject>[] = [makeProject()]) {
+type Data = ComponentProps<typeof ProjectsListPage>['data']
+
+function baseData(items: ProjectSummary[] = [makeProject()]): Data {
   return {
+    ...appLayoutData(),
     projects: { items, total: items.length, page: 1, limit: 20, hasNext: false },
     includeArchived: false,
   }

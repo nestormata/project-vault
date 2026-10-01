@@ -1,5 +1,8 @@
 import { vi } from 'vitest'
 import type { fireEvent, screen } from '@testing-library/dom'
+import type { fireEvent as svelteFireEvent } from '@testing-library/svelte'
+import type { ProjectSummary } from '@project-vault/shared'
+import { sampleProjectSummary } from '$lib/test/fixtures.js'
 import type { AuthUser } from '$lib/api/auth.js'
 
 export const onboardingTestUser: AuthUser = {
@@ -21,14 +24,13 @@ export const onboardingTestUser: AuthUser = {
   },
 }
 
-export const onboardingTestProject = {
+export const onboardingTestProject: ProjectSummary = sampleProjectSummary({
   id: 'project-1',
   name: 'Demo',
   slug: 'demo',
-  description: null,
-  role: 'owner' as const,
+  role: 'owner',
   createdAt: '',
-}
+})
 
 export const GOT_IT_BUTTON = /Got it/i
 export const CREDENTIAL_VALUE_LABEL = 'Secret value'
@@ -51,7 +53,8 @@ export function credentialCreateSuccess() {
 }
 
 type DomScreen = typeof screen
-type DomFireEvent = typeof fireEvent
+// Either @testing-library/dom's sync fireEvent or @testing-library/svelte's async one.
+type DomFireEvent = typeof fireEvent | typeof svelteFireEvent
 
 export async function goToCredentialStep(domScreen: DomScreen, domFireEvent: DomFireEvent) {
   // fireEvent may be sync (@testing-library/dom) or async (@testing-library/svelte).
