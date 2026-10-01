@@ -445,4 +445,53 @@ describe('status-page +page.svelte (Story 6.6: two-step rotation confirm and leg
     expect(screen.getByRole('button', { name: 'Regenerate link' })).toBeTruthy()
     expect(screen.queryByText(/can't be redisplayed/i)).toBeNull()
   })
+
+  // Story 68.1 AC-3: SvelteKit reuses this component when navigating from project A's status
+  // page to project B's (same route, new params). B's config must replace A's without a remount.
+  it("stale state: project A -> B navigation shows B's config, link and selected services", async () => {
+    const { rerender } = render(StatusPage, {
+      props: {
+        data: data({
+          config: {
+            enabled: true,
+            token: 'tok-a',
+            services: [{ serviceId: 'svc-1', displayName: 'Public API' }],
+          },
+        }),
+      },
+    })
+    expect(screen.getByText(/\/status\/tok-a$/)).toBeTruthy()
+    expect(screen.getByDisplayValue('Public API')).toBeTruthy()
+
+    await rerender({
+      data: data({
+        projectId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        config: { enabled: false },
+      }),
+    })
+
+    expect(screen.queryByText(/\/status\/tok-a$/)).toBeNull()
+    expect(screen.queryByDisplayValue('Public API')).toBeNull()
+    expect(screen.getByRole('button', { name: /enable public status page/i })).toBeTruthy()
+  })
+
+  // Story 68.1 AC-3 (secure-display-once): a token revealed by Regenerate on project A must never
+  // be shown as project B's link after navigating, even when B's own token is unavailable.
+  it('stale state: a freshly regenerated token for project A is not re-shown on project B', async () => {
+    const { rerender } = render(StatusPage, { props: { data: data() } })
+    await fireEvent.click(screen.getByRole('button', { name: 'Regenerate link' }))
+    regenerateStatusPageTokenMock.mockResolvedValue({ token: 'tok-fresh-a' })
+    await fireEvent.click(screen.getByRole('button', { name: /confirm.*old link stops working/i }))
+    expect(await screen.findByText(/\/status\/tok-fresh-a$/)).toBeTruthy()
+
+    await rerender({
+      data: data({
+        projectId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        config: { enabled: true, token: undefined, legacyToken: false, services: [] },
+      }),
+    })
+
+    expect(screen.queryByText(/tok-fresh-a/)).toBeNull()
+    expect(screen.getByText(/temporarily unavailable/i)).toBeTruthy()
+  })
 })

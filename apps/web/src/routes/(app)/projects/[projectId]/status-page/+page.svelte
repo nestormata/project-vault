@@ -28,28 +28,37 @@
   )
   const CAPABILITY_DENIED_HELP_ID = 'status-page-capability-denied-help'
 
-  let enabled = $state(data.config.enabled)
+  // Story 68.1 AC-3: SvelteKit reuses this component across project A -> B navigation (same
+  // route, new params), so everything seeded from `data.config` is a writable $derived: a new
+  // load resets it, and the handlers below can still update it locally.
+  let enabled = $derived(data.config.enabled)
   // Ephemeral fallback for the instant right after enable/regenerate: the POST response still
   // returns the raw token directly, but `data.config` (the last GET) hasn't been re-fetched yet
   // to include it. Once the page re-loads config, `data.config.token` takes over.
-  let freshToken = $state<string | null>(null)
-  let configToken = $state<string | null>(data.config.token ?? null)
+  // Story 68.1 AC-3: never derived from `data` (display-once secret), but remembered together
+  // with the project it was issued for, so it can never be shown as another project's link.
+  let freshToken = $state<{ projectId: string; token: string } | null>(null)
+  let configToken = $derived<string | null>(data.config.token ?? null)
   // Story 6.6 AC-4: true only for a genuine legacy row (no recoverable ciphertext was ever
   // written) — never for the transient sealed-vault case, which keeps today's neutral copy.
-  let legacyToken = $state(data.config.legacyToken ?? false)
+  let legacyToken = $derived(data.config.legacyToken ?? false)
   let errorMessage = $state<string | null>(null)
   let isBusy = $state(false)
   let copied = $state(false)
 
   type SelectedService = { serviceId: string; displayName: string }
-  const initialSelected = (data.config.services ?? []).map((s) => ({
-    serviceId: s.serviceId,
-    displayName: s.displayName,
-  }))
-  let selected = $state<SelectedService[]>(initialSelected)
-  let persistedSelected = $state<SelectedService[]>(initialSelected)
+  function persistedServices(): SelectedService[] {
+    return (data.config.services ?? []).map((s) => ({
+      serviceId: s.serviceId,
+      displayName: s.displayName,
+    }))
+  }
+  let selected = $derived<SelectedService[]>(persistedServices())
+  let persistedSelected = $derived<SelectedService[]>(persistedServices())
 
-  const activeToken = $derived(configToken ?? freshToken)
+  const activeToken = $derived(
+    configToken ?? (freshToken?.projectId === data.projectId ? freshToken.token : null)
+  )
   const publicUrl = $derived(
     activeToken ? buildAbsoluteUrl(data.origin, `/status/${activeToken}`) : null
   )
@@ -117,8 +126,9 @@
     isBusy = true
     errorMessage = null
     try {
-      const result = await enableStatusPage(fetch, data.projectId)
-      freshToken = result.token
+      const projectId = data.projectId
+      const result = await enableStatusPage(fetch, projectId)
+      freshToken = { projectId, token: result.token }
       configToken = null
       // Story 6.6: a fresh enable always writes a new encryptedToken, so any legacy state carried
       // over from a previously-disabled legacy row no longer applies.
@@ -139,8 +149,9 @@
     isBusy = true
     errorMessage = null
     try {
-      const result = await regenerateStatusPageToken(fetch, data.projectId)
-      freshToken = result.token
+      const projectId = data.projectId
+      const result = await regenerateStatusPageToken(fetch, projectId)
+      freshToken = { projectId, token: result.token }
       configToken = null
       legacyToken = false
       copied = false
