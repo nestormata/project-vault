@@ -50,7 +50,9 @@ async function main(): Promise<void> {
       )
     )
     if (result.status !== 'ok') {
-      process.stderr.write(`Admin pool preflight failed: ${result.status}.\n`)
+      // Story 66.4 AC-4: status plus the allowlisted reason code, still no DSN or driver text.
+      const reason = result.status === 'unreachable' ? ` (${result.reason ?? 'unknown'})` : ''
+      process.stderr.write(`Admin pool preflight failed: ${result.status}${reason}.\n`)
       process.exitCode = 1
     } else {
       process.stdout.write(

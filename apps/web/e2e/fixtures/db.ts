@@ -9,8 +9,13 @@ import { randomUUID } from 'node:crypto'
 // reading that row directly is this suite's documented substitute for real email delivery
 // infrastructure (AC-J2-1's own "verify the actual shipped mechanism" note).
 
-function dbHostPort(): string {
+export function dbHostPort(): string {
   return process.env['DB_HOST_PORT'] ?? '5432'
+}
+
+/** Re-points a Postgres URL at another database on the same server (isolated-stack journeys). */
+export function withDatabase(url: string, dbName: string): string {
+  return url.replace(/\/[^/]+$/, `/${dbName}`)
 }
 
 export function superuserDatabaseUrl(): string {
@@ -28,6 +33,18 @@ export function appDatabaseUrl(): string {
 }
 
 /**
+ * Story 66.4 AC-5: the vault_admin (BYPASSRLS admin pool) URL, mirroring docker-compose.yml's
+ * `${VAULT_ADMIN_PASSWORD:-password}` so the isolated API uses the credential the stack set.
+ */
+export function adminDatabaseUrl(): string {
+  const password = encodeURIComponent(process.env['VAULT_ADMIN_PASSWORD'] ?? 'password')
+  return (
+    process.env['E2E_ADMIN_DATABASE_URL'] ??
+    `postgresql://vault_admin:${password}@localhost:${dbHostPort()}/project_vault`
+  )
+}
+
+/**
  * Marks a user MFA-enrolled directly against the DB, bypassing real TOTP enrollment — used by
  * journeys that need an MFA-gated code path exercised (e.g. a login flow) without needing a real
  * TOTP secret to answer a challenge with. Callers must log the user in BEFORE calling this:
@@ -36,7 +53,7 @@ export function appDatabaseUrl(): string {
  * flagged the clone).
  */
 export async function enrollMfaDirect(userId: string, dbName: string): Promise<void> {
-  const dbUrl = superuserDatabaseUrl().replace(/\/[^/]+$/, `/${dbName}`)
+  const dbUrl = withDatabase(superuserDatabaseUrl(), dbName)
   const sql = postgres(dbUrl, { max: 1 })
   try {
     await sql`update users set mfa_enrolled_at = now() where id = ${userId}`

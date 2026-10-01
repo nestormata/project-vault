@@ -67,8 +67,10 @@ isolation results. The API refuses to start if `DATABASE_URL` names `postgres`, 
 * `make bootstrap`, which runs the equivalent `ALTER ROLE` after migrating, or
 * `make ci-inner` / CI, for the test database.
 
-If you migrate a database by hand and skip all three, the API fails with
-`password authentication failed for user "vault_admin"`.
+If you migrate a database by hand and skip all three, the API refuses to start with a
+`startup.failed` line on stderr reading
+`API will not start: ADMIN_DATABASE_URL could not reach the configured role (reason: auth_failed); …`
+(`password authentication failed for user "vault_admin"` is what `psql` prints, not the API).
 
 Inside Docker Compose, the API uses hostname `db` instead of `localhost`:
 

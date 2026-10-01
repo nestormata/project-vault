@@ -93,6 +93,31 @@ before failing, so the cause is in the output.
   **every** journey. Also go through `test:e2e`, not `pnpm exec playwright test`: j26's isolated
   stack needs the `npm_execpath` a pnpm script sets.
 
+### Isolated-stack journeys (j19-j22, j25-j27)
+
+These journeys spawn their own `apps/api` process (tsx, `NODE_ENV=test`) against a dedicated
+database on the e2e Postgres (Story 66.4):
+
+- A boot failure always prints one `startup.failed` JSON line on the API's stderr (shown as
+  `[api-…:<port>] …`), and the fixture fails within a second with
+  `isolated api <label>:<port> exited before /health (code=…, signal=…): <reason>` instead of a
+  20 s `/health` timeout.
+- The API is quiet by default (`LOG_LEVEL=silent`). Set one knob to see its normal logs:
+  `J19_DEBUG_LOG_LEVEL`, `J20_DEBUG_LOG_LEVEL`, `J25_DEBUG_LOG_LEVEL`, `J26_DEBUG_LOG_LEVEL`,
+  `J27_DEBUG_LOG_LEVEL`, `E2E_AUDIT_QUOTA_LOG_LEVEL` (j21), `E2E_AUDIT_RATE_LIMIT_LOG_LEVEL` (j22),
+  e.g. `J19_DEBUG_LOG_LEVEL=info`.
+- Before spawning, the fixture runs `SELECT 1` as `vault_app` and as `vault_admin`. The
+  `vault_admin` URL is `E2E_ADMIN_DATABASE_URL` if set, else it uses `VAULT_ADMIN_PASSWORD`
+  (default `password`), mirroring Compose's `${VAULT_ADMIN_PASSWORD:-password}`. If your stack
+  uses a non-default `VAULT_ADMIN_PASSWORD`, export the same value in the Playwright shell
+  (`make e2e` does not read it from your env file).
+- If `vault_admin` has no password yet (a freshly migrated DB) and `E2E_CONFIRM_DB_RESET=true`,
+  the fixture sets it once and prints
+  `[isolated-stack] provisioned vault_admin credential on localhost:<port> (role had no password)`.
+  It only does so when both the superuser URL and the `vault_admin` URL are loopback on this
+  worktree's `DB_HOST_PORT`, never overwrites an existing password, and never touches
+  `vault_app`.
+
 ### Handoff on the E2E stack
 
 Since Story 60.6 the E2E stack runs the CentralizeMe -> PV handoff for real, so
@@ -190,10 +215,14 @@ The following is known to work in a fresh git worktree with no prior local setup
    The password is provisioned separately: by Compose's `admin-provision` service (which
    `make docker-up` / `make bootstrap-docker` bring up), by `make bootstrap`, or by
    `make ci-inner` for the test database. If you migrated the volume directly, as in step 2, none
-   of those ran, and the API boots into
-   `password authentication failed for user "vault_admin"` /
-   `ADMIN_DATABASE_URL could not reach the configured role`. Fix it once per container (the
-   `vault_app` line is only needed if that password was changed too):
+   of those ran, and the API refuses to start with one `startup.failed` JSON line on **stderr**
+   whose `err.message` reads
+   `API will not start: ADMIN_DATABASE_URL could not reach the configured role (reason: auth_failed); …`
+   (`password authentication failed for user "vault_admin"` is what `psql` prints; the API only
+   reports the allowlisted reason code). The isolated e2e fixtures (j19-j27) provision a
+   passwordless `vault_admin` themselves when `E2E_CONFIRM_DB_RESET=true` (as `make e2e` sets);
+   for `pnpm turbo dev` fix it once per container (the `vault_app` line is only needed if that
+   password was changed too):
 
    ```bash
    docker exec <worktree-dir-name>-db-1 psql -U postgres -d project_vault \
