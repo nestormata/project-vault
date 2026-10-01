@@ -444,8 +444,8 @@ describe('base image pin guard', () => {
     it('T17: tag+digest and bare digest are the same family and digest, with ports in names', () => {
       expect(pinOf(`${FLOATING}@${D('c')}`)).toEqual({ image: 'postgres', digest: D('c') })
       expect(pinOf(`postgres@${D('c')}`)).toEqual({ image: 'postgres', digest: D('c') })
-      expect(pinOf(`localhost:5000/team/img@${D('c')}`)).toEqual({
-        image: 'localhost:5000/team/img',
+      expect(pinOf(`registry.example.com:5000/team/img@${D('c')}`)).toEqual({
+        image: 'registry.example.com:5000/team/img',
         digest: D('c'),
       })
       expect(pinOf(`ghcr.io/org/img:1@${D('C')}`)?.digest).toBe(D('c'))
