@@ -19,3 +19,5 @@ allowBuilds:
   argon2: true
   bcrypt: false
   esbuild: true
+patchedDependencies:
+  '@stryker-mutator/vitest-runner': patches/@stryker-mutator__vitest-runner.patch

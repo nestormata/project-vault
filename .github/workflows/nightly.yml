@@ -10,8 +10,18 @@ permissions:
 
 jobs:
   mutation:
-    name: Mutation Testing (Stryker)
+    name: Mutation Testing (Stryker, ${{ matrix.shard }})
     runs-on: ubuntu-latest
+    # Story 66-7: one leg per mutate shard (stryker.config.mjs SHARDS), each with its own Postgres
+    # service and its own dry run. PROVISIONAL 120 min per leg (Story 66-7 AC-4): no
+    # measured dry-run time exists yet (api leg: 167 related spec files, serial). After the first
+    # nightly dispatch, set this to measured dry run + mutation phase + headroom (the job summary
+    # prints the dry-run duration). Add shards, not minutes.
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [api, db]
     # Derived from the postgres: service block below — keep in sync if it changes.
     env:
       SUPERUSER_DATABASE_URL: postgresql://postgres:password@localhost:5432/project_vault
@@ -70,13 +80,34 @@ jobs:
         run: psql "$SUPERUSER_DATABASE_URL" -v ON_ERROR_STOP=1 -c "ALTER ROLE vault_admin PASSWORD 'password'"
 
       - name: Run Stryker mutation tests
-        run: pnpm stryker run
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm stryker run 2>&1 | tee stryker.log
         env:
+          STRYKER_SHARD: ${{ matrix.shard }}
           # Must use vault_app, not postgres — the postgres superuser bypasses RLS
           # entirely, which would make the RLS isolation tests pass even if policies
           # were broken or missing.
           DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
           ADMIN_DATABASE_URL: postgresql://vault_admin:password@localhost:5432/project_vault
+
+      - name: Summarise measured Stryker durations
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Stryker (${{ matrix.shard }}) measured durations"
+            grep -E "Starting initial test run|Initial test run succeeded|Done in|Final mutation score" stryker.log || echo "no Stryker timing lines found"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report-${{ matrix.shard }}
+          path: reports/mutation/
+          if-no-files-found: ignore
 
   flaky-test-repeat:
     name: Flaky Test Repeat Run

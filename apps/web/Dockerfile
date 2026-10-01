@@ -8,6 +8,9 @@ WORKDIR /app
 
 COPY package.json pnpm-workspace.yaml ./
 COPY pnpm-lock.yaml ./
+# Story 66-7: pnpm-workspace.yaml patchedDependencies points at patches/; a frozen-lockfile install
+# fails with ERR_PNPM_PATCH_NOT_FOUND without it (the patched Stryker runner is dev-only).
+COPY patches ./patches
 COPY apps/web/package.json ./apps/web/
 COPY packages/tsconfig/package.json ./packages/tsconfig/
 COPY packages/shared/package.json ./packages/shared/

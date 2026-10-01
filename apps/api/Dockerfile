@@ -12,6 +12,8 @@ WORKDIR /app
 
 COPY package.json pnpm-workspace.yaml ./
 COPY pnpm-lock.yaml ./
+# Story 66-7: see apps/web/Dockerfile (patchedDependencies needs patches/ for the frozen install).
+COPY patches ./patches
 # Keep production deploys aligned with the repository workspace policy: without this file,
 # pnpm deploy creates broken workspace symlinks instead of injecting packed workspace packages.
 COPY .npmrc ./
