@@ -5,6 +5,7 @@
 import type {
   CredentialDependency,
   CredentialDetail,
+  CredentialSummary,
   CredentialVersionSummary,
   ProjectDashboard,
   ProjectOverview,
@@ -189,6 +190,28 @@ export function sampleProjectDashboard(
     unresolvedAlertCount: 0,
     isEmpty: false,
     suggestedActions: [],
+    ...overrides,
+  }
+}
+
+export function sampleCredentialSummary(
+  overrides: Partial<CredentialSummary> = {}
+): CredentialSummary {
+  return {
+    id: SAMPLE_CREDENTIAL_ID,
+    projectId: SAMPLE_PROJECT_ID,
+    name: 'Sample secret',
+    description: null,
+    tags: [],
+    status: 'active',
+    expiresAt: null,
+    rotationSchedule: null,
+    currentVersionNumber: 1,
+    hasDependencies: false,
+    createdAt: CREATED_AT,
+    updatedAt: CREATED_AT,
+    activeRotation: null,
+    archivedAt: null,
     ...overrides,
   }
 }

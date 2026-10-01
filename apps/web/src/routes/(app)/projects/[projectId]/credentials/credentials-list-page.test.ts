@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
 import type { ComponentProps } from 'svelte'
 import { projectLayoutData } from '$lib/test/page-data.js'
+import { sampleCredentialSummary } from '$lib/test/fixtures.js'
 import CredentialsListPage from './+page.svelte'
 
 afterEach(() => cleanup())
@@ -9,27 +10,29 @@ afterEach(() => cleanup())
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
 type Data = ComponentProps<typeof CredentialsListPage>['data']
+/** The loaded list (not the project-not-found fallback). */
+type LoadedData = Exclude<Data, { notFound: true }>
 
-function baseData(overrides: Partial<Data> = {}): Data {
+function baseData(overrides: Partial<LoadedData> = {}): LoadedData {
   return {
     ...projectLayoutData(),
     projectId,
     orgRole: 'owner',
-    filters: { q: '', status: '', tags: '', page: 1 },
+    filters: { q: '', status: '', tags: '', page: 1, includeArchived: false },
     credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
     ...overrides,
   }
 }
 
-const CREDENTIAL = {
+const CREDENTIAL = sampleCredentialSummary({
   id: 'cred-1',
+  projectId,
   name: 'Stripe Secret Key',
-  status: 'active' as const,
+  status: 'active',
   tags: ['payments', 'prod'],
   expiresAt: '2026-08-01T00:00:00.000Z',
   hasDependencies: true,
-  activeRotation: null,
-}
+})
 
 describe('project credentials list +page.svelte', () => {
   it('an owner without active filters sees an "add your first credential" empty state', () => {
@@ -44,7 +47,11 @@ describe('project credentials list +page.svelte', () => {
 
   it('an active filter with no results shows "try adjusting your filters" and a Clear link', () => {
     render(CredentialsListPage, {
-      props: { data: baseData({ filters: { q: 'nomatch', status: '', tags: '', page: 1 } }) },
+      props: {
+        data: baseData({
+          filters: { q: 'nomatch', status: '', tags: '', page: 1, includeArchived: false },
+        }),
+      },
     })
     expect(screen.getByText(/try adjusting your filters/i)).toBeTruthy()
     expect(screen.getByRole('link', { name: /clear/i })).toBeTruthy()

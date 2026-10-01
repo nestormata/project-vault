@@ -3,6 +3,11 @@ import { cleanup, render, screen } from '@testing-library/svelte'
 import { tick } from 'svelte'
 import type { ActionResult, SubmitFunction } from '@sveltejs/kit'
 import { routeExists } from '$lib/test/route-exists.js'
+import type { InboxEntry } from '$lib/api/inbox.js'
+import type {
+  DormancyAlertView,
+  UserDormancyAlertView,
+} from '$lib/notifications/dormancy-alerts.js'
 
 // Story 68.1 AC-5 (C4): results shaped like SvelteKit's real ActionResult union.
 const successResult: ActionResult = { type: 'success', status: 200 }
@@ -35,7 +40,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-const userDormantAlertView = {
+const userDormantAlertView: UserDormancyAlertView = {
   id: 'alert-2',
   userId: 'user-1',
   displayName: 'jsmith@example.com',
@@ -44,13 +49,15 @@ const userDormantAlertView = {
   createdAt: '2026-07-01T00:00:00.000Z',
 }
 
-const unreadNotification = {
+const unreadNotification: InboxEntry = {
   id: 'notification-1',
   title: 'API unavailable',
   body: 'The production API is down.',
   severity: 'critical',
   alertType: 'service.down',
   projectId: 'project-1',
+  resourceId: null,
+  resourceType: null,
   readAt: null,
   createdAt: '2026-07-10T00:00:00.000Z',
 }
@@ -387,7 +394,7 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
   })
 
   it('renders machine-key dormancy variants and cancels or accepts key revocation', async () => {
-    const alerts = [
+    const alerts: DormancyAlertView[] = [
       {
         id: 'machine-alert-1',
         projectId: 'project-1',
@@ -396,6 +403,7 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
         keyId: 'key-1',
         keyName: 'Production',
         lastUsedAt: null,
+        createdAt: '2026-07-01T00:00:00.000Z',
       },
       {
         id: 'machine-alert-2',
@@ -405,6 +413,7 @@ describe('/notifications +page.svelte (Story 8.7 AC group H / AC-A3)', () => {
         keyId: 'key-2',
         keyName: 'Nightly',
         lastUsedAt: '2026-07-01T00:00:00.000Z',
+        createdAt: '2026-07-01T00:00:00.000Z',
       },
     ]
     vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)

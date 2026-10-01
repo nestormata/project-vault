@@ -43,8 +43,13 @@ afterEach(() => {
 const projectId = 'proj-1'
 const machineUserId = 'mu-1'
 
-function baseMachineUser(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof MachineUserDetailPage>['data']
+type MachineUser = NonNullable<Data['machineUser']>
+type ApiKey = Data['apiKeys']['items'][number]
+
+function baseMachineUser(overrides: Partial<MachineUser> = {}): MachineUser {
   return {
+    createdBy: null,
     id: machineUserId,
     projectId,
     name: 'ci-deploy-bot',
@@ -57,7 +62,15 @@ function baseMachineUser(overrides: Record<string, unknown> = {}) {
   }
 }
 
-type Data = ComponentProps<typeof MachineUserDetailPage>['data']
+function apiKey(overrides: Partial<ApiKey> & Pick<ApiKey, 'id' | 'name'>): ApiKey {
+  return {
+    expiresAt: null,
+    lastUsedAt: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    isRevoked: false,
+    ...overrides,
+  }
+}
 
 function baseData(overrides: Partial<Data> = {}): Data {
   return {
@@ -146,13 +159,13 @@ describe('machine-user detail +page.svelte', () => {
           machineUser: baseMachineUser({ createdAt: '2026-01-01T00:00:00.000Z' }),
           apiKeys: {
             items: [
-              {
+              apiKey({
                 id: 'key-1',
                 name: 'ci key',
                 isRevoked: false,
                 expiresAt: null,
                 lastUsedAt: null,
-              },
+              }),
             ],
             total: 1,
           },
@@ -171,7 +184,13 @@ describe('machine-user detail +page.svelte', () => {
           orgRole: 'viewer',
           apiKeys: {
             items: [
-              { id: 'key-1', name: 'ci key', isRevoked: false, expiresAt: null, lastUsedAt: null },
+              apiKey({
+                id: 'key-1',
+                name: 'ci key',
+                isRevoked: false,
+                expiresAt: null,
+                lastUsedAt: null,
+              }),
             ],
             total: 1,
           },
@@ -196,7 +215,13 @@ describe('machine-user detail +page.svelte', () => {
         data: baseData({
           apiKeys: {
             items: [
-              { id: 'key-1', name: 'old key', isRevoked: true, expiresAt: null, lastUsedAt: null },
+              apiKey({
+                id: 'key-1',
+                name: 'old key',
+                isRevoked: true,
+                expiresAt: null,
+                lastUsedAt: null,
+              }),
             ],
             total: 1,
           },
@@ -214,7 +239,13 @@ describe('machine-user detail +page.svelte', () => {
         data: baseData({
           apiKeys: {
             items: [
-              { id: 'key-1', name: 'ci key', isRevoked: false, expiresAt: null, lastUsedAt: null },
+              apiKey({
+                id: 'key-1',
+                name: 'ci key',
+                isRevoked: false,
+                expiresAt: null,
+                lastUsedAt: null,
+              }),
             ],
             total: 1,
           },
@@ -291,7 +322,13 @@ describe('machine-user detail +page.svelte', () => {
         data: baseData({
           apiKeys: {
             items: [
-              { id: 'key-1', name: 'ci key', isRevoked: false, expiresAt: null, lastUsedAt: null },
+              apiKey({
+                id: 'key-1',
+                name: 'ci key',
+                isRevoked: false,
+                expiresAt: null,
+                lastUsedAt: null,
+              }),
             ],
             total: 1,
           },
@@ -321,7 +358,13 @@ describe('machine-user detail +page.svelte', () => {
         data: baseData({
           apiKeys: {
             items: [
-              { id: 'key-1', name: 'ci key', isRevoked: false, expiresAt: null, lastUsedAt: null },
+              apiKey({
+                id: 'key-1',
+                name: 'ci key',
+                isRevoked: false,
+                expiresAt: null,
+                lastUsedAt: null,
+              }),
             ],
             total: 1,
           },
@@ -347,7 +390,13 @@ describe('machine-user detail +page.svelte', () => {
         data: baseData({
           apiKeys: {
             items: [
-              { id: 'key-1', name: 'ci key', isRevoked: false, expiresAt: null, lastUsedAt: null },
+              apiKey({
+                id: 'key-1',
+                name: 'ci key',
+                isRevoked: false,
+                expiresAt: null,
+                lastUsedAt: null,
+              }),
             ],
             total: 1,
           },
@@ -370,7 +419,13 @@ describe('machine-user detail +page.svelte', () => {
         data: baseData({
           apiKeys: {
             items: [
-              { id: 'key-1', name: 'ci key', isRevoked: false, expiresAt: null, lastUsedAt: null },
+              apiKey({
+                id: 'key-1',
+                name: 'ci key',
+                isRevoked: false,
+                expiresAt: null,
+                lastUsedAt: null,
+              }),
             ],
             total: 1,
           },
@@ -393,7 +448,13 @@ describe('machine-user detail +page.svelte', () => {
         data: baseData({
           apiKeys: {
             items: [
-              { id: 'key-1', name: 'ci key', isRevoked: false, expiresAt: null, lastUsedAt: null },
+              apiKey({
+                id: 'key-1',
+                name: 'ci key',
+                isRevoked: false,
+                expiresAt: null,
+                lastUsedAt: null,
+              }),
             ],
             total: 1,
           },
@@ -423,7 +484,13 @@ describe('machine-user detail +page.svelte', () => {
         data: baseData({
           apiKeys: {
             items: [
-              { id: 'key-1', name: 'ci key', isRevoked: false, expiresAt: null, lastUsedAt: null },
+              apiKey({
+                id: 'key-1',
+                name: 'ci key',
+                isRevoked: false,
+                expiresAt: null,
+                lastUsedAt: null,
+              }),
             ],
             total: 1,
           },
@@ -446,7 +513,13 @@ describe('machine-user detail +page.svelte', () => {
         data: baseData({
           apiKeys: {
             items: [
-              { id: 'key-1', name: 'ci key', isRevoked: false, expiresAt: null, lastUsedAt: null },
+              apiKey({
+                id: 'key-1',
+                name: 'ci key',
+                isRevoked: false,
+                expiresAt: null,
+                lastUsedAt: null,
+              }),
             ],
             total: 1,
           },
@@ -469,7 +542,13 @@ describe('machine-user detail +page.svelte', () => {
         data: baseData({
           apiKeys: {
             items: [
-              { id: 'key-1', name: 'ci key', isRevoked: false, expiresAt: null, lastUsedAt: null },
+              apiKey({
+                id: 'key-1',
+                name: 'ci key',
+                isRevoked: false,
+                expiresAt: null,
+                lastUsedAt: null,
+              }),
             ],
             total: 1,
           },
@@ -494,7 +573,13 @@ describe('machine-user detail +page.svelte', () => {
         data: baseData({
           apiKeys: {
             items: [
-              { id: 'key-1', name: 'ci key', isRevoked: false, expiresAt: null, lastUsedAt: null },
+              apiKey({
+                id: 'key-1',
+                name: 'ci key',
+                isRevoked: false,
+                expiresAt: null,
+                lastUsedAt: null,
+              }),
             ],
             total: 1,
           },
@@ -517,7 +602,13 @@ describe('machine-user detail +page.svelte', () => {
         data: baseData({
           apiKeys: {
             items: [
-              { id: 'key-1', name: 'ci key', isRevoked: false, expiresAt: null, lastUsedAt: null },
+              apiKey({
+                id: 'key-1',
+                name: 'ci key',
+                isRevoked: false,
+                expiresAt: null,
+                lastUsedAt: null,
+              }),
             ],
             total: 1,
           },
