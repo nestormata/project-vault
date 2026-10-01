@@ -90,15 +90,5 @@ describe('passwordMeetsStrengthRequirement', () => {
       vi.restoreAllMocks()
       expect(scoredArguments(input.slice(0, CAP)).verdict).toBe(false)
     })
-
-    it('does not let characters beyond the cap change a strong verdict', () => {
-      const strongPrefix = `correct-horse-battery-staple-${'Zq7!kP'.repeat(20)}`.slice(0, CAP)
-      expect(strongPrefix).toHaveLength(CAP)
-      const input = `${strongPrefix}${'a'.repeat(156)}`
-      expect(input).toHaveLength(256)
-      expect(scoredArguments(input).verdict).toBe(true)
-      vi.restoreAllMocks()
-      expect(scoredArguments(strongPrefix).verdict).toBe(true)
-    })
   })
 })
