@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import {
   assertSurfaceSnapshotIsFresh,
   generateSurfaceSnapshot,
@@ -14,7 +13,7 @@ import {
 // in an uninstrumented child process (see surface-runner.ts). Fixture assertions never depend
 // on `__@<symbol>@<id>` numbers (DW-310).
 
-const fixtureRoot = fileURLToPath(new URL('./fixtures/surface-mini/', import.meta.url))
+const fixtureRoot = join(import.meta.dirname, 'fixtures', 'surface-mini')
 const tempRoots: string[] = []
 const NO_LIB_TSCONFIG = '{"compilerOptions":{"noLib":true,"types":[]}}'
 const SNAPSHOT_FILE = 'api-surface.snapshot.md'
@@ -22,10 +21,9 @@ const INDEX_FILE = 'src/index.ts'
 const TRUNCATION_NOTE = 'more differing lines not shown'
 const EMIT_ARGV = ['node', 'api-surface.ts', '--emit']
 
-// One read and one write call site keep the fs access to temp roots and the committed fixture.
-function readText(root: string, name: string): string {
-  return readFileSync(join(root, name), 'utf8')
-}
+// The committed fixture is read once through static paths; temp copies start out identical to it.
+const COMMITTED_SNAPSHOT = readFileSync(join(fixtureRoot, SNAPSHOT_FILE), 'utf8')
+const FIXTURE_INDEX = readFileSync(join(fixtureRoot, INDEX_FILE), 'utf8')
 
 function writeText(root: string, name: string, content: string): void {
   writeFileSync(join(root, name), content)
@@ -164,7 +162,7 @@ describe('surface renderer over the surface-mini fixture package', () => {
       'src/helper.ts',
       'export function size(input: string): number {\n  return Buffer.byteLength(input)\n}\n'
     )
-    writeText(root, INDEX_FILE, `${readText(root, INDEX_FILE)}import './helper'\n`)
+    writeText(root, INDEX_FILE, `${FIXTURE_INDEX}import './helper'\n`)
 
     expect(() => generateSurfaceSnapshot(root)).toThrow(
       /src\/helper\.ts.*Cannot find name 'Buffer'/
@@ -183,11 +181,7 @@ describe('surface renderer over the surface-mini fixture package', () => {
         'tsconfig.json',
         `{"compilerOptions":{"strict":true,"target":"${target}","types":[]},"files":["src/index.ts"]}`
       )
-      writeText(
-        root,
-        INDEX_FILE,
-        `${readText(root, INDEX_FILE)}export type Element = HTMLElement\n`
-      )
+      writeText(root, INDEX_FILE, `${FIXTURE_INDEX}export type Element = HTMLElement\n`)
 
       expect(() => generateSurfaceSnapshot(root)).toThrow(
         /src\/index\.ts.*Cannot find name 'HTMLElement'/
@@ -199,7 +193,7 @@ describe('surface renderer over the surface-mini fixture package', () => {
 describe('assertSurfaceSnapshotIsFresh (parent-side compare)', () => {
   it('reports since-index errors before comparing', () => {
     const root = tempCopy({ withSnapshot: true })
-    const committed = readText(root, SNAPSHOT_FILE)
+    const committed = COMMITTED_SNAPSHOT
     writeText(
       root,
       SNAPSHOT_FILE,
@@ -213,7 +207,7 @@ describe('assertSurfaceSnapshotIsFresh (parent-side compare)', () => {
   })
 
   it('shows the regenerate hint and at most 20 differing lines on a mismatch', () => {
-    const committed = readText(fixtureRoot, SNAPSHOT_FILE)
+    const committed = COMMITTED_SNAPSHOT
     const extra = Array.from(
       { length: 30 },
       (_, index) => `## export \`Extra${index}\`\n\n- since: 1.0.0\n`
@@ -235,7 +229,7 @@ describe('assertSurfaceSnapshotIsFresh (parent-side compare)', () => {
   })
 
   it('shows an inserted export as added lines only, not as every following line shifting', () => {
-    const committed = readText(fixtureRoot, SNAPSHOT_FILE)
+    const committed = COMMITTED_SNAPSHOT
     const anchor = '## export `Both`'
     const inserted = '## export `Added`\n\n- since: 1.0.0\n- kind: value\n- type: `1`\n\n'
     const generated = committed.replace(anchor, `${inserted}${anchor}`)
@@ -255,7 +249,7 @@ describe('assertSurfaceSnapshotIsFresh (parent-side compare)', () => {
   })
 
   it('shows both sides of a changed line', () => {
-    const committed = readText(fixtureRoot, SNAPSHOT_FILE)
+    const committed = COMMITTED_SNAPSHOT
     const generated = committed.replace('- member: `tags?`', '- member: `tags`')
 
     const result = assertSurfaceSnapshotIsFresh(fixtureRoot, generated)
@@ -274,7 +268,7 @@ describe('api-surface CLI', () => {
     const exitCode = runSurfaceCli(EMIT_ARGV, fixtureRoot, capture.io)
 
     expect(exitCode).toBe(0)
-    expect(capture.out()).toBe(readText(fixtureRoot, SNAPSHOT_FILE))
+    expect(capture.out()).toBe(COMMITTED_SNAPSHOT)
     expect(capture.err()).toBe('')
   })
 
@@ -299,7 +293,8 @@ describe('api-surface CLI', () => {
     const exitCode = runSurfaceCli([...EMIT_ARGV.slice(0, 2), '--write'], root, capture.io)
 
     expect(exitCode).toBe(0)
-    expect(readText(root, SNAPSHOT_FILE)).toBe(generateSurfaceSnapshot(root))
+    // The freshness check reads the file --write produced and compares it byte for byte.
+    expect(assertSurfaceSnapshotIsFresh(root, generateSurfaceSnapshot(root))).toEqual({ ok: true })
   })
 
   it('prints usage and exits 2 without a mode flag', () => {
