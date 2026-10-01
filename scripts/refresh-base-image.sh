@@ -72,7 +72,7 @@ cmd_resolve() {
 
 # Prints "<alpine-release> <libssl3> <libcrypto3>" for one platform of an index digest.
 base_versions() {
-  local t="$1" index="$2" arch="$3" manifest layer tmp alpine ssl crypto
+  local t="$1" index="$2" arch="$3" manifest layer tmp alpine db ssl crypto
   manifest=$(curl -fsS -H "Authorization: Bearer $t" -H "Accept: $INDEX_ACCEPT" "$REGISTRY/manifests/$index" \
     | jq -r --arg a "$arch" '.manifests[] | select(.platform.architecture==$a and .platform.os=="linux") | .digest' | head -n1)
   [[ -n "$manifest" ]] || die "no $arch manifest in $index"
@@ -80,9 +80,12 @@ base_versions() {
   tmp=$(mktemp)
   curl -fsSL -H "Authorization: Bearer $t" "$REGISTRY/blobs/$layer" -o "$tmp"
   alpine=$(tar -xzOf "$tmp" etc/alpine-release)
-  ssl=$(tar -xzOf "$tmp" lib/apk/db/installed | awk '/^P:libssl3$/{p=1;next} p&&/^V:/{print substr($0,3);exit}')
-  crypto=$(tar -xzOf "$tmp" lib/apk/db/installed | awk '/^P:libcrypto3$/{p=1;next} p&&/^V:/{print substr($0,3);exit}')
+  # Read the package db once and let awk consume all of it: an early `exit` would SIGPIPE tar and,
+  # under `set -o pipefail`, abort the script nondeterministically.
+  db=$(tar -xzOf "$tmp" lib/apk/db/installed)
   rm -f "$tmp"
+  ssl=$(awk '/^P:libssl3$/{p=1;next} p&&/^V:/{print substr($0,3);p=0}' <<<"$db" | head -n1)
+  crypto=$(awk '/^P:libcrypto3$/{p=1;next} p&&/^V:/{print substr($0,3);p=0}' <<<"$db" | head -n1)
   [[ -n "$alpine" && -n "$ssl" && -n "$crypto" ]] || die "could not read versions for $arch of $index"
   echo "$alpine $ssl $crypto"
 }

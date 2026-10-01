@@ -16,7 +16,7 @@ description.
 - [ ] **Backup restore validation.** Run
       `POST /api/v1/admin/backups/:filename/validate` against the most recent backup
       ([`backup-restore.md`](backup-restore.md)). Expected: `{"data":{"valid":true,
-    "assetsPresent":{...all true...},"checksum":"match"}}`. Record pass/fail; a failure requires
+      "assetsPresent":{...all true...},"checksum":"match"}}`. Record pass/fail; a failure requires
       immediate escalation, not a note for next quarter.
 
 - [ ] **Audit-log integrity check, both logs.** Run both `GET /api/v1/org/audit/verify` and

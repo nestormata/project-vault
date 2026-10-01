@@ -129,7 +129,19 @@ jobs:
           fi
 
       - name: Dispatch CI on the refresh branch
-        if: steps.digests.outputs.changed == 'true' && steps.push.outputs.pushed == 'true'
+        if: steps.digests.outputs.changed == 'true'
+        env:
+          PUSHED: ${{ steps.push.outputs.pushed }}
         run: |
           set -euo pipefail
+          # Recovery: when the branch was already up to date, still dispatch if no CI run exists on
+          # its head commit (e.g. the dispatch in a previous run failed), so the PR is never ungated.
+          if [[ "$PUSHED" != "true" ]]; then
+            SHA=$(gh api "repos/${GH_REPO}/branches/${BRANCH}" --jq .commit.sha)
+            RUNS=$(gh run list --workflow ci.yml --branch "$BRANCH" --event workflow_dispatch --json headSha --jq "[.[] | select(.headSha == \"${SHA}\")] | length")
+            if [[ "$RUNS" -gt 0 ]]; then
+              echo "CI already dispatched for ${SHA}."
+              exit 0
+            fi
+          fi
           gh workflow run ci.yml --ref "$BRANCH"
