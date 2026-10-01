@@ -25,7 +25,7 @@ export function deferred<T = void>() {
 }
 
 /** A real `BossService` over a mocked pg-boss client, already started (so `isStarted()` is true). */
-export async function startedMockBoss() {
+export async function startedMockBoss(): Promise<ReturnType<typeof createMockBoss>> {
   const mock = createMockBoss()
   await mock.boss.start()
   return mock
