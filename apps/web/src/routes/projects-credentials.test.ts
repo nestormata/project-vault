@@ -5,7 +5,7 @@ import { formatDateTime } from '$lib/datetime.js'
 import { ApiClientError } from '$lib/api/client.js'
 import type { CredentialSummary } from '@project-vault/shared'
 
-const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
+const gotoMock = vi.hoisted(() => vi.fn(async (_url: string | URL) => {}))
 const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
 const createCredentialMock = vi.hoisted(() => vi.fn())
 const revealCredentialValueMock = vi.hoisted(() => vi.fn())
@@ -36,6 +36,11 @@ vi.mock('$lib/api/credentials.js', async (importOriginal) => {
   }
 })
 
+import type { ComponentProps } from 'svelte'
+import type { CredentialDependencyWithChecklistStatus } from '$lib/api/credentials.js'
+import { projectLayoutData } from '$lib/test/page-data.js'
+import { nth } from '$lib/test/dom.js'
+import { sampleCredential, sampleDependency, sampleProject } from '$lib/test/fixtures.js'
 import CredentialsListPage from './(app)/projects/[projectId]/credentials/+page.svelte'
 import CreateCredentialPage from './(app)/projects/[projectId]/credentials/new/+page.svelte'
 import CredentialDetailPage from './(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte'
@@ -55,6 +60,8 @@ function makeCredential(overrides: Partial<CredentialSummary> = {}): CredentialS
     rotationSchedule: null,
     currentVersionNumber: 1,
     hasDependencies: overrides.hasDependencies ?? false,
+    activeRotation: null,
+    archivedAt: null,
     createdAt: '2026-06-01T00:00:00.000Z',
     updatedAt: '2026-06-01T00:00:00.000Z',
   }
@@ -83,8 +90,9 @@ describe('project credential routes', () => {
     render(CredentialsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
           projectId,
-          orgRole: 'member' as const,
+          orgRole: 'member',
           credentials: {
             items: [
               makeCredential({ name: 'Stripe Secret Key', status: 'expiring' }),
@@ -105,7 +113,7 @@ describe('project credential routes', () => {
             limit: 20,
             hasNext: false,
           },
-          filters: { q: '', status: '', tags: '', page: 1 },
+          filters: { q: '', status: '', tags: '', page: 1, includeArchived: false },
         },
       },
     })
@@ -120,10 +128,11 @@ describe('project credential routes', () => {
     render(CredentialsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
           projectId,
-          orgRole: 'member' as const,
+          orgRole: 'member',
           credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
-          filters: { q: '', status: '', tags: 'db, prod', page: 1 },
+          filters: { q: '', status: '', tags: 'db, prod', page: 1, includeArchived: false },
         },
       },
     })
@@ -137,12 +146,13 @@ describe('project credential routes', () => {
     render(CredentialsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
           projectId,
-          orgRole: 'member' as const,
+          orgRole: 'member',
           credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
           // Tags carries an extra hint line ("Matches credentials with ALL of these tags.")
           // that Search/Status do not have, so this is the height-mismatch case from the story.
-          filters: { q: '', status: '', tags: 'db, prod', page: 1 },
+          filters: { q: '', status: '', tags: 'db, prod', page: 1, includeArchived: false },
         },
       },
     })
@@ -181,10 +191,11 @@ describe('project credential routes', () => {
     render(CredentialsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
           projectId,
-          orgRole: 'member' as const,
+          orgRole: 'member',
           credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
-          filters: { q: '', status: '', tags: 'nonexistent', page: 1 },
+          filters: { q: '', status: '', tags: 'nonexistent', page: 1, includeArchived: false },
         },
       },
     })
@@ -196,12 +207,19 @@ describe('project credential routes', () => {
   })
 
   describe('Apply filters submit behavior (Story 28.1)', () => {
-    function renderFilterForm(filters: { q: string; status: string; tags: string; page: number }) {
+    function renderFilterForm(filters: {
+      q: string
+      status: string
+      tags: string
+      page: number
+      includeArchived: boolean
+    }) {
       return render(CredentialsListPage, {
         props: {
           data: {
+            ...projectLayoutData(),
             projectId,
-            orgRole: 'member' as const,
+            orgRole: 'member',
             credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
             filters,
           },
@@ -210,7 +228,7 @@ describe('project credential routes', () => {
     }
 
     it('AC1 happy path: clicking Apply filters with a Search value navigates via goto() to a q-filtered URL, page reset', async () => {
-      renderFilterForm({ q: '', status: '', tags: '', page: 1 })
+      renderFilterForm({ q: '', status: '', tags: '', page: 1, includeArchived: false })
 
       await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'Database' } })
       await fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }))
@@ -219,7 +237,7 @@ describe('project credential routes', () => {
     })
 
     it('AC1: submitting the form via Enter (dispatching submit directly) is handled identically to a button click', async () => {
-      renderFilterForm({ q: '', status: '', tags: '', page: 1 })
+      renderFilterForm({ q: '', status: '', tags: '', page: 1, includeArchived: false })
 
       const searchInput = screen.getByLabelText('Search') as HTMLInputElement
       await fireEvent.input(searchInput, { target: { value: 'Database' } })
@@ -229,7 +247,7 @@ describe('project credential routes', () => {
     })
 
     it('AC1 edge/failure: submitting with all three fields empty calls goto() with no query params at all', async () => {
-      renderFilterForm({ q: '', status: '', tags: '', page: 1 })
+      renderFilterForm({ q: '', status: '', tags: '', page: 1, includeArchived: false })
 
       await fireEvent.submit(screen.getByLabelText('Search').closest('form') as HTMLFormElement)
 
@@ -237,7 +255,7 @@ describe('project credential routes', () => {
     })
 
     it('AC2 happy path: a Status-only submit produces a goto() URL with only status set', async () => {
-      renderFilterForm({ q: '', status: '', tags: '', page: 1 })
+      renderFilterForm({ q: '', status: '', tags: '', page: 1, includeArchived: false })
 
       await fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'expiring' } })
       await fireEvent.submit(screen.getByLabelText('Search').closest('form') as HTMLFormElement)
@@ -246,7 +264,7 @@ describe('project credential routes', () => {
     })
 
     it('AC2 happy path: a Tags-only submit produces a goto() URL with only tags set, comma+space preserved', async () => {
-      renderFilterForm({ q: '', status: '', tags: '', page: 1 })
+      renderFilterForm({ q: '', status: '', tags: '', page: 1, includeArchived: false })
 
       await fireEvent.input(screen.getByLabelText('Tags'), { target: { value: 'db, prod' } })
       await fireEvent.submit(screen.getByLabelText('Search').closest('form') as HTMLFormElement)
@@ -260,7 +278,7 @@ describe('project credential routes', () => {
     })
 
     it('AC2 happy path: a combined Search+Status+Tags submit produces a goto() URL with all three set', async () => {
-      renderFilterForm({ q: '', status: '', tags: '', page: 1 })
+      renderFilterForm({ q: '', status: '', tags: '', page: 1, includeArchived: false })
 
       await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'Database' } })
       await fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'expiring' } })
@@ -275,7 +293,7 @@ describe('project credential routes', () => {
     })
 
     it('AC2 edge/failure: submitting from a paginated state (page 2) resets to page 1 (no page param)', async () => {
-      renderFilterForm({ q: 'nope', status: '', tags: '', page: 2 })
+      renderFilterForm({ q: 'nope', status: '', tags: '', page: 2, includeArchived: false })
 
       await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'Database' } })
       await fireEvent.submit(screen.getByLabelText('Search').closest('form') as HTMLFormElement)
@@ -287,7 +305,7 @@ describe('project credential routes', () => {
     })
 
     it('AC2 boundary/encoding: a Tags value with comma, space, and ampersand round-trips through goto() without mis-parsing', async () => {
-      renderFilterForm({ q: '', status: '', tags: '', page: 1 })
+      renderFilterForm({ q: '', status: '', tags: '', page: 1, includeArchived: false })
 
       const original = 'db, prod & staging'
       await fireEvent.input(screen.getByLabelText('Tags'), { target: { value: original } })
@@ -305,10 +323,11 @@ describe('project credential routes', () => {
     render(CredentialsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
           projectId,
-          orgRole: 'member' as const,
+          orgRole: 'member',
           credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
-          filters: { q: 'nope', status: '', tags: '', page: 1 },
+          filters: { q: 'nope', status: '', tags: '', page: 1, includeArchived: false },
         },
       },
     })
@@ -321,10 +340,11 @@ describe('project credential routes', () => {
     render(CredentialsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
           projectId,
-          orgRole: 'member' as const,
+          orgRole: 'member',
           credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
-          filters: { q: '', status: '', tags: '', page: 1 },
+          filters: { q: '', status: '', tags: '', page: 1, includeArchived: false },
         },
       },
     })
@@ -337,10 +357,11 @@ describe('project credential routes', () => {
     render(CredentialsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
           projectId,
           orgRole: 'viewer' as const,
           credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
-          filters: { q: '', status: '', tags: '', page: 1 },
+          filters: { q: '', status: '', tags: '', page: 1, includeArchived: false },
         },
       },
     })
@@ -349,11 +370,12 @@ describe('project credential routes', () => {
     render(CredentialsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
           projectId,
-          orgRole: 'admin' as const,
+          orgRole: 'admin',
           notFound: true,
           credentials: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
-          filters: { q: '', status: '', tags: '', page: 1 },
+          filters: { q: '', status: '', tags: '', page: 1, includeArchived: false },
         },
       },
     })
@@ -365,8 +387,9 @@ describe('project credential routes', () => {
     render(CredentialsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
           projectId,
-          orgRole: 'admin' as const,
+          orgRole: 'admin',
           credentials: {
             items: [
               makeCredential({
@@ -380,7 +403,7 @@ describe('project credential routes', () => {
             limit: 20,
             hasNext: false,
           },
-          filters: { q: '', status: '', tags: '', page: 1 },
+          filters: { q: '', status: '', tags: '', page: 1, includeArchived: false },
         },
       },
     })
@@ -394,6 +417,7 @@ describe('project credential routes', () => {
     render(CredentialsListPage, {
       props: {
         data: {
+          ...projectLayoutData(),
           projectId,
           orgRole: 'viewer' as const,
           credentials: {
@@ -403,7 +427,7 @@ describe('project credential routes', () => {
             limit: 20,
             hasNext: false,
           },
-          filters: { q: '', status: '', page: 1 },
+          filters: { q: '', status: '', tags: '', page: 1, includeArchived: false },
         },
       },
     })
@@ -421,8 +445,9 @@ describe('project credential routes', () => {
     render(CreateCredentialPage, {
       props: {
         data: {
+          ...projectLayoutData(),
           projectId,
-          orgRole: 'member' as const,
+          orgRole: 'member',
         },
       },
     })
@@ -451,10 +476,11 @@ describe('project credential routes', () => {
     const { unmount } = render(CredentialDetailPage, {
       props: {
         data: {
+          ...projectLayoutData(),
           projectId,
           credentialId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-          orgRole: 'member' as const,
-          project: {
+          orgRole: 'member',
+          project: sampleProject({
             id: '11111111-1111-4111-8111-111111111111',
             orgId: '11111111-1111-4111-8111-111111111111',
             name: 'Test Project',
@@ -465,8 +491,8 @@ describe('project credential routes', () => {
             createdAt: '2026-06-01T00:00:00.000Z',
             updatedAt: '2026-06-01T00:00:00.000Z',
             archivedAt: null,
-          },
-          credential: {
+          }),
+          credential: sampleCredential({
             id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
             projectId,
             orgId: '11111111-1111-4111-8111-111111111111',
@@ -481,13 +507,20 @@ describe('project credential routes', () => {
             createdBy: null,
             createdAt: '2026-06-01T00:00:00.000Z',
             updatedAt: '2026-06-01T00:00:00.000Z',
-          },
+          }),
           versions: [],
-          dependencies: { items: [], hasDependencies: false },
+          dependencies: { items: [], hasDependencies: false, hasStagedRotation: false },
           rotations: [],
           rotationsPage: 1,
           rotationsHasMore: false,
           activeRotationId: null,
+          origin: 'https://vault.example.com',
+          shares: [],
+          sharesTotal: 0,
+          sharesPage: 1,
+          sharesStatus: null,
+          rotationRecommendedNudges: [],
+          orgMembers: [],
         },
       },
     })
@@ -517,7 +550,7 @@ describe('project credential routes', () => {
 
     render(CredentialDetailPage, {
       props: {
-        data: baseCredentialDetailData({ orgRole: 'member' as const }),
+        data: baseCredentialDetailData({ orgRole: 'member' }),
       },
     })
 
@@ -536,7 +569,7 @@ describe('project credential routes', () => {
 
     render(CredentialDetailPage, {
       props: {
-        data: baseCredentialDetailData({ orgRole: 'member' as const }),
+        data: baseCredentialDetailData({ orgRole: 'member' }),
       },
     })
 
@@ -580,8 +613,9 @@ describe('project credential routes', () => {
     render(ImportCredentialsPage, {
       props: {
         data: {
+          ...projectLayoutData(),
           projectId,
-          orgRole: 'admin' as const,
+          orgRole: 'admin',
           canImport: true,
         },
       },
@@ -617,7 +651,7 @@ describe('project credential routes', () => {
   ])('maps import-preview failures and clears the file control', async (failure, expected) => {
     previewCredentialImportMock.mockRejectedValue(failure)
     render(ImportCredentialsPage, {
-      props: { data: { projectId, orgRole: 'admin' as const, canImport: true } },
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'admin', canImport: true } },
     })
     const file = new File(['KEY=value'], 'secrets.env', { type: 'text/plain' })
     const input = screen.getByLabelText(/select .env or json file/i) as HTMLInputElement
@@ -643,7 +677,7 @@ describe('project credential routes', () => {
       warnings: [],
     })
     render(ImportCredentialsPage, {
-      props: { data: { projectId, orgRole: 'admin' as const, canImport: true } },
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'admin', canImport: true } },
     })
     const file = new File(['KEY=value'], 'secrets.env', { type: 'text/plain' })
     await fireEvent.change(screen.getByLabelText(/select .env or json file/i), {
@@ -694,7 +728,7 @@ describe('project credential routes', () => {
     })
     confirmCredentialImportMock.mockRejectedValue(failure)
     render(ImportCredentialsPage, {
-      props: { data: { projectId, orgRole: 'admin' as const, canImport: true } },
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'admin', canImport: true } },
     })
     const file = new File(['KEY=value'], 'secrets.env', { type: 'text/plain' })
     await fireEvent.change(screen.getByLabelText(/select .env or json file/i), {
@@ -718,7 +752,7 @@ describe('project credential routes', () => {
       )
     )
     render(CreateCredentialPage, {
-      props: { data: { projectId, orgRole: 'member' as const } },
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'member' } },
     })
     const createButton = screen.getByRole('button', { name: /create secret/i })
     await fireEvent.submit(createButton.closest('form') as HTMLFormElement)
@@ -744,74 +778,99 @@ describe('project credential routes', () => {
 
   it('renders create access notice for viewers', () => {
     render(CreateCredentialPage, {
-      props: { data: { projectId, orgRole: 'viewer' as const } },
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'viewer' as const } },
     })
     expect(screen.getByText(/create not available/i)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /create credential/i })).toBeNull()
   })
 
-  function baseCredentialDetailData(overrides: Record<string, unknown> = {}) {
+  type DetailData = Exclude<
+    ComponentProps<typeof CredentialDetailPage>['data'],
+    { notFound: boolean }
+  >
+
+  function baseCredentialDetailData(overrides: Partial<DetailData> = {}): DetailData {
     return {
+      ...projectLayoutData(),
       projectId,
       credentialId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-      orgRole: 'admin' as const,
+      orgRole: 'admin',
       // Story 21.5's `data.project != null` hardening (84df9c44) requires this field to be
       // present, matching the real +layout.server.ts loader (project is only null on a 404,
       // which this fixture never represents). Project-level role independently gates
       // `canReveal` alongside org-level `orgRole` — defaults to 'admin' to match orgRole so
       // existing tests keep their pre-hardening behavior; override explicitly for viewer-role
       // scenarios.
-      project: {
+      project: sampleProject({
         id: '11111111-1111-4111-8111-111111111111',
         orgId: '11111111-1111-4111-8111-111111111111',
         name: 'Test Project',
         slug: 'test-project',
-        description: null,
-        role: 'admin' as const,
-        createdBy: null,
+        role: 'admin',
         createdAt: '2026-06-01T00:00:00.000Z',
         updatedAt: '2026-06-01T00:00:00.000Z',
-        archivedAt: null,
-      },
-      credential: {
+      }),
+      origin: 'https://vault.example.com',
+      credential: sampleCredential({
         id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
         projectId,
         orgId: '11111111-1111-4111-8111-111111111111',
         name: 'Stripe Secret Key',
-        description: null,
-        tags: [],
         expiresAt: '2026-07-15T00:00:00.000Z',
-        rotationSchedule: null,
-        cacheable: true,
         retentionCount: 5,
-        currentVersionNumber: 1,
-        createdBy: null,
         createdAt: '2026-06-01T00:00:00.000Z',
         updatedAt: '2026-06-01T00:00:00.000Z',
-      },
+      }),
       versions: [],
-      dependencies: { items: [], hasDependencies: false },
+      dependencies: { items: [], hasDependencies: false, hasStagedRotation: false },
       rotations: [],
       rotationsPage: 1,
       rotationsHasMore: false,
       activeRotationId: null,
+      shares: [],
+      sharesTotal: 0,
+      sharesPage: 1,
+      sharesStatus: null,
+      rotationRecommendedNudges: [],
+      orgMembers: [],
       ...overrides,
     }
   }
 
-  function makeDependency(overrides: Record<string, unknown> = {}) {
+  /** The loader's sealed-vault (503) fallback: every section empty. */
+  function sealedCredentialDetailData(): ComponentProps<typeof CredentialDetailPage>['data'] {
     return {
+      ...projectLayoutData(),
+      projectId,
+      credentialId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      orgRole: 'admin',
+      origin: 'https://vault.example.com',
+      credential: null,
+      versions: [],
+      dependencies: { items: [], hasDependencies: false, hasStagedRotation: false },
+      rotations: [],
+      rotationsPage: 1,
+      rotationsHasMore: false,
+      activeRotationId: null,
+      shares: [],
+      sharesTotal: 0,
+      rotationRecommendedNudges: [],
+      orgMembers: [],
+      notFound: false,
+      vaultSealed: true,
+    }
+  }
+
+  function makeDependency(
+    overrides: Partial<CredentialDependencyWithChecklistStatus> = {}
+  ): CredentialDependencyWithChecklistStatus {
+    return sampleDependency({
       id: 'd1',
       credentialId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-      systemName: 'billing-worker',
-      systemType: 'service',
-      notes: null,
-      createdBy: null,
-      archivedAt: null,
       createdAt: '2026-06-01T00:00:00.000Z',
       updatedAt: '2026-06-01T00:00:00.000Z',
       ...overrides,
-    }
+    })
   }
 
   it('AC-1: admin sees "Start rotation" when there is no active rotation', () => {
@@ -825,7 +884,7 @@ describe('project credential routes', () => {
 
   it('AC-1: member/viewer sees explanatory text instead of a "Start rotation" link', () => {
     render(CredentialDetailPage, {
-      props: { data: baseCredentialDetailData({ orgRole: 'member' as const }) },
+      props: { data: baseCredentialDetailData({ orgRole: 'member' }) },
     })
 
     expect(screen.queryByRole('link', { name: 'Start rotation' })).toBeNull()
@@ -894,7 +953,7 @@ describe('project credential routes', () => {
     render(CredentialDetailPage, {
       props: {
         data: baseCredentialDetailData({
-          credential: {
+          credential: sampleCredential({
             id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
             projectId,
             orgId: '11111111-1111-4111-8111-111111111111',
@@ -909,7 +968,7 @@ describe('project credential routes', () => {
             createdBy: null,
             createdAt: '2026-06-01T00:00:00.000Z',
             updatedAt: '2026-06-01T00:00:00.000Z',
-          },
+          }),
         }),
       },
     })
@@ -1077,7 +1136,11 @@ describe('project credential routes', () => {
     render(CredentialDetailPage, {
       props: {
         data: baseCredentialDetailData({
-          dependencies: { items: [makeDependency()], hasDependencies: true },
+          dependencies: {
+            items: [makeDependency()],
+            hasDependencies: true,
+            hasStagedRotation: false,
+          },
         }),
       },
     })
@@ -1111,12 +1174,13 @@ describe('project credential routes', () => {
               makeDependency({ id: 'd2', systemName: 'primary-db', systemType: 'database' }),
             ],
             hasDependencies: true,
+            hasStagedRotation: false,
           },
         }),
       },
     })
 
-    const [firstArchiveButton] = screen.getAllByRole('button', { name: 'Archive' })
+    const firstArchiveButton = nth(screen.getAllByRole('button', { name: 'Archive' }), 0)
     await fireEvent.click(firstArchiveButton)
 
     await waitFor(() => expect(archiveCredentialDependencyMock).toHaveBeenCalled())
@@ -1152,7 +1216,11 @@ describe('project credential routes', () => {
       props: {
         data: baseCredentialDetailData({
           orgRole: 'viewer' as const,
-          dependencies: { items: [makeDependency()], hasDependencies: true },
+          dependencies: {
+            items: [makeDependency()],
+            hasDependencies: true,
+            hasStagedRotation: false,
+          },
         }),
       },
     })
@@ -1177,7 +1245,11 @@ describe('project credential routes', () => {
     render(CredentialDetailPage, {
       props: {
         data: baseCredentialDetailData({
-          dependencies: { items: [makeDependency()], hasDependencies: true },
+          dependencies: {
+            items: [makeDependency()],
+            hasDependencies: true,
+            hasStagedRotation: false,
+          },
         }),
       },
     })
@@ -1331,11 +1403,7 @@ describe('project credential routes', () => {
   it('AC-1: renders the sealed-vault message (not "Credential not found") when data.vaultSealed is true', () => {
     render(CredentialDetailPage, {
       props: {
-        data: baseCredentialDetailData({
-          vaultSealed: true as const,
-          credential: null,
-          notFound: false as const,
-        }),
+        data: sealedCredentialDetailData(),
       },
     })
 
@@ -1347,8 +1415,9 @@ describe('project credential routes', () => {
     render(ImportCredentialsPage, {
       props: {
         data: {
+          ...projectLayoutData(),
           projectId,
-          orgRole: 'member' as const,
+          orgRole: 'member',
           canImport: false,
         },
       },

@@ -9,8 +9,10 @@
 //   `expectLoaded()` asserts data came back (a real check, not a cast) before a test reads it.
 import type { AuthUser } from '$lib/api/auth.js'
 import type { LayoutData as AppLayoutData } from '../../routes/(app)/$types.js'
+import type { LayoutData as ProjectLayoutData } from '../../routes/(app)/projects/[projectId]/$types.js'
+import { SAMPLE_PROJECT_ID, sampleProject } from './fixtures.js'
 
-export type { AppLayoutData }
+export type { AppLayoutData, ProjectLayoutData }
 
 /** A signed-in org owner with MFA settled; override any field per test. */
 export function testAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
@@ -49,6 +51,17 @@ export function appLayoutData(overrides: Partial<AppLayoutData> = {}): AppLayout
     orphanedNotice: false,
     orphanedThemeName: null,
     themeCss: '',
+    ...overrides,
+  }
+}
+
+/** The layout data every page under `projects/[projectId]` receives (`(app)` + project layout). */
+export function projectLayoutData(overrides: Partial<ProjectLayoutData> = {}): ProjectLayoutData {
+  return {
+    ...appLayoutData(),
+    projectId: SAMPLE_PROJECT_ID,
+    orgRole: 'owner',
+    project: sampleProject(),
     ...overrides,
   }
 }
