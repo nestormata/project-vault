@@ -16,6 +16,8 @@ vi.mock('$lib/api/platform.js', () => ({
   testStatusToken: testStatusTokenMock,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import SettingsPage from './+page.svelte'
 
 afterEach(() => {
@@ -30,12 +32,16 @@ const SAMPLE_SETTINGS = {
   instancePolicy: { maxOrgs: 10, maxUsersPerOrg: 50, sessionIdleTimeoutMinutes: 30 },
 }
 
-function allowedData(overrides: Record<string, unknown> = {}) {
+type AllowedData = Extract<ComponentProps<typeof SettingsPage>['data'], { allowed: true }>
+
+function allowedData(overrides: Partial<AllowedData> = {}): AllowedData {
   return {
-    allowed: true as const,
+    ...appLayoutData(),
+    allowed: true,
     settings: SAMPLE_SETTINGS,
     errorMessage: null,
     statusToken: { configured: false },
+    statusTokenLoadFailed: false,
     ...overrides,
   }
 }

@@ -283,7 +283,7 @@ describe('/platform/upgrade +page.server.ts', () => {
       health.resolve({ status: 'ok', version: 'dev', versionSource: 'development' })
       docs.resolve(false)
       policy.resolve(DEV_POLICY_OK)
-      const result = await pending
+      const result = expectLoaded(await pending)
       expect(result.allowed && result.cliPolicy).toEqual(DEV_POLICY_OK)
     })
 

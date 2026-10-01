@@ -11,6 +11,8 @@ vi.mock('$lib/api/platform.js', () => ({
   listOrgs: listOrgsMock,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData, deniedPageData } from '$lib/test/page-data.js'
 import OrgsPage from './+page.svelte'
 
 afterEach(() => {
@@ -26,9 +28,12 @@ const SAMPLE_ORG = {
   memberCount: 3,
 }
 
-function allowedData(overrides: Record<string, unknown> = {}) {
+type AllowedData = Extract<ComponentProps<typeof OrgsPage>['data'], { allowed: true }>
+
+function allowedData(overrides: Partial<AllowedData> = {}): AllowedData {
   return {
-    allowed: true as const,
+    ...appLayoutData(),
+    allowed: true,
     orgs: [SAMPLE_ORG],
     errorMessage: null,
     ...overrides,
@@ -46,7 +51,7 @@ describe('/platform/settings/orgs +page.svelte', () => {
   })
 
   it('a non-operator sees the platform-operator-required notice', () => {
-    render(OrgsPage, { props: { data: { allowed: false } } })
+    render(OrgsPage, { props: { data: deniedPageData() } })
 
     expect(screen.getByRole('heading', { name: /platform operator access required/i })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: /organizations/i })).toBeNull()

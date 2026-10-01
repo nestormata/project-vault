@@ -12,6 +12,9 @@ vi.mock('$lib/api/platform.js', async () => {
   }
 })
 
+import type { ComponentProps } from 'svelte'
+import type { AuditStorageOrgRow, ResourceUsageResponse } from '$lib/api/platform.js'
+import { appLayoutData } from '$lib/test/page-data.js'
 import ResourceUsagePage from './+page.svelte'
 
 afterEach(() => {
@@ -28,7 +31,7 @@ const BASE_USAGE = {
   auditLogStorage: { currentBytes: 1_000_000_000, limitBytes: 50_000_000_000, utilizationPct: 2 },
 }
 
-const OK_ORG = {
+const OK_ORG: AuditStorageOrgRow = {
   orgId: 'org-ok',
   orgName: 'Ok Org',
   bytesUsed: 100_000_000,
@@ -44,7 +47,7 @@ const OK_ORG = {
   state: 'ok' as const,
 }
 
-const UNLIMITED_ORG = {
+const UNLIMITED_ORG: AuditStorageOrgRow = {
   ...OK_ORG,
   orgId: 'org-unlimited',
   orgName: 'Unlimited Org',
@@ -53,7 +56,7 @@ const UNLIMITED_ORG = {
   state: 'unlimited' as const,
 }
 
-const STALE_ORG = {
+const STALE_ORG: AuditStorageOrgRow = {
   ...OK_ORG,
   orgId: 'org-stale',
   orgName: 'Stale Org',
@@ -61,7 +64,7 @@ const STALE_ORG = {
   state: 'stale' as const,
 }
 
-const BLOCKED_ORG = {
+const BLOCKED_ORG: AuditStorageOrgRow = {
   ...OK_ORG,
   orgId: 'org-blocked',
   orgName: 'Blocked Org',
@@ -71,7 +74,10 @@ const BLOCKED_ORG = {
   state: 'blocked' as const,
 }
 
-function usageWith(rows: (typeof OK_ORG)[], overrides: Record<string, unknown> = {}) {
+function usageWith(
+  rows: AuditStorageOrgRow[],
+  overrides: Partial<ResourceUsageResponse> = {}
+): ResourceUsageResponse {
   return {
     ...BASE_USAGE,
     auditStorageByOrg: rows,
@@ -84,8 +90,10 @@ function usageWith(rows: (typeof OK_ORG)[], overrides: Record<string, unknown> =
   }
 }
 
-function allowedData(usage: ReturnType<typeof usageWith>) {
-  return { allowed: true as const, usage, warnings: [] as string[], errorMessage: null }
+type AllowedData = Extract<ComponentProps<typeof ResourceUsagePage>['data'], { allowed: true }>
+
+function allowedData(usage: ResourceUsageResponse): AllowedData {
+  return { ...appLayoutData(), allowed: true, usage, warnings: [], errorMessage: null }
 }
 
 describe('Story 22.3: Audit Storage by Organization table', () => {

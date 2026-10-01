@@ -53,6 +53,17 @@ export function appLayoutData(overrides: Partial<AppLayoutData> = {}): AppLayout
   }
 }
 
+/** A page under `(app)`: the `(app)` layout data merged with the page's own `load` fields. */
+export function appPageData<P extends object>(page: P): AppLayoutData & P {
+  return { ...appLayoutData(), ...page }
+}
+
+/** The `(app)` page data a platform/org-gated page receives when the viewer is not allowed. */
+export function deniedPageData(): AppLayoutData & { allowed: false } {
+  const denied: { allowed: false } = { allowed: false }
+  return appPageData(denied)
+}
+
 /** The `void` member of a `load()` result type (written as a return type, where `void` is valid). */
 type VoidResult = ReturnType<() => void>
 

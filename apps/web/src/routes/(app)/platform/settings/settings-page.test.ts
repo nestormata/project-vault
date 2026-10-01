@@ -9,6 +9,9 @@ vi.mock('$lib/api/platform.js', () => ({
   updateSettings: updateSettingsMock,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData, deniedPageData } from '$lib/test/page-data.js'
+import { nth } from '$lib/test/dom.js'
 import SettingsPage from './+page.svelte'
 
 afterEach(() => {
@@ -29,11 +32,16 @@ const SAMPLE_SETTINGS = {
   instancePolicy: { maxOrgs: 10, maxUsersPerOrg: 50, sessionIdleTimeoutMinutes: 30 },
 }
 
-function allowedData(overrides: Record<string, unknown> = {}) {
+type AllowedData = Extract<ComponentProps<typeof SettingsPage>['data'], { allowed: true }>
+
+function allowedData(overrides: Partial<AllowedData> = {}): AllowedData {
   return {
-    allowed: true as const,
+    ...appLayoutData(),
+    allowed: true,
     settings: SAMPLE_SETTINGS,
     errorMessage: null,
+    statusToken: null,
+    statusTokenLoadFailed: false,
     ...overrides,
   }
 }
@@ -44,7 +52,7 @@ describe('/platform/settings +page.svelte', () => {
   })
 
   it('a non-operator sees the platform-operator-required notice', () => {
-    render(SettingsPage, { props: { data: { allowed: false } } })
+    render(SettingsPage, { props: { data: deniedPageData() } })
 
     expect(screen.getByRole('heading', { name: /platform operator access required/i })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: /^smtp$/i })).toBeNull()
@@ -74,7 +82,7 @@ describe('/platform/settings +page.svelte', () => {
     await fireEvent.input(schedule, { target: { value: '0 4 * * *' } })
 
     expect(screen.getByText(/every day at 04:00 utc/i)).toBeTruthy()
-    await fireEvent.click(screen.getAllByRole('button', { name: /show cron field help/i })[0])
+    await fireEvent.click(nth(screen.getAllByRole('button', { name: /show cron field help/i }), 0))
     expect(screen.getByRole('dialog', { name: /cron schedule fields/i })).toBeTruthy()
   })
 

@@ -2,24 +2,36 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
 import { routeExists } from '$lib/test/route-exists.js'
 
+import type { ComponentProps } from 'svelte'
+import type { ResourceUsageResponse } from '$lib/api/platform.js'
+import { appLayoutData, deniedPageData } from '$lib/test/page-data.js'
 import ResourceUsagePage from './+page.svelte'
 
 afterEach(() => cleanup())
 
-const SAMPLE_USAGE = {
+const SAMPLE_USAGE: ResourceUsageResponse = {
   orgs: { current: 3, limit: 10 },
   usersPerOrg: [{ orgId: 'org-1', current: 5, limit: 50 }],
   secretsPerProject: [],
-  auditLogEntries: { current: 1000, limit: null as number | null },
-  storageBytes: { current: 900_000, limit: null as number | null },
+  auditLogEntries: { current: 1000, limit: null },
+  storageBytes: { current: 900_000, limit: null },
   auditLogStorage: { currentBytes: 42_000_000_000, limitBytes: 50_000_000_000, utilizationPct: 84 },
+  auditStorageByOrg: [],
+  truncated: false,
+  allocatedLogicalBytes: 0,
+  estimatedPhysicalBytes: 0,
+  allocationIncludesUnlimitedOrgs: false,
+  observedPhysicalToLogicalRatio: null,
 }
 
-function allowedData(overrides: Record<string, unknown> = {}) {
+type AllowedData = Extract<ComponentProps<typeof ResourceUsagePage>['data'], { allowed: true }>
+
+function allowedData(overrides: Partial<AllowedData> = {}): AllowedData {
   return {
-    allowed: true as const,
+    ...appLayoutData(),
+    allowed: true,
     usage: SAMPLE_USAGE,
-    warnings: [] as string[],
+    warnings: [],
     errorMessage: null,
     ...overrides,
   }
@@ -31,7 +43,7 @@ describe('/platform/settings/resource-usage +page.svelte', () => {
   })
 
   it('a non-operator sees the platform-operator-required notice', () => {
-    render(ResourceUsagePage, { props: { data: { allowed: false, warnings: [] } } })
+    render(ResourceUsagePage, { props: { data: deniedPageData() } })
 
     expect(screen.getByRole('heading', { name: /platform operator access required/i })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: /^organizations$/i })).toBeNull()

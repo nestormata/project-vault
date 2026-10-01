@@ -8,13 +8,15 @@ import {
 } from '$lib/api/platform.js'
 import { ApiClientError } from '$lib/api/client.js'
 
-async function fetchSettingsData(fetch: typeof globalThis.fetch) {
+async function fetchSettingsData(
+  fetch: typeof globalThis.fetch
+): Promise<{ settings: SystemSettingsResponse | null; errorMessage: string | null }> {
   try {
     const settings = await getSettings(fetch)
-    return { settings, errorMessage: null as string | null }
+    return { settings, errorMessage: null }
   } catch (err) {
     return {
-      settings: null as SystemSettingsResponse | null,
+      settings: null,
       errorMessage:
         err instanceof ApiClientError
           ? (err.message ?? 'Failed to load settings')
