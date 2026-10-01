@@ -675,7 +675,8 @@ jobs:
             CHANGED=$(git diff --name-only --no-renames "origin/${BASE_REF}...HEAD")
             for INPUT in apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci .dockerignore \
               apps/api/docker-entrypoint.sh pnpm-lock.yaml pnpm-workspace.yaml \
-              scripts/materialize-deploy-runtime.mjs .trivyignore fly.db.toml; do
+              scripts/materialize-deploy-runtime.mjs .trivyignore fly.db.toml \
+              patches/@stryker-mutator__vitest-runner.patch; do
               if grep -Fxq -- "$INPUT" <<<"$CHANGED"; then
                 echo "Image input changed: $INPUT"
                 IMAGES_CHANGED=true

@@ -40,7 +40,8 @@ describe('stryker.config.mjs gate invariants', () => {
 
   it('mutates a non-empty set of source globs split into non-overlapping api and db shards', () => {
     const positives = (config.mutate as string[]).filter((glob) => !glob.startsWith('!'))
-    expect(positives.length).toBeGreaterThan(0)
+    // Floor, not a count to track: shrinking `mutate` to get green must fail here (66-7 review).
+    expect(positives.length).toBeGreaterThanOrEqual(4)
     expect(Object.keys(SHARDS).sort()).toEqual(['api', 'db'])
     const all = (Object.values(SHARDS) as string[][]).flat()
     for (const globs of Object.values(SHARDS) as string[][]) expect(globs.length).toBeGreaterThan(0)
@@ -88,6 +89,9 @@ describe('nightly mutation job wiring', () => {
 
   it('has an explicit job timeout, never continue-on-error', () => {
     expect(job).toMatch(/timeout-minutes:\s*\d+/)
+    const jobTimeout = Number(/timeout-minutes:\s*(\d+)/.exec(job)?.[1])
+    // The job timeout must leave room beyond the dry-run ceiling for the mutation phase.
+    expect(jobTimeout).toBeGreaterThan(config.dryRunTimeoutMinutes)
     expect(job).not.toContain('continue-on-error')
   })
 })
