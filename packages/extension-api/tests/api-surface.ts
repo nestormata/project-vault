@@ -382,8 +382,7 @@ function validateMemberSince(line: string, next: string): string[] {
 export function validateSinceIndex(snapshot: string, currentVersion = '2.0.0'): string[] {
   const lines = snapshot.split('\n')
   const errors: string[] = []
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? ''
+  for (const [index, line] of lines.entries()) {
     const next = lines.slice(index + 1).find((candidate) => candidate.trim().length > 0) ?? ''
     if (line.startsWith('## export '))
       errors.push(...validateExportSince(line, next, currentVersion))
