@@ -2,4 +2,6 @@
 // generator builds with `types: []`, so the helper must fail the generation closed.
 import './helper.js'
 
-export type Id = string
+export interface Id {
+  readonly value: string
+}

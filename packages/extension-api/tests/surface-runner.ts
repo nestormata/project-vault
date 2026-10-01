@@ -134,16 +134,15 @@ export function childEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return { ...rest, ...options, NODE_V8_COVERAGE: '' }
 }
 
-function stderrTail(stderr: string | undefined): string {
-  const lines = (stderr ?? '').split('\n')
+function stderrTail(stderr = ''): string {
+  const lines = stderr.split('\n')
   if (lines.at(-1) === '') lines.pop()
   if (lines.length === 0) return 'stderr: (empty)'
   const tail = lines.slice(-MAX_STDERR_LINES)
   return [`stderr (last ${tail.length} of ${lines.length} stderr lines):`, ...tail].join('\n')
 }
 
-function hintFor(stderr: string | undefined): string[] {
-  const text = stderr ?? ''
+function hintFor(text = ''): string[] {
   return /ERR_MODULE_NOT_FOUND|Cannot find (package|module)/.test(text) && text.includes('tsx')
     ? [
         'hint: tsx could not be loaded; it must be installed as a devDependency of @project-vault/extension-api (run pnpm install)',
