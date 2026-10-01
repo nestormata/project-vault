@@ -12,6 +12,7 @@ vi.mock('$lib/api/platform.js', () => ({
 }))
 
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const platformUser = {
   userId: '00000000-0000-4000-8000-000000000001',
@@ -45,7 +46,7 @@ describe('/platform +page.server.ts', () => {
   it('AC-B1: returns allowed=false for a non-platform-operator without fetching ready', async () => {
     platformOperatorGateMock.mockReturnValue({ allowed: false })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(false)
     expect(fetchReadyMock).not.toHaveBeenCalled()
@@ -55,7 +56,7 @@ describe('/platform +page.server.ts', () => {
     platformOperatorGateMock.mockReturnValue({ allowed: true, user: platformUser })
     fetchReadyMock.mockResolvedValue({ status: 'ready' })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -67,7 +68,7 @@ describe('/platform +page.server.ts', () => {
     platformOperatorGateMock.mockReturnValue({ allowed: true, user: platformUser })
     fetchReadyMock.mockResolvedValue({ status: 'ready', warnings: ['key_custody_risk'] })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -79,7 +80,7 @@ describe('/platform +page.server.ts', () => {
     platformOperatorGateMock.mockReturnValue({ allowed: true, user: platformUser })
     fetchReadyMock.mockRejectedValue(new Error('Network error'))
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {

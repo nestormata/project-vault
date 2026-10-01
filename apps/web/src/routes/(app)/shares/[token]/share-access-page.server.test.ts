@@ -12,6 +12,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const token = 'raw-token-value'
 
@@ -41,7 +42,7 @@ describe('/shares/[token] +page.server.ts', () => {
       status: 'active',
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.metadata?.credentialName).toBe('Stripe Secret Key')
     expect(result.error).toBeNull()
@@ -51,7 +52,7 @@ describe('/shares/[token] +page.server.ts', () => {
   it('AC-7: a not-found token renders an honest not_found state', async () => {
     getShareMetadataMock.mockRejectedValue(new ApiClientError(404, null, 'not found'))
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.metadata).toBeNull()
     expect(result.error).toBe('not_found')
@@ -62,7 +63,7 @@ describe('/shares/[token] +page.server.ts', () => {
       new ApiClientError(403, { code: 'share_recipient_mismatch' }, 'mismatch')
     )
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.metadata).toBeNull()
     expect(result.error).toBe('session_mismatch')

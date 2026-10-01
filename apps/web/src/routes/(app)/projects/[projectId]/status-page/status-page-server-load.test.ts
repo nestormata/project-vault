@@ -23,6 +23,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 }))
 
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
@@ -54,7 +55,7 @@ describe('project status-page +page.server.ts', () => {
     getStatusPageConfigMock.mockResolvedValue({ enabled: true })
     listServiceEndpointsMock.mockResolvedValue([{ id: 'e1' }])
 
-    const result = await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' })))
 
     expect(result.canManage).toBe(true)
     expect(result.config).toEqual({ enabled: true })
@@ -69,7 +70,7 @@ describe('project status-page +page.server.ts', () => {
     getStatusPageConfigMock.mockResolvedValue({ enabled: true })
     listServiceEndpointsMock.mockResolvedValue([])
 
-    const result = await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' })))
 
     expect(result.origin).toBe('https://vault.example.com')
   })
@@ -96,7 +97,7 @@ describe('project status-page +page.server.ts', () => {
     getStatusPageConfigMock.mockResolvedValue({ enabled: false })
     listServiceEndpointsMock.mockResolvedValue([])
 
-    const result = await load(makeEvent({ orgRole: 'member', userId: 'u-1' }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'member', userId: 'u-1' })))
 
     expect(result.canManage).toBe(true)
   })
@@ -104,7 +105,7 @@ describe('project status-page +page.server.ts', () => {
   it('a plain member who is not a project owner cannot manage and gets an empty/never-configured form', async () => {
     listProjectMembersMock.mockResolvedValue([{ userId: 'u-1', role: 'member' }])
 
-    const result = await load(makeEvent({ orgRole: 'member', userId: 'u-1' }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'member', userId: 'u-1' })))
 
     expect(result.canManage).toBe(false)
     expect(result.config).toEqual({ enabled: false })
@@ -119,7 +120,7 @@ describe('project status-page +page.server.ts', () => {
   it('tolerates a failed member lookup by treating the user as not a project member', async () => {
     listProjectMembersMock.mockRejectedValue(new Error('network down'))
 
-    const result = await load(makeEvent({ orgRole: 'member', userId: 'u-1' }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'member', userId: 'u-1' })))
 
     expect(result.canManage).toBe(false)
   })
@@ -138,7 +139,9 @@ describe('project status-page +page.server.ts', () => {
         capabilities: { 'monitoring.public-status-page': false },
       })
 
-      const result = await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+      const result = expectLoaded(
+        await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+      )
 
       expect(result.capabilities).toEqual({ 'monitoring.public-status-page': false })
       expect(getCapabilityMapMock).toHaveBeenCalledTimes(1)
@@ -147,7 +150,9 @@ describe('project status-page +page.server.ts', () => {
     it('AC-9: capability-fetch failure (network/throw) fails open — data.capabilities defaults to every id permitted', async () => {
       getCapabilityMapMock.mockRejectedValue(new Error('capability service unreachable'))
 
-      const result = await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+      const result = expectLoaded(
+        await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+      )
 
       expect(result.capabilities).toEqual({ 'monitoring.public-status-page': true })
     })
@@ -157,7 +162,9 @@ describe('project status-page +page.server.ts', () => {
         capabilities: { 'monitoring.public-status-page': 'yes' },
       })
 
-      const result = await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+      const result = expectLoaded(
+        await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+      )
 
       expect(result.capabilities).toEqual({ 'monitoring.public-status-page': true })
     })
@@ -167,7 +174,9 @@ describe('project status-page +page.server.ts', () => {
         capabilities: [true],
       })
 
-      const result = await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+      const result = expectLoaded(
+        await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+      )
 
       expect(result.capabilities).toEqual({ 'monitoring.public-status-page': true })
     })
@@ -177,7 +186,9 @@ describe('project status-page +page.server.ts', () => {
         capabilities: {},
       })
 
-      const result = await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+      const result = expectLoaded(
+        await load(makeEvent({ orgRole: 'owner', userId: 'u-org-owner' }))
+      )
 
       expect(result.capabilities).toEqual({ 'monitoring.public-status-page': true })
     })

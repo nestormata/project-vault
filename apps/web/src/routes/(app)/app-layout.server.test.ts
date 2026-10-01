@@ -24,6 +24,7 @@ vi.mock('$lib/api/extension-panel.js', () => ({
 }))
 
 import { load } from './+layout.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const noCustomThemes = {
   themes: [{ name: 'base', label: 'Default', css: null }],
@@ -64,7 +65,7 @@ describe('/(app) +layout.server.ts', () => {
     getOnboardingStatusMock.mockResolvedValue({ completed: true })
     getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 4 } })
 
-    const result = await load(makeEvent(baseUser))
+    const result = expectLoaded(await load(makeEvent(baseUser)))
 
     expect(result.onboardingCompleted).toBe(true)
     expect(listProjectsMock).not.toHaveBeenCalled()
@@ -77,7 +78,7 @@ describe('/(app) +layout.server.ts', () => {
     listProjectsMock.mockResolvedValue({ items: [], total: 0 })
     getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
 
-    const result = await load(makeEvent(baseUser))
+    const result = expectLoaded(await load(makeEvent(baseUser)))
 
     expect(result.onboardingCompleted).toBe(false)
     expect(listProjectsMock).toHaveBeenCalled()
@@ -89,7 +90,7 @@ describe('/(app) +layout.server.ts', () => {
     listProjectsMock.mockResolvedValue({ items: [{ id: 'p1', name: 'Payments' }], total: 1 })
     getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
 
-    const result = await load(makeEvent(baseUser))
+    const result = expectLoaded(await load(makeEvent(baseUser)))
 
     expect(result.onboardingCompleted).toBe(true)
     expect(listProjectsMock).toHaveBeenCalled()
@@ -100,7 +101,7 @@ describe('/(app) +layout.server.ts', () => {
     getOnboardingStatusMock.mockRejectedValue(new Error('boom'))
     getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
 
-    const result = await load(makeEvent(baseUser))
+    const result = expectLoaded(await load(makeEvent(baseUser)))
 
     expect(result.onboardingCompleted).toBe(true)
     expect(listProjectsMock).not.toHaveBeenCalled()
@@ -111,7 +112,7 @@ describe('/(app) +layout.server.ts', () => {
     listProjectsMock.mockRejectedValue(new Error('boom'))
     getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
 
-    const result = await load(makeEvent(baseUser))
+    const result = expectLoaded(await load(makeEvent(baseUser)))
 
     expect(result.projects).toEqual([])
   })
@@ -120,7 +121,7 @@ describe('/(app) +layout.server.ts', () => {
     getOnboardingStatusMock.mockResolvedValue({ completed: true })
     getUsersMeMock.mockRejectedValue(new Error('boom'))
 
-    const result = await load(makeEvent(baseUser))
+    const result = expectLoaded(await load(makeEvent(baseUser)))
 
     expect(result.unreadCount).toBe(0)
   })
@@ -129,10 +130,10 @@ describe('/(app) +layout.server.ts', () => {
     getOnboardingStatusMock.mockResolvedValue({ completed: true })
     getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
 
-    const ownerResult = await load(makeEvent({ ...baseUser, orgRole: 'owner' }))
+    const ownerResult = expectLoaded(await load(makeEvent({ ...baseUser, orgRole: 'owner' })))
     expect(ownerResult.importRouteLive).toBe(true)
 
-    const viewerResult = await load(makeEvent({ ...baseUser, orgRole: 'viewer' }))
+    const viewerResult = expectLoaded(await load(makeEvent({ ...baseUser, orgRole: 'viewer' })))
     expect(viewerResult.importRouteLive).toBe(false)
   })
 
@@ -149,7 +150,7 @@ describe('/(app) +layout.server.ts', () => {
         orgDefaultThemeName: null,
       })
 
-      const result = await load(makeEvent(baseUser))
+      const result = expectLoaded(await load(makeEvent(baseUser)))
 
       expect(result.appliedTheme).toBe('acme-brand')
       expect(result.orphanedNotice).toBe(false)
@@ -162,7 +163,7 @@ describe('/(app) +layout.server.ts', () => {
       getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
       getThemesMock.mockResolvedValue(noCustomThemes)
 
-      const result = await load(makeEvent(baseUser))
+      const result = expectLoaded(await load(makeEvent(baseUser)))
 
       expect(result.appliedTheme).toBeNull()
       expect(result.orphanedNotice).toBe(false)
@@ -177,7 +178,7 @@ describe('/(app) +layout.server.ts', () => {
         orgDefaultThemeName: null,
       })
 
-      const result = await load(makeEvent(baseUser))
+      const result = expectLoaded(await load(makeEvent(baseUser)))
 
       expect(result.appliedTheme).toBeNull()
       expect(result.orphanedNotice).toBe(true)
@@ -196,7 +197,7 @@ describe('/(app) +layout.server.ts', () => {
         orgDefaultThemeName: null,
       })
 
-      const result = await load(makeEvent(baseUser))
+      const result = expectLoaded(await load(makeEvent(baseUser)))
 
       expect(result.appliedTheme).toBe('acme-brand')
       expect(result.orphanedNotice).toBe(false)
@@ -214,7 +215,7 @@ describe('/(app) +layout.server.ts', () => {
         orgDefaultThemeName: 'acme-brand',
       })
 
-      const result = await load(makeEvent(baseUser))
+      const result = expectLoaded(await load(makeEvent(baseUser)))
 
       expect(result.appliedTheme).toBe('acme-brand')
       // AC-2's own edge case: the orphaned-selection notice stays keyed off the personal
@@ -235,7 +236,7 @@ describe('/(app) +layout.server.ts', () => {
         orgDefaultThemeName: 'acme-brand',
       })
 
-      const result = await load(makeEvent(baseUser))
+      const result = expectLoaded(await load(makeEvent(baseUser)))
 
       expect(result.appliedTheme).toBe('morgan-dark')
     })
@@ -249,7 +250,7 @@ describe('/(app) +layout.server.ts', () => {
         orgDefaultThemeName: 'old-brand',
       })
 
-      const result = await load(makeEvent(baseUser))
+      const result = expectLoaded(await load(makeEvent(baseUser)))
 
       expect(result.appliedTheme).toBeNull()
       expect(result.orphanedNotice).toBe(false)
@@ -260,7 +261,7 @@ describe('/(app) +layout.server.ts', () => {
       getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
       getThemesMock.mockResolvedValue(noCustomThemes)
 
-      const result = await load(makeEvent(baseUser))
+      const result = expectLoaded(await load(makeEvent(baseUser)))
 
       expect(result.appliedTheme).toBeNull()
       expect(result.orphanedNotice).toBe(false)
@@ -271,7 +272,7 @@ describe('/(app) +layout.server.ts', () => {
       getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
       getThemesMock.mockRejectedValue(new Error('boom'))
 
-      const result = await load(makeEvent(baseUser))
+      const result = expectLoaded(await load(makeEvent(baseUser)))
 
       expect(result.appliedTheme).toBeNull()
       expect(result.orphanedNotice).toBe(false)
@@ -285,7 +286,7 @@ describe('/(app) +layout.server.ts', () => {
       getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
       getExtensionNavMock.mockResolvedValue({ uiPanelSlot: null })
 
-      const result = await load(makeEvent(baseUser))
+      const result = expectLoaded(await load(makeEvent(baseUser)))
 
       expect(result.hasUiPanelExtension).toBe(false)
     })
@@ -295,7 +296,7 @@ describe('/(app) +layout.server.ts', () => {
       getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
       getExtensionNavMock.mockResolvedValue({ uiPanelSlot: 'group' })
 
-      const result = await load(makeEvent(baseUser))
+      const result = expectLoaded(await load(makeEvent(baseUser)))
 
       expect(result.hasUiPanelExtension).toBe(true)
     })
@@ -305,7 +306,7 @@ describe('/(app) +layout.server.ts', () => {
       getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
       getExtensionNavMock.mockRejectedValue(new Error('boom'))
 
-      const result = await load(makeEvent(baseUser))
+      const result = expectLoaded(await load(makeEvent(baseUser)))
 
       expect(result.hasUiPanelExtension).toBe(false)
     })
@@ -317,7 +318,7 @@ describe('/(app) +layout.server.ts', () => {
       getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
       getExtensionNavMock.mockResolvedValue({ uiPanelSlot: null })
 
-      const result = await load(makeEvent(baseUser))
+      const result = expectLoaded(await load(makeEvent(baseUser)))
 
       expect(result.extensionNavItems).toEqual([])
     })
@@ -336,7 +337,7 @@ describe('/(app) +layout.server.ts', () => {
       ]
       getExtensionNavMock.mockResolvedValue({ uiPanelSlot: null, navItems })
 
-      const result = await load(makeEvent(baseUser))
+      const result = expectLoaded(await load(makeEvent(baseUser)))
 
       expect(result.extensionNavItems).toEqual(navItems)
     })
@@ -346,7 +347,7 @@ describe('/(app) +layout.server.ts', () => {
       getUsersMeMock.mockResolvedValue({ notifications: { unreadCount: 0 } })
       getExtensionNavMock.mockRejectedValue(new Error('boom'))
 
-      const result = await load(makeEvent(baseUser))
+      const result = expectLoaded(await load(makeEvent(baseUser)))
 
       expect(result.extensionNavItems).toEqual([])
     })

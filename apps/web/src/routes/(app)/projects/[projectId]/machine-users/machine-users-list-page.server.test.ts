@@ -14,6 +14,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
@@ -44,7 +45,7 @@ describe('machine-users list +page.server.ts (AC-1)', () => {
       return Promise.resolve({ items: [], total: 0 })
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.notFound).toBe(false)
     expect(result.machineUsers.items).toEqual([
@@ -56,7 +57,7 @@ describe('machine-users list +page.server.ts (AC-1)', () => {
   it('returns an empty list and honest empty state (no fabricated example) when there are zero machine users', async () => {
     listMachineUsersMock.mockResolvedValueOnce({ items: [], total: 0 })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.machineUsers.items).toEqual([])
     expect(result.notFound).toBe(false)
@@ -66,7 +67,7 @@ describe('machine-users list +page.server.ts (AC-1)', () => {
   it('returns notFound when the project 404s, matching the credential-list-page error pattern', async () => {
     listMachineUsersMock.mockRejectedValueOnce(new ApiClientError(404, null, 'not found'))
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.notFound).toBe(true)
     expect(result.machineUsers.items).toEqual([])

@@ -8,6 +8,7 @@ vi.mock('$lib/api/credential-shares.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const token = 'raw-external-token-value'
 
@@ -53,7 +54,7 @@ describe('/external-shares/[token] +page.server.ts', () => {
     })
     const { event } = makeEvent()
 
-    const result = await load(event)
+    const result = expectLoaded(await load(event))
 
     expect(result.metadata?.credentialName).toBe('Stripe Secret Key')
     expect(result.error).toBeNull()
@@ -72,7 +73,7 @@ describe('/external-shares/[token] +page.server.ts', () => {
       )
       const { event } = makeEvent()
 
-      const result = await load(event)
+      const result = expectLoaded(await load(event))
 
       expect(result.metadata).toBeNull()
       expect(result.error).toBe(expectedError)

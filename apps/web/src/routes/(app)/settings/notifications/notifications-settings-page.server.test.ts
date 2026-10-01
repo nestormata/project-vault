@@ -16,6 +16,7 @@ vi.mock('$lib/api/notifications.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { actions, load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 function makeEvent(user: { orgRole: string; mfaEnrolled: boolean } | null) {
   return { fetch: vi.fn(), locals: { user } } as unknown as Parameters<typeof load>[0]
@@ -41,7 +42,7 @@ describe('/settings/notifications +page.server.ts load', () => {
   it('a non-admin member sees preferences but no routing table, and cannot send test', async () => {
     getNotificationPreferencesMock.mockResolvedValue(PREFS)
 
-    const result = await load(makeEvent({ orgRole: 'member', mfaEnrolled: true }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'member', mfaEnrolled: true })))
 
     expect(result.isAdmin).toBe(false)
     expect(result.canSendTest).toBe(false)
@@ -56,7 +57,7 @@ describe('/settings/notifications +page.server.ts load', () => {
       { alertType: 'credential.expiring', routeTo: 'admin' },
     ])
 
-    const result = await load(makeEvent({ orgRole: 'owner', mfaEnrolled: true }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'owner', mfaEnrolled: true })))
 
     expect(result.isAdmin).toBe(true)
     expect(result.canSendTest).toBe(true)
@@ -68,7 +69,7 @@ describe('/settings/notifications +page.server.ts load', () => {
     getNotificationPreferencesMock.mockResolvedValue(PREFS)
     getOrgNotificationRoutingMock.mockResolvedValue([])
 
-    const result = await load(makeEvent({ orgRole: 'admin', mfaEnrolled: false }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'admin', mfaEnrolled: false })))
 
     expect(result.isAdmin).toBe(true)
     expect(result.canSendTest).toBe(false)
@@ -78,7 +79,7 @@ describe('/settings/notifications +page.server.ts load', () => {
     getNotificationPreferencesMock.mockResolvedValue(PREFS)
     getOrgNotificationRoutingMock.mockRejectedValue(new ApiClientError(403, null, 'forbidden'))
 
-    const result = await load(makeEvent({ orgRole: 'owner', mfaEnrolled: true }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'owner', mfaEnrolled: true })))
 
     expect(result.routing).toBeNull()
   })
@@ -93,7 +94,7 @@ describe('/settings/notifications +page.server.ts load', () => {
   it('an anonymous/no-user request never queries routing and is never admin', async () => {
     getNotificationPreferencesMock.mockResolvedValue(PREFS)
 
-    const result = await load(makeEvent(null))
+    const result = expectLoaded(await load(makeEvent(null)))
 
     expect(result.isAdmin).toBe(false)
     expect(result.canSendTest).toBe(false)

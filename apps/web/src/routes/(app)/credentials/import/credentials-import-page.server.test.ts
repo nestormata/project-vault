@@ -11,6 +11,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 }))
 
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 function makeEvent(orgRole: string) {
   return {
@@ -27,7 +28,7 @@ describe('credentials/import +page.server.ts', () => {
   it('sets canImport true for an owner', async () => {
     listProjectsMock.mockResolvedValueOnce({ items: [], total: 0 })
 
-    const result = await load(makeEvent('owner'))
+    const result = expectLoaded(await load(makeEvent('owner')))
 
     expect(result.canImport).toBe(true)
     expect(result.orgRole).toBe('owner')
@@ -36,7 +37,7 @@ describe('credentials/import +page.server.ts', () => {
   it('sets canImport true for an admin', async () => {
     listProjectsMock.mockResolvedValueOnce({ items: [], total: 0 })
 
-    const result = await load(makeEvent('admin'))
+    const result = expectLoaded(await load(makeEvent('admin')))
 
     expect(result.canImport).toBe(true)
   })
@@ -44,7 +45,7 @@ describe('credentials/import +page.server.ts', () => {
   it('sets canImport false for a member/viewer, while still returning the project list', async () => {
     listProjectsMock.mockResolvedValueOnce({ items: [{ id: 'p-1' }], total: 1 })
 
-    const result = await load(makeEvent('member'))
+    const result = expectLoaded(await load(makeEvent('member')))
 
     expect(result.canImport).toBe(false)
     expect(result.projects.items).toEqual([{ id: 'p-1' }])

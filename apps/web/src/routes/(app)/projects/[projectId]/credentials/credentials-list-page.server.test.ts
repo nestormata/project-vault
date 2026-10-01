@@ -12,6 +12,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
@@ -37,7 +38,7 @@ describe('credentials list +page.server.ts', () => {
       limit: 20,
       hasNext: false,
     })
-    const result = await load(makeEvent('viewer'))
+    const result = expectLoaded(await load(makeEvent('viewer')))
     expect(result.credentials.items).toEqual([{ id: 'c1' }])
     expect(result.notFound).toBeUndefined()
   })
@@ -50,13 +51,13 @@ describe('credentials list +page.server.ts', () => {
       limit: 20,
       hasNext: false,
     })
-    const result = await load(makeEvent('viewer', { status: 'expiring' }))
+    const result = expectLoaded(await load(makeEvent('viewer', { status: 'expiring' })))
     expect(result.filters).toBeDefined()
   })
 
   it('404s to an empty honest page instead of throwing', async () => {
     listCredentialsMock.mockRejectedValueOnce(new ApiClientError(404, null, 'not found'))
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
     expect(result.notFound).toBe(true)
     expect(result.credentials).toEqual({ items: [], total: 0, page: 1, limit: 20, hasNext: false })
   })

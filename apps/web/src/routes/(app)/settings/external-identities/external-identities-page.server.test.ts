@@ -18,6 +18,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 import { ApiClientError } from '$lib/api/client.js'
 import { requireUser } from '$lib/server/require-user.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const requireUserMock = vi.mocked(requireUser)
 
@@ -55,7 +56,7 @@ describe('/settings/external-identities +page.server.ts', () => {
     listExternalIdentitiesMock.mockResolvedValue([SAMPLE_IDENTITY])
     listOrgUsersMock.mockResolvedValue([SAMPLE_ORG_USER])
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -71,7 +72,7 @@ describe('/settings/external-identities +page.server.ts', () => {
     listExternalIdentitiesMock.mockResolvedValue([])
     listOrgUsersMock.mockResolvedValue([])
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -85,7 +86,7 @@ describe('/settings/external-identities +page.server.ts', () => {
     async (orgRole) => {
       requireUserMock.mockReturnValue({ orgRole } as ReturnType<typeof requireUser>)
 
-      const result = await load(makeEvent())
+      const result = expectLoaded(await load(makeEvent()))
 
       expect(result).toEqual({ allowed: false, orgRole })
       expect(listExternalIdentitiesMock).not.toHaveBeenCalled()
@@ -98,7 +99,7 @@ describe('/settings/external-identities +page.server.ts', () => {
     listExternalIdentitiesMock.mockRejectedValue(new Error('boom'))
     listOrgUsersMock.mockResolvedValue([])
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -115,7 +116,7 @@ describe('/settings/external-identities +page.server.ts', () => {
     )
     listOrgUsersMock.mockResolvedValue([])
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {

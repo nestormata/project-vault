@@ -14,6 +14,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const machineUserId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
@@ -43,7 +44,7 @@ describe('machine-user detail +page.server.ts (AC-1/AC-2)', () => {
     })
     listApiKeysMock.mockResolvedValueOnce({ items: [{ id: 'key-1', isRevoked: false }], total: 1 })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.notFound).toBe(false)
     expect(result.machineUser?.scopeBoundary).toEqual({ canAccess: ['x'], cannotAccess: ['y'] })
@@ -53,7 +54,7 @@ describe('machine-user detail +page.server.ts (AC-1/AC-2)', () => {
   it('returns notFound (standard 404 empty state) on a cross-org/nonexistent machine user, matching the credential-detail error pattern', async () => {
     getMachineUserMock.mockRejectedValueOnce(new ApiClientError(404, null, 'not found'))
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.notFound).toBe(true)
     expect(result.machineUser).toBeNull()

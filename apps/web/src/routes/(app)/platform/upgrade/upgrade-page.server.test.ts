@@ -16,6 +16,7 @@ vi.mock('$lib/api/platform.js', () => ({
 }))
 
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const platformUser = {
   userId: '00000000-0000-4000-8000-000000000001',
@@ -80,7 +81,7 @@ describe('/platform/upgrade +page.server.ts', () => {
   it('AC-A3: returns allowed=false for non-platform-operator', async () => {
     platformOperatorGateMock.mockReturnValue({ allowed: false })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(false)
   })
@@ -90,7 +91,7 @@ describe('/platform/upgrade +page.server.ts', () => {
     fetchHealthMock.mockResolvedValue({ status: 'ok', version: '0.9.0', versionSource: 'release' })
     probeApiDocsEnabledMock.mockResolvedValue(false)
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -104,7 +105,7 @@ describe('/platform/upgrade +page.server.ts', () => {
     fetchHealthMock.mockResolvedValue(null)
     probeApiDocsEnabledMock.mockResolvedValue(false)
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -125,7 +126,7 @@ describe('/platform/upgrade +page.server.ts', () => {
       })
       probeApiDocsEnabledMock.mockResolvedValue(false)
 
-      const result = await load(makeEvent())
+      const result = expectLoaded(await load(makeEvent()))
 
       expect(result.allowed).toBe(true)
       if (result.allowed) {
@@ -143,7 +144,7 @@ describe('/platform/upgrade +page.server.ts', () => {
       })
       probeApiDocsEnabledMock.mockResolvedValue(false)
 
-      const result = await load(makeEvent())
+      const result = expectLoaded(await load(makeEvent()))
 
       expect(result.allowed).toBe(true)
       if (result.allowed) {
@@ -157,7 +158,7 @@ describe('/platform/upgrade +page.server.ts', () => {
       fetchHealthMock.mockResolvedValue(null)
       probeApiDocsEnabledMock.mockResolvedValue(false)
 
-      const result = await load(makeEvent())
+      const result = expectLoaded(await load(makeEvent()))
 
       expect(result.allowed).toBe(true)
       if (result.allowed) {
@@ -171,7 +172,7 @@ describe('/platform/upgrade +page.server.ts', () => {
     fetchHealthMock.mockResolvedValue({ status: 'ok', version: '0.9.0' })
     probeApiDocsEnabledMock.mockResolvedValue(true)
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -184,7 +185,7 @@ describe('/platform/upgrade +page.server.ts', () => {
     it('AC-5: a non-operator gets exactly {allowed:false} and no policy request is made', async () => {
       platformOperatorGateMock.mockReturnValue({ allowed: false })
 
-      const result = await load(makeEvent())
+      const result = expectLoaded(await load(makeEvent()))
 
       expect(result).toStrictEqual({ allowed: false })
       expect(fetchClientVersionPolicyMock).not.toHaveBeenCalled()
@@ -203,7 +204,7 @@ describe('/platform/upgrade +page.server.ts', () => {
       fetchClientVersionPolicyMock.mockResolvedValue(RELEASE_POLICY_OK)
       const event = makeEvent()
 
-      const result = await load(event)
+      const result = expectLoaded(await load(event))
 
       expect(fetchClientVersionPolicyMock).toHaveBeenCalledTimes(1)
       expect(fetchClientVersionPolicyMock).toHaveBeenCalledWith(event.fetch)
@@ -235,7 +236,7 @@ describe('/platform/upgrade +page.server.ts', () => {
         probeApiDocsEnabledMock.mockResolvedValue(true)
         fetchClientVersionPolicyMock.mockResolvedValue({ status: 'unavailable', reason })
 
-        const result = await load(makeEvent())
+        const result = expectLoaded(await load(makeEvent()))
 
         expect(result).toStrictEqual({
           allowed: true,
@@ -253,7 +254,7 @@ describe('/platform/upgrade +page.server.ts', () => {
       probeApiDocsEnabledMock.mockResolvedValue(false)
       fetchClientVersionPolicyMock.mockResolvedValue(RELEASE_POLICY_OK)
 
-      const result = await load(makeEvent())
+      const result = expectLoaded(await load(makeEvent()))
 
       expect(result.allowed).toBe(true)
       if (result.allowed) {
@@ -296,7 +297,7 @@ describe('/platform/upgrade +page.server.ts', () => {
       probeApiDocsEnabledMock.mockResolvedValue(false)
       fetchClientVersionPolicyMock.mockResolvedValue(RELEASE_POLICY_OK)
 
-      const result = await load(makeEvent())
+      const result = expectLoaded(await load(makeEvent()))
 
       expect(JSON.stringify(result)).not.toMatch(/set-cookie|x-powered-by/i)
     })

@@ -5,6 +5,7 @@ const getThemesMock = vi.hoisted(() => vi.fn())
 vi.mock('$lib/api/themes.js', () => ({ getThemes: getThemesMock }))
 
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 function makeEvent(user: { orgRole: string } | null) {
   const withOrgId = user ? { ...user, orgId: 'org-1' } : null
@@ -30,7 +31,7 @@ describe('/settings/themes +page.server.ts load (Story 16.2 AC-1)', () => {
       orgDefaultThemeName: null,
     })
 
-    const result = await load(makeEvent({ orgRole: 'viewer' }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'viewer' })))
 
     expect(result.themes).toEqual([
       { name: 'base', label: 'Default', css: null },
@@ -43,7 +44,7 @@ describe('/settings/themes +page.server.ts load (Story 16.2 AC-1)', () => {
   it('falls back to an empty themes list with an error message when the fetch fails', async () => {
     getThemesMock.mockRejectedValue(new Error('boom'))
 
-    const result = await load(makeEvent({ orgRole: 'member' }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'member' })))
 
     expect(result.themes).toEqual([])
     expect(result.selected).toBeNull()
@@ -61,7 +62,7 @@ describe('/settings/themes +page.server.ts load — orgDefaultThemeName (Story 1
       orgDefaultThemeName: 'acme-brand',
     })
 
-    const result = await load(makeEvent({ orgRole: 'admin' }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'admin' })))
 
     expect(result.orgDefaultThemeName).toBe('acme-brand')
   })
@@ -69,7 +70,7 @@ describe('/settings/themes +page.server.ts load — orgDefaultThemeName (Story 1
   it('falls back to null orgDefaultThemeName when the fetch fails', async () => {
     getThemesMock.mockRejectedValue(new Error('boom'))
 
-    const result = await load(makeEvent({ orgRole: 'admin' }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'admin' })))
 
     expect(result.orgDefaultThemeName).toBeNull()
   })
@@ -84,25 +85,25 @@ describe('/settings/themes +page.server.ts load — canReload gate (Story 16.3 A
   })
 
   it('canReload is true for orgRole "admin"', async () => {
-    const result = await load(makeEvent({ orgRole: 'admin' }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'admin' })))
     expect(result.orgRole).toBe('admin')
     expect(result.canReload).toBe(true)
   })
 
   it('canReload is true for orgRole "owner"', async () => {
-    const result = await load(makeEvent({ orgRole: 'owner' }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'owner' })))
     expect(result.orgRole).toBe('owner')
     expect(result.canReload).toBe(true)
   })
 
   it('canReload is false for orgRole "member"', async () => {
-    const result = await load(makeEvent({ orgRole: 'member' }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'member' })))
     expect(result.orgRole).toBe('member')
     expect(result.canReload).toBe(false)
   })
 
   it('canReload is false for orgRole "viewer"', async () => {
-    const result = await load(makeEvent({ orgRole: 'viewer' }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'viewer' })))
     expect(result.orgRole).toBe('viewer')
     expect(result.canReload).toBe(false)
   })

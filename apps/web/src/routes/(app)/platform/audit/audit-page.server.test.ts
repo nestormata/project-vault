@@ -15,6 +15,7 @@ vi.mock('$lib/api/platform.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const platformUser = {
   userId: '00000000-0000-4000-8000-000000000001',
@@ -80,7 +81,7 @@ describe('/platform/audit +page.server.ts', () => {
   it('AC-A3: returns allowed=false for non-platform-operator', async () => {
     platformOperatorGateMock.mockReturnValue({ allowed: false })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(false)
     expect(listPlatformAuditEventsMock).not.toHaveBeenCalled()
@@ -91,7 +92,7 @@ describe('/platform/audit +page.server.ts', () => {
     listPlatformAuditEventsMock.mockResolvedValue(SAMPLE_EVENTS)
     getMaintenanceModeStatusMock.mockResolvedValue(INACTIVE_STATUS)
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -106,7 +107,7 @@ describe('/platform/audit +page.server.ts', () => {
     listPlatformAuditEventsMock.mockResolvedValue(SAMPLE_EVENTS)
     getMaintenanceModeStatusMock.mockRejectedValue(new Error('Network error'))
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -122,7 +123,7 @@ describe('/platform/audit +page.server.ts', () => {
     )
     getMaintenanceModeStatusMock.mockResolvedValue(INACTIVE_STATUS)
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {

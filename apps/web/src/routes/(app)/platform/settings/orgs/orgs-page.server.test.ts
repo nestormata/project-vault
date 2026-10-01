@@ -12,6 +12,7 @@ vi.mock('$lib/api/platform.js', () => ({
 }))
 
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const platformUser = {
   userId: '00000000-0000-4000-8000-000000000001',
@@ -45,7 +46,7 @@ describe('/platform/settings/orgs +page.server.ts', () => {
   it('AC-A3: returns allowed=false for non-platform-operator without fetching orgs', async () => {
     platformOperatorGateMock.mockReturnValue({ allowed: false })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(false)
     expect(listOrgsMock).not.toHaveBeenCalled()
@@ -65,7 +66,7 @@ describe('/platform/settings/orgs +page.server.ts', () => {
       ],
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -78,7 +79,7 @@ describe('/platform/settings/orgs +page.server.ts', () => {
     platformOperatorGateMock.mockReturnValue({ allowed: true, user: platformUser })
     listOrgsMock.mockRejectedValue(new Error('Network error'))
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {

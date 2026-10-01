@@ -12,6 +12,7 @@ vi.mock('$lib/api/platform.js', () => ({
 }))
 
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const platformUser = {
   userId: '00000000-0000-4000-8000-000000000001',
@@ -58,7 +59,7 @@ describe('/platform/settings +page.server.ts', () => {
   it('AC-A3: returns allowed=false for non-platform-operator without fetching settings', async () => {
     platformOperatorGateMock.mockReturnValue({ allowed: false })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(false)
     expect(getSettingsMock).not.toHaveBeenCalled()
@@ -68,7 +69,7 @@ describe('/platform/settings +page.server.ts', () => {
     platformOperatorGateMock.mockReturnValue({ allowed: true, user: platformUser })
     getSettingsMock.mockResolvedValue(SAMPLE_SETTINGS)
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -82,7 +83,7 @@ describe('/platform/settings +page.server.ts', () => {
     platformOperatorGateMock.mockReturnValue({ allowed: true, user: platformUser })
     getSettingsMock.mockRejectedValue(new Error('Network error'))
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {

@@ -14,6 +14,7 @@ vi.mock('$lib/server/native-login-status.js', () => ({
 }))
 
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 function makeEvent(orgRole: string) {
   return {
@@ -32,41 +33,41 @@ describe('/settings/users +page.server.ts', () => {
     it('defaults true when the health check succeeds', async () => {
       listOrgUsersMock.mockResolvedValue([])
       resolveNativeLoginEnabledMock.mockResolvedValue(true)
-      const result = await load(makeEvent('owner'))
+      const result = expectLoaded(await load(makeEvent('owner')))
       expect(result.nativeLoginEnabled).toBe(true)
     })
 
     it('is false once native login is excluded', async () => {
       listOrgUsersMock.mockResolvedValue([])
       resolveNativeLoginEnabledMock.mockResolvedValue(false)
-      const result = await load(makeEvent('owner'))
+      const result = expectLoaded(await load(makeEvent('owner')))
       expect(result.nativeLoginEnabled).toBe(false)
     })
 
     it('fails safe to true when the health check itself fails (returns null)', async () => {
       listOrgUsersMock.mockResolvedValue([])
       resolveNativeLoginEnabledMock.mockResolvedValue(null)
-      const result = await load(makeEvent('owner'))
+      const result = expectLoaded(await load(makeEvent('owner')))
       expect(result.nativeLoginEnabled).toBe(true)
     })
   })
 
   it('an owner can manage and sees the loaded user list', async () => {
     listOrgUsersMock.mockResolvedValue([{ id: 'u1' }])
-    const result = await load(makeEvent('owner'))
+    const result = expectLoaded(await load(makeEvent('owner')))
     expect(result.canManage).toBe(true)
     expect(result.users).toEqual([{ id: 'u1' }])
   })
 
   it('an admin can manage and sees the loaded user list', async () => {
     listOrgUsersMock.mockResolvedValue([{ id: 'u2' }])
-    const result = await load(makeEvent('admin'))
+    const result = expectLoaded(await load(makeEvent('admin')))
     expect(result.canManage).toBe(true)
     expect(result.users).toEqual([{ id: 'u2' }])
   })
 
   it('a member cannot manage and the user list is never fetched', async () => {
-    const result = await load(makeEvent('member'))
+    const result = expectLoaded(await load(makeEvent('member')))
     expect(result.canManage).toBe(false)
     expect(result.users).toEqual([])
     expect(listOrgUsersMock).not.toHaveBeenCalled()
@@ -74,7 +75,7 @@ describe('/settings/users +page.server.ts', () => {
 
   it('tolerates a failed user list fetch by returning an empty list', async () => {
     listOrgUsersMock.mockRejectedValueOnce(new Error('network down'))
-    const result = await load(makeEvent('owner'))
+    const result = expectLoaded(await load(makeEvent('owner')))
     expect(result.users).toEqual([])
   })
 })

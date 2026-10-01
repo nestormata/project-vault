@@ -13,6 +13,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 import { ApiClientError } from '$lib/api/client.js'
 import { requireUser } from '$lib/server/require-user.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const requireUserMock = vi.mocked(requireUser)
 
@@ -50,7 +51,7 @@ describe('/settings/audit +page.server.ts', () => {
   it('AC-B4: does not call the API and returns allowed=false for a non-owner role', async () => {
     requireUserMock.mockReturnValue({ orgRole: 'admin' } as ReturnType<typeof requireUser>)
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(false)
     expect(listAuditEventsMock).not.toHaveBeenCalled()
@@ -60,7 +61,7 @@ describe('/settings/audit +page.server.ts', () => {
     requireUserMock.mockReturnValue({ orgRole: 'owner' } as ReturnType<typeof requireUser>)
     listAuditEventsMock.mockResolvedValue(SAMPLE_RESULT)
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(listAuditEventsMock).toHaveBeenCalledWith(
       expect.anything(),
@@ -109,7 +110,7 @@ describe('/settings/audit +page.server.ts', () => {
       hasNext: false,
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {
@@ -124,7 +125,7 @@ describe('/settings/audit +page.server.ts', () => {
       new ApiClientError(429, { message: 'Too many requests' }, 'Too many requests')
     )
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.allowed).toBe(true)
     if (result.allowed) {

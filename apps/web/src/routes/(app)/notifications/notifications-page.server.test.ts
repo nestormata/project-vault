@@ -38,6 +38,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 import { ApiClientError } from '$lib/api/client.js'
 import { requireUser } from '$lib/server/require-user.js'
 import { load, actions } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const requireUserMock = vi.mocked(requireUser)
 
@@ -106,7 +107,7 @@ describe('/notifications +page.server.ts', () => {
       data: { items: [SAMPLE_ENTRY], total: 1, page: 1, limit: 20, hasNext: false },
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(Array.isArray(result.notifications)).toBe(true)
     expect(result.notifications).toEqual([SAMPLE_ENTRY])
@@ -118,7 +119,7 @@ describe('/notifications +page.server.ts', () => {
       data: { items: [], total: 0, page: 1, limit: 20, hasNext: false },
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.notifications).toEqual([])
   })
@@ -126,7 +127,7 @@ describe('/notifications +page.server.ts', () => {
   it('returns an empty array (not a thrown error) on a 403 from the API', async () => {
     getNotificationInboxMock.mockRejectedValue(new ApiClientError(403, null, 'forbidden'))
 
-    const result = await load(makeEvent({ page: '2' }))
+    const result = expectLoaded(await load(makeEvent({ page: '2' })))
 
     expect(result.notifications).toEqual([])
     expect(result.page).toBe(2)
@@ -136,7 +137,7 @@ describe('/notifications +page.server.ts', () => {
     getNotificationInboxMock.mockResolvedValueOnce({
       data: { items: [SAMPLE_ENTRY], total: 44, page: 3, limit: 20, hasNext: true },
     })
-    const result = await load(makeEvent({ page: '9', status: 'read' }))
+    const result = expectLoaded(await load(makeEvent({ page: '9', status: 'read' })))
     expect(result).toMatchObject({ total: 44, page: 3, hasNext: true, status: 'read' })
 
     getNotificationInboxMock.mockRejectedValueOnce(new Error('offline'))
@@ -166,7 +167,7 @@ describe('notifications +page.server.ts (AC-4: dormancy alerts in existing inbox
       hasNext: false,
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.dormancyAlerts).toHaveLength(1)
     expect(result.dormancyAlerts[0]).toMatchObject({
@@ -179,7 +180,7 @@ describe('notifications +page.server.ts (AC-4: dormancy alerts in existing inbox
   it('does not call the org security-alerts endpoint for a non-admin viewer/member', async () => {
     requireUserMock.mockReturnValue({ orgRole: 'member' } as ReturnType<typeof requireUser>)
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(listOrgSecurityAlertsMock).not.toHaveBeenCalled()
     expect(result.dormancyAlerts).toEqual([])
@@ -189,7 +190,7 @@ describe('notifications +page.server.ts (AC-4: dormancy alerts in existing inbox
     requireUserMock.mockReturnValue({ orgRole: 'admin' } as ReturnType<typeof requireUser>)
     listOrgSecurityAlertsMock.mockRejectedValueOnce(new ApiClientError(403, null, 'forbidden'))
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.dormancyAlerts).toEqual([])
   })
@@ -213,7 +214,7 @@ describe('notifications +page.server.ts (AC-4: dormancy alerts in existing inbox
     })
     listOrgSecurityAlertsMock.mockResolvedValueOnce(EMPTY_DORMANCY_ALERTS_PAGE)
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.notifications).toEqual([{ id: 'n-1', alertType: 'credential.expiry' }])
     expect(result.dormancyAlerts).toEqual([])
@@ -341,7 +342,7 @@ describe('notifications +page.server.ts (Story 8.7 AC group H: user dormancy ale
       hasNext: false,
     })
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(listOrgSecurityAlertsMock).toHaveBeenCalledTimes(1)
     expect(result.userDormancyAlerts).toHaveLength(1)
@@ -355,7 +356,7 @@ describe('notifications +page.server.ts (Story 8.7 AC group H: user dormancy ale
   it('AC-H3: a member/viewer sees neither dormancy section', async () => {
     requireUserMock.mockReturnValue({ orgRole: 'member' } as ReturnType<typeof requireUser>)
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(listOrgSecurityAlertsMock).not.toHaveBeenCalled()
     expect(result.userDormancyAlerts).toEqual([])
@@ -366,7 +367,7 @@ describe('notifications +page.server.ts (Story 8.7 AC group H: user dormancy ale
     requireUserMock.mockReturnValue({ orgRole: 'owner' } as ReturnType<typeof requireUser>)
     listOrgSecurityAlertsMock.mockResolvedValueOnce(EMPTY_DORMANCY_ALERTS_PAGE)
 
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
 
     expect(result.userDormancyAlerts).toEqual([])
   })

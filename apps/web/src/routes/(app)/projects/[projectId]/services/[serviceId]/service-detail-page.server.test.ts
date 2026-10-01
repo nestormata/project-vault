@@ -12,6 +12,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 
 import { ApiClientError } from '$lib/api/client.js'
 import { load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const serviceId = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
@@ -29,14 +30,14 @@ describe('service detail +page.server.ts', () => {
 
   it('loads the service for a viewer+ role', async () => {
     getServiceMock.mockResolvedValue({ id: serviceId, name: 'payments' })
-    const result = await load(makeEvent('viewer'))
+    const result = expectLoaded(await load(makeEvent('viewer')))
     expect(result.service).toEqual({ id: serviceId, name: 'payments' })
     expect(result.notFound).toBe(false)
   })
 
   it('404s to a notFound flag instead of throwing', async () => {
     getServiceMock.mockRejectedValueOnce(new ApiClientError(404, null, 'not found'))
-    const result = await load(makeEvent())
+    const result = expectLoaded(await load(makeEvent()))
     expect(result.notFound).toBe(true)
     expect(result.service).toBeNull()
   })

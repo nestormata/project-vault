@@ -7,6 +7,7 @@ vi.mock('$lib/api/inbox.js', () => ({ getUsersMe: getUsersMeMock }))
 vi.mock('$lib/api/locale.js', () => ({ patchUserLocale: patchUserLocaleMock }))
 
 import { actions, load } from './+page.server.js'
+import { expectLoaded } from '$lib/test/page-data.js'
 
 function makeEvent(user: { orgRole: string } | null) {
   return { fetch: vi.fn(), locals: { user } } as unknown as Parameters<typeof load>[0]
@@ -30,7 +31,7 @@ describe('/settings/language +page.server.ts load (AC 1/7)', () => {
   it('builds locale options from the current users.locale value, redirecting anonymous users', async () => {
     getUsersMeMock.mockResolvedValue({ locale: 'es' })
 
-    const result = await load(makeEvent({ orgRole: 'member' }))
+    const result = expectLoaded(await load(makeEvent({ orgRole: 'member' })))
 
     expect(result.options).toEqual([
       { locale: 'en', label: 'English', isCurrent: false },
