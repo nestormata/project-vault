@@ -88,8 +88,8 @@
   // forms: never sourced from `data`, only cleared when the record changes).
   const credentialKey = $derived(`${data.projectId}/${data.credentialId}`)
 
-  let revealedValue = $derived(resetOn(credentialKey, null as string | null))
-  let revealVersion = $derived(resetOn(credentialKey, null as number | null))
+  let revealedValue = $derived(resetOn<string | null>(credentialKey, null))
+  let revealVersion = $derived(resetOn<number | null>(credentialKey, null))
   let revealing = $state(false)
   let revealError = $state<string | null>(null)
 
@@ -97,7 +97,7 @@
   // holds explicitly-revealed sensitive field values (and any non-sensitive field whose eager
   // decrypt degraded — AC-2 Failure Mode). "Hide" clears a key client-side only, no API call,
   // mirroring the existing whole-secret `revealedValue = null` convention.
-  let revealedFields = $derived(resetOn(credentialKey, {} as Record<string, string>))
+  let revealedFields = $derived(resetOn<Record<string, string>>(credentialKey, {}))
   let revealingField = $state<string | null>(null)
   let fieldRevealError = $state<Record<string, string>>({})
   let revealAllLoading = $state(false)
@@ -106,7 +106,7 @@
   // AC-L1: local override applied after a successful lifecycle save so the read-only summary
   // grid above updates without a full page reload; null means "show data.credential's value".
   type LifecycleOverride = { expiresAt: string | null; rotationSchedule: string | null }
-  let lifecycleOverride = $derived(resetOn(credentialKey, null as LifecycleOverride | null))
+  let lifecycleOverride = $derived(resetOn<LifecycleOverride | null>(credentialKey, null))
   // Story 68.1 AC-3: the editable lifecycle inputs re-seed when the record or its persisted value
   // changes (primitive $deriveds), but keep an in-progress edit across an unrelated reload of the
   // same credential (e.g. invalidateAll() after adding a version).
@@ -306,7 +306,7 @@
   // Story 17.1 AC-11: the raw token is shown exactly once, right after creation (copy-once
   // affordance) — never persisted, never re-fetchable once this local state is cleared/replaced.
   // Story 68.1 AC-3: cleared when the record changes (never sourced from `data`).
-  let lastCreatedShareToken = $derived(resetOn(credentialKey, null as string | null))
+  let lastCreatedShareToken = $derived(resetOn<string | null>(credentialKey, null))
   let lastCreatedShareIsExternal = $derived(resetOn(credentialKey, false))
   let revokingShareId = $state<string | null>(null)
 
@@ -1010,7 +1010,7 @@
   // Story 68.1 AC-3: the field-set editor is pre-filled with this credential's revealed values,
   // so it closes and clears when the record changes (never sourced from `data`).
   let editingFieldSet = $derived(resetOn(credentialKey, false))
-  let editFields = $derived(resetOn(credentialKey, [] as FieldDraft[]))
+  let editFields = $derived(resetOn<FieldDraft[]>(credentialKey, []))
   let fieldSetErrors = $state<Record<number, string>>({})
   let fieldSetFormError = $state<string | null>(null)
   let loadingFieldSet = $state(false)

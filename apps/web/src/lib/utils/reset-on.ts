@@ -4,7 +4,7 @@
  * on that identity only: it resets to `value` when SvelteKit reuses the page for another record
  * (same route, new params), and otherwise keeps local updates across unrelated reloads.
  *
- * @example let revealedValue = $derived(resetOn(credentialKey, null as string | null))
+ * @example let revealedValue = $derived(resetOn<string | null>(credentialKey, null))
  */
 export function resetOn<T>(identity: unknown, value: T): T {
   return value
