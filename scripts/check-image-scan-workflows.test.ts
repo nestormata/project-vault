@@ -381,6 +381,23 @@ describe('Story 64.3 AC-3: PR-time image scan in ci.yml docker-build', () => {
     it('reports images_changed=false on push (nightly is the gate on main)', () => {
       expect(runDetect({ event: 'push', changed: [API_DOCKERFILE] })).toBe('false')
     })
+
+    // Story 64.4: base-image-refresh.yml dispatches ci.yml on its branch (a GITHUB_TOKEN PR does not
+    // trigger pull_request), so a dispatch run on a non-default branch must be gated like a PR.
+    it('gates a workflow_dispatch run on a non-default branch like a PR', () => {
+      expect(
+        runDetect({ event: 'workflow_dispatch', refName: 'pr', changed: [API_DOCKERFILE] })
+      ).toBe('true')
+      expect(runDetect({ event: 'workflow_dispatch', refName: 'pr', changed: ['README.md'] })).toBe(
+        'false'
+      )
+    })
+
+    it('keeps a workflow_dispatch run on the default branch advisory', () => {
+      expect(
+        runDetect({ event: 'workflow_dispatch', refName: 'main', changed: [API_DOCKERFILE] })
+      ).toBe('false')
+    })
   })
 })
 
@@ -436,7 +453,7 @@ cat "$GITHUB_OUTPUT"
  * Executes the real "image-inputs" step body in a throwaway clone whose PR branch changes the
  * given files relative to `origin/main`, and returns the `images_changed` output it wrote.
  */
-function runDetect(options: { event: string; changed: string[] }): string {
+function runDetect(options: { event: string; changed: string[]; refName?: string }): string {
   const detect = job(loadWorkflow(CI_WORKFLOW), DOCKER_BUILD_JOB).steps?.find(
     (step) => step.id === 'image-inputs'
   )
@@ -450,6 +467,7 @@ function runDetect(options: { event: string; changed: string[] }): string {
       CHANGED_FILES: options.changed.join('\n'),
       EVENT_NAME: options.event,
       BASE_REF: 'main',
+      REF_NAME: options.refName ?? '',
     },
   })
   expect(run.status, `${run.stdout}${run.stderr}`).toBe(0)

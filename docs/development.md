@@ -132,6 +132,23 @@ Since Story 60.6 the E2E stack runs the CentralizeMe -> PV handoff for real, so
 - Two `make e2e` runs in the **same** worktree at once are unsupported: they share one compose
   project and one database, which `global-setup.ts` truncates under the other run.
 
+## Base image refresh
+
+Every image builds `FROM node@sha256:<digest>` (the `node:24-alpine` index digest, a bare digest by
+design: Sonar S8431 flags tag plus digest as redundant). Six lines carry it: `apps/api/Dockerfile`
+(builder, runner, migrate), `apps/web/Dockerfile` (builder, runner) and `Dockerfile.ci`; they must
+stay in lockstep (`scripts/check-base-image-digest.test.ts`).
+
+`.github/workflows/base-image-refresh.yml` runs weekly (and on `workflow_dispatch`). It resolves the
+current digest from Docker Hub with an anonymous token, refuses a registry rollback (older `libssl3`),
+rewrites all six lines with `scripts/refresh-base-image.sh`, force-pushes `chore/base-image-refresh`
+and opens or updates a single `base-image`-labelled PR. A PR opened with `GITHUB_TOKEN` does not
+trigger `pull_request` workflows, so the job also runs `gh workflow run ci.yml --ref
+chore/base-image-refresh`; the checks (including the blocking image scan) appear on the PR head
+commit. The PR is never auto-merged: review the checks, then merge by hand. To refresh by hand, run
+`gh workflow run base-image-refresh.yml`. `scripts/update-base-image.sh` only prints a digest from a
+local Docker pull.
+
 ## Local quality gates
 
 `make ci` runs the public build, typecheck, lint, migration, RLS, security, test, duplication, and

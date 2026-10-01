@@ -1,0 +1,135 @@
+name: Base Image Refresh
+
+# Story 64.4 (Option B): proposes a reviewed PR whenever upstream publishes a new node:24-alpine
+# build, so OS-level fixes reach our images in days. The pin stays a bare `FROM node@sha256:` digest
+# (Sonar S8431-clean); Dependabot's docker ecosystem cannot follow a tag-less digest, hence this job.
+#
+# GITHUB_TOKEN trap: a PR opened (or a branch pushed) with GITHUB_TOKEN does NOT trigger
+# `pull_request`/`push` workflows, so CI, the Story 64.3 PR image scan and the Docker Build jobs
+# would never run on the refresh PR. ci.yml therefore has `workflow_dispatch`, and this job runs
+# `gh workflow run ci.yml --ref <refresh branch>` after pushing (dispatch is exempt from the
+# no-recursion rule). The results attach to the branch head SHA and show on the PR.
+#
+# A maintainer reviews and merges the gated PR by hand. Contract:
+# scripts/check-base-image-refresh-workflow.test.ts. Logic: scripts/refresh-base-image.sh.
+
+on:
+  schedule:
+    - cron: '17 6 * * 1' # weekly, Monday 06:17 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: base-image-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Refresh node base image digest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # push the refresh branch
+      pull-requests: write # open/update the PR and apply the label
+      actions: write # `gh workflow run ci.yml` (dispatch gates the PR, see header)
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BRANCH: chore/base-image-refresh
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Resolve current and upstream digests
+        id: digests
+        run: |
+          set -euo pipefail
+          OLD=$(scripts/refresh-base-image.sh current)
+          NEW=$(scripts/refresh-base-image.sh resolve)
+          echo "pinned:   ${OLD}"
+          echo "upstream: ${NEW}"
+          echo "old=${OLD}" >> "$GITHUB_OUTPUT"
+          echo "new=${NEW}" >> "$GITHUB_OUTPUT"
+          if [[ "$OLD" == "$NEW" ]]; then
+            echo "Base image digest is current; nothing to do."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Registry-rollback sanity check: fails the job if the new image ships an older libssl3
+      # than the pinned one on either architecture. The markdown table goes into the PR body.
+      - name: Verify the new image is not a rollback
+        if: steps.digests.outputs.changed == 'true'
+        env:
+          OLD: ${{ steps.digests.outputs.old }}
+          NEW: ${{ steps.digests.outputs.new }}
+        run: |
+          set -euo pipefail
+          scripts/refresh-base-image.sh verify "$OLD" "$NEW" | tee "$RUNNER_TEMP/versions.md"
+
+      - name: Rewrite FROM lines and push the refresh branch
+        id: push
+        if: steps.digests.outputs.changed == 'true'
+        env:
+          NEW: ${{ steps.digests.outputs.new }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH" "origin/${DEFAULT_BRANCH}"
+          scripts/refresh-base-image.sh rewrite "$NEW"
+          git add apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci
+          # Idempotent: if the existing refresh branch already carries exactly this change, leave
+          # it (and its CI run) alone instead of force-pushing an identical tree.
+          if git fetch --no-tags origin "$BRANCH" 2>/dev/null \
+            && git diff --quiet --cached "origin/${BRANCH}" -- apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci \
+            && [[ -z "$(git diff --name-only "origin/${DEFAULT_BRANCH}" "origin/${BRANCH}" | grep -v -E '^(apps/api/Dockerfile|apps/web/Dockerfile|Dockerfile\.ci)$' || true)" ]]; then
+            echo "Refresh branch already up to date."
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m "chore(docker): refresh node base image digest" \
+            -m "Bump the node:24-alpine digest pinned in apps/api, apps/web and Dockerfile.ci to ${NEW}."
+          git push --force origin "HEAD:refs/heads/${BRANCH}"
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the refresh PR
+        id: pr
+        if: steps.digests.outputs.changed == 'true'
+        env:
+          OLD: ${{ steps.digests.outputs.old }}
+          NEW: ${{ steps.digests.outputs.new }}
+        run: |
+          set -euo pipefail
+          {
+            echo "Automated refresh of the \`node:24-alpine\` base image (Story 64.4)."
+            echo
+            echo "- Old digest: \`${OLD}\`"
+            echo "- New digest: \`${NEW}\`"
+            echo
+            cat "$RUNNER_TEMP/versions.md"
+            echo
+            echo "All six \`FROM node@sha256:\` lines (apps/api x3, apps/web x2, Dockerfile.ci) are rewritten in lockstep."
+            echo "Merge by hand after review. A PR opened by GITHUB_TOKEN does not trigger \`pull_request\` workflows, so this job"
+            echo "dispatches \`ci.yml\` on the branch: review the checks on the head commit (image scan, Docker Build,"
+            echo "lockstep guard) before merging."
+          } > "$RUNNER_TEMP/body.md"
+          TITLE="chore(docker): refresh node:24-alpine base image digest"
+          gh label create base-image --color 0e8a16 --description "Automated base image refresh" || true
+          NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [[ -n "$NUMBER" ]]; then
+            echo "Updating existing PR #${NUMBER}"
+            gh api -X PATCH "repos/${GH_REPO}/pulls/${NUMBER}" -f title="$TITLE" -F body=@"$RUNNER_TEMP/body.md" > /dev/null
+          else
+            gh pr create --head "$BRANCH" --base "$DEFAULT_BRANCH" --title "$TITLE" --body-file "$RUNNER_TEMP/body.md" --label base-image
+          fi
+
+      - name: Dispatch CI on the refresh branch
+        if: steps.digests.outputs.changed == 'true' && steps.push.outputs.pushed == 'true'
+        run: |
+          set -euo pipefail
+          gh workflow run ci.yml --ref "$BRANCH"

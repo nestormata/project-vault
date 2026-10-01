@@ -16,7 +16,7 @@ description.
 - [ ] **Backup restore validation.** Run
       `POST /api/v1/admin/backups/:filename/validate` against the most recent backup
       ([`backup-restore.md`](backup-restore.md)). Expected: `{"data":{"valid":true,
-      "assetsPresent":{...all true...},"checksum":"match"}}`. Record pass/fail; a failure requires
+    "assetsPresent":{...all true...},"checksum":"match"}}`. Record pass/fail; a failure requires
       immediate escalation, not a note for next quarter.
 
 - [ ] **Audit-log integrity check, both logs.** Run both `GET /api/v1/org/audit/verify` and
@@ -91,6 +91,10 @@ description.
 
       As part of this review, check the last few nightly runs and any advisory PR-scan warnings for
       findings that nobody picked up.
+
+      Confirm the base-image refresh (`base-image-refresh.yml`; Dependabot has no docker ecosystem
+      for our bare-digest pin) has produced or reviewed a PR in the last quarter. A silent refresh
+      mechanism is a broken one.
 
 - [ ] **`.trivyignore` expiry audit.** For every active entry, confirm its `exp: YYYY-MM-DD` deadline
       is not approaching without a renewal plan (same file and mechanism as the item above).
