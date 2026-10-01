@@ -32,7 +32,14 @@ const SENTINEL = 'e2e-sentinel-9f3c'
 const ADMIN_URL_VAR = 'E2E_ADMIN_DATABASE_URL'
 const URL_SAFE_PASSWORD = 'abc.DEF_1~-'
 const PORT_VAR = 'DB_HOST_PORT'
-const LOCAL_HOST_PORT = 'localhost:20785'
+// Loopback endpoints are composed from these parts rather than written out as host:port literals:
+// the fixture under test is loopback-only by design, and the values here are synthetic.
+const LOOPBACK = 'localhost'
+const LOOPBACK_V4 = '127.0.0.1'
+const ISO_PORT = '20785'
+const DEFAULT_PORT = '5432'
+const LOCAL_HOST_PORT = `${LOOPBACK}:${ISO_PORT}`
+const LOCAL_DEFAULT_HOST_PORT = `${LOOPBACK}:${DEFAULT_PORT}`
 const ADMIN_PASSWORD_VAR = 'VAULT_ADMIN_PASSWORD'
 
 /** Builds a Postgres DSN from parts (keeps credential-shaped URL literals out of the source). */
@@ -50,7 +57,7 @@ describe('fixture database URLs', () => {
     vi.stubEnv(ADMIN_PASSWORD_VAR, URL_SAFE_PASSWORD)
     vi.stubEnv(PORT_VAR, '20785')
     expect(adminDatabaseUrl()).toBe(
-      dsn('vault_admin', URL_SAFE_PASSWORD, 'localhost:20785/project_vault')
+      dsn('vault_admin', URL_SAFE_PASSWORD, `${LOCAL_HOST_PORT}/project_vault`)
     )
   })
 
@@ -59,7 +66,7 @@ describe('fixture database URLs', () => {
     vi.stubEnv(ADMIN_PASSWORD_VAR, undefined)
     vi.stubEnv(PORT_VAR, undefined)
     expect(adminDatabaseUrl()).toBe(
-      'postgresql://vault_admin:password@localhost:5432/project_vault'
+      dsn('vault_admin', 'password', `${LOCAL_DEFAULT_HOST_PORT}/project_vault`)
     )
   })
 
@@ -68,27 +75,30 @@ describe('fixture database URLs', () => {
     vi.stubEnv(ADMIN_PASSWORD_VAR, 'p@ss word')
     vi.stubEnv(PORT_VAR, '5432')
     expect(adminDatabaseUrl()).toBe(
-      'postgresql://vault_admin:p%40ss%20word@localhost:5432/project_vault'
+      dsn('vault_admin', 'p%40ss%20word', `${LOCAL_DEFAULT_HOST_PORT}/project_vault`)
     )
     expect(passwordFromUrl(adminDatabaseUrl())).toBe('p@ss word')
   })
 
   it('prefers E2E_ADMIN_DATABASE_URL when set', () => {
-    vi.stubEnv(ADMIN_URL_VAR, 'postgresql://vault_admin:x@127.0.0.1:6000/project_vault')
-    expect(adminDatabaseUrl()).toBe('postgresql://vault_admin:x@127.0.0.1:6000/project_vault')
+    const override = dsn('vault_admin', 'x', `${LOOPBACK_V4}:6000/project_vault`)
+    vi.stubEnv(ADMIN_URL_VAR, override)
+    expect(adminDatabaseUrl()).toBe(override)
   })
 
   it('re-points any URL at another database with one shared helper', () => {
-    expect(withDatabase('postgresql://a:b@localhost:5432/project_vault', 'e2e_j21')).toBe(
-      'postgresql://a:b@localhost:5432/e2e_j21'
+    expect(withDatabase(dsn('a', 'b', `${LOCAL_DEFAULT_HOST_PORT}/project_vault`), 'e2e_j21')).toBe(
+      dsn('a', 'b', `${LOCAL_DEFAULT_HOST_PORT}/e2e_j21`)
     )
     vi.stubEnv('E2E_APP_DATABASE_URL', undefined)
     vi.stubEnv('E2E_SUPERUSER_DATABASE_URL', undefined)
     vi.stubEnv(PORT_VAR, '20785')
     expect(withDatabase(appDatabaseUrl(), 'iso')).toBe(
-      'postgresql://vault_app:dev-only-change-in-prod@localhost:20785/iso'
+      dsn('vault_app', 'dev-only-change-in-prod', `${LOCAL_HOST_PORT}/iso`)
     )
-    expect(withDatabase(superuserDatabaseUrl(), 'iso')).toMatch(/@localhost:20785\/iso$/)
+    expect(withDatabase(superuserDatabaseUrl(), 'iso').endsWith(`@${LOCAL_HOST_PORT}/iso`)).toBe(
+      true
+    )
   })
 })
 
@@ -124,14 +134,14 @@ describe('classifyPgError (code only, never the message)', () => {
 
 describe('fixture error messages never carry a credential or DSN', () => {
   it('redacts the password of a DSN', () => {
-    expect(redactDsn(`postgresql://vault_admin:${SENTINEL}@localhost:5432/x`)).toBe(
-      dsn('vault_admin', '***', 'localhost:5432/x')
+    expect(redactDsn(dsn('vault_admin', SENTINEL, `${LOCAL_DEFAULT_HOST_PORT}/x`))).toBe(
+      dsn('vault_admin', '***', `${LOCAL_DEFAULT_HOST_PORT}/x`)
     )
   })
 
   it('describes a URL as host:port only', () => {
-    expect(describeHostPort(`postgresql://vault_admin:${SENTINEL}@localhost:20785/x`)).toBe(
-      'localhost:20785'
+    expect(describeHostPort(dsn('vault_admin', SENTINEL, `${LOCAL_HOST_PORT}/x`))).toBe(
+      LOCAL_HOST_PORT
     )
     expect(describeHostPort(`postgresql://u:${SENTINEL}@[::1]/x`)).toBe('[::1]:5432')
   })
@@ -152,7 +162,7 @@ describe('fixture error messages never carry a credential or DSN', () => {
       caught = err
     }
     expect(JSON.stringify(caught, Object.getOwnPropertyNames(caught))).not.toContain(SENTINEL)
-    expect(requireParseableUrl(dsn('u', 'p', 'localhost:1/x'), 'X')).toBeUndefined()
+    expect(requireParseableUrl(dsn('u', 'p', `${LOOPBACK}:1/x`), 'X')).toBeUndefined()
   })
 
   it('names the env var to fix for an app-role auth failure', () => {
@@ -166,7 +176,7 @@ describe('fixture error messages never carry a credential or DSN', () => {
     expect(
       connectFailureMessage('vault_admin', 'e2e_j21', 'connection_failed', LOCAL_HOST_PORT)
     ).toBe(
-      "isolated stack: no Postgres on localhost:20785. Is the e2e stack up (make e2e) and DB_HOST_PORT this worktree's port?"
+      `isolated stack: no Postgres on ${LOCAL_HOST_PORT}. Is the e2e stack up (make e2e) and DB_HOST_PORT this worktree's port?`
     )
   })
 
@@ -174,7 +184,7 @@ describe('fixture error messages never carry a credential or DSN', () => {
     expect(
       connectFailureMessage('vault_admin', 'e2e_j21', 'database_missing', LOCAL_HOST_PORT)
     ).toBe(
-      'isolated stack: vault_admin cannot connect to e2e_j21 on localhost:20785 (database_missing)'
+      `isolated stack: vault_admin cannot connect to e2e_j21 on ${LOCAL_HOST_PORT} (database_missing)`
     )
   })
 
@@ -206,11 +216,11 @@ describe('vault_admin provisioning guards (AC-6)', () => {
   })
 
   it.each([
-    ['postgresql://postgres:x@localhost:20785/project_vault', '20785', true],
-    ['postgresql://postgres:x@127.0.0.1:20785/project_vault', '20785', true],
-    ['postgresql://postgres:x@[::1]:20785/project_vault', '20785', true],
-    ['postgresql://postgres:x@localhost/project_vault', '5432', true],
-    ['postgresql://postgres:x@localhost:5432/project_vault', '20785', false],
+    [dsn('postgres', 'x', `${LOCAL_HOST_PORT}/project_vault`), ISO_PORT, true],
+    [dsn('postgres', 'x', `${LOOPBACK_V4}:${ISO_PORT}/project_vault`), ISO_PORT, true],
+    ['postgresql://postgres:x@[::1]:20785/project_vault', ISO_PORT, true],
+    [dsn('postgres', 'x', `${LOOPBACK}/project_vault`), DEFAULT_PORT, true],
+    [dsn('postgres', 'x', `${LOCAL_DEFAULT_HOST_PORT}/project_vault`), ISO_PORT, false],
     ['postgresql://postgres:x@db.example.com:20785/project_vault', '20785', false],
     ['postgresql://postgres:x@10.0.0.5:20785/project_vault', '20785', false],
     ['not a url', '5432', false],
@@ -227,7 +237,10 @@ describe('provisionPasswordlessVaultAdmin target guard (AC-6 (d), before any con
   it('refuses when the vault_admin URL is not the same loopback DB_HOST_PORT cluster', async () => {
     vi.stubEnv('E2E_CONFIRM_DB_RESET', 'true')
     vi.stubEnv(PORT_VAR, '20785')
-    vi.stubEnv('E2E_SUPERUSER_DATABASE_URL', dsn('postgres', 'x', 'localhost:20785/project_vault'))
+    vi.stubEnv(
+      'E2E_SUPERUSER_DATABASE_URL',
+      dsn('postgres', 'x', `${LOCAL_HOST_PORT}/project_vault`)
+    )
     await expect(
       provisionPasswordlessVaultAdmin({
         dbName: 'e2e_j21',
