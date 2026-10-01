@@ -106,10 +106,14 @@
           -->
           {#each item.children as child, childIndex (childIndex)}
             {@const childActive = isActiveNavItem(child.href, page.url.pathname)}
+            {@const childHref = resolve(
+              // @ts-expect-error -- extension navItems hrefs are runtime strings validated by NAV_ITEM_HREF_PATTERN, not members of the generated Pathname union; signed off by Nestor 2026-09-30 (story 68-1, AGENTS.md quality-gate exception), remove with 68-7
+              child.href
+            )}
             <a
               class={`rounded-lg px-3 py-2 text-sm font-medium ${childActive ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
               aria-current={childActive ? 'page' : undefined}
-              href={resolve(child.href)}
+              href={childHref}
             >
               {child.label}
             </a>
@@ -117,10 +121,14 @@
         </div>
       </details>
     {:else}
+      {@const itemHref = resolve(
+        // @ts-expect-error -- extension navItems hrefs are runtime strings validated by NAV_ITEM_HREF_PATTERN, not members of the generated Pathname union; signed off by Nestor 2026-09-30 (story 68-1, AGENTS.md quality-gate exception), remove with 68-7
+        item.href
+      )}
       <a
         class={`flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium ${active ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
         aria-current={active ? 'page' : undefined}
-        href={resolve(item.href)}
+        href={itemHref}
       >
         {@render itemLabel(item)}
       </a>
