@@ -306,4 +306,26 @@ describe('/(app) +layout.svelte', () => {
     expect(screen.getByText('protected app content')).toBeTruthy()
     expect(screen.queryByText(/Welcome to Project Vault/i)).toBeNull()
   })
+
+  // Code review 68-1: `onboardingDone` is a writable $derived of the layout data. A later load
+  // that still reports onboarding pending must not remount the wizard or wipe what the user typed.
+  it('stale state: an unrelated reload keeps the first-project name being typed', async () => {
+    const pending = appLayoutData({
+      user: onboardingTestUser,
+      onboardingCompleted: false,
+      projects: [],
+      importRouteLive: true,
+      unreadCount: 0,
+    })
+    const { rerender } = render(Layout, {
+      props: { data: pending, children: childrenSnippet() },
+    })
+    const input = screen.getByLabelText('Project name')
+    await fireEvent.input(input, { target: { value: 'Acme payments' } })
+
+    await rerender({ data: appLayoutData({ ...pending, unreadCount: 3 }) })
+
+    expect(screen.getByLabelText('Project name')).toBe(input)
+    expect((input as HTMLInputElement).value).toBe('Acme payments')
+  })
 })

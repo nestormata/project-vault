@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte'
 import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
 import { rotationCopy } from '$lib/components/rotations/rotation-copy.js'
@@ -2616,5 +2616,158 @@ describe('credential detail +page.svelte — stale state across loads (Story 68.
 
     expect(await screen.findByText(/raw-one-time-token/)).toBeTruthy()
     expect(screen.getAllByRole('button', { name: /^revoke$/i })).toHaveLength(1)
+  })
+
+  // Code review 68-1: a reveal / edit / share request started on credential A that resolves after
+  // SvelteKit reused the page for credential B must not write A's secret material into B's view.
+  describe('a request started on A that resolves after A -> B is discarded', () => {
+    const MULTI_A: CredentialDetail = {
+      ...CREDENTIAL,
+      schemaVersion: 2,
+      fields: [
+        { key: 'host', sensitive: false, template: 'db_connection' },
+        { key: 'password', sensitive: true, template: 'db_connection' },
+      ],
+    }
+    const MULTI_B: CredentialDetail = { ...MULTI_A, id: credentialBId, name: 'Twilio Token' }
+    const multiA = () => baseData({ credential: MULTI_A })
+    const multiB = () => baseData({ credentialId: credentialBId, credential: MULTI_B })
+    const fieldsOfA = {
+      fields: [
+        { key: 'host', value: 'db-of-a.example.com', sensitive: false },
+        { key: 'password', value: 'password-of-a', sensitive: true },
+      ],
+      schemaVersion: 2,
+      versionNumber: 3,
+      retrievedAt: '2026-07-26T00:00:00.000Z',
+    }
+
+    /** Lets the page's own continuation run and Svelte flush the DOM. */
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+    // The staged-rotation poll tests above switch to fake timers without switching back.
+    beforeEach(() => {
+      vi.useRealTimers()
+    })
+
+    function deferred<T>() {
+      let resolve: (value: T) => void = () => {}
+      const promise = new Promise<T>((r) => {
+        resolve = r
+      })
+      return { promise, resolve }
+    }
+
+    it('whole-value reveal', async () => {
+      const reveal = deferred<{ value: string; versionNumber: number }>()
+      revealCredentialValueMock.mockReturnValue(reveal.promise)
+      const { rerender } = render(CredentialDetailPage, { props: { data: dataA() } })
+      await fireEvent.click(screen.getByRole('button', { name: /^reveal value$/i }))
+
+      await rerender({ data: dataB() })
+      reveal.resolve({ value: 'sk_live_secret_of_a', versionNumber: 3 })
+      await settle()
+      await vi.waitFor(() =>
+        expect(screen.getByRole('button', { name: /^reveal value$/i })).toBeTruthy()
+      )
+
+      expect(screen.queryByText('sk_live_secret_of_a')).toBeNull()
+    })
+
+    it('whole-value reveal failure does not show an error banner on B', async () => {
+      let reject: (error: unknown) => void = () => {}
+      revealCredentialValueMock.mockReturnValue(
+        new Promise((_, r) => {
+          reject = r
+        })
+      )
+      const { rerender } = render(CredentialDetailPage, { props: { data: dataA() } })
+      await fireEvent.click(screen.getByRole('button', { name: /^reveal value$/i }))
+
+      await rerender({ data: dataB() })
+      reject(new Error('reveal of A failed'))
+      await settle()
+      await vi.waitFor(() =>
+        expect(screen.getByRole('button', { name: /^reveal value$/i })).toBeTruthy()
+      )
+
+      expect(screen.queryByText('reveal of A failed')).toBeNull()
+    })
+
+    it('single-field reveal', async () => {
+      const reveal = deferred<typeof fieldsOfA>()
+      revealCredentialValueMock.mockReturnValue(reveal.promise)
+      const { rerender } = render(CredentialDetailPage, { props: { data: multiA() } })
+      await fireEvent.click(
+        within(screen.getByTestId('field-row-password')).getByRole('button', { name: /^reveal$/i })
+      )
+
+      expect(revealCredentialValueMock).toHaveBeenCalledTimes(1)
+      await rerender({ data: multiB() })
+      reveal.resolve({
+        ...fieldsOfA,
+        fields: [{ key: 'password', value: 'password-of-a', sensitive: true }],
+      })
+      await settle()
+      await vi.waitFor(() => expect(screen.getByTestId('field-masked-password')).toBeTruthy())
+
+      expect(screen.queryByTestId('field-value-password')).toBeNull()
+      expect(screen.queryByText('password-of-a')).toBeNull()
+    })
+
+    it('reveal all', async () => {
+      const reveal = deferred<typeof fieldsOfA>()
+      revealCredentialValueMock.mockReturnValue(reveal.promise)
+      const { rerender } = render(CredentialDetailPage, { props: { data: multiA() } })
+      await fireEvent.click(screen.getByRole('button', { name: /reveal all/i }))
+      expect(revealCredentialValueMock).toHaveBeenCalledTimes(1)
+
+      await rerender({ data: multiB() })
+      reveal.resolve(fieldsOfA)
+      await settle()
+      await vi.waitFor(() => expect(screen.getByTestId('field-masked-password')).toBeTruthy())
+
+      expect(screen.queryByText('password-of-a')).toBeNull()
+    })
+
+    it("the field-set editor is not opened on B with A's values", async () => {
+      const reveal = deferred<typeof fieldsOfA>()
+      revealCredentialValueMock.mockReturnValue(reveal.promise)
+      const { rerender } = render(CredentialDetailPage, { props: { data: multiA() } })
+      await fireEvent.click(screen.getByRole('button', { name: /edit fields/i }))
+
+      await rerender({ data: multiB() })
+      reveal.resolve(fieldsOfA)
+      await settle()
+      await vi.waitFor(() =>
+        expect(screen.getByRole('button', { name: /edit fields/i })).toBeTruthy()
+      )
+
+      expect(screen.queryByLabelText('Field 2 value')).toBeNull()
+      expect(screen.queryByDisplayValue('password-of-a')).toBeNull()
+    })
+
+    it('a share created on A is not listed on B and its one-time token is not shown there', async () => {
+      const create = deferred<typeof SHARE_A & { token: string }>()
+      createCredentialShareMock.mockReturnValue(create.promise)
+      const { rerender } = render(CredentialDetailPage, {
+        props: { data: baseData({ shares: [], sharesTotal: 0 }) },
+      })
+      await fireEvent.change(screen.getByLabelText(/recipient/i), {
+        target: { value: 'recipient-1' },
+      })
+      await fireEvent.click(screen.getByRole('checkbox', { name: /value/i }))
+      await fireEvent.click(screen.getByRole('button', { name: /create share link/i }))
+
+      await rerender({ data: dataB() })
+      create.resolve({ ...SHARE_A, token: 'raw-token-of-a' })
+      await settle()
+      await vi.waitFor(() =>
+        expect(screen.getByRole('button', { name: /create share link/i })).toBeTruthy()
+      )
+
+      expect(screen.queryByText(/raw-token-of-a/)).toBeNull()
+      expect(screen.queryByRole('button', { name: /^revoke$/i })).toBeNull()
+    })
   })
 })

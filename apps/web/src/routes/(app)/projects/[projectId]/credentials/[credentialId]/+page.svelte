@@ -88,6 +88,13 @@
   // forms: never sourced from `data`, only cleared when the record changes).
   const credentialKey = $derived(`${data.projectId}/${data.credentialId}`)
 
+  // A request captures the record it was started for. If the page has moved to another record by
+  // the time it settles, its result and its error are dropped, so one secret's values, share
+  // token or failure never show up on the next one.
+  function isCurrentCredential(requestKey: string): boolean {
+    return requestKey === credentialKey
+  }
+
   let revealedValue = $derived(resetOn<string | null>(credentialKey, null))
   let revealVersion = $derived(resetOn<number | null>(credentialKey, null))
   let revealing = $state(false)
@@ -485,6 +492,7 @@
     shareSubmitting = true
     shareError = null
     lastCreatedShareToken = null
+    const requestKey = credentialKey
     try {
       const expiresAt = new Date(Date.now() + shareExpiresInHours * 60 * 60 * 1000).toISOString()
       if (shareRecipientType === 'external') {
@@ -500,6 +508,7 @@
             ...(shareStepUpTotp ? { totpCode: shareStepUpTotp } : {}),
           }
         )
+        if (!isCurrentCredential(requestKey)) return
         const { token, ...summary } = created
         // Story 28.7 AC3: a newly created share is never 'revoked' — if an active status filter
         // wouldn't match it, splicing it into `shareItems` (and bumping the total) would show
@@ -515,6 +524,7 @@
           expiresAt,
           singleUse: shareSingleUse,
         })
+        if (!isCurrentCredential(requestKey)) return
         const { token, ...summary } = created
         if (matchesActiveSharesFilter(summary.status)) addShareLocally(summary)
         lastCreatedShareToken = token
@@ -523,6 +533,7 @@
       }
       shareAttributeOverrides = {}
     } catch (error) {
+      if (!isCurrentCredential(requestKey)) return
       // Story 28.5 AC4/AC6: share creation now rejects with 410 against an archived secret.
       const archivedBanner = archivedBannerFor(error)
       shareError =
@@ -769,13 +780,16 @@
     if (revealingField || !canReveal || !data.credential) return
     revealingField = key
     fieldRevealError = { ...fieldRevealError, [key]: '' }
+    const requestKey = credentialKey
     try {
       const result = await revealCredentialValue(fetch, data.projectId, data.credentialId, {
         field: key,
       })
+      if (!isCurrentCredential(requestKey)) return
       const value = isFieldsValue(result) ? (result.fields[0]?.value ?? '') : result.value
       revealedFields = { ...revealedFields, [key]: value }
     } catch (error) {
+      if (!isCurrentCredential(requestKey)) return
       // AC-7/Subtask 3.5 — surface `unknown_field_key` inline near the affected row (e.g. a stale
       // field list after a concurrent rename) rather than as a generic top-level banner.
       if (error instanceof ApiClientError && error.code === 'unknown_field_key') {
@@ -808,8 +822,10 @@
     if (revealAllLoading || !canReveal || !data.credential) return
     revealAllLoading = true
     revealAllError = null
+    const requestKey = credentialKey
     try {
       const result = await revealCredentialValue(fetch, data.projectId, data.credentialId)
+      if (!isCurrentCredential(requestKey)) return
       if (isFieldsValue(result)) {
         const updates: Record<string, string> = {}
         for (const field of result.fields) {
@@ -818,6 +834,7 @@
         revealedFields = { ...revealedFields, ...updates }
       }
     } catch (error) {
+      if (!isCurrentCredential(requestKey)) return
       revealAllError = error instanceof Error ? error.message : 'Could not reveal all fields.'
     } finally {
       revealAllLoading = false
@@ -828,13 +845,16 @@
     if (revealing || !canReveal || !data.credential) return
     revealing = true
     revealError = null
+    const requestKey = credentialKey
     try {
       const result = await revealCredentialValue(fetch, data.projectId, data.credentialId)
+      if (!isCurrentCredential(requestKey)) return
       // A single-field secret's reveal returns `{ value }`; narrow on the response union the same
       // way revealSingleField() does.
       revealedValue = isFieldsValue(result) ? (result.fields[0]?.value ?? '') : result.value
       revealVersion = result.versionNumber
     } catch (error) {
+      if (!isCurrentCredential(requestKey)) return
       revealedValue = null
       revealVersion = null
       if (error instanceof ApiClientError && error.code === 'insufficient_project_role') {
@@ -1022,12 +1042,15 @@
     if (loadingFieldSet || !data.credential) return
     loadingFieldSet = true
     fieldSetFormError = null
+    const requestKey = credentialKey
     try {
       const revealed = await revealCredentialValue(fetch, data.projectId, data.credentialId)
+      if (!isCurrentCredential(requestKey)) return
       editFields = parseRevealedFields(fieldMeta, revealed).map((f) => ({ ...f }))
       fieldSetErrors = {}
       editingFieldSet = true
     } catch (error) {
+      if (!isCurrentCredential(requestKey)) return
       fieldSetFormError =
         error instanceof Error ? error.message : 'Could not load fields for editing.'
     } finally {
