@@ -6,6 +6,8 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+    // Story 66-6: one public-surface generation per run, before the test workers start.
+    globalSetup: ['tests/surface-global-setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'clover', 'json', 'lcov'],

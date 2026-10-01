@@ -1,0 +1,1 @@
+{ "compilerOptions": { "strict": true, "target": "es5", "types": [] }, "files": ["src/index.ts"] }

@@ -1,7 +1,23 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
-import ts from 'typescript'
+import { pathToFileURL } from 'node:url'
+import type * as TypeScript from 'typescript'
 import semver from 'semver'
+
+// Story 66-6: `typescript` is a CommonJS package without a "type" field, so an ESM `import`
+// makes Node syntax-scan the 9 MB typescript.js to detect its module format (~135 ms of the
+// child's ~940 ms CPU profile). `require` loads it as CommonJS directly. It is also loaded
+// lazily, only by the generator: the coverage-instrumented workers that merely compare
+// snapshots (src/api-surface.test.ts, tests/surface-runner.test.ts) never pay for it, so they
+// do not compete for CPU with the generation child under nightly contention.
+const requireFromHere = createRequire(import.meta.url)
+let typescriptModule: typeof TypeScript | undefined
+
+function typescript(): typeof TypeScript {
+  typescriptModule ??= requireFromHere('typescript') as typeof TypeScript
+  return typescriptModule
+}
 
 const SNAPSHOT_NAME = 'api-surface.snapshot.md'
 
@@ -137,22 +153,73 @@ export function applySinceAnnotations(
   )
 }
 
+// The two DOM-inclusive default libs whose names do not follow the `.full.d.ts` pattern.
+const LEGACY_FULL_LIBS: ReadonlyMap<string, string> = new Map([
+  ['lib.d.ts', 'lib.es5.d.ts'],
+  ['lib.es6.d.ts', 'lib.es2015.d.ts'],
+])
+
+/** The target's default lib without DOM/ScriptHost: lib.es2022.full.d.ts -> lib.es2022.d.ts. */
+function ecmaScriptLib(options: TypeScript.CompilerOptions): string {
+  const ts = typescript()
+  const full = ts.getDefaultLibFileName(options)
+  return LEGACY_FULL_LIBS.get(full) ?? full.replace(/\.full\.d\.ts$/, '.d.ts')
+}
+
 function compiler(root: string): {
-  program: ts.Program
-  checker: ts.TypeChecker
-  source: ts.SourceFile
+  program: TypeScript.Program
+  checker: TypeScript.TypeChecker
+  source: TypeScript.SourceFile
 } {
+  const ts = typescript()
   const config = ts.readConfigFile(join(root, 'tsconfig.json'), ts.sys.readFile)
   if (config.error) throw new Error(ts.flattenDiagnosticMessageText(config.error.messageText, '\n'))
   const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, root)
   const sourcePath = join(root, 'src/index.ts')
-  const program = ts.createProgram([sourcePath], { ...parsed.options, noEmit: true }, undefined)
+  // Story 66-6: `types: []` skips the ~83 ambient @types/node files (259 -> 130 files) and the
+  // ECMAScript-only default lib skips lib.dom.d.ts, the largest lib file (child CPU 1.3 s ->
+  // 0.9 s). Output stays byte-identical because the public surface must not depend on Node or
+  // DOM globals. The diagnostics guard (assertNoSourceDiagnostics, run by
+  // generateSurfaceSnapshot after rendering) makes that fail closed instead of rendering an
+  // unresolved type.
+  const program = ts.createProgram(
+    [sourcePath],
+    {
+      ...parsed.options,
+      noEmit: true,
+      types: [],
+      lib: parsed.options.lib ?? [ecmaScriptLib(parsed.options)],
+    },
+    undefined
+  )
   const source = program.getSourceFile(sourcePath)
   if (!source) throw new Error('could not load extension-api src/index.ts')
   return { program, checker: program.getTypeChecker(), source }
 }
 
-function typeText(checker: ts.TypeChecker, type: ts.Type, source: ts.Node): string {
+function assertNoSourceDiagnostics(program: TypeScript.Program, sourceDir: string): void {
+  const ts = typescript()
+  const prefix = `${sourceDir.replaceAll('\\', '/').replace(/\/$/, '')}/`
+  const messages = program
+    .getSourceFiles()
+    .filter((file) => file.fileName.startsWith(prefix))
+    .flatMap((file) => program.getSemanticDiagnostics(file))
+    .map((diagnostic) => {
+      const where = diagnostic.file?.fileName.slice(prefix.length - 'src/'.length) ?? '(global)'
+      return `${where}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')}`
+    })
+  if (messages.length > 0)
+    throw new Error(
+      `public surface sources do not type-check without @types (types: []):\n${messages.join('\n')}`
+    )
+}
+
+function typeText(
+  checker: TypeScript.TypeChecker,
+  type: TypeScript.Type,
+  source: TypeScript.Node
+): string {
+  const ts = typescript()
   return checker.typeToString(
     type,
     source,
@@ -162,12 +229,13 @@ function typeText(checker: ts.TypeChecker, type: ts.Type, source: ts.Node): stri
 
 // eslint-disable-next-line complexity -- renders properties, index signatures, and nested members
 function renderTypeMembers(
-  checker: ts.TypeChecker,
-  type: ts.Type,
-  source: ts.Node,
+  checker: TypeScript.TypeChecker,
+  type: TypeScript.Type,
+  source: TypeScript.Node,
   indent: string,
   seen: Set<number>
 ): string[] {
+  const ts = typescript()
   if (
     (type.flags & ts.TypeFlags.Object) === 0 ||
     checker.isArrayType(type) ||
@@ -182,7 +250,9 @@ function renderTypeMembers(
     const propertyType = checker.getTypeOfSymbolAtLocation(property, declaration)
     const optional = (property.flags & ts.SymbolFlags.Optional) !== 0 ? '?' : ''
     const readonly =
-      (ts.getCombinedModifierFlags(declaration as ts.Declaration) & ts.ModifierFlags.Readonly) !== 0
+      (ts.getCombinedModifierFlags(declaration as TypeScript.Declaration) &
+        ts.ModifierFlags.Readonly) !==
+      0
         ? 'readonly '
         : ''
     lines.push(
@@ -204,11 +274,12 @@ function renderTypeMembers(
 }
 
 function renderSignatures(
-  checker: ts.TypeChecker,
-  type: ts.Type,
-  source: ts.Node,
+  checker: TypeScript.TypeChecker,
+  type: TypeScript.Type,
+  source: TypeScript.Node,
   indent: string
 ): string[] {
+  const ts = typescript()
   return checker
     .getSignaturesOfType(type, ts.SignatureKind.Call)
     .map(
@@ -218,9 +289,9 @@ function renderSignatures(
 }
 
 function renderType(
-  checker: ts.TypeChecker,
-  type: ts.Type,
-  source: ts.Node,
+  checker: TypeScript.TypeChecker,
+  type: TypeScript.Type,
+  source: TypeScript.Node,
   indent: string,
   seen: Set<number>
 ): string[] {
@@ -239,7 +310,7 @@ function renderType(
       .join(', ')
     lines.push(`${indent}- intersection-members: ${members}`)
   }
-  const id = (type as ts.Type & { id?: number }).id
+  const id = (type as TypeScript.Type & { id?: number }).id
   if (id !== undefined && seen.has(id)) return lines
   if (id !== undefined) seen.add(id)
   lines.push(
@@ -250,7 +321,8 @@ function renderType(
 }
 
 export function generateSurfaceSnapshot(root: string): string {
-  const { checker, source } = compiler(root)
+  const ts = typescript()
+  const { program, checker, source } = compiler(root)
   const moduleSymbol = checker.getSymbolAtLocation(source)
   if (!moduleSymbol) throw new Error('could not resolve index.ts module symbol')
   const lines = [
@@ -277,6 +349,9 @@ export function generateSurfaceSnapshot(root: string): string {
       ''
     )
   }
+  // Only after rendering: a full check first creates checker symbols in a different order and
+  // shifts the `__@match@<id>` ids in the output (DW-310), breaking byte-identity.
+  assertNoSourceDiagnostics(program, join(root, 'src'))
   const generated = `${lines.join('\n').trimEnd()}\n`
   const previous = existsSync(join(root, SNAPSHOT_NAME))
     ? readFileSync(join(root, SNAPSHOT_NAME), 'utf8')
@@ -307,8 +382,7 @@ function validateMemberSince(line: string, next: string): string[] {
 export function validateSinceIndex(snapshot: string, currentVersion = '2.0.0'): string[] {
   const lines = snapshot.split('\n')
   const errors: string[] = []
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? ''
+  for (const [index, line] of lines.entries()) {
     const next = lines.slice(index + 1).find((candidate) => candidate.trim().length > 0) ?? ''
     if (line.startsWith('## export '))
       errors.push(...validateExportSince(line, next, currentVersion))
@@ -319,8 +393,64 @@ export function validateSinceIndex(snapshot: string, currentVersion = '2.0.0'): 
   return errors
 }
 
+const CONTRACT_CHANGED =
+  'public contract changed: update api-surface.snapshot.md and classify the change against AC-2'
+const REGENERATE_HINT =
+  'regenerate with `pnpm tsx tests/api-surface.ts --write` from packages/extension-api (CONTRIBUTING.md), then classify the change'
+const MAX_DIFF_LINES = 20
+
+// Story 66-6 AC-7: show the first differing lines (unified-diff style, `-` committed, `+`
+// generated) so a CI log alone explains the mismatch; never dump the full ~97 KB snapshot.
+function commonPrefixLength(before: readonly string[], after: readonly string[]): number {
+  let length = 0
+  while (length < Math.min(before.length, after.length) && before.at(length) === after.at(length))
+    length += 1
+  return length
+}
+
+function commonSuffixLength(
+  before: readonly string[],
+  after: readonly string[],
+  prefix: number
+): number {
+  let length = 0
+  while (
+    length < Math.min(before.length, after.length) - prefix &&
+    before.at(-1 - length) === after.at(-1 - length)
+  )
+    length += 1
+  return length
+}
+
+function firstDifferingLines(committed: string, generated: string): string[] {
+  const before = committed.split('\n')
+  const after = generated.split('\n')
+  const prefix = commonPrefixLength(before, after)
+  const suffix = commonSuffixLength(before, after, prefix)
+  const removed = before.slice(prefix, before.length - suffix).map((line) => `- ${line}`)
+  const added = after.slice(prefix, after.length - suffix).map((line) => `+ ${line}`)
+  // Split the line budget between both sides so a large removal cannot hide every addition.
+  const removedShown = removed.slice(0, Math.max(MAX_DIFF_LINES / 2, MAX_DIFF_LINES - added.length))
+  const addedShown = added.slice(0, MAX_DIFF_LINES - removedShown.length)
+  const hidden = removed.length + added.length - removedShown.length - addedShown.length
+  return [
+    `@@ committed line ${prefix + 1}, generated line ${prefix + 1} @@`,
+    ...removedShown,
+    ...addedShown,
+    ...(hidden > 0 ? [`… ${hidden} more differing lines not shown`] : []),
+  ]
+}
+
+/**
+ * Compares a generated surface against the committed `api-surface.snapshot.md`.
+ *
+ * Story 66-6: the caller passes the generated snapshot in. The test path produces it once in an
+ * uninstrumented child process (tests/surface-runner.ts); this function reads the committed file
+ * itself and does the comparison, so a child that prints nothing or "ok" can never pass.
+ */
 export function assertSurfaceSnapshotIsFresh(
-  root: string
+  root: string,
+  generated: string
 ): { ok: true } | { ok: false; errors: string[] } {
   const snapshot = readFileSync(join(root, SNAPSHOT_NAME), 'utf8')
   const packageJson = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
@@ -328,18 +458,47 @@ export function assertSurfaceSnapshotIsFresh(
   }
   const errors = validateSinceIndex(snapshot, packageJson.version)
   if (errors.length > 0) return { ok: false, errors }
-  const expected = generateSurfaceSnapshot(root)
-  return expected === snapshot
+  return generated === snapshot
     ? { ok: true }
     : {
         ok: false,
-        errors: [
-          'public contract changed: update api-surface.snapshot.md and classify the change against AC-2',
-        ],
+        errors: [CONTRACT_CHANGED, REGENERATE_HINT, ...firstDifferingLines(snapshot, generated)],
       }
 }
 
-if (import.meta.url === `file://${process.argv[1]}` && process.argv.includes('--write')) {
-  const root = process.cwd()
-  writeFileSync(join(root, SNAPSHOT_NAME), generateSurfaceSnapshot(root))
+interface CliStream {
+  write(chunk: string): boolean
+}
+
+/**
+ * `--emit` writes the generated snapshot to stdout (used by the surface runner's child process);
+ * `--write` regenerates the committed snapshot in place (CONTRIBUTING.md).
+ */
+export function runSurfaceCli(
+  argv: readonly string[],
+  root: string,
+  io: { stdout: CliStream; stderr: CliStream } = process
+): number {
+  if (argv.includes('--emit')) {
+    try {
+      io.stdout.write(generateSurfaceSnapshot(root))
+      return 0
+    } catch (error) {
+      io.stderr.write(
+        `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`
+      )
+      return 1
+    }
+  }
+  if (argv.includes('--write')) {
+    writeFileSync(join(root, SNAPSHOT_NAME), generateSurfaceSnapshot(root))
+    return 0
+  }
+  io.stderr.write('usage: tsx tests/api-surface.ts --emit | --write\n')
+  return 2
+}
+
+const entryPoint = process.argv[1]
+if (entryPoint !== undefined && import.meta.url === pathToFileURL(entryPoint).href) {
+  process.exitCode = runSurfaceCli(process.argv, process.cwd())
 }

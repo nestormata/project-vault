@@ -1,45 +1,58 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, inject, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
-import {
-  applySinceAnnotations,
-  assertSurfaceSnapshotIsFresh,
-  validateSinceIndex,
-} from '../tests/api-surface.js'
+import { applySinceAnnotations, validateSinceIndex } from '../tests/api-surface.js'
+import { checkSurfaceFreshness, createSurfaceRunner } from '../tests/surface-runner.js'
 
+// Story 66-6: the real public-surface program (src/index.ts + TypeScript's ECMAScript libs) is
+// built exactly once per run, in a child process that V8 coverage does not instrument: by the
+// package's vitest globalSetup before the workers start, or lazily here when the file runs
+// without that config. The three compiler-backed assertions below read that single result, so
+// any one of them can run on its own (`-t readonly`). See tests/surface-runner.ts for why the
+// build must never run in-process here (symbol-id drift, DW-310).
 describe('extension API public type surface snapshot', () => {
   const packageRoot = fileURLToPath(new URL('..', import.meta.url))
   const compilerTestTimeoutMs = 15_000
+  // Generated once by the package's vitest globalSetup before the workers start; when this file
+  // runs without that config (repo-root Checks job), nothing is provided and the runner
+  // generates lazily on first use.
+  const surfaceRunner = createSurfaceRunner({ provided: inject('apiSurfaceGeneration') })
+  const surfaceSection = (exportName: string): string => {
+    const { snapshot } = surfaceRunner.generate(packageRoot)
+    const start = snapshot.indexOf(`## export \`${exportName}\``)
+    if (start === -1) return ''
+    const end = snapshot.indexOf('\n## export ', start + 1)
+    return snapshot.slice(start, end === -1 ? undefined : end)
+  }
 
   it(
     'runs from the package test task and matches source, including nested members',
     () => {
-      expect(assertSurfaceSnapshotIsFresh(packageRoot)).toEqual({ ok: true })
+      expect(checkSurfaceFreshness(packageRoot, surfaceRunner)).toEqual({ ok: true })
     },
     compilerTestTimeoutMs
   )
 
   it(
     'captures primitive property types in the public surface',
-    async () => {
-      const { generateSurfaceSnapshot } = await import('../tests/api-surface.js')
-      const panelContext = generateSurfaceSnapshot(packageRoot).match(
-        /## export `UIPanelContext`[\s\S]*?(?=\n## export |$)/
-      )?.[0]
-
-      expect(panelContext).toContain('- type: `string`')
+    () => {
+      expect(surfaceSection('UIPanelContext')).toContain('- type: `string`')
     },
     compilerTestTimeoutMs
   )
 
   it(
     'captures readonly modifiers in the public surface',
-    async () => {
-      const { generateSurfaceSnapshot } = await import('../tests/api-surface.js')
-      const registrationError = generateSurfaceSnapshot(packageRoot).match(
-        /## export `ExtensionRegistrationError`[\s\S]*?(?=\n## export |$)/
-      )?.[0]
+    () => {
+      expect(surfaceSection('ExtensionRegistrationError')).toContain('- member: `readonly reason`')
+    },
+    compilerTestTimeoutMs
+  )
 
-      expect(registrationError).toContain('- member: `readonly reason`')
+  it(
+    'builds the full TypeScript program exactly once for every compiler-backed assertion',
+    () => {
+      surfaceRunner.generate(packageRoot)
+      expect(surfaceRunner.buildCount()).toBe(1)
     },
     compilerTestTimeoutMs
   )
