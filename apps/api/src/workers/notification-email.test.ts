@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import nodemailer from 'nodemailer'
 import { withOrg } from '@project-vault/db'
@@ -13,6 +14,8 @@ import {
 } from '../__tests__/helpers/auth-test-helpers.js'
 import { resetVaultForTest } from '../__tests__/helpers/vault-test-cleanup.js'
 import {
+  buildNotificationMessageId,
+  NOTIFICATION_MESSAGE_ID_FALLBACK_DOMAIN,
   resetEmailTransportForTesting,
   sendEmailNotification,
   setEmailTransportForTesting,
@@ -261,5 +264,28 @@ describe('sendEmailNotification', () => {
         await expectQueueStatus(orgId, queueId, 'delivered')
       })
     })
+  })
+})
+
+describe('buildNotificationMessageId (Story 70.1 Decisions 2026-09-30)', () => {
+  const ROW = randomUUID()
+
+  it.each([
+    ['alerts@vault.example.com', 'vault.example.com'],
+    ['Project Vault <alerts@Vault.Example.com>', 'vault.example.com'],
+    ['  weird@sub.example.org  ', 'sub.example.org'],
+    [null, NOTIFICATION_MESSAGE_ID_FALLBACK_DOMAIN],
+    [undefined, NOTIFICATION_MESSAGE_ID_FALLBACK_DOMAIN],
+    ['no-at-sign', NOTIFICATION_MESSAGE_ID_FALLBACK_DOMAIN],
+    ['bad@exa mple.com', NOTIFICATION_MESSAGE_ID_FALLBACK_DOMAIN],
+    ['bad@<injected>@x', 'x'],
+    ['trailing@', NOTIFICATION_MESSAGE_ID_FALLBACK_DOMAIN],
+  ])('from %j -> domain %s', (from, domain) => {
+    expect(buildNotificationMessageId(ROW, from)).toBe(`<pv-nq-${ROW}@${domain}>`)
+  })
+
+  it('is deterministic per row', () => {
+    expect(buildNotificationMessageId(ROW, 'a@b.c')).toBe(buildNotificationMessageId(ROW, 'a@b.c'))
+    expect(NOTIFICATION_MESSAGE_ID_FALLBACK_DOMAIN).toBe('project-vault.invalid')
   })
 })

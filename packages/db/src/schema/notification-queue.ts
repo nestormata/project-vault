@@ -54,6 +54,17 @@ export const notificationQueue = pgTable(
     // notification entry point that needs its own independent budget MUST add a new column, never
     // overload this one with a third meaning (Story 58.1 decision ADR-58.1-2).
     enqueuedOutOfRequest: boolean('enqueued_out_of_request').notNull().default(false),
+    // Story 70.1 AC1/AC2 — additive, nullable, no default. The exclusive-claim lease: set by
+    // `claimPendingNotificationEntry()`'s single conditional UPDATE to `now() + lease`, cleared by
+    // the attempt_count-fenced release when an attempt fails before its send resolved. A row is
+    // claimable only while this is NULL or in the past. Left as-is on terminal rows.
+    claimExpiresAt: timestamp('claim_expires_at', { withTimezone: true }),
+    // Story 70.1 Decisions 2026-09-30 (DW-252) — additive, nullable, no default. Set by a fenced
+    // UPDATE immediately before the external send (provider/SMTP/Slack); cleared only by the
+    // release after a send that threw. While set, the row is never claimed or re-enqueued again:
+    // an expired lease with this set means the send outcome is unknown, and the DLQ cleanup moves
+    // the row to `failed` (at-most-once) instead of re-sending it.
+    sendStartedAt: timestamp('send_started_at', { withTimezone: true }),
   },
   (t) => ({
     channelCheck: check(

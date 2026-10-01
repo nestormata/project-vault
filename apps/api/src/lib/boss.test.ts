@@ -302,3 +302,38 @@ describe('BossService', () => {
     )
   })
 })
+
+const RETIRED_SCHEDULE = 'notification/email-catchup'
+
+describe('BossService.unschedule (Story 70.1 AC3)', () => {
+  it('delegates to the pg-boss client with the schedule name', async () => {
+    const unschedule = vi.fn().mockResolvedValue(undefined)
+    const boss = createBossWithMocks({ unschedule })
+    await boss.start()
+
+    await boss.unschedule(RETIRED_SCHEDULE)
+
+    expect(unschedule).toHaveBeenCalledWith(RETIRED_SCHEDULE)
+  })
+
+  it('throws when not started', async () => {
+    const boss = createBossWithMocks({ unschedule: vi.fn() })
+    await expect(boss.unschedule(RETIRED_SCHEDULE)).rejects.toThrow(BOSS_NOT_STARTED_ERROR)
+  })
+
+  it('throws when the underlying client has no unschedule API', async () => {
+    const boss = createBossWithMocks()
+    await boss.start()
+    await expect(boss.unschedule(RETIRED_SCHEDULE)).rejects.toThrow(
+      'BossService unschedule API unavailable'
+    )
+  })
+
+  it('propagates an underlying unschedule failure (boot fails like registerSchedules)', async () => {
+    const boss = createBossWithMocks({
+      unschedule: vi.fn().mockRejectedValue(new Error('db down')),
+    })
+    await boss.start()
+    await expect(boss.unschedule(RETIRED_SCHEDULE)).rejects.toThrow('db down')
+  })
+})

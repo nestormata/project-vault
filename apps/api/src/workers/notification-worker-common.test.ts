@@ -1,14 +1,25 @@
 import { describe, expect, it, vi } from 'vitest'
+import { sql } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { notificationQueue } from '@project-vault/db/schema'
-import { withTestOrg } from '@project-vault/db/test-helpers'
+import { withTestOrg, withTwoTestOrgs } from '@project-vault/db/test-helpers'
 import { createMockBoss } from '../__tests__/helpers/notification-test-helpers.js'
 import { BossService } from '../lib/boss.js'
 import {
+  NOTIFICATION_CLAIM_LEASE_SECONDS,
+  NOTIFICATION_DLQ_GRACE_SECONDS,
   NOTIFICATION_MAX_ATTEMPTS,
   createNotificationJobHandler,
-  runNotificationCatchup,
 } from './notification-worker-common.js'
+import { runDeliverCatchup } from './notification-deliver-catchup.js'
+
+describe('notification lease constants (Story 70.1 AC2)', () => {
+  it('the claim lease is no longer than pg-boss expire_seconds and shorter than the DLQ grace', () => {
+    expect(NOTIFICATION_CLAIM_LEASE_SECONDS).toBeLessThanOrEqual(900)
+    expect(NOTIFICATION_CLAIM_LEASE_SECONDS).toBeLessThan(NOTIFICATION_DLQ_GRACE_SECONDS)
+    expect(NOTIFICATION_DLQ_GRACE_SECONDS).toBe(1800)
+  })
+})
 
 const FAILED_AUTH_TEMPLATE = 'security.failed_auth_threshold'
 const NOTIFICATION_DELIVER_JOB = 'notification/deliver'
@@ -36,84 +47,164 @@ async function insertQueueEntry(
   return row.id
 }
 
-describe('runNotificationCatchup', () => {
-  it('re-enqueues stale channel-specific pending entries still below the max attempt budget', async () => {
+describe('runDeliverCatchup — the single catch-up owner (Story 70.1 AC3)', () => {
+  async function runCatchupFor(orgId: string) {
     const { boss, send } = createMockBoss()
     await boss.start()
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+    await runDeliverCatchup(boss, logger)
+    return { calls: send.mock.calls.filter((call) => call[1]?.orgId === orgId), logger }
+  }
 
+  it('enqueues exactly one notification/deliver job per due row, every channel', async () => {
+    await withTestOrg(async ({ orgId }) => {
+      const ids = [
+        await insertQueueEntry(orgId, { channel: 'email', templateId: FAILED_AUTH_TEMPLATE }),
+        await insertQueueEntry(orgId, { channel: 'slack', templateId: FAILED_AUTH_TEMPLATE }),
+        await insertQueueEntry(orgId, { channel: 'inbox', templateId: FAILED_AUTH_TEMPLATE }),
+      ]
+
+      const { calls, logger } = await runCatchupFor(orgId)
+
+      expect(calls).toHaveLength(3)
+      for (const call of calls) {
+        expect(call[0]).toBe(NOTIFICATION_DELIVER_JOB)
+        expect(call[2]).toEqual(
+          expect.objectContaining({ retryLimit: 3, retryBackoff: true, retryDelay: 60 })
+        )
+      }
+      expect(calls.map((call) => call[1].notificationQueueId).sort()).toEqual([...ids].sort())
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'notification.catchup.entries_found' }),
+        'Notification deliver catchup found stale pending entries'
+      )
+    })
+  })
+
+  it('skips rows with a live lease, a future deliver_at, a maxed attempt budget, a started send, or inside the 5-minute grace', async () => {
     await withTestOrg(async ({ orgId }) => {
       const eligibleId = await insertQueueEntry(orgId, {
         channel: 'email',
         templateId: FAILED_AUTH_TEMPLATE,
         attemptCount: NOTIFICATION_MAX_ATTEMPTS - 1,
+        deliverAt: new Date(Date.now() - 60_000),
+      })
+      const leasedId = await insertQueueEntry(orgId, {
+        channel: 'email',
+        templateId: FAILED_AUTH_TEMPLATE,
+      })
+      await withOrg(orgId, (tx) =>
+        tx.execute(sql`
+          UPDATE notification_queue SET claim_expires_at = now() + interval '10 minutes'
+           WHERE id = ${leasedId}::uuid
+        `)
+      )
+      const sendStartedId = await insertQueueEntry(orgId, {
+        channel: 'email',
+        templateId: FAILED_AUTH_TEMPLATE,
+      })
+      await withOrg(orgId, (tx) =>
+        tx.execute(sql`
+          UPDATE notification_queue
+             SET claim_expires_at = now() - interval '1 second', send_started_at = now()
+           WHERE id = ${sendStartedId}::uuid
+        `)
+      )
+      await insertQueueEntry(orgId, {
+        channel: 'inbox',
+        templateId: FAILED_AUTH_TEMPLATE,
+        deliverAt: new Date(Date.now() + 3_600_000),
       })
       await insertQueueEntry(orgId, {
-        channel: 'email',
+        channel: 'inbox',
         templateId: FAILED_AUTH_TEMPLATE,
         attemptCount: NOTIFICATION_MAX_ATTEMPTS,
       })
+      await insertQueueEntry(orgId, {
+        channel: 'slack',
+        templateId: FAILED_AUTH_TEMPLATE,
+        createdAt: new Date(Date.now() - 4 * 60 * 1000),
+      })
 
-      await runNotificationCatchup(
-        boss,
-        {
-          jobName: 'notification/email',
-          channel: 'email',
-          logMessage: 'Notification catchup found stale pending email entries',
-        },
-        logger
-      )
+      const { calls } = await runCatchupFor(orgId)
 
-      const orgCalls = send.mock.calls.filter((call) => call[1]?.orgId === orgId)
-      expect(orgCalls).toHaveLength(1)
-      expect(orgCalls[0]).toEqual([
-        'notification/email',
-        { notificationQueueId: eligibleId, orgId },
-        expect.objectContaining({ retryLimit: 3, retryDelay: 60 }),
-      ])
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.objectContaining({ eventType: 'notification.catchup.entries_found' }),
-        'Notification catchup found stale pending email entries'
-      )
+      expect(calls.map((call) => call[1].notificationQueueId)).toEqual([eligibleId])
     })
   })
 
-  it('also excludes maxed-out entries from the deliverAt-aware catchup branch', async () => {
-    const { boss, send } = createMockBoss()
-    await boss.start()
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
-
+  it('re-enqueues a row whose lease has expired (crash recovery)', async () => {
     await withTestOrg(async ({ orgId }) => {
-      const eligibleId = await insertQueueEntry(orgId, {
-        channel: 'inbox',
+      const expiredId = await insertQueueEntry(orgId, {
+        channel: 'email',
         templateId: FAILED_AUTH_TEMPLATE,
-        attemptCount: NOTIFICATION_MAX_ATTEMPTS - 2,
-        deliverAt: new Date(Date.now() - 60_000),
+        attemptCount: 1,
       })
-      await insertQueueEntry(orgId, {
-        channel: 'inbox',
-        templateId: FAILED_AUTH_TEMPLATE,
-        attemptCount: NOTIFICATION_MAX_ATTEMPTS,
-        deliverAt: new Date(Date.now() - 60_000),
-      })
-
-      await runNotificationCatchup(
-        boss,
-        {
-          jobName: NOTIFICATION_DELIVER_JOB,
-          deliverAtAware: true,
-          logMessage: 'Notification deliver catchup found stale pending entries',
-        },
-        logger
+      await withOrg(orgId, (tx) =>
+        tx.execute(sql`
+          UPDATE notification_queue SET claim_expires_at = now() - interval '1 second'
+           WHERE id = ${expiredId}::uuid
+        `)
       )
 
-      const orgCalls = send.mock.calls.filter((call) => call[1]?.orgId === orgId)
-      expect(orgCalls).toHaveLength(1)
-      expect(orgCalls[0]).toEqual([
-        NOTIFICATION_DELIVER_JOB,
-        { notificationQueueId: eligibleId, orgId },
-        expect.objectContaining({ retryLimit: 3, retryDelay: 60 }),
-      ])
+      const { calls } = await runCatchupFor(orgId)
+
+      expect(calls.map((call) => call[1].notificationQueueId)).toEqual([expiredId])
+    })
+  })
+
+  it('drains a backlog oldest-first: 150 due rows enqueue the 100 oldest', async () => {
+    await withTestOrg(async ({ orgId }) => {
+      const base = Date.now() - 2 * 60 * 60 * 1000
+      const rows = Array.from({ length: 150 }, (_, i) => ({
+        orgId,
+        channel: 'email' as const,
+        templateId: FAILED_AUTH_TEMPLATE,
+        payload: {},
+        status: 'pending',
+        createdAt: new Date(base + i * 1000),
+      }))
+      const inserted = await withOrg(orgId, (tx) =>
+        tx
+          .insert(notificationQueue)
+          .values(rows)
+          .returning({ id: notificationQueue.id, createdAt: notificationQueue.createdAt })
+      )
+      const oldest = inserted
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+        .slice(0, 100)
+        .map((r) => r.id)
+
+      const { calls } = await runCatchupFor(orgId)
+
+      expect(calls).toHaveLength(100)
+      expect(calls.map((call) => call[1].notificationQueueId).sort()).toEqual([...oldest].sort())
+    })
+  })
+
+  it('pairs every job with its own row’s org (tenant isolation)', async () => {
+    await withTwoTestOrgs(async ({ orgAId, orgBId }) => {
+      const rowA = await insertQueueEntry(orgAId, {
+        channel: 'email',
+        templateId: FAILED_AUTH_TEMPLATE,
+      })
+      const rowB = await insertQueueEntry(orgBId, {
+        channel: 'slack',
+        templateId: FAILED_AUTH_TEMPLATE,
+      })
+      const { boss, send } = createMockBoss()
+      await boss.start()
+      await runDeliverCatchup(boss, { info: vi.fn(), warn: vi.fn(), error: vi.fn() })
+
+      const pairs = send.mock.calls
+        .map((call) => call[1] as { notificationQueueId: string; orgId: string })
+        .filter((data) => [rowA, rowB].includes(data.notificationQueueId))
+      expect(pairs).toEqual(
+        expect.arrayContaining([
+          { notificationQueueId: rowA, orgId: orgAId },
+          { notificationQueueId: rowB, orgId: orgBId },
+        ])
+      )
+      expect(pairs).toHaveLength(2)
     })
   })
 })

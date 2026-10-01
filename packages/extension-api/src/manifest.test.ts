@@ -66,8 +66,9 @@ describe('EXTENSION_API_VERSION', () => {
     // additive-minor): 3.22.1 -> 3.23.0. Story 59.1 — optional `html` on every ActionResult
     // variant (also additive-minor): 3.23.0 -> 3.24.0. Story 43.9 — internal-only
     // panelDataPaths read (patch): 3.24.0 -> 3.24.1. Documentation-only JSDoc/comment rewording
-    // of the contract source (patch): 3.24.1 -> 3.24.2.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.24.2')
+    // of the contract source (patch): 3.24.1 -> 3.24.2. Story 70.1 — required
+    // DeliveryProviderSendPayload.attemptNumber (additive-minor, policy row 2): 3.24.2 -> 3.25.0.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.25.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

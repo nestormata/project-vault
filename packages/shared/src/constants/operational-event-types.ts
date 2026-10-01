@@ -175,6 +175,16 @@ export const OperationalEvent = {
   // Per-row DLQ dead-letter visibility (Story 28.6 AC4) — alongside, not replacing, the
   // count-only summary above; carries templateId/notificationQueueId for traceability.
   NOTIFICATION_DLQ_ENTRY_FAILED: 'notification.dlq_cleanup.entry_failed',
+  // Story 70.1 Decisions 2026-09-30 (DW-252) — a row whose send started but whose outcome was
+  // never recorded (crash mid-send, or a failed status commit after a resolved send) is moved to
+  // `failed` instead of being re-sent (at-most-once). Recipient-free fields only.
+  NOTIFICATION_DELIVERY_OUTCOME_UNKNOWN: 'notification.delivery_outcome_unknown',
+
+  // Exclusive notification_queue claim (Story 70.1 AC9) — the fenced release after a failed
+  // attempt itself failed; the row is reclaimable once its lease expires.
+  NOTIFICATION_CLAIM_RELEASE_FAILED: 'notification.claim_release_failed',
+  // Boot-time removal of the retired per-channel catch-up schedules (Story 70.1 AC3/AC9).
+  NOTIFICATION_CATCHUP_RETIRED_SCHEDULES: 'notification.catchup.retired_schedules',
 
   // Notification template render failure fallback (Story 28.6 AC3)
   NOTIFICATION_TEMPLATE_RENDER_FAILED: 'notification.template_render_failed',

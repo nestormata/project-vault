@@ -708,6 +708,13 @@
       "when": 1790614591583,
       "tag": "0100_extension_scheduled_task_runs_last_attempt_at",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1790816654550,
+      "tag": "0101_notification_queue_claim_expires_at",
+      "breakpoints": true
     }
   ]
 }

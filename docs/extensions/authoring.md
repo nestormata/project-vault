@@ -420,6 +420,19 @@ be replayed once per process, and a restart clears it entirely. The repository's
 `mock-envelope-extension` fixture uses an in-memory set deliberately, and says so loudly — it is a
 test fixture, not a pattern to copy.
 
+### Delivery providers: delivery semantics
+
+A `deliveryProvider`'s `send()` receives `queueRowId` and `attemptNumber` (since 3.25.0).
+`queueRowId` is the idempotency key: it is the same on every retry of one notification and never
+reused, so forward it as your provider's idempotency key (for example
+`Idempotency-Key: pv-nq-<queueRowId>`). Project Vault calls `send()` again for the same
+`queueRowId` only after an earlier call rejected. Once `send()` resolves, or while its outcome is
+unknown (the process stopped during the call, or the result could not be recorded), Project Vault
+never calls it again for that notification and marks it `failed` instead. If your `send()` can
+reject after the message was actually accepted (a timeout, for example), deduplicating on
+`queueRowId` is what keeps the retry from sending twice. `attemptNumber` is for logs and metrics
+only; never put it in the idempotency key.
+
 ## Recovering from a broken extension
 
 There is deliberately no break-glass switch that disables one hook.

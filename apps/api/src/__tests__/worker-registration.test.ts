@@ -14,6 +14,7 @@ const REGISTER_WORKERS = 'registerWorkers({'
 // incident: colon-separated names like 'payment:expiry-alert' threw an uncaught AssertionError
 // out of registerSchedules on first vault unseal in every real deployment).
 const PG_BOSS_NAME_PATTERN = /^[\w.\-/]+$/
+const DELIVER_CATCHUP_JOB = 'notification/deliver-catchup'
 
 // Module-relative (static) root, so the directory listing needs no lint suppression.
 function collectTsFiles(): string[] {
@@ -107,9 +108,7 @@ describe('credentials/prune-versions registration (AC-8 R3)', () => {
         'security/prune-failed-auth-attempts',
         'credentials/prune-versions',
         'import/cleanup-expired',
-        'notification/email-catchup',
-        'notification/slack-catchup',
-        'notification/deliver-catchup',
+        DELIVER_CATCHUP_JOB,
         'notification/dlq-cleanup',
         'notification/send-digest',
         'payment/expiry-alert',
@@ -171,7 +170,43 @@ describe('credentials/prune-versions registration (AC-8 R3)', () => {
     expect(workersBlock).toContain("'notification/slack'")
     expect(workersBlock).toContain("'notification/backfill-pending-delivery'")
     expect(workersBlock).toContain("'notification/deliver'")
-    expect(workersBlock).toContain("'notification/deliver-catchup'")
+    expect(workersBlock).toContain(`'${DELIVER_CATCHUP_JOB}'`)
     expect(workersBlock).toContain("'notification/send-digest'")
+  })
+})
+
+describe('notification catch-up ownership (Story 70.1 AC3)', () => {
+  const CATCHUP_KEY_PATTERN = /^\s*'(notification\/[a-z-]+-catchup)':/gm
+
+  it('schedules exactly one notification catch-up: notification/deliver-catchup', () => {
+    // Static source inspection (not an import of the handlers this story deletes), so it fails on
+    // the baseline with four matches.
+    const mainSource = readFileSync(MAIN_TS_MODULE_PATH, 'utf-8')
+    const schedulesBlock = extractBalancedBlock(mainSource, REGISTER_SCHEDULES)
+    const catchups = [...schedulesBlock.matchAll(CATCHUP_KEY_PATTERN)].map((m) => m[1])
+
+    expect(catchups).toEqual([DELIVER_CATCHUP_JOB])
+  })
+
+  it('registers no worker for a retired catch-up name', () => {
+    const mainSource = readFileSync(MAIN_TS_MODULE_PATH, 'utf-8')
+    const workersBlock = extractBalancedBlock(mainSource, REGISTER_WORKERS)
+    const catchups = [...workersBlock.matchAll(CATCHUP_KEY_PATTERN)].map((m) => m[1])
+
+    expect(catchups).toEqual([DELIVER_CATCHUP_JOB])
+  })
+
+  it('unschedules every retired catch-up name at boot', async () => {
+    const { RETIRED_NOTIFICATION_CATCHUP_SCHEDULES } =
+      await import('../workers/notification-deliver-catchup.js')
+    expect([...RETIRED_NOTIFICATION_CATCHUP_SCHEDULES].sort()).toEqual([
+      'notification/email-catchup',
+      'notification/inbox-catchup',
+      'notification/slack-catchup',
+    ])
+    const mainSource = readFileSync(MAIN_TS_MODULE_PATH, 'utf-8')
+    expect(mainSource).toMatch(
+      /for \(const name of RETIRED_NOTIFICATION_CATCHUP_SCHEDULES\)\s*{\s*await boss\.unschedule\(name\)/
+    )
   })
 })

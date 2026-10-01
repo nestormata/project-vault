@@ -22,19 +22,3 @@ export async function runInboxPurge(logger: PurgeLogger): Promise<void> {
 export async function notificationInboxPurgeHandler(logger: PurgeLogger): Promise<void> {
   await withJobLogging(logger, 'notification/inbox-purge', 'daily', () => runInboxPurge(logger))
 }
-
-export async function notificationInboxCatchupHandler(
-  boss: import('../lib/boss.js').BossService,
-  logger: PurgeLogger
-): Promise<void> {
-  const { runNotificationCatchup } = await import('./notification-worker-common.js')
-  await runNotificationCatchup(
-    boss,
-    {
-      channel: 'inbox',
-      jobName: 'notification/deliver',
-      logMessage: 'Notification catchup found stale pending inbox entries',
-    },
-    logger
-  )
-}
