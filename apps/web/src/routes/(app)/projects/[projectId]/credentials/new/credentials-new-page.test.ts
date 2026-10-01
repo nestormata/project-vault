@@ -8,6 +8,8 @@ vi.mock('$app/navigation', () => ({ goto: gotoMock }))
 vi.mock('$lib/api/credentials.js', () => ({ createCredential: createCredentialMock }))
 
 import { ApiClientError } from '$lib/api/client.js'
+import type { ComponentProps } from 'svelte'
+import { projectLayoutData } from '$lib/test/page-data.js'
 import NewCredentialPage from './+page.svelte'
 
 afterEach(() => {
@@ -17,8 +19,10 @@ afterEach(() => {
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
-function data(overrides: Record<string, unknown> = {}) {
-  return { projectId, orgRole: 'member', ...overrides }
+type Data = ComponentProps<typeof NewCredentialPage>['data']
+
+function data(overrides: Partial<Data> = {}): Data {
+  return { ...projectLayoutData(), projectId, orgRole: 'member', ...overrides }
 }
 
 async function selectTemplate(value: string) {

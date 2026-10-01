@@ -13,6 +13,7 @@ vi.mock('$lib/api/status-page.js', () => ({
 
 import type { ComponentProps } from 'svelte'
 import { projectLayoutData } from '$lib/test/page-data.js'
+import type { ServiceEndpoint } from '$lib/api/service-endpoints.js'
 import StatusPage from './+page.svelte'
 
 afterEach(() => {
@@ -22,13 +23,16 @@ afterEach(() => {
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 
-function serviceEndpoint(id: string, name: string) {
+function serviceEndpoint(id: string, name: string): ServiceEndpoint {
   return {
     id,
     name,
     url: `https://${name}.example.com`,
-    status: 'up' as const,
+    status: 'healthy',
     lastCheckedAt: null,
+    healthCheckPaused: false,
+    healthCheckPausedAt: null,
+    healthCheckPausedBy: null,
   }
 }
 
@@ -41,6 +45,8 @@ function data(overrides: Partial<Data> = {}): Data {
     origin: 'https://vault.example.com',
     canManage: true,
     config: { enabled: true, token: 'tok-1', services: [] },
+    // No capability-gating extension registered: the gated key is simply absent (fail-open).
+    capabilities: {},
     serviceEndpoints: [
       serviceEndpoint('svc-1', 'API'),
       serviceEndpoint('svc-2', 'Database'),
@@ -52,7 +58,7 @@ function data(overrides: Partial<Data> = {}): Data {
 
 describe('status-page +page.svelte (Story 23.7: capability-gated Enable/Save controls)', () => {
   // AC-12: no capability-gating extension registered → the screen is byte-identical to its
-  // pre-story rendering. `data.capabilities` absent entirely (matches AC-9's fail-open default:
+  // pre-story rendering. The gated key absent from `data.capabilities` (matches AC-9's fail-open default:
   // "the key is absent from a stale/partial response" per AC-10's positive example) is the
   // golden, pre-story shape every other test in this file already renders with.
   it('AC-12: golden snapshot — with data.capabilities absent, both gated buttons render enabled with no explanatory text and no extra DOM nodes (byte-identical to pre-story markup)', () => {
@@ -168,8 +174,8 @@ describe('status-page +page.svelte (Story 23.7: capability-gated Enable/Save con
             enabled: true,
             token: 'tok-1',
             services: [
-              { serviceId: 'svc-1', displayName: 'API' },
-              { serviceId: 'svc-2', displayName: 'Database' },
+              { serviceId: 'svc-1', displayName: 'API', sortOrder: 0 },
+              { serviceId: 'svc-2', displayName: 'Database', sortOrder: 1 },
             ],
           },
           capabilities: { 'monitoring.public-status-page': false },
@@ -205,7 +211,7 @@ describe('status-page +page.svelte (Story 21.8: deduplicated Services section)',
           config: {
             enabled: true,
             token: 'tok-1',
-            services: [{ serviceId: 'svc-1', displayName: 'API' }],
+            services: [{ serviceId: 'svc-1', displayName: 'API', sortOrder: 0 }],
           },
         }),
       },
@@ -232,8 +238,8 @@ describe('status-page +page.svelte (Story 21.8: deduplicated Services section)',
   it('reorder buttons move a selected service and are disabled at the array boundaries', async () => {
     updateStatusPageServicesMock.mockResolvedValue({
       services: [
-        { serviceId: 'svc-2', displayName: 'Database' },
-        { serviceId: 'svc-1', displayName: 'API' },
+        { serviceId: 'svc-2', displayName: 'Database', sortOrder: 0 },
+        { serviceId: 'svc-1', displayName: 'API', sortOrder: 1 },
       ],
     })
 
@@ -244,8 +250,8 @@ describe('status-page +page.svelte (Story 21.8: deduplicated Services section)',
             enabled: true,
             token: 'tok-1',
             services: [
-              { serviceId: 'svc-1', displayName: 'API' },
-              { serviceId: 'svc-2', displayName: 'Database' },
+              { serviceId: 'svc-1', displayName: 'API', sortOrder: 0 },
+              { serviceId: 'svc-2', displayName: 'Database', sortOrder: 1 },
             ],
           },
         }),
@@ -285,9 +291,9 @@ describe('status-page +page.svelte (Story 21.8: deduplicated Services section)',
             enabled: true,
             token: 'tok-1',
             services: [
-              { serviceId: 'svc-1', displayName: 'API' },
-              { serviceId: 'svc-2', displayName: 'Database' },
-              { serviceId: 'svc-3', displayName: 'Worker' },
+              { serviceId: 'svc-1', displayName: 'API', sortOrder: 0 },
+              { serviceId: 'svc-2', displayName: 'Database', sortOrder: 1 },
+              { serviceId: 'svc-3', displayName: 'Worker', sortOrder: 2 },
             ],
           },
         }),
@@ -308,7 +314,7 @@ describe('status-page +page.svelte (Story 21.8: deduplicated Services section)',
           config: {
             enabled: true,
             token: 'tok-1',
-            services: [{ serviceId: 'svc-1', displayName: 'API' }],
+            services: [{ serviceId: 'svc-1', displayName: 'API', sortOrder: 0 }],
           },
         }),
       },
@@ -327,8 +333,8 @@ describe('status-page +page.svelte (Story 21.8: deduplicated Services section)',
             token: 'tok-1',
             // svc-3 selected before svc-1 — selected order should win over endpoint list order.
             services: [
-              { serviceId: 'svc-3', displayName: 'Worker' },
-              { serviceId: 'svc-1', displayName: 'API' },
+              { serviceId: 'svc-3', displayName: 'Worker', sortOrder: 0 },
+              { serviceId: 'svc-1', displayName: 'API', sortOrder: 1 },
             ],
           },
         }),
@@ -352,7 +358,7 @@ describe('status-page +page.svelte (Story 21.8: deduplicated Services section)',
           config: {
             enabled: true,
             token: 'tok-1',
-            services: [{ serviceId: 'svc-1', displayName: 'API' }],
+            services: [{ serviceId: 'svc-1', displayName: 'API', sortOrder: 0 }],
           },
         }),
       },
@@ -460,7 +466,7 @@ describe('status-page +page.svelte (Story 6.6: two-step rotation confirm and leg
           config: {
             enabled: true,
             token: 'tok-a',
-            services: [{ serviceId: 'svc-1', displayName: 'Public API' }],
+            services: [{ serviceId: 'svc-1', displayName: 'Public API', sortOrder: 0 }],
           },
         }),
       },
