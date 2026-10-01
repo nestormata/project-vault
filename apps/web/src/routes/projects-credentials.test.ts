@@ -778,7 +778,7 @@ describe('project credential routes', () => {
 
   it('renders create access notice for viewers', () => {
     render(CreateCredentialPage, {
-      props: { data: { ...projectLayoutData(), projectId, orgRole: 'viewer' as const } },
+      props: { data: { ...projectLayoutData(), projectId, orgRole: 'viewer' } },
     })
     expect(screen.getByText(/create not available/i)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /create credential/i })).toBeNull()
