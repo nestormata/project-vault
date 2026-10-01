@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import ProjectOverviewPage from './+page.svelte'
 
 afterEach(() => cleanup())
@@ -94,7 +95,7 @@ describe('project overview +page.svelte (AC-1/AC-2/AC-5)', () => {
 
   it('AC-3: renders an honest not-found state instead of leaking any project data', () => {
     render(ProjectOverviewPage, {
-      props: { data: { project: null, dashboard: null, notFound: true } },
+      props: { data: { ...appLayoutData(), project: null, dashboard: null, notFound: true } },
     })
 
     expect(screen.getByText(/project not found/i)).toBeTruthy()

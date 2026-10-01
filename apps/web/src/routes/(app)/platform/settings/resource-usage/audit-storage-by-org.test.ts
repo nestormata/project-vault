@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import { ApiClientError } from '$lib/api/client.js'
+import { apiClientError } from '$lib/test/api-error.js'
 
 const setOrgAuditQuotaMock = vi.hoisted(() => vi.fn())
 
@@ -234,7 +235,7 @@ describe('Story 22.3: Audit Storage by Organization table', () => {
   it('AC-5: an overcommit 422 shows the confirm-and-acknowledge flow, and acknowledging resubmits with acknowledgeOvercommit: true', async () => {
     setOrgAuditQuotaMock
       .mockRejectedValueOnce(
-        new ApiClientError(
+        apiClientError(
           422,
           {
             code: 'quota_overcommit',

@@ -5,12 +5,17 @@ vi.mock('$app/paths', () => ({
   resolve: (path: string) => path,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import CredentialsImportPage from './+page.svelte'
 
 afterEach(() => cleanup())
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof CredentialsImportPage>['data']
+
+function baseData(overrides: Partial<Data> = {}): Data {
   return {
+    ...appLayoutData(),
     canImport: true,
     orgRole: 'admin',
     projects: { items: [], total: 0 },

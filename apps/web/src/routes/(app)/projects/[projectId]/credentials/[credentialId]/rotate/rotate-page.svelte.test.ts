@@ -7,7 +7,9 @@ const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('$app/navigation', () => ({ goto: gotoMock }))
 vi.mock('$lib/api/rotations.js', () => ({ initiateRotation: initiateRotationMock }))
 
-import { ApiClientError } from '$lib/api/client.js'
+import { apiClientError } from '$lib/test/api-error.js'
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import RotatePage from './+page.svelte'
 
 afterEach(() => {
@@ -18,8 +20,11 @@ afterEach(() => {
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const credentialId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 
-function data(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof RotatePage>['data']
+
+function data(overrides: Partial<Data> = {}): Data {
   return {
+    ...appLayoutData(),
     projectId,
     credentialId,
     orgRole: 'admin',
@@ -143,7 +148,7 @@ describe('/rotate +page.svelte (Story 13.4)', () => {
 
   it('AC-3: surfaces a 400 unknown_field_key error inline', async () => {
     initiateRotationMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         400,
         {
           code: 'unknown_field_key',
@@ -202,7 +207,7 @@ describe('/rotate +page.svelte (Story 13.4)', () => {
     it('shows the confirm/cancel prompt naming the field, and Confirm resubmits with confirmSameValue: true', async () => {
       initiateRotationMock
         .mockRejectedValueOnce(
-          new ApiClientError(
+          apiClientError(
             409,
             {
               code: 'same_value_confirmation_required',
@@ -256,7 +261,7 @@ describe('/rotate +page.svelte (Story 13.4)', () => {
 
     it('Cancel dismisses the prompt and preserves the entered value, no resubmit', async () => {
       initiateRotationMock.mockRejectedValueOnce(
-        new ApiClientError(
+        apiClientError(
           409,
           { code: 'same_value_confirmation_required', field: null, message: 'identical' },
           'identical'

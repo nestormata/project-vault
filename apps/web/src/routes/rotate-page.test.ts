@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
 import { ApiClientError } from '$lib/api/client.js'
+import { apiClientError } from '$lib/test/api-error.js'
 import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
 import { routeExists } from '$lib/test/route-exists.js'
 
@@ -19,14 +20,19 @@ vi.mock('$lib/api/rotations.js', async (importOriginal) => {
   }
 })
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import RotatePage from './(app)/projects/[projectId]/credentials/[credentialId]/rotate/+page.svelte'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const credentialId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 const rotationId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof RotatePage>['data']
+
+function baseData(overrides: Partial<Data> = {}): Data {
   return {
+    ...appLayoutData(),
     projectId,
     credentialId,
     orgRole: 'admin' as const,
@@ -143,7 +149,7 @@ describe('/rotate +page.svelte', () => {
 
   it('AC-5: 409 rotation_in_progress links straight to the winning rotation', async () => {
     initiateRotationMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         409,
         {
           code: 'rotation_in_progress',

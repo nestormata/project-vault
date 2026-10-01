@@ -11,6 +11,8 @@ vi.mock('$lib/api/status-page.js', () => ({
   updateStatusPageServices: updateStatusPageServicesMock,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import StatusPage from './+page.svelte'
 
 afterEach(() => {
@@ -30,8 +32,11 @@ function serviceEndpoint(id: string, name: string) {
   }
 }
 
-function data(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof StatusPage>['data']
+
+function data(overrides: Partial<Data> = {}): Data {
   return {
+    ...appLayoutData(),
     projectId,
     origin: 'https://vault.example.com',
     canManage: true,

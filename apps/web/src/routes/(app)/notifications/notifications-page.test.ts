@@ -24,6 +24,8 @@ vi.mock('$lib/state/notifications.svelte.js', () => ({
   decrementUnread: decrementUnreadMock,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import NotificationsPage from './+page.svelte'
 
 afterEach(() => {
@@ -104,8 +106,11 @@ async function submitEnhanced(
   })
 }
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof NotificationsPage>['data']
+
+function baseData(overrides: Partial<Data> = {}): Data {
   return {
+    ...appLayoutData(),
     notifications: [],
     total: 0,
     hasNext: false,

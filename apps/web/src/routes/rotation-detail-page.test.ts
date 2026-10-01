@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
 import { ApiClientError } from '$lib/api/client.js'
+import { apiClientError } from '$lib/test/api-error.js'
 import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
 import { routeExists } from '$lib/test/route-exists.js'
 import type { RotationChecklistItem, RotationDetail } from '@project-vault/shared'
@@ -23,6 +24,8 @@ vi.mock('$lib/api/rotations.js', () => ({
   abandonRotation: abandonRotationMock,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import RotationDetailPage from './(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]/+page.svelte'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -62,8 +65,11 @@ function makeRotation(overrides: Partial<RotationDetail> = {}): RotationDetail {
   }
 }
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof RotationDetailPage>['data']
+
+function baseData(overrides: Partial<Data> = {}): Data {
   return {
+    ...appLayoutData(),
     projectId,
     credentialId,
     rotationId,
@@ -218,7 +224,7 @@ describe('/rotations/[rotationId] +page.svelte', () => {
 
   it('AC-12: 422 checklist_incomplete lists pending systems and triggers a refetch', async () => {
     completeRotationMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         422,
         {
           code: 'checklist_incomplete',
@@ -289,7 +295,7 @@ describe('/rotations/[rotationId] +page.svelte', () => {
 
   it('AC-13 edge: 422 acknowledgement_required shows the message and re-shows the unchecked checkbox', async () => {
     completeRotationMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         422,
         {
           code: 'acknowledgement_required',
@@ -320,7 +326,7 @@ describe('/rotations/[rotationId] +page.svelte', () => {
 
   it('AC-15: concurrent_modification on complete triggers a single refetch and clears after refresh', async () => {
     completeRotationMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         409,
         { code: 'concurrent_modification', message: 'Retry', currentVersion: 5 },
         'Retry'

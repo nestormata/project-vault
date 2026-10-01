@@ -52,6 +52,9 @@ vi.mock('$lib/api/rotations.js', async () => {
 })
 
 import { ApiClientError } from '$lib/api/client.js'
+import { apiClientError } from '$lib/test/api-error.js'
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import CredentialDetailPage from './+page.svelte'
 
 afterEach(() => {
@@ -75,8 +78,11 @@ const CREDENTIAL = {
   archivedAt: null as string | null,
 }
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof CredentialDetailPage>['data']
+
+function baseData(overrides: Partial<Data> = {}): Data {
   return {
+    ...appLayoutData(),
     projectId,
     credentialId,
     orgRole: 'member',
@@ -154,7 +160,7 @@ describe('credential detail +page.svelte — archive/unarchive (Story 28.5 AC6)'
   it('shows an inline active_shares error and does not treat the secret as archived', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     archiveCredentialMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         409,
         { error: 'active_shares', shareIds: ['dddddddd-dddd-4ddd-8ddd-dddddddddddd'] },
         'active_shares'
@@ -1295,7 +1301,7 @@ describe('credential detail +page.svelte', () => {
 
   it('a 409 already_confirmed reconciles the checkbox to checked instead of showing an error', async () => {
     confirmChecklistItemMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         409,
         {
           code: 'already_confirmed',

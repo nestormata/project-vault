@@ -14,9 +14,6 @@ export type ApiFailure = {
   details?: unknown
   retryAfter?: number
   retryAfterSeconds?: number
-  // Error bodies also carry endpoint-specific fields (e.g. quota_overcommit's byte counts,
-  // active_shares' shareIds) that callers read from `ApiClientError.body` (Story 68.1).
-  [field: string]: unknown
 }
 
 export class ApiClientError extends Error {

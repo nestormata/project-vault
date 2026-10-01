@@ -37,6 +37,7 @@ vi.mock('$lib/api/org-users.js', () => ({
 }))
 
 import { ApiClientError } from '$lib/api/client.js'
+import { apiClientError } from '$lib/test/api-error.js'
 import type { ComponentProps } from 'svelte'
 import type { OrgUser } from '$lib/api/org-users.js'
 import { appLayoutData } from '$lib/test/page-data.js'
@@ -372,7 +373,7 @@ describe('/settings/users +page.svelte (Story 8.7 AC groups A4/I/J/K)', () => {
 
     it('AC-K3: a 409 already-pending response navigates to the existing request', async () => {
       createErasureRequestMock.mockRejectedValue(
-        new ApiClientError(
+        apiClientError(
           409,
           {
             code: 'erasure_request_already_pending',
@@ -398,7 +399,7 @@ describe('/settings/users +page.svelte (Story 8.7 AC groups A4/I/J/K)', () => {
 
     it('AC-K4: a 410 already-erased response navigates to the completed request', async () => {
       createErasureRequestMock.mockRejectedValue(
-        new ApiClientError(
+        apiClientError(
           410,
           {
             code: 'user_already_erased',
@@ -698,7 +699,7 @@ describe('/settings/users +page.svelte (Story 8.7 AC groups A4/I/J/K)', () => {
 
     it.each([
       [
-        new ApiClientError(
+        apiClientError(
           409,
           {
             code: 'sole_owner_of_projects',

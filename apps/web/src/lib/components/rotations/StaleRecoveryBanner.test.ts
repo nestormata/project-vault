@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
 import { ApiClientError } from '$lib/api/client.js'
+import { apiClientError } from '$lib/test/api-error.js'
 import { routeExists } from '$lib/test/route-exists.js'
 
 const resumeRotationMock = vi.hoisted(() => vi.fn())
@@ -109,7 +110,7 @@ describe('StaleRecoveryBanner', () => {
 
   it('AC-15: 409 concurrent_modification triggers onConcurrentModification', async () => {
     resumeRotationMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         409,
         { code: 'concurrent_modification', message: 'Retry', currentVersion: 5 },
         'Retry'

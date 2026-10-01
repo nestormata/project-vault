@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/svelte'
 import { ApiClientError } from '$lib/api/client.js'
+import { apiClientError } from '$lib/test/api-error.js'
 
 const invalidateAllMock = vi.hoisted(() => vi.fn(async () => {}))
 const gotoMock = vi.hoisted(() => vi.fn(async () => {}))
@@ -304,7 +305,7 @@ describe('/projects +page.svelte — tag management (Group P)', () => {
 
   it.each([
     [
-      new ApiClientError(
+      apiClientError(
         409,
         { code: 'active_rotations', rotationIds: ['rotation-1', 'rotation-2'] },
         'active'

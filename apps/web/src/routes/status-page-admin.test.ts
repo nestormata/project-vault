@@ -14,6 +14,8 @@ vi.mock('$lib/api/status-page.js', () => ({
   updateStatusPageServices: updateStatusPageServicesMock,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import StatusPageAdminPage from './(app)/projects/[projectId]/status-page/+page.svelte'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -46,8 +48,11 @@ const endpoints = [
   },
 ]
 
-function pageData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof StatusPageAdminPage>['data']
+
+function pageData(overrides: Partial<Data> = {}): Data {
   return {
+    ...appLayoutData(),
     projectId,
     origin: 'https://vault.example.com',
     canManage: true,

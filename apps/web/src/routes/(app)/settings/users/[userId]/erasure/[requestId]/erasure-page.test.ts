@@ -17,6 +17,7 @@ vi.mock('$lib/download.js', () => ({
 }))
 
 import { ApiClientError } from '$lib/api/client.js'
+import { apiClientError } from '$lib/test/api-error.js'
 import type { ComponentProps } from 'svelte'
 import { appLayoutData, type AppLayoutData } from '$lib/test/page-data.js'
 import ErasurePage from './+page.svelte'
@@ -123,7 +124,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.svelte (AC groups K
 
   it('AC-L3: a 409 user_has_other_org_memberships shows the exact remediation, stays on the pending screen', async () => {
     executeErasureMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         409,
         {
           code: 'user_has_other_org_memberships',
@@ -238,7 +239,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.svelte (AC groups K
 
   it('a remediation error pluralizes "organizations" when otherOrgCount > 1', async () => {
     executeErasureMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         409,
         {
           code: 'user_has_other_org_memberships',

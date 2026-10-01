@@ -18,6 +18,7 @@ vi.mock('$lib/server/require-user.js', () => ({
 }))
 
 import { ApiClientError } from '$lib/api/client.js'
+import { apiClientError } from '$lib/test/api-error.js'
 import { requireUser } from '$lib/server/require-user.js'
 import { load } from './+page.server.js'
 import { expectLoaded } from '$lib/test/page-data.js'
@@ -110,7 +111,7 @@ describe('/settings/users/[userId]/erasure/[requestId] +page.server.ts (D6)', ()
       )
     )
     createErasureRequestMock.mockRejectedValue(
-      new ApiClientError(
+      apiClientError(
         409,
         {
           code: 'erasure_request_already_pending',

@@ -25,6 +25,8 @@ vi.mock('$lib/api/org-users.js', () => ({
   transferOwnership: transferOwnershipMock,
 }))
 
+import type { ComponentProps } from 'svelte'
+import { appLayoutData } from '$lib/test/page-data.js'
 import MembersPage from './(app)/projects/[projectId]/members/+page.svelte'
 
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -41,8 +43,11 @@ const member = {
   role: 'member' as const,
 }
 
-function baseData(overrides: Record<string, unknown> = {}) {
+type Data = ComponentProps<typeof MembersPage>['data']
+
+function baseData(overrides: Partial<Data> = {}): Data {
   return {
+    ...appLayoutData(),
     projectId,
     userId: 'u1',
     canManage: true as const,
