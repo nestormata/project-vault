@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "strict": true, "target": "es2015", "types": [] },
+  "files": ["src/index.ts"]
+}

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -12,22 +12,20 @@ import {
 // package (lib es5, no @types), not from the 259-file real build. The real build runs once,
 // in an uninstrumented child process (see surface-runner.ts). Fixture assertions never depend
 // on `__@<symbol>@<id>` numbers (DW-310).
+// The failure-path variants are committed, read-only fixture directories under
+// fixtures/surface-variants/ rather than files written at test time: they render through the
+// generator's real on-disk path and stay safe under concurrent runs.
 
 const fixtureRoot = join(import.meta.dirname, 'fixtures', 'surface-mini')
+const variantsRoot = join(import.meta.dirname, 'fixtures', 'surface-variants')
+const NO_INDEX_SOURCE_ROOT = join(variantsRoot, 'no-index-source')
 const tempRoots: string[] = []
-const NO_LIB_TSCONFIG = '{"compilerOptions":{"noLib":true,"types":[]}}'
 const SNAPSHOT_FILE = 'api-surface.snapshot.md'
-const INDEX_FILE = 'src/index.ts'
 const TRUNCATION_NOTE = 'more differing lines not shown'
 const EMIT_ARGV = ['node', 'api-surface.ts', '--emit']
 
 // The committed fixture is read once through static paths; temp copies start out identical to it.
 const COMMITTED_SNAPSHOT = readFileSync(join(fixtureRoot, SNAPSHOT_FILE), 'utf8')
-const FIXTURE_INDEX = readFileSync(join(fixtureRoot, INDEX_FILE), 'utf8')
-
-function writeText(root: string, name: string, content: string): void {
-  writeFileSync(join(root, name), content)
-}
 
 function section(snapshot: string, exportName: string): string {
   const start = snapshot.indexOf(`## export \`${exportName}\``)
@@ -36,19 +34,17 @@ function section(snapshot: string, exportName: string): string {
   return snapshot.slice(start, end === -1 ? undefined : end)
 }
 
-function tempCopy(options: { withSnapshot: boolean }): string {
+function tempCopyWithoutSnapshot(): string {
   const root = mkdtempSync(join(tmpdir(), 'surface-mini-'))
   tempRoots.push(root)
   cpSync(fixtureRoot, root, { recursive: true })
-  if (!options.withSnapshot) rmSync(join(root, SNAPSHOT_FILE))
+  rmSync(join(root, SNAPSHOT_FILE))
   return root
 }
 
-function tempRootWith(files: Record<string, string>): string {
-  const root = mkdtempSync(join(tmpdir(), 'surface-broken-'))
+function emptyTempRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), 'surface-empty-'))
   tempRoots.push(root)
-  cpSync(join(fixtureRoot, 'package.json'), join(root, 'package.json'))
-  for (const [name, content] of Object.entries(files)) writeText(root, name, content)
   return root
 }
 
@@ -126,7 +122,7 @@ describe('surface renderer over the surface-mini fixture package', () => {
   })
 
   it('dates every entry at the package version when there is no previous snapshot', () => {
-    const snapshot = generateSurfaceSnapshot(tempCopy({ withSnapshot: false }))
+    const snapshot = generateSurfaceSnapshot(tempCopyWithoutSnapshot())
 
     expect(snapshot).not.toContain('- since: 0.9.0')
     expect(snapshot).toContain('- since: 1.0.0')
@@ -139,32 +135,23 @@ describe('surface renderer over the surface-mini fixture package', () => {
   })
 
   it('fails closed with a readable message on a missing tsconfig, source or module symbol', () => {
-    expect(() => generateSurfaceSnapshot(tempRootWith({}))).toThrow(/tsconfig\.json/)
-    expect(() =>
-      generateSurfaceSnapshot(tempRootWith({ 'tsconfig.json': NO_LIB_TSCONFIG }))
-    ).toThrow('could not load extension-api src/index.ts')
+    expect(() => generateSurfaceSnapshot(emptyTempRoot())).toThrow(/tsconfig\.json/)
+    expect(() => generateSurfaceSnapshot(NO_INDEX_SOURCE_ROOT)).toThrow(
+      'could not load extension-api src/index.ts'
+    )
   })
 
   it('throws when src/index.ts is not a module', () => {
-    const root = tempCopy({ withSnapshot: false })
-    writeText(root, INDEX_FILE, 'const notExported = 1\n')
-
-    expect(() => generateSurfaceSnapshot(root)).toThrow('could not resolve index.ts module symbol')
+    expect(() => generateSurfaceSnapshot(join(variantsRoot, 'not-a-module'))).toThrow(
+      'could not resolve index.ts module symbol'
+    )
   })
 
   // The generator builds with `types: []` (no @types/node) for speed. A source that starts to
   // depend on a Node global would otherwise render it as an unresolved type silently, so any
   // semantic diagnostic in the package's own src files must fail the generation.
   it('fails closed when a src file references a name the narrowed program cannot resolve', () => {
-    const root = tempCopy({ withSnapshot: false })
-    writeText(
-      root,
-      'src/helper.ts',
-      'export function size(input: string): number {\n  return Buffer.byteLength(input)\n}\n'
-    )
-    writeText(root, INDEX_FILE, `${FIXTURE_INDEX}import './helper'\n`)
-
-    expect(() => generateSurfaceSnapshot(root)).toThrow(
+    expect(() => generateSurfaceSnapshot(join(variantsRoot, 'node-global'))).toThrow(
       /src\/helper\.ts.*Cannot find name 'Buffer'/
     )
   })
@@ -175,15 +162,7 @@ describe('surface renderer over the surface-mini fixture package', () => {
   it.each(['es5', 'es2015', 'es2022'])(
     'builds without the DOM lib for target %s when tsconfig has no explicit lib, and fails closed on DOM names',
     (target) => {
-      const root = tempCopy({ withSnapshot: false })
-      writeText(
-        root,
-        'tsconfig.json',
-        `{"compilerOptions":{"strict":true,"target":"${target}","types":[]},"files":["src/index.ts"]}`
-      )
-      writeText(root, INDEX_FILE, `${FIXTURE_INDEX}export type Element = HTMLElement\n`)
-
-      expect(() => generateSurfaceSnapshot(root)).toThrow(
+      expect(() => generateSurfaceSnapshot(join(variantsRoot, `dom-${target}`))).toThrow(
         /src\/index\.ts.*Cannot find name 'HTMLElement'/
       )
     }
@@ -192,15 +171,11 @@ describe('surface renderer over the surface-mini fixture package', () => {
 
 describe('assertSurfaceSnapshotIsFresh (parent-side compare)', () => {
   it('reports since-index errors before comparing', () => {
-    const root = tempCopy({ withSnapshot: true })
-    const committed = COMMITTED_SNAPSHOT
-    writeText(
-      root,
-      SNAPSHOT_FILE,
-      committed.replace(/(- member: `readonly id`\n) {2}- since: 0\.9\.0\n/, '$1')
+    // missing-since holds the surface-mini snapshot without the `readonly id` member's since.
+    const result = assertSurfaceSnapshotIsFresh(
+      join(variantsRoot, 'missing-since'),
+      COMMITTED_SNAPSHOT
     )
-
-    const result = assertSurfaceSnapshotIsFresh(root, committed)
 
     expect(result.ok).toBe(false)
     expect(result.ok ? '' : result.errors.join('\n')).toContain('is missing since')
@@ -275,11 +250,7 @@ describe('api-surface CLI', () => {
   it('--emit exits 1 with the error on stderr and nothing on stdout when generation fails', () => {
     const capture = captureIo()
 
-    const exitCode = runSurfaceCli(
-      EMIT_ARGV,
-      tempRootWith({ 'tsconfig.json': NO_LIB_TSCONFIG }),
-      capture.io
-    )
+    const exitCode = runSurfaceCli(EMIT_ARGV, NO_INDEX_SOURCE_ROOT, capture.io)
 
     expect(exitCode).toBe(1)
     expect(capture.out()).toBe('')
@@ -287,7 +258,7 @@ describe('api-surface CLI', () => {
   })
 
   it('--write regenerates the snapshot file in place', () => {
-    const root = tempCopy({ withSnapshot: false })
+    const root = tempCopyWithoutSnapshot()
     const capture = captureIo()
 
     const exitCode = runSurfaceCli([...EMIT_ARGV.slice(0, 2), '--write'], root, capture.io)
