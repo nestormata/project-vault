@@ -25,7 +25,8 @@ die() {
 }
 
 require_digest() {
-  [[ "$1" =~ $DIGEST_RE ]] || die "not a sha256 digest: '$1'"
+  local candidate="$1"
+  [[ "$candidate" =~ $DIGEST_RE ]] || die "not a sha256 digest: '$candidate'"
 }
 
 cmd_current() {
@@ -58,13 +59,13 @@ cmd_rewrite() {
 }
 
 token() {
-  curl -fsS "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/node:pull" | jq -r .token
+  curl -fsS --proto '=https' "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/node:pull" | jq -r .token
 }
 
 cmd_resolve() {
   local t digest
   t=$(token)
-  digest=$(curl -fsSI -H "Authorization: Bearer $t" -H "Accept: $INDEX_ACCEPT" "$REGISTRY/manifests/$TAG" \
+  digest=$(curl -fsSI --proto '=https' -H "Authorization: Bearer $t" -H "Accept: $INDEX_ACCEPT" "$REGISTRY/manifests/$TAG" \
     | tr -d '\r' | awk 'tolower($1)=="docker-content-digest:"{print $2}')
   require_digest "$digest"
   echo "$digest"
@@ -73,12 +74,12 @@ cmd_resolve() {
 # Prints "<alpine-release> <libssl3> <libcrypto3>" for one platform of an index digest.
 base_versions() {
   local t="$1" index="$2" arch="$3" manifest layer tmp alpine db ssl crypto
-  manifest=$(curl -fsS -H "Authorization: Bearer $t" -H "Accept: $INDEX_ACCEPT" "$REGISTRY/manifests/$index" \
+  manifest=$(curl -fsS --proto '=https' -H "Authorization: Bearer $t" -H "Accept: $INDEX_ACCEPT" "$REGISTRY/manifests/$index" \
     | jq -r --arg a "$arch" '.manifests[] | select(.platform.architecture==$a and .platform.os=="linux") | .digest' | head -n1)
   [[ -n "$manifest" ]] || die "no $arch manifest in $index"
-  layer=$(curl -fsS -H "Authorization: Bearer $t" -H "Accept: $MANIFEST_ACCEPT" "$REGISTRY/manifests/$manifest" | jq -r '.layers[0].digest')
+  layer=$(curl -fsS --proto '=https' -H "Authorization: Bearer $t" -H "Accept: $MANIFEST_ACCEPT" "$REGISTRY/manifests/$manifest" | jq -r '.layers[0].digest')
   tmp=$(mktemp)
-  curl -fsSL -H "Authorization: Bearer $t" "$REGISTRY/blobs/$layer" -o "$tmp"
+  curl -fsSL --proto '=https' --proto-redir '=https' -H "Authorization: Bearer $t" "$REGISTRY/blobs/$layer" -o "$tmp"
   alpine=$(tar -xzOf "$tmp" etc/alpine-release)
   # Read the package db once and let awk consume all of it: an early `exit` would SIGPIPE tar and,
   # under `set -o pipefail`, abort the script nondeterministically.
@@ -92,7 +93,8 @@ base_versions() {
 
 # True (exit 0) when version $1 is >= version $2 (apk -rN revisions sort correctly with sort -V).
 version_ge() {
-  [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" == "$2" ]]
+  local candidate="$1" floor="$2"
+  [[ "$(printf '%s\n%s\n' "$candidate" "$floor" | sort -V | head -n1)" == "$floor" ]]
 }
 
 cmd_verify() {
