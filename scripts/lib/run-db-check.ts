@@ -7,12 +7,25 @@ import { pgTlsOptions } from '@project-vault/db/pg-tls'
  * writes `successMessage` to stdout on success. Any thrown error is handed to `onError` for
  * check-specific formatting, after which the process exits non-zero. The connection is always
  * closed, success or failure.
+ *
+ * Returns `void` and owns the whole async lifecycle, so a caller cannot leave a promise floating
+ * (Sonar typescript:S9383): a rejection the check path does not handle itself (`onError` throwing,
+ * closing the connection failing) becomes one FATAL line and a non-zero exit code.
  */
-export async function runDbCheck(options: {
+export function runDbCheck(options: DbCheckOptions): void {
+  executeDbCheck(options).catch((error: unknown) => {
+    process.stderr.write(`FATAL: ${error instanceof Error ? error.message : String(error)}\n`)
+    process.exitCode = 1
+  })
+}
+
+interface DbCheckOptions {
   check: (sql: postgres.Sql) => Promise<void>
   successMessage: string
   onError: (error: unknown) => void
-}): Promise<void> {
+}
+
+async function executeDbCheck(options: DbCheckOptions): Promise<void> {
   const databaseUrl = process.env['DATABASE_URL']
   if (!databaseUrl) {
     process.stderr.write('FATAL: DATABASE_URL is not set\n')
