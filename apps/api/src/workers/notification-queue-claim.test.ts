@@ -34,7 +34,7 @@ import {
   sendEmailNotification,
   setEmailTransportForTesting,
 } from './notification-email.js'
-import { deliverNotification } from './notification-deliver.js'
+import { deliverNotification, wrapDeliverHandler } from './notification-deliver.js'
 import {
   deliverInboxNotification,
   insertInboxQueueEntry,
@@ -644,6 +644,62 @@ describe('Story 70.1 AC5 — at-most-once for an ambiguous post-send outcome (DW
       })
       expect((await getNotificationQueueEntry(orgId, queueId))?.status).toBe('delivered')
     })
+  })
+})
+
+describe('Story 70.1 AC3 — catch-up jobs executed through the real handlers', () => {
+  // Code review 70-1: AC3's "end-to-end-ish" case. Every job runDeliverCatchup captures is
+  // executed through the real notification/deliver handler, each one twice and all at once (the
+  // shape of a pg-boss expiry-retry or a rolling-deploy duplicate landing alongside the original),
+  // and every row is still delivered exactly once. Slack is covered by its own concurrency test in
+  // notification-slack.test.ts (its webhook URL is read from env at module load).
+  it('one delivery per row when every captured job runs concurrently, duplicates included', async () => {
+    const transport = nodemailer.createTransport({ jsonTransport: true })
+    const sendMail = vi.spyOn(transport, 'sendMail').mockResolvedValue({} as never)
+    setEmailTransportForTesting(transport)
+    const userId = await createTestUser('claim-catchup-e2e-70-1')
+    const stale = new Date(Date.now() - 10 * 60 * 1000)
+    try {
+      await withTestOrg(async ({ orgId }) => {
+        const emailIds = [
+          await seedEmailRow(orgId, { createdAt: stale }),
+          await seedEmailRow(orgId, { createdAt: stale }),
+        ]
+        const inboxId = await insertInboxQueueEntry(orgId, userId, {
+          payload: { ...TEMPLATE_PAYLOAD, severity: 'warning' },
+          createdAt: stale,
+        })
+
+        const { boss, send: bossSend } = createMockBoss()
+        await boss.start()
+        const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+        await runDeliverCatchup(boss, logger)
+        const jobs = bossSend.mock.calls
+          .filter((call) => call[1]?.orgId === orgId)
+          .map((call, index) => ({ name: call[0] as string, id: `job-${index}`, data: call[1] }))
+        expect(jobs.map((job) => job.data.notificationQueueId).sort()).toEqual(
+          [...emailIds, inboxId].sort()
+        )
+        expect(new Set(jobs.map((job) => job.name))).toEqual(new Set(['notification/deliver']))
+
+        const handler = wrapDeliverHandler(logger, new EventEmitter())
+        const results = await Promise.allSettled(
+          [...jobs, ...jobs].map((job) => handler({ id: job.id, data: job.data }))
+        )
+        expect(results.every((result) => result.status === 'fulfilled')).toBe(true)
+
+        expect(sendMail).toHaveBeenCalledTimes(emailIds.length)
+        for (const emailId of emailIds) {
+          const row = await getNotificationQueueEntry(orgId, emailId)
+          expect(row?.status).toBe('delivered')
+          expect(row?.attemptCount).toBe(1)
+        }
+        expect(await listInboxEntriesForTest(orgId, userId)).toHaveLength(1)
+        expect((await getNotificationQueueEntry(orgId, inboxId))?.status).toBe('delivered')
+      })
+    } finally {
+      await deleteTestUser(userId)
+    }
   })
 })
 

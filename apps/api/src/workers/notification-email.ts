@@ -154,12 +154,20 @@ async function resolveToAddress(
  * from-address is configured (`.invalid` is reserved by RFC 2606, so it can never collide). */
 export const NOTIFICATION_MESSAGE_ID_FALLBACK_DOMAIN = 'project-vault.invalid'
 
-const MESSAGE_ID_DOMAIN_CHARSET = /^[a-z0-9.-]{1,253}$/i
+const MESSAGE_ID_DOMAIN_MAX_LENGTH = 253
+const MESSAGE_ID_LABEL_CHARSET = /^[a-z0-9-]{1,63}$/i
 
-/** A conservative hostname check (charset, length, no leading/trailing `.`/`-`) for the
- * Message-ID right-hand side; anything else falls back. */
+/** A conservative hostname check for the Message-ID right-hand side: total length, and every
+ * dot-separated label non-empty, LDH-only and not starting/ending with `-` (so no `..`, no
+ * leading/trailing `.`). Anything else falls back. */
 function isUsableMessageIdDomain(domain: string): boolean {
-  return MESSAGE_ID_DOMAIN_CHARSET.test(domain) && !/^[.-]/.test(domain) && !/[.-]$/.test(domain)
+  if (domain.length === 0 || domain.length > MESSAGE_ID_DOMAIN_MAX_LENGTH) return false
+  return domain
+    .split('.')
+    .every(
+      (label) =>
+        MESSAGE_ID_LABEL_CHARSET.test(label) && !label.startsWith('-') && !label.endsWith('-')
+    )
 }
 
 /**

@@ -280,6 +280,9 @@ describe('buildNotificationMessageId (Story 70.1 Decisions 2026-09-30)', () => {
     ['bad@exa mple.com', NOTIFICATION_MESSAGE_ID_FALLBACK_DOMAIN],
     ['bad@<injected>@x', 'x'],
     ['trailing@', NOTIFICATION_MESSAGE_ID_FALLBACK_DOMAIN],
+    // Code review 70-1: an empty DNS label is not a valid Message-ID right-hand side.
+    ['double-dot@mail..example.com', NOTIFICATION_MESSAGE_ID_FALLBACK_DOMAIN],
+    ['dot-dash@mail.-example.com', NOTIFICATION_MESSAGE_ID_FALLBACK_DOMAIN],
   ])('from %j -> domain %s', (from, domain) => {
     expect(buildNotificationMessageId(ROW, from)).toBe(`<pv-nq-${ROW}@${domain}>`)
   })
