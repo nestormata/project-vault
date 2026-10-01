@@ -92,9 +92,9 @@ description.
       As part of this review, check the last few nightly runs and any advisory PR-scan warnings for
       findings that nobody picked up.
 
-      Confirm the base-image refresh (`base-image-refresh.yml`; Dependabot has no docker ecosystem
-      for our bare-digest pin) has produced or reviewed a PR in the last quarter. A silent refresh
-      mechanism is a broken one.
+      Confirm the base-image refresh (`base-image-refresh.yml`, covering both the `node` and the Fly
+      db `postgres` pins; Dependabot has no docker ecosystem for our bare-digest pin) has produced
+      or reviewed a PR in the last quarter. A silent refresh mechanism is a broken one.
 
 - [ ] **`.trivyignore` expiry audit.** For every active entry, confirm its `exp: YYYY-MM-DD` deadline
       is not approaching without a renewal plan (same file and mechanism as the item above).

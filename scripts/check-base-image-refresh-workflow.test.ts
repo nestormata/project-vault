@@ -19,6 +19,8 @@ const ROOT = resolve(__dirname, '..')
 const WORKFLOW_PATH = '.github/workflows/base-image-refresh.yml'
 const SCRIPT = join(ROOT, 'scripts/refresh-base-image.sh')
 const DOCKERFILES = ['apps/api/Dockerfile', 'apps/web/Dockerfile', 'Dockerfile.ci']
+const POSTGRES_DOCKERFILE = 'deploy/fly/db/Dockerfile'
+const ALL_DOCKERFILES = [...DOCKERFILES, POSTGRES_DOCKERFILE]
 
 type Step = { name?: string; uses?: string; run?: string; env?: Record<string, unknown> }
 type Job = { permissions?: Record<string, string>; steps?: Step[] }
@@ -106,6 +108,23 @@ describe('base-image-refresh.yml shape', () => {
     expect(allRuns).toMatch(/changed=false/)
   })
 
+  it('refreshes every image family the script lists, per image (Story 64.6 AC-7)', () => {
+    expect(allRuns).toContain('refresh-base-image.sh images')
+    expect(allRuns).toMatch(/refresh-base-image\.sh (current|resolve|verify|rewrite)[^\n]*--image/)
+  })
+
+  it('stages and guards every refreshable Dockerfile, including the Fly db image', () => {
+    for (const file of ALL_DOCKERFILES) {
+      expect(allRuns, file).toContain(file)
+    }
+    expect(allRuns).toMatch(/git add [^\n]*deploy\/fly\/db\/Dockerfile/)
+  })
+
+  it('does not hard-code a stale FROM-line count or node-only wording in the PR text', () => {
+    expect(allRuns).not.toMatch(/All six/)
+    expect(allRuns).not.toContain('refresh node base image digest')
+  })
+
   it('never enables auto-merge on the refresh PR', () => {
     expect(workflowText).not.toMatch(/--auto|auto-merge|automerge|enableAutoMerge/i)
   })
@@ -130,6 +149,8 @@ describe('ci.yml supports dispatch on the refresh branch', () => {
 describe('refresh-base-image.sh', () => {
   const OLD = 'sha256:' + 'a'.repeat(64)
   const NEW = 'sha256:' + 'b'.repeat(64)
+  const OLD_PG = 'sha256:' + 'c'.repeat(64)
+  const NEW_PG = 'sha256:' + 'd'.repeat(64)
   const scratch: string[] = []
 
   afterAll(() => {
@@ -139,11 +160,14 @@ describe('refresh-base-image.sh', () => {
   function fixture(): string {
     const dir = mkdtempSync(join(tmpdir(), 'refresh-base-image-'))
     scratch.push(dir)
-    for (const file of DOCKERFILES) {
+    for (const file of ALL_DOCKERFILES) {
       cpSync(join(ROOT, file), join(dir, file), { recursive: true })
     }
-    // Make the fixture's pin a known value, independent of the real current digest.
+    // Make the fixture's pins known values, independent of the real current digests.
     spawnSync('bash', [SCRIPT, 'rewrite', OLD, dir], { encoding: 'utf8' })
+    spawnSync('bash', [SCRIPT, 'rewrite', '--image', 'postgres', OLD_PG, dir], {
+      encoding: 'utf8',
+    })
     return dir
   }
 
@@ -197,6 +221,65 @@ describe('refresh-base-image.sh', () => {
     const result = run('current', ROOT)
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout.trim()).toMatch(/^sha256:[0-9a-f]{64}$/)
+    const postgres = run('current', '--image', 'postgres', ROOT)
+    expect(postgres.status, postgres.stderr).toBe(0)
+    expect(postgres.stdout.trim()).toMatch(/^sha256:[0-9a-f]{64}$/)
+  })
+
+  it('lists the image families it can refresh (guard contract, Story 64.6 AC-13)', () => {
+    const result = run('images')
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout.split('\n').filter(Boolean)).toEqual(['node', 'postgres'])
+  })
+
+  it('T10: rewriting postgres changes only deploy/fly/db/Dockerfile', () => {
+    const dir = fixture()
+    const before = ALL_DOCKERFILES.map((file) => readFixture(dir, file))
+    const result = run('rewrite', '--image', 'postgres', NEW_PG, dir)
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('rewrote 1 FROM lines')
+
+    const after = ALL_DOCKERFILES.map((file) => readFixture(dir, file))
+    expect(after.slice(0, 3)).toEqual(before.slice(0, 3))
+    expect(after[3]).toContain(`FROM postgres@${NEW_PG} AS runner`)
+    expect(after[3]).not.toContain(OLD_PG)
+    expect(after[3].replace(NEW_PG, OLD_PG)).toBe(before[3])
+    expect(run('current', '--image', 'postgres', dir).stdout.trim()).toBe(NEW_PG)
+    expect(run('current', dir).stdout.trim()).toBe(OLD)
+  })
+
+  it('rewriting node leaves the postgres pin alone', () => {
+    const dir = fixture()
+    const before = readFixture(dir, POSTGRES_DOCKERFILE)
+    expect(run('rewrite', NEW, dir).status).toBe(0)
+    expect(readFixture(dir, POSTGRES_DOCKERFILE)).toBe(before)
+  })
+
+  it('keeps the postgres pin a bare digest and is a no-op when the digest is unchanged', () => {
+    const dir = fixture()
+    const before = readFixture(dir, POSTGRES_DOCKERFILE)
+    expect(run('rewrite', '--image', 'postgres', OLD_PG, dir).status).toBe(0)
+    expect(readFixture(dir, POSTGRES_DOCKERFILE)).toBe(before)
+    expect(before).toMatch(/^FROM postgres@sha256:/m)
+    expect(before).not.toMatch(/^FROM postgres:/m)
+  })
+
+  it('rejects an unknown image, naming it', () => {
+    const result = run('current', '--image', 'alpine', ROOT)
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain('alpine')
+  })
+
+  it('T11: verify refuses a registry rollback (older libssl3), naming the image', () => {
+    // The version comparison is the rollback gate; the registry fetch is exercised live.
+    const floor = '3.5.8-r0'
+    const versionGe = (candidate: string) => run('version-ge', candidate, floor).status
+    expect(versionGe(floor)).toBe(0)
+    expect(versionGe('3.5.10-r0')).toBe(0)
+    expect(versionGe('3.5.7-r1')).not.toBe(0)
+    const malformed = run('verify', '--image', 'postgres', 'sha256:xyz', NEW_PG)
+    expect(malformed.status).not.toBe(0)
+    expect(malformed.stderr).toContain('not a sha256 digest')
   })
 })
 

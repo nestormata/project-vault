@@ -1,7 +1,8 @@
 name: Base Image Refresh
 
-# Story 64.4 (Option B): proposes a reviewed PR whenever upstream publishes a new node:24-alpine
-# build, so OS-level fixes reach our images in days. The pin stays a bare `FROM node@sha256:` digest
+# Story 64.4 (Option B) / 64.6: proposes ONE reviewed PR whenever upstream publishes a new
+# node:24-alpine or postgres:16-alpine build (the families listed by `refresh-base-image.sh images`),
+# so OS-level fixes reach our images in days. Each pin stays a bare `FROM <image>@sha256:` digest
 # (Sonar S8431-clean); Dependabot's docker ecosystem cannot follow a tag-less digest, hence this job.
 #
 # GITHUB_TOKEN trap: a PR opened (or a branch pushed) with GITHUB_TOKEN does NOT trigger
@@ -26,7 +27,7 @@ concurrency:
 
 jobs:
   refresh:
-    name: Refresh node base image digest
+    name: Refresh base image digests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -43,57 +44,74 @@ jobs:
         with:
           fetch-depth: 0
 
+      # One row per image family whose upstream digest differs from the pinned one:
+      # "<image> <old> <new>" in $RUNNER_TEMP/changes.txt. Unchanged families are left untouched.
       - name: Resolve current and upstream digests
         id: digests
         run: |
           set -euo pipefail
-          OLD=$(scripts/refresh-base-image.sh current)
-          NEW=$(scripts/refresh-base-image.sh resolve)
-          echo "pinned:   ${OLD}"
-          echo "upstream: ${NEW}"
-          echo "old=${OLD}" >> "$GITHUB_OUTPUT"
-          echo "new=${NEW}" >> "$GITHUB_OUTPUT"
-          if [[ "$OLD" == "$NEW" ]]; then
-            echo "Base image digest is current; nothing to do."
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
+          : > "$RUNNER_TEMP/changes.txt"
+          for IMG in $(scripts/refresh-base-image.sh images); do
+            OLD=$(scripts/refresh-base-image.sh current --image "$IMG")
+            NEW=$(scripts/refresh-base-image.sh resolve --image "$IMG")
+            echo "${IMG} pinned:   ${OLD}"
+            echo "${IMG} upstream: ${NEW}"
+            if [[ "$OLD" == "$NEW" ]]; then
+              echo "${IMG} base image digest is current; nothing to do."
+            else
+              echo "${IMG} ${OLD} ${NEW}" >> "$RUNNER_TEMP/changes.txt"
+            fi
+          done
+          if [[ -s "$RUNNER_TEMP/changes.txt" ]]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "images=$(cut -d' ' -f1 "$RUNNER_TEMP/changes.txt" | paste -sd, -)" >> "$GITHUB_OUTPUT"
+          else
+            echo "Every base image digest is current; nothing to do."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # Registry-rollback sanity check: fails the job if the new image ships an older libssl3
-      # than the pinned one on either architecture. The markdown table goes into the PR body.
-      - name: Verify the new image is not a rollback
+      # Registry-rollback sanity check: fails the job if any new image ships an older libssl3
+      # than the pinned one on either architecture. The markdown tables go into the PR body.
+      - name: Verify the new images are not a rollback
         if: steps.digests.outputs.changed == 'true'
-        env:
-          OLD: ${{ steps.digests.outputs.old }}
-          NEW: ${{ steps.digests.outputs.new }}
         run: |
           set -euo pipefail
-          scripts/refresh-base-image.sh verify "$OLD" "$NEW" | tee "$RUNNER_TEMP/versions.md"
+          : > "$RUNNER_TEMP/versions.md"
+          while read -r IMG OLD NEW; do
+            {
+              echo "#### ${IMG}"
+              echo
+              scripts/refresh-base-image.sh verify --image "$IMG" "$OLD" "$NEW"
+              echo
+            } | tee -a "$RUNNER_TEMP/versions.md"
+          done < "$RUNNER_TEMP/changes.txt"
 
       - name: Rewrite FROM lines and push the refresh branch
         id: push
         if: steps.digests.outputs.changed == 'true'
         env:
-          NEW: ${{ steps.digests.outputs.new }}
+          IMAGES: ${{ steps.digests.outputs.images }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B "$BRANCH" "origin/${DEFAULT_BRANCH}"
-          scripts/refresh-base-image.sh rewrite "$NEW"
-          git add apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci
+          : > "$RUNNER_TEMP/rewrites.txt"
+          while read -r IMG OLD NEW; do
+            scripts/refresh-base-image.sh rewrite --image "$IMG" "$NEW" | tee -a "$RUNNER_TEMP/rewrites.txt"
+          done < "$RUNNER_TEMP/changes.txt"
+          git add apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci deploy/fly/db/Dockerfile
           # Idempotent: if the existing refresh branch already carries exactly this change, leave
           # it (and its CI run) alone instead of force-pushing an identical tree.
           if git fetch --no-tags origin "$BRANCH" 2>/dev/null \
-            && git diff --quiet --cached "origin/${BRANCH}" -- apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci \
-            && [[ -z "$(git diff --name-only "origin/${DEFAULT_BRANCH}" "origin/${BRANCH}" | grep -v -E '^(apps/api/Dockerfile|apps/web/Dockerfile|Dockerfile\.ci)$' || true)" ]]; then
+            && git diff --quiet --cached "origin/${BRANCH}" -- apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci deploy/fly/db/Dockerfile \
+            && [[ -z "$(git diff --name-only "origin/${DEFAULT_BRANCH}" "origin/${BRANCH}" | grep -v -E '^(apps/api/Dockerfile|apps/web/Dockerfile|Dockerfile\.ci|deploy/fly/db/Dockerfile)$' || true)" ]]; then
             echo "Refresh branch already up to date."
             echo "pushed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git commit -m "chore(docker): refresh node base image digest" \
-            -m "Bump the node:24-alpine digest pinned in apps/api, apps/web and Dockerfile.ci to ${NEW}."
+          git commit -m "chore(docker): refresh base image digests (${IMAGES})" \
+            -m "Bump the digest pinned for: ${IMAGES}. Only the FROM lines of those images change."
           git push --force origin "HEAD:refs/heads/${BRANCH}"
           echo "pushed=true" >> "$GITHUB_OUTPUT"
 
@@ -101,24 +119,27 @@ jobs:
         id: pr
         if: steps.digests.outputs.changed == 'true'
         env:
-          OLD: ${{ steps.digests.outputs.old }}
-          NEW: ${{ steps.digests.outputs.new }}
+          IMAGES: ${{ steps.digests.outputs.images }}
         run: |
           set -euo pipefail
           {
-            echo "Automated refresh of the \`node:24-alpine\` base image (Story 64.4)."
+            echo "Automated base image refresh for: ${IMAGES} (Stories 64.4, 64.6)."
             echo
-            echo "- Old digest: \`${OLD}\`"
-            echo "- New digest: \`${NEW}\`"
+            while read -r IMG OLD NEW; do
+              echo "- \`${IMG}\`: old \`${OLD}\`, new \`${NEW}\`"
+            done < "$RUNNER_TEMP/changes.txt"
             echo
             cat "$RUNNER_TEMP/versions.md"
             echo
-            echo "All six \`FROM node@sha256:\` lines (apps/api x3, apps/web x2, Dockerfile.ci) are rewritten in lockstep."
+            echo "Rewrites (only the refreshed images' \`FROM\` lines change, each image family in lockstep):"
+            echo
+            sed 's/^/- /' "$RUNNER_TEMP/rewrites.txt"
+            echo
             echo "Merge by hand after review. A PR opened by GITHUB_TOKEN does not trigger \`pull_request\` workflows, so this job"
             echo "dispatches \`ci.yml\` on the branch: review the checks on the head commit (image scan, Docker Build,"
             echo "lockstep guard) before merging."
           } > "$RUNNER_TEMP/body.md"
-          TITLE="chore(docker): refresh node:24-alpine base image digest"
+          TITLE="chore(docker): refresh base image digests (${IMAGES})"
           gh label create base-image --color 0e8a16 --description "Automated base image refresh" || true
           NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
           if [[ -n "$NUMBER" ]]; then

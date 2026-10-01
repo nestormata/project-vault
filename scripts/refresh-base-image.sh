@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
-# Story 64.4: base-image digest refresh helper, driven by .github/workflows/base-image-refresh.yml.
+# Story 64.4/64.6: base-image digest refresh helper, driven by .github/workflows/base-image-refresh.yml.
 #
-#   current [ROOT]            print the one sha256 digest all `FROM node@sha256:` lines share
-#   rewrite DIGEST [ROOT]     rewrite every `FROM node@sha256:`/`FROM node:<tag>@sha256:` line
-#   resolve                   print the registry's current node:24-alpine index digest
+#   images                    print the image families this script can refresh, one per line
+#   current [ROOT]            print the one sha256 digest all of the image's `FROM` lines share
+#   rewrite DIGEST [ROOT]     rewrite every `FROM <image>@sha256:`/`FROM <image>:<tag>@sha256:` line
+#   resolve                   print the registry's current index digest for the image's tag
 #   verify OLD NEW            fail if NEW ships an older libssl3 than OLD on any arch; prints a
 #                             markdown report of the Alpine / libssl3 / libcrypto3 versions
+#   version-ge A B            exit 0 when apk version A >= B (the rollback comparison)
 #
-# The pin stays a bare digest (Sonar S8431); this script never adds a tag. Needs bash, curl, jq,
-# tar, sed, grep and `sort -V` only, so it runs on a stock ubuntu runner with no extra action.
+# Every command except `images` and `version-ge` takes `--image node|postgres` (default node).
+# The image table lives in select_image(); scripts/check-base-image-digest.test.ts fails when a
+# pinned image family is missing from it. The pin stays a bare digest (Sonar S8431); this script
+# never adds a tag. Needs bash, curl, jq, tar, sed, grep and `sort -V` only, so it runs on a stock
+# ubuntu runner with no extra action.
 set -euo pipefail
 
-TAG="${BASE_IMAGE_TAG:-24-alpine}"
-REGISTRY="https://registry-1.docker.io/v2/library/node"
-FILES=(apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci)
+IMAGE_NAMES=(node postgres)
+IMAGE=node
 DIGEST_RE='^sha256:[0-9a-f]{64}$'
-FROM_RE='^FROM node(:[^@[:space:]]+)?@sha256:[0-9a-f]{64}'
 INDEX_ACCEPT='application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json'
 MANIFEST_ACCEPT='application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json'
 HTTPS_ONLY='=https'
@@ -26,9 +29,32 @@ die() {
   exit 1
 }
 
+# Image table: registry repo, tracked tag and the Dockerfiles that pin it.
+select_image() {
+  case "$IMAGE" in
+    node)
+      REPO="library/node"
+      TAG="${BASE_IMAGE_TAG:-24-alpine}"
+      FILES=(apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci)
+      ;;
+    postgres)
+      REPO="library/postgres"
+      TAG="${POSTGRES_IMAGE_TAG:-16-alpine}"
+      FILES=(deploy/fly/db/Dockerfile)
+      ;;
+    *) die "unknown image '$IMAGE' (known: ${IMAGE_NAMES[*]})" ;;
+  esac
+  REGISTRY="https://registry-1.docker.io/v2/${REPO}"
+  FROM_RE="^FROM ${IMAGE}(:[^@[:space:]]+)?@sha256:[0-9a-f]{64}"
+}
+
 require_digest() {
   local candidate="$1"
   [[ "$candidate" =~ $DIGEST_RE ]] || die "not a sha256 digest: '$candidate'"
+}
+
+cmd_images() {
+  printf '%s\n' "${IMAGE_NAMES[@]}"
 }
 
 cmd_current() {
@@ -40,10 +66,10 @@ cmd_current() {
       found+=("$(grep -Eo 'sha256:[0-9a-f]{64}' <<<"$line")")
     done < <(grep -E "$FROM_RE" "$root/$file" || true)
   done
-  [[ ${#found[@]} -gt 0 ]] || die "no FROM node@sha256 lines found"
+  [[ ${#found[@]} -gt 0 ]] || die "no FROM ${IMAGE}@sha256 lines found"
   local unique
   unique=$(printf '%s\n' "${found[@]}" | sort -u)
-  [[ $(wc -l <<<"$unique") -eq 1 ]] || die "FROM lines pin more than one digest: $(tr '\n' ' ' <<<"$unique")"
+  [[ $(wc -l <<<"$unique") -eq 1 ]] || die "$IMAGE FROM lines pin more than one digest: $(tr '\n' ' ' <<<"$unique")"
   echo "$unique"
 }
 
@@ -53,15 +79,15 @@ cmd_rewrite() {
   for file in "${FILES[@]}"; do
     [[ -f "$root/$file" ]] || die "missing $root/$file"
     count=$(grep -Ec "$FROM_RE" "$root/$file" || true)
-    [[ "$count" -gt 0 ]] || die "$file has no FROM node@sha256 line to rewrite"
-    sed -E -i "s#^(FROM node(:[^@[:space:]]+)?@)sha256:[0-9a-f]{64}#\\1${new}#" "$root/$file"
+    [[ "$count" -gt 0 ]] || die "$file has no FROM ${IMAGE}@sha256 line to rewrite"
+    sed -E -i "s#^(FROM ${IMAGE}(:[^@[:space:]]+)?@)sha256:[0-9a-f]{64}#\\1${new}#" "$root/$file"
     total=$((total + count))
   done
   echo "rewrote $total FROM lines to $new"
 }
 
 token() {
-  curl -fsS "${CURL_HTTPS[@]}" "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/node:pull" | jq -r .token
+  curl -fsS "${CURL_HTTPS[@]}" "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${REPO}:pull" | jq -r .token
 }
 
 cmd_resolve() {
@@ -111,15 +137,39 @@ cmd_verify() {
     n=$(base_versions "$t" "$new" "$arch")
     read -r oa os _ <<<"$o"
     read -r na ns nc <<<"$n"
-    version_ge "$ns" "$os" || die "$arch: new libssl3 $ns is OLDER than current $os (registry rollback?); refusing to refresh"
+    version_ge "$ns" "$os" || die "$IMAGE $arch: new libssl3 $ns is OLDER than current $os (registry rollback?); refusing to refresh"
     echo "| $arch | $oa / $os | $na / $ns / $nc |"
   done
 }
 
-case "${1:-}" in
-  current) shift; cmd_current "$@" ;;
-  rewrite) shift; cmd_rewrite "$@" ;;
-  resolve) shift; cmd_resolve "$@" ;;
-  verify) shift; cmd_verify "$@" ;;
-  *) die "usage: $0 {current [ROOT]|rewrite DIGEST [ROOT]|resolve|verify OLD NEW}" ;;
+# `--image NAME` may appear anywhere after the command.
+POSITIONAL=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --image)
+      [[ $# -ge 2 ]] || die "--image needs a value (${IMAGE_NAMES[*]})"
+      IMAGE="$2"
+      shift 2
+      ;;
+    *)
+      POSITIONAL+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- "${POSITIONAL[@]+"${POSITIONAL[@]}"}"
+
+COMMAND="${1:-}"
+[[ $# -gt 0 ]] && shift
+
+case "$COMMAND" in
+  images) cmd_images ;;
+  version-ge)
+    version_ge "${1:-}" "${2:-}"
+    ;;
+  current | rewrite | resolve | verify)
+    select_image
+    "cmd_${COMMAND}" "$@"
+    ;;
+  *) die "usage: $0 {images|version-ge A B|current [ROOT]|rewrite DIGEST [ROOT]|resolve|verify OLD NEW} [--image node|postgres]" ;;
 esac
