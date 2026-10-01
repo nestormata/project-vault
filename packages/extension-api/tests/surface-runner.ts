@@ -34,7 +34,11 @@ const TSX_ARGS = ['--import', 'tsx'] as const
 const SNAPSHOT_HEADER = '# @project-vault/extension-api public type surface'
 const MAX_STDERR_LINES = 40
 const MIN_NODE = { major: 20, minor: 6 }
-const NATIVE_TYPE_STRIPPING: Readonly<Record<number, number>> = { 22: 18, 23: 6 }
+// Node major -> first minor that strips types without a flag (24+ always does).
+const NATIVE_TYPE_STRIPPING: ReadonlyMap<number, number> = new Map([
+  [22, 18],
+  [23, 6],
+])
 
 export type SurfacePhase = 'spawn' | 'timeout' | 'exit' | 'parse' | 'compare'
 
@@ -178,7 +182,7 @@ function nodeVersionTooOld(version: string): boolean {
 /** Child argv: native type stripping where Node has it unflagged, the tsx loader otherwise. */
 function childArgs(version: string): readonly string[] {
   const { major, minor } = parseNodeVersion(version)
-  const strippingMinor = NATIVE_TYPE_STRIPPING[major]
+  const strippingMinor = NATIVE_TYPE_STRIPPING.get(major)
   const native = major >= 24 || (strippingMinor !== undefined && minor >= strippingMinor)
   return native ? EMIT_ARGS : [...TSX_ARGS, ...EMIT_ARGS]
 }
