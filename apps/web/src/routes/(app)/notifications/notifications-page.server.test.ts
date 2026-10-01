@@ -231,9 +231,9 @@ describe('notifications form actions', () => {
     ['markAllRead', markAllInboxReadMock, {}],
   ] as const)('%s returns success and maps API failure to 422', async (name, mock, fields) => {
     mock.mockResolvedValueOnce({})
-    expect(await actions[name](actionEvent(fields))).toEqual({ success: true })
+    expect(await expectAction(actions, name)(actionEvent(fields))).toEqual({ success: true })
     mock.mockRejectedValueOnce(new Error('offline'))
-    expect(await actions[name](actionEvent(fields))).toMatchObject({ status: 422 })
+    expect(await expectAction(actions, name)(actionEvent(fields))).toMatchObject({ status: 422 })
   })
 
   it('dismiss returns success or not-found from the API boolean', async () => {
