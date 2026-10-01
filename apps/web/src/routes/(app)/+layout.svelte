@@ -19,7 +19,10 @@
 
   const { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props()
 
-  let onboardingDone = $state(data.onboardingCompleted)
+  // Story 68.1 AC-3: writable $derived — this layout persists across app navigations, so a later
+  // load's onboardingCompleted replaces the first one, while the wizard's own completion handler
+  // below can still flip it locally right after its invalidateAll().
+  let onboardingDone = $derived(data.onboardingCompleted)
   let searchOpen = $state(false)
   let unsubscribeInbox: (() => void) | null = null
 

@@ -294,4 +294,26 @@ describe('/(app) +layout.svelte', () => {
       expect(screen.getByText(/no longer available/i)).toBeTruthy()
     })
   })
+
+  // Story 68.1 AC-3: this layout persists across every app navigation, so `onboardingCompleted`
+  // from a later load (e.g. onboarding finished in another tab, then a navigation/invalidate)
+  // must replace the value captured at first mount.
+  it('stale state: a later load reporting onboarding completed reveals the page without a remount', async () => {
+    const pending = {
+      user: onboardingTestUser,
+      onboardingCompleted: false,
+      projects: [onboardingTestProject],
+      importRouteLive: true,
+      unreadCount: 0,
+    }
+    const { rerender } = render(Layout, {
+      props: { data: pending, children: childrenSnippet() },
+    })
+    expect(screen.getByText(/Welcome to Project Vault/i)).toBeTruthy()
+
+    await rerender({ data: { ...pending, onboardingCompleted: true } })
+
+    expect(screen.getByText('protected app content')).toBeTruthy()
+    expect(screen.queryByText(/Welcome to Project Vault/i)).toBeNull()
+  })
 })

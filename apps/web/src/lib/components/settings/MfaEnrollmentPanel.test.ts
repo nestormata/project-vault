@@ -188,4 +188,33 @@ describe('MfaEnrollmentPanel', () => {
     resolveEnroll(enrollResponse)
     expect(await screen.findByLabelText(/authenticator code/i)).toBeTruthy()
   })
+
+  // Story 68.1 AC-3: `user` follows a newer `initialUser` from the parent (a fresh load), while
+  // an in-progress enrollment (its own state) is not wiped by an unrelated prop update.
+  it('stale state: follows a newer initialUser without remounting', async () => {
+    const { rerender } = render(MfaEnrollmentPanel, { props: { initialUser: unenrolledUser() } })
+    expect(screen.getByRole('button', { name: /set up authenticator app/i })).toBeTruthy()
+
+    await rerender({
+      initialUser: unenrolledUser({
+        mfaEnrolled: true,
+        mfaEnrolledAt: '2026-06-01T00:00:00.000Z',
+        remainingRecoveryCodesCount: 3,
+      }),
+    })
+
+    expect(screen.getByText(/mfa is enabled/i)).toBeTruthy()
+  })
+
+  it('stale state: an unrelated initialUser update does not wipe an in-progress enrollment', async () => {
+    enrollMfaMock.mockResolvedValue(enrollResponse)
+    const { rerender } = render(MfaEnrollmentPanel, { props: { initialUser: unenrolledUser() } })
+    await fireEvent.click(screen.getByRole('button', { name: /set up authenticator app/i }))
+    expect(await screen.findByLabelText(/authenticator code/i)).toBeTruthy()
+
+    await rerender({ initialUser: unenrolledUser({ remainingRecoveryCodesCount: 0 }) })
+
+    expect(screen.getByLabelText(/authenticator code/i)).toBeTruthy()
+    expect(screen.getByText(enrollResponse.secret)).toBeTruthy()
+  })
 })

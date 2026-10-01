@@ -21,7 +21,10 @@
     onLocaleChange,
   }: { invitationToken?: string; prefillEmail?: string; onLocaleChange?: () => void } = $props()
 
-  let email = $state(prefillEmail)
+  // Story 68.1 AC-3: writable $derived — `prefillEmail` comes from the /register URL, so it only
+  // changes when a different link is opened (the email then follows it); typing overrides it
+  // locally, and an unrelated prop update leaves the typed value alone.
+  let email = $derived(prefillEmail)
   let password = $state('')
   let orgName = $state('')
   let errorMessage = $state<string | null>(null)
