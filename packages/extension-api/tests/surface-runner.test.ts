@@ -7,6 +7,7 @@ import {
   checkSurfaceFreshness,
   childEnvironment,
   createSurfaceRunner,
+  provideSurfaceGeneration,
   settleSurfaceGeneration,
   type SurfaceExecutor,
 } from './surface-runner.js'
@@ -381,6 +382,58 @@ describe('generation settled before the test workers start (vitest globalSetup)'
     expect(() => checkSurfaceFreshness(root, runner)).toThrow(PHASE_TIMEOUT)
     expect(builds).toBe(0)
     expect(runner.buildCount()).toBe(1)
+  })
+
+  it('provides a fresh generation at setup and again on every rerun (watch mode)', async () => {
+    const provided: unknown[] = []
+    let rerun: (() => Promise<void> | void) | undefined
+    const snapshots = [VALID_SNAPSHOT, VALID_SNAPSHOT.replace('Foo', 'Bar')]
+    let runners = 0
+    const project = {
+      provide: (key: string, value: unknown) => provided.push({ key, value }),
+      onTestsRerun: (callback: () => Promise<void> | void) => {
+        rerun = callback
+      },
+    }
+    const logs: string[] = []
+
+    provideSurfaceGeneration(project, root, {
+      createRunner: () => {
+        const snapshot = snapshots.at(runners) ?? VALID_SNAPSHOT
+        runners += 1
+        return createSurfaceRunner({ execute: () => snapshot, env: {} })
+      },
+      log: (line) => logs.push(line),
+    })
+    await rerun?.()
+
+    expect(runners).toBe(2)
+    expect(provided).toEqual([
+      { key: 'apiSurfaceGeneration', value: expect.objectContaining({ snapshot: snapshots[0] }) },
+      { key: 'apiSurfaceGeneration', value: expect.objectContaining({ snapshot: snapshots[1] }) },
+    ])
+    expect(logs).toHaveLength(2)
+    expect(logs[0]).toMatch(/^\[api-surface\] public surface generated in \d+ms/)
+  })
+
+  it('logs a failed generation without throwing from the setup', () => {
+    const logs: string[] = []
+    const project = { provide: () => undefined, onTestsRerun: () => undefined }
+
+    provideSurfaceGeneration(project, root, {
+      createRunner: () =>
+        createSurfaceRunner({
+          execute: () => {
+            throw execFailure({ status: 1, stderr: 'boom\n' })
+          },
+          env: {},
+        }),
+      log: (line) => logs.push(line),
+    })
+
+    expect(logs).toEqual([
+      '[api-surface] public surface generation failed (vitest globalSetup, 1 child)\n',
+    ])
   })
 
   // This file only ever runs under the package vitest config, which registers the globalSetup.

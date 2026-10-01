@@ -287,6 +287,37 @@ export function settleSurfaceGeneration(runner: SurfaceRunner, root: string): Se
   }
 }
 
+/** The slice of vitest's TestProject that the globalSetup needs (kept structural for tests). */
+export interface SurfaceSetupProject {
+  provide(key: 'apiSurfaceGeneration', value: SettledSurface): void
+  onTestsRerun(callback: () => Promise<void> | void): void
+}
+
+/**
+ * The vitest globalSetup body: generate once now and provide the settled outcome, then
+ * regenerate with a fresh runner (fresh memo) before every rerun, so watch mode never serves a
+ * stale snapshot. Logs one line per generation and never throws.
+ */
+export function provideSurfaceGeneration(
+  project: SurfaceSetupProject,
+  root: string,
+  options: {
+    createRunner?: () => SurfaceRunner
+    log?: (line: string) => void
+  } = {}
+): void {
+  const createRunner = options.createRunner ?? (() => createSurfaceRunner())
+  const log = options.log ?? ((line: string) => process.stderr.write(line))
+  const generate = (): void => {
+    const settled = settleSurfaceGeneration(createRunner(), root)
+    project.provide('apiSurfaceGeneration', settled)
+    const result = settled.ok ? `generated in ${settled.durationMs}ms` : 'generation failed'
+    log(`[api-surface] public surface ${result} (vitest globalSetup, 1 child)\n`)
+  }
+  generate()
+  project.onTestsRerun(generate)
+}
+
 /** Freshness check over the runner's single generation, with compare-phase context on mismatch. */
 export function checkSurfaceFreshness(
   root: string,

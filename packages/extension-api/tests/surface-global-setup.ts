@@ -1,10 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import type { TestProject } from 'vitest/node'
-import {
-  createSurfaceRunner,
-  settleSurfaceGeneration,
-  type SettledSurface,
-} from './surface-runner.js'
+import { provideSurfaceGeneration, type SettledSurface } from './surface-runner.js'
 
 declare module 'vitest' {
   export interface ProvidedContext {
@@ -21,14 +17,10 @@ declare module 'vitest' {
  *
  * It never throws: a failed generation is provided as data and fails the dependent tests with
  * its full message. Nothing is cached on disk; every `vitest run` (turbo `--force`, the nightly
- * 5x loop, watch reruns of the whole run) regenerates. Contexts without this config (the
+ * 5x loop) regenerates, and so does every watch-mode rerun (`onTestsRerun`). Contexts without this config (the
  * repo-root `pnpm vitest run packages/extension-api/src/api-surface.test.ts` in ci.yml Checks)
  * get nothing provided and generate lazily inside the test instead.
  */
 export default function setup(project: TestProject): void {
-  const root = fileURLToPath(new URL('..', import.meta.url))
-  const settled = settleSurfaceGeneration(createSurfaceRunner(), root)
-  project.provide('apiSurfaceGeneration', settled)
-  const result = settled.ok ? `generated in ${settled.durationMs}ms` : 'generation failed'
-  process.stderr.write(`[api-surface] public surface ${result} (vitest globalSetup, 1 child)\n`)
+  provideSurfaceGeneration(project, fileURLToPath(new URL('..', import.meta.url)))
 }
