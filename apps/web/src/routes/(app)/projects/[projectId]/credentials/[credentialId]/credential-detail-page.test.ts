@@ -54,8 +54,19 @@ vi.mock('$lib/api/rotations.js', async () => {
 import { ApiClientError } from '$lib/api/client.js'
 import { apiClientError } from '$lib/test/api-error.js'
 import type { ComponentProps } from 'svelte'
+import type { CredentialDetail } from '@project-vault/shared'
+import type { OrgRole } from '$lib/credentials/permissions.js'
 import { appLayoutData } from '$lib/test/page-data.js'
 import CredentialDetailPage from './+page.svelte'
+import {
+  sampleCredential,
+  sampleDependency,
+  sampleOrgUser,
+  sampleProject,
+  sampleRotation,
+  sampleShare,
+  sampleVersion,
+} from '$lib/test/fixtures.js'
 
 afterEach(() => {
   cleanup()
@@ -65,8 +76,9 @@ afterEach(() => {
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const credentialId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 
-const CREDENTIAL = {
+const CREDENTIAL = sampleCredential({
   id: credentialId,
+  projectId,
   name: 'Stripe Secret Key',
   description: 'Payments processor secret',
   tags: ['payments', 'prod'],
@@ -74,31 +86,73 @@ const CREDENTIAL = {
   rotationSchedule: '0 0 1 * *',
   cacheable: true,
   currentVersionNumber: 3,
+  // A legacy single-value secret (schema v1, one implicit sensitive `value` field).
+  schemaVersion: 1,
   updatedAt: '2026-07-01T00:00:00.000Z',
-  archivedAt: null as string | null,
-}
+})
 
 type Data = ComponentProps<typeof CredentialDetailPage>['data']
+/** The loaded page (not the notFound / vaultSealed fallbacks). */
+type LoadedData = Exclude<Data, { notFound: boolean }>
 
-function baseData(overrides: Partial<Data> = {}): Data {
+function baseData(overrides: Partial<LoadedData> = {}): LoadedData {
   return {
     ...appLayoutData(),
     projectId,
     credentialId,
     orgRole: 'member',
-    project: { role: 'member' },
+    project: sampleProject({ id: projectId, role: 'member' }),
     origin: 'https://vault.example.com',
-    vaultSealed: false,
-    notFound: false,
     credential: CREDENTIAL,
     dependencies: { items: [], hasDependencies: false, hasStagedRotation: false },
     versions: [],
     rotations: [],
+    rotationsPage: 1,
+    rotationsHasMore: false,
     activeRotationId: null,
     shares: [],
-    orgMembers: [{ userId: 'recipient-1', email: 'riley@example.com', displayName: 'Riley' }],
+    sharesTotal: 0,
+    sharesPage: 1,
+    sharesStatus: null,
+    rotationRecommendedNudges: [],
+    orgMembers: [
+      sampleOrgUser({ userId: 'recipient-1', email: 'riley@example.com', displayName: 'Riley' }),
+    ],
     ...overrides,
   }
+}
+
+/** The sections the loader returns empty when the secret itself could not be loaded. */
+function emptySections(orgRole: OrgRole = 'member') {
+  return {
+    ...appLayoutData(),
+    projectId,
+    credentialId,
+    orgRole,
+    project: sampleProject({ id: projectId, role: 'member' }),
+    origin: 'https://vault.example.com',
+    credential: null,
+    versions: [],
+    dependencies: { items: [], hasDependencies: false, hasStagedRotation: false },
+    rotations: [],
+    rotationsPage: 1,
+    rotationsHasMore: false,
+    activeRotationId: null,
+    shares: [],
+    sharesTotal: 0,
+    rotationRecommendedNudges: [],
+    orgMembers: [],
+  }
+}
+
+/** The loader's 404 fallback. */
+function notFoundData(): Data {
+  return { ...emptySections(), notFound: true }
+}
+
+/** The loader's sealed-vault (503) fallback. */
+function sealedData(): Data {
+  return { ...emptySections(), notFound: false, vaultSealed: true }
 }
 
 describe('credential detail +page.svelte — archive/unarchive (Story 28.5 AC6)', () => {
@@ -110,20 +164,25 @@ describe('credential detail +page.svelte — archive/unarchive (Story 28.5 AC6)'
 
   it('a project-owner sees the Archive button; a member does not', () => {
     render(CredentialDetailPage, {
-      props: { data: baseData({ project: { role: 'owner' } }) },
+      props: { data: baseData({ project: sampleProject({ id: projectId, role: 'owner' }) }) },
     })
     expect(screen.getByRole('button', { name: /archive secret/i })).toBeTruthy()
 
     cleanup()
     render(CredentialDetailPage, {
-      props: { data: baseData({ project: { role: 'member' } }) },
+      props: { data: baseData({ project: sampleProject({ id: projectId, role: 'member' }) }) },
     })
     expect(screen.queryByRole('button', { name: /archive secret/i })).toBeNull()
   })
 
   it('an org-owner (not project owner) also sees the Archive button', () => {
     render(CredentialDetailPage, {
-      props: { data: baseData({ orgRole: 'owner', project: { role: 'member' } }) },
+      props: {
+        data: baseData({
+          orgRole: 'owner',
+          project: sampleProject({ id: projectId, role: 'member' }),
+        }),
+      },
     })
     expect(screen.getByRole('button', { name: /archive secret/i })).toBeTruthy()
   })
@@ -137,7 +196,7 @@ describe('credential detail +page.svelte — archive/unarchive (Story 28.5 AC6)'
       isArchived: true,
     })
     render(CredentialDetailPage, {
-      props: { data: baseData({ project: { role: 'owner' } }) },
+      props: { data: baseData({ project: sampleProject({ id: projectId, role: 'owner' }) }) },
     })
 
     await fireEvent.click(screen.getByRole('button', { name: /archive secret/i }))
@@ -149,7 +208,7 @@ describe('credential detail +page.svelte — archive/unarchive (Story 28.5 AC6)'
   it('does not archive when the confirm dialog is dismissed', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false)
     render(CredentialDetailPage, {
-      props: { data: baseData({ project: { role: 'owner' } }) },
+      props: { data: baseData({ project: sampleProject({ id: projectId, role: 'owner' }) }) },
     })
 
     await fireEvent.click(screen.getByRole('button', { name: /archive secret/i }))
@@ -167,7 +226,7 @@ describe('credential detail +page.svelte — archive/unarchive (Story 28.5 AC6)'
       )
     )
     render(CredentialDetailPage, {
-      props: { data: baseData({ project: { role: 'owner' } }) },
+      props: { data: baseData({ project: sampleProject({ id: projectId, role: 'owner' }) }) },
     })
 
     await fireEvent.click(screen.getByRole('button', { name: /archive secret/i }))
@@ -185,7 +244,7 @@ describe('credential detail +page.svelte — archive/unarchive (Story 28.5 AC6)'
     render(CredentialDetailPage, {
       props: {
         data: baseData({
-          project: { role: 'owner' },
+          project: sampleProject({ id: projectId, role: 'owner' }),
           credential: { ...CREDENTIAL, archivedAt: '2026-08-29T00:00:00.000Z' },
         }),
       },
@@ -210,7 +269,7 @@ describe('credential detail +page.svelte — archive/unarchive (Story 28.5 AC6)'
     render(CredentialDetailPage, {
       props: {
         data: baseData({
-          project: { role: 'owner' },
+          project: sampleProject({ id: projectId, role: 'owner' }),
           credential: { ...CREDENTIAL, archivedAt: '2026-08-29T00:00:00.000Z' },
         }),
       },
@@ -297,13 +356,13 @@ describe('credential detail +page.svelte', () => {
   })
 
   it('shows the sealed-vault message when the vault is sealed', () => {
-    render(CredentialDetailPage, { props: { data: baseData({ vaultSealed: true }) } })
+    render(CredentialDetailPage, { props: { data: sealedData() } })
     expect(screen.getByText(onboardingCopy.vaultSealedMessage)).toBeTruthy()
   })
 
   it('shows a not-found banner instead of the detail sections', () => {
     render(CredentialDetailPage, {
-      props: { data: baseData({ credential: null, notFound: true }) },
+      props: { data: notFoundData() },
     })
     expect(screen.getByText(/secret not found/i)).toBeTruthy()
   })
@@ -741,7 +800,7 @@ describe('credential detail +page.svelte', () => {
       props: {
         data: baseData({
           orgRole: 'member',
-          project: { role: 'viewer' },
+          project: sampleProject({ id: projectId, role: 'viewer' }),
           credential: MULTI_FIELD_CREDENTIAL_WITH_VISIBLE,
         }),
       },
@@ -835,8 +894,16 @@ describe('credential detail +page.svelte', () => {
       props: {
         data: baseData({
           versions: [
-            { versionNumber: 2, createdAt: '2026-06-01T00:00:00.000Z', isCurrent: false },
-            { versionNumber: 3, createdAt: '2026-07-01T00:00:00.000Z', isCurrent: true },
+            sampleVersion({
+              versionNumber: 2,
+              createdAt: '2026-06-01T00:00:00.000Z',
+              isCurrent: false,
+            }),
+            sampleVersion({
+              versionNumber: 3,
+              createdAt: '2026-07-01T00:00:00.000Z',
+              isCurrent: true,
+            }),
           ],
         }),
       },
@@ -957,7 +1024,7 @@ describe('credential detail +page.svelte', () => {
 
   // Story 13.5 AC-6: field-scope selector for multi-field credentials + scope badge.
   describe('Story 13.5 AC-6: dependency field-scope selector and badge', () => {
-    const MULTI_FIELD_FOR_DEPS = {
+    const MULTI_FIELD_FOR_DEPS: CredentialDetail = {
       ...CREDENTIAL,
       schemaVersion: 2,
       fields: [
@@ -1009,20 +1076,20 @@ describe('credential detail +page.svelte', () => {
           data: baseData({
             dependencies: {
               items: [
-                {
+                sampleDependency({
                   id: 'dep-1',
                   systemName: 'backup-script',
                   systemType: 'service',
                   fieldKey: 'password',
                   checklistStatus: null,
-                },
-                {
+                }),
+                sampleDependency({
                   id: 'dep-2',
                   systemName: 'ci-pipeline',
                   systemType: 'ci_pipeline',
                   fieldKey: null,
                   checklistStatus: null,
-                },
+                }),
               ],
               hasDependencies: true,
               hasStagedRotation: false,
@@ -1042,7 +1109,15 @@ describe('credential detail +page.svelte', () => {
       props: {
         data: baseData({
           dependencies: {
-            items: [{ id: 'dep-1', systemName: 'billing-worker', systemType: 'service' }],
+            items: [
+              sampleDependency({
+                id: 'dep-1',
+                systemName: 'billing-worker',
+                systemType: 'service',
+              }),
+            ],
+            hasDependencies: true,
+            hasStagedRotation: false,
           },
         }),
       },
@@ -1059,7 +1134,15 @@ describe('credential detail +page.svelte', () => {
       props: {
         data: baseData({
           dependencies: {
-            items: [{ id: 'dep-1', systemName: 'billing-worker', systemType: 'service' }],
+            items: [
+              sampleDependency({
+                id: 'dep-1',
+                systemName: 'billing-worker',
+                systemType: 'service',
+              }),
+            ],
+            hasDependencies: true,
+            hasStagedRotation: false,
           },
         }),
       },
@@ -1076,13 +1159,13 @@ describe('credential detail +page.svelte', () => {
         data: baseData({
           dependencies: {
             items: [
-              {
+              sampleDependency({
                 id: 'dep-1',
                 systemName: 'billing-worker',
                 systemType: 'service',
                 linkUrl: 'https://example.com/billing-worker',
                 checklistStatus: null,
-              },
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: false,
@@ -1101,13 +1184,13 @@ describe('credential detail +page.svelte', () => {
         data: baseData({
           dependencies: {
             items: [
-              {
+              sampleDependency({
                 id: 'dep-1',
                 systemName: 'billing-worker',
                 systemType: 'service',
                 linkUrl: null,
                 checklistStatus: null,
-              },
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: false,
@@ -1128,12 +1211,12 @@ describe('credential detail +page.svelte', () => {
         data: baseData({
           dependencies: {
             items: [
-              {
+              sampleDependency({
                 id: 'dep-1',
                 systemName: 'billing-worker',
                 systemType: 'service',
                 checklistStatus: null,
-              },
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: false,
@@ -1151,7 +1234,12 @@ describe('credential detail +page.svelte', () => {
         data: baseData({
           dependencies: {
             items: [
-              { id: 'dep-1', systemName: 'delta', systemType: 'service', checklistStatus: null },
+              sampleDependency({
+                id: 'dep-1',
+                systemName: 'delta',
+                systemType: 'service',
+                checklistStatus: null,
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: true,
@@ -1167,7 +1255,7 @@ describe('credential detail +page.svelte', () => {
     vi.useFakeTimers()
     listCredentialDependenciesMock.mockResolvedValue({
       items: [
-        {
+        sampleDependency({
           id: 'dep-1',
           systemName: 'billing-worker',
           systemType: 'service',
@@ -1178,7 +1266,7 @@ describe('credential detail +page.svelte', () => {
             confirmedBy: null,
             confirmedAt: null,
           },
-        },
+        }),
       ],
       hasDependencies: true,
       hasStagedRotation: true,
@@ -1188,12 +1276,12 @@ describe('credential detail +page.svelte', () => {
         data: baseData({
           dependencies: {
             items: [
-              {
+              sampleDependency({
                 id: 'dep-1',
                 systemName: 'billing-worker',
                 systemType: 'service',
                 checklistStatus: null,
-              },
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: false,
@@ -1218,7 +1306,12 @@ describe('credential detail +page.svelte', () => {
     vi.useFakeTimers()
     listCredentialDependenciesMock.mockResolvedValue({
       items: [
-        { id: 'dep-1', systemName: 'billing-worker', systemType: 'service', checklistStatus: null },
+        sampleDependency({
+          id: 'dep-1',
+          systemName: 'billing-worker',
+          systemType: 'service',
+          checklistStatus: null,
+        }),
       ],
       hasDependencies: true,
       hasStagedRotation: false,
@@ -1228,7 +1321,7 @@ describe('credential detail +page.svelte', () => {
         data: baseData({
           dependencies: {
             items: [
-              {
+              sampleDependency({
                 id: 'dep-1',
                 systemName: 'billing-worker',
                 systemType: 'service',
@@ -1239,7 +1332,7 @@ describe('credential detail +page.svelte', () => {
                   confirmedBy: null,
                   confirmedAt: null,
                 },
-              },
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: true,
@@ -1264,7 +1357,7 @@ describe('credential detail +page.svelte', () => {
         data: baseData({
           dependencies: {
             items: [
-              {
+              sampleDependency({
                 id: 'dep-1',
                 systemName: 'billing-worker',
                 systemType: 'service',
@@ -1275,7 +1368,7 @@ describe('credential detail +page.svelte', () => {
                   confirmedBy: null,
                   confirmedAt: null,
                 },
-              },
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: true,
@@ -1316,7 +1409,7 @@ describe('credential detail +page.svelte', () => {
         data: baseData({
           dependencies: {
             items: [
-              {
+              sampleDependency({
                 id: 'dep-1',
                 systemName: 'billing-worker',
                 systemType: 'service',
@@ -1327,7 +1420,7 @@ describe('credential detail +page.svelte', () => {
                   confirmedBy: null,
                   confirmedAt: null,
                 },
-              },
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: true,
@@ -1350,7 +1443,7 @@ describe('credential detail +page.svelte', () => {
           orgRole: 'viewer',
           dependencies: {
             items: [
-              {
+              sampleDependency({
                 id: 'dep-1',
                 systemName: 'billing-worker',
                 systemType: 'service',
@@ -1361,7 +1454,7 @@ describe('credential detail +page.svelte', () => {
                   confirmedBy: null,
                   confirmedAt: null,
                 },
-              },
+              }),
             ],
             hasDependencies: true,
             hasStagedRotation: true,
@@ -1400,12 +1493,12 @@ describe('credential detail +page.svelte', () => {
       props: {
         data: baseData({
           rotations: [
-            {
+            sampleRotation({
               id: 'rot-1',
               status: 'completed',
               initiatedAt: '2026-06-01T00:00:00.000Z',
               completedAt: '2026-06-02T00:00:00.000Z',
-            },
+            }),
           ],
         }),
       },
@@ -1415,7 +1508,7 @@ describe('credential detail +page.svelte', () => {
 
   // -------- Story 13.2: multi-field secrets --------
 
-  const MULTI_FIELD_CREDENTIAL = {
+  const MULTI_FIELD_CREDENTIAL: CredentialDetail = {
     ...CREDENTIAL,
     schemaVersion: 2,
     fields: [
@@ -1517,7 +1610,7 @@ describe('credential detail +page.svelte', () => {
 
   // -------- Story 13.3: per-field reveal/mask, Reveal all --------
 
-  const MULTI_FIELD_CREDENTIAL_WITH_VISIBLE = {
+  const MULTI_FIELD_CREDENTIAL_WITH_VISIBLE: CredentialDetail = {
     ...MULTI_FIELD_CREDENTIAL,
     visibleFieldValues: { host: 'db.example.com' },
   }
@@ -2052,7 +2145,7 @@ describe('credential detail +page.svelte', () => {
         props: {
           data: baseData({
             shares: [
-              {
+              sampleShare({
                 id: 'share-1',
                 credentialId,
                 fieldKey: null,
@@ -2065,7 +2158,7 @@ describe('credential detail +page.svelte', () => {
                 firstViewedAt: null,
                 viewCount: 0,
                 status: 'active',
-              },
+              }),
             ],
           }),
         },
@@ -2125,7 +2218,7 @@ describe('credential detail +page.svelte', () => {
       })
 
       it('AC2: creating a share when N shares already exist shows "Showing N+1 of N+1"', async () => {
-        const existingShare = {
+        const existingShare = sampleShare({
           id: 'share-existing',
           credentialId,
           fieldKey: null,
@@ -2138,7 +2231,7 @@ describe('credential detail +page.svelte', () => {
           firstViewedAt: null,
           viewCount: 0,
           status: 'active',
-        }
+        })
         createCredentialShareMock.mockResolvedValue({
           id: 'share-new',
           credentialId,
@@ -2170,7 +2263,7 @@ describe('credential detail +page.svelte', () => {
       })
 
       it('AC3: creating a share while a non-matching status filter is active does not splice it into the list or bump the total', async () => {
-        const revokedShare = {
+        const revokedShare = sampleShare({
           id: 'share-revoked',
           credentialId,
           fieldKey: null,
@@ -2183,7 +2276,7 @@ describe('credential detail +page.svelte', () => {
           firstViewedAt: null,
           viewCount: 0,
           status: 'revoked',
-        }
+        })
         // A new share is always created with status 'active', which never matches a 'revoked'
         // filter — mirrors what a full reload against the same filtered URL would return.
         createCredentialShareMock.mockResolvedValue({
@@ -2245,7 +2338,7 @@ describe('credential detail +page.svelte', () => {
           props: {
             data: baseData({
               shares: [
-                {
+                sampleShare({
                   id: 'share-1',
                   credentialId,
                   fieldKey: null,
@@ -2258,7 +2351,7 @@ describe('credential detail +page.svelte', () => {
                   firstViewedAt: null,
                   viewCount: 0,
                   status: 'active',
-                },
+                }),
               ],
               sharesTotal: 1,
             }),
@@ -2355,7 +2448,7 @@ describe('credential detail +page.svelte', () => {
 // state may survive onto B, and the optimistic local lists must still work and never duplicate.
 describe('credential detail +page.svelte — stale state across loads (Story 68.1 AC-3)', () => {
   const credentialBId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
-  const CREDENTIAL_B = {
+  const CREDENTIAL_B: CredentialDetail = {
     ...CREDENTIAL,
     id: credentialBId,
     name: 'Twilio Token',
@@ -2363,7 +2456,7 @@ describe('credential detail +page.svelte — stale state across loads (Story 68.
     rotationSchedule: '0 0 * * 1',
     cacheable: false,
   }
-  const SHARE_A = {
+  const SHARE_A = sampleShare({
     id: 'share-a',
     credentialId,
     fieldKey: null,
@@ -2376,14 +2469,8 @@ describe('credential detail +page.svelte — stale state across loads (Story 68.
     firstViewedAt: null,
     viewCount: 0,
     status: 'active',
-  }
-  const DEP = (id: string, systemName: string) => ({
-    id,
-    systemName,
-    systemType: 'service',
-    notes: null,
-    checklistStatus: null,
   })
+  const DEP = (id: string, systemName: string) => sampleDependency({ id, systemName })
 
   function dataA() {
     return baseData({
