@@ -149,8 +149,13 @@ test-repeat: ## Run the test suite N times back-to-back, stopping at the first f
 		DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_ADMIN) SUPERUSER_DATABASE_URL=$(DB_URL_SUPERUSER) pnpm turbo test --force || exit 1; \
 	done
 
-stryker: ## Run Stryker mutation testing (matches nightly CI)
-	DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_ADMIN) SUPERUSER_DATABASE_URL=$(DB_URL_SUPERUSER) pnpm stryker run
+# Story 66-7: the nightly runs one leg per shard (api, db; stryker.config.mjs SHARDS). Locally, SHARD=api|db
+# runs one leg; the default runs both legs sequentially, each with its own dry run.
+STRYKER_SHARDS := $(if $(SHARD),$(SHARD),api db)
+stryker: ## Run Stryker mutation testing (matches nightly CI; SHARD=api|db for one leg)
+	for shard in $(STRYKER_SHARDS); do \
+		STRYKER_SHARD=$$shard DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_ADMIN) SUPERUSER_DATABASE_URL=$(DB_URL_SUPERUSER) pnpm stryker run || exit 1; \
+	done
 
 # Story 43.11 AC-11: the private overlay's repo root, or empty when it is not attached/resolvable.
 PRIVATE_OVERLAY_ROOT := $(shell t=$$(readlink -f _bmad-output/implementation-artifacts/sprint-status.yaml 2>/dev/null) && [ -f "$$t" ] && git -C "$$(dirname "$$t")" rev-parse --show-toplevel 2>/dev/null)
@@ -224,6 +229,7 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-native-credential-surface
 	pnpm check-no-sonar-suppressions # Story 43.9 AC-9: no unsigned Sonar suppressions
 	pnpm vitest run scripts/check-no-sonar-suppressions.test.ts scripts/lib/trusted-executable.test.ts
+	pnpm vitest run scripts/check-stryker-config.test.ts # Story 66-7: Stryker shard/threshold/vitest-5 patch invariants
 	# Story 43.16 AC-3/AC-5: Fly demo internal TLS — PKI script, fly-setup wiring, pinned-CA call sites.
 	pnpm vitest run scripts/fly-setup.test.ts scripts/fly-internal-tls.test.ts scripts/check-pg-tls-call-sites.test.ts
 	pnpm check-build-info-unstamped # Story 43.6 AC-5

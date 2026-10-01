@@ -24,6 +24,8 @@ RUN apk add --no-cache g++ make python3 git postgresql16-client bash openssl fin
 WORKDIR /app
 
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+# Story 66-7: patchedDependencies needs patches/ for the frozen install.
+COPY patches ./patches
 COPY apps/api/package.json ./apps/api/
 COPY apps/web/package.json ./apps/web/
 COPY packages/agent/package.json ./packages/agent/
