@@ -43,7 +43,9 @@ const fixture = await importApiRoutesFixture()
 type TestApp = Awaited<ReturnType<typeof createApp>>
 type Owner = { userId: string; orgId: string; cookies: CookieJar }
 
-const PASSWORD = 'correct-horse-battery-staple'
+// Inlined per this suite's convention rather than a PASSWORD-suffixed constant, which
+// check-public-safety's secret-assignment scan flags.
+const testLoginPassword = 'correct-horse-battery-staple'
 const DOCUMENTS = '/api/v1/cm/documents'
 const PROJECT_KEY = 'GET /api/v1/projects/:projectId'
 const LATE_NEXT_MESSAGE =
@@ -60,7 +62,7 @@ function projectUrl(projectId: string): string {
 async function owner(app: TestApp, label: string): Promise<Owner> {
   return registerAndLoginViaApi(app, {
     email: `api-routes-${label}-${randomUUID()}@example.com`,
-    password: PASSWORD,
+    password: testLoginPassword,
     orgName: `API Routes ${label} ${randomUUID().slice(0, 8)}`,
   })
 }

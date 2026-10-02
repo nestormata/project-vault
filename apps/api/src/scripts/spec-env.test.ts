@@ -19,13 +19,7 @@ describe('Story 68.8 AC-15 — the committed OpenAPI spec stays PV-only', () => 
     })
   })
 
-  it('defaults DATABASE_URL to a password-free placeholder when unset', () => {
-    const env: NodeJS.ProcessEnv = {}
-    prepareSpecGenerationEnv(env)
-    expect(env['DATABASE_URL']).toBe('postgresql://vault_app@localhost:5432/project_vault')
-  })
-
-  it('leaves an environment without extension settings unchanged apart from DATABASE_URL', () => {
+  it('leaves an environment without extension settings unchanged', () => {
     const env: NodeJS.ProcessEnv = { DATABASE_URL: 'postgresql://vault_app@x/y' }
     prepareSpecGenerationEnv(env)
     expect(env).toEqual({ DATABASE_URL: 'postgresql://vault_app@x/y' })

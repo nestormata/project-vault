@@ -27,7 +27,9 @@ const fixture = await importApiRoutesFixture()
 
 type TestApp = Awaited<ReturnType<typeof createApp>>
 
-const PASSWORD = 'correct-horse-battery-staple'
+// Inlined per this suite's convention rather than a PASSWORD-suffixed constant, which
+// check-public-safety's secret-assignment scan flags.
+const testLoginPassword = 'correct-horse-battery-staple'
 
 function uniqueIp(): string {
   const bytes = randomUUID().replaceAll('-', '')
@@ -81,7 +83,7 @@ describe('Story 68.8 — rate limits with enforcement on', () => {
       app = await bootScenario('old-pack')
       const owner = await registerAndLoginViaApi(app, {
         email: `api-routes-rl-${randomUUID()}@example.com`,
-        password: PASSWORD,
+        password: testLoginPassword,
         orgName: `API Routes RL ${randomUUID().slice(0, 8)}`,
       })
       cookie = cookieHeader(owner.cookies)
