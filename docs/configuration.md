@@ -187,6 +187,7 @@ and no scheduling happens at all. Configure exactly one destination (path **xor*
 |---|---|---|---|
 | `VAULT_EXTENSIONS_PACKAGE` | unset | | Exact package identity of a founder-trusted extension, dynamically imported at boot. Unset means zero extension code loads. |
 | `VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST` | `false` | leave `false` | Incident-only rollback escape allowing a same-major extension above the host's API version. Warns on every boot. |
+| `VAULT_EXTENSIONS_REQUIRED` | `false` | `true` in composed deployments | Fail the boot when the configured extension does not load (any load failure) or when `VAULT_EXTENSIONS_PACKAGE` is unset. `startup.failed` then carries `extension.reason` (`extension_required_load_failed` with `loadFailureReason`, or `extension_required_not_configured`). Unset or `false` keeps PV's fail-open default. Accepts `true`/`false` only. |
 | `VAULT_THEMES_DIR` | `/data/themes` | | Directory of admin-installed theme packs, kept on a persistent volume so they survive image upgrades. An absent directory is zero behaviour change. |
 
 ## Handoff & service integration

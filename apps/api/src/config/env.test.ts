@@ -1560,6 +1560,37 @@ describe('env', () => {
     })
   })
 
+  describe('Story 68.8 AC-11: VAULT_EXTENSIONS_REQUIRED', () => {
+    it.each([
+      [undefined, false],
+      ['', false],
+      ['false', false],
+      ['true', true],
+    ])('VAULT_EXTENSIONS_REQUIRED=%j parses as %s', async (value, expected) => {
+      process.env = {
+        ...BASE_ENV,
+        DATABASE_URL: VAULT_APP_DATABASE_URL,
+        ...(value === undefined ? {} : { VAULT_EXTENSIONS_REQUIRED: value }),
+      }
+      const { env } = await import('./env.js')
+      expect(env.VAULT_EXTENSIONS_REQUIRED).toBe(expected)
+      expect(exitSpy).not.toHaveBeenCalled()
+    })
+
+    it.each(['TRUE', '1'])(
+      'VAULT_EXTENSIONS_REQUIRED=%s is rejected like every booleanEnvDefault flag',
+      async (value) => {
+        process.env = {
+          ...BASE_ENV,
+          DATABASE_URL: VAULT_APP_DATABASE_URL,
+          VAULT_EXTENSIONS_REQUIRED: value,
+        }
+        await import('./env.js').catch(() => undefined)
+        expect(exitSpy).toHaveBeenCalledWith(1)
+      }
+    )
+  })
+
   describe('Story 23.2: VAULT_NATIVE_LOGIN_REPLACEMENT_CONFIRMED', () => {
     it('defaults to false (proving latch required) when unset', async () => {
       process.env = {

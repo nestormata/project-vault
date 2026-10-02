@@ -1,32 +1,15 @@
 import { writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { prepareSpecGenerationEnv } from './spec-env.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const outPath = resolve(__dirname, '../../../../packages/shared/openapi.json')
 
-// config/env.ts requires DATABASE_URL with no default (real deployments must set it
-// explicitly), but route registration never opens a connection — @project-vault/db's
-// getDb() only connects lazily on first query, and this script only registers routes and
-// reads their attached schemas. Any well-formed, non-superuser URL satisfies validation
-// without a reachable database — no password is required, so none is included (avoids
-// looking like a credential to secret-scanning tools).
-//
-// env.ts also requires the admin-pool connection var, which is deliberately NOT given a
-// fallback here: admin-pool-boundary.test.ts enforces that no file outside lib/db.ts and
-// config/env.ts (plus tests) references that env var by name, to keep the admin-pool
-// credential's usage auditable at those two sites only. Callers of this script (the
-// Makefile's ci-inner target, CI's job-level env) are expected to supply it externally.
-process.env.DATABASE_URL ??= 'postgresql://vault_app@localhost:5432/project_vault'
-
-// Story 9.10: the checked-in artifact must be byte-identical wherever it is regenerated, because
-// CI and `make ci` gate on `git diff --exit-code packages/shared/openapi.json`. `info.version`
-// now comes from RELEASE_VERSION at runtime, so any environment that happens to export it (a
-// release-time regeneration, a developer with it in their shell, running the suite inside a
-// released container) would otherwise emit a different `info.version` and fail that drift check
-// with a confusing diff. Pinning it to the dev fallback here keeps the committed spec
-// deterministic; the live `/openapi.json` route still reports the real injected release version.
-delete process.env.RELEASE_VERSION
+// Must run before app.js (and config/env.ts) is imported: a placeholder DATABASE_URL, no
+// RELEASE_VERSION (Story 9.10 determinism) and no extension settings (Story 68.8 AC-15: the
+// committed spec stays PV-only). See spec-env.ts for the full rationale.
+prepareSpecGenerationEnv(process.env)
 
 const { createApp } = await import('../app.js')
 

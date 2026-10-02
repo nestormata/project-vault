@@ -35,6 +35,7 @@ import {
   type ApiRouteOverrideEntry,
   type BusinessFn,
   type BusinessWrapFn,
+  type RawFn,
   type ApiRouteTable,
   type RouteHookPlan,
 } from './secure-route-overrides.js'
@@ -1104,4 +1105,30 @@ export function secureAddedApiRoute(fastify: RouteFastify, entry: ApiRouteAddEnt
       logBinding: { added: true },
     }
   )
+}
+
+/**
+ * Story 68.8 AC-6 (raw route with `replaceSecurity`): a raw PV route has no secureRoute pipeline to
+ * replace, so PV builds one around the extension's handler from the entry's own `security`. The
+ * returned route-level pieces (handler, preHandler, onRequest log binding) replace the raw
+ * route's own; `wrap`'s `next()` runs PV's raw handler. Context-level and app-wide hooks still run.
+ */
+export function secureRawRouteReplacement(
+  fastify: RouteFastify,
+  route: { method: string; url: string; pvHandler: RawFn },
+  entry: ApiRouteOverrideEntry,
+  key: string
+): Record<string, unknown> {
+  const base: SecureRouteRegistrationOptions = {
+    method: route.method as HttpMethod,
+    url: route.url,
+    handler: ((_ctx: unknown, req: unknown, reply: unknown) =>
+      route.pvHandler.call(fastify, req, reply)) as BusinessHandler,
+  }
+  const options = { ...overriddenOptions(base, entry, key), schema: undefined }
+  const plan: RegistrationPlan = { ...overridePlan(entry, key), hookPlan: undefined }
+  const resolvedSecurity = resolveSecurity(options, key)
+  assertEffectiveConfig(fastify, options, resolvedSecurity, true, key)
+  recordRegistration(fastify, options, plan, resolvedSecurity)
+  return buildRouteOptions(fastify, options, plan, resolvedSecurity)
 }

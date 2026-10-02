@@ -61,6 +61,8 @@ export type ApiRouteTable = Readonly<{
   adds: readonly ApiRouteAddEntry[]
   /** Per-app: override keys applied by `secureRoute()` or the root `onRoute` hook. */
   consumed: Set<string>
+  /** Per-app: which mechanism applied each consumed override (status endpoint `target`). */
+  targets: Map<string, 'secureRoute' | 'raw'>
 }>
 
 /** The route URL as Fastify serves it under `ignoreTrailingSlash: true`. */
@@ -121,16 +123,21 @@ export function buildApiRouteTable(state: ExtensionState): ApiRouteTable | undef
     overrides,
     adds: Object.freeze(adds),
     consumed: new Set<string>(),
+    targets: new Map<string, 'secureRoute' | 'raw'>(),
   })
 }
 
 /** Looks up an override and marks it consumed (AC-10 fails the boot for unconsumed ones). */
 export function takeOverride(
   table: ApiRouteTable | undefined,
-  key: string
+  key: string,
+  target: 'secureRoute' | 'raw' = 'secureRoute'
 ): ApiRouteOverrideEntry | undefined {
   const entry = table?.overrides.get(key)
-  if (entry) table?.consumed.add(key)
+  if (entry) {
+    table?.consumed.add(key)
+    table?.targets.set(key, target)
+  }
   return entry
 }
 

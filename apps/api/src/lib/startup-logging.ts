@@ -3,6 +3,7 @@ import type { FastifyBaseLogger } from 'fastify'
 import { OperationalEvent } from '@project-vault/shared'
 import type { Env } from '../config/env.js'
 import { findDbErrorCause } from './db-error-cause.js'
+import { findExtensionBootFailure } from '../extensions/boot-errors.js'
 import { createFixedLevelLogger, operationalLog, serializeLogError } from './logger.js'
 
 type FlushableLogger = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'> & {
@@ -17,9 +18,14 @@ export async function logStartupFailure(logger: FlushableLogger, err: unknown): 
   // Story 43.28 AC-1: name the database cause by its code (closed reason set), never by driver
   // text; the key is omitted when no link carries a code, so other lines stay byte-identical.
   const cause = findDbErrorCause(err)
+  // Story 68.8 Q15: an extension boot failure (VAULT_EXTENSIONS_REQUIRED, apiRoutes drift,
+  // collision or schema rejection) gets a sibling `extension` key with a closed reason; the DB
+  // `cause` key above is unchanged.
+  const extension = findExtensionBootFailure(err)
   operationalLog(logger, 'error', OperationalEvent.STARTUP_FAILED, 'API startup failed', {
     err: serializeLogError(err),
     ...(cause ? { cause } : {}),
+    ...(extension ? { extension } : {}),
   })
   await flushLogger(logger)
 }

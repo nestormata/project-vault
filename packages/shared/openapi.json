@@ -38894,12 +38894,125 @@
                         "status"
                       ],
                       "additionalProperties": false
+                    },
+                    "apiRoutes": {
+                      "type": "object",
+                      "properties": {
+                        "added": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "method": {
+                                "type": "string"
+                              },
+                              "url": {
+                                "type": "string"
+                              },
+                              "capability": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "method",
+                              "url"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "overrides": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "method": {
+                                "type": "string"
+                              },
+                              "url": {
+                                "type": "string"
+                              },
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "replace",
+                                  "wrap"
+                                ]
+                              },
+                              "replaceSecurity": {
+                                "type": "boolean"
+                              },
+                              "schema": {
+                                "type": "string",
+                                "enum": [
+                                  "extend",
+                                  "replace"
+                                ]
+                              },
+                              "hooks": {
+                                "type": "object",
+                                "properties": {
+                                  "prepend": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "enum": [
+                                        "onRequest",
+                                        "preValidation",
+                                        "preHandler",
+                                        "onSend"
+                                      ]
+                                    }
+                                  },
+                                  "append": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "enum": [
+                                        "onRequest",
+                                        "preValidation",
+                                        "preHandler",
+                                        "onSend"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "additionalProperties": false
+                              },
+                              "capability": {
+                                "type": "string"
+                              },
+                              "target": {
+                                "type": "string",
+                                "enum": [
+                                  "secureRoute",
+                                  "raw"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "method",
+                              "url",
+                              "mode",
+                              "replaceSecurity",
+                              "target"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "added",
+                        "overrides"
+                      ],
+                      "additionalProperties": false,
+                      "description": "Extension API routes (M7): routes the extension added and PV routes it overrides. `replaceSecurity: true` replaces only the route-level security of that route; context-level hooks (for example a per-IP rate limiter of the route plugin) and app-wide hooks (vault guard, helmet, CORS) always still run."
                     }
                   },
                   "required": [
                     "extension",
                     "nativeLoginPolicy",
-                    "clockSkew"
+                    "clockSkew",
+                    "apiRoutes"
                   ],
                   "additionalProperties": false
                 }

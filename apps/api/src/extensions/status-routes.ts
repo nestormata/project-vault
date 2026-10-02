@@ -11,6 +11,8 @@ import {
 } from '../modules/auth/native-login-latch.js'
 import { countLiveSessionsAcrossInstance } from './sessions-live-count.js'
 import { getClockSkewDiagnostics } from '../workers/clock-skew-check.js'
+import type { ApiRouteTable } from '../lib/secure-route-overrides.js'
+import { apiRoutesStatus } from './api-routes/install.js'
 
 // AC-2/AC-4: OrgAdmin sees the loaded manifest, or a real `null` (not 404, not `{}`) when
 // nothing is loaded — a future admin UI page's honest empty state (Product Surface Contract).
@@ -71,10 +73,45 @@ const ClockSkewSchema = z.object({
   status: z.enum(['ok', 'warn', 'unknown']),
 })
 
+// Story 68.8 AC-6 (2): the loaded extension's M7 apiRoutes, recorded (never refused): added
+// routes and overrides of PV routes, keys and declaration flags only. Empty lists when no
+// extension declares apiRoutes.
+const ApiRouteHookPhaseSchema = z.enum(['onRequest', 'preValidation', 'preHandler', 'onSend'])
+const ApiRoutesStatusSchema = z
+  .object({
+    added: z.array(
+      z.object({ method: z.string(), url: z.string(), capability: z.string().optional() })
+    ),
+    overrides: z.array(
+      z.object({
+        method: z.string(),
+        url: z.string(),
+        mode: z.enum(['replace', 'wrap']),
+        replaceSecurity: z.boolean(),
+        schema: z.enum(['extend', 'replace']).optional(),
+        hooks: z
+          .object({
+            prepend: z.array(ApiRouteHookPhaseSchema).optional(),
+            append: z.array(ApiRouteHookPhaseSchema).optional(),
+          })
+          .optional(),
+        capability: z.string().optional(),
+        target: z.enum(['secureRoute', 'raw']),
+      })
+    ),
+  })
+  .describe(
+    'Extension API routes (M7): routes the extension added and PV routes it overrides. ' +
+      '`replaceSecurity: true` replaces only the route-level security of that route; ' +
+      'context-level hooks (for example a per-IP rate limiter of the route plugin) and ' +
+      'app-wide hooks (vault guard, helmet, CORS) always still run.'
+  )
+
 const ExtensionStatusEnvelopeSchema = z.object({
   extension: ExtensionManifestSchema.nullable(),
   nativeLoginPolicy: NativeLoginPolicySchema,
   clockSkew: ClockSkewSchema,
+  apiRoutes: ApiRoutesStatusSchema,
 })
 
 export async function extensionStatusRoutes(fastify: FastifyApp): Promise<void> {
@@ -160,6 +197,9 @@ export async function extensionStatusRoutes(fastify: FastifyApp): Promise<void> 
           sessionsLive,
         },
         clockSkew: getClockSkewDiagnostics(),
+        apiRoutes: apiRoutesStatus(
+          (fastify as FastifyApp & { pvApiRouteOverrides?: ApiRouteTable }).pvApiRouteOverrides
+        ),
       }
     },
   })

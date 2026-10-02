@@ -106,7 +106,7 @@ describe('GET /api/v1/admin/extensions/status', () => {
   // Story 66.3: the contract-layer pin of the metadata-only boundary (AC-12). Exact key sets on
   // purpose — a new key on this admin envelope must force a conscious review of what it exposes,
   // rather than passing silently. J24 keeps the browser-path leak assertion on top of this.
-  it('AC-12: the envelope carries exactly extension, nativeLoginPolicy and clockSkew', async () => {
+  it('AC-12 + Story 68.8 AC-6: the envelope carries exactly apiRoutes, extension, nativeLoginPolicy and clockSkew', async () => {
     const admin = await createDirectAuthenticatedUser(suite.app, 'status-key-set', 'admin')
     await enrollMfa(admin.userId)
 
@@ -114,7 +114,14 @@ describe('GET /api/v1/admin/extensions/status', () => {
 
     expect(res.statusCode).toBe(200)
     const body = res.json<Record<string, Record<string, unknown> | null>>()
-    expect(Object.keys(body).sort()).toEqual(['clockSkew', 'extension', 'nativeLoginPolicy'])
+    expect(Object.keys(body).sort()).toEqual([
+      'apiRoutes',
+      'clockSkew',
+      'extension',
+      'nativeLoginPolicy',
+    ])
+    // Story 68.8 AC-6 (2): zero-valued, not absent, when no extension declares apiRoutes.
+    expect(body['apiRoutes']).toEqual({ added: [], overrides: [] })
     expect(Object.keys(body['clockSkew'] ?? {}).sort()).toEqual([
       'lastMeasuredMs',
       'measuredAt',
