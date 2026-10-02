@@ -77,6 +77,7 @@ import {
   rewriteSharedSource,
 } from '../apps/web/config/app-css-source.ts'
 import { paraglideOptions } from '../apps/web/config/paths.ts'
+import { npmPackArgs, packDestination } from './lib/web-host/pack-destination.js'
 
 export const REPO_ROOT = join(import.meta.dirname, '..')
 export const WEB_DIR = join(REPO_ROOT, 'apps', 'web')
@@ -559,25 +560,24 @@ async function main(): Promise<void> {
       tarball: { type: 'string' },
     },
   })
+  let destination: string | undefined
   try {
+    // Validate --tarball before packing, so a bad value fails fast and never reaches npm's argv.
+    destination = values.tarball === undefined ? undefined : packDestination(values.tarball)
     await packWebHost({ version: values.version, repository: values.repository })
   } catch (error) {
     process.stderr.write(`${(error as Error).message}\n`)
     process.exitCode = 1
     return
   }
-  if (values.tarball !== undefined) {
-    const output = execFileSync(
-      process.execPath,
-      [npmCli(), 'pack', '--json', '--pack-destination', values.tarball],
-      {
-        cwd: STAGE_DIR,
-        encoding: 'utf8',
-      }
-    )
+  if (destination !== undefined) {
+    const output = execFileSync(process.execPath, npmPackArgs(npmCli(), destination), {
+      cwd: STAGE_DIR,
+      encoding: 'utf8',
+    })
     const [packed] = JSON.parse(output) as { filename: string; size: number }[]
     process.stdout.write(
-      `pack-web-host: tarball ${join(values.tarball, packed?.filename ?? '')} (${packed?.size ?? 0} bytes)\n`
+      `pack-web-host: tarball ${join(destination, packed?.filename ?? '')} (${packed?.size ?? 0} bytes)\n`
     )
   }
 }
