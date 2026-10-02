@@ -1,5 +1,7 @@
 // Story 68.2 AC-2/AC-6/AC-9: the generated manifests of the packed @project-vault/web-host. Pure
 // functions: scripts/pack-web-host.ts gathers the inputs (lockfile, import graph, versions).
+// The kit's own helper (scripts may depend on the MIT kit; the reverse is forbidden).
+import { sortKeys } from '../../../packages/composition-kit/src/sort-keys.ts'
 import { isExactVersion } from './lockfile.js'
 
 export const WEB_HOST_NAME = '@project-vault/web-host'
@@ -183,19 +185,6 @@ export interface CompatibilityInput {
   kitVersion: string
   toolchain: { kit: string; svelte: string; vite: string; typescript: string }
   apiImageTag: string
-}
-
-/** Recursively sorted keys, so the JSON is byte-stable. */
-function sortKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortKeys)
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, entry]) => [key, sortKeys(entry)])
-    )
-  }
-  return value
 }
 
 /** manifests/compatibility.json (design §11). `kitVersion` is the composition kit's own version. */

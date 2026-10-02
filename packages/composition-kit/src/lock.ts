@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { unifiedDiff } from './diff.js'
 import { compareCodeUnits } from './paths.js'
+import { sortKeys } from './sort-keys.js'
 import type { InjectionPointRecord } from './registry.js'
 import type { AdditionRecord, OverrideRecord, RemovalRecord, ReplacementRecord } from './overlay.js'
 import type { Relocated } from './materialize.js'
@@ -90,18 +91,6 @@ export function buildLock(input: LockInput): CompositionLock {
     apiRouteOverrides: [],
     notes: [...new Set(input.notes)].sort(compareCodeUnits),
   }
-}
-
-function sortKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortKeys)
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .sort(([a], [b]) => compareCodeUnits(a, b))
-        .map(([key, entry]) => [key, sortKeys(entry)])
-    )
-  }
-  return value
 }
 
 /** Deterministic text: sorted keys, two-space indent, trailing newline, no timestamps, no absolute
