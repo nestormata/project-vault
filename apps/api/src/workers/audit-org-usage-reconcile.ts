@@ -388,7 +388,9 @@ function logRunCompleted(
  * the two instance-wide checks (stale-org scan, pre-auth volume alert) because both are computed
  * over the whole instance and a partial total would raise or clear them wrongly. An empty
  * `orgIds` reconciles nothing (it never falls back to the instance-wide scan). Without options
- * the behaviour is exactly the instance-wide reconcile above.
+ * the behaviour is exactly the instance-wide reconcile above. A failing scoped aggregate still
+ * raises the instance-wide `audit_usage_reconciliation.failing` alert, and a scoped success never
+ * clears it: another reason a scope is for tests and operators, never for the scheduled job.
  */
 export async function runAuditOrgUsageReconcile(
   logger?: WorkerLogger,
