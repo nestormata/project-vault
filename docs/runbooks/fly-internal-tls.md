@@ -99,12 +99,18 @@ shred -u ~/pv-ca/ca.key ~/pv-ca/ca.key.b64 && rm -rf ~/pv-ca
 The order matters, and there is a short, expected outage window (a demo; no dual-stack):
 
 1. CA secrets set (above).
-2. Issue and stage the leaves, and switch the URLs: run `scripts/fly-setup.sh` (or the Fly Demo
-   Bootstrap workflow) with the usual secrets plus `FLY_INTERNAL_CA_*_B64`. Staged TLS secrets
-   apply on each app's next deploy.
-   **Warning:** `fly-setup.sh` also sets the non-staged api secrets immediately — including the new
-   `?sslmode=verify-full` DB URLs — which restarts running api machines. The api then cannot reach
-   the db until the db is redeployed with its certificate. Run the full deploy right after.
+2. Issue and stage the leaves, and switch the URLs: run the Fly Demo Bootstrap workflow (or
+   `scripts/fly-setup.sh`) with the usual secrets plus `FLY_INTERNAL_CA_*_B64`. `fly-setup.sh`
+   deploys the TLS-only db and **stages** every api and web secret (TLS leaves and the
+   `?sslmode=verify-full` DB URLs alike), so it never restarts the running api; everything applies
+   on each app's next deploy (Story 43.28). The bootstrap then runs, in order:
+   **db → migrate (`fly-migrate.sh`, which also syncs the `vault_app`/`vault_admin` passwords) →
+   api → ensure started (`fly-ensure-started.sh`) → web → first reset**.
+   The old api still loses the db once the TLS-only db is up (it has no client certificate), so the
+   short outage below starts here, not at the api deploy. If the bootstrap fails at
+   `Run pending migrations`, the api has not been redeployed and its new secrets are only staged:
+   the outage is the same as before, not worse. Fix the cause and re-run the Bootstrap. A
+   destructive pending migration is refused by `guarded-migrate` and fails the run there, by design.
 3. Full deploy: `fly-deploy.yml` already runs **db → migrate → api → web**.
    - Old api machines fail DB handshakes until the new api is up; old web machines fail api
      handshakes (web `503 api_unreachable`) until the new web is up. Minutes, not hours.
@@ -193,6 +199,29 @@ private CA with EKU clientAuth, so the listener accepts it, and it never leaves 
 
 Expired certificates: the first signature is web `503 api_unreachable` on every page (web ↔ api),
 then api `/ready` failing on the DB (api ↔ db).
+
+### api machine stopped after max restarts
+
+Fly stops a machine that crash-loops past its max restart count (10). `flyctl apps restart` does not
+start it, and `flyctl deploy` can leave it stopped while reporting a good state. Since Story 43.28
+the bootstrap, `fly-deploy` and the reset start it themselves, but by hand:
+
+```bash
+flyctl machine list -a project-vault-demo-api            # STATE "stopped"?
+./scripts/fly-ensure-started.sh project-vault-demo-api https://project-vault-demo-web.fly.dev
+# or: flyctl machine start <id> -a project-vault-demo-api
+```
+
+Then read why it crashed: the api's single `startup.failed` line carries
+`cause: {code, reason, depth}` (the SQLSTATE or Node error code only, never driver text). Read
+`cause.code` as well as `cause.reason`: `auth_failed` covers two SQLSTATEs with different fixes.
+
+| `cause.reason`      | Meaning                                                                                                                                                                                        | Fix                                                                                                                                                              |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth_failed`       | `28P01`: the role passwords differ from the api secrets. `28000`: `pg_hba.conf` refused the connection, most often no or a wrong client certificate (an api older than 43.16, or stale leaves) | `28P01`: run `scripts/fly-migrate.sh` (it re-syncs `vault_app` and `vault_admin`). `28000`: check the api release and its staged TLS leaves, as for `tls_failed` |
+| `tls_failed`        | the TLS leaves do not match                                                                                                                                                                    | `scripts/fly-internal-tls.sh issue-leaves`, then redeploy db → api → web                                                                                         |
+| `schema_missing`    | migrations have not been applied                                                                                                                                                               | `scripts/fly-migrate.sh`                                                                                                                                         |
+| `connection_failed` | the db app is down or still starting                                                                                                                                                           | check `flyctl machine list -a project-vault-demo-db`                                                                                                             |
 
 ## Rollback
 

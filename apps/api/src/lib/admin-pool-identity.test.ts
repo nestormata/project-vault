@@ -93,6 +93,37 @@ describe('admin pool identity verification', () => {
     expect(classifyAdminPoolError(thrown)).toBe('unknown')
   })
 
+  // Story 43.28 AC-1 edge 8: classifyAdminPoolError is now a thin wrapper over the shared
+  // findDbErrorCause classifier. Every 66.4 code keeps its reason; the reasons the shared
+  // classifier added (schema_missing, tls_failed) and unlisted/invalid codes stay `unknown` here.
+  it.each([
+    ['28P01', 'auth_failed'],
+    ['28000', 'auth_failed'],
+    ['3D000', 'database_missing'],
+    ['42501', 'permission_denied'],
+    ['ECONNREFUSED', 'connection_failed'],
+    ['ENOTFOUND', 'connection_failed'],
+    ['EAI_AGAIN', 'connection_failed'],
+    ['ETIMEDOUT', 'connection_failed'],
+    ['CONNECT_TIMEOUT', 'connection_failed'],
+    ['57P03', 'connection_failed'],
+    ['42P01', 'unknown'],
+    ['42703', 'unknown'],
+    ['3F000', 'unknown'],
+    ['SELF_SIGNED_CERT_IN_CHAIN', 'unknown'],
+    ['ERR_SSL_WRONG_VERSION_NUMBER', 'unknown'],
+    ['53300', 'unknown'],
+    ['not an identifier', 'unknown'],
+  ] as const satisfies ReadonlyArray<readonly [string, AdminPoolUnreachableReason]>)(
+    'keeps the 66.4 reason for code %s (%s) behind the shared classifier',
+    (code, reason) => {
+      const wrapped = new Error('Failed query', {
+        cause: Object.assign(new Error('driver'), { code }),
+      })
+      expect(classifyAdminPoolError(wrapped)).toBe(reason)
+    }
+  )
+
   it.each([
     ['superuser', /superuser/],
     ['no-bypassrls', /without BYPASSRLS/],

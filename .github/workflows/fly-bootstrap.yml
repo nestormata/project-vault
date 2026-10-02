@@ -23,17 +23,17 @@ jobs:
   bootstrap:
     name: Create Fly apps, set secrets, deploy, seed
     runs-on: ubuntu-latest
-    concurrency: fly-demo-deploy
+    # Story 43.28: one group for bootstrap, deploy and reset, so the scheduled reset can never
+    # wipe the schema in the middle of a deploy or bootstrap. Never cancel a running one.
+    concurrency:
+      group: fly-demo-deploy
+      cancel-in-progress: false
+    # Story 43.28 review: only the Fly token and org at job level. The DB and demo secrets are
+    # scoped to the steps that read them (setup, migrate, reset), as fly-reset.yml does, so no
+    # third-party action, deploy or ensure-started step inherits them.
     env:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       FLY_ORG: ${{ inputs.fly_org }}
-      ADMIN_PG_PASSWORD: ${{ secrets.FLY_DEMO_PG_SUPERUSER_PASSWORD }}
-      VAULT_APP_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_APP_PASSWORD }}
-      VAULT_ADMIN_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_ADMIN_PASSWORD }}
-      DEMO_VAULT_PASSPHRASE: ${{ secrets.FLY_DEMO_VAULT_PASSPHRASE }}
-      DEMO_LOGIN_EMAIL: ${{ secrets.FLY_DEMO_LOGIN_EMAIL }}
-      DEMO_LOGIN_PASSWORD: ${{ secrets.FLY_DEMO_LOGIN_PASSWORD }}
-      VAULT_BOOTSTRAP_TOKEN: ${{ secrets.FLY_DEMO_VAULT_BOOTSTRAP_TOKEN }}
     steps:
       - name: Validate release tag
         id: release
@@ -62,10 +62,12 @@ jobs:
         with:
           node-version: '24'
 
+      # Story 43.28: no `version:` input. The action reads the CHECKED-OUT release's
+      # package.json `packageManager`; a pinned version here fails with "Multiple versions of
+      # pnpm specified" whenever main's pnpm differs from the release's (scheduled reset, or a
+      # dispatch of an older tag), as in run 36823249947.
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-        with:
-          version: 11.28.3
 
       - name: Get pnpm store directory
         shell: bash
@@ -93,7 +95,29 @@ jobs:
       - name: Create apps, volume, secrets, deploy db
         run: ./scripts/fly-setup.sh
         env:
+          # fly-setup.sh silently mints a random superuser password, passphrase or bootstrap token
+          # for any of these that is unset, so all of them must be passed here.
+          ADMIN_PG_PASSWORD: ${{ secrets.FLY_DEMO_PG_SUPERUSER_PASSWORD }}
+          VAULT_APP_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_APP_PASSWORD }}
+          VAULT_ADMIN_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_ADMIN_PASSWORD }}
+          DEMO_VAULT_PASSPHRASE: ${{ secrets.FLY_DEMO_VAULT_PASSPHRASE }}
+          VAULT_BOOTSTRAP_TOKEN: ${{ secrets.FLY_DEMO_VAULT_BOOTSTRAP_TOKEN }}
           # Story 43.16: the internal CA mints the TLS leaves / the per-run operator certificate.
+          # Scoped to this step only — never to a deploy step (docs/runbooks/fly-internal-tls.md).
+          FLY_INTERNAL_CA_CERT_B64: ${{ secrets.FLY_DEMO_INTERNAL_CA_CERT_B64 }}
+          FLY_INTERNAL_CA_KEY_B64: ${{ secrets.FLY_DEMO_INTERNAL_CA_KEY_B64 }}
+
+      # Story 43.28: migrate (and sync the vault_app/vault_admin passwords) BEFORE the api
+      # deploys, so its first boot sees the real passwords and the full schema. fly-setup.sh only
+      # staged the api secrets, so the old api has not been restarted. A destructive pending
+      # migration is refused (guarded-migrate) and fails the bootstrap before the api deploys.
+      - name: Run pending migrations
+        run: ./scripts/fly-migrate.sh
+        env:
+          ADMIN_PG_PASSWORD: ${{ secrets.FLY_DEMO_PG_SUPERUSER_PASSWORD }}
+          VAULT_APP_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_APP_PASSWORD }}
+          VAULT_ADMIN_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_ADMIN_PASSWORD }}
+          # Story 43.16: the internal CA mints the per-run operator certificate.
           # Scoped to this step only — never to a deploy step (docs/runbooks/fly-internal-tls.md).
           FLY_INTERNAL_CA_CERT_B64: ${{ secrets.FLY_DEMO_INTERNAL_CA_CERT_B64 }}
           FLY_INTERNAL_CA_KEY_B64: ${{ secrets.FLY_DEMO_INTERNAL_CA_KEY_B64 }}
@@ -101,12 +125,25 @@ jobs:
       - name: Deploy api
         run: flyctl deploy -c fly.api.toml -a project-vault-demo-api --ha=false --remote-only --build-arg RELEASE_VERSION=${{ steps.release.outputs.version }}
 
+      # Story 43.28 AC-4: `flyctl deploy` can leave a machine Fly already stopped (max restarts)
+      # stopped while reporting success. No web URL yet: web deploys next, and the reset below
+      # waits for /ready.
+      - name: Ensure api machines are started
+        run: ./scripts/fly-ensure-started.sh project-vault-demo-api
+
       - name: Deploy web
         run: flyctl deploy -c fly.web.toml -a project-vault-demo-web --ha=false --remote-only --build-arg RELEASE_VERSION=${{ steps.release.outputs.version }}
 
       - name: First reset (migrate + seed + vault init/unseal)
         run: ./scripts/fly-reset.sh
         env:
+          ADMIN_PG_PASSWORD: ${{ secrets.FLY_DEMO_PG_SUPERUSER_PASSWORD }}
+          VAULT_APP_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_APP_PASSWORD }}
+          VAULT_ADMIN_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_ADMIN_PASSWORD }}
+          DEMO_VAULT_PASSPHRASE: ${{ secrets.FLY_DEMO_VAULT_PASSPHRASE }}
+          DEMO_LOGIN_EMAIL: ${{ secrets.FLY_DEMO_LOGIN_EMAIL }}
+          DEMO_LOGIN_PASSWORD: ${{ secrets.FLY_DEMO_LOGIN_PASSWORD }}
+          VAULT_BOOTSTRAP_TOKEN: ${{ secrets.FLY_DEMO_VAULT_BOOTSTRAP_TOKEN }}
           # Story 43.16: the internal CA mints the TLS leaves / the per-run operator certificate.
           # Scoped to this step only — never to a deploy step (docs/runbooks/fly-internal-tls.md).
           FLY_INTERNAL_CA_CERT_B64: ${{ secrets.FLY_DEMO_INTERNAL_CA_CERT_B64 }}

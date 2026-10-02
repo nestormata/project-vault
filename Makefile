@@ -232,7 +232,8 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm vitest run scripts/check-stryker-config.test.ts # Story 66-7: Stryker shard/threshold/vitest-5 patch invariants
 	pnpm vitest run scripts/check-nightly-workflow.test.ts # Story 66-11: nightly quiet-day gate + 5-leg flaky repeat matrix
 	# Story 43.16 AC-3/AC-5: Fly demo internal TLS — PKI script, fly-setup wiring, pinned-CA call sites.
-	pnpm vitest run scripts/fly-setup.test.ts scripts/fly-internal-tls.test.ts scripts/check-pg-tls-call-sites.test.ts
+	# Story 43.28: + Fly workflow contract (bootstrap order, concurrency, release pnpm) and fly-ensure-started.sh.
+	pnpm vitest run scripts/fly-setup.test.ts scripts/fly-internal-tls.test.ts scripts/check-pg-tls-call-sites.test.ts scripts/check-fly-deploy-workflow.test.ts scripts/fly-ensure-started.test.ts
 	pnpm check-build-info-unstamped # Story 43.6 AC-5
 	# Story 43.14: the CLI docs guard raw-loads an apps/web .ts file, whose tsconfig extends the
 	# generated .svelte-kit/tsconfig.json. A turbo cache hit on typecheck above does not regenerate it.

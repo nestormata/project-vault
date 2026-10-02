@@ -109,18 +109,13 @@ echo "   next vault/init insert fail; restart now for a clean pool against the n
 echo "   schema, NOT after unseal, which would immediately re-seal the vault) =="
 flyctl apps restart "$API_APP"
 
-echo "== Waiting for api to be reachable via ${WEB_URL} =="
-# The api machine can be mid-restart (the one just triggered above, Fly machine
-# lifecycle churn, or a leftover crash-loop from a first-ever deploy racing db:migrate)
-# exactly when this script reaches here — a bare vault/init call at the wrong moment
-# gets api_unreachable. Poll /ready (proxied through web) until it reports anything
-# other than that specific reason.
-for ((i = 1; i <= 30; i++)); do
-  ready_reason="$(curl -s "${WEB_URL}/ready" 2>/dev/null | jq -r '.reason // empty')"
-  [[ "$ready_reason" != "api_unreachable" ]] && break
-  sleep 2
-  [[ $i -eq 30 ]] && { echo "api never became reachable via ${WEB_URL}/ready" >&2; exit 1; }
-done
+# Story 43.28 AC-4: `apps restart` only restarts STARTED machines. A machine Fly stopped after its
+# max restart count (e.g. a first-ever deploy crash-looping before migrate) stays down, so start
+# any stopped one, then wait (bounded) until /ready, proxied through web, stops reporting
+# api_unreachable: the machine can be mid-restart (the one just triggered above, Fly lifecycle
+# churn) exactly when this script reaches here. Restart first, then start: a machine started first
+# would only be restarted again.
+"${SCRIPT_DIR}/fly-ensure-started.sh" "$API_APP" "$WEB_URL"
 
 echo "== Initializing + unsealing vault via ${WEB_URL} =="
 init_body="$(jq -n --arg p "$DEMO_VAULT_PASSPHRASE" '{kmsType:"passphrase",passphrase:$p}')"

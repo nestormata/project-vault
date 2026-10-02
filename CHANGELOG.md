@@ -9,6 +9,27 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+### Changed
+
+- **Operators:** the api's `startup.failed` log line now carries `cause: {code, reason, depth}`
+  when a database or TLS error code is found in the error chain (for example `28P01` /
+  `auth_failed`, `SELF_SIGNED_CERT_IN_CHAIN` / `tls_failed`). Only the code and a closed reason
+  are logged, never driver message text.
+- **Operators (Fly demo):** `scripts/fly-migrate.sh` now requires `VAULT_APP_PASSWORD` and re-syncs
+  the `vault_app` role password after every migration, as it already did for `vault_admin`.
+
+### Fixed
+
+- **Fly demo:** the Bootstrap workflow migrates the database before it deploys the api, and
+  `fly-setup.sh` stages the api and web secrets instead of restarting the running api against the
+  new TLS-only database. Bootstrap, deploy and reset now start any api machine Fly stopped after
+  repeated crashes (`scripts/fly-ensure-started.sh`), and a deploy no longer reports success
+  over an api that is down.
+- **Fly demo:** the scheduled reset uses the pnpm version of the release it resets to, instead of
+  `main`'s, and can no longer run in the middle of a deploy.
+- `pvault`: the version check now returns its result before it tears the request down, so a slow
+  teardown can no longer delay the command.
+
 ## [1.3.0] - 2026-10-01
 
 Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.3.0`

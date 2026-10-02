@@ -51,7 +51,11 @@ jobs:
     name: Deploy self-hosted demo (db/api/web) to Fly.io
     needs: prepare
     runs-on: ubuntu-latest
-    concurrency: fly-demo-deploy
+    # Story 43.28: one group for bootstrap, deploy and reset, so the scheduled reset can never
+    # wipe the schema in the middle of a deploy or bootstrap. Never cancel a running one.
+    concurrency:
+      group: fly-demo-deploy
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
         with:
@@ -62,10 +66,12 @@ jobs:
         with:
           node-version: '24'
 
+      # Story 43.28: no `version:` input. The action reads the CHECKED-OUT release's
+      # package.json `packageManager`; a pinned version here fails with "Multiple versions of
+      # pnpm specified" whenever main's pnpm differs from the release's (scheduled reset, or a
+      # dispatch of an older tag), as in run 36823249947.
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-        with:
-          version: 11.28.3
 
       - name: Get pnpm store directory
         shell: bash
@@ -89,8 +95,9 @@ jobs:
 
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
 
-      - name: Install psql
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+      # jq: scripts/fly-ensure-started.sh parses `flyctl machine list --json` (Story 43.28).
+      - name: Install psql + jq
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client jq
 
       # db rarely changes — deploy it too so a first-time bootstrap or a fly.db.toml /
       # deploy/fly/db edit still lands. Story 43.16: it builds deploy/fly/db/Dockerfile
@@ -127,7 +134,21 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
+      # Story 43.28 AC-4: start any api machine Fly left stopped (max restarts), which
+      # `flyctl deploy` reports as a good state.
+      - name: Ensure api machines are started
+        run: ./scripts/fly-ensure-started.sh project-vault-demo-api
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
       - name: Deploy web
         run: flyctl deploy -c fly.web.toml -a project-vault-demo-web --ha=false --remote-only --build-arg RELEASE_VERSION=${{ needs.prepare.outputs.version }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      # Story 43.28 AC-4: a deploy must not go green over a down api. Waits (bounded) until
+      # /ready, proxied through web, stops reporting api_unreachable (sealed is fine).
+      - name: Ensure api is reachable through web
+        run: ./scripts/fly-ensure-started.sh project-vault-demo-api https://project-vault-demo-web.fly.dev
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

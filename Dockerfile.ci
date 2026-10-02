@@ -19,7 +19,8 @@ RUN npm install -g pnpm@11.28.3 --ignore-scripts
 # bash: the root Makefile sets `SHELL := /usr/bin/env bash`; Alpine's base image only ships `sh`.
 # Story 43.16: openssl mints the runtime test PKI (no key/cert fixtures are committed); GNU
 # findutils/coreutils give the Fly TLS script tests `find -printf` and `base64 -w0`.
-RUN apk add --no-cache g++ make python3 git postgresql16-client bash openssl findutils coreutils
+# Story 43.28: jq for the Fly script tests (fly-ensure-started.sh parses `flyctl machine list --json`).
+RUN apk add --no-cache g++ make python3 git postgresql16-client bash openssl findutils coreutils jq
 
 WORKDIR /app
 
