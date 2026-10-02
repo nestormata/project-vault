@@ -465,7 +465,7 @@ describe('Story 66-15: optional org scope', () => {
     // inside the two FILTER clauses), and the only bound parameters are the pre-auth event types
     // (bound once per FILTER, so twice), never an org id.
     expect(unscoped.sql).toMatch(/from audit_log_entries t\s+group by org_id\s*$/i)
-    expect(unscoped.params.length).toBe(PREAUTH_ATTRIBUTABLE_EVENT_TYPES.size * 2)
+    expect(unscoped.params).toHaveLength(PREAUTH_ATTRIBUTABLE_EVENT_TYPES.size * 2)
     expect(unscoped.params).not.toContain('org-a')
     expect(fetchAllOrgIdsMock).toHaveBeenCalledTimes(1)
     expect(clearThresholdAlertEpisodeMock).toHaveBeenCalledWith(PREAUTH_VOLUME_ALERT_TYPE, null)
