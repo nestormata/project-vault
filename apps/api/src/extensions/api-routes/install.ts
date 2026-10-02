@@ -54,6 +54,9 @@ export function installApiRoutes(fastify: ApiRoutesHost, state: ExtensionState):
   if (table) fastify.decorate('pvApiRouteOverrides', table)
   fastify.decorate('pvSecureRouteRegistry', registry)
   const routeIndex = installRawRouteOverrideHook(fastify as never, table)
+  // Per-app, in registration order: what the missing-target hints and Story 68-14's runtime route
+  // audit read. Never consulted by a request path.
+  fastify.decorate('pvRouteIndex', routeIndex)
   return { table, registry, routeIndex }
 }
 

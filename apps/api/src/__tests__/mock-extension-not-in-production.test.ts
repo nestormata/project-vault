@@ -22,6 +22,8 @@ const MOCK_AUDIT_EVENT_SOURCE_EXTENSION_PACKAGE_NAME =
 // Story 25.1 Task 7: the fifth reference fixture extension (UI-panel mounting) gets the same
 // guard as the four above.
 const MOCK_UI_PANEL_EXTENSION_PACKAGE_NAME = '@project-vault/mock-ui-panel-extension'
+// Story 68.8 Task 6: the M7 apiRoutes fixture extension gets the same guard as the five above.
+const MOCK_API_ROUTES_EXTENSION_PACKAGE_NAME = '@project-vault/mock-api-routes-extension'
 const REPO_ROOT = resolve(process.cwd(), '../..')
 
 const PRODUCTION_CONFIG_FILES = [
@@ -52,6 +54,11 @@ describe.each([
     'mock-ui-panel-extension',
     MOCK_UI_PANEL_EXTENSION_PACKAGE_NAME,
     'fixtures/mock-ui-panel-extension/package.json',
+  ],
+  [
+    'mock-api-routes-extension',
+    MOCK_API_ROUTES_EXTENSION_PACKAGE_NAME,
+    'fixtures/mock-api-routes-extension/package.json',
   ],
 ])(
   '%s is never referenced by production config (AC-12/Story 23.2 AC-15)',

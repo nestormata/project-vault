@@ -182,6 +182,9 @@ importers:
       '@project-vault/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
+      '@project-vault/mock-api-routes-extension':
+        specifier: workspace:*
+        version: link:../../fixtures/mock-api-routes-extension
       '@project-vault/mock-audit-event-source-extension':
         specifier: workspace:*
         version: link:../../fixtures/mock-audit-event-source-extension
@@ -324,6 +327,37 @@ importers:
       vite:
         specifier: ^8.3.1
         version: 8.3.1(@types/node@26.6.2)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.1)(yaml@2.9.1)
+      vitest:
+        specifier: ^5.0.1
+        version: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@26.6.2)(@vitest/coverage-v8@5.0.1)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@26.6.2)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.1)(yaml@2.9.1))
+
+  fixtures/mock-api-routes-extension:
+    dependencies:
+      '@project-vault/extension-api':
+        specifier: workspace:*
+        version: link:../../packages/extension-api
+      zod:
+        specifier: 3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@project-vault/eslint-config':
+        specifier: workspace:*
+        version: link:../../packages/eslint-config
+      '@project-vault/tsconfig':
+        specifier: workspace:*
+        version: link:../../packages/tsconfig
+      '@types/node':
+        specifier: ^26.6.2
+        version: 26.6.2
+      '@vitest/coverage-v8':
+        specifier: ^5.0.1
+        version: 5.0.1(vitest@5.0.1)
+      eslint:
+        specifier: ^10.11.0
+        version: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
       vitest:
         specifier: ^5.0.1
         version: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@26.6.2)(@vitest/coverage-v8@5.0.1)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@26.6.2)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.1)(yaml@2.9.1))
@@ -5341,6 +5375,9 @@ packages:
   zimmerframe@1.1.4:
     resolution: {integrity: sha512-B58NGBEoc8Y9MWWCQGl/gq9xBCe4IiKM0a2x7GZdQKOW5Exr8S1W24J6OgM1njK8xCRGvAJIL/MxXHf6SkmQKQ==}
 
+  zod@3.25.76:
+    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+
   zod@4.6.5:
     resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
 
@@ -9526,5 +9563,7 @@ snapshots:
   yoctocolors@2.2.0: {}
 
   zimmerframe@1.1.4: {}
+
+  zod@3.25.76: {}
 
   zod@4.6.5: {}

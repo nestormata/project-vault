@@ -66,6 +66,7 @@
   "devDependencies": {
     "@project-vault/agent": "workspace:*",
     "@project-vault/eslint-config": "workspace:*",
+    "@project-vault/mock-api-routes-extension": "workspace:*",
     "@project-vault/mock-audit-event-source-extension": "workspace:*",
     "@project-vault/mock-capability-gate-extension": "workspace:*",
     "@project-vault/mock-envelope-extension": "workspace:*",
