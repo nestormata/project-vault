@@ -336,19 +336,24 @@ export function computeDependencies(inputs: DependencyInputs, problems: string[]
  * its pin, and points the packed settings.json at the copies: a consumer has no PV node_modules. */
 async function packInlangPlugins(problems: string[]): Promise<void> {
   const lock = readJson<PluginLock>(join(WEB_DIR, 'inlang-plugins', 'plugins.lock.json'))
-  for (const [name, pin] of Object.entries(lock)) {
-    const target = join(STAGE_DIR, pin.packedAs)
-    cpSync(join(WEB_DIR, pin.module), target)
-    cpSync(
-      join(WEB_DIR, 'node_modules', name, 'LICENSE'),
-      join(dirname(target), `LICENSE-${name.split('/').at(-1) ?? name}`)
-    )
-    const bytes = await (await openAsBlob(target)).arrayBuffer()
-    const sha256 = createHash('sha256').update(Buffer.from(bytes)).digest('hex')
-    if (sha256 !== pin.sha256) {
-      problems.push(`${name}: packed plugin sha256 ${sha256} does not match the pin ${pin.sha256}`)
-    }
-  }
+  // Each plugin has its own target, so the copies and checks are independent: a small fixed list
+  // checked in parallel, with problems reported in lockfile order.
+  const mismatches = await Promise.all(
+    Object.entries(lock).map(async ([name, pin]) => {
+      const target = join(STAGE_DIR, pin.packedAs)
+      cpSync(join(WEB_DIR, pin.module), target)
+      cpSync(
+        join(WEB_DIR, 'node_modules', name, 'LICENSE'),
+        join(dirname(target), `LICENSE-${name.split('/').at(-1) ?? name}`)
+      )
+      const bytes = await (await openAsBlob(target)).arrayBuffer()
+      const sha256 = createHash('sha256').update(Buffer.from(bytes)).digest('hex')
+      return sha256 === pin.sha256
+        ? undefined
+        : `${name}: packed plugin sha256 ${sha256} does not match the pin ${pin.sha256}`
+    })
+  )
+  problems.push(...mismatches.filter((problem) => problem !== undefined))
   const settings = readJson<InlangSettings>(join(WEB_DIR, INLANG_SETTINGS))
   writeFileSync(
     join(STAGE_DIR, INLANG_SETTINGS),
