@@ -38,6 +38,7 @@ function parseJobs(text: string): Map<string, string> {
 const jobs = parseJobs(nightly)
 const jobText = (id: string): string => jobs.get(id) ?? ''
 const gated = ['mutation', 'flaky-test-repeat', 'trivy-image', 'e2e']
+const NOTIFY_JOB = 'notify-failure'
 const RUN_GUARD = "if: needs.changes.outputs.run == 'true'"
 
 describe('nightly changes gate job', () => {
@@ -46,7 +47,7 @@ describe('nightly changes gate job', () => {
     for (const [id, text] of [...jobs.entries()]) {
       if (id === 'changes') {
         expect(text).not.toMatch(/^ {4}needs:/m)
-      } else if (id !== 'notify-failure') {
+      } else if (id !== NOTIFY_JOB) {
         expect(text, id).toMatch(/^ {4}needs:\s*(changes|\[[^\]]*\bchanges\b[^\]]*\])\s*$/m)
       }
     }
@@ -94,8 +95,18 @@ describe('nightly job gating', () => {
     expect(job).toContain(RUN_GUARD)
   })
 
+  it('posts to Slack with the slack-github-action v4 inputs (Story 66-13)', () => {
+    const job = jobText(NOTIFY_JOB)
+    // v4 rejects the pre-v3 SLACK_WEBHOOK_TYPE env: the alert never posted (test run 37008010743).
+    expect(job).not.toContain('SLACK_WEBHOOK_TYPE')
+    expect(job).toMatch(/webhook-type:\s*incoming-webhook\s*$/m)
+    expect(job).toContain('webhook: ${{ env.SLACK_WEBHOOK_URL }}')
+    // still skipped (not failed) when the secret is unset
+    expect(job).toContain("if: ${{ env.SLACK_WEBHOOK_URL != '' }}")
+  })
+
   it('notify-failure keeps if: failure() and needs every job including changes', () => {
-    const job = jobText('notify-failure')
+    const job = jobText(NOTIFY_JOB)
     expect(job).toMatch(/^ {4}if: failure\(\)\s*$/m)
     expect(job).toMatch(
       /needs:\s*\[\s*changes\s*,\s*mutation\s*,\s*flaky-test-repeat\s*,\s*trivy-image\s*,\s*e2e\s*\]/
