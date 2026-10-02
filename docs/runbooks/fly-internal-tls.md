@@ -106,6 +106,9 @@ The order matters, and there is a short, expected outage window (a demo; no dual
    on each app's next deploy (Story 43.28). The bootstrap then runs, in order:
    **db → migrate (`fly-migrate.sh`, which also syncs the `vault_app`/`vault_admin` passwords) →
    api → ensure started (`fly-ensure-started.sh`) → web → first reset**.
+   The ensure-started steps (bootstrap and deploy) run the copy of `fly-ensure-started.sh` from the
+   workflow's own commit, fetched into `$RUNNER_TEMP`, so dispatching an older tag that lacks the
+   script (v1.3.0 and older) from `main` still works.
    The old api still loses the db once the TLS-only db is up (it has no client certificate), so the
    short outage below starts here, not at the api deploy. If the bootstrap fails at
    `Run pending migrations`, the api has not been redeployed and its new secrets are only staged:

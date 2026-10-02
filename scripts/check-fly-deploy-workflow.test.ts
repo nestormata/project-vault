@@ -1,4 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import { resolveTrustedExecutable } from './lib/trusted-executable.js'
 
 // The workflows are loaded as raw text by Vite (Story 43.28: replaces non-literal fs reads).
 const WORKFLOWS: Record<string, string> = import.meta.glob('../.github/workflows/fly-*.yml', {
@@ -136,7 +141,10 @@ function stepIndex(steps: WorkflowStep[], predicate: (step: WorkflowStep) => boo
 
 const API_APP = 'project-vault-demo-api'
 const WEB_URL = 'https://project-vault-demo-web.fly.dev'
-const ENSURE_SCRIPT = './scripts/fly-ensure-started.sh'
+// The release checkout can predate fly-ensure-started.sh (v1.3.0 and older), so the deploy and
+// bootstrap jobs run the copy that `Fetch workflow tooling` takes from the workflow's own commit.
+const ENSURE_SCRIPT = '$RUNNER_TEMP/fly-tools/fly-ensure-started.sh'
+const TOOLING_STEP = 'Fetch workflow tooling'
 const MIGRATE_RUN = './scripts/fly-migrate.sh'
 const isDeploy = (config: string) => (step: WorkflowStep) =>
   step.run.startsWith(`flyctl deploy -c ${config} `)
@@ -276,3 +284,115 @@ describe('Fly workflows use the release checkout pnpm (Story 43.28 AC-5)', () =>
     expect(workflow).not.toMatch(/PNPM_VERSION|COREPACK_/)
   })
 })
+
+describe('Fly ensure-started runs from the workflow commit, not the release checkout', () => {
+  const JOBS = [
+    ['fly-deploy.yml', deployWorkflowPath],
+    ['fly-bootstrap.yml', bootstrapWorkflowPath],
+  ] as const
+
+  it.each(JOBS)(
+    '%s: fetches the tooling before the first ensure step, with no secrets',
+    (_n, path) => {
+      const steps = parseSteps(readWorkflow(path))
+      const tooling = stepIndex(steps, (s) => s.name === TOOLING_STEP)
+      const checkout = stepIndex(steps, (s) => s.uses.startsWith('actions/checkout@'))
+      expect(checkout).toBeLessThan(tooling)
+      expect(tooling).toBeLessThan(stepIndex(steps, isEnsure))
+      expect(steps.at(tooling)?.envNames).toEqual([])
+    }
+  )
+
+  it.each(FLY_WORKFLOWS)('%s: never runs ensure-started from the release checkout', (_n, path) => {
+    expect(readWorkflow(path)).not.toContain('run: ./scripts/fly-ensure-started.sh')
+  })
+
+  it('uses one identical tooling step in deploy and bootstrap', () => {
+    const [deploy, bootstrap] = JOBS.map(([, path]) => toolingScript(path))
+    expect(deploy).toBe(bootstrap)
+  })
+})
+
+// Runs the real `Fetch workflow tooling` script against a local origin: the checkout is a shallow
+// clone of an old tag without the script, GITHUB_SHA is a later commit that has it.
+describe('Fetch workflow tooling script', () => {
+  const GIT = resolveTrustedExecutable('git')
+  const BASH = resolveTrustedExecutable('bash')
+  const roots: string[] = []
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  })
+
+  // src: an old tag without the script, then a commit adding it (mode 644, so the step's chmod is
+  // what makes it runnable). work: the release checkout, a shallow clone of the old tag.
+  const FIXTURE = `set -euo pipefail
+git init -q -b main src
+cd src
+git config user.name t
+git config user.email t@t
+git config uploadpack.allowReachableSHA1InWant true
+echo 'old release' >README.md
+git add . && git commit -q -m 'old release' && git tag v1.0.0
+mkdir scripts
+printf '#!/bin/bash\\necho tooling-from-head\\n' >scripts/fly-ensure-started.sh
+git add . && git commit -q -m 'add tooling'
+cd ..
+git clone -q --depth=1 --branch v1.0.0 "file://$PWD/src" work
+mkdir runner-temp`
+
+  function setup() {
+    const root = mkdtempSync(join(tmpdir(), 'fly-workflow-tooling-'))
+    roots.push(root)
+    const env = { PATH: '/usr/bin:/bin', HOME: root, GIT_CONFIG_NOSYSTEM: '1' }
+    const fixture = spawnSync(BASH, ['-c', FIXTURE], { cwd: root, env, encoding: 'utf8' })
+    expect(fixture.status, fixture.stderr).toBe(0)
+    const git = (cwd: string, ...args: string[]) => {
+      const result = spawnSync(GIT, args, { cwd, env, encoding: 'utf8' })
+      expect(result.status, `git ${args.join(' ')}: ${result.stderr}`).toBe(0)
+      return result.stdout.trim()
+    }
+    const work = join(root, 'work')
+    const head = git(join(root, 'src'), 'rev-parse', 'HEAD')
+    return { env, git, work, head, runnerTemp: join(root, 'runner-temp') }
+  }
+
+  it('copies the script from GITHUB_SHA without touching the release checkout', () => {
+    const { env, git, work, head, runnerTemp } = setup()
+    const before = git(work, 'rev-parse', 'HEAD')
+    const result = spawnSync(BASH, ['-c', toolingScript(deployWorkflowPath)], {
+      cwd: work,
+      env: { ...env, GITHUB_SHA: head, RUNNER_TEMP: runnerTemp },
+      encoding: 'utf8',
+    })
+    expect(result.status, result.stderr).toBe(0)
+    const tool = join(runnerTemp, 'fly-tools', 'fly-ensure-started.sh')
+    // Executed directly (not via bash), so this also proves the step made it executable.
+    expect(spawnSync(tool, { encoding: 'utf8' }).stdout).toBe('tooling-from-head\n')
+    expect(git(work, 'rev-parse', 'HEAD')).toBe(before)
+    expect(git(work, 'status', '--porcelain')).toBe('')
+  })
+
+  it('fails when GITHUB_SHA does not carry the script', () => {
+    const { env, git, work, runnerTemp } = setup()
+    const result = spawnSync(BASH, ['-c', toolingScript(deployWorkflowPath)], {
+      cwd: work,
+      env: { ...env, GITHUB_SHA: git(work, 'rev-parse', 'HEAD'), RUNNER_TEMP: runnerTemp },
+      encoding: 'utf8',
+    })
+    expect(result.status).not.toBe(0)
+  })
+})
+
+function toolingScript(path: string): string {
+  const steps = parseSteps(readWorkflow(path))
+  const text = steps.at(stepIndex(steps, (s) => s.name === TOOLING_STEP))?.text ?? ''
+  const lines = text.split('\n')
+  const start = lines.findIndex((line) => line === '        run: |')
+  expect(start, 'tooling step uses a run: | block').toBeGreaterThan(-1)
+  const body = lines.slice(start + 1)
+  const end = body.findIndex((line) => line.trim() !== '' && !line.startsWith('          '))
+  return (end === -1 ? body : body.slice(0, end))
+    .map((line) => line.slice(10))
+    .join('\n')
+    .trim()
+}

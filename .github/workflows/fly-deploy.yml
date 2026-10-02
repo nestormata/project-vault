@@ -61,6 +61,17 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.ref }}
 
+      # Story 43.28 follow-up: the release checkout above can predate scripts/fly-ensure-started.sh
+      # (v1.3.0 and older), so dispatching an older tag from main would fail at the ensure steps.
+      # The script only drives flyctl and curl, so it runs from this workflow's own commit.
+      - name: Fetch workflow tooling
+        run: |
+          set -euo pipefail
+          git fetch --quiet --no-tags --depth=1 origin "$GITHUB_SHA"
+          mkdir -p "$RUNNER_TEMP/fly-tools"
+          git show FETCH_HEAD:scripts/fly-ensure-started.sh >"$RUNNER_TEMP/fly-tools/fly-ensure-started.sh"
+          chmod +x "$RUNNER_TEMP/fly-tools/fly-ensure-started.sh"
+
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
@@ -137,7 +148,7 @@ jobs:
       # Story 43.28 AC-4: start any api machine Fly left stopped (max restarts), which
       # `flyctl deploy` reports as a good state.
       - name: Ensure api machines are started
-        run: ./scripts/fly-ensure-started.sh project-vault-demo-api
+        run: $RUNNER_TEMP/fly-tools/fly-ensure-started.sh project-vault-demo-api
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
@@ -149,6 +160,6 @@ jobs:
       # Story 43.28 AC-4: a deploy must not go green over a down api. Waits (bounded) until
       # /ready, proxied through web, stops reporting api_unreachable (sealed is fine).
       - name: Ensure api is reachable through web
-        run: ./scripts/fly-ensure-started.sh project-vault-demo-api https://project-vault-demo-web.fly.dev
+        run: $RUNNER_TEMP/fly-tools/fly-ensure-started.sh project-vault-demo-api https://project-vault-demo-web.fly.dev
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
