@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/nestormata/project-vault/scripts/web-host-compat-manifest.schema.json",
+  "title": "@project-vault/web-host compatibility manifest (manifests/compatibility.json)",
+  "description": "Story 68.2 AC-9 / design §11: the compatibility tuple a web-host release was built with. kitVersion is null until story 68-3 fills it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "pvRelease",
+    "extensionApiVersion",
+    "kitVersion",
+    "toolchain",
+    "apiImageTag"
+  ],
+  "definitions": {
+    "exactVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"
+    }
+  },
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "pvRelease": { "$ref": "#/definitions/exactVersion" },
+    "extensionApiVersion": { "$ref": "#/definitions/exactVersion" },
+    "kitVersion": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/exactVersion" }]
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kit", "svelte", "vite", "typescript"],
+      "properties": {
+        "kit": { "$ref": "#/definitions/exactVersion" },
+        "svelte": { "$ref": "#/definitions/exactVersion" },
+        "vite": { "$ref": "#/definitions/exactVersion" },
+        "typescript": { "$ref": "#/definitions/exactVersion" }
+      }
+    },
+    "apiImageTag": {
+      "type": "string",
+      "pattern": "^ghcr\\.io/[a-z0-9._-]+/[a-z0-9._-]+/api:(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"
+    }
+  }
+}

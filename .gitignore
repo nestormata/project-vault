@@ -95,3 +95,6 @@ design-artifacts/
 docs/federated-multi-tenant-architecture-analysis.md
 docs/usability-audit-2026-07-13.md
 scripts/check-operational-log-language.ts
+
+# Story 68.2: the staged @project-vault/web-host package (scripts/pack-web-host.ts), rebuilt on every pack.
+/.web-host-pack/

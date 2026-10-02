@@ -1,0 +1,242 @@
+// Story 68.2 AC-2/AC-6/AC-9: the generated manifests of the packed @project-vault/web-host. Pure
+// functions: scripts/pack-web-host.ts gathers the inputs (lockfile, import graph, versions).
+import { isExactVersion } from './lockfile.js'
+
+export const WEB_HOST_NAME = '@project-vault/web-host'
+export const WEB_HOST_LICENSE = 'AGPL-3.0-or-later'
+/** Where the packed package keeps @project-vault/shared's vendored source. */
+export const VENDORED_SHARED_DIR = 'vendor/shared/src'
+
+/** Exact peers: the toolchain the source and the config factories are built with. The consumer
+ * must resolve these exact versions, because pnpm overrides never reach it (design §2, §11). */
+export const PEER_PACKAGES = [
+  '@sveltejs/adapter-node',
+  '@sveltejs/kit',
+  '@sveltejs/vite-plugin-svelte',
+  '@tailwindcss/vite',
+  'svelte',
+  'tailwindcss',
+  'typescript',
+  'vite',
+  'vitest',
+] as const
+
+/** Peers the exported vitest config needs only when tests actually run (its jsdom environment and
+ * v8 coverage provider); nothing imports them, so they are the only optional peers. */
+export const OPTIONAL_PEER_PACKAGES = ['@vitest/coverage-v8', 'jsdom'] as const
+
+/** Every top-level entry the tarball ships (`files`). The whole of src/ and static/, never a
+ * curated subset (ADR 0007: nothing may narrow M1-M7). */
+export const PACKAGE_FILES = [
+  'LICENSE',
+  'README.md',
+  'config',
+  'inlang-plugins',
+  'manifests',
+  'messages',
+  'project.inlang',
+  'src',
+  'static',
+  'tsconfig.base.json',
+  'vendor',
+] as const
+
+/** The compiled config factories (`config/<name>.js` + `.d.ts`), one export each. */
+export const CONFIG_EXPORTS = [
+  'svelte.config',
+  'vite.config',
+  'vitest.config',
+  'app-css-source',
+] as const
+
+/** Generated manifests later stories add (68-4, 68-5, 68-7): packed when generated, never stubbed. */
+export const OPTIONAL_MANIFESTS = [
+  'component-index.json',
+  'injection-points.json',
+  'nav-ids.json',
+] as const
+
+export interface WebHostManifestInput {
+  version: string
+  repositoryUrl: string
+  nodeEngine: string
+  dependencies: Record<string, string>
+  peerDependencies: Record<string, string>
+}
+
+function sortedRecord(record: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b)))
+}
+
+function packageExports(): Record<string, unknown> {
+  const configs = Object.fromEntries(
+    CONFIG_EXPORTS.map((name) => [
+      `./${name}`,
+      { types: `./config/${name}.d.ts`, default: `./config/${name}.js` },
+    ])
+  )
+  return {
+    './package.json': './package.json',
+    ...configs,
+    './manifest': './manifests/compatibility.json',
+    './manifests/*': './manifests/*',
+    './tsconfig.base.json': './tsconfig.base.json',
+    // Every shipped directory is reachable through the package boundary: the composer reads them all.
+    './src/*': './src/*',
+    './static/*': './static/*',
+    './messages/*': './messages/*',
+    './project.inlang/*': './project.inlang/*',
+    './inlang-plugins/*': './inlang-plugins/*',
+    './vendor/*': './vendor/*',
+  }
+}
+
+/** The packed package.json: no `private`, `scripts`, `devDependencies`, `bin` or lifecycle hook. */
+export function buildPackageJson(input: WebHostManifestInput): Record<string, unknown> {
+  const optionalPeers = new Set<string>(OPTIONAL_PEER_PACKAGES)
+  return {
+    name: WEB_HOST_NAME,
+    version: input.version,
+    description:
+      "Project Vault's web application source (SvelteKit) at one PV release, with path-independent config factories, for build-time composition.",
+    license: WEB_HOST_LICENSE,
+    type: 'module',
+    repository: { type: 'git', url: input.repositoryUrl, directory: 'apps/web' },
+    engines: { node: input.nodeEngine },
+    exports: packageExports(),
+    files: [...PACKAGE_FILES],
+    dependencies: sortedRecord(input.dependencies),
+    peerDependencies: sortedRecord(input.peerDependencies),
+    peerDependenciesMeta: Object.fromEntries(
+      Object.keys(sortedRecord(input.peerDependencies))
+        .filter((name) => optionalPeers.has(name))
+        .map((name) => [name, { optional: true }])
+    ),
+    publishConfig: { access: 'public', provenance: true },
+    // Read by config/paths.ts: the shared aliases point at this vendored copy.
+    webHost: { sharedSource: VENDORED_SHARED_DIR },
+  }
+}
+
+const FORBIDDEN_KEYS = [
+  'private',
+  'scripts',
+  'devDependencies',
+  'bin',
+  'bundleDependencies',
+] as const
+
+/** Every version-specifier field, as [field, record] pairs read without dynamic key access. */
+function versionFields(pkg: Record<string, unknown>): [string, Record<string, string>][] {
+  return Object.entries(pkg)
+    .filter(([key]) => key === 'dependencies' || key === 'peerDependencies')
+    .map(([key, value]) => [key, (value ?? {}) as Record<string, string>])
+}
+
+function identityProblems(pkg: Record<string, unknown>): string[] {
+  const version = typeof pkg.version === 'string' ? pkg.version : ''
+  return [
+    ...(pkg.name === WEB_HOST_NAME ? [] : [`name is ${String(pkg.name)}`]),
+    ...(pkg.license === WEB_HOST_LICENSE ? [] : [`license is ${String(pkg.license)}`]),
+    ...(isExactVersion(version)
+      ? []
+      : [`version ${String(pkg.version)} is not an exact semver version`]),
+  ]
+}
+
+/** AC-2/AC-6/AC-7(5,6) rules over a generated package.json; one message per violation. */
+export function packageJsonProblems(pkg: Record<string, unknown>): string[] {
+  const forbidden = FORBIDDEN_KEYS.filter((key) => key in pkg).map(
+    (key) => `must not contain "${key}"`
+  )
+  // isExactVersion() already rejects ranges and protocols (workspace:, catalog:, link:, file:).
+  const specifiers = versionFields(pkg).flatMap(([field, record]) =>
+    Object.entries(record)
+      .filter(([, spec]) => !isExactVersion(spec))
+      .map(([name, spec]) => `${field}.${name} is ${spec}, not an exact version`)
+  )
+  return [...identityProblems(pkg), ...forbidden, ...specifiers]
+}
+
+/** Keys and value sources, never versions: what the committed golden shape pins. */
+export function packageJsonShape(pkg: Record<string, unknown>): Record<string, unknown> {
+  const shapes = Object.fromEntries(
+    versionFields(pkg).map(([field, record]) => [
+      field,
+      Object.fromEntries(Object.keys(record).map((name) => [name, '<exact>'])),
+    ])
+  )
+  return {
+    ...pkg,
+    version: '<pv-release>',
+    engines: { node: '<root engines.node>' },
+    ...shapes,
+  }
+}
+
+export interface CompatibilityInput {
+  pvRelease: string
+  extensionApiVersion: string
+  toolchain: { kit: string; svelte: string; vite: string; typescript: string }
+  apiImageTag: string
+}
+
+/** Recursively sorted keys, so the JSON is byte-stable. */
+function sortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeys)
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, entry]) => [key, sortKeys(entry)])
+    )
+  }
+  return value
+}
+
+/** manifests/compatibility.json (design §11). `kitVersion` stays null until story 68-3. */
+export function buildCompatibilityManifest(input: CompatibilityInput): string {
+  const manifest = {
+    schemaVersion: 1,
+    pvRelease: input.pvRelease,
+    extensionApiVersion: input.extensionApiVersion,
+    kitVersion: null,
+    toolchain: input.toolchain,
+    apiImageTag: input.apiImageTag,
+  }
+  return `${JSON.stringify(sortKeys(manifest), null, 2)}\n`
+}
+
+/** The generated manifests to pack: exactly the optional ones that exist, never an empty stub. */
+export function optionalManifestsToPack(existing: ReadonlySet<string>): string[] {
+  return OPTIONAL_MANIFESTS.filter((name) => existing.has(name))
+}
+
+export function packageReadme(version: string): string {
+  return `# @project-vault/web-host ${version}
+
+Project Vault's web application **source** (SvelteKit), published at one Project Vault release.
+It is not a runtime library: a consumer copies \`src/\`, \`static/\` and the vendored shared source
+into its own app, composes its changes onto them, and builds the result (ADR 0007, the
+CentralizeMe composed app).
+
+- **Licence:** AGPL-3.0-or-later, the same as Project Vault. The vendored copy of Project Vault's
+  \`@project-vault/shared\` source under \`vendor/shared/src\` is under the same licence. The vendored
+  inlang message-format plugin under \`inlang-plugins/\` is MIT (its licence file is next to it).
+- **Pin the exact version.** \`dependencies\` and \`peerDependencies\` are the exact versions Project
+  Vault builds and tests this source with, read from its lockfile. Install those exact versions.
+- **Compatibility manifest:** \`manifests/compatibility.json\` (export \`@project-vault/web-host/manifest\`)
+  names the Project Vault release, the \`@project-vault/extension-api\` version, the exact Kit,
+  Svelte, Vite and TypeScript versions and the matching API container image.
+- **Config factories:** \`@project-vault/web-host/svelte.config\`, \`/vite.config\` and
+  \`/vitest.config\` return Project Vault's configs with every path computed from where this package
+  is installed. Pass your own plugins, aliases or adapter to extend them. Compiled messages are
+  written to \`<appRoot>/src/lib/paraglide\`, where \`appRoot\` defaults to the working directory.
+  The vitest factory also needs \`jsdom\` and \`@vitest/coverage-v8\` when you run tests.
+- **\`src/app.css\`:** the line after the \`@project-vault/web-host: shared-source\` marker is the
+  shared \`@source\` glob, relative to \`src/\` (\`../vendor/shared/src/**/*.ts\`). Rewrite it with
+  \`rewriteSharedSource()\` from \`@project-vault/web-host/app-css-source\` if your layout differs.
+- **Not shipped:** tests, Playwright e2e, generated Paraglide output (run \`paraglide-js compile\` or
+  the Vite plugin), build output and Project Vault's dev tooling.
+`
+}

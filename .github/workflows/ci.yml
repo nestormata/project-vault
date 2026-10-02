@@ -107,6 +107,9 @@ jobs:
       - name: Check no pnpm override makes a declared range false (Story 68.2 AC-1)
         run: pnpm vitest run scripts/check-no-false-overrides.test.ts
 
+      - name: Check the web-host release workflow contract (Story 68.2 AC-10)
+        run: pnpm vitest run scripts/check-web-host-release-workflow.test.ts
+
       # Story 43.11 AC-6.4: the story-integrity guards' own test suites. --dir scripts limits
       # vitest discovery to ./scripts (positional args are substring filters). The overlay guards
       # themselves print SKIPPED here: public CI never has the private _bmad-output overlay.
@@ -986,3 +989,45 @@ jobs:
 
       - name: Run post-merge status drift check
         run: pnpm check-post-merge-status-drift
+
+  # Story 68.2 AC-10: pack @project-vault/web-host exactly as web-host-release.yml does, then prove
+  # the tarball (content rules, lockfile drift, the paraglide pin) and an out-of-monorepo consumer
+  # build from it. It needs no secret and no OIDC, so fork PRs run it too. Required-check name once
+  # green on main: "Web-host pack".
+  web-host-pack:
+    name: Web-host pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 11.28.3
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check the paraglide plugin pin (AC-5)
+        run: pnpm vitest run scripts/check-paraglide-plugin-pinned.test.ts
+
+      - name: Check the web-host pack libraries
+        run: pnpm vitest run scripts/lib/web-host scripts/lib/version-triangle.test.ts
+
+      - name: Out-of-monorepo consumer fixture (AC-8)
+        env:
+          WEB_HOST_FIXTURE: '1'
+        run: pnpm vitest run scripts/check-web-host-consumer-fixture.test.ts
+
+      - name: Pack and check the web-host tarball (AC-2, AC-4, AC-6, AC-7, AC-9)
+        run: pnpm vitest run scripts/check-web-host-tarball.test.ts
+
+      - name: Dry-run npm pack of the staged package
+        working-directory: .web-host-pack
+        run: npm pack --dry-run --json
