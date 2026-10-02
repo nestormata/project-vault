@@ -1,0 +1,160 @@
+name: Web-host release
+
+# Story 68.2 AC-10: publishes @project-vault/web-host (Project Vault's web application source, see
+# docs/web-host-package.md) to npm from a PV release tag. It fires on the same vMAJOR.MINOR.PATCH
+# tag as container-publish.yml and cli-release.yml, so the web source, its version and the API
+# image tag in its compatibility manifest are one commit (design §11). Modelled on
+# extension-api-release.yml:
+# - only full vMAJOR.MINOR.PATCH(-prerelease) tags are eligible (`validate`);
+# - `publish` runs in the npm-publish environment (required reviewer) with OIDC Trusted Publishing
+#   and npm provenance. There is no NPM_TOKEN. Every publish goes to the `next` dist-tag; a
+#   maintainer promotes a verified version to `latest` separately;
+# - npm versions are immutable: never --force, never unpublish. Re-running after a successful
+#   publish fails the "not already on npm" gate by design (check `npm view @project-vault/web-host
+#   versions` before treating that as a bug);
+# - a workflow_dispatch `dry_run` (dispatched on a tag ref) runs every gate except the upload, in
+#   its own concurrency group so a rehearsal never queues behind or cancels a real release;
+# - both Node legs verify, only the Node 24 leg uploads.
+# Maintainer-only prerequisites (story 68-12): the npm trusted publisher for @project-vault/web-host
+# (this workflow file, environment npm-publish), the npm-publish environment's tag policy and the
+# release tag ruleset covering v*, and the npm bootstrap if npm needs the package to exist first.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run every release gate at the dispatched tag without uploading a package'
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  # `inputs.dry_run` is null on a tag push, so only an explicit dry run gets the separate group.
+  group: ${{ inputs.dry_run == true && format('web-host-release-dry-run-{0}', github.ref) || 'web-host-release' }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      should_release: ${{ steps.tagcheck.outputs.should_release }}
+      version: ${{ steps.tagcheck.outputs.version }}
+    steps:
+      - name: Check whether this is a full release tag
+        id: tagcheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$TAG" =~ ^v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "Eligible release tag: $TAG (version $VERSION)"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+            echo "Skipping '$TAG': it is not a vMAJOR.MINOR.PATCH release tag."
+          fi
+
+  publish:
+    name: Verify and publish (Node ${{ matrix.node-version }})
+    needs: validate
+    if: needs.validate.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # 24 is the engines.node floor; 26 is the current release line.
+        node-version: [24, 26]
+    env:
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 11.28.3
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check the paraglide plugin pin
+        run: pnpm vitest run scripts/check-paraglide-plugin-pinned.test.ts
+
+      # Registry-only: a release must build against the published @project-vault/extension-api. PR
+      # and local runs may fall back to a workspace tarball while a bumped version is unpublished;
+      # the release never does (Nestor 2026-10-02, asserted by check-web-host-release-workflow).
+      - name: Out-of-monorepo consumer fixture
+        env:
+          WEB_HOST_FIXTURE: '1'
+          WEB_HOST_FIXTURE_REGISTRY_ONLY: '1'
+        run: pnpm vitest run scripts/check-web-host-consumer-fixture.test.ts
+
+      # Packs at the release version (lockfile drift fails the pack) and asserts the tarball rules on
+      # that exact staged directory, which the publish steps below then upload.
+      - name: Pack at the release version and check the tarball
+        env:
+          WEB_HOST_PACK_VERSION: ${{ needs.validate.outputs.version }}
+        run: pnpm vitest run scripts/check-web-host-tarball.test.ts
+
+      - name: Verify version triangle
+        run: pnpm exec tsx scripts/check-release-version-triangle.ts web-host --tag "$RELEASE_VERSION"
+
+      - name: Reject a version that is already on npm
+        shell: bash
+        run: |
+          set -uo pipefail
+          OUTPUT="$(npm view "@project-vault/web-host@${RELEASE_VERSION}" version 2>&1)"
+          STATUS=$?
+          if [[ $STATUS -eq 0 ]]; then
+            echo "FATAL: @project-vault/web-host@${RELEASE_VERSION} is already published. npm versions are immutable; cut a new PV release." >&2
+            exit 1
+          fi
+          if ! grep -q 'E404' <<< "$OUTPUT"; then
+            echo "FATAL: could not confirm that ${RELEASE_VERSION} is unpublished:" >&2
+            echo "$OUTPUT" >&2
+            exit 1
+          fi
+          echo "@project-vault/web-host@${RELEASE_VERSION} is not on npm yet."
+
+      - name: Inspect the exact npm tarball
+        working-directory: .web-host-pack
+        run: npm pack --dry-run --json
+
+      # Both legs verify; only the Node 24 leg uploads, so one tag publishes once (extension-api rule).
+      - name: Dry-run publish (no registry upload)
+        if: inputs.dry_run == true && matrix.node-version == 24
+        working-directory: .web-host-pack
+        run: npm publish --dry-run --provenance --access public --tag next
+
+      - name: Publish to npm next with OIDC provenance
+        if: inputs.dry_run != true && matrix.node-version == 24
+        working-directory: .web-host-pack
+        run: |
+          set -o pipefail
+          if ! npm publish --provenance --access public --tag next; then
+            echo "ERROR: npm publish failed for ${RELEASE_VERSION}. Versions are immutable; never --force or unpublish." >&2
+            exit 1
+          fi

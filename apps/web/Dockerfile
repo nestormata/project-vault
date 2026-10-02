@@ -18,7 +18,7 @@ COPY packages/eslint-config/package.json ./packages/eslint-config/
 # Story 23.2 Task 10: @project-vault/mock-envelope-extension is a devDependency of apps/web
 # (see fixtures/mock-envelope-extension/README.md's "Production-safety" section — it is never a
 # runtime/production dep of web either) but is a real pnpm-workspace member present in
-# pnpm-lock.yaml. `pnpm --filter @project-vault/web deploy --prod --legacy` resolves the full
+# pnpm-lock.yaml. `pnpm --filter @project-vault/web-host deploy --prod --legacy` resolves the full
 # workspace dependency graph before applying the --prod filter, so it fails with
 # ERR_PNPM_WORKSPACE_PKG_NOT_FOUND without this package.json present, even though the deployed
 # output never includes it (same "frozen-lockfile/deploy needs every referenced member's
@@ -74,7 +74,7 @@ RUN pnpm --filter @project-vault/shared build \
 # Bundle the web app and its production deps into a self-contained directory.
 # This keeps pnpm and the full workspace install out of the runtime image.
 WORKDIR /app
-RUN pnpm --filter @project-vault/web deploy --prod --legacy /app/deploy
+RUN pnpm --filter @project-vault/web-host deploy --prod --legacy /app/deploy
 
 # @inlang/paraglide-js declares vite as a runtime dependency (for its `/vite` plugin export,
 # used only in vite.config.ts at build time) but its compiled dist/ never requires it — verified

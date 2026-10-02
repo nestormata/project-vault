@@ -52,7 +52,7 @@ That target runs `fix-ports`, starts the stack with the E2E overlay through
 `scripts/e2e-stack.sh start` (the same script nightly CI uses), re-reads the possibly-bumped ports
 out of `.env` and exports them (Playwright's config reads `DB_HOST_PORT` / `API_HOST_PORT` /
 `WEB_HOST_PORT` straight from `process.env` — nothing loads `.env` for it), installs Chromium on
-first run, and then runs `pnpm --filter @project-vault/web test:e2e`.
+first run, and then runs `pnpm --filter @project-vault/web-host test:e2e`.
 
 It sets `E2E_CONFIRM_DB_RESET=true`: **the suite truncates the database it runs against.** That is
 the E2E stack's own volume, but do not point it at a database whose contents you care about. The
@@ -87,7 +87,7 @@ before failing, so the cause is in the output.
 - Stack already up and you only want to re-run a spec, without a rebuild: from the repo root, with
   the worktree's `DB_HOST_PORT` / `API_HOST_PORT` / `WEB_HOST_PORT` set in your shell and
   `E2E_CONFIRM_DB_RESET=true`:
-  `pnpm --filter @project-vault/web test:e2e e2e/journeys/j28-handoff-confirmation.spec.ts`.
+  `pnpm --filter @project-vault/web-host test:e2e e2e/journeys/j28-handoff-confirmation.spec.ts`.
 - **Do not put `--` before the spec.** pnpm forwards extra arguments as-is, so
   `test:e2e -- <spec>` hands Playwright a literal `--`, after which it ignores the filter and runs
   **every** journey. Also go through `test:e2e`, not `pnpm exec playwright test`: j26's isolated

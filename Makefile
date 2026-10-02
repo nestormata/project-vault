@@ -50,7 +50,7 @@ DB_URL_APP        ?= postgresql://vault_app:dev-only-change-in-prod@$(DB_CONN_HO
 DB_URL_ADMIN      ?= postgresql://vault_admin:password@$(DB_CONN_HOST):$(DB_HOST_PORT)/project_vault
 
 .PHONY: help install dev build lint typecheck generate-spec jscpd audit sonar-issues check-public-safety check-form-guidance check-function-executability check-function-executability-tests \
-        db-up db-down db-migrate check-rls test test-repeat stryker ci ci-inner \
+        db-up db-down db-migrate check-rls test test-repeat stryker ci ci-inner web-host-fixture \
         check-extension-api-policy check-extension-api-policy-content check-extension-api-behaviour check-extension-api-markers check-extension-api-contract-changelog \
         bootstrap bootstrap-docker check-ports fix-ports \
         docker-up docker-down docker-down-v docker-build docker-logs docker-smoke docker-backup-permission-smoke docker-prod docker-prod-down \
@@ -237,7 +237,7 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-build-info-unstamped # Story 43.6 AC-5
 	# Story 43.14: the CLI docs guard raw-loads an apps/web .ts file, whose tsconfig extends the
 	# generated .svelte-kit/tsconfig.json. A turbo cache hit on typecheck above does not regenerate it.
-	pnpm --filter @project-vault/web exec svelte-kit sync
+	pnpm --filter @project-vault/web-host exec svelte-kit sync
 	pnpm vitest run scripts/check-build-info-unstamped.test.ts scripts/stamp-build-info.test.ts scripts/check-cli-release-workflow.test.ts scripts/check-cli-docs-naming.test.ts
 	pnpm check-audit-insert-sites
 	$(MAKE) test
@@ -252,6 +252,13 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm vitest run scripts/check-container-publish-workflow.test.ts scripts/check-image-scan-workflows.test.ts # Story 64.3 AC-5 image-scan gate contracts
 	pnpm vitest run scripts/e2e-stack.test.ts # Story 66.1 AC-7 e2e stack script contract
 	pnpm vitest run scripts/check-web-svelte-check-wiring.test.ts # Story 68.1 AC-4 svelte-check gate wiring
+	# Story 68.2 AC-1: no pnpm override may make a declared dependency range false.
+	pnpm vitest run scripts/check-no-false-overrides.test.ts
+	# Story 68.2: web-host pack gates (paraglide pin, pack libraries, tarball rules, release workflow
+	# contract). The slow out-of-monorepo consumer fixture is `make web-host-fixture`.
+	pnpm vitest run scripts/check-paraglide-plugin-pinned.test.ts scripts/lib/web-host scripts/lib/version-triangle.test.ts
+	pnpm vitest run scripts/check-web-host-tarball.test.ts
+	pnpm vitest run scripts/check-web-host-release-workflow.test.ts
 	pnpm tsx scripts/check-env-example.ts
 	# Blocking, matching ci.yml's `audit-ci` step on this same command (Story 42.2 — the
 	# formerly non-blocking `pnpm audit --audit-level=high || true` is superseded by this
@@ -263,6 +270,9 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm exec audit-ci --config audit-ci.jsonc
 	DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_ADMIN) pnpm generate-spec
 	git diff --exit-code packages/shared/openapi.json
+
+web-host-fixture: ## Story 68.2 AC-8: pack web-host and build/boot an out-of-monorepo consumer from the tarball (slow, needs the npm registry)
+	WEB_HOST_FIXTURE=1 pnpm vitest run scripts/check-web-host-consumer-fixture.test.ts
 
 # --- Docker -----------------------------------------------------------------
 
@@ -313,8 +323,8 @@ e2e: fix-ports ## Playwright E2E suite against a real docker-compose stack: make
 	WEB_HOST_PORT="$$(grep -m1 '^WEB_HOST_PORT=' .env 2>/dev/null | cut -d= -f2)"; \
 	E2E_CONFIRM_DB_RESET=true; \
 	export DB_HOST_PORT API_HOST_PORT WEB_HOST_PORT E2E_CONFIRM_DB_RESET; \
-	pnpm --filter @project-vault/web exec playwright install --with-deps chromium && \
-	pnpm --filter @project-vault/web test:e2e $(if $(SPEC),"$(SPEC)")
+	pnpm --filter @project-vault/web-host exec playwright install --with-deps chromium && \
+	pnpm --filter @project-vault/web-host test:e2e $(if $(SPEC),"$(SPEC)")
 
 docker-smoke: fix-ports ## Build, start, and curl /health + /ready end-to-end
 	pnpm docker:smoke

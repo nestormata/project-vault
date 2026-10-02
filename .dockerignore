@@ -20,3 +20,5 @@ apps/web/e2e/test-results/
 # host) — never needed by the build, and stale worktree copies of scripts/*.test.ts would
 # otherwise be matched by vitest's positional substring filters inside `make ci`.
 .claude/
+# Story 68.2: the staged @project-vault/web-host package; images build from apps/web, never from it.
+.web-host-pack/

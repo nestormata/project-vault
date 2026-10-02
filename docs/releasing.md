@@ -276,6 +276,36 @@ Tagging scheme — the CLI **diverges** from `packages/vault-action` on purpose:
 | Mirror repo `nestormata/vault-action` | None; the assets are attached to this repository's Release | The mirror exists only because Marketplace requires `action.yml` at a repository root. The CLI has no such constraint. |
 | `dist/` committed, plus the `check-vault-action-dist` freshness gate | `dist` is never committed; it is built at the tag | Nothing resolves the CLI from git, so there is no committed build to drift. The self-verify step replaces the freshness gate. |
 
+## 9. web-host (every release)
+
+The same `vX.Y.Z` tag also fires `web-host-release.yml`, which publishes PV's web source as
+`@project-vault/web-host` `X.Y.Z` to the npm `next` dist-tag. It uses OIDC trusted publishing and
+provenance, and it runs only after the consumer fixture, the tarball rules, the version triangle
+and the "not already on npm" gate pass. The package is described in
+[web-host-package.md](web-host-package.md).
+
+```bash
+gh run list --workflow web-host-release.yml --limit 1
+gh run watch <run-id>                                        # approve the npm-publish environment
+npm view @project-vault/web-host dist-tags                   # `next` should now be X.Y.Z
+```
+
+Rehearse first with a dry run, dispatched on the tag. It runs every gate and uploads nothing:
+
+```bash
+gh workflow run web-host-release.yml --ref vX.Y.Z -f dry_run=true
+```
+
+Promote to `latest` by hand, after the downstream consumer has built against `next`:
+
+```bash
+npm dist-tag add @project-vault/web-host@X.Y.Z latest
+```
+
+Re-running the workflow after a successful publish fails the "not already on npm" gate by design.
+npm versions are immutable: never `--force` and never unpublish. Fix a bad release forward with a
+new PV release.
+
 ## Tooling note
 
 The `gh` version used in this repository does not support `--json` on `gh pr checks`. Parse the

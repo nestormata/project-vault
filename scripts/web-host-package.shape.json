@@ -1,0 +1,99 @@
+{
+  "name": "@project-vault/web-host",
+  "version": "<pv-release>",
+  "description": "Project Vault's web application source (SvelteKit) at one PV release, with path-independent config factories, for build-time composition.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nestormata/project-vault.git",
+    "directory": "apps/web"
+  },
+  "engines": {
+    "node": "<root engines.node>"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    "./svelte.config": {
+      "types": "./config/svelte.config.d.ts",
+      "default": "./config/svelte.config.js"
+    },
+    "./vite.config": {
+      "types": "./config/vite.config.d.ts",
+      "default": "./config/vite.config.js"
+    },
+    "./vitest.config": {
+      "types": "./config/vitest.config.d.ts",
+      "default": "./config/vitest.config.js"
+    },
+    "./app-css-source": {
+      "types": "./config/app-css-source.d.ts",
+      "default": "./config/app-css-source.js"
+    },
+    "./manifest": "./manifests/compatibility.json",
+    "./manifests/*": "./manifests/*",
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./src/*": "./src/*",
+    "./static/*": "./static/*",
+    "./messages/*": "./messages/*",
+    "./project.inlang/*": "./project.inlang/*",
+    "./inlang-plugins/*": "./inlang-plugins/*",
+    "./vendor/*": "./vendor/*"
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "config",
+    "inlang-plugins",
+    "manifests",
+    "messages",
+    "project.inlang",
+    "src",
+    "static",
+    "tsconfig.base.json",
+    "vendor"
+  ],
+  "dependencies": {
+    "@inlang/paraglide-js": "<exact>",
+    "@project-vault/extension-api": "<exact>",
+    "@zxcvbn-ts/core": "<exact>",
+    "@zxcvbn-ts/language-common": "<exact>",
+    "@zxcvbn-ts/language-en": "<exact>",
+    "cron-parser": "<exact>",
+    "dompurify": "<exact>",
+    "undici": "<exact>",
+    "zod": "<exact>"
+  },
+  "peerDependencies": {
+    "@sveltejs/adapter-node": "<exact>",
+    "@sveltejs/kit": "<exact>",
+    "@sveltejs/vite-plugin-svelte": "<exact>",
+    "@tailwindcss/vite": "<exact>",
+    "@testing-library/svelte": "<exact>",
+    "@vitest/coverage-v8": "<exact>",
+    "jsdom": "<exact>",
+    "svelte": "<exact>",
+    "tailwindcss": "<exact>",
+    "typescript": "<exact>",
+    "vite": "<exact>",
+    "vitest": "<exact>"
+  },
+  "peerDependenciesMeta": {
+    "@testing-library/svelte": {
+      "optional": true
+    },
+    "@vitest/coverage-v8": {
+      "optional": true
+    },
+    "jsdom": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "webHost": {
+    "sharedSource": "vendor/shared/src"
+  }
+}

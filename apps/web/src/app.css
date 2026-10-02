@@ -1,6 +1,7 @@
 @import "tailwindcss" source(none);
 
 @source "./**/*.{svelte,ts}";
+/* @project-vault/web-host: shared-source (the next line is rewritten when packed or composed) */
 @source "../../../packages/shared/src/**/*.ts";
 
 @theme {

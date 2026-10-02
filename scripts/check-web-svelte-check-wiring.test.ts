@@ -31,6 +31,11 @@ const MAKEFILE_TEXT: Record<string, string> = import.meta.glob('../Makefil[e]', 
   import: 'default',
   eager: true,
 })
+// Story 68.2: svelte.config.js and vite.config.ts are one-line calls into these factories.
+const WEB_CONFIG_FACTORIES: Record<string, string> = import.meta.glob(
+  ['../apps/web/config/*.ts', '!../apps/web/config/*.test.ts'],
+  { query: '?raw', import: 'default', eager: true }
+)
 const WEB_SVELTE_SOURCES: Record<string, string> = import.meta.glob(
   ['../apps/web/src/**/*.svelte', '!../apps/web/src/lib/paraglide/**'],
   { query: '?raw', import: 'default', eager: true }
@@ -98,12 +103,14 @@ export function svelteCheckScriptProblems(checkSvelte: string | undefined): stri
   return problems
 }
 
-/** A `turbo typecheck` invocation must not filter @project-vault/web out. */
+/** A `turbo typecheck` invocation must not filter @project-vault/web-host out. */
 export function turboTypecheckFilterProblems(source: string, label: string): string[] {
   return source
     .split('\n')
     .filter((line) => line.includes('turbo typecheck') && line.includes('--filter'))
-    .filter((line) => !/--filter[= ]@project-vault\/web(\s|$)/.test(line) || line.includes('!'))
+    .filter(
+      (line) => !/--filter[= ]@project-vault\/web-host(\s|$)/.test(line) || line.includes('!')
+    )
     .map((line) => `${label}: turbo typecheck is filtered: ${line.trim()}`)
 }
 
@@ -195,7 +202,10 @@ describe('web svelte-check wiring guard: parsers (Story 68.1 AC-4)', () => {
 
   it('rejects a turbo typecheck that filters the web app out', () => {
     expect(
-      turboTypecheckFilterProblems('run: pnpm turbo typecheck --filter=!@project-vault/web', 'x')
+      turboTypecheckFilterProblems(
+        'run: pnpm turbo typecheck --filter=!@project-vault/web-host',
+        'x'
+      )
     ).toHaveLength(1)
     expect(
       turboTypecheckFilterProblems('run: pnpm turbo typecheck --filter=@project-vault/api', 'x')
@@ -285,6 +295,10 @@ describe('web svelte-check wiring guard: the real repository files (Story 68.1 A
   it('no warning filter hides Svelte warnings from the build or svelte-check', () => {
     for (const path of ['../apps/web/svelte.config.js', '../apps/web/vite.config.ts']) {
       expect(repoText(path), path).not.toMatch(/\bonwarn\b|\bwarningFilter\b/)
+    }
+    expect(Object.keys(WEB_CONFIG_FACTORIES).length).toBeGreaterThanOrEqual(3)
+    for (const [path, source] of Object.entries(WEB_CONFIG_FACTORIES)) {
+      expect(source, path).not.toMatch(/\bonwarn\b|\bwarningFilter\b/)
     }
   })
 

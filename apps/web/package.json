@@ -1,5 +1,5 @@
 {
-  "name": "@project-vault/web",
+  "name": "@project-vault/web-host",
   "version": "0.0.1",
   "license": "AGPL-3.0-or-later",
   "private": true,
@@ -7,6 +7,12 @@
   "files": [
     "build"
   ],
+  "exports": {
+    "./package.json": "./package.json",
+    "./svelte.config": "./config/svelte.config.ts",
+    "./vite.config": "./config/vite.config.ts",
+    "./vitest.config": "./config/vitest.config.ts"
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
@@ -17,10 +23,12 @@
     "test:coverage-buffer": "rm -rf coverage && vitest run --coverage && tsx scripts/check-coverage-buffer.ts",
     "test:e2e": "playwright test",
     "check:svelte": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
-    "typecheck": "pnpm run paraglide:compile && svelte-kit sync && tsc --noEmit && pnpm run check:svelte && pnpm run typecheck:e2e",
-    "typecheck:e2e": "tsc -p e2e/tsconfig.json --noEmit"
+    "typecheck": "pnpm run paraglide:compile && svelte-kit sync && tsc --noEmit && pnpm run check:svelte && pnpm run typecheck:e2e && pnpm run typecheck:config",
+    "typecheck:e2e": "tsc -p e2e/tsconfig.json --noEmit",
+    "typecheck:config": "tsc -p config/tsconfig.json"
   },
   "devDependencies": {
+    "@inlang/plugin-message-format": "4.4.4",
     "@playwright/test": "^1.63.0",
     "@project-vault/eslint-config": "workspace:*",
     "@project-vault/mock-envelope-extension": "workspace:*",
@@ -42,7 +50,7 @@
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "tailwindcss": "^4.3.3",
-    "typescript": "^7.0.2",
+    "typescript": "^6.0.3",
     "vite": "^8.3.1",
     "vitest": "^5.0.1"
   },

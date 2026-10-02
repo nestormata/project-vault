@@ -2,6 +2,10 @@ import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import {
+  RELEASE_IMAGE_NAMESPACE_EXPRESSION,
+  RELEASE_IMAGE_NAME_EXPRESSION,
+} from './lib/release-image.js'
 
 // The repository root has no YAML dependency; reuse the `yaml` package apps/api already depends on.
 const { parse: parseYaml } = createRequire(resolve(process.cwd(), 'apps/api/package.json'))(
@@ -67,6 +71,19 @@ describe('container publish workflow contract', () => {
     expect(workflow).toMatch(/latest/)
     expect(workflow).toMatch(/git ls-remote --exit-code/)
     expect(workflow).toMatch(/imagetools inspect/)
+  })
+
+  // Story 68.2 AC-9: the web-host compatibility manifest's apiImageTag is computed by
+  // scripts/lib/release-image.ts. This pins the workflow to the same derivation, so the two can never
+  // name different images: <IMAGE_NAMESPACE>/<name>:<release version>.
+  it('tags images exactly as scripts/lib/release-image.ts derives the apiImageTag', () => {
+    const workflow = workflowText()
+    const parsed = parseYaml(workflow) as { env?: Record<string, string> }
+
+    expect(parsed.env?.IMAGE_NAMESPACE).toBe(RELEASE_IMAGE_NAMESPACE_EXPRESSION)
+    expect(workflow).toContain(`images: ${RELEASE_IMAGE_NAME_EXPRESSION}`)
+    expect(workflow).toMatch(/type=raw,value=\$\{\{\s*needs\.prepare\.outputs\.version\s*\}\}/)
+    expect(workflow).toContain('echo "version=${TAG#v}"')
   })
 
   it('uses the release tag as the checkout ref and stamps one resolved source commit', () => {

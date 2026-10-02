@@ -9,8 +9,26 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+### Added
+
+- **`@project-vault/web-host`:** every release now also publishes PV's web application source to
+  npm (dist-tag `next`, OIDC provenance) for build-time composition, with path-independent
+  `svelte`/`vite`/`vitest` config factories, the vendored `@project-vault/shared` source and a
+  compatibility manifest. PV's self-contained web unit tests ship with the source, so a composer
+  can run them over its composed tree. See [docs/web-host-package.md](docs/web-host-package.md). The
+  `apps/web` workspace package is renamed from `@project-vault/web` to `@project-vault/web-host`, so
+  `pnpm --filter` commands use the new name.
+
 ### Changed
 
+- **Contributors:** every workspace `package.json` now declares the TypeScript and `tsx` versions
+  the lockfile actually installs (`typescript ^6.0.3`, `tsx 4.21.1`). The `typescript` pnpm override
+  is gone, because it made the declared `^7.0.2` false. A TypeScript 7 upgrade is separate work. A
+  new CI check fails when a pnpm override no longer matches a declared range.
+- **Contributors:** Paraglide's message-format plugin is no longer fetched from a CDN at `@latest`.
+  It is an exact-pinned `apps/web` devDependency (`@inlang/plugin-message-format` 4.4.4, MIT), loaded
+  from `node_modules` and hash-pinned in `apps/web/inlang-plugins/plugins.lock.json`, so message
+  compilation works offline and is reproducible.
 - **Operators:** the api's `startup.failed` log line now carries `cause: {code, reason, depth}`
   when a database or TLS error code is found in the error chain (for example `28P01` /
   `auth_failed`, `SELF_SIGNED_CERT_IN_CHAIN` / `tls_failed`). Only the code and a closed reason
