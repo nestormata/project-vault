@@ -16,7 +16,6 @@ function serverTextChanges(c: string): boolean {
 
 describe('sanitizer character-set parity (AC-3.1)', () => {
   it('for every non-surrogate code point, sanitizeForTerminal removes it iff sanitizeServerText changes it', () => {
-    const started = performance.now()
     const mismatches: string[] = []
     for (let cp = 0; cp <= 0x10ffff; cp++) {
       if (cp >= 0xd800 && cp <= 0xdfff) continue
@@ -25,9 +24,11 @@ describe('sanitizer character-set parity (AC-3.1)', () => {
         mismatches.push(`U+${cp.toString(16).toUpperCase().padStart(4, '0')}`)
       }
     }
-    const elapsedMs = performance.now() - started
     expect(mismatches).toEqual([])
-    expect(elapsedMs).toBeLessThan(5000)
+    // No wall-clock assertion on purpose (Story 66-14): an absolute millisecond budget measures the
+    // runner, not the sanitizers (5281 ms on a contended CI runner against 549 ms locally, which
+    // failed the nightly's flaky repeat run). The claim under test is parity; a hang is caught by
+    // the 20 s vitest timeout below.
   }, 20_000)
 
   it.each([
