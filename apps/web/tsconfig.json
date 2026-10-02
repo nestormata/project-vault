@@ -5,6 +5,7 @@
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
     "rootDirs": [".", ".svelte-kit/types"]
   },
   "include": [

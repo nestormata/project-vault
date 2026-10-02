@@ -7,6 +7,12 @@
   "files": [
     "build"
   ],
+  "exports": {
+    "./package.json": "./package.json",
+    "./svelte.config": "./config/svelte.config.ts",
+    "./vite.config": "./config/vite.config.ts",
+    "./vitest.config": "./config/vitest.config.ts"
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
@@ -17,8 +23,9 @@
     "test:coverage-buffer": "rm -rf coverage && vitest run --coverage && tsx scripts/check-coverage-buffer.ts",
     "test:e2e": "playwright test",
     "check:svelte": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
-    "typecheck": "pnpm run paraglide:compile && svelte-kit sync && tsc --noEmit && pnpm run check:svelte && pnpm run typecheck:e2e",
-    "typecheck:e2e": "tsc -p e2e/tsconfig.json --noEmit"
+    "typecheck": "pnpm run paraglide:compile && svelte-kit sync && tsc --noEmit && pnpm run check:svelte && pnpm run typecheck:e2e && pnpm run typecheck:config",
+    "typecheck:e2e": "tsc -p e2e/tsconfig.json --noEmit",
+    "typecheck:config": "tsc -p config/tsconfig.json"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
