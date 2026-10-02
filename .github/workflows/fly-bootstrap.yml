@@ -55,6 +55,17 @@ jobs:
         with:
           ref: ${{ inputs.release_tag }}
 
+      # Story 43.28 follow-up: the release checkout above can predate scripts/fly-ensure-started.sh
+      # (v1.3.0 and older), so dispatching an older tag from main would fail at the ensure steps.
+      # The script only drives flyctl and curl, so it runs from this workflow's own commit.
+      - name: Fetch workflow tooling
+        run: |
+          set -euo pipefail
+          git fetch --quiet --no-tags --depth=1 origin "$GITHUB_SHA"
+          mkdir -p "$RUNNER_TEMP/fly-tools"
+          git show FETCH_HEAD:scripts/fly-ensure-started.sh >"$RUNNER_TEMP/fly-tools/fly-ensure-started.sh"
+          chmod +x "$RUNNER_TEMP/fly-tools/fly-ensure-started.sh"
+
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
 
       - name: Setup Node.js
@@ -129,7 +140,7 @@ jobs:
       # stopped while reporting success. No web URL yet: web deploys next, and the reset below
       # waits for /ready.
       - name: Ensure api machines are started
-        run: ./scripts/fly-ensure-started.sh project-vault-demo-api
+        run: $RUNNER_TEMP/fly-tools/fly-ensure-started.sh project-vault-demo-api
 
       - name: Deploy web
         run: flyctl deploy -c fly.web.toml -a project-vault-demo-web --ha=false --remote-only --build-arg RELEASE_VERSION=${{ steps.release.outputs.version }}
