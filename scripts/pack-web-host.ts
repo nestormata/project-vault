@@ -49,6 +49,11 @@ import {
   type PluginLock,
 } from './lib/web-host/inlang-plugins.js'
 import {
+  classifyTest,
+  type TestClassification,
+  type TestSelectionContext,
+} from './lib/web-host/test-selection.js'
+import {
   isExactVersion,
   findDrift,
   importerDependencies,
@@ -106,8 +111,12 @@ export interface PackOptions {
 
 export interface PackResult {
   packageJson: Record<string, unknown>
-  /** Repo-relative paths of the apps/web files copied (tests excluded). */
+  /** Repo-relative paths of the apps/web non-test files copied. */
   shippedWebFiles: string[]
+  /** Repo-relative paths of the self-contained unit tests shipped. */
+  shippedTests: string[]
+  /** Cross-package tests left out, with the rule each one breaks. */
+  excludedTests: { file: string; reasons: string[] }[]
   /** Repo-relative paths of the vendored packages/shared/src files. */
   vendoredSharedFiles: string[]
   compatibilityManifest: string
@@ -154,16 +163,60 @@ function runNode(script: string, args: string[], cwd: string): void {
   execFileSync(process.execPath, [script, ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
 }
 
-function copyWebTrees(problems: string[]): string[] {
+function copyToStage(path: string): void {
+  cpSync(join(REPO_ROOT, path), join(STAGE_DIR, path.slice('apps/web/'.length)))
+}
+
+/** Copies every tracked non-test file; returns them plus the tracked test files under src/,
+ * which ship only when self-contained (classified later, once the import graph is ready). */
+function copyWebTrees(problems: string[]): { shipped: string[]; testCandidates: string[] } {
   const tracked = trackedFiles(SHIPPED_TREES.map((tree) => `apps/web/${tree}`))
   for (const file of tracked.filter((entry) => entry.symlink)) {
     problems.push(`${file.path} is a symlink; the pack never dereferences one silently`)
   }
-  const shipped = tracked.filter((entry) => !entry.symlink && !isTestFile(entry.path))
-  for (const { path } of shipped) {
-    cpSync(join(REPO_ROOT, path), join(STAGE_DIR, path.slice('apps/web/'.length)))
-  }
-  return shipped.map((entry) => entry.path)
+  const regular = tracked.filter((entry) => !entry.symlink).map((entry) => entry.path)
+  const shipped = regular.filter((path) => !isTestFile(path))
+  for (const path of shipped) copyToStage(path)
+  const testCandidates = regular.filter(
+    (path) => isTestFile(path) && path.startsWith('apps/web/src/') && SOURCE_FILE_RE.test(path)
+  )
+  return { shipped, testCandidates }
+}
+
+/** Ships the self-contained unit tests (Story 68.2, Nestor 2026-10-02) and reports the rest. */
+function packSelfContainedTests(
+  candidates: string[],
+  context: TestSelectionContext
+): { shipped: TestClassification[]; excluded: TestClassification[] } {
+  const classified = candidates.map((path) => {
+    const file = join(REPO_ROOT, path)
+    return classifyTest(file, sysReadFile(file) ?? '', context)
+  })
+  const shipped = classified.filter((entry) => entry.selfContained)
+  for (const entry of shipped) copyToStage(relativePosix(REPO_ROOT, entry.file))
+  return { shipped, excluded: classified.filter((entry) => !entry.selfContained) }
+}
+
+/** Packages the shipped tests import that the runtime does not: optional, exact peers. */
+function testPeers(
+  shipped: TestClassification[],
+  runtime: { dependencies: Record<string, string>; peerDependencies: Record<string, string> },
+  webLocked: Map<string, LockedDependency>
+): Record<string, string> {
+  const names = new Set(shipped.flatMap((entry) => entry.bareImports))
+  const taken = new Set([
+    ...Object.keys(runtime.dependencies),
+    ...Object.keys(runtime.peerDependencies),
+    SHARED_PACKAGE,
+  ])
+  return Object.fromEntries(
+    [...names]
+      .filter((name) => !taken.has(name))
+      .flatMap((name) => {
+        const version = webLocked.get(name)?.version
+        return version === undefined ? [] : [[name, version]]
+      })
+  )
 }
 
 /** Vendors @project-vault/shared: exactly the non-test files reachable from its three entries. */
@@ -360,7 +413,7 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
   mkdirSync(join(STAGE_DIR, 'manifests'), { recursive: true })
   log(`pack-web-host: staging ${relativePosix(REPO_ROOT, STAGE_DIR)} (version ${options.version})`)
 
-  const shippedWebFiles = copyWebTrees(problems)
+  const { shipped: shippedWebFiles, testCandidates } = copyWebTrees(problems)
   writeFileSync(
     join(STAGE_DIR, 'src', 'app.css'),
     rewriteSharedSource(
@@ -368,7 +421,7 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
       VENDORED_SHARED_SOURCE_GLOB
     )
   )
-  log(`pack-web-host: copied ${shippedWebFiles.length} tracked apps/web files (tests excluded)`)
+  log(`pack-web-host: copied ${shippedWebFiles.length} tracked apps/web non-test files`)
   await packInlangPlugins(problems)
 
   // `$lib/paraglide/*` is generated; compile it so the import graph can follow it (never shipped).
@@ -398,7 +451,7 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
     ...findDrift({ ...webManifest.devDependencies, ...webManifest.dependencies }, webLocked)
   )
   const extensionApi = await extensionApiVersion()
-  const { dependencies, peerDependencies } = computeDependencies(
+  const runtime = computeDependencies(
     {
       webBareImports: webGraph.bareImports,
       sharedBareImports: shared.bareImports,
@@ -407,6 +460,25 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
       extensionApi,
     },
     problems
+  )
+  const { dependencies } = runtime
+  const tests = packSelfContainedTests(testCandidates, {
+    webSrc: join(WEB_DIR, 'src'),
+    vendoredShared: new Set(shared.files.map((file) => join(REPO_ROOT, file))),
+    // apps/web's own registry dependencies, plus the runtime dependencies the vendored shared
+    // source brings (zod, cron-parser, ...), which web-host's own `dependencies` already carry.
+    lockedPackages: new Set([
+      ...[...webLocked].filter(([, entry]) => entry.link === undefined).map(([name]) => name),
+      ...Object.keys(dependencies),
+    ]),
+    publishedWorkspacePackages: new Set([EXTENSION_API_PACKAGE]),
+    resolver: webResolver(),
+    display: (path) => relativePosix(REPO_ROOT, path),
+  })
+  const optionalTestPeers = testPeers(tests.shipped, runtime, webLocked)
+  const peerDependencies = { ...runtime.peerDependencies, ...optionalTestPeers }
+  log(
+    `pack-web-host: ${tests.shipped.length} self-contained tests shipped, ${tests.excluded.length} cross-package tests excluded`
   )
   log(
     `pack-web-host: ${Object.keys(dependencies).length} dependencies and ${Object.keys(peerDependencies).length} peers from pnpm-lock.yaml`
@@ -422,6 +494,7 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
     nodeEngine: rootManifest.engines.node,
     dependencies,
     peerDependencies,
+    optionalPeers: Object.keys(optionalTestPeers),
   })
   problems.push(...packageJsonProblems(packageJson))
   if (problems.length > 0) throw new PackError(problems)
@@ -448,7 +521,17 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
     `pack-web-host: done: ${options.version}, ${shippedWebFiles.length + shared.files.length} source files, ` +
       `manifests: compatibility.json${optional.map((name) => `, ${name}`).join('')}`
   )
-  return { packageJson, shippedWebFiles, vendoredSharedFiles: shared.files, compatibilityManifest }
+  return {
+    packageJson,
+    shippedWebFiles,
+    shippedTests: tests.shipped.map((entry) => relativePosix(REPO_ROOT, entry.file)),
+    excludedTests: tests.excluded.map((entry) => ({
+      file: relativePosix(REPO_ROOT, entry.file),
+      reasons: entry.reasons,
+    })),
+    vendoredSharedFiles: shared.files,
+    compatibilityManifest,
+  }
 }
 
 /** npm's own CLI next to the running node binary (never a $PATH lookup). */

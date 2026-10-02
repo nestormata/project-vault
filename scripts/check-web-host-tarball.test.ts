@@ -22,6 +22,7 @@ import {
   missingRequiredEntries,
   monorepoPathProblems,
   privateKeyProblems,
+  shippedTestProblems,
 } from './lib/web-host/tarball-rules.js'
 import { trustedGit } from './lib/trusted-executable.js'
 
@@ -77,10 +78,12 @@ beforeAll(async () => {
 }, PACK_TIMEOUT_MS)
 
 describe('web-host tarball rules: self-tests on mutated listings (Story 68.2 AC-7)', () => {
-  it('rule 1: a leaked test, e2e, coverage or .svelte-kit path fails', () => {
+  it('rule 1: a misplaced test, e2e, coverage or .svelte-kit path fails', () => {
+    expect(forbiddenPathProblems(['src/lib/a.test.ts'])).toEqual([])
     expect(
       forbiddenPathProblems([
-        'src/lib/a.test.ts',
+        'config/a.test.js',
+        'vendor/shared/src/b.test.ts',
         'src/__tests__/b.ts',
         'e2e/journeys/j1.spec.ts',
         'coverage/lcov.info',
@@ -88,7 +91,17 @@ describe('web-host tarball rules: self-tests on mutated listings (Story 68.2 AC-
         'src/lib/paraglide/messages.js',
         'scripts/check-coverage-buffer.ts',
       ])
-    ).toHaveLength(8) // the .spec.ts file breaks two rules
+    ).toHaveLength(9) // the .spec.ts file breaks two rules
+  })
+
+  it('rule 1 (Nestor 2026-10-02): the shipped unit tests are exactly the self-contained ones', () => {
+    const [a, b] = ['src/a.test.ts', 'src/b.test.ts']
+    const selfContained = [a, b]
+    expect(shippedTestProblems([a, b, 'src/x.ts'], selfContained)).toEqual([])
+    expect(shippedTestProblems([a, 'src/c.test.ts'], selfContained)).toEqual([
+      'src/c.test.ts ships but is not a self-contained test',
+      'src/b.test.ts is a self-contained test but is not in the tarball',
+    ])
   })
 
   it('rule 2: a missing README or vendored shared index fails', () => {
@@ -165,6 +178,22 @@ describe('web-host tarball: this checkout (Story 68.2 AC-7)', () => {
     expect(missingRequiredEntries(paths)).toEqual([])
   })
 
+  it('rule 1: ships exactly the self-contained unit tests and excludes the cross-package ones', () => {
+    const selfContained = result.shippedTests.map((file) => file.slice('apps/web/'.length))
+    expect(selfContained.length).toBeGreaterThan(200)
+    expect(shippedTestProblems(paths, selfContained)).toEqual([])
+    const excluded = new Map(result.excludedTests.map((entry) => [entry.file, entry.reasons]))
+    // The story's known cross-package tests, each excluded by a structural rule (not by name).
+    for (const file of [
+      'apps/web/src/lib/platform/cli-version-policy-view.test.ts',
+      'apps/web/src/lib/server/e2e-global-setup-security.test.ts',
+      'apps/web/src/tailwind-source-boundary.test.ts',
+    ]) {
+      expect(excluded.get(file)?.join(' '), file).toMatch(/outside the package/)
+    }
+    for (const reasons of excluded.values()) expect(reasons.length).toBeGreaterThan(0)
+  })
+
   it('rule 3: every tracked non-test file under src/ and static/ ships (never a curated subset)', () => {
     const tracked = trustedGit(REPO_ROOT, [
       'ls-files',
@@ -177,6 +206,12 @@ describe('web-host tarball: this checkout (Story 68.2 AC-7)', () => {
       .filter((path) => path !== '' && !isTestFile(path))
       .map((path) => path.slice('apps/web/'.length))
     expect(tracked.length).toBeGreaterThan(300)
+    // Every tracked test is either shipped or excluded with a reason: none silently dropped.
+    const testsTracked = trustedGit(REPO_ROOT, ['ls-files', '-z', '--', 'apps/web/src'])
+      .split('\0')
+      .filter((path) => path !== '' && isTestFile(path))
+    const accounted = [...result.shippedTests, ...result.excludedTests.map((entry) => entry.file)]
+    expect(accounted.sort()).toEqual(testsTracked.sort())
     expect(droppedSourceFiles(tracked, paths)).toEqual([])
   })
 

@@ -34,6 +34,18 @@ describe('generated package.json (Story 68.2 AC-6)', () => {
     expect(packageJsonProblems(pkg)).toEqual([])
   })
 
+  it('marks the peers only the shipped unit tests need as optional', () => {
+    const withTestPeers = buildPackageJson({
+      ...INPUT,
+      peerDependencies: { ...INPUT.peerDependencies, '@testing-library/svelte': '5.4.2' },
+      optionalPeers: ['@testing-library/svelte'],
+    })
+    expect(withTestPeers.peerDependenciesMeta).toEqual({
+      '@testing-library/svelte': { optional: true },
+      jsdom: { optional: true },
+    })
+  })
+
   it('sorts dependencies and marks only the test-time peers optional', () => {
     expect(Object.keys(pkg.dependencies as object)).toEqual(['dompurify', 'zod'])
     expect(pkg.peerDependenciesMeta).toEqual({ jsdom: { optional: true } })

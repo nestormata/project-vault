@@ -66,10 +66,12 @@ describe.runIf(ENABLED)('web-host consumer fixture (Story 68.2 AC-8)', () => {
   })
 
   it(
-    'installs, compiles, syncs, builds and server-renders /login from the tarball alone',
+    'installs, compiles, syncs, builds, runs the shipped unit tests and renders /login from the tarball alone',
     () => {
       const { status, output } = runFixture('ok')
       expect(output).toContain('OK: /login server-rendered the sign-in form')
+      // Story 68.2 (Nestor 2026-10-02): the shipped self-contained unit tests pass from the package.
+      expect(output).toMatch(/OK: \d{3,} shipped unit test files passed/)
       expect(status, output).toBe(0)
     },
     VARIANT_TIMEOUT_MS

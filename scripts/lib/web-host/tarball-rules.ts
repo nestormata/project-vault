@@ -4,6 +4,8 @@
 // that may be dropped, because the package must never become a curated subset (ADR 0007 M1-M7).
 import ts from 'typescript'
 
+const UNIT_TEST_RE = /\.test\.[cm]?[jt]s$/
+
 /** Entries every tarball must contain. */
 export const REQUIRED_ENTRIES = [
   'package.json',
@@ -24,9 +26,10 @@ export const REQUIRED_ENTRIES = [
   'messages/es.json',
 ] as const
 
-/** Paths that must never ship: tests, generated output, dev tooling. */
+/** Paths that must never ship: tests outside src/ (and every *.spec file), generated output, dev
+ * tooling. Unit tests under src/ ship when self-contained, checked by shippedTestProblems(). */
 const NOT_SHIPPED: readonly [RegExp, string][] = [
-  [/\.(test|spec)\.[cm]?[jt]s$/, 'a test file'],
+  [/\.spec\.[cm]?[jt]s$/, 'a spec file'],
   [/(^|\/)__tests__\//, 'a __tests__ directory'],
   [/(^|\/)e2e\//, 'Playwright e2e'],
   [/(^|\/)playwright[^/]*$/, 'Playwright config'],
@@ -63,10 +66,15 @@ const LIFECYCLE_HOOKS = [
 
 /** Rules 1 and 6 (paths): every shipped path that is a test, generated, tooling or secret-shaped. */
 export function forbiddenPathProblems(paths: readonly string[]): string[] {
-  return paths.flatMap((path) =>
-    [...NOT_SHIPPED, ...SECRET_SHAPED]
-      .filter(([pattern]) => pattern.test(path))
-      .map(([, what]) => `${path} is ${what} and must not ship`)
+  const misplacedTests = paths
+    .filter((path) => UNIT_TEST_RE.test(path) && !path.startsWith('src/'))
+    .map((path) => `${path} is a test file outside src/ and must not ship`)
+  return misplacedTests.concat(
+    ...paths.map((path) =>
+      [...NOT_SHIPPED, ...SECRET_SHAPED]
+        .filter(([pattern]) => pattern.test(path))
+        .map(([, what]) => `${path} is ${what} and must not ship`)
+    )
   )
 }
 
@@ -76,6 +84,24 @@ export function missingRequiredEntries(paths: readonly string[]): string[] {
   return REQUIRED_ENTRIES.filter((entry) => !shipped.has(entry)).map(
     (entry) => `missing required entry ${entry}`
   )
+}
+
+/** Rule 1 (Nestor 2026-10-02): the unit tests in the tarball are exactly the ones the pack
+ * classified as self-contained (paths relative to the package root). */
+export function shippedTestProblems(
+  paths: readonly string[],
+  selfContained: readonly string[]
+): string[] {
+  const shipped = new Set(paths.filter((path) => UNIT_TEST_RE.test(path)))
+  const expected = new Set(selfContained)
+  return [
+    ...[...shipped]
+      .filter((path) => !expected.has(path))
+      .map((path) => `${path} ships but is not a self-contained test`),
+    ...[...expected]
+      .filter((path) => !shipped.has(path))
+      .map((path) => `${path} is a self-contained test but is not in the tarball`),
+  ]
 }
 
 /** Rule 3, the anti-narrowing rule: every tracked non-test file under apps/web/src and

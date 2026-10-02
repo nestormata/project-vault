@@ -21,8 +21,17 @@ own app and builds it.
 | `tsconfig.base.json` | PV's compiler options, for a consumer's `tsconfig.json` to extend. |
 | `LICENSE`, `README.md` | AGPL-3.0-or-later, and what the package is. |
 
-Not shipped: unit tests, Playwright e2e, generated Paraglide output, build output, the Dockerfile
-and PV's dev tooling.
+PV's **self-contained unit tests** ship too (`src/**/*.test.ts`, decided by Nestor on 2026-10-02),
+so a composer can run them over a composed tree (story 68-9) with `vitestConfig()`. The pack
+classifies every test structurally and ships it only when its imports stay inside `src/` and the
+vendored shared source, it imports no other workspace package, and no relative path in its code
+leaves `src/`. Cross-package tests, which read `apps/api`, `packages/db` or PV's own config files,
+are excluded and logged with the rule they break. The packages only the tests import
+(`@testing-library/svelte`, `jsdom`, `@vitest/coverage-v8`) are optional exact peers. The consumer
+fixture runs every shipped test from the tarball, and they must all pass.
+
+Not shipped: cross-package tests, Playwright e2e, generated Paraglide output, build output, the
+Dockerfile and PV's dev tooling.
 
 ## Using it
 
@@ -98,7 +107,7 @@ root. The directory is gitignored and rebuilt from scratch every time. The pack 
 The CI job **`Web-host pack`** runs on every pull request. It checks the paraglide plugin pin and
 the tarball content rules (`scripts/check-web-host-tarball.test.ts`). It also runs the
 out-of-monorepo consumer fixture: a clean `npm install` of the tarball in a temp directory, then a
-build, then booting the built server, which must render `/login`. Run the fixture locally with
+build, then every shipped unit test, then booting the built server, which must render `/login`. Run the fixture locally with
 `make web-host-fixture`. It is slow and needs the npm registry.
 
 ## Releasing

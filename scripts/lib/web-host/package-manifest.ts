@@ -62,6 +62,8 @@ export interface WebHostManifestInput {
   nodeEngine: string
   dependencies: Record<string, string>
   peerDependencies: Record<string, string>
+  /** Peers only the shipped unit tests need (Story 68.2, Nestor 2026-10-02): marked optional. */
+  optionalPeers?: readonly string[]
 }
 
 function sortedRecord(record: Record<string, string>): Record<string, string> {
@@ -93,7 +95,7 @@ function packageExports(): Record<string, unknown> {
 
 /** The packed package.json: no `private`, `scripts`, `devDependencies`, `bin` or lifecycle hook. */
 export function buildPackageJson(input: WebHostManifestInput): Record<string, unknown> {
-  const optionalPeers = new Set<string>(OPTIONAL_PEER_PACKAGES)
+  const optionalPeers = new Set<string>([...OPTIONAL_PEER_PACKAGES, ...(input.optionalPeers ?? [])])
   return {
     name: WEB_HOST_NAME,
     version: input.version,
@@ -233,10 +235,13 @@ CentralizeMe composed app).
   is installed. Pass your own plugins, aliases or adapter to extend them. Compiled messages are
   written to \`<appRoot>/src/lib/paraglide\`, where \`appRoot\` defaults to the working directory.
   The vitest factory also needs \`jsdom\` and \`@vitest/coverage-v8\` when you run tests.
+- **Unit tests:** Project Vault's self-contained unit tests ship next to the source they test
+  (\`src/**/*.test.ts\`). \`vitestConfig()\` runs them over your copied tree; the optional peers are
+  what they import. Tests that read files outside the web app (cross-package tests) are not shipped.
 - **\`src/app.css\`:** the line after the \`@project-vault/web-host: shared-source\` marker is the
   shared \`@source\` glob, relative to \`src/\` (\`../vendor/shared/src/**/*.ts\`). Rewrite it with
   \`rewriteSharedSource()\` from \`@project-vault/web-host/app-css-source\` if your layout differs.
-- **Not shipped:** tests, Playwright e2e, generated Paraglide output (run \`paraglide-js compile\` or
+- **Not shipped:** cross-package tests, Playwright e2e, generated Paraglide output (run \`paraglide-js compile\` or
   the Vite plugin), build output and Project Vault's dev tooling.
 `
 }

@@ -111,7 +111,7 @@ if [[ "$VARIANT" != 'ok' ]]; then
 fi
 readonly TARBALL
 
-cp "$FIXTURE_DIR/app/svelte.config.js" "$FIXTURE_DIR/app/vite.config.ts" "$APP/"
+cp "$FIXTURE_DIR/app/svelte.config.js" "$FIXTURE_DIR/app/vite.config.ts" "$FIXTURE_DIR/app/vitest.config.ts" "$APP/"
 # Generated, not committed: inside the repository, a tsconfig.json that extends a package which only
 # exists in the consumer would break Vite's tsconfig lookup for anything that loads these files.
 printf '%s\n' '{ "extends": ["./.svelte-kit/tsconfig.json", "@project-vault/web-host/tsconfig.base.json"] }' > "$APP/tsconfig.json"
@@ -124,8 +124,8 @@ clean_env "$NODE_BIN" -e '
   const fs = require("node:fs")
   const [manifestPath, tarball, out] = process.argv.slice(1)
   const host = JSON.parse(fs.readFileSync(manifestPath, "utf8"))
-  const optional = new Set(Object.keys(host.peerDependenciesMeta ?? {}))
-  const peers = Object.fromEntries(Object.entries(host.peerDependencies).filter(([n]) => !optional.has(n)))
+  // Optional peers too: they are what the shipped unit tests need (jsdom, @testing-library/*).
+  const peers = host.peerDependencies
   const pkg = {
     name: "web-host-consumer-fixture",
     private: true,
@@ -170,6 +170,19 @@ if [[ ! -f "$APP/build/index.js" || ! -d "$APP/build/client/_app" ]]; then
   echo 'fixture: vite build produced no build/index.js or build/client/_app' >&2
   exit 1
 fi
+
+# Story 68.2 (Nestor 2026-10-02): the package ships PV's self-contained unit tests so a composer can
+# run them over a composed tree (story 68-9). Run every shipped test, through the exported vitest
+# config factory, over the copied source: they must all pass outside PV's monorepo.
+SHIPPED_TESTS="$(find "$APP/src" -name '*.test.ts' | wc -l)"
+readonly SHIPPED_TESTS
+log "running the ${SHIPPED_TESTS} shipped unit test files with the exported vitest config"
+if [[ "$SHIPPED_TESTS" -eq 0 ]]; then
+  echo 'fixture: the package shipped no unit tests' >&2
+  exit 1
+fi
+(cd "$APP" && clean_env "$NODE_BIN" node_modules/vitest/vitest.mjs run --reporter=dot)
+log "OK: ${SHIPPED_TESTS} shipped unit test files passed"
 
 free_port() {
   clean_env "$NODE_BIN" -e '

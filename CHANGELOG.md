@@ -14,7 +14,8 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 - **`@project-vault/web-host`:** every release now also publishes PV's web application source to
   npm (dist-tag `next`, OIDC provenance) for build-time composition, with path-independent
   `svelte`/`vite`/`vitest` config factories, the vendored `@project-vault/shared` source and a
-  compatibility manifest. See [docs/web-host-package.md](docs/web-host-package.md). The
+  compatibility manifest. PV's self-contained web unit tests ship with the source, so a composer
+  can run them over its composed tree. See [docs/web-host-package.md](docs/web-host-package.md). The
   `apps/web` workspace package is renamed from `@project-vault/web` to `@project-vault/web-host`, so
   `pnpm --filter` commands use the new name.
 
