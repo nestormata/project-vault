@@ -6,7 +6,9 @@ import { expect, type APIRequestContext } from '@playwright/test'
 import { superuserDatabaseUrl, withDatabase } from './db.js'
 import { pollUntilOk } from './poll-until-ready.js'
 import { ensureIsolatedDbCredentials } from './isolated-db-credentials.js'
-import { StderrTail, earlyExitMessage } from './isolated-api-exit.js'
+import { StderrTail } from './isolated-api-exit.js'
+import { allocateFreePort, withFreshPortRetry, type PortAllocation } from './isolated-ports.js'
+import { waitForIsolatedApiReady } from './isolated-readiness.js'
 
 /**
  * Shared plumbing for "isolated stack" E2E fixtures — self-contained, non-Docker
@@ -16,6 +18,8 @@ import { StderrTail, earlyExitMessage } from './isolated-api-exit.js'
  * which both need this exact shape because a host process can only load ONE
  * `VAULT_EXTENSIONS_PACKAGE` at a time and the shared stack's slot is already spoken for.
  */
+
+export { allocateFreePort } from './isolated-ports.js'
 
 export const REPO_ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
 const require = createRequire(import.meta.url)
@@ -85,39 +89,6 @@ export async function waitForHttp(
 }
 
 /**
- * Story 66.4 AC-7: waits for `/health`, but rejects as soon as the child exits instead of
- * spending the whole poll budget, with the reason from its stderr. Listens on `close` (not
- * `exit`): `exit` can fire before the stdio pipes drain, losing the very line that says why.
- * The poll and the listener are both cleaned up on either outcome.
- */
-async function waitForHealthOrExit(
-  child: ChildProcess,
-  url: string,
-  label: string,
-  port: number,
-  stderrTail: StderrTail
-): Promise<void> {
-  const controller = new AbortController()
-  let onClose: ((code: number | null, signal: NodeJS.Signals | null) => void) | undefined
-  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
-    onClose = (code, signal) => resolve({ code, signal })
-    child.once('close', onClose)
-  })
-  const healthy = waitForHttp(url, 40, 500, controller.signal).then(() => undefined)
-  try {
-    const outcome = await Promise.race([healthy, exited])
-    if (outcome !== undefined) {
-      throw new Error(
-        earlyExitMessage(label, port, outcome.code, outcome.signal, stderrTail.reason())
-      )
-    }
-  } finally {
-    controller.abort()
-    if (onClose) child.off('close', onClose)
-  }
-}
-
-/**
  * Negative pid signals the whole process group (see the `detached: true` spawn option on both
  * spawn helpers below) — belt-and-braces against tsx (or a future version of it) spawning a real
  * child rather than exec-ing in-process, which would otherwise survive a plain `child.kill()`.
@@ -160,7 +131,11 @@ export function pipeChildDiagnostics(child: ChildProcess, label: string, port: n
 }
 
 export type SpawnIsolatedApiOptions = {
-  port: number
+  /**
+   * Story 66.10: omit to let the fixture allocate a free port (retrying on a NEW port when the
+   * child hits EADDRINUSE). Pass the previous port only for a restart, which must keep it.
+   */
+  port?: number
   dbName: string
   webPort: number
   /** Console-log prefix, e.g. `api-envelope` / `api-capgate`. */
@@ -172,28 +147,53 @@ export type SpawnIsolatedApiOptions = {
   extraEnv?: Record<string, string>
 }
 
+export type IsolatedApiProcess = { process: ChildProcess; port: number }
+
+/** Story 66.10: `/health` also answers for a stale process on the port. Only our child was
+ * started with this journey's own (OS-allocated, so unique) web origin in `CORS_ALLOWED_ORIGINS`,
+ * so only it echoes that origin back: a per-process identity needing no product change. */
+async function answeredByThisChild(port: number, origin: string): Promise<boolean> {
+  try {
+    const response = await fetch(`http://localhost:${port}/health`, { headers: { origin } })
+    return response.headers.get('access-control-allow-origin') === origin
+  } catch {
+    return false
+  }
+}
+
 /** Boots a real `apps/api` process (tsx, not Docker) against an isolated database and waits for
- * `/health` to respond. Returns the raw child process — callers wrap it in their own
- * fixture-specific handle type. */
+ * `/health` to respond. Ports (API and metrics) come from the OS allocator, never a hardcoded
+ * number. Returns the raw child process and the port it really listens on. */
 export async function spawnIsolatedApiProcess(
   options: SpawnIsolatedApiOptions
-): Promise<ChildProcess> {
+): Promise<IsolatedApiProcess> {
   // Story 66.4 AC-5/AC-6: verify (and on a fresh local DB provision) both credentials first.
-  const { appUrl: dbUrl, adminUrl } = await ensureIsolatedDbCredentials(options.dbName)
+  const credentials = await ensureIsolatedDbCredentials(options.dbName)
+  return withFreshPortRetry((allocation) => bootIsolatedApi(options, credentials, allocation), {
+    pinnedPort: options.port,
+  })
+}
+
+async function bootIsolatedApi(
+  options: SpawnIsolatedApiOptions,
+  credentials: { appUrl: string; adminUrl: string },
+  { port, metricsPort }: PortAllocation
+): Promise<IsolatedApiProcess> {
   const { executable, tsxCliPath } = tsxExecutable()
   const mainPath = fileURLToPath(new URL('../../../api/src/main.ts', import.meta.url))
+  const webOrigin = `http://localhost:${options.webPort}`
 
   const child = spawn(executable, [tsxCliPath, mainPath], {
     cwd: `${REPO_ROOT}/apps/api`,
     env: {
       ...process.env,
       NODE_ENV: 'test',
-      DATABASE_URL: dbUrl,
-      ADMIN_DATABASE_URL: adminUrl,
-      API_PORT: String(options.port),
-      CORS_ALLOWED_ORIGINS: `http://localhost:${options.webPort}`,
+      DATABASE_URL: credentials.appUrl,
+      ADMIN_DATABASE_URL: credentials.adminUrl,
+      API_PORT: String(port),
+      CORS_ALLOWED_ORIGINS: webOrigin,
       METRICS_BIND_HOST: '127.0.0.1',
-      METRICS_PORT: String(options.port + 1000),
+      METRICS_PORT: String(metricsPort),
       VAULT_ALLOW_REMOTE_INIT: 'true',
       AUTH_RATE_LIMIT_MAX: '100000',
       AUTH_REGISTER_RATE_LIMIT_MAX: '1000',
@@ -209,18 +209,21 @@ export async function spawnIsolatedApiProcess(
   })
   // Decode as UTF-8 once, so a multi-byte character split across chunks is not mangled.
   child.stderr?.setEncoding('utf8')
-  pipeChildDiagnostics(child, options.logLabel, options.port)
+  pipeChildDiagnostics(child, options.logLabel, port)
   const stderrTail = new StderrTail()
   child.stderr?.on('data', (chunk) => stderrTail.push(String(chunk)))
 
-  await waitForHealthOrExit(
+  await waitForIsolatedApiReady({
     child,
-    `http://localhost:${options.port}/health`,
-    options.logLabel,
-    options.port,
-    stderrTail
-  )
-  return child
+    label: options.logLabel,
+    port,
+    stderrTail,
+    probeHealth: (signal) => waitForHttp(`http://localhost:${port}/health`, 40, 500, signal),
+    confirmIdentity: () => answeredByThisChild(port, webOrigin),
+    stop: stopProcess,
+    identityGraceMs: 3000,
+  })
+  return { process: child, port }
 }
 
 /**
@@ -326,28 +329,37 @@ export async function spawnIsolatedWebProcess(options: {
  * them was duplicated.
  */
 export async function setupMockExtensionIsolatedStack(options: {
-  apiPort: number
-  webPort: number
   dbName: string
   apiLogLabel: string
   webLogLabel: string
   vaultPassphrase: string
   debugLogLevelEnvVar: string
-}): Promise<{ apiProcess: ChildProcess; webHandle: WebHandle }> {
+}): Promise<{
+  apiProcess: ChildProcess
+  webHandle: WebHandle
+  /** Story 66.10: ports are OS-allocated, so callers get the URLs the stack really listens on. */
+  baseUrl: string
+  apiBase: string
+}> {
+  const webPort = await allocateFreePort()
   await createIsolatedDatabase(options.dbName)
-  const apiProcess = await spawnIsolatedApiProcess({
-    port: options.apiPort,
+  const api = await spawnIsolatedApiProcess({
     dbName: options.dbName,
-    webPort: options.webPort,
+    webPort,
     logLabel: options.apiLogLabel,
     logLevelEnvVar: options.debugLogLevelEnvVar,
     extraEnv: { VAULT_EXTENSIONS_PACKAGE: '@project-vault/mock-ui-panel-extension' },
   })
-  await initIsolatedVault(options.apiPort, options.vaultPassphrase)
+  await initIsolatedVault(api.port, options.vaultPassphrase)
   const webHandle = await spawnIsolatedWebProcess({
-    port: options.webPort,
-    apiPort: options.apiPort,
+    port: webPort,
+    apiPort: api.port,
     logLabel: options.webLogLabel,
   })
-  return { apiProcess, webHandle }
+  return {
+    apiProcess: api.process,
+    webHandle,
+    baseUrl: `http://localhost:${webPort}`,
+    apiBase: `http://localhost:${api.port}`,
+  }
 }

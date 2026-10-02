@@ -15,6 +15,7 @@ import {
   startEnvelopeWeb,
   type ApiHandle,
 } from '../fixtures/isolated-envelope-stack.js'
+import { allocateFreePort } from '../fixtures/isolated-ports.js'
 
 /**
  * J19 — Story 23.2's own end-to-end proof of native-login exclusion (AC-6/AC-6a/AC-13/AC-14/
@@ -31,8 +32,9 @@ import {
  */
 
 const AUDIENCE = 'j19-envelope-e2e'
-const API_PORT = 34719
-const WEB_PORT = 34720
+// Story 66.10: ports come from the OS allocator (assigned in beforeAll), never hardcoded.
+let apiPort = 0
+let webPort = 0
 const DB_NAME = 'project_vault_j19_envelope_e2e'
 const PROVIDER = 'test.mock-envelope-extension'
 const NO_MAPPING_EMAIL = 'someone@example.test'
@@ -95,17 +97,18 @@ async function signEnvelope(externalSubject: string): Promise<string> {
 test.describe.serial('J19 — native-login exclusion end-to-end (Story 23.2)', () => {
   test.beforeAll(async () => {
     test.setTimeout(120_000)
+    webPort = await allocateFreePort()
     await createIsolatedDatabase(DB_NAME)
     apiHandle = await startEnvelopeApi({
-      port: API_PORT,
       dbName: DB_NAME,
       envAudience: AUDIENCE,
-      webPort: WEB_PORT,
+      webPort: webPort,
     })
+    apiPort = apiHandle.port
     // VAULT_ALLOW_REMOTE_INIT=true (set by startEnvelopeApi) permits vault/init without a
     // bootstrap token — see initIsolatedVault()'s doc comment.
-    await initIsolatedVault(API_PORT, 'j19-envelope-e2e-passphrase')
-    webHandle = await startEnvelopeWeb({ port: WEB_PORT, apiPort: API_PORT })
+    await initIsolatedVault(apiPort, 'j19-envelope-e2e-passphrase')
+    webHandle = await startEnvelopeWeb({ port: webPort, apiPort: apiPort })
   })
 
   test.afterAll(async () => {
@@ -122,7 +125,7 @@ test.describe.serial('J19 — native-login exclusion end-to-end (Story 23.2)', (
     // (`/login?`). The SSR'd email input is visible long before that, so `toBeVisible()` was not a
     // readiness signal (Story 66.3 reproduced exactly this `/login?` failure); `goto()` waits for
     // the deterministic hydration signal instead (fixtures/hydration.ts).
-    await loginPage.goto(`http://localhost:${WEB_PORT}/login`)
+    await loginPage.goto(`http://localhost:${webPort}/login`)
     await expect(loginPage.emailInput()).toBeVisible()
     await loginPage.emailInput().fill(NO_MAPPING_EMAIL)
     await loginPage.continueButton().click()
@@ -131,7 +134,7 @@ test.describe.serial('J19 — native-login exclusion end-to-end (Story 23.2)', (
     // false) — the password field renders exactly as it would with no extension at all.
     await expect(loginPage.passwordInput()).toBeVisible()
 
-    const health = await page.request.get(`http://localhost:${API_PORT}/health`)
+    const health = await page.request.get(`http://localhost:${apiPort}/health`)
     const healthBody = (await health.json()) as {
       nativeLoginEnabled: boolean
       extensions_status: string
@@ -148,11 +151,11 @@ test.describe.serial('J19 — native-login exclusion end-to-end (Story 23.2)', (
 
     // Drive the real SSO start -> callback exchange through the running app, not a mock.
     const start = await page.request.post(
-      `http://localhost:${API_PORT}/api/v1/auth/sso/start/${PROVIDER}`
+      `http://localhost:${apiPort}/api/v1/auth/sso/start/${PROVIDER}`
     )
     expect(start.ok()).toBeTruthy()
     const callback = await page.request.post(
-      `http://localhost:${API_PORT}/api/v1/auth/sso/callback/${PROVIDER}`,
+      `http://localhost:${apiPort}/api/v1/auth/sso/callback/${PROVIDER}`,
       { data: { credential } }
     )
     expect(callback.ok(), await callback.text()).toBeTruthy()
@@ -168,7 +171,7 @@ test.describe.serial('J19 — native-login exclusion end-to-end (Story 23.2)', (
     // form.
     // Hydration-armed full load — see the first test in this file.
     const loginPage = new LoginPage(page)
-    await loginPage.goto(`http://localhost:${WEB_PORT}/login`)
+    await loginPage.goto(`http://localhost:${webPort}/login`)
     await expect(loginPage.emailInput()).toBeVisible()
     await loginPage.emailInput().fill('someone-else@example.test')
     await loginPage.continueButton().click()
@@ -185,19 +188,19 @@ test.describe.serial('J19 — native-login exclusion end-to-end (Story 23.2)', (
     // architecture concern this journey is not testing). The web app's own layout redirects a
     // sealed instance away from /login to /vault; unseal exactly like a real operator would
     // after any restart, so this journey can reach the login screen it actually cares about.
-    const unseal = await page.request.post(`http://localhost:${API_PORT}/api/v1/vault/unseal`, {
+    const unseal = await page.request.post(`http://localhost:${apiPort}/api/v1/vault/unseal`, {
       data: { kmsType: 'passphrase', passphrase: 'j19-envelope-e2e-passphrase' },
     })
     expect(unseal.ok(), await unseal.text()).toBeTruthy()
 
-    const health = await page.request.get(`http://localhost:${API_PORT}/health`)
+    const health = await page.request.get(`http://localhost:${apiPort}/health`)
     const healthBody = (await health.json()) as { nativeLoginEnabled: boolean }
     expect(healthBody.nativeLoginEnabled).toBe(false)
 
     // Real Chrome, fresh navigation against the restarted process.
     // Hydration-armed full load — see the first test in this file.
     const loginPage = new LoginPage(page)
-    await loginPage.goto(`http://localhost:${WEB_PORT}/login`)
+    await loginPage.goto(`http://localhost:${webPort}/login`)
     await expect(loginPage.emailInput()).toBeVisible()
     // AC-13: Register/Recovery links are gone from the page immediately (nativeLoginEnabled is
     // resolved server-side, before the user does anything) — the SSO-only/honest-placeholder
@@ -210,7 +213,7 @@ test.describe.serial('J19 — native-login exclusion end-to-end (Story 23.2)', (
     await expect(page.getByLabel('Password')).toHaveCount(0)
 
     // Defense-in-depth: the route itself refuses, independent of what the UI renders.
-    const loginAttempt = await page.request.post(`http://localhost:${API_PORT}/api/v1/auth/login`, {
+    const loginAttempt = await page.request.post(`http://localhost:${apiPort}/api/v1/auth/login`, {
       data: { email: NO_MAPPING_EMAIL, password: 'whatever-password-1' },
     })
     expect(loginAttempt.status()).toBe(403)
@@ -223,7 +226,7 @@ test.describe.serial('J19 — native-login exclusion end-to-end (Story 23.2)', (
   }) => {
     // This isolated database already has users from the seeding above, so isFirstUser is false
     // — the real production code path (registerUser()'s own isFirstUser check), not a fixture.
-    const register = await page.request.post(`http://localhost:${API_PORT}/api/v1/auth/register`, {
+    const register = await page.request.post(`http://localhost:${apiPort}/api/v1/auth/register`, {
       data: {
         email: `j19-late-${randomUUID()}@example.test`,
         password: 'CorrectHorseBattery9!',

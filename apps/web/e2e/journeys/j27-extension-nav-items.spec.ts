@@ -29,12 +29,10 @@ import {
  * a host process can only load one extensions package at a time.
  */
 
-const API_PORT = 34842
-const WEB_PORT = 34843
 const DB_NAME = 'project_vault_j27_extension_nav_items_e2e'
 const PASSWORD = 'j27-extension-nav-items-e2e-Password-1'
-const BASE_URL = `http://localhost:${WEB_PORT}`
-const API_BASE = `http://localhost:${API_PORT}`
+let baseUrl = ''
+let apiBase = ''
 
 let apiProcess: ChildProcess | undefined
 let webHandle: WebHandle | undefined
@@ -42,9 +40,7 @@ let webHandle: WebHandle | undefined
 test.describe.serial('J27 — Story 29.3 nav/menu manifest merge (mock-ui-panel-extension)', () => {
   test.beforeAll(async () => {
     test.setTimeout(120_000)
-    ;({ apiProcess, webHandle } = await setupMockExtensionIsolatedStack({
-      apiPort: API_PORT,
-      webPort: WEB_PORT,
+    ;({ apiProcess, webHandle, baseUrl, apiBase } = await setupMockExtensionIsolatedStack({
       dbName: DB_NAME,
       apiLogLabel: 'api-nav-items',
       webLogLabel: 'web-nav-items',
@@ -66,14 +62,14 @@ test.describe.serial('J27 — Story 29.3 nav/menu manifest merge (mock-ui-panel-
     context,
   }) => {
     const email = `j27-nav-${randomUUID()}@example.test`
-    const identity = await registerAndLoginIsolated(context.request, API_BASE, {
+    const identity = await registerAndLoginIsolated(context.request, apiBase, {
       email,
       password: PASSWORD,
       orgName: `J27 Nav Org ${randomUUID()}`,
     })
     await enrollMfaDirect(identity.userId, DB_NAME)
 
-    await page.goto(`${BASE_URL}/dashboard`)
+    await page.goto(`${baseUrl}/dashboard`)
 
     const primaryNav = page.getByTestId('primary-nav')
     await expect(primaryNav).toBeVisible()
@@ -102,7 +98,7 @@ test.describe.serial('J27 — Story 29.3 nav/menu manifest merge (mock-ui-panel-
     // Clicking the child performs a real top-level browser navigation to its declared href — not
     // a client-side no-op or a dead link.
     await childLink.click()
-    await expect(page).toHaveURL(`${BASE_URL}/health`)
+    await expect(page).toHaveURL(`${baseUrl}/health`)
     await expect(page.getByRole('heading', { name: 'Cross-project health' })).toBeVisible()
 
     // Confirm the parent item's own icon renders (AC12) — proves the icon-token->glyph mapping

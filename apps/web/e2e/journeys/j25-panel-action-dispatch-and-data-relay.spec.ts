@@ -50,12 +50,10 @@ import {
  * through the real browser/login/HTTP path that `fastify.inject()` cannot exercise.
  */
 
-const API_PORT = 34840
-const WEB_PORT = 34841
 const DB_NAME = 'project_vault_j25_panel_relay_e2e'
 const PASSWORD = 'j25-panel-relay-e2e-Password-1'
-const BASE_URL = `http://localhost:${WEB_PORT}`
-const API_BASE = `http://localhost:${API_PORT}`
+let baseUrl = ''
+let apiBase = ''
 const GROUP_ACTIONS_PATH = '/api/v1/extensions/panels/group/actions'
 const REFRESH_PATH = '/api/v1/auth/refresh'
 // The mock-ui-panel-extension fixture's own action button label and its message-only result.
@@ -83,7 +81,7 @@ async function registerLoggedInMember(
   label: string
 ): Promise<{ userId: string; orgId: string }> {
   const email = `j25-${label}-${randomUUID()}@example.test`
-  const identity = await registerAndLoginIsolated(request, API_BASE, {
+  const identity = await registerAndLoginIsolated(request, apiBase, {
     email,
     password: PASSWORD,
     orgName: `J25 ${label} Org ${randomUUID()}`,
@@ -96,9 +94,7 @@ test.describe
   .serial('J25 — Story 29.2 panel action dispatch, Story 25.12 data relay (mock-ui-panel-extension)', () => {
   test.beforeAll(async () => {
     test.setTimeout(120_000)
-    ;({ apiProcess, webHandle } = await setupMockExtensionIsolatedStack({
-      apiPort: API_PORT,
-      webPort: WEB_PORT,
+    ;({ apiProcess, webHandle, baseUrl, apiBase } = await setupMockExtensionIsolatedStack({
       dbName: DB_NAME,
       apiLogLabel: 'api-panel-relay',
       webLogLabel: 'web-panel-relay',
@@ -118,7 +114,7 @@ test.describe
   test('the fixture extension is genuinely loaded (real boot, not a mock of a mock)', async ({
     page,
   }) => {
-    const res = await page.request.get(`${API_BASE}/api/v1/extensions/nav`, {
+    const res = await page.request.get(`${apiBase}/api/v1/extensions/nav`, {
       headers: {},
       failOnStatusCode: false,
     })
@@ -133,7 +129,7 @@ test.describe
   }) => {
     await registerLoggedInMember(context.request, 'action')
 
-    await page.goto(`${BASE_URL}/extensions/panels/group`)
+    await page.goto(`${baseUrl}/extensions/panels/group`)
     await waitForPanelHydration(page)
 
     // Story 29.1 removed the iframe: the fixture's button is rendered directly into the host
@@ -183,7 +179,7 @@ test.describe
   }) => {
     await registerLoggedInMember(context.request, 'denied-html')
 
-    await page.goto(`${BASE_URL}/extensions/panels/group`)
+    await page.goto(`${baseUrl}/extensions/panels/group`)
     await waitForPanelHydration(page)
 
     const deniedResponse = page.waitForResponse(
@@ -232,7 +228,7 @@ test.describe
   }) => {
     await registerLoggedInMember(context.request, 'expired-action')
 
-    await page.goto(`${BASE_URL}/extensions/panels/group`)
+    await page.goto(`${baseUrl}/extensions/panels/group`)
     await waitForPanelHydration(page)
 
     const authFlow: string[] = []
@@ -266,14 +262,14 @@ test.describe
   }) => {
     await registerLoggedInMember(context.request, 'dead-session')
 
-    await page.goto(`${BASE_URL}/extensions/panels/group`)
+    await page.goto(`${baseUrl}/extensions/panels/group`)
     await waitForPanelHydration(page)
 
     await expireAccessSession(context)
     await context.clearCookies({ name: 'refresh-token' })
     await page.getByRole('button', { name: RUN_BUTTON_NAME }).click()
 
-    await expect(page).toHaveURL(`${BASE_URL}/login?reason=session-expired`)
+    await expect(page).toHaveURL(`${baseUrl}/login?reason=session-expired`)
   })
 
   // Story 29.6 AC13 — real Playwright e2e coverage that a genuine click on a panel-rendered
@@ -288,7 +284,7 @@ test.describe
   }) => {
     await registerLoggedInMember(context.request, 'nav-link')
 
-    await page.goto(`${BASE_URL}/extensions/panels/group`)
+    await page.goto(`${baseUrl}/extensions/panels/group`)
     await waitForPanelHydration(page)
 
     const navLink = page.getByRole('link', { name: 'Open detail' })
@@ -300,7 +296,7 @@ test.describe
     // A real navigation: the URL changed, and the target route's own real content rendered
     // (still the `group` slot's own panel — the `[...subpath]` rest segment is this route's own
     // deep-link mechanism, Story 25.8 AC1, unaffected by this story).
-    await expect(page).toHaveURL(`${BASE_URL}/extensions/panels/group/detail`)
+    await expect(page).toHaveURL(`${baseUrl}/extensions/panels/group/detail`)
     await expect(page.getByRole('heading', { name: 'Extension' })).toBeVisible()
     await expect(page.getByText('Mock panel for slot "group"')).toBeVisible()
   })
@@ -320,7 +316,7 @@ test.describe
     // `registerAndLoginIsolated` above) — mirrors this file's existing `page.request.get(...)`
     // pattern in the "fixture extension is genuinely loaded" test, just via `context.request`
     // since no page navigation is needed for this assertion.
-    const res = await context.request.get(`${API_BASE}/api/v1/extensions/data/fixture-echo`, {
+    const res = await context.request.get(`${apiBase}/api/v1/extensions/data/fixture-echo`, {
       failOnStatusCode: false,
     })
 
@@ -343,7 +339,7 @@ test.describe
   }) => {
     await registerLoggedInMember(context.request, 'module-data-404')
 
-    const res = await context.request.get(`${API_BASE}/api/v1/extensions/data/not-a-real-route`, {
+    const res = await context.request.get(`${apiBase}/api/v1/extensions/data/not-a-real-route`, {
       failOnStatusCode: false,
     })
 

@@ -37,13 +37,14 @@ export type ApiHandle = {
  * comment on `MOCK_CAPABILITY_GATE_EXTRA_PERMITTED_ORG_ID`.
  */
 export async function startCapabilityGateApi(options: {
-  port: number
+  /** Omit to allocate a free port; a restart passes the previous port. */
+  port?: number
   dbName: string
   webPort: number
   extensionPackage?: string
   extraPermittedOrgId?: string
 }): Promise<ApiHandle> {
-  const child = await spawnIsolatedApiProcess({
+  const api = await spawnIsolatedApiProcess({
     port: options.port,
     dbName: options.dbName,
     webPort: options.webPort,
@@ -58,8 +59,8 @@ export async function startCapabilityGateApi(options: {
   })
 
   return {
-    process: child,
-    port: options.port,
+    process: api.process,
+    port: api.port,
     dbName: options.dbName,
     webPort: options.webPort,
     extensionPackage: options.extensionPackage,

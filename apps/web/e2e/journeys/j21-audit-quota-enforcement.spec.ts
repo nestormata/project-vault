@@ -12,6 +12,7 @@ import {
   spawnIsolatedApiProcess,
   stopProcess,
 } from '../fixtures/isolated-stack-shared.js'
+import { allocateFreePort } from '../fixtures/isolated-ports.js'
 
 /**
  * J21 — Story 22.1's own end-to-end proof of per-org audit-storage quota enforcement. This story
@@ -28,10 +29,11 @@ import {
  * describes.
  */
 
-const API_PORT = 34830
+// Story 66.10: ports come from the OS allocator (assigned in beforeAll), never hardcoded.
+let apiPort = 0
 const DB_NAME = 'project_vault_j21_audit_quota_e2e'
 const E2E_PASS_VALUE = 'j21-audit-quota-e2e-Password-1'
-const API_BASE = `http://localhost:${API_PORT}`
+let apiBase = ''
 
 let apiProcess: ChildProcess
 
@@ -56,7 +58,7 @@ function registerAndLogin(
   request: import('@playwright/test').APIRequestContext,
   opts: { email: string; password: string; orgName: string }
 ): Promise<{ userId: string; orgId: string }> {
-  return registerAndLoginIsolated(request, API_BASE, opts)
+  return registerAndLoginIsolated(request, apiBase, opts)
 }
 
 test.describe.configure({ mode: 'serial' })
@@ -64,10 +66,9 @@ test.describe.configure({ mode: 'serial' })
 test.describe('J21 — Story 22.1: per-org audit-storage quota enforcement', () => {
   test.beforeAll(async () => {
     await createIsolatedDatabase(DB_NAME)
-    apiProcess = await spawnIsolatedApiProcess({
-      port: API_PORT,
+    const api = await spawnIsolatedApiProcess({
       dbName: DB_NAME,
-      webPort: API_PORT, // no web process in this journey; CORS origin is unused
+      webPort: await allocateFreePort(), // no web process in this journey; CORS origin is unused
       logLabel: 'api-audit-quota',
       logLevelEnvVar: 'E2E_AUDIT_QUOTA_LOG_LEVEL',
       extraEnv: {
@@ -84,7 +85,10 @@ test.describe('J21 — Story 22.1: per-org audit-storage quota enforcement', () 
         AUDIT_ORG_DEFAULT_STORAGE_QUOTA_MB: '0',
       },
     })
-    await initIsolatedVault(API_PORT, 'j21-audit-quota-e2e-passphrase')
+    apiProcess = api.process
+    apiPort = api.port
+    apiBase = `http://localhost:${apiPort}`
+    await initIsolatedVault(apiPort, 'j21-audit-quota-e2e-passphrase')
   })
 
   test.afterAll(async () => {
@@ -102,7 +106,7 @@ test.describe('J21 — Story 22.1: per-org audit-storage quota enforcement', () 
     })
     await setOrgQuotaBytes(orgId, 10 * 1024 * 1024) // 10 MiB — comfortable headroom
 
-    const createProject = await request.post(`${API_BASE}/api/v1/projects`, {
+    const createProject = await request.post(`${apiBase}/api/v1/projects`, {
       data: { name: 'J21 Project', slug: 'j21-project' },
     })
     expect(createProject.ok(), await createProject.text()).toBeTruthy()
@@ -131,12 +135,12 @@ test.describe('J21 — Story 22.1: per-org audit-storage quota enforcement', () 
     // Re-authenticate as each org's owner (registerAndLogin's cookie jar is per-call via the
     // shared `request` fixture, which persists the LAST login's session) — log back in explicitly
     // before each org's assertions so the right session is active.
-    const loginAsOver = await request.post(`${API_BASE}/api/v1/auth/login`, {
+    const loginAsOver = await request.post(`${apiBase}/api/v1/auth/login`, {
       data: { email: overEmail, password: E2E_PASS_VALUE },
     })
     expect(loginAsOver.ok()).toBeTruthy()
 
-    const refused = await request.post(`${API_BASE}/api/v1/projects`, {
+    const refused = await request.post(`${apiBase}/api/v1/projects`, {
       data: { name: 'Should be refused', slug: 'j21-refused-project' },
     })
     expect(refused.status()).toBe(503)
@@ -148,7 +152,7 @@ test.describe('J21 — Story 22.1: per-org audit-storage quota enforcement', () 
     expect(refusedBody.message).not.toContain(orgSibling.orgId)
 
     // The over-quota org's READS still work (only audited mutations are refused).
-    const listProjects = await request.get(`${API_BASE}/api/v1/projects`)
+    const listProjects = await request.get(`${apiBase}/api/v1/projects`)
     expect(listProjects.ok(), await listProjects.text()).toBeTruthy()
 
     // The partial-write invariant: the refused create must not have persisted a project row —
@@ -160,11 +164,11 @@ test.describe('J21 — Story 22.1: per-org audit-storage quota enforcement', () 
 
     // The sibling org is entirely unaffected — this is the story's headline regression fix
     // (AC-12/AC-15): one org's refusal must never touch another org's success rate.
-    const loginAsSibling = await request.post(`${API_BASE}/api/v1/auth/login`, {
+    const loginAsSibling = await request.post(`${apiBase}/api/v1/auth/login`, {
       data: { email: siblingEmail, password: E2E_PASS_VALUE },
     })
     expect(loginAsSibling.ok()).toBeTruthy()
-    const siblingCreate = await request.post(`${API_BASE}/api/v1/projects`, {
+    const siblingCreate = await request.post(`${apiBase}/api/v1/projects`, {
       data: { name: 'Sibling org unaffected', slug: 'j21-sibling-project' },
     })
     expect(siblingCreate.ok(), await siblingCreate.text()).toBeTruthy()
@@ -181,14 +185,14 @@ test.describe('J21 — Story 22.1: per-org audit-storage quota enforcement', () 
     await setOrgQuotaBytes(orgId, 1)
 
     // Confirm the org really is refused for an ordinary mutation first.
-    const blocked = await request.post(`${API_BASE}/api/v1/projects`, {
+    const blocked = await request.post(`${apiBase}/api/v1/projects`, {
       data: { name: 'Blocked', slug: 'j21-remediation-blocked' },
     })
     expect(blocked.status()).toBe(503)
 
     // Lowering retention is a QUOTA_REMEDIATION_EVENT_TYPES write and must succeed anyway.
     // (auditRoutes is registered under the '/api/v1/org' prefix, not '/api/v1'.)
-    const retention = await request.put(`${API_BASE}/api/v1/org/audit/retention`, {
+    const retention = await request.put(`${apiBase}/api/v1/org/audit/retention`, {
       data: { retentionDays: 30 },
     })
     expect(retention.ok(), await retention.text()).toBeTruthy()

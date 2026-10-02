@@ -22,18 +22,18 @@ export type ApiHandle = { process: ChildProcess; port: number; dbName: string; w
 /** Boots a plain (no extension) isolated `apps/api` process — this journey's subject under test
  * is entirely client-side hydration timing, so the API side needs nothing special. */
 export async function startHydrationRaceApi(options: {
-  port: number
+  port?: number
   dbName: string
   webPort: number
 }): Promise<ApiHandle> {
-  const child = await spawnIsolatedApiProcess({
+  const api = await spawnIsolatedApiProcess({
     port: options.port,
     dbName: options.dbName,
     webPort: options.webPort,
     logLabel: 'api-hydration-race',
     logLevelEnvVar: 'J26_DEBUG_LOG_LEVEL',
   })
-  return { process: child, port: options.port, dbName: options.dbName, webPort: options.webPort }
+  return { process: api.process, port: api.port, dbName: options.dbName, webPort: options.webPort }
 }
 
 /** Vite dev mode — reuses the generic isolated-web spawner unchanged (matches J19/J20's
