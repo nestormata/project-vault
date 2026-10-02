@@ -230,6 +230,7 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-no-sonar-suppressions # Story 43.9 AC-9: no unsigned Sonar suppressions
 	pnpm vitest run scripts/check-no-sonar-suppressions.test.ts scripts/lib/trusted-executable.test.ts
 	pnpm vitest run scripts/check-stryker-config.test.ts # Story 66-7: Stryker shard/threshold/vitest-5 patch invariants
+	pnpm vitest run scripts/check-nightly-workflow.test.ts # Story 66-11: nightly quiet-day gate + 5-leg flaky repeat matrix
 	# Story 43.16 AC-3/AC-5: Fly demo internal TLS — PKI script, fly-setup wiring, pinned-CA call sites.
 	pnpm vitest run scripts/fly-setup.test.ts scripts/fly-internal-tls.test.ts scripts/check-pg-tls-call-sites.test.ts
 	pnpm check-build-info-unstamped # Story 43.6 AC-5
