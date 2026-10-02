@@ -1,7 +1,8 @@
 {
-  "./inlang-plugins/plugin-message-format.js.txt": {
-    "package": "@inlang/plugin-message-format",
+  "@inlang/plugin-message-format": {
     "version": "4.4.4",
+    "module": "./node_modules/@inlang/plugin-message-format/dist/index.js",
+    "packedAs": "./inlang-plugins/plugin-message-format.js",
     "sha256": "b22cf60eb28b3c8c3ce1fb6300611a0552f12d0d995d37c4dd2c96e3ad80c645"
   }
 }

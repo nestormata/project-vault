@@ -14,7 +14,7 @@ own app and builds it.
 | Path | What it is |
 |---|---|
 | `src/`, `static/` | Every tracked file under `apps/web/src` and `apps/web/static` except test files. Never a curated subset: a CI check fails if a tracked source file is missing. |
-| `messages/`, `project.inlang/settings.json`, `inlang-plugins/` | The translations, the inlang project and the vendored message-format plugin (MIT, byte-pinned), so message compilation works offline. |
+| `messages/`, `project.inlang/settings.json`, `inlang-plugins/` | The translations, the inlang project, and a copy of the pinned message-format plugin (MIT, hash-checked at pack time) that the packed `settings.json` loads, so message compilation works offline. |
 | `vendor/shared/src/` | `@project-vault/shared`'s TypeScript source, vendored byte for byte. Only the files reachable from its three entry points are copied. |
 | `config/` | Compiled config factories (`.js` + `.d.ts`): `svelte.config`, `vite.config`, `vitest.config`, `app-css-source`. |
 | `manifests/compatibility.json` | The compatibility manifest (below). Later generated manifests (`injection-points.json`, `nav-ids.json`, `component-index.json`) land here when their stories ship. |

@@ -12,6 +12,8 @@ export const REQUIRED_ENTRIES = [
   'manifests/compatibility.json',
   'vendor/shared/src/index.ts',
   'project.inlang/settings.json',
+  'inlang-plugins/plugin-message-format.js',
+  'inlang-plugins/plugins.lock.json',
   'config/svelte.config.js',
   'config/vite.config.js',
   'config/vitest.config.js',

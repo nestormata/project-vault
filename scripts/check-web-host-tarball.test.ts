@@ -207,6 +207,19 @@ describe('web-host tarball: this checkout (Story 68.2 AC-7)', () => {
   })
 })
 
+describe('web-host inlang project (Story 68.2 AC-5)', () => {
+  it('loads every plugin from a copy inside the tarball, never from PV node_modules or a URL', async () => {
+    const settings = JSON.parse(
+      await fileText(join(STAGE_DIR, 'project.inlang', 'settings.json'))
+    ) as { modules: string[] }
+    expect(settings.modules.length).toBeGreaterThan(0)
+    for (const module of settings.modules) {
+      expect(module, module).toMatch(/^\.\/inlang-plugins\//)
+      expect(paths).toContain(module.slice(2))
+    }
+  })
+})
+
 describe('web-host package.json (Story 68.2 AC-2/AC-6)', () => {
   it('matches the committed golden shape (keys and sources, not versions)', () => {
     const golden = JSON.parse(

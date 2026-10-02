@@ -18,7 +18,16 @@
  * use; the root package.json version is a 0.0.1 placeholder).
  */
 import { execFileSync } from 'node:child_process'
-import { cpSync, globSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import {
+  cpSync,
+  globSync,
+  mkdirSync,
+  openAsBlob,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -34,6 +43,11 @@ import {
   walkImportGraph,
   type GraphResolver,
 } from './lib/web-host/import-graph.js'
+import {
+  packedSettings,
+  type InlangSettings,
+  type PluginLock,
+} from './lib/web-host/inlang-plugins.js'
 import {
   isExactVersion,
   findDrift,
@@ -71,6 +85,7 @@ const EXTENSION_API_PACKAGE = '@project-vault/extension-api'
 
 /** apps/web's tracked directories the package ships, relative to apps/web. */
 const SHIPPED_TREES = ['src', 'static', 'messages', 'project.inlang', 'inlang-plugins'] as const
+const INLANG_SETTINGS = 'project.inlang/settings.json'
 /** @project-vault/shared's three entry points apps/web aliases (index, /node-tls, /test-pki). */
 const SHARED_ENTRIES = ['index.ts', 'node/internal-tls-pem.ts', 'node/test-pki-test-helpers.ts']
 const SOURCE_FILE_RE = /\.(ts|js|svelte)$/
@@ -261,6 +276,30 @@ export function computeDependencies(inputs: DependencyInputs, problems: string[]
   return { dependencies, peerDependencies }
 }
 
+/** Copies each pinned inlang plugin (and its licence) into the package, checks the copy against
+ * its pin, and points the packed settings.json at the copies: a consumer has no PV node_modules. */
+async function packInlangPlugins(problems: string[]): Promise<void> {
+  const lock = readJson<PluginLock>(join(WEB_DIR, 'inlang-plugins', 'plugins.lock.json'))
+  for (const [name, pin] of Object.entries(lock)) {
+    const target = join(STAGE_DIR, pin.packedAs)
+    cpSync(join(WEB_DIR, pin.module), target)
+    cpSync(
+      join(WEB_DIR, 'node_modules', name, 'LICENSE'),
+      join(dirname(target), `LICENSE-${name.split('/').at(-1) ?? name}`)
+    )
+    const bytes = await (await openAsBlob(target)).arrayBuffer()
+    const sha256 = createHash('sha256').update(Buffer.from(bytes)).digest('hex')
+    if (sha256 !== pin.sha256) {
+      problems.push(`${name}: packed plugin sha256 ${sha256} does not match the pin ${pin.sha256}`)
+    }
+  }
+  const settings = readJson<InlangSettings>(join(WEB_DIR, INLANG_SETTINGS))
+  writeFileSync(
+    join(STAGE_DIR, INLANG_SETTINGS),
+    `${JSON.stringify(packedSettings(settings, lock), null, 2)}\n`
+  )
+}
+
 /** Compiles apps/web's messages with the same options the exported factories use. */
 async function compileParaglide(): Promise<void> {
   const entry = createRequire(join(WEB_DIR, MANIFEST)).resolve('@inlang/paraglide-js')
@@ -330,6 +369,7 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
     )
   )
   log(`pack-web-host: copied ${shippedWebFiles.length} tracked apps/web files (tests excluded)`)
+  await packInlangPlugins(problems)
 
   // `$lib/paraglide/*` is generated; compile it so the import graph can follow it (never shipped).
   await compileParaglide()
