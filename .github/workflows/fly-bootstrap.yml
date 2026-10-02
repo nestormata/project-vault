@@ -28,16 +28,12 @@ jobs:
     concurrency:
       group: fly-demo-deploy
       cancel-in-progress: false
+    # Story 43.28 review: only the Fly token and org at job level. The DB and demo secrets are
+    # scoped to the steps that read them (setup, migrate, reset), as fly-reset.yml does, so no
+    # third-party action, deploy or ensure-started step inherits them.
     env:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       FLY_ORG: ${{ inputs.fly_org }}
-      ADMIN_PG_PASSWORD: ${{ secrets.FLY_DEMO_PG_SUPERUSER_PASSWORD }}
-      VAULT_APP_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_APP_PASSWORD }}
-      VAULT_ADMIN_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_ADMIN_PASSWORD }}
-      DEMO_VAULT_PASSPHRASE: ${{ secrets.FLY_DEMO_VAULT_PASSPHRASE }}
-      DEMO_LOGIN_EMAIL: ${{ secrets.FLY_DEMO_LOGIN_EMAIL }}
-      DEMO_LOGIN_PASSWORD: ${{ secrets.FLY_DEMO_LOGIN_PASSWORD }}
-      VAULT_BOOTSTRAP_TOKEN: ${{ secrets.FLY_DEMO_VAULT_BOOTSTRAP_TOKEN }}
     steps:
       - name: Validate release tag
         id: release
@@ -99,6 +95,13 @@ jobs:
       - name: Create apps, volume, secrets, deploy db
         run: ./scripts/fly-setup.sh
         env:
+          # fly-setup.sh silently mints a random superuser password, passphrase or bootstrap token
+          # for any of these that is unset, so all of them must be passed here.
+          ADMIN_PG_PASSWORD: ${{ secrets.FLY_DEMO_PG_SUPERUSER_PASSWORD }}
+          VAULT_APP_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_APP_PASSWORD }}
+          VAULT_ADMIN_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_ADMIN_PASSWORD }}
+          DEMO_VAULT_PASSPHRASE: ${{ secrets.FLY_DEMO_VAULT_PASSPHRASE }}
+          VAULT_BOOTSTRAP_TOKEN: ${{ secrets.FLY_DEMO_VAULT_BOOTSTRAP_TOKEN }}
           # Story 43.16: the internal CA mints the TLS leaves / the per-run operator certificate.
           # Scoped to this step only — never to a deploy step (docs/runbooks/fly-internal-tls.md).
           FLY_INTERNAL_CA_CERT_B64: ${{ secrets.FLY_DEMO_INTERNAL_CA_CERT_B64 }}
@@ -134,6 +137,13 @@ jobs:
       - name: First reset (migrate + seed + vault init/unseal)
         run: ./scripts/fly-reset.sh
         env:
+          ADMIN_PG_PASSWORD: ${{ secrets.FLY_DEMO_PG_SUPERUSER_PASSWORD }}
+          VAULT_APP_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_APP_PASSWORD }}
+          VAULT_ADMIN_PASSWORD: ${{ secrets.FLY_DEMO_VAULT_ADMIN_PASSWORD }}
+          DEMO_VAULT_PASSPHRASE: ${{ secrets.FLY_DEMO_VAULT_PASSPHRASE }}
+          DEMO_LOGIN_EMAIL: ${{ secrets.FLY_DEMO_LOGIN_EMAIL }}
+          DEMO_LOGIN_PASSWORD: ${{ secrets.FLY_DEMO_LOGIN_PASSWORD }}
+          VAULT_BOOTSTRAP_TOKEN: ${{ secrets.FLY_DEMO_VAULT_BOOTSTRAP_TOKEN }}
           # Story 43.16: the internal CA mints the TLS leaves / the per-run operator certificate.
           # Scoped to this step only — never to a deploy step (docs/runbooks/fly-internal-tls.md).
           FLY_INTERNAL_CA_CERT_B64: ${{ secrets.FLY_DEMO_INTERNAL_CA_CERT_B64 }}

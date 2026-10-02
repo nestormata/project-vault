@@ -213,14 +213,15 @@ flyctl machine list -a project-vault-demo-api            # STATE "stopped"?
 ```
 
 Then read why it crashed: the api's single `startup.failed` line carries
-`cause: {code, reason, depth}` (the SQLSTATE or Node error code only, never driver text):
+`cause: {code, reason, depth}` (the SQLSTATE or Node error code only, never driver text). Read
+`cause.code` as well as `cause.reason`: `auth_failed` covers two SQLSTATEs with different fixes.
 
-| `cause.reason`      | Meaning                                        | Fix                                                                      |
-| ------------------- | ---------------------------------------------- | ------------------------------------------------------------------------ |
-| `auth_failed`       | the role passwords differ from the api secrets | run `scripts/fly-migrate.sh` (it re-syncs `vault_app` and `vault_admin`) |
-| `tls_failed`        | the TLS leaves do not match                    | `scripts/fly-internal-tls.sh issue-leaves`, then redeploy db → api → web |
-| `schema_missing`    | migrations have not been applied               | `scripts/fly-migrate.sh`                                                 |
-| `connection_failed` | the db app is down or still starting           | check `flyctl machine list -a project-vault-demo-db`                     |
+| `cause.reason`      | Meaning                                                                                                                                                                                        | Fix                                                                                                                                                              |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth_failed`       | `28P01`: the role passwords differ from the api secrets. `28000`: `pg_hba.conf` refused the connection, most often no or a wrong client certificate (an api older than 43.16, or stale leaves) | `28P01`: run `scripts/fly-migrate.sh` (it re-syncs `vault_app` and `vault_admin`). `28000`: check the api release and its staged TLS leaves, as for `tls_failed` |
+| `tls_failed`        | the TLS leaves do not match                                                                                                                                                                    | `scripts/fly-internal-tls.sh issue-leaves`, then redeploy db → api → web                                                                                         |
+| `schema_missing`    | migrations have not been applied                                                                                                                                                               | `scripts/fly-migrate.sh`                                                                                                                                         |
+| `connection_failed` | the db app is down or still starting                                                                                                                                                           | check `flyctl machine list -a project-vault-demo-db`                                                                                                             |
 
 ## Rollback
 

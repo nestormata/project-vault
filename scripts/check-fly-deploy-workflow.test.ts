@@ -149,6 +149,13 @@ const MIGRATE_SECRETS = [
   'VAULT_ADMIN_PASSWORD',
   ...CA_NAMES,
 ]
+const SETUP_SECRETS = [
+  'ADMIN_PG_PASSWORD',
+  'VAULT_APP_PASSWORD',
+  'VAULT_ADMIN_PASSWORD',
+  'DEMO_VAULT_PASSPHRASE',
+  'VAULT_BOOTSTRAP_TOKEN',
+]
 
 const FLY_WORKFLOWS = [
   ['fly-bootstrap.yml', bootstrapWorkflowPath, 'bootstrap'],
@@ -176,6 +183,19 @@ describe('Fly Demo Bootstrap order (Story 43.28 AC-2/AC-4)', () => {
     const migrate = steps.at(stepIndex(steps, isRun(MIGRATE_RUN)))
     expect(migrate?.name).toBe('Run pending migrations')
     expect([...(migrate?.envNames ?? [])].sort()).toEqual([...MIGRATE_SECRETS].sort())
+  })
+
+  // Story 43.28 review: AC-4 says the ensure-started step sees only FLY_API_TOKEN. A job-level DB or
+  // demo secret would reach it (and every third-party action) by inheritance.
+  it('keeps DB and demo secrets off the job env, scoped to setup, migrate and reset', () => {
+    const jobEnv = envNamesAt(jobLines(readWorkflow(bootstrapWorkflowPath), 'bootstrap'), 4)
+    expect([...jobEnv].sort()).toEqual(['FLY_API_TOKEN', 'FLY_ORG'])
+    const setup = steps.at(stepIndex(steps, isRun('./scripts/fly-setup.sh')))
+    expect([...(setup?.envNames ?? [])].sort()).toEqual([...SETUP_SECRETS, ...CA_NAMES].sort())
+    const reset = steps.at(stepIndex(steps, isRun('./scripts/fly-reset.sh')))
+    expect([...(reset?.envNames ?? [])].sort()).toEqual(
+      [...SETUP_SECRETS, 'DEMO_LOGIN_EMAIL', 'DEMO_LOGIN_PASSWORD', ...CA_NAMES].sort()
+    )
   })
 
   it('ensures only the api app is started, without a web URL (web is not deployed yet)', () => {

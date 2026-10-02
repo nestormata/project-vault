@@ -157,6 +157,13 @@ describe('fly-ensure-started.sh (Story 43.28 AC-4)', () => {
     }
   )
 
+  it('a transient machine-list failure while polling is retried, not fatal (review)', () => {
+    const r = run({ lists: [[stopped('m1')], 'not json at all', [started('m1')]] })
+    expect(r.status).toBe(0)
+    expect(r.flyctl).toEqual([LIST_CALL, `machine start m1 -a ${APP}`, LIST_CALL, LIST_CALL])
+    expect(r.stdout).toContain(`== ${APP}: all 1 machines started ==`)
+  })
+
   it('polls transitional machines without starting them, and ignores destroyed ones', () => {
     const r = run({
       lists: [
@@ -205,6 +212,9 @@ describe('fly-ensure-started.sh (Story 43.28 AC-4)', () => {
       ['api_unreachable', '{"status":"not_ready","reason":"api_unreachable"}', '503'],
       ['an HTML 502 from the Fly edge', '<html><body>502 Bad Gateway</body></html>', '502'],
       ['an empty body', '', '000'],
+      // review: web's own JSON error carries no api `reason`, so it does not prove the api answered
+      ['a JSON error without a reason', '{"message":"Internal Error"}', '500'],
+      ['a non-string reason', '{"reason":null}', '503'],
     ])('%s until the timeout fails with the never-reachable message', (_label, body, code) => {
       const r = run({ lists: [[started('m1')]], args, ready: { body, code }, timeoutS: '0' })
       expect(r.status).not.toBe(0)

@@ -64,9 +64,11 @@ record_states() {
   return 0
 }
 
+# A failed or unparsable re-poll (a transient Fly API error) counts as "not yet" and is retried
+# until the deadline; only the FIRST list is fatal, so a parse failure never means "nothing stopped".
 all_started() {
   local rows
-  rows="$(machine_rows)" || exit 1
+  rows="$(machine_rows)" || return 1
   record_states "$rows"
   [[ -z "$NOT_STARTED" ]]
 }
@@ -77,8 +79,11 @@ api_reachable() {
   code="${response##*$'\n'}"
   body="${response%$'\n'*}"
   [[ "$code" == "200" ]] && return 0
-  # A non-JSON body (an HTML 502 from the Fly edge) means "not reachable yet", never a crash.
-  jq -e 'type == "object" and .reason != "api_unreachable"' <<<"$body" >/dev/null 2>&1
+  # A non-JSON body (an HTML 502 from the Fly edge) means "not reachable yet", never a crash. Only
+  # an api /ready answer counts: it always names a string `reason` (sealed, uninitialized, db). A
+  # JSON error without one (e.g. web's own 500) is not proof that the api answered.
+  jq -e 'type == "object" and (.reason | type) == "string" and .reason != "api_unreachable"' \
+    <<<"$body" >/dev/null 2>&1
 }
 
 rows="$(machine_rows)" || exit 1
