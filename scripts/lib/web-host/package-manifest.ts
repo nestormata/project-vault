@@ -179,6 +179,8 @@ export function packageJsonShape(pkg: Record<string, unknown>): Record<string, u
 export interface CompatibilityInput {
   pvRelease: string
   extensionApiVersion: string
+  /** The composition kit version this release was built with (Story 68.3). */
+  kitVersion: string
   toolchain: { kit: string; svelte: string; vite: string; typescript: string }
   apiImageTag: string
 }
@@ -196,13 +198,13 @@ function sortKeys(value: unknown): unknown {
   return value
 }
 
-/** manifests/compatibility.json (design §11). `kitVersion` stays null until story 68-3. */
+/** manifests/compatibility.json (design §11). `kitVersion` is the composition kit's own version. */
 export function buildCompatibilityManifest(input: CompatibilityInput): string {
   const manifest = {
     schemaVersion: 1,
     pvRelease: input.pvRelease,
     extensionApiVersion: input.extensionApiVersion,
-    kitVersion: null,
+    kitVersion: input.kitVersion,
     toolchain: input.toolchain,
     apiImageTag: input.apiImageTag,
   }
@@ -244,4 +246,18 @@ CentralizeMe composed app).
 - **Not shipped:** cross-package tests, Playwright e2e, generated Paraglide output (run \`paraglide-js compile\` or
   the Vite plugin), build output and Project Vault's dev tooling.
 `
+}
+
+/** Story 68.3 AC-1: the kit's `package.json` version must equal the version its own build embeds
+ * (`src/version.ts`), and both must be exact: the tuple names it and the composer compares it. */
+export function kitVersionProblems(packageVersion: string, embeddedVersion: string): string[] {
+  if (!isExactVersion(packageVersion)) {
+    return [`kit version ${packageVersion} is not an exact semver version`]
+  }
+  if (packageVersion !== embeddedVersion) {
+    return [
+      `kitVersion mismatch: packages/composition-kit/package.json says ${packageVersion} but the kit embeds ${embeddedVersion} (src/version.ts)`,
+    ]
+  }
+  return []
 }

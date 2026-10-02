@@ -66,6 +66,16 @@ describe('web-host config factories: paths (Story 68.2 AC-3)', () => {
     })
   })
 
+  it('aliases @project-vault/shared to the composed copy when a composed root is given (Story 68.3)', () => {
+    const aliases = sharedAliases({ composedRoot: '/srv/app' })
+    // The composed copy sits where a packed web-host keeps its vendored shared source.
+    expect(aliases).toEqual(sharedAliases({ root: '/srv/app', manifest: VENDORED_MANIFEST }))
+    expect(aliases).toMatchObject({ [SHARED_ALIAS]: join('/srv/app', VENDORED_SHARED, 'index.ts') })
+    expect(paraglideOptions('/srv/app', '/srv/app').project).toBe(
+      join('/srv/app', 'project.inlang')
+    )
+  })
+
   it('rejects a packaged shared source that escapes the package root', () => {
     expect(() =>
       sharedAliases({ root: PACKAGE_ROOT, manifest: { webHost: { sharedSource: '../x' } } })
@@ -101,6 +111,14 @@ describe('web-host config factories: svelteConfig (Story 68.2 AC-3)', () => {
     const config = svelteConfig({ adapter })
     expect(config.kit?.adapter).toBe(adapter)
     expect(config.kit?.alias).toEqual(sharedAliases())
+  })
+
+  it('points the shared aliases at the composed copy for a composed app (Story 68.3)', () => {
+    const config = svelteConfig({ composedRoot: '/srv/app', alias: { $cm: 'src/lib/_cm' } })
+    expect(config.kit?.alias).toEqual({
+      ...sharedAliases({ composedRoot: '/srv/app' }),
+      $cm: 'src/lib/_cm',
+    })
   })
 
   it('merges caller aliases and kit options without dropping PV aliases', () => {

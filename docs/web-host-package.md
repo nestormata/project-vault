@@ -76,7 +76,7 @@ was built with. Keys are sorted, and the schema is
 {
   "apiImageTag": "ghcr.io/nestormata/project-vault/api:1.4.0",
   "extensionApiVersion": "3.25.0",
-  "kitVersion": null,
+  "kitVersion": "0.1.0",
   "pvRelease": "1.4.0",
   "schemaVersion": 1,
   "toolchain": { "kit": "2.70.3", "svelte": "5.57.1", "typescript": "6.0.3", "vite": "8.3.1" }
@@ -89,7 +89,9 @@ was built with. Keys are sorted, and the schema is
 - `toolchain` comes from the lockfile, never from ranges.
 - `apiImageTag` is the API image `container-publish.yml` publishes for the same tag. Both use
   `scripts/lib/release-image.ts`.
-- `kitVersion` is `null` until the composition kit (story 68-3) ships.
+- `kitVersion` is the `@project-vault/composition-kit` version this release was built with (its
+  `package.json`, asserted equal to the version its build embeds). The composer fails when the app
+  resolves a different kit version. See [the composition kit](composition-kit.md).
 
 ## How it is built and checked
 

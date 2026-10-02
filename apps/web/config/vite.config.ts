@@ -10,12 +10,18 @@ export interface WebHostBuildOptions {
   /** The app being built: compiled Paraglide messages go into `<appRoot>/src/lib/paraglide`.
    * Defaults to the working directory, which is where Vite and SvelteKit look for the app. */
   appRoot?: string
+  /** A composed app's root (Story 68.3): the inlang project is read from its composed copy. */
+  composedRoot?: string
 }
 
 /** PV's plugins, in PV's order: Tailwind, then the Paraglide compiler (Story 15.1, compiles
  * project.inlang + messages/{locale}.json into typesafe message functions), then SvelteKit. */
 export function webHostPlugins(options: WebHostBuildOptions = {}): PluginOption[] {
-  return [tailwindcss(), paraglideVitePlugin(paraglideOptions(options.appRoot)), sveltekit()]
+  return [
+    tailwindcss(),
+    paraglideVitePlugin(paraglideOptions(options.appRoot, options.composedRoot)),
+    sveltekit(),
+  ]
 }
 
 /** PV's Vite config merged with the caller's: arrays (plugins) are appended after PV's, objects

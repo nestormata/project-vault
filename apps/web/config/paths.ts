@@ -49,12 +49,20 @@ export function sharedSourceRoot(
   return target
 }
 
+/** Story 68.3: where the composer copies the vendored shared source inside a composed app. */
+export function composedSharedSource(composedRoot: string): string {
+  return join(composedRoot, 'vendor', 'shared', 'src')
+}
+
 /** The three @project-vault/shared import specifiers apps/web uses, mapped to source files. The
  * node-only subpaths come first so they win over the package root. */
 export function sharedAliases(
-  options: { root?: string; manifest?: WebHostManifest } = {}
+  options: { root?: string; manifest?: WebHostManifest; composedRoot?: string } = {}
 ): Record<string, string> {
-  const source = sharedSourceRoot(options.root, options.manifest)
+  const source =
+    options.composedRoot === undefined
+      ? sharedSourceRoot(options.root, options.manifest)
+      : composedSharedSource(options.composedRoot)
   return {
     [`${SHARED_PACKAGE}/node-tls`]: join(source, 'node', 'internal-tls-pem.ts'),
     [`${SHARED_PACKAGE}/test-pki`]: join(source, 'node', 'test-pki-test-helpers.ts'),
@@ -62,12 +70,15 @@ export function sharedAliases(
   }
 }
 
-/** Paraglide compiler options. Messages and the inlang project come from the package; the
+/** Paraglide compiler options. Messages and the inlang project come from the package (or, for a
+ * composed app, from its composed copy); the
  * compiled message modules go into the consuming app's own `src/lib/paraglide`, which is where
  * `$lib/paraglide/...` imports in the (copied) source resolve. */
-export function paraglideOptions(appRoot: string = process.cwd()) {
+export function paraglideOptions(appRoot: string = process.cwd(), composedRoot?: string) {
   return {
-    project: join(webHostRoot(), 'project.inlang'),
+    // A composed app compiles its own copy of the inlang project (the composer applies the pack's
+    // message overlays to it before `paraglide compile`, Story 68.3).
+    project: join(composedRoot ?? webHostRoot(), 'project.inlang'),
     outdir: join(appRoot, 'src', 'lib', 'paraglide'),
     // Story 15.1: cookie-based locale, no URL prefixing, so no route changes shape per locale.
     strategy: ['cookie', 'baseLocale'] as ('cookie' | 'baseLocale')[],

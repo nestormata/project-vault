@@ -37,6 +37,12 @@ const MANIFEST = 'package.json'
 const VENDOR_PREFIX = 'vendor/shared/src/'
 // The release workflow packs at the tag's version; locally and in PR CI a prerelease exercises AC-9's edge.
 const TEST_VERSION = process.env.WEB_HOST_PACK_VERSION ?? '1.4.0-rc.1'
+// Story 68.3 AC-1/AC-10: the tuple names the kit version the repository's own kit package.json carries.
+const KIT_VERSION = (
+  JSON.parse(
+    readFileSync(join(repositoryRoot, 'packages', 'composition-kit', MANIFEST), 'utf8')
+  ) as { version: string }
+).version
 const PACK_TIMEOUT_MS = 180_000
 
 interface PackListing {
@@ -323,14 +329,16 @@ describe('compatibility manifest (Story 68.2 AC-9)', () => {
     expect(validate(manifest), JSON.stringify(validate.errors)).toBe(true)
     expect(manifest).toMatchObject({
       pvRelease: TEST_VERSION,
-      kitVersion: null,
+      kitVersion: KIT_VERSION,
       apiImageTag: `ghcr.io/nestormata/project-vault/api:${TEST_VERSION}`,
     })
     expect(paths).toContain('manifests/compatibility.json')
   })
 
-  it('lets 68-3 set kitVersion, and fails on any missing field', () => {
+  it('requires kitVersion as an exact version string (Story 68.3), and fails on any missing field', () => {
     const manifest = JSON.parse(result.compatibilityManifest) as Record<string, unknown>
+    expect(validate({ ...manifest, kitVersion: null })).toBe(false)
+    expect(validate({ ...manifest, kitVersion: '^0.1.0' })).toBe(false)
     expect(validate({ ...manifest, kitVersion: '0.1.0' })).toBe(true)
     for (const field of Object.keys(manifest)) {
       const { [field]: _dropped, ...rest } = manifest
