@@ -115,27 +115,12 @@ jobs:
       - name: Test extension API at the tagged ref
         run: pnpm --filter @project-vault/extension-api test
 
+      # tag == package.json version == compiled EXTENSION_API_VERSION. The check lives in
+      # scripts/lib/version-triangle.ts, shared with web-host-release.yml (Story 68.2).
       - name: Verify version triangle
         env:
           RELEASE_VERSION: ${{ needs.validate.outputs.version }}
-        run: |
-          set -euo pipefail
-          node --input-type=module <<'NODE'
-          import { readFileSync } from 'node:fs'
-          import { EXTENSION_API_VERSION } from './packages/extension-api/dist/manifest.js'
-
-          const packageJson = JSON.parse(readFileSync('./packages/extension-api/package.json', 'utf8'))
-          const releaseVersion = process.env.RELEASE_VERSION
-          const values = {
-            tag: releaseVersion,
-            package: packageJson.version,
-            compiled: EXTENSION_API_VERSION,
-          }
-          console.log(JSON.stringify(values))
-          if (new Set(Object.values(values)).size !== 1) {
-            throw new Error(`version triangle mismatch: ${JSON.stringify(values)}`)
-          }
-          NODE
+        run: pnpm exec tsx scripts/check-release-version-triangle.ts extension-api --tag "$RELEASE_VERSION"
 
       - name: Strip workspace-only devDependencies before packing
         working-directory: packages/extension-api
