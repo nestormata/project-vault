@@ -16,6 +16,14 @@ const VALID_SCENARIOS: ApiRoutesScenario[] = [
   'old-pack',
 ]
 
+const PROJECT_ROUTE = 'GET /api/v1/projects/:projectId'
+
+function routeCaller() {
+  const routes = new Map(Object.entries(extension.hooksFactory().apiRoutes?.routes ?? {}))
+  return (key: string, ...args: unknown[]) =>
+    (routes.get(key)?.handler as (...a: unknown[]) => Promise<unknown>)(...args)
+}
+
 describe('mock-api-routes-extension', () => {
   afterEach(() => {
     setApiRoutesScenario('default')
@@ -44,9 +52,7 @@ describe('mock-api-routes-extension', () => {
   })
 
   it('the default handlers behave as the integration tests expect', async () => {
-    const routes = new Map(Object.entries(extension.hooksFactory().apiRoutes?.routes ?? {}))
-    const call = (key: string, ...args: unknown[]) =>
-      (routes.get(key)?.handler as (...a: unknown[]) => Promise<unknown>)(...args)
+    const call = routeCaller()
     const headers = new Map<string, string>()
     const reply = { sent: false, header: (name: string, value: string) => headers.set(name, value) }
     const executed: string[] = []
@@ -70,12 +76,12 @@ describe('mock-api-routes-extension', () => {
     expect(executed.filter((query) => query.startsWith('insert'))).toHaveLength(2)
 
     await expect(
-      call('GET /api/v1/projects/:projectId', ctx, {}, reply, async () => ({ data: { id: 'p1' } }))
+      call(PROJECT_ROUTE, ctx, {}, reply, async () => ({ data: { id: 'p1' } }))
     ).resolves.toEqual({ data: { id: 'p1', cmTiles: ['tile-for-p1'] } })
     const sentReply = { ...reply, sent: true }
-    await expect(
-      call('GET /api/v1/projects/:projectId', ctx, {}, sentReply, async () => 'pv-reply')
-    ).resolves.toBe('pv-reply')
+    await expect(call(PROJECT_ROUTE, ctx, {}, sentReply, async () => 'pv-reply')).resolves.toBe(
+      'pv-reply'
+    )
 
     await expect(call('HEAD /api/v1/projects/:projectId', ctx, {}, reply)).resolves.toBe('')
     expect(headers.get('x-cm-head')).toBe('explicit')
@@ -94,6 +100,42 @@ describe('mock-api-routes-extension', () => {
     })
     await expect(call('GET /api/v1/dashboard', {})).resolves.toEqual({ cm: 'dashboard' })
     await expect(call('GET /api/v1/cm/gated')).resolves.toEqual({ data: 'gated-ok' })
+  })
+
+  it('the remaining default handlers return their fixed bodies', async () => {
+    const call = routeCaller()
+
+    await expect(call('GET /api/v1/cm/mfa')).resolves.toEqual({ data: 'mfa-ok' })
+    await expect(call('GET /api/v1/cm/operator')).resolves.toEqual({ data: 'operator-ok' })
+    await expect(call('GET /api/v1/auth/login')).resolves.toEqual({ cm: 'login-get' })
+    await expect(call('POST /api/v1/vault/unseal')).resolves.toEqual({ cm: 'unseal' })
+    await expect(call('POST /api/v1/auth/cli-login')).resolves.toEqual({ cm: 'cli' })
+    await expect(call('GET /api/v1/docs/yaml')).resolves.toBe('cm: yaml')
+    await expect(call('GET /api/v1/capabilities')).resolves.toEqual({ capabilities: {} })
+    await expect(call('GET /api/v1/cm/own-capability')).resolves.toEqual({
+      data: 'cm-capability-ok',
+    })
+    await expect(call('GET /api/v1/cm/own-capability-denied')).resolves.toEqual({
+      data: 'never reached',
+    })
+    expect(observed.calls.get('GET /api/v1/cm/own-capability')).toBe(1)
+    expect(observed.calls.get('GET /api/v1/cm/own-capability-denied')).toBe(1)
+
+    await expect(
+      call('GET /api/v1/status-pages/:token', { tx: {} }, {}, {}, async () => 'pv-status')
+    ).resolves.toBe('pv-status')
+    expect(observed.contexts).toContainEqual({
+      route: 'GET /api/v1/status-pages/:token',
+      ctxKeys: ['tx'],
+    })
+  })
+
+  it.each([
+    ['collision', 'GET /api/v1/projects', { cm: true }],
+    ['bad-schema', PROJECT_ROUTE, {}],
+  ] as const)('the %s scenario handler for %s returns %j', async (name, key, body) => {
+    setApiRoutesScenario(name)
+    await expect(routeCaller()(key)).resolves.toEqual(body)
   })
 
   it('a stored next() called after the wrap settled is recorded, not run', async () => {
