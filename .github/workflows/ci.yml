@@ -192,6 +192,14 @@ jobs:
       - name: Check migration compatibility (AC-E9b)
         run: pnpm check-migration-compatibility
 
+      # A workflow_dispatch run (base-image-refresh.yml gates its PR this way) checks out only the
+      # dispatched branch, so the guard's local fork-point base `main` does not exist and it dies
+      # with an unresolvable `main...HEAD` range. History is full (fetch-depth 0); only the ref is
+      # missing. Skipped on main itself, where `main` is the checked-out branch.
+      - name: Create the local main ref for the version-skew guard (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch' && github.ref_name != 'main'
+        run: git fetch --no-tags origin main:refs/heads/main
+
       - name: Check extension-api version-skew (Story 14.1 AC7 / Story 24.4)
         run: pnpm check-extension-api-version-skew
 
