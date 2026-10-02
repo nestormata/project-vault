@@ -211,3 +211,10 @@ function resolveSpecifier(specifier: string, importer: string, resolver: GraphRe
 export function relativePosix(root: string, path: string): string {
   return relative(root, path).split(sep).join('/')
 }
+
+/** Orders strings by UTF-16 code unit, like a comparator-less `sort()`, but explicitly: the pack's
+ * file lists must not depend on the build machine's locale or ICU data. */
+export function compareCodeUnits(a: string, b: string): number {
+  if (a === b) return 0
+  return a < b ? -1 : 1
+}

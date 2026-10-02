@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  compareCodeUnits,
   isTestFile,
   isTestSupportFile,
   moduleSpecifiers,
@@ -159,5 +160,20 @@ describe('withoutQuery (Sonar typescript:S8786)', () => {
     const started = performance.now()
     expect(withoutQuery(pathological)).toBe('x')
     expect(performance.now() - started).toBeLessThan(500)
+  })
+})
+
+describe('compareCodeUnits (Sonar typescript:S2871)', () => {
+  it('orders by UTF-16 code unit, independent of locale', () => {
+    const paths = ['b.ts', 'B.ts', 'a/z.ts', 'a-b.ts', '\u00e9.ts', 'e.ts']
+    expect([...paths].sort(compareCodeUnits)).toEqual([
+      'B.ts',
+      'a-b.ts',
+      'a/z.ts',
+      'b.ts',
+      'e.ts',
+      '\u00e9.ts',
+    ])
+    expect(compareCodeUnits('same', 'same')).toBe(0)
   })
 })

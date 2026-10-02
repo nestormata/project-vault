@@ -36,6 +36,7 @@ import { DEFAULT_RELEASE_REPOSITORY, releaseImageRef } from './lib/release-image
 import { resolveBin, trustedGit } from './lib/trusted-executable.js'
 import { extensionApiVersion } from './lib/version-triangle.js'
 import {
+  compareCodeUnits,
   isTestFile,
   isTestSupportFile,
   relativePosix,
@@ -227,7 +228,9 @@ function vendorShared(problems: string[]): { files: string[]; bareImports: Map<s
     (path) => relativePosix(REPO_ROOT, path)
   )
   problems.push(...graph.errors)
-  const files = [...graph.files].map((path) => relativePosix(REPO_ROOT, path)).sort()
+  const files = [...graph.files]
+    .map((path) => relativePosix(REPO_ROOT, path))
+    .sort(compareCodeUnits)
   const symlinks = new Set(
     trackedFiles(['packages/shared/src'])
       .filter((entry) => entry.symlink)
