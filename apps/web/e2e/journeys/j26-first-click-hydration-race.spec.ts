@@ -22,6 +22,7 @@ import {
   type ApiHandle,
 } from '../fixtures/isolated-hydration-race-stack.js'
 import { instrumentHydrationDetection, waitForHydration } from '../fixtures/hydration.js'
+import { allocateFreePort } from '../fixtures/isolated-ports.js'
 
 /**
  * J26 — Story 28.3 AC1: deterministic reproduction + instrumentation of the swallowed-first-click
@@ -46,9 +47,10 @@ import { instrumentHydrationDetection, waitForHydration } from '../fixtures/hydr
  * or a bare, unlistened DOM node (the silent swallow QA reported).
  */
 
-const API_PORT = 34926
-const DEV_WEB_PORT = 34927
-const BUILD_WEB_PORT = 34928
+// Story 66.10: ports come from the OS allocator (assigned in beforeAll), never hardcoded.
+let apiPort = 0
+let devWebPort = 0
+let buildWebPort = 0
 const DB_NAME = 'project_vault_j26_hydration_race_e2e'
 const PASSWORD = 'j26-hydration-race-e2e-Password-1'
 const NATIVE_FORM_FALLBACK = 'native-form-fallback'
@@ -272,18 +274,20 @@ function languageSelectButton(page: Page) {
 test.describe.serial('J26 — first-click hydration race reproduction (Story 28.3 AC1)', () => {
   test.beforeAll(async () => {
     test.setTimeout(180_000)
+    devWebPort = await allocateFreePort()
+    buildWebPort = await allocateFreePort()
     await createIsolatedDatabase(DB_NAME)
     apiHandle = await startHydrationRaceApi({
-      port: API_PORT,
       dbName: DB_NAME,
-      webPort: DEV_WEB_PORT,
+      webPort: devWebPort,
     })
-    await initIsolatedVault(API_PORT, 'j26-hydration-race-e2e-passphrase')
-    devWebHandle = await startHydrationRaceWebDev({ port: DEV_WEB_PORT, apiPort: API_PORT })
+    apiPort = apiHandle.port
+    await initIsolatedVault(apiPort, 'j26-hydration-race-e2e-passphrase')
+    devWebHandle = await startHydrationRaceWebDev({ port: devWebPort, apiPort: apiPort })
     // Real `vite build` + adapter-node, matching how `make docker-up` actually serves the app —
     // built once here, reused by every production-mode test below.
     buildHydrationRaceWeb()
-    buildWebHandle = await startHydrationRaceWebBuild({ port: BUILD_WEB_PORT, apiPort: API_PORT })
+    buildWebHandle = await startHydrationRaceWebBuild({ port: buildWebPort, apiPort: apiPort })
   })
 
   test.afterAll(async () => {
@@ -296,7 +300,7 @@ test.describe.serial('J26 — first-click hydration race reproduction (Story 28.
   test('AC1 (Vite dev, full page load): measures the click-vs-listener-attachment gap and its effect on the request outcome', async ({
     context,
   }) => {
-    const webBase = `http://localhost:${DEV_WEB_PORT}`
+    const webBase = `http://localhost:${devWebPort}`
     await registerAndLoginViaWebProxy(context, webBase, 'dev-full')
     const page = await context.newPage()
     await instrumentHydrationTiming(page)
@@ -331,7 +335,7 @@ test.describe.serial('J26 — first-click hydration race reproduction (Story 28.
   test('AC1 (production-style build, full page load): same measurement against real `vite build` + adapter-node', async ({
     context,
   }) => {
-    const webBase = `http://localhost:${BUILD_WEB_PORT}`
+    const webBase = `http://localhost:${buildWebPort}`
     await registerAndLoginViaWebProxy(context, webBase, 'build-full')
     const page = await context.newPage()
     await instrumentHydrationTiming(page)
@@ -356,7 +360,7 @@ test.describe.serial('J26 — first-click hydration race reproduction (Story 28.
   test('AC1 (in-app client-side navigation): raw-coordinate click immediately after a real in-app link navigation arrives', async ({
     context,
   }) => {
-    const webBase = `http://localhost:${BUILD_WEB_PORT}`
+    const webBase = `http://localhost:${buildWebPort}`
     await registerAndLoginViaWebProxy(context, webBase, 'build-nav')
     const page = await context.newPage()
     await instrumentHydrationTiming(page)
@@ -399,7 +403,7 @@ test.describe.serial('J26 — first-click hydration race reproduction (Story 28.
     // helper actually closes the gap: same worst-case environment (Vite dev, full page load,
     // raw-coordinate click) as the very first test in this file, but gated behind
     // `waitForHydration` instead of firing the instant `page.goto()` resolves.
-    const webBase = `http://localhost:${DEV_WEB_PORT}`
+    const webBase = `http://localhost:${devWebPort}`
     await registerAndLoginViaWebProxy(context, webBase, 'dev-helper')
     const page = await context.newPage()
     await instrumentHydrationDetection(page)

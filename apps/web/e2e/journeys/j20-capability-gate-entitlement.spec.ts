@@ -14,6 +14,7 @@ import {
   startCapabilityGateWeb,
   type ApiHandle,
 } from '../fixtures/isolated-capability-gate-stack.js'
+import { allocateFreePort } from '../fixtures/isolated-ports.js'
 
 /**
  * J20 — Story 23.3's own end-to-end proof of the capability-entitlement gate, covering the
@@ -34,11 +35,12 @@ import {
  * "UI is for validation only, not setup" convention (`fixtures/auth.ts`).
  */
 
-const API_PORT = 34820
-const WEB_PORT = 34821
+// Story 66.10: ports come from the OS allocator (assigned in beforeAll), never hardcoded.
+let apiPort = 0
+let webPort = 0
 const DB_NAME = 'project_vault_j20_capgate_e2e'
 const PASSWORD = 'j20-capability-gate-e2e-Password-1'
-const BASE_URL = `http://localhost:${WEB_PORT}`
+let baseUrl = ''
 const CAPABILITY_DENIED_HELP =
   "Your organization's plan doesn't include public status pages. Contact your administrator to upgrade."
 
@@ -50,7 +52,7 @@ async function registerAndLogin(
   label: string
 ): Promise<{ userId: string; orgId: string }> {
   const email = `j20-${label}-${randomUUID()}@example.test`
-  const register = await context.request.post(`http://localhost:${API_PORT}/api/v1/auth/register`, {
+  const register = await context.request.post(`http://localhost:${apiPort}/api/v1/auth/register`, {
     data: { email, password: PASSWORD, orgName: `J20 ${label} Org ${randomUUID()}` },
   })
   expect(register.ok(), await register.text()).toBeTruthy()
@@ -58,7 +60,7 @@ async function registerAndLogin(
   // Log in BEFORE enrolling MFA — enrolling first would make this login demand a TOTP challenge
   // this helper cannot answer (it only sets mfa_enrolled_at directly, it doesn't go through real
   // enrollment and so has no secret to generate a code from).
-  const login = await context.request.post(`http://localhost:${API_PORT}/api/v1/auth/login`, {
+  const login = await context.request.post(`http://localhost:${apiPort}/api/v1/auth/login`, {
     data: { email, password: PASSWORD },
   })
   expect(login.ok(), await login.text()).toBeTruthy()
@@ -76,15 +78,17 @@ test.describe
   .serial('J20 — capability-gate entitlement journey (Story 23.3, Priya persona)', () => {
   test.beforeAll(async () => {
     test.setTimeout(120_000)
+    webPort = await allocateFreePort()
+    baseUrl = `http://localhost:${webPort}`
     await createIsolatedDatabase(DB_NAME)
     apiHandle = await startCapabilityGateApi({
-      port: API_PORT,
       dbName: DB_NAME,
-      webPort: WEB_PORT,
+      webPort: webPort,
       extensionPackage: '@project-vault/mock-capability-gate-extension',
     })
-    await initIsolatedVault(API_PORT, 'j20-capgate-e2e-passphrase')
-    webHandle = await startCapabilityGateWeb({ port: WEB_PORT, apiPort: API_PORT })
+    apiPort = apiHandle.port
+    await initIsolatedVault(apiPort, 'j20-capgate-e2e-passphrase')
+    webHandle = await startCapabilityGateWeb({ port: webPort, apiPort: apiPort })
   })
 
   test.afterAll(async () => {
@@ -92,7 +96,7 @@ test.describe
   })
 
   test('the gate is genuinely registered (real boot, not a mock)', async ({ page }) => {
-    const res = await page.request.get(`http://localhost:${API_PORT}/status`)
+    const res = await page.request.get(`http://localhost:${apiPort}/status`)
     const body = (await res.json()) as { capabilityGate?: { gate: { name: string } | null } }
     expect(body.capabilityGate?.gate).toEqual({ name: 'test.mock-capability-gate-extension' })
   })
@@ -105,7 +109,7 @@ test.describe
 
     // Create a project via the API (setup, not the subject under test).
     const createProject = await context.request.post(
-      `http://localhost:${API_PORT}/api/v1/projects`,
+      `http://localhost:${apiPort}/api/v1/projects`,
       {
         data: { name: 'J20 Project', slug: `j20-project-${Date.now()}` },
       }
@@ -119,7 +123,7 @@ test.describe
     // own fallback copy wired as its accessible description (23-7's Priya persona journey, step
     // 1). The page is loaded hydration-armed so the assertions read the hydrated state.
     const enableButton = page.getByRole('button', { name: 'Enable public status page' })
-    await gotoHydrated(page, `${BASE_URL}/projects/${projectId}/status-page`, enableButton)
+    await gotoHydrated(page, `${baseUrl}/projects/${projectId}/status-page`, enableButton)
     await expect(page.getByRole('heading', { name: 'Public status page' })).toBeVisible()
     await expect(enableButton).toBeDisabled()
     await expect(enableButton).toHaveAccessibleDescription(CAPABILITY_DENIED_HELP)
@@ -127,7 +131,7 @@ test.describe
     // The UI gate is cosmetic; Story 23.3's backend gate is the enforcement (23-7 step 3, AC-11).
     // Bypassing the UI must still get a real 403 carrying the extension's own message verbatim.
     const bypass = await context.request.post(
-      `http://localhost:${API_PORT}/api/v1/projects/${projectId}/status-page`,
+      `http://localhost:${apiPort}/api/v1/projects/${projectId}/status-page`,
       { data: {} }
     )
     expect(bypass.status(), await bypass.text()).toBe(403)
@@ -149,7 +153,7 @@ test.describe
     // check on the public route for THIS org — instead confirm the general "unknown token"
     // 404-collapse invariant this story adds no new distinguishable state to (AC-24).
     const unknownTokenRes = await page.request.get(
-      `http://localhost:${API_PORT}/api/v1/status-pages/${'deadbeef'.repeat(4)}`
+      `http://localhost:${apiPort}/api/v1/status-pages/${'deadbeef'.repeat(4)}`
     )
     expect(unknownTokenRes.status()).toBe(404)
 
@@ -167,13 +171,13 @@ test.describe
     // genuinely re-seals the vault regardless of the capability gate, an orthogonal pre-existing
     // vault architecture concern this journey is not testing. Unseal exactly like a real operator
     // would after any restart.
-    const unseal = await page.request.post(`http://localhost:${API_PORT}/api/v1/vault/unseal`, {
+    const unseal = await page.request.post(`http://localhost:${apiPort}/api/v1/vault/unseal`, {
       data: { kmsType: 'passphrase', passphrase: 'j20-capgate-e2e-passphrase' },
     })
     expect(unseal.ok(), await unseal.text()).toBeTruthy()
 
     const retryEnableButton = page.getByRole('button', { name: 'Enable public status page' })
-    await gotoHydrated(page, `${BASE_URL}/projects/${projectId}/status-page`, retryEnableButton)
+    await gotoHydrated(page, `${baseUrl}/projects/${projectId}/status-page`, retryEnableButton)
     await expect(page.getByRole('heading', { name: 'Public status page' })).toBeVisible()
     await expect(retryEnableButton).toBeEnabled()
     await retryEnableButton.click()

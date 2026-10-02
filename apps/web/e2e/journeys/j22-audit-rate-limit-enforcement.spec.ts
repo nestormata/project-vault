@@ -12,6 +12,7 @@ import {
   spawnIsolatedApiProcess,
   stopProcess,
 } from '../fixtures/isolated-stack-shared.js'
+import { allocateFreePort } from '../fixtures/isolated-ports.js'
 
 /**
  * J22 — Story 22.2's own end-to-end proof of per-org audit write-RATE (throughput) limiting.
@@ -22,10 +23,11 @@ import {
  * surface either — see the story's Product Surface Contract).
  */
 
-const API_PORT = 34831
+// Story 66.10: ports come from the OS allocator (assigned in beforeAll), never hardcoded.
+let apiPort = 0
 const DB_NAME = 'project_vault_j22_audit_rate_limit_e2e'
 const E2E_PASS_VALUE = 'j22-audit-rate-e2e-Password-1'
-const API_BASE = `http://localhost:${API_PORT}`
+let apiBase = ''
 
 let apiProcess: ChildProcess
 
@@ -53,7 +55,7 @@ function registerAndLogin(
   request: import('@playwright/test').APIRequestContext,
   opts: { email: string; password: string; orgName: string }
 ): Promise<{ userId: string; orgId: string }> {
-  return registerAndLoginIsolated(request, API_BASE, opts)
+  return registerAndLoginIsolated(request, apiBase, opts)
 }
 
 test.describe.configure({ mode: 'serial' })
@@ -61,10 +63,9 @@ test.describe.configure({ mode: 'serial' })
 test.describe('J22 — Story 22.2: per-org audit write-rate (throughput) limiting', () => {
   test.beforeAll(async () => {
     await createIsolatedDatabase(DB_NAME)
-    apiProcess = await spawnIsolatedApiProcess({
-      port: API_PORT,
+    const api = await spawnIsolatedApiProcess({
       dbName: DB_NAME,
-      webPort: API_PORT, // no web process in this journey; CORS origin is unused
+      webPort: await allocateFreePort(), // no web process in this journey; CORS origin is unused
       logLabel: 'api-audit-rate-limit',
       logLevelEnvVar: 'E2E_AUDIT_RATE_LIMIT_LOG_LEVEL',
       extraEnv: {
@@ -76,7 +77,10 @@ test.describe('J22 — Story 22.2: per-org audit write-rate (throughput) limitin
         AUDIT_ORG_WRITE_RATE_WINDOW_MS: '60000',
       },
     })
-    await initIsolatedVault(API_PORT, 'j22-audit-rate-e2e-passphrase')
+    apiProcess = api.process
+    apiPort = api.port
+    apiBase = `http://localhost:${apiPort}`
+    await initIsolatedVault(apiPort, 'j22-audit-rate-e2e-passphrase')
   })
 
   test.afterAll(async () => {
@@ -94,7 +98,7 @@ test.describe('J22 — Story 22.2: per-org audit write-rate (throughput) limitin
     })
     await setOrgWriteRatePerMinute(orgId, 1000) // comfortable headroom
 
-    const createProject = await request.post(`${API_BASE}/api/v1/projects`, {
+    const createProject = await request.post(`${apiBase}/api/v1/projects`, {
       data: { name: 'J22 Project', slug: 'j22-project' },
     })
     expect(createProject.ok(), await createProject.text()).toBeTruthy()
@@ -122,13 +126,13 @@ test.describe('J22 — Story 22.2: per-org audit write-rate (throughput) limitin
     await setOrgWriteRatePerMinute(orgOver.orgId, 1)
     await setOrgWriteRatePerMinute(orgSibling.orgId, 1000)
 
-    const loginAsOver = await request.post(`${API_BASE}/api/v1/auth/login`, {
+    const loginAsOver = await request.post(`${apiBase}/api/v1/auth/login`, {
       data: { email: overEmail, password: E2E_PASS_VALUE },
     })
     expect(loginAsOver.ok()).toBeTruthy()
 
     // The org's next non-exempt write must be refused.
-    const refused = await request.post(`${API_BASE}/api/v1/projects`, {
+    const refused = await request.post(`${apiBase}/api/v1/projects`, {
       data: { name: 'Should be refused', slug: 'j22-refused-project' },
     })
     expect(refused.status()).toBe(429)
@@ -145,7 +149,7 @@ test.describe('J22 — Story 22.2: per-org audit write-rate (throughput) limitin
     expect(Number(retryAfter)).toBeGreaterThan(0)
 
     // The over-cap org's READS still work (only audited mutations are refused).
-    const listProjects = await request.get(`${API_BASE}/api/v1/projects`)
+    const listProjects = await request.get(`${apiBase}/api/v1/projects`)
     expect(listProjects.ok(), await listProjects.text()).toBeTruthy()
 
     // The partial-write invariant: the refused create must not have persisted a project row.
@@ -154,11 +158,11 @@ test.describe('J22 — Story 22.2: per-org audit write-rate (throughput) limitin
 
     // The sibling org is entirely unaffected — one org's rate refusal must never touch another
     // org's success rate (AC-8/AC-15).
-    const loginAsSibling = await request.post(`${API_BASE}/api/v1/auth/login`, {
+    const loginAsSibling = await request.post(`${apiBase}/api/v1/auth/login`, {
       data: { email: siblingEmail, password: E2E_PASS_VALUE },
     })
     expect(loginAsSibling.ok()).toBeTruthy()
-    const siblingCreate = await request.post(`${API_BASE}/api/v1/projects`, {
+    const siblingCreate = await request.post(`${apiBase}/api/v1/projects`, {
       data: { name: 'Sibling org unaffected', slug: 'j22-sibling-project' },
     })
     expect(siblingCreate.ok(), await siblingCreate.text()).toBeTruthy()
@@ -177,28 +181,28 @@ test.describe('J22 — Story 22.2: per-org audit write-rate (throughput) limitin
 
     // Confirm the org really is refused for an ordinary mutation first (registration/onboarding
     // already consumed the single slot).
-    const blocked = await request.post(`${API_BASE}/api/v1/projects`, {
+    const blocked = await request.post(`${apiBase}/api/v1/projects`, {
       data: { name: 'Blocked', slug: 'j22-remediation-blocked' },
     })
     expect(blocked.status()).toBe(429)
 
     // Logging back in (SESSION_CREATED, security_critical) must never be rate-refused — this is
     // the login deadlock the rate axis's exemption reuse exists to close.
-    const reLogin = await request.post(`${API_BASE}/api/v1/auth/login`, {
+    const reLogin = await request.post(`${apiBase}/api/v1/auth/login`, {
       data: { email, password: E2E_PASS_VALUE },
     })
     expect(reLogin.ok(), await reLogin.text()).toBeTruthy()
 
     // Lowering retention is a QUOTA_REMEDIATION_EVENT_TYPES write and must succeed anyway, even
     // though the org is still over its rate cap.
-    const retention = await request.put(`${API_BASE}/api/v1/org/audit/retention`, {
+    const retention = await request.put(`${apiBase}/api/v1/org/audit/retention`, {
       data: { retentionDays: 30 },
     })
     expect(retention.ok(), await retention.text()).toBeTruthy()
 
     // A routine, non-exempt write is still correctly refused — exemption is scoped, not a
     // blanket "org is fine now" reset.
-    const stillBlocked = await request.post(`${API_BASE}/api/v1/projects`, {
+    const stillBlocked = await request.post(`${apiBase}/api/v1/projects`, {
       data: { name: 'Still blocked', slug: 'j22-still-blocked' },
     })
     expect(stillBlocked.status()).toBe(429)

@@ -71,12 +71,13 @@ export type ApiHandle = {
  * `/vault/init` at all: this journey only exercises those three routes plus the SSO
  * start/callback pair, and the latter two are deliberately exempted too. */
 export async function startEnvelopeApi(options: {
-  port: number
+  /** Omit to allocate a free port; a restart passes the previous port. */
+  port?: number
   dbName: string
   envAudience: string
   webPort: number
 }): Promise<ApiHandle> {
-  const child = await spawnIsolatedApiProcess({
+  const api = await spawnIsolatedApiProcess({
     port: options.port,
     dbName: options.dbName,
     webPort: options.webPort,
@@ -92,8 +93,8 @@ export async function startEnvelopeApi(options: {
     },
   })
   return {
-    process: child,
-    port: options.port,
+    process: api.process,
+    port: api.port,
     dbName: options.dbName,
     envAudience: options.envAudience,
     webPort: options.webPort,
