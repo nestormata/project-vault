@@ -39,6 +39,8 @@ import type { HostServices } from './host-services.js'
 import type { ExtensionDbScopeEntry, ExtensionRuntimeContext } from './db-access.js'
 import type { ProjectArchiveNotifier, ProjectCreatePolicy } from './hooks/project-lifecycle.js'
 import type { ModuleDataRouteHandler } from './hooks/module-data.js'
+import type { ApiRoutesHooks } from './hooks/api-routes.js'
+import { assertApiRouteImplementations, validateApiRoutesShape } from './api-routes-validation.js'
 
 /**
  * AC6 — reverse-DNS-style manifest name, e.g. "com.acme.sso-extension". The two quantified
@@ -119,6 +121,13 @@ export type ExtensionHooks = {
    * `capabilities[]` and a non-empty `anonymousRoutePaths` allow-list (AC3).
    */
   publicRoute?: PublicRouteHooks
+  /**
+   * Story 68.8 (M7) — the handlers, schema objects and hook functions behind
+   * `ExtensionManifest.apiRoutes`, keyed by `"<METHOD> <url>"`. Cross-checked after
+   * `hooksFactory()`: every declared route has a callable handler, a declared schema has a value
+   * and a declared hook phase has a function.
+   */
+  apiRoutes?: ApiRoutesHooks
 }
 
 /** Default `HostServices` used when a caller (typically a test) invokes `registerExtension()`
@@ -353,6 +362,7 @@ const KNOWN_MANIFEST_KEYS = [
   'redirectOrigins',
   'scheduledTasks',
   'anonymousRoutePaths',
+  'apiRoutes',
 ]
 
 const INVALID_MANIFEST_FIELD = 'invalid-manifest-field'
@@ -1444,6 +1454,7 @@ export function registerExtension(
   validateRedirectOriginsShape(manifest)
   validateScheduledTasksShape(manifest, options)
   validateAnonymousRoutePathsShape(manifest)
+  validateApiRoutesShape(manifest.apiRoutes)
 
   if (!REVERSE_DNS_NAME_PATTERN.test(manifest.name)) {
     throw new ExtensionRegistrationError(
@@ -1457,6 +1468,9 @@ export function registerExtension(
   const hooks = hooksFactory(host)
 
   assertCallableHooksAfterFactory(manifest, hooks)
+  assertApiRouteImplementations(manifest.apiRoutes, hooks.apiRoutes, (message) =>
+    logger.warn(message)
+  )
 
   return {
     manifest: {
@@ -1473,6 +1487,7 @@ export function registerExtension(
       redirectOrigins: manifest.redirectOrigins,
       scheduledTasks: manifest.scheduledTasks,
       anonymousRoutePaths: manifest.anonymousRoutePaths,
+      apiRoutes: manifest.apiRoutes,
     },
     hooks,
   }

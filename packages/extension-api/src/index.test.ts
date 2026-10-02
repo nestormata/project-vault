@@ -11,6 +11,9 @@ describe('index.ts — root-only export surface (AC1, AC2)', () => {
       new Set([
         'defineExtension',
         'ANONYMOUS_ROUTE_PATH_PATTERN',
+        'API_ROUTE_HOOK_PHASES',
+        'API_ROUTE_METHODS',
+        'MAX_API_ROUTE_URL_LENGTH',
         'MAX_ANONYMOUS_ROUTE_PATHS',
         'EXTENSION_API_VERSION',
         'HOST_SUPPORTED_EXTENSION_API_RANGE',

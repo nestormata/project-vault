@@ -6,6 +6,8 @@ describe('@project-vault/extension-api public value exports', () => {
   it('keeps the root export surface exact', () => {
     expect(Object.keys(extensionApi).sort()).toEqual([
       'ANONYMOUS_ROUTE_PATH_PATTERN',
+      'API_ROUTE_HOOK_PHASES',
+      'API_ROUTE_METHODS',
       'CredentialSharingNoMachineUserError',
       'CredentialSharingOrgRateLimitedError',
       'CredentialSharingRateLimitedError',
@@ -14,6 +16,7 @@ describe('@project-vault/extension-api public value exports', () => {
       'ExtensionRegistrationError',
       'HOST_SUPPORTED_EXTENSION_API_RANGE',
       'MAX_ANONYMOUS_ROUTE_PATHS',
+      'MAX_API_ROUTE_URL_LENGTH',
       'MAX_MODULE_ACTIONS',
       'MAX_MODULE_DATA_ROUTES',
       'MAX_NAV_ITEMS',

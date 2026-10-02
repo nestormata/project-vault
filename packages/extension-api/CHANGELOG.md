@@ -2,6 +2,42 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.27.0 — 2026-10-02
+
+contract-hash: sha256:1395088e2b26df5007845ff462a355fc077405aeac6025dd30460a1d6786c3d5
+
+### Added
+
+- `ExtensionManifest.apiRoutes` (optional, Story 68.8, M7): declares API routes the extension adds
+  at any URL (`add`) and PV API routes it overrides (`override`, with `mode: 'replace' | 'wrap'`,
+  optional `schema: 'extend' | 'replace'`, prepended/appended route hooks and `replaceSecurity`).
+  Every route runs inside PV's own security pipeline (authentication, roles, MFA, rate limit,
+  capability gate, RLS transaction, audit). Validation checks integrity only: well-formed methods
+  and URLs, known entry keys, no duplicate `METHOD url` keys, `security` on an override only with
+  `replaceSecurity: true`. There is no URL prefix, count cap, capability declaration or allowlist.
+  Failures use the existing `invalid-manifest-field` reason (no new reason).
+- `ExtensionHooks.apiRoutes` (optional): the handlers, schema objects and hook functions behind
+  the declarations, keyed by `"<METHOD> <url>"`. After `hooksFactory()` every declared route must
+  have a callable handler, a declared schema a value and a declared hook phase a function; an
+  implementation with no declaration only warns.
+- New exported types (`ApiRouteMethod`, `ApiRouteKey`, `ApiRouteHookPhase`, `ApiRouteSecurity`,
+  `ApiRouteAddDeclaration`, `ApiRouteOverrideDeclaration`, `ApiRoutesDeclaration`,
+  `ApiRouteContext`, `ApiRouteHandler`, `ApiRouteWrapHandler`, `RawRouteHandler`,
+  `RawRouteWrapHandler`, `ApiRouteImplementation`, `ApiRoutesHooks` and their helpers) and
+  constants (`API_ROUTE_METHODS`, `API_ROUTE_HOOK_PHASES`, `MAX_API_ROUTE_URL_LENGTH`).
+
+`apiRoutes` replaces the deprecated `moduleDataRoutes`, which is unchanged in this release.
+
+Host behaviour shipped with this release (PV API): an added route's default per-user rate-limit
+bucket key is its full `METHOD url`; an overridden route counts in PV's own route key, which is
+now the prefixed route key (for example `GET /api/v1/projects`) instead of the unprefixed
+registration URL.
+
+Per `docs/extension-api-versioning-policy.md` rows 1 ("adding an optional field to any exported
+object type") and 11 ("adding a new hook type and a new optional field on `ExtensionHooks`"),
+this change is NON-BREAKING — a MINOR. The floor stays `>=3.0.0`. 3.26.0 is taken by a parallel
+change; this release moves to the next free minor.
+
 ## 3.25.0 — 2026-09-30
 
 contract-hash: sha256:facb311006a33162b6e99a403709602a394f5a97f522dbc1ead815bb1f949d97
