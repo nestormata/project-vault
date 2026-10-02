@@ -68,8 +68,8 @@
     "@vitest/coverage-v8": "^5.0.1",
     "drizzle-kit": "^0.31.11",
     "eslint": "^10.11.0",
-    "tsx": "4.23.15",
-    "typescript": "^7.0.2",
+    "tsx": "4.21.1",
+    "typescript": "^6.0.3",
     "vitest": "^5.0.1"
   }
 }

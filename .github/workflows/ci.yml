@@ -104,6 +104,9 @@ jobs:
       - name: Check third-party action SHA pins (Story 64.2 AC-3)
         run: pnpm vitest run scripts/check-action-pins.test.ts
 
+      - name: Check no pnpm override makes a declared range false (Story 68.2 AC-1)
+        run: pnpm vitest run scripts/check-no-false-overrides.test.ts
+
       # Story 43.11 AC-6.4: the story-integrity guards' own test suites. --dir scripts limits
       # vitest discovery to ./scripts (positional args are substring filters). The overlay guards
       # themselves print SKIPPED here: public CI never has the private _bmad-output overlay.

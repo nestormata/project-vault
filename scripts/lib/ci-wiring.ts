@@ -1,13 +1,7 @@
 // Shared parsing for "is this contract suite actually wired into CI?" self-tests (Story 66.1's
 // e2e-stack.test.ts, Story 60.7's check-compose-config.test.ts). Pure text in, data out: callers
 // load the Makefile / workflow text themselves.
-import { createRequire } from 'node:module'
-import { resolve } from 'node:path'
-
-// The repository root has no YAML dependency; reuse the `yaml` package apps/api already depends on.
-const { parse: parseYaml } = createRequire(resolve(process.cwd(), 'apps/api/package.json'))(
-  'yaml'
-) as typeof import('yaml')
+import { parseYaml } from './yaml.js'
 
 interface WorkflowStep {
   run?: string
