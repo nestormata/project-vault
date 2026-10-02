@@ -7,6 +7,9 @@
  *   tsx scripts/check-release-version-triangle.ts web-host --tag 1.4.0
  *     tag == staged web-host package.json version == compatibility manifest pvRelease, and the
  *     manifest's apiImageTag names that same version
+ *   tsx scripts/check-release-version-triangle.ts composition-kit --tag 0.1.0
+ *     tag == packages/composition-kit/package.json version == the version its build embeds
+ *     (src/version.ts), Story 68.3
  *
  * Prints the compared values as JSON and exits 1 on any mismatch.
  */
@@ -22,6 +25,20 @@ const STAGE_DIR = fileURLToPath(new URL('../.web-host-pack', import.meta.url))
 export async function extensionApiCorners(tag: string): Promise<Record<string, string>> {
   const versions = await readExtensionApiVersions({ compiled: true })
   return { tag, package: versions.package, compiled: versions.manifest }
+}
+
+/** The composition kit's corners, read from `root` (the repository by default). The embedded
+ * version is the one the kit's own source exports, loaded through module resolution. */
+export async function kitCorners(
+  tag: string,
+  root: string = fileURLToPath(new URL('..', import.meta.url))
+): Promise<Record<string, string | undefined>> {
+  const kitDir = join(root, 'packages', 'composition-kit')
+  const pkg = createRequire(join(kitDir, 'package.json'))('./package.json') as { version?: string }
+  const embedded = (await import(pathToFileURL(join(kitDir, 'src', 'version.ts')).href)) as {
+    KIT_VERSION?: string
+  }
+  return { tag, package: pkg.version, embedded: embedded.KIT_VERSION }
 }
 
 export function webHostCorners(tag: string): Record<string, string | undefined> {
@@ -46,13 +63,20 @@ async function main(): Promise<void> {
     options: { tag: { type: 'string' } },
   })
   const [target] = positionals
-  if (values.tag === undefined || (target !== 'extension-api' && target !== 'web-host')) {
+  if (
+    values.tag === undefined ||
+    (target !== 'extension-api' && target !== 'web-host' && target !== 'composition-kit')
+  ) {
     throw new Error(
-      'usage: check-release-version-triangle.ts <extension-api|web-host> --tag <version>'
+      'usage: check-release-version-triangle.ts <extension-api|web-host|composition-kit> --tag <version>'
     )
   }
   const corners =
-    target === 'extension-api' ? await extensionApiCorners(values.tag) : webHostCorners(values.tag)
+    target === 'extension-api'
+      ? await extensionApiCorners(values.tag)
+      : target === 'web-host'
+        ? webHostCorners(values.tag)
+        : await kitCorners(values.tag)
   process.stdout.write(`${JSON.stringify(corners)}\n`)
   assertVersionTriangle(corners)
 }

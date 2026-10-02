@@ -12,7 +12,11 @@ useWorlds()
 const requireAjv = createRequire(
   join(import.meta.dirname, '..', '..', 'api-contract-tests', 'package.json')
 )
-const Ajv = requireAjv('ajv') as typeof import('ajv').default
+interface Validator {
+  (data: unknown): boolean
+  errors?: unknown
+}
+const Ajv = requireAjv('ajv') as new (options: object) => { compile: (schema: object) => Validator }
 const schema = JSON.parse(
   readFileSync(join(import.meta.dirname, '..', 'schema', 'composition.lock.schema.json'), 'utf8')
 ) as object

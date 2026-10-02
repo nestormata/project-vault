@@ -51,8 +51,11 @@ by accident). `story` is informational.
 
 1. Checks the compatibility tuple (below) **before** touching anything.
 2. Copies `web-host`'s `src/`, `static/`, `messages/`, `project.inlang/` and `vendor/` into the app
-   root as regular files (never symlinks), each generated directory with a "do not edit" header and a
-   catch-all `.gitignore`. The kit owns these directories and refuses to replace one without its header.
+   root as regular files (never symlinks), each generated directory with a "do not edit" header. The kit
+   owns these directories and refuses to replace one without its header. List them in your app's own
+   `.gitignore` (`/src/`, `/static/`, `/messages/`, `/project.inlang/`, `/inlang-plugins/`, `/vendor/`);
+   the kit writes no `.gitignore` inside them, because Tailwind's scanner honours one and would then skip
+   every composed file.
 3. Overlays the pack's `src/` and `static/`. A pack file on an existing PV path is an **override** and
    must be declared with the PV file's `hostSha256`; an undeclared collision fails. A pack file on a new
    path is an **addition** (no declaration).

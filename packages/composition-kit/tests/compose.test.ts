@@ -121,12 +121,12 @@ describe('AC-2/AC-3: copy, overlay, override and addition', () => {
     expect(lock.apiRouteOverrides).toEqual([])
   })
 
-  it('copies regular files only, writes a do-not-edit header and a gitignore in each generated directory', async () => {
+  it('copies regular files only and writes a do-not-edit header, never a gitignore, in each generated directory', async () => {
     const world = makeWorld()
     await run(world, manifest())
-    for (const dir of ['src', 'static', 'messages', 'project.inlang', 'vendor']) {
+    for (const dir of ['src', 'static', 'messages', 'project.inlang', 'inlang-plugins', 'vendor']) {
       expect(read(world, `${dir}/.pv-compose-generated`)).toContain('DO NOT EDIT')
-      expect(read(world, `${dir}/.gitignore`)).toBe('*\n')
+      expect(existsSync(join(world.app, dir, '.gitignore'))).toBe(false)
     }
     for (const file of listFiles(world.app, 'src'))
       expect(lstatSync(join(world.app, file)).isFile()).toBe(true)
@@ -211,6 +211,12 @@ describe('AC-2/AC-3: copy, overlay, override and addition', () => {
       expect.stringContaining('Refusing symlink in the UI pack: src/plink -> /etc/hostname'),
       expect.stringContaining('Refusing symlink in web-host: src/link -> /etc/hostname'),
     ])
+  })
+
+  it('ignores a node_modules symlink in the pack (a workspace install), but not other symlinks', async () => {
+    const world = makeWorld({ packFiles: { 'src/a.txt': 'a' } })
+    symlinkSync(world.app, join(world.pack, 'node_modules'))
+    expect((await run(world, manifest())).messages).toEqual([])
   })
 
   it('refuses a directory that is not a web-host package before touching the target', async () => {

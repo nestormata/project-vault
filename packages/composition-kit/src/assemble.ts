@@ -31,12 +31,11 @@ function textOf(source: FileSource | undefined): string {
   return source.kind === 'file' ? readFileSync(source.abs, 'utf8') : source.content.toString('utf8')
 }
 
-/** The "do not edit" header and a catch-all `.gitignore` in every generated directory. */
+/** The "do not edit" header in every generated directory. There is deliberately no `.gitignore`
+ * inside them: Tailwind's scanner honours one, so a `*` rule in `src/` hides every composed file
+ * from the utility scan (verified in the integration job). The app's own `.gitignore` lists them. */
 function headerFiles(): [string, FileSource][] {
-  return OWNED_DIRECTORIES.flatMap((owned) => [
-    [`${owned}/${GENERATED_MARKER}`, text(HEADER_TEXT)] as [string, FileSource],
-    [`${owned}/.gitignore`, text('*\n')] as [string, FileSource],
-  ])
+  return OWNED_DIRECTORIES.map((owned) => [`${owned}/${GENERATED_MARKER}`, text(HEADER_TEXT)])
 }
 
 /** The pack's message overlay files: `<messages dir>/<locale>.json`, directly in that directory. */

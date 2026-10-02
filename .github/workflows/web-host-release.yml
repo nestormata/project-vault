@@ -14,10 +14,15 @@ name: Web-host release
 #   versions` before treating that as a bug);
 # - a workflow_dispatch `dry_run` (dispatched on a tag ref) runs every gate except the upload, in
 #   its own concurrency group so a rehearsal never queues behind or cancels a real release;
-# - both Node legs verify, only the Node 24 leg uploads.
+# - both Node legs verify, only the Node 24 leg uploads;
+# - Story 68.3: `publish-kit` runs BEFORE `publish` and publishes @project-vault/composition-kit
+#   (MIT, its own semver in packages/composition-kit/package.json, same OIDC flow, always `next`)
+#   unless that exact kit version is already on npm. web-host's compatibility manifest names the kit
+#   version it was built with, so `publish` refuses to upload a web-host whose kit is not on npm.
 # Maintainer-only prerequisites (story 68-12): the npm trusted publisher for @project-vault/web-host
 # (this workflow file, environment npm-publish), the npm-publish environment's tag policy and the
 # release tag ruleset covering v*, and the npm bootstrap if npm needs the package to exist first.
+# Story 68-13 owns the same steps for @project-vault/composition-kit.
 
 on:
   push:
@@ -65,9 +70,99 @@ jobs:
             echo "Skipping '$TAG': it is not a vMAJOR.MINOR.PATCH release tag."
           fi
 
+  publish-kit:
+    name: Verify and publish the composition kit (Node ${{ matrix.node-version }})
+    needs: validate
+    if: needs.validate.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 24]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 11.28.3
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check the kit is MIT, imports no AGPL code and has permissive dependencies only
+        run: pnpm check-composition-kit-boundary
+
+      - name: Typecheck, test and build the kit
+        run: |
+          pnpm --filter @project-vault/composition-kit typecheck
+          pnpm --filter @project-vault/composition-kit test
+          pnpm --filter @project-vault/composition-kit build
+
+      - name: Read the kit version
+        id: kit
+        shell: bash
+        run: echo "version=$(node -p "require('./packages/composition-kit/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Verify version triangle
+        run: pnpm exec tsx scripts/check-release-version-triangle.ts composition-kit --tag "${{ steps.kit.outputs.version }}"
+
+      # The kit has its own semver: a PV release that does not change it must not re-publish it.
+      - name: Check whether this kit version is already on npm
+        id: npm
+        shell: bash
+        run: |
+          set -uo pipefail
+          KIT_VERSION="${{ steps.kit.outputs.version }}"
+          OUTPUT="$(npm view "@project-vault/composition-kit@${KIT_VERSION}" version 2>&1)"
+          STATUS=$?
+          if [[ $STATUS -eq 0 ]]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "@project-vault/composition-kit@${KIT_VERSION} is already on npm; nothing to publish."
+          elif grep -q 'E404' <<< "$OUTPUT"; then
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "@project-vault/composition-kit@${KIT_VERSION} is not on npm yet."
+          else
+            echo "FATAL: could not confirm whether ${KIT_VERSION} is published:" >&2
+            echo "$OUTPUT" >&2
+            exit 1
+          fi
+
+      - name: Inspect the exact npm tarball
+        working-directory: packages/composition-kit
+        run: npm pack --dry-run --json
+
+      # Both legs verify; only the Node 24 leg uploads, so one tag publishes once (extension-api rule).
+      - name: Dry-run publish the kit (no registry upload)
+        if: inputs.dry_run == true && matrix.node-version == 24 && steps.npm.outputs.published != 'true'
+        working-directory: packages/composition-kit
+        run: npm publish --dry-run --provenance --access public --tag next
+
+      - name: Publish the kit to npm next with OIDC provenance
+        if: inputs.dry_run != true && matrix.node-version == 24 && steps.npm.outputs.published != 'true'
+        working-directory: packages/composition-kit
+        run: |
+          set -o pipefail
+          if ! npm publish --provenance --access public --tag next; then
+            echo "ERROR: npm publish failed for the composition kit. Versions are immutable; never --force or unpublish." >&2
+            exit 1
+          fi
+
   publish:
     name: Verify and publish (Node ${{ matrix.node-version }})
-    needs: validate
+    needs: [validate, publish-kit]
     if: needs.validate.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -121,6 +216,16 @@ jobs:
 
       - name: Verify version triangle
         run: pnpm exec tsx scripts/check-release-version-triangle.ts web-host --tag "$RELEASE_VERSION"
+
+      # web-host's tuple names the kit version it was built with; publish-kit has already run, so a real
+      # release must find that exact kit on npm (a dry run may name a kit that is not published yet).
+      - name: Require the composition kit named by the compatibility manifest to be on npm
+        if: inputs.dry_run != true
+        shell: bash
+        run: |
+          set -euo pipefail
+          KIT_VERSION="$(node -p "require('./.web-host-pack/manifests/compatibility.json').kitVersion")"
+          npm view "@project-vault/composition-kit@${KIT_VERSION}" version
 
       - name: Reject a version that is already on npm
         shell: bash

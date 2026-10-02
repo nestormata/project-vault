@@ -107,8 +107,13 @@ jobs:
       - name: Check no pnpm override makes a declared range false (Story 68.2 AC-1)
         run: pnpm vitest run scripts/check-no-false-overrides.test.ts
 
-      - name: Check the web-host release workflow contract (Story 68.2 AC-10)
+      - name: Check the web-host release workflow contract (Story 68.2 AC-10, Story 68.3)
         run: pnpm vitest run scripts/check-web-host-release-workflow.test.ts
+
+      # The integration test itself runs in the `Composition kit integration` job; here only its
+      # wiring assertions run (it prints SKIPPED without COMPOSITION_KIT_INTEGRATION=1).
+      - name: Check the composition kit's release version triangle and integration wiring (Story 68.3)
+        run: pnpm vitest run scripts/check-release-version-triangle.test.ts scripts/check-composition-kit-integration.test.ts
 
       # Story 43.11 AC-6.4: the story-integrity guards' own test suites. --dir scripts limits
       # vitest discovery to ./scripts (positional args are substring filters). The overlay guards
@@ -1046,3 +1051,36 @@ jobs:
       - name: Dry-run npm pack of the staged package
         working-directory: .web-host-pack
         run: npm pack --dry-run --json
+
+  # Story 68.3 AC-12: compose a small UI pack onto the REAL packed web-host in an isolated consumer
+  # (fresh temp dir outside the repository, clean env, the packed tarballs only), then paraglide
+  # compile, svelte-kit sync, svelte-check, the shipped unit tests, vite build, boot and HTTP/CSS
+  # assertions, plus the negative cases and the Vite dev plugin. It has no path filter, so it runs
+  # on every PR and every push to main. It needs no secret and no OIDC, so fork PRs run it too.
+  # Required-check name once green on main: "Composition kit integration".
+  composition-kit-integration:
+    name: Composition kit integration
+    runs-on: ubuntu-latest
+    # Measured 2026-10-02 on a warm laptop: about 6 minutes for all five variants (npm install
+    # about 2 minutes each, cold in CI). 30 minutes leaves more than 3x headroom.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 11.28.3
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Composition kit composes a UI pack onto the packed web-host (AC-12, AC-13)
+        env:
+          COMPOSITION_KIT_INTEGRATION: '1'
+        run: pnpm vitest run scripts/check-composition-kit-integration.test.ts

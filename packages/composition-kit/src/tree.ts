@@ -28,10 +28,12 @@ function walk(root: string, rel: string, options: ReadTreeOptions, into: Tree): 
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const childRel = rel === '' ? entry.name : `${rel}/${entry.name}`
     const abs = join(root, childRel)
+    // `node_modules` is a symlink to the workspace's install in a monorepo pack: never entered.
+    if (options.skipDirectories?.has(entry.name)) continue
     if (entry.isSymbolicLink()) {
       into.symlinks.push({ rel: childRel, target: readlinkSync(abs) })
     } else if (entry.isDirectory()) {
-      if (!options.skipDirectories?.has(entry.name)) walk(root, childRel, options, into)
+      walk(root, childRel, options, into)
     } else if (entry.isFile()) {
       into.files.push({ rel: childRel, abs })
     }

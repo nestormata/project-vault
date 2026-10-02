@@ -7,7 +7,14 @@ import { readTree, type Tree, type TreeFile } from './tree.js'
 import type { CompatibilityTuple } from './types.js'
 
 /** The directories of web-host the composer copies, relative to the package root. */
-export const OWNED_DIRECTORIES = ['src', 'static', 'messages', 'project.inlang', 'vendor'] as const
+export const OWNED_DIRECTORIES = [
+  'src',
+  'static',
+  'messages',
+  'project.inlang',
+  'inlang-plugins',
+  'vendor',
+] as const
 
 export interface Host {
   dir: string
