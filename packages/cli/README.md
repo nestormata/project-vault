@@ -719,7 +719,9 @@ advisory line prints per invocation, in this order of precedence:
   older server, `429`, `503` from a sealed vault, a redirect, or a malformed body. The command
   proceeds silently, and the check does not retry that server for 10 minutes. The check uses its
   own request, never the agent, so it cannot push the agent into offline-cache mode. The request
-  carries no credential, only `accept` and `user-agent: pvault/<version>`.
+  carries no credential, only `accept` and `user-agent: pvault/<version>`. Against a server that
+  accepts connections but never answers, the check gives up after 1.5 s; tearing down the
+  connection can occasionally add a moment on some hosts.
 - **Cache:** `<config dir>/pvault/version-check.json`, using `$XDG_CONFIG_HOME` or
   `~/.config`. It is owner-only (`0600`) and holds at most 20 servers. A successful answer is kept
   for 1 hour. The cache fails open: a broken or unwritable file is ignored.

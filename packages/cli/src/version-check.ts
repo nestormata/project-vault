@@ -92,11 +92,16 @@ async function fetchPolicy(
   fetchFn: typeof fetch
 ): Promise<CliVersionPolicy | null> {
   const controller = new AbortController()
+  // Story 43.28 AC-6 (R1a): settle the result first, then tear the request down on a later turn.
+  // `abort()` runs its listeners synchronously (fetch's socket teardown among them), so calling
+  // it before the caller resumes would let a slow teardown delay the result. setImmediate still
+  // keeps the process alive until the teardown has run, so nothing leaks (43.6 endless-body test).
+  const teardown = () => setImmediate(() => controller.abort())
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<null>((resolve) => {
     timer = setTimeout(() => {
-      controller.abort()
       resolve(null)
+      teardown()
     }, VERSION_CHECK_TIMEOUT_MS)
   })
   const attempt = (async () => {
@@ -115,8 +120,9 @@ async function fetchPolicy(
   } finally {
     clearTimeout(timer)
     // Always tear the request down: an unread (e.g. non-200) body that never ends would otherwise
-    // keep the connection, and so the process, alive after the command has finished.
-    controller.abort()
+    // keep the connection, and so the process, alive after the command has finished. Deferred
+    // like the deadline's (R1a), so the caller resumes before the teardown runs.
+    teardown()
   }
 }
 

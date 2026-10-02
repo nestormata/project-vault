@@ -302,6 +302,8 @@ describe('runVersionCheck — unreachable / malformed (AC-3)', () => {
     const pending = runVersionCheck(h.opts)
     await vi.advanceTimersByTimeAsync(VERSION_CHECK_TIMEOUT_MS)
     await pending
+    // Story 43.28 AC-6 (R1a): the abort is deferred one turn, after the result has settled.
+    await vi.runAllTimersAsync()
     expect(captured?.aborted).toBe(true)
   })
 
