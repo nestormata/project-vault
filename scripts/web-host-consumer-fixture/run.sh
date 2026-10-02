@@ -111,7 +111,10 @@ if [[ "$VARIANT" != 'ok' ]]; then
 fi
 readonly TARBALL
 
-cp "$FIXTURE_DIR/app/svelte.config.js" "$FIXTURE_DIR/app/vite.config.ts" "$FIXTURE_DIR/app/tsconfig.json" "$APP/"
+cp "$FIXTURE_DIR/app/svelte.config.js" "$FIXTURE_DIR/app/vite.config.ts" "$APP/"
+# Generated, not committed: inside the repository, a tsconfig.json that extends a package which only
+# exists in the consumer would break Vite's tsconfig lookup for anything that loads these files.
+printf '%s\n' '{ "extends": ["./.svelte-kit/tsconfig.json", "@project-vault/web-host/tsconfig.base.json"] }' > "$APP/tsconfig.json"
 
 # The consumer's package.json is generated from the tarball's own manifest, so this fixture proves
 # the exact-version contract is installable: every dependency and required peer at its exact
