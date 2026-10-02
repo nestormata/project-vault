@@ -25,6 +25,29 @@ export type AuditEventSourceWriteInput = {
   resourceId?: string
   resourceType?: string
   payload: Record<string, unknown>
+  /**
+   * Optional stable key that makes this write idempotent (since 3.26.0). Matches
+   * `^[A-Za-z0-9._:-]{1,128}$`; anything else rejects before any write.
+   *
+   * With a key, PV remembers the first successful write under the tuple (org, your extension
+   * `manifest.name`, key). A later call with the same tuple and identical content writes no row and
+   * returns the FIRST call's `{ id, createdAt }`, so a retry after a lost response never produces a
+   * second audit row, including under concurrent duplicates. Identical content means the same
+   * `eventType`, `resourceType`, `resourceId`, `projectId` and `payload` (object key order is
+   * ignored; an `undefined` field equals an absent one; `null` does NOT equal absent). The same key
+   * with different content rejects with a non-retryable conflict error and never overwrites or
+   * acknowledges. The same key under another org or another extension is an independent key.
+   *
+   * A replay is not a fresh write: it is not rate-limited or storage-gated (the first write was).
+   * A first write that is rejected or rolls back leaves no key, so a retry writes fresh.
+   *
+   * **Retention.** A key lives exactly as long as the audit row it points at: PV never expires it
+   * on a timer, and it disappears only if that audit row is purged by an org's configured audit
+   * retention. PV stores a fingerprint of the content, never a copy of the payload.
+   *
+   * Omit it to keep the original behaviour unchanged: two calls write two rows.
+   */
+  idempotencyKey?: string
 }
 
 export type AuditEventSourceWriteResult = { id: string; createdAt: string }
@@ -35,10 +58,11 @@ export type AuditEventSourceWriteResult = { id: string; createdAt: string }
  * orgId. That authorization is the calling extension's own responsibility, exactly as it is for
  * every other line of code an in-process extension executes today.
  *
- * **No idempotency (AC-20).** Calling this twice for what you consider "the same" event writes
- * two rows. If your extension's own retry logic can double-call this, de-duplicate on your side
- * before calling, or accept two rows — PV's audit log has always been append-only-of-record, not
- * a dedup service, even for its own host-originated writes.
+ * **Idempotency is opt-in (AC-20, amended by Story 71.1).** By default, calling this twice for
+ * what you consider "the same" event writes two rows: PV's audit log is append-only-of-record, not
+ * a dedup service. If your delivery channel is at-least-once, pass a stable `idempotencyKey` (see
+ * `AuditEventSourceWriteInput.idempotencyKey`) and a retry returns the original receipt instead of
+ * writing a second row. Callers that omit the key are unaffected.
  */
 export type AuditEventSourceHost = {
   writeAuditEvent(input: AuditEventSourceWriteInput): Promise<AuditEventSourceWriteResult>

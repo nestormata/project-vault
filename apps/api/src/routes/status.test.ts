@@ -235,7 +235,12 @@ describe('GET /status', () => {
         auditEventSource?: { counters: Record<string, number> }
       }>()
       expect(body.auditEventSource).toBeDefined()
-      expect(body.auditEventSource?.counters).toEqual({ writes: 0, succeeded: 0, rejected: 0 })
+      expect(body.auditEventSource?.counters).toEqual({
+        writes: 0,
+        succeeded: 0,
+        rejected: 0,
+        deduped: 0,
+      })
       await app.close()
     })
   })

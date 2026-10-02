@@ -256,7 +256,7 @@ describe('checkRlsCoverage', () => {
         JOIN LATERAL aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) acl ON true
         JOIN pg_catalog.pg_roles grantee ON grantee.oid = acl.grantee
        WHERE n.nspname = 'public'
-         AND c.relname IN ('audit_log_entries', 'platform_audit_events')
+         AND c.relname IN ('audit_log_entries', 'platform_audit_events', 'extension_audit_idempotency_keys')
          AND grantee.rolname = 'vault_app'
     `
     const byTable = new Map<string, Set<string>>()
@@ -265,7 +265,12 @@ describe('checkRlsCoverage', () => {
       privileges.add(row.privilege_type)
       byTable.set(row.table_name, privileges)
     }
-    for (const table of ['audit_log_entries', 'platform_audit_events']) {
+    for (const table of [
+      'audit_log_entries',
+      'platform_audit_events',
+      // Story 71.1: the idempotency dedupe table is registered as append-only too.
+      'extension_audit_idempotency_keys',
+    ]) {
       expect(byTable.get(table)).toEqual(new Set(['SELECT', 'INSERT']))
     }
   })

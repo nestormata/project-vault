@@ -715,6 +715,13 @@
       "when": 1790816654550,
       "tag": "0101_notification_queue_claim_expires_at",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1790976876882,
+      "tag": "0102_extension_audit_idempotency_keys",
+      "breakpoints": true
     }
   ]
 }

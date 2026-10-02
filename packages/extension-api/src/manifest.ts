@@ -576,8 +576,11 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // Story 68.8 AC-1 — bumped as a minor (3.25.0 -> 3.27.0): `ExtensionManifest` gains the optional
 // `apiRoutes` declaration and `ExtensionHooks` the optional `apiRoutes` implementations (M7 API
 // routes: add, replace, wrap). New optional fields only (policy rows 1 and 11); `moduleDataRoutes`
-// is unchanged. 3.26.0 is reserved by Story 71-1, developed in parallel (next free minor, Q13).
-export const EXTENSION_API_VERSION = '3.27.0'
+// is unchanged. 3.26.0 was reserved for Story 71-1 but 68-8 merged first, so 71-1 took 3.28.0.
+// Story 71.1 — bumped as a minor (3.27.0 -> 3.28.0): `AuditEventSourceWriteInput` gains the
+// optional `idempotencyKey` (an optional field on an exported object type: non-breaking, policy
+// table row 1). Omitting it keeps the previous behaviour exactly.
+export const EXTENSION_API_VERSION = '3.28.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

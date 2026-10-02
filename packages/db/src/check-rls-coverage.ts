@@ -69,7 +69,14 @@ export const EXCLUDED_TABLES = new Set([
   'sso_login_states',
 ])
 
-const APPEND_ONLY_AUDIT_TABLES = new Set(['audit_log_entries', 'platform_audit_events'])
+// Story 71.1: extension_audit_idempotency_keys is append-only for vault_app too (SELECT, INSERT):
+// a key row is never updated or deleted by the app role; it disappears only through the audit-row
+// ON DELETE CASCADE of the sanctioned retention purge.
+const APPEND_ONLY_AUDIT_TABLES = new Set([
+  'audit_log_entries',
+  'platform_audit_events',
+  'extension_audit_idempotency_keys',
+])
 
 export class RlsCoverageDriftError extends Error {
   constructor(

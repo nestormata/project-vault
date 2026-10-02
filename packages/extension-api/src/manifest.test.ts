@@ -69,8 +69,9 @@ describe('EXTENSION_API_VERSION', () => {
     // of the contract source (patch): 3.24.1 -> 3.24.2. Story 70.1 — required
     // DeliveryProviderSendPayload.attemptNumber (additive-minor, policy row 2): 3.24.2 -> 3.25.0.
     // Story 68.8 — optional apiRoutes manifest + hooks fields (additive-minor, rows 1 and 11):
-    // 3.25.0 -> 3.27.0 (3.26.0 is reserved by Story 71-1).
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.27.0')
+    // 3.25.0 -> 3.27.0. Story 71.1 — optional AuditEventSourceWriteInput.idempotencyKey
+    // (additive-minor, policy row 1): 3.27.0 -> 3.28.0.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.28.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

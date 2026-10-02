@@ -7,8 +7,24 @@ import type {
   ExtensionManifest,
 } from '@project-vault/extension-api'
 import { writeExtensionAuditEntry } from '../modules/audit/extension-entry.js'
+import {
+  ExtensionAuditIdempotencyConflictError,
+  ExtensionAuditIdempotencyKeyInvalidError,
+  ExtensionAuditIdempotencyPayloadTooLargeError,
+  ExtensionAuditIdempotencyRaceError,
+  assertValidIdempotencyKey,
+  writeIdempotentExtensionAuditEntry,
+} from '../modules/audit/extension-idempotency.js'
 import { SameTransactionAuditWriteError } from './secure-route.js'
 import { operationalLog } from './logger.js'
+
+// Story 71.1: the idempotency errors live with the dedupe helper; re-exported here so every
+// writeAuditEvent error type is importable from one place.
+export {
+  ExtensionAuditIdempotencyConflictError,
+  ExtensionAuditIdempotencyKeyInvalidError,
+  ExtensionAuditIdempotencyPayloadTooLargeError,
+}
 
 /**
  * Story 23.8 AC-16 — thrown when the loaded extension's manifest never declared
@@ -73,6 +89,10 @@ function assertMayWriteExtensionAuditEvent(
   ) {
     throw new ExtensionAuditEventTypeNamespaceError(manifest.name, input.eventType)
   }
+
+  // Story 71.1 AC-1: validated AFTER the capability/namespace gates so an undeclared extension can
+  // never probe key handling, and before any transaction opens. An omitted key skips this entirely.
+  if (input.idempotencyKey !== undefined) assertValidIdempotencyKey(input.idempotencyKey)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -84,10 +104,12 @@ export type AuditEventSourceCounters = {
   writes: number
   succeeded: number
   rejected: number
+  /** Story 71.1 AC-7: idempotent replays that returned the original receipt (never in `succeeded`). */
+  deduped: number
 }
 
 function freshCounters(): AuditEventSourceCounters {
-  return { writes: 0, succeeded: 0, rejected: 0 }
+  return { writes: 0, succeeded: 0, rejected: 0, deduped: 0 }
 }
 
 let counters: AuditEventSourceCounters = freshCounters()
@@ -108,7 +130,13 @@ export function __resetAuditEventSourceCountersForTests(): void {
 // ---------------------------------------------------------------------------------------------
 
 export type ExtensionAuditRejectReason =
-  'capability_not_declared' | 'event_type_namespace_violation' | 'quota_exhausted' | 'write_failed'
+  | 'capability_not_declared'
+  | 'event_type_namespace_violation'
+  | 'quota_exhausted'
+  | 'write_failed'
+  | 'idempotency_key_invalid'
+  | 'idempotency_conflict'
+  | 'payload_too_large'
 
 const RATE_LIMIT_WINDOW_MS = 1000
 const rateLimitState = new Map<string, { lastEmittedAt: number; suppressedCount: number }>()
@@ -142,6 +170,27 @@ function logSucceeded(logger: EventSourceLogger, auditEventType: string): void {
   )
 }
 
+// Story 71.1 AC-7: a replay log is rate-limited exactly like the success log (own bucket per
+// auditEventType) and carries only the audited eventType — never the key, never the payload.
+function logDeduped(logger: EventSourceLogger, auditEventType: string): void {
+  const bucket = `deduped:${auditEventType}`
+  const now = Date.now()
+  const state = rateLimitState.get(bucket)
+  if (state && now - state.lastEmittedAt < RATE_LIMIT_WINDOW_MS) {
+    state.suppressedCount += 1
+    return
+  }
+  const suppressedCount = state?.suppressedCount ?? 0
+  rateLimitState.set(bucket, { lastEmittedAt: now, suppressedCount: 0 })
+  operationalLog(
+    logger,
+    'info',
+    OperationalEvent.EXTENSION_AUDIT_EVENT_WRITE_DEDUPED,
+    'extension audit event write deduplicated by idempotency key',
+    { auditEventType, suppressedCount }
+  )
+}
+
 function logRejected(
   logger: EventSourceLogger,
   auditEventType: string,
@@ -156,11 +205,82 @@ function logRejected(
   )
 }
 
+function preGateRejectReason(error: unknown): ExtensionAuditRejectReason {
+  if (error instanceof ExtensionAuditCapabilityNotDeclaredError) return 'capability_not_declared'
+  if (error instanceof ExtensionAuditIdempotencyKeyInvalidError) return 'idempotency_key_invalid'
+  return 'event_type_namespace_violation'
+}
+
+function writeRejectReason(error: unknown): ExtensionAuditRejectReason {
+  if (error instanceof SameTransactionAuditWriteError && error.code === 'audit_quota_exhausted') {
+    return 'quota_exhausted'
+  }
+  if (error instanceof ExtensionAuditIdempotencyConflictError) return 'idempotency_conflict'
+  if (error instanceof ExtensionAuditIdempotencyPayloadTooLargeError) return 'payload_too_large'
+  return 'write_failed'
+}
+
+type WriteOutcome = { row: { id: string; createdAt: Date }; deduped: boolean }
+
+/**
+ * Story 71.1 — the keyed path. One retry on a lost key-insert race: the race error rolls the whole
+ * transaction back (no orphan audit row), and the fresh transaction then takes the replay path.
+ */
+async function writeKeyedOnce(
+  manifest: ExtensionManifest,
+  input: AuditEventSourceWriteInput,
+  idempotencyKey: string
+): Promise<WriteOutcome> {
+  const run = (): Promise<WriteOutcome> =>
+    withOrg(input.orgId, async (tx) => {
+      const receipt = await writeIdempotentExtensionAuditEntry(tx, {
+        orgId: input.orgId,
+        projectId: input.projectId,
+        eventType: input.eventType,
+        resourceId: input.resourceId,
+        resourceType: input.resourceType,
+        payload: input.payload,
+        extensionName: manifest.name,
+        idempotencyKey,
+      })
+      return { row: receipt, deduped: receipt.deduped }
+    })
+  try {
+    return await run()
+  } catch (error) {
+    if (error instanceof ExtensionAuditIdempotencyRaceError) return run()
+    throw error
+  }
+}
+
+async function writeOnce(
+  manifest: ExtensionManifest,
+  input: AuditEventSourceWriteInput
+): Promise<WriteOutcome> {
+  if (input.idempotencyKey !== undefined) {
+    return writeKeyedOnce(manifest, input, input.idempotencyKey)
+  }
+  const row = await withOrg(input.orgId, (tx) =>
+    writeExtensionAuditEntry(tx, {
+      orgId: input.orgId,
+      eventType: input.eventType,
+      resourceId: input.resourceId,
+      resourceType: input.resourceType,
+      payload: input.payload,
+      extensionName: manifest.name,
+    })
+  )
+  return { row, deduped: false }
+}
+
 /**
  * Story 23.8 AC-7/AC-15/AC-16/AC-17/AC-18/AC-19 — the host-side function bound to one manifest,
  * called by `loader.ts`'s `buildHostServices()`. Opens a FRESH transaction per call (`withOrg`) —
  * never a `Tx` shared across calls or handed to the extension. Never swallows an error: every
  * failure mode propagates as a rejected promise (AC-18).
+ *
+ * Story 71.1: an optional `idempotencyKey` makes a retry return the original receipt; a call that
+ * omits it takes exactly the pre-71.1 path (two calls = two rows, no extra statement).
  */
 export async function writeExtensionAuditEventForManifest(
   manifest: ExtensionManifest,
@@ -174,35 +294,23 @@ export async function writeExtensionAuditEventForManifest(
     assertMayWriteExtensionAuditEvent(manifest, input)
   } catch (error) {
     counters.rejected += 1
-    const reason: ExtensionAuditRejectReason =
-      error instanceof ExtensionAuditCapabilityNotDeclaredError
-        ? 'capability_not_declared'
-        : 'event_type_namespace_violation'
-    logRejected(logger, input.eventType, reason)
+    logRejected(logger, input.eventType, preGateRejectReason(error))
     throw error
   }
 
   try {
-    const row = await withOrg(input.orgId, (tx) =>
-      writeExtensionAuditEntry(tx, {
-        orgId: input.orgId,
-        eventType: input.eventType,
-        resourceId: input.resourceId,
-        resourceType: input.resourceType,
-        payload: input.payload,
-        extensionName: manifest.name,
-      })
-    )
-    counters.succeeded += 1
-    logSucceeded(logger, input.eventType)
+    const { row, deduped } = await writeOnce(manifest, input)
+    if (deduped) {
+      counters.deduped += 1
+      logDeduped(logger, input.eventType)
+    } else {
+      counters.succeeded += 1
+      logSucceeded(logger, input.eventType)
+    }
     return { id: row.id, createdAt: row.createdAt.toISOString() }
   } catch (error) {
     counters.rejected += 1
-    const reason: ExtensionAuditRejectReason =
-      error instanceof SameTransactionAuditWriteError && error.code === 'audit_quota_exhausted'
-        ? 'quota_exhausted'
-        : 'write_failed'
-    logRejected(logger, input.eventType, reason)
+    logRejected(logger, input.eventType, writeRejectReason(error))
     throw error
   }
 }

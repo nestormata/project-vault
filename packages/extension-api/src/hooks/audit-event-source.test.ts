@@ -21,10 +21,36 @@ describe('AuditEventSourceWriteInput / AuditEventSourceWriteResult — exact-sha
       resourceId: 'resource_1',
       resourceType: 'widget',
       payload: { foo: 'bar' },
+      idempotencyKey: 'cm-evt-123:v1',
     }
     expect(new Set(Object.keys(fixture))).toEqual(
-      new Set(['eventType', 'orgId', 'projectId', 'resourceId', 'resourceType', 'payload'])
+      new Set([
+        'eventType',
+        'orgId',
+        'projectId',
+        'resourceId',
+        'resourceType',
+        'payload',
+        'idempotencyKey',
+      ])
     )
+  })
+
+  it('idempotencyKey is optional and string-typed (Story 71.1 AC-1, additive minor)', () => {
+    const withoutKey: AuditEventSourceWriteInput = {
+      eventType: FIXTURE_EVENT_TYPE,
+      orgId: 'org_1',
+      payload: {},
+    }
+    expect(withoutKey.idempotencyKey).toBeUndefined()
+    const notAString: AuditEventSourceWriteInput = {
+      eventType: FIXTURE_EVENT_TYPE,
+      orgId: 'org_1',
+      payload: {},
+      // @ts-expect-error — idempotencyKey is a string, never a number
+      idempotencyKey: 42,
+    }
+    expect(notAString).toBeDefined()
   })
 
   it('AuditEventSourceWriteInput accepts the minimal required shape', () => {

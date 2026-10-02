@@ -416,4 +416,10 @@ export const KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS: Record<string, string> = {
   // DROP/RENAME/TRUNCATE/DELETE.
   '0095_extension_scheduled_task_runs':
     'Story 56.1 reviewed table-creation-time vault_app CRUD grant on the new extension_scheduled_task_runs due-state table; paired migration safety test proves it is a single additive CREATE TABLE with no destructive statement riding along.',
+  // Story 71.1 AC-4: brand-new, RLS-isolated `extension_audit_idempotency_keys` dedupe table with
+  // an append-only vault_app grant (SELECT, INSERT only). The paired migration-0102-safety.test.ts
+  // proves this migration creates exactly one new table, ALTERs no pre-existing table
+  // (audit_log_entries stays untouched) and grants nothing beyond SELECT/INSERT.
+  '0102_extension_audit_idempotency_keys':
+    'Story 71.1 reviewed table-creation-time append-only (SELECT, INSERT) vault_app grant on the new extension_audit_idempotency_keys dedupe table; paired migration safety test proves it is a single additive CREATE TABLE that does not alter audit_log_entries.',
 }
