@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 import type {
   AuditEventSourceHost,
   AuditEventSourceWriteInput,
@@ -43,14 +43,7 @@ describe('AuditEventSourceWriteInput / AuditEventSourceWriteResult — exact-sha
       payload: {},
     }
     expect(withoutKey.idempotencyKey).toBeUndefined()
-    const notAString: AuditEventSourceWriteInput = {
-      eventType: FIXTURE_EVENT_TYPE,
-      orgId: 'org_1',
-      payload: {},
-      // @ts-expect-error — idempotencyKey is a string, never a number
-      idempotencyKey: 42,
-    }
-    expect(notAString).toBeDefined()
+    expectTypeOf<AuditEventSourceWriteInput['idempotencyKey']>().toEqualTypeOf<string | undefined>()
   })
 
   it('AuditEventSourceWriteInput accepts the minimal required shape', () => {

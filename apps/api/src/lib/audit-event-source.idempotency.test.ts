@@ -13,14 +13,13 @@ import {
 import { withTestOrg, withTwoTestOrgs } from '@project-vault/db/test-helpers'
 import { EXTENSION_API_VERSION } from '@project-vault/extension-api'
 import type { ExtensionManifest } from '@project-vault/extension-api'
-import { SUPERUSER_DATABASE_URL } from '../__tests__/db-urls.js'
+import { DATABASE_URL, SUPERUSER_DATABASE_URL } from '../__tests__/db-urls.js'
 
 // Story 71.1 AC-8 — real-Postgres suite for the idempotent writeAuditEvent path. Both audit gates
 // are ENABLED so the quota-on-first-write and replay-not-rate-limited cases exercise the real
 // gates. Same vault bootstrap as modules/audit/write-entry-concurrency.test.ts.
 const keyDir = mkdtempSync(join(tmpdir(), 'audit-event-source-idempotency-test-'))
-process.env['DATABASE_URL'] ??=
-  'postgresql://vault_app:dev-only-change-in-prod@localhost:5432/project_vault'
+process.env['DATABASE_URL'] ??= DATABASE_URL
 process.env['VAULT_KEY_DIR'] = keyDir
 process.env['VAULT_ALLOW_REMOTE_INIT'] = 'true'
 process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] = 'true'
