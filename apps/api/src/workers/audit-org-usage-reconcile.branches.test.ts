@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { PgDialect } from 'drizzle-orm/pg-core'
 import { OperationalEvent } from '@project-vault/shared'
 
 // This is a fully-mocked, branch-focused companion to audit-org-usage-reconcile.test.ts (which
@@ -93,16 +94,16 @@ function row(overrides: Partial<FakeRow> = {}): FakeRow {
 /** Wires runOrgScopedJob so callers can independently control the write-back path, the
  * stale-check path and the alert-notification path per test, keyed by orgId/jobName. */
 function configureRunOrgScopedJob(options: {
-  currentUsageByOrg?: Record<string, { bytesUsed: number } | undefined>
+  currentUsageByOrg?: Map<string, { bytesUsed: number }>
   writeBackThrowsForOrg?: Set<string>
   staleCheckThrowsForOrg?: Set<string>
-  staleRowsByOrg?: Record<string, { lastReconciledAt: Date | null }[]>
+  staleRowsByOrg?: Map<string, { lastReconciledAt: Date | null }[]>
 }): void {
   const {
-    currentUsageByOrg = {},
+    currentUsageByOrg = new Map(),
     writeBackThrowsForOrg = new Set<string>(),
     staleCheckThrowsForOrg = new Set<string>(),
-    staleRowsByOrg = {},
+    staleRowsByOrg = new Map(),
   } = options
 
   runOrgScopedJobMock.mockImplementation(
@@ -115,7 +116,7 @@ function configureRunOrgScopedJob(options: {
         if (writeBackThrowsForOrg.has(orgId)) {
           throw new Error(`write-back failed for ${orgId}`)
         }
-        const current = currentUsageByOrg[orgId]
+        const current = currentUsageByOrg.get(orgId)
         const tx = {
           select: () => ({
             from: () => ({
@@ -134,7 +135,7 @@ function configureRunOrgScopedJob(options: {
         if (staleCheckThrowsForOrg.has(orgId)) {
           throw new Error(`stale check failed for ${orgId}`)
         }
-        const rows = staleRowsByOrg[orgId] ?? []
+        const rows = staleRowsByOrg.get(orgId) ?? []
         const tx = {
           select: () => ({
             from: () => ({
@@ -263,7 +264,7 @@ describe('Story 22.1 AC-7: writeBackOneOrg counter drift log', () => {
       row({ org_id: 'org-drift', logical_bytes: '5000000' }), // new value
     ])
     configureRunOrgScopedJob({
-      currentUsageByOrg: { 'org-drift': { bytesUsed: 0 } }, // 5,000,000 byte drift > 1 MiB tolerance
+      currentUsageByOrg: new Map([['org-drift', { bytesUsed: 0 }]]), // 5,000,000 byte drift > 1 MiB tolerance
     })
     const logger = fakeLogger()
 
@@ -280,7 +281,7 @@ describe('Story 22.1 AC-7: writeBackOneOrg counter drift log', () => {
       row({ org_id: 'org-stable', logical_bytes: '1000100' }),
     ])
     configureRunOrgScopedJob({
-      currentUsageByOrg: { 'org-stable': { bytesUsed: 1000000 } }, // 100 byte drift, well under tolerance
+      currentUsageByOrg: new Map([['org-stable', { bytesUsed: 1000000 }]]), // 100 byte drift, well under tolerance
     })
     const logger = fakeLogger()
 
@@ -318,7 +319,7 @@ describe('Story 22.1 AC-7: isOrgUsageStale / checkStaleOrgs', () => {
     aggregateExecute.mockImplementation(async () => [])
     fetchAllOrgIdsMock.mockResolvedValue(['org-never-reconciled'])
     configureRunOrgScopedJob({
-      staleRowsByOrg: { 'org-never-reconciled': [] }, // no row -> lastReconciledAt is null -> stale
+      staleRowsByOrg: new Map([['org-never-reconciled', []]]), // no row -> lastReconciledAt is null -> stale
     })
     const logger = fakeLogger()
 
@@ -438,6 +439,73 @@ describe('Story 22.1 AC-7: logRunCompleted budget-overrun warning', () => {
     expect(logger.warn).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.stringContaining('exceeded 50%')
+    )
+  })
+})
+
+function aggregateQuery(): { sql: string; params: unknown[] } {
+  // calls[0] is `SET LOCAL statement_timeout`; the aggregate SELECT is the last execute call.
+  const [query] = aggregateExecute.mock.calls.at(-1) as [Parameters<PgDialect['sqlToQuery']>[0]]
+  return new PgDialect().sqlToQuery(query)
+}
+
+describe('Story 66-15: optional org scope', () => {
+  it('unscoped (default) run stays instance-wide: no org filter, full stale scan, pre-auth alert evaluated', async () => {
+    envMock['AUDIT_ORG_PREAUTH_ALERT_THRESHOLD_MB'] = 1
+    aggregateExecute.mockImplementation(async () => [row({ org_id: 'org-a' })])
+    fetchAllOrgIdsMock.mockResolvedValue(['org-a', 'org-other'])
+
+    await runAuditOrgUsageReconcile(fakeLogger())
+
+    expect(aggregateQuery().sql).not.toContain('org_id = ANY')
+    expect(fetchAllOrgIdsMock).toHaveBeenCalledTimes(1)
+    expect(clearThresholdAlertEpisodeMock).toHaveBeenCalledWith(PREAUTH_VOLUME_ALERT_TYPE, null)
+  })
+
+  it('scoped run filters the aggregate by the given orgs and skips the instance-wide checks', async () => {
+    envMock['AUDIT_ORG_PREAUTH_ALERT_THRESHOLD_MB'] = 1
+    aggregateExecute.mockImplementation(async () => [row({ org_id: 'org-a' })])
+    const logger = fakeLogger()
+
+    await runAuditOrgUsageReconcile(logger, undefined, { orgIds: ['org-a', 'org-a'] })
+
+    const query = aggregateQuery()
+    expect(query.sql).toContain('org_id = ANY')
+    expect(query.params.filter((param) => param === 'org-a')).toHaveLength(1) // de-duplicated
+    // A partial scan must neither scan every org for staleness nor touch the instance-wide
+    // pre-auth volume alert (it would be computed from a partial total).
+    expect(fetchAllOrgIdsMock).not.toHaveBeenCalled()
+    expect(clearThresholdAlertEpisodeMock).not.toHaveBeenCalledWith(PREAUTH_VOLUME_ALERT_TYPE, null)
+    expect(upsertThresholdAlertMock).not.toHaveBeenCalled()
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ rowsScanned: 1, orgsUpdated: 1 }),
+      expect.any(String)
+    )
+  })
+
+  it('an empty scope reconciles nothing and never falls back to the instance-wide scan', async () => {
+    const logger = fakeLogger()
+
+    await runAuditOrgUsageReconcile(logger, undefined, { orgIds: [] })
+
+    expect(aggregateTransaction).not.toHaveBeenCalled()
+    expect(runOrgScopedJobMock).not.toHaveBeenCalled()
+    expect(fetchAllOrgIdsMock).not.toHaveBeenCalled()
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ rowsScanned: 0, orgsUpdated: 0 }),
+      expect.any(String)
+    )
+  })
+
+  it('a scoped aggregate failure still raises the failing alert and rethrows', async () => {
+    aggregateExecute.mockRejectedValue(new Error(AGGREGATE_FAILURE_MESSAGE))
+
+    await expect(
+      runAuditOrgUsageReconcile(fakeLogger(), undefined, { orgIds: ['org-a'] })
+    ).rejects.toThrow(AGGREGATE_FAILURE_MESSAGE)
+
+    expect(upsertThresholdAlertMock).toHaveBeenCalledWith(
+      expect.objectContaining({ alertType: RECONCILE_FAILING_ALERT_TYPE })
     )
   })
 })

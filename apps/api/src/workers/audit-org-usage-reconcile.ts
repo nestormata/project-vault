@@ -142,7 +142,8 @@ type ReconcileAggregateRow = {
  * the write path's and reconciliation's classification impossible to drift apart.
  */
 async function runReconcileAggregate(
-  timeoutMs: number
+  timeoutMs: number,
+  orgIds?: readonly string[]
 ): Promise<{ rows: ReconcileAggregateRow[]; preauthTypesParam: string[] }> {
   const preauthTypesParam = Array.from(PREAUTH_ATTRIBUTABLE_EVENT_TYPES)
   // drizzle-orm's sql`` tag spreads a plain JS array into a comma-separated tuple ($1, $2, ...),
@@ -154,6 +155,14 @@ async function runReconcileAggregate(
     preauthTypesParam.map((eventType) => sql`${eventType}`),
     sql`, `
   )}]::text[]`
+  // Story 66-15: optional org scope (never set by the production scheduler). Same real-array
+  // construction as above, one bound parameter per org id.
+  const orgFilter = orgIds
+    ? sql`WHERE org_id = ANY(ARRAY[${sql.join(
+        orgIds.map((orgId) => sql`${orgId}`),
+        sql`, `
+      )}]::uuid[])`
+    : sql``
   const rows = await getAdminDb().transaction(async (tx) => {
     // SET LOCAL scopes the timeout to this transaction only — it is not a session-wide change on
     // a pooled connection.
@@ -164,6 +173,7 @@ async function runReconcileAggregate(
              sum(pg_column_size(t.*)) FILTER (WHERE t.event_type = ANY(${preauthTypesArrayLiteral}))::bigint AS preauth_logical_bytes,
              count(*)::bigint AS entries
         FROM audit_log_entries t
+       ${orgFilter}
        GROUP BY org_id
     `)
   })
@@ -371,21 +381,35 @@ function logRunCompleted(
  * incremental fallback is added deliberately — the documented escalation when this stops fitting
  * its budget is the table-partitioning step in docs/design/audit-log-scaling.md, and the
  * immediate remedy is the AC-25 kill switch.
+ *
+ * Story 66-15 — `options.orgIds` (test/operator use only; `main.ts`'s scheduled job never passes
+ * it) restricts the aggregate and the write-back to those orgs, so the cost is proportional to
+ * the scope instead of to every org in the database. A scoped run is write-back only: it skips
+ * the two instance-wide checks (stale-org scan, pre-auth volume alert) because both are computed
+ * over the whole instance and a partial total would raise or clear them wrongly. An empty
+ * `orgIds` reconciles nothing (it never falls back to the instance-wide scan). Without options
+ * the behaviour is exactly the instance-wide reconcile above.
  */
 export async function runAuditOrgUsageReconcile(
   logger?: WorkerLogger,
-  boss?: BossService
+  boss?: BossService,
+  options?: { orgIds?: readonly string[] }
 ): Promise<void> {
   const startedAt = Date.now()
-  const aggregate = await runReconcileAggregate(env.AUDIT_ORG_USAGE_RECONCILE_TIMEOUT_MS).catch(
-    (error: unknown) => handleAggregateFailure(error, logger)
-  )
+  const scope = options?.orgIds ? Array.from(new Set(options.orgIds)) : undefined
+  const aggregate =
+    scope?.length === 0
+      ? { rows: [] as ReconcileAggregateRow[] }
+      : await runReconcileAggregate(env.AUDIT_ORG_USAGE_RECONCILE_TIMEOUT_MS, scope).catch(
+          (error: unknown) => handleAggregateFailure(error, logger)
+        )
 
   const orgsUpdated = await writeBackAllOrgs(aggregate.rows, logger, boss)
 
   const durationMs = Date.now() - startedAt
   logRunCompleted(logger, durationMs, aggregate.rows.length, orgsUpdated)
 
+  if (scope) return
   await checkStaleOrgs(logger)
   await checkPreauthVolumeAlert(aggregate.rows)
 }

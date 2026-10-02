@@ -13,7 +13,8 @@ process.env['AUDIT_ORG_QUOTA_ENFORCEMENT_ENABLED'] = 'true'
 
 const { initVault } = await import('../modules/vault/key-service.js')
 const { resetVaultForTest } = await import('../__tests__/helpers/vault-test-cleanup.js')
-const { withTestOrg, createTestUser } = await import('@project-vault/db/test-helpers')
+const { withTestOrg, withTwoTestOrgs, createTestUser } =
+  await import('@project-vault/db/test-helpers')
 const { firstActorTokenIdForUser } = await import('../modules/audit/actor-token.js')
 const { writeHumanAuditEntry } = await import('../modules/audit/human-entry.js')
 const { runAuditOrgUsageReconcile } = await import('./audit-org-usage-reconcile.js')
@@ -37,6 +38,17 @@ async function readUsage(
   })
 }
 
+async function writeOneAuditEntry(orgId: string, userId: string, eventType: string): Promise<void> {
+  await withOrg(orgId, async (tx) => {
+    const actorTokenId = await firstActorTokenIdForUser(tx, userId)
+    await writeHumanAuditEntry(tx, { orgId, actorTokenId, eventType, payload: {} })
+  })
+}
+
+// Story 66-15: these tests scope the reconcile to the orgs they created. The worker's default
+// (unscoped) run costs O(every org in the shared DB) (about 3.3 ms per org measured, so ~10 s at
+// 3000 orgs), which made these tests' runtime depend on unrelated suite residue. The unscoped
+// instance-wide contract stays covered by audit-org-usage-reconcile.branches.test.ts.
 describe('Story 22.1 AC-7: audit-org-usage/reconcile', () => {
   beforeAll(async () => {
     await resetVaultForTest()
@@ -66,7 +78,7 @@ describe('Story 22.1 AC-7: audit-org-usage/reconcile', () => {
       })
 
       const logger = fakeLogger()
-      await runAuditOrgUsageReconcile(logger)
+      await runAuditOrgUsageReconcile(logger, undefined, { orgIds: [orgId] })
 
       const usage = await readUsage(orgId)
       expect(usage?.bytesUsed).toBeGreaterThan(0)
@@ -93,10 +105,30 @@ describe('Story 22.1 AC-7: audit-org-usage/reconcile', () => {
       // covered structurally: this run must still update THIS org even if some other org in the
       // instance-wide scan throws inside its own runOrgScopedJob (isolated by try/catch per row).
       const logger = fakeLogger()
-      await runAuditOrgUsageReconcile(logger)
+      await runAuditOrgUsageReconcile(logger, undefined, { orgIds: [orgId] })
 
       const usage = await readUsage(orgId)
       expect(usage?.bytesUsed).toBeGreaterThan(0)
+    })
+  }, 20_000)
+
+  it('a scoped run reconciles only the requested orgs (Story 66-15)', async () => {
+    await withTwoTestOrgs(async ({ orgAId, orgBId }) => {
+      const userId = await createTestUser('reconcile-scope-actor')
+      await writeOneAuditEntry(orgAId, userId, AuditEvent.PROJECT_CREATED)
+      await writeOneAuditEntry(orgBId, userId, AuditEvent.PROJECT_CREATED)
+
+      const logger = fakeLogger()
+      await runAuditOrgUsageReconcile(logger, undefined, { orgIds: [orgAId] })
+
+      expect((await readUsage(orgAId))?.lastReconciledAt).toBeTruthy()
+      // The bystander org has audit rows (and an incremental counter from the write path) but was
+      // outside the scope: reconciliation never touched it, so it has no reconciled timestamp.
+      expect((await readUsage(orgBId))?.lastReconciledAt ?? null).toBeNull()
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ rowsScanned: 1, orgsUpdated: 1 }),
+        expect.any(String)
+      )
     })
   }, 20_000)
 })
