@@ -21064,12 +21064,16 @@
                             },
                             "rejected": {
                               "type": "number"
+                            },
+                            "deduped": {
+                              "type": "number"
                             }
                           },
                           "required": [
                             "writes",
                             "succeeded",
-                            "rejected"
+                            "rejected",
+                            "deduped"
                           ],
                           "additionalProperties": false
                         }
@@ -21303,12 +21307,16 @@
                             },
                             "rejected": {
                               "type": "number"
+                            },
+                            "deduped": {
+                              "type": "number"
                             }
                           },
                           "required": [
                             "writes",
                             "succeeded",
-                            "rejected"
+                            "rejected",
+                            "deduped"
                           ],
                           "additionalProperties": false
                         }
