@@ -40,6 +40,32 @@ function assignedPort(server: Server): number {
 }
 
 /**
+ * Opens the missing probe sockets concurrently (every socket is held open, so the kernel cannot
+ * hand out one port twice) and keeps the ports this process has not handed out yet. A batch that
+ * yields too few usable ports (a port was handed out earlier) recurses for the shortfall only;
+ * recursion, not a loop with `await`, keeps each probe batch concurrent.
+ */
+async function collectFreePorts(count: number, servers: Server[], ports: number[]): Promise<void> {
+  if (ports.length >= count) return
+  const batch = await Promise.all(
+    Array.from({ length: count - ports.length }, async () => {
+      const server = await listenOnFreePort()
+      // Registered as soon as it listens, so a sibling probe failing still closes it in `finally`.
+      servers.push(server)
+      return server
+    })
+  )
+  for (const server of batch) {
+    const port = assignedPort(server)
+    if (!handedOut.has(port)) {
+      handedOut.add(port)
+      ports.push(port)
+    }
+  }
+  await collectFreePorts(count, servers, ports)
+}
+
+/**
  * Allocates `count` distinct free ports. All probe sockets are held open together, so the ports
  * of one call can never coincide, and none was already handed out by this process.
  */
@@ -47,15 +73,7 @@ export async function allocateFreePorts(count: number): Promise<number[]> {
   const servers: Server[] = []
   const ports: number[] = []
   try {
-    while (ports.length < count) {
-      const server = await listenOnFreePort()
-      servers.push(server)
-      const port = assignedPort(server)
-      if (!handedOut.has(port)) {
-        handedOut.add(port)
-        ports.push(port)
-      }
-    }
+    await collectFreePorts(count, servers, ports)
   } finally {
     await Promise.all(servers.map(closeServer))
   }
@@ -81,6 +99,25 @@ export type FreshPortRetryOptions = {
 }
 
 /**
+ * One attempt with freshly allocated ports; on an EADDRINUSE failure (and only that) it recurses
+ * with new ports while `remaining` attempts are left. Recursion keeps the retries sequential
+ * without an `await` inside a loop.
+ */
+async function attemptWithFreshPorts<T>(
+  attempt: (allocation: PortAllocation) => Promise<T>,
+  pinnedPort: number | undefined,
+  remaining: number
+): Promise<T> {
+  const [port, metricsPort] = (await allocateFreePorts(2)) as [number, number]
+  try {
+    return await attempt({ port: pinnedPort ?? port, metricsPort })
+  } catch (error) {
+    if (!isAddrInUseFailure(error) || remaining <= 1) throw error
+    return attemptWithFreshPorts(attempt, pinnedPort, remaining - 1)
+  }
+}
+
+/**
  * Runs `attempt` with an API port and a metrics port. On an EADDRINUSE failure (and only that),
  * retries with freshly allocated ports, at most `maxAttempts` (3) times in total.
  */
@@ -89,15 +126,5 @@ export async function withFreshPortRetry<T>(
   options: FreshPortRetryOptions = {}
 ): Promise<T> {
   const maxAttempts = options.pinnedPort === undefined ? (options.maxAttempts ?? MAX_ATTEMPTS) : 1
-  let lastError: unknown
-  for (let n = 1; n <= maxAttempts; n++) {
-    const [port, metricsPort] = (await allocateFreePorts(2)) as [number, number]
-    try {
-      return await attempt({ port: options.pinnedPort ?? port, metricsPort })
-    } catch (error) {
-      lastError = error
-      if (!isAddrInUseFailure(error)) throw error
-    }
-  }
-  throw lastError
+  return attemptWithFreshPorts(attempt, options.pinnedPort, maxAttempts)
 }
