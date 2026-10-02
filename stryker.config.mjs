@@ -40,12 +40,11 @@ export default {
   plugins: ['@stryker-mutator/vitest-runner'],
   coverageAnalysis: 'perTest',
   ignoreStatic: true,
-  // PROVISIONAL (Story 66-7 AC-4): measured locally only that the dry run of the api shard (167
-  // related spec files, serial single worker, DB-backed) exceeds 30 min and the plain serial run
-  // moves ~1 spec file/min; no completed dry-run time exists yet. 90 is a generous ceiling until the
-  // first nightly dispatch reports the real number (the job summary prints it); then tune this and
-  // the workflow's timeout-minutes to measured + headroom. Never raise it blindly beyond that.
-  dryRunTimeoutMinutes: 90,
+  // Measured (Story 66-9): the api shard's dry run (2295 serial DB-backed tests, runner forces one
+  // worker) took 43m29s (Nightly 36927014312) and 46m50s (forced Nightly 36955819885); the db shard
+  // 30 s. 70 = 1.5x the slower api measurement. A slower dry run fails the job honestly: add a
+  // shard, never raise this number (Epic 66 rule); keep the workflow's timeout-minutes above it.
+  dryRunTimeoutMinutes: 70,
   // Initial threshold: 60% — ratchets to 80% after Epic 2 is complete
   // Initial scaffold correctly reports "no mutants found" (all Story 1.1 code is
   // infrastructure/stubs — business logic files that Stryker mutates are added in Story 1.2+)

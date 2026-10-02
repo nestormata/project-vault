@@ -42,11 +42,11 @@ jobs:
     if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     # Story 66-7: one leg per mutate shard (stryker.config.mjs SHARDS), each with its own Postgres
-    # service and its own dry run. PROVISIONAL 120 min per leg (Story 66-7 AC-4): no
-    # measured dry-run time exists yet (api leg: 167 related spec files, serial). After the first
-    # nightly dispatch, set this to measured dry run + mutation phase + headroom (the job summary
-    # prints the dry-run duration). Add shards, not minutes.
-    timeout-minutes: 120
+    # service and its own dry run. Measured (Story 66-9, Nightly 36927014312 and forced Nightly
+    # 36955819885): api leg 53 and 58 min wall-clock (dry run 43m29s / 46m50s, mutation ~10 min),
+    # db leg ~5 min. 90 min = 1.55x the slower api job and leaves 20 min after a worst-case 70-min
+    # dry run (stryker.config.mjs). Add shards, not minutes.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -146,8 +146,8 @@ jobs:
     # Story 66.11: one repeat per matrix leg, each on its own runner with its own fresh Postgres
     # service. Five back-to-back runs on one runner could not fit any timeout (Nightly
     # 36927014312: run 1 alone took 1h16m34s, run 2 hit the old 180-minute limit). Add legs/shards,
-    # not minutes. PROVISIONAL 120 min per leg (1.57x the measured 1h16m34s of run 1 in Nightly
-    # 36927014312); tune from the measured legs after the first all-green matrix run.
+    # not minutes. 120 min per leg = 1.5x the slowest measured leg (80 min; legs took 65-80 min in
+    # forced Nightly 36955819885, Story 66-9). Past ~100 min, add the 2-way vitest --shard from ci.yml.
     timeout-minutes: 120
     # Rare, timing-dependent flakes (e.g. one bad run in ~6-8) are invisible to a single CI
     # run and to a single local `make ci` — a green run says nothing about a bug that only

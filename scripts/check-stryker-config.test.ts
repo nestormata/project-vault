@@ -49,9 +49,10 @@ describe('stryker.config.mjs gate invariants', () => {
     expect(new Set(positives)).toEqual(new Set(all))
   })
 
-  it('has a dry-run timeout that is a stated ceiling (tuned after the first measured dispatch)', () => {
+  it('has a dry-run timeout tuned to the measured api dry run (Story 66-9)', () => {
     expect(config.dryRunTimeoutMinutes).toBeGreaterThan(0)
-    expect(config.dryRunTimeoutMinutes).toBeLessThanOrEqual(90)
+    // Measured api dry run: 43m29s and 46m50s (Nightly 36927014312, forced Nightly 36955819885); 70 = 1.5x the slower.
+    expect(config.dryRunTimeoutMinutes).toBeLessThanOrEqual(70)
   })
 })
 
