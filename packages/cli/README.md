@@ -40,6 +40,7 @@ curl -fsSLO "$BASE/pvault-$VERSION.mjs" && curl -fsSLO "$BASE/pvault-$VERSION.mj
 sha256sum -c "pvault-$VERSION.mjs.sha256"   # macOS without sha256sum: shasum -a 256 -c "pvault-$VERSION.mjs.sha256"
 mkdir -p ~/.local/bin
 chmod +x "pvault-$VERSION.mjs" && mv "pvault-$VERSION.mjs" ~/.local/bin/pvault
+export PATH="$HOME/.local/bin:$PATH"   # if ~/.local/bin is not already on PATH; add it to your shell profile to keep it
 pvault --version
 ```
 
