@@ -159,15 +159,24 @@ Since Story 60.6 the E2E stack runs the CentralizeMe -> PV handoff for real, so
 
 ## Base image refresh
 
-Every image builds `FROM node@sha256:<digest>` (the `node:24-alpine` index digest, a bare digest by
-design: Sonar S8431 flags tag plus digest as redundant). Six lines carry it: `apps/api/Dockerfile`
-(builder, runner, migrate), `apps/web/Dockerfile` (builder, runner) and `Dockerfile.ci`; they must
-stay in lockstep (`scripts/check-base-image-digest.test.ts`).
+Every shipped image builds from a digest-pinned base: `FROM <image>@sha256:<digest>` (the multi-arch
+index digest, a bare digest by design: Sonar S8431 flags tag plus digest as redundant). Two image
+families are pinned: `node` (`node:24-alpine`; six lines in `apps/api/Dockerfile` (builder, runner,
+migrate), `apps/web/Dockerfile` (builder, runner) and `Dockerfile.ci`) and `postgres`
+(`postgres:16-alpine`; one line in `deploy/fly/db/Dockerfile`, the Fly demo db image). Each family
+stays in lockstep. `scripts/check-base-image-digest.test.ts` discovers every Dockerfile in the
+repo by name (no list to edit when you add one), rejects any floating external `FROM` (also
+`COPY --from=` and `RUN --mount=...from=`), and fails if a Dockerfile named by a fly toml, compose
+file, workflow or script is not discovered, or if a pinned family is unknown to the refresh script.
+It cannot judge whether a digest is recent: the image scan gates and the refresh below do that.
 
-`.github/workflows/base-image-refresh.yml` runs weekly (and on `workflow_dispatch`). It resolves the
-current digest from Docker Hub with an anonymous token, refuses a registry rollback (older `libssl3`),
-rewrites all six lines with `scripts/refresh-base-image.sh`, force-pushes `chore/base-image-refresh`
-and opens or updates a single `base-image`-labelled PR. A PR opened with `GITHUB_TOKEN` does not
+`.github/workflows/base-image-refresh.yml` runs weekly (and on `workflow_dispatch`). For each family
+that `scripts/refresh-base-image.sh images` lists, it resolves the current digest from Docker Hub with
+an anonymous token, refuses a registry rollback (older `libssl3`), rewrites only the changed
+family's `FROM` lines with `scripts/refresh-base-image.sh rewrite --image <name>`, force-pushes
+`chore/base-image-refresh` and opens or updates a single `base-image`-labelled PR (one PR even when
+both families moved). The Fly db image has no `apk upgrade` step: OS fixes arrive only through this
+reviewed refresh. A PR opened with `GITHUB_TOKEN` does not
 trigger `pull_request` workflows, so the job also runs `gh workflow run ci.yml --ref
 chore/base-image-refresh`; the checks (including the blocking image scan) appear on the PR head
 commit. The PR is never auto-merged: review the checks, then merge by hand. To refresh by hand, run

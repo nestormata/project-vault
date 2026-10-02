@@ -5,17 +5,21 @@
 # Build context is the repo root (`flyctl deploy -c fly.db.toml`).
 # Named `runner` so the nightly/PR image scans (Story 43.16 AC-13) build it with an explicit
 # --target, like every other scanned image.
-FROM postgres:16-alpine AS runner
+# Story 64.6: the base is pinned by the multi-arch INDEX digest of `postgres:16-alpine` (a bare
+# digest, Sonar S8431-clean, same form as node). The weekly base-image-refresh workflow keeps it
+# current (scripts/refresh-base-image.sh --image postgres) and the guard
+# scripts/check-base-image-digest.test.ts rejects a floating tag here.
+FROM postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea AS runner
 
 # The stock entrypoint drops root with gosu, a Go binary whose bundled stdlib carries fixable
 # HIGH/CRITICAL CVEs that the image scan gate blocks on (Story 43.16 AC-13). su-exec (Alpine's small
 # C tool, same `<user> <command...>` interface, and what the Alpine postgres images used before
 # gosu) replaces it under the same command name, so docker-entrypoint.sh is unchanged. The Go
 # binary is deleted (a layer whiteout, which image scanners honour) and the su-exec link lives at
-# /usr/local/sbin/gosu, which is on PATH. `apk upgrade` picks up Alpine security fixes published
-# after the base tag was built.
-RUN apk upgrade --no-cache \
- && apk add --no-cache su-exec \
+# /usr/local/sbin/gosu, which is on PATH. There is deliberately no `apk upgrade`: OS fixes arrive
+# through the reviewed digest refresh, so a build never drifts from its pin (Story 64.6; on the
+# pinned digest `apk upgrade` changed no package and the Trivy gate was clean without it).
+RUN apk add --no-cache su-exec \
  && rm -f /usr/local/bin/gosu \
  && mkdir -p /usr/local/sbin \
  && ln -s /sbin/su-exec /usr/local/sbin/gosu
