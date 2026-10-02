@@ -525,9 +525,10 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
   writeFileSync(join(STAGE_DIR, 'manifests', 'compatibility.json'), compatibilityManifest)
   const optional = packOptionalManifests()
   writeFileSync(join(STAGE_DIR, MANIFEST), `${JSON.stringify(packageJson, null, 2)}\n`)
+  const manifests = ['compatibility.json', ...optional].join(', ')
   log(
     `pack-web-host: done: ${options.version}, ${shippedWebFiles.length + shared.files.length} source files, ` +
-      `manifests: compatibility.json${optional.map((name) => `, ${name}`).join('')}`
+      `manifests: ${manifests}`
   )
   return {
     packageJson,
