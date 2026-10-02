@@ -5,6 +5,7 @@ import {
   moduleSpecifiers,
   packageNameOf,
   walkImportGraph,
+  withoutQuery,
   type GraphResolver,
 } from './import-graph.js'
 
@@ -140,5 +141,23 @@ describe('walkImportGraph', () => {
     )
     expect(graph.errors).toEqual([])
     expect(graph.files.has(APP_B)).toBe(true)
+  })
+})
+
+describe('withoutQuery (Sonar typescript:S8786)', () => {
+  it('drops a Vite query suffix and keeps a specifier without one', () => {
+    expect(withoutQuery('./icon.svg?raw')).toBe('./icon.svg')
+    expect(withoutQuery('./a?b?c')).toBe('./a')
+    expect(withoutQuery('./plain.ts')).toBe('./plain.ts')
+    expect(withoutQuery('?')).toBe('')
+  })
+
+  it('is linear on a ?-heavy specifier that made the old /\\?.*$/ regex quadratic', () => {
+    // The old regex started a match at every `?` and re-scanned to the end: ~n^2/2 steps, which
+    // is about 5e9 for 100k characters (many seconds). The scan is one indexOf.
+    const pathological = `x${'?'.repeat(100_000)}\n`
+    const started = performance.now()
+    expect(withoutQuery(pathological)).toBe('x')
+    expect(performance.now() - started).toBeLessThan(500)
   })
 })

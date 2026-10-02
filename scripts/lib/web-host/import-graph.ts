@@ -182,6 +182,13 @@ export function walkImportGraph(
   return result
 }
 
+/** A Vite query suffix (`./x.svg?raw`) names the same file. A linear scan, not a regex: a
+ * `/\?.*$/` tries every `?` as a start and re-scans to the end, quadratic on `?`-heavy input. */
+export function withoutQuery(specifier: string): string {
+  const query = specifier.indexOf('?')
+  return query === -1 ? specifier : specifier.slice(0, query)
+}
+
 type Resolved =
   | { kind: 'package'; name: string }
   | { kind: 'file'; path: string }
@@ -189,8 +196,7 @@ type Resolved =
   | { kind: 'missing' }
 
 function resolveSpecifier(specifier: string, importer: string, resolver: GraphResolver): Resolved {
-  // A Vite query suffix (`./x.svg?raw`) names the same file.
-  const path = specifier.replace(/\?.*$/, '')
+  const path = withoutQuery(specifier)
   const aliased = resolver.alias(path)
   const base = aliased ?? (path.startsWith('.') ? join(dirname(importer), path) : undefined)
   if (base !== undefined) {
