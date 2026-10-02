@@ -133,6 +133,14 @@ export type CheckCapabilityInput = {
    * invokes the gate; this is a log-only backstop, not a cache.
    */
   perRequestSeen?: Set<string>
+  /**
+   * Story 68.8 Q14 (Nestor 2026-10-02): true only when the id comes from an M7 `apiRoutes` entry's
+   * own `security` (an added route, or an override with `replaceSecurity`). The id may then be one
+   * PV does not know (a CentralizeMe-only capability), and it is passed to the registered gate,
+   * which decides. PV's own call sites never set it, so the AC-22 unknown-id backstop still
+   * applies to them.
+   */
+  extensionRouteCapability?: boolean
 }
 
 const PV_LOCALIZED_FALLBACK_MESSAGE = 'This capability is not available for your organization.'
@@ -341,6 +349,37 @@ function isKnownCapabilityId(capability: string): boolean {
   return (Object.values(CapabilityId) as string[]).includes(capability)
 }
 
+function unknownCapabilityDenial(logger: GateLogger, fields: LogFields): CapabilityDecision {
+  logGateEvent(
+    logger,
+    'error',
+    OperationalEvent.CAPABILITY_GATE_UNKNOWN_ID,
+    'assertCapability/checkCapability received an id outside the closed CapabilityId set',
+    fields
+  )
+  return denial('unknown_capability')
+}
+
+/**
+ * Story 68.8 Q14 — the no-gate decision for an M7 `apiRoutes` entry's own capability id. A PV id
+ * keeps AC-5's fail-open (`null`: proceed ungated, exactly as for PV's routes). An id PV does not
+ * know has nobody to decide it, so it denies (`unknown_capability`, fail closed).
+ */
+export function extensionRouteCapabilityWithoutGate(input: {
+  capability: string
+  orgId: string | null
+  requestId?: string
+  logger?: GateLogger
+}): CapabilityDecision | null {
+  if (isKnownCapabilityId(input.capability)) return null
+  return unknownCapabilityDenial(input.logger ?? {}, {
+    capability: input.capability,
+    orgId: input.orgId,
+    gateCallId: randomUUID(),
+    requestId: input.requestId,
+  })
+}
+
 /** Resolves a settled `invokeGateWithTimeout()` outcome into a final, counted CapabilityDecision. */
 function resolveGateOutcome(
   outcome: Awaited<ReturnType<typeof invokeGateWithTimeout>>,
@@ -426,15 +465,8 @@ export async function checkCapability(
   // AC-22 runtime backstop: an id reaching here outside the closed CapabilityId set denies rather
   // than silently going ungated. secureRoute()'s boot-time check (AC-22 primary) already prevents
   // this for the declarative form; this covers a hand-built assertCapability() call.
-  if (!isKnownCapabilityId(input.capability)) {
-    logGateEvent(
-      logger,
-      'error',
-      OperationalEvent.CAPABILITY_GATE_UNKNOWN_ID,
-      'assertCapability/checkCapability received an id outside the closed CapabilityId set',
-      fields
-    )
-    const decision = denial('unknown_capability')
+  if (!input.extensionRouteCapability && !isKnownCapabilityId(input.capability)) {
+    const decision = unknownCapabilityDenial(logger, fields)
     recordOutcome(decision)
     return decision
   }

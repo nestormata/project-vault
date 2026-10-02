@@ -1,8 +1,13 @@
 import type { FastifyReply, FastifyRequest, FastifySchema, preHandlerHookHandler } from 'fastify'
+import type { CapabilityDecision } from '@project-vault/extension-api'
 import { getDb, type Tx } from '@project-vault/db'
 import { auditLogEntries } from '@project-vault/db/schema'
 import { CapabilityId, type CapabilityIdValue } from '@project-vault/shared'
-import { checkCapability, getCapabilityGate } from './capability-gate.js'
+import {
+  checkCapability,
+  extensionRouteCapabilityWithoutGate,
+  getCapabilityGate,
+} from './capability-gate.js'
 import { recordCapabilityDeniedAudit } from './capability-gate-audit.js'
 import { requireMfaEnrollment } from '../modules/auth/mfa-enforcement.js'
 import { firstActorTokenIdForUser } from '../modules/audit/actor-token.js'
@@ -427,6 +432,9 @@ type ResolvedSecurity = {
   // key computed once at registration.
   rateLimit: false | { max: number; timeWindowMs?: number; key: string }
   rateLimitKeyIsDefault: boolean
+  // Story 68.8 Q14: true when `security` is an apiRoutes entry's own (an added route, or an
+  // override with `replaceSecurity`); its capability id then goes to the extension gate as is.
+  extensionSecurity: boolean
 }
 
 type RequestPhase = 'rls' | 'handler' | 'audit'
@@ -450,7 +458,8 @@ function withAuditSendGuard(reply: FastifyReply, enabled: boolean): () => void {
 
 function resolveSecurity(
   options: SecureRouteRegistrationOptions,
-  defaultRateLimitKey: string
+  defaultRateLimitKey: string,
+  extensionSecurity = false
 ): ResolvedSecurity {
   const security = options.security ?? {}
   const requireAuth = security.requireAuth !== false
@@ -461,6 +470,7 @@ function resolveSecurity(
     rateLimit:
       rateLimit === false ? false : { ...rateLimit, key: rateLimit.key ?? defaultRateLimitKey },
     rateLimitKeyIsDefault: rateLimit !== false && rateLimit.key === undefined,
+    extensionSecurity,
   }
 }
 
@@ -514,13 +524,13 @@ function enforceRouteRateLimit(
 async function enforceProtectedGuards({
   auth,
   options,
-  rateLimit,
+  resolvedSecurity,
   request,
   reply,
 }: {
   auth: AuthContext
   options: SecureRouteRegistrationOptions
-  rateLimit: ResolvedSecurity['rateLimit']
+  resolvedSecurity: ResolvedSecurity
   request: FastifyRequest
   reply: FastifyReply
 }): Promise<boolean> {
@@ -533,9 +543,9 @@ async function enforceProtectedGuards({
     sendInsufficientRole(reply)
     return false
   }
-  if (!enforceRouteRateLimit(rateLimit, auth, reply)) return false
+  if (!enforceRouteRateLimit(resolvedSecurity.rateLimit, auth, reply)) return false
   if (!(await enforceMfaIfRequired(options, request, reply))) return false
-  return enforceCapabilityIfRequired(options, auth, request, reply)
+  return enforceCapabilityIfRequired(options, resolvedSecurity, auth, request, reply)
 }
 
 // Story 23.3 AC-10 — a per-request marker (log-only double-check backstop), keyed off the
@@ -580,17 +590,27 @@ async function auditCapabilityDenialBestEffort(
 // connection. Routes with `security.capability` unset make ZERO gate calls (AC-5/AC-20 spy
 // assertion). With NO gate registered, checkCapability() is never invoked at all — AC-5's
 // byte-identical-to-today guarantee for the overwhelmingly common no-extension case.
-async function enforceCapabilityIfRequired(
-  options: SecureRouteRegistrationOptions,
+// Story 68.8 Q14 (Nestor 2026-10-02): for an apiRoutes entry's own security, an id outside PV's
+// CapabilityId set is passed to the registered extension gate, which decides; with no gate it
+// denies (fail closed). A PV id, and every PV route, behaves exactly as before. `null` means
+// "no gate and nothing to decide": proceed ungated (AC-5).
+async function decideCapability(
+  capability: CapabilityIdValue,
+  extensionSecurity: boolean,
   auth: AuthContext,
-  request: FastifyRequest,
-  reply: FastifyReply
-): Promise<boolean> {
-  const capability = options.security?.capability
-  if (!capability) return true
+  request: FastifyRequest
+): Promise<CapabilityDecision | null> {
   const gate = getCapabilityGate()
-  if (!gate) return true
-  const decision = await checkCapability(gate, {
+  if (!gate) {
+    if (!extensionSecurity) return null
+    return extensionRouteCapabilityWithoutGate({
+      capability,
+      orgId: auth.orgId,
+      requestId: request.id,
+      logger: request.log,
+    })
+  }
+  return checkCapability(gate, {
     capability,
     orgId: auth.orgId,
     userId: auth.userId,
@@ -599,8 +619,26 @@ async function enforceCapabilityIfRequired(
     requestId: request.id,
     logger: request.log,
     perRequestSeen: perRequestSeenSetFor(request),
+    extensionRouteCapability: extensionSecurity,
   })
-  if (decision.permitted) return true
+}
+
+async function enforceCapabilityIfRequired(
+  options: SecureRouteRegistrationOptions,
+  resolvedSecurity: ResolvedSecurity,
+  auth: AuthContext,
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<boolean> {
+  const capability = options.security?.capability
+  if (!capability) return true
+  const decision = await decideCapability(
+    capability,
+    resolvedSecurity.extensionSecurity,
+    auth,
+    request
+  )
+  if (decision === null || decision.permitted) return true
   await auditCapabilityDenialBestEffort(request, auth, capability, decision.reasonCode)
   sendCapabilityDenied(reply, capability, decision)
   return false
@@ -816,7 +854,7 @@ async function handleSecureRouteRequest({
   const guardsPassed = await enforceProtectedGuards({
     auth,
     options,
-    rateLimit: resolvedSecurity.rateLimit,
+    resolvedSecurity,
     request,
     reply,
   })
@@ -872,8 +910,7 @@ function assertKnownCapabilityId(options: SecureRouteRegistrationOptions): void 
 function assertSecureRouteConfig(
   fastify: RouteFastify,
   options: SecureRouteRegistrationOptions,
-  resolvedSecurity: ResolvedSecurity,
-  apiRoute: boolean
+  resolvedSecurity: ResolvedSecurity
 ): void {
   if (resolvedSecurity.requireAuth && typeof fastify.authenticate !== 'function') {
     throw new Error('SecureRoute: requireAuth is true but fastify.authenticate is not registered')
@@ -884,7 +921,7 @@ function assertSecureRouteConfig(
   if (!resolvedSecurity.requireOrgScope && auditConfigFor(options)) {
     throw new Error('SecureRoute: writeAuditEvent requires requireOrgScope')
   }
-  if (!apiRoute) assertKnownCapabilityId(options)
+  if (!resolvedSecurity.extensionSecurity) assertKnownCapabilityId(options)
 }
 
 /** Story 68.8 AC-3: the effective-config assertion names the extension route that failed it. */
@@ -896,11 +933,16 @@ function assertEffectiveConfig(
   key: string
 ): void {
   try {
-    assertSecureRouteConfig(fastify, options, resolvedSecurity, apiRoute)
+    assertSecureRouteConfig(fastify, options, resolvedSecurity)
   } catch (error) {
     if (!apiRoute || !(error instanceof Error)) throw error
     throw new Error(`apiRoutes ${key}: ${error.message}`)
   }
+}
+
+// Story 68.8 Q14: the route's security is the extension's own declaration (not PV's).
+function isExtensionSecurity(marker: RouteMarker): boolean {
+  return marker.added === true || marker.replaceSecurity === true
 }
 
 function isDefaultAuditConfig(options: SecureRouteRegistrationOptions): boolean {
@@ -983,7 +1025,7 @@ function registerBuiltRoute(
   options: SecureRouteRegistrationOptions,
   plan: RegistrationPlan
 ): void {
-  const resolvedSecurity = resolveSecurity(options, plan.key)
+  const resolvedSecurity = resolveSecurity(options, plan.key, isExtensionSecurity(plan.marker))
   assertEffectiveConfig(fastify, options, resolvedSecurity, plan.origin !== 'pv', plan.key)
   const routeOptions = buildRouteOptions(fastify, options, plan, resolvedSecurity)
   const routeHost = fastify.withTypeProvider ? fastify.withTypeProvider() : fastify
@@ -1127,7 +1169,7 @@ export function secureRawRouteReplacement(
   }
   const options = { ...overriddenOptions(base, entry, key), schema: undefined }
   const plan: RegistrationPlan = { ...overridePlan(entry, key), hookPlan: undefined }
-  const resolvedSecurity = resolveSecurity(options, key)
+  const resolvedSecurity = resolveSecurity(options, key, isExtensionSecurity(plan.marker))
   assertEffectiveConfig(fastify, options, resolvedSecurity, true, key)
   recordRegistration(fastify, options, plan, resolvedSecurity)
   return buildRouteOptions(fastify, options, plan, resolvedSecurity)

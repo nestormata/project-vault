@@ -533,9 +533,16 @@ Project Vault's transaction: write it inside `ctx.onPostCommit` (after Project V
 make it idempotent and compensate. A request that holds `ctx.tx` while it waits on
 `getDbHandle()` uses two connections; size the pools for it. Public routes get `ctx = {}`.
 
-**Capabilities.** `security.capability` is passed to the capability gate step unchanged. Today an
-id outside Project Vault's own `CapabilityId` set is denied with `reasonCode: 'unknown_capability'`
-before any extension gate is consulted, exactly as for any unknown id.
+**Capabilities.** An `apiRoutes` entry's own `security.capability` (on an added route, or on an
+override with `replaceSecurity: true`) may be any id, including your own capability ids that
+Project Vault does not know. Project Vault passes it unchanged to your registered
+`capabilityGate` hook, which permits or denies it; a denial answers PV's `403 capability_denied`
+with your `reasonCode`. With no `capabilityGate` registered, an id outside Project Vault's own
+`CapabilityId` set is denied (`reasonCode: 'unknown_capability'`, fail closed), while a Project
+Vault id behaves as on PV's own routes (no gate, no check). The gate step runs only on
+authenticated routes: a `requireAuth: false` route is never gated, as for PV's routes. An override
+without `replaceSecurity` keeps Project Vault's own security, and PV's own routes keep refusing an
+unknown id at boot. The status endpoint lists each entry's `capability`.
 
 **Schemas.** Supply a schema Project Vault's compilers accept: today a Zod 4 schema per part,
 including `zod/v4` from zod 3.25 and later. Project Vault checks every schema part while the API

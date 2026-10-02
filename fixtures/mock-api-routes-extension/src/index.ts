@@ -80,9 +80,13 @@ const DASHBOARD_KEY = 'GET /api/v1/dashboard'
 const ProjectWithTilesSchema = z.object({
   data: z.looseObject({ id: z.string(), cmTiles: z.array(z.string()) }),
 })
-// A PV capability id the fixture's own gate denies (an id outside PV's closed CapabilityId set is
-// denied by PV itself as `unknown_capability` before any gate is consulted; see the authoring doc).
+// A PV capability id the fixture's own gate denies.
 const GATED_PV_CAPABILITY = 'monitoring.public-status-page'
+// Story 68.8 Q14: CM-only ids (outside PV's CapabilityId set) reach this gate unchanged; it permits
+// the first and denies the second.
+const CM_READ_CAPABILITY = 'cm.documents.read'
+const CM_WRITE_CAPABILITY = 'cm.documents.write'
+const DENIED_CAPABILITIES = new Set([GATED_PV_CAPABILITY, CM_WRITE_CAPABILITY])
 const DashboardSchema = z.object({ cm: z.string() })
 const SimpleSchema = z.object({ cm: z.boolean() })
 const HealthWithCmSchema = z.looseObject({ status: z.string(), cm: z.string().optional() })
@@ -120,7 +124,12 @@ const defaultDeclaration: ApiRoutesDeclaration = {
     {
       method: 'GET',
       url: '/api/v1/cm/own-capability',
-      options: { security: { capability: 'cm.documents.read', writeAuditEvent: false } },
+      options: { security: { capability: CM_READ_CAPABILITY, writeAuditEvent: false } },
+    },
+    {
+      method: 'GET',
+      url: '/api/v1/cm/own-capability-denied',
+      options: { security: { capability: CM_WRITE_CAPABILITY, writeAuditEvent: false } },
     },
   ],
   override: [
@@ -269,7 +278,18 @@ function defaultRoutes(): ApiRoutesHooks['routes'] {
       },
     },
     'GET /api/v1/users/me': { handler: lateNext },
-    'GET /api/v1/cm/own-capability': { handler: async () => ({ data: 'never reached' }) },
+    'GET /api/v1/cm/own-capability': {
+      handler: async () => {
+        count('GET /api/v1/cm/own-capability')
+        return { data: 'cm-capability-ok' }
+      },
+    },
+    'GET /api/v1/cm/own-capability-denied': {
+      handler: async () => {
+        count('GET /api/v1/cm/own-capability-denied')
+        return { data: 'never reached' }
+      },
+    },
     [DASHBOARD_KEY]: {
       schema: { response: { 200: DashboardSchema } },
       handler: async (ctx: object) => {
@@ -333,7 +353,7 @@ function scenarios(): Record<ApiRoutesScenario, ScenarioDefinition> {
         },
         capabilityGate: {
           onCheckCapability: async ({ capability }) =>
-            capability === GATED_PV_CAPABILITY
+            DENIED_CAPABILITIES.has(capability)
               ? { permitted: false, reasonCode: 'fixture_denied', message: 'Denied by fixture.' }
               : { permitted: true },
         },

@@ -212,18 +212,30 @@ describe('Story 68.8 AC-14 — apiRoutes through the real loader and createApp()
       expect(fixture.observed.calls.get('GET /api/v1/cm/gated')).toBeUndefined()
     })
 
-    it('Q14: a capability id outside PV’s CapabilityId set is accepted at boot and denied at request time (unknown_capability), as in the gate today', async () => {
+    it('Q14: a CM-only capability id reaches the extension gate, which permits it: 200 from CM', async () => {
       const res = await app.inject({
         method: 'GET',
         url: '/api/v1/cm/own-capability',
         headers: as(orgA.cookies),
       })
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toEqual({ data: 'cm-capability-ok' })
+      expect(fixture.observed.calls.get('GET /api/v1/cm/own-capability')).toBe(1)
+    })
+
+    it('Q14: a CM-only capability id the extension gate denies: 403 with the gate’s reason, handler never runs', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/cm/own-capability-denied',
+        headers: as(orgA.cookies),
+      })
       expect(res.statusCode).toBe(403)
       expect(res.json()).toMatchObject({
         code: 'capability_denied',
-        capability: 'cm.documents.read',
-        reasonCode: 'unknown_capability',
+        capability: 'cm.documents.write',
+        reasonCode: 'fixture_denied',
       })
+      expect(fixture.observed.calls.get('GET /api/v1/cm/own-capability-denied')).toBeUndefined()
     })
   })
 
