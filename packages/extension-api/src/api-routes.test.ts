@@ -400,3 +400,97 @@ describe('Story 68.8 AC-2 — apiRoutes validation checks integrity only', () =>
     )
   })
 })
+
+describe('Story 68.8 AC-2 (a) — the security object inside an entry is integrity-checked too', () => {
+  const add = (security: unknown) => ({
+    add: [{ method: 'GET', url: '/x', options: { security } }],
+  })
+  const override = (security: unknown) => ({
+    override: [{ method: 'GET', url: '/x', mode: 'replace', replaceSecurity: true, security }],
+  })
+  const registers = (declaration: unknown) => () =>
+    registerExtension(
+      manifestWith(declaration),
+      hooksFor(implementationsFor(declaration as ApiRoutesDeclaration))
+    )
+
+  it('a full, well-formed security object registers', () => {
+    expect(
+      registers(
+        add({
+          requireAuth: true,
+          requireOrgScope: true,
+          minimumRole: 'admin',
+          allowedRoles: ['owner', 'admin'],
+          requireMfa: true,
+          requirePlatformOperator: false,
+          writeAuditEvent: {
+            eventType: 'cm.read',
+            resourceType: 'doc',
+            resourceIdFromParams: 'id',
+          },
+          rateLimit: { max: 10, timeWindowMs: 1000, key: 'cm' },
+          capability: 'cm.documents.read',
+        })
+      )
+    ).not.toThrow()
+    expect(registers(add({ writeAuditEvent: false, rateLimit: false }))).not.toThrow()
+    expect(registers(override({ requireAuth: false, rateLimit: false }))).not.toThrow()
+  })
+
+  it('a typo in a security key fails instead of silently dropping a restriction (add)', () => {
+    expectInvalid(
+      add({ minimumRol: 'admin' }),
+      'apiRoutes.add[0].options.security has unknown key "minimumRol"'
+    )
+  })
+
+  it('a typo in a security key fails instead of silently dropping a restriction (override)', () => {
+    expectInvalid(
+      override({ requireMFA: true }),
+      'apiRoutes.override[0].security has unknown key "requireMFA"'
+    )
+  })
+
+  it.each([
+    [{ requireAuth: 'false' }, 'security.requireAuth must be a boolean'],
+    [{ requireOrgScope: 0 }, 'security.requireOrgScope must be a boolean'],
+    [{ requireMfa: 'yes' }, 'security.requireMfa must be a boolean'],
+    [{ requirePlatformOperator: 1 }, 'security.requirePlatformOperator must be a boolean'],
+    [{ minimumRole: 'Admin' }, 'security.minimumRole must be one of owner, admin, member, viewer'],
+    [{ allowedRoles: 'admin' }, 'security.allowedRoles must be an array'],
+    [{ allowedRoles: ['admin', 'root'] }, 'security.allowedRoles[1] must be one of owner'],
+    [{ capability: '' }, 'security.capability must be a non-empty string'],
+    [{ capability: 7 }, 'security.capability must be a non-empty string'],
+    [{ rateLimit: true }, 'security.rateLimit must be false or an object'],
+    [{ rateLimit: { max: 0 } }, 'security.rateLimit.max must be a positive integer'],
+    [{ rateLimit: { max: '5' } }, 'security.rateLimit.max must be a positive integer'],
+    [{ rateLimit: { max: 5, timeWindowMs: -1 } }, 'security.rateLimit.timeWindowMs'],
+    [{ rateLimit: { max: 5, key: 3 } }, 'security.rateLimit.key must be a non-empty string'],
+    [{ rateLimit: { max: 5, window: 1 } }, 'security.rateLimit has unknown key "window"'],
+    [{ writeAuditEvent: 'yes' }, 'security.writeAuditEvent must be a boolean or an object'],
+    [{ writeAuditEvent: {} }, 'security.writeAuditEvent.eventType must be a non-empty string'],
+    [
+      { writeAuditEvent: { eventType: 'x', resourceType: 1 } },
+      'security.writeAuditEvent.resourceType must be a non-empty string',
+    ],
+    [
+      { writeAuditEvent: { eventType: 'x', payload: {} } },
+      'security.writeAuditEvent has unknown key "payload"',
+    ],
+  ])('security %j is rejected', (security, message) => {
+    expectInvalid(add(security), `apiRoutes.add[0].options.${message}`)
+  })
+
+  it('entries that differ only by a trailing slash are the same route and fail as duplicates', () => {
+    expectInvalid(
+      {
+        override: [
+          { method: 'GET', url: '/x', mode: 'replace' },
+          { method: 'GET', url: '/x/', mode: 'wrap' },
+        ],
+      },
+      'apiRoutes.override[1] duplicates GET /x'
+    )
+  })
+})

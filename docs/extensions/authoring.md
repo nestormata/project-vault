@@ -522,7 +522,10 @@ boot log line (`extension.api_route.replace_security`) per route, and the
 `GET /api/v1/admin/extensions/status` `apiRoutes` list. Only the route's own security is replaced.
 Context-level hooks of the route's plugin (for example the per-IP limiter on the CLI login routes)
 and app-wide hooks (vault guard, helmet, CORS) still run. Without `replaceSecurity`, a `security`
-key on an override fails the manifest, so a typo can never silently weaken a route.
+key on an override fails the manifest, so a typo can never silently weaken a route. For the same
+reason every `security` object (on an `add` or an override) is checked for unknown keys and value
+types (`minimumRol`, `requireMfa: 'yes'` or `minimumRole: 'Admin'` fail the manifest), and two
+entries that differ only by a trailing slash are one route (a duplicate).
 
 **Handler context.** An authenticated, organization-scoped route gets
 `ctx = { auth, tx, onPostCommit, audit }`. `ctx.tx` is Project Vault's request transaction (a
@@ -540,7 +543,8 @@ Project Vault does not know. Project Vault passes it unchanged to your registere
 with your `reasonCode`. With no `capabilityGate` registered, an id outside Project Vault's own
 `CapabilityId` set is denied (`reasonCode: 'unknown_capability'`, fail closed), while a Project
 Vault id behaves as on PV's own routes (no gate, no check). The gate step runs only on
-authenticated routes: a `requireAuth: false` route is never gated, as for PV's routes. An override
+authenticated routes, so a `capability` on a `requireAuth: false` entry fails the boot (it could
+never be enforced) instead of being ignored. An override
 without `replaceSecurity` keeps Project Vault's own security, and PV's own routes keep refusing an
 unknown id at boot. The status endpoint lists each entry's `capability`.
 

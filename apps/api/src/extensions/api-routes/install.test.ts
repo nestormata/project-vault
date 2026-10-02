@@ -233,7 +233,7 @@ describe('Story 68.8 AC-6 — recording: boot log lines and the status summary',
       {
         method: 'GET',
         url: '/cm/a',
-        options: { security: { requireAuth: false, capability: 'cm.read' } },
+        options: { security: { requireOrgScope: false, capability: 'cm.read' } },
       },
     ],
     override: [

@@ -1,4 +1,9 @@
-import { ExtensionRegistrationError } from './errors.js'
+import {
+  assertOnlyKeys as assertKnownKeys,
+  fail,
+  isRecord,
+  validateApiRouteSecurity,
+} from './api-routes-security-validation.js'
 import { API_ROUTE_HOOK_PHASES, API_ROUTE_METHODS } from './hooks/api-routes.js'
 import type {
   ApiRouteHookPhase,
@@ -14,7 +19,6 @@ import type {
  * not be narrowed). Every failure uses the existing `invalid-manifest-field` reason.
  */
 
-const INVALID = 'invalid-manifest-field'
 export const MAX_API_ROUTE_URL_LENGTH = 2048
 
 const TOP_LEVEL_KEYS = ['add', 'override']
@@ -27,22 +31,9 @@ const PHASE_LIST = API_ROUTE_HOOK_PHASES.join(', ')
 
 type UnknownRecord = Record<string, unknown>
 
-function fail(message: string): never {
-  throw new ExtensionRegistrationError(INVALID, message)
-}
-
-function isRecord(value: unknown): value is UnknownRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 function assertRecord(value: unknown, path: string): UnknownRecord {
   if (!isRecord(value)) fail(`${path} must be an object`)
   return value
-}
-
-function assertKnownKeys(record: UnknownRecord, known: readonly string[], path: string): void {
-  const unknownKey = Object.keys(record).find((key) => !known.includes(key))
-  if (unknownKey !== undefined) fail(`${path} has unknown key "${unknownKey}"`)
 }
 
 function assertArray(value: unknown, path: string): unknown[] {
@@ -71,6 +62,10 @@ function assertUrl(value: unknown, path: string): string {
   return value
 }
 
+function withoutTrailingSlash(url: string): string {
+  return url.length > 1 && url.endsWith('/') ? url.slice(0, -1) : url
+}
+
 function assertMethod(value: unknown, path: string): string {
   if (typeof value !== 'string' || !(API_ROUTE_METHODS as readonly string[]).includes(value)) {
     fail(`${path} must be one of ${METHOD_LIST}`)
@@ -89,15 +84,11 @@ function assertPhases(value: unknown, path: string): void {
   })
 }
 
-function assertOptionalSecurity(value: unknown, path: string): void {
-  if (value !== undefined) assertRecord(value, path)
-}
-
 function validateAddOptions(value: unknown, path: string): void {
   if (value === undefined) return
   const options = assertRecord(value, path)
   assertKnownKeys(options, ADD_OPTION_KEYS, path)
-  assertOptionalSecurity(options.security, `${path}.security`)
+  validateApiRouteSecurity(options.security, `${path}.security`)
   if (options.schema !== undefined && typeof options.schema !== 'boolean') {
     fail(`${path}.schema must be a boolean`)
   }
@@ -128,7 +119,7 @@ function validateOverrideFields(entry: UnknownRecord, path: string): void {
   if (entry.replaceSecurity !== undefined && typeof entry.replaceSecurity !== 'boolean') {
     fail(`${path}.replaceSecurity must be a boolean`)
   }
-  assertOptionalSecurity(entry.security, `${path}.security`)
+  validateApiRouteSecurity(entry.security, `${path}.security`)
   if (entry.security !== undefined && entry.replaceSecurity !== true) {
     fail(`${path}: security is only honoured with replaceSecurity: true`)
   }
@@ -145,7 +136,8 @@ function validateEntries(list: unknown, listName: 'add' | 'override', seen: Set<
     const url = assertUrl(entry.url, `${entryPath}.url`)
     if (listName === 'add') validateAddOptions(entry.options, `${entryPath}.options`)
     else validateOverrideFields(entry, entryPath)
-    const key = `${method} ${url}`
+    // The host serves `/x` and `/x/` as one route (`ignoreTrailingSlash`), so they are one key.
+    const key = `${method} ${withoutTrailingSlash(url)}`
     if (seen.has(key)) fail(`${entryPath} duplicates ${key}`)
     seen.add(key)
   })

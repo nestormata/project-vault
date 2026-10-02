@@ -193,11 +193,8 @@ describe('Story 68.8 AC-14 — apiRoutes through the real loader and createApp()
       expect(res.json()).toMatchObject({ code: 'platform_operator_required' })
     })
 
-    // The capability.denied audit row is PV's existing best-effort write
-    // (lib/capability-gate-audit.ts); it is not asserted here: on main it currently fails RLS
-    // (getDb().transaction without the org context) and is logged, for PV routes and extension
-    // routes alike. Reported separately; not an M7 behaviour.
-    it('capability-gated added route with a denying gate: 403 capability_denied, handler never runs', async () => {
+    it('capability-gated added route with a denying gate: 403 capability_denied, handler never runs, one capability.denied audit row', async () => {
+      const before = await auditRowCount(orgA.orgId, 'capability.denied')
       const res = await app.inject({
         method: 'GET',
         url: '/api/v1/cm/gated',
@@ -210,6 +207,7 @@ describe('Story 68.8 AC-14 — apiRoutes through the real loader and createApp()
         reasonCode: 'fixture_denied',
       })
       expect(fixture.observed.calls.get('GET /api/v1/cm/gated')).toBeUndefined()
+      expect(await auditRowCount(orgA.orgId, 'capability.denied')).toBe(before + 1)
     })
 
     it('Q14: a CM-only capability id reaches the extension gate, which permits it: 200 from CM', async () => {

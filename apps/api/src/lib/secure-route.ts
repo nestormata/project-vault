@@ -907,6 +907,24 @@ function assertKnownCapabilityId(options: SecureRouteRegistrationOptions): void 
   }
 }
 
+// PV routes: the id must be a PV CapabilityId. An apiRoutes entry's own security (Q14): any id,
+// but only on an authenticated route, because the gate step runs only there and an extension's
+// capability on a public route would otherwise be silently ignored (integrity, not policy).
+function assertCapabilityConfig(
+  options: SecureRouteRegistrationOptions,
+  resolvedSecurity: ResolvedSecurity
+): void {
+  if (!resolvedSecurity.extensionSecurity) {
+    assertKnownCapabilityId(options)
+    return
+  }
+  if (options.security?.capability !== undefined && !resolvedSecurity.requireAuth) {
+    throw new Error(
+      'SecureRoute: capability requires requireAuth (the capability gate runs only on authenticated routes)'
+    )
+  }
+}
+
 function assertSecureRouteConfig(
   fastify: RouteFastify,
   options: SecureRouteRegistrationOptions,
@@ -921,7 +939,7 @@ function assertSecureRouteConfig(
   if (!resolvedSecurity.requireOrgScope && auditConfigFor(options)) {
     throw new Error('SecureRoute: writeAuditEvent requires requireOrgScope')
   }
-  if (!resolvedSecurity.extensionSecurity) assertKnownCapabilityId(options)
+  assertCapabilityConfig(options, resolvedSecurity)
 }
 
 /** Story 68.8 AC-3: the effective-config assertion names the extension route that failed it. */

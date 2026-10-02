@@ -157,6 +157,26 @@ describe('Story 68.8 Q14 — an apiRoutes entry’s own capability id reaches th
     })
   })
 
+  it('an apiRoutes capability on a public (requireAuth: false) route fails the boot instead of going silently ungated', () => {
+    const table = tableFor(
+      {
+        add: [
+          {
+            method: 'GET',
+            url: ADDED_URL,
+            options: { security: { requireAuth: false, capability: CM_ONLY_CAPABILITY } },
+          },
+        ],
+      },
+      { [ADDED_KEY]: { handler: async () => ({}) } }
+    )
+    const entry = table.adds.at(0)
+    if (!entry) throw new Error('expected one added route')
+    expect(() => secureAddedApiRoute(stubInstance({ table }) as never, entry)).toThrow(
+      `apiRoutes ${ADDED_KEY}: SecureRoute: capability requires requireAuth (the capability gate runs only on authenticated routes)`
+    )
+  })
+
   describe('PV’s own routes keep the strict unknown-capability checks', () => {
     it('a PV route with an unknown id still fails registration (AC-22 boot-time check)', () => {
       expect(() =>

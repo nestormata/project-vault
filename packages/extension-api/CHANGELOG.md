@@ -13,8 +13,10 @@ contract-hash: sha256:1395088e2b26df5007845ff462a355fc077405aeac6025dd30460a1d67
   optional `schema: 'extend' | 'replace'`, prepended/appended route hooks and `replaceSecurity`).
   Every route runs inside PV's own security pipeline (authentication, roles, MFA, rate limit,
   capability gate, RLS transaction, audit). Validation checks integrity only: well-formed methods
-  and URLs, known entry keys, no duplicate `METHOD url` keys, `security` on an override only with
-  `replaceSecurity: true`. There is no URL prefix, count cap, capability declaration or allowlist.
+  and URLs, known entry keys (including the keys and value types of each `security` object, so a
+  typo cannot silently drop a restriction), no duplicate `METHOD url` keys (a trailing slash does
+  not make a new key), `security` on an override only with `replaceSecurity: true`. There is no
+  URL prefix, count cap, capability declaration or allowlist.
   Failures use the existing `invalid-manifest-field` reason (no new reason).
 - `ExtensionHooks.apiRoutes` (optional): the handlers, schema objects and hook functions behind
   the declarations, keyed by `"<METHOD> <url>"`. After `hooksFactory()` every declared route must
