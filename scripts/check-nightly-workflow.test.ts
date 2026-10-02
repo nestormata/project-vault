@@ -56,6 +56,8 @@ describe('nightly changes gate job', () => {
     const job = jobText('changes')
     expect(job).toMatch(/outputs:\s*\n\s+run: \$\{\{ steps\.gate\.outputs\.run \}\}/)
     expect(job).toMatch(/permissions:\s*\n\s+contents: read/)
+    // steps.gate.outputs.run only resolves if the step id matches (a mismatch would skip everything)
+    expect(job).toMatch(/- name: Decide whether to run the nightly\s*\n\s+id: gate\b/)
     expect(job).toContain('./scripts/nightly-changes-gate.sh')
     expect(job).toContain('GH_TOKEN: ${{ github.token }}')
     expect(job).toContain('FORCE: ${{ inputs.force }}')
