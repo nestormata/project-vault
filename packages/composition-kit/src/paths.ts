@@ -11,6 +11,14 @@ export function compareCodeUnits(a: string, b: string): number {
   return a < b ? -1 : 1
 }
 
+/** Drops every trailing `/`. A linear scan, not `replace(/\/+$/, '')`, whose unanchored start
+ * retries at every slash of a long run (Sonar typescript:S8786). */
+export function stripTrailingSlashes(value: string): string {
+  let end = value.length
+  while (end > 0 && value.codePointAt(end - 1) === 0x2f) end--
+  return value.slice(0, end)
+}
+
 export function sortedCodeUnits(values: readonly string[]): string[] {
   return [...values].sort(compareCodeUnits)
 }

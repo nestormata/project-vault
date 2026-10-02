@@ -1,6 +1,6 @@
 // A small line diff (Myers' O(ND) algorithm), hand-written so the kit has no dependency for it.
 
-const NO_NEWLINE = '\\ No newline at end of file'
+const NO_NEWLINE = String.raw`\ No newline at end of file`
 /** Above this edit distance the diff is skipped: a drift report must never hang a build. */
 const MAX_EDIT_DISTANCE = 1000
 const NUL_PROBE = 8000
@@ -164,7 +164,8 @@ export function unifiedDiff(
   const trace = shortestEdit(oldSide.lines, newSide.lines)
   const head = [`--- ${oldLabel}`, `+++ ${newLabel}`]
   if (trace === null) {
-    return `${[...head, `(files too large to diff: ${oldSide.lines.length} and ${newSide.lines.length} lines)`].join('\n')}\n`
+    const notice = `(files too large to diff: ${oldSide.lines.length} and ${newSide.lines.length} lines)`
+    return `${[...head, notice].join('\n')}\n`
   }
   const ops = markMissingNewlines(
     backtrack(trace, oldSide.lines, newSide.lines),

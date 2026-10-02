@@ -135,16 +135,13 @@ export async function runCli(
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  runCli(process.argv.slice(2), {
-    out: (text) => process.stdout.write(text),
-    err: (text) => process.stderr.write(text),
-  }).then(
-    (code) => {
-      process.exitCode = code
-    },
-    (error: unknown) => {
-      process.stderr.write(`pv-compose: ${String(error)}\n`)
-      process.exitCode = 1
-    }
-  )
+  try {
+    process.exitCode = await runCli(process.argv.slice(2), {
+      out: (text) => process.stdout.write(text),
+      err: (text) => process.stderr.write(text),
+    })
+  } catch (error: unknown) {
+    process.stderr.write(`pv-compose: ${String(error)}\n`)
+    process.exitCode = 1
+  }
 }

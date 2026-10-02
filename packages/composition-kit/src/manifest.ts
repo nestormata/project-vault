@@ -48,11 +48,17 @@ function checkHash(value: unknown, label: string, problems: string[]): void {
 }
 
 function checkOverrides(value: unknown, problems: string[], notes: string[]): void {
-  if (!Array.isArray(value)) return void problems.push('routes.overrides must be an array')
+  if (!Array.isArray(value)) {
+    problems.push('routes.overrides must be an array')
+    return
+  }
   const seen = new Set<string>()
   value.forEach((entry: unknown, index) => {
     const label = `routes.overrides[${index}]`
-    if (!isRecord(entry)) return void problems.push(`${label} must be an object`)
+    if (!isRecord(entry)) {
+      problems.push(`${label} must be an object`)
+      return
+    }
     const path = entry.path
     if (typeof path !== 'string') {
       problems.push(`${label}.path must be a string`)
@@ -69,7 +75,10 @@ function checkOverrides(value: unknown, problems: string[], notes: string[]): vo
 }
 
 function checkRoutes(value: unknown, problems: string[], notes: string[]): void {
-  if (!isRecord(value)) return void problems.push('routes must be an object')
+  if (!isRecord(value)) {
+    problems.push('routes must be an object')
+    return
+  }
   if (value.overrides !== undefined) checkOverrides(value.overrides, problems, notes)
   if (value.remove !== undefined && !isStringArray(value.remove)) {
     problems.push('routes.remove must be an array of strings')
@@ -77,7 +86,10 @@ function checkRoutes(value: unknown, problems: string[], notes: string[]): void 
 }
 
 function checkInjections(value: unknown, problems: string[]): void {
-  if (!isRecord(value)) return void problems.push('injections must be an object')
+  if (!isRecord(value)) {
+    problems.push('injections must be an object')
+    return
+  }
   for (const [name, list] of Object.entries(value)) {
     if (!Array.isArray(list)) {
       problems.push(`injections.${name} must be an array`)
@@ -85,7 +97,10 @@ function checkInjections(value: unknown, problems: string[]): void {
     }
     list.forEach((entry: unknown, index) => {
       const label = `injections.${name}[${index}]`
-      if (!isRecord(entry)) return void problems.push(`${label} must be an object`)
+      if (!isRecord(entry)) {
+        problems.push(`${label} must be an object`)
+        return
+      }
       if (typeof entry.component !== 'string') problems.push(`${label}.component must be a string`)
       if (entry.order !== undefined && typeof entry.order !== 'number') {
         problems.push(`${label}.order must be a number`)
@@ -97,7 +112,10 @@ function checkInjections(value: unknown, problems: string[]): void {
 }
 
 function checkReplacements(value: unknown, problems: string[], notes: string[]): void {
-  if (!isRecord(value)) return void problems.push('replacements must be an object')
+  if (!isRecord(value)) {
+    problems.push('replacements must be an object')
+    return
+  }
   for (const [target, entry] of Object.entries(value)) {
     const label = `replacements.${target}`
     if (!isRecord(entry)) {
@@ -112,12 +130,18 @@ function checkReplacements(value: unknown, problems: string[], notes: string[]):
 }
 
 function checkHooks(value: unknown, problems: string[]): void {
-  if (!isRecord(value)) return void problems.push('hooks must be an object')
+  if (!isRecord(value)) {
+    problems.push('hooks must be an object')
+    return
+  }
   for (const [key, entry] of Object.entries(value)) optionalString(entry, `hooks.${key}`, problems)
 }
 
 function checkProtectedPaths(value: unknown, problems: string[]): void {
-  if (!isRecord(value)) return void problems.push('protectedPaths must be an object')
+  if (!isRecord(value)) {
+    problems.push('protectedPaths must be an object')
+    return
+  }
   for (const [key, entry] of [
     ['add', value.add],
     ['remove', value.remove],
@@ -130,9 +154,8 @@ function checkProtectedPaths(value: unknown, problems: string[]): void {
 
 function checkHost(value: unknown, problems: string[]): void {
   if (!isRecord(value) || typeof value.pvRelease !== 'string') {
-    return void problems.push(
-      'host.pvRelease is required (an exact PV version, for example "1.4.0")'
-    )
+    problems.push('host.pvRelease is required (an exact PV version, for example "1.4.0")')
+    return
   }
   if (!isExactVersion(value.pvRelease)) {
     problems.push(`host.pvRelease "${value.pvRelease}" must be an exact version, not a range`)

@@ -7,6 +7,7 @@ import {
   manifestPathProblem,
   normalizePackPath,
   sortedCodeUnits,
+  stripTrailingSlashes,
   toPosix,
 } from './paths.js'
 
@@ -18,6 +19,24 @@ describe('sha256Hex', () => {
       'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
     )
     expect(sha256Hex(Buffer.from('a\r\n'))).not.toBe(sha256Hex(Buffer.from('a\n')))
+  })
+})
+
+describe('stripTrailingSlashes (Sonar typescript:S8786)', () => {
+  it('drops every trailing slash and nothing else', () => {
+    expect(stripTrailingSlashes('/billing')).toBe('/billing')
+    expect(stripTrailingSlashes('/billing/')).toBe('/billing')
+    expect(stripTrailingSlashes('src/lib//')).toBe('src/lib')
+    expect(stripTrailingSlashes('/a//b///')).toBe('/a//b')
+    expect(stripTrailingSlashes('///')).toBe('')
+    expect(stripTrailingSlashes('')).toBe('')
+  })
+
+  it('handles a long adversarial run of slashes inside and at the end of the input', () => {
+    const run = '/'.repeat(200_000)
+    expect(stripTrailingSlashes(`a${run}b${run}`)).toBe(`a${run}b`)
+    expect(stripTrailingSlashes(`${run}x`)).toBe(`${run}x`)
+    expect(stripTrailingSlashes(run)).toBe('')
   })
 })
 

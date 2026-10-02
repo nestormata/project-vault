@@ -132,6 +132,30 @@ describe('validateManifest (structural integrity only)', () => {
     expect(result.problems.join('\n')).toContain('injections.p[0].component')
   })
 
+  it('reports a section or entry that is not an object, once, without reading into it', () => {
+    const result = validateManifest({
+      host: 5,
+      routes: { overrides: [7] },
+      injections: { p: [null] },
+      replacements: { '$lib/a': 'x' },
+      hooks: 'x',
+      protectedPaths: 'x',
+    })
+    expect(result.problems).toEqual([
+      'host.pvRelease is required (an exact PV version, for example "1.4.0")',
+      'routes.overrides[0] must be an object',
+      'injections.p[0] must be an object',
+      'replacements.$lib/a must be an object',
+      'hooks must be an object',
+      'protectedPaths must be an object',
+    ])
+    for (const field of ['routes', 'injections', 'replacements']) {
+      expect(validateManifest({ ...base, [field]: 5 }).problems).toEqual([
+        `${field} must be an object`,
+      ])
+    }
+  })
+
   it('never refuses a declaration on policy grounds (any PV path, any injection name)', () => {
     const paths = [
       'src/hooks.server.ts',

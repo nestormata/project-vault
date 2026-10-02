@@ -3,6 +3,7 @@ import {
   findCaseCollisions,
   normalizePackPath,
   sortedCodeUnits,
+  stripTrailingSlashes,
 } from './paths.js'
 import { treeDigest } from './sources.js'
 import type { Host, Pack } from './sources.js'
@@ -99,12 +100,12 @@ function isOverlayPath(rel: string): boolean {
 /** The host files a removal entry covers: a route id's whole subtree, a file, or a directory. */
 function matchRemoval(entry: string, hostPaths: readonly string[]): string[] | string {
   if (entry.startsWith('/')) {
-    const id = entry.replace(/\/+$/, '')
+    const id = stripTrailingSlashes(entry)
     const prefix = `${ROUTES}${id}/`
     return hostPaths.filter((path) => path.startsWith(prefix))
   }
   if (entry.startsWith('src/') || entry.startsWith('static/')) {
-    const prefix = `${entry.replace(/\/+$/, '')}/`
+    const prefix = `${stripTrailingSlashes(entry)}/`
     return hostPaths.filter((path) => path === entry || path.startsWith(prefix))
   }
   return `routes.remove "${entry}" is neither a route id (it starts with "/") nor a file path (it starts with "src/" or "static/")`
@@ -187,8 +188,8 @@ function underRemoved(path: string, removals: readonly Removal[]): string | unde
   return removals.find((removal) => {
     const entry = removal.record.path
     const prefix = entry.startsWith('/')
-      ? `${ROUTES}${entry.replace(/\/+$/, '')}/`
-      : `${entry.replace(/\/+$/, '')}/`
+      ? `${ROUTES}${stripTrailingSlashes(entry)}/`
+      : `${stripTrailingSlashes(entry)}/`
     return path === entry || path.startsWith(prefix)
   })?.record.path
 }
