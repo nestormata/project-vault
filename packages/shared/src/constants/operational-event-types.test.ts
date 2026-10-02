@@ -39,6 +39,16 @@ describe('OperationalEvent', () => {
     )
   })
 
+  it('exposes the Story 68.8 apiRoutes boot event types', () => {
+    expect(OperationalEvent.EXTENSION_API_ROUTES_APPLIED).toBe('extension.api_routes.applied')
+    expect(OperationalEvent.EXTENSION_API_ROUTE_REPLACE_SECURITY).toBe(
+      'extension.api_route.replace_security'
+    )
+    expect(OperationalEvent.EXTENSION_API_ROUTE_SHARED_DEFAULT_KEY).toBe(
+      'extension.api_route.shared_default_key'
+    )
+  })
+
   it('exposes the Story 43.16 internal TLS event types', () => {
     expect(OperationalEvent.INTERNAL_TLS_CONFIGURED).toBe('internal_tls.configured')
     expect(OperationalEvent.INTERNAL_TLS_CERT_EXPIRING).toBe('internal_tls.cert_expiring')

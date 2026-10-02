@@ -22,7 +22,26 @@ import { env } from '../config/env.js'
 import { requireOrgRole, type OrgRole } from '../plugins/require-org-role.js'
 import { enforceUserRateLimit } from './route-helpers.js'
 import { setRlsOrgContext } from '../middleware/rls.js'
+import {
+  applyHookPlan,
+  hookPlanForAdd,
+  hookPlanForOverride,
+  mergeRouteSchema,
+  normalizeRouteUrl,
+  routeKey,
+  takeOverride,
+  wrapBusinessHandler,
+  type ApiRouteAddEntry,
+  type ApiRouteOverrideEntry,
+  type BusinessFn,
+  type BusinessWrapFn,
+  type ApiRouteTable,
+  type RouteHookPlan,
+} from './secure-route-overrides.js'
 
+// Story 68.8 AC-13 (a): keyed by the PREFIXED route (`METHOD prefix+url`, normalized), so routes
+// registered at `url: ''` under different prefixes no longer collide. No production code reads it;
+// per-app consumers use the `pvSecureRouteRegistry` collector instead.
 export const secureRoutes = new Set<string>()
 
 export type SecureRouteOptions = {
@@ -31,15 +50,43 @@ export type SecureRouteOptions = {
   requireOrgRole?: OrgRole[]
 }
 
-type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+// Story 68.8 AC-10: HEAD and OPTIONS added (non-mutating, no default audit) so every apiRoutes
+// method can be built through this pipeline.
+type HttpMethod = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS'
 type AuthContext = NonNullable<FastifyRequest['authContext']>
 type TransactionalDb = {
   transaction: (fn: (tx: unknown) => Promise<unknown>) => Promise<unknown>
 }
+/**
+ * Story 68.8 AC-18/AC-19 — one entry per `secureRoute` registration in the per-app collector
+ * (`pvSecureRouteRegistry`, decorated on the root instance by `createApp()`): the route's prefixed
+ * key, its effective rate-limit bucket key and its default audit event type. Read by the apiRoutes
+ * add plugin (shared bucket warning) and by boot tripwire tests; never by a request path.
+ */
+export type SecureRouteRegistration = {
+  key: string
+  origin: 'pv' | 'override' | 'added'
+  rateLimitKey: string | null
+  rateLimitKeyIsDefault: boolean
+  defaultAuditEventType: string | null
+}
+
 type RouteFastify = {
   authenticate?: unknown
+  /** Fastify's encapsulation prefix; absent on test stubs (treated as ''). */
+  prefix?: string
+  /** Story 68.8: the per-app apiRoutes override table; absent means "no overrides". */
+  pvApiRouteOverrides?: ApiRouteTable
+  pvSecureRouteRegistry?: Map<string, SecureRouteRegistration>
   route: (options: never) => unknown
   withTypeProvider?: <_T>() => { route: (options: never) => unknown }
+}
+
+type RouteMarker = {
+  builtBy: 'secureRoute'
+  override?: 'replace' | 'wrap'
+  replaceSecurity?: true
+  added?: true
 }
 
 export type AuditConfig = {
@@ -375,7 +422,10 @@ async function defaultAuditWriter({
 type ResolvedSecurity = {
   requireAuth: boolean
   requireOrgScope: boolean
-  rateLimit: false | { max: number; timeWindowMs?: number; key?: string }
+  // Story 68.8 AC-18: `key` is always set — the explicit `rateLimit.key`, or the route's prefixed
+  // key computed once at registration.
+  rateLimit: false | { max: number; timeWindowMs?: number; key: string }
+  rateLimitKeyIsDefault: boolean
 }
 
 type RequestPhase = 'rls' | 'handler' | 'audit'
@@ -397,13 +447,19 @@ function withAuditSendGuard(reply: FastifyReply, enabled: boolean): () => void {
   }
 }
 
-function resolveSecurity(options: SecureRouteRegistrationOptions): ResolvedSecurity {
+function resolveSecurity(
+  options: SecureRouteRegistrationOptions,
+  defaultRateLimitKey: string
+): ResolvedSecurity {
   const security = options.security ?? {}
   const requireAuth = security.requireAuth !== false
+  const rateLimit = security.rateLimit ?? { max: 60, timeWindowMs: 60_000 }
   return {
     requireAuth,
     requireOrgScope: security.requireOrgScope !== false && requireAuth,
-    rateLimit: security.rateLimit ?? { max: 60, timeWindowMs: 60_000 },
+    rateLimit:
+      rateLimit === false ? false : { ...rateLimit, key: rateLimit.key ?? defaultRateLimitKey },
+    rateLimitKeyIsDefault: rateLimit !== false && rateLimit.key === undefined,
   }
 }
 
@@ -417,7 +473,7 @@ async function handlePublicRequest(
     rateLimit &&
     !enforceUserRateLimit({
       userId: `ip:${request.ip}`,
-      key: rateLimit.key ?? `${options.method} ${options.url}`,
+      key: rateLimit.key,
       max: rateLimit.max,
       timeWindowMs: rateLimit.timeWindowMs,
       reply,
@@ -440,7 +496,6 @@ async function enforceMfaIfRequired(
 }
 
 function enforceRouteRateLimit(
-  options: SecureRouteRegistrationOptions,
   rateLimit: ResolvedSecurity['rateLimit'],
   auth: AuthContext,
   reply: FastifyReply
@@ -448,7 +503,7 @@ function enforceRouteRateLimit(
   if (!rateLimit) return true
   return enforceUserRateLimit({
     userId: auth.userId,
-    key: rateLimit.key ?? `${options.method} ${options.url}`,
+    key: rateLimit.key,
     max: rateLimit.max,
     timeWindowMs: rateLimit.timeWindowMs,
     reply,
@@ -477,7 +532,7 @@ async function enforceProtectedGuards({
     sendInsufficientRole(reply)
     return false
   }
-  if (!enforceRouteRateLimit(options, rateLimit, auth, reply)) return false
+  if (!enforceRouteRateLimit(rateLimit, auth, reply)) return false
   if (!(await enforceMfaIfRequired(options, request, reply))) return false
   return enforceCapabilityIfRequired(options, auth, request, reply)
 }
@@ -804,7 +859,8 @@ export function buildSecurePreHandlers(
 
 // Story 23.3 AC-22: boot-time (primary) validation — an unknown capability id is a startup
 // failure, the cheapest possible place to catch an id typo'd or refactored away (which would
-// otherwise silently stop being gated, with no log and no failing test).
+// otherwise silently stop being gated, with no log and no failing test). Story 68.8 Q14: an
+// apiRoutes entry's own capability id is passed to the gate unchanged instead (not refused).
 function assertKnownCapabilityId(options: SecureRouteRegistrationOptions): void {
   const capability = options.security?.capability
   if (capability !== undefined && !(Object.values(CapabilityId) as string[]).includes(capability)) {
@@ -815,7 +871,8 @@ function assertKnownCapabilityId(options: SecureRouteRegistrationOptions): void 
 function assertSecureRouteConfig(
   fastify: RouteFastify,
   options: SecureRouteRegistrationOptions,
-  resolvedSecurity: ResolvedSecurity
+  resolvedSecurity: ResolvedSecurity,
+  apiRoute: boolean
 ): void {
   if (resolvedSecurity.requireAuth && typeof fastify.authenticate !== 'function') {
     throw new Error('SecureRoute: requireAuth is true but fastify.authenticate is not registered')
@@ -826,28 +883,225 @@ function assertSecureRouteConfig(
   if (!resolvedSecurity.requireOrgScope && auditConfigFor(options)) {
     throw new Error('SecureRoute: writeAuditEvent requires requireOrgScope')
   }
-  assertKnownCapabilityId(options)
+  if (!apiRoute) assertKnownCapabilityId(options)
 }
 
-export function secureRoute(fastify: RouteFastify, options: SecureRouteRegistrationOptions): void {
-  const resolvedSecurity = resolveSecurity(options)
-  assertSecureRouteConfig(fastify, options, resolvedSecurity)
+/** Story 68.8 AC-3: the effective-config assertion names the extension route that failed it. */
+function assertEffectiveConfig(
+  fastify: RouteFastify,
+  options: SecureRouteRegistrationOptions,
+  resolvedSecurity: ResolvedSecurity,
+  apiRoute: boolean,
+  key: string
+): void {
+  try {
+    assertSecureRouteConfig(fastify, options, resolvedSecurity, apiRoute)
+  } catch (error) {
+    if (!apiRoute || !(error instanceof Error)) throw error
+    throw new Error(`apiRoutes ${key}: ${error.message}`)
+  }
+}
 
+function isDefaultAuditConfig(options: SecureRouteRegistrationOptions): boolean {
+  const configured = options.security?.writeAuditEvent
+  return configured === true || (configured === undefined && MUTATING_METHODS.has(options.method))
+}
+
+type RegistrationPlan = {
+  key: string
+  origin: SecureRouteRegistration['origin']
+  marker: RouteMarker
+  hookPlan?: RouteHookPlan
+  logBinding?: Record<string, unknown>
+  extraRouteOptions?: Record<string, unknown>
+}
+
+// Story 68.8 AC-6: every request an extension route answers carries a `pvRoute` binding in PV's
+// request logs (no metrics label, so http-metrics cardinality is unchanged).
+function pvRouteLogBinding(binding: Record<string, unknown>) {
+  return async (request: FastifyRequest): Promise<void> => {
+    request.log = request.log.child({ pvRoute: binding })
+  }
+}
+
+function withLogBinding(
+  routeOptions: Record<string, unknown>,
+  binding: Record<string, unknown>
+): void {
+  const onRequest = new Map(Object.entries(routeOptions)).get('onRequest')
+  routeOptions['onRequest'] = [
+    pvRouteLogBinding(binding),
+    ...(onRequest === undefined ? [] : [onRequest].flat()),
+  ]
+}
+
+function recordRegistration(
+  fastify: RouteFastify,
+  options: SecureRouteRegistrationOptions,
+  plan: RegistrationPlan,
+  resolvedSecurity: ResolvedSecurity
+): void {
+  const rateLimit = resolvedSecurity.rateLimit
+  const defaultAudit = isDefaultAuditConfig(options) ? auditConfigFor(options) : null
+  fastify.pvSecureRouteRegistry?.set(plan.key, {
+    key: plan.key,
+    origin: plan.origin,
+    rateLimitKey: rateLimit ? rateLimit.key : null,
+    rateLimitKeyIsDefault: resolvedSecurity.rateLimitKeyIsDefault,
+    defaultAuditEventType: defaultAudit?.eventType ?? null,
+  })
+}
+
+function buildRouteOptions(
+  fastify: RouteFastify,
+  options: SecureRouteRegistrationOptions,
+  plan: RegistrationPlan,
+  resolvedSecurity: ResolvedSecurity
+): Record<string, unknown> {
   const preHandler: preHandlerHookHandler[] = []
   if (resolvedSecurity.requireAuth) preHandler.push(fastify.authenticate as preHandlerHookHandler)
-
-  const routeOptions = {
+  const routeOptions: Record<string, unknown> = {
     method: options.method,
     url: options.url,
     schema: options.schema,
     ...(options.bodyLimit !== undefined ? { bodyLimit: options.bodyLimit } : {}),
     attachValidation: Boolean(options.schema?.body),
     preHandler,
+    config: { pvRoute: plan.marker },
     handler: (request: FastifyRequest, reply: FastifyReply) =>
       handleSecureRouteRequest({ options, resolvedSecurity, request, reply }),
+    ...plan.extraRouteOptions,
   }
+  if (plan.hookPlan) applyHookPlan(routeOptions, plan.hookPlan)
+  if (plan.logBinding) withLogBinding(routeOptions, plan.logBinding)
+  return routeOptions
+}
 
+function registerBuiltRoute(
+  fastify: RouteFastify,
+  options: SecureRouteRegistrationOptions,
+  plan: RegistrationPlan
+): void {
+  const resolvedSecurity = resolveSecurity(options, plan.key)
+  assertEffectiveConfig(fastify, options, resolvedSecurity, plan.origin !== 'pv', plan.key)
+  const routeOptions = buildRouteOptions(fastify, options, plan, resolvedSecurity)
   const routeHost = fastify.withTypeProvider ? fastify.withTypeProvider() : fastify
   routeHost.route(routeOptions as never)
-  secureRoutes.add(`${options.method} ${options.url}`)
+  secureRoutes.add(plan.key)
+  recordRegistration(fastify, options, plan, resolvedSecurity)
+}
+
+type BusinessHandler = SecureRouteRegistrationOptions['handler']
+
+/**
+ * Story 68.8 AC-3/AC-4/AC-5/AC-6 — the effective options of an overridden `secureRoute`. Only the
+ * function at the business-handler call sites changes (`replace`: CM's handler; `wrap`: CM's
+ * handler with `next()` running PV's), so every pipeline step before the handler still applies,
+ * including steps later stories insert there. The schema is merged per AC-5; with
+ * `replaceSecurity`, the entry's `security` replaces PV's wholesale (Q7).
+ */
+function overriddenOptions(
+  options: SecureRouteRegistrationOptions,
+  entry: ApiRouteOverrideEntry,
+  key: string
+): SecureRouteRegistrationOptions {
+  const cm = entry.implementation.handler as unknown as BusinessWrapFn
+  const handler =
+    entry.declaration.mode === 'replace'
+      ? cm
+      : wrapBusinessHandler(key, cm, options.handler as unknown as BusinessFn)
+  return {
+    ...options,
+    handler: handler as BusinessHandler,
+    schema: mergeRouteSchema(
+      options.schema,
+      entry.implementation.schema,
+      entry.declaration.schema
+    ) as FastifySchema | undefined,
+    security: entry.declaration.replaceSecurity
+      ? ((entry.declaration.security ?? {}) as SecureRouteRegistrationOptions['security'])
+      : options.security,
+  }
+}
+
+function overridePlan(
+  entry: ApiRouteOverrideEntry,
+  key: string,
+  extraRouteOptions?: Record<string, unknown>
+): RegistrationPlan {
+  const mode = entry.declaration.mode
+  return {
+    key,
+    origin: 'override',
+    marker: {
+      builtBy: 'secureRoute',
+      override: mode,
+      ...(entry.declaration.replaceSecurity ? { replaceSecurity: true as const } : {}),
+    },
+    hookPlan: hookPlanForOverride(entry),
+    logBinding: { override: mode },
+    ...(extraRouteOptions ? { extraRouteOptions } : {}),
+  }
+}
+
+export function secureRoute(fastify: RouteFastify, options: SecureRouteRegistrationOptions): void {
+  const prefix = fastify.prefix ?? ''
+  const key = routeKey(options.method, prefix, options.url)
+  const table = fastify.pvApiRouteOverrides
+  const override = takeOverride(table, key)
+  // Story 68.8 AC-7: an explicit HEAD override of a secureRoute GET gets its own HEAD route
+  // through the same pipeline (the auto-HEAD clone would keep the GET's handler closure and is
+  // skipped by the root onRoute hook), so the GET is registered without the auto-HEAD.
+  const headKey = `HEAD ${normalizeRouteUrl(prefix, options.url)}`
+  const headOverride = options.method === 'GET' ? takeOverride(table, headKey) : undefined
+  const extraRouteOptions = headOverride ? { exposeHeadRoute: false } : undefined
+
+  if (override) {
+    registerBuiltRoute(
+      fastify,
+      overriddenOptions(options, override, key),
+      overridePlan(override, key, extraRouteOptions)
+    )
+  } else {
+    registerBuiltRoute(fastify, options, {
+      key,
+      origin: 'pv',
+      marker: { builtBy: 'secureRoute' },
+      ...(extraRouteOptions ? { extraRouteOptions } : {}),
+    })
+  }
+  if (headOverride) {
+    registerBuiltRoute(
+      fastify,
+      overriddenOptions({ ...options, method: 'HEAD' }, headOverride, headKey),
+      overridePlan(headOverride, headKey)
+    )
+  }
+}
+
+/**
+ * Story 68.8 AC-10 — registers an extension-added route (`apiRoutes.add`) through this same
+ * pipeline, with the entry's own security (Q14: its capability id is passed to the gate
+ * unchanged), schema, body limit and appended route hooks.
+ */
+export function secureAddedApiRoute(fastify: RouteFastify, entry: ApiRouteAddEntry): void {
+  const declared = entry.declaration.options
+  registerBuiltRoute(
+    fastify,
+    {
+      method: entry.method as HttpMethod,
+      url: entry.url,
+      schema: entry.implementation.schema as FastifySchema | undefined,
+      ...(declared?.bodyLimit !== undefined ? { bodyLimit: declared.bodyLimit } : {}),
+      security: declared?.security as SecureRouteRegistrationOptions['security'],
+      handler: entry.implementation.handler as unknown as BusinessHandler,
+    },
+    {
+      key: routeKey(entry.method, fastify.prefix ?? '', entry.url),
+      origin: 'added',
+      marker: { builtBy: 'secureRoute', added: true },
+      hookPlan: hookPlanForAdd(entry),
+      logBinding: { added: true },
+    }
+  )
 }
