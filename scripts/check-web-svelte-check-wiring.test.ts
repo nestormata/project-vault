@@ -98,12 +98,14 @@ export function svelteCheckScriptProblems(checkSvelte: string | undefined): stri
   return problems
 }
 
-/** A `turbo typecheck` invocation must not filter @project-vault/web out. */
+/** A `turbo typecheck` invocation must not filter @project-vault/web-host out. */
 export function turboTypecheckFilterProblems(source: string, label: string): string[] {
   return source
     .split('\n')
     .filter((line) => line.includes('turbo typecheck') && line.includes('--filter'))
-    .filter((line) => !/--filter[= ]@project-vault\/web(\s|$)/.test(line) || line.includes('!'))
+    .filter(
+      (line) => !/--filter[= ]@project-vault\/web-host(\s|$)/.test(line) || line.includes('!')
+    )
     .map((line) => `${label}: turbo typecheck is filtered: ${line.trim()}`)
 }
 
@@ -195,7 +197,10 @@ describe('web svelte-check wiring guard: parsers (Story 68.1 AC-4)', () => {
 
   it('rejects a turbo typecheck that filters the web app out', () => {
     expect(
-      turboTypecheckFilterProblems('run: pnpm turbo typecheck --filter=!@project-vault/web', 'x')
+      turboTypecheckFilterProblems(
+        'run: pnpm turbo typecheck --filter=!@project-vault/web-host',
+        'x'
+      )
     ).toHaveLength(1)
     expect(
       turboTypecheckFilterProblems('run: pnpm turbo typecheck --filter=@project-vault/api', 'x')

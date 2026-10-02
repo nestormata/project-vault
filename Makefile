@@ -237,7 +237,7 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-build-info-unstamped # Story 43.6 AC-5
 	# Story 43.14: the CLI docs guard raw-loads an apps/web .ts file, whose tsconfig extends the
 	# generated .svelte-kit/tsconfig.json. A turbo cache hit on typecheck above does not regenerate it.
-	pnpm --filter @project-vault/web exec svelte-kit sync
+	pnpm --filter @project-vault/web-host exec svelte-kit sync
 	pnpm vitest run scripts/check-build-info-unstamped.test.ts scripts/stamp-build-info.test.ts scripts/check-cli-release-workflow.test.ts scripts/check-cli-docs-naming.test.ts
 	pnpm check-audit-insert-sites
 	$(MAKE) test
@@ -315,8 +315,8 @@ e2e: fix-ports ## Playwright E2E suite against a real docker-compose stack: make
 	WEB_HOST_PORT="$$(grep -m1 '^WEB_HOST_PORT=' .env 2>/dev/null | cut -d= -f2)"; \
 	E2E_CONFIRM_DB_RESET=true; \
 	export DB_HOST_PORT API_HOST_PORT WEB_HOST_PORT E2E_CONFIRM_DB_RESET; \
-	pnpm --filter @project-vault/web exec playwright install --with-deps chromium && \
-	pnpm --filter @project-vault/web test:e2e $(if $(SPEC),"$(SPEC)")
+	pnpm --filter @project-vault/web-host exec playwright install --with-deps chromium && \
+	pnpm --filter @project-vault/web-host test:e2e $(if $(SPEC),"$(SPEC)")
 
 docker-smoke: fix-ports ## Build, start, and curl /health + /ready end-to-end
 	pnpm docker:smoke

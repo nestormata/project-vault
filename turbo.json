@@ -51,7 +51,7 @@
     "@project-vault/vault-action#typecheck": {
       "dependsOn": ["^build"]
     },
-    "@project-vault/web#typecheck": {
+    "@project-vault/web-host#typecheck": {
       "dependsOn": ["^build"]
     },
     "dev": {

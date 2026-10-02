@@ -120,7 +120,7 @@ jobs:
       # resolves that file's tsconfig (which extends the generated .svelte-kit/tsconfig.json) even
       # for a ?raw import. Generate it first, as the SonarCloud job does.
       - name: Generate SvelteKit config for the CLI docs guard
-        run: pnpm --filter @project-vault/web exec svelte-kit sync
+        run: pnpm --filter @project-vault/web-host exec svelte-kit sync
 
       - name: Check CLI docs name the pvault binary and document every command (Story 43.14)
         run: pnpm vitest run scripts/check-cli-docs-naming.test.ts
@@ -495,11 +495,11 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Generate SvelteKit config for SonarCloud
-        run: pnpm --filter @project-vault/web exec svelte-kit sync
+        run: pnpm --filter @project-vault/web-host exec svelte-kit sync
 
       - name: Test (with coverage) - web, agent, crypto, shared, vault-action, extension-api
         run: >-
-          pnpm turbo test --filter=@project-vault/web --filter=@project-vault/shared
+          pnpm turbo test --filter=@project-vault/web-host --filter=@project-vault/shared
           --filter=@project-vault/agent --filter=@project-vault/crypto
           --filter=@project-vault/vault-action --filter=@project-vault/extension-api
 

@@ -60,7 +60,7 @@ function pnpmExecutable(): string {
   if (!execPath) {
     throw new Error(
       'J26: npm_execpath is not set — this journey must be run via `pnpm` (e.g. `pnpm --filter ' +
-        '@project-vault/web test:e2e` or `make e2e`), not a bare `node`/`playwright` invocation.'
+        '@project-vault/web-host test:e2e` or `make e2e`), not a bare `node`/`playwright` invocation.'
     )
   }
   return execPath
@@ -86,7 +86,7 @@ export function buildHydrationRaceWeb(): void {
     env,
     stdio: 'inherit',
   })
-  execFileSync(process.execPath, [pnpmCli, '--filter', '@project-vault/web', 'build'], {
+  execFileSync(process.execPath, [pnpmCli, '--filter', '@project-vault/web-host', 'build'], {
     cwd: REPO_ROOT,
     env,
     stdio: 'inherit',

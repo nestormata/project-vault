@@ -336,7 +336,7 @@ jobs:
         run: ./scripts/e2e-stack.sh wait
 
       - name: Install Playwright browsers
-        run: pnpm --filter @project-vault/web exec playwright install --with-deps chromium
+        run: pnpm --filter @project-vault/web-host exec playwright install --with-deps chromium
 
       - name: Run Playwright E2E suite
         timeout-minutes: 25
@@ -344,7 +344,7 @@ jobs:
         # database is understood to be disposable (see apps/web/e2e/global-setup.ts's
         # assertResetIsSafe() — a bare, ungated DB reset would be too dangerous to run
         # unconditionally against whatever superuserDatabaseUrl() resolves to).
-        run: E2E_CONFIRM_DB_RESET=true pnpm --filter @project-vault/web test:e2e
+        run: E2E_CONFIRM_DB_RESET=true pnpm --filter @project-vault/web-host test:e2e
 
       # Story 66.1 AC-10: also on cancel (a job timeout), so traces survive a slow failing run; the
       # run_attempt suffix keeps "Re-run failed jobs" from colliding on the artifact name. Traces
