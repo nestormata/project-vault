@@ -1,4 +1,5 @@
 import { sql, type SQL } from 'drizzle-orm'
+import { findDbErrorCause, type DbErrorReason } from './db-error-cause.js'
 
 export type AdminPoolIdentityRow = {
   current_user: string
@@ -26,19 +27,6 @@ export type AdminPoolUnreachableReason =
   | 'role_row_missing'
   | 'unknown'
 
-const REASON_BY_CODE: ReadonlyMap<string, AdminPoolUnreachableReason> = new Map([
-  ['28P01', 'auth_failed'],
-  ['28000', 'auth_failed'],
-  ['3D000', 'database_missing'],
-  ['42501', 'permission_denied'],
-  ['ECONNREFUSED', 'connection_failed'],
-  ['ENOTFOUND', 'connection_failed'],
-  ['EAI_AGAIN', 'connection_failed'],
-  ['ETIMEDOUT', 'connection_failed'],
-  ['CONNECT_TIMEOUT', 'connection_failed'],
-  ['57P03', 'connection_failed'],
-])
-
 const UNKNOWN_HINT =
   'run the Story 24.2 migration, provision its credential, and verify .env.example'
 
@@ -57,23 +45,19 @@ const UNREACHABLE_HINTS: ReadonlyMap<AdminPoolUnreachableReason, string> = new M
   ['unknown', UNKNOWN_HINT],
 ])
 
-// drizzle-orm 0.45 wraps driver errors in a DrizzleQueryError whose own message carries the query
-// text and parameters; the SQLSTATE lives on its `cause`. Follow a short, bounded cause chain.
-const MAX_CAUSE_DEPTH = 3
-
-function ownProperty(value: unknown, key: 'code' | 'cause'): unknown {
-  if (typeof value !== 'object' || value === null || !Object.hasOwn(value, key)) return undefined
-  return Object.getOwnPropertyDescriptor(value, key)?.value
-}
+// Story 43.28 AC-1: the cause walk lives in the shared classifier. The admin-pool reason type keeps
+// its 66.4 values; the reasons the shared classifier added (schema_missing, tls_failed) map to
+// `unknown` here, so this check's messages and hints are unchanged.
+const ADMIN_POOL_REASON: ReadonlyMap<DbErrorReason, AdminPoolUnreachableReason> = new Map([
+  ['auth_failed', 'auth_failed'],
+  ['database_missing', 'database_missing'],
+  ['permission_denied', 'permission_denied'],
+  ['connection_failed', 'connection_failed'],
+])
 
 export function classifyAdminPoolError(err: unknown): AdminPoolUnreachableReason {
-  let current = err
-  for (let depth = 0; depth <= MAX_CAUSE_DEPTH && current !== undefined; depth += 1) {
-    const code = ownProperty(current, 'code')
-    if (typeof code === 'string') return REASON_BY_CODE.get(code) ?? 'unknown'
-    current = ownProperty(current, 'cause')
-  }
-  return 'unknown'
+  const cause = findDbErrorCause(err)
+  return (cause && ADMIN_POOL_REASON.get(cause.reason)) ?? 'unknown'
 }
 
 export type AdminPoolExecutor = (query: SQL) => Promise<unknown>

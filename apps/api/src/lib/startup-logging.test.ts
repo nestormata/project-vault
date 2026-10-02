@@ -5,6 +5,8 @@ import type { Env } from '../config/env.js'
 import { createLogCaptureStream, parseCapturedLogLines } from '../__tests__/helpers/capture-logs.js'
 import { logStartupFailure, reportStartupFailure, stderrDestination } from './startup-logging.js'
 
+const WRITE_EPIPE = 'write EPIPE'
+
 type StartupEnv = Pick<Env, 'NODE_ENV' | 'LOG_LEVEL' | 'SERVICE_NAME'>
 
 function startupEnv(nodeEnv: Env['NODE_ENV'], logLevel: Env['LOG_LEVEL']): StartupEnv {
@@ -111,11 +113,84 @@ describe('reportStartupFailure', () => {
     })
   })
 
+  // Story 43.28 AC-1: the line names the database cause by code, never by driver text.
+  it('adds cause{code,reason,depth} for a drizzle-wrapped 28P01 without any driver text', async () => {
+    const { stream, lines } = createLogCaptureStream()
+    const driverError = Object.assign(
+      new Error('password authentication failed for user "vault_app"'),
+      {
+        code: '28P01',
+        detail: 'Connection matched pg_hba.conf line 3',
+        routine: 'auth_failed',
+        connectionString: 'postgresql://vault_app:x@db:5432/project_vault',
+      }
+    )
+    const err = new Error('Failed query: select "id" from "vault_state"', { cause: driverError })
+    err.name = 'DrizzleQueryError'
+
+    await reportStartupFailure(startupEnv('production', 'info'), err, stream)
+
+    const parsed = parseCapturedLogLines(lines)
+    expect(parsed).toHaveLength(1)
+    expect(parsed[0]).toMatchObject({
+      eventType: OperationalEvent.STARTUP_FAILED,
+      err: { name: 'DrizzleQueryError', message: 'Failed query: select "id" from "vault_state"' },
+      cause: { code: '28P01', reason: 'auth_failed', depth: 1 },
+    })
+    expect(Object.keys(parsed[0]?.['cause'] as object).sort()).toEqual(['code', 'depth', 'reason'])
+    const bytes = lines.join('')
+    expect(bytes).not.toContain('vault_app')
+    expect(bytes).not.toContain('password authentication failed')
+    expect(bytes).not.toContain('postgresql://')
+    expect(bytes).not.toContain('pg_hba')
+  })
+
+  it('logs a connection_failed cause for a refused connection', async () => {
+    const { stream, lines } = createLogCaptureStream()
+    const refused = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:1'), {
+      code: 'ECONNREFUSED',
+    })
+
+    await reportStartupFailure(startupEnv('test', 'silent'), refused, stream)
+
+    expect(parseCapturedLogLines(lines)[0]?.['cause']).toEqual({
+      code: 'ECONNREFUSED',
+      reason: 'connection_failed',
+      depth: 0,
+    })
+  })
+
+  it('omits the cause key entirely when no link carries a code', async () => {
+    const { stream, lines } = createLogCaptureStream()
+
+    await reportStartupFailure(startupEnv('test', 'silent'), new Error('boom'), stream)
+
+    const parsed = parseCapturedLogLines(lines)
+    expect(parsed[0]).not.toHaveProperty('cause')
+    expect(lines.join('')).not.toContain('"cause"')
+  })
+
+  it('never writes cause on the plain Fatal error fallback path', async () => {
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const broken = new Writable({
+      write() {
+        throw new Error(WRITE_EPIPE)
+      },
+    })
+    const err = new Error('Failed query', {
+      cause: Object.assign(new Error('x'), { code: '28P01' }),
+    })
+
+    await reportStartupFailure(startupEnv('production', 'info'), err, broken)
+
+    expect(String(stderrWrite.mock.calls[0]?.[0])).toBe('Fatal error: Failed query\n')
+  })
+
   it('falls back to a plain redacted Fatal error line when the structured write throws', async () => {
     const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     const broken = new Writable({
       write() {
-        throw Object.assign(new Error('write EPIPE'), { code: 'EPIPE' })
+        throw Object.assign(new Error(WRITE_EPIPE), { code: 'EPIPE' })
       },
     })
 
@@ -138,7 +213,7 @@ describe('reportStartupFailure', () => {
     })
     const broken = new Writable({
       write() {
-        throw new Error('write EPIPE')
+        throw new Error(WRITE_EPIPE)
       },
     })
 

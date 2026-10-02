@@ -2,6 +2,7 @@ import pino from 'pino'
 import type { FastifyBaseLogger } from 'fastify'
 import { OperationalEvent } from '@project-vault/shared'
 import type { Env } from '../config/env.js'
+import { findDbErrorCause } from './db-error-cause.js'
 import { createFixedLevelLogger, operationalLog, serializeLogError } from './logger.js'
 
 type FlushableLogger = Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'> & {
@@ -13,8 +14,12 @@ export async function flushLogger(logger: FlushableLogger): Promise<void> {
 }
 
 export async function logStartupFailure(logger: FlushableLogger, err: unknown): Promise<void> {
+  // Story 43.28 AC-1: name the database cause by its code (closed reason set), never by driver
+  // text; the key is omitted when no link carries a code, so other lines stay byte-identical.
+  const cause = findDbErrorCause(err)
   operationalLog(logger, 'error', OperationalEvent.STARTUP_FAILED, 'API startup failed', {
     err: serializeLogError(err),
+    ...(cause ? { cause } : {}),
   })
   await flushLogger(logger)
 }
