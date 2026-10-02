@@ -19,6 +19,7 @@ compose_pack_name() {
     compose-server-leak | compose-server-twin) echo negative-pack ;;
     *) echo mini-pack ;;
   esac
+  return 0
 }
 
 # The package.json of the consumer: web-host's exact dependencies and peers (run.sh builds it), plus
@@ -32,12 +33,9 @@ compose_extend_package_json() {
     pkg.devDependencies["svelte-check"] = svelteCheck
     // svelte-check types the shipped tests, which import node: modules (web-host does not list it).
     pkg.devDependencies["@types/node"] = typesNode
-    // svelte-check types the shipped tests, which import node: modules (web-host does not list it).
-    pkg.devDependencies["@types/node"] = typesNode
-    // svelte-check types the shipped tests, which import node: modules (web-host does not list it).
-    pkg.devDependencies["@types/node"] = typesNode
     fs.writeFileSync(file, JSON.stringify(pkg, null, 2))
-  ' "$APP/package.json" "$COMPOSITION_KIT_TARBALL" "$COMPOSITION_KIT_SVELTE_CHECK" "$COMPOSITION_KIT_TYPES_NODE" "$COMPOSITION_KIT_TYPES_NODE" "$COMPOSITION_KIT_TYPES_NODE"
+  ' "$APP/package.json" "$COMPOSITION_KIT_TARBALL" "$COMPOSITION_KIT_SVELTE_CHECK" "$COMPOSITION_KIT_TYPES_NODE"
+  return 0
 }
 
 compose_prepare_app() {
@@ -60,6 +58,7 @@ compose_prepare_app() {
   # composed tree. Story 68-9 turns this into the lock's `excludedPvTests`; until then the fixture
   # leaves that one test directory out of its run.
   VITEST_ARGS=(--exclude '**/node_modules/**' --exclude 'src/routes/*/recovery/**')
+  return 0
 }
 
 # Isolation: nothing may resolve from the monorepo, and the composed copy must be the one in use.
@@ -127,6 +126,7 @@ compose_svelte_check() {
 # shared @source works. Written into the composed copy, which is gitignored output.
 compose_plant_probe() {
   printf "export const probe = 'bg-[#654321]'\n" > "$APP/vendor/shared/src/cm-probe.ts"
+  return 0
 }
 
 compose_assert_css() {
@@ -143,20 +143,24 @@ compose_assert_css() {
 
 # GET <path> -> body in $WORK/body.txt, status echoed.
 compose_get() {
-  curl -s -o "$WORK/body.txt" -w '%{http_code}' "http://127.0.0.1:$1$2" || true
+  local port="$1" path="$2"
+  curl -s -o "$WORK/body.txt" -w '%{http_code}' "http://127.0.0.1:${port}${path}" || true
+  return 0
 }
 
 compose_expect() { # port path status needle
+  local port="$1" path="$2" expected="$3" needle="${4:-}"
   local status
-  status="$(compose_get "$1" "$2")"
-  if [[ "$status" != "$3" ]]; then
-    echo "fixture: GET $2 answered HTTP $status, expected $3" >&2
+  status="$(compose_get "$port" "$path")"
+  if [[ "$status" != "$expected" ]]; then
+    echo "fixture: GET $path answered HTTP $status, expected $expected" >&2
     exit 1
   fi
-  if [[ -n "${4:-}" ]] && ! grep -q -- "$4" "$WORK/body.txt"; then
-    echo "fixture: GET $2 did not contain: $4" >&2
+  if [[ -n "$needle" ]] && ! grep -q -- "$needle" "$WORK/body.txt"; then
+    echo "fixture: GET $path did not contain: $needle" >&2
     exit 1
   fi
+  return 0
 }
 
 compose_http_checks() {
@@ -168,18 +172,20 @@ compose_http_checks() {
   compose_expect "$port" /recovery 200 'Acme recovery'
   compose_expect "$port" /status/abc 404 ''
   log "OK: /login, /billing, /billing/export, /recovery served; the removed /status route is 404"
+  return 0
 }
 
 # Dev mode (AC-13): the plugin composes on start and mirrors pack edits, additions and deletions.
 compose_wait_for() { # port path needle seconds
+  local port="$1" path="$2" needle="$3" seconds="$4"
   local _
-  for _ in $(seq 1 "$4"); do
-    if [[ "$(compose_get "$1" "$2")" == '200' ]] && grep -q -- "$3" "$WORK/body.txt"; then
+  for _ in $(seq 1 "$seconds"); do
+    if [[ "$(compose_get "$port" "$path")" == '200' ]] && grep -q -- "$needle" "$WORK/body.txt"; then
       return 0
     fi
     sleep 1
   done
-  echo "fixture: GET $2 never contained: $3" >&2
+  echo "fixture: GET $path never contained: $needle" >&2
   return 1
 }
 

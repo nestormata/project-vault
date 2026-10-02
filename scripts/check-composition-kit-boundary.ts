@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import ts from 'typescript'
 import { toRepoPath, walkFiles } from './lib/scan-utils.js'
+import { compareCodeUnits } from './lib/web-host/import-graph.js'
 
 export const KIT_DIR = 'packages/composition-kit'
 const KIT_NAME = '@project-vault/composition-kit'
@@ -98,7 +99,7 @@ export function findBoundaryProblems(repoRoot: string): string[] {
       }
     }
   }
-  return problems.sort()
+  return problems.sort(compareCodeUnits)
 }
 
 /** True when an SPDX expression can be satisfied using only allowed licences. */
@@ -160,7 +161,7 @@ export function findLicenseClosureProblems(repoRoot: string): string[] {
       queue.push({ name, from: dirname(real), via: entry.name })
     }
   }
-  return problems.sort()
+  return problems.sort(compareCodeUnits)
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

@@ -1,3 +1,5 @@
+import { compareCodeUnits } from '../paths.js'
+
 export interface ComposeBatch {
   /** The changed paths collected since the last compose, sorted. */
   paths: string[]
@@ -35,7 +37,7 @@ export function createComposeQueue(options: ComposeQueueOptions): ComposeQueue {
   const start = (): void => {
     timer = undefined
     if (running !== undefined || paths.size === 0) return
-    const batch: ComposeBatch = { paths: [...paths].sort(), full }
+    const batch: ComposeBatch = { paths: [...paths].sort(compareCodeUnits), full }
     paths = new Set()
     full = false
     running = options

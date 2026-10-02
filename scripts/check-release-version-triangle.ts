@@ -71,12 +71,14 @@ async function main(): Promise<void> {
       'usage: check-release-version-triangle.ts <extension-api|web-host|composition-kit> --tag <version>'
     )
   }
-  const corners =
-    target === 'extension-api'
-      ? await extensionApiCorners(values.tag)
-      : target === 'web-host'
-        ? webHostCorners(values.tag)
-        : await kitCorners(values.tag)
+  let corners: Awaited<ReturnType<typeof kitCorners>>
+  if (target === 'extension-api') {
+    corners = await extensionApiCorners(values.tag)
+  } else if (target === 'web-host') {
+    corners = webHostCorners(values.tag)
+  } else {
+    corners = await kitCorners(values.tag)
+  }
   process.stdout.write(`${JSON.stringify(corners)}\n`)
   assertVersionTriangle(corners)
 }
