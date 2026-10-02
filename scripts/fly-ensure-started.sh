@@ -105,11 +105,9 @@ while read -r id state; do
 done <<<"$rows"
 
 # Anything not yet `started` (just started by us, or starting/replacing/created) is polled.
-if [[ -n "$NOT_STARTED" ]]; then
-  if ! poll all_started; then
-    echo "fly-ensure-started: machines of ${APP} never reached started: ${NOT_STARTED}" >&2
-    exit 1
-  fi
+if [[ -n "$NOT_STARTED" ]] && ! poll all_started; then
+  echo "fly-ensure-started: machines of ${APP} never reached started: ${NOT_STARTED}" >&2
+  exit 1
 fi
 echo "== ${APP}: all ${MACHINE_COUNT} machines started =="
 
