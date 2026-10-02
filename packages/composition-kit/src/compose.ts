@@ -45,7 +45,9 @@ export async function compose(options: RunOptions): Promise<ComposeResult> {
   const composed = await plan(options)
   const messages = acceptanceMessages(composed)
   if (composed.problems.length > 0) {
-    if (persistAcceptances(composed.lockPath, composed.accepted)) {
+    // `--dry-run` and `--check` promise to write nothing, so they never persist an acceptance.
+    const readOnly = options.dryRun === true || options.check === true
+    if (!readOnly && persistAcceptances(composed.lockPath, composed.accepted)) {
       messages.push(
         'the accepted hashes were recorded in the committed lock; fix the remaining problems and run again'
       )

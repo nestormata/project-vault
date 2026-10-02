@@ -52,8 +52,12 @@ function writeSource(path: string, source: FileSource): void {
   else writeFileSync(path, source.content)
 }
 
-function swapIn(appRoot: string, stage: string): void {
+/** Moves each previous directory aside, then the new one in. On failure only what this call
+ * moved or installed is touched: installed directories are removed and moved ones restored, so a
+ * directory the swap never reached is never deleted. */
+export function swapIn(appRoot: string, stage: string): void {
   const moved: string[] = []
+  const installed: string[] = []
   mkdirSync(join(stage, 'old'))
   try {
     for (const owned of OWNED_DIRECTORIES) {
@@ -63,10 +67,10 @@ function swapIn(appRoot: string, stage: string): void {
         moved.push(owned)
       }
       renameSync(join(stage, 'new', owned), current)
+      installed.push(owned)
     }
   } catch (error) {
-    for (const owned of OWNED_DIRECTORIES)
-      rmSync(join(appRoot, owned), { recursive: true, force: true })
+    for (const owned of installed) rmSync(join(appRoot, owned), { recursive: true, force: true })
     for (const owned of moved) renameSync(join(stage, 'old', owned), join(appRoot, owned))
     throw error
   }

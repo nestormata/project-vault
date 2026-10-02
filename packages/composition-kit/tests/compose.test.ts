@@ -627,6 +627,27 @@ describe('AC-8/AC-9: the lock, --check, drift and --accept-host', () => {
     expect(final.ok).toBe(true)
   })
 
+  it.each([['dryRun'], ['check']] as const)(
+    '--accept-host with %s never writes the lock, even when other files still drift',
+    async (flag) => {
+      const world = makeWorld({ packFiles: { [DASHBOARD]: 'cm\n', [LOGIN_PAGE]: 'cm login\n' } })
+      const pack = manifest({
+        routes: {
+          overrides: [
+            { path: DASHBOARD, hostSha256: sha(world, DASHBOARD), story: 'a' },
+            { path: LOGIN_PAGE, hostSha256: sha(world, LOGIN_PAGE), story: 'b' },
+          ],
+        },
+      })
+      await run(world, pack)
+      writeAll(world.host, { [DASHBOARD]: 'v2\n', [LOGIN_PAGE]: 'v2\n' })
+      const before = read(world, LOCK_FILE)
+      const result = await run(world, pack, { acceptHost: [DASHBOARD], [flag]: true })
+      expect(result.ok).toBe(false)
+      expect(read(world, LOCK_FILE)).toBe(before)
+    }
+  )
+
   it('prints the true old-to-new PV diff with --previous-host', async () => {
     const world = makeWorld({ packFiles: { [DASHBOARD]: 'cm\n' } })
     const { pack } = dashboardOverride(world)
