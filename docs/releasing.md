@@ -40,7 +40,10 @@ says yes.
 internal CA GitHub secrets (`FLY_DEMO_INTERNAL_CA_CERT_B64` / `_KEY_B64`) set and
 `scripts/fly-internal-tls.sh` run (through `scripts/fly-setup.sh` or the Fly Demo Bootstrap
 workflow) **before** the deploy; `fly-migrate.sh` fails closed without the CA. Order and outage
-window: [`runbooks/fly-internal-tls.md`](runbooks/fly-internal-tls.md) § First rollout.
+window: [`runbooks/fly-internal-tls.md`](runbooks/fly-internal-tls.md) § First rollout. Since
+Story 43.28 the Bootstrap migrates (and syncs the DB role passwords) before it deploys the api, and
+starts any stopped api machine, so a first-release Bootstrap no longer crash-loops the api or needs
+a hand `fly machine start`.
 
 Confirming H2 does not confirm H3. One message may confirm both only if it names both.
 
