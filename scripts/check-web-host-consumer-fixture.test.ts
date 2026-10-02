@@ -5,7 +5,12 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { REPO_ROOT, STAGE_DIR, npmCli, packWebHost } from './pack-web-host.js'
 import { makeRecipe } from './lib/ci-wiring.js'
-import { resolveTrustedExecutable } from './lib/trusted-executable.js'
+import { resolveBin, resolveTrustedExecutable } from './lib/trusted-executable.js'
+import {
+  EXTENSION_API_PACKAGE,
+  extensionApiFallbackLine,
+  extensionApiSource,
+} from './lib/web-host/extension-api-source.js'
 import { parseYaml } from './lib/yaml.js'
 
 // Story 68.2 AC-8: an out-of-monorepo consumer installs the packed tarball (and nothing from the
@@ -22,6 +27,7 @@ const repositoryRoot = join(import.meta.dirname, '..')
 const ENABLED = process.env.WEB_HOST_FIXTURE === '1'
 const FIXTURE_SCRIPT = join(REPO_ROOT, 'scripts', 'web-host-consumer-fixture', 'run.sh')
 const VARIANT_TIMEOUT_MS = 900_000
+const EXTENSION_API_DIR = join(REPO_ROOT, 'packages', 'extension-api')
 
 if (!ENABLED) {
   process.stderr.write(
@@ -32,11 +38,58 @@ if (!ENABLED) {
 
 let workDir = ''
 let tarball = ''
+/** A tarball of packages/extension-api, set only when its exact version is not on npm yet. */
+let extensionApiTarball: string | undefined
+
+/** `npm pack`s the package in `cwd` into the work dir (npm's own CLI, never a $PATH lookup). */
+function packInto(cwd: string): string {
+  const packed = execFileSync(
+    process.execPath,
+    [npmCli(), 'pack', '--json', '--pack-destination', workDir],
+    { cwd, encoding: 'utf8' }
+  )
+  return join(workDir, (JSON.parse(packed) as { filename: string }[])[0]?.filename ?? '')
+}
+
+/** Builds and packs packages/extension-api, as extension-api-release.yml does before publishing. */
+function packWorkspaceExtensionApi(): string {
+  rmSync(join(EXTENSION_API_DIR, 'dist'), { recursive: true, force: true })
+  execFileSync(
+    process.execPath,
+    [resolveBin('typescript', 'tsc', EXTENSION_API_DIR), '-p', 'tsconfig.build.json'],
+    { cwd: EXTENSION_API_DIR, stdio: ['ignore', 'pipe', 'pipe'] }
+  )
+  return packInto(EXTENSION_API_DIR)
+}
+
+/** Story 68.2 (Nestor 2026-10-02): the registry version when published; a workspace tarball when
+ * npm answers E404 outside a registry-only run; a failure otherwise. */
+function resolveExtensionApi(version: string): string | undefined {
+  const view = spawnSync(
+    process.execPath,
+    [npmCli(), 'view', `${EXTENSION_API_PACKAGE}@${version}`, 'version'],
+    { cwd: workDir, encoding: 'utf8' }
+  )
+  const source = extensionApiSource(version, view, {
+    registryOnly: process.env.WEB_HOST_FIXTURE_REGISTRY_ONLY === '1',
+  })
+  if (source.kind === 'registry') return undefined
+  process.stderr.write(`${extensionApiFallbackLine(version, source.reason)}\n`)
+  return packWorkspaceExtensionApi()
+}
 
 function runFixture(variant: string): { status: number | null; output: string } {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    WEB_HOST_FIXTURE_CACHE: join(workDir, 'npm-cache'),
+  }
+  if (extensionApiTarball !== undefined) {
+    // run.sh installs this tarball instead of the (unpublished) registry version.
+    env.WEB_HOST_FIXTURE_EXTENSION_API_TARBALL = extensionApiTarball
+  }
   const run = spawnSync(resolveTrustedExecutable('bash'), [FIXTURE_SCRIPT, tarball, variant], {
     encoding: 'utf8',
-    env: { ...process.env, WEB_HOST_FIXTURE_CACHE: join(workDir, 'npm-cache') },
+    env,
     timeout: VARIANT_TIMEOUT_MS,
   })
   return { status: run.status, output: `${run.stdout}\n${run.stderr}` }
@@ -45,20 +98,18 @@ function runFixture(variant: string): { status: number | null; output: string } 
 describe.runIf(ENABLED)('web-host consumer fixture (Story 68.2 AC-8)', () => {
   beforeAll(async () => {
     workDir = mkdtempSync(join(tmpdir(), 'web-host-fixture-'))
-    await packWebHost({
+    const { packageJson } = await packWebHost({
       version: '0.0.0-fixture',
       repository: 'nestormata/project-vault',
       log: () => undefined,
     })
-    const packed = execFileSync(
-      process.execPath,
-      [npmCli(), 'pack', '--json', '--pack-destination', workDir],
-      {
-        cwd: STAGE_DIR,
-        encoding: 'utf8',
-      }
-    )
-    tarball = join(workDir, (JSON.parse(packed) as { filename: string }[])[0]?.filename ?? '')
+    tarball = packInto(STAGE_DIR)
+    const dependencies = packageJson.dependencies as Record<string, string>
+    const extensionApi = Object.entries(dependencies).find(
+      ([name]) => name === EXTENSION_API_PACKAGE
+    )?.[1]
+    expect(extensionApi, 'web-host depends on an exact extension-api version').toBeDefined()
+    extensionApiTarball = resolveExtensionApi(extensionApi ?? '')
   }, 300_000)
 
   afterAll(() => {

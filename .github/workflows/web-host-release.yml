@@ -103,9 +103,13 @@ jobs:
       - name: Check the paraglide plugin pin
         run: pnpm vitest run scripts/check-paraglide-plugin-pinned.test.ts
 
+      # Registry-only: a release must build against the published @project-vault/extension-api. PR
+      # and local runs may fall back to a workspace tarball while a bumped version is unpublished;
+      # the release never does (Nestor 2026-10-02, asserted by check-web-host-release-workflow).
       - name: Out-of-monorepo consumer fixture
         env:
           WEB_HOST_FIXTURE: '1'
+          WEB_HOST_FIXTURE_REGISTRY_ONLY: '1'
         run: pnpm vitest run scripts/check-web-host-consumer-fixture.test.ts
 
       # Packs at the release version (lockfile drift fails the pack) and asserts the tarball rules on

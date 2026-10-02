@@ -110,6 +110,12 @@ out-of-monorepo consumer fixture: a clean `npm install` of the tarball in a temp
 build, then every shipped unit test, then booting the built server, which must render `/login`. Run the fixture locally with
 `make web-host-fixture`. It is slow and needs the npm registry.
 
+`@project-vault/extension-api` comes from npm at the exact version web-host depends on. While that
+version is not published yet (a PR that bumps it, so `npm view` answers E404), PR and local runs
+install a tarball packed from `packages/extension-api` instead and print one `fixture:` line saying
+so. Any other `npm view` failure fails the fixture. The release workflow sets
+`WEB_HOST_FIXTURE_REGISTRY_ONLY=1`, so a release always builds against the published version.
+
 ## Releasing
 
 `.github/workflows/web-host-release.yml` runs on the PV `vX.Y.Z` tag. It does not use a separate

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { findPinViolations } from './lib/action-pins.js'
+import { EXTENSION_API_REGISTRY_ONLY_ENV } from './lib/web-host/extension-api-source.js'
 import { makeRecipe, recipeRunsCommand, workflowRunCommands } from './lib/ci-wiring.js'
 import { parseYaml } from './lib/yaml.js'
 
@@ -39,9 +40,10 @@ interface Workflow {
   jobs?: Record<string, Job>
 }
 
+const FIXTURE_TEST_GATE = 'scripts/check-web-host-consumer-fixture.test.ts'
 const GATES = [
   'scripts/check-paraglide-plugin-pinned.test.ts',
-  'scripts/check-web-host-consumer-fixture.test.ts',
+  FIXTURE_TEST_GATE,
   'scripts/check-web-host-tarball.test.ts',
   'scripts/check-release-version-triangle.ts web-host',
   'npm view "@project-vault/web-host@',
@@ -85,6 +87,15 @@ function concurrencyProblems(workflow: Workflow): string[] {
   ]
 }
 
+/** The release's consumer fixture must build against the published extension-api, never fall back
+ * to a workspace tarball (Nestor 2026-10-02: the fallback is for PR and local runs only). */
+function fixtureRegistryOnlyProblems(steps: Step[]): string[] {
+  const fixture = steps.find((step) => step.run?.includes(FIXTURE_TEST_GATE))
+  return fixture?.env?.WEB_HOST_FIXTURE_REGISTRY_ONLY === '1'
+    ? []
+    : [`the consumer fixture step does not set ${EXTENSION_API_REGISTRY_ONLY_ENV}: '1'`]
+}
+
 function publishJobProblems(job: Job | undefined): string[] {
   if (job === undefined) return ['has no publish job']
   const steps = job.steps ?? []
@@ -105,6 +116,7 @@ function publishJobProblems(job: Job | undefined): string[] {
       ? []
       : [`expected exactly one real npm publish step, found ${real.length}`]),
     ...uploads.flatMap((step) => publishStepProblems(step)),
+    ...fixtureRegistryOnlyProblems(steps),
     ...(real.every((step) => (step.if ?? '').includes('inputs.dry_run != true'))
       ? []
       : ['the real publish runs on a dry run']),
@@ -237,6 +249,12 @@ describe('web-host release workflow: each rule fails on a mutated copy (Story 68
       REAL_PUBLISH,
       'npm publish --force --provenance --access public --tag next;',
       /uses --force/,
+    ],
+    [
+      'registry-only fixture',
+      `          ${EXTENSION_API_REGISTRY_ONLY_ENV}: '1'\n`,
+      '',
+      /does not set WEB_HOST_FIXTURE_REGISTRY_ONLY/,
     ],
     ['action pin', PNPM_SETUP_PIN, 'pnpm/action-setup@v6', /not a full 40-hex commit SHA/],
   ]
