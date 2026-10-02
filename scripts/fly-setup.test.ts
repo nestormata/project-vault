@@ -46,6 +46,11 @@ const FLYCTL_STUB = [
   '    local line',
   `    while IFS= read -r line; do printf 'STDIN %s\\n' "$line" >&${FLYCTL_CALL_FD}; done`,
   '  fi',
+  // Story 43.28: fly-reset.sh now runs fly-ensure-started.sh, which reads `machine list --json`
+  // (shape verified against flyctl v0.4.109: an array of objects with `id` and `state`).
+  '  if [[ "$1" == machine && "$2" == list ]]; then',
+  `    printf '%s\\n' '[{"id":"m1","state":"started"}]'`,
+  '  fi',
   '}',
 ].join('\n')
 
@@ -82,6 +87,7 @@ function runFlyScript(
   extraEnv: Record<string, string>
 ): {
   status: number | null
+  stdout: string
   stderr: string
   flyctlCalls: string[]
 } {
@@ -104,7 +110,7 @@ function runFlyScript(
   const flyctlCalls = String(result.output.at(FLYCTL_CALL_FD) ?? '')
     .split('\n')
     .filter(Boolean)
-  return { status: result.status, stderr: result.stderr, flyctlCalls }
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr, flyctlCalls }
 }
 
 function runFlySetup(extraEnv: Record<string, string>) {
@@ -243,6 +249,79 @@ describe('fly-setup.sh internal TLS (Story 43.16 AC-5)', () => {
   })
 })
 
+// Story 43.28 AC-2: fly-setup.sh stages the api/web secrets instead of applying them, so it never
+// restarts the running (old) api against the TLS-only db it just deployed.
+describe('fly-setup.sh stages api/web secrets and never touches the api (Story 43.28 AC-2)', () => {
+  const APP_SECRETS = /^secrets set .*-a (project-vault-demo-api|project-vault-demo-web)( |$)/
+
+  it('every api and web `secrets set` carries --stage', () => {
+    const { status, flyctlCalls } = runFlySetup({ VAULT_APP_PASSWORD: 's3cret' })
+    expect(status).toBe(0)
+    const appSecrets = flyctlCalls.filter((call) => APP_SECRETS.test(call))
+    expect(appSecrets).toHaveLength(2)
+    for (const call of appSecrets) expect(call.split(' ')).toContain('--stage')
+  })
+
+  it('deploys the db before setting api secrets, and never restarts or deploys the api', () => {
+    const { flyctlCalls } = runFlySetup({ VAULT_APP_PASSWORD: 's3cret' })
+    const deployDb = flyctlCalls.findIndex((call) => call.startsWith('deploy -c fly.db.toml'))
+    const apiSecrets = flyctlCalls.findIndex((call) =>
+      call.startsWith('secrets set -a project-vault-demo-api')
+    )
+    expect(deployDb).toBeGreaterThan(-1)
+    expect(apiSecrets).toBeGreaterThan(deployDb)
+    for (const call of flyctlCalls) {
+      expect(call).not.toMatch(/^(apps restart|machine (re)?start)\b/)
+      expect(call).not.toContain('fly.api.toml')
+    }
+  })
+
+  it('prints no secret value on stdout or stderr', () => {
+    const { stdout, stderr } = runFlySetup({
+      VAULT_APP_PASSWORD: 'app-test-value',
+      ADMIN_PG_PASSWORD: 'pg-test-value',
+    })
+    expect(`${stdout}${stderr}`).not.toMatch(/(app|admin|pg)-test-value/)
+    expect(stdout).toContain('staged')
+  })
+})
+
+// Story 43.28 AC-2: fly-migrate.sh re-syncs vault_app as well as vault_admin, so the api's DB
+// passwords match the db before any api boots (bootstrap and every fly-deploy).
+describe('fly-migrate.sh vault_app password sync (Story 43.28 AC-2)', () => {
+  it.each([
+    ['unset', {}],
+    ['empty', { VAULT_APP_PASSWORD: '' }],
+    ['unset with RLS_CHECK_DATABASE_URL', { RLS_CHECK_DATABASE_URL: 'postgresql://x@h/d' }],
+  ])('%s: exits non-zero before any flyctl call, naming it', (_label, extra) => {
+    const { status, stderr, flyctlCalls } = runFlyScript(MIGRATE_SCRIPT, {
+      ADMIN_PG_PASSWORD: OPERATOR_PASSWORDS.ADMIN_PG_PASSWORD,
+      ...extra,
+    })
+    expect(status).not.toBe(0)
+    expect(stderr).toContain(MISSING_APP_PASSWORD)
+    expect(flyctlCalls).toEqual([])
+  })
+
+  it('runs db:migrate, then ALTERs vault_admin, then vault_app, then the RLS check', () => {
+    const { status, stdout, stderr, flyctlCalls } = runFlyScript(MIGRATE_SCRIPT, {
+      ...OPERATOR_PASSWORDS,
+      'BASH_FUNC_pnpm%%': `() { printf 'PNPM %s\\n' "$*" >&${FLYCTL_CALL_FD}; }`,
+      'BASH_FUNC_psql%%': `() { printf 'PSQL %s\\n' "\${@: -1}" >&${FLYCTL_CALL_FD}; }`,
+      'BASH_FUNC_pg_isready%%': '() { return 0; }',
+    })
+    expect(status).toBe(0)
+    const steps = flyctlCalls.filter((call) => /^(PNPM|PSQL) /.test(call))
+    expect(steps).toEqual([
+      'PNPM --filter @project-vault/db db:migrate',
+      "PSQL ALTER ROLE vault_admin PASSWORD 'admin-test-value';",
+      "PSQL ALTER ROLE vault_app PASSWORD 'app-test-value';",
+      'PNPM check-rls',
+    ])
+    expect(`${stdout}${stderr}`).not.toMatch(/(app|admin|pg)-test-value/)
+  })
+})
+
 // Story 43.16 Decision 6: the operator path needs the CA to mint its per-run client certificate,
 // so both operator scripts fail closed without it — before any flyctl call.
 describe('fly-migrate.sh / fly-reset.sh internal CA (Story 43.16)', () => {
@@ -283,10 +362,11 @@ describe('fly-migrate.sh / fly-reset.sh drop the CA from child environments (Sto
     'BASH_FUNC_pg_isready%%': '() { return 0; }',
     // fly-reset.sh's post-proxy vault init: /ready answers, init returns 200, no network.
     'BASH_FUNC_curl%%': '() { if [[ "$*" == *-w* ]]; then printf 200; fi; return 0; }',
-    'BASH_FUNC_jq%%': '() { if [[ "$1" == -n ]]; then printf "{}"; fi; return 0; }',
   }
+  // Story 43.28: fly-migrate.sh gained a 4th child (ALTER ROLE vault_app); real jq is used (the
+  // reset's ensure-started step parses `machine list --json`), so it is no longer stubbed.
   it.each([
-    [MIGRATE_NAME, MIGRATE_SCRIPT, {}, 3],
+    [MIGRATE_NAME, MIGRATE_SCRIPT, {}, 4],
     [RESET_NAME, RESET_SCRIPT, RESET_DEMO_ENV, 5],
   ])('%s: no pnpm/psql child inherits FLY_INTERNAL_CA_*_B64', (_name, script, extra, count) => {
     const { status, flyctlCalls } = runFlyScript(script, {
@@ -302,5 +382,24 @@ describe('fly-migrate.sh / fly-reset.sh drop the CA from child environments (Sto
     const pnpmChildren = children.filter((child) => child.startsWith('CHILD --filter'))
     expect(pnpmChildren.length).toBeGreaterThan(0)
     for (const child of pnpmChildren) expect(child).not.toContain('opkey=0')
+  })
+
+  // Story 43.28 AC-4 (T9): restart the started machines first, then start any stopped one and wait
+  // for /ready, for the api app only.
+  it('fly-reset.sh restarts the api, then runs ensure-started for the api app only', () => {
+    const { status, stdout, flyctlCalls } = runFlyScript(RESET_SCRIPT, {
+      ...STUBS,
+      ...OPERATOR_PASSWORDS,
+      ...RESET_DEMO_ENV,
+    })
+    expect(status).toBe(0)
+    const fly = flyctlCalls.filter((call) => !/^(CHILD|STDIN) /.test(call))
+    const restart = fly.indexOf('apps restart project-vault-demo-api')
+    const list = fly.indexOf('machine list -a project-vault-demo-api --json')
+    expect(restart).toBeGreaterThan(-1)
+    expect(list).toBeGreaterThan(restart)
+    expect(fly.filter((call) => call.startsWith('machine ')).join('\n')).not.toMatch(/-db|-web/)
+    expect(stdout).toContain('== project-vault-demo-api: all 1 machines started ==')
+    expect(stdout).not.toMatch(/(app|pg|admin|bootstrap|passphrase|demo)-test-value/)
   })
 })

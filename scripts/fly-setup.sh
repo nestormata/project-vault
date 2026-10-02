@@ -80,9 +80,11 @@ BOOTSTRAP_TOKEN="${VAULT_BOOTSTRAP_TOKEN:-$(openssl rand -base64 32)}"
 # wiring up the nightly cron, FLY_DEMO_VAULT_APP_PASSWORD).
 # sslmode=verify-full documents intent; the pin itself is DATABASE_TLS_CA_B64 (plus the api's DB
 # client certificate), staged above and applied by packages/db's pgTlsOptions (Story 43.16).
-# NOTE: unlike the staged TLS secrets, these apply immediately and restart running api machines —
-# on a live demo, run the full deploy (db -> api -> web) right after (see the runbook).
-flyctl secrets set -a "$API_APP" \
+# Story 43.28: staged (--stage), like the TLS secrets above. Applying them here would restart the
+# running api, which may be an older release with no db client certificate, against the TLS-only db
+# deployed above: it crash-loops until Fly stops the machine (Fly Demo Bootstrap run 36936660869).
+# They apply on the api's next `flyctl deploy` (the bootstrap migrates first, then deploys it).
+flyctl secrets set -a "$API_APP" --stage \
   DATABASE_URL="postgresql://vault_app:${VAULT_APP_PASSWORD}@${DB_APP}.internal:5432/project_vault?sslmode=verify-full" \
   ADMIN_DATABASE_URL="postgresql://vault_admin:${VAULT_ADMIN_PASSWORD}@${DB_APP}.internal:5432/project_vault?sslmode=verify-full" \
   CORS_ALLOWED_ORIGINS="https://${WEB_APP}.fly.dev" \
@@ -104,18 +106,24 @@ flyctl secrets set -a "$API_APP" \
 echo "== web: secrets =="
 # The api listener terminates TLS 1.3 and requires the web's client certificate (mTLS); the web
 # pins the private CA via API_TLS_CA_B64 (staged above).
-flyctl secrets set -a "$WEB_APP" \
+# Staged for the same reason as the api secrets (Story 43.28): they apply on the web's next deploy.
+flyctl secrets set -a "$WEB_APP" --stage \
   API_BASE_URL="https://${API_APP}.internal:3000"
 
 cat <<EOF
 
-== Next: deploy the selected release ==
-  Run the Fly Demo Bootstrap workflow with release_tag=vMAJOR.MINOR.PATCH.
-  It will deploy api and web from that exact release tag.
+== Secrets staged ==
+  The api and web secrets above are staged: they apply on each app's next deploy, so this
+  script never restarted a running api against the new db.
 
-Then run scripts/fly-reset.sh (or the Fly Demo Reset workflow) to migrate schema, seed
-demo data, and init/unseal vault. It needs ADMIN_PG_PASSWORD, VAULT_APP_PASSWORD, and
-VAULT_ADMIN_PASSWORD,
+== Next: deploy the selected release ==
+  Run the Fly Demo Bootstrap workflow with release_tag=vMAJOR.MINOR.PATCH. It migrates the
+  db (scripts/fly-migrate.sh), deploys api, makes sure its machines are started
+  (scripts/fly-ensure-started.sh), deploys web, then runs the first reset.
+
+The reset (scripts/fly-reset.sh or the Fly Demo Reset workflow) wipes and re-migrates the
+schema, seeds demo data, and inits/unseals the vault. It needs ADMIN_PG_PASSWORD,
+VAULT_APP_PASSWORD, VAULT_ADMIN_PASSWORD and
 DEMO_VAULT_PASSPHRASE to match whatever you passed to this script (defaults were used
 for any you didn't override) — if those already live in GitHub Actions secrets
 (FLY_DEMO_PG_SUPERUSER_PASSWORD etc.), prefer running the workflow via workflow_dispatch
