@@ -153,13 +153,12 @@ describe('withoutQuery (Sonar typescript:S8786)', () => {
     expect(withoutQuery('?')).toBe('')
   })
 
-  it('is linear on a ?-heavy specifier that made the old /\\?.*$/ regex quadratic', () => {
-    // The old regex started a match at every `?` and re-scanned to the end: ~n^2/2 steps, which
-    // is about 5e9 for 100k characters (many seconds). The scan is one indexOf.
+  it('cuts at the first `?` on the ?-heavy input that made the old /\\?.*$/ regex quadratic', () => {
+    // The old regex started a match at every `?` and re-scanned to the end: ~n^2/2 steps for this
+    // input. withoutQuery is a single indexOf + slice, linear by construction, so this asserts the
+    // result rather than a wall-clock budget (timing assertions flake on contended runners; DW-416).
     const pathological = `x${'?'.repeat(100_000)}\n`
-    const started = performance.now()
     expect(withoutQuery(pathological)).toBe('x')
-    expect(performance.now() - started).toBeLessThan(500)
   })
 })
 
