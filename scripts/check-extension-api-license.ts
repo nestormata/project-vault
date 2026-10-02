@@ -1,10 +1,11 @@
 #!/usr/bin/env tsx
 /**
- * Enforces the repository's intended licensing split for `@project-vault/extension-api`:
+ * Enforces the repository's intended licensing split for the MIT packages
+ * (`@project-vault/extension-api`, and since Story 68.3 `@project-vault/composition-kit`):
  *
- * - the package is MIT-licensed from 3.24.2 onward: `packages/extension-api/LICENSE` is the
- *   standard MIT License text with the expected copyright line, its `package.json` declares
- *   `"license": "MIT"`, and `LICENSE` is in the package's `files` so the text ships in the tarball;
+ * - each MIT package (MIT_PACKAGE_DIRS): `<dir>/LICENSE` is the standard MIT License text with the
+ *   expected copyright line, its `package.json` declares `"license": "MIT"`, and `LICENSE` is in
+ *   the package's `files` so the text ships in the tarball (extension-api is MIT from 3.24.2 onward);
  * - the rest of Project Vault stays AGPL-3.0-or-later: the root `LICENSE` is still the GNU AGPL
  *   version 3 text and the root `package.json` declares `"license": "AGPL-3.0-or-later"`.
  *
@@ -17,6 +18,9 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 export const EXTENSION_API_DIR = 'packages/extension-api'
+export const COMPOSITION_KIT_DIR = 'packages/composition-kit'
+/** Every MIT-licensed package directory. */
+export const MIT_PACKAGE_DIRS = [EXTENSION_API_DIR, COMPOSITION_KIT_DIR] as const
 export const EXPECTED_COPYRIGHT_LINE = 'Copyright (c) 2026 Nestor Mata Cuthbert'
 
 export const EXPECTED_MIT_LICENSE = `MIT License
@@ -83,8 +87,8 @@ function readManifest(
   return null
 }
 
-function checkPackageLicense(repoRoot: string, problems: string[]): void {
-  const path = `${EXTENSION_API_DIR}/LICENSE`
+function checkPackageLicense(repoRoot: string, dir: string, problems: string[]): void {
+  const path = `${dir}/LICENSE`
   const text = readText(repoRoot, path, problems)
   if (text !== null && normalise(text) !== normalise(EXPECTED_MIT_LICENSE)) {
     problems.push(
@@ -93,8 +97,8 @@ function checkPackageLicense(repoRoot: string, problems: string[]): void {
   }
 }
 
-function checkPackageManifest(repoRoot: string, problems: string[]): void {
-  const path = `${EXTENSION_API_DIR}/package.json`
+function checkPackageManifest(repoRoot: string, dir: string, problems: string[]): void {
+  const path = `${dir}/package.json`
   const manifest = readManifest(repoRoot, path, problems)
   if (manifest === null) return
   if (manifest.license !== 'MIT') {
@@ -127,8 +131,10 @@ function checkRootManifest(repoRoot: string, problems: string[]): void {
 
 export function findLicenseProblems(repoRoot: string): string[] {
   const problems: string[] = []
-  checkPackageLicense(repoRoot, problems)
-  checkPackageManifest(repoRoot, problems)
+  for (const dir of MIT_PACKAGE_DIRS) {
+    checkPackageLicense(repoRoot, dir, problems)
+    checkPackageManifest(repoRoot, dir, problems)
+  }
   checkRootLicense(repoRoot, problems)
   checkRootManifest(repoRoot, problems)
   return problems
@@ -138,10 +144,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const problems = findLicenseProblems(process.cwd())
   if (problems.length === 0) {
     process.stdout.write(
-      'check-extension-api-license: extension-api is MIT, the repository root stays AGPL-3.0-or-later — OK\n'
+      'check-extension-api-license: extension-api and composition-kit are MIT, the repository root stays AGPL-3.0-or-later — OK\n'
     )
   } else {
-    process.stderr.write('FATAL: licensing does not match the intended extension-api/root split:\n')
+    process.stderr.write('FATAL: licensing does not match the intended MIT-packages/root split:\n')
     for (const problem of problems) process.stderr.write(`  - ${problem}\n`)
     process.exitCode = 1
   }

@@ -209,10 +209,15 @@ jobs:
       - name: Check extension-api version-skew (Story 14.1 AC7 / Story 24.4)
         run: pnpm check-extension-api-version-skew
 
-      - name: Check extension-api is MIT and the repository root stays AGPL
+      - name: Check extension-api and composition-kit are MIT and the repository root stays AGPL
         run: |
           pnpm check-extension-api-license &&
           pnpm vitest run scripts/check-extension-api-license.test.ts
+
+      - name: Check the composition kit's MIT boundary (Story 68.3)
+        run: |
+          pnpm check-composition-kit-boundary &&
+          pnpm vitest run scripts/check-composition-kit-boundary.test.ts
 
       - name: Check native-credential surface (Story 23.2 AC19)
         run: pnpm check-native-credential-surface
@@ -508,13 +513,14 @@ jobs:
       - name: Generate SvelteKit config for SonarCloud
         run: pnpm --filter @project-vault/web-host exec svelte-kit sync
 
-      - name: Test (with coverage) - web, agent, crypto, shared, vault-action, extension-api
+      - name: Test (with coverage) - web, agent, crypto, shared, vault-action, extension-api, composition-kit
         run: >-
           pnpm turbo test --filter=@project-vault/web-host --filter=@project-vault/shared
           --filter=@project-vault/agent --filter=@project-vault/crypto
           --filter=@project-vault/vault-action --filter=@project-vault/extension-api
+          --filter=@project-vault/composition-kit
 
-      - name: Upload coverage for SonarCloud (web, agent, crypto, shared, vault-action, extension-api)
+      - name: Upload coverage for SonarCloud (web, agent, crypto, shared, vault-action, extension-api, composition-kit)
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -527,6 +533,7 @@ jobs:
             packages/shared/coverage/
             packages/vault-action/coverage/
             packages/extension-api/coverage/
+            packages/composition-kit/coverage/
           retention-days: 1
 
   extension-api-compatibility:

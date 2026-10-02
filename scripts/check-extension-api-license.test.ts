@@ -6,12 +6,14 @@ import { useFixtureRoots, writeFixture } from './lib/fixture-test-helpers.js'
 import {
   EXPECTED_COPYRIGHT_LINE,
   EXPECTED_MIT_LICENSE,
+  COMPOSITION_KIT_DIR,
   EXTENSION_API_DIR,
+  MIT_PACKAGE_DIRS,
   findLicenseProblems,
 } from './check-extension-api-license.js'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const makeFixtureRoot = useFixtureRoots('check-extension-api-license-', [EXTENSION_API_DIR])
+const makeFixtureRoot = useFixtureRoots('check-extension-api-license-', [...MIT_PACKAGE_DIRS])
 
 const PACKAGE_LICENSE = `${EXTENSION_API_DIR}/LICENSE`
 const ROOT_MANIFEST = 'package.json'
@@ -21,10 +23,20 @@ function readRepo(relativePath: string): string {
   return readFileSync(join(repositoryRoot, relativePath), 'utf8')
 }
 
-/** A fixture root holding copies of the four files the check reads, as committed. */
+const KIT_LICENSE = `${COMPOSITION_KIT_DIR}/LICENSE`
+const KIT_MANIFEST = `${COMPOSITION_KIT_DIR}/${ROOT_MANIFEST}`
+
+/** A fixture root holding copies of the files the check reads, as committed. */
 function makeCommittedCopy(): string {
   const root = makeFixtureRoot()
-  for (const path of ['LICENSE', ROOT_MANIFEST, PACKAGE_LICENSE, PACKAGE_MANIFEST]) {
+  for (const path of [
+    'LICENSE',
+    ROOT_MANIFEST,
+    PACKAGE_LICENSE,
+    PACKAGE_MANIFEST,
+    KIT_LICENSE,
+    KIT_MANIFEST,
+  ]) {
     writeFixture(root, path, readRepo(path))
   }
   return root
@@ -115,8 +127,31 @@ describe('check-extension-api-license', () => {
     expect(findLicenseProblems(root)).toEqual([
       `${PACKAGE_LICENSE}: missing`,
       `${PACKAGE_MANIFEST}: missing`,
+      `${KIT_LICENSE}: missing`,
+      `${KIT_MANIFEST}: missing`,
       'LICENSE: missing',
       'package.json: not valid JSON',
+    ])
+  })
+
+  it('covers the composition kit: a mutated kit manifest or LICENSE fails (Story 68.3 AC-1)', () => {
+    expect(MIT_PACKAGE_DIRS).toEqual([EXTENSION_API_DIR, COMPOSITION_KIT_DIR])
+    const manifestRoot = makeCommittedCopy()
+    editManifest(manifestRoot, KIT_MANIFEST, (manifest) => {
+      manifest.license = 'AGPL-3.0-or-later'
+    })
+    expect(findLicenseProblems(manifestRoot)).toEqual([
+      `${KIT_MANIFEST}: "license" must be "MIT", found "AGPL-3.0-or-later"`,
+    ])
+    const licenseRoot = makeCommittedCopy()
+    writeFixture(licenseRoot, KIT_LICENSE, readRepo('LICENSE'))
+    expect(findLicenseProblems(licenseRoot)).toEqual([expect.stringContaining(KIT_LICENSE)])
+    const filesRoot = makeCommittedCopy()
+    editManifest(filesRoot, KIT_MANIFEST, (manifest) => {
+      manifest.files = ['dist']
+    })
+    expect(findLicenseProblems(filesRoot)).toEqual([
+      expect.stringContaining('"files" must include'),
     ])
   })
 })
