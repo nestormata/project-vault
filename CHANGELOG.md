@@ -18,7 +18,7 @@ is in `>=3.0.0 <=3.29.0` (`HOST_SUPPORTED_EXTENSION_API_RANGE`). **The npm packa
 own tags and is not part of this release:** `next` is `3.27.0` and `latest` is `3.25.0`, so
 `3.28.0` and `3.29.0` are not on npm yet. CLI: `pvault-1.4.0.mjs` on this release's assets.
 Build-time composition packages published from this tag to the npm `next` dist-tag:
-`@project-vault/web-host@1.4.0` and `@project-vault/composition-kit@0.6.0`.
+`@project-vault/web-host@1.4.0` and `@project-vault/composition-kit@0.7.0`.
 
 ### Upgrade notes (read before `docker compose pull`)
 
@@ -41,6 +41,10 @@ Build-time composition packages published from this tag to the npm `next` dist-t
 - **Composed deployments:** the hashes of many `apps/web` files change in this release (navigation,
   hooks, injection points, the `AppShell` header split). Reconcile any override or replacement of
   one with `pv-compose --accept-host`, and expect `composition.lock.json` to move to version 2.
+  Pack authors: a `routeClassifications` entry now has the runtime route audit's shape
+  (`{ route: "METHOD /url", reason }`), and the old `{ method, url, class }` fields are rejected with
+  a migration hint. This is a breaking change in kit 0.7.0, which is the first version of the kit
+  published to npm, so no published version breaks.
 
 ### Added
 
@@ -74,6 +78,11 @@ Build-time composition packages published from this tag to the npm `next` dist-t
   composed tree, merges a pack's own guard entries (`defineGuardEntries`, the lock's
   `guardEntries` record) and fails closed when the lock's `excludedPvTests` disagrees with its
   overrides. `web-host` ships `guards.json` and `test-subjects.json`.
+- **Pack route classifications for the runtime route audit (Story 68-16, kit 0.7.0):**
+  `pv-verify --only classifications --out <file>` writes the merged `routeClassifications` of a
+  composed pack as a sorted JSON array (written atomically, and only after the preflight and the lock
+  tamper check pass), in the entry shape that the `route-audit:runtime` CLI parses. A stale
+  classification entry fails the audit, so keep one file per variant.
 - **Navigation as data with stable ids on every nav surface (Story 68-7, M5):** every PV nav surface
   (primary and mobile nav, project tabs, the shell's brand, bell, MFA-banner link, account menu and
   footer, the settings and platform indexes, sub-section link rows, the notifications tabs,
