@@ -53,7 +53,9 @@ Dockerfile and PV's dev tooling.
 Pin the **exact** version, and install every `dependencies` and `peerDependencies` entry at the
 exact version the manifest names. Those versions are read from PV's `pnpm-lock.yaml` when the
 package is packed. pnpm overrides never reach a consumer, so these are the versions PV actually
-builds and tests with.
+builds and tests with. Never install without a version or follow `next`: until the first real
+release is promoted, `latest` is a deprecated bootstrap placeholder. The current published state
+is in [releasing.md § 9](releasing.md#9-web-host-every-release).
 
 ```js
 // svelte.config.js
@@ -135,16 +137,20 @@ so. Any other `npm view` failure fails the fixture. The release workflow sets
 
 ## Releasing
 
-`.github/workflows/web-host-release.yml` runs on the PV `vX.Y.Z` tag. It does not use a separate
-tag family, because the web source, `pvRelease` and the API image are one commit. Before it uploads,
-the workflow:
+`.github/workflows/web-host-release.yml` runs on the PV `vX.Y.Z` tag push (trigger `v[0-9]*`;
+prerelease tags are refused). It does not use a separate tag family, because the web source,
+`pvRelease` and the API image are one commit. Before it uploads, the workflow:
 
-1. runs the fixture;
-2. packs at the tag's version and runs the tarball rules on that exact directory;
-3. checks the version triangle (tag, package version, manifest `pvRelease`);
-4. confirms the version is not on npm yet.
+1. requires the published GitHub Release and a green `container-publish` run for the same commit
+   (only reported on a dry run), so the API image named by `apiImageTag` exists;
+2. runs the fixture;
+3. packs at the tag's version and runs the tarball rules on that exact directory;
+4. checks the version triangle (tag, package version, manifest `pvRelease`);
+5. confirms the version is not on npm yet.
 
-It then publishes from the Node 24 leg with OIDC trusted publishing and provenance to the `next`
-dist-tag. No npm token exists. A maintainer promotes a verified version to `latest`. npm versions
-are immutable: never `--force`, never unpublish, fix forward with a new PV release. See
-[releasing.md](releasing.md#9-web-host-every-release) for the commands.
+It then checks that the tag still names the commit it built, and publishes from the Node 24 leg
+with OIDC trusted publishing and provenance to the `next` dist-tag. No npm token exists. A
+maintainer promotes a verified version to `latest`. npm versions are immutable: never `--force`,
+never unpublish, fix forward with a new PV release. See
+[releasing.md § 9](releasing.md#9-web-host-every-release) for the release-day runbook, verification
+with `scripts/verify-npm-release.ts`, promotion and rollback.

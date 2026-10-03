@@ -1,10 +1,16 @@
 # Releasing Project Vault
 
-Releases are cut from `main` by publishing a GitHub Release on a `vMAJOR.MINOR.PATCH` tag.
-Publishing the release triggers three workflows: `container-publish.yml` (GHCR images),
-`fly-deploy.yml` (the public demo, including its migrations) and `cli-release.yml` (the `pvault`
-assets, step 8). Pushing a `v*` tag on its own triggers nothing; publishing is the point of no
-return.
+Releases are cut from `main` by pushing a `vMAJOR.MINOR.PATCH` tag and then publishing a GitHub
+Release on it. Four workflows take part:
+
+- The **tag push** (H2) starts `web-host-release.yml`, which publishes `@project-vault/web-host`
+  and `@project-vault/composition-kit` to npm (step 9). It triggers on tags matching `v[0-9]*`.
+  It uploads nothing until a reviewer approves the `npm-publish` environment, and even then only
+  once the GitHub Release is published and `container-publish` is green for the same commit.
+  Approving that upload (H3w) is irreversible: npm versions are immutable.
+- **Publishing the Release** (H3) triggers the other three: `container-publish.yml` (GHCR
+  images), `fly-deploy.yml` (the public demo, including its migrations) and `cli-release.yml` (the
+  `pvault` assets, step 8). Publishing is the point of no return.
 
 The version number lives **only in the tag**. Never bump any `package.json` version — they stay
 at `0.0.1` on purpose, and the release identity is injected as the `RELEASE_VERSION` build
@@ -32,8 +38,9 @@ says yes.
 | Gate | What is confirmed | Reversible? |
 | --- | --- | --- |
 | H1 | The final release notes, the version number, and what is in or out of the release | Yes, until H3 |
-| H2 | Pushing the annotated tag on the rehearsed commit (step 3) | Yes, until H3: delete the tag |
-| H3 | Publishing the GitHub Release, which fires all three release workflows | **No**: immutable GHCR tags, demo migrations, public downloads |
+| H2 | Pushing the annotated tag on the rehearsed commit (step 3). This already starts `web-host-release.yml`, whose jobs wait for approval | Yes, until H3: first **reject** the waiting `web-host-release` run (a run left waiting can still be approved later), then delete the tag |
+| H3 | Publishing the GitHub Release, which fires the three Release workflows | **No**: immutable GHCR tags, demo migrations, public downloads |
+| H3w | Approving `npm-publish` on a tag-push `web-host-release` run, after H3 and a green `container-publish` (step 9) | **No**: npm versions are immutable |
 | H4 | Any write after publishing: a real (non-dry-run) re-dispatch, replacing assets, a `fly-deploy`/`fly-reset` dispatch, deleting GHCR versions, withdrawing a CLI version, a patch release | Varies; decided per action |
 
 **H4 note (Story 43.16):** the first `fly-deploy` of a release containing Story 43.16 needs the
@@ -106,6 +113,9 @@ gh release create vX.Y.Z --verify-tag --title "vX.Y.Z" --latest \
   --notes-file <(sed -n '/^## \[X.Y.Z\]/,/^## \[/p' CHANGELOG.md | sed '$d') \
   --generate-notes                             #                                            [H3]
 ```
+
+The `git push` (H2) already starts `web-host-release.yml`. Its jobs wait for the `npm-publish`
+approval; leave them waiting until H3 and a green `container-publish` (step 9).
 
 `--verify-tag` makes `gh` refuse to run if the tag does not exist on the remote, so it can never
 create one implicitly on the default branch's head. `--generate-notes` appends GitHub's
@@ -218,8 +228,10 @@ Recovery: run the workflow manually from `main` with the `tag` input (`workflow_
 concurrency group `cli-release` and never cancelled in progress, but GitHub keeps only one
 *pending* run per group: a second dispatch queued behind a pending one cancels it. Never dispatch
 a recovery while a run for the same tag is queued or in progress, and before any recovery check
-that `git ls-remote --tags origin 'vX.Y.Z^{}'` still points at the released commit (`v*` tags are
-not protected). **Recovery dispatch works for `v1.3.0` and later only**: older tags do not contain
+that `git ls-remote --tags origin 'vX.Y.Z^{}'` still points at the released commit. The ruleset
+"Protect PV release tags" restricts only the creation of `refs/tags/v[0-9]*` (bypass: the
+maintainer); moving or deleting such a tag is not restricted, so "never force-move a published
+tag" is still a procedural rule. **Recovery dispatch works for `v1.3.0` and later only**: older tags do not contain
 `scripts/stamp-build-info.ts`, so the run fails at stamping and uploads nothing.
 
 ### Dry-run (`dry_run: true`)
@@ -266,7 +278,9 @@ procedure so the CLI assets are uploaded to a draft Release before it is publish
 The `.sha256` file sits on the same Release as the bundle, so it detects a corrupted or wrong
 download. It does **not** detect a compromise of the repository or of the release process: anyone
 able to replace the bundle can replace its checksum too. The bundle is not signed and carries no
-build-provenance attestation yet, and `v*` tags are not protected by a ruleset.
+build-provenance attestation yet. Creation of `refs/tags/v[0-9]*` is restricted by the ruleset
+"Protect PV release tags" (bypass: the maintainer), but moving or deleting such a tag is not
+restricted, so "never force-move a published tag" is still procedural.
 
 The committed build-info files must always stay `'dev'`/`null`. `pnpm check-build-info-unstamped`
 enforces this in CI, so never commit a locally stamped copy.
@@ -282,33 +296,196 @@ Tagging scheme — the CLI **diverges** from `packages/vault-action` on purpose:
 
 ## 9. web-host (every release)
 
-The same `vX.Y.Z` tag also fires `web-host-release.yml`, which publishes PV's web source as
-`@project-vault/web-host` `X.Y.Z` to the npm `next` dist-tag. It uses OIDC trusted publishing and
-provenance, and it runs only after the consumer fixture, the tarball rules, the version triangle
-and the "not already on npm" gate pass. The package is described in
-[web-host-package.md](web-host-package.md).
+The `vX.Y.Z` tag push starts `web-host-release.yml`. It publishes PV's web source as
+`@project-vault/web-host` `X.Y.Z`, and first the composition kit
+(`@project-vault/composition-kit`, its own semver, skipped when that kit version is already on
+npm), both to the npm `next` dist-tag with OIDC trusted publishing and provenance. No npm token
+exists. The package is described in [web-host-package.md](web-host-package.md).
+
+Release-day checklist (the details follow below):
+
+1. Prerequisites hold (9.1). The release commit contains the Story 68.12 workflow. **[before H2]**
+2. Push the tag (§3). The real `web-host-release` run starts and waits for approval. **[H2]**
+3. Dispatch the dry run on the tag, check its identity, approve it, and wait until it is green. **[H2]**
+4. Publish the GitHub Release (§3). **[H3]**
+5. Wait for `container-publish` to be green, including its scans and alias promotion (§4). **[H3]**
+6. Check the real run's identity, then approve its kit jobs and, later, its web-host jobs. **[H3w]**
+7. Verify both packages with `scripts/verify-npm-release.ts` (9.5). **[after H3w]**
+8. Record: update "Current state" and tell the CentralizeMe maintainer the exact versions (9.8).
+9. After CentralizeMe builds against the exact version: promote to `latest` and verify again. **[H4]**
+
+### 9.1 Prerequisites
+
+- The npm trusted publisher of both packages is `nestormata/project-vault`,
+  `.github/workflows/web-host-release.yml`, environment `npm-publish`.
+- The `npm-publish` environment has a required reviewer and the tag policy `v[0-9]*`, and the
+  ruleset "Protect PV release tags" covers `refs/tags/v[0-9]*`. The workflow triggers on the same
+  pattern, so `vault-action-v*` and `extension-api-v*` tags never start it.
+- **The tag's workflow file is what runs.** The tag push, a dry run dispatched on the tag and
+  "re-run failed jobs" all use `web-host-release.yml` as it is at the tagged commit. A tag on a
+  commit older than the Story 68.12 merge runs the old workflow (no Release gate).
+- First release only: the composition kit had to exist on npm with its own trusted publisher
+  (Story 68-13, done 2026-10-03), because `publish` needs `publish-kit`.
+
+Run this to check them (read-only; `npm trust list` needs `npm login`):
 
 ```bash
-gh run list --workflow web-host-release.yml --limit 1
-gh run watch <run-id>                                        # approve the npm-publish environment
-npm view @project-vault/web-host dist-tags                   # `next` should now be X.Y.Z
+npm view @project-vault/web-host dist-tags versions deprecated --json
+npm trust list @project-vault/web-host --json
+npm trust list @project-vault/composition-kit --json
+gh api repos/nestormata/project-vault/environments/npm-publish/deployment-branch-policies --jq '.branch_policies[].name'
+gh api repos/nestormata/project-vault/rulesets/24388933 --jq '{conditions, rules: [.rules[].type]}'
+git merge-base --is-ancestor <68.12 merge sha> vX.Y.Z && echo "workflow is current"   # after H2
 ```
 
-Rehearse first with a dry run, dispatched on the tag. It runs every gate and uploads nothing:
+### 9.2 Sequence
+
+The real run starts at H2, before the GitHub Release exists, and waits for the `npm-publish`
+approval. Leave it waiting. Rehearse with a dry run dispatched on the tag. A dry run uses its own
+concurrency group, so it never queues behind or cancels the waiting real run. It runs every gate,
+reports the Release gate without failing, and uploads nothing. Run this (`gh workflow run` must
+be typed by the maintainer; it is blocked in agent sessions):
 
 ```bash
 gh workflow run web-host-release.yml --ref vX.Y.Z -f dry_run=true
+gh run list --workflow web-host-release.yml --limit 2      # the push run (waiting) and the dry run
 ```
 
-Promote to `latest` by hand, after the downstream consumer has built against `next`:
+Approve the dry run after the identity check in 9.3. Its gate prints
+`Release: missing (expected before H3)` and `container-publish: missing ...` and passes. Then
+publish the GitHub Release (H3), wait for `container-publish` to be green (§4), and approve the real
+run (H3w).
+
+The Release gate makes an early approval harmless. Without a published, non-draft Release for the
+tag and a successful `container-publish` run for the same commit (`head_sha`; any event, so a
+`workflow_dispatch` recovery on the same commit counts), each job fails before any upload with
+"no version was consumed". Recovery: wait for H3 and a green `container-publish`, then **re-run
+failed jobs** on the same run. A container-publish run that failed its vulnerability scan (image
+published but not promoted) keeps the gate red on purpose: fix forward with `vX.Y.(Z+1)`. If the
+gate says "GitHub API error; retry the failed jobs", re-run the failed jobs.
+
+A job waiting for approval fails after 30 days (GitHub limit). If H3 takes that long, use
+**re-run all jobs** on the same tag; no version is consumed.
+
+The upload step is preceded by "Fail if the tag moved": the job checks out `github.sha` (the commit
+the provenance attests) and refuses to publish if `vX.Y.Z` no longer names it. Never move a release
+tag; if this check fires, investigate before anything else.
+
+### 9.3 Approvals
+
+Each run has four jobs in the `npm-publish` environment: `publish-kit` (Node 20 and 24), then
+`publish` (Node 24 and 26). The review screen approves the jobs waiting at that moment, so a run
+normally asks twice: once for the kit legs and once for the web-host legs after the kit finishes. A
+run in "waiting" is not hung. Only the Node 24 leg of each job uploads.
+
+**Before every approval**, run this and compare:
+
+```bash
+gh run view <run-id> --json event,headBranch,headSha,displayTitle
+git ls-remote --tags origin 'vX.Y.Z^{}'                    # must print the same headSha
+```
+
+`event` must be `push` for the real run, or `workflow_dispatch` for the dry run you dispatched.
+`headBranch` must be `vX.Y.Z`, and `headSha` must equal the `ls-remote` commit. Reject anything
+else. `gh run view --log` is empty for these runs; read job states with:
+
+```bash
+gh api repos/nestormata/project-vault/actions/runs/<run-id>/jobs --jq '.jobs[]|[.name,.status,.conclusion]|@tsv'
+```
+
+### 9.4 npm writes need a real terminal
+
+`npm dist-tag` and `npm deprecate` need two-factor authentication with the maintainer's security
+key. That works only in a real terminal (TTY). A `!` command typed into an agent prompt fails with
+`EOTP`, because npm skips both the web and the classic one-time-password flow without a TTY. A
+stale local login fails with `E401` first: run `npm login`, then repeat the command, adding
+`--otp=<code>` if npm asks for one.
+
+### 9.5 Verify
+
+`scripts/verify-npm-release.ts` is read-only. It checks the version exists, the expected dist-tag
+points at it, it is not deprecated, and its SLSA provenance names this repository, this workflow
+and `refs/tags/vX.Y.Z`. It also checks that the attested digest equals the tarball's
+`dist.integrity`. The registry can lag about 5 minutes behind a successful upload; `--wait`
+polls every 30 seconds while the version or dist-tag is missing. Run this after H3w:
+
+```bash
+pnpm exec tsx scripts/verify-npm-release.ts --package @project-vault/web-host \
+  --version X.Y.Z --tag vX.Y.Z --expect-dist-tag next --wait 600
+pnpm exec tsx scripts/verify-npm-release.ts --package @project-vault/composition-kit \
+  --version <kit version> --tag vX.Y.Z --expect-dist-tag next --wait 600   # only if the kit was published
+```
+
+Every line must be `ok`. The helper checks registry metadata and the attestation's claims, not the
+Sigstore signature. The signature check is `npm audit signatures`, run in a project that installed
+the exact version (CentralizeMe's build does it). Example:
+
+```bash
+npm install --save-exact @project-vault/web-host@X.Y.Z && npm audit signatures
+```
+
+To read dist-tags without the `npm view` cache lag (example):
+
+```bash
+curl -s https://registry.npmjs.org/@project-vault%2fweb-host | python3 -c "import sys,json;print(json.load(sys.stdin)['dist-tags'])"
+```
+
+### 9.6 Promote to `latest`
+
+Only after CentralizeMe has built against the exact `X.Y.Z` (pinned, never following `next`) and
+its `npm audit signatures` passed. Run this in a real terminal (9.4):
 
 ```bash
 npm dist-tag add @project-vault/web-host@X.Y.Z latest
+pnpm exec tsx scripts/verify-npm-release.ts --package @project-vault/web-host \
+  --version X.Y.Z --tag vX.Y.Z --expect-dist-tag latest --wait 600
 ```
 
+Until the first promotion, `npm i @project-vault/web-host` without a version installs the
+deprecated bootstrap placeholder. Consumers always pin the exact version.
+
+### 9.7 Rollback
+
+- **A bad version on `next`:** publish a fixed `vX.Y.(Z+1)`. Never `--force`, never re-use a
+  number.
+- **A bad version that reached `latest`:** re-point `latest` and deprecate the bad version
+  (example values; real terminal):
+
+  ```bash
+  npm dist-tag add @project-vault/web-host@<previous good> latest
+  npm deprecate @project-vault/web-host@<bad> "<reason>; use X.Y.Z"
+  ```
+
+- `npm unpublish` is not used (project rule). npm itself allows it only within 72 hours and only
+  when no other package depends on the version, and a version number can never be re-used, even
+  after unpublishing.
+- `latest` can be re-pointed but not removed: `npm dist-tag rm @project-vault/web-host latest` is
+  refused.
+- **A compromised release:** follow the extension-api incident list in
+  `.github/workflows/extension-api-release.yml`: revoke the trusted publisher, disable the
+  `npm-publish` environment, publish a security advisory, and notify the CentralizeMe maintainer.
+
 Re-running the workflow after a successful publish fails the "not already on npm" gate by design.
-npm versions are immutable: never `--force` and never unpublish. Fix a bad release forward with a
-new PV release.
+
+### 9.8 Record
+
+After every release: paste the 9.5 helper output into the release record, update "Current state"
+below, and tell the CentralizeMe maintainer the exact web-host version, the kit version and the
+`apiImageTag`, all read from the published tuple. Run this:
+
+```bash
+npm pack @project-vault/web-host@X.Y.Z --pack-destination /tmp
+tar -xOf /tmp/project-vault-web-host-X.Y.Z.tgz package/manifests/compatibility.json
+```
+
+That message is the signal for CentralizeMe's implementation gate (CM-E16 16-1). CentralizeMe
+pins exactly and never follows `next`.
+
+**Current state (2026-10-03):** only the bootstrap placeholder `0.0.1-bootstrap.0` is on npm for
+`@project-vault/web-host` (dist-tags `bootstrap` and `latest`, deprecated) and for
+`@project-vault/composition-kit` (same shape). No real version has been published yet: the first
+one comes with the next `vX.Y.Z` tag. Removing the `bootstrap` dist-tag and re-wording the
+placeholder's deprecation message are pending maintainer steps (Story 68-17).
 
 ## Tooling note
 

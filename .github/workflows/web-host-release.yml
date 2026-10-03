@@ -5,7 +5,17 @@ name: Web-host release
 # tag as container-publish.yml and cli-release.yml, so the web source, its version and the API
 # image tag in its compatibility manifest are one commit (design §11). Modelled on
 # extension-api-release.yml:
-# - only full vMAJOR.MINOR.PATCH(-prerelease) tags are eligible (`validate`);
+# - it triggers on `v[0-9]*` tags, the same pattern as the npm-publish environment's tag policy and
+#   the "Protect PV release tags" ruleset (not `v*`, which also matches the force-moved
+#   vault-action-v1 tag and would start runs in the shared concurrency group); `validate` then
+#   accepts only full vMAJOR.MINOR.PATCH tags, with the exact regex of container-publish.yml and
+#   cli-release.yml: prereleases are refused (Story 68.12, D2);
+# - a tag push starts this workflow at H2, before the GitHub Release exists. Each upload job first
+#   requires the published Release and a green container-publish run for the same commit (Story
+#   68.12, D1), so an early approval cannot publish a web-host whose API image does not exist. On a
+#   dry run that gate only reports;
+# - both jobs check out `github.sha` (the commit the provenance attests), and fail before the upload
+#   if the tag has moved since the run started;
 # - `publish` runs in the npm-publish environment (required reviewer) with OIDC Trusted Publishing
 #   and npm provenance. There is no NPM_TOKEN. Every publish goes to the `next` dist-tag; a
 #   maintainer promotes a verified version to `latest` separately;
@@ -19,15 +29,17 @@ name: Web-host release
 #   (MIT, its own semver in packages/composition-kit/package.json, same OIDC flow, always `next`)
 #   unless that exact kit version is already on npm. web-host's compatibility manifest names the kit
 #   version it was built with, so `publish` refuses to upload a web-host whose kit is not on npm.
-# Maintainer-only prerequisites (story 68-12): the npm trusted publisher for @project-vault/web-host
-# (this workflow file, environment npm-publish), the npm-publish environment's tag policy and the
-# release tag ruleset covering v*, and the npm bootstrap if npm needs the package to exist first.
-# Story 68-13 owns the same steps for @project-vault/composition-kit.
+# Maintainer-only prerequisites, all done (Story 68.12 steps 2-4, 2026-10-03): the npm bootstrap
+# version, the npm trusted publisher for @project-vault/web-host (this workflow file, environment
+# npm-publish), the npm-publish environment's tag policy `v[0-9]*` and the ruleset "Protect PV
+# release tags" restricting creation of `refs/tags/v[0-9]*`. Both use `v[0-9]*`, not `v*`, so that
+# vault-action-v* and extension-api-v* tags stay outside them. Story 68-13 owns the same steps for
+# @project-vault/composition-kit. The release-day runbook is docs/releasing.md section 9.
 
 on:
   push:
     tags:
-      - 'v*'
+      - 'v[0-9]*'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -59,15 +71,15 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
-          if [[ "$GITHUB_REF_TYPE" == "tag" && "$TAG" =~ ^v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            VERSION="${TAG#v}"
             echo "should_release=true" >> "$GITHUB_OUTPUT"
             echo "version=$VERSION" >> "$GITHUB_OUTPUT"
             echo "Eligible release tag: $TAG (version $VERSION)"
           else
             echo "should_release=false" >> "$GITHUB_OUTPUT"
             echo "version=" >> "$GITHUB_OUTPUT"
-            echo "Skipping '$TAG': it is not a vMAJOR.MINOR.PATCH release tag."
+            echo "Skipping '$TAG': it is not a full vMAJOR.MINOR.PATCH release tag (prereleases are not published)."
           fi
 
   publish-kit:
@@ -78,6 +90,7 @@ jobs:
     timeout-minutes: 30
     environment: npm-publish
     permissions:
+      actions: read
       contents: read
       id-token: write
     strategy:
@@ -87,7 +100,55 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
+
+      # Story 68.12 AC-4 (D1): the tag push runs at H2, before the Release. Never upload a version
+      # whose GitHub Release (H3) and API image (container-publish) do not exist for this commit.
+      - name: Require the published GitHub Release and a green container-publish for this tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT_ONLY: ${{ inputs.dry_run == true && '1' || '0' }}
+        run: |
+          set -uo pipefail
+          api_error() {
+            echo "ERROR: GitHub API error; retry the failed jobs. $1" >&2
+            exit 1
+          }
+          MISSING=0
+          if ! RELEASE_JSON="$(gh release view "$GITHUB_REF_NAME" --json isDraft,isPrerelease,tagName 2>&1)"; then
+            grep -q 'release not found' <<< "$RELEASE_JSON" || api_error "$RELEASE_JSON"
+            echo "Release: missing (expected before H3)"
+            MISSING=1
+          elif ! IS_DRAFT="$(jq -er '.isDraft | tostring' <<< "$RELEASE_JSON")"; then
+            api_error "unexpected gh release view output: $RELEASE_JSON"
+          elif [[ "$IS_DRAFT" != "false" ]]; then
+            echo "Release: draft, not published (H3 not done)"
+            MISSING=1
+          else
+            echo "Release: published"
+          fi
+          if ! RUNS_JSON="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/container-publish.yml/runs?head_sha=$GITHUB_SHA" 2>&1)"; then
+            api_error "$RUNS_JSON"
+          fi
+          if ! GREEN="$(jq -e '[.workflow_runs[] | select(.conclusion == "success")] | length' <<< "$RUNS_JSON")"; then
+            api_error "unexpected container-publish runs output"
+          fi
+          if [[ "$GREEN" -gt 0 ]]; then
+            echo "container-publish: green for $GITHUB_SHA"
+          else
+            echo "container-publish: missing (no successful run for $GITHUB_SHA yet)"
+            MISSING=1
+          fi
+          if [[ "$MISSING" -eq 0 ]]; then
+            exit 0
+          fi
+          if [[ "$REPORT_ONLY" == "1" ]]; then
+            echo "Dry run: report only. A real run fails here until H3 and a green container-publish."
+            exit 0
+          fi
+          echo "ERROR: the GitHub Release or the container release for $GITHUB_REF_NAME is missing; no version was consumed; re-run failed jobs after H3 and a green container-publish." >&2
+          exit 1
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -150,6 +211,23 @@ jobs:
         working-directory: packages/composition-kit
         run: npm publish --dry-run --provenance --access public --tag next
 
+      # Story 68.12 AC-4: the job may start days after the tag push (approval wait), and the ruleset
+      # restricts only tag creation. Never publish if the tag no longer names the attested commit.
+      - name: Fail if the tag moved
+        if: inputs.dry_run != true
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_SHA="$(git ls-remote origin "refs/tags/$GITHUB_REF_NAME^{}" | cut -f1)"
+          if [[ -z "$TAG_SHA" ]]; then
+            TAG_SHA="$(git ls-remote origin "refs/tags/$GITHUB_REF_NAME" | cut -f1)"
+          fi
+          if [[ "$TAG_SHA" != "$GITHUB_SHA" ]]; then
+            echo "ERROR: tag moved after the run started; do not publish ($GITHUB_REF_NAME is ${TAG_SHA:-missing}, this run built $GITHUB_SHA)." >&2
+            exit 1
+          fi
+          echo "$GITHUB_REF_NAME still names $GITHUB_SHA."
+
       - name: Publish the kit to npm next with OIDC provenance
         if: inputs.dry_run != true && matrix.node-version == 24 && steps.npm.outputs.published != 'true'
         working-directory: packages/composition-kit
@@ -168,6 +246,7 @@ jobs:
     timeout-minutes: 60
     environment: npm-publish
     permissions:
+      actions: read
       contents: read
       id-token: write
     strategy:
@@ -180,7 +259,55 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
+
+      # Story 68.12 AC-4 (D1): the tag push runs at H2, before the Release. Never upload a version
+      # whose GitHub Release (H3) and API image (container-publish) do not exist for this commit.
+      - name: Require the published GitHub Release and a green container-publish for this tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT_ONLY: ${{ inputs.dry_run == true && '1' || '0' }}
+        run: |
+          set -uo pipefail
+          api_error() {
+            echo "ERROR: GitHub API error; retry the failed jobs. $1" >&2
+            exit 1
+          }
+          MISSING=0
+          if ! RELEASE_JSON="$(gh release view "$GITHUB_REF_NAME" --json isDraft,isPrerelease,tagName 2>&1)"; then
+            grep -q 'release not found' <<< "$RELEASE_JSON" || api_error "$RELEASE_JSON"
+            echo "Release: missing (expected before H3)"
+            MISSING=1
+          elif ! IS_DRAFT="$(jq -er '.isDraft | tostring' <<< "$RELEASE_JSON")"; then
+            api_error "unexpected gh release view output: $RELEASE_JSON"
+          elif [[ "$IS_DRAFT" != "false" ]]; then
+            echo "Release: draft, not published (H3 not done)"
+            MISSING=1
+          else
+            echo "Release: published"
+          fi
+          if ! RUNS_JSON="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/container-publish.yml/runs?head_sha=$GITHUB_SHA" 2>&1)"; then
+            api_error "$RUNS_JSON"
+          fi
+          if ! GREEN="$(jq -e '[.workflow_runs[] | select(.conclusion == "success")] | length' <<< "$RUNS_JSON")"; then
+            api_error "unexpected container-publish runs output"
+          fi
+          if [[ "$GREEN" -gt 0 ]]; then
+            echo "container-publish: green for $GITHUB_SHA"
+          else
+            echo "container-publish: missing (no successful run for $GITHUB_SHA yet)"
+            MISSING=1
+          fi
+          if [[ "$MISSING" -eq 0 ]]; then
+            exit 0
+          fi
+          if [[ "$REPORT_ONLY" == "1" ]]; then
+            echo "Dry run: report only. A real run fails here until H3 and a green container-publish."
+            exit 0
+          fi
+          echo "ERROR: the GitHub Release or the container release for $GITHUB_REF_NAME is missing; no version was consumed; re-run failed jobs after H3 and a green container-publish." >&2
+          exit 1
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -253,6 +380,23 @@ jobs:
         if: inputs.dry_run == true && matrix.node-version == 24
         working-directory: .web-host-pack
         run: npm publish --dry-run --provenance --access public --tag next
+
+      # Story 68.12 AC-4: the job may start days after the tag push (approval wait), and the ruleset
+      # restricts only tag creation. Never publish if the tag no longer names the attested commit.
+      - name: Fail if the tag moved
+        if: inputs.dry_run != true
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_SHA="$(git ls-remote origin "refs/tags/$GITHUB_REF_NAME^{}" | cut -f1)"
+          if [[ -z "$TAG_SHA" ]]; then
+            TAG_SHA="$(git ls-remote origin "refs/tags/$GITHUB_REF_NAME" | cut -f1)"
+          fi
+          if [[ "$TAG_SHA" != "$GITHUB_SHA" ]]; then
+            echo "ERROR: tag moved after the run started; do not publish ($GITHUB_REF_NAME is ${TAG_SHA:-missing}, this run built $GITHUB_SHA)." >&2
+            exit 1
+          fi
+          echo "$GITHUB_REF_NAME still names $GITHUB_SHA."
 
       - name: Publish to npm next with OIDC provenance
         if: inputs.dry_run != true && matrix.node-version == 24

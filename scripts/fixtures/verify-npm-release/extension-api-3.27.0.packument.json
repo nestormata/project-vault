@@ -1,0 +1,23 @@
+{
+  "name": "@project-vault/extension-api",
+  "dist-tags": {
+    "latest": "3.25.0",
+    "next": "3.27.0"
+  },
+  "versions": {
+    "3.27.0": {
+      "name": "@project-vault/extension-api",
+      "version": "3.27.0",
+      "dist": {
+        "integrity": "sha512-QuPjOWsHRkkElNKWYH1I/NbMa/AICKZ3e6LUkGUlhNc7JRrmWA0gYUfc/oIrZ58+246JLNuzfLGUZRZ0NFogUg==",
+        "tarball": "https://registry.npmjs.org/@project-vault/extension-api/-/extension-api-3.27.0.tgz",
+        "attestations": {
+          "url": "https://registry.npmjs.org/-/npm/v1/attestations/@project-vault%2fextension-api@3.27.0",
+          "provenance": {
+            "predicateType": "https://slsa.dev/provenance/v1"
+          }
+        }
+      }
+    }
+  }
+}

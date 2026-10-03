@@ -269,6 +269,8 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm vitest run scripts/check-paraglide-plugin-pinned.test.ts scripts/lib/web-host scripts/lib/version-triangle.test.ts
 	pnpm vitest run scripts/check-web-host-tarball.test.ts
 	pnpm vitest run scripts/check-web-host-release-workflow.test.ts
+	# Story 68.12 AC-5: the npm release verification helper's unit test (no network).
+	pnpm vitest run scripts/verify-npm-release.test.ts
 	# Story 68.3: the kit's release version triangle and the integration job's wiring (the slow
 	# integration itself is `make composition-kit-integration`).
 	pnpm vitest run scripts/check-release-version-triangle.test.ts scripts/check-composition-kit-integration.test.ts
