@@ -1,0 +1,3767 @@
+[
+  {
+    "case": "/ anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/ anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/ authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/ authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/ session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/ session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/login anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/login"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/login anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/login authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/dashboard",
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "location": "/dashboard"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": null
+  },
+  {
+    "case": "/login authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/login session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/login"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/login session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/register anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/register"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/register anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/register authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/dashboard",
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "location": "/dashboard"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": null
+  },
+  {
+    "case": "/register authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/register session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/register"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/register session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/vault anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/vault"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/vault anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/vault"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/vault authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/vault"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/vault authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/vault"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/vault session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/vault"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/vault session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/vault"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/dashboard anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login",
+    "setCookie": [],
+    "headers": {
+      "location": "/login"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/dashboard anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/dashboard authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/dashboard"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/dashboard authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/dashboard session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login?reason=session-expired",
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "location": "/login?reason=session-expired"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/dashboard session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/dashboard/ anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login",
+    "setCookie": [],
+    "headers": {
+      "location": "/login"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/dashboard/ anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/dashboard/ authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/dashboard/"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/dashboard/ authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/dashboard/ session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login?reason=session-expired",
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "location": "/login?reason=session-expired"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/dashboard/ session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/Dashboard anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/Dashboard"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/Dashboard anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/Dashboard"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/Dashboard authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/Dashboard"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/Dashboard authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/Dashboard"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/Dashboard session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/Dashboard"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/Dashboard session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/Dashboard"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/dashboard/nope anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login",
+    "setCookie": [],
+    "headers": {
+      "location": "/login"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/dashboard/nope anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/dashboard/nope authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/dashboard/nope"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/dashboard/nope authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/dashboard/nope session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login?reason=session-expired",
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "location": "/login?reason=session-expired"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/dashboard/nope session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/dashboardx anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/dashboardx"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/dashboardx anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/dashboardx"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/dashboardx authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/dashboardx"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/dashboardx authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/dashboardx"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/dashboardx session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/dashboardx"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/dashboardx session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/dashboardx"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/projects/p1 anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login",
+    "setCookie": [],
+    "headers": {
+      "location": "/login"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/projects/p1 anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/projects/p1 authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/projects/p1"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/projects/p1 authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/projects/p1 session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login?reason=session-expired",
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "location": "/login?reason=session-expired"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/projects/p1 session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/settings/notifications anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login",
+    "setCookie": [],
+    "headers": {
+      "location": "/login"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/settings/notifications anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/settings/notifications authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/settings/notifications"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/settings/notifications authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/settings/notifications session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login?reason=session-expired",
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "location": "/login?reason=session-expired"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/settings/notifications session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/platform anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login",
+    "setCookie": [],
+    "headers": {
+      "location": "/login"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/platform anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/platform authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/platform"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/platform authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/platform session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login?reason=session-expired",
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "location": "/login?reason=session-expired"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/platform session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/health anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login",
+    "setCookie": [],
+    "headers": {
+      "location": "/login"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/health anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/health authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/health"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/health authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/health session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login?reason=session-expired",
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "location": "/login?reason=session-expired"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/health session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/handoff anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY",
+        "referrer-policy": "strict-origin"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "referrer-policy": "strict-origin",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/handoff anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY",
+        "referrer-policy": "strict-origin"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "referrer-policy": "strict-origin",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/handoff authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY",
+        "referrer-policy": "strict-origin"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "referrer-policy": "strict-origin",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/handoff authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY",
+        "referrer-policy": "strict-origin"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "referrer-policy": "strict-origin",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/handoff session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY",
+        "referrer-policy": "strict-origin"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "referrer-policy": "strict-origin",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/handoff session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY",
+        "referrer-policy": "strict-origin"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "referrer-policy": "strict-origin",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/handoff-admin anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff-admin"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/handoff-admin anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff-admin"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/handoff-admin authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff-admin"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/handoff-admin authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff-admin"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/handoff-admin session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff-admin"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/handoff-admin session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff-admin"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/handoff/x anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff/x"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/handoff/x anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff/x"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/handoff/x authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff/x"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/handoff/x authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff/x"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/handoff/x session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff/x"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/handoff/x session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/handoff/x"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/extensions/panels anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login",
+    "setCookie": [],
+    "headers": {
+      "location": "/login"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/extensions/panels anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/extensions/panels authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/extensions/panels"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/extensions/panels authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/extensions/panels session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login?reason=session-expired",
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "location": "/login?reason=session-expired"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/extensions/panels session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/extensions/panels/group anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login",
+    "setCookie": [],
+    "headers": {
+      "location": "/login"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/extensions/panels/group anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/extensions/panels/group authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/extensions/panels/group"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/extensions/panels/group authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/extensions/panels/group session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login?reason=session-expired",
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "location": "/login?reason=session-expired"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/extensions/panels/group session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/extensions/panels/group/a/b anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login",
+    "setCookie": [],
+    "headers": {
+      "location": "/login"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/extensions/panels/group/a/b anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/extensions/panels/group/a/b authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/extensions/panels/group/a/b"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/extensions/panels/group/a/b authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/extensions/panels/group/a/b session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login?reason=session-expired",
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "location": "/login?reason=session-expired"
+    },
+    "localsUser": null,
+    "chunk": null
+  },
+  {
+    "case": "/extensions/panels/group/a/b session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
+    "headers": {
+      "location": "/vault"
+    },
+    "localsUser": "unset",
+    "chunk": null
+  },
+  {
+    "case": "/shares/tok anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/shares/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/shares/tok anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/shares/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/shares/tok authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/shares/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/shares/tok authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/shares/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/shares/tok session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/shares/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/shares/tok session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/shares/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/external-shares/tok anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/external-shares/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/external-shares/tok anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/external-shares/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/external-shares/tok authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/external-shares/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/external-shares/tok authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/external-shares/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/external-shares/tok session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/external-shares/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/external-shares/tok session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/external-shares/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/status/tok anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/status/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/status/tok anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/status/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/status/tok authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/status/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/status/tok authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/status/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/status/tok session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/status/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/status/tok session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/status/tok"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/api/v1/projects anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/api/v1/projects"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/api/v1/projects anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/api/v1/projects"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/api/v1/projects authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/api/v1/projects"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/api/v1/projects authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/api/v1/projects"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/api/v1/projects session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/api/v1/projects"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/api/v1/projects session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/api/v1/projects"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/api/health anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/api/health"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/api/health anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/api/health"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/api/health authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/api/health"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/api/health authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/api/health"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/api/health session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/api/health"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/api/health session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/api/health"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/ready anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/ready"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/ready anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/ready"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/ready authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/ready"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/ready authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/ready"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/ready session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/ready"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/ready session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/ready"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/nonexistent anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/nonexistent"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/nonexistent anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/nonexistent"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/nonexistent authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/nonexistent"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/nonexistent authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/nonexistent"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/nonexistent session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/nonexistent"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/nonexistent session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/nonexistent"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/%64ashboard anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/%64ashboard"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/%64ashboard anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/%64ashboard"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/%64ashboard authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/%64ashboard"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/%64ashboard authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/%64ashboard"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/%64ashboard session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/%64ashboard"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/%64ashboard session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/%64ashboard"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/%73ettings/notifications anonymous vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/%73ettings/notifications"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/%73ettings/notifications anonymous vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/%73ettings/notifications"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/%73ettings/notifications authenticated vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/%73ettings/notifications"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/%73ettings/notifications authenticated vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/%73ettings/notifications"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "access-token=renewed; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": {
+      "id": "u1",
+      "email": "u1@example.test"
+    },
+    "chunk": "<html lang=\"es\">"
+  },
+  {
+    "case": "/%73ettings/notifications session-expired vault=ready",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/%73ettings/notifications"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  },
+  {
+    "case": "/%73ettings/notifications session-expired vault=sealed",
+    "setHeadersCalls": [
+      {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      }
+    ],
+    "resolvedPathnames": [
+      "/%73ettings/notifications"
+    ],
+    "status": 200,
+    "location": null,
+    "setCookie": [
+      "refresh-token=rotated; Path=/; HttpOnly"
+    ],
+    "headers": {
+      "content-security-policy": "frame-ancestors 'none'",
+      "content-type": "text/plain;charset=UTF-8",
+      "x-frame-options": "DENY"
+    },
+    "localsUser": null,
+    "chunk": "<html lang=\"en\">"
+  }
+]
