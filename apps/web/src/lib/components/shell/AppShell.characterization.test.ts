@@ -45,8 +45,17 @@ function markup(props: Case): string {
       ...rest,
     },
   })
-  const html = container.innerHTML.replaceAll(/<!--.*?-->/g, '')
-  return html.replaceAll('><', '>\n<')
+  return withoutComments(container).innerHTML.replaceAll('><', '>\n<')
+}
+
+// Svelte's hydration anchors are comment nodes; drop them by node type, not with a regexp over HTML.
+function withoutComments(root: HTMLElement): HTMLElement {
+  const copy = root.cloneNode(true) as HTMLElement
+  const walker = copy.ownerDocument.createTreeWalker(copy, NodeFilter.SHOW_COMMENT)
+  const comments: Node[] = []
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) comments.push(node)
+  for (const comment of comments) comment.parentNode?.removeChild(comment)
+  return copy
 }
 
 const MFA = {
