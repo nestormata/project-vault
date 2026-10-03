@@ -11,7 +11,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { checkNavSurfacesGuard, type LockProvenance } from './lib/nav-guards.js'
+import { checkNavSurfacesGuard, reportGuard, type LockProvenance } from './lib/nav-guards.js'
 
 function option(args: readonly string[], flag: string): string | undefined {
   const index = args.indexOf(flag)
@@ -30,13 +30,12 @@ export function run(args: readonly string[]): number {
       ? undefined
       : (JSON.parse(readFileSync(resolve(lockPath), 'utf8')) as LockProvenance)
   const result = checkNavSurfacesGuard(webRoot, lock)
-  if (result.problems.length === 0) {
-    process.stdout.write(`check-nav-surfaces: scanned ${result.scannedFiles} .svelte files — OK\n`)
-    return 0
-  }
-  process.stderr.write(`FATAL: nav surfaces (scanned ${result.scannedFiles} .svelte files):\n`)
-  for (const problem of result.problems) process.stderr.write(`  - ${problem}\n`)
-  return 1
+  const scanned = `scanned ${result.scannedFiles} .svelte files`
+  return reportGuard(
+    result.problems,
+    `check-nav-surfaces: ${scanned} — OK`,
+    `nav surfaces (${scanned})`
+  )
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

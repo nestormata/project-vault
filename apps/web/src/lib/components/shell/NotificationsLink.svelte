@@ -6,8 +6,7 @@
   composed app can change it or add its own items here.
 -->
 <script lang="ts">
-  import NavDisclosure from '$lib/navigation/NavDisclosure.svelte'
-  import NavEntry from '$lib/navigation/NavEntry.svelte'
+  import NavNodeEntry from '$lib/navigation/NavNodeEntry.svelte'
   import { renderSurface } from '$lib/navigation/build-surface.js'
 
   let { unreadCount = 0 }: { unreadCount?: number } = $props()
@@ -38,9 +37,7 @@
         </span>
       {/if}
     </a>
-  {:else if item.children.length > 0}
-    <NavDisclosure node={item} class={ITEM_CLASS} />
   {:else}
-    <NavEntry node={item} class={ITEM_CLASS} />
+    <NavNodeEntry node={item} class={ITEM_CLASS} />
   {/if}
 {/each}

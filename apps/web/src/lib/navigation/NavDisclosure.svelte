@@ -5,8 +5,8 @@
   node's own link first, then its children, at any depth.
 -->
 <script lang="ts">
-  import NavDisclosure from './NavDisclosure.svelte'
   import NavEntry from './NavEntry.svelte'
+  import NavNodeEntry from './NavNodeEntry.svelte'
   import type { NavNode } from './types.js'
 
   let { node, class: className }: { node: NavNode; class: string } = $props()
@@ -21,11 +21,7 @@
       <NavEntry node={{ ...node, children: [] }} class={className} />
     {/if}
     {#each node.children as child (child.id)}
-      {#if child.children.length > 0}
-        <NavDisclosure node={child} class={className} />
-      {:else}
-        <NavEntry node={child} class={className} />
-      {/if}
+      <NavNodeEntry node={child} class={className} />
     {/each}
   </div>
 </details>

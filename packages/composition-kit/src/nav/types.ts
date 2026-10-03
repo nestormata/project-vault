@@ -1,98 +1,110 @@
-// Story 68.7 AC-8 (ADR 0007 M5, design §7): the nav delta shapes for UI pack authors. A structural
-// twin of PV's own nav model (`apps/web/src/lib/navigation/types.ts` in web-host): the kit (MIT)
-// and web-host (AGPL) never import each other; a contract test in each proves the two assign both
-// ways. `H` is the internal href type: in a composed app CM's hrefs come from SvelteKit's
-// `resolve()` (`ResolvedPathname`), which is what PV's renderers accept.
+// Story 68.7 AC-8 (ADR 0007 M5, design §7): the nav delta shapes for UI pack authors. The kit (MIT)
+// and web-host (AGPL) never import each other: these types are a structural twin of web-host's nav
+// model, and a contract test on each side proves the two assign both ways. `Href` is the internal
+// href type: in a composed app CM's hrefs come from SvelteKit's `resolve()` (`ResolvedPathname`),
+// which is what PV's renderers accept.
 import type { Component } from 'svelte'
 
+/** A label: a constant string, or a function evaluated per render (locale-reactive). */
+export type NavLabel<Ctx> = string | ((ctx: Ctx) => string)
+
+/** How an item matches the current page: a predicate, `exact`, or `prefix` (the default). */
+export type NavMatch<Ctx> = ((ctx: Ctx) => boolean) | 'prefix' | 'exact'
+
+/** What an item renders as; omitted: `action` with `onSelect`, `group` with only children, else
+ * `link`. */
+export type NavKind = 'external' | 'badge-link' | 'group' | 'action' | 'link'
+
 /** An absolute external URL (`kind: 'external'`). */
-export type ExternalUrl = `https://${string}` | `http://${string}`
+export type ExternalUrl = `http://${string}` | `https://${string}`
 
-export type NavKind = 'link' | 'action' | 'group' | 'badge-link' | 'external'
-
-/** A label: a function evaluated per render (locale-reactive) or a constant string. */
-export type NavLabel<C> = ((ctx: C) => string) | string
-
-export type NavMatch<C> = 'exact' | 'prefix' | ((ctx: C) => boolean)
-
-export interface NavItemFields<C, H extends string = string> {
-  /** Default: `action` with `onSelect`, `group` with only children, else `link`. */
-  kind?: NavKind
+export interface NavItemFields<Ctx, Href extends string = string> {
   /** Required, also for an icon-only item: it is the item's accessible name. */
-  label: NavLabel<C>
-  mobileLabel?: NavLabel<C>
-  description?: NavLabel<C>
-  title?: NavLabel<C>
+  label: NavLabel<Ctx>
+  kind?: NavKind
   /** `link`/`badge-link`: a same-origin path from `resolve()`; `external`: an absolute URL. */
-  href?: (ctx: C) => H | ExternalUrl
-  query?: (ctx: C) => string
-  match?: NavMatch<C>
+  href?: (ctx: Ctx) => ExternalUrl | Href
+  /** Rendered right after the href (a tab's `?status=all`). */
+  query?: (ctx: Ctx) => string
+  match?: NavMatch<Ctx>
   /** Visibility (presentation only: hiding never protects a route). */
-  when?: (ctx: C) => boolean
+  when?: (ctx: Ctx) => boolean
+  /** `action` items. */
+  onSelect?: (ctx: Ctx) => Promise<void> | void
   /** A Svelte component (a string token renders nothing on data items). */
-  icon?: Component | string
+  icon?: string | Component
+  description?: NavLabel<Ctx>
+  mobileLabel?: NavLabel<Ctx>
+  title?: NavLabel<Ctx>
   shortcut?: string
-  onSelect?: (ctx: C) => void | Promise<void>
-  children?: NavItem<C, H>[]
+  children?: NavItem<Ctx, Href>[]
 }
 
-export interface NavItem<C, H extends string = string> extends NavItemFields<C, H> {
-  id: string
-}
+/** A nav item with its id (the pack's own ids follow PV's grammar; no prefix is required). */
+export type NavItem<Ctx, Href extends string = string> = NavItemFields<Ctx, Href> & { id: string }
 
 /** A replacement keeps the target id, so its item carries none. */
-export type NavReplacement<C, H extends string = string> = NavItemFields<C, H> & { id?: never }
-
-export interface NavLabels<C> {
-  label?: NavLabel<C>
-  mobileLabel?: NavLabel<C>
-  description?: NavLabel<C>
+export type NavReplacement<Ctx, Href extends string = string> = NavItemFields<Ctx, Href> & {
+  id?: never
 }
 
-/** Exactly one of `after`, `before` or `parent` (`parent: '<surfaceId>'` is the surface root). */
+/** Exactly one of `before`, `after` or `parent` (`parent: '<surfaceId>'` is the surface root). */
 export interface NavAnchor {
-  after?: string
   before?: string
+  after?: string
   parent?: string
 }
 
-export type NavOp<C, H extends string = string> =
-  | ({ op: 'insert'; item: NavItem<C, H> } & NavAnchor)
-  | { op: 'remove'; id: string }
-  | { op: 'hide'; id: string }
-  | { op: 'relabel'; id: string; label: NavLabel<C> | NavLabels<C> }
-  | ({ op: 'move'; id: string } & NavAnchor)
-  | { op: 'replace'; id: string; item: NavReplacement<C, H> }
-  | { op: 'reorder'; parent: string; ids: string[] }
-
-export interface NavUser {
-  isPlatformOperator: boolean
-  orgRole: string
+/** The labels `relabel` may change. */
+export interface NavLabels<Ctx> {
+  description?: NavLabel<Ctx>
+  label?: NavLabel<Ctx>
+  mobileLabel?: NavLabel<Ctx>
 }
 
-/** The context PV gives each of its surfaces (web-host's `manifests/nav-ids.json` lists every
- * surface and its context keys; a newer web-host may add surfaces this kit does not type yet). */
+type Insert<Ctx, Href extends string> = NavAnchor & { op: 'insert'; item: NavItem<Ctx, Href> }
+type Move = NavAnchor & { op: 'move'; id: string }
+
+/** One operation of a nav delta. */
+export type NavOp<Ctx, Href extends string = string> =
+  | Insert<Ctx, Href>
+  | Move
+  | { op: 'hide' | 'remove'; id: string }
+  | { op: 'replace'; id: string; item: NavReplacement<Ctx, Href> }
+  | { op: 'relabel'; id: string; label: NavLabels<Ctx> | NavLabel<Ctx> }
+  | { op: 'reorder'; parent: string; ids: string[] }
+
+/** What nav conditions read of the signed-in user. */
+export interface NavUser {
+  orgRole: string
+  isPlatformOperator: boolean
+}
+
+type At<Extra = unknown> = Extra & { pathname: string }
+
+/** The context PV gives each surface (web-host's `manifests/nav-ids.json` lists every surface and
+ * its context keys; a newer web-host may add surfaces this kit does not type yet). */
 export interface NavContexts {
-  primary: { pathname: string; user: NavUser; hasUiPanelExtension: boolean; search?: () => void }
-  project: { pathname: string; projectId: string; orgRole: string }
-  'shell.brand': { pathname: string; hidePrimaryNav: boolean }
-  'shell.utility': { pathname: string; unreadCount: number }
-  'shell.mfa-banner': { pathname: string; bannerMessage: string }
-  account: { pathname: string; user: NavUser }
-  footer: { pathname: string }
-  'settings.index': { pathname: string }
-  'platform.index': { pathname: string }
-  'platform.settings.links': { pathname: string }
-  'settings.audit.links': { pathname: string }
-  'notifications.tabs': { pathname: string; status: string }
-  breadcrumbs: { pathname: string; node: string }
-  back: { pathname: string; projectId: string; credentialId: string }
-  'error.nav': { pathname: string; authenticated: boolean }
-  'auth.links': { pathname: string }
+  primary: At<{ user: NavUser; hasUiPanelExtension: boolean; search?: () => void }>
+  project: At<{ projectId: string; orgRole: string }>
+  account: At<{ user: NavUser }>
+  'shell.brand': At<{ hidePrimaryNav: boolean }>
+  'shell.utility': At<{ unreadCount: number }>
+  'shell.mfa-banner': At<{ bannerMessage: string }>
+  'notifications.tabs': At<{ status: string }>
+  breadcrumbs: At<{ node: string }>
+  back: At<{ projectId: string; credentialId: string }>
+  'error.nav': At<{ authenticated: boolean }>
+  footer: At
+  'settings.index': At
+  'platform.index': At
+  'platform.settings.links': At
+  'settings.audit.links': At
+  'auth.links': At
 }
 
 /** A UI pack's nav delta: the operations per surface, applied in array order on top of PV's nav.
  * Known surfaces type their callbacks' context; any other surface key is accepted as well. */
 export type NavDelta = {
-  readonly [S in keyof NavContexts]?: readonly NavOp<NavContexts[S]>[]
+  readonly [Surface in keyof NavContexts]?: readonly NavOp<NavContexts[Surface]>[]
 } & { readonly [surface: string]: readonly NavOp<never>[] | undefined }

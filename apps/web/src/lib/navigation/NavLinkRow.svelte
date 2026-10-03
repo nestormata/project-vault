@@ -3,8 +3,7 @@
   with children becomes a disclosure.
 -->
 <script lang="ts">
-  import NavDisclosure from './NavDisclosure.svelte'
-  import NavEntry from './NavEntry.svelte'
+  import NavNodeEntry from './NavNodeEntry.svelte'
   import { renderSurface } from './build-surface.js'
 
   let {
@@ -17,7 +16,7 @@
   const GAP = ' '
 </script>
 
-{#each links as link, index (link.id)}{#if index > 0}{GAP}{/if}{#if link.children.length > 0}<NavDisclosure
-      node={link}
-      class={className}
-    />{:else}<NavEntry node={link} class={className} />{/if}{/each}
+{#each links as link, index (link.id)}{#if index > 0}{GAP}{/if}<NavNodeEntry
+    node={link}
+    class={className}
+  />{/each}

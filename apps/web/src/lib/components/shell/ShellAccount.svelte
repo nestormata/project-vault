@@ -6,8 +6,7 @@
   action plus whatever a composed app adds. Role and org stay display text.
 -->
 <script lang="ts">
-  import NavDisclosure from '$lib/navigation/NavDisclosure.svelte'
-  import NavEntry from '$lib/navigation/NavEntry.svelte'
+  import NavNodeEntry from '$lib/navigation/NavNodeEntry.svelte'
   import { renderSurface } from '$lib/navigation/build-surface.js'
 
   let { user }: { user: import('$lib/api/auth.js').AuthUser } = $props()
@@ -32,9 +31,7 @@
     >
       {item.label}
     </button>
-  {:else if item.children.length > 0}
-    <NavDisclosure node={item} class={ITEM_CLASS} />
   {:else}
-    <NavEntry node={item} class={ITEM_CLASS} />
+    <NavNodeEntry node={item} class={ITEM_CLASS} />
   {/if}
 {/each}

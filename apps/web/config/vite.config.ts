@@ -27,11 +27,21 @@ export function webHostPlugins(options: WebHostBuildOptions = {}): PluginOption[
   return [
     tailwindcss(),
     paraglideVitePlugin(paraglideOptions(options.appRoot, options.composedRoot)),
+    ...compositionProviders(options),
+    sveltekit(),
+  ]
+}
+
+/** PV's own answers to the composition virtual modules (injection points, hooks, nav), in that
+ * order, shared by the build and the test config. On a composed tree each refuses to build without
+ * the composition kit's plugin. */
+export function compositionProviders(options: WebHostBuildOptions = {}): PluginOption[] {
+  const composed = options.composedRoot !== undefined
+  return [
     injectionEntries(),
     emptyInjectionModules(),
-    emptyHooksModules({ composed: options.composedRoot !== undefined }),
-    emptyNavModule({ composed: options.composedRoot !== undefined }),
-    sveltekit(),
+    emptyHooksModules({ composed }),
+    emptyNavModule({ composed }),
   ]
 }
 

@@ -3,11 +3,8 @@
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
 import { sveltekit } from '@sveltejs/kit/vite'
 import { coverageConfigDefaults, mergeConfig, type ViteUserConfig } from 'vitest/config'
-import { emptyHooksModules } from './hooks-plugins.ts'
-import { emptyInjectionModules, injectionEntries } from './injection-plugins.ts'
-import { emptyNavModule } from './nav-plugins.ts'
 import { paraglideOptions } from './paths.ts'
-import type { WebHostBuildOptions } from './vite.config.ts'
+import { compositionProviders, type WebHostBuildOptions } from './vite.config.ts'
 
 /** The coverage defaults of PV's private @project-vault/tsconfig/vitest.base, inlined because a
  * web-host consumer cannot install that workspace package. A test pins the two as equal. */
@@ -28,10 +25,7 @@ function webHostTestConfig(options: WebHostBuildOptions): ViteUserConfig {
   return {
     plugins: [
       paraglideVitePlugin(paraglideOptions(options.appRoot, options.composedRoot)),
-      injectionEntries(),
-      emptyInjectionModules(),
-      emptyHooksModules({ composed: options.composedRoot !== undefined }),
-      emptyNavModule({ composed: options.composedRoot !== undefined }),
+      ...compositionProviders(options),
       sveltekit(),
     ],
     resolve: { conditions: ['browser'] },

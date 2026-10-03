@@ -155,7 +155,8 @@ export interface PointFile {
   names: { name: string | null; line: number }[]
 }
 
-function cmFiles(lock: LockProvenance | undefined): Set<string> {
+/** The files a composition lock records as CM's (provenance, never a path list). */
+export function cmFiles(lock: LockProvenance | undefined): Set<string> {
   const lists = [lock?.overrides, lock?.additions, lock?.materialized]
   return new Set(lists.flatMap((list) => list ?? []).map((entry) => entry.path))
 }

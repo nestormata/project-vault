@@ -7,19 +7,14 @@
  */
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { checkNavIdsGuard } from './lib/nav-guards.js'
+import { checkNavIdsGuard, reportGuard } from './lib/nav-guards.js'
 
 export function run(args: readonly string[]): number {
   const index = args.indexOf('--web')
   const webRoot = resolve(index === -1 ? 'apps/web' : (args[index + 1] ?? 'apps/web'))
   const result = checkNavIdsGuard(webRoot)
-  if (result.problems.length === 0) {
-    process.stdout.write(`check-nav-ids: ${result.ids} ids in ${result.surfaces} surfaces — OK\n`)
-    return 0
-  }
-  process.stderr.write('FATAL: nav ids:\n')
-  for (const problem of result.problems) process.stderr.write(`  - ${problem}\n`)
-  return 1
+  const ok = `check-nav-ids: ${result.ids} ids in ${result.surfaces} surfaces — OK`
+  return reportGuard(result.problems, ok, 'nav ids')
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

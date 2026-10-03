@@ -11,13 +11,13 @@
 // Integrity only. Nothing is exempted by a list or a flag: a file is left out only when it is CM's
 // (materialized under `_cm`, or recorded as CM's by a composition lock: provenance, never a path).
 import { existsSync, readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import ts from 'typescript'
+import { cmFiles, type LockProvenance } from './injection-point-coverage.js'
+import { svelteCompiler } from './route-files.js'
 import { toRepoPath, walkFiles } from './scan-utils.js'
 
-const requireFromWeb = createRequire(join(import.meta.dirname, '..', '..', 'apps/web/package.json'))
-const svelteCompiler = requireFromWeb('svelte/compiler') as typeof import('svelte/compiler')
+export type { LockProvenance }
 
 export const NAV_REGISTRY_FILE = 'src/lib/navigation/nav-registry.ts'
 const BUILDERS_DIR = 'src/lib/navigation/surfaces'
@@ -44,13 +44,6 @@ export interface RegistrySurface {
   ids: RegistryId[]
   /** Lines of items that have no id. */
   missing: number[]
-}
-
-/** The part of a `composition.lock.json` the guard reads: which files are CM's. */
-export interface LockProvenance {
-  overrides?: { path: string }[]
-  additions?: { path: string }[]
-  materialized?: { path: string }[]
 }
 
 function isNavIdText(id: string): boolean {
@@ -247,11 +240,6 @@ function navUses(code: string, file: string): { what: string; line: number }[] {
   return found
 }
 
-function cmFiles(lock: LockProvenance | undefined): Set<string> {
-  const lists = [lock?.overrides, lock?.additions, lock?.materialized]
-  return new Set(lists.flatMap((list) => list ?? []).map((entry) => entry.path))
-}
-
 export function checkNavSurfacesGuard(
   webRoot: string,
   lock?: LockProvenance
@@ -277,4 +265,14 @@ export function checkNavSurfacesGuard(
     }
   }
   return { problems, scannedFiles: files.length }
+}
+
+/** A guard's exit: 0 with its OK line, or 1 with every problem listed under its FATAL line. */
+export function reportGuard(problems: readonly string[], ok: string, fatal: string): number {
+  if (problems.length === 0) {
+    process.stdout.write(`${ok}\n`)
+    return 0
+  }
+  process.stderr.write([`FATAL: ${fatal}:`, ...problems.map((p) => `  - ${p}`), ''].join('\n'))
+  return 1
 }
