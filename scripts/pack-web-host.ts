@@ -78,6 +78,10 @@ import {
   rewriteSharedSource,
 } from '../apps/web/config/app-css-source.ts'
 import { paraglideOptions } from '../apps/web/config/paths.ts'
+import {
+  buildInjectionPointsManifest,
+  INJECTION_POINTS_MANIFEST,
+} from './lib/web-host/injection-points-manifest.js'
 import { npmPackArgs, packDestination } from './lib/web-host/pack-destination.js'
 
 export const REPO_ROOT = join(import.meta.dirname, '..')
@@ -447,6 +451,9 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
   const webGraph = walkImportGraph(roots, webResolver(), (path) => relativePosix(REPO_ROOT, path))
   problems.push(...webGraph.errors)
   const shared = vendorShared(problems)
+  // Story 68.4 AC-2: the injection point registry joined with the files that render each point.
+  const injectionPoints = buildInjectionPointsManifest(WEB_DIR)
+  problems.push(...injectionPoints.problems)
   log(
     `pack-web-host: import graph reached ${webGraph.files.size} web files, vendored ${shared.files.length} shared files`
   )
@@ -528,9 +535,10 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
     apiImageTag: releaseImageRef(options.repository, 'api', options.version),
   })
   writeFileSync(join(STAGE_DIR, 'manifests', 'compatibility.json'), compatibilityManifest)
+  writeFileSync(join(STAGE_DIR, 'manifests', INJECTION_POINTS_MANIFEST), injectionPoints.text)
   const optional = packOptionalManifests()
   writeFileSync(join(STAGE_DIR, MANIFEST), `${JSON.stringify(packageJson, null, 2)}\n`)
-  const manifests = ['compatibility.json', ...optional].join(', ')
+  const manifests = ['compatibility.json', INJECTION_POINTS_MANIFEST, ...optional].join(', ')
   log(
     `pack-web-host: done: ${options.version}, ${shippedWebFiles.length + shared.files.length} source files, ` +
       `manifests: ${manifests}`
