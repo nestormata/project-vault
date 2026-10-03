@@ -66,6 +66,157 @@ addition, removal and replacement, the materialized files, the contributions lat
 `excludedPvTests` and `apiRouteOverrides` are written empty: Story 68-9 fills the first, Stories
 68-3/68-8 (whichever lands second) wire the second.
 
+## Hooks, header policy and protected paths
+
+Story 68-6 (design §8). A pack contributes to every SvelteKit hook without replacing PV's hooks
+files, changes PV's security-header policy through the same contribution, and gets its `(app)`
+routes protected like PV's. A full-file override of `src/hooks.server.ts`, `src/hooks.ts` or
+`src/hooks.client.ts` stays allowed (M1); contributions are the normal path, not the only one.
+Nothing here limits what a pack may contribute: every validation is integrity only.
+
+### Wiring
+
+```ts
+// pv-ui.manifest.ts
+hooks: { server: './hooks.server.ts', universal: './hooks.universal.ts', client: './hooks.client.ts' },
+protectedPaths: { add: ['/public-cm'], remove: ['/(app)/cm-area/callback'] },
+
+// vite.config.ts and vitest.config.ts of the composed app
+import { pvHooks } from '@project-vault/composition-kit/vite'
+export default viteConfig({ plugins: [pvHooks({ appRoot })] }, { appRoot, composedRoot: appRoot })
+```
+
+`pvHooks()` (`enforce: 'pre'`) generates `virtual:pv-hooks/server`, `/universal` and `/client` from
+`composition.lock.json`: each re-exports the materialized CM file's namespace as `hooks` (empty when
+the pack has no such file), and the server module also exports the protected-path data. web-host
+ships its own empty provider for PV's build, and it **refuses to build a composed tree without
+`pvHooks()`** (`composed tree detected but pvHooks() from @project-vault/composition-kit/vite is not
+in the plugin list`), so a composed image can never silently ship without CM hooks or derived
+protection. In dev a change to the lock's hooks or protected-path contribution restarts the dev
+server (SvelteKit caches the server hooks behind a module-level `init_promise`).
+
+The server hook file is materialized under `src/lib/server/_cm/**`, so Kit's own server-only guard
+rejects a client import of it. Exports that are not hooks are ignored and noted (`hookLabel` is not a
+SvelteKit server hook; not composed), a near miss gets "did you mean `handle`?", and a hook in the
+wrong file (`reroute` in the server file) gets "move it to hooks.universal". If the pack also
+overrides the hooks file a contribution targets, the contribution is not composed (a note says so).
+
+### The contract: chain entry or `wrap`
+
+Every hook is a chain entry ("CM first, then PV") or `{ wrap: (pv) => replacement }`. When neither
+PV nor the pack defines a hook, the composed export is `undefined`, so SvelteKit's own default runs.
+Entries are called as plain functions. A throw or rejection propagates exactly as from PV's own hook.
+
+| Hook (file) | Chain entry | Chain semantics | `wrap` receives |
+|---|---|---|---|
+| `handle` (server) | `Handle`, or `{ before?, after?, wrap? }` | `[...before, wrap ? wrap(pv) : pv, ...after]` with `sequence()` semantics | PV's handle |
+| `handleFetch` (server) | `HandleFetch` | CM runs; its `fetch` is PV's `handleFetch` bound to the real fetch | PV's, or a passthrough |
+| `handleError` (server, client) | `HandleServerError` / `HandleClientError` | CM then PV, both awaited; CM's result unless `undefined` | PV's, or one returning `undefined` |
+| `handleValidationError` (server) | `HandleValidationError` | CM first; the first non-`undefined` result | PV's, or one returning `undefined` |
+| `init` (server, client) | `ServerInit` / `ClientInit` | CM then PV, awaited in order | PV's, or a no-op |
+| `reroute` (universal) | `Reroute` | CM first; a string wins, `undefined` falls through to PV | PV's, or one returning `undefined` |
+| `transport` (universal) | `Transport` | `{ ...pv, ...cm }`; the same key on both sides fails at start-up | PV's, or `{}` |
+
+**Where `handle` entries run (Q10).** `before` entries run outermost, before PV: there is no
+`locals.user` and no Paraglide locale yet, and they run for anonymous requests to protected paths
+too. `after` entries run inside PV, after PV's redirects and immediately before Kit's `resolve`:
+they see `locals.user` and `getLocale()`, and never run for a request PV redirected. `wrap(pv)`
+replaces PV's handle in place. Three examples:
+
+```ts
+// 1. A request id on every response (before).
+export const handle = { before: [async ({ event, resolve }) => {
+  const response = await resolve(event)
+  response.headers.set('x-request-id', crypto.randomUUID())
+  return response
+}] }
+// 2. Tenant-scoped data for signed-in users only (after).
+export const handle = { after: [({ event, resolve }) => {
+  event.locals.tenant = tenantOf(event.locals.user)
+  return resolve(event)
+}] }
+// 3. Full replacement of PV's handle (wrap): call pv zero, one or several times.
+export const handle = { wrap: (pv) => async (input) => (shouldSkip(input.event) ? input.resolve(input.event) : pv(input)) }
+```
+
+PV composes `handle` with its own `composeHandles()`: Kit `sequence()`'s semantics (forward
+pre-processing, reverse post-processing, innermost-first `transformPageChunk`, first-wins `preload`
+and `filterSerializedResponseHeaders`) without Kit's request store, proven by a differential test
+against the real `sequence()`. Two documented differences: no per-handle OpenTelemetry span, and
+`getRequestEvent()` inside a handle returns the request-level event, not one passed through
+`resolve(otherEvent)`.
+
+**Error logging (Q7).** PV defines no `handleError`, so in PV's build Kit's default logs every
+server error. Once a pack contributes `handleError`, that function is the export and Kit's default no
+longer runs, as in any SvelteKit app that defines `handleError`. Re-add logging in your own entry if
+you want it:
+
+```ts
+export const handleError = ({ error, status }) => { console.error(status, error) }
+```
+
+### Header policy
+
+PV's security headers are one data policy (`PV_HEADER_POLICY` in `$lib/security/header-policy.ts`):
+`defaults` plus exclusive `rules` (the first matching rule's headers replace the defaults). A rule
+matches `{ exact }`, a raw `{ startsWith }`, a Kit `{ routeId }` or a `{ test }` predicate. The
+composition sets the resolved headers with **one** `event.setHeaders` call per request, before the
+first handle. Kit applies `setHeaders` only to responses that went through `resolve`, so redirects a
+handle returns carry no policy headers (as before 68-6).
+
+A server hook file changes it with `export const headerPolicy = (pv) => ({ ...pv, ... })`. The
+returned policy is final: it may add, change or remove rules and defaults. It is validated
+(well-formed names and values, no CR/LF/NUL, no `set-cookie`, unique rule ids, one matcher key) and
+deep-frozen. It is **never refused**: `describeHeaderPolicyDelta(PV_HEADER_POLICY, composed)` records
+every added, changed and removed header and rule (a `test` predicate rule is reported as
+`(opaque match)`). PV's policy applies to CM UI exactly as to PV UI: no rule is keyed on where a
+route came from.
+
+- **Change headers through `headerPolicy`, not `event.setHeaders` in a handle:** a handle that sets a
+  name the policy already set makes Kit throw `"<name>" header is already set` on that request.
+- **Route-level `setHeaders` conflicts fail at start-up (Q2).** `/shares/[token]` and
+  `/external-shares/[token]` set `Referrer-Policy` in their `load`. A policy that would also set
+  `referrer-policy` there fails with a message naming the routes; exclude those paths in a rule, or
+  override those pages (M1).
+- **The legacy extension-panel CSP is outside the policy** (Nestor, 2026-10-02): paths under
+  `/extensions/panels/` keep exactly their frozen panel headers, and no contribution reaches them,
+  until Story 68-11 retires the panel.
+- **Start-up failures are caught in CI.** web-host ships `composed-hooks-init.test.ts`, which runs
+  every composition over the virtual modules: a bad policy, a hook of the wrong shape or a transport
+  collision fails the composed tree's test run before it can crash-loop a server.
+
+### Protected paths
+
+PV's protected prefixes are data (`PV_PROTECTED_PREFIXES`, segment-prefix: `/settings` covers
+`/settings` and `/settings/...`). `isProtectedRequest` is the one gate, used by both the vault
+readiness check and the anonymous redirect. A request is protected when its pathname matches a
+prefix, when Kit's matched route id (with `(group)` segments removed) matches a prefix, or when the
+route id is one the composer derived. The route-id test closes two bypasses: a `reroute` that maps an
+unprotected URL onto a protected route, and a percent-encoded URL (`/%73ettings/...`), which Kit
+decodes for matching but not in `event.url.pathname`.
+
+The composer **derives the exact route id** of every CM route under `src/routes/(app)/` (an addition
+or an override with a `+page.svelte`, `+page.ts`, `+page.server.ts` or `+server.ts`), so CM pages,
+their data requests, their form actions and their `+server` endpoints are gated by the hook. That
+matters because Kit runs no layout load for `+server` and runs a form action before any load.
+CM routes outside `(app)` are public by design and listed in a note.
+
+- `protectedPaths.add` adds path prefixes; `protectedPaths.remove` removes a prefix (PV's or an
+  added one) or a derived route id, for example an OAuth callback. Removing a PV prefix is allowed
+  and noted prominently. An entry that matches nothing is a note.
+- Integrity failures: an `add` entry not starting with `/`, containing `?` or `#`, or ending with `/`;
+  the same entry in `add` and `remove`; any protected prefix or derived route that covers `/login`,
+  `/register` or `/vault` (a guaranteed redirect loop).
+- The lock records `contributions.protectedPaths = { add, remove, derived: [{ routeId, urlPattern }] }`.
+  A lock written before 68-6 has no `derived` and is read as `derived: []`. Run with `--verbose` to
+  print each derived route.
+- **Remote functions are not gated by protected paths (Q9).** `$app/server` `query`/`form`/`command`
+  are served under `/_app/remote/...` with no route id; call `requireUser(getRequestEvent().locals)`
+  inside them.
+
+An older web-host without `manifests/hooks-surface.json` keeps the 68-3 behaviour: the files are
+materialized and the lock records them, with notes that hooks and protected paths are not applied.
+
 ## Drift and the upgrade flow
 
 Drift **fails** the build when an overridden or replaced PV file changed, when an injection point CM

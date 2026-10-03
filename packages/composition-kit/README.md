@@ -35,7 +35,7 @@ export default defineUiPack({
   },
   injections: { 'project.detail.tiles': [{ component: './injections/HealthTile.svelte', order: 10 }] },
   replacements: { '$lib/components/shell/GlobalSearch.svelte': { with: './replacements/GlobalSearch.svelte', hostSha256: '…' } },
-  hooks: { server: './hooks.server.ts' },
+  hooks: { server: './hooks.server.ts', universal: './hooks.universal.ts', client: './hooks.client.ts' },
   nav: './nav.ts',
   theme: './theme.css',
   messages: './messages',
@@ -86,6 +86,21 @@ export default svelteConfig({ composedRoot: import.meta.dirname, alias: { ...cmA
 path aliases you define in your own tsconfig are not understood by the composer: an import that is not
 relative is treated as a bare specifier and left alone.
 
+```ts
+// apps/pv-composed/vite.config.ts and vitest.config.ts (web-host 68-6 and later)
+import { pvHooks } from '@project-vault/composition-kit/vite'
+plugins: [pvHooks({ appRoot })]
+```
+
+`pvHooks()` generates `virtual:pv-hooks/server`, `/universal` and `/client` from the lock: your hook
+files and the protected-path data. web-host refuses to build a composed tree without it. Each hook is a
+chain entry ("yours first, then PV's") or `{ wrap: (pv) => replacement }`; `handle` also takes
+`{ before, after, wrap }`, and the server file may export `headerPolicy: (pv) => policy` to add,
+change or remove PV's security headers. Every CM route under `src/routes/(app)/` is protected by PV's
+hook automatically (its exact route id); `protectedPaths.add` adds path prefixes and
+`protectedPaths.remove` removes a prefix or a derived route. The full contract is in PV's
+`docs/composition-kit.md` ("Hooks, header policy and protected paths").
+
 ## The lock and drift
 
 `composition.lock.json` is committed. It holds hashes and paths only: no CM file content and no PV
@@ -124,6 +139,7 @@ version. All mismatches are reported in one run. There is no flag to skip the ch
 ```
 pv-compose --pack <dir> [--app <dir>] [--manifest <file>] [--host <dir>] [--lock <file>]
            [--module-pack <dir>] [--check] [--dry-run] [--accept-host <path>]... [--previous-host <dir>]
+           [--verbose]
 ```
 
 Exit codes: `0` success, `1` an integrity, drift, compatibility or `--check` failure (every problem is

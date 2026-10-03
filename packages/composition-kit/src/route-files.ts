@@ -25,10 +25,12 @@ export function routeIdOfFile(path: string): string | null {
 
 /** `/(app)/(nested)/reports/[id]` -> `/reports/[id]`. A linear split, not a regex (Sonar S8786). */
 export function stripRouteGroups(routeId: string): string {
-  const kept = routeId
-    .split('/')
-    .filter((segment) => !(segment.startsWith('(') && segment.endsWith(')')))
-  return kept.length > 1 ? kept.join('/') : '/'
+  let url = ''
+  for (const segment of routeId.split('/')) {
+    const isGroup = segment.startsWith('(') && segment.endsWith(')')
+    if (segment !== '' && !isGroup) url += `/${segment}`
+  }
+  return url === '' ? '/' : url
 }
 
 /** True for a route id inside the `(app)` group (its first segment). */

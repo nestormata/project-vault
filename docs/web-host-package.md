@@ -18,6 +18,7 @@ own app and builds it.
 | `vendor/shared/src/` | `@project-vault/shared`'s TypeScript source, vendored byte for byte. Only the files reachable from its three entry points are copied. |
 | `config/` | Compiled config factories (`.js` + `.d.ts`): `svelte.config`, `vite.config`, `vitest.config`, `app-css-source`. |
 | `manifests/compatibility.json` | The compatibility manifest (below). Later generated manifests (`injection-points.json`, `nav-ids.json`, `component-index.json`) land here when their stories ship. |
+| `manifests/hooks-surface.json` | Story 68-6: the SvelteKit hooks PV's composition covers per hooks file (`server`, `universal`, `client`, from PV's `HOOK_SURFACE`), `headerPolicy: true`, `protectedPaths: true` and PV's own `protectedPrefixes`. The composition kit reads it; with an older web-host that lacks it, hooks and protected paths stay unapplied. |
 | `tsconfig.base.json` | PV's compiler options, for a consumer's `tsconfig.json` to extend. |
 | `LICENSE`, `README.md` | AGPL-3.0-or-later, and what the package is. |
 
@@ -29,6 +30,15 @@ leaves `src/`. Cross-package tests, which read `apps/api`, `packages/db` or PV's
 are excluded and logged with the rule they break. The packages only the tests import
 (`@testing-library/svelte`, `jsdom`, `@vitest/coverage-v8`) are optional exact peers. The consumer
 fixture runs every shipped test from the tarball, and they must all pass.
+
+**Composition modules (Story 68-6).** A full override of a hooks file can rebuild PV's pipeline
+around its own code from `$lib/server/composition/index.js` (`createPvHandle`, `composeHandles`,
+`composeServerHooks`, `PV_HEADER_POLICY`, `composeProtectedPaths`, `PV_PROTECTED_PREFIXES`,
+`isProtectedRequest`) and the client-safe `$lib/composition/index.js` (`composeChainHook`,
+`composeUniversalHooks`, `composeClientHooks`, `HOOK_SURFACE`, the header-policy functions).
+`src/hooks.ts` and `src/hooks.client.ts` exist (empty compositions in PV's build). The vite and
+vitest factories include an empty provider for `virtual:pv-hooks/*` that refuses a composed tree
+without the kit's `pvHooks()` plugin. See [docs/composition-kit.md](composition-kit.md).
 
 Not shipped: cross-package tests, Playwright e2e, generated Paraglide output, build output, the
 Dockerfile and PV's dev tooling.
