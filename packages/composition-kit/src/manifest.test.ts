@@ -227,3 +227,38 @@ describe('loadManifest', () => {
     )
   })
 })
+
+describe('injection contributions: integrity only (Story 68.4 AC-4)', () => {
+  const entry = (extra: object = {}) => ({ component: './a.svelte', ...extra })
+
+  it('requires a finite order', () => {
+    for (const order of [Number.NaN, Number.POSITIVE_INFINITY, '1']) {
+      const result = validateManifest({
+        host: { pvRelease: '1.0.0' },
+        injections: { 'a.b.c': [entry({ order })] },
+      })
+      expect(result.problems).toEqual(['injections.a.b.c[0].order must be a finite number'])
+    }
+    expect(
+      validateManifest({
+        host: { pvRelease: '1.0.0' },
+        injections: { 'a.b.c': [entry({ order: -5 })] },
+      }).problems
+    ).toEqual([])
+  })
+
+  it('fails the same component listed twice at one point, but allows it at two points', () => {
+    const twice = validateManifest({
+      host: { pvRelease: '1.0.0' },
+      injections: { 'a.b.c': [entry(), entry({ order: 5 })] },
+    })
+    expect(twice.problems).toEqual([
+      'injections.a.b.c[1].component: ./a.svelte is already listed at this point',
+    ])
+    const twoPoints = validateManifest({
+      host: { pvRelease: '1.0.0' },
+      injections: { 'a.b.c': [entry()], 'd.e.f': [entry()] },
+    })
+    expect(twoPoints.problems).toEqual([])
+  })
+})
