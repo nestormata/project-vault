@@ -282,6 +282,15 @@ describe('the module pack entry is trusted but contained (Story 68.14 AC-4)', ()
     const pack = modulePack(world, entrySource({ override: [{ method: 'GET' }] }))
     expect(await failure(world, pack)).toContain('apiRoutes.override[0]')
   })
+
+  it('refuses a method the lock schema does not accept instead of writing an invalid lock', async () => {
+    const world = makeWorld()
+    const pack = modulePack(
+      world,
+      entrySource({ override: [{ method: 'get', url: '/x', mode: 'wrap' }] })
+    )
+    expect(await failure(world, pack)).toContain('apiRoutes.override[0].method must be one of')
+  })
 })
 
 describe('lockfileVersion migration (Story 68.14 OQ-1)', () => {

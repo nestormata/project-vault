@@ -28,6 +28,9 @@ export interface ModulePackRoutes {
 
 const MAX_ERROR_TEXT = 500
 
+/** The methods the lock schema accepts (the extension-api `API_ROUTE_METHODS` list). */
+const LOCK_METHODS: readonly string[] = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
+
 type Json = Record<string, unknown>
 
 const isRecord = (value: unknown): value is Json =>
@@ -100,6 +103,9 @@ function overrideFrom(raw: unknown, index: number): ApiRouteOverrideLock | strin
   const { method, url, mode, replaceSecurity } = raw
   if (typeof method !== 'string' || typeof url !== 'string') {
     return `${path} needs a string method and url`
+  }
+  if (!LOCK_METHODS.includes(method)) {
+    return `${path}.method must be one of ${LOCK_METHODS.join(', ')}`
   }
   if (mode !== 'replace' && mode !== 'wrap') return `${path}.mode must be 'replace' or 'wrap'`
   return { method, url: normalizeOverrideUrl(url), mode, replaceSecurity: replaceSecurity === true }
