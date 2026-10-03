@@ -139,7 +139,9 @@ cut `vX.Y.(Z+1)` (see
 verification fails after the push, do **not** re-run blindly — the immutable `X.Y.Z` image tag
 already exists. Follow the verification-failure procedure in
 [docs/runbook.md](runbook.md): publish `X.Y.Z+1`, or delete the package versions first and re-run
-via `workflow_dispatch`.
+via `workflow_dispatch`. The second option repairs the images only: the web-host Release gate
+(§9.2) does not count a `workflow_dispatch` run, so web-host `X.Y.Z` is then never published.
+Choose `X.Y.Z+1` whenever web-host must ship for this release.
 
 Post-publish verification:
 
@@ -360,11 +362,22 @@ The Release gate makes an early approval harmless. Without a published, non-draf
 tag and a successful `container-publish` run triggered by that tag's Release (event `release`,
 `head_branch` = the tag, `head_sha` = the tag's commit), each job fails before any upload with
 "no version was consumed". A `workflow_dispatch` recovery of `container-publish` does not count:
-it runs from `main`, so its commit does not identify the tag it built. If the Release run failed
-for a transient reason, **re-run its failed jobs** (that keeps the `release` event). Recovery: wait
-for H3 and a green `container-publish`, then **re-run failed jobs** on the same run. A container-publish run that failed its vulnerability scan (image
-published but not promoted) keeps the gate red on purpose: fix forward with `vX.Y.(Z+1)`. If the
-gate says "GitHub API error; retry the failed jobs", re-run the failed jobs.
+it runs from `main`, so its commit does not identify the tag it built. Its run name shows the tag,
+but the gate does not trust a run name (DW-508 records the stronger design to revisit if needed).
+
+Recovery depends on where the Release-triggered `container-publish` run failed:
+
+- **Before any image was pushed**, for a transient reason (a cancelled or flaky job), and within
+  GitHub's re-run window: **re-run its failed jobs** (that keeps the `release` event). Once it is
+  green, **re-run failed jobs** on the waiting web-host run.
+- **Anything else**: a failure after the push (version verification, or a vulnerability scan that
+  left `X.Y.Z` published but not promoted), a workflow bug fixed after the tag, or a run older than
+  the re-run window. A re-run cannot help: "Reject existing immutable release tag" stops it after
+  the push, and a re-run uses the tagged commit's workflow file. Fix forward with `vX.Y.(Z+1)`;
+  web-host `X.Y.Z` is skipped and never published. Precedent: v1.0.1's `container-publish` hit a
+  workflow bug (run 31212977824), and v1.0.2 shipped the next day.
+
+If the gate says "GitHub API error; retry the failed jobs", re-run the failed jobs.
 
 A job waiting for approval fails after 30 days (GitHub limit). If H3 takes that long, use
 **re-run all jobs** on the same tag; no version is consumed.
