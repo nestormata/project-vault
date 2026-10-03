@@ -1,4 +1,5 @@
 <script lang="ts">
+  import NavLinkRow from '$lib/navigation/NavLinkRow.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import DataTable from '$lib/components/tables/DataTable.svelte'
@@ -79,15 +80,7 @@
     </div>
   {:else}
     <div class="mt-6 flex flex-wrap gap-4 text-sm">
-      <a
-        href={resolve('/settings/audit/access-report')}
-        class="font-medium text-indigo-600 underline"
-      >
-        Access Report →
-      </a>
-      <a href={resolve('/settings/audit/forwarding')} class="font-medium text-indigo-600 underline">
-        Forwarding & Retention →
-      </a>
+      <NavLinkRow surface="settings.audit.links" />
     </div>
 
     {#if data.errorMessage}
