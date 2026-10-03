@@ -235,7 +235,8 @@ printed in one run, then a count), `2` a usage error. `--dry-run` writes nothing
 imports the pack's entry (`exports["."]`, else `main`; this runs the entry's top-level code) and records
 its `apiRoutes.override` table in the lock's `apiRouteOverrides` section (`lockfileVersion` 2): one
 `{ method, url, mode, replaceSecurity }` object per override, sorted. `hooksFactory()` is never called.
-A `lockfileVersion` 1 lock is read, rewritten as version 2 by the next `pv-compose`, and reported by
+A pack dir with no `main`/`exports["."]` is tolerated (empty table plus a note); a declared entry that
+is missing, throws or is malformed fails. A `lockfileVersion` 1 lock is read, rewritten as version 2 by the next `pv-compose`, and reported by
 `--check` as a version mismatch.
 
 ## Dev mode

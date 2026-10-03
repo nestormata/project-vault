@@ -12,6 +12,8 @@ import { compareCodeUnits } from './paths.js'
  * entry's top-level code (the pack is trusted first-party code, the same as building it), in the
  * kit's own working directory and with the process's own env: the kit adds nothing. The import
  * target is the resolved `file://` URL only, and must stay inside `<dir>` after `realpath`.
+ * A pack with no `main`/`exports["."]` is tolerated (an informational note, empty table): the flag
+ * predates the table and also only feeds the extension-api version check.
  */
 
 export interface ApiRouteOverrideLock {
@@ -24,6 +26,7 @@ export interface ApiRouteOverrideLock {
 export interface ModulePackRoutes {
   overrides: ApiRouteOverrideLock[]
   problems: string[]
+  notes: string[]
 }
 
 const MAX_ERROR_TEXT = 500
@@ -72,11 +75,16 @@ function readPackageJson(dir: string): { manifest?: Json; problem?: string } {
 }
 
 /** The pack entry's real path, inside `dir`, or the problem naming the pack. */
-function resolveEntry(dir: string): { path?: string; problem?: string } {
+function resolveEntry(dir: string): { path?: string; problem?: string; note?: string } {
   const pkg = readPackageJson(dir)
   if (pkg.manifest === undefined) return { problem: pkg.problem ?? `module pack ${dir} is invalid` }
   const entry = entryOf(pkg.manifest)
-  if (entry === undefined) return { problem: `module pack ${dir} has no main or exports["."]` }
+  if (entry === undefined) {
+    // `--module-pack` also serves the extension-api version check, which never needed an entry.
+    return {
+      note: `module pack ${dir} has no main or exports["."]: apiRouteOverrides not recorded`,
+    }
+  }
   const candidate = resolve(dir, entry)
   if (!existsSync(candidate) || !statSync(candidate).isFile()) {
     return { problem: `module pack ${dir}: entry ${entry} was not found` }
@@ -112,11 +120,12 @@ function overrideFrom(raw: unknown, index: number): ApiRouteOverrideLock | strin
 }
 
 function overridesOf(apiRoutes: unknown, dir: string): ModulePackRoutes {
-  if (apiRoutes === undefined) return { overrides: [], problems: [] }
+  if (apiRoutes === undefined) return { overrides: [], problems: [], notes: [] }
   const list = isRecord(apiRoutes) ? apiRoutes['override'] : undefined
   if (!isRecord(apiRoutes) || (list !== undefined && !Array.isArray(list))) {
     return {
       overrides: [],
+      notes: [],
       problems: [`module pack ${dir}: manifest.apiRoutes.override must be an array`],
     }
   }
@@ -132,13 +141,15 @@ function overridesOf(apiRoutes: unknown, dir: string): ModulePackRoutes {
   const overrides = [...byKey.entries()]
     .sort(([left], [right]) => compareCodeUnits(left, right))
     .map(([, entry]) => entry)
-  return { overrides, problems }
+  return { overrides, problems, notes: [] }
 }
 
 export async function readModulePackRoutes(dir: string): Promise<ModulePackRoutes> {
   const resolved = resolveEntry(dir)
   if (resolved.path === undefined) {
-    return { overrides: [], problems: [resolved.problem ?? `module pack ${dir} is invalid`] }
+    const notes = resolved.note === undefined ? [] : [resolved.note]
+    const problems = resolved.problem === undefined ? [] : [resolved.problem]
+    return { overrides: [], problems, notes }
   }
   let loaded: unknown
   try {
@@ -146,6 +157,7 @@ export async function readModulePackRoutes(dir: string): Promise<ModulePackRoute
   } catch (error) {
     return {
       overrides: [],
+      notes: [],
       problems: [`module pack ${dir} failed to import: ${describeError(error)}`],
     }
   }
@@ -154,6 +166,7 @@ export async function readModulePackRoutes(dir: string): Promise<ModulePackRoute
   if (!isRecord(manifest)) {
     return {
       overrides: [],
+      notes: [],
       problems: [`module pack ${dir}: module pack entry has no default.manifest`],
     }
   }

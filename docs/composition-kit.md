@@ -73,7 +73,10 @@ never refused, and `--check` compares it (a flipped `replaceSecurity` or a new o
 naming `apiRouteOverrides`). `apiRoutes.add` entries are not recorded. Without `--module-pack` the table
 is empty.
 
-`--module-pack <dir>` is the module pack's package root. The kit resolves the entry from
+`--module-pack <dir>` is the module pack's package root. A dir whose `package.json` has no `main` or
+`exports["."]` is tolerated (the flag also feeds the extension-api version check): the kit records an empty
+`apiRouteOverrides` and prints an informational note. An entry that is declared but missing, throws on
+import, or has a malformed manifest still fails naming the pack. The kit resolves the entry from
 `<dir>/package.json` (`exports["."]`, else `main`), imports it and reads `default.manifest.apiRoutes`
 only; it never calls `hooksFactory()`. **Importing runs the entry's top-level code**, exactly like
 building the pack does, in the kit's own working directory and with the process's own env (the kit adds

@@ -233,11 +233,19 @@ describe('the module pack entry is trusted but contained (Story 68.14 AC-4)', ()
     expect(await failure(world, noEntry)).toContain('entry dist/missing.js was not found')
     const bare = modulePack(world, 'export const x = 1\n', { name: 'bare' })
     expect(await failure(world, bare)).toContain('module pack entry has no default.manifest')
-    const noMain = modulePack(world, entrySource({}), {
+  })
+
+  it('a pack dir without main or exports is tolerated: empty table and an informational note', async () => {
+    const world = makeWorld()
+    const noMain = modulePack(world, entrySource({ override: [DASHBOARD_WRAP] }), {
       name: 'no-main',
       packageJson: { main: undefined },
     })
-    expect(await failure(world, noMain)).toContain('has no main or exports')
+    const result = await run(world, { modulePack: noMain })
+    expect(result.ok).toBe(true)
+    expect(lockOf(world)['apiRouteOverrides']).toEqual([])
+    expect(counters.__kit68_14?.imported).toBe(0)
+    expect(result.plan.notes.join('\n')).toContain('has no main or exports')
   })
 
   it('resolves exports["."] before main, including a conditions object', async () => {
