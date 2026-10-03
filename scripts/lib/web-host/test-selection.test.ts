@@ -4,6 +4,7 @@ import { classifyTest, relativePathLiterals, type TestSelectionContext } from '.
 
 // Story 68.2 (Nestor 2026-10-02): only self-contained unit tests ship. Each rule, on a fixture.
 
+const VITEST_IMPORT = "import { it } from 'vitest'"
 const WEB_SRC = '/repo/apps/web/src'
 const TEST = `${WEB_SRC}/lib/a.test.ts`
 
@@ -65,12 +66,24 @@ describe('classifyTest', () => {
 
   it("excludes the route render snapshot oracle, which is valid only on PV's own tree", () => {
     const file = `${WEB_SRC}/routes/route-render-snapshot.test.ts`
-    const result = classifyTest(file, "import { it } from 'vitest'", context({ [file]: '' }))
+    const result = classifyTest(file, VITEST_IMPORT, context({ [file]: '' }))
     expect(result.selfContained).toBe(false)
     expect(result.reasons).toEqual([
       "oracle of PV's own un-composed markup; valid only on PV's tree",
     ])
-    expect(classify("import { it } from 'vitest'").selfContained).toBe(true)
+    expect(classify(VITEST_IMPORT).selfContained).toBe(true)
+  })
+
+  it('excludes the structural pins of PV own build (hooks files, server files wiring)', () => {
+    for (const [name, reason] of [
+      ['hooks-files.test.ts', /hooks files with no contributions/],
+      ['routes/server-files-wiring.test.ts', /every page and layout server file/],
+    ] as const) {
+      const file = `${WEB_SRC}/${name}`
+      const result = classifyTest(file, VITEST_IMPORT, context({ [file]: '' }))
+      expect(result.selfContained, name).toBe(false)
+      expect(result.reasons[0], name).toMatch(reason)
+    }
   })
 
   it('ignores relative paths that only appear in comments', () => {

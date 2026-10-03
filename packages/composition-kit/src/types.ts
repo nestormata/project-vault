@@ -45,6 +45,9 @@ export interface UiPackManifest {
   /** A directory (relative to the pack root) of `<locale>.json` message overlays. */
   messages?: string
   protectedPaths?: { add?: string[]; remove?: string[] }
+  /** Story 68.9: a data module (path in the pack) with this pack's guard entries, authored with
+   * `defineGuardEntries()`. Optional: a pack that needs no carve-out has none. */
+  guards?: string
 }
 
 /** Story 68.6: the shape of `virtual:pv-hooks/universal` and `virtual:pv-hooks/client` (web-host

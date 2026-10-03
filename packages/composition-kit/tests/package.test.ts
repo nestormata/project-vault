@@ -13,7 +13,7 @@ describe('package.json (Story 68.3 AC-1)', () => {
   it('is MIT, ESM, public and provenance-published', () => {
     expect(manifest).toMatchObject({
       name: '@project-vault/composition-kit',
-      version: '0.4.0',
+      version: '0.5.0',
       license: 'MIT',
       type: 'module',
       publishConfig: {
@@ -28,7 +28,10 @@ describe('package.json (Story 68.3 AC-1)', () => {
   })
 
   it('exposes the pv-compose bin, the library entry and the Vite plugin entry', () => {
-    expect(manifest.bin).toEqual({ 'pv-compose': './dist/cli.js' })
+    expect(manifest.bin).toEqual({
+      'pv-compose': './dist/cli.js',
+      'pv-verify': './dist/verify-cli.js',
+    })
     const exportedEntries = Object.keys(manifest.exports as object).sort()
     expect(exportedEntries).toEqual(['.', './package.json', './pv-original', './vite'])
   })

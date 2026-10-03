@@ -1,22 +1,31 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { guardSourceRoot } from './guard-root.js'
 
+// Story 68.9 AC-6: the routes directory of the tree under test, PV's own or a composed app root.
 // Deliberately not `new URL('../../routes', import.meta.url)` — Vite's import-analysis plugin
 // statically rewrites that exact pattern into a dev-server asset URL (e.g.
 // `http://localhost:3000/src/routes`) regardless of intent, which breaks fs-path resolution here.
-const ROUTES_ROOT = path.join(import.meta.dirname, '../../routes')
+function routesRoot(): string {
+  return path.join(guardSourceRoot(), 'routes')
+}
 
-// SvelteKit route groups (parens) are layout-only and never appear in the URL, so a URL segment
-// can live directly under `routes/` or nested one level inside any of these groups.
-const ROUTE_GROUPS = ['(app)', '(auth)', '(vault)']
+// SvelteKit's definition of a route group: a directory whose whole name is `(name)`.
+const ROUTE_GROUP = /^\([^()]+\)$/
+
+/** `routes/` plus every route group under it, recursing only through groups (a group may nest in
+ * a group; groups are layout-only and never appear in the URL). */
+export function routeGroupRoots(root: string = routesRoot()): string[] {
+  if (!existsSync(root)) return []
+  const groups = readdirSync(root)
+    .filter((entry) => ROUTE_GROUP.test(entry) && statSync(path.join(root, entry)).isDirectory())
+    .sort()
+  return [root, ...groups.flatMap((group) => routeGroupRoots(path.join(root, group)))]
+}
 
 /** Shared directory-walk: does `+page.svelte` exist under any route group for these segments? */
 function existsInAnyRouteGroup(...segments: string[]): boolean {
-  const candidateRoots = [
-    ROUTES_ROOT,
-    ...ROUTE_GROUPS.map((group) => path.join(ROUTES_ROOT, group)),
-  ]
-  return candidateRoots.some((root) => existsSync(path.join(root, ...segments, '+page.svelte')))
+  return routeGroupRoots().some((root) => existsSync(path.join(root, ...segments, '+page.svelte')))
 }
 
 /**

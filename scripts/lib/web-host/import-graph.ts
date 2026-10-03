@@ -189,13 +189,18 @@ export function withoutQuery(specifier: string): string {
   return query === -1 ? specifier : specifier.slice(0, query)
 }
 
-type Resolved =
+export type Resolved =
   | { kind: 'package'; name: string }
   | { kind: 'file'; path: string }
   | { kind: 'external' }
   | { kind: 'missing' }
 
-function resolveSpecifier(specifier: string, importer: string, resolver: GraphResolver): Resolved {
+/** What one import specifier of `importer` names: a file, a package, something external, or nothing. */
+export function resolveSpecifier(
+  specifier: string,
+  importer: string,
+  resolver: GraphResolver
+): Resolved {
   const path = withoutQuery(specifier)
   const aliased = resolver.alias(path)
   const base = aliased ?? (path.startsWith('.') ? join(dirname(importer), path) : undefined)

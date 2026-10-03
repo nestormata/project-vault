@@ -89,4 +89,6 @@ export default defineUiPack({
   protectedPaths: { add: ['/public-cm'], remove: ['/(app)/cm-area/callback'] },
   theme: './theme.css',
   messages: './messages',
+  // Story 68.9: this pack's guard entries (a declared session-storage carve-out for one CM file).
+  guards: './pv-guards.ts',
 })

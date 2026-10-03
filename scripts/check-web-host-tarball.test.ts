@@ -358,9 +358,84 @@ describe('compatibility manifest (Story 68.2 AC-9)', () => {
     expect(paths.filter((path) => path.startsWith('manifests/')).sort()).toEqual([
       'manifests/compatibility.json',
       'manifests/component-index.json',
+      'manifests/guards.json',
       'manifests/hooks-surface.json',
       'manifests/injection-points.json',
+      'manifests/test-subjects.json',
     ])
+  })
+
+  // Story 68.9 AC-1/AC-10: the guard registry and the test-subject map are generated from the guard
+  // markers and the shipped tests, and every file they name is in the tarball.
+  interface PackedGuard {
+    id: string
+    kind: string
+    file: string
+    scope: string
+    license: string
+    closure: { file: string; sha256: string }[]
+    subjects?: string[]
+    subjectClosure?: string[]
+  }
+
+  async function packedGuards(): Promise<{ schemaVersion: number; guards: PackedGuard[] }> {
+    return JSON.parse(await fileText(join(STAGE_DIR, 'manifests', 'guards.json'))) as {
+      schemaVersion: number
+      guards: PackedGuard[]
+    }
+  }
+
+  it('ships a guard registry whose files and closure files are all in the tarball (Story 68.9 AC-1)', async () => {
+    const registry = await packedGuards()
+    expect(registry.schemaVersion).toBe(1)
+    expect(registry.guards.map((guard) => guard.id)).toEqual([
+      'form-guidance',
+      'form-secret-inputs',
+      'internal-api-choke-point',
+      'route-exists',
+      'static-hardening',
+      'tailwind-boundary',
+    ])
+    for (const guard of registry.guards) {
+      expect(paths, guard.id).toContain(guard.file)
+      expect(guard.scope, guard.id).toBe('all-files')
+      expect(guard.license).toBe('AGPL-3.0-or-later')
+    }
+    for (const entry of registry.guards.flatMap((guard) => guard.closure)) {
+      expect(paths, entry.file).toContain(entry.file)
+      expect(entry.sha256).toBe(sha256(await fileBytes(join(STAGE_DIR, entry.file))))
+    }
+  })
+
+  it('names a guard subject apart from its pristine helpers, and every subject file ships (Story 68.9 Q3)', async () => {
+    const hardening = (await packedGuards()).guards.find((guard) => guard.id === 'static-hardening')
+    expect(hardening?.closure.map((entry) => entry.file)).toContain('src/lib/test/guard-root.ts')
+    // hardening.ts is a SUBJECT of the guard (its header assertion), not guard machinery: it is
+    // staged from the composed app, so it is named separately and never hash-pinned.
+    expect(hardening?.closure.map((entry) => entry.file)).not.toContain(
+      'src/lib/security/hardening.ts'
+    )
+    expect(hardening?.subjects).toEqual(['src/lib/security/hardening.ts'])
+    for (const file of [...(hardening?.subjects ?? []), ...(hardening?.subjectClosure ?? [])]) {
+      expect(paths, file).toContain(file)
+    }
+  })
+
+  it('ships a test-subject map that names only shipped source files (Story 68.9 AC-10)', async () => {
+    const { schemaVersion, subjects } = JSON.parse(
+      await fileText(join(STAGE_DIR, 'manifests', 'test-subjects.json'))
+    ) as { schemaVersion: number; subjects: Record<string, string[]> }
+    expect(schemaVersion).toBe(1)
+    expect(Object.keys(subjects).length).toBeGreaterThan(50)
+    for (const [test, list] of Object.entries(subjects)) {
+      expect(paths, test).toContain(test)
+      for (const subject of list) {
+        expect(paths, `${test} -> ${subject}`).toContain(subject)
+        expect(isTestFile(subject), subject).toBe(false)
+        expect(subject.startsWith('src/lib/test/'), subject).toBe(false)
+      }
+    }
+    expect(subjects['src/lib/security/static-hardening.test.ts']).toBeUndefined()
   })
 
   it('packs hooks-surface.json from PV HOOK_SURFACE and protected prefixes (Story 68.6 AC-12)', async () => {

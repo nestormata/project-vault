@@ -33,6 +33,7 @@ export const PACKAGE_FILES = [
   'LICENSE',
   'README.md',
   'config',
+  'guards',
   'inlang-plugins',
   'manifests',
   'messages',
@@ -84,6 +85,8 @@ function packageExports(): Record<string, unknown> {
   return {
     './package.json': './package.json',
     ...configs,
+    // Story 68.9: compiled script guards (`guards/form-guidance.js`), imported by the kit's pv-verify.
+    './guards/*': { types: './guards/*.d.ts', default: './guards/*.js' },
     './manifest': './manifests/compatibility.json',
     './manifests/*': './manifests/*',
     './tsconfig.base.json': './tsconfig.base.json',
