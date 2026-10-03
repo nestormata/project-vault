@@ -288,13 +288,30 @@ function planOverrides(
   }
 }
 
+/** TypeScript's "write `.js`, mean `.ts`" convention: the import spelling and the file on disk. */
+const TS_SPELLING: ReadonlyMap<string, string> = new Map([
+  ['.js', '.ts'],
+  ['.jsx', '.tsx'],
+  ['.mjs', '.mts'],
+])
+
+function tsSpelling(base: string): string[] {
+  for (const [js, ts] of TS_SPELLING) {
+    if (base.endsWith(js)) return [`${base.slice(0, -js.length)}${ts}`]
+  }
+  return []
+}
+
+/** The web-host files a `$lib/...` key can mean: the spelled path, with an extension appended, as a
+ * directory index, or (for `.js`, `.jsx`, `.mjs`) as the TypeScript file PV's import really names. */
 export function resolveLibTarget(target: string, hostPaths: ReadonlySet<string>): string[] {
   const base = `${LIB}${target.slice('$lib/'.length)}`
   const candidates = [
     ...LIB_EXTENSIONS.map((extension) => `${base}${extension}`),
+    ...tsSpelling(base),
     ...LIB_INDEXES.map((suffix) => `${base}${suffix}`),
   ]
-  return candidates.filter((candidate) => hostPaths.has(candidate))
+  return [...new Set(candidates)].filter((candidate) => hostPaths.has(candidate))
 }
 
 function replacementTarget(input: OverlayInput, target: string, out: OverlayResult): string | null {

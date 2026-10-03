@@ -30,11 +30,20 @@ import { defineUiPack } from '@project-vault/composition-kit'
 export default defineUiPack({
   host: { pvRelease: '1.4.0' }, // the exact web-host version this pack targets
   routes: {
-    overrides: [{ path: 'src/routes/(app)/dashboard/+page.svelte', hostSha256: '…', story: 'ACME-1' }],
+    overrides: [
+      { path: 'src/routes/(app)/dashboard/+page.svelte', hostSha256: '…', story: 'ACME-1' },
+    ],
     remove: ['/(app)/extensions/panels'], // route ids, files (src/..., static/...) or static assets
   },
-  injections: { 'project.detail.tiles': [{ component: './injections/HealthTile.svelte', order: 10 }] },
-  replacements: { '$lib/components/shell/GlobalSearch.svelte': { with: './replacements/GlobalSearch.svelte', hostSha256: '…' } },
+  injections: {
+    'project.detail.tiles': [{ component: './injections/HealthTile.svelte', order: 10 }],
+  },
+  replacements: {
+    '$lib/components/shell/GlobalSearch.svelte': {
+      with: './replacements/GlobalSearch.svelte',
+      hostSha256: '…',
+    },
+  },
   hooks: { server: './hooks.server.ts' },
   nav: './nav.ts',
   theme: './theme.css',
@@ -85,6 +94,76 @@ export default svelteConfig({ composedRoot: import.meta.dirname, alias: { ...cmA
 `cmAlias()` returns `{ $cm: 'src/lib/_cm' }`. The composer never writes `svelte.config.js`. TypeScript
 path aliases you define in your own tsconfig are not understood by the composer: an import that is not
 relative is treated as a bare specifier and left alone.
+
+## Component and module replacement (M4)
+
+`replacements` swaps any module under PV's `src/lib` (a Svelte component, a `$lib/server/*` module, a
+`$lib/api/*` client) **by its resolved absolute path**, so every import of that file loads yours,
+whichever way PV writes it (`$lib/...`, a relative path, with or without `?raw`). The composer
+materializes your file under `src/lib/_cm/**` (`src/lib/server/_cm/**` for a `$lib/server` target) and
+leaves PV's file untouched. The shadowing is done at build time by one Vite plugin.
+
+```ts
+// vite.config.ts: viteConfig() appends your plugins AFTER PV's, which is where pvReplace() belongs
+import { pvReplace } from '@project-vault/composition-kit/vite'
+export default viteConfig({ plugins: [pvReplace({ appRoot })] }, { appRoot, composedRoot: appRoot })
+```
+
+- **The map.** `pv-compose` writes `.pv-compose/replacements.json` (`{ schemaVersion: 1, replacements:
+[{ target, host, with }] }`, sorted, relative paths, deterministic) on every compose, an empty one when
+  the manifest has no replacements. Add `/.pv-compose/` to your app's `.gitignore`: it is generated, never
+  committed, and not part of the lock (the lock records the same facts). `pvReplace()` fails the build
+  when the map is missing (a skipped compose would silently serve PV's originals), has an unknown
+  `schemaVersion`, names a `with` file that is not there (`run pv-compose`), escapes `<appRoot>/src`, or
+  lists an entry the committed lock does not.
+- **Wrap PV's original first.** `import Original from 'pv-original:$lib/components/shell/ShellAccount.svelte'`
+  gives your replacement PV's own file, resolved by the same specifier PV would write (`$lib/...`, or a
+  relative path from your file, resolved straight from disk under `<appRoot>/src`; any other specifier
+  goes through Vite's resolver) and returned unchanged, bypassing the map. This is the pattern to start
+  from: render `<Original {...props} />` inside your own markup, or `export *` from the original module
+  and override one function. It works in the client and in SSR.
+- **A self-import is a cycle.** Importing the replaced target by its normal specifier from inside its
+  own replacement resolves to the replacement itself. Use `pv-original:` to reach PV's file.
+- **A replaced stateful module is two modules.** If you replace `$lib/state/theme.svelte.ts` and wrap the
+  original, PV's original module instance (and its state) still exists next to yours, and PV's other
+  files import yours. State is not shared between the two: re-export the original's store from the
+  replacement.
+- **Server modules stay server-only.** A `$lib/server/*` replacement lives under `src/lib/server/_cm`,
+  so Kit's own guard still fails a client import of it. It runs in PV's web server process with the same
+  trust as the file it shadows (CentralizeMe's UI is trusted first-party code; the kit adds no sandbox,
+  no wrapper component and no `try`/`catch`).
+- **Spellings.** Keys are `$lib/...` paths. A `.js`, `.jsx` or `.mjs` key matches the `.ts`, `.tsx` or
+  `.mts` file (PV imports `$lib/state/theme.svelte.js` for `theme.svelte.ts`), with the same ambiguity
+  rule as every other key.
+- **Plugin order.** List `pvReplace()` AFTER PV's plugins, `sveltekit()` among them (what
+  `viteConfig({ plugins: [pvReplace(...)] })` does). SvelteKit's import guard resolves every import
+  itself to record who imports what, and only sees an import a later plugin answers; listed before it,
+  `pvReplace()` answers first, so a client import of a replaced `$lib/server` module still fails the
+  build but with "An impossible situation occurred" instead of SvelteKit's own message naming the
+  import chain.
+- **Unit tests.** To run PV's unit tests over a composed tree with the same replacements the build
+  applies, list `pvReplace()` in the vitest `plugins` too (share one plugin list between
+  `vite.config.ts` and `vitest.config.ts`). Without it the same import yields PV's original file.
+  `vi.mock('$lib/x')` of a replaced file mocks the REPLACEMENT (the resolved id).
+- **Types.** `pv-compose` also writes `src/lib/_cm/_pv-original.d.ts`, a generated, types-only
+  `declare module 'pv-original:<specifier>'` for every replaced file, so a `pv-original:` import has PV's
+  original type exactly (`@project-vault/composition-kit/pv-original` is the `.svelte` fallback for a file
+  nothing replaced). **`svelte-check` types PV's call sites against PV's original file, not against your
+  replacement:** a replacement that drops a required prop is not reported at PV's call site, so your own
+  tests must cover the replacement's contract.
+- **`@pv-stable` and `component-index.json` are signals, never gates.** `web-host` ships
+  `manifests/component-index.json`: every UI module with `stability` (`stable` when the first comment of
+  the file carries `@pv-stable`, otherwise `unmarked`; PV promises nothing about an unmarked one) and the
+  raw-bytes SHA-256 you would put in `hostSha256`. The kit adds informational lock `notes`
+  (`replacement <target>: stable`, a note for a server-side module, a note for a target not in the
+  index). Any module may be replaced, stable or not; a note never fails a build.
+- **Dev mode.** With `pvComposeDev`, adding, removing or retargeting a replacement reloads the map and
+  invalidates the affected modules (and their importers) in the client and SSR graphs; no restart.
+
+**Choosing between replacement and override or injection** (ADR 0007 guardrail 3): choose whichever
+mechanism delivers the intended UX and behaviour. When two mechanisms deliver it **equally**, prefer the
+one with the lower drift cost. Never accept a worse UX or missing behaviour to avoid an override: when
+injection falls short, replacement or override is the correct choice, not a compromise.
 
 ## The lock and drift
 
