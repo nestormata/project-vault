@@ -21,9 +21,29 @@ export interface PvHandleOptions {
   protectedPaths: ProtectedPaths
 }
 
-function appendSetCookies(response: Response, setCookies: string[]) {
+function withMutableHeaders(response: Response): Response {
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: new Headers(response.headers),
+  })
+}
+
+function appendAll(response: Response, setCookies: string[]) {
   for (const setCookie of setCookies) response.headers.append('set-cookie', setCookie)
   return response
+}
+
+function appendSetCookies(response: Response, setCookies: string[]) {
+  if (setCookies.length === 0) return response
+  try {
+    return appendAll(response, setCookies)
+  } catch {
+    // Code review 68-6: a contributed `after`/`wrap` handle may return a Response whose headers are
+    // immutable (`Response.redirect()`, a proxied `fetch()`); the first append throws before any
+    // change, so copy it (same status, status text, headers and body stream) and append there.
+    return appendAll(withMutableHeaders(response), setCookies)
+  }
 }
 
 function redirectWithCookies(location: string, setCookies: string[]) {

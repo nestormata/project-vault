@@ -130,6 +130,34 @@ describe('Q10 placement: before outermost, after inside PV right before resolve'
     expect(log).toEqual(['before', 'wrap:pre', 'after', 'wrap:post'])
   })
 
+  // Code review 68-6: an `after` handle may return a Response whose headers are immutable
+  // (`Response.redirect()`, a proxied `fetch()`); forwarding refreshed cookies onto it must not
+  // throw (it used to be a 500 exactly when a token refresh happened).
+  for (const [label, make] of [
+    ['Response.redirect()', async () => Response.redirect('http://pv.test/elsewhere', 302)],
+    ['a fetch-proxied response', async () => fetch('data:text/plain,proxied')],
+  ] as const) {
+    it(`refreshed cookies are forwarded onto ${label} from an after handle`, async () => {
+      const upstream = await make()
+      expect(() => upstream.headers.append('x-probe', '1')).toThrow(TypeError)
+      resolveAuthContextMock.mockImplementation(
+        async ({ forwardSetCookie }: { forwardSetCookie: (value: string) => void }) => {
+          forwardSetCookie('access-token=renewed; Path=/; HttpOnly')
+          return { status: 'authenticated', user: { id: 'u1' } }
+        }
+      )
+      const response = await make()
+      const hooks = compose({ handle: { after: [(() => response) satisfies Handle] } })
+      const req = fakeKitRequest('/settings', { routeId: '/(app)/settings', cookie: 'r=1' })
+      const out = await hooks.handle({ event: req.event, resolve: req.resolve } as never)
+      expect(out.status).toBe(response.status)
+      expect(out.headers.get('location')).toBe(response.headers.get('location'))
+      expect(out.headers.get('content-type')).toBe(response.headers.get('content-type'))
+      expect(out.headers.getSetCookie()).toEqual(['access-token=renewed; Path=/; HttpOnly'])
+      expect(await out.text()).toBe(label === 'Response.redirect()' ? '' : 'proxied')
+    })
+  }
+
   it('a function contribution is one before entry', async () => {
     const seen = vi.fn(({ event, resolve }: Parameters<Handle>[0]) => resolve(event))
     const hooks = compose({ handle: seen })
