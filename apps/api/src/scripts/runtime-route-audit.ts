@@ -13,6 +13,7 @@ import {
   type ClassificationEntry,
 } from '../extensions/api-routes/route-audit.js'
 import type { ObservedRoute } from '../extensions/api-routes/route-observer.js'
+import { DB_FREE_LOADER_DEPS, flagPairs, isBarePackageSpecifier } from './script-shared.js'
 import { prepareSpecGenerationEnv } from './spec-env.js'
 
 /**
@@ -45,30 +46,10 @@ export type AuditArgs = { extension?: string; classifications?: string }
 
 export const USAGE = 'usage: route-audit:runtime [--extension <package>] [--classifications <file>]'
 
-// A bare npm package specifier: `name` or `@scope/name`, each segment a lowercase npm name part.
-// Never a path, URL or version.
-const PACKAGE_SEGMENT_PATTERN = /^[a-z0-9][a-z0-9._-]*$/u
-
-function isBarePackageSpecifier(value: string): boolean {
-  const segments = value.startsWith('@') ? value.slice(1).split('/') : [value]
-  const expected = value.startsWith('@') ? 2 : 1
-  return (
-    segments.length === expected &&
-    segments.every((segment) => PACKAGE_SEGMENT_PATTERN.test(segment))
-  )
-}
-
 const FLAGS = new Map<string, keyof AuditArgs>([
   ['--extension', 'extension'],
   ['--classifications', 'classifications'],
 ])
-
-function flagPairs(argv: readonly string[]): Array<[string, string | undefined]> {
-  return Array.from({ length: Math.ceil(argv.length / 2) }, (_unused, pair) => {
-    const [flag, value] = argv.slice(pair * 2, pair * 2 + 2)
-    return [flag ?? '', value]
-  })
-}
 
 export function parseAuditArgs(argv: readonly string[]): AuditArgs {
   const parsed = new Map<keyof AuditArgs, string>()
@@ -102,12 +83,6 @@ export type AuditDeps = {
   loaderDeps?: NonNullable<AppOptions['extension']>['loaderDeps']
   /** PV's classification table; tests substitute a mutated copy. Defaults to the real one. */
   pvEntries?: readonly ClassificationEntry[]
-}
-
-/** The loader's DB-free stubs: no org to enumerate, no audit row to write. */
-export const DB_FREE_LOADER_DEPS: NonNullable<AuditDeps['loaderDeps']> = {
-  listOrgIds: async () => [],
-  auditWriter: async () => undefined,
 }
 
 /** Boots the app, collects every route and classifies it. Never sends a request. */
