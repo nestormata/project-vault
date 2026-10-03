@@ -150,8 +150,9 @@ jobs:
         run: |
           set -uo pipefail
           KIT_VERSION="${{ steps.kit.outputs.version }}"
-          OUTPUT="$(npm view "@project-vault/composition-kit@${KIT_VERSION}" version 2>&1)"
-          STATUS=$?
+          # GitHub starts `shell: bash` with -e and `set -uo` does not clear it: a bare failing
+          # substitution would abort here, silently, on the normal "not on npm yet" E404.
+          OUTPUT="$(npm view "@project-vault/composition-kit@${KIT_VERSION}" version 2>&1)" && STATUS=0 || STATUS=$?
           if [[ $STATUS -eq 0 ]]; then
             echo "published=true" >> "$GITHUB_OUTPUT"
             echo "@project-vault/composition-kit@${KIT_VERSION} is already on npm; nothing to publish."
@@ -272,8 +273,8 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          OUTPUT="$(npm view "@project-vault/web-host@${RELEASE_VERSION}" version 2>&1)"
-          STATUS=$?
+          # Same -e trap as the kit step above: capture the failure instead of aborting on it.
+          OUTPUT="$(npm view "@project-vault/web-host@${RELEASE_VERSION}" version 2>&1)" && STATUS=0 || STATUS=$?
           if [[ $STATUS -eq 0 ]]; then
             echo "FATAL: @project-vault/web-host@${RELEASE_VERSION} is already published. npm versions are immutable; cut a new PV release." >&2
             exit 1
