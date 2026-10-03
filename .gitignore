@@ -32,6 +32,8 @@ reports/
 
 # Playwright (Story 10-1)
 apps/web/e2e/test-results/
+# Story 68.10: the mechanism e2e output (named so the generic `reports/` and `coverage/` patterns do not hide it from CI artifacts).
+apps/web/playwright-mechanism-output/
 
 # Editor directories
 .vscode/

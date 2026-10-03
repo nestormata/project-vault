@@ -65,6 +65,7 @@ const ADD_MASK = '::add-mask::'
 const GITHUB_ACTIONS = 'GITHUB_ACTIONS'
 const BASE_COMPOSE = 'docker-compose.yml'
 const E2E_COMPOSE = 'docker-compose.e2e.yml'
+const MOCK_PACK_COMPOSE = 'docker-compose.mock-ui-pack.yml'
 
 // Read at transform time by Vite as raw text: the same lint-clean loading pattern as
 // check-action-pins.test.ts (Story 64.2) and check-image-scan-workflows.test.ts (Story 64.3).
@@ -74,7 +75,9 @@ const REPO_TEXT: Record<string, string> = import.meta.glob(
     '../.github/workflows/nightly.yml',
     '../docker-compose.yml',
     '../docker-compose.e2e.yml',
+    '../docker-compose.mock-ui-pack.yml',
     './e2e-stack.sh',
+    './e2e-free-ports.mjs',
   ],
   { query: '?raw', import: 'default', eager: true }
 )
@@ -657,5 +660,112 @@ describe('Story 60.6 AC7: e2e-only handoff wiring', () => {
       }
     }
     expect(repoText(BASE_COMPOSE)).not.toContain('VAULT_HANDOFF_ENABLED')
+  })
+})
+
+// --- Story 68.10 AC-2.4 / AC-2.5 / AC-2.11: the mock-ui-pack flavour of the e2e stack ---------------
+
+const FLAVOR_ENV = 'E2E_STACK_FLAVOR'
+const MOCK_PACK_FLAVOR = 'mock-ui-pack'
+const FREE_PORTS_HELPER = resolve(process.cwd(), 'scripts/e2e-free-ports.mjs')
+
+describe('Story 68.10: the mock-ui-pack flavour of the e2e stack', () => {
+  it('layers on the e2e override and changes only the pack-specific keys', () => {
+    const text = repoText(MOCK_PACK_COMPOSE)
+    const compose = parseYaml(text, { logLevel: 'error' }) as Compose
+    expect(Object.keys(compose.services ?? {}).sort()).toEqual(['api', 'api-faulty', 'db', 'web'])
+    const api = compose.services?.api
+    expect(api?.environment?.['VAULT_EXTENSIONS_PACKAGE']).toBe('@project-vault/mock-ui-pack')
+    expect(api?.environment?.['VAULT_EXTENSIONS_REQUIRED']).toBe('true')
+    expect(api?.build?.args?.['INCLUDE_MOCK_UI_PACK_MODULE']).toBe('true')
+    expect(codeLines(text).join('\n')).not.toContain('NODE_ENV')
+  })
+
+  it('wires the flavour into the script by file list', () => {
+    const script = repoText(SCRIPT)
+    expect(script).toContain('COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.e2e.yml)')
+    expect(script).toContain('COMPOSE_FILES+=(-f docker-compose.mock-ui-pack.yml)')
+  })
+
+  it('keeps the pack, its build arg and its fault knob out of the base and e2e compose files', () => {
+    for (const path of [BASE_COMPOSE, E2E_COMPOSE]) {
+      const text = repoText(path)
+      for (const marker of [
+        '@project-vault/mock-ui-pack',
+        'INCLUDE_MOCK_UI_PACK_MODULE',
+        'MOCK_UI_PACK_BOOT_FAULT',
+        'api-faulty',
+      ]) {
+        expect(text, `${path} must not contain ${marker}`).not.toContain(marker)
+      }
+    }
+  })
+
+  it('gates the fault service behind a profile so `up` never starts it and rebinds ports to loopback', () => {
+    const text = repoText(MOCK_PACK_COMPOSE)
+    expect(text).toMatch(/api-faulty:\n\s+profiles: \['fault'\]/)
+    expect(text).toContain('MOCK_UI_PACK_BOOT_FAULT: missing-target')
+    for (const name of ['API_HOST_PORT', 'WEB_HOST_PORT', 'DB_HOST_PORT']) {
+      expect(text).toContain(`'127.0.0.1:\${${name}:?`)
+    }
+    // only the one-shot services are exempt from the failed-container check
+    expect(repoText(SCRIPT)).toContain('ONE_SHOT_SERVICES=" migrate admin-provision "')
+  })
+
+  it('plan prints per-run distinct ports, a localhost origin and a unique project name, no secrets', () => {
+    const first = runScript(['plan'], { [FLAVOR_ENV]: MOCK_PACK_FLAVOR })
+    const second = runScript(['plan'], { [FLAVOR_ENV]: MOCK_PACK_FLAVOR })
+    expect(first.status, first.stderr).toBe(0)
+    const read = (stdout: string): Record<string, string> =>
+      Object.fromEntries(
+        stdout
+          .trim()
+          .split('\n')
+          .map((line) => line.split('=') as [string, string])
+      )
+    const a = read(first.stdout)
+    const b = read(second.stdout)
+    const ports = [a['WEB_HOST_PORT'], a['API_HOST_PORT'], a['DB_HOST_PORT']]
+    expect(new Set(ports).size).toBe(3)
+    for (const port of ports) expect(Number(port)).toBeGreaterThan(1023)
+    expect(a['PUBLIC_WEB_ORIGIN']).toBe(`http://localhost:${a['WEB_HOST_PORT']}`)
+    expect(a['COMPOSE_PROJECT_NAME']).toMatch(/^pv-mock-ui-pack-[0-9a-f]{8}$/)
+    expect(a['COMPOSE_PROJECT_NAME']).not.toBe(b['COMPOSE_PROJECT_NAME'])
+    expect(`${first.stdout}${first.stderr}`).not.toMatch(HEX64)
+  })
+
+  it('refuses an unknown flavour, a plan without the flavour and a start without its inputs', () => {
+    expect(runScript(['plan'], { [FLAVOR_ENV]: 'nope' }).status).toBe(2)
+    const noFlavor = runScript(['plan'])
+    expect(noFlavor.status).toBe(1)
+    expect(noFlavor.stderr).toContain('plan needs E2E_STACK_FLAVOR=mock-ui-pack')
+    const noInputs = runScript(['up'], { [FLAVOR_ENV]: MOCK_PACK_FLAVOR })
+    expect(noInputs.status).toBe(1)
+    expect(noInputs.stderr).toContain('WEB_HOST_PORT is unset for the mock-ui-pack flavour')
+    const noProject = runScript(['down'], { [FLAVOR_ENV]: MOCK_PACK_FLAVOR })
+    expect(noProject.status).toBe(1)
+    expect(noProject.stderr).toContain('refusing to take down the default project')
+  })
+
+  it('never reads the flavour ports from the local config file', () => {
+    const run = runScript(['wait'], { [FLAVOR_ENV]: MOCK_PACK_FLAVOR })
+    expect(run.status).toBe(1)
+    expect(run.stderr).toContain('API_HOST_PORT is unset')
+  })
+
+  it('allocates host ports with a bounded re-allocation and no fixed-port fallback', () => {
+    const helper = repoText('scripts/e2e-free-ports.mjs')
+    expect(helper).toContain('const MAX_ATTEMPTS = 3')
+    expect(helper).toContain('was taken before the stack could use it')
+    const run = spawnSync('node', [FREE_PORTS_HELPER, '3'], { encoding: 'utf8' })
+    expect(run.status, run.stderr).toBe(0)
+    expect(new Set(run.stdout.trim().split(' ')).size).toBe(3)
+    expect(spawnSync('node', [FREE_PORTS_HELPER, '0']).status).toBe(2)
+  })
+
+  it('keeps the self-test (12 distinct secrets, redaction) working under the flavour', () => {
+    const run = runScript(['self-test'], { [FLAVOR_ENV]: MOCK_PACK_FLAVOR })
+    expect(run.status, run.stderr).toBe(0)
+    expect(run.stdout).toContain(OK_LINE)
   })
 })

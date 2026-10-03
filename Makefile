@@ -50,7 +50,7 @@ DB_URL_APP        ?= postgresql://vault_app:dev-only-change-in-prod@$(DB_CONN_HO
 DB_URL_ADMIN      ?= postgresql://vault_admin:password@$(DB_CONN_HOST):$(DB_HOST_PORT)/project_vault
 
 .PHONY: help install dev build lint typecheck generate-spec jscpd audit sonar-issues check-public-safety check-form-guidance check-function-executability check-function-executability-tests \
-        db-up db-down db-migrate check-rls test test-repeat stryker ci ci-inner web-host-fixture composition-kit-integration mock-ui-pack-compose \
+        db-up db-down db-migrate check-rls test test-repeat stryker ci ci-inner web-host-fixture composition-kit-integration mock-ui-pack-compose mock-ui-pack-e2e \
         check-extension-api-policy check-extension-api-policy-content check-extension-api-behaviour check-extension-api-markers check-extension-api-contract-changelog \
         bootstrap bootstrap-docker check-ports fix-ports \
         docker-up docker-down docker-down-v docker-build docker-logs docker-smoke docker-backup-permission-smoke docker-prod docker-prod-down \
@@ -233,6 +233,8 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	@# Story 68.10: every @region block is a component or contains one (replaceable through M4)
 	pnpm check-monolithic-regions
 	pnpm vitest run scripts/check-monolithic-regions.test.ts scripts/lib/route-files.test.ts
+	@# Story 68.10: the mechanism e2e job wiring, its path filter and the mechanism specs cannot pass vacuously
+	pnpm vitest run scripts/check-mock-ui-pack-e2e-wiring.test.ts scripts/lib/web-host/consumer-tarballs.test.ts
 	pnpm vitest run scripts/extension-authoring-docs.test.ts # Story 59.2 AC-3 authoring-doc drift guard
 	pnpm check-native-credential-surface
 	pnpm check-no-sonar-suppressions # Story 43.9 AC-9: no unsigned Sonar suppressions
@@ -291,6 +293,9 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 
 composition-kit-integration: ## Story 68.3 AC-12: compose a mini UI pack onto the packed web-host in an isolated consumer, then check, build, boot and serve it (slow, needs the npm registry)
 	COMPOSITION_KIT_INTEGRATION=1 pnpm vitest run scripts/check-composition-kit-integration.test.ts
+
+mock-ui-pack-e2e: ## Story 68.10: compose the mock UI pack, build the composed web image, boot it with a real API and database and run the M1-M7 mechanism e2e (host-side: needs Docker and the npm registry; `make mock-ui-pack-e2e SPEC=e2e/mechanism/m7-api-routes.spec.ts`, no `--`)
+	pnpm tsx scripts/mock-ui-pack-e2e.ts $(SPEC)
 
 mock-ui-pack-compose: ## Story 68.10 AC-2.1: compose the mock UI pack onto the packed web-host, run pv-compose --check, pv-verify guards, svelte-check, the build and HTTP/CSS checks (slow, needs the npm registry)
 	MOCK_UI_PACK_COMPOSE=1 pnpm vitest run scripts/check-mock-ui-pack-compose.test.ts

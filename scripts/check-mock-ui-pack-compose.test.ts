@@ -73,6 +73,7 @@ describe.runIf(ENABLED)('mock UI pack compose stage (Story 68.10 AC-2.1)', () =>
         'OK: M2 routes (page, endpoint, 405, depth, protected by derivation/add, public by remove)',
         'OK: M3 injection into a native public page (component, load, shell head) beside PV markup',
         'OK: M4 replacements and M6 tokens, own styles and @source utilities',
+        'OK: a stale replacement hash fails the composition (exit 1) and names Footer.svelte',
       ]) {
         expect(output, line).toContain(line)
       }

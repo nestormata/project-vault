@@ -447,6 +447,12 @@ is updated in the same PR: that is the guardrail working, never a reason to skip
 Manifest hashes are computed when the manifest loads, so a mere PV edit never needs a hash bump. A PV change that
 makes a mechanism impossible is a design question for Nestor, not a pack edit.
 
-Status: the compose stage, the module pack, the guard and the control group exist; the composed Docker image,
-the real-API stack flavour, the Playwright mechanism specs and the `Mock UI pack mechanism e2e` CI job are tracked
-in story 68.10 and are not shipped yet (required in intent, not enforced by branch protection).
+`make mock-ui-pack-e2e` runs the whole mechanism e2e on the host: it builds the composed web image
+(`fixtures/mock-ui-pack/docker/web.Dockerfile`, from the exported composed-app directory), boots it with a real
+API carrying the mock module pack (`VAULT_EXTENSIONS_REQUIRED=true`) and a real database through
+`scripts/e2e-stack.sh` with `E2E_STACK_FLAVOR=mock-ui-pack` (per-run host ports and compose project name), and
+runs Playwright (`apps/web/playwright.mechanism.config.ts`: retries 0, traces off) with one spec file per
+capability under `apps/web/e2e/mechanism/`. The CI job `Mock UI pack mechanism e2e` runs it with an in-workflow
+path filter that fails open. It is **required in intent and enforced by `scripts/check-mock-ui-pack-e2e-wiring.test.ts`,
+not yet by branch protection** (making it a required status check is a repo-admin step). M5 (navigation as
+data) needs story 68-7 and is not covered yet.

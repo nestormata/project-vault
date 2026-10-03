@@ -47,6 +47,35 @@ mock_pack_compose_check() {
   log 'pv-compose --check'
   (cd "$APP" && clean_env PV_FIXTURE_HOST="$INSTALLED" "$NODE_BIN" "$MOCK_COMPOSE_BIN" \
     --pack "$PACK" --module-pack "$APP" --check) || mock_fail 'pv-compose --check failed on a fresh composition'
+  mock_pack_stale_hash_negative
+  return 0
+}
+
+# M4 failure row: a replacement whose `hostSha256` is stale fails the composition with exit 1 and names
+# the file (a PV edit never needs a hash bump, because the manifest computes hashes when it loads; this
+# stale value exists only here, in a copy, on purpose). The composition itself catches it (drift against
+# the declared hash); the original composition is restored afterwards.
+mock_pack_stale_hash_negative() {
+  local copy="$WORK/pack-stale" status=0
+  rm -rf "$copy"
+  cp -r "$PACK" "$copy"
+  ln -sfn "$APP/node_modules" "$copy/node_modules"
+  sed -i "s#hostSha256: sha('src/lib/components/shell/Footer.svelte')#hostSha256: '0'.repeat(64)#" \
+    "$copy/pv-ui.manifest.ts"
+  if ! grep -q "'0'.repeat(64)" "$copy/pv-ui.manifest.ts"; then
+    mock_fail 'the stale-hash mutation did not apply to the manifest copy'
+  fi
+  # With a committed lock the lock holds the accepted hash and the declaration is not consulted, so the
+  # negative composes from a state with no lock (a first composition), then the real one is restored.
+  rm -f "$APP/composition.lock.json"
+  (cd "$APP" && clean_env PV_FIXTURE_HOST="$INSTALLED" "$NODE_BIN" "$MOCK_COMPOSE_BIN" \
+    --pack "$copy" --module-pack "$APP") > "$WORK/mock-stale.out" 2>&1 || status=$?
+  if [[ "$status" != '1' ]] || ! grep -q 'Footer.svelte' "$WORK/mock-stale.out"; then
+    cat "$WORK/mock-stale.out" >&2
+    mock_fail "a stale replacement hash did not fail the composition naming the file (exit $status)"
+  fi
+  log 'OK: a stale replacement hash fails the composition (exit 1) and names Footer.svelte'
+  mock_compose_pack "$PACK"
   return 0
 }
 
@@ -85,7 +114,7 @@ mock_pack_verify_guards() {
   local copy="$WORK/pack-region"
   rm -rf "$copy"
   cp -r "$PACK" "$copy"
-  ln -s "$APP/node_modules" "$copy/node_modules"
+  ln -sfn "$APP/node_modules" "$copy/node_modules"
   mkdir -p "$copy/src/lib"
   printf '%s' "$MOCK_MONOLITHIC_REGION" > "$copy/src/lib/MockRegion.svelte"
   mock_compose_pack "$copy"
@@ -216,11 +245,50 @@ mock_check_m3() {
   return 0
 }
 
+# AC-2.2: when MOCK_UI_PACK_CONTEXT_OUT names a directory, export the composed app there as a Docker
+# build context: the composed sources and config, the three tarballs under ./tarballs and a
+# package.json whose `file:` specs point at them relatively. No node_modules, no build output, no
+# monorepo path. The orchestrator adds the Dockerfile and .dockerignore.
+mock_pack_export_context() {
+  local out="${MOCK_UI_PACK_CONTEXT_OUT:-}" item
+  [[ -n "$out" ]] || return 0
+  log "exporting the composed app as a build context: $out"
+  rm -rf "$out"
+  mkdir -p "$out/tarballs"
+  for item in src static messages project.inlang inlang-plugins vendor svelte.config.js vite.config.ts \
+    tsconfig.json composition.lock.json .pv-compose; do
+    cp -r "$APP/$item" "$out/"
+  done
+  # pv-verify's scratch directory is not a composer output.
+  rm -rf "$out/.pv-compose/guard-run"
+  cp "$TARBALL" "$COMPOSITION_KIT_TARBALL" "$out/tarballs/"
+  if [[ -n "$EXTENSION_API_TARBALL" ]]; then
+    cp "$EXTENSION_API_TARBALL" "$out/tarballs/"
+  fi
+  clean_env "$NODE_BIN" -e '
+    const fs = require("node:fs")
+    const path = require("node:path")
+    const [source, out] = process.argv.slice(1)
+    const pkg = JSON.parse(fs.readFileSync(source, "utf8"))
+    for (const section of ["dependencies", "devDependencies"]) {
+      for (const [name, spec] of Object.entries(pkg[section] ?? {})) {
+        if (String(spec).startsWith("file:")) {
+          pkg[section][name] = "file:./tarballs/" + path.basename(String(spec).slice(5))
+        }
+      }
+    }
+    fs.writeFileSync(out, JSON.stringify(pkg, null, 2))
+  ' "$APP/package.json" "$out/package.json"
+  log 'OK: composed app exported as a build context'
+  return 0
+}
+
 compose_mock_pack_checks() {
   local port="$1"
   mock_check_m1 "$port"
   mock_check_m2 "$port"
   mock_check_m3 "$port"
   mock_check_m4_m6 "$port"
+  mock_pack_export_context
   return 0
 }
