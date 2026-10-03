@@ -1,7 +1,9 @@
 // Story 68.6 AC-5 — the whole-response oracle for PV's server `handle`. The snapshot was generated
 // on `main` @ c4482a44 BEFORE any 68-6 change (the RED commit) and must stay byte-identical with
-// no CM contribution. The single intended difference is AC-7's percent-encoded rows (Q5): on
-// `main` they resolve without the hook's redirect; after 68-6 the route-id rule protects them.
+// no CM contribution. Two intended differences: AC-7's percent-encoded rows (Q5): on `main` they
+// resolve without the hook's redirect; after 68-6 the route-id rule protects them. And the
+// `/%68andoff` rows (code review, Nestor 2026-10-03): on `main` they get the default headers;
+// after 68-6 the header policy matches the decoded pathname too, so they get the handoff headers.
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { describeResponse, fakeKitRequest } from './kit-request-test-helpers.js'
 
@@ -49,6 +51,9 @@ const PATHS: ReadonlyArray<readonly [string, string | null]> = [
   ['/nonexistent', null],
   ['/%64ashboard', '/(app)/dashboard'],
   ['/%73ettings/notifications', '/(app)/settings/notifications'],
+  // Code review 68-6 (Nestor 2026-10-03): header rules also match the decoded pathname, so the
+  // percent-encoded handoff URL gets the handoff headers (second intended change after Q5).
+  ['/%68andoff', '/(auth)/handoff'],
 ]
 
 type AuthCase = 'anonymous' | 'authenticated' | 'session-expired'
