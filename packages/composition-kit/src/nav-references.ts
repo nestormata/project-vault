@@ -167,16 +167,19 @@ class Reader {
     }
   }
 
+  /** `insert` for `insert(...)` and `nav.insert(...)`. */
+  calleeName(callee: TypeScript.Expression): string | undefined {
+    const { ts } = this
+    if (ts.isIdentifier(callee)) return callee.text
+    if (ts.isPropertyAccessExpression(callee)) return callee.name.text
+    return undefined
+  }
+
   /** The op name of a node that is an operation (builder call or op object), else undefined. */
   opOf(node: TypeScript.Node): string | undefined {
     const { ts } = this
     if (ts.isCallExpression(node)) {
-      const callee = node.expression
-      const name = ts.isIdentifier(callee)
-        ? callee.text
-        : ts.isPropertyAccessExpression(callee)
-          ? callee.name.text
-          : undefined
+      const name = this.calleeName(node.expression)
       return name !== undefined && OPS.has(name) ? name : undefined
     }
     if (ts.isObjectLiteralExpression(node)) {
