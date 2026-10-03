@@ -57,7 +57,12 @@ compose_prepare_app() {
   # The pack overrides PV's recovery page, so PV's own test of that page no longer applies to the
   # composed tree. Story 68-9 turns this into the lock's `excludedPvTests`; until then the fixture
   # leaves that one test directory out of its run.
-  VITEST_ARGS=(--exclude '**/node_modules/**' --exclude 'src/routes/*/recovery/**')
+  # Story 68-6: the mini pack contributes hooks and a header-policy delta, so PV's own tests that pin
+  # PV's exact hooks behaviour (the whole-response oracle, the no-contribution hooks exports, the
+  # direct handle tests) describe PV, not this composed app. Same 68-9 hand-off as above.
+  VITEST_ARGS=(--exclude '**/node_modules/**' --exclude 'src/routes/*/recovery/**'
+    --exclude 'src/hooks-files.test.ts' --exclude 'src/hooks.server.test.ts'
+    --exclude 'src/lib/server/composition/hooks-oracle.test.ts')
   return 0
 }
 
@@ -130,6 +135,7 @@ compose_plant_probe() {
 }
 
 compose_assert_css() {
+  compose_assert_hook_markers
   local css
   css="$(cat "$APP"/build/client/_app/immutable/assets/*.css)"
   local needle
@@ -163,8 +169,84 @@ compose_expect() { # port path status needle
   return 0
 }
 
+# One request recording its status (echoed), headers ($WORK/headers.txt) and body ($WORK/body.txt).
+compose_request() {
+  local port="$1" method="$2" path="$3"
+  curl -s -o "$WORK/body.txt" -D "$WORK/headers.txt" -X "$method" \
+    -H "origin: http://127.0.0.1:${port}" -H 'content-type: application/x-www-form-urlencoded' \
+    -w '%{http_code}' "http://127.0.0.1:${port}${path}" || true
+  return 0
+}
+
+compose_expect_redirect() { # port method path status location
+  local port="$1" method="$2" path="$3" expected="$4" location="$5"
+  local status
+  status="$(compose_request "$port" "$method" "$path")"
+  if [[ "$status" != "$expected" ]] || ! grep -qiE "^location: ${location}[[:space:]]*$" "$WORK/headers.txt"; then
+    echo "fixture: $method $path answered HTTP $status, expected $expected to $location" >&2
+    cat "$WORK/headers.txt" >&2
+    exit 1
+  fi
+  return 0
+}
+
+compose_expect_header() { # port path header value
+  local port="$1" path="$2" header="$3" value="$4"
+  compose_request "$port" GET "$path" > /dev/null
+  if ! grep -qi "^${header}: ${value}" "$WORK/headers.txt"; then
+    echo "fixture: GET $path lacks ${header}: ${value}" >&2
+    cat "$WORK/headers.txt" >&2
+    exit 1
+  fi
+  return 0
+}
+
+# Story 68-6 AC-1: the server hook marker is in the server bundle and never in the client bundle;
+# the universal and client markers reach the client bundle (positive twins prove the scan works).
+compose_assert_hook_markers() {
+  if ! grep -rqs 'PV_HOOKS_SERVER_MARKER_6c1f0a' "$APP/build/server"; then
+    echo 'fixture: the server hook marker is missing from the server bundle' >&2
+    exit 1
+  fi
+  if grep -rqs 'PV_HOOKS_SERVER_MARKER_6c1f0a' "$APP/build/client"; then
+    echo 'fixture: the server hook marker leaked into the client bundle' >&2
+    exit 1
+  fi
+  local marker
+  for marker in PV_HOOKS_UNIVERSAL_MARKER_2b9e47 PV_HOOKS_CLIENT_MARKER_93d5c1; do
+    if ! grep -rqs "$marker" "$APP/build/client"; then
+      echo "fixture: $marker is missing from the client bundle" >&2
+      exit 1
+    fi
+  done
+  log 'OK: server hook code stays out of the client bundle; universal/client hooks reach it'
+  return 0
+}
+
+# Story 68-6 AC-6/AC-9/Q5: derived protection for CM (app) routes, the reroute bypass closed, the
+# CM header-policy delta on real responses, the CM before handle on every response.
+compose_hooks_checks() {
+  local port="$1"
+  compose_expect_redirect "$port" GET /cm-area 303 /login
+  if [[ "$(compose_request "$port" GET /cm-area/__data.json)" != '200' ]] ||
+    ! grep -q '"type":"redirect","location":"/login"' "$WORK/body.txt"; then
+    echo 'fixture: the /cm-area data request was not redirected to /login' >&2
+    exit 1
+  fi
+  compose_expect_redirect "$port" POST '/cm-area?/save' 303 /login
+  compose_expect_redirect "$port" GET /cm-area/export 303 /login
+  compose_expect_redirect "$port" GET /go/settings 303 /login
+  compose_expect_header "$port" /cm-area x-cm-before PV_HOOKS_SERVER_MARKER_6c1f0a
+  compose_expect_header "$port" /billing x-cm-policy on
+  compose_expect_header "$port" /billing x-frame-options DENY
+  compose_expect_header "$port" /login x-cm-policy on
+  log 'OK: CM (app) page, data request, action and endpoint, and a rerouted URL redirect anonymous users; CM policy and handle applied'
+  return 0
+}
+
 compose_http_checks() {
   local port="$1"
+  compose_hooks_checks "$port"
   compose_expect "$port" /login 200 'Use your Acme account to continue.'
   compose_expect "$port" /billing 200 'Acme plan: pro'
   compose_expect "$port" /billing 200 'data-testid="health-tile"'

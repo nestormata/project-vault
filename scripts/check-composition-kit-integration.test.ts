@@ -108,6 +108,14 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
     () => {
       const { status, output } = runVariant('compose')
       expect(output).toContain('OK: /login, /billing, /billing/export, /recovery served')
+      // Story 68-6: hook bundles, derived protection, the reroute bypass and the CM policy delta.
+      expect(output).toContain(
+        'OK: server hook code stays out of the client bundle; universal/client hooks reach it'
+      )
+      expect(output).toContain(
+        'OK: CM (app) page, data request, action and endpoint, and a rerouted URL redirect anonymous users; CM policy and handle applied'
+      )
+      expect(output).toContain('pv-compose: protected paths: 2 derived (app) routes')
       expect(status, output).toBe(0)
     },
     VARIANT_TIMEOUT_MS

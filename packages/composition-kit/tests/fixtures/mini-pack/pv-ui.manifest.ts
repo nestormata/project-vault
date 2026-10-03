@@ -1,6 +1,7 @@
 // The mini UI pack of the kit's integration job. It exercises overrides (a page, a server load, the
 // app shell template, a static asset), M2 additions, a route removal, an injection component, a
-// replacement, a server hook, a theme and message overlays. Hashes are computed from the installed
+// replacement, server/universal/client hooks with a header-policy delta, CM routes under (app)
+// (protected by derivation, Story 68-6), a theme and message overlays. Hashes are computed from the installed
 // web-host when the manifest loads, never hard-coded, and an override is declared only while its
 // file exists in the pack (so deleting an override in dev mode restores the PV file).
 import { createHash } from 'node:crypto'
@@ -48,7 +49,11 @@ export default defineUiPack({
       hostSha256: sha('src/lib/components/shell/Footer.svelte'),
     },
   },
-  hooks: { server: './hooks.server.ts' },
+  hooks: {
+    server: './hooks.server.ts',
+    universal: './hooks.universal.ts',
+    client: './hooks.client.ts',
+  },
   theme: './theme.css',
   messages: './messages',
 })
