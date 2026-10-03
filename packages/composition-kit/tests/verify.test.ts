@@ -165,6 +165,36 @@ describe('pv-verify (Story 68.9 AC-9)', () => {
     expect(report.ok).toBe(true)
   })
 
+  it("hands the lock's CM-originated files to a pv-originated-only script guard and to no other", async () => {
+    const reporter = `export function runGuard(root, exempt) {
+  return [{ file: 'x', message: 'exempt=' + JSON.stringify(exempt ?? null) }]
+}
+`
+    const entry = (id: string, file: string, scope: string) => ({
+      id,
+      kind: 'script',
+      file,
+      scope,
+      license: LICENSE,
+      closure: [],
+    })
+    const world = await composedWorld({
+      packFiles: { 'src/lib/billing/ok.ts': 'export const ok = 1\n' },
+      hostFiles: {
+        'manifests/guards.json': registry([
+          entry('scoped-script', 'guards/scoped.js', 'pv-originated-only'),
+          entry('open-script', 'guards/open.js', 'all-files'),
+        ]),
+        'guards/scoped.js': reporter,
+        'guards/open.js': reporter,
+      },
+    })
+    const report = await verify(options(world))
+    const failures = (id: string) => report.guards?.outcomes.find((o) => o.id === id)?.failures
+    expect(failures('scoped-script')).toEqual(['exempt=["src/lib/billing/ok.ts"]'])
+    expect(failures('open-script')).toEqual(['exempt=[]'])
+  })
+
   it('names the file and rule of a CM file that breaks a guard, without stopping the tests step', async () => {
     const world = await composedWorld({
       packFiles: { 'src/lib/billing/bad.ts': `export const x = '${BAD_TOKEN}'\n` },

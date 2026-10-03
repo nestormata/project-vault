@@ -232,6 +232,11 @@ jobs:
           pnpm check-injection-point-coverage &&
           pnpm vitest run scripts/check-injection-point-coverage.test.ts
 
+      - name: Check monolithic regions (Story 68.10)
+        run: |
+          pnpm check-monolithic-regions &&
+          pnpm vitest run scripts/check-monolithic-regions.test.ts scripts/lib/route-files.test.ts
+
       - name: Check native-credential surface (Story 23.2 AC19)
         run: pnpm check-native-credential-surface
 

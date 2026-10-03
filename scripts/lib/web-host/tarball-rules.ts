@@ -15,6 +15,8 @@ export const REQUIRED_ENTRIES = [
   'manifests/guards.json',
   'manifests/test-subjects.json',
   'guards/form-guidance.js',
+  'guards/monolithic-region.js',
+  'guards/region-markup.js',
   'vendor/shared/src/index.ts',
   'project.inlang/settings.json',
   'inlang-plugins/plugin-message-format.js',

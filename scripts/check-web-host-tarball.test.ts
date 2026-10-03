@@ -392,6 +392,7 @@ describe('compatibility manifest (Story 68.2 AC-9)', () => {
       'form-guidance',
       'form-secret-inputs',
       'internal-api-choke-point',
+      'monolithic-region',
       'route-exists',
       'static-hardening',
       'tailwind-boundary',

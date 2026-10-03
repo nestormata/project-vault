@@ -20,6 +20,8 @@ const GUARD_SOURCES = [
   'apps/web/src/lib/test/route-exists.ts',
   'apps/web/src/lib/server/internal-api-consumers.ts',
   'apps/web/guards/form-guidance.ts',
+  'apps/web/guards/monolithic-region.ts',
+  'apps/web/guards/region-markup.ts',
   'packages/composition-kit/src/verify.ts',
   'packages/composition-kit/src/verify-cli.ts',
   'packages/composition-kit/src/verify-guards.ts',

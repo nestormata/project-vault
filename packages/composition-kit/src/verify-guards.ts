@@ -196,12 +196,16 @@ function outcomeOf(guard: GuardRegistryEntry, report: VitestReport): GuardOutcom
 async function scriptOutcome(
   hostDir: string,
   guard: GuardRegistryEntry,
-  appRoot: string
+  appRoot: string,
+  exemptFiles: readonly string[]
 ): Promise<GuardOutcome> {
   const started = Date.now()
   try {
     const module = (await import(pathToFileURL(join(hostDir, guard.file)).href)) as {
-      runGuard?: (root: string) => { file: string; message: string }[]
+      runGuard?: (
+        root: string,
+        exemptFiles?: readonly string[]
+      ) => { file: string; message: string }[]
     }
     if (typeof module.runGuard !== 'function') {
       return {
@@ -212,7 +216,11 @@ async function scriptOutcome(
         failures: [`${guard.file} exports no runGuard(appRoot)`],
       }
     }
-    const findings = module.runGuard(appRoot)
+    // A pv-originated-only guard gets the lock's CM-originated files; every other guard checks all.
+    const findings = module.runGuard(
+      appRoot,
+      guard.scope === 'pv-originated-only' ? exemptFiles : []
+    )
     return {
       id: guard.id,
       kind: 'script',
@@ -300,7 +308,9 @@ export async function runGuards(input: {
   const scripts = await Promise.all(
     guards
       .filter((guard) => guard.kind === 'script')
-      .map((guard) => scriptOutcome(input.hostDir, guard, input.appRoot))
+      .map((guard) =>
+        scriptOutcome(input.hostDir, guard, input.appRoot, cmOriginatedFiles(input.lock))
+      )
   )
   const outcomes = [...scripts, ...tests.outcomes].sort((a, b) => compareCodeUnits(a.id, b.id))
   const known = new Set(guards.map((guard) => guard.id))

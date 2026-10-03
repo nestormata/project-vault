@@ -3,13 +3,9 @@
 // so Kit's route-id rules and the point extraction are written once. Markup is read with
 // `svelte/compiler`'s parser and the server files with TypeScript's compiler API, never with a regex
 // over source text.
-import { createRequire } from 'node:module'
 import { join, posix } from 'node:path'
 import ts from 'typescript'
 import { toRepoPath, walkFiles } from './scan-utils.js'
-
-const requireFromWeb = createRequire(join(import.meta.dirname, '..', '..', 'apps/web/package.json'))
-const svelteCompiler = requireFromWeb('svelte/compiler') as typeof import('svelte/compiler')
 
 export const ROUTES_DIR = 'src/routes'
 export type RouteKind = 'page' | 'layout' | 'error'
@@ -83,122 +79,13 @@ export function listRouteFiles(webRoot: string): RouteScan {
 }
 
 // --- markup: injection points and @region blocks ---------------------------------------------
-
-interface Node {
-  type: string
-  start: number
-  end: number
-  name?: string
-  data?: string
-  attributes?: { type: string; name: string; value: true | Node | Node[] }[]
-  expression?: { value?: unknown }
-  [key: string]: unknown
-}
-
-export interface PointUse {
-  /** The literal name, or null when `name` is not a string literal. */
-  name: string | null
-  line: number
-}
-
-export interface RegionProblem {
-  line: number
-  message: string
-}
-
-export interface ParsedMarkup {
-  points: PointUse[]
-  regionProblems: RegionProblem[]
-}
-
-const REGION_COMMENT = /^\s*@region\s+(\S+)\s*$/
-const REGION_WORD = /^\s*@region\b/
-
-function lineAt(code: string, index: number): number {
-  return code.slice(0, index).split('\n').length
-}
-
-function textOf(part: Node | true | undefined): string | null {
-  if (part === undefined || part === true) return null
-  if (part.type === 'Text') return part.data ?? null
-  const literal = part.type === 'ExpressionTag' ? part.expression?.value : undefined
-  return typeof literal === 'string' ? literal : null
-}
-
-function literalName(node: Node): string | null {
-  const attribute = (node.attributes ?? []).find(
-    (entry) => entry.type === 'Attribute' && entry.name === 'name'
-  )
-  const value = attribute?.value
-  const parts = Array.isArray(value) ? value : [value]
-  return parts.length === 1 ? textOf(parts[0]) : null
-}
-
-function isPoint(node: unknown): node is Node {
-  const candidate = node as Node | null
-  return candidate?.type === 'Component' && candidate.name === 'InjectionPoint'
-}
-
-function childrenOf(node: Node): unknown[] {
-  return Object.entries(node)
-    .filter(([key, value]) => key !== 'metadata' && typeof value === 'object' && value !== null)
-    .map(([, value]) => value)
-}
-
-function containsPoint(node: unknown): boolean {
-  if (Array.isArray(node)) return node.some((child) => containsPoint(child))
-  if (node === null || typeof node !== 'object') return false
-  if (isPoint(node)) return true
-  return childrenOf(node as Node).some((child) => containsPoint(child))
-}
-
-function regionProblemsIn(siblings: Node[], code: string): RegionProblem[] {
-  const problems: RegionProblem[] = []
-  siblings.forEach((node, index) => {
-    if (node.type !== 'Comment' || !REGION_WORD.test(node.data ?? '')) return
-    const line = lineAt(code, node.start)
-    if (!REGION_COMMENT.test(node.data ?? '')) {
-      problems.push({ line, message: '@region comment must be written `<!-- @region <name> -->`' })
-      return
-    }
-    const next = siblings.slice(index + 1).find((sibling) => !isBlankText(sibling))
-    if (next === undefined) {
-      problems.push({ line, message: '@region comment is not followed by an element or block' })
-    } else if (!containsPoint(next)) {
-      problems.push({ line, message: '@region block contains no <InjectionPoint>' })
-    }
-  })
-  return problems
-}
-
-function isBlankText(node: Node): boolean {
-  return node.type === 'Text' && (node.data ?? '').trim() === ''
-}
-
-function walk(node: unknown, code: string, out: ParsedMarkup): void {
-  if (Array.isArray(node)) {
-    if (node.some((child) => (child as Node | null)?.type === 'Comment')) {
-      out.regionProblems.push(...regionProblemsIn(node as Node[], code))
-    }
-    for (const child of node) walk(child, code, out)
-    return
-  }
-  if (node === null || typeof node !== 'object') return
-  const record = node as Node
-  if (isPoint(record))
-    out.points.push({ name: literalName(record), line: lineAt(code, record.start) })
-  for (const child of childrenOf(record)) walk(child, code, out)
-}
-
-/** The `<InjectionPoint>` uses (literal names, in source order) and malformed `@region` blocks. */
-export function parseMarkup(code: string, file: string): ParsedMarkup {
-  const root = svelteCompiler.parse(code, { modern: true, filename: file }) as unknown as {
-    fragment: Node
-  }
-  const out: ParsedMarkup = { points: [], regionProblems: [] }
-  walk(root.fragment, code, out)
-  return out
-}
+// The walker is shared with the shipped `monolithic-region` guard (Story 68.10 AC-4.4).
+export {
+  parseMarkup,
+  type ParsedMarkup,
+  type PointUse,
+  type RegionProblem,
+} from '../../apps/web/guards/region-markup.js'
 
 // --- server files: injectLoad / injectActions call sites --------------------------------------
 
