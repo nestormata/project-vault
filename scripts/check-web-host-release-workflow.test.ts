@@ -948,3 +948,106 @@ describe('web-host release workflow: the tag-moved check by behaviour (Story 68.
     expect(result.stderr).toContain(`(${GATE_TAG} is missing, this run built ${GATE_SHA})`)
   })
 })
+
+// The v1.4.0 dry run (run 37159187872) died, silently, at "Check whether this kit version is already
+// on npm": GitHub starts `shell: bash` steps with `bash -e -o pipefail`, `set -uo pipefail` in the
+// script does not clear -e, and a bare `OUTPUT="$(npm view …)"` aborted on the E404 that a version
+// not yet on npm always produces. These tests run both "is it on npm" steps with the runner's own
+// flags, which the tagcheck tests above (plain `bash -c`) do not.
+const KIT_VERSION_UNDER_TEST = '0.6.0'
+const RELEASE_VERSION_UNDER_TEST = '1.4.0'
+const STUB_NPM = `npm() {
+  case "$STUB_NPM" in
+    e404) echo 'npm error code E404' >&2; return 1 ;;
+    published) echo "$STUB_VERSION"; return 0 ;;
+    *) echo 'npm error code EAI_AGAIN' >&2; return 1 ;;
+  esac
+}
+declare -fx npm
+`
+// What the Actions runner runs for `shell: bash`: the script body as a file, with -e and pipefail.
+const RUNNER_BASH = 'bash --noprofile --norc -e -o pipefail -c'
+const NPM_VIEW_STEP_RUNNER = `${STUB_NPM}out="$(mktemp)"
+trap 'rm -f "$out"' EXIT
+GITHUB_OUTPUT="$out" ${RUNNER_BASH} "$STEP_SCRIPT"
+status=$?
+echo "github_output:$(tr '\\n' ' ' < "$out")" >&2
+exit $status`
+
+function runNpmViewStep(script: string, npm: 'e404' | 'published' | 'network'): ScriptResult {
+  const run = spawnSync('bash', ['-c', NPM_VIEW_STEP_RUNNER], {
+    encoding: 'utf8',
+    env: {
+      PATH: process.env.PATH,
+      STEP_SCRIPT: script,
+      STUB_NPM: npm,
+      STUB_VERSION: KIT_VERSION_UNDER_TEST,
+      RELEASE_VERSION: RELEASE_VERSION_UNDER_TEST,
+    },
+  })
+  return { status: run.status ?? -1, stdout: run.stdout, stderr: run.stderr }
+}
+
+const KIT_NPM_STEP = runOf(JOBS['publish-kit'].steps, (step) => step.id === 'npm').replace(
+  '${{ steps.kit.outputs.version }}',
+  KIT_VERSION_UNDER_TEST
+)
+const WEB_HOST_NPM_STEP = runOf(
+  JOBS.publish.steps,
+  (step) => step.name === 'Reject a version that is already on npm'
+)
+// The pre-fix spelling: a bare substitution, then `STATUS=$?` on the next line.
+const BARE_SUBSTITUTION = ' && STATUS=0 || STATUS=$?'
+
+describe('web-host release workflow: the "is it on npm" steps under the runner flags (v1.4.0 dry run)', () => {
+  it('kit step: a version that is not on npm (E404) records published=false and succeeds', () => {
+    const result = runNpmViewStep(KIT_NPM_STEP, 'e404')
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stderr).toContain('github_output:published=false')
+    expect(result.stdout).toContain('is not on npm yet')
+  })
+
+  it('kit step: a version that is already on npm records published=true and succeeds', () => {
+    const result = runNpmViewStep(KIT_NPM_STEP, 'published')
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stderr).toContain('github_output:published=true')
+    expect(result.stdout).toContain('is already on npm; nothing to publish')
+  })
+
+  it('kit step: any other npm failure still fails the job, with the npm output', () => {
+    const result = runNpmViewStep(KIT_NPM_STEP, 'network')
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('FATAL: could not confirm whether 0.6.0 is published')
+    expect(result.stderr).toContain('EAI_AGAIN')
+  })
+
+  it('web-host step: a version that is not on npm (E404) passes', () => {
+    const result = runNpmViewStep(WEB_HOST_NPM_STEP, 'e404')
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('@project-vault/web-host@1.4.0 is not on npm yet')
+  })
+
+  it('web-host step: a version that is already published fails the job', () => {
+    const result = runNpmViewStep(WEB_HOST_NPM_STEP, 'published')
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('@project-vault/web-host@1.4.0 is already published')
+  })
+
+  it('web-host step: any other npm failure fails the job, with the npm output', () => {
+    const result = runNpmViewStep(WEB_HOST_NPM_STEP, 'network')
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('could not confirm that 1.4.0 is unpublished')
+    expect(result.stderr).toContain('EAI_AGAIN')
+  })
+
+  it.each([
+    ['kit step', KIT_NPM_STEP],
+    ['web-host step', WEB_HOST_NPM_STEP],
+  ])('%s: the pre-fix bare substitution aborts on E404 (the test has teeth)', (_name, script) => {
+    expect(script).toContain(BARE_SUBSTITUTION)
+    const result = runNpmViewStep(script.replace(BARE_SUBSTITUTION, '\nSTATUS=$?'), 'e404')
+    expect(result.status).toBe(1)
+    expect(result.stderr).not.toContain('FATAL')
+    expect(result.stdout).not.toContain('is not on npm yet')
+  })
+})
