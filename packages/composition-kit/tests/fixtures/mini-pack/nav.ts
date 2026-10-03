@@ -66,6 +66,15 @@ export default defineNavDelta({
       },
     }),
     hide('primary.not-a-pv-item'),
+    insert({
+      parent: 'primary',
+      item: {
+        id: 'cm.hidden-billing',
+        label: 'CM Hidden Billing',
+        href: () => resolve('/billing'),
+      },
+    }),
+    hide('cm.hidden-billing'),
   ],
   project: [
     insert({

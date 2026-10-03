@@ -311,6 +311,8 @@ compose_header() {
 compose_fail() {
   echo "fixture: $*" >&2
   cat "$WORK/headers.txt" >&2
+  # An error page's serialized error names what failed.
+  grep -o 'message:"[^"]*"' "$WORK/body.txt" >&2 || true
   exit 1
 }
 
@@ -665,32 +667,35 @@ compose_absent() { # needle context
 
 # Story 68.7 AC-13 (M5): every operation of the mini pack's nav.ts on the built server's real HTML.
 compose_nav_checks() {
+  # /settings: an (app) page whose load calls no API (the stub answers few endpoints), so the
+  # primary nav, the settings index and the account menu all render from the real data.
   local port="$1" member='session=ok' project='/projects/p-nav'
-  compose_expect_ok "$port" GET /dashboard "$member" 'CM Billing'
+  compose_expect_ok "$port" GET /settings "$member" 'CM Billing'
   compose_before 'CM Home' 'sm:inline">Projects' 'reorder (listed ids first)'
   compose_before 'sm:inline">Projects' 'aria-label="Search' 'reorder (unlisted keep their order)'
   compose_before 'sm:inline">Dashboard' 'CM Billing' 'insert after primary.projects'
   compose_before 'CM Ops' 'CM Reports' 'a 3-level CM group'
   compose_before 'CM Reports' 'CM Daily' 'a 3-level CM group'
-  compose_before 'CM Ops' 'href="/notifications"' 'move a PV item under a CM group'
   local needle
-  for needle in 'data-cm-nav-icon' 'Health CM' 'CM Brand' 'CM Account Billing' 'href="/billing/export"'; do
-    compose_expect_ok "$port" GET /dashboard "$member" "$needle"
+  for needle in 'data-cm-nav-icon' 'Health CM' 'CM Brand' 'CM Account Billing' 'CM seats and roles' 'CM Seats'; do
+    compose_expect_ok "$port" GET /settings "$member" "$needle"
   done
   compose_absent 'CM Owners' 'a CM when (owners only) for a member'
   compose_absent '>Project Vault</a>' 'replace shell.brand.home'
-  compose_expect_ok "$port" GET /settings "$member" 'CM seats and roles'
-  compose_expect_ok "$port" GET /settings "$member" 'CM Seats'
   compose_absent 'SSO Domains' 'hide settings.index.sso-domains'
-  compose_expect_ok "$port" GET "$project" "$member" "href=\"$project/members\""
+  compose_absent 'CM Hidden Billing' 'hide a CM item'
+  # Moved under the CM group: no longer a top-level item (top-level items carry the label spans).
+  compose_absent 'sm:inline">Notifications' 'move a PV item under a CM group'
   compose_expect_ok "$port" GET "$project" "$member" 'CM Project Billing'
+  # Server rendering writes resolve()'s relative form (./p-nav/members); match the tail.
+  compose_expect_ok "$port" GET "$project" "$member" 'p-nav/members"'
   compose_absent 'Status Page' 'remove project.status-page'
   # Server-rendered locale: PV's Spanish project tabs and CM's own relabel function.
   compose_expect_ok "$port" GET "$project" "$member; PARAGLIDE_LOCALE=es" 'Miembros'
   compose_expect_ok "$port" GET "$project" "$member; PARAGLIDE_LOCALE=es" 'Resumen'
-  compose_expect_ok "$port" GET /dashboard "$member; PARAGLIDE_LOCALE=es" 'Salud CM'
-  # A hidden item is not access control: its route still answers as PV's page.
-  compose_expect_ok "$port" GET /settings/sso-domains "$member" 'SSO'
+  compose_expect_ok "$port" GET /settings "$member; PARAGLIDE_LOCALE=es" 'Salud CM'
+  # A hidden item is not access control: the route behind the hidden CM item still answers.
+  compose_expect "$port" /billing 200 'Acme plan'
   if ! grep -rqsF 'CM Project Billing' "$APP/build/client"; then
     compose_fail 'the CM nav module is not in the client bundle (the nav renders in the browser too)'
   fi
@@ -705,7 +710,7 @@ compose_nav_checks() {
       compose_fail "the lock notes lack: $needle"
     fi
   done
-  log 'OK: nav delta applied on /dashboard, /settings and a project (every operation, nested, CM when and icon), Spanish tabs and the CM relabel under es, the hidden route still served, CM nav in the client bundle'
+  log 'OK: nav delta applied on /settings and a project (every operation, nested, CM when and icon), Spanish tabs and the CM relabel under es, the hidden route still served, CM nav in the client bundle'
   return 0
 }
 

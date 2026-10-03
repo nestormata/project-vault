@@ -139,7 +139,7 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
       // Story 68.7 AC-13/AC-16 (M5): every nav operation on the real HTML, the server-rendered
       // locale, the client bundle, the lock and its notes, and the shipped composed-nav test.
       expect(output).toContain(
-        'OK: nav delta applied on /dashboard, /settings and a project (every operation, nested, CM when and icon), Spanish tabs and the CM relabel under es, the hidden route still served, CM nav in the client bundle'
+        'OK: nav delta applied on /settings and a project (every operation, nested, CM when and icon), Spanish tabs and the CM relabel under es, the hidden route still served, CM nav in the client bundle'
       )
       expect(output).toContain("OK: composed-nav.test.ts validated the pack's nav delta")
       expect(status, output).toBe(0)
