@@ -542,7 +542,7 @@ describe('check-review-tradeoff-ledger CLI (AC-6)', () => {
     const run = runScriptCli(SCRIPT, fixture(clean))
     expect(run.status).toBe(0)
     expect(run.stdout).toBe(
-      'check-review-tradeoff-ledger: 2 done stories scanned, 1 with trade-off language, all tracked — OK\n'
+      'check-review-tradeoff-ledger: 2 done stories scanned, 1 with trade-off language, 0 with section dispositions, 0 with checked defers, all tracked — OK\n'
     )
   })
 

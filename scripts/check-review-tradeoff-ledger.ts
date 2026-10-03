@@ -23,7 +23,6 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseDevelopmentStatusComments, SPRINT_STATUS_PATH } from './check-story-status-sync.js'
 import {
-  createFenceTracker,
   type DwEntry,
   extractDwCitations,
   normalizeDwId,
@@ -31,7 +30,18 @@ import {
 } from './lib/deferred-work-ledger.js'
 import { isTrackedInDeferredWork } from './lib/followup-review-gate.js'
 import { readOverlayFile, runOverlayGuard, toRepoPath } from './lib/scan-utils.js'
+import {
+  type BodyLine,
+  dispositionHits,
+  extractRiskScopeSections,
+  extractSections,
+  findCheckedDefers,
+  type Heading,
+  isNegated,
+} from './lib/section-ledger-rules.js'
 import { resolveStoryFile } from './lib/story-files.js'
+
+export { isNegated }
 
 export const DEFERRED_WORK_PATH = '_bmad-output/implementation-artifacts/deferred-work.md'
 const CHECK_NAME = 'check-review-tradeoff-ledger'
@@ -51,7 +61,6 @@ export const TRADEOFF_PHRASES: readonly RegExp[] = [
   /\bbelow[- ]threshold\b/gi,
 ]
 
-const NEGATIONS = new Set(['no', 'not', 'none', 'never', 'nothing', 'zero', 'without'])
 const NUMBER_WORDS = [
   'one',
   'two',
@@ -93,11 +102,10 @@ export type TradeoffHit = {
   findings?: number
 }
 
-type BodyLine = { line: number; text: string }
-
 export type ReviewSection = { heading: string; lines: BodyLine[] }
 
-export type TradeoffViolationKind = 'untracked' | 'under-itemized' | 'no-entry-needed'
+export type TradeoffViolationKind =
+  'untracked' | 'under-itemized' | 'no-entry-needed' | 'unledgered-section' | 'unledgered-defer'
 
 export type TradeoffViolation = {
   kind: TradeoffViolationKind
@@ -109,17 +117,11 @@ export type TradeoffViolation = {
 export type TradeoffFindings = {
   doneCount: number
   hitCount: number
+  /** Done stories with a disposition line in a Residual risks / Scope Boundaries section (60.8). */
+  sectionCount: number
+  /** Done stories with a checked `[Review][Defer]` bullet (60.8). */
+  deferCount: number
   violations: TradeoffViolation[]
-}
-
-/** AC-1.4: whether one of the negation words is among the three words before `index`. */
-export function isNegated(sentence: string, index: number): boolean {
-  return sentence
-    .slice(0, index)
-    .split(/\s+/)
-    .filter((word) => word !== '')
-    .slice(-3)
-    .some((word) => NEGATIONS.has(word.toLowerCase().replaceAll(/[^a-z]/g, '')))
 }
 
 function numberValue(token: string): number {
@@ -216,18 +218,6 @@ function withoutOverlaps(hits: TradeoffHit[]): TradeoffHit[] {
   return kept
 }
 
-type Heading = { level: number; title: string }
-
-function parseHeading(line: string): Heading | undefined {
-  const marks = /^(#{1,6})[ \t]+/.exec(line)
-  if (!marks) return undefined
-  const title = line
-    .slice(marks[0].length)
-    .replace(/[ \t]#+[ \t]*$/, '')
-    .trim()
-  return { level: (marks[1] as string).length, title }
-}
-
 /**
  * "review" as a standalone word: not joined to a letter, digit, `_` or `-` on either side, so
  * "Preview", "Reviewed", "reviewer", `followup_review_recommended`, `check-story-review-deferrals`
@@ -236,33 +226,13 @@ function parseHeading(line: string): Heading | undefined {
 const REVIEW_WORD = /(?<![\p{L}\p{N}_-])review(?![\p{L}\p{N}_-])/iu
 
 function isScannedTitle(heading: Heading): boolean {
-  if (heading.level < 2 || heading.level > 4) return false
   if (/completion notes/i.test(heading.title)) return true
   return REVIEW_WORD.test(heading.title) && !/elicitation|pre-?mortem|red team/i.test(heading.title)
 }
 
 /** AC-1.2 (a)/(a2): the story file's review and Completion Notes sections, fenced lines left out. */
 export function extractReviewSections(content: string): ReviewSection[] {
-  const fenced = createFenceTracker()
-  const sections: ReviewSection[] = []
-  let current: (ReviewSection & { level: number }) | undefined
-  for (const [index, rawLine] of content.split('\n').entries()) {
-    const text = rawLine.replace(/\r$/, '')
-    if (fenced(text)) continue
-    const heading = parseHeading(text)
-    if (heading && current && heading.level <= current.level) current = undefined
-    if (heading && !current && isScannedTitle(heading)) {
-      current = {
-        heading: `${'#'.repeat(heading.level)} ${heading.title}`,
-        lines: [],
-        level: heading.level,
-      }
-      sections.push(current)
-      continue
-    }
-    current?.lines.push({ line: index + 1, text })
-  }
-  return sections.map(({ heading, lines }) => ({ heading, lines }))
+  return extractSections(content, isScannedTitle).map(({ heading, lines }) => ({ heading, lines }))
 }
 
 /** One place the story's review text lives: a story-file section or its sprint-status comment. */
@@ -411,6 +381,127 @@ function storyViolations(
   return [...underItemizedViolations(storyKey, sources, tracking.entries), ...contradictions]
 }
 
+const STORY_KEY_IN_TEXT = /(?<![\w-])\d+-\d+[a-z]?-[a-z][a-z0-9-]*/g
+
+/** Story keys written in `text`, trailing hyphens trimmed. */
+function citedStoryKeys(text: string): string[] {
+  return [...text.matchAll(STORY_KEY_IN_TEXT)].map((m) => trimTrailingHyphens(m[0]))
+}
+
+function trimTrailingHyphens(value: string): string {
+  let end = value.length
+  while (end > 0 && value[end - 1] === '-') end -= 1
+  return value.slice(0, end)
+}
+
+type CitationContext = { ledger: Ledger; sprintKeys: Set<string> }
+
+/**
+ * AC-3: `undefined` when the block cites a DW entry that exists and names the story (or, with
+ * `allowStoryKey`, another registered story key); otherwise the notes on citations that did not
+ * count (empty when there is no citation at all).
+ */
+function citationNotes(
+  storyKey: string,
+  text: string,
+  context: CitationContext,
+  allowStoryKey: boolean
+): string[] | undefined {
+  const notes: string[] = []
+  for (const id of new Set(extractDwCitations(text))) {
+    const entry = context.ledger.byId.get(normalizeDwId(id))
+    if (!entry) notes.push(`cites ${id}, which is not in deferred-work.md`)
+    else if (entryNamesStory(storyKey, context.ledger.entryText.get(entry) ?? '')) return undefined
+    else notes.push(`cites ${id}, which does not name this story`)
+  }
+  if (!allowStoryKey) return notes
+  for (const cited of new Set(citedStoryKeys(text))) {
+    if (cited === storyKey) notes.push(`cites ${cited}, which is the story itself`)
+    else if (context.sprintKeys.has(cited)) return undefined
+    else notes.push(`cites ${cited}, which is not in sprint-status.yaml`)
+  }
+  return notes
+}
+
+const suffixOf = (notes: string[]) => notes.map((n) => `; ${n}`).join('')
+
+type RuleScan = { violations: TradeoffViolation[]; sectionHits: number; deferHits: number }
+
+function sectionViolations(
+  storyKey: string,
+  path: string,
+  content: string,
+  context: CitationContext
+): { violations: TradeoffViolation[]; hits: number } {
+  const hits = extractRiskScopeSections(content).flatMap(dispositionHits)
+  const violations = hits.flatMap((hit) => {
+    const notes = citationNotes(storyKey, hit.text, context, true)
+    if (notes === undefined) return []
+    const first = hit.text.split('\n')[0] ?? ''
+    return [
+      {
+        kind: 'unledgered-section' as const,
+        path,
+        line: hit.line,
+        message:
+          `${storyKey}: ${quote(first.trim())} in "${hit.heading}" records an accepted risk / ` +
+          `scope boundary with no ledger entry or backlog story${suffixOf(notes)}`,
+      },
+    ]
+  })
+  return { violations, hits: hits.length }
+}
+
+function deferViolations(
+  storyKey: string,
+  path: string,
+  content: string,
+  context: CitationContext
+): { violations: TradeoffViolation[]; hits: number } {
+  const defers = findCheckedDefers(content)
+  const violations = defers.flatMap((defer) => {
+    const notes = citationNotes(storyKey, defer.text, context, false)
+    if (notes === undefined) return []
+    return [
+      {
+        kind: 'unledgered-defer' as const,
+        path,
+        line: defer.line,
+        message:
+          `${storyKey}: checked [Review][Defer] bullet has no ledger entry ` +
+          `(cite DW-<id>)${suffixOf(notes)}`,
+      },
+    ]
+  })
+  return { violations, hits: defers.length }
+}
+
+/** Rules S and D (Story 60.8) for one done story's file. */
+function ruleScan(root: string, storyKey: string, context: CitationContext): RuleScan {
+  const storyFile = resolveStoryFile(root, storyKey)
+  if (!storyFile) return { violations: [], sectionHits: 0, deferHits: 0 }
+  const path = toRepoPath(root, storyFile.path)
+  const section = sectionViolations(storyKey, path, storyFile.content, context)
+  const defer = deferViolations(storyKey, path, storyFile.content, context)
+  return {
+    violations: [...section.violations, ...defer.violations],
+    sectionHits: section.hits,
+    deferHits: defer.hits,
+  }
+}
+
+/** One violation per path+line: the earliest kind in `BLOCKS` order wins. */
+function dedupeViolations(violations: TradeoffViolation[]): TradeoffViolation[] {
+  const order = BLOCKS.map((b) => b.kind)
+  const best = new Map<string, TradeoffViolation>()
+  for (const v of violations) {
+    const key = `${v.path}:${v.line}`
+    const known = best.get(key)
+    if (!known || order.indexOf(v.kind) < order.indexOf(known.kind)) best.set(key, v)
+  }
+  return [...best.values()]
+}
+
 function storySources(root: string, storyKey: string, comment: BodyLine): TextSource[] {
   const sources: TextSource[] = []
   const storyFile = resolveStoryFile(root, storyKey)
@@ -431,16 +522,29 @@ export function scanReviewTradeoffLedger(rootDir = process.cwd()): TradeoffFindi
   const statusEntries = parseDevelopmentStatusComments(
     readOverlayFile(root, SPRINT_STATUS_PATH) ?? ''
   )
-  const findings: TradeoffFindings = { doneCount: 0, hitCount: 0, violations: [] }
+  const context = { ledger, sprintKeys: new Set(statusEntries.map((entry) => entry.key)) }
+  const findings: TradeoffFindings = {
+    doneCount: 0,
+    hitCount: 0,
+    sectionCount: 0,
+    deferCount: 0,
+    violations: [],
+  }
   for (const entry of statusEntries) {
     if (entry.value !== 'done' || !STORY_KEY_PATTERN.test(entry.key)) continue
     findings.doneCount++
     const comment = { line: entry.line, text: entry.comment }
     const violations = storyViolations(entry.key, storySources(root, entry.key, comment), ledger)
-    if (violations === undefined) continue
-    findings.hitCount++
-    findings.violations.push(...violations)
+    if (violations !== undefined) {
+      findings.hitCount++
+      findings.violations.push(...violations)
+    }
+    const rules = ruleScan(root, entry.key, context)
+    if (rules.sectionHits > 0) findings.sectionCount++
+    if (rules.deferHits > 0) findings.deferCount++
+    findings.violations.push(...rules.violations)
   }
+  findings.violations = dedupeViolations(findings.violations)
   findings.violations.sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line)
   return findings
 }
@@ -474,13 +578,34 @@ const BLOCKS: { kind: TradeoffViolationKind; header: string; fix: string }[] = [
       'findings (pick-story C2, DW-271):',
     fix: 'Fix: reword the sentence to `ledgered as DW-<n>`, naming the tracking entry.',
   },
+  {
+    kind: 'unledgered-section',
+    header:
+      'FATAL: done stories record accepted residual risks / scope boundaries / known limits with ' +
+      'no deferred-work.md entry or backlog story (epic-60 retro Finding 4):',
+    fix:
+      'Fix: cite the tracking entry on the line (`ledgered as DW-<n>`, allocate with ' +
+      '`pnpm -s next-dw-id --fetch`, `source_spec: `<story-key>.md``, `status: open — Trigger to ' +
+      'revisit: ...`) or a registered backlog story key.',
+  },
+  {
+    kind: 'unledgered-defer',
+    header:
+      'FATAL: done stories carry checked [Review][Defer] bullets with no deferred-work.md entry ' +
+      '(epic-61 retro Finding 1):',
+    fix:
+      'Fix: cite the tracking entry on the bullet (`ledgered as DW-<n>`, allocate with ' +
+      '`pnpm -s next-dw-id --fetch`, `source_spec: `<story-key>.md``, `status: open — Trigger to ' +
+      'revisit: ...`). A ticked box means "decided to defer", not "ledgered".',
+  },
 ]
 
 function report(findings: TradeoffFindings): void {
   if (findings.violations.length === 0) {
     process.stdout.write(
       `${CHECK_NAME}: ${findings.doneCount} done stories scanned, ${findings.hitCount} with ` +
-        'trade-off language, all tracked — OK\n'
+        `trade-off language, ${findings.sectionCount} with section dispositions, ` +
+        `${findings.deferCount} with checked defers, all tracked — OK\n`
     )
     return
   }

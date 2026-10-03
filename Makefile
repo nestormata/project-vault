@@ -204,7 +204,7 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-review-tradeoff-ledger
 	# Story 43.11 AC-6.4: the story-integrity guards' own tests; --dir scripts keeps vitest's
 	# substring filters from also matching stale copies in nested agent worktrees.
-	pnpm vitest run --dir scripts check-sprint-status-rollup.test.ts check-story-status-sync.test.ts check-deferred-work-ids.test.ts next-dw-id.test.ts lib/deferred-work-ledger.test.ts check-ci-story-integrity-wiring.test.ts check-review-tradeoff-ledger.test.ts check-deferred-work-triggers.test.ts
+	pnpm vitest run --dir scripts check-sprint-status-rollup.test.ts check-story-status-sync.test.ts check-deferred-work-ids.test.ts next-dw-id.test.ts lib/deferred-work-ledger.test.ts check-ci-story-integrity-wiring.test.ts check-review-tradeoff-ledger.test.ts check-review-tradeoff-ledger-sections.test.ts check-deferred-work-triggers.test.ts
 	pnpm check-story-references
 	pnpm check-psc-tbd-tracking
 	pnpm check-story-review-deferrals

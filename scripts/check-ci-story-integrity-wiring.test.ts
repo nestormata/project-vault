@@ -29,6 +29,7 @@ const STORY_INTEGRITY_TEST_COMMAND =
   'pnpm vitest run --dir scripts check-sprint-status-rollup.test.ts check-story-status-sync.test.ts ' +
   'check-deferred-work-ids.test.ts next-dw-id.test.ts lib/deferred-work-ledger.test.ts ' +
   'check-ci-story-integrity-wiring.test.ts check-review-tradeoff-ledger.test.ts ' +
+  'check-review-tradeoff-ledger-sections.test.ts ' +
   'check-deferred-work-triggers.test.ts'
 
 const GUARDS = {
