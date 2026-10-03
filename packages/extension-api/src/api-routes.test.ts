@@ -157,13 +157,13 @@ describe('Story 68.8 AC-2 — apiRoutes validation checks integrity only', () =>
       () => ({})
     )
     const extra = reads.filter((key) => key !== 'apiRoutes')
-    expect(extra.filter((key) => key === 'anonymousRoutePaths').length).toBe(
+    expect(extra.filter((key) => key === 'anonymousRoutePaths')).toHaveLength(
       baseline.filter((key) => key === 'anonymousRoutePaths').length
     )
-    expect(extra.filter((key) => key === 'redirectOrigins').length).toBe(
+    expect(extra.filter((key) => key === 'redirectOrigins')).toHaveLength(
       baseline.filter((key) => key === 'redirectOrigins').length
     )
-    expect(extra.filter((key) => key === 'capabilities').length).toBe(
+    expect(extra.filter((key) => key === 'capabilities')).toHaveLength(
       baseline.filter((key) => key === 'capabilities').length
     )
   })
