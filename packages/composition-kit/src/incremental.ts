@@ -4,6 +4,7 @@ import { sha256Hex } from './hash.js'
 import { writeFileAtomic } from './lock.js'
 import type { FileSource } from './overlay.js'
 import type { ComposePlan } from './plan.js'
+import { writeReplacementMap } from './replacement-map.js'
 
 export type Signatures = Map<string, string>
 
@@ -37,6 +38,7 @@ export function applyIncremental(
   for (const dest of previous.keys()) {
     if (!next.has(dest)) rmSync(join(appRoot, dest), { force: true })
   }
+  if (plan.replacementMapText !== undefined) writeReplacementMap(appRoot, plan.replacementMapText)
   if (plan.lockText !== undefined) writeFileAtomic(plan.lockPath, plan.lockText)
   return next
 }

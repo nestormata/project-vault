@@ -93,6 +93,7 @@ clean_env() {
   env -i \
     PATH="$NODE_DIR:/usr/local/bin:/usr/bin:/bin" \
     HOME="$WORK/home" \
+    PV_FIXTURE_VARIANT="$VARIANT" \
     npm_config_cache="$CACHE" \
     npm_config_update_notifier=false \
     "$@"
@@ -230,6 +231,7 @@ fi
 if [[ "$VARIANT" == 'compose' ]]; then
   compose_plant_probe
   compose_assert_derived_routes
+  compose_plant_parity_test
 fi
 # Story 68-6 AC-6 (code review): an invalid pack headerPolicy fails the composed tree's
 # composed-hooks-init.test.ts with the start-up error, before anything is built or served.
@@ -239,6 +241,9 @@ if [[ "$VARIANT" == 'compose-bad-policy' ]]; then
     src/lib/composition/composed-hooks-init.test.ts)
   echo 'fixture: composed-hooks-init.test.ts passed over an invalid headerPolicy' >&2
   exit 1
+fi
+if [[ "$VARIANT" == 'compose-missing-with' ]]; then
+  compose_remove_replacement_file
 fi
 
 # The dev variant never builds: it needs the API stub, then drives the Vite dev server.
@@ -269,7 +274,8 @@ if [[ ! -f "$APP/build/index.js" || ! -d "$APP/build/client/_app" ]]; then
   echo 'fixture: vite build produced no build/index.js or build/client/_app' >&2
   exit 1
 fi
-if [[ "$VARIANT" == 'compose-server-leak' || "$VARIANT" == 'compose-server-twin' || "$VARIANT" == 'compose-hooks-leak' ]]; then
+if [[ "$VARIANT" == 'compose-server-leak' || "$VARIANT" == 'compose-server-twin' ||
+  "$VARIANT" == 'compose-replace-leak' || "$VARIANT" == 'compose-hooks-leak' ]]; then
   log "OK: vite build succeeded for $VARIANT"
   exit 0
 fi

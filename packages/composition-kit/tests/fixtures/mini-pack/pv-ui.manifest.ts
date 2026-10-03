@@ -51,6 +51,20 @@ export default defineUiPack({
       with: './replacements/Footer.svelte',
       hostSha256: sha('src/lib/components/shell/Footer.svelte'),
     },
+    // Story 68.5 AC-12: a wrapped shell component, a wrapped `$lib/api` module and a `$lib/server`
+    // module, each reached through `pv-original:`.
+    '$lib/components/shell/ShellAccount.svelte': {
+      with: './replacements/ShellAccount.svelte',
+      hostSha256: sha('src/lib/components/shell/ShellAccount.svelte'),
+    },
+    '$lib/api/audit.ts': {
+      with: './replacements/audit.ts',
+      hostSha256: sha('src/lib/api/audit.ts'),
+    },
+    '$lib/server/require-user.ts': {
+      with: './replacements/require-user.ts',
+      hostSha256: sha('src/lib/server/require-user.ts'),
+    },
   },
   hooks: {
     server: './hooks.server.ts',

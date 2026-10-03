@@ -247,7 +247,13 @@ CentralizeMe composed app).
 - **Compatibility manifest:** \`manifests/compatibility.json\` (export \`@project-vault/web-host/manifest\`)
   names the Project Vault release, the \`@project-vault/extension-api\` version, the exact Kit,
   Svelte, Vite and TypeScript versions and the matching API container image.
-- **Config factories:** \`@project-vault/web-host/svelte.config\`, \`/vite.config\` and
+- **Component index:** \`manifests/component-index.json\` lists every UI module a composed app may
+  replace by resolved path (each \`.svelte\` file under \`src/lib/components\`, each non-test \`.ts\`
+  module under \`src/lib\`) with its raw-bytes SHA-256 (the \`hostSha256\` a replacement declares) and
+  a \`stability\` signal: \`stable\` when the first comment of the file carries \`@pv-stable\` (its
+  props or exports are a contract Project Vault keeps), otherwise \`unmarked\` (no promise either
+  way). It is a signal, never a restriction: any module may be replaced, stable or not.
+- **Config factories:** \`@project-vault/web-host/svelte.config\`,\`/vite.config\` and
   \`/vitest.config\` return Project Vault's configs with every path computed from where this package
   is installed. Pass your own plugins, aliases or adapter to extend them. Compiled messages are
   written to \`<appRoot>/src/lib/paraglide\`, where \`appRoot\` defaults to the working directory.

@@ -36,6 +36,7 @@ import { tsImport } from 'tsx/esm/api'
 import { DEFAULT_RELEASE_REPOSITORY, releaseImageRef } from './lib/release-image.js'
 import { resolveBin, trustedGit } from './lib/trusted-executable.js'
 import { extensionApiVersion } from './lib/version-triangle.js'
+import { buildComponentIndex, componentIndexText } from './lib/web-host/component-index.js'
 import {
   compareCodeUnits,
   isTestFile,
@@ -404,15 +405,20 @@ function writeTsconfigBase(): void {
   )
 }
 
-/** Copies the later stories' generated manifests that exist in apps/web/manifests/ (68-4, 68-5,
- * 68-7); a missing one is simply not packed, never stubbed. */
+/** Copies the later stories' generated manifests that exist in apps/web/manifests/ (68-4, 68-7); a
+ * missing one is simply not packed, never stubbed. `component-index.json` (Story 68.5) is generated
+ * into the staging directory from the staged `src/lib` tree on every pack and never committed, so a
+ * stale copy cannot exist: it is written last and wins over any file of the same name. */
 function packOptionalManifests(): string[] {
   const existing = new Set(globSync('*.json', { cwd: join(WEB_DIR, 'manifests') }))
-  const packed = optionalManifestsToPack(existing)
-  for (const name of packed) {
+  for (const name of optionalManifestsToPack(existing)) {
     cpSync(join(WEB_DIR, 'manifests', name), join(STAGE_DIR, 'manifests', name))
   }
-  return packed
+  writeFileSync(
+    join(STAGE_DIR, 'manifests', 'component-index.json'),
+    componentIndexText(buildComponentIndex(STAGE_DIR))
+  )
+  return optionalManifestsToPack(new Set([...existing, 'component-index.json']))
 }
 
 type HookSurfaceModule = typeof import('../apps/web/src/lib/composition/hook-surface.ts')
@@ -553,13 +559,15 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
     apiImageTag: releaseImageRef(options.repository, 'api', options.version),
   })
   writeFileSync(join(STAGE_DIR, 'manifests', 'compatibility.json'), compatibilityManifest)
+  const copied = packOptionalManifests()
   // Story 68.6 AC-12: generated from PV's own HOOK_SURFACE (the table hook-surface.test.ts keeps
-  // equal to the installed SvelteKit's hooks) and PV's protected prefixes.
+  // equal to the installed SvelteKit's hooks) and PV's protected prefixes. Like component-index.json
+  // it is written after the copied manifests, so it wins over any file of the same name.
   writeFileSync(
     join(STAGE_DIR, 'manifests', 'hooks-surface.json'),
     buildHooksSurfaceManifest(await loadHooksSurfaceInput())
   )
-  const optional = ['hooks-surface.json', ...packOptionalManifests()]
+  const optional = optionalManifestsToPack(new Set([...copied, 'hooks-surface.json']))
   writeFileSync(join(STAGE_DIR, MANIFEST), `${JSON.stringify(packageJson, null, 2)}\n`)
   const manifests = ['compatibility.json', ...optional].join(', ')
   log(
