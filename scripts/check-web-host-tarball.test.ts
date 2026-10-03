@@ -346,9 +346,10 @@ describe('compatibility manifest (Story 68.2 AC-9)', () => {
     }
   })
 
-  it('packs no empty stub for a manifest a later story has not generated yet', () => {
+  it('packs only the manifests generated so far, never an empty stub for a later one', () => {
     expect(paths.filter((path) => path.startsWith('manifests/'))).toEqual([
       'manifests/compatibility.json',
+      'manifests/injection-points.json',
     ])
   })
 })

@@ -117,7 +117,7 @@ describe('route render snapshot (Story 68.4 AC-12)', () => {
         ])
     )
     await expect(`${JSON.stringify(result, null, 2)}\n`).toMatchFileSnapshot(
-      './__tests__/route-render.snapshot.json'
+      './route-render.snapshot.json'
     )
     expect(Object.keys(result)).toHaveLength(70)
   })
