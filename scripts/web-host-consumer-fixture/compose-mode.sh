@@ -204,7 +204,8 @@ compose_request() { # port method path [cookie|-] [origin] [form body] -> status
 
 # The value of one response header of the last compose_request (empty when absent).
 compose_header() {
-  awk -v name="$1" '{
+  local header="$1"
+  awk -v name="$header" '{
     sub(/\r$/, "")
     split($0, parts, ": ")
     if (tolower(parts[1]) == tolower(name)) { print substr($0, length(parts[1]) + 3); exit }
@@ -260,11 +261,13 @@ compose_expect_ok() { # port method path cookie needle
 
 # The API stub's call counters (api-stub.mjs): the CM handlers call it, the harness reads it.
 fixture_stub() { # path -> body
-  curl -s "http://127.0.0.1:${API_PORT}/__fixture/$1" || true
+  local path="$1"
+  curl -s "http://127.0.0.1:${API_PORT}/__fixture/${path}" || true
   return 0
 }
 
 fixture_count() { # name -> count (0 when never called)
+  local name="$1"
   fixture_stub state | "$NODE_BIN" -e '
     let input = ""
     process.stdin.on("data", (chunk) => (input += chunk))
@@ -272,15 +275,16 @@ fixture_count() { # name -> count (0 when never called)
       const state = JSON.parse(input)
       console.log(state.counts[process.argv[1]] ?? 0)
     })
-  ' "$1"
+  ' "$name"
   return 0
 }
 
 fixture_expect_count() { # name expected
+  local name="$1" expected="$2"
   local actual
-  actual="$(fixture_count "$1")"
-  if [[ "$actual" != "$2" ]]; then
-    echo "fixture: handler counter $1 is $actual, expected $2" >&2
+  actual="$(fixture_count "$name")"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "fixture: handler counter $name is $actual, expected $expected" >&2
     fixture_stub state >&2
     exit 1
   fi
@@ -392,16 +396,18 @@ compose_hooks_checks() {
 
 # The response of the last compose_request carries this Set-Cookie value (exact prefix match).
 compose_expect_set_cookie() { # value-prefix context
-  if ! grep -qiF "set-cookie: $1" "$WORK/headers.txt"; then
-    compose_fail "$2: the refreshed cookie ($1) was not forwarded"
+  local prefix="$1" context="$2"
+  if ! grep -qiF "set-cookie: ${prefix}" "$WORK/headers.txt"; then
+    compose_fail "${context}: the refreshed cookie (${prefix}) was not forwarded"
   fi
   return 0
 }
 
 # The stub saw no request for an API path since its last reset.
 fixture_expect_no_path() { # /path context
-  if fixture_stub state | grep -qF "$1"; then
-    compose_fail "$2: the API saw $1"
+  local path="$1" context="$2"
+  if fixture_stub state | grep -qF "$path"; then
+    compose_fail "${context}: the API saw ${path}"
   fi
   return 0
 }
