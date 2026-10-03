@@ -42,6 +42,7 @@ COPY packages/crypto/package.json ./packages/crypto/
 # Copy the remaining members' manifests (manifests only, no sources) so the install
 # validates the whole lockfile. The sources stay out of this image.
 COPY apps/api/package.json ./apps/api/
+COPY fixtures/mock-api-routes-extension/package.json ./fixtures/mock-api-routes-extension/
 COPY fixtures/mock-audit-event-source-extension/package.json ./fixtures/mock-audit-event-source-extension/
 COPY fixtures/mock-capability-gate-extension/package.json ./fixtures/mock-capability-gate-extension/
 COPY fixtures/mock-sso-extension/package.json ./fixtures/mock-sso-extension/

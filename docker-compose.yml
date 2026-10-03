@@ -165,6 +165,9 @@ services:
       VAULT_EXTENSIONS_PACKAGE: ${VAULT_EXTENSIONS_PACKAGE:-}
       # Story 24.3: incident-only rollback escape; keep false in normal operation.
       VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST: ${VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST:-false}
+      # Story 68.8: fail the boot when the configured extension does not load (composed
+      # deployments set true; PV's standalone default is false).
+      VAULT_EXTENSIONS_REQUIRED: ${VAULT_EXTENSIONS_REQUIRED:-false}
       # Story 43.6/43.7: optional CLI version policy (docs/runbooks/cli-version-policy.md).
       # Versions only, never free text; empty = none. Invalid values fail API boot, naming the entry.
       # Apply a change with `docker compose up -d api` (`restart` does not re-read the environment).

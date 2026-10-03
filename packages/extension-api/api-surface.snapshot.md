@@ -14,25 +14,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.23.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@202`
-  - since: 3.24.0
+- member: `__@match@204`
+  - since: 3.27.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@211`
-  - since: 3.24.0
+- member: `__@matchAll@213`
+  - since: 3.27.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@204`
-  - since: 3.24.0
+- member: `__@replace@206`
+  - since: 3.27.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@207`
-  - since: 3.24.0
+- member: `__@search@209`
+  - since: 3.27.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@209`
-  - since: 3.24.0
+- member: `__@split@211`
+  - since: 3.27.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -84,6 +84,324 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.23.0
   - type: `boolean`
   - union-members: `false`, `true`
+
+## export `API_ROUTE_HOOK_PHASES`
+
+- since: 3.27.0
+- kind: value
+- type: `readonly ["onRequest", "preValidation", "preHandler", "onSend"]`
+
+## export `API_ROUTE_METHODS`
+
+- since: 3.27.0
+- kind: value
+- type: `readonly ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]`
+
+## export `ApiRouteAddDeclaration`
+
+- since: 3.27.0
+- kind: type
+- type: `ApiRouteAddDeclaration`
+- member: `method`
+  - since: 3.27.0
+  - type: `"GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"`
+  - union-members: `"GET"`, `"HEAD"`, `"POST"`, `"PUT"`, `"PATCH"`, `"DELETE"`, `"OPTIONS"`
+- member: `options?`
+  - since: 3.27.0
+  - type: `{ security?: ApiRouteSecurity; bodyLimit?: number; schema?: boolean; hooks?: ApiRouteHookPhase[]; } | undefined`
+  - union-members: `undefined`, `{ security?: ApiRouteSecurity; bodyLimit?: number; schema?: boolean; hooks?: ApiRouteHookPhase[]; }`
+- member: `url`
+  - since: 3.27.0
+  - type: `string`
+
+## export `ApiRouteAnyFunction`
+
+- since: 3.27.0
+- kind: type
+- type: `ApiRouteAnyFunction`
+- call-signature: `(...args: never[]): unknown`
+
+## export `ApiRouteAuthContext`
+
+- since: 3.27.0
+- kind: type
+- type: `ApiRouteAuthContext`
+- member: `isPlatformOperator`
+  - since: 3.27.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `orgId`
+  - since: 3.27.0
+  - type: `string`
+- member: `orgRole`
+  - since: 3.27.0
+  - type: `ApiRouteOrgRole`
+  - union-members: `"owner"`, `"admin"`, `"member"`, `"viewer"`
+- member: `sessionId`
+  - since: 3.27.0
+  - type: `string`
+- member: `userId`
+  - since: 3.27.0
+  - type: `string`
+
+## export `ApiRouteContext`
+
+- since: 3.27.0
+- kind: type
+- type: `ApiRouteContext`
+- member: `audit?`
+  - since: 3.27.0
+  - type: `{ eventType?: string; resourceType?: string; } | undefined`
+  - union-members: `undefined`, `{ eventType?: string; resourceType?: string; }`
+- member: `auth`
+  - since: 3.27.0
+  - type: `ApiRouteAuthContext`
+  - member: `isPlatformOperator`
+    - since: 3.27.0
+    - type: `boolean`
+    - union-members: `false`, `true`
+  - member: `orgId`
+    - since: 3.27.0
+    - type: `string`
+  - member: `orgRole`
+    - since: 3.27.0
+    - type: `ApiRouteOrgRole`
+    - union-members: `"owner"`, `"admin"`, `"member"`, `"viewer"`
+  - member: `sessionId`
+    - since: 3.27.0
+    - type: `string`
+  - member: `userId`
+    - since: 3.27.0
+    - type: `string`
+- member: `onPostCommit`
+  - since: 3.27.0
+  - type: `(callback: () => void | Promise<void>) => void`
+  - call-signature: `(callback: () => void | Promise<void>): void`
+- member: `tx?`
+  - since: 3.27.0
+  - type: `object | undefined`
+  - union-members: `undefined`, `object`
+
+## export `ApiRouteHandler`
+
+- since: 3.27.0
+- kind: type
+- type: `ApiRouteHandler<Req, Reply>`
+- call-signature: `(ctx: ApiRouteContext | ApiRoutePublicContext, req: Req, reply: Reply): unknown`
+
+## export `ApiRouteHookFn`
+
+- since: 3.27.0
+- kind: type
+- type: `ApiRouteHookFn<Req, Reply>`
+- call-signature: `(req: Req, reply: Reply, ...rest: unknown[]): unknown`
+
+## export `ApiRouteHookPhase`
+
+- since: 3.27.0
+- kind: type
+- type: `"onRequest" | "preValidation" | "preHandler" | "onSend"`
+- union-members: `"onRequest"`, `"preValidation"`, `"preHandler"`, `"onSend"`
+
+## export `ApiRouteImplementation`
+
+- since: 3.27.0
+- kind: type
+- type: `ApiRouteImplementation`
+- member: `handler`
+  - since: 3.27.0
+  - type: `ApiRouteAnyFunction`
+  - call-signature: `(...args: never[]): unknown`
+- member: `hooks?`
+  - since: 3.27.0
+  - type: `Partial<Record<"onRequest" | "preValidation" | "preHandler" | "onSend", ApiRouteAnyFunction | ApiRouteAnyFunction[]>> | undefined`
+  - union-members: `undefined`, `Partial<Record<"onRequest" | "preValidation" | "preHandler" | "onSend", ApiRouteAnyFunction | ApiRouteAnyFunction[]>>`
+- member: `schema?`
+  - since: 3.27.0
+  - type: `unknown`
+
+## export `ApiRouteKey`
+
+- since: 3.27.0
+- kind: type
+- type: ``GET ${string}` | `HEAD ${string}` | `POST ${string}` | `PUT ${string}` | `PATCH ${string}` | `DELETE ${string}` | `OPTIONS ${string}``
+- union-members: ``GET ${string}``, ``HEAD ${string}``, ``POST ${string}``, ``PUT ${string}``, ``PATCH ${string}``, ``DELETE ${string}``, ``OPTIONS ${string}``
+
+## export `ApiRouteMethod`
+
+- since: 3.27.0
+- kind: type
+- type: `"GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"`
+- union-members: `"GET"`, `"HEAD"`, `"POST"`, `"PUT"`, `"PATCH"`, `"DELETE"`, `"OPTIONS"`
+
+## export `ApiRouteOrgRole`
+
+- since: 3.27.0
+- kind: type
+- type: `ApiRouteOrgRole`
+- union-members: `"owner"`, `"admin"`, `"member"`, `"viewer"`
+
+## export `ApiRouteOverrideDeclaration`
+
+- since: 3.27.0
+- kind: type
+- type: `ApiRouteOverrideDeclaration`
+- member: `hooks?`
+  - since: 3.27.0
+  - type: `{ prepend?: ApiRouteHookPhase[]; append?: ApiRouteHookPhase[]; } | undefined`
+  - union-members: `undefined`, `{ prepend?: ApiRouteHookPhase[]; append?: ApiRouteHookPhase[]; }`
+- member: `method`
+  - since: 3.27.0
+  - type: `"GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS"`
+  - union-members: `"GET"`, `"HEAD"`, `"POST"`, `"PUT"`, `"PATCH"`, `"DELETE"`, `"OPTIONS"`
+- member: `mode`
+  - since: 3.27.0
+  - type: `"replace" | "wrap"`
+  - union-members: `"replace"`, `"wrap"`
+- member: `replaceSecurity?`
+  - since: 3.27.0
+  - type: `boolean | undefined`
+  - union-members: `undefined`, `false`, `true`
+- member: `schema?`
+  - since: 3.27.0
+  - type: `"replace" | "extend" | undefined`
+  - union-members: `undefined`, `"replace"`, `"extend"`
+- member: `security?`
+  - since: 3.27.0
+  - type: `ApiRouteSecurity | undefined`
+  - union-members: `undefined`, `ApiRouteSecurity`
+- member: `url`
+  - since: 3.27.0
+  - type: `string`
+
+## export `ApiRoutePublicContext`
+
+- since: 3.27.0
+- kind: type
+- type: `ApiRoutePublicContext`
+- index-signature: `[string]: never`
+  - since: 3.27.0
+
+## export `ApiRouteReply`
+
+- since: 3.27.0
+- kind: type
+- type: `ApiRouteReply`
+- member: `code`
+  - since: 3.27.0
+  - type: `(statusCode: number) => unknown`
+  - call-signature: `(statusCode: number): unknown`
+- member: `header`
+  - since: 3.27.0
+  - type: `(name: string, value: unknown) => unknown`
+  - call-signature: `(name: string, value: unknown): unknown`
+- member: `send`
+  - since: 3.27.0
+  - type: `(payload?: unknown) => unknown`
+  - call-signature: `(payload?: unknown): unknown`
+- member: `readonly sent`
+  - since: 3.27.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+
+## export `ApiRouteRequest`
+
+- since: 3.27.0
+- kind: type
+- type: `ApiRouteRequest`
+- member: `body`
+  - since: 3.27.0
+  - type: `unknown`
+- member: `headers`
+  - since: 3.27.0
+  - type: `Record<string, string | string[] | undefined>`
+  - index-signature: `[string]: string | string[] | undefined`
+    - since: 3.27.0
+- member: `method`
+  - since: 3.27.0
+  - type: `string`
+- member: `params`
+  - since: 3.27.0
+  - type: `unknown`
+- member: `query`
+  - since: 3.27.0
+  - type: `unknown`
+- member: `url`
+  - since: 3.27.0
+  - type: `string`
+
+## export `ApiRoutesDeclaration`
+
+- since: 3.27.0
+- kind: type
+- type: `ApiRoutesDeclaration`
+- member: `add?`
+  - since: 3.27.0
+  - type: `ApiRouteAddDeclaration[] | undefined`
+  - union-members: `undefined`, `ApiRouteAddDeclaration[]`
+- member: `override?`
+  - since: 3.27.0
+  - type: `ApiRouteOverrideDeclaration[] | undefined`
+  - union-members: `undefined`, `ApiRouteOverrideDeclaration[]`
+
+## export `ApiRouteSecurity`
+
+- since: 3.27.0
+- kind: type
+- type: `ApiRouteSecurity`
+- member: `allowedRoles?`
+  - since: 3.27.0
+  - type: `ApiRouteOrgRole[] | undefined`
+  - union-members: `undefined`, `ApiRouteOrgRole[]`
+- member: `capability?`
+  - since: 3.27.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+- member: `minimumRole?`
+  - since: 3.27.0
+  - type: `ApiRouteOrgRole | undefined`
+  - union-members: `undefined`, `"owner"`, `"admin"`, `"member"`, `"viewer"`
+- member: `rateLimit?`
+  - since: 3.27.0
+  - type: `false | { max: number; timeWindowMs?: number; key?: string; } | undefined`
+  - union-members: `undefined`, `false`, `{ max: number; timeWindowMs?: number; key?: string; }`
+- member: `requireAuth?`
+  - since: 3.27.0
+  - type: `boolean | undefined`
+  - union-members: `undefined`, `false`, `true`
+- member: `requireMfa?`
+  - since: 3.27.0
+  - type: `boolean | undefined`
+  - union-members: `undefined`, `false`, `true`
+- member: `requireOrgScope?`
+  - since: 3.27.0
+  - type: `boolean | undefined`
+  - union-members: `undefined`, `false`, `true`
+- member: `requirePlatformOperator?`
+  - since: 3.27.0
+  - type: `boolean | undefined`
+  - union-members: `undefined`, `false`, `true`
+- member: `writeAuditEvent?`
+  - since: 3.27.0
+  - type: `boolean | { eventType: string; resourceType?: string; resourceIdFromParams?: string; } | undefined`
+  - union-members: `undefined`, `false`, `true`, `{ eventType: string; resourceType?: string; resourceIdFromParams?: string; }`
+
+## export `ApiRoutesHooks`
+
+- since: 3.27.0
+- kind: type
+- type: `ApiRoutesHooks`
+- member: `routes?`
+  - since: 3.27.0
+  - type: `Partial<Record<`GET ${string}` | `HEAD ${string}` | `POST ${string}` | `PUT ${string}` | `PATCH ${string}` | `DELETE ${string}` | `OPTIONS ${string}`, ApiRouteImplementation>> | undefined`
+  - union-members: `undefined`, `Partial<Record<`GET ${string}` | `HEAD ${string}` | `POST ${string}` | `PUT ${string}` | `PATCH ${string}` | `DELETE ${string}` | `OPTIONS ${string}`, ApiRouteImplementation>>`
+
+## export `ApiRouteWrapHandler`
+
+- since: 3.27.0
+- kind: type
+- type: `ApiRouteWrapHandler<Req, Reply>`
+- call-signature: `(ctx: ApiRouteContext | ApiRoutePublicContext, req: Req, reply: Reply, next: () => Promise<unknown>): unknown`
 
 ## export `AuditEventSourceHost`
 
@@ -656,7 +974,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.25.0"`
+- type: `"3.27.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 
@@ -716,6 +1034,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 1.0.0
 - kind: type
 - type: `ExtensionHooks`
+- member: `apiRoutes?`
+  - since: 3.27.0
+  - type: `ApiRoutesHooks | undefined`
+  - union-members: `undefined`, `ApiRoutesHooks`
 - member: `authStrategy?`
   - since: 1.0.0
   - type: `AuthStrategy | undefined`
@@ -774,6 +1096,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.23.0
   - type: `string[] | undefined`
   - union-members: `undefined`, `string[]`
+- member: `apiRoutes?`
+  - since: 3.27.0
+  - type: `ApiRoutesDeclaration | undefined`
+  - union-members: `undefined`, `ApiRoutesDeclaration`
 - member: `apiVersion`
   - since: 1.0.0
   - type: `string`
@@ -1048,6 +1374,12 @@ Generated from `src/index.ts`; update this file and classify the change against 
     - type: `(context: ProjectAuthorizationCheckContext) => Promise<ProjectAuthorizationOutcome>`
     - call-signature: `(context: ProjectAuthorizationCheckContext): Promise<ProjectAuthorizationOutcome>`
 
+## export `HostTransaction`
+
+- since: 3.27.0
+- kind: type
+- type: `object`
+
 ## export `isExtensionApiVersionSupported`
 
 - since: 1.0.0
@@ -1060,6 +1392,12 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.23.0
 - kind: value
 - type: `32`
+
+## export `MAX_API_ROUTE_URL_LENGTH`
+
+- since: 3.27.0
+- kind: value
+- type: `2048`
 
 ## export `MAX_MODULE_ACTIONS`
 
@@ -1120,25 +1458,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.3.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@202`
-  - since: 3.24.0
+- member: `__@match@204`
+  - since: 3.27.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@211`
-  - since: 3.24.0
+- member: `__@matchAll@213`
+  - since: 3.27.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@204`
-  - since: 3.24.0
+- member: `__@replace@206`
+  - since: 3.27.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@207`
-  - since: 3.24.0
+- member: `__@search@209`
+  - since: 3.27.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@209`
-  - since: 3.24.0
+- member: `__@split@211`
+  - since: 3.27.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -1196,25 +1534,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.10.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@202`
-  - since: 3.24.0
+- member: `__@match@204`
+  - since: 3.27.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@211`
-  - since: 3.24.0
+- member: `__@matchAll@213`
+  - since: 3.27.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@204`
-  - since: 3.24.0
+- member: `__@replace@206`
+  - since: 3.27.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@207`
-  - since: 3.24.0
+- member: `__@search@209`
+  - since: 3.27.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@209`
-  - since: 3.24.0
+- member: `__@split@211`
+  - since: 3.27.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -1996,25 +2334,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.9.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@202`
-  - since: 3.24.0
+- member: `__@match@204`
+  - since: 3.27.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@211`
-  - since: 3.24.0
+- member: `__@matchAll@213`
+  - since: 3.27.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@204`
-  - since: 3.24.0
+- member: `__@replace@206`
+  - since: 3.27.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@207`
-  - since: 3.24.0
+- member: `__@search@209`
+  - since: 3.27.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@209`
-  - since: 3.24.0
+- member: `__@split@211`
+  - since: 3.27.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -2078,25 +2416,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.9.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@202`
-  - since: 3.24.0
+- member: `__@match@204`
+  - since: 3.27.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@211`
-  - since: 3.24.0
+- member: `__@matchAll@213`
+  - since: 3.27.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@204`
-  - since: 3.24.0
+- member: `__@replace@206`
+  - since: 3.27.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@207`
-  - since: 3.24.0
+- member: `__@search@209`
+  - since: 3.27.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@209`
-  - since: 3.24.0
+- member: `__@split@211`
+  - since: 3.27.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -2397,25 +2735,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.8.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@202`
-  - since: 3.24.0
+- member: `__@match@204`
+  - since: 3.27.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@211`
-  - since: 3.24.0
+- member: `__@matchAll@213`
+  - since: 3.27.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@204`
-  - since: 3.24.0
+- member: `__@replace@206`
+  - since: 3.27.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@207`
-  - since: 3.24.0
+- member: `__@search@209`
+  - since: 3.27.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@209`
-  - since: 3.24.0
+- member: `__@split@211`
+  - since: 3.27.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -2662,30 +3000,44 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - type: `(params: MonitoringUpdateServiceEndpointPauseStateParams) => Promise<MonitoringUpdateServiceEndpointPauseStateResult | null>`
   - call-signature: `(params: MonitoringUpdateServiceEndpointPauseStateParams): Promise<MonitoringUpdateServiceEndpointPauseStateResult | null>`
 
+## export `RawRouteHandler`
+
+- since: 3.27.0
+- kind: type
+- type: `RawRouteHandler<Req, Reply>`
+- call-signature: `(req: Req, reply: Reply): unknown`
+
+## export `RawRouteWrapHandler`
+
+- since: 3.27.0
+- kind: type
+- type: `RawRouteWrapHandler<Req, Reply>`
+- call-signature: `(req: Req, reply: Reply, next: () => Promise<unknown>): unknown`
+
 ## export `REDIRECT_ORIGIN_PATTERN`
 
 - since: 3.16.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@202`
-  - since: 3.24.0
+- member: `__@match@204`
+  - since: 3.27.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@211`
-  - since: 3.24.0
+- member: `__@matchAll@213`
+  - since: 3.27.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@204`
-  - since: 3.24.0
+- member: `__@replace@206`
+  - since: 3.27.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@207`
-  - since: 3.24.0
+- member: `__@search@209`
+  - since: 3.27.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@209`
-  - since: 3.24.0
+- member: `__@split@211`
+  - since: 3.27.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -2756,25 +3108,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.18.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@202`
-  - since: 3.24.0
+- member: `__@match@204`
+  - since: 3.27.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@211`
-  - since: 3.24.0
+- member: `__@matchAll@213`
+  - since: 3.27.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@204`
-  - since: 3.24.0
+- member: `__@replace@206`
+  - since: 3.27.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@207`
-  - since: 3.24.0
+- member: `__@search@209`
+  - since: 3.27.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@209`
-  - since: 3.24.0
+- member: `__@split@211`
+  - since: 3.27.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`
@@ -3008,25 +3360,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.1.0
 - kind: value
 - type: `RegExp`
-- member: `__@match@202`
-  - since: 3.24.0
+- member: `__@match@204`
+  - since: 3.27.0
   - type: `(string: string) => RegExpMatchArray | null`
   - call-signature: `(string: string): RegExpMatchArray | null`
-- member: `__@matchAll@211`
-  - since: 3.24.0
+- member: `__@matchAll@213`
+  - since: 3.27.0
   - type: `(str: string) => RegExpStringIterator<RegExpExecArray>`
   - call-signature: `(str: string): RegExpStringIterator<RegExpExecArray>`
-- member: `__@replace@204`
-  - since: 3.24.0
+- member: `__@replace@206`
+  - since: 3.27.0
   - type: `{ (string: string, replaceValue: string): string; (string: string, replacer: (substring: string, ...args: any[]) => string): string; }`
   - call-signature: `(string: string, replaceValue: string): string`
   - call-signature: `(string: string, replacer: (substring: string, ...args: any[]) => string): string`
-- member: `__@search@207`
-  - since: 3.24.0
+- member: `__@search@209`
+  - since: 3.27.0
   - type: `(string: string) => number`
   - call-signature: `(string: string): number`
-- member: `__@split@209`
-  - since: 3.24.0
+- member: `__@split@211`
+  - since: 3.27.0
   - type: `(string: string, limit?: number) => string[]`
   - call-signature: `(string: string, limit?: number): string[]`
 - member: `compile`

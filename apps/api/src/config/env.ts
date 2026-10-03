@@ -1254,6 +1254,10 @@ const envSchema = z
     // Story 24.3: incident-only escape for a same-major extension built above a rolled-back host.
     // Default false; this relaxes only the ceiling and emits a warning on every boot while set.
     VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST: booleanEnvDefault(false),
+    // Story 68.8 AC-11: fail the boot when the configured extension does not load (or none is
+    // configured). Composed deployments (the CentralizeMe API image) set it true; PV's standalone
+    // default stays false (fail-open).
+    VAULT_EXTENSIONS_REQUIRED: booleanEnvDefault(false),
 
     // Story 23.2 AC-8: break-glass — re-enables every native-credential route regardless of the
     // resolved policy. Read only at boot (apps/api/src/modules/auth/native-login-policy.ts). Not

@@ -113,6 +113,7 @@ export default { manifest, hooksFactory }
 | `moduleDataRoutes` | Optional, and not gated on any capability (`registerExtension()` deliberately does not require `ui-panel` for it). Mounts real `GET` routes on Project Vault's own API router under `/api/v1/extensions/data`. `GET`-only, under a fixed prefix, so it adds routes but cannot override or wrap existing ones. It does not belong to the panel API. It is deprecated and frozen (no new features or fixes; kept until removed; security issues resolved by replacement or removal) in its own right; first-party API route composition is the planned forward path. |
 | `navItems` | Optional, and not gated on any capability. Adds append-only navigation entries to Project Vault's shell. It does not belong to the panel API. It is deprecated and frozen (no new features or fixes; kept until removed; security issues resolved by replacement or removal) in its own right; build-time UI composition navigation is the planned forward path. |
 | `dbScope` | Optional and operator-approved: a request for a separate least-privilege database handle. |
+| `apiRoutes` | Optional (since 3.27.0), and not gated on any capability. Adds API routes at any URL and overrides (`replace`) or wraps (`wrap`) Project Vault's own API routes, all inside Project Vault's security pipeline. Declarations are data here; handlers, schemas and hook functions go in `hooks.apiRoutes.routes`. Validation is integrity only: no URL prefix, count cap, capability or allowlist. See [API routes (`apiRoutes`)](#api-routes-apiroutes). |
 
 ### Why `EXTENSION_API_VERSION` rather than a version string
 
@@ -432,6 +433,144 @@ never calls it again for that notification and marks it `failed` instead. If you
 reject after the message was actually accepted (a timeout, for example), deduplicating on
 `queueRowId` is what keeps the retry from sending twice. `attemptNumber` is for logs and metrics
 only; never put it in the idempotency key.
+
+### API routes (`apiRoutes`)
+
+`apiRoutes` (since `@project-vault/extension-api` 3.27.0) lets an extension register real API
+routes on Project Vault's API router and override or wrap Project Vault's existing API routes. It
+replaces the deprecated `moduleDataRoutes`. Every route runs inside Project Vault's own security
+pipeline: session authentication, organization role, MFA, platform-operator check, rate limit,
+capability gate, the row-level-security (RLS) request transaction, audit and post-commit
+callbacks.
+
+Declare the routes in the manifest and put the functions in the hooks, keyed by `"<METHOD> <url>"`:
+
+```ts
+import { z } from 'zod/v4'
+import { EXTENSION_API_VERSION, type ExtensionManifest } from '@project-vault/extension-api'
+
+const manifest: ExtensionManifest = {
+  name: 'com.acme.docs',
+  apiVersion: EXTENSION_API_VERSION,
+  capabilities: [],
+  apiRoutes: {
+    add: [{ method: 'GET', url: '/api/v1/acme/documents', options: { security: { minimumRole: 'member', writeAuditEvent: false } } }],
+    override: [{ method: 'GET', url: '/api/v1/projects/:projectId', mode: 'wrap', schema: 'extend' }],
+  },
+}
+
+const hooksFactory = () => ({
+  apiRoutes: {
+    routes: {
+      'GET /api/v1/acme/documents': { handler: async (ctx) => ({ data: { orgId: ctx.auth.orgId } }) },
+      'GET /api/v1/projects/:projectId': {
+        handler: async (_ctx, _req, _reply, next) => {
+          const pv = (await next()) as { data: object }
+          return { data: { ...pv.data, acmeTiles: [] } }
+        },
+        schema: { response: { 200: z.object({ data: z.looseObject({ acmeTiles: z.array(z.string()) }) }) } },
+      },
+    },
+  },
+})
+```
+
+**Adding a route (`add`).** Any method (`GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`,
+`OPTIONS`) at any URL, including outside `/api/v1`. `options.security` takes the same fields as
+Project Vault's own routes (`requireAuth`, `requireOrgScope`, `minimumRole`, `allowedRoles`,
+`requireMfa`, `requirePlatformOperator`, `writeAuditEvent`, `rateLimit`, `capability`); omitted
+fields take Project Vault's defaults (authenticated, organization-scoped, viewer or above, 60
+requests per minute per user, default audit on mutating methods). An added route's default
+rate-limit bucket and default audit event type are its full `METHOD url`. Adding a route at a URL
+and method Project Vault already serves fails the boot: declare it under `override` instead. An
+added `OPTIONS` route is more specific than the CORS plugin's `OPTIONS *`, so your handler answers
+that URL's preflight.
+
+**Overriding a route (`override`).** The key must match the route Project Vault registers,
+including its parameter names (`/api/v1/projects/:projectId`, not `/api/v1/projects/:id`). A
+trailing slash is ignored.
+
+- `mode: 'replace'`: your handler runs in place of Project Vault's business handler. Everything
+  before it is still Project Vault's: authentication, role, rate limit (Project Vault's bucket),
+  MFA, capability gate and the transaction.
+- `mode: 'wrap'`: your handler gets `next()`, which runs Project Vault's handler with the same
+  context and resolves with its result. You may call it more than once (Project Vault's handler,
+  and its writes, run again in the same transaction) or never (then it behaves like `replace`).
+  `next()` is valid only until your handler's promise settles; a call after that rejects with
+  `apiRoutes wrap next() called after the handler settled: <METHOD> <url>`. If Project Vault's
+  handler sent the reply itself (for example a `422`), `next()` resolves with `reply.sent === true`
+  and you must not send again.
+- `schema: 'replace'` uses your schema verbatim; `schema: 'extend'` merges per part (`params`,
+  `querystring`, `body`, `headers`, and `response` per status code), yours winning for the parts
+  you supply. Without one, Project Vault's response schema still serializes your result, so
+  unknown fields are stripped.
+- `hooks: { prepend, append }` places your `onRequest`, `preValidation`, `preHandler` and
+  `onSend` functions before or after Project Vault's own route hooks of that phase.
+- A `GET` override also answers the automatic `HEAD` route. Declare an explicit `HEAD` override
+  to answer `HEAD` differently.
+- Raw Project Vault routes (health, metrics, vault init/unseal, the session login routes and their
+  `405` stubs, the swagger-ui routes) can be overridden too; their handler signature is
+  `(req, reply)` and `(req, reply, next)` for `wrap`. The API docs routes exist only when API docs
+  are enabled (`ENABLE_API_DOCS`).
+
+**`replaceSecurity: true`.** The entry's own `security` then replaces the route's security
+wholesale, and Project Vault still builds the pipeline from it, so
+`security: { requireAuth: false, rateLimit: false }` gives an unauthenticated, unthrottled handler
+whose context is `{}`. On a raw route it builds the secure pipeline around your handler (your
+handler then has the `(ctx, req, reply)` signature). It is recorded, never refused: one `warn`
+boot log line (`extension.api_route.replace_security`) per route, and the
+`GET /api/v1/admin/extensions/status` `apiRoutes` list. Only the route's own security is replaced.
+Context-level hooks of the route's plugin (for example the per-IP limiter on the CLI login routes)
+and app-wide hooks (vault guard, helmet, CORS) still run. Without `replaceSecurity`, a `security`
+key on an override fails the manifest, so a typo can never silently weaken a route. For the same
+reason every `security` object (on an `add` or an override) is checked for unknown keys and value
+types (`minimumRol`, `requireMfa: 'yes'` or `minimumRole: 'Admin'` fail the manifest), and two
+entries that differ only by a trailing slash are one route (a duplicate).
+
+**Handler context.** An authenticated, organization-scoped route gets
+`ctx = { auth, tx, onPostCommit, audit }`. `ctx.tx` is Project Vault's request transaction (a
+drizzle `PgTransaction` at runtime, with `app.current_org_id` set, so RLS limits every query to
+the caller's organization); await every query on it. Your own tables are reached through
+`host.getDbHandle()`, a separate pool and transaction, so a write there is **not** atomic with
+Project Vault's transaction: write it inside `ctx.onPostCommit` (after Project Vault committed) or
+make it idempotent and compensate. A request that holds `ctx.tx` while it waits on
+`getDbHandle()` uses two connections; size the pools for it. Public routes get `ctx = {}`.
+
+**Capabilities.** An `apiRoutes` entry's own `security.capability` (on an added route, or on an
+override with `replaceSecurity: true`) may be any id, including your own capability ids that
+Project Vault does not know. Project Vault passes it unchanged to your registered
+`capabilityGate` hook, which permits or denies it; a denial answers PV's `403 capability_denied`
+with your `reasonCode`. With no `capabilityGate` registered, an id outside Project Vault's own
+`CapabilityId` set is denied (`reasonCode: 'unknown_capability'`, fail closed), while a Project
+Vault id behaves as on PV's own routes (no gate, no check). The gate step runs only on
+authenticated routes, so a `capability` on a `requireAuth: false` entry fails the boot (it could
+never be enforced) instead of being ignored. An override
+without `replaceSecurity` keeps Project Vault's own security, and PV's own routes keep refusing an
+unknown id at boot. The status endpoint lists each entry's `capability`.
+
+**Schemas.** Supply a schema Project Vault's compilers accept: today a Zod 4 schema per part,
+including `zod/v4` from zod 3.25 and later. Project Vault checks every schema part while the API
+boots; one it cannot use fails the boot with the route key.
+
+**Errors and sessions.** These are API routes. Like Project Vault's own, an expired session gets a
+JSON `401`, not a redirect, so call them with `fetch` from your pages. A browser-navigable
+experience (a download link, an OAuth callback page) belongs in a composed page or `+server`
+endpoint.
+
+**Boot failures.** A missing override target, an undeclared collision or a rejected schema fails
+the boot (`startup.failed` with `extension.reason` `extension_api_route_drift`,
+`extension_api_route_collision` or `extension_api_route_schema_rejected`), even when
+`VAULT_EXTENSIONS_REQUIRED` is false: by then routes were already changed and cannot be
+un-registered, so the API cannot start with a partially applied extension. A failure before any
+route is touched (import, manifest, version negotiation, `hooksFactory()`) stays fail-open unless
+`VAULT_EXTENSIONS_REQUIRED=true`, which turns every load failure (and an unset
+`VAULT_EXTENSIONS_PACKAGE`) into a boot failure. Composed deployments set it.
+
+**Observability.** One `info` line `extension.api_routes.applied` lists every added and
+overridden route key with its mode and flags. Every request an extension route answers carries a
+`pvRoute` binding (`{ override: 'replace' | 'wrap' }` or `{ added: true }`) in Project Vault's
+request logs. An extension route whose rate-limit bucket equals a Project Vault route's logs one
+`extension.api_route.shared_default_key` warning; set `rateLimit.key` to separate them.
 
 ## Recovering from a broken extension
 

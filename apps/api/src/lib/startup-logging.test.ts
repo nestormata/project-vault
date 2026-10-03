@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OperationalEvent, SYSTEM_TRACE_ID } from '@project-vault/shared'
 import type { Env } from '../config/env.js'
 import { createLogCaptureStream, parseCapturedLogLines } from '../__tests__/helpers/capture-logs.js'
+import { ExtensionRequiredError } from '../extensions/boot-errors.js'
+import { ExtensionApiRouteBootError } from './secure-route-overrides.js'
 import { logStartupFailure, reportStartupFailure, stderrDestination } from './startup-logging.js'
 
 const WRITE_EPIPE = 'write EPIPE'
@@ -168,6 +170,48 @@ describe('reportStartupFailure', () => {
     const parsed = parseCapturedLogLines(lines)
     expect(parsed[0]).not.toHaveProperty('cause')
     expect(lines.join('')).not.toContain('"cause"')
+  })
+
+  // Story 68.8 Q15: extension boot failures get a sibling `extension` key with a closed reason;
+  // the DB `cause` key is untouched (the golden tests above still pass byte for byte).
+  it('adds extension{reason,loadFailureReason} for a required-mode load failure', async () => {
+    const { stream, lines } = createLogCaptureStream()
+    const err = new ExtensionRequiredError(
+      'extension_required_load_failed',
+      'VAULT_EXTENSIONS_REQUIRED is true and the extension failed to load (import_error)',
+      'import_error'
+    )
+
+    await reportStartupFailure(startupEnv('production', 'info'), err, stream)
+
+    const parsed = parseCapturedLogLines(lines)
+    expect(parsed[0]?.['extension']).toEqual({
+      reason: 'extension_required_load_failed',
+      loadFailureReason: 'import_error',
+    })
+    expect(parsed[0]).not.toHaveProperty('cause')
+  })
+
+  it('adds extension{reason} for an apiRoutes drift failure', async () => {
+    const { stream, lines } = createLogCaptureStream()
+    const err = new ExtensionApiRouteBootError(
+      'extension_api_route_drift',
+      'apiRoutes.override targets not found: PATCH /api/v1/nope (no PV route)'
+    )
+
+    await reportStartupFailure(startupEnv('test', 'silent'), err, stream)
+
+    expect(parseCapturedLogLines(lines)[0]?.['extension']).toEqual({
+      reason: 'extension_api_route_drift',
+    })
+  })
+
+  it('omits the extension key for any other failure', async () => {
+    const { stream, lines } = createLogCaptureStream()
+
+    await reportStartupFailure(startupEnv('test', 'silent'), new Error('boom'), stream)
+
+    expect(lines.join('')).not.toContain('"extension"')
   })
 
   it('never writes cause on the plain Fatal error fallback path', async () => {

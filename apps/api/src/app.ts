@@ -66,6 +66,8 @@ import { moduleDataRoutes } from './extensions/module-data-routes.js'
 import { oauthHandoffRoutes } from './modules/extensions/oauth-handoff-routes.js'
 import { publicRouteRoutes } from './modules/extensions/public-route-routes.js'
 import { loadExtension, getExtensionStatus } from './extensions/loader.js'
+import { assertExtensionRequirement } from './extensions/boot-errors.js'
+import { installApiRoutes, registerApiRouteAdds } from './extensions/api-routes/install.js'
 import { themingRoutes } from './modules/theming/routes.js'
 import { themeSelectionRoutes } from './modules/theming/selection-routes.js'
 import { reloadThemesWithFanout } from './modules/theming/service.js'
@@ -422,6 +424,31 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   fastify.setValidatorCompiler(validatorCompiler)
   fastify.setSerializerCompiler(serializerCompiler)
 
+  // Story 68.8 AC-9 (moved from after the core routes, Story 14.2): the extension loads BEFORE
+  // the error handler, swagger and every route, because its apiRoutes overrides are applied while
+  // routes register (inside secureRoute, and by the root onRoute hook for raw routes). Negotiation
+  // still runs before hooksFactory() (registerExtension, invariant 3), loadExtension() still never
+  // throws, and every consumer reads getExtensionStatus() per request, so loading earlier changes
+  // no core route's registration. The auth-strategy / capability-gate / delivery-provider wiring
+  // below still runs after every core route (Story 14.2 local-first order).
+  await loadExtension(env.VAULT_EXTENSIONS_PACKAGE, {
+    logger: fastify.log,
+    allowApiVersionAboveHost: env.VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST,
+    required: env.VAULT_EXTENSIONS_REQUIRED,
+  })
+  // AC-11: with VAULT_EXTENSIONS_REQUIRED=true, a missing package or a load failure stops the
+  // boot here, before any route registers. Unset/false stays fail-open.
+  assertExtensionRequirement({
+    required: env.VAULT_EXTENSIONS_REQUIRED,
+    packageName: env.VAULT_EXTENSIONS_PACKAGE,
+    state: getExtensionStatus(),
+  })
+  // AC-3/AC-8: the per-app override table, the eager schema check and the root onRoute hook,
+  // installed before any route or route-registering plugin (including @fastify/swagger, so the
+  // live OpenAPI document shows the effective schemas).
+  const apiRoutes = installApiRoutes(fastify as never, getExtensionStatus())
+  const apiDocsEnabled = docsEnabled({ enableApiDocs: env.ENABLE_API_DOCS, nodeEnv: env.NODE_ENV })
+
   fastify.setErrorHandler(
     async (
       error: Error & { statusCode?: number },
@@ -538,7 +565,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // gated-off instance returns a plain 404 with no information leak, and route-audit.test.ts /
   // the OpenAPI spec itself never lists these routes when they don't exist. AC-16: both must
   // remain reachable while the vault is sealed — see plugins/vault-guard.ts's allowlist.
-  if (docsEnabled({ enableApiDocs: env.ENABLE_API_DOCS, nodeEnv: env.NODE_ENV })) {
+  if (apiDocsEnabled) {
     await fastify.register(swaggerUi, { routePrefix: '/api/v1/docs' })
     await fastify.register(openapiRoutes, { prefix: '/api/v1' })
   }
@@ -657,8 +684,8 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // NOT under ADMIN_PREFIX, unlike Story 14.2's extensionStatusRoutes above (AC1).
   await fastify.register(extensionPanelRoutes, { prefix: '/api/v1' })
   // Story 39.1 — fixed URLs (not manifest-declared route paths, unlike moduleDataRoutes below),
-  // so this registers BEFORE loadExtension() and re-checks getExtensionStatus() fresh inside each
-  // request handler, mirroring extensionPanelRoutes/extensionStatusRoutes above exactly.
+  // so its route existence does not depend on the manifest; it re-checks getExtensionStatus()
+  // fresh inside each request handler, mirroring extensionPanelRoutes/extensionStatusRoutes.
   await fastify.register(oauthHandoffRoutes, { prefix: '/api/v1/extensions/oauth-handoff' })
   await fastify.register(onboardingRoutes, { prefix: '/api/v1/users' })
   await fastify.register(usersRoutes, { prefix: '/api/v1/users' })
@@ -710,21 +737,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // both route families.
   await fastify.register(themeSelectionRoutes, { prefix: '/api/v1' })
 
-  // Story 14.2 Task 7: after every core route is registered, so the local-first invariant is
-  // trivially satisfied even though this story doesn't yet wire registerAuthStrategy() (that's
-  // Story 14.3). Called here (not from main.ts) so createApp() stays a complete, testable unit.
-  // loadExtension() is designed to never throw/reject — a bug in this story's own code cannot
-  // regress AC-3's "still starts" guarantee — but `await` (not fire-and-forget) so state is
-  // fully resolved before createApp() returns to any caller (e.g. /health's first response).
-  await loadExtension(env.VAULT_EXTENSIONS_PACKAGE, {
-    logger: fastify.log,
-    allowApiVersionAboveHost: env.VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST,
-  })
-
-  // Story 29.4 AC4 — MUST register AFTER loadExtension() resolves, unlike every other
-  // extension-related route in this file (extensionPanelRoutes/extensionStatusRoutes register
-  // BEFORE loadExtension() and re-check getExtensionStatus() fresh inside each request handler
-  // instead). This mechanism's route EXISTENCE (which URLs respond at all) is manifest-declared,
+  // Story 29.4 AC4 — MUST register AFTER loadExtension() resolves (it now resolves before every
+  // route, Story 68.8; extensionPanelRoutes/extensionStatusRoutes do not depend on it and
+  // re-check getExtensionStatus() fresh inside each request handler instead). This mechanism's
+  // route EXISTENCE (which URLs respond at all) is manifest-declared,
   // so the manifest must already be loaded before the routes can be registered — see
   // module-data-routes.ts's own doc comment for the full rationale.
   await fastify.register(moduleDataRoutes, { prefix: '/api/v1/extensions/data' })
@@ -736,6 +752,15 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // other extension mechanism) since each declared template is itself a full path, not a
   // sub-path under a PV-chosen mount point.
   await fastify.register(publicRouteRoutes)
+
+  // Story 68.8 AC-10: the LAST route registration. apiRoutes `add` entries register in their own
+  // encapsulated plugin after a collision check; then every override must have matched a PV route
+  // (drift fails the boot whatever VAULT_EXTENSIONS_REQUIRED says: applied overrides cannot be
+  // un-registered), and what was applied is recorded in the boot log.
+  await registerApiRouteAdds(fastify as never, apiRoutes, {
+    logger: fastify.log,
+    docsEnabled: apiDocsEnabled,
+  })
 
   // Story 16.1 AC-1/Task 5: startup automatic reload pass for VAULT_THEMES_DIR — identical code
   // path to the manual POST /admin/themes/reload endpoint, just invoked here so a fresh

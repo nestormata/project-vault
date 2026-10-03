@@ -429,6 +429,11 @@ export type LoadExtensionDeps = {
    * stays defensive regardless.
    */
   readPackageVersion?: (packageName: string) => string | undefined
+  /**
+   * Story 68.8 AC-11: `VAULT_EXTENSIONS_REQUIRED`. Only changes the failure log message (the API
+   * will not start); `loadExtension()` itself still never throws — `createApp()` fails the boot.
+   */
+  required?: boolean
 }
 
 const DEFAULT_TIMEOUT_MS = 5000
@@ -591,12 +596,16 @@ function isDoubleInvocation(logger: LoaderLogger): boolean {
 async function applyOutcome(
   packageName: string,
   result: RaceResult,
-  listOrgIds: ListOrgIdsFn,
-  auditWriter: AuditWriterFn,
-  logger: LoaderLogger,
-  allowApiVersionAboveHost: boolean,
-  readPackageVersion: (packageName: string) => string | undefined
+  deps: ResolvedLoadExtensionDeps
 ): Promise<void> {
+  const {
+    listOrgIds,
+    auditWriter,
+    logger,
+    allowApiVersionAboveHost,
+    readPackageVersion,
+    required,
+  } = deps
   if (result.outcome) {
     const { manifest, hooks, hostServices } = result.outcome
     // Story 25.9 AC4: never let a throwing readPackageVersion() implementation (defensive test
@@ -648,7 +657,9 @@ async function applyOutcome(
     logger,
     'fatal',
     OperationalEvent.EXTENSION_LOAD_FAILED,
-    'Extension failed to load — API continuing without it',
+    required
+      ? 'Extension failed to load — VAULT_EXTENSIONS_REQUIRED is true, the API will not start'
+      : 'Extension failed to load — API continuing without it',
     {
       reason: result.reason,
       ...(result.message ? { message: result.message } : {}),
@@ -679,6 +690,7 @@ type ResolvedLoadExtensionDeps = Required<
     | 'auditWriter'
     | 'allowApiVersionAboveHost'
     | 'readPackageVersion'
+    | 'required'
   >
 >
 
@@ -693,6 +705,7 @@ function resolveLoadExtensionDeps(deps: LoadExtensionDeps): ResolvedLoadExtensio
     auditWriter: deps.auditWriter ?? defaultAuditWriter,
     allowApiVersionAboveHost: deps.allowApiVersionAboveHost ?? false,
     readPackageVersion: deps.readPackageVersion ?? defaultReadPackageVersion,
+    required: deps.required ?? false,
   }
 }
 
@@ -700,15 +713,8 @@ export async function loadExtension(
   packageName: string | undefined,
   deps: LoadExtensionDeps = {}
 ): Promise<void> {
-  const {
-    logger,
-    importFn,
-    timeoutMs,
-    listOrgIds,
-    auditWriter,
-    allowApiVersionAboveHost,
-    readPackageVersion,
-  } = resolveLoadExtensionDeps(deps)
+  const resolved = resolveLoadExtensionDeps(deps)
+  const { logger, importFn, timeoutMs, allowApiVersionAboveHost } = resolved
   if (!packageName) return
   if (isDoubleInvocation(logger)) return
 
@@ -719,13 +725,5 @@ export async function loadExtension(
     allowApiVersionAboveHost,
     logger
   )
-  await applyOutcome(
-    packageName,
-    result,
-    listOrgIds,
-    auditWriter,
-    logger,
-    allowApiVersionAboveHost,
-    readPackageVersion
-  )
+  await applyOutcome(packageName, result, resolved)
 }

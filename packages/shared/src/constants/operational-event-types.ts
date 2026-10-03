@@ -275,6 +275,13 @@ export const OperationalEvent = {
   // resolved (loaded or load_failed) is ignored rather than re-run — warn-logged so a
   // regression that double-invokes the loader is still visible in monitoring.
   EXTENSION_LOAD_DOUBLE_INVOCATION_IGNORED: 'extension.load_double_invocation_ignored',
+  // Story 68.8 (M7): one boot summary of the loaded extension's apiRoutes (sorted route keys with
+  // mode and flags; never handler source or schema contents), one warn per override that replaces
+  // a PV route's security (`replaceSecurity: true`, recorded, never refused), and one warn per
+  // extension route whose effective rate-limit bucket key equals a PV route's key.
+  EXTENSION_API_ROUTES_APPLIED: 'extension.api_routes.applied',
+  EXTENSION_API_ROUTE_REPLACE_SECURITY: 'extension.api_route.replace_security',
+  EXTENSION_API_ROUTE_SHARED_DEFAULT_KEY: 'extension.api_route.shared_default_key',
   // Story 25.1 AC3: a UI panel render call degraded (threw, timed out, returned a malformed
   // result, or the extension/hook was gone at request time). Never carries the hook's raw
   // exception message/stack — fixed-enum `subReason` only, same never-leak-internal-detail

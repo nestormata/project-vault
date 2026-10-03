@@ -68,6 +68,10 @@ COPY fixtures/mock-audit-event-source-extension/package.json ./fixtures/mock-aud
 # mock-audit-event-source — its dist is not needed before app-builder's `tsc` build and it is
 # built opt-in-only below.
 COPY fixtures/mock-ui-panel-extension/package.json ./fixtures/mock-ui-panel-extension/
+# Story 68.8: @project-vault/mock-api-routes-extension is a devDependency of apps/api (never a
+# production dep), present in pnpm-lock.yaml, so the frozen-lockfile install needs its manifest.
+# apps/api's tests import it only by string specifier, so its dist is never needed in this image.
+COPY fixtures/mock-api-routes-extension/package.json ./fixtures/mock-api-routes-extension/
 
 # pnpm >= 11.28 refuses `--frozen-lockfile` when any workspace member recorded in
 # pnpm-lock.yaml lacks its package.json, even if this image never builds that member.

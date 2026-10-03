@@ -1,4 +1,4 @@
-import { getDb, type Tx } from '@project-vault/db'
+import { withOrg, type Tx } from '@project-vault/db'
 import { auditLogEntries } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
 import { firstActorTokenIdForUser } from '../modules/audit/actor-token.js'
@@ -124,9 +124,11 @@ async function insertCapabilityDeniedRow(
   })
 }
 
+// The row is org-scoped data under RLS: the transaction must carry the denied org's context
+// (`app.current_org_id`), or every read and the insert below are refused by the policies and the
+// best-effort caller only logs the failure (found by Story 68.8's AC-14 audit-row test).
 const defaultAuditWriter: CapabilityAuditWriter = async (input) => {
-  const db = getDb()
-  await db.transaction(async (tx) => insertCapabilityDeniedRow(tx as Tx, input))
+  await withOrg(input.orgId, async (tx) => insertCapabilityDeniedRow(tx, input))
 }
 
 /** Evicts (and, if it has a pending suppressedCount, flushes) the least-recently-touched entry. */

@@ -1,5 +1,6 @@
 import semver from 'semver'
 import type { ExtensionDbScopeEntry } from './db-access.js'
+import type { ApiRoutesDeclaration } from './hooks/api-routes.js'
 
 /**
  * AC1 — the manifest shape an extension author declares.
@@ -161,6 +162,15 @@ export type ExtensionManifest = {
    * `validateAnonymousRoutePathsShape()`.
    */
   anonymousRoutePaths?: string[]
+  /**
+   * Story 68.8 (M7) — optional declaration of API routes this extension adds at any URL
+   * (`add`) and PV routes it overrides (`override`, `replace` or `wrap`), all running inside PV's
+   * own security pipeline. Plain data only; the handlers, schema objects and hook functions live
+   * in `ExtensionHooks.apiRoutes.routes`, keyed by `"<METHOD> <url>"`. Not tied to any capability.
+   * Validated for integrity only (`validateApiRoutesShape()`): no prefix, count cap or allowlist.
+   * Replaces the deprecated `moduleDataRoutes`.
+   */
+  apiRoutes?: ApiRoutesDeclaration
 }
 
 /**
@@ -563,7 +573,11 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // Story 70.1 AC4 — bumped as a minor (3.24.2 -> 3.25.0): `DeliveryProviderSendPayload` gains the
 // required `attemptNumber` (a required field on a type PV passes to the extension: non-breaking,
 // policy table row 2) and `queueRowId` is documented as the provider idempotency key.
-export const EXTENSION_API_VERSION = '3.25.0'
+// Story 68.8 AC-1 — bumped as a minor (3.25.0 -> 3.27.0): `ExtensionManifest` gains the optional
+// `apiRoutes` declaration and `ExtensionHooks` the optional `apiRoutes` implementations (M7 API
+// routes: add, replace, wrap). New optional fields only (policy rows 1 and 11); `moduleDataRoutes`
+// is unchanged. 3.26.0 is reserved by Story 71-1, developed in parallel (next free minor, Q13).
+export const EXTENSION_API_VERSION = '3.27.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built
