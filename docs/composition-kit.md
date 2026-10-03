@@ -64,9 +64,31 @@ It records the compatibility tuple, every override (`hostSha256`, `cmSha256`, `s
 addition, removal and replacement, the materialized files, the contributions later stories apply
 (hooks, nav, theme, protected paths), the injection points used, every injection contribution (composed
 paths, `order`, route id and scope; an optional section a lock written before 0.2.0 lacks) and informational
-notes. The sections
-`excludedPvTests` and `apiRouteOverrides` are written empty: Story 68-9 fills the first, Stories
-68-3/68-8 (whichever lands second) wire the second.
+notes. `excludedPvTests` is written empty (Story 68-9 fills it).
+
+`apiRouteOverrides` (lockfileVersion 2, Story 68-14) records the module pack's `apiRoutes.override`
+table for review: one `{ method, url, mode, replaceSecurity }` object per override, the url normalized
+like the host's route key (leading slash, no trailing slash), sorted by `METHOD url`. It is recorded,
+never refused, and `--check` compares it (a flipped `replaceSecurity` or a new override fails the check,
+naming `apiRouteOverrides`). `apiRoutes.add` entries are not recorded. Without `--module-pack` the table
+is empty.
+
+`--module-pack <dir>` is the module pack's package root. The kit resolves the entry from
+`<dir>/package.json` (`exports["."]`, else `main`), imports it and reads `default.manifest.apiRoutes`
+only; it never calls `hooksFactory()`. **Importing runs the entry's top-level code**, exactly like
+building the pack does, in the kit's own working directory and with the process's own env (the kit adds
+nothing); the entry must be built JavaScript, and its resolved path must stay inside `<dir>` (a symlink
+that escapes is refused). An import that throws, a missing entry or a module without `default.manifest`
+fails `pv-compose`, naming the pack (the printed error is its name and the first 500 characters of its
+message) and leaves the lock untouched. The extension-api version check against the tuple runs first: a
+pack built against another version is never imported.
+
+### lockfileVersion 2 migration
+
+Version 2 changed `apiRouteOverrides` from a list that was always empty to the object list above. A
+version 1 lock is still read: `pv-compose` rewrites it as version 2 (and prints one migration line), and
+`pv-compose --check` on a version 1 lock fails with a message naming both versions (run `pv-compose` and
+commit the lock), never with a diff or a silent pass. A lock from a newer kit is refused.
 
 ## Injection points
 
@@ -344,7 +366,8 @@ paths). `notes` and the removed files' hashes never fail it.
 kit version (`kitVersion`), the exact Kit, Svelte, Vite and TypeScript versions and the API image
 tag. The composer compares the **installed** versions it resolves from the app root (never declared
 ranges), `@project-vault/composition-kit`'s own installed version, the manifest's `host.pvRelease`,
-and, with `--module-pack <dir>`, the module pack's `@project-vault/extension-api`. It also requires
+and, with `--module-pack <dir>`, the module pack's `@project-vault/extension-api` (resolved from that
+directory's `node_modules`). It also requires
 every `web-host` runtime dependency to be a runtime dependency of the app at the identical version
 (`adapter-node` externalizes only `dependencies`). All mismatches are reported in one run. There is no
 flag to skip the check: a skippable gate is the allowlist pattern this project rejects.
