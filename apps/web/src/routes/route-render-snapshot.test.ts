@@ -1,6 +1,7 @@
 import { cleanup, render } from '@testing-library/svelte'
 import { createRawSnippet } from 'svelte'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { serializeWithoutNoise } from '$lib/test/dom.js'
 
 // Story 68.4 AC-12: PV's own rendered output must not change when the injection points land. This
 // renders EVERY route file (page, layout, error) against a permissive empty `data` and snapshots the
@@ -67,11 +68,9 @@ function permissive(): unknown {
   return proxy
 }
 
-function normalize(html: string): string {
+function normalize(root: Element): string {
   return (
-    html
-      .replace(/<!--[\s\S]*?-->/g, '')
-      .replace(/<script[\s\S]*?<\/script>/g, '<script></script>')
+    serializeWithoutNoise(root)
       // Placeholder addresses in form fields are text, not contact data worth committing verbatim.
       .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '<email>')
       .replace(/\s+/g, ' ')
@@ -88,7 +87,7 @@ function outcome(component: never, isLayout: boolean): string {
       form: null,
       ...(isLayout ? { children } : {}),
     } as never)
-    return normalize(container.innerHTML)
+    return normalize(container)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     return `THROWS: ${message.split('\n')[0]?.slice(0, 120) ?? ''}`

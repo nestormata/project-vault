@@ -1,5 +1,6 @@
 import { render } from '@testing-library/svelte'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { serializeWithoutNoise } from '$lib/test/dom.js'
 import { sampleProject } from '$lib/test/fixtures.js'
 import PointHost from '$lib/test/injection/PointHost.svelte'
 import TileA from '$lib/test/injection/TileA.svelte'
@@ -31,11 +32,10 @@ function mount(props: Record<string, unknown>) {
   return render(PointHost, props)
 }
 
-const norm = (html: string): string =>
-  html
-    .replace(/<!--.*?-->/g, '')
-    .replace(/>\s+/g, '>')
-    .replace(/\s+</g, '<')
+const norm = (root: Element | null): string =>
+  root === null
+    ? 'missing'
+    : serializeWithoutNoise(root).replace(/>\s+/g, '>').replace(/\s+</g, '<')
 
 beforeEach(() => {
   pageState.route.id = '/(app)/projects/[projectId]'
@@ -45,7 +45,7 @@ beforeEach(() => {
 describe('InjectionPoint (rendered)', () => {
   it('renders contributions in the order given, with the route, params and entity reaching each, and no wrapper', () => {
     const { container } = mount({ entries: TWO, project: sampleProject() })
-    const html = norm(container.innerHTML)
+    const html = norm(container)
     expect(html.indexOf('id="a"')).toBeLessThan(html.indexOf('id="b"'))
     const a = container.querySelector('#a')
     expect(a?.getAttribute('data-route')).toBe('/(app)/projects/[projectId]')
@@ -76,7 +76,7 @@ describe('InjectionPoint (rendered)', () => {
 
   it('renders nothing at all with no contributions and no fallback', () => {
     const { container } = mount({ entries: [] })
-    expect(norm(container.querySelector('#host')?.innerHTML ?? 'missing')).toBe('')
+    expect(norm(container.querySelector('#host'))).toBe('')
   })
 
   it('aligns data entry i to contribution i, null for a hole, a shorter array or missing data', () => {
