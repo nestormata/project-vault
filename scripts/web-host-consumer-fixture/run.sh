@@ -228,6 +228,14 @@ else
   )
 fi
 
+# Story 68.9 AC-13: pv-verify's guards and exclusions over the composed mini pack, with the mutations.
+if [[ "$VARIANT" == 'compose-verify' ]]; then
+  # shellcheck source=compose-verify.sh
+  source "$FIXTURE_DIR/compose-verify.sh"
+  compose_verify_cases
+  exit 0
+fi
+
 if [[ "$VARIANT" == 'compose' || "$VARIANT" == 'compose-types-negative' ]]; then
   compose_svelte_check
 fi

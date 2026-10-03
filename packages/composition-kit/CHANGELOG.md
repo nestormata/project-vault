@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## 0.5.0
+
+- `pv-verify` (Story 68-9), a second command in this package: runs PV's web guards and PV's unit tests
+  over a composed tree and reports every finding in one run (preflight, guards, tests; exit `0`, `1`
+  for a guard, test or integrity failure, `2` for a usage error). There is no flag that skips,
+  disables or ignores a step or a guard. A test guard runs from a scratch copy of web-host's pristine
+  guard file and helpers with `PV_GUARD_APP_ROOT` pointing at the real composed app, so a pack that
+  overrides a guard cannot blind it; a script guard is imported from web-host.
+- New manifest field `guards`: a data module authored with `defineGuardEntries()` holding the pack's
+  reviewed carve-outs (browser-storage keys per file, internal-API consumers, route classifications,
+  external hrefs). The composer validates it (integrity only, every entry needs a `reason`), maps pack
+  paths to composed paths, writes `src/lib/composition/guard-entries.generated.json` and records
+  per-section hashes in the lock (`guardEntries`). A stale entry or a release for a file CM did not
+  change fails the composition.
+- The lock's `excludedPvTests` is now computed from web-host's `manifests/test-subjects.json`: a PV
+  test whose subject (a direct import or its sibling) the pack overrode, replaced or removed is
+  excluded and listed (sorted, normative for `--check`). Report-only warnings name security-relevant
+  exclusions and an exclusion rate above 25%. A pack override of a guard file or its helpers composes
+  and is noted in the lock (`guard-file-overridden`).
+- An older web-host (no guard registry or subject map) still composes; only `pv-verify` fails, naming
+  the upgrade. The shared CLI plumbing moved to `cli-shared`.
+
 ## 0.4.0
 
 - `pvHooks()` Vite plugin (`@project-vault/composition-kit/vite`): generates `virtual:pv-hooks/server`,

@@ -31,6 +31,9 @@ export interface GuardRegistryEntry {
   file: string
   scope: string
   closure?: { file: string; sha256: string }[]
+  /** Modules the guard also asserts about, staged from the composed app (an override is seen). */
+  subjects?: string[]
+  subjectClosure?: string[]
 }
 
 export interface GuardOutcome {
@@ -118,6 +121,23 @@ function stageFile(
   if (fileHash(join(context.appRoot, entry.file)) !== host) staged.overridden.push(entry.file)
 }
 
+/** A subject module (and what it imports) comes from the COMPOSED app: the guard asserts about the
+ * code that will run, so a pack's override of it is what the guard sees. */
+function stageSubject(
+  context: StageContext,
+  guard: GuardRegistryEntry,
+  file: string,
+  staged: Staged
+): void {
+  const source = join(context.appRoot, file)
+  if (!existsSync(source)) {
+    staged.problems.push(`guard ${guard.id}: its subject ${file} is not in the composed tree`)
+    return
+  }
+  mkdirSync(dirname(join(context.scratch, file)), { recursive: true })
+  copyFileSync(source, join(context.scratch, file))
+}
+
 /** Copies each test guard and its closure from the host into a fresh scratch directory. */
 function stage(context: StageContext, guards: GuardRegistryEntry[]): Staged {
   rmSync(context.scratch, { recursive: true, force: true })
@@ -130,6 +150,11 @@ function stage(context: StageContext, guards: GuardRegistryEntry[]): Staged {
       if (seen.has(entry.file)) continue
       seen.add(entry.file)
       stageFile(context, guard, entry, staged)
+    }
+    for (const file of [...(guard.subjects ?? []), ...(guard.subjectClosure ?? [])]) {
+      if (seen.has(file)) continue
+      seen.add(file)
+      stageSubject(context, guard, file, staged)
     }
   }
   staged.overridden.sort(compareCodeUnits)

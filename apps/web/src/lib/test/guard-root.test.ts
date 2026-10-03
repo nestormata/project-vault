@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   GUARD_ENTRIES_PATH,
@@ -36,7 +36,7 @@ afterEach(() => {
 
 describe('guard root (Story 68.9 AC-2)', () => {
   it('defaults to the directory above this src and follows PV_GUARD_APP_ROOT when set', () => {
-    expect(guardAppRoot().endsWith('apps/web') || guardAppRoot().endsWith('web-host')).toBe(true)
+    expect(guardAppRoot()).toBe(resolve(import.meta.dirname, '..', '..', '..'))
     const root = app(SENTINELS)
     vi.stubEnv(GUARD_ROOT_ENV, root)
     expect(guardAppRoot()).toBe(root)

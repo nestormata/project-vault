@@ -167,9 +167,12 @@ function testsStep(options: VerifyOptions, lock: CompositionLock): TestsResult {
   }
 }
 
-function warningsOf(lock: CompositionLock, run: number, guards?: GuardsResult): string[] {
-  const total = run + lock.excludedPvTests.length
-  const notes = exclusionNotes(lock.excludedPvTests, total)
+function warningsOf(lock: CompositionLock, tests?: TestsResult, guards?: GuardsResult): string[] {
+  // The exclusion rate is only meaningful when the tests step ran (it supplies the total).
+  const notes =
+    tests === undefined
+      ? []
+      : exclusionNotes(lock.excludedPvTests, tests.run + lock.excludedPvTests.length)
   return [
     ...securityRelevant(lock.excludedPvTests).map(
       (test) => `WARN excluded security-relevant PV test ${test}`
@@ -209,7 +212,7 @@ function reportExtras(
 ): Pick<VerifyReport, 'warnings' | 'entries' | 'sources'> {
   if (lock === undefined) return { warnings: [], entries: {}, sources: {} }
   return {
-    warnings: warningsOf(lock, steps.tests?.run ?? 0, steps.guards),
+    warnings: warningsOf(lock, steps.tests, steps.guards),
     entries: entryCounts(lock),
     sources: Object.fromEntries(lock.materialized.map((entry) => [entry.path, entry.source])),
   }

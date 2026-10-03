@@ -75,26 +75,24 @@ compose_prepare_app() {
     *) ;;
   esac
   readonly PACK
-  # The pack overrides PV's recovery page, so PV's own test of that page no longer applies to the
-  # composed tree. Story 68.5 (`pvReplace()` is in this app's vitest plugins) makes the same true of
-  # a test whose subject is a REPLACED file: it now exercises CM's replacement, which changes the
-  # behaviour the test pins on purpose (the audit download URL, the org name `requireUser` returns,
-  # the header markup).
-  # Story 68-6: the mini pack contributes hooks and a header-policy delta, so PV's own tests that pin
-  # PV's exact hooks behaviour (the whole-response oracle, the no-contribution hooks exports, the
-  # direct handle tests) describe PV, not this composed app. The pack also overrides PV's
-  # (app)/shares/[token] load, so PV's tests of that page are out too. Story 68-4's
-  # server-files-wiring.test.ts globs every route server file and pins PV's own (no `actions` on a
-  # page without its own); the pack's CM (app)/cm-area page has a form action on purpose (AC-9).
-  # Story 68-9 turns all of these into the lock's `excludedPvTests`, keyed on the replaced or
-  # overridden host file; until then the fixture leaves exactly these tests out of its run.
+  # Story 68-9: a PV test whose SUBJECT (a direct import or its sibling) the pack overrode, replaced
+  # or removed is excluded by the lock's `excludedPvTests`, which the exported vitest config factory
+  # reads: PV's recovery and shares pages and `audit.test.ts` (it imports the replaced
+  # `$lib/api/audit`) are no longer listed here. What stays listed are tests the lock cannot name,
+  # by Q2 (a subject is a DIRECT import, never a transitive one):
+  #   - AuditExportPanel.test.ts and require-platform-operator.test.ts test code that merely IMPORTS a
+  #     replaced module (`$lib/api/audit`, `$lib/server/require-user`), so the replacement changes
+  #     what they pin on purpose;
+  #   - AppShell.characterization.test.ts pins the header markup around a ShellAccount the pack wraps;
+  #   - Story 68-6's hooks tests (the whole-response oracle, the no-contribution hooks exports, the
+  #     direct handle tests) describe PV with no contributions, and Story 68-4's
+  #     server-files-wiring.test.ts globs every route server file (the pack's CM (app)/cm-area page has
+  #     a form action on purpose, AC-9).
+  # Whether the kit should also exclude these is an open decision (Story 68-9 Dev Notes).
   VITEST_ARGS=(
     --exclude '**/node_modules/**'
-    --exclude 'src/routes/*/recovery/**'
-    --exclude 'src/routes/*/shares/**'
-    --exclude 'src/lib/api/audit.test.ts'
-    --exclude 'src/lib/server/require-platform-operator.test.ts'
     --exclude 'src/lib/components/audit/AuditExportPanel.test.ts'
+    --exclude 'src/lib/server/require-platform-operator.test.ts'
     --exclude 'src/lib/components/shell/AppShell.characterization.test.ts'
     --exclude 'src/hooks-files.test.ts'
     --exclude 'src/hooks.server.test.ts'

@@ -220,6 +220,49 @@ compares the **installed** versions resolved from the app root (never declared r
 also requires every `web-host` runtime dependency to be a runtime dependency of the app at the identical
 version. All mismatches are reported in one run. There is no flag to skip the check: align your versions.
 
+## Guards and tests over a composed tree
+
+`pv-verify --app <dir> [--host <dir>] [--pack <dir>] [--only guards|tests] [--explain] [--json]`
+runs, in order, and reports everything in one run: (1) **preflight**: the committed lock exists, matches
+the web-host, and its generated guard entries are untouched (`--pack` also regenerates the lock like
+`pv-compose --check`); (2) **guards**: every guard in web-host's `manifests/guards.json` over the
+composed `src/` (including `src/lib/_cm`) with PV's own rules; (3) **tests**: `vitest run` over the
+composed tree through web-host's `vitestConfig` factory, which excludes the lock's `excludedPvTests`,
+with no coverage gate (CM owns its coverage policy). Exit `0` ok, `1` a guard, test or integrity
+failure, `2` usage. A web-host without a guard registry fails (never silently skips); upgrade it.
+`pv-verify` does not run `svelte-check` or lint (your pipeline's own steps) and the route
+classification step arrives with the runtime route audit (story 68-14).
+
+**Pack guard entries.** Name a data module in the manifest (`guards: './pv-guards.ts'`) and author it with
+`defineGuardEntries()`:
+
+```ts
+export default defineGuardEntries({
+  browserStorage: {
+    sessionStorage: [
+      {
+        file: 'src/lib/billing/draft.ts',
+        keys: ['cm:billing-draft'],
+        reason: 'non-sensitive draft id',
+      },
+    ],
+    release: ['src/lib/theme/apply-theme.ts'], // only a PV file this pack overrode, replaced or removed
+  },
+  internalApiConsumers: { add: ['src/routes/billing/+page.server.ts'], release: [] },
+})
+```
+
+Paths are pack-relative (as you see them); the composer maps them to composed paths. Every entry needs a
+`reason`. Entries are reviewed under PV's rules: they carve a reviewed exception out of a PV guard by
+exact path and never limit what your code may do. Every guard rule applies to your files exactly as to
+PV's (no raw HTML of untrusted data, no browser storage outside reviewed entries, no raw `fetch` to the
+internal API, labelled controls, a bounded Tailwind scan); a finding is fixed in your code.
+
+Gotchas: a guard test file also holds PV unit assertions (for example the clickjacking headers in the
+browser-storage guard); they run against your overrides of those modules and have no release. A test
+that merely IMPORTS a module you replaced (not a direct subject) still runs and may fail truthfully.
+`vendor/shared/src` is outside `src` and is not scanned, like PV's own tree.
+
 ## CLI
 
 ```

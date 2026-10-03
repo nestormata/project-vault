@@ -85,7 +85,9 @@ describe('no guard is a CM-only gate (Story 68.9 AC-12)', () => {
 
   it.each(GUARD_SOURCES)('%s holds only the listed CM-keyed tokens', (file) => {
     const found = cmKeyedTokens(readFileSync(join(ROOT, file), 'utf8'))
-    const allowed = new Map((ALLOWED[file] ?? []).map(([token, count]) => [token, count]))
+    const allowed = new Map(
+      (new Map(Object.entries(ALLOWED)).get(file) ?? []).map(([token, count]) => [token, count])
+    )
     expect(Object.fromEntries(found)).toEqual(Object.fromEntries(allowed))
   })
 })

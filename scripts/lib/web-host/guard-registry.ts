@@ -35,6 +35,10 @@ export interface GuardEntry {
   entries?: string
   license: string
   closure: GuardClosureFile[]
+  /** Modules the guard also asserts about (named by `@pv-subject`): staged from the COMPOSED app, so
+   * an override of one is what the guard sees. `subjectClosure` is what they import. */
+  subjects?: string[]
+  subjectClosure?: string[]
 }
 
 export interface GuardMarker {
@@ -93,38 +97,83 @@ function sha256(file: string, resolver: GraphResolver): string {
   return createHash('sha256').update(text).digest('hex')
 }
 
-/** The guard's helper closure: every module its runtime imports reach, except through an import
- * the guard names as a subject. The guard file itself is not part of it. */
-function helperClosure(
-  guardFile: string,
-  subjects: readonly string[],
+interface ClosureResult {
+  /** The guard's helper files (pristine host copies). */
+  helpers: GuardClosureFile[]
+  /** The subject modules and everything they import (composed copies). */
+  subjects: string[]
+  subjectClosure: string[]
+}
+
+/** Every file reachable from `starts` by runtime imports, never crossing into `blocked`. */
+function reach(
+  starts: readonly string[],
+  blocked: ReadonlySet<string>,
   input: GuardRegistryInput
-): GuardClosureFile[] {
-  const seen = new Set<string>([guardFile])
-  const queue = [guardFile]
+): Set<string> {
+  const seen = new Set<string>(starts)
+  const queue = [...starts]
   for (let file = queue.shift(); file !== undefined; file = queue.shift()) {
     const code = input.resolver.readFile(file) ?? ''
     for (const { specifier, typeOnly } of moduleSpecifiers(code, file)) {
-      if (typeOnly || (file === guardFile && subjects.includes(specifier))) continue
+      if (typeOnly) continue
       const target = resolveSpecifier(specifier, file, input.resolver)
-      if (target.kind === 'file' && !seen.has(target.path)) {
+      if (target.kind === 'file' && !seen.has(target.path) && !blocked.has(target.path)) {
         seen.add(target.path)
         queue.push(target.path)
       }
     }
   }
-  seen.delete(guardFile)
-  return [...seen]
-    .map((file) => ({
-      file: relativePosix(input.webDir, file),
-      sha256: sha256(file, input.resolver),
-    }))
-    .sort((a, b) => compareCodeUnits(a.file, b.file))
+  return seen
+}
+
+/** The guard's helper closure (imports reached except through a subject) and its subjects. */
+function closureOf(
+  guardFile: string,
+  subjectSpecifiers: readonly string[],
+  input: GuardRegistryInput
+): ClosureResult {
+  const subjectFiles = subjectSpecifiers.flatMap((specifier) => {
+    const target = resolveSpecifier(specifier, guardFile, input.resolver)
+    return target.kind === 'file' ? [target.path] : []
+  })
+  const blocked = new Set(subjectFiles)
+  const helpers = reach([guardFile], blocked, input)
+  helpers.delete(guardFile)
+  const everything = reach(subjectFiles, helpers, input)
+  const relative = (files: Iterable<string>): string[] =>
+    [...files].map((file) => relativePosix(input.webDir, file)).sort(compareCodeUnits)
+  return {
+    helpers: [...helpers]
+      .map((file) => ({
+        file: relativePosix(input.webDir, file),
+        sha256: sha256(file, input.resolver),
+      }))
+      .sort((a, b) => compareCodeUnits(a.file, b.file)),
+    subjects: relative(subjectFiles),
+    subjectClosure: relative([...everything].filter((file) => !blocked.has(file))),
+  }
 }
 
 /** Compiled copy of a script guard inside the package: `guards/x.ts` ships as `guards/x.js`. */
 function shippedScriptPath(webDir: string, file: string): string {
   return relativePosix(webDir, file).replace(/\.ts$/, '.js')
+}
+
+function closureFields(
+  file: string,
+  kind: 'test' | 'script',
+  subjectSpecifiers: readonly string[],
+  input: GuardRegistryInput
+): Pick<GuardEntry, 'closure' | 'subjects' | 'subjectClosure'> {
+  if (kind === 'script') return { closure: [] }
+  const found = closureOf(file, subjectSpecifiers, input)
+  return {
+    closure: found.helpers,
+    ...(found.subjects.length === 0
+      ? {}
+      : { subjects: found.subjects, subjectClosure: found.subjectClosure }),
+  }
 }
 
 export function buildGuardRegistry(input: GuardRegistryInput): GuardRegistry {
@@ -148,7 +197,7 @@ export function buildGuardRegistry(input: GuardRegistryInput): GuardRegistry {
       scope: marker.scope,
       ...(marker.entries === undefined ? {} : { entries: marker.entries }),
       license: GUARD_LICENSE,
-      closure: kind === 'test' ? helperClosure(file, marker.subjects, input) : [],
+      ...closureFields(file, kind, marker.subjects, input),
     })
   }
   for (const file of input.testFiles) consider(file, 'test')

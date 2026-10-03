@@ -10,6 +10,7 @@ import {
   makeWorld,
   manifest,
   sha,
+  shaOf,
   useWorlds,
   writeAll,
   type World,
@@ -22,6 +23,7 @@ const GUARD_FILE = 'src/lib/security/mini.test.ts'
 const HELPER_FILE = 'src/lib/test/mini-helper.ts'
 const SCRIPT_FILE = 'guards/mini.js'
 const BAD_TOKEN = 'FORBIDDEN_TOKEN'
+const LICENSE = 'AGPL-3.0-or-later'
 const LOCK_FILE = 'composition.lock.json'
 const UTIL = 'src/lib/util.ts'
 const UTIL_TEST = 'src/lib/util.test.ts'
@@ -70,7 +72,7 @@ function registry(extra: object[] = []): string {
         kind: 'test',
         file: GUARD_FILE,
         scope: 'all-files',
-        license: 'AGPL-3.0-or-later',
+        license: LICENSE,
         closure: [{ file: HELPER_FILE, sha256: sha256Hex(Buffer.from(HELPER)) }],
       },
       {
@@ -78,7 +80,7 @@ function registry(extra: object[] = []): string {
         kind: 'script',
         file: SCRIPT_FILE,
         scope: 'all-files',
-        license: 'AGPL-3.0-or-later',
+        license: LICENSE,
         closure: [],
       },
       ...extra,
@@ -221,6 +223,53 @@ describe('pv-verify (Story 68.9 AC-9)', () => {
     const report = await verify({ ...options(world), only: 'guards' })
     expect(report.guards?.overridden).toContain(GUARD_FILE)
     expect(report.ok).toBe(false)
+  })
+
+  it('stages a guard subject from the COMPOSED app, so a pack override of it is what the guard sees', async () => {
+    const subject = 'src/lib/subject.ts'
+    const subjectGuard = 'src/lib/security/subject.test.ts'
+    const guardSource = `/** @pv-guard subject */
+import { expect, it } from 'vitest'
+import { value } from '../subject.js'
+it('the subject answers pv', () => expect(value).toBe('pv'))
+`
+    const hostSubject = "export const value = 'pv'\n"
+    const subjectEntry = {
+      id: 'subject',
+      kind: 'test',
+      file: subjectGuard,
+      scope: 'all-files',
+      license: LICENSE,
+      closure: [],
+      subjects: [subject],
+      subjectClosure: [],
+    }
+    const setup = (override: boolean): Setup => ({
+      hostFiles: {
+        'manifests/guards.json': registry([subjectEntry]),
+        [subjectGuard]: guardSource,
+        [subject]: hostSubject,
+      },
+      ...(override
+        ? {
+            packFiles: { [subject]: "export const value = 'cm'\n" },
+            manifest: () => ({
+              routes: { overrides: [{ path: subject, hostSha256: shaOf(hostSubject) }] },
+            }),
+          }
+        : {}),
+    })
+    const clean = await verify({ ...options(await composedWorld(setup(false))), only: 'guards' })
+    expect(clean.guards?.outcomes.find((o) => o.id === 'subject')?.ok).toBe(true)
+    const overridden = await verify({
+      ...options(await composedWorld(setup(true))),
+      only: 'guards',
+    })
+    const outcome = overridden.guards?.outcomes.find((o) => o.id === 'subject')
+    expect(outcome?.ok).toBe(false)
+    expect(outcome?.failures.join('\n')).toContain("expected 'cm' to be 'pv'")
+    // the guard file itself is the pristine host copy: only the subject differs
+    expect(overridden.guards?.overridden).not.toContain(subjectGuard)
   })
 
   it('fails (never skips) when the host publishes no guard registry', async () => {

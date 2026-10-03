@@ -88,13 +88,15 @@ describe('guard registry (Story 68.9 AC-1)', () => {
     expect(registry.guards.every((guard) => guard.license === 'AGPL-3.0-or-later')).toBe(true)
   })
 
-  it('closes over helpers but not over a subject the guard names', () => {
-    const closure = registry.guards.find((guard) => guard.id === GUARD_ID)?.closure
-    expect(closure?.map((entry) => entry.file)).toEqual([
+  it('closes over helpers but not over a subject the guard names, and lists the subject and its imports', () => {
+    const guard = registry.guards.find((entry) => entry.id === GUARD_ID)
+    expect(guard?.closure.map((entry) => entry.file)).toEqual([
       'src/lib/security/rules.ts',
       'src/lib/test/guard-root.ts',
     ])
-    expect(closure?.every((entry) => /^[0-9a-f]{64}$/.test(entry.sha256))).toBe(true)
+    expect(guard?.closure.every((entry) => /^[0-9a-f]{64}$/.test(entry.sha256))).toBe(true)
+    expect(guard?.subjects).toEqual(['src/lib/security/hardening.ts'])
+    expect(guard?.subjectClosure).toEqual(['src/lib/security/deep.ts'])
   })
 
   it('is byte-identical across runs', () => {

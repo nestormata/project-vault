@@ -142,6 +142,32 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
   )
 
   it(
+    "PV's web guards and exclusions run over the composed mini pack through pv-verify, and every mutation is red (Story 68.9 AC-13)",
+    () => {
+      const { status, output } = runVariant('compose-verify')
+      expect(output).toContain('OK: pv-verify guards pass over the composed mini pack')
+      for (const mutation of [
+        '1-raw-html',
+        '2-storage-no-entry',
+        '2b-storage-other-key',
+        '4-raw-fetch',
+        '5-input-without-description',
+        '6-css-drops-source-none',
+      ]) {
+        expect(output).toContain(`OK: mutation ${mutation} is red`)
+      }
+      expect(output).toContain('OK: mutation 3-stale-entry fails the composition')
+      expect(output).toContain('OK: mutation 8-release-untouched fails the composition')
+      expect(output).toContain(
+        'OK: mutation 7: src/lib/utils/format-bytes.test.ts is excluded by the lock'
+      )
+      expect(output).toContain('OK: mutation 9: the pristine static-hardening guard ran')
+      expect(status, output).toBe(0)
+    },
+    VARIANT_TIMEOUT_MS
+  )
+
+  it(
     'fails `vite build` with the pv-replace message when the map names a CM file that is missing (Story 68.5 AC-12)',
     () => {
       const { status, output } = runVariant('compose-missing-with')
