@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { compose } from './compose.js'
 import { exclusionNotes, securityRelevant } from './excluded-tests.js'
 import { GUARD_ENTRIES_PATH, sectionHashes } from './guard-entries.js'
+import { compareCodeUnits } from './paths.js'
 import { readLock, type CompositionLock } from './lock.js'
 import { runGuards, type GuardsResult } from './verify-guards.js'
 import { runVitest, suiteFailures, vitestBin, type VitestReport } from './verify-run.js'
@@ -62,12 +63,13 @@ function lockProblems(appRoot: string): { lock?: CompositionLock; problems: stri
 }
 
 function tamperProblems(appRoot: string, lock: CompositionLock): string[] {
-  if (lock.guardEntries === undefined) return []
+  const recorded = lock.guardEntries ?? {}
   const path = join(appRoot, GUARD_ENTRIES_PATH)
   const actual = sectionHashes(existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {})
-  const differing = Object.entries(lock.guardEntries)
-    .filter(([section, hash]) => actual[section] !== hash)
-    .map(([section]) => section)
+  // Every section on either side is compared: one the lock never recorded cannot hide an exemption.
+  const differing = [...new Set([...Object.keys(recorded), ...Object.keys(actual)])]
+    .sort(compareCodeUnits)
+    .filter((section) => actual[section] !== recorded[section])
   return differing.length === 0
     ? []
     : [

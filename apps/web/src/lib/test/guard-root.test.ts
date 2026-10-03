@@ -121,4 +121,29 @@ describe('guard root (Story 68.9 AC-2)', () => {
     )
     expect(entriesTamperProblem(app({ [GUARD_ENTRIES_PATH]: JSON.stringify(edited) }))).toBeNull()
   })
+
+  it('detects a section the lock never recorded (an added exemption cannot hide there)', () => {
+    const section = { sessionStorage: [], localStorage: [], release: [] }
+    const extra = { _generated: 'x', browserStorage: section, externalHrefs: { allow: [1] } }
+    const root = app({
+      [GUARD_ENTRIES_PATH]: JSON.stringify(extra),
+      'composition.lock.json': JSON.stringify({
+        guardEntries: { browserStorage: sectionHash(section) },
+      }),
+    })
+    expect(entriesTamperProblem(root)).toContain('(externalHrefs)')
+  })
+
+  it('scans a directory merely named paraglide anywhere except the generated src/lib/paraglide', () => {
+    const root = app({
+      ...SENTINELS,
+      'src/lib/paraglide/messages.js': 'x',
+      'src/lib/_cm/paraglide/Evil.svelte': 'x',
+      'src/routes/paraglide/+page.svelte': 'x',
+    })
+    const paths = guardSources(/\.(js|svelte)$/, root).map((source) => source.path)
+    expect(paths).toContain('src/lib/_cm/paraglide/Evil.svelte')
+    expect(paths).toContain('src/routes/paraglide/+page.svelte')
+    expect(paths).not.toContain('src/lib/paraglide/messages.js')
+  })
 })

@@ -324,6 +324,23 @@ it('the subject answers pv', () => expect(value).toBe('pv'))
     )
   })
 
+  it('fails when the lock records no guard entries but the app holds a generated module', async () => {
+    const world = await composedWorld({
+      hostFiles: {
+        'src/lib/composition/guard-entries.generated.json': JSON.stringify({
+          _generated: 'x',
+          browserStorage: {},
+        }),
+      },
+    })
+    const lockPath = join(world.app, LOCK_FILE)
+    const lock = JSON.parse(readFileSync(lockPath, 'utf8')) as Record<string, unknown>
+    delete lock.guardEntries
+    writeFileSync(lockPath, JSON.stringify(lock))
+    const report = await verify(options(world))
+    expect(report.preflight.problems.join('\n')).toContain('differ from composition.lock.json')
+  })
+
   it('never leaks the guards scan root to the caller or to the tests step', async () => {
     const world = await composedWorld({
       appTests: {
