@@ -93,7 +93,10 @@ ships its own empty provider for PV's build, and it **refuses to build a compose
 `pvHooks()`** (`composed tree detected but pvHooks() from @project-vault/composition-kit/vite is not
 in the plugin list`), so a composed image can never silently ship without CM hooks or derived
 protection. In dev a change to the lock's hooks or protected-path contribution restarts the dev
-server (SvelteKit caches the server hooks behind a module-level `init_promise`).
+server (SvelteKit caches the server hooks behind a module-level `init_promise`); `pvComposeDev`
+then updates the composed tree incrementally, so files other plugins generated in it (Paraglide's
+output) survive. The integration job proves it live: a CM `(app)` route added while `vite dev` runs
+is gated by the hook without a manual restart.
 
 The server hook file is materialized under `src/lib/server/_cm/**`, so Kit's own server-only guard
 rejects a client import of it. Exports that are not hooks are ignored and noted (`hookLabel` is not a

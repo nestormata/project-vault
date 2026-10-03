@@ -15,6 +15,8 @@
   (the 68-3 "not applied" notes disappear), non-hook exports of a hook file are noted (with a
   "did you mean" hint), a hook in the wrong file is noted, and a contribution to a fully overridden
   hooks file is noted. An older web-host keeps the 68-3 behaviour.
+- `pvComposeDev` keeps the composed tree across a dev-server restart in the same process (it updates
+  it incrementally instead of swapping in a fresh copy).
 - `--verbose` prints each derived protected route. New types `PvHooksModule`, `PvServerHooksModule`.
 
 ## 0.1.0
