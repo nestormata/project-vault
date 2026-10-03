@@ -22,6 +22,7 @@ const GUARD_SOURCES = [
   'apps/web/guards/form-guidance.ts',
   'apps/web/guards/monolithic-region.ts',
   'apps/web/guards/region-markup.ts',
+  'apps/web/guards/svelte-files.ts',
   'packages/composition-kit/src/verify.ts',
   'packages/composition-kit/src/verify-cli.ts',
   'packages/composition-kit/src/verify-guards.ts',

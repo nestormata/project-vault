@@ -249,7 +249,11 @@ describe('monolithic-region: tree scan, provenance exemption and the shipped con
   })
 
   it('imports only node: modules, svelte/compiler and its sibling walker (ships standalone)', () => {
-    for (const file of ['guards/monolithic-region.ts', 'guards/region-markup.ts']) {
+    for (const file of [
+      'guards/monolithic-region.ts',
+      'guards/region-markup.ts',
+      'guards/svelte-files.ts',
+    ]) {
       const code = readFileSync(join(WEB, file), 'utf8')
       const specifiers = [...code.matchAll(/^import[^'"]*['"]([^'"]+)['"]/gm)].map((m) => m[1])
       for (const specifier of specifiers) {

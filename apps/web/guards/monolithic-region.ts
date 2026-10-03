@@ -16,9 +16,10 @@
 //
 // Ships with web-host (`guards/monolithic-region.js`, registry kind "script"), so `pv-verify` runs
 // the same rule over a composed tree. Imports only `node:`, `svelte/compiler` and the shared walker.
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
 import { childrenOf, parseRegions, type Node } from './region-markup.js'
+import { walkSvelte } from './svelte-files.js'
 
 export interface MonolithicFinding {
   line: number
@@ -98,31 +99,6 @@ export function scanMonolithicRegions(source: string, file = '<source>'): FileSc
   }
   findings.sort((a, b) => a.line - b.line)
   return { regions: parsed.regions.length, findings }
-}
-
-// Never descend into node_modules; follow symlinks (a dangling one is skipped, not fatal): the same
-// rules as the repository's own scan-utils walker, kept minimal because that one is not shipped.
-function walkSvelte(dir: string): string[] {
-  const found: string[] = []
-  let entries: string[]
-  try {
-    entries = readdirSync(dir).sort()
-  } catch {
-    return found
-  }
-  for (const entry of entries) {
-    if (entry === 'node_modules') continue
-    const full = join(dir, entry)
-    let stat
-    try {
-      stat = statSync(full)
-    } catch {
-      continue
-    }
-    if (stat.isDirectory()) found.push(...walkSvelte(full))
-    else if (stat.isFile() && full.endsWith('.svelte')) found.push(full)
-  }
-  return found
 }
 
 function toPosix(path: string): string {

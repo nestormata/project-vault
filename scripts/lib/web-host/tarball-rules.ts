@@ -17,6 +17,7 @@ export const REQUIRED_ENTRIES = [
   'guards/form-guidance.js',
   'guards/monolithic-region.js',
   'guards/region-markup.js',
+  'guards/svelte-files.js',
   'vendor/shared/src/index.ts',
   'project.inlang/settings.json',
   'inlang-plugins/plugin-message-format.js',
