@@ -318,6 +318,7 @@ describe('Story 68.8 AC-6 — recording: boot log lines and the status summary',
       }
     )
     expect(apiRoutesStatus(runtime.table)).toEqual({
+      app: { errorHandler: null, notFoundHandler: null, hooks: { prepend: [], append: [] } },
       added: [{ method: 'GET', url: '/cm/a', capability: 'cm.read' }],
       overrides: [
         {
@@ -338,7 +339,11 @@ describe('Story 68.8 AC-6 — recording: boot log lines and the status summary',
         },
       ],
     })
-    expect(apiRoutesStatus(undefined)).toEqual({ added: [], overrides: [] })
+    expect(apiRoutesStatus(undefined)).toEqual({
+      added: [],
+      overrides: [],
+      app: { errorHandler: null, notFoundHandler: null, hooks: { prepend: [], append: [] } },
+    })
     await app.close()
   })
 

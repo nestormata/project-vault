@@ -39006,11 +39006,74 @@
                             ],
                             "additionalProperties": false
                           }
+                        },
+                        "app": {
+                          "type": "object",
+                          "properties": {
+                            "errorHandler": {
+                              "nullable": true,
+                              "type": "string",
+                              "enum": [
+                                "replace",
+                                "wrap"
+                              ]
+                            },
+                            "notFoundHandler": {
+                              "nullable": true,
+                              "type": "string",
+                              "enum": [
+                                "replace",
+                                "wrap"
+                              ]
+                            },
+                            "hooks": {
+                              "type": "object",
+                              "properties": {
+                                "prepend": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "onRequest",
+                                      "preValidation",
+                                      "preHandler",
+                                      "onSend"
+                                    ]
+                                  }
+                                },
+                                "append": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "onRequest",
+                                      "preValidation",
+                                      "preHandler",
+                                      "onSend"
+                                    ]
+                                  }
+                                }
+                              },
+                              "required": [
+                                "prepend",
+                                "append"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "errorHandler",
+                            "notFoundHandler",
+                            "hooks"
+                          ],
+                          "additionalProperties": false,
+                          "description": "App-level behaviour the extension changes (Story 68.14): the error and not-found handler mode (`null` when untouched) and the global hook phases it prepends or appends. Declaration data only."
                         }
                       },
                       "required": [
                         "added",
-                        "overrides"
+                        "overrides",
+                        "app"
                       ],
                       "additionalProperties": false,
                       "description": "Extension API routes (M7): routes the extension added and PV routes it overrides. `replaceSecurity: true` replaces only the route-level security of that route; context-level hooks (for example a per-IP rate limiter of the route plugin) and app-wide hooks (vault guard, helmet, CORS) always still run."

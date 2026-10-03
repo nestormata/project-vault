@@ -19,6 +19,13 @@ export type ApiRoutesFixture = {
       | 'above-host'
       | 'never-refused'
       | 'old-pack'
+      | 'app-wrap'
+      | 'app-replace'
+      | 'app-throwing-wrap'
+      | 'app-throwing-replace'
+      | 'app-hooks-prepend'
+      | 'app-hooks-append'
+      | 'app-hooks-throw'
   ) => void
   resetObserved: () => void
   observed: {
