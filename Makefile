@@ -50,7 +50,7 @@ DB_URL_APP        ?= postgresql://vault_app:dev-only-change-in-prod@$(DB_CONN_HO
 DB_URL_ADMIN      ?= postgresql://vault_admin:password@$(DB_CONN_HOST):$(DB_HOST_PORT)/project_vault
 
 .PHONY: help install dev build lint typecheck generate-spec jscpd audit sonar-issues check-public-safety check-form-guidance check-function-executability check-function-executability-tests \
-        db-up db-down db-migrate check-rls test test-repeat stryker ci ci-inner web-host-fixture composition-kit-integration \
+        db-up db-down db-migrate check-rls test test-repeat stryker ci ci-inner web-host-fixture composition-kit-integration mock-ui-pack-compose \
         check-extension-api-policy check-extension-api-policy-content check-extension-api-behaviour check-extension-api-markers check-extension-api-contract-changelog \
         bootstrap bootstrap-docker check-ports fix-ports \
         docker-up docker-down docker-down-v docker-build docker-logs docker-smoke docker-backup-permission-smoke docker-prod docker-prod-down \
@@ -291,6 +291,9 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 
 composition-kit-integration: ## Story 68.3 AC-12: compose a mini UI pack onto the packed web-host in an isolated consumer, then check, build, boot and serve it (slow, needs the npm registry)
 	COMPOSITION_KIT_INTEGRATION=1 pnpm vitest run scripts/check-composition-kit-integration.test.ts
+
+mock-ui-pack-compose: ## Story 68.10 AC-2.1: compose the mock UI pack onto the packed web-host, run pv-compose --check, pv-verify guards, svelte-check, the build and HTTP/CSS checks (slow, needs the npm registry)
+	MOCK_UI_PACK_COMPOSE=1 pnpm vitest run scripts/check-mock-ui-pack-compose.test.ts
 
 web-host-fixture: ## Story 68.2 AC-8: pack web-host and build/boot an out-of-monorepo consumer from the tarball (slow, needs the npm registry)
 	WEB_HOST_FIXTURE=1 pnpm vitest run scripts/check-web-host-consumer-fixture.test.ts

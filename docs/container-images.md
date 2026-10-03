@@ -29,6 +29,18 @@ workflow promotes the `1.2`, `1`, and `latest` aliases.
 Use an exact version or digest for production and Portainer deployments. `latest` is a convenience
 alias and moves when a newer release is published.
 
+## Test-only api build arg for the mock module pack
+
+`apps/api/Dockerfile` has an opt-in build arg `INCLUDE_MOCK_UI_PACK_MODULE` (default `false` in every stage that
+declares it, never set by `docker-compose.yml`, `docker-compose.prod.yml` or a Fly config). When `true` it builds
+`fixtures/mock-ui-pack` (the module pack of Story 68.10) and grafts its `dist` into the deployed
+`node_modules`, so a test stack can load it with `VAULT_EXTENSIONS_PACKAGE=@project-vault/mock-ui-pack`. A pnpm
+workspace member also needs its `package.json` COPY line in every Dockerfile that runs `pnpm install
+--frozen-lockfile` (`apps/api`, `apps/web`, `Dockerfile.ci`) and a lockfile update, or the image build fails with
+a frozen-lockfile mismatch that a local workspace symlink hides.
+`apps/api/src/__tests__/mock-extension-not-in-production.test.ts` pins that the package and its boot-fault knob
+`MOCK_UI_PACK_BOOT_FAULT` appear in no production configuration.
+
 ## Release vulnerability gate
 
 Before any alias moves, the publish workflow scans every pushed image (`api`, `migrate` and `web`)

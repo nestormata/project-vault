@@ -30,10 +30,10 @@ pv-compose  ->  paraglide compile  ->  svelte-kit sync  ->  svelte-check  ->  gu
    skip every composed file, so the app's own `.gitignore` lists them). The kit owns these directories and
    refuses to replace one that has no header. It also refuses to run when the app root is a filesystem
    root, a home directory, has no `package.json`, or overlaps `web-host` or the pack.
-3. **Overlay** the pack's `src/` and `static/`. A pack file on an existing PV path is an *override* and
+3. **Overlay** the pack's `src/` and `static/`. A pack file on an existing PV path is an _override_ and
    must be declared in `routes.overrides` with the PV file's `hostSha256`; an undeclared collision
    fails (an integrity check against accidental shadowing, resolved by declaring it). A pack file on a
-   new path is an *addition* (M2) and needs no declaration.
+   new path is an _addition_ (M2) and needs no declaration.
 4. **Removals** (`routes.remove`): a route id such as `/(app)/extensions/panels` removes its whole
    subtree, including files PV adds there later; a `src/...` or `static/...` entry removes that file
    or directory. Removals are recorded with their hash. A changed removed file is informational. A
@@ -158,6 +158,18 @@ contains a point, every name is registered, and every page and layout server fil
 `injectActions` with its own route id and scope. Run over a composed tree with `--lock composition.lock.json`,
 it skips the files the lock records as CM's.
 
+**Monolithic regions (Story 68.10).** `scripts/check-monolithic-regions.ts` (`pnpm check-monolithic-regions`,
+shipped as the `monolithic-region` guard in `apps/web/guards/monolithic-region.ts` and run by `pv-verify` over a
+composed tree) adds a second rule to the same `<!-- @region name -->` marker: the marked block must be a component
+or contain one, so it can be replaced individually through M4. A component is a capitalized tag (or a dotted
+member) whose binding is imported from a `.svelte` file in the same file's scripts, a `<svelte:component>`, or a
+`{@render}` marked node. `<InjectionPoint>` never counts, so a region that is only plain HTML and a point is
+monolithic. The check is about replaceability, not size: a region wrapped in a trivial component passes (whether
+the extraction is meaningful is the componentization audit of story 69.5). An unparseable `.svelte` file is a
+finding, never a silent skip. Files the lock records as CM's are exempt by provenance (the guard has
+`@pv-scope pv-originated-only`); there is no suppression syntax, baseline or allow-list. PV's own tree has no
+`@region` marker yet, so today it scans N files and zero regions.
+
 **Hash drift:** this change adds injection points and server calls to about 70 PV route files, so the hash of
 every file a pack overrides there changes with the next web-host release. That is the intended signal;
 reconcile it with `pv-compose --accept-host`.
@@ -206,15 +218,15 @@ Every hook is a chain entry ("CM first, then PV") or `{ wrap: (pv) => replacemen
 PV nor the pack defines a hook, the composed export is `undefined`, so SvelteKit's own default runs.
 Entries are called as plain functions. A throw or rejection propagates exactly as from PV's own hook.
 
-| Hook (file) | Chain entry | Chain semantics | `wrap` receives |
-|---|---|---|---|
-| `handle` (server) | `Handle`, or `{ before?, after?, wrap? }` | `[...before, wrap ? wrap(pv) : pv, ...after]` with `sequence()` semantics | PV's handle |
-| `handleFetch` (server) | `HandleFetch` | CM runs; its `fetch` is PV's `handleFetch` bound to the real fetch | PV's, or a passthrough |
-| `handleError` (server, client) | `HandleServerError` / `HandleClientError` | CM then PV, both awaited; CM's result unless `undefined` | PV's, or one returning `undefined` |
-| `handleValidationError` (server) | `HandleValidationError` | CM first; the first non-`undefined` result | PV's, or one returning `undefined` |
-| `init` (server, client) | `ServerInit` / `ClientInit` | CM then PV, awaited in order | PV's, or a no-op |
-| `reroute` (universal) | `Reroute` | CM first; a string wins, `undefined` falls through to PV | PV's, or one returning `undefined` |
-| `transport` (universal) | `Transport` | `{ ...pv, ...cm }`; the same key on both sides fails at start-up | PV's, or `{}` |
+| Hook (file)                      | Chain entry                               | Chain semantics                                                           | `wrap` receives                    |
+| -------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------- |
+| `handle` (server)                | `Handle`, or `{ before?, after?, wrap? }` | `[...before, wrap ? wrap(pv) : pv, ...after]` with `sequence()` semantics | PV's handle                        |
+| `handleFetch` (server)           | `HandleFetch`                             | CM runs; its `fetch` is PV's `handleFetch` bound to the real fetch        | PV's, or a passthrough             |
+| `handleError` (server, client)   | `HandleServerError` / `HandleClientError` | CM then PV, both awaited; CM's result unless `undefined`                  | PV's, or one returning `undefined` |
+| `handleValidationError` (server) | `HandleValidationError`                   | CM first; the first non-`undefined` result                                | PV's, or one returning `undefined` |
+| `init` (server, client)          | `ServerInit` / `ClientInit`               | CM then PV, awaited in order                                              | PV's, or a no-op                   |
+| `reroute` (universal)            | `Reroute`                                 | CM first; a string wins, `undefined` falls through to PV                  | PV's, or one returning `undefined` |
+| `transport` (universal)          | `Transport`                               | `{ ...pv, ...cm }`; the same key on both sides fails at start-up          | PV's, or `{}`                      |
 
 **Where `handle` entries run (Q10).** `before` entries run outermost, before PV: there is no
 `locals.user` and no Paraglide locale yet, and they run for anonymous requests to protected paths
@@ -224,18 +236,28 @@ replaces PV's handle in place. Three examples:
 
 ```ts
 // 1. A request id on every response (before).
-export const handle = { before: [async ({ event, resolve }) => {
-  const response = await resolve(event)
-  response.headers.set('x-request-id', crypto.randomUUID())
-  return response
-}] }
+export const handle = {
+  before: [
+    async ({ event, resolve }) => {
+      const response = await resolve(event)
+      response.headers.set('x-request-id', crypto.randomUUID())
+      return response
+    },
+  ],
+}
 // 2. Tenant-scoped data for signed-in users only (after).
-export const handle = { after: [({ event, resolve }) => {
-  event.locals.tenant = tenantOf(event.locals.user)
-  return resolve(event)
-}] }
+export const handle = {
+  after: [
+    ({ event, resolve }) => {
+      event.locals.tenant = tenantOf(event.locals.user)
+      return resolve(event)
+    },
+  ],
+}
 // 3. Full replacement of PV's handle (wrap): call pv zero, one or several times.
-export const handle = { wrap: (pv) => async (input) => (shouldSkip(input.event) ? input.resolve(input.event) : pv(input)) }
+export const handle = {
+  wrap: (pv) => async (input) => (shouldSkip(input.event) ? input.resolve(input.event) : pv(input)),
+}
 ```
 
 PV composes `handle` with its own `composeHandles()`: Kit `sequence()`'s semantics (forward
@@ -251,7 +273,9 @@ longer runs, as in any SvelteKit app that defines `handleError`. Re-add logging 
 you want it:
 
 ```ts
-export const handleError = ({ error, status }) => { console.error(status, error) }
+export const handleError = ({ error, status }) => {
+  console.error(status, error)
+}
 ```
 
 ### Header policy
@@ -396,10 +420,33 @@ required check, the first real publish, and promotion to `latest`.
 - `make composition-kit-integration` (CI job `Composition kit integration`) packs the real `web-host`
   and the kit, installs them from the tarballs into a fresh directory outside the repository under
   `env -i`, composes a small pack, then runs paraglide compile, `svelte-kit sync`, `svelte-check
-  --fail-on-warnings`, the shipped unit tests and `vite build`, boots the built server and asserts over
+--fail-on-warnings`, the shipped unit tests and `vite build`, boots the built server and asserts over
   HTTP and in the built CSS. Variants prove that `svelte-check` fails on a lying `./$types`, that
   Kit's server-only guard rejects a client import of materialized server-only code (and accepts the
   same import from `+page.server.ts`), and that the Vite dev plugin mirrors a pack edit, an added
   route and a deleted override. The main variant also serves the M3 mechanism from the packed `web-host` (an
   injected component with server data and a form action, a layout point and a `shell.head` meta) and proves an
   unknown injection point fails with the way out.
+
+## Mechanism e2e (mock UI pack)
+
+Story 68.10 proves M1-M7 together against PV's own build with a mock UI pack
+(`fixtures/mock-ui-pack`: the overlay tree under `ui-pack/` and the mock module pack under `module/`, loaded by
+the real API through `VAULT_EXTENSIONS_PACKAGE`). It never contains real CentralizeMe code, a secret or a back
+door, and every capability is exercised at the breadth of design section 12; the lists there are a floor, not a
+ceiling. `make mock-ui-pack-compose` composes the pack onto the packed `web-host` in the kit's isolated consumer
+(`scripts/lib/web-host/consumer-tarballs.ts` is shared with the kit integration test) and runs `pv-compose
+--check`, `pv-verify --only guards` (including the monolithic-region guard and its CM-exemption proof),
+svelte-check, the shipped unit tests, `vite build`, a boot against the API stub and the HTTP/CSS assertions for
+M1, M2, M3 on public pages, M4 and M6. PV's own CM-free build is the control group
+(`scripts/check-pv-cm-free-build.test.ts`: every `virtual:pv-*` module of the built output is empty, and PV's own
+built server answers the committed `main` snapshot).
+
+**This job is red after my PV change.** A changed PV file that the pack overrides, replaces or wraps means the pack
+is updated in the same PR: that is the guardrail working, never a reason to skip, loosen or allowlist anything.
+Manifest hashes are computed when the manifest loads, so a mere PV edit never needs a hash bump. A PV change that
+makes a mechanism impossible is a design question for Nestor, not a pack edit.
+
+Status: the compose stage, the module pack, the guard and the control group exist; the composed Docker image,
+the real-API stack flavour, the Playwright mechanism specs and the `Mock UI pack mechanism e2e` CI job are tracked
+in story 68.10 and are not shipped yet (required in intent, not enforced by branch protection).

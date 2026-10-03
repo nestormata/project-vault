@@ -41,6 +41,19 @@ The base stack is `docker-compose.yml` (`db`, `migrate`, `admin-provision`, `api
 | `docker-compose.ci.yml`         | `make ci`                                         | The containerized quality-gate runner (see below)                                                                                                                                                                                                                                |
 | `docker-compose.ci-overlay.yml` | `make ci`, only when the private overlay resolves | Mounts the private overlay repo read-only at its own absolute host path (see below)                                                                                                                                                                                              |
 
+## Composition mechanism checks (Story 68.10)
+
+```bash
+make composition-kit-integration   # the kit's mini pack, per feature, against an API stub
+make mock-ui-pack-compose          # the mock UI pack composed onto the packed web-host (M1-M4, M6)
+pnpm check-monolithic-regions      # every @region block is a component or contains one
+pnpm vitest run scripts/check-pv-cm-free-build.test.ts   # PV's own CM-free build: the control group
+```
+
+The two `make` targets run on the host (the `make ci` container has no Docker CLI and no registry
+access), install from the public npm registry and take minutes. `make ci-inner` runs only the guard,
+the wiring tests and the control group (which builds `apps/web` once).
+
 ## Running the Playwright E2E suite locally
 
 ```bash

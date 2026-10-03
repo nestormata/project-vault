@@ -1,0 +1,9 @@
+{
+  "extends": "@project-vault/tsconfig/node.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "module"
+  },
+  "include": ["module/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

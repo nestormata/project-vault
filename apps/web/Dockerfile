@@ -47,6 +47,7 @@ COPY fixtures/mock-audit-event-source-extension/package.json ./fixtures/mock-aud
 COPY fixtures/mock-capability-gate-extension/package.json ./fixtures/mock-capability-gate-extension/
 COPY fixtures/mock-sso-extension/package.json ./fixtures/mock-sso-extension/
 COPY fixtures/mock-ui-panel-extension/package.json ./fixtures/mock-ui-panel-extension/
+COPY fixtures/mock-ui-pack/package.json ./fixtures/mock-ui-pack/
 COPY packages/agent/package.json ./packages/agent/
 COPY packages/api-contract-tests/package.json ./packages/api-contract-tests/
 COPY packages/cli/package.json ./packages/cli/

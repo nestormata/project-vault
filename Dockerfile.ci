@@ -49,6 +49,7 @@ COPY fixtures/mock-audit-event-source-extension/package.json ./fixtures/mock-aud
 COPY fixtures/mock-capability-gate-extension/package.json ./fixtures/mock-capability-gate-extension/
 COPY fixtures/mock-envelope-extension/package.json ./fixtures/mock-envelope-extension/
 COPY fixtures/mock-ui-panel-extension/package.json ./fixtures/mock-ui-panel-extension/
+COPY fixtures/mock-ui-pack/package.json ./fixtures/mock-ui-pack/
 COPY packages/cli/package.json ./packages/cli/
 COPY packages/composition-kit/package.json ./packages/composition-kit/
 RUN pnpm install --frozen-lockfile --ignore-scripts
