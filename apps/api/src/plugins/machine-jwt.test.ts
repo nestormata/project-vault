@@ -62,7 +62,11 @@ describe('machineJwtPlugin (D3)', () => {
     const app = await buildApp()
     const token = await app.machineJwtSign(sampleClaims())
     const [header, payload, signature] = token.split('.')
-    const tampered = `${header}.${payload}.${signature?.slice(0, -2)}zz`
+    // Flip the FIRST signature char: all 6 of its bits are significant. Overwriting the tail
+    // (the old `...zz`) was a ~1/1024 nightly flake: a 43-char HS256 signature's last char
+    // carries only 4 significant bits, so the tampered tail could decode to the same bytes.
+    const sig = signature ?? ''
+    const tampered = `${header}.${payload}.${sig.startsWith('A') ? 'B' : 'A'}${sig.slice(1)}`
 
     await expect(app.machineJwtVerify(tampered)).rejects.toThrow()
   })
