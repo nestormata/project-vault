@@ -13,4 +13,13 @@ export default defineGuardEntries({
       },
     ],
   },
+  // Story 68-16: the entry shape of the runtime route audit's classification file.
+  routeClassifications: [
+    {
+      route: 'GET /api/v1/cm/health',
+      reason: 'public liveness probe, returns a static body',
+      securityOwner: 'cm-platform',
+      compensatingControls: ['no data is read', 'edge rate limit'],
+    },
+  ],
 })

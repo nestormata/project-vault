@@ -8,10 +8,12 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { compose } from './compose.js'
 import { exclusionConsistencyProblems, exclusionNotes, securityRelevant } from './excluded-tests.js'
 import { GUARD_ENTRIES_PATH, sectionHashes } from './guard-entries.js'
@@ -247,6 +249,63 @@ export async function verify(options: VerifyOptions): Promise<VerifyReport> {
     ...steps,
     ...reportExtras(checked.lock, steps),
   }
+}
+
+export interface ExtractOptions {
+  appRoot: string
+  hostDir: string
+  packRoot?: string
+  /** Absolute path of the file to write. */
+  out: string
+}
+
+export interface ExtractResult {
+  ok: boolean
+  entries: number
+  problems: string[]
+}
+
+function outProblem(out: string): string | null {
+  if (existsSync(out) && statSync(out).isDirectory()) return `--out ${out} is a directory`
+  const parent = dirname(out)
+  if (!existsSync(parent) || !statSync(parent).isDirectory()) {
+    return `the parent directory does not exist for --out ${out}`
+  }
+  return null
+}
+
+function classificationEntries(appRoot: string): unknown[] {
+  const path = join(appRoot, GUARD_ENTRIES_PATH)
+  // The preflight proved the file equals the lock; an absent file means no sections at all.
+  const generated = (existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}) as {
+    routeClassifications?: { route: string }[]
+  }
+  return [...(generated.routeClassifications ?? [])].sort((a, b) =>
+    compareCodeUnits(a.route, b.route)
+  )
+}
+
+/**
+ * Story 68-16 AC-2: writes the locked `routeClassifications` section as the JSON array the runtime
+ * route audit (`--classifications`) reads. A pure projection of the section the preflight just
+ * proved equal to the lock's recorded hash; nothing is written when the preflight fails.
+ */
+export async function extractClassifications(options: ExtractOptions): Promise<ExtractResult> {
+  const failed = (problems: string[]): ExtractResult => ({ ok: false, entries: 0, problems })
+  const checked = await preflight(options)
+  if (checked.lock === undefined || checked.problems.length > 0) return failed(checked.problems)
+  const problem = outProblem(options.out)
+  if (problem !== null) return failed([problem])
+  const entries = classificationEntries(options.appRoot)
+  const temp = `${options.out}.${process.pid}.tmp`
+  try {
+    writeFileSync(temp, `${JSON.stringify(entries, null, 2)}\n`)
+    renameSync(temp, options.out)
+  } catch (error) {
+    rmSync(temp, { force: true })
+    return failed([`cannot write --out ${options.out}: ${(error as Error).message}`])
+  }
+  return { ok: true, entries: entries.length, problems: [] }
 }
 
 /** A second run on one app root fails fast instead of racing vitest's cache; a stale lock (its
