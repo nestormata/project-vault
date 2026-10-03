@@ -162,10 +162,11 @@ function stage(context: StageContext, guards: GuardRegistryEntry[]): Staged {
 }
 
 function configText(scratch: string, testFiles: readonly string[]): string {
+  const libDir = JSON.stringify(`${scratch}/src/lib/`)
   return [
     'export default {',
     `  test: { include: ${JSON.stringify(testFiles)}, environment: 'node' },`,
-    `  resolve: { alias: [{ find: /^\\$lib\\//, replacement: ${JSON.stringify(`${scratch}/src/lib/`)} }] },`,
+    `  resolve: { alias: [{ find: /^\\$lib\\//, replacement: ${libDir} }] },`,
     '}',
     '',
   ].join('\n')

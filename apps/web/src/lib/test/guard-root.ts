@@ -171,13 +171,14 @@ export function entriesTamperProblem(appRoot: string = guardAppRoot()): string |
       (existsSync(path) ? JSON.parse(readFileSync(path, 'utf-8')) : {}) as Record<string, unknown>
     )
   )
+  const recordedHashes = new Map(Object.entries(recorded))
   const sections = new Set([
-    ...Object.keys(recorded),
+    ...recordedHashes.keys(),
     ...[...raw.keys()].filter((k) => k !== '_generated'),
   ])
   const differing = [...sections]
     .sort()
-    .filter((section) => sectionHash(raw.get(section) ?? null) !== recorded[section])
+    .filter((section) => sectionHash(raw.get(section) ?? null) !== recordedHashes.get(section))
   return differing.length === 0
     ? null
     : `generated guard entries differ from composition.lock.json (${differing.join(', ')}); re-run pv-compose`

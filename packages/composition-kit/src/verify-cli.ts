@@ -73,8 +73,9 @@ function guardLines(report: VerifyReport): string[] {
 function testLines(report: VerifyReport): string[] {
   const tests = report.tests
   if (tests === undefined) return []
+  const failedNote = tests.failed > 0 ? `, ${tests.failed} failed` : ''
   return [
-    `pv-verify: tests: ${tests.run} run, ${tests.excluded.length} excluded${tests.failed > 0 ? `, ${tests.failed} failed` : ''}`,
+    `pv-verify: tests: ${tests.run} run, ${tests.excluded.length} excluded${failedNote}`,
     ...tests.excluded.map((test) => `  excluded ${test}`),
     ...tests.failures.map((line) => `    ${line}`),
     ...tests.problems.map((line) => `  ${line}`),

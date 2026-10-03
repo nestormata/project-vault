@@ -64,13 +64,15 @@ function lockProblems(appRoot: string): { lock?: CompositionLock; problems: stri
 }
 
 function tamperProblems(appRoot: string, lock: CompositionLock): string[] {
-  const recorded = lock.guardEntries ?? {}
+  const recorded = new Map(Object.entries(lock.guardEntries ?? {}))
   const path = join(appRoot, GUARD_ENTRIES_PATH)
-  const actual = sectionHashes(existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {})
+  const actual = new Map(
+    Object.entries(sectionHashes(existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}))
+  )
   // Every section on either side is compared: one the lock never recorded cannot hide an exemption.
-  const differing = [...new Set([...Object.keys(recorded), ...Object.keys(actual)])]
+  const differing = [...new Set([...recorded.keys(), ...actual.keys()])]
     .sort(compareCodeUnits)
-    .filter((section) => actual[section] !== recorded[section])
+    .filter((section) => actual.get(section) !== recorded.get(section))
   return differing.length === 0
     ? []
     : [
