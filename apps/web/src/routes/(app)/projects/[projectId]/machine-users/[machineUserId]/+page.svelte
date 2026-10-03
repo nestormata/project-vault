@@ -1,4 +1,5 @@
 <script lang="ts">
+  import NavLink from '$lib/navigation/NavLink.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { invalidateAll } from '$app/navigation'
   import { resolve } from '$app/paths'
@@ -363,12 +364,12 @@
       {/if}
     </section>
 
-    <a
+    <NavLink
+      surface="back"
+      node="back.project.machine-user"
       class="inline-block font-medium text-slate-700 underline"
-      href={resolve(`/projects/${data.projectId}/machine-users`)}
-    >
-      Back to machine users
-    </a>
+      projectId={data.projectId}
+    />
   {/if}
 </section>
 <InjectionPoint name="project.machine-users-detail.after" data={data?.__inject} />

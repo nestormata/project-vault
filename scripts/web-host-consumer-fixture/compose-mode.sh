@@ -17,6 +17,10 @@
 #                            (compose-mock-pack.sh)
 #   compose-bad-policy       the pack's headerPolicy is invalid: composed-hooks-init.test.ts must fail
 #                            before any build (68-6 AC-6, code review)
+#   compose-nav-drift        web-host's nav-ids.json loses an id the pack's nav delta changes: pv-compose
+#                            must fail naming it (Story 68.7 AC-9/AC-13)
+#   compose-nav-leak         the pack's nav.ts imports a $lib/server module: vite build must fail (the
+#                            nav delta reaches the client bundle; Story 68.7 AC-8)
 #
 # Inputs (environment): COMPOSITION_KIT_TARBALL, COMPOSITION_KIT_FIXTURES (the kit's tests/fixtures
 # directory), COMPOSITION_KIT_SVELTE_CHECK and COMPOSITION_KIT_TYPES_NODE (the versions PV pins).
@@ -72,6 +76,9 @@ compose_prepare_app() {
     compose-full-override)
       cp "$COMPOSITION_KIT_FIXTURES/full-override/hooks.server.ts" "$PACK/src/hooks.server.ts"
       ;;
+    compose-nav-leak)
+      cat "$COMPOSITION_KIT_FIXTURES/nav-leak/nav-leak.ts.txt" >> "$PACK/nav.ts"
+      ;;
     compose-bad-policy)
       # An empty header value is an integrity failure of the composed policy.
       sed -i "s/'x-cm-policy': 'on'/'x-cm-policy': ''/" "$PACK/hooks.server.ts"
@@ -105,7 +112,40 @@ compose_assert_isolated() {
   # NODE_PATH cannot leak in: every tool runs under clean_env (env -i with only PATH and HOME).
 }
 
+# Story 68.7 AC-13 drift variant: web-host's nav-ids.json no longer has an id the pack's nav.ts
+# relabels (an operative change), so pv-compose fails naming it and writes nothing.
+compose_nav_drift() {
+  local ids="$INSTALLED/manifests/nav-ids.json"
+  clean_env "$NODE_BIN" -e '
+    const fs = require("node:fs")
+    const file = process.argv[1]
+    const manifest = JSON.parse(fs.readFileSync(file, "utf8"))
+    manifest.ids = manifest.ids.filter((entry) => entry.id !== "primary.health")
+    fs.writeFileSync(file, JSON.stringify(manifest, null, 2))
+  ' "$ids"
+  local status=0
+  (cd "$APP" && clean_env PV_FIXTURE_HOST="$INSTALLED" "$NODE_BIN" \
+    node_modules/@project-vault/composition-kit/dist/cli.js \
+    --pack "$PACK" --module-pack "$APP") > "$WORK/drift.out" 2>&1 || status=$?
+  cat "$WORK/drift.out"
+  if [[ "$status" == 0 ]] ||
+    ! grep -qF 'Nav id "primary.health" vanished from web-host and an operative nav change targets it' "$WORK/drift.out"; then
+    echo 'fixture: pv-compose did not fail on the vanished nav id' >&2
+    exit 1
+  fi
+  if [[ -e "$APP/composition.lock.json" ]]; then
+    echo 'fixture: a failed compose wrote a lock' >&2
+    exit 1
+  fi
+  log 'OK: a vanished operative nav id fails the compose, naming it'
+  return 0
+}
+
 compose_run() {
+  if [[ "$VARIANT" == 'compose-nav-drift' ]]; then
+    compose_nav_drift
+    exit 0
+  fi
   log "pv-compose --pack $(basename "$PACK")"
   (cd "$APP" && clean_env PV_FIXTURE_HOST="$INSTALLED" "$NODE_BIN" \
     node_modules/@project-vault/composition-kit/dist/cli.js \
@@ -267,6 +307,8 @@ compose_header() {
 compose_fail() {
   echo "fixture: $*" >&2
   cat "$WORK/headers.txt" >&2
+  # An error page's serialized error names what failed.
+  grep -o 'message:"[^"]*"' "$WORK/body.txt" >&2 || true
   exit 1
 }
 
@@ -591,6 +633,84 @@ compose_injection_checks() {
   return 0
 }
 
+# Story 68.7 AC-16: the shipped composed-nav test validates the pack's real delta (virtual:pv-nav
+# through pvNav()) on every surface, in en and es. It also runs in the full shipped-test step; run
+# here on its own, its pass is visible in the job output.
+compose_nav_test() {
+  log 'composed-nav.test.ts over the pack nav delta'
+  (cd "$APP" && clean_env "$NODE_BIN" node_modules/vitest/vitest.mjs run --reporter=dot \
+    src/lib/navigation/composed-nav.test.ts)
+  log "OK: composed-nav.test.ts validated the pack's nav delta"
+  return 0
+}
+
+compose_before() { # needle-a needle-b context: a must come before b in $WORK/body.txt
+  local first="$1" second="$2" context="$3" a b
+  a="$(compose_offset "$first")"
+  b="$(compose_offset "$second")"
+  if [[ -z "$a" || -z "$b" || "$a" -ge "$b" ]]; then
+    compose_fail "$context: expected '$first' before '$second'"
+  fi
+  return 0
+}
+
+compose_absent() { # needle context
+  local needle="$1" context="$2"
+  if grep -qF -- "$needle" "$WORK/body.txt"; then
+    compose_fail "$context: unexpected $needle"
+  fi
+  return 0
+}
+
+# Story 68.7 AC-13 (M5): every operation of the mini pack's nav.ts on the built server's real HTML.
+compose_nav_checks() {
+  # /settings: an (app) page whose load calls no API (the stub answers few endpoints), so the
+  # primary nav, the settings index and the account menu all render from the real data.
+  local port="$1" member='session=ok' project='/projects/p-nav'
+  compose_expect_ok "$port" GET /settings "$member" 'CM Billing'
+  compose_before 'CM Home' 'sm:inline">Projects' 'reorder (listed ids first)'
+  compose_before 'sm:inline">Projects' 'aria-label="Search' 'reorder (unlisted keep their order)'
+  compose_before 'sm:inline">Dashboard' 'CM Billing' 'insert after primary.projects'
+  compose_before 'CM Ops' 'CM Reports' 'a 3-level CM group'
+  compose_before 'CM Reports' 'CM Daily' 'a 3-level CM group'
+  local needle
+  for needle in 'data-cm-nav-icon' 'Health CM' 'CM Brand' 'CM Account Billing' 'CM seats and roles' 'CM Seats'; do
+    compose_expect_ok "$port" GET /settings "$member" "$needle"
+  done
+  compose_absent 'CM Owners' 'a CM when (owners only) for a member'
+  compose_absent '>Project Vault</a>' 'replace shell.brand.home'
+  compose_absent 'SSO Domains' 'hide settings.index.sso-domains'
+  compose_absent 'CM Hidden Billing' 'hide a CM item'
+  # Moved under the CM group: no longer a top-level item (top-level items carry the label spans).
+  compose_absent 'sm:inline">Notifications' 'move a PV item under a CM group'
+  compose_expect_ok "$port" GET "$project" "$member" 'CM Project Billing'
+  # Server rendering writes resolve()'s relative form (./p-nav/members); match the tail.
+  compose_expect_ok "$port" GET "$project" "$member" 'p-nav/members"'
+  compose_absent 'Status Page' 'remove project.status-page'
+  # Server-rendered locale: PV's Spanish project tabs and CM's own relabel function.
+  compose_expect_ok "$port" GET "$project" "$member; PARAGLIDE_LOCALE=es" 'Miembros'
+  compose_expect_ok "$port" GET "$project" "$member; PARAGLIDE_LOCALE=es" 'Resumen'
+  compose_expect_ok "$port" GET /settings "$member; PARAGLIDE_LOCALE=es" 'Salud CM'
+  # A hidden item is not access control: the route behind the hidden CM item still answers.
+  compose_expect "$port" /billing 200 'Acme plan'
+  if ! grep -rqsF 'CM Project Billing' "$APP/build/client"; then
+    compose_fail 'the CM nav module is not in the client bundle (the nav renders in the browser too)'
+  fi
+  if ! grep -qF '"cm.ops.reports.daily"' "$APP/composition.lock.json" ||
+    ! grep -qF '"id": "primary.health"' "$APP/composition.lock.json"; then
+    compose_fail 'the lock lacks navIdsDeclared / navIdsReferenced'
+  fi
+  # The compose notes (recorded in the lock): inheritance, the hide of an id PV does not have, and
+  # how many references compose time could check.
+  for needle in "nav ids: web-host defines" 'nav id \"primary.not-a-pv-item\" vanished from web-host; it is only hidden or removed' 'nav references: '; do
+    if ! grep -qF -- "$needle" "$APP/composition.lock.json"; then
+      compose_fail "the lock notes lack: $needle"
+    fi
+  done
+  log 'OK: nav delta applied on /settings and a project (every operation, nested, CM when and icon), Spanish tabs and the CM relabel under es, the hidden route still served, CM nav in the client bundle'
+  return 0
+}
+
 compose_http_checks() {
   local port="$1"
   if [[ "$VARIANT" == 'compose-mock-pack' ]]; then
@@ -603,6 +723,7 @@ compose_http_checks() {
   fi
   compose_hooks_checks "$port"
   compose_injection_checks "$port"
+  compose_nav_checks "$port"
   compose_expect "$port" /login 200 'Use your Acme account to continue.'
   compose_expect "$port" /billing 200 'Acme plan: pro'
   compose_expect "$port" /billing 200 'data-testid="health-tile"'
@@ -675,6 +796,22 @@ compose_dev() {
     cat "$WORK/dev.err" >&2
     return 1
   fi
+  # Story 68.7 AC-13: an edit of nav.ts reaches the next SSR response through virtual:pv-nav
+  # (a re-export of the materialized file, so Vite's module graph follows it; no restart).
+  log 'dev: edit the nav delta'
+  if ! compose_wait_for "$port" /m4 'CM Account Billing' 30; then
+    echo "fixture: GET /m4 answered HTTP $(compose_get "$port" /m4); body head:" >&2
+    head -c 3000 "$WORK/body.txt" >&2
+    cat "$WORK/dev.err" "$WORK/dev.out" >&2
+    return 1
+  fi
+  sed -i 's/CM Account Billing/CM Account Invoices/' "$PACK/nav.ts"
+  started="$(date +%s)"
+  if ! compose_wait_for "$port" /m4 'CM Account Invoices' 90; then
+    cat "$WORK/dev.err" >&2
+    return 1
+  fi
+  log "OK: dev mode applied an edit of nav.ts ($(($(date +%s) - started)) s)"
   log 'dev: delete an override (the PV page must come back)'
   rm "$PACK/src/routes/(auth)/recovery/+page.svelte"
   for _ in $(seq 1 60); do

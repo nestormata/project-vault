@@ -235,6 +235,11 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm vitest run scripts/check-monolithic-regions.test.ts scripts/lib/route-files.test.ts
 	@# Story 68.10: the mechanism e2e job wiring, its path filter and the mechanism specs cannot pass vacuously
 	pnpm vitest run scripts/check-mock-ui-pack-e2e-wiring.test.ts scripts/lib/web-host/consumer-tarballs.test.ts
+	@# Story 68.7: every PV nav item has a stable id; every nav surface is rendered from nav data
+	pnpm check-nav-ids
+	pnpm vitest run scripts/check-nav-ids.test.ts
+	pnpm check-nav-surfaces
+	pnpm vitest run scripts/check-nav-surfaces.test.ts
 	pnpm vitest run scripts/extension-authoring-docs.test.ts # Story 59.2 AC-3 authoring-doc drift guard
 	pnpm check-native-credential-surface
 	pnpm check-no-sonar-suppressions # Story 43.9 AC-9: no unsigned Sonar suppressions
@@ -272,6 +277,8 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm turbo build --force --filter=@project-vault/web-host
 	pnpm vitest run scripts/check-pv-cm-free-build.test.ts
 	pnpm vitest run scripts/check-web-host-release-workflow.test.ts
+	# Story 68.12 AC-5: the npm release verification helper's unit test (no network).
+	pnpm vitest run scripts/verify-npm-release.test.ts
 	# Story 68.3: the kit's release version triangle and the integration job's wiring (the slow
 	# integration itself is `make composition-kit-integration`).
 	pnpm vitest run scripts/check-release-version-triangle.test.ts scripts/check-composition-kit-integration.test.ts

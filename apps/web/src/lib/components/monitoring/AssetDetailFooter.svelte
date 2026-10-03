@@ -4,7 +4,6 @@
   pages.
 -->
 <script lang="ts">
-  import type { ProjectPath } from '$lib/app-paths.js'
   import AssetDeletePanel from './AssetDeletePanel.svelte'
   import BackLink from './BackLink.svelte'
 
@@ -14,16 +13,17 @@
     onDelete,
     deleteNote,
     confirmLabel,
-    backHref,
-    backLabel,
+    backNode,
+    projectId,
   }: {
     canManage: boolean
     deleteError: string | null
     onDelete: () => void | Promise<void>
     deleteNote?: string
     confirmLabel?: string
-    backHref: ProjectPath
-    backLabel: string
+    /** Story 68.7: the page's node in the `back` nav surface. */
+    backNode: string
+    projectId: string
   } = $props()
 </script>
 
@@ -31,4 +31,4 @@
   <AssetDeletePanel note={deleteNote} {confirmLabel} {deleteError} {onDelete} />
 {/if}
 
-<BackLink href={backHref} label={backLabel} />
+<BackLink node={backNode} {projectId} />

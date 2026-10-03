@@ -358,6 +358,121 @@ CM routes outside `(app)` are public by design and listed in a note.
 An older web-host without `manifests/hooks-surface.json` keeps the 68-3 behaviour: the files are
 materialized and the lock records them, with notes that hooks and protected paths are not applied.
 
+## Navigation delta (M5)
+
+Story 68-7 (ADR 0007 M5, design §7). Every PV navigation surface is data with stable ids, and a UI
+pack changes it with a **delta**: operations per surface, applied in order inside PV's nav models.
+It is a delta, not a snapshot: a PV nav item the pack never touches (including one a later web-host
+adds) is inherited and shown until the pack changes it. Nothing narrows M5: every item, PV's own
+included, can be added, removed, hidden, renamed, reordered, nested and replaced, and no id prefix is
+required for the pack's own items.
+
+### Surfaces
+
+`web-host`'s `manifests/nav-ids.json` lists every surface (its renderer file and context keys) and
+every PV item id (its surface, parent and whether it has a visibility condition). The surfaces are:
+
+| Surface | Where | Context (`ctx`) |
+|---|---|---|
+| `primary` | the primary nav (also the mobile nav) | `user`, `hasUiPanelExtension`, `pathname`, `search` |
+| `project` | the project tab bar | `projectId`, `orgRole`, `pathname` |
+| `shell.brand`, `shell.utility`, `shell.mfa-banner` | the header brand link, the notifications bell, the MFA banner's settings link | `hidePrimaryNav`, `unreadCount`, `bannerMessage` |
+| `account` | the account menu (`account.sign-out` is an action) | `user` |
+| `footer` | the footer links (external) | none |
+| `settings.index`, `platform.index` | the section index cards (`label` + `description`) | none |
+| `platform.settings.links`, `settings.audit.links` | sub-section link rows | none |
+| `notifications.tabs` | the notifications status tabs (`query`: `?status=…`) | `status` |
+| `breadcrumbs` | one tree; a page renders the path to its node (`<Breadcrumbs node="…">`) | `node` |
+| `back` | one back link per page (`<BackLink node="…">`, `<NavLink surface="back" node="…">`) | `projectId`, `credentialId` |
+| `error.nav`, `auth.links` | the error page's way back, the auth pages' cross-links | `authenticated` |
+
+Every context also has `pathname`. Ids are a public contract named by meaning, not position: PV never
+renames one (a rename is a removal plus an addition, listed under "Nav ids removed" in the web-host
+changelog). Legacy `navItems` (Story 29.3, deprecated and frozen) still render after the delta-applied
+items and are not addressable by a delta.
+
+### Writing `nav.ts`
+
+```ts
+import { resolve } from '$app/paths'
+import { defineNavDelta, hide, insert, move, relabel, remove, reorder, replace } from '@project-vault/composition-kit/nav'
+
+export default defineNavDelta({
+  primary: [
+    insert({ after: 'primary.projects', item: { id: 'cm.billing', label: () => t('billing'), href: () => resolve('/billing') } }),
+    insert({ parent: 'primary', item: { id: 'cm.ops', label: 'Ops', icon: OpsIcon, children: [] } }),
+    move('primary.health', { parent: 'cm.ops' }),
+    relabel('primary.secrets', () => t('vault')),
+    reorder('primary', ['primary.projects', 'primary.dashboard']),
+  ],
+  project: [insert({ parent: 'project', item: { id: 'cm.project-billing', label: 'Billing', href: (ctx) => resolve(`/projects/${ctx.projectId}/billing`) } })],
+  'settings.index': [hide('settings.index.sso-domains'), relabel('settings.index.users', { description: () => 'Seats and roles' })],
+  'shell.brand': [replace('shell.brand.home', { label: 'CentralizeMe', href: () => resolve('/') })],
+  account: [insert({ before: 'account.sign-out', item: { id: 'cm.account.billing', label: 'Billing', href: () => resolve('/billing') } })],
+})
+```
+
+Wire `pvNav()` next to `pvHooks()` in the composed app's `vite.config.ts` and `vitest.config.ts`.
+web-host refuses to build a composed tree without it. `nav.ts` renders in the browser too, so it must
+not import server-only code (Kit's server-only guard fails the build).
+
+| Op | Semantics | Problems (integrity only) |
+|---|---|---|
+| `insert({ after \| before \| parent, item })` | exactly one anchor; `parent` appends as the last child, `parent: '<surface>'` at the root | no anchor or two; an existing id ("use replace"); an anchor that was removed |
+| `remove(id)` | the item and its subtree leave the tree | none (an absent id is a note: the desired state holds) |
+| `hide(id)` | the item stays as an anchor for later ops; it and its subtree are not rendered | none (idempotent; an absent id is a note) |
+| `relabel(id, label \| { label, mobileLabel, description })` | replaces only the named labels | an empty object; an absent id |
+| `move(id, { after \| before \| parent })` | detaches and re-attaches the subtree | moving into its own subtree; a parent that is an action |
+| `replace(id, item)` | keeps the id; keeps PV's children and `when` unless the replacement declares its own (Q5) | a different `item.id` |
+| `reorder(parentId, ids)` | the listed children first, in order; the others (also future PV ones) keep their order after them | an id that is not a child; a duplicate |
+
+Rules:
+
+- **Per surface (Q4).** An op names ids of its own surface; an id of another surface is a problem that
+  names the owning surface. Moving an item across surfaces is a `remove`/`hide` in one plus an
+  `insert` in the other.
+- **Full tree, then the delta, then visibility.** Anchors resolve against PV's full tree, so an insert
+  after an operator-only item lands after it for operators and in the same place for everyone else.
+  PV's conditions (`primary.platform`, `project.endpoints`, `primary.extension-panel`) run after the
+  delta; a moved PV item keeps its own; a CM item may carry its own `when`. A group with no visible
+  children is not rendered (Q14).
+- **Labels** are functions evaluated on every render, so CM's i18n (reading Paraglide's `getLocale()`)
+  follows a no-reload locale switch; a plain string is rendered as is in every locale. Labels are
+  escaped text, always.
+- **Kinds:** `link`/`badge-link` hrefs must be same-origin paths from `resolve()`; an absolute
+  `http(s)://` URL is kind `external` (opened like the footer links); an `action` needs `onSelect`; an
+  icon is any Svelte component, and an icon-only item still needs a `label` (its accessible name).
+- **Nesting** has no depth limit. Each surface has a nested form: disclosures (`<details>`) in the
+  primary nav, the account menu, the footer, the link rows and the tab bars; nested card lists on the
+  index pages; the tree itself for breadcrumbs; sibling links for back and auth links.
+- **Hiding is not access control (design rule 4).** A hidden item's route still answers. Restrict
+  access with protected paths and the API's authorization.
+- **Runtime is total (Q7).** In production an invalid op, or a CM callback that throws, costs only that
+  op or item; the page renders. In dev the first render throws with every problem.
+
+### At compose time
+
+With a web-host whose `nav-ids.json` has `delta: 1`, `pv-compose` reads `nav.ts` with the app's
+TypeScript and records every string-literal id: `navIdsReferenced` (targets and anchors are operative,
+the targets of `hide`/`remove` are not), `navIdsDeclared` (the ids the pack inserts) and the
+informational `navIdsHost`. It **fails** an operative reference to an id web-host no longer has, an id
+used under another surface, an inserted id that web-host now defines (rename yours or replace PV's),
+and a syntax error in `nav.ts`. It **notes** each id that is new in web-host (inherited and shown), a
+hidden or removed id that vanished, every id passed as a variable (with its position), a
+`nav references: <n> literal, <m> not statically checked` count, and any change to `footer.github` or
+`footer.license` (check the AGPL-3.0 §13 source-offer obligations; never refused). An older web-host
+keeps the 68-3 behaviour: the file is materialized and a "nav delta not applied" note is printed.
+
+### In CI
+
+`web-host` ships `src/lib/navigation/composed-nav.test.ts`. Run over the composed tree (story 68-9), it
+validates the real delta on every surface over the full context matrix, in `en` and `es`: any
+integrity problem, a callback that throws or an empty label fails, also for ids the compose step could
+not see. PV's own CI runs two guards: `check-nav-ids` (every PV nav item has a stable, unique,
+well-formed id inside its surface) and `check-nav-surfaces` (every `<nav>` and `aria-current` in a PV
+`.svelte` file lives in a registered surface renderer; a new nav surface is registered and rendered
+from data, never exempted).
+
 ## Drift and the upgrade flow
 
 Drift **fails** the build when an overridden or replaced PV file changed, when an injection point CM

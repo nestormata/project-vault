@@ -1,7 +1,13 @@
 import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { pvComposeDev, pvHooks, pvInject, pvReplace } from '@project-vault/composition-kit/vite'
+import {
+  pvComposeDev,
+  pvHooks,
+  pvInject,
+  pvNav,
+  pvReplace,
+} from '@project-vault/composition-kit/vite'
 import { viteConfig } from '@project-vault/web-host/vite.config'
 
 // Vite bundles this file into a temporary one, where only import.meta.url is reliable.
@@ -21,8 +27,11 @@ const inject = pvInject({
 // pvHooks() (Story 68-6) generates the virtual:pv-hooks/* modules from the lock; without it
 // web-host's empty provider refuses to build a composed tree.
 const dev = process.env.PV_FIXTURE_DEV === '1'
+// pvNav() (Story 68.7) serves virtual:pv-nav (the pack's nav delta) from the lock; web-host refuses
+// to build a composed tree without it.
 const plugins = [
   pvHooks({ appRoot }),
+  pvNav({ appRoot }),
   ...(dev ? [pvComposeDev({ appRoot, packRoot: process.env.PV_FIXTURE_PACK ?? '', hostDir })] : []),
   inject,
 ]

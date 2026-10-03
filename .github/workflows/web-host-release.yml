@@ -5,7 +5,19 @@ name: Web-host release
 # tag as container-publish.yml and cli-release.yml, so the web source, its version and the API
 # image tag in its compatibility manifest are one commit (design §11). Modelled on
 # extension-api-release.yml:
-# - only full vMAJOR.MINOR.PATCH(-prerelease) tags are eligible (`validate`);
+# - it triggers on `v[0-9]*` tags, the same pattern as the npm-publish environment's tag policy and
+#   the "Protect PV release tags" ruleset (not `v*`, which also matches the force-moved
+#   vault-action-v1 tag and would start runs in the shared concurrency group); `validate` then
+#   accepts only full vMAJOR.MINOR.PATCH tags, with the exact regex of container-publish.yml and
+#   cli-release.yml: prereleases are refused (Story 68.12, D2);
+# - a tag push starts this workflow at H2, before the GitHub Release exists. Each upload job first
+#   requires the published Release and a green container-publish run for the same commit (Story
+#   68.12, D1), so an early approval cannot publish a web-host whose API image does not exist. On a
+#   dry run that gate only reports;
+# - both jobs check out `github.sha` (the commit the provenance attests), and fail before the upload
+#   if the tag has moved since the run started. The release gate and the tag-moved check are
+#   scripts/web-host-release-gate.sh and scripts/web-host-release-tag-moved.sh, run from that
+#   checkout (so after it), taking every input from env;
 # - `publish` runs in the npm-publish environment (required reviewer) with OIDC Trusted Publishing
 #   and npm provenance. There is no NPM_TOKEN. Every publish goes to the `next` dist-tag; a
 #   maintainer promotes a verified version to `latest` separately;
@@ -19,15 +31,17 @@ name: Web-host release
 #   (MIT, its own semver in packages/composition-kit/package.json, same OIDC flow, always `next`)
 #   unless that exact kit version is already on npm. web-host's compatibility manifest names the kit
 #   version it was built with, so `publish` refuses to upload a web-host whose kit is not on npm.
-# Maintainer-only prerequisites (story 68-12): the npm trusted publisher for @project-vault/web-host
-# (this workflow file, environment npm-publish), the npm-publish environment's tag policy and the
-# release tag ruleset covering v*, and the npm bootstrap if npm needs the package to exist first.
-# Story 68-13 owns the same steps for @project-vault/composition-kit.
+# Maintainer-only prerequisites, all done (Story 68.12 steps 2-4, 2026-10-03): the npm bootstrap
+# version, the npm trusted publisher for @project-vault/web-host (this workflow file, environment
+# npm-publish), the npm-publish environment's tag policy `v[0-9]*` and the ruleset "Protect PV
+# release tags" restricting creation of `refs/tags/v[0-9]*`. Both use `v[0-9]*`, not `v*`, so that
+# vault-action-v* and extension-api-v* tags stay outside them. Story 68-13 owns the same steps for
+# @project-vault/composition-kit. The release-day runbook is docs/releasing.md section 9.
 
 on:
   push:
     tags:
-      - 'v*'
+      - 'v[0-9]*'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -59,15 +73,15 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
-          if [[ "$GITHUB_REF_TYPE" == "tag" && "$TAG" =~ ^v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            VERSION="${TAG#v}"
             echo "should_release=true" >> "$GITHUB_OUTPUT"
             echo "version=$VERSION" >> "$GITHUB_OUTPUT"
             echo "Eligible release tag: $TAG (version $VERSION)"
           else
             echo "should_release=false" >> "$GITHUB_OUTPUT"
             echo "version=" >> "$GITHUB_OUTPUT"
-            echo "Skipping '$TAG': it is not a vMAJOR.MINOR.PATCH release tag."
+            echo "Skipping '$TAG': it is not a full vMAJOR.MINOR.PATCH release tag (prereleases are not published)."
           fi
 
   publish-kit:
@@ -78,6 +92,7 @@ jobs:
     timeout-minutes: 30
     environment: npm-publish
     permissions:
+      actions: read
       contents: read
       id-token: write
     strategy:
@@ -87,7 +102,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
+
+      # Story 68.12 AC-4 (D1): the tag push runs at H2, before the Release. Never upload a version
+      # whose GitHub Release (H3) and API image (container-publish) do not exist for this commit.
+      - name: Require the published GitHub Release and a green container-publish for this tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT_ONLY: ${{ inputs.dry_run == true && '1' || '0' }}
+        run: ./scripts/web-host-release-gate.sh
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -126,8 +150,9 @@ jobs:
         run: |
           set -uo pipefail
           KIT_VERSION="${{ steps.kit.outputs.version }}"
-          OUTPUT="$(npm view "@project-vault/composition-kit@${KIT_VERSION}" version 2>&1)"
-          STATUS=$?
+          # GitHub starts `shell: bash` with -e and `set -uo` does not clear it: a bare failing
+          # substitution would abort here, silently, on the normal "not on npm yet" E404.
+          OUTPUT="$(npm view "@project-vault/composition-kit@${KIT_VERSION}" version 2>&1)" && STATUS=0 || STATUS=$?
           if [[ $STATUS -eq 0 ]]; then
             echo "published=true" >> "$GITHUB_OUTPUT"
             echo "@project-vault/composition-kit@${KIT_VERSION} is already on npm; nothing to publish."
@@ -150,6 +175,13 @@ jobs:
         working-directory: packages/composition-kit
         run: npm publish --dry-run --provenance --access public --tag next
 
+      # Story 68.12 AC-4: the job may start days after the tag push (approval wait), and the ruleset
+      # restricts only tag creation. Never publish if the tag no longer names the attested commit.
+      - name: Fail if the tag moved
+        if: inputs.dry_run != true
+        shell: bash
+        run: ./scripts/web-host-release-tag-moved.sh
+
       - name: Publish the kit to npm next with OIDC provenance
         if: inputs.dry_run != true && matrix.node-version == 24 && steps.npm.outputs.published != 'true'
         working-directory: packages/composition-kit
@@ -168,6 +200,7 @@ jobs:
     timeout-minutes: 60
     environment: npm-publish
     permissions:
+      actions: read
       contents: read
       id-token: write
     strategy:
@@ -180,7 +213,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
+
+      # Story 68.12 AC-4 (D1): the tag push runs at H2, before the Release. Never upload a version
+      # whose GitHub Release (H3) and API image (container-publish) do not exist for this commit.
+      - name: Require the published GitHub Release and a green container-publish for this tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT_ONLY: ${{ inputs.dry_run == true && '1' || '0' }}
+        run: ./scripts/web-host-release-gate.sh
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -231,8 +273,8 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          OUTPUT="$(npm view "@project-vault/web-host@${RELEASE_VERSION}" version 2>&1)"
-          STATUS=$?
+          # Same -e trap as the kit step above: capture the failure instead of aborting on it.
+          OUTPUT="$(npm view "@project-vault/web-host@${RELEASE_VERSION}" version 2>&1)" && STATUS=0 || STATUS=$?
           if [[ $STATUS -eq 0 ]]; then
             echo "FATAL: @project-vault/web-host@${RELEASE_VERSION} is already published. npm versions are immutable; cut a new PV release." >&2
             exit 1
@@ -253,6 +295,13 @@ jobs:
         if: inputs.dry_run == true && matrix.node-version == 24
         working-directory: .web-host-pack
         run: npm publish --dry-run --provenance --access public --tag next
+
+      # Story 68.12 AC-4: the job may start days after the tag push (approval wait), and the ruleset
+      # restricts only tag creation. Never publish if the tag no longer names the attested commit.
+      - name: Fail if the tag moved
+        if: inputs.dry_run != true
+        shell: bash
+        run: ./scripts/web-host-release-tag-moved.sh
 
       - name: Publish to npm next with OIDC provenance
         if: inputs.dry_run != true && matrix.node-version == 24

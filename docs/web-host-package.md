@@ -18,9 +18,10 @@ own app and builds it.
 | `vendor/shared/src/`                                           | `@project-vault/shared`'s TypeScript source, vendored byte for byte. Only the files reachable from its three entry points are copied.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `config/`                                                      | Compiled config factories (`.js` + `.d.ts`): `svelte.config`, `vite.config`, `vitest.config`, `app-css-source`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `manifests/compatibility.json`                                 | The compatibility manifest (below).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `manifests/injection-points.json`                              | The injection point registry (Story 68-4), generated at pack time from `injection-points.ts` and the route files that render each point: `{ schemaVersion: 1, points: [{ name, file, kind, propsType, routeId, scope }] }`. The kit reads `name`, `file`, `routeId` and `scope`. A later generated manifest (`nav-ids.json`) lands here when its story ships.                                                                                                                                                                                                                                                   |
+| `manifests/injection-points.json`                              | The injection point registry (Story 68-4), generated at pack time from `injection-points.ts` and the route files that render each point: `{ schemaVersion: 1, points: [{ name, file, kind, propsType, routeId, scope }] }`. The kit reads `name`, `file`, `routeId` and `scope`.                                                                                                                                                                                                                                                                                                                                |
 | `manifests/component-index.json`                               | Story 68.5: generated into the staging directory on every pack (never committed): `{ schemaVersion: 1, components: [{ path, stability, hash }] }` for every `.svelte` file under `src/lib/components` and every non-test `.ts` module under `src/lib`, sorted by `path`. `hash` is SHA-256 of the raw bytes (the `hostSha256` of a replacement); `stability` is `stable` when the file's first top-level comment carries `@pv-stable` (the first `<!-- -->` of a `.svelte` file, the first `/** */` of a `.ts` file), else `unmarked`. A signal for composers, never a restriction: any module may be replaced. |
 | `manifests/hooks-surface.json`                                 | Story 68-6: generated at pack time from PV's `HOOK_SURFACE` and `PV_PROTECTED_PREFIXES`: the SvelteKit hooks PV's composition covers per hooks file (`server`, `universal`, `client`), `headerPolicy: true`, `protectedPaths: true` and PV's own `protectedPrefixes`. The composition kit reads it; with an older web-host that lacks it, hooks and protected paths stay unapplied.                                                                                                                                                                                                                             |
+| `manifests/nav-ids.json`                                       | Story 68-7: generated at pack time from `src/lib/navigation/nav-registry.ts` (never committed): `{ schemaVersion: 1, delta: 1, surfaces: [{ id, file, contextKeys }], ids: [{ id, surface, parent, conditional }] }`, sorted by id (code units). `delta: 1` says this web-host applies a composed app's nav delta. The kit validates a pack's `nav.ts` against it; with an older web-host that lacks it (or `delta`), the nav delta stays unapplied. An empty registry fails the pack.                                                                                                                          |
 | `guards/`                                                      | Story 68.9 and 68.10: compiled script guards (`.js` + `.d.ts`) the kit's `pv-verify` imports and runs over a composed tree: `form-guidance` and `monolithic-region` (rule: a `<!-- @region name -->` block is a component or contains one; `@pv-scope pv-originated-only`, so files the lock records as CM's are exempt by provenance; its markup walker `region-markup` is shared with PV's own route scan). Listed in `manifests/guards.json`.                                                                                                                                                                |
 | `tsconfig.base.json`                                           | PV's compiler options, for a consumer's `tsconfig.json` to extend.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `LICENSE`, `README.md`                                         | AGPL-3.0-or-later, and what the package is.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -53,7 +54,9 @@ Dockerfile and PV's dev tooling.
 Pin the **exact** version, and install every `dependencies` and `peerDependencies` entry at the
 exact version the manifest names. Those versions are read from PV's `pnpm-lock.yaml` when the
 package is packed. pnpm overrides never reach a consumer, so these are the versions PV actually
-builds and tests with.
+builds and tests with. Never install without a version or follow `next`: until the first real
+release is promoted, `latest` is a deprecated bootstrap placeholder. The current published state
+is in [releasing.md § 9](releasing.md#9-web-host-every-release).
 
 ```js
 // svelte.config.js
@@ -135,16 +138,20 @@ so. Any other `npm view` failure fails the fixture. The release workflow sets
 
 ## Releasing
 
-`.github/workflows/web-host-release.yml` runs on the PV `vX.Y.Z` tag. It does not use a separate
-tag family, because the web source, `pvRelease` and the API image are one commit. Before it uploads,
-the workflow:
+`.github/workflows/web-host-release.yml` runs on the PV `vX.Y.Z` tag push (trigger `v[0-9]*`;
+prerelease tags are refused). It does not use a separate tag family, because the web source,
+`pvRelease` and the API image are one commit. Before it uploads, the workflow:
 
-1. runs the fixture;
-2. packs at the tag's version and runs the tarball rules on that exact directory;
-3. checks the version triangle (tag, package version, manifest `pvRelease`);
-4. confirms the version is not on npm yet.
+1. requires the published GitHub Release and a green `container-publish` run triggered by that
+   Release (only reported on a dry run), so the API image named by `apiImageTag` exists;
+2. runs the fixture;
+3. packs at the tag's version and runs the tarball rules on that exact directory;
+4. checks the version triangle (tag, package version, manifest `pvRelease`);
+5. confirms the version is not on npm yet.
 
-It then publishes from the Node 24 leg with OIDC trusted publishing and provenance to the `next`
-dist-tag. No npm token exists. A maintainer promotes a verified version to `latest`. npm versions
-are immutable: never `--force`, never unpublish, fix forward with a new PV release. See
-[releasing.md](releasing.md#9-web-host-every-release) for the commands.
+It then checks that the tag still names the commit it built, and publishes from the Node 24 leg
+with OIDC trusted publishing and provenance to the `next` dist-tag. No npm token exists. A
+maintainer promotes a verified version to `latest`. npm versions are immutable: never `--force`,
+never unpublish, fix forward with a new PV release. See
+[releasing.md § 9](releasing.md#9-web-host-every-release) for the release-day runbook, verification
+with `scripts/verify-npm-release.ts`, promotion and rollback.

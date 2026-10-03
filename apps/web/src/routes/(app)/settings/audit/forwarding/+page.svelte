@@ -1,4 +1,5 @@
 <script lang="ts">
+  import NavLink from '$lib/navigation/NavLink.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import { updateAuditForwarding, updateAuditRetention } from '$lib/api/audit.js'
@@ -144,9 +145,11 @@
 <InjectionPoint name="settings.audit-forwarding.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-3xl px-4 py-8">
   <h1 class="text-2xl font-bold text-gray-900">Forwarding &amp; Retention</h1>
-  <a href={resolve('/settings/audit')} class="mt-2 inline-block text-sm text-indigo-600 underline">
-    ← Back to Audit Log
-  </a>
+  <NavLink
+    surface="back"
+    node="back.settings.audit.forwarding"
+    class="mt-2 inline-block text-sm text-indigo-600 underline"
+  />
 
   {#if !data.allowed}
     <div class="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-6">

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import NavLink from '$lib/navigation/NavLink.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import DataTable from '$lib/components/tables/DataTable.svelte'
@@ -51,9 +52,11 @@
 <div class="mx-auto max-w-5xl px-4 py-8">
   <h1 class="text-2xl font-bold text-gray-900">Access Report</h1>
   <p class="mt-2 text-gray-500">Who had access, as of any point in time.</p>
-  <a href={resolve('/settings/audit')} class="mt-2 inline-block text-sm text-indigo-600 underline">
-    ← Back to Audit Log
-  </a>
+  <NavLink
+    surface="back"
+    node="back.settings.audit.access-report"
+    class="mt-2 inline-block text-sm text-indigo-600 underline"
+  />
 
   {#if !data.allowed}
     <div class="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-6">

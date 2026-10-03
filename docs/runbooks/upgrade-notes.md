@@ -310,3 +310,25 @@ the other.
 re-trying a stale credential, can now lock an account for up to 15 minutes. If that is too tight for
 your deployment, raise `LOGIN_LOCKOUT_THRESHOLD` or shorten `LOGIN_LOCKOUT_WINDOW_SECONDS` in `.env`
 and restart the API. Both are parsed at boot.
+
+## Upgrading to 1.4.0
+
+Releases between 1.2.0 and 1.4.0 have their upgrade notes in the [CHANGELOG](../../CHANGELOG.md);
+only the 1.4.0 operator actions are repeated here. There is no required pre-step.
+
+- **Migration `0102`** (`0102_extension_audit_idempotency_keys.sql`) adds one table,
+  `extension_audit_idempotency_keys`, with forced row-level security. `vault_app` can only `SELECT`
+  and `INSERT` on it; its rows are removed by `ON DELETE CASCADE` when the audit row they point to is
+  purged. It does not touch `audit_log_entries` and backfills nothing, so it is instant on any
+  instance size. The `migrate` service applies it on the next pull.
+- **`VAULT_EXTENSIONS_REQUIRED`** is a new optional variable, default `false`. Set it to `true` only
+  in a composed deployment where the API must not start without its extension (it then also refuses to
+  boot when `VAULT_EXTENSIONS_PACKAGE` is unset); PV standalone keeps the default, where a failed
+  extension load is logged and the API starts without it. See [configuration](../configuration.md).
+  `docker-compose.yml` forwards it to the `api` service.
+- **Rate-limit buckets** are now keyed per route (the prefixed route key). Counters are in memory,
+  so they start empty after the restart; no configuration changes.
+- **Extension boot order:** the extension loads before PV's core routes. An extension that
+  overrides a route PV does not have, or adds a route that collides with an existing one, now stops
+  the boot with a `startup.failed` line naming the extension. Extensions that declare no `apiRoutes`
+  are unaffected.

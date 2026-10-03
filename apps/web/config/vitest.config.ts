@@ -10,10 +10,8 @@ import {
   mergeConfig,
   type ViteUserConfig,
 } from 'vitest/config'
-import { emptyHooksModules } from './hooks-plugins.ts'
-import { emptyInjectionModules, injectionEntries } from './injection-plugins.ts'
 import { paraglideOptions } from './paths.ts'
-import type { WebHostBuildOptions } from './vite.config.ts'
+import { compositionProviders, type WebHostBuildOptions } from './vite.config.ts'
 
 /** The coverage defaults of PV's private @project-vault/tsconfig/vitest.base, inlined because a
  * web-host consumer cannot install that workspace package. A test pins the two as equal. */
@@ -51,9 +49,7 @@ function webHostTestConfig(options: WebHostBuildOptions): ViteUserConfig {
   return {
     plugins: [
       paraglideVitePlugin(paraglideOptions(options.appRoot, options.composedRoot)),
-      injectionEntries(),
-      emptyInjectionModules(),
-      emptyHooksModules({ composed: options.composedRoot !== undefined }),
+      ...compositionProviders(options),
       sveltekit(),
     ],
     resolve: { conditions: ['browser'] },
@@ -64,6 +60,9 @@ function webHostTestConfig(options: WebHostBuildOptions): ViteUserConfig {
         ? {}
         : { exclude: [...configDefaults.exclude, ...lockedExclusions(options.composedRoot)] }),
       environment: 'jsdom',
+      // Story 68.7 AC-8: PV's tests render PV's own nav (the empty delta), also when they run over a
+      // composed tree whose `virtual:pv-nav` holds CM's delta (story 68-9).
+      setupFiles: ['src/lib/test/setup-nav.ts'],
       coverage: {
         ...WEB_HOST_COVERAGE,
         include: ['src/**/*.{ts,svelte}'],

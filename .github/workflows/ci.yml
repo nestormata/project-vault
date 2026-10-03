@@ -110,6 +110,9 @@ jobs:
       - name: Check the web-host release workflow contract (Story 68.2 AC-10, Story 68.3)
         run: pnpm vitest run scripts/check-web-host-release-workflow.test.ts
 
+      - name: Check the npm release verification helper (Story 68.12 AC-5)
+        run: pnpm vitest run scripts/verify-npm-release.test.ts
+
       # The integration test itself runs in the `Composition kit integration` job; here only its
       # wiring assertions run (it prints SKIPPED without COMPOSITION_KIT_INTEGRATION=1).
       - name: Check the composition kit's release version triangle and integration wiring (Story 68.3)
@@ -239,6 +242,13 @@ jobs:
 
       - name: Check the mock UI pack mechanism wiring (Story 68.10)
         run: pnpm vitest run scripts/check-mock-ui-pack-e2e-wiring.test.ts scripts/lib/web-host/consumer-tarballs.test.ts
+
+      - name: Check nav ids and nav surfaces (Story 68.7)
+        run: |
+          pnpm check-nav-ids &&
+          pnpm vitest run scripts/check-nav-ids.test.ts &&
+          pnpm check-nav-surfaces &&
+          pnpm vitest run scripts/check-nav-surfaces.test.ts
 
       - name: Check native-credential surface (Story 23.2 AC19)
         run: pnpm check-native-credential-surface

@@ -71,6 +71,8 @@ import {
   buildCompatibilityManifest,
   buildHooksSurfaceManifest,
   HOOKS_SURFACE_MANIFEST,
+  NAV_IDS_MANIFEST,
+  buildNavIdsManifest,
   type HooksSurfaceInput,
   buildPackageJson,
   kitVersionProblems,
@@ -439,6 +441,17 @@ function writeTsconfigBase(): void {
   )
 }
 
+type NavRegistryModule = typeof import('../apps/web/src/lib/navigation/nav-registry.ts')
+
+/** Story 68.7 AC-10: PV's nav registry, loaded the same way as the hooks surface (tsx, no
+ * tsconfig: the registry is pure data with no imports). */
+async function loadNavRegistry(): Promise<NavRegistryModule> {
+  return (await tsImport(pathToFileURL(join(WEB_DIR, 'src/lib/navigation/nav-registry.ts')).href, {
+    parentURL: import.meta.url,
+    tsconfig: false,
+  })) as NavRegistryModule
+}
+
 /** Copies the later stories' generated manifests that exist in apps/web/manifests/ (68-4, 68-7); a
  * missing one is simply not packed, never stubbed. `component-index.json` (Story 68.5) is generated
  * into the staging directory from the staged `src/lib` tree on every pack and never committed, so a
@@ -604,6 +617,11 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
     join(STAGE_DIR, 'manifests', 'hooks-surface.json'),
     buildHooksSurfaceManifest(await loadHooksSurfaceInput())
   )
+  const navRegistry = await loadNavRegistry()
+  writeFileSync(
+    join(STAGE_DIR, 'manifests', NAV_IDS_MANIFEST),
+    buildNavIdsManifest({ surfaces: navRegistry.NAV_SURFACES, ids: navRegistry.NAV_IDS })
+  )
   // Story 68.9: the guard registry and the test-subject map, generated from the guard files and the
   // shipped tests themselves (never a hand-written list).
   const shippedTestFiles = tests.shipped.map((entry) => entry.file)
@@ -635,6 +653,7 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
     'compatibility.json',
     INJECTION_POINTS_MANIFEST,
     HOOKS_SURFACE_MANIFEST,
+    NAV_IDS_MANIFEST,
     GUARDS_MANIFEST,
     TEST_SUBJECTS_MANIFEST,
     ...optional,

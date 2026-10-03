@@ -3,9 +3,14 @@
 // so Kit's route-id rules and the point extraction are written once. Markup is read with
 // `svelte/compiler`'s parser and the server files with TypeScript's compiler API, never with a regex
 // over source text.
+import { createRequire } from 'node:module'
 import { join, posix } from 'node:path'
 import ts from 'typescript'
 import { toRepoPath, walkFiles } from './scan-utils.js'
+
+const requireFromWeb = createRequire(join(import.meta.dirname, '..', '..', 'apps/web/package.json'))
+/** apps/web's own `svelte/compiler` (the one PV's markup is compiled with). */
+export const svelteCompiler = requireFromWeb('svelte/compiler') as typeof import('svelte/compiler')
 
 export const ROUTES_DIR = 'src/routes'
 export type RouteKind = 'page' | 'layout' | 'error'

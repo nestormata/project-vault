@@ -289,7 +289,7 @@
       {/if}
     </section>
 
-    <BackLink href={`/projects/${data.projectId}/service-endpoints`} label="Back to endpoints" />
+    <BackLink node="back.project.service-endpoint" projectId={data.projectId} />
   {/if}
 </section>
 <InjectionPoint name="project.service-endpoints-detail.after" data={data?.__inject} />

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import NavTabs from '$lib/navigation/NavTabs.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { enhance } from '$app/forms'
   import { resolve } from '$app/paths'
@@ -234,16 +235,7 @@
   {/if}
 
   <div class="mb-6 flex gap-1 border-b border-gray-200">
-    {#each [{ value: 'all', label: 'All' }, { value: 'unread', label: 'Unread' }, { value: 'read', label: 'Read' }] as tab (tab.value)}
-      <a
-        href="{resolve('/notifications')}?status={tab.value}"
-        class="border-b-2 px-4 py-2 text-sm font-medium transition-colors {data.status === tab.value
-          ? 'border-indigo-600 text-indigo-600'
-          : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'}"
-      >
-        {tab.label}
-      </a>
-    {/each}
+    <NavTabs status={data.status} />
   </div>
 
   {#if notifications.length === 0}

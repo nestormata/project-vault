@@ -1,4 +1,6 @@
 <script lang="ts">
+  import NavLinkRow from '$lib/navigation/NavLinkRow.svelte'
+  import Breadcrumbs from '$lib/navigation/Breadcrumbs.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import { describeBackupCron } from '@project-vault/shared'
@@ -249,25 +251,13 @@
   <PlatformOperatorRequiredNotice />
 {:else}
   <div class="mx-auto max-w-3xl px-4 py-8">
-    <nav class="mb-4 text-sm text-gray-500">
-      <a href={resolve('/platform')} class="hover:underline">Platform Admin</a>
-      <span class="mx-2">›</span>
-      <span>System Settings</span>
-    </nav>
+    <Breadcrumbs spacing="around" node="breadcrumbs.platform.settings" />
 
     <h1 class="text-2xl font-bold text-gray-900">System Settings</h1>
     <p class="mt-1 text-gray-500">Configure SMTP, notifications, and instance policy.</p>
 
     <div class="mt-4 flex gap-4 text-sm">
-      <a href={resolve('/platform/settings/orgs')} class="font-medium text-indigo-600 underline">
-        Organizations →
-      </a>
-      <a
-        href={resolve('/platform/settings/resource-usage')}
-        class="font-medium text-indigo-600 underline"
-      >
-        Resource Usage →
-      </a>
+      <NavLinkRow surface="platform.settings.links" />
     </div>
 
     {#if data.errorMessage}

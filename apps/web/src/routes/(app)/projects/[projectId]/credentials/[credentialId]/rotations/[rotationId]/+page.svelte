@@ -1,4 +1,5 @@
 <script lang="ts">
+  import NavLink from '$lib/navigation/NavLink.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { onDestroy, onMount } from 'svelte'
   import { resolve } from '$app/paths'
@@ -613,12 +614,13 @@
       </p>
     {/if}
 
-    <a
+    <NavLink
+      surface="back"
+      node="back.project.rotation"
       class="inline-block font-medium text-slate-700 underline"
-      href={resolve(`/projects/${data.projectId}/credentials/${data.credentialId}`)}
-    >
-      Back to secret
-    </a>
+      projectId={data.projectId}
+      credentialId={data.credentialId}
+    />
   {/if}
 </section>
 <InjectionPoint name="project.credentials-rotations-detail.after" data={data?.__inject} />

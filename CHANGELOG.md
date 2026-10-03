@@ -9,8 +9,90 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-03
+
+Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.4.0`
+(aliases `1.4`, `1`, `latest`). Extension API contract: the source is at
+`@project-vault/extension-api@3.29.0`, and this host loads extensions whose manifest `apiVersion`
+is in `>=3.0.0 <=3.29.0` (`HOST_SUPPORTED_EXTENSION_API_RANGE`). **The npm package is released on its
+own tags and is not part of this release:** `next` is `3.27.0` and `latest` is `3.25.0`, so
+`3.28.0` and `3.29.0` are not on npm yet. CLI: `pvault-1.4.0.mjs` on this release's assets.
+Build-time composition packages published from this tag to the npm `next` dist-tag:
+`@project-vault/web-host@1.4.0` and `@project-vault/composition-kit@0.6.0`.
+
+### Upgrade notes (read before `docker compose pull`)
+
+- **Migration 0102 runs automatically** via the `migrate` service. It is additive: one new table,
+  `extension_audit_idempotency_keys` (row-level security forced, `vault_app` limited to `SELECT` and
+  `INSERT`), with no change to `audit_log_entries` and no backfill. Images on `latest`, `1` or `1.4`
+  pick it up on the next pull.
+- **No new required environment variables.** One new optional API variable,
+  `VAULT_EXTENSIONS_REQUIRED` (default `false`), stops the boot when the configured extension fails
+  to load or `VAULT_EXTENSIONS_PACKAGE` is unset. Leave it unset unless you run a composed deployment. `docker-compose.yml` forwards it.
+- **Per-user rate-limit buckets are keyed per route and reset on deploy.** The default bucket key is
+  now the prefixed route key. Before, `GET /api/v1/dashboard` and `GET /api/v1/projects` shared one
+  bucket and so did `GET /api/v1/auth/me` and `GET /api/v1/users/me`; they no longer do. Buckets are
+  in memory, so the first minutes after the upgrade start from empty counters.
+- **Extensions load before the core routes.** A configured extension that declares an override for a
+  route PV does not have, or a route that collides with an existing one, now stops the boot.
+  Without `apiRoutes` in the manifest nothing changes for an extension.
+- **The admin extension status response gained fields** (`apiRoutes`, and `app` for app-level
+  behavior). Clients that compare the exact key set of that response must allow the new keys.
+- **Composed deployments:** the hashes of many `apps/web` files change in this release (navigation,
+  hooks, injection points, the `AppShell` header split). Reconcile any override or replacement of
+  one with `pv-compose --accept-host`, and expect `composition.lock.json` to move to version 2.
+
 ### Added
 
+- **App-level `apiRoutes` behavior and the runtime route audit (Story 68-14,
+  `@project-vault/extension-api` 3.29.0):** an extension can add global hooks (before and after
+  every route), and wrap or replace PV's error handler and not-found handler, with a fallback to
+  PV's own handler when the extension's throws. `AppOptions.extension` and
+  `AppOptions.routeObserver` back a new `route-audit:runtime` CLI that fails on a route no
+  classification covers and on a stale classification entry. The `generate-spec` script takes
+  `--extension` and `--out` options and writes a composed OpenAPI spec (it refuses PV's own spec
+  path). The status endpoint gains an `app` object and the events `extension.api_route.app_override` and
+  `extension.api_route.app_handler_failed`.
+- **API route composition, M7 (Story 68-8, `@project-vault/extension-api` 3.27.0):** an extension
+  manifest can declare `apiRoutes` to add routes, or override PV routes with `replace` or `wrap`
+  (inside the request transaction, with `next()`). A capability id PV does not know is passed to
+  the extension's `capabilityGate` for `apiRoutes` entries only, and is denied when no gate is
+  registered; PV's own routes keep the strict check. The `security` object is validated, so a typo
+  no longer drops a restriction silently.
+- **Idempotent `writeAuditEvent` (Story 71-1, `@project-vault/extension-api` 3.28.0):** an optional
+  `idempotencyKey` (`^[A-Za-z0-9._:-]{1,128}$`) makes a replayed extension audit write return the
+  original `{id, createdAt}` instead of writing a second row. The same key with different content
+  is a typed conflict, replays skip the rate and storage gates and count under a new `deduped`
+  counter, and keyed payloads over 1 MiB are rejected. Omitting the key keeps the old behavior.
+  Dedupe state lives in the new table from migration 0102 and is removed with its audit row.
+- **Resolved-path module replacement, M4 (Story 68-5):** composition-kit's `pvReplace` Vite plugin
+  shadows any `$lib` module by its resolved path in the client, SSR and vitest, and the
+  `pv-original:` specifier lets a replacement wrap the original. `web-host` ships
+  `component-index.json`. PV's `AppShell` header is split into `ShellBrand`, `NotificationsLink` and
+  `ShellAccount` with byte-identical output.
+- **`pv-verify` (Story 68-9, kit 0.5.0):** runs PV's web guards and self-contained tests over a
+  composed tree, merges a pack's own guard entries (`defineGuardEntries`, the lock's
+  `guardEntries` record) and fails closed when the lock's `excludedPvTests` disagrees with its
+  overrides. `web-host` ships `guards.json` and `test-subjects.json`.
+- **Navigation as data with stable ids on every nav surface (Story 68-7, M5):** every PV nav surface
+  (primary and mobile nav, project tabs, the shell's brand, bell, MFA-banner link, account menu and
+  footer, the settings and platform indexes, sub-section link rows, the notifications tabs,
+  breadcrumbs, page back links, the error page's way back and the auth cross-links) now renders from
+  one registry of stable ids, and a composed app changes it with a nav delta (insert, remove, hide,
+  relabel, move, replace, reorder, at any depth) through `pvNav()` and
+  `@project-vault/composition-kit/nav` in kit 0.6.0. `web-host` ships the new `manifests/nav-ids.json`
+  and a `composed-nav.test.ts` that validates a composed app's delta. Two new CI guards,
+  `check-nav-ids` and `check-nav-surfaces`. PV's own rendered navigation is unchanged except that
+  **the project tabs are now translated** (Spanish under `es`). The rewritten nav files' hashes drift
+  with the next web-host release (`PrimaryNav.svelte`, `ProjectNav.svelte`, `AppShell.svelte`,
+  `ShellBrand.svelte`, `NotificationsLink.svelte`, `ShellAccount.svelte`, `Footer.svelte`,
+  `PlatformBreadcrumb.svelte`, `PlatformSettingsBreadcrumb.svelte`, `BackLink.svelte`,
+  `AssetDetailFooter.svelte`, `nav-model.ts`, `project-nav-model.ts`, `+error.svelte`, the settings
+  and platform index pages and every page whose back link, breadcrumb, link row or tab bar moved onto
+  the data): reconcile a CM override or replacement of one with `pv-compose --accept-host`.
+  `BackLink.svelte` now takes `{ node, projectId, credentialId? }` and `AssetDetailFooter.svelte`
+  `{ backNode, projectId }` instead of an href and a label. Nav ids removed: none. See
+  [docs/composition-kit.md](docs/composition-kit.md#navigation-delta-m5).
 - **Composable hooks, header policy and protected paths (Story 68-6):** a UI pack can contribute to
   every SvelteKit hook (server, universal, client), change PV's security-header policy and get its
   `(app)` routes protected, through `pvHooks()` in `@project-vault/composition-kit` 0.4.0 and the new
@@ -61,6 +143,15 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   are logged, never driver message text.
 - **Operators (Fly demo):** `scripts/fly-migrate.sh` now requires `VAULT_APP_PASSWORD` and re-syncs
   the `vault_app` role password after every migration, as it already did for `vault_admin`.
+- **Operators:** the base-image guard now covers every Dockerfile the repository ships, and the Fly
+  database image's PostgreSQL base is pinned by digest. A scheduled workflow opens a refresh pull
+  request when the pinned `node` or `postgres` digest has an upstream update; this release carries
+  one such PostgreSQL digest refresh.
+- **Contributors:** the nightly workflow skips days with no new commits (with a force input), splits
+  the flaky repeat run from the main run, uses budgets measured from a forced run for the sharded
+  Stryker jobs, and posts its failure alert through the Slack action's v4 inputs. Isolated e2e
+  stacks take their ports from the operating system and stop children that died or timed out.
+  The deferred-work ledger guard also checks residual-risk sections and checked defers.
 
 ### Fixed
 
@@ -73,6 +164,11 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   `main`'s, and can no longer run in the middle of a deploy.
 - `pvault`: the version check now returns its result before it tears the request down, so a slow
   teardown can no longer delay the command.
+- **Fly demo:** `fly-ensure-started.sh` now runs from the workflow's own commit, so a deploy of an
+  older release tag no longer fails because that tag predates the script.
+- **Contributors:** the version-skew guard creates the local `main` ref it compares against when CI
+  runs by dispatch, and the `pvault` README's from-a-release install block puts `~/.local/bin` on
+  `PATH`.
 
 ## [1.3.0] - 2026-10-01
 
@@ -470,6 +566,7 @@ Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.2.0`
 - The `fast-uri` transitive dependency is patched (CVE-2026-75899, CVE-2026-75931,
   CVE-2026-75975, CVE-2026-76172).
 
-[Unreleased]: https://github.com/nestormata/project-vault/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/nestormata/project-vault/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/nestormata/project-vault/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/nestormata/project-vault/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/nestormata/project-vault/compare/v1.1.0...v1.2.0

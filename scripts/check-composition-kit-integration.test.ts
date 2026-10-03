@@ -105,6 +105,12 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
       )
       expect(output).toContain('pv-compose: header policy: added defaults.x-cm-policy')
       expect(output).toContain('pv-compose: header policy: added rules.cm-billing')
+      // Story 68.7 AC-13/AC-16 (M5): every nav operation on the real HTML, the server-rendered
+      // locale, the client bundle, the lock and its notes, and the shipped composed-nav test.
+      expect(output).toContain(
+        'OK: nav delta applied on /settings and a project (every operation, nested, CM when and icon), Spanish tabs and the CM relabel under es, the hidden route still served, CM nav in the client bundle'
+      )
+      expect(output).toContain("OK: composed-nav.test.ts validated the pack's nav delta")
       expect(status, output).toBe(0)
     },
     VARIANT_TIMEOUT_MS
@@ -200,6 +206,27 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
       const { status, output } = runVariant('compose-dev')
       expect(output).toContain('OK: dev mode mirrored an edit, an addition and a deleted override')
       expect(output).toContain('OK: dev mode protected a CM (app) route added while running')
+      expect(output).toContain('OK: dev mode applied an edit of nav.ts')
+      expect(status, output).toBe(0)
+    },
+    VARIANT_TIMEOUT_MS
+  )
+
+  it(
+    "Kit's server-only guard rejects a nav.ts that imports server-only code (Story 68.7 AC-8)",
+    () => {
+      const { status, output } = runVariant('compose-nav-leak')
+      expect(status, output).not.toBe(0)
+      expect(output).toMatch(/Cannot import .* into code that runs in the browser/)
+    },
+    VARIANT_TIMEOUT_MS
+  )
+
+  it(
+    'a nav id the pack changes vanished from web-host: pv-compose fails naming it (Story 68.7 AC-13)',
+    () => {
+      const { status, output } = runVariant('compose-nav-drift')
+      expect(output).toContain('OK: a vanished operative nav id fails the compose, naming it')
       expect(status, output).toBe(0)
     },
     VARIANT_TIMEOUT_MS

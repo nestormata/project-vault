@@ -193,7 +193,10 @@
 
 <InjectionPoint name="platform.settings-resource-usage.before" data={data?.__inject} />
 <InjectionPoint name="platform.settings-resource-usage.header.actions" data={data?.__inject} />
-<PlatformSettingsBreadcrumb allowed={data.allowed} leafLabel="Resource Usage">
+<PlatformSettingsBreadcrumb
+  allowed={data.allowed}
+  node="breadcrumbs.platform.settings.resource-usage"
+>
   <h1 class="text-2xl font-bold text-gray-900">Resource Usage</h1>
   <p class="mt-1 text-gray-500">Monitor instance-wide resource consumption and limits.</p>
 
