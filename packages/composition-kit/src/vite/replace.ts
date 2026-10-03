@@ -212,7 +212,7 @@ export function pvReplace(options: PvReplaceOptions): Plugin {
       const report = (message: string): void => {
         dev.ws.send({ type: 'error', err: { message, stack: '' } })
       }
-      const reload = async (): Promise<void> => {
+      const reload = (): void => {
         let next: LoadedMap
         try {
           next = loadReplacementMap(source)
@@ -228,7 +228,7 @@ export function pvReplace(options: PvReplaceOptions): Plugin {
       }
       const queue = createComposeQueue({
         debounceMs: options.debounceMs ?? DEFAULT_DEBOUNCE_MS,
-        run: reload,
+        run: () => Promise.resolve(reload()),
       })
       dev.watcher.add(mapPath)
       for (const event of ['add', 'change', 'unlink']) {

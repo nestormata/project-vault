@@ -33,7 +33,8 @@ export interface ComponentIndex {
 const LIB = 'src/lib/'
 const COMPONENTS = 'src/lib/components/'
 const TEST_FILE_RE = /\.(?:test|spec)\.(?:svelte\.)?[cm]?[jt]s$/
-const TEST_SUPPORT_RE = /(?:^|\/)(?:__mocks__|__tests__|__fixtures__)\/|-test-helpers\.[cm]?[jt]s$/
+const TEST_SUPPORT_RE =
+  /(?:(?:^|\/)(?:__mocks__|__tests__|__fixtures__)\/|-test-helpers\.[cm]?[jt]s$)/
 const NOT_LIB_SOURCE = ['src/lib/test/', 'src/lib/paraglide/']
 
 /** `.svelte` under `src/lib/components/`, `.ts` (including `.svelte.ts`) anywhere under `src/lib/`;

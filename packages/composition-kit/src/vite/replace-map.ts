@@ -124,7 +124,7 @@ export function loadReplacementMap(source: MapSource): LoadedMap {
     )
   }
   if (!Array.isArray(raw.replacements)) {
-    throw new Error(`pv-replace: ${mapPath} has no replacements list; run pv-compose.`)
+    throw new TypeError(`pv-replace: ${mapPath} has no replacements list; run pv-compose.`)
   }
   const entries = (raw.replacements as unknown[]).map((entry) => resolveEntry(appRoot, entry))
   const targets = lockTargets(source.lockPath ?? join(source.appRoot, LOCK_BASENAME))
