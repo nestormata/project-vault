@@ -43,9 +43,9 @@ function makeApp(
 ): string {
   const root = mkdtempSync(join(tmpdir(), 'pv-replace-'))
   roots.push(root)
-  const all: Record<string, string> = { ...BASE_FILES, ...files }
-  if (map !== null) all[MAP_FILE] = map
-  for (const [rel, content] of Object.entries(all)) {
+  const all = new Map<string, string>(Object.entries({ ...BASE_FILES, ...files }))
+  if (map !== null) all.set(MAP_FILE, map)
+  for (const [rel, content] of all) {
     mkdirSync(dirname(join(root, rel)), { recursive: true })
     writeFileSync(join(root, rel), content)
   }
@@ -88,7 +88,7 @@ function call(
   context: unknown,
   ...args: unknown[]
 ) {
-  const hook = plugin[name] as Hook
+  const hook = Reflect.get(plugin, name) as Hook
   return hook.apply(context, args)
 }
 
@@ -102,7 +102,7 @@ interface FakeContext {
 function context(resolved: Record<string, string | null> = {}): FakeContext {
   return {
     resolve: vi.fn(async (source: string) => {
-      const id = resolved[source]
+      const id = Reflect.get(resolved, source) as string | null | undefined
       // A dev server leaves `external` out; a build sets it to false (a real dev-only bug once).
       return id === undefined || id === null ? null : { id }
     }),

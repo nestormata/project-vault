@@ -45,7 +45,7 @@ function plainResolve(
 }
 
 function isBypassed(options: ResolveOptions): boolean {
-  const flag = options?.custom?.[PLUGIN_NAME] as { bypass?: boolean } | undefined
+  const flag = Reflect.get(options?.custom ?? {}, PLUGIN_NAME) as { bypass?: boolean } | undefined
   return flag?.bypass === true
 }
 

@@ -176,16 +176,19 @@ describe('AC-13: nothing narrows what a replacement may name', () => {
     const chosen = pick(paths, 20, 68_005)
     const forced = ['src/lib/server/file2.ts', 'src/lib/api/file3.ts']
     for (const path of forced) if (!chosen.includes(path)) chosen.push(path)
-    const packFiles: Record<string, string> = {}
-    const replacements: Record<string, { with: string; hostSha256: string }> = {}
-    for (const path of chosen) {
-      const withPath = `r/${path.replaceAll('/', '_')}`
-      packFiles[withPath] = path.endsWith('.svelte') ? '<p>cm</p>\n' : 'export const cm = 1\n'
-      replacements[`$lib/${path.slice('src/lib/'.length)}`] = {
-        with: `./${withPath}`,
-        hostSha256: shaOf(FILES[path] ?? ''),
-      }
-    }
+    const withPathOf = (path: string): string => `r/${path.replaceAll('/', '_')}`
+    const packFiles: Record<string, string> = Object.fromEntries(
+      chosen.map((path) => [
+        withPathOf(path),
+        path.endsWith('.svelte') ? '<p>cm</p>\n' : 'export const cm = 1\n',
+      ])
+    )
+    const replacements: Record<string, { with: string; hostSha256: string }> = Object.fromEntries(
+      chosen.map((path) => [
+        `$lib/${path.slice('src/lib/'.length)}`,
+        { with: `./${withPathOf(path)}`, hostSha256: shaOf(Reflect.get(FILES, path) ?? '') },
+      ])
+    )
     const world = makeWorld({ packFiles, hostFiles: FILES })
     const result = await run(world, manifest({ replacements }))
     expect(result.messages).toEqual([])
