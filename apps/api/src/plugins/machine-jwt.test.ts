@@ -65,10 +65,13 @@ describe('machineJwtPlugin (D3)', () => {
     // Flip the FIRST signature char: all 6 of its bits are significant. Overwriting the tail
     // (the old `...zz`) was a ~1/1024 nightly flake: a 43-char HS256 signature's last char
     // carries only 4 significant bits, so the tampered tail could decode to the same bytes.
-    const sig = signature ?? ''
+    expect(signature).toHaveLength(43)
+    const sig = signature as string
     const tampered = `${header}.${payload}.${sig.startsWith('A') ? 'B' : 'A'}${sig.slice(1)}`
 
-    await expect(app.machineJwtVerify(tampered)).rejects.toThrow()
+    await expect(app.machineJwtVerify(tampered)).rejects.toMatchObject({
+      code: 'FAST_JWT_INVALID_SIGNATURE',
+    })
   })
 
   it('rejects a token signed with a different (wrong) machine JWT secret', async () => {
