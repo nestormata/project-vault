@@ -4,8 +4,8 @@
 //   pnpm exec tsx scripts/verify-npm-release.ts --package @project-vault/web-host \
 //     --version X.Y.Z --tag vX.Y.Z --expect-dist-tag next [--wait 600]
 //
-// It reads https://registry.npmjs.org/ only (an attestation URL on any other host is a FAIL, never
-// followed) and checks: the version exists; the dist-tag points at it; it is not deprecated; it has
+// It reads https://registry.npmjs.org/ only (an attestation URL on any other host, or any HTTP
+// redirect, is a FAIL, never followed) and checks: the version exists; the dist-tag points at it; it is not deprecated; it has
 // an SLSA provenance v1 attestation whose statement names this repository, the package's release
 // workflow and refs/tags/<tag>, whose subject is the version's purl, and whose sha512 digest equals
 // the tarball's dist.integrity. One `ok`/`FAIL` line per check; exit 0 only if all pass, 2 on a
@@ -173,8 +173,12 @@ async function fetchJson(url: string, fetchImpl: typeof fetch): Promise<Fetched>
   if (!url.startsWith(REGISTRY))
     return { ok: false, error: `${url} is not on ${REGISTRY}; not followed` }
   let response: Response
+  let body: string
   try {
-    response = await fetchImpl(url, { signal: AbortSignal.timeout(TIMEOUT_MS) })
+    // A redirect is an error, never followed: it could lead off registry.npmjs.org.
+    response = await fetchImpl(url, { signal: AbortSignal.timeout(TIMEOUT_MS), redirect: 'error' })
+    // The timeout signal also covers reading the body, so it is read inside this try.
+    body = response.ok ? await response.text() : ''
   } catch (error) {
     const name = (error as Error).name
     const timedOut = name === 'TimeoutError' || name === 'AbortError'
@@ -184,7 +188,6 @@ async function fetchJson(url: string, fetchImpl: typeof fetch): Promise<Fetched>
     }
   }
   if (!response.ok) return { ok: false, error: `HTTP ${response.status} from ${url}` }
-  const body = await response.text()
   try {
     return { ok: true, value: JSON.parse(body) as unknown }
   } catch {

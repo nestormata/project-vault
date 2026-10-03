@@ -357,10 +357,12 @@ publish the GitHub Release (H3), wait for `container-publish` to be green (§4),
 run (H3w).
 
 The Release gate makes an early approval harmless. Without a published, non-draft Release for the
-tag and a successful `container-publish` run for the same commit (`head_sha`; any event, so a
-`workflow_dispatch` recovery on the same commit counts), each job fails before any upload with
-"no version was consumed". Recovery: wait for H3 and a green `container-publish`, then **re-run
-failed jobs** on the same run. A container-publish run that failed its vulnerability scan (image
+tag and a successful `container-publish` run triggered by that tag's Release (event `release`,
+`head_branch` = the tag, `head_sha` = the tag's commit), each job fails before any upload with
+"no version was consumed". A `workflow_dispatch` recovery of `container-publish` does not count:
+it runs from `main`, so its commit does not identify the tag it built. If the Release run failed
+for a transient reason, **re-run its failed jobs** (that keeps the `release` event). Recovery: wait
+for H3 and a green `container-publish`, then **re-run failed jobs** on the same run. A container-publish run that failed its vulnerability scan (image
 published but not promoted) keeps the gate red on purpose: fix forward with `vX.Y.(Z+1)`. If the
 gate says "GitHub API error; retry the failed jobs", re-run the failed jobs.
 

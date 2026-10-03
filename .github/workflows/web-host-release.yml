@@ -128,16 +128,18 @@ jobs:
           else
             echo "Release: published"
           fi
-          if ! RUNS_JSON="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/container-publish.yml/runs?head_sha=$GITHUB_SHA" 2>&1)"; then
+          # Only a release-event run for this tag counts: container-publish is dispatched from main,
+          # so a dispatch run's head_sha is main's tip, not the tag it built.
+          if ! RUNS_JSON="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/container-publish.yml/runs?head_sha=$GITHUB_SHA&event=release&per_page=100" 2>&1)"; then
             api_error "$RUNS_JSON"
           fi
-          if ! GREEN="$(jq -e '[.workflow_runs[] | select(.conclusion == "success")] | length' <<< "$RUNS_JSON")"; then
+          if ! GREEN="$(jq -e --arg tag "$GITHUB_REF_NAME" '[.workflow_runs[] | select(.conclusion == "success" and .event == "release" and .head_branch == $tag)] | length' <<< "$RUNS_JSON")"; then
             api_error "unexpected container-publish runs output"
           fi
           if [[ "$GREEN" -gt 0 ]]; then
-            echo "container-publish: green for $GITHUB_SHA"
+            echo "container-publish: green for the $GITHUB_REF_NAME release at $GITHUB_SHA"
           else
-            echo "container-publish: missing (no successful run for $GITHUB_SHA yet)"
+            echo "container-publish: missing (no successful $GITHUB_REF_NAME release run at $GITHUB_SHA yet)"
             MISSING=1
           fi
           if [[ "$MISSING" -eq 0 ]]; then
@@ -287,16 +289,18 @@ jobs:
           else
             echo "Release: published"
           fi
-          if ! RUNS_JSON="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/container-publish.yml/runs?head_sha=$GITHUB_SHA" 2>&1)"; then
+          # Only a release-event run for this tag counts: container-publish is dispatched from main,
+          # so a dispatch run's head_sha is main's tip, not the tag it built.
+          if ! RUNS_JSON="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/container-publish.yml/runs?head_sha=$GITHUB_SHA&event=release&per_page=100" 2>&1)"; then
             api_error "$RUNS_JSON"
           fi
-          if ! GREEN="$(jq -e '[.workflow_runs[] | select(.conclusion == "success")] | length' <<< "$RUNS_JSON")"; then
+          if ! GREEN="$(jq -e --arg tag "$GITHUB_REF_NAME" '[.workflow_runs[] | select(.conclusion == "success" and .event == "release" and .head_branch == $tag)] | length' <<< "$RUNS_JSON")"; then
             api_error "unexpected container-publish runs output"
           fi
           if [[ "$GREEN" -gt 0 ]]; then
-            echo "container-publish: green for $GITHUB_SHA"
+            echo "container-publish: green for the $GITHUB_REF_NAME release at $GITHUB_SHA"
           else
-            echo "container-publish: missing (no successful run for $GITHUB_SHA yet)"
+            echo "container-publish: missing (no successful $GITHUB_REF_NAME release run at $GITHUB_SHA yet)"
             MISSING=1
           fi
           if [[ "$MISSING" -eq 0 ]]; then

@@ -141,8 +141,8 @@ so. Any other `npm view` failure fails the fixture. The release workflow sets
 prerelease tags are refused). It does not use a separate tag family, because the web source,
 `pvRelease` and the API image are one commit. Before it uploads, the workflow:
 
-1. requires the published GitHub Release and a green `container-publish` run for the same commit
-   (only reported on a dry run), so the API image named by `apiImageTag` exists;
+1. requires the published GitHub Release and a green `container-publish` run triggered by that
+   Release (only reported on a dry run), so the API image named by `apiImageTag` exists;
 2. runs the fixture;
 3. packs at the tag's version and runs the tarball rules on that exact directory;
 4. checks the version triangle (tag, package version, manifest `pvRelease`);

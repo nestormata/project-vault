@@ -182,26 +182,38 @@ function setWorkflow(
   if (workflow !== undefined) Object.assign(workflow, change)
 }
 
-type Answer = { status: number; body: string } | 'timeout'
+type Answer = { status: number; body: string } | 'timeout' | 'body-timeout'
 
 function fakeFetch(answers: Record<string, Answer | Answer[]>): {
   fetch: typeof fetch
   urls: string[]
+  redirects: (RequestRedirect | undefined)[]
 } {
   const urls: string[] = []
+  const redirects: (RequestRedirect | undefined)[] = []
   const byUrl = new Map(Object.entries(answers))
-  const fetchImpl = (input: string | URL | Request): Promise<Response> => {
+  const fetchImpl = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = input instanceof Request ? input.url : String(input)
     urls.push(url)
+    redirects.push(init?.redirect)
     const entry = byUrl.get(url)
     const answer = Array.isArray(entry) ? (entry.length > 1 ? entry.shift() : entry[0]) : entry
     if (answer === undefined) return Promise.resolve(new Response('not found', { status: 404 }))
     if (answer === 'timeout') {
       return Promise.reject(new DOMException('The operation was aborted', 'TimeoutError'))
     }
+    if (answer === 'body-timeout') {
+      // The headers arrive, then the body stalls until the request's timeout signal fires.
+      const body = new ReadableStream({
+        start(controller) {
+          controller.error(new DOMException('The operation was aborted', 'TimeoutError'))
+        },
+      })
+      return Promise.resolve(new Response(body, { status: 200 }))
+    }
     return Promise.resolve(new Response(answer.body, { status: answer.status }))
   }
-  return { fetch: fetchImpl as typeof fetch, urls }
+  return { fetch: fetchImpl as typeof fetch, urls, redirects }
 }
 
 const ARGS = [
@@ -218,7 +230,13 @@ const ARGS = [
 async function cli(
   args: string[],
   answers: Record<string, Answer | Answer[]>
-): Promise<{ code: number; lines: string[]; urls: string[]; sleeps: number[] }> {
+): Promise<{
+  code: number
+  lines: string[]
+  urls: string[]
+  redirects: (RequestRedirect | undefined)[]
+  sleeps: number[]
+}> {
   const lines: string[] = []
   const sleeps: number[] = []
   const fake = fakeFetch(answers)
@@ -230,7 +248,7 @@ async function cli(
       return Promise.resolve()
     },
   })
-  return { code, lines, urls: fake.urls, sleeps }
+  return { code, lines, urls: fake.urls, redirects: fake.redirects, sleeps }
 }
 
 const OK_ANSWERS = {
@@ -245,6 +263,13 @@ describe('verify-npm-release: CLI (Story 68.12 AC-5, no network)', () => {
     expect(result.lines).toHaveLength(9)
     expect(result.lines.every((line) => line.startsWith('ok '))).toBe(true)
     expect(result.urls).toEqual([PACKUMENT_URL, ATTESTATIONS_URL])
+  })
+
+  // Code review 68.12: fetch follows redirects by default, so a registry redirect to another host
+  // would be followed silently. Every request refuses redirects.
+  it('refuses HTTP redirects on every request', async () => {
+    const result = await cli(ARGS, OK_ANSWERS)
+    expect(result.redirects).toEqual(['error', 'error'])
   })
 
   it('never follows an attestation URL outside registry.npmjs.org', async () => {
@@ -268,6 +293,7 @@ describe('verify-npm-release: CLI (Story 68.12 AC-5, no network)', () => {
       [{ status: 503, body: 'unavailable' }, /HTTP 503/],
       [{ status: 200, body: '<html>' }, /not JSON/],
       ['timeout', /timed out/],
+      ['body-timeout', /timed out/],
     ] as const) {
       const result = await cli(ARGS, { [PACKUMENT_URL]: answer })
       expect(result.code).toBe(1)

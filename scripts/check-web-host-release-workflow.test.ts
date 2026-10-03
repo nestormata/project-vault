@@ -587,18 +587,30 @@ describe('web-host release workflow: the tagcheck script by behaviour (Story 68.
   })
 })
 
-const RELEASE_PUBLISHED = JSON.stringify({ isDraft: false, isPrerelease: false, tagName: 'v1.4.0' })
-const RELEASE_DRAFT = JSON.stringify({ isDraft: true, isPrerelease: false, tagName: 'v1.4.0' })
-const runsWith = (...conclusions: (string | null)[]): string =>
+const GATE_TAG = 'v1.4.0'
+const CONTAINER_MISSING = 'container-publish: missing'
+const RELEASE_PUBLISHED = JSON.stringify({ isDraft: false, isPrerelease: false, tagName: GATE_TAG })
+const RELEASE_DRAFT = JSON.stringify({ isDraft: true, isPrerelease: false, tagName: GATE_TAG })
+const GATE_SHA = 'a'.repeat(40)
+interface GateRun {
+  conclusion: string | null
+  event?: string
+  head_branch?: string
+}
+const runsOf = (...runs: GateRun[]): string =>
   JSON.stringify({
-    total_count: conclusions.length,
-    workflow_runs: conclusions.map((conclusion, index) => ({
+    total_count: runs.length,
+    workflow_runs: runs.map((run, index) => ({
       id: index + 1,
-      event: 'release',
-      status: conclusion === null ? 'in_progress' : 'completed',
-      conclusion,
+      event: run.event ?? 'release',
+      head_branch: run.head_branch ?? GATE_TAG,
+      head_sha: GATE_SHA,
+      status: run.conclusion === null ? 'in_progress' : 'completed',
+      conclusion: run.conclusion,
     })),
   })
+const runsWith = (...conclusions: (string | null)[]): string =>
+  runsOf(...conclusions.map((conclusion) => ({ conclusion })))
 
 // A stub `gh`, defined as a bash function (it takes precedence over any `gh` on PATH, so the test
 // writes no files): `gh release …` answers with $STUB_RELEASE, `gh api …` with $STUB_RUNS; the
@@ -623,9 +635,9 @@ function runReleaseGate(options: { release: string; runs: string; reportOnly?: b
     encoding: 'utf8',
     env: {
       PATH: process.env.PATH,
-      GITHUB_REF_NAME: 'v1.4.0',
+      GITHUB_REF_NAME: GATE_TAG,
       GITHUB_REPOSITORY: 'nestormata/project-vault',
-      GITHUB_SHA: 'a'.repeat(40),
+      GITHUB_SHA: GATE_SHA,
       REPORT_ONLY: options.reportOnly === true ? '1' : '0',
       STUB_RELEASE: options.release,
       STUB_RUNS: options.runs,
@@ -666,7 +678,20 @@ describe('web-host release workflow: the release gate by behaviour (Story 68.12 
     for (const runs of [runsWith(null), runsWith('failure'), runsWith()]) {
       const result = runReleaseGate({ release: RELEASE_PUBLISHED, runs })
       expect(result.status, runs).toBe(1)
-      expect(result.stdout).toContain('container-publish: missing')
+      expect(result.stdout).toContain(CONTAINER_MISSING)
+    }
+  })
+
+  // Code review 68.12: container-publish can only be dispatched from main, so a dispatch run's
+  // head_sha is main's tip, not the tag it built. Only a release-event run for this tag counts.
+  it('does not count a main dispatch on the same commit or a release run for another tag', () => {
+    for (const runs of [
+      runsOf({ conclusion: 'success', event: 'workflow_dispatch', head_branch: 'main' }),
+      runsOf({ conclusion: 'success', head_branch: 'v1.3.0' }),
+    ]) {
+      const result = runReleaseGate({ release: RELEASE_PUBLISHED, runs })
+      expect(result.status, runs).toBe(1)
+      expect(result.stdout).toContain(CONTAINER_MISSING)
     }
   })
 
@@ -686,6 +711,6 @@ describe('web-host release workflow: the release gate by behaviour (Story 68.12 
     const result = runReleaseGate({ release: 'notfound', runs: runsWith(), reportOnly: true })
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain('Release: missing (expected before H3)')
-    expect(result.stdout).toContain('container-publish: missing')
+    expect(result.stdout).toContain(CONTAINER_MISSING)
   })
 })
