@@ -4,7 +4,10 @@
 // never excludes a test because a CM file touched it by accident: only an exact subject match counts.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { CompositionLock } from './lock.js'
+import { resolveLibTarget } from './overlay.js'
 import { compareCodeUnits } from './paths.js'
+import { loadHost } from './sources.js'
 
 export interface TestSubjects {
   schemaVersion: number
@@ -58,6 +61,42 @@ export function excludedPvTests(input: ExclusionInput): string[] {
     .filter(([, subjects]) => subjects.some((subject) => input.changed.has(subject)))
     .map(([test]) => test)
     .sort(compareCodeUnits)
+}
+
+/** DW-495: the exclusions a lock's own overrides, removals and replacements imply for a host. Null
+ * when the host publishes no subject map (nothing to recompute). The result is only ever COMPARED
+ * with the lock's list, never substituted for it. */
+export function impliedExclusions(lock: CompositionLock, hostDir: string): string[] | null {
+  const read = readTestSubjects(hostDir)
+  if (read.subjects === undefined) return null
+  const hostPaths = new Set(loadHost(hostDir).host?.files.keys() ?? [])
+  const removed = lock.removals.flatMap((entry) => entry.files)
+  const notPvTests = new Set([...lock.overrides.map((entry) => entry.path), ...removed])
+  const replaced = lock.replacements.flatMap((entry) => resolveLibTarget(entry.target, hostPaths))
+  return excludedPvTests({
+    subjects: read.subjects,
+    changed: new Set([...notPvTests, ...replaced]),
+    notPvTests,
+  })
+}
+
+/** Problems when the lock's `excludedPvTests` is not what its own records imply (a hand edit, or a
+ * lock from a composer that computed it differently): names the extra and the missing tests. */
+export function exclusionConsistencyProblems(lock: CompositionLock, hostDir: string): string[] {
+  const implied = impliedExclusions(lock, hostDir)
+  if (implied === null) return []
+  const recorded = new Set(lock.excludedPvTests)
+  const expected = new Set(implied)
+  const extra = [...recorded].filter((test) => !expected.has(test)).sort(compareCodeUnits)
+  const missing = [...expected].filter((test) => !recorded.has(test)).sort(compareCodeUnits)
+  if (extra.length === 0 && missing.length === 0) return []
+  const parts = [
+    ...(extra.length === 0 ? [] : [`extra: ${extra.join(', ')}`]),
+    ...(missing.length === 0 ? [] : [`missing: ${missing.join(', ')}`]),
+  ]
+  return [
+    `excludedPvTests in composition.lock.json differs from what its own overrides, removals and replacements imply (${parts.join('; ')}); re-run pv-compose`,
+  ]
 }
 
 const SECURITY_PATH = /(^|\/)(server|hooks|auth)(\/|\.|-)|routes\/\(auth\)/

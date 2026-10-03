@@ -259,8 +259,13 @@ PV's (no raw HTML of untrusted data, no browser storage outside reviewed entries
 internal API, labelled controls, a bounded Tailwind scan); a finding is fixed in your code.
 
 Gotchas: a guard test file also holds PV unit assertions (for example the clickjacking headers in the
-browser-storage guard); they run against your overrides of those modules and have no release. A test
-that merely IMPORTS a module you replaced (not a direct subject) still runs and may fail truthfully.
+browser-storage guard); they run against your overrides of those modules and have no release. A test's
+subjects (computed by PV, shipped in `manifests/test-subjects.json`) are its direct imports, its sibling
+and what those reach inside `src/lib`, so a test of a component that imports a module you replaced is
+excluded too and listed in the lock. Without `--pack`, `pv-verify` recomputes the exclusions from the
+lock's own override, removal and replacement records and fails when the lock's `excludedPvTests`
+differs (a hand edit); that checks the lock's internal consistency only, and `--pack` (or
+`pv-compose --check`) stays the full proof.
 `vendor/shared/src` is outside `src` and is not scanned, like PV's own tree.
 
 ## CLI

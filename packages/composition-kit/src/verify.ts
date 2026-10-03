@@ -13,7 +13,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import { compose } from './compose.js'
-import { exclusionNotes, securityRelevant } from './excluded-tests.js'
+import { exclusionConsistencyProblems, exclusionNotes, securityRelevant } from './excluded-tests.js'
 import { GUARD_ENTRIES_PATH, sectionHashes } from './guard-entries.js'
 import { compareCodeUnits } from './paths.js'
 import { readLock, type CompositionLock } from './lock.js'
@@ -59,7 +59,8 @@ function lockProblems(appRoot: string): { lock?: CompositionLock; problems: stri
     return { problems: [`no committed ${LOCK_FILE} in the app root; run pv-compose and commit it`] }
   }
   if (read.lock === undefined) return { problems: [read.problem ?? `${LOCK_FILE} is unreadable`] }
-  return { lock: read.lock, problems: [] }
+  // A lock written before the list existed has none: read as empty, never as absent.
+  return { lock: { ...read.lock, excludedPvTests: read.lock.excludedPvTests ?? [] }, problems: [] }
 }
 
 function tamperProblems(appRoot: string, lock: CompositionLock): string[] {
@@ -113,7 +114,12 @@ async function preflight(
       }
     }
   }
-  return { lock, problems: tamperProblems(options.appRoot, lock) }
+  // Without --pack the lock cannot be regenerated, but its excludedPvTests can be recomputed from its
+  // own override, removal and replacement records and the host's subject map and compared. This
+  // checks the lock's internal consistency only; --pack (pv-compose --check) stays the full proof.
+  const consistency =
+    options.packRoot === undefined ? exclusionConsistencyProblems(lock, options.hostDir) : []
+  return { lock, problems: [...tamperProblems(options.appRoot, lock), ...consistency] }
 }
 
 function testsStep(options: VerifyOptions, lock: CompositionLock): TestsResult {

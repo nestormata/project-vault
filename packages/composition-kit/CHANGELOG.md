@@ -21,6 +21,11 @@
   excluded and listed (sorted, normative for `--check`). Report-only warnings name security-relevant
   exclusions and an exclusion rate above 25%. A pack override of a guard file or its helpers composes
   and is noted in the lock (`guard-file-overridden`).
+- Test subjects are walked transitively inside `src/lib` (web-host side; the kit still reads them as
+  data), so a PV test that reaches a replaced or overridden module through a component is excluded.
+- `pv-verify` without `--pack` fails closed when the lock's `excludedPvTests` differs from what the
+  lock's own overrides, removals and replacements imply (extra and missing tests are named). It never
+  substitutes the recomputed list, and checks the lock's internal consistency only.
 - An older web-host (no guard registry or subject map) still composes; only `pv-verify` fails, naming
   the upgrade. The shared CLI plumbing moved to `cli-shared`.
 

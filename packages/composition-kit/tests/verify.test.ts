@@ -27,6 +27,8 @@ const LICENSE = 'AGPL-3.0-or-later'
 const LOCK_FILE = 'composition.lock.json'
 const UTIL = 'src/lib/util.ts'
 const UTIL_TEST = 'src/lib/util.test.ts'
+const OVERRIDE_BODY = 'export const fmt = String\n'
+const OTHER_TEST = 'src/lib/other.test.ts'
 
 // A plain-TypeScript guard: fails when any file under the app root's src holds the token.
 const GUARD = `/** @pv-guard mini */
@@ -188,7 +190,7 @@ describe('pv-verify (Story 68.9 AC-9)', () => {
     const world = await composedWorld({
       subjects: { [UTIL_TEST]: [UTIL] },
       hostFiles: { [UTIL_TEST]: failing },
-      packFiles: { [UTIL]: 'export const fmt = String\n' },
+      packFiles: { [UTIL]: OVERRIDE_BODY },
       manifest: (made) => ({
         routes: {
           overrides: [{ path: UTIL, hostSha256: sha(made, UTIL) }],
@@ -199,6 +201,72 @@ describe('pv-verify (Story 68.9 AC-9)', () => {
     expect(report.tests?.excluded).toEqual([UTIL_TEST])
     expect(report.tests?.run).toBe(1)
     expect(report.tests?.failed).toBe(0)
+  })
+
+  describe('lock consistency without --pack (DW-495)', () => {
+    const subjects = { [UTIL_TEST]: [UTIL], [OTHER_TEST]: ['src/lib/other.ts'] }
+    const overridden = (): Setup => ({
+      subjects,
+      packFiles: { [UTIL]: OVERRIDE_BODY },
+      manifest: (made) => ({
+        routes: { overrides: [{ path: UTIL, hostSha256: sha(made, UTIL) }] },
+      }),
+    })
+    const edit = (world: World, change: (lock: Record<string, unknown>) => void): void => {
+      const path = join(world.app, LOCK_FILE)
+      const lock = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
+      change(lock)
+      writeFileSync(path, JSON.stringify(lock))
+    }
+
+    it('passes a clean lock, for an override and for a replacement', async () => {
+      const world = await composedWorld(overridden())
+      expect((await verify({ ...options(world), only: 'guards' })).preflight.problems).toEqual([])
+      const replaced = await composedWorld({
+        subjects,
+        packFiles: { 'repl/util.ts': OVERRIDE_BODY },
+        manifest: (made) => ({
+          replacements: {
+            '$lib/util.ts': { with: './repl/util.ts', hostSha256: sha(made, UTIL) },
+          },
+        }),
+      })
+      const lock = JSON.parse(readFileSync(join(replaced.app, LOCK_FILE), 'utf8')) as {
+        excludedPvTests: string[]
+      }
+      expect(lock.excludedPvTests).toEqual([UTIL_TEST])
+      expect((await verify({ ...options(replaced), only: 'guards' })).preflight.problems).toEqual(
+        []
+      )
+    })
+
+    it('fails closed on a hand-edited list, naming the extra and the missing test', async () => {
+      const world = await composedWorld(overridden())
+      edit(world, (lock) => {
+        lock.excludedPvTests = [OTHER_TEST]
+      })
+      const report = await verify({ ...options(world), only: 'guards' })
+      expect(report.ok).toBe(false)
+      const [problem] = report.preflight.problems
+      expect(problem).toContain('excludedPvTests')
+      expect(problem).toContain(`extra: ${OTHER_TEST}`)
+      expect(problem).toContain(`missing: ${UTIL_TEST}`)
+      expect(problem).toContain('re-run pv-compose')
+    })
+
+    it('treats an old lock without the list as empty, so a lock that implies exclusions fails', async () => {
+      const world = await composedWorld(overridden())
+      edit(world, (lock) => {
+        delete lock.excludedPvTests
+      })
+      const [problem] = (await verify({ ...options(world), only: 'guards' })).preflight.problems
+      expect(problem).toContain(`missing: ${UTIL_TEST}`)
+    })
+
+    it('checks nothing it cannot recompute: a host without a subject map', async () => {
+      const world = await composedWorld({ hostFiles: { 'manifests/test-subjects.json': null } })
+      expect((await verify({ ...options(world), only: 'guards' })).preflight.problems).toEqual([])
+    })
   })
 
   it('runs the pristine host guard when the pack overrode its helper (a helper cannot blind a guard)', async () => {
