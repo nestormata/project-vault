@@ -1,3 +1,4 @@
+// @pv-not-guard asserts the shape of PV's own page and layout server files
 import { describe, expect, it } from 'vitest'
 
 // Story 68.4 AC-6 / AC-7 / AC-12: in PV's own build every page server file is a no-op wrapper. A page

@@ -53,6 +53,14 @@ export const PV_TREE_ONLY_TESTS: ReadonlyMap<string, string> = new Map([
     'src/lib/navigation/nav-not-security.test.ts',
     "pins PV's own hooks and (app) layout answers (Story 68.7); valid only on PV's tree",
   ],
+  [
+    'src/hooks-files.test.ts',
+    "pins PV's hooks files with no contributions and who imports the virtual hooks modules; valid only on PV's own build",
+  ],
+  [
+    'src/routes/server-files-wiring.test.ts',
+    "pins the shape of every page and layout server file in PV's own build (no actions where PV has none); valid only on PV's own tree",
+  ],
 ])
 
 function pvTreeOnlyReason(file: string): string | undefined {

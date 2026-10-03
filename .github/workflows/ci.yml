@@ -115,6 +115,9 @@ jobs:
       - name: Check the composition kit's release version triangle and integration wiring (Story 68.3)
         run: pnpm vitest run scripts/check-release-version-triangle.test.ts scripts/check-composition-kit-integration.test.ts
 
+      - name: Check PV web guards run over a composed tree (Story 68.9)
+        run: pnpm vitest run scripts/check-web-guard-completeness.test.ts scripts/check-web-guard-symmetry.test.ts scripts/check-web-guard-wiring.test.ts scripts/check-form-guidance.test.ts
+
       # Story 43.11 AC-6.4: the story-integrity guards' own test suites. --dir scripts limits
       # vitest discovery to ./scripts (positional args are substring filters). The overlay guards
       # themselves print SKIPPED here: public CI never has the private _bmad-output overlay.

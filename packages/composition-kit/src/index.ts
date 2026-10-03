@@ -1,5 +1,12 @@
 // @project-vault/composition-kit: the MIT composer for Project Vault's web-host (ADR 0007).
 export { defineUiPack } from './types.js'
+export { defineGuardEntries } from './guard-entries.js'
+export type {
+  ExternalHrefInput,
+  GuardEntriesInput,
+  RouteClassificationInput,
+  StorageEntryInput,
+} from './guard-entries.js'
 export type {
   CompatibilityTuple,
   HooksContribution,

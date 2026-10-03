@@ -82,33 +82,13 @@ compose_prepare_app() {
     *) ;;
   esac
   readonly PACK
-  # The pack overrides PV's recovery page, so PV's own test of that page no longer applies to the
-  # composed tree. Story 68.5 (`pvReplace()` is in this app's vitest plugins) makes the same true of
-  # a test whose subject is a REPLACED file: it now exercises CM's replacement, which changes the
-  # behaviour the test pins on purpose (the audit download URL, the org name `requireUser` returns,
-  # the header markup).
-  # Story 68-6: the mini pack contributes hooks and a header-policy delta, so PV's own tests that pin
-  # PV's exact hooks behaviour (the whole-response oracle, the no-contribution hooks exports, the
-  # direct handle tests) describe PV, not this composed app. The pack also overrides PV's
-  # (app)/shares/[token] load, so PV's tests of that page are out too. Story 68-4's
-  # server-files-wiring.test.ts globs every route server file and pins PV's own (no `actions` on a
-  # page without its own); the pack's CM (app)/cm-area page has a form action on purpose (AC-9).
-  # Story 68-9 turns all of these into the lock's `excludedPvTests`, keyed on the replaced or
-  # overridden host file; until then the fixture leaves exactly these tests out of its run.
+  # Story 68-9: a PV test whose subject the pack overrode, replaced or removed is excluded by the
+  # lock's `excludedPvTests`, which the exported vitest config factory reads. A subject is a direct
+  # import, the sibling, and what those reach inside src/lib (DW-493). The tests that pin PV's own
+  # build (hooks-files, server-files-wiring) are not shipped, and the hooks.server tests mock the
+  # contribution module, so nothing is excluded by hand here.
   VITEST_ARGS=(
     --exclude '**/node_modules/**'
-    --exclude 'src/routes/*/recovery/**'
-    --exclude 'src/routes/*/shares/**'
-    --exclude 'src/lib/api/audit.test.ts'
-    --exclude 'src/lib/server/require-platform-operator.test.ts'
-    --exclude 'src/lib/components/audit/AuditExportPanel.test.ts'
-    --exclude 'src/lib/components/shell/AppShell.characterization.test.ts'
-    --exclude 'src/hooks-files.test.ts'
-    --exclude 'src/hooks.server.test.ts'
-    --exclude 'src/lib/server/composition/hooks-oracle.test.ts'
-    --exclude 'src/routes/server-files-wiring.test.ts'
-    # Story 68.7: PV's tests of the shell components the pack replaces (ShellAccount, Footer).
-    --exclude 'src/lib/navigation/nav-delta-render-shell.test.ts'
   )
   return 0
 }
@@ -247,8 +227,20 @@ compose_remove_replacement_file() {
   return 0
 }
 
+# Story 68.9 AC-15: the generated guard entries module is read by test code only, so it must never
+# reach the app bundle (it holds reviewed carve-outs, not runtime data).
+compose_assert_no_guard_entries_in_bundle() {
+  if grep -rqs 'guard-entries' "$APP/build"; then
+    echo 'fixture: the generated guard entries module leaked into the built app' >&2
+    exit 1
+  fi
+  log 'OK: the generated guard entries module is absent from the built app'
+  return 0
+}
+
 compose_assert_css() {
   compose_assert_hook_markers
+  compose_assert_no_guard_entries_in_bundle
   local css
   css="$(cat "$APP"/build/client/_app/immutable/assets/*.css)"
   local needle

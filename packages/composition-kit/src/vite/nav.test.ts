@@ -27,6 +27,8 @@ function lockWith(nav: string | null, navIdsHost?: string[]): CompositionLock {
     contributions: { hooks: {}, nav, theme: null, protectedPaths: null },
     injectionPointsUsed: [],
     injections: [],
+    excludedPvTests: [],
+    guardEntries: {},
     navIdsReferenced: [],
     ...(navIdsHost === undefined ? {} : { navIdsHost }),
     apiRouteOverrides: [],

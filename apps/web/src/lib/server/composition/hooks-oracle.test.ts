@@ -18,6 +18,14 @@ vi.mock('$lib/server/auth-guard.js', async () => {
   return { ...actual, resolveAuthContext: resolveAuthContextMock }
 })
 
+// Story 68-9 (Nestor 2026-10-03): hermetic over a composed tree. These tests describe PV's own
+// `handle` with NO contribution, so the contribution module is mocked to PV's own empty one instead
+// of whatever a pack contributed. They run unchanged on PV's tree and over a composed tree.
+vi.mock('virtual:pv-hooks/server', () => ({
+  hooks: {},
+  protectedPaths: { routeIds: [], add: [], remove: [] },
+}))
+
 import { handle } from '../../../hooks.server.js'
 
 // Each path with the Kit route id it matches (`null` = no route), as Kit's `find_route` would set

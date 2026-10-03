@@ -272,6 +272,10 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	# Story 68.3: the kit's release version triangle and the integration job's wiring (the slow
 	# integration itself is `make composition-kit-integration`).
 	pnpm vitest run scripts/check-release-version-triangle.test.ts scripts/check-composition-kit-integration.test.ts
+	# Story 68.9: PV's web guards over a composed tree (guard completeness and symmetry, this wiring, the
+	# shipped form-guidance scanner). The registry builders run above (scripts/lib/web-host); pv-verify's
+	# own tests run with the kit's tests.
+	pnpm vitest run scripts/check-web-guard-completeness.test.ts scripts/check-web-guard-symmetry.test.ts scripts/check-web-guard-wiring.test.ts scripts/check-form-guidance.test.ts
 	pnpm tsx scripts/check-env-example.ts
 	# Blocking, matching ci.yml's `audit-ci` step on this same command (Story 42.2 — the
 	# formerly non-blocking `pnpm audit --audit-level=high || true` is superseded by this

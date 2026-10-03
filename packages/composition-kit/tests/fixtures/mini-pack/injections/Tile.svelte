@@ -4,6 +4,8 @@
 
   // Story 68.4 AC-13: an injected component with server data, an injected form action and a client
   // navigation. It runs in PV's own document, router and session: nothing here is sandboxed.
+  // Story 68.9: PV's form-guidance guard (G5) reads CM files like its own, so the input has a
+  // visible description wired through aria-describedby.
   let { data = null, routeId = '' }: { data?: { healthy?: number } | null; routeId?: string } =
     $props()
 </script>
@@ -11,7 +13,8 @@
 <div data-testid="inject-tile" data-route={routeId}>
   <span>tile-data:{data?.healthy ?? 'none'}</span>
   <form method="POST" action="?/auth.register.after.share" use:enhance>
-    <input name="note" aria-label="Note" />
+    <input name="note" aria-label="Note" aria-describedby="inject-tile-note-help" />
+    <p id="inject-tile-note-help">A short note shared with your team.</p>
     <button type="submit">Share</button>
   </form>
   <button type="button" onclick={() => goto('/login')}>Go to sign in</button>

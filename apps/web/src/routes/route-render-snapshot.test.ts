@@ -1,3 +1,4 @@
+// @pv-not-guard oracle of PV's own un-composed markup, valid only on PV's tree
 import { cleanup, render } from '@testing-library/svelte'
 import { createRawSnippet } from 'svelte'
 import { afterEach, describe, expect, it, vi } from 'vitest'

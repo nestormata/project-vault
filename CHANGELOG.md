@@ -17,7 +17,7 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   breadcrumbs, page back links, the error page's way back and the auth cross-links) now renders from
   one registry of stable ids, and a composed app changes it with a nav delta (insert, remove, hide,
   relabel, move, replace, reorder, at any depth) through `pvNav()` and
-  `@project-vault/composition-kit/nav` in kit 0.5.0. `web-host` ships the new `manifests/nav-ids.json`
+  `@project-vault/composition-kit/nav` in kit 0.6.0. `web-host` ships the new `manifests/nav-ids.json`
   and a `composed-nav.test.ts` that validates a composed app's delta. Two new CI guards,
   `check-nav-ids` and `check-nav-surfaces`. PV's own rendered navigation is unchanged except that
   **the project tabs are now translated** (Spanish under `es`). The rewritten nav files' hashes drift

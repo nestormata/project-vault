@@ -30,6 +30,7 @@ import {
   type HooksSurface,
 } from './hooks-surface.js'
 import { protectedPathsFindings, type ProtectedPathsRecord } from './protected-paths.js'
+import { guardStage, loadGuardEntries, type LoadedGuardEntries } from './plan-guards.js'
 import { requirePeer } from './peers.js'
 import type { UiPackManifest } from './types.js'
 
@@ -124,6 +125,8 @@ interface Stage {
   hash: (abs: string) => string
   existingLock?: CompositionLock
   registries: Registries
+  /** Story 68.9: the pack's loaded guard entries (loaded here, where the planning is still async). */
+  guardEntries: LoadedGuardEntries
   /** Story 68.14: the module pack's override table (empty without `--module-pack`). */
   apiRouteOverrides: ApiRouteOverrideLock[]
 }
@@ -151,6 +154,8 @@ async function prepare(
   findings.add(loadedPack)
   findings.add(registries)
   findings.add({ problems: existing?.problem === undefined ? [] : [existing.problem] })
+  const guardEntries = await loadGuardEntries(validation.manifest, loadedPack.pack, resolveFrom)
+  findings.add(guardEntries)
   const stage: Stage = {
     manifest: validation.manifest,
     host: located.host,
@@ -158,6 +163,7 @@ async function prepare(
     options,
     hash: hasher(),
     registries,
+    guardEntries,
     apiRouteOverrides: [],
     ...(existing?.lock === undefined ? {} : { existingLock: existing.lock }),
   }
@@ -228,6 +234,7 @@ function unreachedNotes(stage: Stage, reached: ReadonlySet<string>): string[] {
     .join('/')
   const messagesDir =
     stage.manifest.messages === undefined ? null : normalizePackPath(stage.manifest.messages)
+  const guardsFile = stage.guardEntries.rel
   return [...stage.pack.files.keys()]
     .filter(
       (rel) =>
@@ -235,6 +242,7 @@ function unreachedNotes(stage: Stage, reached: ReadonlySet<string>): string[] {
         !rel.startsWith('.') &&
         rel !== 'package.json' &&
         rel !== manifestFile &&
+        rel !== guardsFile &&
         !(messagesDir !== null && rel.startsWith(`${messagesDir}/`))
     )
     .sort(compareCodeUnits)
@@ -421,6 +429,15 @@ function planStage(
   findings.add(injections)
   const hooks = hooksFindings(stage, overlay, mat, log)
   findings.add(hooks)
+  const guards = guardStage({
+    manifest: stage.manifest,
+    host: stage.host,
+    overlay,
+    mat,
+    files: assembly.files,
+    loaded: stage.guardEntries,
+  })
+  findings.add(guards)
   findings.add({
     notes: [
       ...deferredNotes(stage.manifest, hooks.surface !== undefined, nav.host !== undefined),
@@ -446,6 +463,8 @@ function planStage(
     contributions: contributionsOf(stage.manifest, mat, hooks.record),
     injectionPointsUsed: registry.used,
     injections: injections.lock,
+    excludedPvTests: guards.excludedPvTests,
+    guardEntries: guards.guardEntries,
     ...navLockFields(nav),
     apiRouteOverrides: stage.apiRouteOverrides,
     notes,

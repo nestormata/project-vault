@@ -37,11 +37,15 @@ export interface CompositionLock {
   replacements: Omit<ReplacementRecord, 'hostPath'>[]
   materialized: { path: string; source: string; cmSha256: string }[]
   contributions: Contributions
+  /** Story 68.9: PV tests not run because a pack changed their subject; recomputed every run. */
   excludedPvTests: string[]
   injectionPointsUsed: InjectionPointRecord[]
   /** Story 68.4: every contribution, composed paths, in point and `order` order. Absent in locks
    * written before it existed (read as none). */
   injections?: LockInjection[]
+  /** Story 68.9: sha256 per section of the generated guard-entries file (`GUARD_ENTRIES_PATH`).
+   * Absent in locks written before it existed (read as none). */
+  guardEntries?: Record<string, string>
   navIdsReferenced: { id: string; operative: boolean }[]
   /** Story 68.7: the nav ids the pack inserts. Absent in older locks (read as none). */
   navIdsDeclared?: string[]
@@ -61,15 +65,22 @@ const NORMATIVE = [
   'replacements',
   'materialized',
   'contributions',
+  'excludedPvTests',
   'injectionPointsUsed',
   'injections',
+  'guardEntries',
   'navIdsReferenced',
   'navIdsDeclared',
   'apiRouteOverrides',
 ] as const
 
 /** Sections a lock may lack and still be read (they were added after lockfileVersion 1). */
-const OPTIONAL_SECTIONS: ReadonlySet<string> = new Set(['injections', 'navIdsDeclared'])
+const OPTIONAL_SECTIONS: ReadonlySet<string> = new Set([
+  'injections',
+  'guardEntries',
+  'excludedPvTests',
+  'navIdsDeclared',
+])
 
 export interface LockInput {
   tuple: CompatibilityTuple
@@ -81,6 +92,8 @@ export interface LockInput {
   contributions: Contributions
   injectionPointsUsed: InjectionPointRecord[]
   injections: LockInjection[]
+  excludedPvTests: string[]
+  guardEntries: Record<string, string>
   navIdsReferenced: { id: string; operative: boolean }[]
   navIdsDeclared?: string[]
   navIdsHost?: string[]
@@ -111,9 +124,10 @@ export function buildLock(input: LockInput): CompositionLock {
       (entry) => entry.path
     ),
     contributions: input.contributions,
-    excludedPvTests: [],
+    excludedPvTests: [...input.excludedPvTests].sort(compareCodeUnits),
     injectionPointsUsed: sortBy(input.injectionPointsUsed, (entry) => entry.name),
     injections: input.injections,
+    guardEntries: input.guardEntries,
     navIdsReferenced: sortBy(input.navIdsReferenced, (entry) => entry.id),
     ...(input.navIdsDeclared === undefined
       ? {}
@@ -191,6 +205,8 @@ function normativeText(lock: CompositionLock): string {
     Object.entries({
       ...lock,
       injections: lock.injections ?? [],
+      guardEntries: lock.guardEntries ?? {},
+      excludedPvTests: lock.excludedPvTests ?? [],
       navIdsDeclared: lock.navIdsDeclared ?? [],
     }).filter(([key]) => (NORMATIVE as readonly string[]).includes(key))
   )
