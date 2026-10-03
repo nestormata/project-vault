@@ -12,6 +12,8 @@
 #                      and protects a CM (app) route added while it runs (Story 68-6 AC-8)
 #   compose-hooks-leak       a client page imports virtual:pv-hooks/server: vite build must fail (68-6 AC-1)
 #   compose-full-override    the pack overrides src/hooks.server.ts wholesale (68-6 AC-11): build, serve
+#   compose-bad-policy       the pack's headerPolicy is invalid: composed-hooks-init.test.ts must fail
+#                            before any build (68-6 AC-6, code review)
 #
 # Inputs (environment): COMPOSITION_KIT_TARBALL, COMPOSITION_KIT_FIXTURES (the kit's tests/fixtures
 # directory), COMPOSITION_KIT_SVELTE_CHECK and COMPOSITION_KIT_TYPES_NODE (the versions PV pins).
@@ -61,6 +63,10 @@ compose_prepare_app() {
     compose-full-override)
       cp "$COMPOSITION_KIT_FIXTURES/full-override/hooks.server.ts" "$PACK/src/hooks.server.ts"
       ;;
+    compose-bad-policy)
+      # An empty header value is an integrity failure of the composed policy.
+      sed -i "s/'x-cm-policy': 'on'/'x-cm-policy': ''/" "$PACK/hooks.server.ts"
+      ;;
     *) ;;
   esac
   readonly PACK
@@ -70,7 +76,9 @@ compose_prepare_app() {
   # Story 68-6: the mini pack contributes hooks and a header-policy delta, so PV's own tests that pin
   # PV's exact hooks behaviour (the whole-response oracle, the no-contribution hooks exports, the
   # direct handle tests) describe PV, not this composed app. Same 68-9 hand-off as above.
+  # The pack also overrides PV's (app)/shares/[token] load, so PV's tests of that page are out too.
   VITEST_ARGS=(--exclude '**/node_modules/**' --exclude 'src/routes/*/recovery/**'
+    --exclude 'src/routes/*/shares/**'
     --exclude 'src/hooks-files.test.ts' --exclude 'src/hooks.server.test.ts'
     --exclude 'src/lib/server/composition/hooks-oracle.test.ts')
   return 0
@@ -179,12 +187,16 @@ compose_expect() { # port path status needle
   return 0
 }
 
-compose_request() { # port method path [cookie|-] [origin] -> status; headers/body in $WORK
+compose_request() { # port method path [cookie|-] [origin] [form body] -> status; headers/body in $WORK
   local port="$1" method="$2" path="$3" cookie="${4:--}" origin="${5:-http://127.0.0.1:$1}"
+  local form="${6:-}"
   local args=(-s -o "$WORK/body.txt" -D "$WORK/headers.txt" -X "$method"
     -H "origin: ${origin}" -H 'content-type: application/x-www-form-urlencoded')
   if [[ "$cookie" != '-' ]]; then
     args+=(-H "cookie: ${cookie}")
+  fi
+  if [[ -n "$form" ]]; then
+    args+=(--data "$form")
   fi
   curl "${args[@]}" -w '%{http_code}' "http://127.0.0.1:${port}${path}" || true
   return 0
@@ -300,6 +312,8 @@ compose_assert_hook_markers() {
 readonly CM_ANON='-'
 readonly CM_EXPIRED='refresh-token=dead'
 readonly CM_AUTHED='session=ok'
+# The stub's refresh succeeds for this cookie and sets `session=ok` (code review 68-6).
+readonly CM_REFRESHABLE='refresh-token=good'
 readonly CM_HANDLERS=(cm-area-load cm-area-action cm-area-export)
 
 # AC-9: each gated request type answers <location> for <cookie>, and no CM handler runs.
@@ -372,6 +386,92 @@ compose_hooks_checks() {
     exit 1
   fi
   log 'OK: AC-9 table (anonymous, session-expired, sealed, authenticated, CSRF) with handler counters; handleFetch, transport, init, handleError and the CM policy applied'
+  compose_review_rows "$port"
+  return 0
+}
+
+# The response of the last compose_request carries this Set-Cookie value (exact prefix match).
+compose_expect_set_cookie() { # value-prefix context
+  if ! grep -qiF "set-cookie: $1" "$WORK/headers.txt"; then
+    compose_fail "$2: the refreshed cookie ($1) was not forwarded"
+  fi
+  return 0
+}
+
+# The stub saw no request for an API path since its last reset.
+fixture_expect_no_path() { # /path context
+  if fixture_stub state | grep -qF "$1"; then
+    compose_fail "$2: the API saw $1"
+  fi
+  return 0
+}
+
+# Story 68-6 code review: the remaining AC-9 rows on the real packed host. protectedPaths.add and
+# .remove, a CM override of a PV (app) route outside PV's prefixes, refreshed cookies forwarded on a
+# protected CM route and onto an immutable proxied Response, and a rerouted form action.
+compose_review_rows() {
+  local port="$1"
+  fixture_stub reset > /dev/null
+  # protectedPaths.add: a CM page outside (app) is protected on purpose.
+  compose_expect_redirect "$port" GET /public-cm "$CM_ANON" 303 /login
+  compose_expect_ok "$port" GET /public-cm "$CM_AUTHED" 'CM public-cm page'
+  # protectedPaths.remove: the callback-shaped route is reachable anonymously; its sibling is not.
+  compose_expect_ok "$port" GET /cm-area/callback "$CM_ANON" 'cm-callback reached'
+  fixture_expect_count cm-callback 1
+  compose_expect_redirect "$port" GET /cm-area/export "$CM_ANON" 303 /login
+
+  # A CM override of PV's (app)/shares/[token]: derived, so the HOOK answers (the reason and the
+  # vault redirect only come from the hook, never from the (app) layout).
+  compose_expect_redirect "$port" GET /shares/tok "$CM_EXPIRED" 303 '/login?reason=session-expired'
+  fixture_stub vault/sealed > /dev/null
+  compose_expect_redirect "$port" GET /shares/tok "$CM_ANON" 303 /vault
+  fixture_stub vault/ready > /dev/null
+  fixture_expect_count cm-shares-load 0
+  compose_expect_ok "$port" GET /shares/tok "$CM_AUTHED" 'This share link is invalid'
+  fixture_expect_count cm-shares-load 1
+
+  # A successful refresh: the refreshed cookie is forwarded on a protected CM route...
+  compose_expect_ok "$port" GET /cm-area "$CM_REFRESHABLE" 'CM area for a signed-in user'
+  compose_expect_set_cookie 'session=ok; Path=/; HttpOnly' 'GET /cm-area'
+  # ...and onto the immutable Response a CM `after` handle proxied with fetch() (no 500).
+  compose_expect_ok "$port" GET /cm-proxy "$CM_REFRESHABLE" '"proxied":true'
+  compose_expect_set_cookie 'session=ok; Path=/; HttpOnly' 'GET /cm-proxy'
+
+  # Reroute (Q5): an anonymous form action on /go/settings/language never runs (no API call);
+  # signed in, the same action runs and reaches the API (positive twin).
+  fixture_stub reset > /dev/null
+  local status
+  status="$(compose_request "$port" POST '/go/settings/language?/updateLocale' "$CM_ANON" '' 'locale=es')"
+  if [[ "$status" != '303' || "$(compose_header location)" != '/login' ]]; then
+    compose_fail "anonymous POST /go/settings/language?/updateLocale answered HTTP $status"
+  fi
+  fixture_expect_no_path '/api/v1/users/me/locale' 'the rerouted anonymous action'
+  status="$(compose_request "$port" POST '/go/settings/language?/updateLocale' "$CM_AUTHED" '' 'locale=es')"
+  if ! fixture_stub state | grep -q '/api/v1/users/me/locale'; then
+    compose_fail "the signed-in rerouted action did not reach the API (HTTP $status)"
+  fi
+  log 'OK: protectedPaths add/remove, CM shares override, refreshed cookies (incl. an immutable proxied response) and the rerouted action'
+  return 0
+}
+
+# Story 68-6 AC-8 (Elicitation 3): every derived route id is a route Kit knows (after svelte-kit
+# sync); a derived id Kit does not know is a silent protection gap.
+compose_assert_derived_routes() {
+  clean_env "$NODE_BIN" -e '
+    const fs = require("node:fs")
+    const [lockFile, metaFile] = process.argv.slice(1)
+    const lock = JSON.parse(fs.readFileSync(lockFile, "utf8"))
+    const derived = (lock.contributions.protectedPaths?.derived ?? []).map((r) => r.routeId)
+    const kit = Object.keys(JSON.parse(fs.readFileSync(metaFile, "utf8")))
+    const unknown = derived.filter((id) => !kit.includes(id))
+    if (derived.length === 0 || unknown.length > 0) {
+      console.error("fixture: derived route ids Kit does not know: " + JSON.stringify(unknown))
+      console.error("derived: " + JSON.stringify(derived))
+      console.error("kit: " + JSON.stringify(kit))
+      process.exit(1)
+    }
+    console.log("fixture[compose]: OK: " + derived.length + " derived route ids are all Kit routes")
+  ' "$APP/composition.lock.json" "$APP/.svelte-kit/types/route_meta_data.json"
   return 0
 }
 

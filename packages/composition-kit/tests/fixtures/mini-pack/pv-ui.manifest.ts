@@ -26,6 +26,7 @@ const release = (
 const OVERRIDES = [
   // Present only in the integration job's compose-full-override variant (Story 68-6 AC-11).
   'src/hooks.server.ts',
+  'src/routes/(app)/shares/[token]/+page.server.ts',
   'src/routes/(auth)/recovery/+page.svelte',
   'src/routes/(auth)/login/+page.server.ts',
   'src/app.html',
@@ -56,6 +57,9 @@ export default defineUiPack({
     universal: './hooks.universal.ts',
     client: './hooks.client.ts',
   },
+  // Story 68-6 (code review): a CM page outside (app) protected on purpose, and a callback-shaped
+  // CM route under (app) made reachable anonymously.
+  protectedPaths: { add: ['/public-cm'], remove: ['/(app)/cm-area/callback'] },
   theme: './theme.css',
   messages: './messages',
 })

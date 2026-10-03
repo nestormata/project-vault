@@ -18,7 +18,14 @@ const stampRequest: Handle = async ({ event, resolve }) => {
   return response
 }
 
-export const handle = { before: [stampRequest] }
+// `after` runs inside PV, after its redirects. `/cm-proxy` answers with a proxied `fetch()` Response,
+// whose headers are immutable: PV must still forward refreshed cookies onto it (code review 68-6).
+const proxy: Handle = ({ event, resolve }) =>
+  event.url.pathname === '/cm-proxy'
+    ? fetch(`${env.API_BASE_URL}/__fixture/proxied`)
+    : resolve(event)
+
+export const handle = { before: [stampRequest], after: [proxy] }
 
 // Every server-side fetch a load makes carries a CM header (AC-2 handleFetch example).
 export const handleFetch: HandleFetch = ({ request, fetch }) => {

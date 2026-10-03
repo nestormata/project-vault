@@ -119,7 +119,17 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
       expect(output).toContain(
         'OK: AC-9 table (anonymous, session-expired, sealed, authenticated, CSRF) with handler counters; handleFetch, transport, init, handleError and the CM policy applied'
       )
-      expect(output).toContain('pv-compose: protected paths: 3 derived (app) routes')
+      expect(output).toContain(
+        'pv-compose: protected paths: 5 derived (app) routes, 1 added, 1 removed'
+      )
+      // Code review 68-6: AC-8 derived ids vs Kit's route list, the remaining AC-9 rows, and the
+      // header-policy delta printed by composed-hooks-init.test.ts in the composed tree (Q3).
+      expect(output).toContain('OK: 5 derived route ids are all Kit routes')
+      expect(output).toContain(
+        'OK: protectedPaths add/remove, CM shares override, refreshed cookies (incl. an immutable proxied response) and the rerouted action'
+      )
+      expect(output).toContain('pv-compose: header policy: added defaults.x-cm-policy')
+      expect(output).toContain('pv-compose: header policy: added rules.cm-billing')
       expect(status, output).toBe(0)
     },
     VARIANT_TIMEOUT_MS
@@ -179,6 +189,17 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
         'OK: a full override of src/hooks.server.ts composes, builds, serves and keeps derived protection'
       )
       expect(status, output).toBe(0)
+    },
+    VARIANT_TIMEOUT_MS
+  )
+
+  it(
+    'an invalid pack headerPolicy fails composed-hooks-init.test.ts before any build (Story 68-6 AC-6)',
+    () => {
+      const { status, output } = runVariant('compose-bad-policy')
+      expect(status, output).not.toBe(0)
+      expect(output).toContain('composed-hooks-init.test.ts')
+      expect(output).toContain('header "x-cm-policy" must be a non-empty string')
     },
     VARIANT_TIMEOUT_MS
   )

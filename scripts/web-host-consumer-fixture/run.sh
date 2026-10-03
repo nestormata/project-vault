@@ -229,6 +229,16 @@ if [[ "$VARIANT" == 'compose' || "$VARIANT" == 'compose-types-negative' ]]; then
 fi
 if [[ "$VARIANT" == 'compose' ]]; then
   compose_plant_probe
+  compose_assert_derived_routes
+fi
+# Story 68-6 AC-6 (code review): an invalid pack headerPolicy fails the composed tree's
+# composed-hooks-init.test.ts with the start-up error, before anything is built or served.
+if [[ "$VARIANT" == 'compose-bad-policy' ]]; then
+  log 'composed-hooks-init.test.ts over a pack with an invalid headerPolicy (must fail)'
+  (cd "$APP" && clean_env "$NODE_BIN" node_modules/vitest/vitest.mjs run --reporter=dot \
+    src/lib/composition/composed-hooks-init.test.ts)
+  echo 'fixture: composed-hooks-init.test.ts passed over an invalid headerPolicy' >&2
+  exit 1
 fi
 
 # The dev variant never builds: it needs the API stub, then drives the Vite dev server.
