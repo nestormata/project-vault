@@ -273,7 +273,9 @@ function warnUndeclaredApp(
     }
   }
   const declaredPhases = new Set<string>(declaredAppPhases(app))
-  for (const phase of Object.keys(implemented.hooks ?? {}).sort()) {
+  for (const phase of Object.keys(implemented.hooks ?? {}).sort((left, right) =>
+    left < right ? -1 : left > right ? 1 : 0
+  )) {
     if (!declaredPhases.has(phase)) {
       warn(`hooks.apiRoutes.app has an implementation for undeclared hook phase "${phase}"`)
     }
