@@ -1,4 +1,5 @@
 <script lang="ts">
+  import NavLink from '$lib/navigation/NavLink.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import { invalidateAll } from '$app/navigation'
@@ -66,9 +67,11 @@
 <InjectionPoint name="settings.users-erasure-detail.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-3xl px-4 py-8">
   <h1 class="text-2xl font-bold text-gray-900">Erasure Request</h1>
-  <a href={resolve('/settings/users')} class="mt-2 inline-block text-sm text-indigo-600 underline">
-    ← Back to Users
-  </a>
+  <NavLink
+    surface="back"
+    node="back.settings.users.erasure"
+    class="mt-2 inline-block text-sm text-indigo-600 underline"
+  />
 
   {#if data.state === 'not_allowed'}
     <div class="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-6">

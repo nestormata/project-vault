@@ -1,4 +1,5 @@
 <script lang="ts">
+  import NavLink from '$lib/navigation/NavLink.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { onDestroy, onMount } from 'svelte'
   import { SvelteMap } from 'svelte/reactivity'
@@ -2269,12 +2270,12 @@
       {/if}
     </section>
 
-    <a
+    <NavLink
+      surface="back"
+      node="back.project.credential"
       class="inline-block font-medium text-slate-700 underline"
-      href={resolve(`/projects/${data.projectId}/credentials`)}
-    >
-      Back to secrets
-    </a>
+      projectId={data.projectId}
+    />
   {/if}
 </section>
 <InjectionPoint

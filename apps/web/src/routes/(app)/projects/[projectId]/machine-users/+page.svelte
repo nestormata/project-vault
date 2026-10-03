@@ -1,4 +1,5 @@
 <script lang="ts">
+  import NavLink from '$lib/navigation/NavLink.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import DataTable from '$lib/components/tables/DataTable.svelte'
@@ -44,12 +45,12 @@
         </a>
         for the full flow, error cases, and a working curl example.
       </p>
-      <a
+      <NavLink
+        surface="back"
+        node="back.project.machine-users"
         class="mt-3 inline-block text-sm font-medium text-slate-700 underline"
-        href={resolve(`/projects/${data.projectId}/credentials`)}
-      >
-        Back to secrets
-      </a>
+        projectId={data.projectId}
+      />
     </div>
     {#if canManage}
       <a

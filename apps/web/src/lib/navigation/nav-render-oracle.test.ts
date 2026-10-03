@@ -212,8 +212,9 @@ function breadcrumbCases(out: Map<string, string>): void {
       canManage: false,
       deleteError: null,
       onDelete: () => undefined,
-      backHref: '/projects/p1/services',
-      backLabel: 'Back to services',
+      // Story 68.7: the back link is the `back` surface's node now (same markup).
+      backNode: 'back.project.service',
+      projectId: 'p1',
     })
   )
 }

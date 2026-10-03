@@ -1,4 +1,5 @@
 <script lang="ts">
+  import NavLink from '$lib/navigation/NavLink.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import {
@@ -191,12 +192,12 @@
   {/if}
 
   {#if data.canImport && step !== 'done'}
-    <a
+    <NavLink
+      surface="back"
+      node="back.project.credentials.import"
       class="inline-block font-medium text-slate-700 underline"
-      href={resolve(`/projects/${data.projectId}/credentials`)}
-    >
-      Back to secrets
-    </a>
+      projectId={data.projectId}
+    />
   {/if}
 </section>
 <InjectionPoint name="project.credentials-import.after" data={data?.__inject} />

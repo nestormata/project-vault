@@ -140,8 +140,8 @@
       {canManage}
       {deleteError}
       onDelete={handleDelete}
-      backHref={`/projects/${data.projectId}/services`}
-      backLabel="Back to services"
+      backNode="back.project.service"
+      projectId={data.projectId}
     />
   {/if}
 </section>
