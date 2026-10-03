@@ -122,8 +122,8 @@ export function resolveErrorHandler(
       return mode === 'replace'
         ? await cm(error, req, reply)
         : await cm(error, req, reply, () => Promise.resolve(pv(error, req, reply)))
-    } catch (failure) {
-      logHandlerFailure(extensionName, 'errorHandler', req as RequestLike, failure)
+    } catch (error_) {
+      logHandlerFailure(extensionName, 'errorHandler', req as RequestLike, error_)
       if ((reply as ReplyLike).sent) return reply
       return pv(error, req, reply)
     }
@@ -159,8 +159,8 @@ export function resolveNotFoundHandler(
       return mode === 'replace'
         ? await cm(req, reply)
         : await cm(req, reply, () => Promise.resolve(pv(req, reply)))
-    } catch (failure) {
-      logHandlerFailure(extensionName, 'notFoundHandler', req as RequestLike, failure)
+    } catch (error_) {
+      logHandlerFailure(extensionName, 'notFoundHandler', req as RequestLike, error_)
       if ((reply as ReplyLike).sent) return reply
       return pv(req, reply)
     }

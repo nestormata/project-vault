@@ -104,7 +104,7 @@ describe('runtime route audit (Story 68.14 AC-2)', () => {
 
   it('removing GET /health from the table fails naming GET and HEAD /health', async () => {
     const pvEntries = pvClassifications().filter((entry) => entry.route !== HEALTH_ROUTE)
-    expect(pvEntries.length).toBe(pvClassifications().length - 1)
+    expect(pvEntries).toHaveLength(pvClassifications().length - 1)
     const report = await runRouteAudit({}, { ...deps().deps, pvEntries })
     expect(report.ok).toBe(false)
     expect(report.failures.some((line) => line.includes('unclassified route GET /health'))).toBe(

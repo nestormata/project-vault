@@ -80,7 +80,7 @@ export type AuditDeps = {
   createApp: (options: AppOptions) => Promise<FastifyApp>
   getExtensionStatus: () => ExtensionState
   /** The loader's injection seams; the CLI stubs the DB-touching ones. */
-  loaderDeps?: NonNullable<AppOptions['extension']>['loaderDeps']
+  loaderDeps?: NonNullable<NonNullable<AppOptions['extension']>['loaderDeps']>
   /** PV's classification table; tests substitute a mutated copy. Defaults to the real one. */
   pvEntries?: readonly ClassificationEntry[]
 }
@@ -117,14 +117,16 @@ export async function runRouteAudit(args: AuditArgs, deps: AuditDeps): Promise<A
 
 type Io = { stdout: (text: string) => void; stderr: (text: string) => void }
 
+const PROCESS_IO: Io = {
+  stdout: (text) => process.stdout.write(text),
+  stderr: (text) => process.stderr.write(text),
+}
+
 /** Maps an audit run to its exit code and output. */
 export async function runCli(
   argv: readonly string[],
   deps: AuditDeps,
-  io: Io = {
-    stdout: (text) => process.stdout.write(text),
-    stderr: (text) => process.stderr.write(text),
-  }
+  io: Io = PROCESS_IO
 ): Promise<number> {
   try {
     const report = await runRouteAudit(parseAuditArgs(argv), deps)

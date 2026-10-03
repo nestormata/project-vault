@@ -72,9 +72,7 @@ function fileIdOf(path: string): FileId | undefined {
 }
 
 function isSameFile(left: FileId | undefined, right: FileId | undefined): boolean {
-  return (
-    left !== undefined && right !== undefined && left.dev === right.dev && left.ino === right.ino
-  )
+  return left?.dev !== undefined && left.dev === right?.dev && left.ino === right?.ino
 }
 
 /**

@@ -8,8 +8,8 @@ import type { AppOptions } from '../app.js'
 /** The loader's injection seams that touch the DB, stubbed: no org to enumerate, no audit row. */
 export const DB_FREE_LOADER_DEPS: NonNullable<NonNullable<AppOptions['extension']>['loaderDeps']> =
   {
-    listOrgIds: async () => [],
-    auditWriter: async () => undefined,
+    listOrgIds: () => Promise.resolve([]),
+    auditWriter: () => Promise.resolve(undefined),
   }
 
 // A bare npm package specifier: `name` or `@scope/name`, each segment a lowercase npm name part.

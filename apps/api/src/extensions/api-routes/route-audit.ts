@@ -12,7 +12,7 @@ import type { ObservedRoute } from './route-observer.js'
  * review: an unclassified raw route fails, a duplicate key fails, a stale classification fails.
  */
 
-const ALLOWED_ENTRY_KEYS = [
+const ALLOWED_ENTRY_KEYS = new Set([
   'route',
   'reason',
   'securityOwner',
@@ -20,7 +20,7 @@ const ALLOWED_ENTRY_KEYS = [
   'expiresAfterStory',
   'revisitBy',
   'temporary',
-]
+])
 const ROUTE_KEY_PATTERN = /^(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS) (\/\S*|\*)$/u
 
 export type ClassificationEntry = {
@@ -82,7 +82,7 @@ function parseEntry(raw: unknown, index: number): ClassificationEntry {
   const path = `classifications[${index}]`
   if (!isRecord(raw)) throw new ClassificationInputError(`${path} must be an object`)
   for (const key of Object.keys(raw)) {
-    if (!ALLOWED_ENTRY_KEYS.includes(key)) {
+    if (!ALLOWED_ENTRY_KEYS.has(key)) {
       throw new ClassificationInputError(`${path} has unknown field "${key}"`)
     }
   }
@@ -179,8 +179,10 @@ export type AuditReport = {
   ok: boolean
 }
 
-const compareCodeUnits = (left: string, right: string): number =>
-  left < right ? -1 : left > right ? 1 : 0
+const compareCodeUnits = (left: string, right: string): number => {
+  if (left === right) return 0
+  return left < right ? -1 : 1
+}
 
 function isSecureRouteBuilt(route: ObservedRoute): boolean {
   const marker = route.pvRoute as { builtBy?: string } | undefined

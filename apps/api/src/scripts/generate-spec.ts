@@ -62,9 +62,8 @@ if (args.mode === 'composed' && composedOut) {
     const reason = (error as { reason?: unknown }).reason
     const known = error instanceof SpecLoadError || typeof reason === 'string'
     const label = typeof reason === 'string' ? `${reason}: ` : ''
-    process.stderr.write(
-      `generate-spec: ${known ? `${label}${(error as Error).message}` : 'composed generation failed'}\n`
-    )
+    const detail = known ? `${label}${(error as Error).message}` : 'composed generation failed'
+    process.stderr.write(`generate-spec: ${detail}\n`)
     process.exit(1)
   }
 }
