@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { REPO_ROOT, STAGE_DIR, packWebHost } from './pack-web-host.js'
 import { makeRecipe } from './lib/ci-wiring.js'
-import { resolveBin, resolveTrustedExecutable } from './lib/trusted-executable.js'
+import { resolveBin, resolveTrustedExecutable, trustedGit } from './lib/trusted-executable.js'
 import { extensionApiVersion, packInto, resolveExtensionApi } from './lib/web-host/fixture-pack.js'
 import { parseYaml } from './lib/yaml.js'
 
@@ -230,6 +230,23 @@ function rmSyncDist(): void {
 
 describe('composition kit integration: wiring (Story 68.3 AC-12)', () => {
   const command = 'pnpm vitest run scripts/check-composition-kit-integration.test.ts'
+
+  it('no fixture file the integration copies is gitignored, so CI composes what a dev composes (Story 68-6)', () => {
+    // A root .gitignore pattern (Stryker's `reports/`) once hid the mini pack's
+    // `(app)/(nested)/reports/[id]` route: present on disk, never committed, so only CI lacked it.
+    // `--cached --others` lists tracked and untracked files that match an ignore pattern.
+    const ignored = trustedGit(repositoryRoot, [
+      'ls-files',
+      '--cached',
+      '--others',
+      '--ignored',
+      '--exclude-standard',
+      '--',
+      'packages/composition-kit/tests/fixtures',
+      'scripts/web-host-consumer-fixture',
+    ])
+    expect(ignored.split('\n').filter(Boolean)).toEqual([])
+  })
 
   it('the CI Composition kit integration job runs it with COMPOSITION_KIT_INTEGRATION=1, so it can never skip there', () => {
     const ci = parseYaml(

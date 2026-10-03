@@ -327,7 +327,7 @@ compose_gated_row() { # port cookie location
   compose_expect_data_redirect "$port" /cm-area/__data.json "$cookie" "$location"
   compose_expect_redirect "$port" POST '/cm-area?/save' "$cookie" 303 "$location"
   compose_expect_redirect "$port" GET /cm-area/export "$cookie" 303 "$location"
-  compose_expect_redirect "$port" GET '/reports/7' "$cookie" 303 "$location"
+  compose_expect_redirect "$port" GET '/ledger/7' "$cookie" 303 "$location"
   return 0
 }
 
@@ -350,7 +350,7 @@ compose_hooks_checks() {
   if [[ "$(compose_request "$port" POST '/cm-area?/save' "$CM_AUTHED" http://evil.example)" != '403' ]]; then
     compose_fail 'a cross-origin form POST to /cm-area?/save was not refused with 403'
   fi
-  for handler in "${CM_HANDLERS[@]}" cm-reports-load; do
+  for handler in "${CM_HANDLERS[@]}" cm-ledger-load; do
     fixture_expect_count "$handler" 0
   done
 
@@ -371,7 +371,7 @@ compose_hooks_checks() {
   fixture_expect_count cm-area-action 1
   compose_expect_ok "$port" GET /cm-area/export "$CM_AUTHED" '"cmExport":true'
   fixture_expect_count cm-area-export 1
-  compose_expect_ok "$port" GET /reports/7 "$CM_AUTHED" 'CM report 7'
+  compose_expect_ok "$port" GET /ledger/7 "$CM_AUTHED" 'CM ledger 7'
   compose_expect_redirect "$port" GET /go/settings "$CM_ANON" 303 /login
   compose_expect_header "$port" /cm-area x-cm-before PV_HOOKS_SERVER_MARKER_6c1f0a
   compose_expect_header "$port" /billing x-cm-policy on
