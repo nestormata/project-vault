@@ -11,6 +11,25 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **Navigation as data with stable ids on every nav surface (Story 68-7, M5):** every PV nav surface
+  (primary and mobile nav, project tabs, the shell's brand, bell, MFA-banner link, account menu and
+  footer, the settings and platform indexes, sub-section link rows, the notifications tabs,
+  breadcrumbs, page back links, the error page's way back and the auth cross-links) now renders from
+  one registry of stable ids, and a composed app changes it with a nav delta (insert, remove, hide,
+  relabel, move, replace, reorder, at any depth) through `pvNav()` and
+  `@project-vault/composition-kit/nav` in kit 0.5.0. `web-host` ships the new `manifests/nav-ids.json`
+  and a `composed-nav.test.ts` that validates a composed app's delta. Two new CI guards,
+  `check-nav-ids` and `check-nav-surfaces`. PV's own rendered navigation is unchanged except that
+  **the project tabs are now translated** (Spanish under `es`). The rewritten nav files' hashes drift
+  with the next web-host release (`PrimaryNav.svelte`, `ProjectNav.svelte`, `AppShell.svelte`,
+  `ShellBrand.svelte`, `NotificationsLink.svelte`, `ShellAccount.svelte`, `Footer.svelte`,
+  `PlatformBreadcrumb.svelte`, `PlatformSettingsBreadcrumb.svelte`, `BackLink.svelte`,
+  `AssetDetailFooter.svelte`, `nav-model.ts`, `project-nav-model.ts`, `+error.svelte`, the settings
+  and platform index pages and every page whose back link, breadcrumb, link row or tab bar moved onto
+  the data): reconcile a CM override or replacement of one with `pv-compose --accept-host`.
+  `BackLink.svelte` now takes `{ node, projectId, credentialId? }` and `AssetDetailFooter.svelte`
+  `{ backNode, projectId }` instead of an href and a label. Nav ids removed: none. See
+  [docs/composition-kit.md](docs/composition-kit.md#navigation-delta-m5).
 - **Composable hooks, header policy and protected paths (Story 68-6):** a UI pack can contribute to
   every SvelteKit hook (server, universal, client), change PV's security-header policy and get its
   `(app)` routes protected, through `pvHooks()` in `@project-vault/composition-kit` 0.4.0 and the new
