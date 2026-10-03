@@ -15,7 +15,9 @@ name: Web-host release
 #   68.12, D1), so an early approval cannot publish a web-host whose API image does not exist. On a
 #   dry run that gate only reports;
 # - both jobs check out `github.sha` (the commit the provenance attests), and fail before the upload
-#   if the tag has moved since the run started;
+#   if the tag has moved since the run started. The release gate and the tag-moved check are
+#   scripts/web-host-release-gate.sh and scripts/web-host-release-tag-moved.sh, run from that
+#   checkout (so after it), taking every input from env;
 # - `publish` runs in the npm-publish environment (required reviewer) with OIDC Trusted Publishing
 #   and npm provenance. There is no NPM_TOKEN. Every publish goes to the `next` dist-tag; a
 #   maintainer promotes a verified version to `latest` separately;
@@ -109,48 +111,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPORT_ONLY: ${{ inputs.dry_run == true && '1' || '0' }}
-        run: |
-          set -uo pipefail
-          api_error() {
-            echo "ERROR: GitHub API error; retry the failed jobs. $1" >&2
-            exit 1
-          }
-          MISSING=0
-          if ! RELEASE_JSON="$(gh release view "$GITHUB_REF_NAME" --json isDraft,isPrerelease,tagName 2>&1)"; then
-            grep -q 'release not found' <<< "$RELEASE_JSON" || api_error "$RELEASE_JSON"
-            echo "Release: missing (expected before H3)"
-            MISSING=1
-          elif ! IS_DRAFT="$(jq -er '.isDraft | tostring' <<< "$RELEASE_JSON")"; then
-            api_error "unexpected gh release view output: $RELEASE_JSON"
-          elif [[ "$IS_DRAFT" != "false" ]]; then
-            echo "Release: draft, not published (H3 not done)"
-            MISSING=1
-          else
-            echo "Release: published"
-          fi
-          # Only a release-event run for this tag counts: container-publish is dispatched from main,
-          # so a dispatch run's head_sha is main's tip, not the tag it built.
-          if ! RUNS_JSON="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/container-publish.yml/runs?head_sha=$GITHUB_SHA&event=release&per_page=100" 2>&1)"; then
-            api_error "$RUNS_JSON"
-          fi
-          if ! GREEN="$(jq -e --arg tag "$GITHUB_REF_NAME" '[.workflow_runs[] | select(.conclusion == "success" and .event == "release" and .head_branch == $tag)] | length' <<< "$RUNS_JSON")"; then
-            api_error "unexpected container-publish runs output"
-          fi
-          if [[ "$GREEN" -gt 0 ]]; then
-            echo "container-publish: green for the $GITHUB_REF_NAME release at $GITHUB_SHA"
-          else
-            echo "container-publish: missing (no successful $GITHUB_REF_NAME release run at $GITHUB_SHA yet)"
-            MISSING=1
-          fi
-          if [[ "$MISSING" -eq 0 ]]; then
-            exit 0
-          fi
-          if [[ "$REPORT_ONLY" == "1" ]]; then
-            echo "Dry run: report only. A real run fails here until H3 and a green container-publish."
-            exit 0
-          fi
-          echo "ERROR: the GitHub Release or the container release for $GITHUB_REF_NAME is missing; no version was consumed; re-run failed jobs after H3 and a green container-publish." >&2
-          exit 1
+        run: ./scripts/web-host-release-gate.sh
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -218,17 +179,7 @@ jobs:
       - name: Fail if the tag moved
         if: inputs.dry_run != true
         shell: bash
-        run: |
-          set -euo pipefail
-          TAG_SHA="$(git ls-remote origin "refs/tags/$GITHUB_REF_NAME^{}" | cut -f1)"
-          if [[ -z "$TAG_SHA" ]]; then
-            TAG_SHA="$(git ls-remote origin "refs/tags/$GITHUB_REF_NAME" | cut -f1)"
-          fi
-          if [[ "$TAG_SHA" != "$GITHUB_SHA" ]]; then
-            echo "ERROR: tag moved after the run started; do not publish ($GITHUB_REF_NAME is ${TAG_SHA:-missing}, this run built $GITHUB_SHA)." >&2
-            exit 1
-          fi
-          echo "$GITHUB_REF_NAME still names $GITHUB_SHA."
+        run: ./scripts/web-host-release-tag-moved.sh
 
       - name: Publish the kit to npm next with OIDC provenance
         if: inputs.dry_run != true && matrix.node-version == 24 && steps.npm.outputs.published != 'true'
@@ -270,48 +221,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPORT_ONLY: ${{ inputs.dry_run == true && '1' || '0' }}
-        run: |
-          set -uo pipefail
-          api_error() {
-            echo "ERROR: GitHub API error; retry the failed jobs. $1" >&2
-            exit 1
-          }
-          MISSING=0
-          if ! RELEASE_JSON="$(gh release view "$GITHUB_REF_NAME" --json isDraft,isPrerelease,tagName 2>&1)"; then
-            grep -q 'release not found' <<< "$RELEASE_JSON" || api_error "$RELEASE_JSON"
-            echo "Release: missing (expected before H3)"
-            MISSING=1
-          elif ! IS_DRAFT="$(jq -er '.isDraft | tostring' <<< "$RELEASE_JSON")"; then
-            api_error "unexpected gh release view output: $RELEASE_JSON"
-          elif [[ "$IS_DRAFT" != "false" ]]; then
-            echo "Release: draft, not published (H3 not done)"
-            MISSING=1
-          else
-            echo "Release: published"
-          fi
-          # Only a release-event run for this tag counts: container-publish is dispatched from main,
-          # so a dispatch run's head_sha is main's tip, not the tag it built.
-          if ! RUNS_JSON="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/container-publish.yml/runs?head_sha=$GITHUB_SHA&event=release&per_page=100" 2>&1)"; then
-            api_error "$RUNS_JSON"
-          fi
-          if ! GREEN="$(jq -e --arg tag "$GITHUB_REF_NAME" '[.workflow_runs[] | select(.conclusion == "success" and .event == "release" and .head_branch == $tag)] | length' <<< "$RUNS_JSON")"; then
-            api_error "unexpected container-publish runs output"
-          fi
-          if [[ "$GREEN" -gt 0 ]]; then
-            echo "container-publish: green for the $GITHUB_REF_NAME release at $GITHUB_SHA"
-          else
-            echo "container-publish: missing (no successful $GITHUB_REF_NAME release run at $GITHUB_SHA yet)"
-            MISSING=1
-          fi
-          if [[ "$MISSING" -eq 0 ]]; then
-            exit 0
-          fi
-          if [[ "$REPORT_ONLY" == "1" ]]; then
-            echo "Dry run: report only. A real run fails here until H3 and a green container-publish."
-            exit 0
-          fi
-          echo "ERROR: the GitHub Release or the container release for $GITHUB_REF_NAME is missing; no version was consumed; re-run failed jobs after H3 and a green container-publish." >&2
-          exit 1
+        run: ./scripts/web-host-release-gate.sh
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -390,17 +300,7 @@ jobs:
       - name: Fail if the tag moved
         if: inputs.dry_run != true
         shell: bash
-        run: |
-          set -euo pipefail
-          TAG_SHA="$(git ls-remote origin "refs/tags/$GITHUB_REF_NAME^{}" | cut -f1)"
-          if [[ -z "$TAG_SHA" ]]; then
-            TAG_SHA="$(git ls-remote origin "refs/tags/$GITHUB_REF_NAME" | cut -f1)"
-          fi
-          if [[ "$TAG_SHA" != "$GITHUB_SHA" ]]; then
-            echo "ERROR: tag moved after the run started; do not publish ($GITHUB_REF_NAME is ${TAG_SHA:-missing}, this run built $GITHUB_SHA)." >&2
-            exit 1
-          fi
-          echo "$GITHUB_REF_NAME still names $GITHUB_SHA."
+        run: ./scripts/web-host-release-tag-moved.sh
 
       - name: Publish to npm next with OIDC provenance
         if: inputs.dry_run != true && matrix.node-version == 24

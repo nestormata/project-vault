@@ -25,9 +25,16 @@ const DOC = readFileSync(join(repositoryRoot, 'docs', 'releasing.md'), 'utf8')
 const RELEASE_TAG_RE = String.raw`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`
 // Story 68.12 (G5): the trigger matches the npm-publish environment policy and the tag ruleset.
 const TRIGGER_TAG = 'v[0-9]*'
-// Story 68.12 AC-4 (D1): the Release and container-publish gate, and the tag-moved check.
-const RELEASE_GATE = 'gh release view "$GITHUB_REF_NAME"'
-const TAG_MOVED_CHECK = 'git ls-remote origin "refs/tags/$GITHUB_REF_NAME^{}"'
+// Story 68.12 AC-4 (D1): the Release and container-publish gate, and the tag-moved check. Both jobs
+// run the same two scripts from their checkout of the attested commit.
+const GATE_SCRIPT_FILE = 'web-host-release-gate.sh'
+const TAG_MOVED_SCRIPT_FILE = 'web-host-release-tag-moved.sh'
+const RELEASE_GATE = `./scripts/${GATE_SCRIPT_FILE}`
+const TAG_MOVED_CHECK = `./scripts/${TAG_MOVED_SCRIPT_FILE}`
+const GATE_SCRIPT_PATH = join(repositoryRoot, 'scripts', GATE_SCRIPT_FILE)
+const TAG_MOVED_SCRIPT_PATH = join(repositoryRoot, 'scripts', TAG_MOVED_SCRIPT_FILE)
+const GATE_SCRIPT = readFileSync(GATE_SCRIPT_PATH, 'utf8')
+const TAG_MOVED_SCRIPT = readFileSync(TAG_MOVED_SCRIPT_PATH, 'utf8')
 const ATTESTED_REF = '${{ github.sha }}'
 
 interface Step {
@@ -150,20 +157,36 @@ function jobIdentityProblems(job: Job, name: string): string[] {
 }
 
 /** Story 68.12 AC-4: build exactly the commit the provenance attests, never the tag re-resolved
- * after a long approval wait. */
+ * after a long approval wait, and run the shared gate scripts only from that checkout. */
 function checkoutProblems(steps: Step[], name: string): string[] {
   const checkouts = steps.filter((step) => step.uses?.startsWith('actions/checkout@'))
-  return checkouts.length > 0 && checkouts.every((step) => step.with?.ref === ATTESTED_REF)
-    ? []
-    : [`${name}: actions/checkout does not use ref ${ATTESTED_REF} (the attested commit)`]
+  const firstCheckout = steps.findIndex((step) => checkouts.includes(step))
+  const scriptCalls = [RELEASE_GATE, TAG_MOVED_CHECK]
+    .map((call) => stepIndex(steps, call))
+    .filter((index) => index !== -1)
+  return [
+    ...(checkouts.length > 0 && checkouts.every((step) => step.with?.ref === ATTESTED_REF)
+      ? []
+      : [`${name}: actions/checkout does not use ref ${ATTESTED_REF} (the attested commit)`]),
+    ...(firstCheckout !== -1 && scriptCalls.every((index) => index > firstCheckout)
+      ? []
+      : [`${name}: a release gate script runs before the checkout of the attested commit`]),
+  ]
 }
 
 /** Story 68.12 AC-4: the Release gate is report-only on a dry run, and the tag-moved check runs
- * before the real upload. */
+ * before the real upload. Both are calls to the shared scripts, never inline copies. */
 function releaseGateProblems(steps: Step[], realUpload: number, name: string): string[] {
   const gate = steps.find((step) => step.run?.includes(RELEASE_GATE))
   const tagMoved = stepIndex(steps, TAG_MOVED_CHECK)
+  const inlined = steps.filter((step) =>
+    ['gh release view', 'git ls-remote'].some((command) => step.run?.includes(command))
+  )
   return [
+    ...inlined.map(
+      (step) =>
+        `${name}: step "${step.name ?? '(unnamed)'}" inlines a release gate instead of calling its script`
+    ),
     ...((gate?.env?.REPORT_ONLY ?? '').includes('inputs.dry_run == true')
       ? []
       : [`${name}: the release gate is not report-only on a dry run`]),
@@ -278,6 +301,41 @@ export function releaseWorkflowProblems(text: string): string[] {
   ]
 }
 
+/** Story 68.12 AC-4: the shared scripts keep the gate's fail-closed rules. Each needle is a rule a
+ * refactor could quietly drop; the behaviour tests below prove what they do. */
+const GH_RELEASE_VIEW = 'gh release view "$GITHUB_REF_NAME"'
+const GATE_SCRIPT_RULES: [string, string][] = [
+  [GH_RELEASE_VIEW, 'does not read the GitHub Release for the tag'],
+  ['event=release&per_page=100', 'does not ask for release-event runs with per_page=100'],
+  [
+    '.event == "release" and .head_branch == $tag',
+    'counts container-publish runs that are not release runs for this tag',
+  ],
+  ['[[ "$REPORT_ONLY" == "1" ]]', 'has no report-only mode'],
+]
+const TAG_MOVED_SCRIPT_RULES: [string, string][] = [
+  ['git ls-remote origin "refs/tags/$GITHUB_REF_NAME^{}"', 'does not peel the tag on origin'],
+  ['"$TAG_SHA" != "$GITHUB_SHA"', 'does not compare the tag with the attested commit'],
+]
+
+function scriptProblems(file: string, text: string, rules: [string, string][]): string[] {
+  return [
+    ...(text.startsWith('#!/usr/bin/env bash\n') ? [] : [`${file} has no bash shebang`]),
+    ...(text.includes('${{') ? [`${file} uses a workflow expression (inputs come from env)`] : []),
+    ...rules
+      .filter(([needle]) => !text.includes(needle))
+      .map(([, problem]) => `${file} ${problem}`),
+  ]
+}
+
+/** Every contract violation of the two shared release-gate scripts. */
+export function releaseScriptProblems(gate: string, tagMoved: string): string[] {
+  return [
+    ...scriptProblems(GATE_SCRIPT_FILE, gate, GATE_SCRIPT_RULES),
+    ...scriptProblems(TAG_MOVED_SCRIPT_FILE, tagMoved, TAG_MOVED_SCRIPT_RULES),
+  ]
+}
+
 /** Story 68.12 AC-1: the release doc must not contradict what a tag push does. Three assertions
  * only: it names the workflow before § 1, it names the workflow's real trigger pattern, and it
  * never says a tag push "triggers nothing" (the false sentence that shipped unnoticed in 68.2). */
@@ -302,9 +360,20 @@ function mutate(from: string, to: string): string {
   return WORKFLOW.replace(from, to)
 }
 
+/** Replaces the LAST occurrence: the `publish` job, which comes after `publish-kit`. */
+function mutateLast(from: string, to: string): string {
+  const index = WORKFLOW.lastIndexOf(from)
+  expect(index, `the workflow contains ${JSON.stringify(from)}`).toBeGreaterThan(-1)
+  return `${WORKFLOW.slice(0, index)}${to}${WORKFLOW.slice(index + from.length)}`
+}
+
 describe('web-host release workflow: this repo (Story 68.2 AC-10)', () => {
   it('meets the whole release contract', () => {
     expect(releaseWorkflowProblems(WORKFLOW)).toEqual([])
+  })
+
+  it('runs release gate scripts that keep their rules (Story 68.12 AC-4)', () => {
+    expect(releaseScriptProblems(GATE_SCRIPT, TAG_MOVED_SCRIPT)).toEqual([])
   })
 
   it('is described truthfully by docs/releasing.md (Story 68.12 AC-1)', () => {
@@ -321,6 +390,7 @@ describe('web-host release workflow: this repo (Story 68.2 AC-10)', () => {
 })
 
 const SKIPPED_RUN = 'run: echo skipped'
+const CHECKOUT_STEP = `      - uses: actions/checkout@v7\n        with:\n          ref: ${ATTESTED_REF}\n`
 const REAL_PUBLISH = 'npm publish --provenance --access public --tag next;'
 // The workflow's own SHA-pinned pnpm/action-setup line, read from it rather than repeated here.
 const PNPM_SETUP_PIN =
@@ -420,15 +490,27 @@ describe('web-host release workflow: each rule fails on a mutated copy (Story 68
     ],
     [
       'tag moved before the upload',
-      `${TAG_MOVED_CHECK} | cut -f1`,
-      'true | cut -f1',
+      `run: ${TAG_MOVED_CHECK}`,
+      SKIPPED_RUN,
       /publish-kit: the "Fail if the tag moved" check is missing/,
     ],
     [
       'release gate removed',
-      `if ! RELEASE_JSON="$(${RELEASE_GATE}`,
-      'if ! RELEASE_JSON="$(true',
-      /publish-kit: gate "gh release view/,
+      `run: ${RELEASE_GATE}`,
+      SKIPPED_RUN,
+      /publish-kit: gate "\.\/scripts\/web-host-release-gate\.sh" is missing/,
+    ],
+    [
+      'release gate inlined',
+      `run: ${RELEASE_GATE}`,
+      `run: ${GH_RELEASE_VIEW}`,
+      /publish-kit: step "Require the published .*" inlines a release gate/,
+    ],
+    [
+      'release gate before the checkout',
+      CHECKOUT_STEP,
+      '',
+      /publish-kit: a release gate script runs before the checkout/,
     ],
     [
       'release gate report-only on a dry run',
@@ -442,6 +524,88 @@ describe('web-host release workflow: each rule fails on a mutated copy (Story 68
   for (const [rule, from, to, expected] of cases) {
     it(`rejects a workflow that breaks the ${rule} rule`, () => {
       const problems = releaseWorkflowProblems(mutate(from, to))
+      expect(
+        problems.some((problem) => expected.test(problem)),
+        problems.join('\n')
+      ).toBe(true)
+    })
+  }
+
+  // Story 68.12 AC-4: the same rules hold for the `publish` job, the last copy of each call.
+  const publishCases: [string, string, string, RegExp][] = [
+    [
+      'release gate removed',
+      `run: ${RELEASE_GATE}`,
+      SKIPPED_RUN,
+      /^publish: gate "\.\/scripts\/web-host-release-gate\.sh" is missing/,
+    ],
+    [
+      'tag moved before the upload',
+      `run: ${TAG_MOVED_CHECK}`,
+      SKIPPED_RUN,
+      /^publish: the "Fail if the tag moved" check is missing/,
+    ],
+    [
+      'tag-moved check inlined',
+      `run: ${TAG_MOVED_CHECK}`,
+      'run: git ls-remote origin "refs/tags/$GITHUB_REF_NAME"',
+      /^publish: step "Fail if the tag moved" inlines a release gate/,
+    ],
+    [
+      'release gate before the checkout',
+      CHECKOUT_STEP,
+      '',
+      /^publish: a release gate script runs before the checkout/,
+    ],
+  ]
+
+  for (const [rule, from, to, expected] of publishCases) {
+    it(`rejects a publish job that breaks the ${rule} rule`, () => {
+      const problems = releaseWorkflowProblems(mutateLast(from, to))
+      expect(
+        problems.some((problem) => expected.test(problem)),
+        problems.join('\n')
+      ).toBe(true)
+    })
+  }
+})
+
+describe('web-host release gate scripts: each rule fails on a mutated copy (Story 68.12 AC-4)', () => {
+  const cases: [string, string, string, RegExp][] = [
+    ['gate', GH_RELEASE_VIEW, 'true', /does not read the GitHub Release/],
+    ['gate', '&per_page=100', '', /per_page=100/],
+    ['gate', ' and .head_branch == $tag', '', /not release runs for this tag/],
+    ['gate', 'if [[ "$REPORT_ONLY" == "1" ]]', 'if false', /has no report-only mode/],
+    ['gate', '#!/usr/bin/env bash', '#!/bin/sh', /web-host-release-gate\.sh has no bash shebang/],
+    [
+      'gate',
+      GH_RELEASE_VIEW,
+      'gh release view "${{ github.ref_name }}"',
+      /uses a workflow expression/,
+    ],
+    [
+      'tag-moved',
+      '"refs/tags/$GITHUB_REF_NAME^{}"',
+      '"refs/tags/$GITHUB_REF_NAME"',
+      /does not peel the tag/,
+    ],
+    [
+      'tag-moved',
+      '"$TAG_SHA" != "$GITHUB_SHA"',
+      '"$TAG_SHA" != "$TAG_SHA"',
+      /does not compare the tag/,
+    ],
+  ]
+
+  for (const [script, from, to, expected] of cases) {
+    it(`rejects a ${script} script that replaces ${from} with ${to || '(nothing)'}`, () => {
+      const isGate = script === 'gate'
+      const source = isGate ? GATE_SCRIPT : TAG_MOVED_SCRIPT
+      expect(source).toContain(from)
+      const mutated = source.replace(from, to)
+      const problems = isGate
+        ? releaseScriptProblems(mutated, TAG_MOVED_SCRIPT)
+        : releaseScriptProblems(GATE_SCRIPT, mutated)
       expect(
         problems.some((problem) => expected.test(problem)),
         problems.join('\n')
@@ -462,7 +626,7 @@ describe('web-host release workflow: moving the release gate after the upload fa
     const moved = `${WORKFLOW.slice(0, gateStart)}${WORKFLOW.slice(gateEnd + 1)}\n${gateStep}`
     const problems = releaseWorkflowProblems(moved)
     expect(problems, problems.join('\n')).toEqual([
-      'publish: gate "gh release view "$GITHUB_REF_NAME"" is missing or runs after the upload',
+      `publish: gate "${RELEASE_GATE}" is missing or runs after the upload`,
     ])
   })
 })
@@ -612,45 +776,61 @@ const runsOf = (...runs: GateRun[]): string =>
 const runsWith = (...conclusions: (string | null)[]): string =>
   runsOf(...conclusions.map((conclusion) => ({ conclusion })))
 
-// A stub `gh`, defined as a bash function (it takes precedence over any `gh` on PATH, so the test
-// writes no files): `gh release …` answers with $STUB_RELEASE, `gh api …` with $STUB_RUNS; the
-// words `notfound` and `error` make it fail the way the real CLI does.
+// A stub `gh`, defined as a bash function and handed to the script through `declare -fx` (an
+// exported function takes precedence over any `gh` on PATH, so the test writes no files):
+// `gh release …` answers with $STUB_RELEASE, `gh api …` with $STUB_RUNS; the words `notfound` and
+// `error` make it fail the way the real CLI does.
 const STUB_GH = `gh() {
-  if [[ "$1" == "release" ]]; then answer="$STUB_RELEASE"; else answer="$STUB_RUNS"; fi
+  local command="$1"
+  local answer
+  if [[ "$command" == "release" ]]; then answer="$STUB_RELEASE"; else answer="$STUB_RUNS"; fi
   case "$answer" in
     notfound) echo 'release not found' >&2; return 1 ;;
     error) echo 'HTTP 502: Bad Gateway (https://api.github.com/)' >&2; return 1 ;;
     *) printf '%s\\n' "$answer" ;;
   esac
 }
+declare -fx gh
 `
 
-function runReleaseGate(options: { release: string; runs: string; reportOnly?: boolean }): {
+interface ScriptResult {
   status: number
   stdout: string
   stderr: string
-} {
-  const script = runOf(JOBS.publish.steps, (step) => step.run?.includes(RELEASE_GATE) === true)
-  const run = spawnSync('bash', ['-c', `${STUB_GH}${script}`], {
+}
+
+/** Executes a shared release script (by its path, as the workflow does) with a stubbed command. */
+function runScript(stub: string, path: string, scriptEnv: Record<string, string>): ScriptResult {
+  const run = spawnSync('bash', ['-c', `${stub}"$SCRIPT_PATH"`], {
     encoding: 'utf8',
-    env: {
-      PATH: process.env.PATH,
-      GITHUB_REF_NAME: GATE_TAG,
-      GITHUB_REPOSITORY: 'nestormata/project-vault',
-      GITHUB_SHA: GATE_SHA,
-      REPORT_ONLY: options.reportOnly === true ? '1' : '0',
-      STUB_RELEASE: options.release,
-      STUB_RUNS: options.runs,
-    },
+    env: { PATH: process.env.PATH, SCRIPT_PATH: path, ...scriptEnv },
   })
   return { status: run.status ?? -1, stdout: run.stdout, stderr: run.stderr }
 }
 
+function runReleaseGate(options: {
+  release: string
+  runs: string
+  reportOnly?: boolean
+}): ScriptResult {
+  return runScript(STUB_GH, GATE_SCRIPT_PATH, {
+    GITHUB_REF_NAME: GATE_TAG,
+    GITHUB_REPOSITORY: 'nestormata/project-vault',
+    GITHUB_SHA: GATE_SHA,
+    REPORT_ONLY: options.reportOnly === true ? '1' : '0',
+    STUB_RELEASE: options.release,
+    STUB_RUNS: options.runs,
+  })
+}
+
 describe('web-host release workflow: the release gate by behaviour (Story 68.12 AC-4)', () => {
-  it('is the same script in publish-kit and publish', () => {
-    const gate = (step: Step): boolean => step.run?.includes(RELEASE_GATE) === true
+  it('is the same script call in publish-kit and publish', () => {
     const kitSteps = jobNamed(parseYaml(WORKFLOW) as Workflow, KIT_JOB)?.steps ?? []
-    expect(runOf(kitSteps, gate)).toBe(runOf(JOBS.publish.steps, gate))
+    for (const call of [RELEASE_GATE, TAG_MOVED_CHECK]) {
+      const isCall = (step: Step): boolean => step.run?.includes(call) === true
+      expect(runOf(kitSteps, isCall).trim(), call).toBe(call)
+      expect(runOf(JOBS.publish.steps, isCall).trim(), call).toBe(call)
+    }
   })
 
   it('passes with a published Release and a green container-publish run', () => {
@@ -712,5 +892,59 @@ describe('web-host release workflow: the release gate by behaviour (Story 68.12 
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain('Release: missing (expected before H3)')
     expect(result.stdout).toContain(CONTAINER_MISSING)
+  })
+})
+
+// A stub `git`: `git ls-remote origin refs/tags/<tag>^{}` answers with $STUB_PEELED (an annotated
+// tag's commit), the plain ref with $STUB_REF (a lightweight tag's commit); empty means no such ref.
+const STUB_GIT = `git() {
+  local ref="$3"
+  local sha="$STUB_REF"
+  if [[ "$ref" == *'^{}' ]]; then sha="$STUB_PEELED"; fi
+  if [[ -n "$sha" ]]; then printf '%s\\t%s\\n' "$sha" "$ref"; fi
+  return 0
+}
+declare -fx git
+`
+const MOVED_SHA = 'b'.repeat(40)
+
+function runTagMoved(peeled: string, ref: string): ScriptResult {
+  return runScript(STUB_GIT, TAG_MOVED_SCRIPT_PATH, {
+    GITHUB_REF_NAME: GATE_TAG,
+    GITHUB_SHA: GATE_SHA,
+    STUB_PEELED: peeled,
+    STUB_REF: ref,
+  })
+}
+
+describe('web-host release workflow: the tag-moved check by behaviour (Story 68.12 AC-4)', () => {
+  it('passes when the annotated tag still names the attested commit', () => {
+    const result = runTagMoved(GATE_SHA, MOVED_SHA)
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain(`${GATE_TAG} still names ${GATE_SHA}.`)
+  })
+
+  it('passes when a lightweight tag still names the attested commit', () => {
+    const result = runTagMoved('', GATE_SHA)
+    expect(result.status, result.stderr).toBe(0)
+  })
+
+  it('fails when the tag now names another commit', () => {
+    for (const [peeled, ref] of [
+      [MOVED_SHA, GATE_SHA],
+      ['', MOVED_SHA],
+    ] as const) {
+      const result = runTagMoved(peeled, ref)
+      expect(result.status, `${peeled} / ${ref}`).toBe(1)
+      expect(result.stderr).toContain(
+        `ERROR: tag moved after the run started; do not publish (${GATE_TAG} is ${MOVED_SHA}, this run built ${GATE_SHA}).`
+      )
+    }
+  })
+
+  it('fails when the tag is gone', () => {
+    const result = runTagMoved('', '')
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(`(${GATE_TAG} is missing, this run built ${GATE_SHA})`)
   })
 })
