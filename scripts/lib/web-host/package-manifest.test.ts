@@ -3,6 +3,7 @@ import {
   OPTIONAL_MANIFESTS,
   buildCompatibilityManifest,
   buildPackageJson,
+  kitVersionProblems,
   optionalManifestsToPack,
   packageJsonProblems,
   packageJsonShape,
@@ -98,11 +99,12 @@ describe('compatibility manifest (Story 68.2 AC-9)', () => {
   const text = buildCompatibilityManifest({
     pvRelease: '1.4.0-rc.1',
     extensionApiVersion: '3.25.0',
+    kitVersion: '0.1.0',
     toolchain: { kit: '2.70.3', svelte: '5.57.1', vite: '8.3.1', typescript: '6.0.3' },
     apiImageTag: 'ghcr.io/nestormata/project-vault/api:1.4.0-rc.1',
   })
 
-  it('has sorted keys, a trailing newline and kitVersion null', () => {
+  it('has sorted keys, a trailing newline and the composition kit version (Story 68.3)', () => {
     expect(text.endsWith('}\n')).toBe(true)
     const parsed = JSON.parse(text) as Record<string, unknown>
     expect(Object.keys(parsed)).toEqual([
@@ -114,7 +116,7 @@ describe('compatibility manifest (Story 68.2 AC-9)', () => {
       'toolchain',
     ])
     expect(Object.keys(parsed.toolchain as object)).toEqual(['kit', 'svelte', 'typescript', 'vite'])
-    expect(parsed.kitVersion).toBeNull()
+    expect(parsed.kitVersion).toBe('0.1.0')
     expect(parsed.schemaVersion).toBe(1)
   })
 })
@@ -126,5 +128,23 @@ describe('later generated manifests (Story 68.2 AC-9)', () => {
       'nav-ids.json',
     ])
     expect(optionalManifestsToPack(new Set(OPTIONAL_MANIFESTS))).toEqual([...OPTIONAL_MANIFESTS])
+  })
+})
+
+describe('composition kit version triangle (Story 68.3 AC-1)', () => {
+  it('passes when the kit package.json and the version its build embeds agree', () => {
+    expect(kitVersionProblems('0.1.0', '0.1.0')).toEqual([])
+  })
+
+  it('fails naming both values when they differ', () => {
+    expect(kitVersionProblems('0.1.0', '0.1.1')).toEqual([
+      'kitVersion mismatch: packages/composition-kit/package.json says 0.1.0 but the kit embeds 0.1.1 (src/version.ts)',
+    ])
+  })
+
+  it('fails a kit version that is not an exact version', () => {
+    expect(kitVersionProblems('^0.1.0', '^0.1.0')).toEqual([
+      expect.stringContaining('not an exact semver version'),
+    ])
   })
 })

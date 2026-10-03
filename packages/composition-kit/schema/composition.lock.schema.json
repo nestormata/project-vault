@@ -1,0 +1,166 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/nestormata/project-vault/packages/composition-kit/schema/composition.lock.schema.json",
+  "title": "composition.lock.json (@project-vault/composition-kit lockfileVersion 1)",
+  "description": "Written by pv-compose and committed. Hashes and paths only: no CM or PV file content. Deterministic: sorted keys and arrays, no timestamps, no absolute paths.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "lockfileVersion",
+    "compatibility",
+    "overrides",
+    "additions",
+    "removals",
+    "replacements",
+    "materialized",
+    "contributions",
+    "excludedPvTests",
+    "injectionPointsUsed",
+    "navIdsReferenced",
+    "apiRouteOverrides",
+    "notes"
+  ],
+  "definitions": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "version": { "type": "string", "minLength": 1 },
+    "nullableString": { "type": ["string", "null"] },
+    "stringArray": { "type": "array", "items": { "type": "string" } }
+  },
+  "properties": {
+    "lockfileVersion": { "const": 1 },
+    "compatibility": {
+      "type": "object",
+      "required": ["schemaVersion", "pvRelease", "extensionApiVersion", "kitVersion", "toolchain", "apiImageTag"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "pvRelease": { "$ref": "#/definitions/version" },
+        "extensionApiVersion": { "$ref": "#/definitions/version" },
+        "kitVersion": { "$ref": "#/definitions/version" },
+        "toolchain": {
+          "type": "object",
+          "required": ["kit", "svelte", "typescript", "vite"],
+          "properties": {
+            "kit": { "$ref": "#/definitions/version" },
+            "svelte": { "$ref": "#/definitions/version" },
+            "typescript": { "$ref": "#/definitions/version" },
+            "vite": { "$ref": "#/definitions/version" }
+          }
+        },
+        "apiImageTag": { "type": "string" }
+      }
+    },
+    "overrides": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "hostSha256", "cmSha256", "story", "hostVersion"],
+        "properties": {
+          "path": { "type": "string" },
+          "hostSha256": { "$ref": "#/definitions/sha256" },
+          "cmSha256": { "$ref": "#/definitions/sha256" },
+          "story": { "$ref": "#/definitions/nullableString" },
+          "hostVersion": { "$ref": "#/definitions/version" }
+        }
+      }
+    },
+    "additions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "cmSha256"],
+        "properties": { "path": { "type": "string" }, "cmSha256": { "$ref": "#/definitions/sha256" } }
+      }
+    },
+    "removals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "matched", "hostSha256", "hostVersion", "files"],
+        "properties": {
+          "path": { "type": "string" },
+          "matched": { "type": "integer", "minimum": 0 },
+          "hostSha256": {
+            "oneOf": [{ "$ref": "#/definitions/sha256" }, { "type": "null" }]
+          },
+          "hostVersion": { "$ref": "#/definitions/version" },
+          "files": { "$ref": "#/definitions/stringArray" }
+        }
+      }
+    },
+    "replacements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["target", "with", "hostSha256", "cmSha256", "story", "hostVersion"],
+        "properties": {
+          "target": { "type": "string" },
+          "with": { "type": "string" },
+          "hostSha256": { "$ref": "#/definitions/sha256" },
+          "cmSha256": { "$ref": "#/definitions/sha256" },
+          "story": { "$ref": "#/definitions/nullableString" },
+          "hostVersion": { "$ref": "#/definitions/version" }
+        }
+      }
+    },
+    "materialized": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "source", "cmSha256"],
+        "properties": {
+          "path": { "type": "string" },
+          "source": { "type": "string" },
+          "cmSha256": { "$ref": "#/definitions/sha256" }
+        }
+      }
+    },
+    "contributions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hooks", "nav", "theme", "protectedPaths"],
+      "properties": {
+        "hooks": { "type": "object", "additionalProperties": { "type": "string" } },
+        "nav": { "$ref": "#/definitions/nullableString" },
+        "theme": { "$ref": "#/definitions/nullableString" },
+        "protectedPaths": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["add", "remove"],
+              "properties": {
+                "add": { "$ref": "#/definitions/stringArray" },
+                "remove": { "$ref": "#/definitions/stringArray" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "excludedPvTests": { "$ref": "#/definitions/stringArray" },
+    "injectionPointsUsed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "file"],
+        "properties": { "name": { "type": "string" }, "file": { "$ref": "#/definitions/nullableString" } }
+      }
+    },
+    "navIdsReferenced": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "operative"],
+        "properties": { "id": { "type": "string" }, "operative": { "type": "boolean" } }
+      }
+    },
+    "apiRouteOverrides": { "$ref": "#/definitions/stringArray" },
+    "notes": { "$ref": "#/definitions/stringArray" }
+  }
+}

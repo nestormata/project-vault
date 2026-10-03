@@ -80,6 +80,7 @@ COPY fixtures/mock-api-routes-extension/package.json ./fixtures/mock-api-routes-
 COPY apps/web/package.json ./apps/web/
 COPY packages/api-contract-tests/package.json ./packages/api-contract-tests/
 COPY packages/cli/package.json ./packages/cli/
+COPY packages/composition-kit/package.json ./packages/composition-kit/
 COPY packages/vault-action/package.json ./packages/vault-action/
 RUN pnpm install --frozen-lockfile --ignore-scripts \
  && pnpm rebuild argon2 esbuild

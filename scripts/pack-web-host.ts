@@ -68,6 +68,7 @@ import {
   VENDORED_SHARED_DIR,
   buildCompatibilityManifest,
   buildPackageJson,
+  kitVersionProblems,
   optionalManifestsToPack,
   packageJsonProblems,
   packageReadme,
@@ -508,6 +509,8 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
   problems.push(...packageJsonProblems(packageJson))
   if (problems.length > 0) throw new PackError(problems)
 
+  const kitVersion = readKitVersion(problems)
+  if (problems.length > 0) throw new PackError(problems)
   compileConfigFactories()
   writeTsconfigBase()
   cpSync(join(REPO_ROOT, 'LICENSE'), join(STAGE_DIR, 'LICENSE'))
@@ -515,6 +518,7 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
   const compatibilityManifest = buildCompatibilityManifest({
     pvRelease: options.version,
     extensionApiVersion: extensionApi,
+    kitVersion,
     toolchain: {
       kit: peerDependencies['@sveltejs/kit'] ?? '',
       svelte: peerDependencies.svelte ?? '',
@@ -542,6 +546,20 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
     vendoredSharedFiles: shared.files,
     compatibilityManifest,
   }
+}
+
+const KIT_DIR = join(REPO_ROOT, 'packages', 'composition-kit')
+const KIT_EMBEDDED_VERSION = /export const KIT_VERSION = '([^']+)'/
+
+/** The composition kit's version (Story 68.3): its package.json, asserted equal to the one its
+ * build embeds, so the tuple can never name a version the kit does not report. */
+function readKitVersion(problems: string[]): string {
+  const { version } = readJson<{ version: string }>(join(KIT_DIR, MANIFEST))
+  const embedded = KIT_EMBEDDED_VERSION.exec(
+    readFileSync(join(KIT_DIR, 'src', 'version.ts'), 'utf8')
+  )
+  problems.push(...kitVersionProblems(version, embedded?.[1] ?? 'missing'))
+  return version
 }
 
 /** npm's own CLI next to the running node binary (never a $PATH lookup). */

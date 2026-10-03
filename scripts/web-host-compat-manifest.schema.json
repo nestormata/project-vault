@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/nestormata/project-vault/scripts/web-host-compat-manifest.schema.json",
   "title": "@project-vault/web-host compatibility manifest (manifests/compatibility.json)",
-  "description": "Story 68.2 AC-9 / design §11: the compatibility tuple a web-host release was built with. kitVersion is null until story 68-3 fills it.",
+  "description": "Story 68.2 AC-9 / design §11: the compatibility tuple a web-host release was built with. kitVersion is the composition kit's own exact version (Story 68.3).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -23,9 +23,7 @@
     "schemaVersion": { "const": 1 },
     "pvRelease": { "$ref": "#/definitions/exactVersion" },
     "extensionApiVersion": { "$ref": "#/definitions/exactVersion" },
-    "kitVersion": {
-      "oneOf": [{ "type": "null" }, { "$ref": "#/definitions/exactVersion" }]
-    },
+    "kitVersion": { "$ref": "#/definitions/exactVersion" },
     "toolchain": {
       "type": "object",
       "additionalProperties": false,

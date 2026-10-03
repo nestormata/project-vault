@@ -1,0 +1,73 @@
+{
+  "name": "@project-vault/composition-kit",
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "description": "Build-time composer for Project Vault's web-host: overlays a UI pack onto the web source, locks drift and checks version compatibility.",
+  "bin": {
+    "pv-compose": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./vite": {
+      "types": "./dist/vite/index.d.ts",
+      "default": "./dist/vite/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nestormata/project-vault.git",
+    "directory": "packages/composition-kit"
+  },
+  "homepage": "https://github.com/nestormata/project-vault/tree/main/packages/composition-kit",
+  "bugs": {
+    "url": "https://github.com/nestormata/project-vault/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --coverage",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json"
+  },
+  "peerDependencies": {
+    "svelte": ">=5",
+    "typescript": ">=5",
+    "vite": ">=6"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@project-vault/eslint-config": "workspace:*",
+    "@project-vault/tsconfig": "workspace:*",
+    "@types/node": "^26.6.2",
+    "@vitest/coverage-v8": "^5.0.1",
+    "eslint": "^10.11.0",
+    "svelte": "^5.57.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.1"
+  }
+}

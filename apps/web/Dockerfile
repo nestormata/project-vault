@@ -50,6 +50,7 @@ COPY fixtures/mock-ui-panel-extension/package.json ./fixtures/mock-ui-panel-exte
 COPY packages/agent/package.json ./packages/agent/
 COPY packages/api-contract-tests/package.json ./packages/api-contract-tests/
 COPY packages/cli/package.json ./packages/cli/
+COPY packages/composition-kit/package.json ./packages/composition-kit/
 COPY packages/vault-action/package.json ./packages/vault-action/
 RUN pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm rebuild esbuild
