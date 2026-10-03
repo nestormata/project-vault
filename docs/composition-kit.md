@@ -194,8 +194,15 @@ route came from.
   `/extensions/panels/` keep exactly their frozen panel headers, and no contribution reaches them,
   until Story 68-11 retires the panel.
 - **Start-up failures are caught in CI.** web-host ships `composed-hooks-init.test.ts`, which runs
-  every composition over the virtual modules: a bad policy, a hook of the wrong shape or a transport
-  collision fails the composed tree's test run before it can crash-loop a server.
+  every composition over the virtual modules (`checkComposedHooks`): a bad policy (including one
+  without `rules`/`routeSetHeaders` arrays), a hook of the wrong shape, a `handle.wrap` that returns
+  no function, a transport collision or a protected-path redirect loop fails the composed tree's
+  test run before it can crash-loop a server.
+- **Every header change is printed.** The same test prints one line per difference from PV's policy
+  (`pv-compose: header policy: added defaults.x-cm-policy`, `... changed ...`, `... removed ...`), so
+  CM's review sees each add, change and removal in the composed tree's test output. The kit cannot
+  compute it at compose time: the policy is code that runs against PV's own policy. Nothing is
+  printed when the policy is PV's.
 
 ### Protected paths
 

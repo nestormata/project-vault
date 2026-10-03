@@ -4,6 +4,7 @@ import {
   PV_HEADER_POLICY,
   composeHeaderPolicy,
   describeHeaderPolicyDelta,
+  headerPolicyDeltaNotes,
   resolveHeaders,
   validateHeaderPolicy,
   type HeaderPolicy,
@@ -427,5 +428,40 @@ describe('invariant 0 and anti-allowlist (AC-6, AC-11)', () => {
     expect(source).not.toMatch(
       /allowedHeaders|ALLOWED_HEADERS|ALLOWED_PATHS|permittedPaths|headerWhitelist|HEADER_WHITELIST/
     )
+  })
+})
+
+// Code review 68-6 (AC-6/Q3): the delta is surfaced, one note per difference, so a CM header
+// change shows up in the composed tree's test output (composed-hooks-init.test.ts).
+describe('headerPolicyDeltaNotes (code review 68-6)', () => {
+  it('one note per added, changed and removed entry; none for an identical policy', () => {
+    expect(headerPolicyDeltaNotes({ added: [], changed: [], removed: [] })).toEqual([])
+    expect(
+      headerPolicyDeltaNotes({
+        added: ['defaults.x-cm-policy', 'rules.cm-billing'],
+        changed: ['defaults.content-security-policy'],
+        removed: ['defaults.x-frame-options'],
+      })
+    ).toEqual([
+      'header policy: added defaults.x-cm-policy',
+      'header policy: added rules.cm-billing',
+      'header policy: changed defaults.content-security-policy',
+      'header policy: removed defaults.x-frame-options',
+    ])
+  })
+})
+
+describe('validateHeaderPolicy — a policy of the wrong shape (code review 68-6)', () => {
+  it('names a missing rules/routeSetHeaders array instead of "not iterable"', () => {
+    expect(() => validateHeaderPolicy({ defaults: {} } as never)).toThrow(
+      'invalid header policy: rules and routeSetHeaders must be an array'
+    )
+    expect(() =>
+      validateHeaderPolicy({ defaults: {}, rules: [], routeSetHeaders: 'x' } as never)
+    ).toThrow('invalid header policy: routeSetHeaders must be an array')
+    expect(() => validateHeaderPolicy(null as never)).toThrow(
+      'invalid header policy: expected an object { defaults, rules, routeSetHeaders } (got null)'
+    )
+    expect(() => validateHeaderPolicy(undefined as never)).toThrow('(got undefined)')
   })
 })

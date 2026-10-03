@@ -9,6 +9,7 @@ export {
   PV_HEADER_POLICY,
   composeHeaderPolicy,
   describeHeaderPolicyDelta,
+  headerPolicyDeltaNotes,
   resolveHeaders,
   validateHeaderPolicy,
   type HeaderMatch,

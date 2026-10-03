@@ -152,8 +152,32 @@ function deepFreeze<T>(value: T): T {
   return value
 }
 
+/** A contribution may return anything: name a missing or mistyped top-level field instead of
+ * failing later with a bare "not iterable" TypeError (code review 68-6). */
+function checkShape(policy: unknown) {
+  if (typeof policy !== 'object' || policy === null) {
+    throw new Error(
+      'invalid header policy: expected an object { defaults, rules, routeSetHeaders } ' +
+        `(got ${policy === null ? 'null' : typeof policy})`
+    )
+  }
+  const { rules, routeSetHeaders } = policy as Record<string, unknown>
+  const fields: Array<[string, unknown]> = [
+    ['rules', rules],
+    ['routeSetHeaders', routeSetHeaders],
+  ]
+  const missing = fields.filter(([, value]) => !Array.isArray(value)).map(([key]) => key)
+  if (missing.length > 0) {
+    throw new Error(
+      `invalid header policy: ${missing.join(' and ')} must be an array ` +
+        '(keep them from pv, e.g. { ...pv, defaults })'
+    )
+  }
+}
+
 /** Integrity validation (fail fast, every problem in one message) + a deep-frozen copy. */
 export function validateHeaderPolicy(policy: HeaderPolicy): HeaderPolicy {
+  checkShape(policy)
   const errors: string[] = []
   validateHeaders('defaults', policy.defaults, errors)
   const ids = new Set<string>()
@@ -295,6 +319,16 @@ export function describeHeaderPolicyDelta(
   delta.changed.sort(byCodeUnit)
   delta.removed.sort(byCodeUnit)
   return delta
+}
+
+/** Q3 (code review 68-6): the delta as one informational note per difference, for the composed
+ * tree's test output (`composed-hooks-init.test.ts`). Empty when the policy is PV's own. */
+export function headerPolicyDeltaNotes(delta: HeaderPolicyDelta): string[] {
+  return [
+    ...delta.added.map((entry) => `header policy: added ${entry}`),
+    ...delta.changed.map((entry) => `header policy: changed ${entry}`),
+    ...delta.removed.map((entry) => `header policy: removed ${entry}`),
+  ]
 }
 
 /** PV's own policy (byte-identical to `main`'s `securityHeadersFor`, minus the frozen panel branch
