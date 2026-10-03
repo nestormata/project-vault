@@ -6,7 +6,8 @@
 
 - `pvHooks()` Vite plugin (`@project-vault/composition-kit/vite`): generates `virtual:pv-hooks/server`,
   `/universal` and `/client` from the lock for web-host's composable hooks (Story 68-6).
-- The composer derives the exact route id of every CM route under `src/routes/(app)/` and records it in
+- The composer derives the exact route id of every CM route under `src/routes/(app)/` (pages,
+  including a layout-reset `+page@….svelte`, and endpoints) and records it in
   `contributions.protectedPaths.derived` (a lock without it is read as `derived: []`); validates
   `protectedPaths.add`/`remove` for integrity (malformed entries, an entry in both lists, a redirect
   loop over `/login`, `/register` or `/vault`) and notes the rest (public CM routes, a removed PV

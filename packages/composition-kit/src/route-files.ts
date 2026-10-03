@@ -9,10 +9,16 @@ const ROUTES_DIR = 'src/routes/'
  * not routes. */
 const ROUTE_FILE = /^\+(page(\.server)?\.(ts|js)|page\.svelte|server\.(ts|js))$/
 
+/** A page that resets its layout (`+page@.svelte`, `+page@(group).svelte`, `+page@[id].svelte`)
+ * is a page too, and the one most in need of the hook: it skips `(app)/+layout.server.ts`. */
+function isLayoutResetPage(name: string): boolean {
+  return name.startsWith('+page@') && name.endsWith('.svelte')
+}
+
 export function isRouteFile(path: string): boolean {
   if (!path.startsWith(ROUTES_DIR)) return false
   const name = path.slice(path.lastIndexOf('/') + 1)
-  return ROUTE_FILE.test(name)
+  return ROUTE_FILE.test(name) || isLayoutResetPage(name)
 }
 
 /** `src/routes/(app)/cm-area/+page.svelte` -> `/(app)/cm-area`; `src/routes/+page.svelte` -> `/`. */

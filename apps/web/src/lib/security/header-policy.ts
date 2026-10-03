@@ -57,6 +57,18 @@ const MATCH_KEYS = ['exact', 'startsWith', 'routeId', 'test'] as const
 const TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
 const FORBIDDEN_VALUE_CHARS = /[\r\n\0]/
 
+/** RFC 9110 §5.5 field-value characters: HTAB, SP, VCHAR and obs-text (U+0080-U+00FF). Anything
+ * else passes `event.setHeaders` but fails when the response is built (undici rejects a value above
+ * U+00FF, Node's http layer rejects other control characters), so every response under the policy
+ * would fail: reject it at boot instead. */
+function isFieldValueChar(code: number): boolean {
+  return code === 0x09 || (code >= 0x20 && code <= 0x7e) || (code >= 0x80 && code <= 0xff)
+}
+
+function hasInvalidValueChar(value: string): boolean {
+  return [...value].some((char) => !isFieldValueChar(char.codePointAt(0) ?? 0))
+}
+
 function matchEntry(match: object): [string, unknown] | undefined {
   return Object.entries(match).find(([key]) => (MATCH_KEYS as readonly string[]).includes(key))
 }
@@ -88,11 +100,16 @@ function validateHeaders(where: string, headers: unknown, errors: string[]) {
       errors.push(`${where}: "${name}" cannot be set through the header policy (use cookies)`)
     if (seen.has(lower)) errors.push(`${where}: header "${lower}" is set twice`)
     seen.add(lower)
-    if (typeof value !== 'string' || value === '')
-      errors.push(`${where}: header "${name}" must be a non-empty string`)
-    else if (FORBIDDEN_VALUE_CHARS.test(value))
-      errors.push(`${where}: header "${name}" value contains CR, LF or NUL`)
+    const problem = valueProblem(value)
+    if (problem !== undefined) errors.push(`${where}: header "${name}" ${problem}`)
   }
+}
+
+function valueProblem(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value === '') return 'must be a non-empty string'
+  if (FORBIDDEN_VALUE_CHARS.test(value)) return 'value contains CR, LF or NUL'
+  if (hasInvalidValueChar(value)) return 'value contains a character not allowed in a header value'
+  return undefined
 }
 
 function validateMatch(where: string, match: unknown, errors: string[]) {

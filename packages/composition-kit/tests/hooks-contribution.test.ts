@@ -82,6 +82,15 @@ describe('route-files (the one route-id helper)', () => {
     expect(isRouteFile('src/routes/a/+page.server.js')).toBe(true)
   })
 
+  it('a page that resets its layout (+page@.svelte, +page@(group).svelte) is a route file', () => {
+    // Code review 68-6: such a page escapes (app)/+layout.server.ts, so the hook is its only gate.
+    expect(routeIdOfFile('src/routes/(app)/cm-reset/+page@.svelte')).toBe('/(app)/cm-reset')
+    expect(routeIdOfFile('src/routes/(app)/a/b/+page@(app).svelte')).toBe('/(app)/a/b')
+    expect(routeIdOfFile('src/routes/(app)/a/[id]/+page@[id].svelte')).toBe('/(app)/a/[id]')
+    expect(routeIdOfFile('src/routes/(app)/x/+layout@.svelte')).toBeNull()
+    expect(routeIdOfFile('src/routes/(app)/x/+page@.server.ts')).toBeNull()
+  })
+
   it('strips groups with a linear split (long input)', () => {
     expect(stripRouteGroups('/(app)/(nested)/reports/[id]')).toBe('/reports/[id]')
     expect(stripRouteGroups('/(app)')).toBe('/')

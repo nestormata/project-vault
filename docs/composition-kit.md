@@ -169,12 +169,17 @@ handle returns carry no policy headers (as before 68-6).
 
 A server hook file changes it with `export const headerPolicy = (pv) => ({ ...pv, ... })`. The
 returned policy is final: it may add, change or remove rules and defaults. It is validated
-(well-formed names and values, no CR/LF/NUL, no `set-cookie`, unique rule ids, one matcher key) and
+(well-formed names and values: only RFC 9110 field-value characters, so no CR/LF/NUL, no other
+control character and nothing above U+00FF; no `set-cookie`, unique rule ids, one matcher key) and
 deep-frozen. It is **never refused**: `describeHeaderPolicyDelta(PV_HEADER_POLICY, composed)` records
 every added, changed and removed header and rule (a `test` predicate rule is reported as
 `(opaque match)`). PV's policy applies to CM UI exactly as to PV UI: no rule is keyed on where a
 route came from.
 
+- **Key a security-relevant rule on `routeId`.** `exact` and `startsWith` compare the raw
+  `event.url.pathname`, which keeps percent-encoding, while Kit decodes the path before it matches a
+  route: `/%63m-area` renders `/cm-area` but does not match `{ startsWith: '/cm-area' }`, so it gets
+  the defaults instead of that rule. A `{ routeId }` rule matches however the URL is spelled.
 - **Change headers through `headerPolicy`, not `event.setHeaders` in a handle:** a handle that sets a
   name the policy already set makes Kit throw `"<name>" header is already set` on that request.
 - **Route-level `setHeaders` conflicts fail at start-up (Q2).** `/shares/[token]` and
@@ -199,9 +204,11 @@ unprotected URL onto a protected route, and a percent-encoded URL (`/%73ettings/
 decodes for matching but not in `event.url.pathname`.
 
 The composer **derives the exact route id** of every CM route under `src/routes/(app)/` (an addition
-or an override with a `+page.svelte`, `+page.ts`, `+page.server.ts` or `+server.ts`), so CM pages,
-their data requests, their form actions and their `+server` endpoints are gated by the hook. That
-matters because Kit runs no layout load for `+server` and runs a form action before any load.
+or an override with a `+page.svelte` (including a layout-reset `+page@….svelte`), `+page.ts`,
+`+page.server.ts` or `+server.ts`), so CM pages, their data requests, their form actions and their
+`+server` endpoints are gated by the hook. That matters because Kit runs no layout load for
+`+server` (nor `(app)/+layout.server.ts` for a layout-reset page) and runs a form action before
+any load.
 CM routes outside `(app)` are public by design and listed in a note.
 
 - `protectedPaths.add` adds path prefixes; `protectedPaths.remove` removes a prefix (PV's or an

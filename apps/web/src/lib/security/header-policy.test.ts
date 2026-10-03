@@ -101,6 +101,20 @@ describe('validateHeaderPolicy — integrity only (AC-5)', () => {
       /rule "nul": header "x-a" value contains CR, LF or NUL/,
     ],
     [
+      // Code review 68-6: undici's Headers rejects a value above U+00FF (ByteString) when Kit
+      // applies the headers, so every response under the policy would be a 500.
+      'a character above U+00FF in a value',
+      withRules({ id: 'quote', match: { exact: '/y' }, headers: { 'x-a': 'a’b' } }),
+      /rule "quote": header "x-a" value contains a character not allowed in a header value/,
+    ],
+    [
+      // Node's http layer rejects other control characters (ERR_INVALID_CHAR) when it writes the
+      // response, so every response under the policy would fail.
+      'a control character in a value',
+      withRules({ id: 'ctl', match: { exact: '/y' }, headers: { 'x-a': 'a\u0001b\u007f' } }),
+      /rule "ctl": header "x-a" value contains a character not allowed in a header value/,
+    ],
+    [
       'non-token name',
       withRules({ id: 't', match: { exact: '/y' }, headers: { 'x a': '1' } }),
       /rule "t": "x a" is not a valid header name/,
@@ -139,7 +153,12 @@ describe('validateHeaderPolicy — integrity only (AC-5)', () => {
         withRules({
           id: 'anything',
           match: { exact: '/z' },
-          headers: { 'x-totally-custom': 'v', 'content-security-policy': 'default-src *' },
+          headers: {
+            'x-totally-custom': 'v',
+            'content-security-policy': 'default-src *',
+            // HTAB and obs-text (U+0080-U+00FF) are valid field-value characters.
+            'x-latin1': 'a\tb é',
+          },
         })
       )
     ).not.toThrow()
