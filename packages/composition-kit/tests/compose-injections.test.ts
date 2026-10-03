@@ -204,6 +204,52 @@ describe('behavior injection needs the registry route and scope (AC-17)', () => 
     expect(result.ok).toBe(true)
   })
 
+  it('fails actions declared at a layout- or shell-scoped point, which have no form actions', async () => {
+    const world = makeWorld({ hostFiles: registry(), packFiles: files() })
+    const pack = manifest({
+      injections: { 'shell.head': [{ component: `./${TILE}`, actions: `./${ACTIONS}` }] },
+    })
+    const result = await run(world, pack)
+    expect(result.ok).toBe(false)
+    expect(result.messages.join('\n')).toContain(
+      'injections.shell.head: a layout-scoped point has no form actions'
+    )
+    expect(result.messages.join('\n')).toContain('override the page (M1)')
+  })
+
+  it('still lets a layout-scoped point carry a load', async () => {
+    const world = makeWorld({ hostFiles: registry(), packFiles: files() })
+    const pack = manifest({
+      injections: { 'shell.head': [{ component: `./${TILE}`, load: `./${LOAD}` }] },
+    })
+    expect((await run(world, pack)).messages).toEqual([])
+  })
+
+  it('fails a load or actions declared at an error-scoped point, which runs no server code', async () => {
+    const hostFiles = {
+      'manifests/injection-points.json': JSON.stringify({
+        schemaVersion: 1,
+        points: [
+          {
+            name: 'root.error.after',
+            file: 'src/routes/+error.svelte',
+            routeId: '/',
+            scope: 'error',
+          },
+        ],
+      }),
+    }
+    const world = makeWorld({ hostFiles, packFiles: files() })
+    const pack = manifest({
+      injections: { 'root.error.after': [{ component: `./${TILE}`, load: `./${LOAD}` }] },
+    })
+    const result = await run(world, pack)
+    expect(result.ok).toBe(false)
+    expect(result.messages.join('\n')).toContain(
+      'injections.root.error.after: an error-scoped point has no load or actions'
+    )
+  })
+
   it('fails composition when the page server file exports a default action (Kit forbids mixing)', async () => {
     const world = makeWorld({
       hostFiles: {

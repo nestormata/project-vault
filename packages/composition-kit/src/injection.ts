@@ -289,11 +289,36 @@ function routeFinding(ctx: Context, point: string, route: PointRoute | undefined
   return true
 }
 
+/** Behavior the host has no way to run is refused rather than recorded and silently dropped: an
+ * error page has no load or actions, and a layout has a load but no form actions. */
+function unrunnableBehavior(
+  ctx: Context,
+  point: string,
+  route: PointRoute | undefined,
+  declared: readonly Declared[]
+): boolean {
+  const way = 'override the page (M1)'
+  if (route?.scope === 'error') {
+    ctx.out.problems.push(
+      `injections.${point}: an error-scoped point has no load or actions (Kit runs no server code for an error page); ${way}`
+    )
+    return true
+  }
+  if ((route?.scope === 'layout' || route?.scope === 'shell') && declaresActions(declared)) {
+    ctx.out.problems.push(
+      `injections.${point}: a layout-scoped point has no form actions (Kit has no actions on a layout); ${way}`
+    )
+    return true
+  }
+  return false
+}
+
 function checkBehavior(ctx: Context, point: string, declared: readonly Declared[]): void {
   // No behavior, or an unknown point (reported by the registry check): nothing to route.
   if (!declaresBehavior(declared) || !ctx.registryFiles.has(point)) return
   const route = ctx.routes.get(point)
   if (routeFinding(ctx, point, route)) return
+  if (unrunnableBehavior(ctx, point, route, declared)) return
   if (declaresActions(declared) && route?.scope === 'page') {
     const problem = defaultActionProblem(ctx, point, ctx.registryFiles.get(point) ?? null)
     if (problem !== null) ctx.out.problems.push(problem)
