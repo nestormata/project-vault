@@ -1694,3 +1694,64 @@ export const DIRECT_DB_ACCESS_CLASSIFICATIONS: DirectDbAccessClassification[] = 
     reviewer: SECURITY_OWNER,
   },
 ]
+
+/**
+ * Story 68.14 AC-2 (b): runtime route audit classifications for the routes `secureRoute()` does
+ * not build and `PUBLIC_ROUTE_EXEMPTIONS` does not list: the explicit 405 stubs, the swagger-ui
+ * routes, the CORS preflight catch-all and the operational status endpoint. A HEAD route Fastify
+ * derives from a classified GET needs no entry (the audit derives it). Keys are prefixed
+ * `METHOD /full/url`. An extension supplies its own entries in the same shape through the audit's
+ * `--classifications` file, reviewed under the same rules.
+ */
+export type RuntimeRouteClassification = { route: string; reason: string }
+
+// `registerMethodNotAllowed()` registers GET/PUT/PATCH/DELETE 405 stubs for each path below
+// (modules/auth/routes.ts under the /api/v1/auth prefix, modules/auth/cli-login-routes.ts).
+const METHOD_NOT_ALLOWED_STUB_PATHS = [
+  '/api/v1/auth/register',
+  '/api/v1/auth/login',
+  '/api/v1/auth/refresh',
+  '/api/v1/auth/logout',
+  '/api/v1/auth/mfa/enroll',
+  '/api/v1/auth/mfa/verify-enrollment',
+  '/api/v1/auth/mfa/regenerate-recovery-codes',
+  '/api/v1/auth/mfa/recover',
+  '/api/v1/auth/mfa/verify-login',
+  '/api/v1/auth/cli-login',
+  '/api/v1/auth/cli/mfa/verify-login',
+  '/api/v1/auth/cli/refresh',
+  '/api/v1/auth/cli/logout',
+]
+
+const METHOD_NOT_ALLOWED_STUB_METHODS = ['GET', 'PUT', 'PATCH', 'DELETE']
+
+const SWAGGER_UI_REASON =
+  'Swagger UI route registered by @fastify/swagger-ui only when API docs are enabled; serves the API description or static UI assets, never tenant data.'
+
+export const RUNTIME_ROUTE_CLASSIFICATIONS: RuntimeRouteClassification[] = [
+  ...METHOD_NOT_ALLOWED_STUB_PATHS.flatMap((path) =>
+    METHOD_NOT_ALLOWED_STUB_METHODS.map((method) => ({
+      route: `${method} ${path}`,
+      reason:
+        'Explicit 405 stub (registerMethodNotAllowed): answers { code: method_not_allowed } with an Allow: POST header for a method the path does not serve; touches no data.',
+    }))
+  ),
+  ...[
+    '/api/v1/docs',
+    '/api/v1/docs/json',
+    '/api/v1/docs/yaml',
+    '/api/v1/docs/static/index.html',
+    '/api/v1/docs/static/swagger-initializer.js',
+    '/api/v1/docs/static/*',
+  ].map((path) => ({ route: `GET ${path}`, reason: SWAGGER_UI_REASON })),
+  {
+    route: 'OPTIONS *',
+    reason:
+      '@fastify/cors preflight catch-all: answers CORS headers for an allowed origin only and carries no tenant data.',
+  },
+  {
+    route: 'GET /status',
+    reason:
+      'Operational status endpoint: authenticated by its own static operational-status token (or a loopback peer), not a session; payload is operational health only.',
+  },
+]
