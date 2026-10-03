@@ -29,6 +29,7 @@ function lockWith(nav: string | null, navIdsHost?: string[]): CompositionLock {
     injections: [],
     navIdsReferenced: [],
     ...(navIdsHost === undefined ? {} : { navIdsHost }),
+    apiRouteOverrides: [],
     notes: [],
   })
 }

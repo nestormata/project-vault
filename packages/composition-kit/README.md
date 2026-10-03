@@ -269,6 +269,14 @@ pv-compose --pack <dir> [--app <dir>] [--manifest <file>] [--host <dir>] [--lock
 Exit codes: `0` success, `1` an integrity, drift, compatibility or `--check` failure (every problem is
 printed in one run, then a count), `2` a usage error. `--dry-run` writes nothing.
 
+`--module-pack <dir>` is the module pack's package root. Besides the extension-api version check, the kit
+imports the pack's entry (`exports["."]`, else `main`; this runs the entry's top-level code) and records
+its `apiRoutes.override` table in the lock's `apiRouteOverrides` section (`lockfileVersion` 2): one
+`{ method, url, mode, replaceSecurity }` object per override, sorted. `hooksFactory()` is never called.
+A pack dir with no `main`/`exports["."]` is tolerated (empty table plus a note); a declared entry that
+is missing, throws or is malformed fails. A `lockfileVersion` 1 lock is read, rewritten as version 2 by the next `pv-compose`, and reported by
+`--check` as a version mismatch.
+
 ## Dev mode
 
 ```ts

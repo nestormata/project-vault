@@ -586,7 +586,7 @@ describe('AC-8/AC-9: the lock, --check, drift and --accept-host', () => {
     await run(world, manifest())
     const lockPath = join(world.app, LOCK_FILE)
     const lock = JSON.parse(readFileSync(lockPath, 'utf8')) as Record<string, unknown>
-    writeFileSync(lockPath, JSON.stringify({ ...lock, lockfileVersion: 2 }))
+    writeFileSync(lockPath, JSON.stringify({ ...lock, lockfileVersion: 3 }))
     expect((await run(world, manifest(), { check: true })).messages).toEqual([
       expect.stringContaining('newer kit'),
     ])

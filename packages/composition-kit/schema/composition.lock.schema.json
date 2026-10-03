@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/nestormata/project-vault/packages/composition-kit/schema/composition.lock.schema.json",
-  "title": "composition.lock.json (@project-vault/composition-kit lockfileVersion 1)",
+  "title": "composition.lock.json (@project-vault/composition-kit lockfileVersion 2)",
   "description": "Written by pv-compose and committed. Hashes and paths only: no CM or PV file content. Deterministic: sorted keys and arrays, no timestamps, no absolute paths.",
   "type": "object",
   "additionalProperties": false,
@@ -27,10 +27,17 @@
     "stringArray": { "type": "array", "items": { "type": "string" } }
   },
   "properties": {
-    "lockfileVersion": { "const": 1 },
+    "lockfileVersion": { "const": 2 },
     "compatibility": {
       "type": "object",
-      "required": ["schemaVersion", "pvRelease", "extensionApiVersion", "kitVersion", "toolchain", "apiImageTag"],
+      "required": [
+        "schemaVersion",
+        "pvRelease",
+        "extensionApiVersion",
+        "kitVersion",
+        "toolchain",
+        "apiImageTag"
+      ],
       "properties": {
         "schemaVersion": { "const": 1 },
         "pvRelease": { "$ref": "#/definitions/version" },
@@ -70,7 +77,10 @@
         "type": "object",
         "additionalProperties": false,
         "required": ["path", "cmSha256"],
-        "properties": { "path": { "type": "string" }, "cmSha256": { "$ref": "#/definitions/sha256" } }
+        "properties": {
+          "path": { "type": "string" },
+          "cmSha256": { "$ref": "#/definitions/sha256" }
+        }
       }
     },
     "removals": {
@@ -162,7 +172,10 @@
       "items": {
         "type": "object",
         "required": ["name", "file"],
-        "properties": { "name": { "type": "string" }, "file": { "$ref": "#/definitions/nullableString" } }
+        "properties": {
+          "name": { "type": "string" },
+          "file": { "$ref": "#/definitions/nullableString" }
+        }
       }
     },
     "injections": {
@@ -199,7 +212,21 @@
       "description": "Story 68.7 (informational): the web-host nav ids this lock was written against.",
       "$ref": "#/definitions/stringArray"
     },
-    "apiRouteOverrides": { "$ref": "#/definitions/stringArray" },
+    "apiRouteOverrides": {
+      "description": "Story 68.14: the module pack's apiRoutes.override table (method, normalized url, mode, replaceSecurity), sorted by method and url. Empty without --module-pack. Recorded for review, never refused; --check compares it.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["method", "url", "mode", "replaceSecurity"],
+        "properties": {
+          "method": { "enum": ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] },
+          "url": { "type": "string", "pattern": "^/" },
+          "mode": { "enum": ["replace", "wrap"] },
+          "replaceSecurity": { "type": "boolean" }
+        }
+      }
+    },
     "notes": { "$ref": "#/definitions/stringArray" }
   }
 }

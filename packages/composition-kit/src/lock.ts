@@ -10,8 +10,12 @@ import type { Relocated } from './materialize.js'
 import type { LockInjection } from './injection.js'
 import type { CompatibilityTuple } from './types.js'
 import type { ProtectedPathsRecord } from './protected-paths.js'
+import type { ApiRouteOverrideLock } from './module-pack.js'
 
-export const LOCKFILE_VERSION = 1
+/** Story 68.14: 2. `apiRouteOverrides` became an array of `{ method, url, mode, replaceSecurity }`
+ * objects (it was always `[]` in version 1). A version 1 lock is still read; recomposing rewrites
+ * it as version 2, and `--check` reports the version difference instead of a diff. */
+export const LOCKFILE_VERSION = 2
 export const SCHEMA_PATH = 'packages/composition-kit/schema/composition.lock.schema.json'
 
 /** Where each manifest contribution landed in the composed tree (what later stories read). */
@@ -44,7 +48,8 @@ export interface CompositionLock {
   /** Story 68.7 (informational): the web-host nav ids this lock was written against, so the next
    * compose can name the ones that are new (inherited). Absent when the host has no nav delta. */
   navIdsHost?: string[]
-  apiRouteOverrides: string[]
+  /** Story 68.14: the module pack's `apiRoutes.override` table, sorted by `METHOD url`. */
+  apiRouteOverrides: ApiRouteOverrideLock[]
   notes: string[]
 }
 
@@ -79,6 +84,7 @@ export interface LockInput {
   navIdsReferenced: { id: string; operative: boolean }[]
   navIdsDeclared?: string[]
   navIdsHost?: string[]
+  apiRouteOverrides: ApiRouteOverrideLock[]
   notes: string[]
 }
 
@@ -115,7 +121,7 @@ export function buildLock(input: LockInput): CompositionLock {
     ...(input.navIdsHost === undefined
       ? {}
       : { navIdsHost: [...input.navIdsHost].sort(compareCodeUnits) }),
-    apiRouteOverrides: [],
+    apiRouteOverrides: sortBy(input.apiRouteOverrides, (entry) => `${entry.method} ${entry.url}`),
     notes: [...new Set(input.notes)].sort(compareCodeUnits),
   }
 }
@@ -153,7 +159,12 @@ export function parseLock(
   if (missing.length > 0) {
     return { problem: `${label} is missing ${missing.join(', ')} (schema: ${SCHEMA_PATH})` }
   }
-  return { lock: withDerivedDefault(record as unknown as CompositionLock) }
+  return { lock: withV1Overrides(withDerivedDefault(record as unknown as CompositionLock)) }
+}
+
+/** A version 1 lock always had `apiRouteOverrides: []`; read it as the empty table. */
+function withV1Overrides(lock: CompositionLock): CompositionLock {
+  return lock.lockfileVersion === 1 ? { ...lock, apiRouteOverrides: [] } : lock
 }
 
 /** Locks written before Story 68.6 have no `contributions.protectedPaths.derived`. */
@@ -189,6 +200,27 @@ function normativeText(lock: CompositionLock): string {
     removals: lock.removals.map((entry) => entry.path),
   }
   return `${JSON.stringify(sortKeys(picked), null, 2)}\n`
+}
+
+/** The normative sections whose content differs between two locks, in lock order (`--check` names
+ * them so the drifted section is visible even when the diff hunk shows only a nested value). */
+export function driftedSections(
+  committed: CompositionLock,
+  regenerated: CompositionLock
+): string[] {
+  const view = (lock: CompositionLock) =>
+    new Map(
+      Object.entries({
+        ...lock,
+        injections: lock.injections ?? [],
+        removals: lock.removals.map((entry) => entry.path),
+      })
+    )
+  const left = view(committed)
+  const right = view(regenerated)
+  return [...NORMATIVE, 'removals', 'lockfileVersion'].filter(
+    (key) => JSON.stringify(sortKeys(left.get(key))) !== JSON.stringify(sortKeys(right.get(key)))
+  )
 }
 
 /** `--check`: empty when the committed lock equals the regenerated one in the normative sections. */

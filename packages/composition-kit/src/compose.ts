@@ -1,5 +1,5 @@
 import { apply, persistAcceptances } from './apply.js'
-import { lockDifference } from './lock.js'
+import { LOCKFILE_VERSION, driftedSections, lockDifference } from './lock.js'
 import { plan, type ComposeOptions, type ComposePlan } from './plan.js'
 
 export interface RunOptions extends ComposeOptions {
@@ -32,10 +32,27 @@ function checkMessages(composed: ComposePlan): string[] {
   if (composed.existingLock === undefined || composed.lock === undefined) {
     return [`no committed lock at ${composed.lockPath}; run pv-compose and commit it`]
   }
+  const committedVersion = composed.existingLock.lockfileVersion
+  if (committedVersion !== LOCKFILE_VERSION) {
+    return [
+      `composition.lock.json is lockfileVersion ${committedVersion} but this kit writes lockfileVersion ${LOCKFILE_VERSION}; run pv-compose and commit the lock (recomposing rewrites it)`,
+    ]
+  }
   const difference = lockDifference(composed.existingLock, composed.lock)
-  return difference === ''
-    ? []
-    : [`composition.lock.json is out of date; run pv-compose and commit the lock\n${difference}`]
+  if (difference === '') return []
+  const sections = driftedSections(composed.existingLock, composed.lock).join(', ')
+  return [
+    `composition.lock.json is out of date (${sections}); run pv-compose and commit the lock\n${difference}`,
+  ]
+}
+
+function logMigration(composed: ComposePlan, log: (line: string) => void): void {
+  const committedVersion = composed.existingLock?.lockfileVersion
+  if (committedVersion !== undefined && committedVersion !== LOCKFILE_VERSION) {
+    log(
+      `pv-compose: migrating composition.lock.json from lockfileVersion ${committedVersion} to ${LOCKFILE_VERSION}`
+    )
+  }
 }
 
 /** Plans, then (unless `dryRun` or `check`) writes. `check` uses the plan only, so CI can verify a
@@ -72,6 +89,7 @@ export async function compose(options: RunOptions): Promise<ComposeResult> {
     log(`pv-compose: dry run, nothing written (${composed.summary.files} files planned)`)
     return { plan: composed, ok: true, written: false, messages }
   }
+  logMigration(composed, log)
   const started = Date.now()
   log('pv-compose: copy')
   apply(composed, options.appRoot)

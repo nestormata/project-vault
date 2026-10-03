@@ -53,7 +53,7 @@ describe('pv-compose CLI contract (AC-2)', () => {
     )
     expect(result.out + result.err).not.toContain('cm secret-looking content')
     expect(readFileSync(join(world.app, 'composition.lock.json'), 'utf8')).toContain(
-      '"lockfileVersion": 1'
+      '"lockfileVersion": 2'
     )
   })
 
