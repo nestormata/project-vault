@@ -2,6 +2,32 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.29.0 — 2026-10-03
+
+contract-hash: sha256:4db413b5e7a61f453ff3e740bb8564990c5089f876e218d0ae5ca8d6db568c8d
+
+### Added
+
+- `ApiRoutesDeclaration.app` (optional, Story 68.14, M7): app-level API behaviour with the same
+  `wrap`/`replace` model as routes. `app.hooks.prepend` / `app.hooks.append` name request-lifecycle
+  phases (`onRequest`, `preValidation`, `preHandler`, `onSend`) whose functions run app-wide, before
+  PV's own app-wide hooks or after them (and before PV's route plugins). `app.errorHandler` and
+  `app.notFoundHandler` (`'wrap' | 'replace'`) change PV's root error and not-found handlers. A
+  handler that throws or rejects falls back to PV's own handler with the original error.
+- `ApiRoutesHooks.app` (optional): the functions behind `apiRoutes.app` (`hooks`, `errorHandler`,
+  `notFoundHandler`). After `hooksFactory()` a declared handler or hook phase must have a function;
+  an implementation with no declaration only warns.
+- New exported types `ApiRoutesAppDeclaration`, `AppBehaviourHooks`, `AppHookPhase`,
+  `AppErrorHandler`, `AppErrorWrapHandler`, `AppNotFoundHandler` and `AppNotFoundWrapHandler`.
+
+Validation is integrity only (known keys, the closed phase list, `wrap`/`replace`); there is no
+prefix, count cap or allowlist. Failures use the existing `invalid-manifest-field` reason. In
+3.27.0 and 3.28.0 `apiRoutes.app` was an unknown key and failed registration, so no existing pack
+can be using it; a pack without `app` loads unchanged.
+
+Per `docs/extension-api-versioning-policy.md` rows 1 and 11 ("adding an optional field to any
+exported object type"), this change is NON-BREAKING — a MINOR. The floor stays `>=3.0.0`.
+
 ## 3.28.0 — 2026-10-02
 
 contract-hash: sha256:432993f45a239971e9a502dcc302236499349966c967776f2f47f9af01a4734f

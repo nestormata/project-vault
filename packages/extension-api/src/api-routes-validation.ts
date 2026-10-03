@@ -8,8 +8,10 @@ import { API_ROUTE_HOOK_PHASES, API_ROUTE_METHODS } from './hooks/api-routes.js'
 import type {
   ApiRouteHookPhase,
   ApiRouteImplementation,
+  ApiRoutesAppDeclaration,
   ApiRoutesDeclaration,
   ApiRoutesHooks,
+  AppBehaviourHooks,
 } from './hooks/api-routes.js'
 
 /**
@@ -21,7 +23,8 @@ import type {
 
 export const MAX_API_ROUTE_URL_LENGTH = 2048
 
-const TOP_LEVEL_KEYS = ['add', 'override']
+const TOP_LEVEL_KEYS = ['add', 'override', 'app']
+const APP_KEYS = ['hooks', 'errorHandler', 'notFoundHandler']
 const ADD_KEYS = ['method', 'url', 'options']
 const ADD_OPTION_KEYS = ['security', 'bodyLimit', 'schema', 'hooks']
 const OVERRIDE_KEYS = ['method', 'url', 'mode', 'schema', 'hooks', 'replaceSecurity', 'security']
@@ -125,6 +128,22 @@ function validateOverrideFields(entry: UnknownRecord, path: string): void {
   }
 }
 
+function assertWrapOrReplace(value: unknown, path: string): void {
+  if (value !== undefined && value !== 'wrap' && value !== 'replace') {
+    fail(`${path} must be 'wrap' or 'replace'`)
+  }
+}
+
+/** Story 68.14: `apiRoutes.app`. Integrity only: known keys, closed phase list, wrap/replace. */
+function validateAppShape(value: unknown): void {
+  if (value === undefined) return
+  const app = assertRecord(value, 'apiRoutes.app')
+  assertKnownKeys(app, APP_KEYS, 'apiRoutes.app')
+  validateOverrideHooks(app.hooks, 'apiRoutes.app.hooks')
+  assertWrapOrReplace(app.errorHandler, 'apiRoutes.app.errorHandler')
+  assertWrapOrReplace(app.notFoundHandler, 'apiRoutes.app.notFoundHandler')
+}
+
 function validateEntries(list: unknown, listName: 'add' | 'override', seen: Set<string>): void {
   if (list === undefined) return
   const path = `apiRoutes.${listName}`
@@ -151,6 +170,7 @@ export function validateApiRoutesShape(apiRoutes: unknown): void {
   const seen = new Set<string>()
   validateEntries(declaration.add, 'add', seen)
   validateEntries(declaration.override, 'override', seen)
+  validateAppShape(declaration.app)
 }
 
 type DeclaredEntry = { key: string; schema: boolean; phases: ApiRouteHookPhase[] }
@@ -170,7 +190,7 @@ function declaredEntries(declaration: ApiRoutesDeclaration): DeclaredEntry[] {
 }
 
 function hasHookFunction(
-  implementation: ApiRouteImplementation,
+  implementation: ApiRouteImplementation | AppBehaviourHooks,
   phase: ApiRouteHookPhase
 ): boolean {
   const value = new Map(Object.entries(implementation.hooks ?? {})).get(phase)
@@ -221,4 +241,64 @@ export function assertApiRouteImplementations(
       warn(`hooks.apiRoutes.routes has an implementation for undeclared key "${key}"`)
     }
   }
+}
+
+function article(word: string): string {
+  return /^[aeiou]/u.test(word) ? 'an' : 'a'
+}
+
+function assertAppFunction(declared: unknown, implemented: unknown, name: string): void {
+  if (declared === undefined || typeof implemented === 'function') return
+  fail(
+    `apiRoutes.app declares ${article(name)} ${name} but hooks.apiRoutes.app has no function for it`
+  )
+}
+
+function declaredAppPhases(app: ApiRoutesAppDeclaration): ApiRouteHookPhase[] {
+  return [...(app.hooks?.prepend ?? []), ...(app.hooks?.append ?? [])]
+}
+
+function warnUndeclaredApp(
+  app: ApiRoutesAppDeclaration,
+  implemented: AppBehaviourHooks,
+  warn: (message: string) => void
+): void {
+  const handlers = [
+    ['errorHandler', app.errorHandler, implemented.errorHandler],
+    ['notFoundHandler', app.notFoundHandler, implemented.notFoundHandler],
+  ] as const
+  for (const [name, declared, fn] of handlers) {
+    if (fn !== undefined && declared === undefined) {
+      warn(`hooks.apiRoutes.app has an implementation for undeclared ${name}`)
+    }
+  }
+  const declaredPhases = new Set<string>(declaredAppPhases(app))
+  for (const phase of Object.keys(implemented.hooks ?? {}).sort()) {
+    if (!declaredPhases.has(phase)) {
+      warn(`hooks.apiRoutes.app has an implementation for undeclared hook phase "${phase}"`)
+    }
+  }
+}
+
+/**
+ * Story 68.14: the post-`hooksFactory()` check of `apiRoutes.app`. A declared handler or hook phase
+ * needs a function; an implementation with no declaration only warns.
+ */
+export function assertAppImplementations(
+  apiRoutes: ApiRoutesDeclaration | undefined,
+  hooks: ApiRoutesHooks | undefined,
+  warn: (message: string) => void
+): void {
+  const declared = apiRoutes?.app ?? {}
+  const implemented = hooks?.app ?? {}
+  assertAppFunction(declared.errorHandler, implemented.errorHandler, 'errorHandler')
+  assertAppFunction(declared.notFoundHandler, implemented.notFoundHandler, 'notFoundHandler')
+  for (const phase of declaredAppPhases(declared)) {
+    if (!hasHookFunction(implemented, phase)) {
+      fail(
+        `apiRoutes.app declares ${article(phase)} ${phase} hook but hooks.apiRoutes.app has no function for it`
+      )
+    }
+  }
+  warnUndeclaredApp(declared, implemented, warn)
 }

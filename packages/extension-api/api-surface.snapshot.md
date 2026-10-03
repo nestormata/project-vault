@@ -330,6 +330,24 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.27.0
   - type: `string`
 
+## export `ApiRoutesAppDeclaration`
+
+- since: 3.29.0
+- kind: type
+- type: `ApiRoutesAppDeclaration`
+- member: `errorHandler?`
+  - since: 3.29.0
+  - type: `"replace" | "wrap" | undefined`
+  - union-members: `undefined`, `"replace"`, `"wrap"`
+- member: `hooks?`
+  - since: 3.29.0
+  - type: `{ prepend?: AppHookPhase[]; append?: AppHookPhase[]; } | undefined`
+  - union-members: `undefined`, `{ prepend?: AppHookPhase[]; append?: AppHookPhase[]; }`
+- member: `notFoundHandler?`
+  - since: 3.29.0
+  - type: `"replace" | "wrap" | undefined`
+  - union-members: `undefined`, `"replace"`, `"wrap"`
+
 ## export `ApiRoutesDeclaration`
 
 - since: 3.27.0
@@ -339,6 +357,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.27.0
   - type: `ApiRouteAddDeclaration[] | undefined`
   - union-members: `undefined`, `ApiRouteAddDeclaration[]`
+- member: `app?`
+  - since: 3.29.0
+  - type: `ApiRoutesAppDeclaration | undefined`
+  - union-members: `undefined`, `ApiRoutesAppDeclaration`
 - member: `override?`
   - since: 3.27.0
   - type: `ApiRouteOverrideDeclaration[] | undefined`
@@ -391,6 +413,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.27.0
 - kind: type
 - type: `ApiRoutesHooks`
+- member: `app?`
+  - since: 3.29.0
+  - type: `AppBehaviourHooks | undefined`
+  - union-members: `undefined`, `AppBehaviourHooks`
 - member: `routes?`
   - since: 3.27.0
   - type: `Partial<Record<`GET ${string}` | `HEAD ${string}` | `POST ${string}` | `PUT ${string}` | `PATCH ${string}` | `DELETE ${string}` | `OPTIONS ${string}`, ApiRouteImplementation>> | undefined`
@@ -402,6 +428,59 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - kind: type
 - type: `ApiRouteWrapHandler<Req, Reply>`
 - call-signature: `(ctx: ApiRouteContext | ApiRoutePublicContext, req: Req, reply: Reply, next: () => Promise<unknown>): unknown`
+
+## export `AppBehaviourHooks`
+
+- since: 3.29.0
+- kind: type
+- type: `AppBehaviourHooks`
+- member: `errorHandler?`
+  - since: 3.29.0
+  - type: `ApiRouteAnyFunction | undefined`
+  - union-members: `undefined`, `ApiRouteAnyFunction`
+- member: `hooks?`
+  - since: 3.29.0
+  - type: `Partial<Record<"onRequest" | "preValidation" | "preHandler" | "onSend", ApiRouteAnyFunction | ApiRouteAnyFunction[]>> | undefined`
+  - union-members: `undefined`, `Partial<Record<"onRequest" | "preValidation" | "preHandler" | "onSend", ApiRouteAnyFunction | ApiRouteAnyFunction[]>>`
+- member: `notFoundHandler?`
+  - since: 3.29.0
+  - type: `ApiRouteAnyFunction | undefined`
+  - union-members: `undefined`, `ApiRouteAnyFunction`
+
+## export `AppErrorHandler`
+
+- since: 3.29.0
+- kind: type
+- type: `AppErrorHandler<Req, Reply>`
+- call-signature: `(error: Error, req: Req, reply: Reply): unknown`
+
+## export `AppErrorWrapHandler`
+
+- since: 3.29.0
+- kind: type
+- type: `AppErrorWrapHandler<Req, Reply>`
+- call-signature: `(error: Error, req: Req, reply: Reply, next: () => Promise<unknown>): unknown`
+
+## export `AppHookPhase`
+
+- since: 3.29.0
+- kind: type
+- type: `"onRequest" | "preValidation" | "preHandler" | "onSend"`
+- union-members: `"onRequest"`, `"preValidation"`, `"preHandler"`, `"onSend"`
+
+## export `AppNotFoundHandler`
+
+- since: 3.29.0
+- kind: type
+- type: `AppNotFoundHandler<Req, Reply>`
+- call-signature: `(req: Req, reply: Reply): unknown`
+
+## export `AppNotFoundWrapHandler`
+
+- since: 3.29.0
+- kind: type
+- type: `AppNotFoundWrapHandler<Req, Reply>`
+- call-signature: `(req: Req, reply: Reply, next: () => Promise<unknown>): unknown`
 
 ## export `AuditEventSourceHost`
 
@@ -978,7 +1057,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.28.0"`
+- type: `"3.29.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 

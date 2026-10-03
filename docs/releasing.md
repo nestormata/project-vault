@@ -163,7 +163,7 @@ npm dist-tag add @project-vault/extension-api@X.Y.Z latest
 `extension-api-v1.1.0`, `-v3.15.0`, `-v3.23.0`, `-v3.24.1`, `-v3.25.0`, `-v3.27.0`). `3.27.0` (Story 68.8,
 M7 `apiRoutes`) was tagged on merge commit `c610e486`, published by run `37088769144` (shasum
 `7f9423e286a678c41a679363ff1d170c90df83df`); `latest` moves to it only after CentralizeMe verifies it.
-The package source is at `3.28.0` (Story 71.1, unreleased; the tag push is maintainer-only).
+The package source is at `3.29.0` (Story 68.14, unreleased; the tag push is maintainer-only). `3.28.0` (Story 71.1) is also unreleased.
 `3.26.0` was never published (71.1 renumbered to `3.28.0` after 68.8 took `3.27.0`). `3.24.2` was a
 documentation-only patch that was never published; `3.25.0` supersedes it.
 `3.24.0` was never tagged and is superseded by `3.24.1`. Every other intermediate contract version

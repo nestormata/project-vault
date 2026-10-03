@@ -40,7 +40,11 @@ import type { ExtensionDbScopeEntry, ExtensionRuntimeContext } from './db-access
 import type { ProjectArchiveNotifier, ProjectCreatePolicy } from './hooks/project-lifecycle.js'
 import type { ModuleDataRouteHandler } from './hooks/module-data.js'
 import type { ApiRoutesHooks } from './hooks/api-routes.js'
-import { assertApiRouteImplementations, validateApiRoutesShape } from './api-routes-validation.js'
+import {
+  assertApiRouteImplementations,
+  assertAppImplementations,
+  validateApiRoutesShape,
+} from './api-routes-validation.js'
 
 /**
  * AC6 — reverse-DNS-style manifest name, e.g. "com.acme.sso-extension". The two quantified
@@ -1471,6 +1475,7 @@ export function registerExtension(
   assertApiRouteImplementations(manifest.apiRoutes, hooks.apiRoutes, (message) =>
     logger.warn(message)
   )
+  assertAppImplementations(manifest.apiRoutes, hooks.apiRoutes, (message) => logger.warn(message))
 
   return {
     manifest: {
