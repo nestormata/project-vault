@@ -135,13 +135,14 @@ export function protectedPathsFindings(input: ProtectedPathsInput): ProtectedPat
     if (isAppGroupRoute(id)) continue // removed on purpose; already noted
     notes.push(`CM route ${id} is public: not under (app) and not in protectedPaths.add`)
   }
+  notes.sort(compareCodeUnits)
   const summary =
     `protected paths: ${derived.length} derived (app) routes, ${uniqueAdd.length} added, ` +
     `${uniqueRemove.length} removed (${notes.length} note${notes.length === 1 ? '' : 's'})`
   return {
     record: { add: uniqueAdd, remove: uniqueRemove, derived },
     problems,
-    notes: notes.sort(compareCodeUnits),
+    notes,
     summary,
   }
 }

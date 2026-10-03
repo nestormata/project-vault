@@ -65,8 +65,8 @@ function functionList(name: string, key: string, value: unknown): Fn[] {
 export function readHandleContribution<H = Fn>(value: unknown): HandleContribution<H> {
   if (value === undefined) return { before: [], after: [], wrap: undefined }
   if (typeof value === 'function') return { before: [value as H], after: [], wrap: undefined }
-  const known = ['before', 'after', 'wrap']
-  if (!isPlainObject(value) || Object.keys(value).some((key) => !known.includes(key))) {
+  const known = new Set(['before', 'after', 'wrap'])
+  if (!isPlainObject(value) || Object.keys(value).some((key) => !known.has(key))) {
     throw new TypeError(
       'hooks.server: export "handle" must be a function or { before?, after?, wrap? } ' +
         `(got ${describeValue(value)})`
