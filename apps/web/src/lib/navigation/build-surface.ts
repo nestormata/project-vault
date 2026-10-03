@@ -81,8 +81,24 @@ function externalOf(href: string): NavNode['external'] {
 }
 
 /** `link`/`badge-link` mean "inside this app": a same-origin path, never `//host` or a scheme. */
+const SCHEME = /^[a-z][a-z0-9+.-]*:/i
+
+/** `link`/`badge-link` mean "inside this app": a path, absolute (`/x`) or, as SvelteKit's
+ * `resolve()` returns it during server rendering with relative paths, relative (`../x`); never
+ * `//host`, a backslash form or a scheme (`javascript:`, `https:`). */
 function isSameOriginPath(href: string): href is ResolvedPathname {
-  return href.startsWith('/') && !href.startsWith('//') && !href.startsWith('/\\')
+  return (
+    !SCHEME.test(href) &&
+    !href.startsWith('//') &&
+    !href.startsWith('\\') &&
+    !href.startsWith('/\\')
+  )
+}
+
+/** The absolute path a (possibly relative) href points at from the current page. */
+function absolutePath(href: string, pathname: string): string {
+  if (href.startsWith('/')) return href
+  return new URL(href, `http://nav.invalid${pathname === '' ? '/' : pathname}`).pathname
 }
 
 function hrefFields<C>(
@@ -95,7 +111,7 @@ function hrefFields<C>(
   if (kind === 'external') return { external: externalOf(href) }
   if (!isSameOriginPath(href)) {
     throw new NavItemError(
-      `a link href must be a same-origin path (starting with one "/"); use kind "external" for an absolute URL, got ${JSON.stringify(href)}`
+      `a link href must be a path inside this app (no scheme, not //host); use kind "external" for an absolute URL, got ${JSON.stringify(href)}`
     )
   }
   return { href }
@@ -108,8 +124,9 @@ function isActive<C>(
 ): boolean {
   if (typeof item.match === 'function') return item.match(ctx)
   if (href === undefined) return false
-  if (item.match === 'exact') return ctx.pathname === href
-  return ctx.pathname === href || ctx.pathname.startsWith(`${href}/`)
+  const target = absolutePath(href, ctx.pathname)
+  if (item.match === 'exact') return ctx.pathname === target
+  return ctx.pathname === target || ctx.pathname.startsWith(`${target}/`)
 }
 
 function evaluate<C extends { pathname: string }>(

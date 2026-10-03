@@ -195,6 +195,9 @@ describe('web-host tarball: this checkout (Story 68.2 AC-7)', () => {
       'apps/web/src/lib/platform/cli-version-policy-view.test.ts',
       'apps/web/src/lib/server/e2e-global-setup-security.test.ts',
       'apps/web/src/tailwind-source-boundary.test.ts',
+      // Story 68.7: they read the kit's source and apps/web/eslint.config.js.
+      'apps/web/src/lib/navigation/kit-contract.test.ts',
+      'apps/web/src/lib/navigation/nav-lint-scope.test.ts',
     ]) {
       expect(excluded.get(file)?.join(' '), file).toMatch(/outside the package/)
     }

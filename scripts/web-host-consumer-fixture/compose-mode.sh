@@ -793,9 +793,18 @@ compose_dev() {
   # Story 68.7 AC-13: an edit of nav.ts reaches the next SSR response through virtual:pv-nav
   # (a re-export of the materialized file, so Vite's module graph follows it; no restart).
   log 'dev: edit the nav delta'
+  if ! compose_wait_for "$port" /m4 'CM Account Billing' 30; then
+    echo "fixture: GET /m4 answered HTTP $(compose_get "$port" /m4); body head:" >&2
+    head -c 3000 "$WORK/body.txt" >&2
+    cat "$WORK/dev.err" "$WORK/dev.out" >&2
+    return 1
+  fi
   sed -i 's/CM Account Billing/CM Account Invoices/' "$PACK/nav.ts"
   started="$(date +%s)"
-  compose_wait_for "$port" /m4 'CM Account Invoices' 90
+  if ! compose_wait_for "$port" /m4 'CM Account Invoices' 90; then
+    cat "$WORK/dev.err" >&2
+    return 1
+  fi
   log "OK: dev mode applied an edit of nav.ts ($(($(date +%s) - started)) s)"
   log 'dev: delete an override (the PV page must come back)'
   rm "$PACK/src/routes/(auth)/recovery/+page.svelte"

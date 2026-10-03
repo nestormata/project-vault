@@ -8,18 +8,11 @@ import { dirname, join } from 'node:path'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
+// A relative path literal, so web-host's test selection sees this test reads outside the package
+// (it is not shipped).
 const KIT_TYPES = join(
   import.meta.dirname,
-  '..',
-  '..',
-  '..',
-  '..',
-  '..',
-  'packages',
-  'composition-kit',
-  'src',
-  'nav',
-  'types.ts'
+  '../../../../../packages/composition-kit/src/nav/types.ts'
 )
 const PV_TYPES = join(import.meta.dirname, 'types.ts')
 const SVELTE_TYPES = join(

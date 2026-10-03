@@ -6,7 +6,9 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { NAV_SURFACES } from './nav-registry.js'
 
-const CONFIG = readFileSync(join(import.meta.dirname, '..', '..', '..', 'eslint.config.js'), 'utf8')
+// A relative path literal, so web-host's test selection sees this test reads outside the package
+// (apps/web/eslint.config.js is not shipped, so neither is this test).
+const CONFIG = readFileSync(join(import.meta.dirname, '../../../eslint.config.js'), 'utf8')
 
 describe('type-aware lint scope of the nav renderers (Story 68.7 Q1)', () => {
   it('covers every registered renderer file', () => {

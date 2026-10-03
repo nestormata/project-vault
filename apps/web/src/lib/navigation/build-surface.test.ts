@@ -146,7 +146,7 @@ describe('renderSurface (Story 68.7 AC-2/AC-4/AC-7)', () => {
       expect(() =>
         renderSurface('primary', primaryCtx(), { delta: bad(href), strict: true })
       ).toThrow(
-        `nav item "cm.x": a link href must be a same-origin path (starting with one "/"); use kind "external" for an absolute URL, got ${JSON.stringify(href)}`
+        `nav item "cm.x": a link href must be a path inside this app (no scheme, not //host); use kind "external" for an absolute URL, got ${JSON.stringify(href)}`
       )
       expect(
         ids(renderSurface('primary', primaryCtx(), { delta: bad(href), strict: false }))
@@ -211,6 +211,57 @@ describe('renderSurface (Story 68.7 AC-2/AC-4/AC-7)', () => {
     expect(() => renderSurface('primary', primaryCtx(), { delta, strict: true })).toThrow(
       /nav delta problems in surface "primary":\n {2}- primary: op 2 \(move\) unknown nav id "primary.nope"/
     )
+  })
+
+  it('accepts the relative hrefs resolve() returns during server rendering, and matches them', () => {
+    // SvelteKit's resolve() returns relative paths while rendering on the server (paths.relative).
+    const nodes = renderSurface('primary', primaryCtx(operator, '/projects/x'), {
+      delta: {
+        primary: [
+          {
+            op: 'insert',
+            parent: 'primary',
+            item: { id: 'cm.rel', label: 'Rel', href: () => '../projects' as never },
+          },
+          {
+            op: 'insert',
+            parent: 'primary',
+            item: { id: 'cm.here', label: 'Here', href: () => './x' as never },
+          },
+          {
+            op: 'insert',
+            parent: 'primary',
+            item: { id: 'cm.root', label: 'Root', href: () => './' as never },
+          },
+        ],
+      },
+      strict: true,
+    })
+    const byId = new Map(nodes.map((node) => [node.id, node]))
+    expect(byId.get('cm.rel')).toMatchObject({ href: '../projects', active: true })
+    expect(byId.get('cm.here')).toMatchObject({ href: './x', active: true })
+    expect(byId.get('cm.root')?.href).toBe('./')
+    for (const bad of [
+      '\\\\evil.example',
+      '/\\evil.example',
+      'JavaScript:alert(1)',
+      'data:text/html,x',
+    ]) {
+      expect(() =>
+        renderSurface('primary', primaryCtx(), {
+          delta: {
+            primary: [
+              {
+                op: 'insert',
+                parent: 'primary',
+                item: { id: 'cm.bad', label: 'B', href: () => bad as never },
+              },
+            ],
+          },
+          strict: true,
+        })
+      ).toThrow('a link href must be a path inside this app')
+    }
   })
 
   it('a string icon on a data item renders nothing (only components)', () => {
