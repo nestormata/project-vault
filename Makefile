@@ -266,6 +266,9 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	# contract). The slow out-of-monorepo consumer fixture is `make web-host-fixture`.
 	pnpm vitest run scripts/check-paraglide-plugin-pinned.test.ts scripts/lib/web-host scripts/lib/version-triangle.test.ts
 	pnpm vitest run scripts/check-web-host-tarball.test.ts
+	@# Story 68.10 AC-9: PV's own CM-free build is the control group (empty virtual modules, main response snapshot)
+	pnpm turbo build --force --filter=@project-vault/web-host
+	pnpm vitest run scripts/check-pv-cm-free-build.test.ts
 	pnpm vitest run scripts/check-web-host-release-workflow.test.ts
 	# Story 68.3: the kit's release version triangle and the integration job's wiring (the slow
 	# integration itself is `make composition-kit-integration`).

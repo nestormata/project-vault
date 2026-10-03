@@ -1061,6 +1061,12 @@ jobs:
       - name: Pack and check the web-host tarball (AC-2, AC-4, AC-6, AC-7, AC-9)
         run: pnpm vitest run scripts/check-web-host-tarball.test.ts
 
+      - name: Build PV's own web app (control group prerequisites)
+        run: pnpm turbo build --force --filter=@project-vault/web-host
+
+      - name: PV's own CM-free build is the control group (Story 68.10 AC-9)
+        run: pnpm vitest run scripts/check-pv-cm-free-build.test.ts
+
       - name: Dry-run npm pack of the staged package
         working-directory: .web-host-pack
         run: npm pack --dry-run --json

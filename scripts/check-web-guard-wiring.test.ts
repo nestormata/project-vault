@@ -48,6 +48,27 @@ const MONOLITHIC_CHECK = 'pnpm check-monolithic-regions'
 const MONOLITHIC_TESTS =
   'pnpm vitest run scripts/check-monolithic-regions.test.ts scripts/lib/route-files.test.ts'
 
+// Story 68.10 AC-9: the control-group test (PV's own CM-free build) runs in `make ci-inner` after a
+// forced build of the web app, and in the web-host-pack job, as live blocking lines.
+const CONTROL_BUILD = 'pnpm turbo build --force --filter=@project-vault/web-host'
+const CONTROL_TEST = 'pnpm vitest run scripts/check-pv-cm-free-build.test.ts'
+
+describe("PV's CM-free control group is wired into CI (Story 68.10 AC-9)", () => {
+  it('make ci-inner builds the web app, then runs the control group', () => {
+    const recipe = makeRecipe(Object.values(MAKEFILE)[0] ?? '', 'ci-inner')
+    expect(recipeRunsCommand(recipe, CONTROL_BUILD)).toBe(true)
+    expect(recipeRunsCommand(recipe, CONTROL_TEST)).toBe(true)
+    expect(recipe.indexOf(CONTROL_BUILD)).toBeLessThan(recipe.indexOf(CONTROL_TEST))
+  })
+
+  it('ci.yml builds the web app and runs the control group as separate steps, build first', () => {
+    const commands = workflowRunCommands(Object.values(WORKFLOW)[0] ?? '')
+    expect(commands).toContain(CONTROL_BUILD)
+    expect(commands).toContain(CONTROL_TEST)
+    expect(commands.indexOf(CONTROL_BUILD)).toBeLessThan(commands.indexOf(CONTROL_TEST))
+  })
+})
+
 describe('the monolithic-region guard is wired into CI (Story 68.10 AC-4.5)', () => {
   it('has a package script that runs the thin CLI', () => {
     const scripts = (
