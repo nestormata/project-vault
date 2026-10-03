@@ -389,7 +389,7 @@ git ls-remote --tags origin 'vX.Y.Z^{}'                    # must print the same
 
 `event` must be `push` for the real run, or `workflow_dispatch` for the dry run you dispatched.
 `headBranch` must be `vX.Y.Z`, and `headSha` must equal the `ls-remote` commit. Reject anything
-else. `gh run view --log` is empty for these runs; read job states with:
+else. `gh run view --log` is empty for these runs; run this to read the job states:
 
 ```bash
 gh api repos/nestormata/project-vault/actions/runs/<run-id>/jobs --jq '.jobs[]|[.name,.status,.conclusion]|@tsv'
