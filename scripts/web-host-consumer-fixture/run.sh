@@ -206,6 +206,9 @@ fi
 if [[ "$COMPOSE_MODE" == 1 ]]; then
   compose_assert_isolated
   compose_run
+  if [[ "$VARIANT" == compose ]]; then
+    compose_unknown_point
+  fi
   compose_pipeline_to_sync
 else
   cp -r "$INSTALLED/src" "$INSTALLED/static" "$APP/"

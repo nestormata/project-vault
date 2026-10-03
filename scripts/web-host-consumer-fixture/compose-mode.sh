@@ -93,6 +93,26 @@ compose_run() {
   fi
 }
 
+# Story 68.4 AC-2: an unknown injection point fails the composition against the REAL generated
+# registry, and the message says the way out. A dry run writes nothing.
+compose_unknown_point() {
+  local bad="$WORK/pack-unknown-point"
+  cp -r "$COMPOSITION_KIT_FIXTURES/mini-pack" "$bad"
+  ln -s "$APP/node_modules" "$bad/node_modules"
+  sed -i "s/'auth.register.after'/'project.detail.nope'/" "$bad/pv-ui.manifest.ts"
+  local out status=0
+  out="$(cd "$APP" && clean_env PV_FIXTURE_HOST="$INSTALLED" "$NODE_BIN" \
+    node_modules/@project-vault/composition-kit/dist/cli.js \
+    --pack "$bad" --module-pack "$APP" --dry-run 2>&1)" || status=$?
+  if [[ "$status" == '0' ]] || ! grep -q 'Injection point "project.detail.nope" does not exist' <<< "$out" ||
+    ! grep -q 'a missing point never blocks you' <<< "$out"; then
+    echo "fixture: an unknown injection point was not rejected as expected (exit $status): $out" >&2
+    exit 1
+  fi
+  log 'OK: an unknown injection point fails with the way out'
+  return 0
+}
+
 compose_pipeline_to_sync() {
   log 'paraglide compile (composed messages), svelte-kit sync'
   (
@@ -163,8 +183,53 @@ compose_expect() { # port path status needle
   return 0
 }
 
+# Story 68.4 AC-13: the M3 mechanism on the real packed web-host. `/register` is a public page, so the
+# injected markup, the contribution load (via the page's `__data.json` and the SSR HTML) and the
+# injected form action are all served with no session; the layout point and the shell head meta
+# prove layout-, page- and shell-scoped points together.
+compose_offset() { # needle -> byte offset of the first match in $WORK/body.txt, or empty
+  grep -ob -- "$1" "$WORK/body.txt" | head -n 1 | cut -d: -f1
+  return 0
+}
+
+compose_injection_checks() {
+  local port="$1"
+  compose_expect "$port" /register 200 'data-testid="inject-tile"'
+  compose_expect "$port" /register 200 'tile-data:3'
+  compose_expect "$port" /register 200 'data-testid="inject-layout"'
+  compose_expect "$port" /register 200 'name="pv-fixture"'
+  compose_expect "$port" /login 200 'name="pv-fixture"'
+  compose_expect "$port" /register 200 ''
+  local tile late
+  tile="$(compose_offset 'data-testid="inject-tile"')"
+  late="$(compose_offset 'data-testid="inject-late"')"
+  if [[ -z "$tile" || -z "$late" ]] || ((tile >= late)); then
+    echo "fixture: the injected components are not in order (tile at $tile, late at $late)" >&2
+    exit 1
+  fi
+  compose_expect "$port" /register/__data.json 200 'healthy'
+  local status
+  status="$(curl -s -o "$WORK/body.txt" -w '%{http_code}' -X POST \
+    -H "Origin: http://127.0.0.1:${port}" -H 'x-sveltekit-action: true' \
+    --data-urlencode 'note=hello' "http://127.0.0.1:${port}/register?/auth.register.after.share")"
+  if [[ "$status" != '200' ]] || ! grep -q '"type":"success"' "$WORK/body.txt"; then
+    echo "fixture: the injected action answered HTTP $status: $(cat "$WORK/body.txt")" >&2
+    exit 1
+  fi
+  status="$(curl -s -o "$WORK/body.txt" -w '%{http_code}' -X POST \
+    -H "Origin: http://127.0.0.1:${port}" -H 'x-sveltekit-action: true' \
+    "http://127.0.0.1:${port}/register?/auth.register.after.nope")"
+  if [[ "$status" != '404' ]]; then
+    echo "fixture: an unknown injected action answered HTTP $status, expected 404" >&2
+    exit 1
+  fi
+  log 'OK: injected markup (in order), load data, layout point, shell head and action served'
+  return 0
+}
+
 compose_http_checks() {
   local port="$1"
+  compose_injection_checks "$port"
   compose_expect "$port" /login 200 'Use your Acme account to continue.'
   compose_expect "$port" /billing 200 'Acme plan: pro'
   compose_expect "$port" /billing 200 'data-testid="health-tile"'

@@ -33,7 +33,10 @@ export default defineUiPack({
     overrides: [{ path: 'src/routes/(app)/dashboard/+page.svelte', hostSha256: '…', story: 'ACME-1' }],
     remove: ['/(app)/extensions/panels'], // route ids, files (src/..., static/...) or static assets
   },
-  injections: { 'project.detail.tiles': [{ component: './injections/HealthTile.svelte', order: 10 }] },
+  injections: {
+    // a point from web-host's injection-points.json; load/actions are optional named exports
+    'project.detail.after': [{ component: './injections/HealthTile.svelte', order: 10 }],
+  },
   replacements: { '$lib/components/shell/GlobalSearch.svelte': { with: './replacements/GlobalSearch.svelte', hostSha256: '…' } },
   hooks: { server: './hooks.server.ts' },
   nav: './nav.ts',

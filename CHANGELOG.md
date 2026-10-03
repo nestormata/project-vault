@@ -11,6 +11,15 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **Injection points with behavior injection (Story 68-4, M3):** every PV page, layout and error file now
+  exposes `<prefix>.before`, `<prefix>.after` and `<prefix>.header.actions` injection points, the shell
+  exposes `shell.head`, `shell.header.end` and `shell.body.end`, and PV's server files call
+  `injectLoad`/`injectActions` so a composed pack can add server data and form actions. `web-host` ships
+  `manifests/injection-points.json`; `@project-vault/composition-kit` 0.2.0 adds the `pvInject()` Vite plugin
+  and the `injections` lock section. PV's own build is a no-op (the rendered markup, headers and data are
+  unchanged). A new CI guard, `check-injection-point-coverage`, keeps every PV route file covered. About 70
+  PV route files changed, so the hash of any file a pack overrides there drifts with the next `web-host`
+  release: reconcile it with `pv-compose --accept-host`.
 - **`@project-vault/composition-kit` (MIT):** the `pv-compose` composer that overlays a UI pack onto
   `@project-vault/web-host`, the `defineUiPack()` manifest, the committed `composition.lock.json`
   drift lock, the version-tuple compatibility check and a Vite dev plugin. It has its own semver and

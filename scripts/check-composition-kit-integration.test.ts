@@ -108,6 +108,10 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
     () => {
       const { status, output } = runVariant('compose')
       expect(output).toContain('OK: /login, /billing, /billing/export, /recovery served')
+      expect(output).toContain('OK: an unknown injection point fails with the way out')
+      expect(output).toContain(
+        'OK: injected markup (in order), load data, layout point, shell head and action served'
+      )
       expect(status, output).toBe(0)
     },
     VARIANT_TIMEOUT_MS

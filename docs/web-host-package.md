@@ -17,7 +17,8 @@ own app and builds it.
 | `messages/`, `project.inlang/settings.json`, `inlang-plugins/` | The translations, the inlang project, and a copy of the pinned message-format plugin (MIT, hash-checked at pack time) that the packed `settings.json` loads, so message compilation works offline. |
 | `vendor/shared/src/` | `@project-vault/shared`'s TypeScript source, vendored byte for byte. Only the files reachable from its three entry points are copied. |
 | `config/` | Compiled config factories (`.js` + `.d.ts`): `svelte.config`, `vite.config`, `vitest.config`, `app-css-source`. |
-| `manifests/compatibility.json` | The compatibility manifest (below). Later generated manifests (`injection-points.json`, `nav-ids.json`, `component-index.json`) land here when their stories ship. |
+| `manifests/compatibility.json` | The compatibility manifest (below). |
+| `manifests/injection-points.json` | The injection point registry (Story 68-4), generated at pack time from `injection-points.ts` and the route files that render each point: `{ schemaVersion: 1, points: [{ name, file, kind, propsType, routeId, scope }] }`. The kit reads `name`, `file`, `routeId` and `scope`. Later generated manifests (`nav-ids.json`, `component-index.json`) land here when their stories ship. |
 | `tsconfig.base.json` | PV's compiler options, for a consumer's `tsconfig.json` to extend. |
 | `LICENSE`, `README.md` | AGPL-3.0-or-later, and what the package is. |
 
