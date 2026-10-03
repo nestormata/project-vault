@@ -19,6 +19,7 @@ const KNOWN_KEYS = new Set([
   'theme',
   'messages',
   'protectedPaths',
+  'guards',
 ])
 
 export interface ManifestValidation {
@@ -185,6 +186,7 @@ export function validateManifest(raw: unknown): ManifestValidation {
   optionalString(raw.nav, 'nav', problems)
   optionalString(raw.theme, 'theme', problems)
   optionalString(raw.messages, 'messages', problems)
+  optionalString(raw.guards, 'guards', problems)
   for (const key of Object.keys(raw).filter((entry) => !KNOWN_KEYS.has(entry))) {
     notes.push(`unknown manifest key "${key}" ignored (a newer kit may give it meaning)`)
   }

@@ -1,10 +1,13 @@
 // @vitest-environment node
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { baseVitestConfig } from '@project-vault/tsconfig/vitest.base'
 import type { Adapter } from '@sveltejs/kit'
 import type { Plugin, PluginOption } from 'vite'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { configDefaults } from 'vitest/config'
 import { paraglideOptions, sharedAliases, webHostRoot } from './paths.ts'
 import { svelteConfig } from './svelte.config.ts'
 import { viteConfig } from './vite.config.ts'
@@ -158,5 +161,58 @@ describe('web-host config factories: vitestConfig (Story 68.2 AC-3)', () => {
       expect.arrayContaining(['src/**/*.test.ts', 'cm/**/*.test.ts'])
     )
     expect(config.test?.environment).toBe('jsdom')
+  })
+})
+
+// Story 68.9 AC-10: on a composed tree the factory excludes the PV tests the lock lists.
+describe('web-host config factories: vitestConfig over a composed tree (Story 68.9 AC-10)', () => {
+  const roots: string[] = []
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  })
+
+  function composed(lock: string | null): string {
+    const root = mkdtempSync(join(tmpdir(), 'pv-vitest-lock-'))
+    roots.push(root)
+    if (lock !== null) writeFileSync(join(root, 'composition.lock.json'), lock)
+    return root
+  }
+
+  it('appends the locked exclusions to Vitest default excludes', () => {
+    const root = composed(
+      JSON.stringify({ excludedPvTests: ['src/lib/a.test.ts', 'src/lib/b.test.ts'] })
+    )
+    const exclude = vitestConfig({}, { composedRoot: root }).test?.exclude
+    expect(exclude).toEqual(
+      expect.arrayContaining([...configDefaults.exclude, 'src/lib/a.test.ts', 'src/lib/b.test.ts'])
+    )
+    expect(exclude).toContain('**/node_modules/**')
+  })
+
+  it('excludes nothing and reads no lock for PV own run (no composedRoot)', () => {
+    expect(vitestConfig().test?.exclude).toBeUndefined()
+  })
+
+  it('throws, never runs everything silently, when the lock is absent or unreadable', () => {
+    expect(() => vitestConfig({}, { composedRoot: composed(null) })).toThrow(
+      /composition\.lock\.json/
+    )
+    expect(() => vitestConfig({}, { composedRoot: composed('{ not json') })).toThrow(
+      /composition\.lock\.json/
+    )
+  })
+
+  it('treats a lock without the list (older kit) as nothing excluded', () => {
+    const root = composed(JSON.stringify({ lockfileVersion: 1 }))
+    expect(vitestConfig({}, { composedRoot: root }).test?.exclude).toEqual([
+      ...configDefaults.exclude,
+    ])
+  })
+
+  it('keeps a caller own excludes', () => {
+    const root = composed(JSON.stringify({ excludedPvTests: ['src/a.test.ts'] }))
+    const exclude = vitestConfig({ test: { exclude: ['cm/skip.test.ts'] } }, { composedRoot: root })
+      .test?.exclude
+    expect(exclude).toEqual(expect.arrayContaining(['cm/skip.test.ts', 'src/a.test.ts']))
   })
 })

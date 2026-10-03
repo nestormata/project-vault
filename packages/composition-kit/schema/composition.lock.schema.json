@@ -165,6 +165,11 @@
         "properties": { "name": { "type": "string" }, "file": { "$ref": "#/definitions/nullableString" } }
       }
     },
+    "guardEntries": {
+      "description": "Story 68.9: sha256 (canonical JSON) of each section of the generated guard-entries module src/lib/composition/guard-entries.generated.json. PV's web guards recompute these and fail on a hand-edited file. Optional: a lock written before it existed is read as having none.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/sha256" }
+    },
     "injections": {
       "description": "Story 68.4: every injection contribution (composed paths) in point and order order. Optional: a lock written before it existed is read as having none.",
       "type": "array",

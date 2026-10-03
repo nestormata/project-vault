@@ -84,7 +84,9 @@ describe('composition.lock.schema.json (Story 68.3 AC-8)', () => {
 
   it('fails a lock missing lockfileVersion or any required section', async () => {
     const lock = await composedLock()
-    for (const key of Object.keys(lock).filter((name) => name !== 'injections')) {
+    for (const key of Object.keys(lock).filter(
+      (name) => name !== 'injections' && name !== 'guardEntries'
+    )) {
       const { [key]: _dropped, ...rest } = lock
       expect(validate(rest), key).toBe(false)
     }
