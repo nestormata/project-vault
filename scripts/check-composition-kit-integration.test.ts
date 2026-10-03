@@ -107,8 +107,22 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
     'composes the mini pack onto the packed web-host, typechecks, builds, boots and serves it',
     () => {
       const { status, output } = runVariant('compose')
-      expect(output).toContain('OK: /login, /billing, /billing/export, /recovery served')
+      // Story 68.5 AC-12 (M4): the same run replaces a shell component (wrapped through
+      // `pv-original:`), a `$lib/api` module and a `$lib/server` module, and PV's own files get them.
+      expect(output).toContain('OK: /login, /billing, /billing/export, /recovery, /m4 served')
       expect(status, output).toBe(0)
+    },
+    VARIANT_TIMEOUT_MS
+  )
+
+  it(
+    'fails `vite build` with the pv-replace message when the map names a CM file that is missing (Story 68.5 AC-12)',
+    () => {
+      const { status, output } = runVariant('compose-missing-with')
+      expect(status, output).not.toBe(0)
+      expect(output).toContain(
+        'pv-replace: replacement for src/lib/components/shell/Footer.svelte points at missing src/lib/_cm/replacements/Footer.svelte; run pv-compose.'
+      )
     },
     VARIANT_TIMEOUT_MS
   )
@@ -134,6 +148,29 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
       expect(twin.output).toContain('OK: vite build succeeded for compose-server-twin')
     },
     VARIANT_TIMEOUT_MS * 2
+  )
+
+  it(
+    "Kit's server-only guard still rejects a client import of a REPLACED $lib/server module, naming the _cm path (Story 68.5 AC-4)",
+    () => {
+      const leak = runVariant('compose-replace-leak')
+      expect(leak.status, leak.output).not.toBe(0)
+      expect(leak.output).toMatch(/Cannot import .* into code that runs in the browser/)
+      expect(leak.output).toContain('$lib/server/_cm/server/require-user.ts')
+    },
+    VARIANT_TIMEOUT_MS
+  )
+
+  it(
+    "why plugin order matters (Story 68.5 Q6): with pvReplace() listed BEFORE sveltekit(), the guard can't walk the same client import back to its page",
+    () => {
+      const first = runVariant('compose-replace-first-leak')
+      // The build still fails (the replaced module stays server-only), but SvelteKit's guard has
+      // not seen the import that reached it and reports "An impossible situation occurred".
+      expect(first.status, first.output).not.toBe(0)
+      expect(first.output).toContain('An impossible situation occurred')
+    },
+    VARIANT_TIMEOUT_MS
   )
 
   it(

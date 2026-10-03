@@ -17,7 +17,8 @@ own app and builds it.
 | `messages/`, `project.inlang/settings.json`, `inlang-plugins/` | The translations, the inlang project, and a copy of the pinned message-format plugin (MIT, hash-checked at pack time) that the packed `settings.json` loads, so message compilation works offline. |
 | `vendor/shared/src/` | `@project-vault/shared`'s TypeScript source, vendored byte for byte. Only the files reachable from its three entry points are copied. |
 | `config/` | Compiled config factories (`.js` + `.d.ts`): `svelte.config`, `vite.config`, `vitest.config`, `app-css-source`. |
-| `manifests/compatibility.json` | The compatibility manifest (below). Later generated manifests (`injection-points.json`, `nav-ids.json`, `component-index.json`) land here when their stories ship. |
+| `manifests/compatibility.json` | The compatibility manifest (below). Later generated manifests (`injection-points.json`, `nav-ids.json`) land here when their stories ship. |
+| `manifests/component-index.json` | Story 68.5: generated into the staging directory on every pack (never committed): `{ schemaVersion: 1, components: [{ path, stability, hash }] }` for every `.svelte` file under `src/lib/components` and every non-test `.ts` module under `src/lib`, sorted by `path`. `hash` is SHA-256 of the raw bytes (the `hostSha256` of a replacement); `stability` is `stable` when the file's first top-level comment carries `@pv-stable` (the first `<!-- -->` of a `.svelte` file, the first `/** */` of a `.ts` file), else `unmarked`. A signal for composers, never a restriction: any module may be replaced. |
 | `tsconfig.base.json` | PV's compiler options, for a consumer's `tsconfig.json` to extend. |
 | `LICENSE`, `README.md` | AGPL-3.0-or-later, and what the package is. |
 

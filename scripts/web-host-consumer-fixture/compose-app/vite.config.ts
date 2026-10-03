@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { pvComposeDev } from '@project-vault/composition-kit/vite'
+import { pvComposeDev, pvReplace } from '@project-vault/composition-kit/vite'
 import { viteConfig } from '@project-vault/web-host/vite.config'
 
 // Vite bundles this file into a temporary one, where only import.meta.url is reliable.
@@ -16,4 +16,14 @@ const plugins = dev
   ? [pvComposeDev({ appRoot, packRoot: process.env.PV_FIXTURE_PACK ?? '', hostDir })]
   : []
 
-export default viteConfig({ plugins }, { appRoot, composedRoot: appRoot })
+// Story 68.5: `pvReplace()` is listed AFTER PV's own plugins (`sveltekit()` among them), which is
+// where `viteConfig` puts a caller's plugins: SvelteKit's import guard must see every import before
+// `pvReplace()` answers it, or it cannot walk a client import of a replaced `$lib/server` module back
+// to its page and fails with "An impossible situation occurred" instead of its own message. The
+// `compose-replace-first-leak` variant lists it first to prove exactly that.
+const ours = pvReplace({ appRoot })
+const options = { appRoot, composedRoot: appRoot }
+const first = process.env.PV_FIXTURE_VARIANT === 'compose-replace-first-leak'
+const config = viteConfig({ plugins: first ? plugins : [...plugins, ours] }, options)
+
+export default first ? { ...config, plugins: [ours, ...(config.plugins ?? [])] } : config

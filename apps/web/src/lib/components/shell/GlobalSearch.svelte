@@ -1,3 +1,7 @@
+<!--
+  @pv-stable: the `open` bindable prop is relied on by `(app)/+layout.svelte` and by composed
+  apps that replace this component (Story 68.5). Marker only; it changes no behaviour.
+-->
 <script lang="ts">
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'

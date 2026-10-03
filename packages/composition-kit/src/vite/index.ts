@@ -4,7 +4,12 @@ import type { Plugin } from 'vite'
 import { apply } from '../apply.js'
 import { applyIncremental, signaturesOf, type Signatures } from '../incremental.js'
 import { plan, type ComposeOptions } from '../plan.js'
+import type { DevServerLike } from './dev-server.js'
 import { createComposeQueue, type ComposeBatch } from './queue.js'
+
+export { pvReplace, PV_ORIGINAL_PREFIX } from './replace.js'
+export type { PvReplaceOptions } from './replace.js'
+export type { DevServerLike } from './dev-server.js'
 
 const DEFAULT_DEBOUNCE_MS = 100
 const MANIFEST_BASENAME = 'pv-ui.manifest'
@@ -17,21 +22,6 @@ const virtualPrefixes = new Set<string>()
  * invalidates every module under it, in both the client and the SSR module graphs. */
 export function registerVirtualModulePrefix(prefix: string): void {
   virtualPrefixes.add(prefix)
-}
-
-interface ModuleGraphLike {
-  idToModuleMap: Map<string, unknown>
-  invalidateModule: (module: never) => void
-}
-
-/** The subset of Vite's dev server the plugin uses (Vite 8's `environments` API). */
-export interface DevServerLike {
-  watcher: {
-    add: (paths: string | readonly string[]) => unknown
-    on: (event: string, listener: (path: string) => void) => unknown
-  }
-  ws: { send: (payload: unknown) => void }
-  environments: Record<string, { moduleGraph: ModuleGraphLike }>
 }
 
 /** Invalidates every registered virtual module in the `client` and `ssr` environments' module

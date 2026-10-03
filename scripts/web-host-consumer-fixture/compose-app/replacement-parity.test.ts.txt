@@ -1,0 +1,13 @@
+// Story 68.5 AC-16: PV's unit tests run over the composed tree with the SAME replacements the build
+// applies, because the consumer lists `pvReplace()` in its vitest plugins too.
+import { render } from '@testing-library/svelte'
+import { describe, expect, it } from 'vitest'
+import Footer from '$lib/components/shell/Footer.svelte'
+
+describe('replacement parity under vitest', () => {
+  it('imports CM\'s Footer, exactly as `vite build` does', () => {
+    const { container } = render(Footer)
+
+    expect(container.textContent).toContain('Acme footer')
+  })
+})
