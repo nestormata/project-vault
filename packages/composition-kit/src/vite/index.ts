@@ -113,3 +113,6 @@ export function pvComposeDev(options: PvComposeDevOptions): Plugin {
 
 export { pvHooks, hooksModuleCode, PV_HOOKS_PLUGIN_NAME, PV_HOOKS_PREFIX } from './hooks.js'
 export type { PvHooksOptions } from './hooks.js'
+
+export { pvNav, navModuleCode, PV_NAV_MODULE, PV_NAV_PLUGIN_NAME } from './nav.js'
+export type { PvNavOptions } from './nav.js'

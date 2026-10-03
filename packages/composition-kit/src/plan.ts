@@ -15,7 +15,8 @@ import { materialize, type MaterializeResult } from './materialize.js'
 import { loadManifest, validateManifest } from './manifest.js'
 import { planOverlay, type FileSource, type OverlayResult } from './overlay.js'
 import { compareCodeUnits, normalizePackPath, sortedCodeUnits } from './paths.js'
-import { checkInjectionPoints, checkNavIds, readRegistries, type Registries } from './registry.js'
+import { checkInjectionPoints, readRegistries, type Registries } from './registry.js'
+import { navFindings, type NavFindings } from './nav-findings.js'
 import { PV_ORIGINAL_TYPES_PATH, pvOriginalDeclarations } from './pv-original-types.js'
 import { replacementMapText } from './replacement-map.js'
 import { hasher, loadHost, loadPack, type Host, type Pack } from './sources.js'
@@ -182,14 +183,35 @@ function registryFindings(stage: Stage, overlay: OverlayResult) {
     overlay.changedHostPaths,
     stage.existingLock?.injectionPointsUsed
   )
-  const navRefs = stage.existingLock?.navIdsReferenced ?? []
-  const nav = checkNavIds(navRefs, stage.registries.navIds)
+  return injections
+}
+
+/** Story 68.7 AC-9: the lock's nav sections (`navIdsDeclared`/`navIdsHost` only when the host
+ * applies nav deltas; additive, so an older lock without them still reads). */
+function navLockFields(nav: NavFindings) {
   return {
-    problems: [...injections.problems, ...nav.problems],
-    notes: [...injections.notes, ...nav.notes],
-    used: injections.used,
-    navRefs,
+    navIdsReferenced: nav.referenced,
+    ...(nav.declared === undefined ? {} : { navIdsDeclared: nav.declared }),
+    ...(nav.host === undefined ? {} : { navIdsHost: nav.host }),
   }
+}
+
+/** Story 68.7 AC-9: the pack's nav delta against the host's nav ids (see nav-findings.ts). */
+function navFindingsOf(stage: Stage, mat: MaterializeResult): NavFindings {
+  const dest = composedPathOf(stage.manifest.nav, mat)
+  const bytes = dest === null ? undefined : mat.files.get(dest)
+  return navFindings({
+    ...(dest === null || bytes === undefined
+      ? {}
+      : { navFile: { path: dest, code: bytes.toString('utf8') } }),
+    registries: stage.registries,
+    ...(stage.existingLock === undefined ? {} : { existingLock: stage.existingLock }),
+    typescript: () =>
+      requirePeer<typeof TypeScript>(
+        'typescript',
+        stage.options.resolveFrom ?? stage.options.appRoot
+      ),
+  })
 }
 
 /** Pack files nothing reached are listed, never copied (copying all would ship tests and tooling). */
@@ -373,6 +395,8 @@ function planStage(
   findings.add(addPvOriginalTypes(assembly.files, overlay, stage.host))
   const registry = registryFindings(stage, overlay)
   findings.add(registry)
+  const nav = navFindingsOf(stage, mat)
+  findings.add(nav)
   const injections = checkInjections({
     manifest: stage.manifest,
     pack: stage.pack,
@@ -387,7 +411,7 @@ function planStage(
   findings.add(hooks)
   findings.add({
     notes: [
-      ...deferredNotes(stage.manifest, hooks.surface !== undefined),
+      ...deferredNotes(stage.manifest, hooks.surface !== undefined, nav.host !== undefined),
       ...unreachedNotes(stage, new Set([...mat.reached, ...overlayPaths])),
     ],
   })
@@ -410,7 +434,7 @@ function planStage(
     contributions: contributionsOf(stage.manifest, mat, hooks.record),
     injectionPointsUsed: registry.used,
     injections: injections.lock,
-    navIdsReferenced: registry.navRefs,
+    ...navLockFields(nav),
     notes,
   })
   return {

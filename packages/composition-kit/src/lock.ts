@@ -39,6 +39,11 @@ export interface CompositionLock {
    * written before it existed (read as none). */
   injections?: LockInjection[]
   navIdsReferenced: { id: string; operative: boolean }[]
+  /** Story 68.7: the nav ids the pack inserts. Absent in older locks (read as none). */
+  navIdsDeclared?: string[]
+  /** Story 68.7 (informational): the web-host nav ids this lock was written against, so the next
+   * compose can name the ones that are new (inherited). Absent when the host has no nav delta. */
+  navIdsHost?: string[]
   apiRouteOverrides: string[]
   notes: string[]
 }
@@ -54,11 +59,12 @@ const NORMATIVE = [
   'injectionPointsUsed',
   'injections',
   'navIdsReferenced',
+  'navIdsDeclared',
   'apiRouteOverrides',
 ] as const
 
 /** Sections a lock may lack and still be read (they were added after lockfileVersion 1). */
-const OPTIONAL_SECTIONS: ReadonlySet<string> = new Set(['injections'])
+const OPTIONAL_SECTIONS: ReadonlySet<string> = new Set(['injections', 'navIdsDeclared'])
 
 export interface LockInput {
   tuple: CompatibilityTuple
@@ -71,6 +77,8 @@ export interface LockInput {
   injectionPointsUsed: InjectionPointRecord[]
   injections: LockInjection[]
   navIdsReferenced: { id: string; operative: boolean }[]
+  navIdsDeclared?: string[]
+  navIdsHost?: string[]
   notes: string[]
 }
 
@@ -101,6 +109,12 @@ export function buildLock(input: LockInput): CompositionLock {
     injectionPointsUsed: sortBy(input.injectionPointsUsed, (entry) => entry.name),
     injections: input.injections,
     navIdsReferenced: sortBy(input.navIdsReferenced, (entry) => entry.id),
+    ...(input.navIdsDeclared === undefined
+      ? {}
+      : { navIdsDeclared: [...input.navIdsDeclared].sort(compareCodeUnits) }),
+    ...(input.navIdsHost === undefined
+      ? {}
+      : { navIdsHost: [...input.navIdsHost].sort(compareCodeUnits) }),
     apiRouteOverrides: [],
     notes: [...new Set(input.notes)].sort(compareCodeUnits),
   }
@@ -163,9 +177,11 @@ export function readLock(path: string): { lock?: CompositionLock; problem?: stri
 /** The normative part of a lock, as text, for `--check`. */
 function normativeText(lock: CompositionLock): string {
   const normative = new Map(
-    Object.entries({ ...lock, injections: lock.injections ?? [] }).filter(([key]) =>
-      (NORMATIVE as readonly string[]).includes(key)
-    )
+    Object.entries({
+      ...lock,
+      injections: lock.injections ?? [],
+      navIdsDeclared: lock.navIdsDeclared ?? [],
+    }).filter(([key]) => (NORMATIVE as readonly string[]).includes(key))
   )
   const picked = {
     ...Object.fromEntries(normative),

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 0.5.0
+
+- Navigation delta (Story 68-7, ADR 0007 M5). New subpath `@project-vault/composition-kit/nav`
+  (zero runtime dependencies): `defineNavDelta()` and the operation builders `insert`, `remove`,
+  `hide`, `relabel`, `move`, `replace`, `reorder`, with types structurally identical to web-host's
+  nav model (a contract test on each side proves it). They build plain objects; nothing limits which
+  item a pack may change.
+- `pvNav()` Vite plugin (`@project-vault/composition-kit/vite`): resolves `virtual:pv-nav` to a
+  re-export of the pack's materialized `nav.ts` (an empty delta without one, or for a lock written
+  against an older web-host). A missing lock fails the build.
+- With a web-host that ships `manifests/nav-ids.json` with `delta: 1`, the composer reads `nav.ts`
+  with the app's TypeScript and records every string-literal id: `navIdsReferenced` (targets and
+  anchors operative, except `hide`/`remove` targets), the new `navIdsDeclared` (ids the pack inserts)
+  and the informational `navIdsHost` (both optional lock sections, no `lockfileVersion` bump). It
+  fails an operative reference to a vanished id, an id used under the wrong surface, and an inserted
+  id web-host now defines; it notes new (inherited) web-host ids, hidden/removed vanished ids, every
+  non-literal id (with its position) plus a literal/non-literal count, and a change to the footer's
+  AGPL source/license links. The "nav delta not applied" note is gone for such a host; an older
+  web-host keeps the 68-3 behaviour.
+
 ## 0.4.0
 
 - `pvHooks()` Vite plugin (`@project-vault/composition-kit/vite`): generates `virtual:pv-hooks/server`,

@@ -115,6 +115,44 @@ hook automatically (its exact route id); `protectedPaths.add` adds path prefixes
 `protectedPaths.remove` removes a prefix or a derived route. The full contract is in PV's
 `docs/composition-kit.md` ("Hooks, header policy and protected paths").
 
+## Navigation delta (M5)
+
+`nav: './nav.ts'` names a module whose default export is your delta on top of PV's navigation: the
+operations per nav surface, applied in order inside PV's nav models (so PV items you never touch,
+including ones a later web-host adds, are inherited). web-host lists every surface and PV item id in
+`manifests/nav-ids.json`.
+
+```ts
+// nav.ts (client-safe: it renders in the browser too, so never import $lib/server/*)
+import { resolve } from '$app/paths'
+import { defineNavDelta, hide, insert, move, relabel, replace } from '@project-vault/composition-kit/nav'
+
+export default defineNavDelta({
+  primary: [
+    insert({ after: 'primary.projects', item: { id: 'cm.billing', label: () => t('billing'), href: () => resolve('/billing') } }),
+    insert({ parent: 'primary', item: { id: 'cm.ops', label: 'Ops', children: [] } }),
+    move('primary.health', { parent: 'cm.ops' }),
+    relabel('primary.secrets', () => t('vault')),
+  ],
+  'settings.index': [hide('settings.index.sso-domains')],
+  'shell.brand': [replace('shell.brand.home', { label: 'CentralizeMe', href: () => resolve('/') })],
+})
+```
+
+```ts
+// vite.config.ts and vitest.config.ts
+import { pvNav } from '@project-vault/composition-kit/vite'
+plugins: [pvHooks({ appRoot }), pvNav({ appRoot })]
+```
+
+`pvNav()` serves `virtual:pv-nav` from the lock; web-host refuses to build a composed tree without
+it. At compose time the kit records every string-literal id (`navIdsReferenced`, `navIdsDeclared`),
+fails an operative reference to an id web-host no longer has, an id used under another surface, and an
+id you insert that web-host now defines; everything else is a note. Ids passed as variables are noted
+and checked by web-host's shipped `composed-nav.test.ts` in your CI. Hiding an item never protects its
+route: use `protectedPaths` or the API's authorization. The full contract is in PV's
+`docs/composition-kit.md` ("Navigation delta (M5)").
+
 ## Component and module replacement (M4)
 
 `replacements` swaps any module under PV's `src/lib` (a Svelte component, a `$lib/server/*` module, a

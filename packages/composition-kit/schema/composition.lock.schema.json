@@ -191,6 +191,14 @@
         "properties": { "id": { "type": "string" }, "operative": { "type": "boolean" } }
       }
     },
+    "navIdsDeclared": {
+      "description": "Story 68.7: the nav ids the UI pack inserts (absent in older locks).",
+      "$ref": "#/definitions/stringArray"
+    },
+    "navIdsHost": {
+      "description": "Story 68.7 (informational): the web-host nav ids this lock was written against.",
+      "$ref": "#/definitions/stringArray"
+    },
     "apiRouteOverrides": { "$ref": "#/definitions/stringArray" },
     "notes": { "$ref": "#/definitions/stringArray" }
   }

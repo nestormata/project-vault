@@ -8,9 +8,10 @@
 // In dev a change to the lock's hooks or protected-path contribution restarts the dev server:
 // SvelteKit caches the server hooks behind a module-level `init_promise`, so invalidating the
 // virtual module alone is not guaranteed to re-run them.
-import { isAbsolute, join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import type { Plugin } from 'vite'
 import { readLock, type CompositionLock } from '../lock.js'
+import { appLock, specifierFor, type AppLockOptions } from './app-lock.js'
 import { registerVirtualModulePrefix } from './virtual-modules.js'
 
 export const PV_HOOKS_PREFIX = 'virtual:pv-hooks/'
@@ -19,12 +20,7 @@ export const PV_HOOKS_PLUGIN_NAME = 'pv-composition-kit:hooks'
 const KINDS = ['server', 'universal', 'client'] as const
 type Kind = (typeof KINDS)[number]
 
-export interface PvHooksOptions {
-  /** The composed app root (default: Vite's root). */
-  appRoot?: string
-  /** The lock path (default: `<appRoot>/composition.lock.json`). */
-  lockPath?: string
-}
+export type PvHooksOptions = AppLockOptions
 
 type Contributions = CompositionLock['contributions']
 
@@ -44,11 +40,6 @@ function requireContributions(lockPath: string): Contributions | undefined {
     )
   }
   return readContributions(lockPath)
-}
-
-/** The import specifier for a composed-tree path: `$lib/...` under src/lib, else absolute. */
-function specifierFor(appRoot: string, rel: string): string {
-  return rel.startsWith('src/lib/') ? `$lib/${rel.slice('src/lib/'.length)}` : join(appRoot, rel)
 }
 
 /** The generated module for one hooks file. */
@@ -94,17 +85,13 @@ interface DevServer {
 
 export function pvHooks(options: PvHooksOptions = {}): Plugin {
   registerVirtualModulePrefix(PV_HOOKS_PREFIX)
-  let appRoot = options.appRoot === undefined ? process.cwd() : resolve(options.appRoot)
-  const lockPath = () =>
-    options.lockPath === undefined
-      ? join(appRoot, 'composition.lock.json')
-      : resolve(appRoot, options.lockPath)
+  const app = appLock(options)
+  const lockPath = app.lockPath
   return {
     name: PV_HOOKS_PLUGIN_NAME,
     enforce: 'pre',
     configResolved(config) {
-      if (options.appRoot === undefined) appRoot = config.root
-      else if (!isAbsolute(options.appRoot)) appRoot = resolve(config.root, options.appRoot)
+      app.configure(config.root)
     },
     resolveId(id) {
       if (!id.startsWith(PV_HOOKS_PREFIX)) return null
@@ -114,7 +101,7 @@ export function pvHooks(options: PvHooksOptions = {}): Plugin {
     load(id) {
       if (!id.startsWith(`\0${PV_HOOKS_PREFIX}`)) return null
       const kind = id.slice(PV_HOOKS_PREFIX.length + 1) as Kind
-      return hooksModuleCode(kind, requireContributions(lockPath()), appRoot)
+      return hooksModuleCode(kind, requireContributions(lockPath()), app.appRoot())
     },
     configureServer(server) {
       const dev = server as unknown as DevServer
