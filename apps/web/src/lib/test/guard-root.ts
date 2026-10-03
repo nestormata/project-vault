@@ -33,7 +33,16 @@ export type StorageApi = `${'session' | 'local'}Storage`
 export interface GuardEntries {
   browserStorage: Record<StorageApi, StorageEntry[]> & { release: string[] }
   internalApiConsumers: { add: string[]; release: string[] }
-  routeClassifications: { method: string; url: string; class: string; reason: string }[]
+  // The runtime route audit's entry shape (apps/api route-audit.ts); no PV web guard reads these.
+  routeClassifications: {
+    route: string
+    reason: string
+    securityOwner?: string
+    compensatingControls?: string[]
+    expiresAfterStory?: string | null
+    revisitBy?: string
+    temporary?: boolean
+  }[]
   externalHrefs: { allow: { file: string; href: string; reason: string }[] }
 }
 

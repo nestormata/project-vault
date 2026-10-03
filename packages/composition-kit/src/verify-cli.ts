@@ -12,7 +12,13 @@ import {
   usageError,
   type CliIo,
 } from './cli-shared.js'
-import { acquireRunLock, verify, type VerifyOptions, type VerifyReport } from './verify.js'
+import {
+  acquireRunLock,
+  extractClassifications,
+  verify,
+  type VerifyOptions,
+  type VerifyReport,
+} from './verify.js'
 
 const USAGE = `Usage: pv-verify [options]
 
@@ -23,7 +29,9 @@ disables or ignores a step or a guard.
   --app <dir>        the composed app root (default: the working directory)
   --host <dir>       the web-host directory (default: resolved from the app root)
   --pack <dir>       the UI pack: also regenerate the lock and fail when the committed one is stale
-  --only <step>      run one step: guards or tests
+  --only <step>      run one step: guards, tests or classifications
+  --out <file>       with --only classifications: write the route classification file the runtime
+                     route audit reads (--classifications); no guards or tests run
   --explain          map composed paths in findings back to the pack source files
   --json             print a stable JSON document instead of text
   -h, --help         print this help
@@ -38,6 +46,7 @@ const OPTIONS = {
   host: { type: 'string' },
   pack: { type: 'string' },
   only: { type: 'string' },
+  out: { type: 'string' },
   explain: { type: 'boolean' },
   json: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
@@ -109,9 +118,24 @@ function isDirectory(path: string): boolean {
   }
 }
 
-function stepOf(only: string | undefined): VerifyOptions['only'] | 'invalid' {
-  if (only === undefined) return undefined
-  return only === 'guards' || only === 'tests' ? only : 'invalid'
+/** The guards or tests step (`--only` was validated by `outProblem`); classifications is not one. */
+function stepOf(only: string | undefined): VerifyOptions['only'] {
+  return only === 'guards' || only === 'tests' ? only : undefined
+}
+
+const STEPS = new Set(['guards', 'tests', 'classifications'])
+
+/** A usage problem with `--only`/`--out`: `--out` belongs to the classifications step alone. */
+function outProblem(only: string | undefined, out: string | undefined): string | null {
+  if (only !== undefined && !STEPS.has(only)) {
+    return `--only must be guards, tests or classifications, got "${only}"`
+  }
+  if (only === 'classifications') {
+    return out === undefined
+      ? '--only classifications needs --out <file>, the classification file to write'
+      : null
+  }
+  return out === undefined ? null : '--out only applies to --only classifications'
 }
 
 interface Parsed {
@@ -121,6 +145,25 @@ interface Parsed {
   only?: VerifyOptions['only']
   json: boolean
   explain: boolean
+  /** Set for `--only classifications`: the absolute file to write. */
+  classifyOut?: string
+}
+
+async function runExtract(parsed: Parsed & { classifyOut: string }, io: CliIo): Promise<number> {
+  const { appRoot, hostDir, packRoot, classifyOut, json } = parsed
+  const result = await extractClassifications({
+    appRoot,
+    hostDir,
+    out: classifyOut,
+    ...(packRoot === undefined ? {} : { packRoot }),
+  })
+  if (json) {
+    io.out(`${JSON.stringify({ ok: result.ok, entries: result.entries })}\n`)
+  } else if (result.ok) {
+    io.out(`${TOOL}: classifications: ${result.entries} entries written\n`)
+  }
+  if (!result.ok) io.err(`${result.problems.map((line) => `${TOOL}: ${line}`).join('\n')}\n`)
+  return result.ok ? EXIT.ok : EXIT.failed
 }
 
 function parse(
@@ -141,24 +184,27 @@ function parse(
     io.out(USAGE)
     return { exit: EXIT.ok }
   }
-  if (values.only === 'classifications') {
-    return fail(
-      'the route classification step is delivered with story 68-14 (the audit file schema it feeds); it is not available yet'
-    )
-  }
-  const only = stepOf(values.only)
-  if (only === 'invalid')
-    return fail(`--only must be guards or tests, got "${String(values.only)}"`)
+  const stepProblem = outProblem(values.only, values.out)
+  if (stepProblem !== null) return fail(stepProblem)
   const appRoot = resolve(values.app ?? process.cwd())
   if (!isDirectory(appRoot)) return fail(`--app ${appRoot} is not a directory`)
   const hostDir = hostDirectory(values.host, appRoot, locate)
   if (hostDir === undefined) return fail(NO_HOST_MESSAGE)
-  const packRoot = resolveOptional(values.pack)
   return {
     appRoot,
     hostDir,
     json: values.json === true,
     explain: values.explain === true,
+    ...optionalFields(values),
+  }
+}
+
+function optionalFields(values: Values): Partial<Parsed> {
+  const packRoot = resolveOptional(values.pack)
+  const only = stepOf(values.only)
+  return {
+    // Relative to the working directory, not to --app.
+    ...(values.only === 'classifications' ? { classifyOut: resolve(values.out ?? '') } : {}),
     ...(packRoot === undefined ? {} : { packRoot }),
     ...(only === undefined ? {} : { only }),
   }
@@ -180,7 +226,8 @@ export async function runVerifyCli(
     return EXIT.failed
   }
   try {
-    const { json, explain, ...options } = parsed
+    const { json, explain, classifyOut, ...options } = parsed
+    if (classifyOut !== undefined) return await runExtract({ ...parsed, classifyOut }, io)
     const report = await verify(options)
     io.out(json ? `${JSON.stringify(report, null, 2)}\n` : formatReport(report, explain))
     return report.ok ? EXIT.ok : EXIT.failed

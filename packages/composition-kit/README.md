@@ -270,7 +270,7 @@ version. All mismatches are reported in one run. There is no flag to skip the ch
 
 ## Guards and tests over a composed tree
 
-`pv-verify --app <dir> [--host <dir>] [--pack <dir>] [--only guards|tests] [--explain] [--json]`
+`pv-verify --app <dir> [--host <dir>] [--pack <dir>] [--only guards|tests|classifications --out <file>] [--explain] [--json]`
 runs, in order, and reports everything in one run: (1) **preflight**: the committed lock exists, matches
 the web-host, and its generated guard entries are untouched (`--pack` also regenerates the lock like
 `pv-compose --check`); (2) **guards**: every guard in web-host's `manifests/guards.json` over the
@@ -278,8 +278,28 @@ composed `src/` (including `src/lib/_cm`) with PV's own rules; (3) **tests**: `v
 composed tree through web-host's `vitestConfig` factory, which excludes the lock's `excludedPvTests`,
 with no coverage gate (CM owns its coverage policy). Exit `0` ok, `1` a guard, test or integrity
 failure, `2` usage. A web-host without a guard registry fails (never silently skips); upgrade it.
-`pv-verify` does not run `svelte-check` or lint (your pipeline's own steps) and the route
-classification step arrives with the runtime route audit (story 68-14).
+`pv-verify` does not run `svelte-check` or lint (your pipeline's own steps).
+
+**Route classifications for the runtime route audit.** A pack that adds raw (non-`secureRoute`) API routes
+classifies them in `guards.routeClassifications`, one entry per route in the audit's own shape:
+`{ route: 'GET /api/v1/cm/health', reason: 'public liveness probe' }` (optional `securityOwner`,
+`compensatingControls: string[]`, `expiresAfterStory`, `revisitBy`, `temporary`; the route is the full URL
+including the prefix, `OPTIONS *` is valid; any other field is rejected, including the old `method`, `url`
+and `class`). The kit validates integrity only (shape, duplicates); it never decides which routes may be
+public. Then, as the input of your CI's route audit step:
+
+```bash
+pv-verify --app <dir> --only classifications --out classifications.json
+pnpm --filter @project-vault/api route-audit:runtime --extension <package> --classifications classifications.json
+```
+
+`--only classifications --out <file>` runs the preflight (lock current, generated entries untouched), then
+writes the locked entries as a JSON array sorted by `route` (`[]` when there are none), atomically, and
+runs no guard or test. It writes nothing when the preflight fails. Rules of the audit worth knowing: an
+entry that restates a classification Project Vault already has is an **error** (the kit cannot see
+Project Vault's table, so it emits no note), and a **stale** entry (a route not on the composed API)
+**fails** the audit, so regenerate the file whenever the pack changes and use one file per composed
+variant, never a shared union. The audit must run with API docs enabled (its CLI forces this).
 
 **Pack guard entries.** Name a data module in the manifest (`guards: './pv-guards.ts'`) and author it with
 `defineGuardEntries()`:

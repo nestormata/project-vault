@@ -15,11 +15,16 @@ export interface StorageEntryInput {
   reason: string
 }
 
+/** The entry shape of the runtime route audit's classification file (`route-audit.ts`, Story 68-14). */
 export interface RouteClassificationInput {
-  method: string
-  url: string
-  class: string
+  /** `METHOD /full/url` (the audit's route key), or `OPTIONS *`. */
+  route: string
   reason: string
+  securityOwner?: string
+  compensatingControls?: string[]
+  expiresAfterStory?: string | null
+  revisitBy?: string
+  temporary?: boolean
 }
 
 export interface ExternalHrefInput {
@@ -166,7 +171,64 @@ function checkStringList(label: string, value: unknown, problems: string[]): voi
   })
 }
 
-const METHOD = /^[A-Z]{3,7}$/
+// These rules mirror `parseClassifications` in apps/api/src/extensions/api-routes/route-audit.ts
+// (the MIT kit cannot import it). scripts/check-composition-kit-route-classifications.test.ts keeps
+// the two in step by feeding the same entries to both.
+const ROUTE_KEY = /^(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS) (\/\S*|\*)$/u
+const CLASSIFICATION_KEYS = new Set([
+  'route',
+  'reason',
+  'securityOwner',
+  'compensatingControls',
+  'expiresAfterStory',
+  'revisitBy',
+  'temporary',
+])
+const LEGACY_CLASSIFICATION_KEYS = new Set(['method', 'url', 'class'])
+
+function optionalTextProblem(label: string, name: string, value: unknown): string[] {
+  return value === undefined || nonEmptyString(value)
+    ? []
+    : [`${label}.${name} must be a non-empty string`]
+}
+
+function optionalProblems(label: string, entry: Rec): string[] {
+  const expires = entry.expiresAfterStory
+  const controls = entry.compensatingControls
+  return [
+    ...optionalTextProblem(label, 'securityOwner', entry.securityOwner),
+    ...optionalTextProblem(label, 'revisitBy', entry.revisitBy),
+    ...(expires === null ? [] : optionalTextProblem(label, 'expiresAfterStory', expires)),
+    ...(controls === undefined || (Array.isArray(controls) && controls.every(nonEmptyString))
+      ? []
+      : [`${label}.compensatingControls must be an array of non-empty strings`]),
+    ...(entry.temporary === undefined || typeof entry.temporary === 'boolean'
+      ? []
+      : [`${label}.temporary must be a boolean`]),
+  ]
+}
+
+function unknownFieldProblems(label: string, entry: Rec): string[] {
+  const unknown = Object.keys(entry).filter((key) => !CLASSIFICATION_KEYS.has(key))
+  if (unknown.length === 0) return []
+  const legacy = unknown.some((key) => LEGACY_CLASSIFICATION_KEYS.has(key))
+  const hint = legacy
+    ? '; use { route: "GET /api/v1/x", reason } (the route audit entry shape)'
+    : ''
+  return [`${label} has unknown field ${unknown.map((key) => `"${key}"`).join(', ')}${hint}`]
+}
+
+function classificationProblems(label: string, entry: unknown): string[] {
+  if (!isRecord(entry)) return [`${label} must be an object`]
+  const problems = unknownFieldProblems(label, entry)
+  if (!nonEmptyString(entry.route) || !ROUTE_KEY.test(entry.route)) {
+    problems.push(
+      `${label}.route must be "METHOD /full/url" with one of GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS`
+    )
+  }
+  if (!nonEmptyString(entry.reason)) problems.push(`${label} has no reason`)
+  return [...problems, ...optionalProblems(label, entry)]
+}
 
 function checkClassifications(value: unknown, problems: string[]): void {
   if (value === undefined) return
@@ -177,21 +239,12 @@ function checkClassifications(value: unknown, problems: string[]): void {
   const seen = new Set<string>()
   value.forEach((entry: unknown, index) => {
     const label = `routeClassifications[${index}]`
-    if (!isRecord(entry)) {
-      problems.push(`${label} must be an object`)
-      return
-    }
-    if (typeof entry.method !== 'string' || !METHOD.test(entry.method)) {
-      problems.push(`${label}.method must be an upper-case HTTP method such as GET`)
-    }
-    if (typeof entry.url !== 'string' || !entry.url.startsWith('/')) {
-      problems.push(`${label}.url must be a URL path starting with "/"`)
-    }
-    if (!nonEmptyString(entry.class)) problems.push(`${label}.class must be a non-empty string`)
-    if (!nonEmptyString(entry.reason)) problems.push(`${label} has no reason`)
-    const key = `${String(entry.method)} ${String(entry.url)}`
-    if (seen.has(key)) problems.push(`duplicate guard entry ${label}: ${key} is classified twice`)
-    seen.add(key)
+    problems.push(...classificationProblems(label, entry))
+    const route = isRecord(entry) ? entry.route : undefined
+    if (typeof route !== 'string') return
+    if (seen.has(route))
+      problems.push(`duplicate guard entry ${label}: ${route} is classified twice`)
+    seen.add(route)
   })
 }
 
@@ -400,10 +453,7 @@ export function mergeGuardEntries(
   const merged: MergedGuardEntries = {
     browserStorage: mergeStorage(entries?.browserStorage, context, problems),
     internalApiConsumers: mergeConsumers(entries?.internalApiConsumers, context, problems),
-    routeClassifications: bySortKey(
-      entries?.routeClassifications ?? [],
-      (entry) => `${entry.url} ${entry.method}`
-    ),
+    routeClassifications: bySortKey(entries?.routeClassifications ?? [], (entry) => entry.route),
     externalHrefs: { allow: mapHrefs(entries?.externalHrefs?.allow ?? [], context, problems) },
   }
   return { merged, problems }
