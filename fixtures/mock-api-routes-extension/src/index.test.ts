@@ -14,6 +14,13 @@ const VALID_SCENARIOS: ApiRoutesScenario[] = [
   'bad-schema',
   'never-refused',
   'old-pack',
+  'app-wrap',
+  'app-replace',
+  'app-throwing-wrap',
+  'app-throwing-replace',
+  'app-hooks-prepend',
+  'app-hooks-append',
+  'app-hooks-throw',
 ]
 
 const PROJECT_ROUTE = 'GET /api/v1/projects/:projectId'
@@ -170,6 +177,43 @@ describe('mock-api-routes-extension', () => {
     })
     await expect(gate?.onCheckCapability({ capability: 'cm.other' } as never)).resolves.toEqual({
       permitted: true,
+    })
+  })
+
+  describe('Story 68.14 app-level scenarios', () => {
+    const appHandlers = () => extension.hooksFactory().apiRoutes?.app
+
+    it('app-wrap delegates a non-CM error and maps CmError to 409', async () => {
+      setApiRoutesScenario('app-wrap')
+      const handler = appHandlers()?.errorHandler as (...a: unknown[]) => Promise<unknown>
+      const sent: unknown[] = []
+      const reply = {
+        status: (code: number) => ({ send: (body: unknown) => sent.push([code, body]) }),
+      }
+      const next = async () => 'pv'
+      const { CmError } = await import('./index.js')
+      await handler(new CmError('x'), {}, reply, next)
+      expect(sent).toEqual([[409, { code: 'cm_conflict' }]])
+      expect(await handler(new Error('plain'), {}, reply, next)).toBe('pv')
+    })
+
+    it('app-throwing-replace throws from the error handler and rejects from the not-found handler', async () => {
+      setApiRoutesScenario('app-throwing-replace')
+      const app = appHandlers()
+      expect(() =>
+        (app?.errorHandler as (...a: unknown[]) => unknown)(new Error('x'), {}, {})
+      ).toThrow(TypeError)
+      await expect(
+        (app?.notFoundHandler as (...a: unknown[]) => Promise<unknown>)({}, {})
+      ).rejects.toBeInstanceOf(TypeError)
+    })
+
+    it('records hook order in observed.hookOrder', () => {
+      setApiRoutesScenario('app-hooks-prepend')
+      const hooks = appHandlers()?.hooks
+      const fn = hooks?.onRequest as (...a: unknown[]) => unknown
+      fn({}, { getHeader: () => undefined }, () => undefined)
+      expect(observed.hookOrder).toEqual([{ phase: 'onRequest', requestIdHeader: false }])
     })
   })
 })

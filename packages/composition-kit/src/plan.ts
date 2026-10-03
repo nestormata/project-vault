@@ -12,6 +12,7 @@ import { overlapProblems, ownershipProblems } from './guards.js'
 import { checkInjections } from './injection.js'
 import { buildLock, readLock, serializeLock, type CompositionLock } from './lock.js'
 import { materialize, type MaterializeResult } from './materialize.js'
+import { readModulePackRoutes, type ApiRouteOverrideLock } from './module-pack.js'
 import { loadManifest, validateManifest } from './manifest.js'
 import { planOverlay, type FileSource, type OverlayResult } from './overlay.js'
 import { compareCodeUnits, normalizePackPath, sortedCodeUnits } from './paths.js'
@@ -125,6 +126,8 @@ interface Stage {
   registries: Registries
   /** Story 68.9: the pack's loaded guard entries (loaded here, where the planning is still async). */
   guardEntries: LoadedGuardEntries
+  /** Story 68.14: the module pack's override table (empty without `--module-pack`). */
+  apiRouteOverrides: ApiRouteOverrideLock[]
 }
 
 async function prepare(
@@ -160,6 +163,7 @@ async function prepare(
     hash: hasher(),
     registries,
     guardEntries,
+    apiRouteOverrides: [],
     ...(existing?.lock === undefined ? {} : { existingLock: existing.lock }),
   }
   return { stage, findings }
@@ -305,8 +309,16 @@ export async function plan(options: ComposeOptions): Promise<ComposePlan> {
   const { stage, findings } = await prepare(options, lockPath, log)
   if (stage === undefined) return emptyPlan(lockPath, findings.problems, findings.notes)
   findings.add({ problems: ownershipProblems(options.appRoot) })
-  // The tuple check runs before anything is planned, so a mismatch fails fast.
-  findings.add(compatibilityFindings(stage))
+  // The tuple check runs before anything is planned, so a mismatch fails fast. It also runs before
+  // the module pack entry is imported: a pack built against another extension-api is never run.
+  const compatibility = compatibilityFindings(stage)
+  findings.add(compatibility)
+  if (compatibility.problems.length === 0 && options.modulePack !== undefined) {
+    log('pv-compose: module pack')
+    const routes = await readModulePackRoutes(options.modulePack)
+    findings.add(routes)
+    stage.apiRouteOverrides = routes.overrides
+  }
   return planStage(stage, findings, lockPath, log)
 }
 
@@ -430,6 +442,7 @@ function planStage(
     excludedPvTests: guards.excludedPvTests,
     guardEntries: guards.guardEntries,
     navIdsReferenced: registry.navRefs,
+    apiRouteOverrides: stage.apiRouteOverrides,
     notes,
   })
   return {

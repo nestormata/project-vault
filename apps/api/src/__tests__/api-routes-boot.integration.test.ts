@@ -234,7 +234,11 @@ describe('Story 68.8 — apiRoutes boot outcomes', () => {
       try {
         expect(getExtensionStatus().status).toBe('loaded')
         expect(app.pvApiRouteOverrides).toBeUndefined()
-        expect(apiRoutesStatus(app.pvApiRouteOverrides)).toEqual({ added: [], overrides: [] })
+        expect(apiRoutesStatus(app.pvApiRouteOverrides)).toEqual({
+          added: [],
+          overrides: [],
+          app: { errorHandler: null, notFoundHandler: null, hooks: { prepend: [], append: [] } },
+        })
         const events = parseCapturedLogLines(logs.lines).map((line) => String(line['eventType']))
         expect(events.filter((event) => event.startsWith('extension.api_route'))).toEqual([])
       } finally {

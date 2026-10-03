@@ -99,6 +99,20 @@ const ApiRoutesStatusSchema = z
         target: z.enum(['secureRoute', 'raw']),
       })
     ),
+    app: z
+      .object({
+        errorHandler: z.enum(['replace', 'wrap']).nullable(),
+        notFoundHandler: z.enum(['replace', 'wrap']).nullable(),
+        hooks: z.object({
+          prepend: z.array(ApiRouteHookPhaseSchema),
+          append: z.array(ApiRouteHookPhaseSchema),
+        }),
+      })
+      .describe(
+        'App-level behaviour the extension changes (Story 68.14): the error and not-found ' +
+          'handler mode (`null` when untouched) and the global hook phases it prepends or ' +
+          'appends. Declaration data only.'
+      ),
   })
   .describe(
     'Extension API routes (M7): routes the extension added and PV routes it overrides. ' +

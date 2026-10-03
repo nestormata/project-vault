@@ -31,6 +31,13 @@ export type ApiRoutesScenario =
   | 'above-host'
   | 'never-refused'
   | 'old-pack'
+  | 'app-wrap'
+  | 'app-replace'
+  | 'app-throwing-wrap'
+  | 'app-throwing-replace'
+  | 'app-hooks-prepend'
+  | 'app-hooks-append'
+  | 'app-hooks-throw'
 
 let scenario: ApiRoutesScenario = 'default'
 
@@ -44,6 +51,10 @@ export const observed = {
   lateNextErrors: [] as string[],
   hooksFactoryCalls: 0,
   contexts: [] as Array<{ route: string; ctxKeys: string[] }>,
+  // Story 68.14: one entry per app-level hook call (`requestIdHeader` is true when PV's
+  // structured-logging onRequest hook already ran for the request) and per CM error handler call.
+  hookOrder: [] as Array<{ phase: string; requestIdHeader: boolean }>,
+  errorHandlerErrors: [] as string[],
 }
 
 export function resetObserved(): void {
@@ -51,6 +62,8 @@ export function resetObserved(): void {
   observed.lateNextErrors.length = 0
   observed.hooksFactoryCalls = 0
   observed.contexts.length = 0
+  observed.hookOrder.length = 0
+  observed.errorHandlerErrors.length = 0
 }
 
 function count(route: string): void {
@@ -334,6 +347,155 @@ function simple(
 
 const NAME = 'test.mock-api-routes-extension'
 
+/** Story 68.14: a CM-owned error class the app-level error handler recognizes. */
+export class CmError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'CmError'
+  }
+}
+
+const publicAdd = (url: string) =>
+  ({
+    method: 'GET',
+    url,
+    options: { security: { requireAuth: false, rateLimit: false, writeAuditEvent: false } },
+  }) as const
+
+/** Public add routes the app-level scenarios use to raise errors (no auth, no DB). */
+const appRoutesDeclaration: ApiRoutesDeclaration = {
+  add: [publicAdd('/cm/boom'), publicAdd('/cm/plain-error'), publicAdd('/cm/status-error')],
+}
+
+function appRouteHandlers(): ApiRoutesHooks['routes'] {
+  return {
+    'GET /cm/boom': {
+      handler: async () => {
+        throw new CmError('cm boom')
+      },
+    },
+    'GET /cm/plain-error': {
+      handler: async () => {
+        throw new Error('plain failure with a secret-looking detail')
+      },
+    },
+    'GET /cm/status-error': {
+      handler: async () => {
+        throw Object.assign(new Error('bad input'), { statusCode: 400 })
+      },
+    },
+  }
+}
+
+type ErrorReply = { status: (code: number) => { send: (body: unknown) => unknown } }
+type HookReply = { getHeader?: (name: string) => unknown }
+
+function recordHook(phase: string) {
+  return (_req: unknown, reply: HookReply, done?: () => void): void => {
+    observed.hookOrder.push({
+      phase,
+      requestIdHeader: reply.getHeader?.('x-request-id') !== undefined,
+    })
+    done?.()
+  }
+}
+
+const wrapErrorHandler = async (
+  error: Error,
+  _req: unknown,
+  reply: ErrorReply,
+  next: Next
+): Promise<unknown> => {
+  observed.errorHandlerErrors.push(error.name)
+  if (error instanceof CmError) return reply.status(409).send({ code: 'cm_conflict' })
+  return next()
+}
+
+const wrapNotFoundHandler = async (
+  req: { url: string },
+  reply: ErrorReply,
+  next: Next
+): Promise<unknown> =>
+  req.url.startsWith('/cm/') ? reply.status(404).send({ code: 'cm_not_found' }) : next()
+
+const replaceErrorHandler = async (error: Error, _req: unknown, reply: ErrorReply) => {
+  observed.errorHandlerErrors.push(error.name)
+  return reply.status(418).send({ code: 'cm_teapot', errorName: error.name })
+}
+
+const replaceNotFoundHandler = async (_req: unknown, reply: ErrorReply) =>
+  reply.status(404).send({ code: 'cm_nope' })
+
+function throwingError(): never {
+  throw new TypeError('boom secret-looking text')
+}
+
+function appScenario(
+  app: NonNullable<ApiRoutesDeclaration['app']>,
+  appHooks: NonNullable<ApiRoutesHooks['app']>
+): ScenarioDefinition {
+  const declaration: ApiRoutesDeclaration = { ...appRoutesDeclaration, app }
+  return {
+    manifest: {
+      name: NAME,
+      apiVersion: EXTENSION_API_VERSION,
+      capabilities: [],
+      apiRoutes: declaration,
+    },
+    hooks: () => ({ apiRoutes: { routes: appRouteHandlers(), app: appHooks } }),
+  }
+}
+
+function appScenarios(): Record<
+  | 'app-wrap'
+  | 'app-replace'
+  | 'app-throwing-wrap'
+  | 'app-throwing-replace'
+  | 'app-hooks-prepend'
+  | 'app-hooks-append'
+  | 'app-hooks-throw',
+  ScenarioDefinition
+> {
+  return {
+    'app-wrap': appScenario(
+      { errorHandler: 'wrap', notFoundHandler: 'wrap' },
+      { errorHandler: wrapErrorHandler, notFoundHandler: wrapNotFoundHandler }
+    ),
+    'app-replace': appScenario(
+      { errorHandler: 'replace', notFoundHandler: 'replace' },
+      { errorHandler: replaceErrorHandler, notFoundHandler: replaceNotFoundHandler }
+    ),
+    // wrap: the error handler rejects asynchronously, the not-found handler throws synchronously
+    'app-throwing-wrap': appScenario(
+      { errorHandler: 'wrap', notFoundHandler: 'wrap' },
+      {
+        errorHandler: async () => throwingError(),
+        notFoundHandler: () => throwingError(),
+      }
+    ),
+    // replace: the error handler throws synchronously, the not-found handler rejects asynchronously
+    'app-throwing-replace': appScenario(
+      { errorHandler: 'replace', notFoundHandler: 'replace' },
+      {
+        errorHandler: () => throwingError(),
+        notFoundHandler: async () => throwingError(),
+      }
+    ),
+    'app-hooks-prepend': appScenario(
+      { hooks: { prepend: ['onRequest'] } },
+      { hooks: { onRequest: recordHook('onRequest') } }
+    ),
+    'app-hooks-append': appScenario(
+      { hooks: { append: ['onRequest'] } },
+      { hooks: { onRequest: recordHook('onRequest') } }
+    ),
+    'app-hooks-throw': appScenario(
+      { hooks: { prepend: ['onRequest'] } },
+      { hooks: { onRequest: () => throwingError() } }
+    ),
+  }
+}
+
 function scenarios(): Record<ApiRoutesScenario, ScenarioDefinition> {
   return {
     default: {
@@ -411,6 +573,7 @@ function scenarios(): Record<ApiRoutesScenario, ScenarioDefinition> {
       manifest: { name: NAME, apiVersion: '3.25.0', capabilities: [] },
       hooks: () => ({}),
     },
+    ...appScenarios(),
   }
 }
 

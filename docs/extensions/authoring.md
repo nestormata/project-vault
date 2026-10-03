@@ -113,7 +113,7 @@ export default { manifest, hooksFactory }
 | `moduleDataRoutes` | Optional, and not gated on any capability (`registerExtension()` deliberately does not require `ui-panel` for it). Mounts real `GET` routes on Project Vault's own API router under `/api/v1/extensions/data`. `GET`-only, under a fixed prefix, so it adds routes but cannot override or wrap existing ones. It does not belong to the panel API. It is deprecated and frozen (no new features or fixes; kept until removed; security issues resolved by replacement or removal) in its own right; first-party API route composition is the planned forward path. |
 | `navItems` | Optional, and not gated on any capability. Adds append-only navigation entries to Project Vault's shell. It does not belong to the panel API. It is deprecated and frozen (no new features or fixes; kept until removed; security issues resolved by replacement or removal) in its own right; build-time UI composition navigation is the planned forward path. |
 | `dbScope` | Optional and operator-approved: a request for a separate least-privilege database handle. |
-| `apiRoutes` | Optional (since 3.27.0), and not gated on any capability. Adds API routes at any URL and overrides (`replace`) or wraps (`wrap`) Project Vault's own API routes, all inside Project Vault's security pipeline. Declarations are data here; handlers, schemas and hook functions go in `hooks.apiRoutes.routes`. Validation is integrity only: no URL prefix, count cap, capability or allowlist. See [API routes (`apiRoutes`)](#api-routes-apiroutes). |
+| `apiRoutes` | Optional (since 3.27.0), and not gated on any capability. Adds API routes at any URL and overrides (`replace`) or wraps (`wrap`) Project Vault's own API routes, all inside Project Vault's security pipeline. Declarations are data here; handlers, schemas and hook functions go in `hooks.apiRoutes.routes`. Validation is integrity only: no URL prefix, count cap, capability or allowlist. See [API routes (`apiRoutes`)](#api-routes-apiroutes) and, for the global hooks and error handlers (since 3.29.0), [App-level behaviour](#app-level-behaviour-apiroutesapp). |
 
 ### Why `EXTENSION_API_VERSION` rather than a version string
 
@@ -571,6 +571,89 @@ overridden route key with its mode and flags. Every request an extension route a
 `pvRoute` binding (`{ override: 'replace' | 'wrap' }` or `{ added: true }`) in Project Vault's
 request logs. An extension route whose rate-limit bucket equals a Project Vault route's logs one
 `extension.api_route.shared_default_key` warning; set `rateLimit.key` to separate them.
+
+#### App-level behaviour (`apiRoutes.app`)
+
+`apiRoutes.app` (since `@project-vault/extension-api` 3.29.0) changes what applies to **every**
+request: global hooks, the error handler and the not-found handler, with the same `wrap`/`replace`
+model as routes. A pack without `app` loads exactly as before; there is no prefix, capability or
+allowlist.
+
+```ts
+const manifest: ExtensionManifest = {
+  name: 'com.acme.docs',
+  apiVersion: EXTENSION_API_VERSION,
+  capabilities: [],
+  apiRoutes: {
+    app: {
+      hooks: { prepend: ['onRequest'], append: ['onSend'] },
+      errorHandler: 'wrap',
+      notFoundHandler: 'wrap',
+    },
+  },
+}
+// hooksFactory() returns:
+// { apiRoutes: { app: {
+//     hooks: { onRequest: myOnRequest, onSend: myOnSend },
+//     errorHandler: (error, req, reply, next) => (error instanceof AcmeError ? reply.status(409).send({ code: 'acme_conflict' }) : next()),
+//     notFoundHandler: (req, reply, next) => (req.url.startsWith('/acme/') ? reply.status(404).send({ code: 'acme_not_found' }) : next()),
+// } } }
+```
+
+- **Phases.** `onRequest`, `preValidation`, `preHandler` and `onSend` (the request phases; `onRoute`,
+  `onRegister`, `onReady` and `onClose` are not accepted). A phase in `prepend` and `append` runs the same
+  functions at both positions.
+- **Where the hooks sit.** `prepend` hooks run before Project Vault's own app-wide hooks (structured
+  logging, the vault guard), **including while the vault is sealed**: a prepended `onRequest` hook runs on a
+  sealed vault before the guard's `503`. `append` hooks run after Project Vault's last app-wide hook and
+  before its route plugins: right after the vault guard when `vaultGuardEnabled` is true, and in that same
+  (empty) slot when it is false, so an appended hook never runs on a request the guard already answered.
+  Both reach every route, including routes in encapsulated plugins.
+- **No tenant context.** App-level hooks run outside any request transaction: they receive no `ctx.tx` and
+  no organization scope. Do not touch tenant tables from a hook without your own scope (`getDbHandle()`).
+- **Error and not-found handlers.** `replace` makes your function the handler for every error (or every
+  unknown route), Project Vault's own errors included; `wrap` gives it a `next()` that runs Project Vault's
+  handler with the same error, so `validation_error`, `internal_error` and the `429` shapes stay
+  byte-identical unless you change them. Project Vault's own not-found output is Fastify's default 404
+  body, reproduced unchanged.
+- **A throwing handler never leaks.** If your error or not-found function throws or rejects, Project Vault
+  logs one `extension.api_route.app_handler_failed` error (route key and error class only, never the
+  message or stack) and answers with its own handler and the **original** error.
+- **Recording.** One `extension.api_route.app_override` warning per change at boot,
+  `extension.api_routes.applied` lists them under `app`, and `GET /api/v1/admin/extensions/status` returns
+  `apiRoutes.app` (`errorHandler`, `notFoundHandler`, `hooks.prepend`, `hooks.append`; declaration data
+  only).
+
+#### Verifying a composed API: the runtime route audit and the composed spec
+
+Two tools boot the real `createApp()` with your extension, with no database (the loader's DB steps are
+stubbed; the admin database URL variable still has to be set to any well-formed URL, as for
+`generate-spec`):
+
+```bash
+# Prove every route on the composed API is secureRoute-built or classified. Exit 0 pass, 1 an audit failure
+# or an extension that did not load, 2 a usage or classification-file error.
+pnpm --filter @project-vault/api route-audit:runtime --extension <package> [--classifications <file>]
+
+# Write your composed OpenAPI document. Both flags together; --out must not resolve to PV's own spec.
+pnpm --filter @project-vault/api generate-spec --extension <package> --out <path>
+```
+
+The audit uses a root route collector and `app.ready()`: it sends no request and opens no port. A route is
+accepted when `secureRoute()` built it or when a classification names it (`METHOD /full/url`, prefix
+included): Project Vault's own table (`PUBLIC_ROUTE_EXEMPTIONS` plus explicit entries for the 405 stubs,
+swagger-ui, `OPTIONS *` and `GET /status`; a HEAD route Fastify derives from a classified GET needs no
+entry) and the optional `--classifications` file. The file is a JSON array of `{ "route", "reason" }`
+entries (the optional `securityOwner`, `compensatingControls`, `expiresAfterStory`, `revisitBy` and
+`temporary` fields of Project Vault's table are allowed; any other field is rejected). Extension and
+Project Vault entries are reviewed under the same rules: the audit never decides which routes may be
+public. An unclassified route, a duplicate key and a **stale** classification (a key for a route that does
+not exist) all fail, naming the key. The report is sorted and holds no absolute path or env value.
+
+`generate-spec --extension` writes the composed document atomically; a boot failure or a package that
+does not load exits 1 and leaves the old `--out` untouched. The committed `packages/shared/openapi.json`
+stays Project Vault-only: `--out` spellings that resolve to it (relative, `..`, `//`, a symlink or a hard
+link) exit 2 without writing.
 
 ## Recovering from a broken extension
 

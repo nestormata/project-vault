@@ -22,7 +22,8 @@ Composes a UI pack onto @project-vault/web-host in the app root, writes composit
   --manifest <file>        the pack manifest (default: <pack>/pv-ui.manifest.ts)
   --host <dir>             the web-host directory (default: resolved from the app root)
   --lock <file>            the lock path (default: <app>/composition.lock.json)
-  --module-pack <dir>      a directory that resolves @project-vault/extension-api (checked against the tuple)
+  --module-pack <dir>      the module pack package root: its extension-api is checked against the tuple, and its
+                           entry is imported to record apiRoutes.override in the lock (runs its top-level code)
   --check                  fail when the committed lock is not current (writes nothing)
   --dry-run                print the plan summary and write nothing
   --accept-host <path>     accept the current web-host hash of a declared override or replacement (repeatable)
