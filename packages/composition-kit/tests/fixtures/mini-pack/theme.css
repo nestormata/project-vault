@@ -1,0 +1,7 @@
+@theme {
+  --color-cm-accent: #abcdef;
+}
+
+.cm-brand-mark {
+  background-image: url('./brand/mark.svg');
+}

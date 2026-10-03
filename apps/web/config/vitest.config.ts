@@ -23,7 +23,10 @@ export const WEB_HOST_COVERAGE = {
 // inclusion.
 function webHostTestConfig(options: WebHostBuildOptions): ViteUserConfig {
   return {
-    plugins: [paraglideVitePlugin(paraglideOptions(options.appRoot)), sveltekit()],
+    plugins: [
+      paraglideVitePlugin(paraglideOptions(options.appRoot, options.composedRoot)),
+      sveltekit(),
+    ],
     resolve: { conditions: ['browser'] },
     test: {
       include: ['src/**/*.test.ts', 'scripts/**/*.test.ts'],

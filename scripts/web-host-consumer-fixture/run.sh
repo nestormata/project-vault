@@ -7,6 +7,10 @@
 # `missing-dependency` (cron-parser removed from the tarball's dependencies). The two broken
 # variants must fail; scripts/check-web-host-consumer-fixture.test.ts asserts that.
 #
+# Story 68.3: the variants named `compose*` install the composition kit tarball as well and compose
+# a UI pack onto the installed web-host (instead of a plain copy) before building. They are driven
+# by scripts/check-composition-kit-integration.test.ts and implemented in compose-mode.sh.
+#
 # Isolation is the point of this fixture. A build that "works" only because Node walked up into
 # the monorepo's node_modules proves nothing, so:
 #   - the consumer lives in a fresh `mktemp -d` outside the repository;
@@ -36,6 +40,11 @@ REPO_ROOT="$(cd "$FIXTURE_DIR/../.." && pwd)"
 readonly REPO_ROOT
 TARBALL="$(realpath "$1")"
 readonly VARIANT="${2:-ok}"
+COMPOSE_MODE=0
+if [[ "$VARIANT" == compose* ]]; then
+  COMPOSE_MODE=1
+fi
+readonly COMPOSE_MODE
 NODE_BIN="$(command -v node)"
 readonly NODE_BIN
 NODE_DIR="$(dirname "$NODE_BIN")"
@@ -47,11 +56,13 @@ readonly WORK
 readonly APP="$WORK/app"
 readonly CACHE="${WEB_HOST_FIXTURE_CACHE:-$WORK/npm-cache}"
 SERVER_PID=''
+VITEST_ARGS=()
 API_PID=''
+DEV_PID=''
 
 cleanup() {
   local pid
-  for pid in "$SERVER_PID" "$API_PID"; do
+  for pid in "$SERVER_PID" "$API_PID" "$DEV_PID"; do
     if [[ -n "$pid" ]]; then
       kill "$pid" 2>/dev/null || true
     fi
@@ -86,10 +97,17 @@ clean_env() {
     "$@"
 }
 
+free_port() {
+  clean_env "$NODE_BIN" -e '
+    const server = require("node:net").createServer()
+    server.listen(0, "127.0.0.1", () => { console.log(server.address().port); server.close() })
+  '
+}
+
 mkdir -p "$WORK/home" "$CACHE" "$APP"
 
 # Variants rewrite a copy of the tarball; the original is never touched.
-if [[ "$VARIANT" != 'ok' ]]; then
+if [[ "$VARIANT" != 'ok' && "$COMPOSE_MODE" == 0 ]]; then
   mkdir -p "$WORK/repack"
   tar -xzf "$TARBALL" -C "$WORK/repack"
   case "$VARIANT" in
@@ -127,10 +145,16 @@ if [[ -n "${WEB_HOST_FIXTURE_EXTENSION_API_TARBALL:-}" ]]; then
 fi
 readonly EXTENSION_API_TARBALL
 
-cp "$FIXTURE_DIR/app/svelte.config.js" "$FIXTURE_DIR/app/vite.config.ts" "$FIXTURE_DIR/app/vitest.config.ts" "$APP/"
-# Generated, not committed: inside the repository, a tsconfig.json that extends a package which only
-# exists in the consumer would break Vite's tsconfig lookup for anything that loads these files.
-printf '%s\n' '{ "extends": ["./.svelte-kit/tsconfig.json", "@project-vault/web-host/tsconfig.base.json"] }' > "$APP/tsconfig.json"
+if [[ "$COMPOSE_MODE" == 1 ]]; then
+  # shellcheck source=compose-mode.sh
+  source "$FIXTURE_DIR/compose-mode.sh"
+  compose_prepare_app
+else
+  cp "$FIXTURE_DIR/app/svelte.config.js" "$FIXTURE_DIR/app/vite.config.ts" "$FIXTURE_DIR/app/vitest.config.ts" "$APP/"
+  # Generated, not committed: inside the repository, a tsconfig.json that extends a package which only
+  # exists in the consumer would break Vite's tsconfig lookup for anything that loads these files.
+  printf '%s\n' '{ "extends": ["./.svelte-kit/tsconfig.json", "@project-vault/web-host/tsconfig.base.json"] }' > "$APP/tsconfig.json"
+fi
 
 # The consumer's package.json is generated from the tarball's own manifest, so this fixture proves
 # the exact-version contract is installable: every dependency and required peer at its exact
@@ -159,6 +183,9 @@ clean_env "$NODE_BIN" -e '
   }
   fs.writeFileSync(out, JSON.stringify(pkg, null, 2))
 ' "$WORK/web-host-package.json" "$TARBALL" "$APP/package.json" "$EXTENSION_API_TARBALL"
+if [[ "$COMPOSE_MODE" == 1 ]]; then
+  compose_extend_package_json
+fi
 
 log "installing into $APP (fresh npm cache, clean env)"
 (cd "$APP" && clean_env "$NODE_BIN" "$NPM_CLI" install --no-audit --no-fund --ignore-scripts --loglevel=error)
@@ -176,23 +203,71 @@ if [[ -e "$APP/node_modules/@project-vault/shared" ]]; then
   exit 1
 fi
 
-cp -r "$INSTALLED/src" "$INSTALLED/static" "$APP/"
-if [[ -d "$INSTALLED/vendor" ]]; then
-  cp -r "$INSTALLED/vendor" "$APP/"
+if [[ "$COMPOSE_MODE" == 1 ]]; then
+  compose_assert_isolated
+  compose_run
+  compose_pipeline_to_sync
+else
+  cp -r "$INSTALLED/src" "$INSTALLED/static" "$APP/"
+  if [[ -d "$INSTALLED/vendor" ]]; then
+    cp -r "$INSTALLED/vendor" "$APP/"
+  fi
+
+  log 'paraglide compile, svelte-kit sync'
+  (
+    cd "$APP"
+    clean_env "$NODE_BIN" node_modules/@inlang/paraglide-js/bin/run.js compile \
+      --project node_modules/@project-vault/web-host/project.inlang --outdir ./src/lib/paraglide \
+      --strategy cookie baseLocale --emit-ts-declarations --silent
+    clean_env "$NODE_BIN" node_modules/@sveltejs/kit/svelte-kit.js sync
+  )
 fi
 
-log 'paraglide compile, svelte-kit sync, vite build'
-(
-  cd "$APP"
-  clean_env "$NODE_BIN" node_modules/@inlang/paraglide-js/bin/run.js compile \
-    --project node_modules/@project-vault/web-host/project.inlang --outdir ./src/lib/paraglide \
-    --strategy cookie baseLocale --emit-ts-declarations --silent
-  clean_env "$NODE_BIN" node_modules/@sveltejs/kit/svelte-kit.js sync
-  clean_env "$NODE_BIN" node_modules/vite/bin/vite.js build --logLevel warn
-)
+if [[ "$VARIANT" == 'compose' || "$VARIANT" == 'compose-types-negative' ]]; then
+  compose_svelte_check
+fi
+if [[ "$VARIANT" == 'compose' ]]; then
+  compose_plant_probe
+fi
+
+# The dev variant never builds: it needs the API stub, then drives the Vite dev server.
+start_api_stub() {
+  API_PORT="$(free_port)"
+  (
+    exec env -i PATH="$NODE_DIR:/usr/bin:/bin" "$NODE_BIN" -e '
+      const http = require("node:http")
+      http.createServer((req, res) => {
+        res.setHeader("content-type", "application/json")
+        if (["/ready", "/health", "/api/health"].includes(req.url)) {
+          res.end(JSON.stringify({ status: "ready", nativeLoginEnabled: true }))
+          return
+        }
+        res.statusCode = 404
+        res.end(JSON.stringify({ error: { code: "not_found", message: "fixture API stub" } }))
+      }).listen(Number(process.argv[1]), "127.0.0.1")
+    ' "$API_PORT"
+  ) &
+  API_PID=$!
+}
+
+if [[ "$VARIANT" == 'compose-dev' ]]; then
+  start_api_stub
+  compose_dev "$API_PORT"
+  exit 0
+fi
+
+log 'vite build'
+(cd "$APP" && clean_env "$NODE_BIN" node_modules/vite/bin/vite.js build --logLevel warn)
 if [[ ! -f "$APP/build/index.js" || ! -d "$APP/build/client/_app" ]]; then
   echo 'fixture: vite build produced no build/index.js or build/client/_app' >&2
   exit 1
+fi
+if [[ "$VARIANT" == 'compose-server-leak' || "$VARIANT" == 'compose-server-twin' ]]; then
+  log "OK: vite build succeeded for $VARIANT"
+  exit 0
+fi
+if [[ "$VARIANT" == 'compose' ]]; then
+  compose_assert_css
 fi
 
 # Story 68.2 (Nestor 2026-10-02): the package ships PV's self-contained unit tests so a composer can
@@ -205,35 +280,13 @@ if [[ "$SHIPPED_TESTS" -eq 0 ]]; then
   echo 'fixture: the package shipped no unit tests' >&2
   exit 1
 fi
-(cd "$APP" && clean_env "$NODE_BIN" node_modules/vitest/vitest.mjs run --reporter=dot)
+(cd "$APP" && clean_env "$NODE_BIN" node_modules/vitest/vitest.mjs run --reporter=dot "${VITEST_ARGS[@]}")
 log "OK: ${SHIPPED_TESTS} shipped unit test files passed"
-
-free_port() {
-  clean_env "$NODE_BIN" -e '
-    const server = require("node:net").createServer()
-    server.listen(0, "127.0.0.1", () => { console.log(server.address().port); server.close() })
-  '
-}
 
 # A stand-in for the PV API: /ready and /health say "ready, native login enabled", which is all
 # /login's server-side load needs to render the sign-in form. Everything else is a JSON 404.
-API_PORT="$(free_port)"
+start_api_stub
 readonly API_PORT
-(
-  exec env -i PATH="$NODE_DIR:/usr/bin:/bin" "$NODE_BIN" -e '
-    const http = require("node:http")
-    http.createServer((req, res) => {
-      res.setHeader("content-type", "application/json")
-      if (["/ready", "/health", "/api/health"].includes(req.url)) {
-        res.end(JSON.stringify({ status: "ready", nativeLoginEnabled: true }))
-        return
-      }
-      res.statusCode = 404
-      res.end(JSON.stringify({ error: { code: "not_found", message: "fixture API stub" } }))
-    }).listen(Number(process.argv[1]), "127.0.0.1")
-  ' "$API_PORT"
-) &
-API_PID=$!
 
 PORT="$(free_port)"
 readonly PORT
@@ -270,5 +323,8 @@ fi
 if ! grep -q '<form' "$WORK/login.html" || ! grep -q '<title>Sign in | Project Vault</title>' "$WORK/login.html"; then
   echo 'fixture: /login did not server-render the sign-in form' >&2
   exit 1
+fi
+if [[ "$COMPOSE_MODE" == 1 ]]; then
+  compose_http_checks "$PORT"
 fi
 log "OK: /login server-rendered the sign-in form (HTTP 200) from $(basename "$TARBALL")"

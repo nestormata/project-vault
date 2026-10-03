@@ -29,6 +29,7 @@ interface Step {
 }
 
 interface Job {
+  needs?: string | string[]
   environment?: string
   permissions?: Record<string, string>
   steps?: Step[]
@@ -47,6 +48,15 @@ const GATES = [
   'scripts/check-web-host-tarball.test.ts',
   'scripts/check-release-version-triangle.ts web-host',
   'npm view "@project-vault/web-host@',
+  // Story 68.3: the kit named by the compatibility manifest must be on npm before web-host uploads.
+  'npm view "@project-vault/composition-kit@',
+]
+// Story 68.3: what publish-kit must pass before it uploads the composition kit.
+const KIT_GATES = [
+  'pnpm check-composition-kit-boundary',
+  'pnpm --filter @project-vault/composition-kit test',
+  'scripts/check-release-version-triangle.ts composition-kit',
+  'npm view "@project-vault/composition-kit@',
 ]
 
 function stepIndex(steps: Step[], needle: string): number {
@@ -96,35 +106,55 @@ function fixtureRegistryOnlyProblems(steps: Step[]): string[] {
     : [`the consumer fixture step does not set ${EXTENSION_API_REGISTRY_ONLY_ENV}: '1'`]
 }
 
-function publishJobProblems(job: Job | undefined): string[] {
-  if (job === undefined) return ['has no publish job']
+function jobIdentityProblems(job: Job, name: string): string[] {
+  return [
+    ...(job.environment === 'npm-publish'
+      ? []
+      : [`${name} job is not in the npm-publish environment`]),
+    ...(job.permissions?.['id-token'] === 'write'
+      ? []
+      : [`${name} job lacks id-token: write (OIDC)`]),
+    ...(job.permissions?.contents === 'read'
+      ? []
+      : [`${name} job contents permission is not read`]),
+  ]
+}
+
+function publishJobProblems(
+  job: Job | undefined,
+  options: { name: string; gates: string[]; registryOnlyFixture: boolean }
+): string[] {
+  if (job === undefined) return [`has no ${options.name} job`]
   const steps = job.steps ?? []
   const uploads = publishSteps(steps)
   const real = uploads.filter((step) => !(step.run ?? '').includes('--dry-run'))
   const firstUpload = steps.findIndex((step) => uploads.includes(step))
   return [
-    ...(job.environment === 'npm-publish'
-      ? []
-      : ['publish job is not in the npm-publish environment']),
-    ...(job.permissions?.['id-token'] === 'write'
-      ? []
-      : ['publish job lacks id-token: write (OIDC)']),
-    ...(job.permissions?.contents === 'read'
-      ? []
-      : ['publish job contents permission is not read']),
+    ...jobIdentityProblems(job, options.name),
     ...(real.length === 1
       ? []
-      : [`expected exactly one real npm publish step, found ${real.length}`]),
+      : [`${options.name}: expected exactly one real npm publish step, found ${real.length}`]),
     ...uploads.flatMap((step) => publishStepProblems(step)),
-    ...fixtureRegistryOnlyProblems(steps),
+    ...(options.registryOnlyFixture ? fixtureRegistryOnlyProblems(steps) : []),
     ...(real.every((step) => (step.if ?? '').includes('inputs.dry_run != true'))
       ? []
       : ['the real publish runs on a dry run']),
-    ...GATES.filter((gate) => {
-      const index = stepIndex(steps, gate)
-      return index === -1 || index > firstUpload
-    }).map((gate) => `gate "${gate}" is missing or runs after the upload`),
+    ...options.gates
+      .filter((gate) => {
+        const index = stepIndex(steps, gate)
+        return index === -1 || index > firstUpload
+      })
+      .map((gate) => `${options.name}: gate "${gate}" is missing or runs after the upload`),
   ]
+}
+
+/** Story 68.3: the kit publishes first, and web-host never uploads without waiting for it. */
+function kitOrderProblems(workflow: Workflow): string[] {
+  const needs = workflow.jobs?.publish?.needs
+  const list = typeof needs === 'string' ? [needs] : (needs ?? [])
+  return list.includes('publish-kit')
+    ? []
+    : ['publish does not need publish-kit (the kit must publish first)']
 }
 
 /** The `npm publish` command lines of a run script (not messages that merely mention it). */
@@ -168,7 +198,17 @@ export function releaseWorkflowProblems(text: string): string[] {
   return [
     ...triggerProblems(workflow, text),
     ...concurrencyProblems(workflow),
-    ...publishJobProblems(workflow.jobs?.publish),
+    ...publishJobProblems(workflow.jobs?.publish, {
+      name: 'publish',
+      gates: GATES,
+      registryOnlyFixture: true,
+    }),
+    ...publishJobProblems(workflow.jobs?.['publish-kit'], {
+      name: 'publish-kit',
+      gates: KIT_GATES,
+      registryOnlyFixture: false,
+    }),
+    ...kitOrderProblems(workflow),
     ...(/NPM_TOKEN|NODE_AUTH_TOKEN|secrets\.NPM/.test(code)
       ? ['references an npm token secret']
       : []),
@@ -196,6 +236,7 @@ describe('web-host release workflow: this repo (Story 68.2 AC-10)', () => {
   })
 })
 
+const SKIPPED_RUN = 'run: echo skipped'
 const REAL_PUBLISH = 'npm publish --provenance --access public --tag next;'
 // The workflow's own SHA-pinned pnpm/action-setup line, read from it rather than repeated here.
 const PNPM_SETUP_PIN =
@@ -241,7 +282,7 @@ describe('web-host release workflow: each rule fails on a mutated copy (Story 68
     [
       'gate order',
       'run: pnpm exec tsx scripts/check-release-version-triangle.ts web-host',
-      'run: echo skipped',
+      SKIPPED_RUN,
       /check-release-version-triangle\.ts web-host" is missing/,
     ],
     [
@@ -255,6 +296,30 @@ describe('web-host release workflow: each rule fails on a mutated copy (Story 68
       `          ${EXTENSION_API_REGISTRY_ONLY_ENV}: '1'\n`,
       '',
       /does not set WEB_HOST_FIXTURE_REGISTRY_ONLY/,
+    ],
+    [
+      'kit publishes first',
+      'needs: [validate, publish-kit]',
+      'needs: validate',
+      /publish does not need publish-kit/,
+    ],
+    [
+      'kit version triangle',
+      'run: pnpm exec tsx scripts/check-release-version-triangle.ts composition-kit',
+      SKIPPED_RUN,
+      /check-release-version-triangle\.ts composition-kit" is missing/,
+    ],
+    [
+      'kit boundary',
+      'run: pnpm check-composition-kit-boundary',
+      SKIPPED_RUN,
+      /pnpm check-composition-kit-boundary" is missing/,
+    ],
+    [
+      'kit on npm before web-host',
+      'npm view "@project-vault/composition-kit@${KIT_VERSION}" version\n\n      - name: Reject',
+      'echo skipped\n\n      - name: Reject',
+      /publish: gate "npm view "@project-vault\/composition-kit@" is missing/,
     ],
     ['action pin', PNPM_SETUP_PIN, 'pnpm/action-setup@v6', /not a full 40-hex commit SHA/],
   ]

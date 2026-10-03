@@ -89,6 +89,7 @@ Rationale rather than procedure — why a subsystem works the way it does.
 | [../packages/vault-action/README.md](../packages/vault-action/README.md) | The GitHub Action that fetches credentials into a workflow, including the offline cache fallback |
 | [../packages/cli/README.md](../packages/cli/README.md) | The `pvault` terminal CLI: `get`, `run`, `write-env`, `login`/`logout`, exit codes, and the startup version check |
 | [../packages/extension-api/README.md](../packages/extension-api/README.md) | The published extension contract package: hooks, host services, and a minimal extension |
+| [composition-kit.md](composition-kit.md) | `@project-vault/composition-kit`, the MIT composer (`pv-compose`) that overlays a UI pack onto `web-host`: the manifest, the drift lock, `--accept-host`, the upgrade flow, the version tuple, the licence boundary and its release |
 | [web-host-package.md](web-host-package.md) | `@project-vault/web-host`, PV's web source published per release for build-time composition: contents, config factories, the compatibility manifest, and its release |
 
 ## Extending

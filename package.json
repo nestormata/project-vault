@@ -43,6 +43,7 @@
     "check-vault-action-dist": "tsx scripts/check-vault-action-dist-fresh.ts",
     "check-build-info-unstamped": "tsx scripts/check-build-info-unstamped.ts",
     "check-extension-api-license": "tsx scripts/check-extension-api-license.ts",
+    "check-composition-kit-boundary": "tsx scripts/check-composition-kit-boundary.ts",
     "check-migration-compatibility": "tsx scripts/migration-compatibility-check.ts",
     "check-public-safety": "tsx scripts/check-public-safety.ts",
     "check-form-guidance": "tsx scripts/check-form-guidance.ts",

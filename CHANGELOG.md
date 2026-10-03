@@ -11,6 +11,13 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **`@project-vault/composition-kit` (MIT):** the `pv-compose` composer that overlays a UI pack onto
+  `@project-vault/web-host`, the `defineUiPack()` manifest, the committed `composition.lock.json`
+  drift lock, the version-tuple compatibility check and a Vite dev plugin. It has its own semver and
+  publishes (dist-tag `next`, OIDC provenance) from the same `vX.Y.Z` tag, before `web-host`. The
+  web-host compatibility manifest now names the kit version (`kitVersion`). See
+  [docs/composition-kit.md](docs/composition-kit.md). Nothing in PV's own web build, image or tests
+  changes.
 - **`@project-vault/web-host`:** every release now also publishes PV's web application source to
   npm (dist-tag `next`, OIDC provenance) for build-time composition, with path-independent
   `svelte`/`vite`/`vitest` config factories, the vendored `@project-vault/shared` source and a

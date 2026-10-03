@@ -5,6 +5,9 @@ import type { Adapter, Config, KitConfig } from '@sveltejs/kit'
 import { sharedAliases } from './paths.ts'
 
 export interface SvelteConfigOptions {
+  /** A composed app's root (Story 68.3): the shared aliases then point at its composed
+   * `vendor/shared/src` copy instead of the copy inside node_modules. */
+  composedRoot?: string
   /** Replaces adapter-node. Nothing else changes. */
   adapter?: Adapter
   /** Extra aliases, merged after (and so able to override) PV's shared aliases. */
@@ -19,7 +22,12 @@ export function svelteConfig(options: SvelteConfigOptions = {}): Config {
       ...options.kit,
       adapter: options.adapter ?? adapterNode(),
       // Story 43.16: node-only subpath exports are listed before the package root so they win.
-      alias: { ...sharedAliases(), ...options.alias },
+      alias: {
+        ...sharedAliases(
+          options.composedRoot === undefined ? {} : { composedRoot: options.composedRoot }
+        ),
+        ...options.alias,
+      },
     },
   }
 }
