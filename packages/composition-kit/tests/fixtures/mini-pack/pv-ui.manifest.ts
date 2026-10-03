@@ -87,6 +87,8 @@ export default defineUiPack({
   // Story 68-6 (code review): a CM page outside (app) protected on purpose, and a callback-shaped
   // CM route under (app) made reachable anonymously.
   protectedPaths: { add: ['/public-cm'], remove: ['/(app)/cm-area/callback'] },
+  // Story 68.7 (M5): the nav delta (every operation; see nav.ts).
+  nav: './nav.ts',
   theme: './theme.css',
   messages: './messages',
 })

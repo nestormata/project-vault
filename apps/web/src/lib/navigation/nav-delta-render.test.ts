@@ -6,8 +6,7 @@ import { flushSync } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getLocale, setLocale } from '$lib/paraglide/runtime.js'
 import { reactivePage } from '$lib/test/reactive-page.svelte.js'
-import { testAuthUser } from '$lib/test/page-data.js'
-import type { NavDelta, NavItem } from './types.js'
+import type { NavDelta } from './types.js'
 
 const holder = vi.hoisted(() => ({ delta: {} as unknown }))
 
@@ -22,9 +21,6 @@ vi.mock('$lib/navigation/active-delta.js', () => ({
 
 import PrimaryNav from '$lib/components/shell/PrimaryNav.svelte'
 import ProjectNav from '$lib/components/shell/ProjectNav.svelte'
-import ShellAccount from '$lib/components/shell/ShellAccount.svelte'
-import Footer from '$lib/components/shell/Footer.svelte'
-import NotificationsLink from '$lib/components/shell/NotificationsLink.svelte'
 import ShellBrand from '$lib/components/shell/ShellBrand.svelte'
 import BackLink from '$lib/components/monitoring/BackLink.svelte'
 import Breadcrumbs from './Breadcrumbs.svelte'
@@ -32,31 +28,10 @@ import NavCards from './NavCards.svelte'
 import NavLinkRow from './NavLinkRow.svelte'
 import NavTabs from './NavTabs.svelte'
 import TestIcon from './fixtures/TestIcon.svelte'
-
-const path = (value: string) => value as never
+import { one, path, subtree } from './nav-render-test-helpers.js'
 
 function useDelta(delta: NavDelta): void {
   holder.delta = delta
-}
-
-/** A CM subtree `depth` levels deep, every level a group except the deepest link. */
-function subtree<C>(prefix: string, depth: number, leafHref: string): NavItem<C> {
-  let node: NavItem<C> = {
-    id: `${prefix}.l${depth}`,
-    label: `L${depth}`,
-    href: () => path(leafHref),
-  }
-  for (let level = depth - 1; level >= 1; level -= 1) {
-    node = { id: `${prefix}.l${level}`, label: `L${level}`, children: [node] }
-  }
-  return node
-}
-
-/** The first element matching `selector` under `root`, failing the test when there is none. */
-function one(root: ParentNode, selector: string): Element {
-  const found = root.querySelector(selector)
-  if (found === null) throw new Error(`no ${selector}`)
-  return found
 }
 
 beforeEach(() => {
@@ -206,26 +181,6 @@ describe('the other renderer families render a 6-level CM tree (Story 68.7 AC-2/
     )
   })
 
-  it('account menu, utility cluster and footer: nested disclosures', () => {
-    useDelta({
-      account: [{ op: 'insert', after: 'account.sign-out', item: subtree('cm.a', 6, '/billing') }],
-      'shell.utility': [
-        { op: 'insert', parent: 'shell.utility', item: subtree('cm.u', 6, '/help') },
-      ],
-      footer: [{ op: 'insert', parent: 'footer', item: subtree('cm.f', 6, '/about') }],
-    })
-    for (const [component, props] of [
-      [ShellAccount, { user: testAuthUser() }],
-      [NotificationsLink, { unreadCount: 2 }],
-      [Footer, {}],
-    ] as const) {
-      const { container, unmount } = render(component as never, { props } as never)
-      expect(container.querySelectorAll('details')).toHaveLength(5)
-      expect(within(container).getByRole('link', { name: 'L6' })).toBeTruthy()
-      unmount()
-    }
-  })
-
   it('index cards: nested lists of cards; link rows: disclosures; tabs: disclosure tabs', () => {
     useDelta({
       'settings.index': [
@@ -312,21 +267,5 @@ describe('the other renderer families render a 6-level CM tree (Story 68.7 AC-2/
     const text = render(ShellBrand, { props: { hidePrimaryNav: true } })
     expect(text.container.querySelector('a')).toBeNull()
     expect(text.container.textContent).toContain('CentralizeMe')
-  })
-
-  it('a replaced sign-out runs the CM action', async () => {
-    const onSelect = vi.fn()
-    useDelta({
-      account: [
-        {
-          op: 'replace',
-          id: 'account.sign-out',
-          item: { label: 'Leave', kind: 'action', onSelect },
-        },
-      ],
-    })
-    render(ShellAccount, { props: { user: testAuthUser() } })
-    await fireEvent.click(screen.getByRole('button', { name: 'Leave' }))
-    expect(onSelect).toHaveBeenCalledOnce()
   })
 })
