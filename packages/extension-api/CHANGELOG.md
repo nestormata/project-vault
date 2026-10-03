@@ -4,7 +4,7 @@ The contract hash covers the checked-in public API surface and contract-behaviou
 
 ## 3.28.0 — 2026-10-02
 
-contract-hash: sha256:8b8e85aa18cc62c3579afb193248c5e93cc39639fd07e4ae35a71b99c3331a63
+contract-hash: sha256:432993f45a239971e9a502dcc302236499349966c967776f2f47f9af01a4734f
 
 ### Added
 
