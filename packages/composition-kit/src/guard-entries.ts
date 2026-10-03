@@ -215,7 +215,8 @@ function unknownFieldProblems(label: string, entry: Rec): string[] {
   const hint = legacy
     ? '; use { route: "GET /api/v1/x", reason } (the route audit entry shape)'
     : ''
-  return [`${label} has unknown field ${unknown.map((key) => `"${key}"`).join(', ')}${hint}`]
+  const names = unknown.map((key) => '"' + key + '"').join(', ')
+  return [`${label} has unknown field ${names}${hint}`]
 }
 
 function classificationProblems(label: string, entry: unknown): string[] {

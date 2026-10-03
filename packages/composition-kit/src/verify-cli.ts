@@ -162,7 +162,10 @@ async function runExtract(parsed: Parsed & { classifyOut: string }, io: CliIo): 
   } else if (result.ok) {
     io.out(`${TOOL}: classifications: ${result.entries} entries written\n`)
   }
-  if (!result.ok) io.err(`${result.problems.map((line) => `${TOOL}: ${line}`).join('\n')}\n`)
+  if (!result.ok) {
+    const lines = result.problems.map((line) => TOOL + ': ' + line)
+    io.err(lines.join('\n') + '\n')
+  }
   return result.ok ? EXIT.ok : EXIT.failed
 }
 
