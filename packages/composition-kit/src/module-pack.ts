@@ -129,7 +129,7 @@ function overridesOf(apiRoutes: unknown, dir: string): ModulePackRoutes {
       problems: [`module pack ${dir}: manifest.apiRoutes.override must be an array`],
     }
   }
-  const converted = ((list ?? []) as unknown[]).map(overrideFrom)
+  const converted = ((list ?? []) as unknown[]).map((entry, index) => overrideFrom(entry, index))
   const problems = converted
     .filter((entry): entry is string => typeof entry === 'string')
     .map((problem) => `module pack ${dir}: manifest.${problem}`)
