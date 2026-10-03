@@ -124,8 +124,10 @@ leaves PV's file untouched. The shadowing is done at build time by one Vite plug
 
 ```ts
 // vite.config.ts: viteConfig() appends your plugins AFTER PV's, which is where pvReplace() belongs
-import { pvReplace } from '@project-vault/composition-kit/vite'
-export default viteConfig({ plugins: [pvReplace({ appRoot })] }, { appRoot, composedRoot: appRoot })
+// (pvHooks() is `enforce: 'pre'`, so its place in the list does not matter)
+import { pvHooks, pvReplace } from '@project-vault/composition-kit/vite'
+const plugins = [pvHooks({ appRoot }), pvReplace({ appRoot })]
+export default viteConfig({ plugins }, { appRoot, composedRoot: appRoot })
 ```
 
 - **The map.** `pv-compose` writes `.pv-compose/replacements.json` (`{ schemaVersion: 1, replacements:
