@@ -4,6 +4,7 @@ import { paraglideVitePlugin } from '@inlang/paraglide-js'
 import { sveltekit } from '@sveltejs/kit/vite'
 import tailwindcss from '@tailwindcss/vite'
 import { mergeConfig, type PluginOption, type UserConfig } from 'vite'
+import { emptyHooksModules } from './hooks-plugins.ts'
 import { paraglideOptions } from './paths.ts'
 
 export interface WebHostBuildOptions {
@@ -15,11 +16,14 @@ export interface WebHostBuildOptions {
 }
 
 /** PV's plugins, in PV's order: Tailwind, then the Paraglide compiler (Story 15.1, compiles
- * project.inlang + messages/{locale}.json into typesafe message functions), then SvelteKit. */
+ * project.inlang + messages/{locale}.json into typesafe message functions), then PV's empty
+ * providers for the composition virtual modules (Story 68.6: `virtual:pv-hooks/*`), then
+ * SvelteKit last. */
 export function webHostPlugins(options: WebHostBuildOptions = {}): PluginOption[] {
   return [
     tailwindcss(),
     paraglideVitePlugin(paraglideOptions(options.appRoot, options.composedRoot)),
+    emptyHooksModules({ composed: options.composedRoot !== undefined }),
     sveltekit(),
   ]
 }

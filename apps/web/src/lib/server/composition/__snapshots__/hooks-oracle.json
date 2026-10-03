@@ -3480,19 +3480,15 @@
         "x-frame-options": "DENY"
       }
     ],
-    "resolvedPathnames": [
-      "/%64ashboard"
-    ],
-    "status": 200,
-    "location": null,
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login",
     "setCookie": [],
     "headers": {
-      "content-security-policy": "frame-ancestors 'none'",
-      "content-type": "text/plain;charset=UTF-8",
-      "x-frame-options": "DENY"
+      "location": "/login"
     },
     "localsUser": null,
-    "chunk": "<html lang=\"en\">"
+    "chunk": null
   },
   {
     "case": "/%64ashboard anonymous vault=sealed",
@@ -3502,19 +3498,15 @@
         "x-frame-options": "DENY"
       }
     ],
-    "resolvedPathnames": [
-      "/%64ashboard"
-    ],
-    "status": 200,
-    "location": null,
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
     "setCookie": [],
     "headers": {
-      "content-security-policy": "frame-ancestors 'none'",
-      "content-type": "text/plain;charset=UTF-8",
-      "x-frame-options": "DENY"
+      "location": "/vault"
     },
-    "localsUser": null,
-    "chunk": "<html lang=\"en\">"
+    "localsUser": "unset",
+    "chunk": null
   },
   {
     "case": "/%64ashboard authenticated vault=ready",
@@ -3551,24 +3543,15 @@
         "x-frame-options": "DENY"
       }
     ],
-    "resolvedPathnames": [
-      "/%64ashboard"
-    ],
-    "status": 200,
-    "location": null,
-    "setCookie": [
-      "access-token=renewed; Path=/; HttpOnly"
-    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
     "headers": {
-      "content-security-policy": "frame-ancestors 'none'",
-      "content-type": "text/plain;charset=UTF-8",
-      "x-frame-options": "DENY"
+      "location": "/vault"
     },
-    "localsUser": {
-      "id": "u1",
-      "email": "u1@example.test"
-    },
-    "chunk": "<html lang=\"es\">"
+    "localsUser": "unset",
+    "chunk": null
   },
   {
     "case": "/%64ashboard session-expired vault=ready",
@@ -3578,21 +3561,17 @@
         "x-frame-options": "DENY"
       }
     ],
-    "resolvedPathnames": [
-      "/%64ashboard"
-    ],
-    "status": 200,
-    "location": null,
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login?reason=session-expired",
     "setCookie": [
       "refresh-token=rotated; Path=/; HttpOnly"
     ],
     "headers": {
-      "content-security-policy": "frame-ancestors 'none'",
-      "content-type": "text/plain;charset=UTF-8",
-      "x-frame-options": "DENY"
+      "location": "/login?reason=session-expired"
     },
     "localsUser": null,
-    "chunk": "<html lang=\"en\">"
+    "chunk": null
   },
   {
     "case": "/%64ashboard session-expired vault=sealed",
@@ -3602,21 +3581,15 @@
         "x-frame-options": "DENY"
       }
     ],
-    "resolvedPathnames": [
-      "/%64ashboard"
-    ],
-    "status": 200,
-    "location": null,
-    "setCookie": [
-      "refresh-token=rotated; Path=/; HttpOnly"
-    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
     "headers": {
-      "content-security-policy": "frame-ancestors 'none'",
-      "content-type": "text/plain;charset=UTF-8",
-      "x-frame-options": "DENY"
+      "location": "/vault"
     },
-    "localsUser": null,
-    "chunk": "<html lang=\"en\">"
+    "localsUser": "unset",
+    "chunk": null
   },
   {
     "case": "/%73ettings/notifications anonymous vault=ready",
@@ -3626,19 +3599,15 @@
         "x-frame-options": "DENY"
       }
     ],
-    "resolvedPathnames": [
-      "/%73ettings/notifications"
-    ],
-    "status": 200,
-    "location": null,
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login",
     "setCookie": [],
     "headers": {
-      "content-security-policy": "frame-ancestors 'none'",
-      "content-type": "text/plain;charset=UTF-8",
-      "x-frame-options": "DENY"
+      "location": "/login"
     },
     "localsUser": null,
-    "chunk": "<html lang=\"en\">"
+    "chunk": null
   },
   {
     "case": "/%73ettings/notifications anonymous vault=sealed",
@@ -3648,19 +3617,15 @@
         "x-frame-options": "DENY"
       }
     ],
-    "resolvedPathnames": [
-      "/%73ettings/notifications"
-    ],
-    "status": 200,
-    "location": null,
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
     "setCookie": [],
     "headers": {
-      "content-security-policy": "frame-ancestors 'none'",
-      "content-type": "text/plain;charset=UTF-8",
-      "x-frame-options": "DENY"
+      "location": "/vault"
     },
-    "localsUser": null,
-    "chunk": "<html lang=\"en\">"
+    "localsUser": "unset",
+    "chunk": null
   },
   {
     "case": "/%73ettings/notifications authenticated vault=ready",
@@ -3697,24 +3662,15 @@
         "x-frame-options": "DENY"
       }
     ],
-    "resolvedPathnames": [
-      "/%73ettings/notifications"
-    ],
-    "status": 200,
-    "location": null,
-    "setCookie": [
-      "access-token=renewed; Path=/; HttpOnly"
-    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
     "headers": {
-      "content-security-policy": "frame-ancestors 'none'",
-      "content-type": "text/plain;charset=UTF-8",
-      "x-frame-options": "DENY"
+      "location": "/vault"
     },
-    "localsUser": {
-      "id": "u1",
-      "email": "u1@example.test"
-    },
-    "chunk": "<html lang=\"es\">"
+    "localsUser": "unset",
+    "chunk": null
   },
   {
     "case": "/%73ettings/notifications session-expired vault=ready",
@@ -3724,21 +3680,17 @@
         "x-frame-options": "DENY"
       }
     ],
-    "resolvedPathnames": [
-      "/%73ettings/notifications"
-    ],
-    "status": 200,
-    "location": null,
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/login?reason=session-expired",
     "setCookie": [
       "refresh-token=rotated; Path=/; HttpOnly"
     ],
     "headers": {
-      "content-security-policy": "frame-ancestors 'none'",
-      "content-type": "text/plain;charset=UTF-8",
-      "x-frame-options": "DENY"
+      "location": "/login?reason=session-expired"
     },
     "localsUser": null,
-    "chunk": "<html lang=\"en\">"
+    "chunk": null
   },
   {
     "case": "/%73ettings/notifications session-expired vault=sealed",
@@ -3748,20 +3700,14 @@
         "x-frame-options": "DENY"
       }
     ],
-    "resolvedPathnames": [
-      "/%73ettings/notifications"
-    ],
-    "status": 200,
-    "location": null,
-    "setCookie": [
-      "refresh-token=rotated; Path=/; HttpOnly"
-    ],
+    "resolvedPathnames": [],
+    "status": 303,
+    "location": "/vault",
+    "setCookie": [],
     "headers": {
-      "content-security-policy": "frame-ancestors 'none'",
-      "content-type": "text/plain;charset=UTF-8",
-      "x-frame-options": "DENY"
+      "location": "/vault"
     },
-    "localsUser": null,
-    "chunk": "<html lang=\"en\">"
+    "localsUser": "unset",
+    "chunk": null
   }
 ]

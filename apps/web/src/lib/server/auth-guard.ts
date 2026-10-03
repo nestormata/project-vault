@@ -1,4 +1,5 @@
 import type { AuthUser } from '$lib/api/auth.js'
+import { PV_PROTECTED_PREFIXES, matchesPrefix } from './protected-paths.js'
 
 export type AuthGuardResult =
   | { status: 'authenticated'; user: AuthUser }
@@ -128,21 +129,11 @@ export async function resolveAuthContext({
   return refreshAndRetry({ fetchFn, cookieHeader, forwardSetCookie })
 }
 
+// Story 68.6 AC-7: the prefix list is data in `protected-paths.ts` (same 9 entries, same order);
+// this keeps its signature and segment-prefix behaviour. The hook itself decides with
+// `isProtectedRequest`, which also sees Kit's matched route id.
 export function isProtectedAppPath(pathname: string) {
-  return [
-    '/dashboard',
-    '/projects',
-    '/credentials',
-    '/alerts',
-    '/health',
-    '/settings',
-    '/platform',
-    '/notifications',
-    // Story 25.1 AC1: defense in depth alongside the API-side secureRoute() gate — an
-    // unauthenticated browser is redirected to /login before this route even renders
-    // server-side.
-    '/extensions/panels',
-  ].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+  return matchesPrefix(PV_PROTECTED_PREFIXES, pathname)
 }
 
 export function isAuthPath(pathname: string) {

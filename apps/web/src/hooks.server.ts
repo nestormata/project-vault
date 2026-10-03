@@ -1,15 +1,14 @@
-import type { Handle } from '@sveltejs/kit'
+// Story 68.6 (design §8): PV's server hooks, composed with the UI pack's server hook contribution
+// (`virtual:pv-hooks/server`; empty in PV's own build, so every hook PV did not define stays
+// `undefined` and SvelteKit's own defaults run). The same code path runs in PV's build and in a
+// composed build; only the virtual module's content differs.
 import { env } from '$env/dynamic/private'
-import { isAuthPath, isProtectedAppPath, resolveAuthContext } from '$lib/server/auth-guard.js'
-import { getVaultReadiness } from '$lib/api/vault.js'
-import {
-  getExtensionPanelCspHeaders,
-  getFrameProtectionHeaders,
-  getHandoffSecurityHeaders,
-  isHandoffPath,
-} from '$lib/security/hardening.js'
-import { createServerApiFetch } from '$lib/server/server-api-fetch.js'
-import { paraglideMiddleware } from '$lib/paraglide/server.js'
+import { hooks as contributed, protectedPaths as contributedPaths } from 'virtual:pv-hooks/server'
+import { getExtensionPanelCspHeaders } from '$lib/security/hardening.js'
+import { PV_HEADER_POLICY } from '$lib/security/header-policy.js'
+import { composeServerHooks } from '$lib/server/composition/compose-server-hooks.js'
+import { createPvHandle } from '$lib/server/composition/pv-server-hooks.js'
+import { PV_PROTECTED_PREFIXES, composeProtectedPaths } from '$lib/server/protected-paths.js'
 import { parseAllowedOrigins } from '$lib/server/handoff-cors.js'
 
 // A plain index-signature record (matching $env/dynamic/private's own shape) rather than a
@@ -47,15 +46,6 @@ export function checkHandoffCorsBootWarning(rawEnv: HandoffCorsBootEnv): void {
 // checkHandoffCorsBootWarning's own doc comment for why this must be side-effect-free by default).
 checkHandoffCorsBootWarning(env)
 
-function appendSetCookies(response: Response, setCookies: string[]) {
-  for (const setCookie of setCookies) response.headers.append('set-cookie', setCookie)
-  return response
-}
-
-function redirectWithCookies(location: string, setCookies: string[]) {
-  return appendSetCookies(new Response(null, { status: 303, headers: { location } }), setCookies)
-}
-
 // Story 29.1 — code-review hardening (2026-08-29). The extension-panel route renders sanitized,
 // but not network-egress-restricted, third-party HTML inline into this same document/session
 // (see `hardening.ts`'s `getExtensionPanelCspHeaders` doc comment for the full rationale) — a
@@ -66,86 +56,27 @@ function isExtensionPanelPath(pathname: string) {
   return pathname.startsWith('/extensions/panels/')
 }
 
-function shouldCheckVaultReadiness(pathname: string) {
-  return (
-    pathname !== '/vault' &&
-    (['/', '/login', '/register'].includes(pathname) || isProtectedAppPath(pathname))
-  )
+// Story 68.6 (Nestor 2026-10-02, Q1): the frozen legacy panel branch stays outside the composed
+// header policy. For panel paths it is checked first and exclusively, exactly as on `main`; the
+// policy (PV's defaults and rules, and every CM delta) applies to every other path, until Story
+// 68-11 retires the panel.
+function panelHeadersOutsidePolicy({ pathname }: { pathname: string }) {
+  return isExtensionPanelPath(pathname) ? getExtensionPanelCspHeaders() : null
 }
 
-async function redirectIfVaultUnavailable(fetchFn: typeof fetch, pathname: string) {
-  if (!shouldCheckVaultReadiness(pathname)) return null
-  const readiness = await getVaultReadiness(fetchFn)
-  return readiness.state === 'ready'
-    ? null
-    : new Response(null, { status: 303, headers: { location: '/vault' } })
-}
+const composed = composeServerHooks(
+  {
+    handle: createPvHandle({
+      apiBaseUrl: () => env.API_BASE_URL,
+      protectedPaths: composeProtectedPaths(PV_PROTECTED_PREFIXES, contributedPaths),
+    }),
+  },
+  contributed,
+  { headerPolicy: PV_HEADER_POLICY, outsidePolicy: panelHeadersOutsidePolicy }
+)
 
-function securityHeadersFor(pathname: string) {
-  // Story 60.3 AC4: `event.setHeaders` throws on a duplicate header name, so the handoff branch
-  // must supply the FULL header set for that route in one call (its own frame-protection headers
-  // plus Referrer-Policy) — never call this alongside a second header-getter for the same route.
-  if (isHandoffPath(pathname)) return getHandoffSecurityHeaders()
-  if (isExtensionPanelPath(pathname)) return getExtensionPanelCspHeaders()
-  return getFrameProtectionHeaders()
-}
-
-const appHandle: Handle = async ({ event, resolve }) => {
-  event.setHeaders(securityHeadersFor(event.url.pathname))
-  const forwardedSetCookies: string[] = []
-  const pathname = event.url.pathname
-  const apiFetch = createServerApiFetch({ apiBaseUrl: env.API_BASE_URL })
-
-  const vaultRedirect = await redirectIfVaultUnavailable(apiFetch, pathname)
-  if (vaultRedirect) return vaultRedirect
-
-  const cookieHeader = event.request.headers.get('cookie')
-  const auth = await resolveAuthContext({
-    fetchFn: apiFetch,
-    cookieHeader,
-    forwardSetCookie: (value) => forwardedSetCookies.push(value),
-  })
-
-  event.locals.user = auth.status === 'authenticated' ? auth.user : null
-
-  if (isProtectedAppPath(pathname) && auth.status !== 'authenticated') {
-    const reason = auth.reason ? `?reason=${auth.reason}` : ''
-    return redirectWithCookies(`/login${reason}`, forwardedSetCookies)
-  }
-
-  if (isAuthPath(pathname) && auth.status === 'authenticated') {
-    return redirectWithCookies('/dashboard', forwardedSetCookies)
-  }
-
-  return appendSetCookies(await resolve(event), forwardedSetCookies)
-}
-
-/**
- * Story 15.1 AC 2/7 — resolves the SSR-visible locale from the `PARAGLIDE_LOCALE` cookie (cookie
- * strategy, see vite.config.ts's paraglideVitePlugin `strategy: ['cookie', 'baseLocale']`), and
- * substitutes `%paraglide.lang%` in app.html's `<html lang="...">`. An invalid/stale/tampered
- * cookie value is not a crash: Paraglide's own `toLocale()` validation rejects any value outside
- * the compiled locale set and the strategy chain falls through to `baseLocale` ('en') — this is
- * relied upon rather than hand-rolled (AC 7 edge case), matching Task 5.4's guidance.
- *
- * Composed manually (rather than via `sequence()` from `@sveltejs/kit/hooks`) so this file's own
- * unit tests can keep invoking `handle({ event, resolve })` directly with a hand-built fake event
- * — `sequence()` internally requires SvelteKit's real per-request AsyncLocalStorage context
- * (`get_request_store()`), which only exists inside an actual SvelteKit request lifecycle, not a
- * fabricated test event.
- */
-export const handle: Handle = ({ event, resolve }) =>
-  paraglideMiddleware(event.request, ({ request, locale }) => {
-    event.request = request
-    return appHandle({
-      event,
-      resolve: (ev, opts) =>
-        resolve(ev, {
-          ...opts,
-          transformPageChunk: async (chunk) => {
-            const html = (await opts?.transformPageChunk?.(chunk)) ?? chunk.html
-            return html.replace('%paraglide.lang%', locale)
-          },
-        }),
-    })
-  })
+export const handle = composed.handle
+export const handleFetch = composed.handleFetch
+export const handleError = composed.handleError
+export const handleValidationError = composed.handleValidationError
+export const init = composed.init
