@@ -142,7 +142,19 @@ describe('renderSurface (Story 68.7 AC-2/AC-4/AC-7)', () => {
         },
       ],
     })
-    for (const href of ['//evil.example/x', 'javascript:alert(1)', 'https://example.com']) {
+    // A browser strips leading/trailing spaces and C0 controls from an href and removes every tab
+    // and newline before parsing it, so these are the same scheme and //host forms (68-7 review).
+    for (const href of [
+      '//evil.example/x',
+      'javascript:alert(1)',
+      'https://example.com',
+      ' javascript:alert(1)',
+      '\u0001javascript:alert(1)',
+      'java\tscript:alert(1)',
+      '/\t/evil.example/x',
+      '\n//evil.example/x',
+      ' https://example.com',
+    ]) {
       expect(() =>
         renderSurface('primary', primaryCtx(), { delta: bad(href), strict: true })
       ).toThrow(

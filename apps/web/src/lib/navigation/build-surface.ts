@@ -87,12 +87,34 @@ const SCHEME = /^[a-z][a-z0-9+.-]*:/i
  * `resolve()` returns it during server rendering with relative paths, relative (`../x`); never
  * `//host`, a backslash form or a scheme (`javascript:`, `https:`). */
 function isSameOriginPath(href: string): href is ResolvedPathname {
+  const parsed = asBrowserParses(href)
   return (
-    !SCHEME.test(href) &&
-    !href.startsWith('//') &&
-    !href.startsWith('\\') &&
-    !href.startsWith('/\\')
+    !SCHEME.test(parsed) &&
+    !parsed.startsWith('//') &&
+    !parsed.startsWith('\\') &&
+    !parsed.startsWith('/\\')
   )
+}
+
+/** Is this code unit a C0 control or a space (what the URL parser trims from both ends)? */
+function isC0OrSpace(code: number): boolean {
+  return code <= 0x20
+}
+
+/** The href as the browser's URL parser sees it: leading and trailing C0 controls and spaces
+ * trimmed, every tab and newline removed (WHATWG URL, basic URL parser), so `" javascript:"` or
+ * `"/\t/host"` cannot pass as a path. A linear scan, no regex. */
+function asBrowserParses(href: string): string {
+  let start = 0
+  let end = href.length
+  while (start < end && isC0OrSpace(href.charCodeAt(start))) start += 1
+  while (end > start && isC0OrSpace(href.charCodeAt(end - 1))) end -= 1
+  let out = ''
+  for (let index = start; index < end; index += 1) {
+    const char = href.charAt(index)
+    if (char !== '\t' && char !== '\n' && char !== '\r') out += char
+  }
+  return out
 }
 
 /** The absolute path a (possibly relative) href points at from the current page. */

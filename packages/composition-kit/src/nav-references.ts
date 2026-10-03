@@ -119,6 +119,13 @@ class Reader {
       this.literal += 1
       this.out.declared.push({ id, surface })
     }
+    this.declaredChildren(item, surface)
+  }
+
+  /** The ids an item's `children` declare (an insert's item, or a replacement that declares
+   * children: those are the pack's own ids too). */
+  declaredChildren(item: TypeScript.Node | undefined, surface: string | null): void {
+    const { ts } = this
     const children = this.property(item, 'children')
     if (children !== undefined && ts.isArrayLiteralExpression(children)) {
       for (const child of children.elements) this.declared(child, surface)
@@ -136,6 +143,7 @@ class Reader {
     } else {
       this.id(args[0], op !== 'hide' && op !== 'remove', surface, { op, role: 'target' })
       if (op === 'move') this.anchors(args[1], surface, op)
+      if (op === 'replace') this.declaredChildren(args[1], surface)
     }
   }
 
@@ -164,6 +172,7 @@ class Reader {
         role: 'target',
       })
       if (op === 'move') this.anchors(node, surface, op)
+      if (op === 'replace') this.declaredChildren(this.property(node, 'item'), surface)
     }
   }
 

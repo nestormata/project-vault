@@ -86,6 +86,28 @@ export default { primary: [...ops, makeOp()] }
     expect(result.notes.at(-1)).toBe('nav references: 1 literal, 2 not statically checked')
   })
 
+  it("records the children a replace declares as the pack's own ids, not host references", () => {
+    // 68-7 review: a replacement that declares children inserts those ids, so an op anchored on
+    // one of them is not a reference to a (vanished) web-host id.
+    const result = extract(`
+import { insert, replace } from '@project-vault/composition-kit/nav'
+export default {
+  primary: [
+    replace('primary.settings', { label: 'S', children: [{ id: 'cm.s.a', label: 'A', children: [{ id: 'cm.s.a.b', label: 'B' }] }] }),
+    { op: 'replace', id: 'primary.health', item: { label: 'H', children: [{ id: 'cm.h', label: 'X' }] } },
+    insert({ after: 'cm.s.a', item: { id: 'cm.after', label: 'N' } }),
+  ],
+}
+`)
+    expect(result.problems).toEqual([])
+    expect(result.declared).toEqual([
+      { id: 'cm.s.a', surface: PRIMARY },
+      { id: 'cm.s.a.b', surface: PRIMARY },
+      { id: 'cm.h', surface: PRIMARY },
+      { id: 'cm.after', surface: PRIMARY },
+    ])
+  })
+
   it('reports a syntax error with its file and line', () => {
     const result = extract("export default { primary: [hide('x') }\n")
     expect(result.problems).toEqual([expect.stringMatching(/^nav\.ts:1:\d+: /)])
