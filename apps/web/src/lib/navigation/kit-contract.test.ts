@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import ts from 'typescript'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 // A relative path literal, so web-host's test selection sees this test reads outside the package
 // (it is not shipped).
@@ -37,7 +37,9 @@ export const pvItemFromKit: PvItem<Ctx> = kitItem
 export const delta: PvDelta = { project: [kitOp] }
 `
 
-function diagnostics(check: string): string[] {
+// One program checks every case: building a TypeScript program (lib + svelte types) costs seconds
+// under CI coverage, so it is built once in `beforeAll`, never once per test.
+function diagnosticsByFile(checks: Record<string, string>): Map<string, string[]> {
   const files = new Map<string, string>([
     ['/v/app-types.ts', 'export type ResolvedPathname = `/${string}`\n'],
     [
@@ -45,7 +47,7 @@ function diagnostics(check: string): string[] {
       readFileSync(PV_TYPES, 'utf8').replace("from '$app/types'", "from './app-types.ts'"),
     ],
     ['/v/kit-types.ts', readFileSync(KIT_TYPES, 'utf8')],
-    ['/v/check.ts', check],
+    ...Object.entries(checks).map(([name, text]): [string, string] => [`/v/${name}.ts`, text]),
   ])
   const options: ts.CompilerOptions = {
     strict: true,
@@ -70,20 +72,33 @@ function diagnostics(check: string): string[] {
     const text = host.readFile(name)
     return text === undefined ? undefined : ts.createSourceFile(name, text, version)
   }
-  const program = ts.createProgram(['/v/check.ts'], options, host)
-  return ts
-    .getPreEmitDiagnostics(program)
-    .filter((d) => d.file?.fileName.startsWith('/v/') === true)
-    .map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n').split('\n')[0] ?? '')
+  const roots = Object.keys(checks).map((name) => `/v/${name}.ts`)
+  const program = ts.createProgram(roots, options, host)
+  const byFile = new Map<string, string[]>(roots.map((root) => [root, []]))
+  for (const d of ts.getPreEmitDiagnostics(program)) {
+    const file = d.file?.fileName
+    if (file?.startsWith('/v/') !== true) continue
+    const message = ts.flattenDiagnosticMessageText(d.messageText, '\n').split('\n')[0] ?? ''
+    // An error inside a shared type file (pv-types, kit-types) breaks every case, so it counts for each.
+    for (const [root, messages] of byFile)
+      if (root === file || !byFile.has(file)) messages.push(message)
+  }
+  return byFile
 }
 
 describe("web-host's nav model = the kit's nav shapes (Story 68.7 AC-8)", () => {
+  let byFile = new Map<string, string[]>()
+
+  beforeAll(() => {
+    const negative = `${CHECK}\ndeclare const loose: KitOp<Ctx, string>\nexport const bad: PvOp<Ctx> = loose\n`
+    byFile = diagnosticsByFile({ check: CHECK, negative })
+  }, 60_000)
+
   it('assign both ways (operations, items, a whole delta)', () => {
-    expect(diagnostics(CHECK)).toEqual([])
+    expect(byFile.get('/v/check.ts')).toEqual([])
   })
 
   it('is not vacuous: a plain-string href does not satisfy web-host (it needs resolve())', () => {
-    const negative = `${CHECK}\ndeclare const loose: KitOp<Ctx, string>\nexport const bad: PvOp<Ctx> = loose\n`
-    expect(diagnostics(negative)).toEqual([expect.stringContaining('is not assignable')])
+    expect(byFile.get('/v/negative.ts')).toEqual([expect.stringContaining('is not assignable')])
   })
 })
