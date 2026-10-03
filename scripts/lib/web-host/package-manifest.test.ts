@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   HOOKS_SURFACE_MANIFEST,
+  NAV_IDS_MANIFEST,
   OPTIONAL_MANIFESTS,
+  buildNavIdsManifest,
   buildHooksSurfaceManifest,
   buildCompatibilityManifest,
   buildPackageJson,
@@ -161,10 +163,58 @@ describe('hooks-surface.json (Story 68.6 AC-12)', () => {
 describe('later generated manifests (Story 68.2 AC-9)', () => {
   it('packs exactly the ones that exist and never stubs a missing one', () => {
     expect(optionalManifestsToPack(new Set())).toEqual([])
-    expect(optionalManifestsToPack(new Set(['nav-ids.json', 'unrelated.json']))).toEqual([
-      'nav-ids.json',
+    expect(optionalManifestsToPack(new Set(['component-index.json', 'unrelated.json']))).toEqual([
+      'component-index.json',
     ])
     expect(optionalManifestsToPack(new Set(OPTIONAL_MANIFESTS))).toEqual([...OPTIONAL_MANIFESTS])
+  })
+})
+
+describe('nav-ids.json (Story 68.7 AC-10)', () => {
+  const PRIMARY = 'primary'
+  const PLATFORM = 'primary.platform'
+  const input = {
+    surfaces: [
+      { id: 'project', file: 'src/p.svelte', contextKeys: ['projectId'] },
+      { id: PRIMARY, file: 'src/q.svelte', contextKeys: [] },
+    ],
+    ids: [
+      { id: 'primary.settings', surface: PRIMARY, parent: null, conditional: false },
+      { id: PLATFORM, surface: PRIMARY, parent: null, conditional: true },
+      { id: 'primary.Z', surface: PRIMARY, parent: PLATFORM, conditional: false },
+    ],
+  }
+
+  it('is generated (never an optional copy), deterministic and code-unit sorted, with delta: 1', () => {
+    expect(NAV_IDS_MANIFEST).toBe('nav-ids.json')
+    expect(OPTIONAL_MANIFESTS as readonly string[]).not.toContain(NAV_IDS_MANIFEST)
+    const text = buildNavIdsManifest(input)
+    expect(text).toBe(
+      buildNavIdsManifest({
+        surfaces: [...input.surfaces].reverse(),
+        ids: [...input.ids].reverse(),
+      })
+    )
+    const parsed = JSON.parse(text) as { ids: { id: string }[]; surfaces: { id: string }[] }
+    expect(Object.keys(parsed)).toEqual(['delta', 'ids', 'schemaVersion', 'surfaces'])
+    expect(parsed).toMatchObject({ schemaVersion: 1, delta: 1 })
+    // Code units: 'Z' (0x5a) sorts before 'p' (0x70).
+    expect(parsed.ids.map((entry) => entry.id)).toEqual(['primary.Z', PLATFORM, 'primary.settings'])
+    expect(parsed.ids[1]).toEqual({
+      conditional: true,
+      id: PLATFORM,
+      parent: null,
+      surface: PRIMARY,
+    })
+    expect(parsed.surfaces.map((surface) => surface.id)).toEqual([PRIMARY, 'project'])
+    expect(text.endsWith('}\n')).toBe(true)
+  })
+
+  it('fails the pack on an empty registry instead of writing an empty manifest', () => {
+    expect(() => buildNavIdsManifest({ surfaces: [], ids: [] })).toThrow(
+      'an empty manifest is a bug'
+    )
+    expect(() => buildNavIdsManifest({ surfaces: input.surfaces, ids: [] })).toThrow()
   })
 })
 

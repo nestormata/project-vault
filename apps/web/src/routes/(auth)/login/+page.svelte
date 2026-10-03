@@ -1,4 +1,5 @@
 <script lang="ts">
+  import NavLink from '$lib/navigation/NavLink.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import { page } from '$app/state'
@@ -64,14 +65,18 @@
       (AC-6 rows #1/#5) — never rendered when native login is disabled or its status is unknown. -->
       <p class="text-sm text-slate-600">
         {m.auth_login_register_prompt()}
-        <a class="font-medium text-brand-600 underline" href={resolve('/register')}
-          >{m.auth_login_register_link()}</a
-        >
+        <NavLink
+          surface="auth.links"
+          node="auth.links.login.register"
+          class="font-medium text-brand-600 underline"
+        />
       </p>
       <p class="text-sm text-slate-600">
-        <a class="font-medium text-brand-600 underline" href={resolve('/recovery')}
-          >{m.auth_login_recovery_link()}</a
-        >
+        <NavLink
+          surface="auth.links"
+          node="auth.links.login.recovery"
+          class="font-medium text-brand-600 underline"
+        />
       </p>
     {/if}
   {/key}

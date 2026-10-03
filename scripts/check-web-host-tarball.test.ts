@@ -195,12 +195,25 @@ describe('web-host tarball: this checkout (Story 68.2 AC-7)', () => {
       'apps/web/src/lib/platform/cli-version-policy-view.test.ts',
       'apps/web/src/lib/server/e2e-global-setup-security.test.ts',
       'apps/web/src/tailwind-source-boundary.test.ts',
+      // Story 68.7: they read the kit's source and apps/web/eslint.config.js.
+      'apps/web/src/lib/navigation/kit-contract.test.ts',
+      'apps/web/src/lib/navigation/nav-lint-scope.test.ts',
     ]) {
       expect(excluded.get(file)?.join(' '), file).toMatch(/outside the package/)
     }
     // The PV-tree-only route snapshot oracle is excluded with its reason, never shipped.
     expect(excluded.get('apps/web/src/routes/route-render-snapshot.test.ts')).toEqual([
       "oracle of PV's own un-composed markup; valid only on PV's tree",
+    ])
+    // Story 68.7 AC-3: the nav render oracle is PV-tree-only for the same reason.
+    expect(excluded.get('apps/web/src/lib/navigation/nav-render-oracle.test.ts')).toEqual([
+      "oracle of PV's own un-composed nav markup (Story 68.7); valid only on PV's tree",
+    ])
+    expect(excluded.get('apps/web/src/lib/navigation/nav-ssr.test.ts')).toEqual([
+      "compares PV's server render with the nav render oracle (Story 68.7); valid only on PV's tree",
+    ])
+    expect(excluded.get('apps/web/src/lib/navigation/nav-not-security.test.ts')).toEqual([
+      "pins PV's own hooks and (app) layout answers (Story 68.7); valid only on PV's tree",
     ])
     for (const reasons of excluded.values()) expect(reasons.length).toBeGreaterThan(0)
   })
@@ -352,17 +365,35 @@ describe('compatibility manifest (Story 68.2 AC-9)', () => {
   })
 
   it('packs only the manifests generated so far, never an empty stub for a later one', () => {
-    // component-index.json (Story 68.5), injection-points.json (Story 68-4) and hooks-surface.json
-    // (Story 68.6) are generated on every pack; nav-ids.json (68-7) is not, and a missing one is
-    // never stubbed.
+    // component-index.json (Story 68.5), injection-points.json (Story 68-4), hooks-surface.json
+    // (Story 68.6) and nav-ids.json (Story 68.7) are generated on every pack.
     expect(paths.filter((path) => path.startsWith('manifests/')).sort()).toEqual([
       'manifests/compatibility.json',
       'manifests/component-index.json',
       'manifests/guards.json',
       'manifests/hooks-surface.json',
       'manifests/injection-points.json',
+      'manifests/nav-ids.json',
       'manifests/test-subjects.json',
     ])
+  })
+
+  it('packs nav-ids.json from PV nav registry with delta: 1 (Story 68.7 AC-10)', async () => {
+    const navIds = JSON.parse(await fileText(join(STAGE_DIR, 'manifests', 'nav-ids.json'))) as {
+      delta: number
+      surfaces: { id: string; file: string }[]
+      ids: { id: string; surface: string; conditional: boolean }[]
+    }
+    expect(navIds.delta).toBe(1)
+    expect(navIds.surfaces.map((surface) => surface.id)).toContain('primary')
+    expect(navIds.ids).toContainEqual({
+      id: 'primary.platform',
+      surface: 'primary',
+      parent: null,
+      conditional: true,
+    })
+    expect(navIds.ids.length).toBeGreaterThan(70)
+    for (const surface of navIds.surfaces) expect(paths).toContain(surface.file)
   })
 
   // Story 68.9 AC-1/AC-10: the guard registry and the test-subject map are generated from the guard

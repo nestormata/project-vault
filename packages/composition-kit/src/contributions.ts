@@ -116,15 +116,20 @@ function protectedPathsRecord(
 
 /** Contributions validated and recorded but not applied by this web-host. `hooksSupported` is true
  * when the web-host ships `manifests/hooks-surface.json` (Story 68.6), which applies hooks and
- * protected paths. */
-export function deferredNotes(manifest: UiPackManifest, hooksSupported = false): string[] {
+ * protected paths; `navSupported` when it ships `manifests/nav-ids.json` with `delta: 1` (Story
+ * 68.7), which applies the nav delta. */
+export function deferredNotes(
+  manifest: UiPackManifest,
+  hooksSupported = false,
+  navSupported = false
+): string[] {
   const notes: string[] = []
   if (!hooksSupported && Object.keys(manifest.hooks ?? {}).length > 0) {
     notes.push(
       'hook composition not applied: requires web-host with composeHandles (Story 68-6); the hook files were materialized'
     )
   }
-  if (manifest.nav !== undefined) {
+  if (!navSupported && manifest.nav !== undefined) {
     notes.push(
       'nav delta not applied: requires web-host with navigation as data (Story 68-7); the nav file was materialized'
     )

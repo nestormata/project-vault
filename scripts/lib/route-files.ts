@@ -9,7 +9,8 @@ import ts from 'typescript'
 import { toRepoPath, walkFiles } from './scan-utils.js'
 
 const requireFromWeb = createRequire(join(import.meta.dirname, '..', '..', 'apps/web/package.json'))
-const svelteCompiler = requireFromWeb('svelte/compiler') as typeof import('svelte/compiler')
+/** apps/web's own `svelte/compiler` (the one PV's markup is compiled with). */
+export const svelteCompiler = requireFromWeb('svelte/compiler') as typeof import('svelte/compiler')
 
 export const ROUTES_DIR = 'src/routes'
 export type RouteKind = 'page' | 'layout' | 'error'

@@ -34,7 +34,7 @@ function fileExists(path: string): boolean {
 
 /** A composed tree: its lock, or the marker pv-compose writes in every directory it owns (src/,
  * so also a tree with CM code under src/lib/server/_cm/ whose lock went missing). */
-function isComposedTree(root: string): boolean {
+export function isComposedTree(root: string): boolean {
   return (
     fileExists(join(root, 'composition.lock.json')) ||
     fileExists(join(root, 'src', '.pv-compose-generated'))

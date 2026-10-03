@@ -1,0 +1,5 @@
+
+// Story 68.7 compose-nav-leak: appended to the mini pack's nav.ts. The nav delta reaches the client
+// bundle, so importing a $lib/server module from it must fail Kit's server-only guard.
+import { requireUser } from '$lib/server/require-user.js'
+export const leaked = requireUser

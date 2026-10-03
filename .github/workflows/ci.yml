@@ -232,6 +232,13 @@ jobs:
           pnpm check-injection-point-coverage &&
           pnpm vitest run scripts/check-injection-point-coverage.test.ts
 
+      - name: Check nav ids and nav surfaces (Story 68.7)
+        run: |
+          pnpm check-nav-ids &&
+          pnpm vitest run scripts/check-nav-ids.test.ts &&
+          pnpm check-nav-surfaces &&
+          pnpm vitest run scripts/check-nav-surfaces.test.ts
+
       - name: Check native-credential surface (Story 23.2 AC19)
         run: pnpm check-native-credential-surface
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import NavLink from '$lib/navigation/NavLink.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   let { data } = $props()
   import { resolve } from '$app/paths'
@@ -32,9 +33,11 @@
     </div>
     <p class="text-sm text-slate-600">
       {m.auth_register_existing_account_prompt()}
-      <a class="font-medium text-brand-600 underline" href={resolve('/login')}
-        >{m.auth_login_sign_in()}</a
-      >
+      <NavLink
+        surface="auth.links"
+        node="auth.links.register.login"
+        class="font-medium text-brand-600 underline"
+      />
     </p>
   {/key}
   <RegisterForm {invitationToken} {prefillEmail} onLocaleChange={handleLocaleChange} />

@@ -220,7 +220,7 @@ describe('AC-1: shadowing by resolved absolute path, in the client and in SSR', 
     expect(await call(plugin, 'resolveId', ctx, 'missing', undefined, {})).toBeNull()
   })
 
-  it('leaves an external id alone, and a nested bypass resolve untouched', async () => {
+  it('leaves an external id alone', async () => {
     const root = makeApp()
     const plugin = pvReplace({ appRoot: root })
     const abs = join(root, HOST_UTIL)
@@ -228,9 +228,36 @@ describe('AC-1: shadowing by resolved absolute path, in the client and in SSR', 
     ctx.resolve.mockResolvedValueOnce({ id: abs, external: true })
     await call(plugin, 'buildStart', ctx)
     expect(await call(plugin, 'resolveId', ctx, abs, undefined, {})).toBeNull()
-    const bypass = { custom: { 'pv-replace': { bypass: true } } }
-    expect(await call(plugin, 'resolveId', ctx, abs, undefined, bypass)).toBeNull()
     expect(ctx.resolve).toHaveBeenCalledTimes(1)
+  })
+
+  // Rolldown (1.2.x) hands each `this.resolve` call's options to the hooks under a receipt numbered
+  // by the size of its map of in-flight calls, so two concurrent calls can share a receipt and one
+  // receives the other's `custom`. A decision carried in `custom` therefore reaches unrelated
+  // resolves: SvelteKit's guard once got a "leave this id alone" flag meant for another import,
+  // recorded PV's file instead of CM's replacement and failed with "An impossible situation
+  // occurred" (Story 68.7 compose-nav-leak, CI only). The plugin must decide from the id alone.
+  it('replaces whatever `custom` the call arrives with (no decision travels in `custom`)', async () => {
+    const root = makeApp()
+    const plugin = pvReplace({ appRoot: root })
+    const abs = join(root, HOST_UTIL)
+    const ctx = context({ [UTIL_SPEC]: abs })
+    await call(plugin, 'buildStart', ctx)
+    const crossed = { custom: { 'pv-replace': { bypass: true } } }
+    expect(
+      await call(plugin, 'resolveId', ctx, UTIL_SPEC, join(root, MAIN_ENTRY), crossed)
+    ).toEqual(expect.objectContaining({ id: join(root, CM_UTIL_FILE) }))
+    expect(ctx.resolve.mock.calls[0]?.[2]).toEqual({ ...crossed, skipSelf: true })
+  })
+
+  it('keeps the replacement when the nested pipeline resolve already replaced the import', async () => {
+    const root = makeApp()
+    const plugin = pvReplace({ appRoot: root })
+    const ctx = context({ [UTIL_SPEC]: join(root, CM_UTIL_FILE) })
+    await call(plugin, 'buildStart', ctx)
+    expect(await call(plugin, 'resolveId', ctx, UTIL_SPEC, join(root, MAIN_ENTRY), {})).toEqual(
+      expect.objectContaining({ id: join(root, CM_UTIL_FILE) })
+    )
   })
 
   it('passes a non-replaced file through (null) with a single resolve call per import', async () => {
@@ -424,6 +451,18 @@ describe('AC-3: pv-original:', () => {
     })
     const code = await bundle(root, entry)
     expect(code).toContain('CM+')
+  })
+
+  it("maps a pipeline answer that is the replacement back to PV's file (pv-original: never yields CM)", async () => {
+    const root = makeApp()
+    const plugin = pvReplace({ appRoot: root })
+    // An alias of the consumer's own falls back to the pipeline, which may apply the map itself.
+    const ctx = context({ 'alias/util': join(root, CM_UTIL_FILE) })
+    await call(plugin, 'buildStart', ctx)
+    const importer = join(root, CM_UTIL_FILE)
+    expect(await call(plugin, 'resolveId', ctx, 'pv-original:alias/util', importer, {})).toEqual(
+      expect.objectContaining({ id: join(root, HOST_UTIL) })
+    )
   })
 
   it('fails with a message naming the specifier for an empty or unresolvable remainder', async () => {

@@ -209,6 +209,14 @@
         "properties": { "id": { "type": "string" }, "operative": { "type": "boolean" } }
       }
     },
+    "navIdsDeclared": {
+      "description": "Story 68.7: the nav ids the UI pack inserts (absent in older locks).",
+      "$ref": "#/definitions/stringArray"
+    },
+    "navIdsHost": {
+      "description": "Story 68.7 (informational): the web-host nav ids this lock was written against.",
+      "$ref": "#/definitions/stringArray"
+    },
     "apiRouteOverrides": {
       "description": "Story 68.14: the module pack's apiRoutes.override table (method, normalized url, mode, replaceSecurity), sorted by method and url. Empty without --module-pack. Recorded for review, never refused; --check compares it.",
       "type": "array",

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Breadcrumbs from '$lib/navigation/Breadcrumbs.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import PlatformOperatorRequiredNotice from '$lib/components/PlatformOperatorRequiredNotice.svelte'
@@ -18,11 +19,7 @@
   <PlatformOperatorRequiredNotice />
 {:else}
   <div class="mx-auto max-w-3xl px-4 py-8">
-    <nav class="mb-4 text-sm text-gray-500">
-      <a href={resolve('/platform')} class="hover:underline">Platform Admin</a>
-      <span class="mx-2">›</span>
-      <span>Version &amp; Upgrade</span>
-    </nav>
+    <Breadcrumbs spacing="around" node="breadcrumbs.platform.upgrade" />
 
     <h1 class="text-2xl font-bold text-gray-900">Version &amp; Upgrade</h1>
 

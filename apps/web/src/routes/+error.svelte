@@ -1,7 +1,8 @@
 <script lang="ts">
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { page } from '$app/state'
-  import { resolve } from '$app/paths'
+  import NavEntry from '$lib/navigation/NavEntry.svelte'
+  import { renderSurface, withDescendants } from '$lib/navigation/build-surface.js'
 
   // AC-19: distinguish a genuine thrown error (5xx, or any non-404 status) from a bare unmatched
   // route (404) — the copy must not claim "Page not found" for the former.
@@ -18,8 +19,14 @@
   const authenticatedUser = $derived(
     (page.data as { user?: { userId: string } } | undefined)?.user ?? null
   )
-  const backPath = $derived(authenticatedUser ? ('/dashboard' as const) : ('/' as const))
-  const backLabel = $derived(authenticatedUser ? 'Back to Dashboard' : 'Back to Project Vault')
+  // Story 68.7 (S15): the way back is the `error.nav` surface's data (Dashboard when signed in).
+  // It marks no current item, so it needs no path.
+  const backLinks = $derived(
+    renderSurface('error.nav', {
+      pathname: '',
+      authenticated: authenticatedUser !== null,
+    }).flatMap(withDescendants)
+  )
 
   const heading = $derived(isNotFound ? 'Page not found' : 'Something went wrong')
   const description = $derived(
@@ -50,12 +57,10 @@
     <p class="mt-4 text-slate-600">{description}</p>
 
     <nav aria-label="Error page navigation" class="mt-8">
-      <a
-        class="inline-block rounded-xl bg-slate-950 px-4 py-3 text-sm font-medium text-white"
-        href={resolve(backPath)}
-      >
-        {backLabel}
-      </a>
+      {#each backLinks as link (link.id)}<NavEntry
+          node={link}
+          class="inline-block rounded-xl bg-slate-950 px-4 py-3 text-sm font-medium text-white"
+        />{/each}
     </nav>
   </main>
 </div>

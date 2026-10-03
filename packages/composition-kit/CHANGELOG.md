@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+## 0.6.0
+
+- Navigation delta (Story 68-7, ADR 0007 M5). New subpath `@project-vault/composition-kit/nav`
+  (zero runtime dependencies): `defineNavDelta()` and the operation builders `insert`, `remove`,
+  `hide`, `relabel`, `move`, `replace`, `reorder`, with types structurally identical to web-host's
+  nav model (a contract test on each side proves it). They build plain objects; nothing limits which
+  item a pack may change.
+- `pvNav()` Vite plugin (`@project-vault/composition-kit/vite`): resolves `virtual:pv-nav` to a
+  re-export of the pack's materialized `nav.ts` (an empty delta without one, or for a lock written
+  against an older web-host). A missing lock fails the build.
+- `pvReplace()` no longer passes a "leave this id alone" flag to nested resolves in `custom`. Rolldown
+  1.2.x can hand one concurrent `this.resolve` call another's `custom`, so the flag sometimes reached
+  SvelteKit's import guard on an unrelated import: the guard then recorded PV's file instead of the
+  replacement and failed a client import of a replaced `$lib/server` module with "An impossible
+  situation occurred" instead of its own "Cannot import ... into code that runs in the browser". The
+  plugin now decides from the resolved id alone: an answer that is already a replacement is kept, and
+  `pv-original:` maps one back to PV's file.
+- With a web-host that ships `manifests/nav-ids.json` with `delta: 1`, the composer reads `nav.ts`
+  with the app's TypeScript and records every string-literal id: `navIdsReferenced` (targets and
+  anchors operative, except `hide`/`remove` targets), the new `navIdsDeclared` (ids the pack inserts)
+  and the informational `navIdsHost` (both optional lock sections, no `lockfileVersion` bump). It
+  fails an operative reference to a vanished id, an id used under the wrong surface, and an inserted
+  id web-host now defines; it notes new (inherited) web-host ids, hidden/removed vanished ids, every
+  non-literal id (with its position) plus a literal/non-literal count, and a change to the footer's
+  AGPL source/license links. The "nav delta not applied" note is gone for such a host; an older
+  web-host keeps the 68-3 behaviour.
+
 ## 0.5.0
 
 - `pv-verify` (Story 68-9), a second command in this package: runs PV's web guards and PV's unit tests

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import NavLink from '$lib/navigation/NavLink.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   let { data } = $props()
   import { resolve } from '$app/paths'
@@ -95,10 +96,11 @@
   {/if}
 
   <p class="text-sm text-slate-600">
-    Remembered your password? <a
+    Remembered your password? <NavLink
+      surface="auth.links"
+      node="auth.links.recovery.login"
       class="font-medium text-brand-600 underline"
-      href={resolve('/login')}>Sign in</a
-    >
+    />
   </p>
 </div>
 <InjectionPoint name="auth.recovery.after" data={data?.__inject} />

@@ -5,12 +5,15 @@
 
   interface Props {
     allowed: boolean
-    leafLabel: string
+    /** The leaf of a fixed Platform Admin › System Settings › leaf trail (existing callers). */
+    leafLabel?: string
+    /** Story 68.7: the page's node in the `breadcrumbs` nav tree (nav as data). */
+    node?: string
     maxWidth?: string
     children: Snippet
   }
 
-  let { allowed, leafLabel, maxWidth = 'max-w-4xl', children }: Props = $props()
+  let { allowed, leafLabel = '', node, maxWidth = 'max-w-4xl', children }: Props = $props()
 
   // Story 68.1 AC-3: $derived so the leaf follows a new `leafLabel` on the same instance.
   const trail: { label: string; href?: PlatformPath }[] = $derived([
@@ -20,6 +23,6 @@
   ])
 </script>
 
-<PlatformBreadcrumb {allowed} {trail} {maxWidth}>
+<PlatformBreadcrumb {allowed} trail={node === undefined ? trail : []} {node} {maxWidth}>
   {@render children()}
 </PlatformBreadcrumb>

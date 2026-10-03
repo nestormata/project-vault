@@ -32,21 +32,19 @@ type ResolveOptions = Parameters<Context['resolve']>[2]
 
 /** `this.resolve` with `skipSelf` skips only this plugin's own call, not the nested resolves other
  * plugins start (Vite's alias plugin re-issues `$lib/x` as an absolute path through the whole
- * pipeline, this plugin included). The `custom` flag travels with those nested resolves, so they
- * are told to leave the id alone and the file that comes back is PV's, to be looked up once. */
+ * pipeline, this plugin included), so the answer may already be the replacement; callers accept
+ * both. No decision travels in `custom`: Rolldown 1.2.x numbers each call's saved options by the
+ * size of its map of in-flight calls, so two concurrent calls can share a number and one receives
+ * the other's `custom`. A "leave this alone" flag sent that way once reached SvelteKit's guard on
+ * an unrelated import, which then recorded PV's file instead of CM's replacement and failed a
+ * client import of a replaced `$lib/server` module with "An impossible situation occurred". */
 function plainResolve(
   context: Context,
   id: string,
   importer: string | undefined,
   options: ResolveOptions
 ) {
-  const custom = { ...options?.custom, [PLUGIN_NAME]: { bypass: true } }
-  return context.resolve(id, importer, { ...options, custom, skipSelf: true })
-}
-
-function isBypassed(options: ResolveOptions): boolean {
-  const flag = Reflect.get(options?.custom ?? {}, PLUGIN_NAME) as { bypass?: boolean } | undefined
-  return flag?.bypass === true
+  return context.resolve(id, importer, { ...options, skipSelf: true })
 }
 
 /** Splits `file.svelte?svelte&type=style#x` into the path and its `?query#hash` suffix. */
@@ -72,8 +70,14 @@ class ReplacementTable {
   private readonly byHost = new Map<string, string>()
   private readonly real = new Map<string, string>()
 
+  /** CM's file -> PV's file, or null when one CM file replaces several PV files. */
+  private readonly byWith = new Map<string, string | null>()
+
   constructor(readonly entries: readonly ResolvedReplacement[]) {
-    for (const entry of entries) this.byHost.set(entry.host, entry.with)
+    for (const entry of entries) {
+      this.byHost.set(entry.host, entry.with)
+      this.byWith.set(entry.with, this.byWith.has(entry.with) ? null : entry.host)
+    }
   }
 
   private realOf(path: string): string {
@@ -91,6 +95,23 @@ class ReplacementTable {
     if (isSvelteSubRequest(suffix)) return undefined
     const target = this.byHost.get(path) ?? this.byHost.get(this.realOf(path))
     return target === undefined ? undefined : `${target}${suffix}`
+  }
+
+  /** Whether a resolved id is one of CM's replacement files (a nested resolve already mapped it). */
+  isReplacement(id: string): boolean {
+    if (isVirtualId(id)) return false
+    const { path, suffix } = splitId(id)
+    if (isSvelteSubRequest(suffix)) return false
+    return this.byWith.has(path) || this.byWith.has(this.realOf(path))
+  }
+
+  /** PV's file for a resolved id that is CM's replacement (its query and hash kept): the id itself
+   * when it is not a replacement, undefined when the replacement stands for several PV files. */
+  originalOf(id: string): string | undefined {
+    if (!this.isReplacement(id)) return id
+    const { path, suffix } = splitId(id)
+    const host = this.byWith.get(path) ?? this.byWith.get(this.realOf(path))
+    return host === null || host === undefined ? undefined : `${host}${suffix}`
   }
 }
 
@@ -132,6 +153,7 @@ function invalidateImporters(server: DevServerLike, files: ReadonlySet<string>):
 
 async function resolveOriginal(
   context: Context,
+  table: ReplacementTable,
   appRoot: string,
   source: string,
   importer: string | undefined,
@@ -152,9 +174,12 @@ async function resolveOriginal(
   if (local.kind === 'file') return { id: local.id }
   const resolved = await plainResolve(context, rest, importer, options)
   if (resolved === null) return unresolved()
-  if (!isInside(src, realPathOf(splitId(resolved.id).path))) return outside()
-  // Returned UNCHANGED: exactly PV's file, bypassing the map.
-  return resolved
+  // The pipeline may have applied the map itself: PV's file is the one CM's replacement stands for.
+  const id = table.originalOf(resolved.id)
+  if (id === undefined) return unresolved()
+  if (!isInside(src, realPathOf(splitId(id).path))) return outside()
+  // Otherwise returned UNCHANGED: exactly PV's file, bypassing the map.
+  return id === resolved.id ? resolved : { ...resolved, id }
 }
 
 /** Design section 6 (M4): shadows a module by its RESOLVED absolute path, not by specifier text
@@ -195,15 +220,16 @@ export function pvReplace(options: PvReplaceOptions): Plugin {
       this.info(`pv-replace: ${loaded.entries.length} replacements applied`)
     },
     async resolveId(this: Context, id, importer, resolveOptions) {
-      if (isBypassed(resolveOptions)) return null
       const current = table ?? load(this)
       if (id.startsWith(PV_ORIGINAL_PREFIX)) {
-        return resolveOriginal(this, appRoot, id, importer, resolveOptions)
+        return resolveOriginal(this, current, appRoot, id, importer, resolveOptions)
       }
       if (isVirtualId(id)) return null
       const resolved = await plainResolve(this, id, importer, resolveOptions)
       // `external` is `false` in a build and absent in a dev server: only a truthy one is external.
       if (resolved === null || resolved.external) return null
+      // A nested resolve that already mapped the import answers with the replacement: keep it.
+      if (current.isReplacement(resolved.id)) return resolved
       const replacement = current.replacementFor(resolved.id)
       return replacement === undefined ? null : { id: replacement }
     },

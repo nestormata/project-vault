@@ -21,10 +21,24 @@ export interface PointRoute {
   scope: string | null
 }
 
+/** Story 68.7: one PV nav id with the additive fields web-host's `nav-ids.json` carries. */
+export interface NavIdEntry {
+  id: string
+  surface: string | null
+  parent: string | null
+  conditional: boolean
+}
+
 export interface Registries {
   injectionPoints?: InjectionPointRecord[]
   pointRoutes?: PointRoute[]
   navIds?: string[]
+  /** Story 68.7: the nav ids with their surface and parent (null fields from an older host). */
+  navEntries?: NavIdEntry[]
+  /** Story 68.7: the host's nav surfaces (`surfaces[].id`), empty from an older host. */
+  navSurfaces?: string[]
+  /** Story 68.7: the host applies nav deltas (`delta: 1`); an older host only lists ids. */
+  navDelta?: boolean
   problems: string[]
 }
 
@@ -82,7 +96,12 @@ export function readRegistries(host: string): Registries {
     routeId: typeof entry.routeId === 'string' ? entry.routeId : null,
     scope: typeof entry.scope === 'string' ? entry.scope : null,
   })) as (InjectionPointRecord & Omit<PointRoute, 'name'>)[] | undefined
-  const ids = readList(host, 'nav-ids.json', 'ids', problems, (entry) => String(entry.id))
+  const ids = readList(host, 'nav-ids.json', 'ids', problems, (entry) => ({
+    id: String(entry.id),
+    surface: typeof entry.surface === 'string' ? entry.surface : null,
+    parent: typeof entry.parent === 'string' ? entry.parent : null,
+    conditional: entry.conditional === true,
+  })) as NavIdEntry[] | undefined
   const registries: Registries = { problems }
   if (points !== undefined) {
     const duplicate = duplicateName(points.map((point) => point.name))
@@ -95,8 +114,24 @@ export function readRegistries(host: string): Registries {
       registries.pointRoutes = points.map(({ name, routeId, scope }) => ({ name, routeId, scope }))
     }
   }
-  if (ids !== undefined) registries.navIds = ids as string[]
+  if (ids !== undefined) Object.assign(registries, navRegistry(host, ids))
   return registries
+}
+
+/** The nav-ids.json fields beyond the id list (Story 68.7, additive: an older host has none). */
+function navRegistry(host: string, entries: NavIdEntry[]): Partial<Registries> {
+  const raw = new Map(Object.entries(readHostManifest(host, 'nav-ids.json') as object))
+  const surfaces = raw.get('surfaces')
+  return {
+    navIds: entries.map((entry) => entry.id),
+    navEntries: entries,
+    navSurfaces: Array.isArray(surfaces)
+      ? surfaces.flatMap((surface: unknown) =>
+          isRecord(surface) && typeof surface.id === 'string' ? [surface.id] : []
+        )
+      : [],
+    navDelta: raw.get('delta') === 1,
+  }
 }
 
 /** A missing injection point never limits CM: it may override the page or replace the component. */

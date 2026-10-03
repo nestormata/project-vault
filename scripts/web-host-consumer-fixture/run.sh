@@ -243,6 +243,7 @@ if [[ "$VARIANT" == 'compose' ]]; then
   compose_plant_probe
   compose_assert_derived_routes
   compose_plant_parity_test
+  compose_nav_test
 fi
 # Story 68-6 AC-6 (code review): an invalid pack headerPolicy fails the composed tree's
 # composed-hooks-init.test.ts with the start-up error, before anything is built or served.
@@ -286,7 +287,8 @@ if [[ ! -f "$APP/build/index.js" || ! -d "$APP/build/client/_app" ]]; then
   exit 1
 fi
 if [[ "$VARIANT" == 'compose-server-leak' || "$VARIANT" == 'compose-server-twin' ||
-  "$VARIANT" == 'compose-replace-leak' || "$VARIANT" == 'compose-hooks-leak' ]]; then
+  "$VARIANT" == 'compose-replace-leak' || "$VARIANT" == 'compose-hooks-leak' ||
+  "$VARIANT" == 'compose-nav-leak' ]]; then
   log "OK: vite build succeeded for $VARIANT"
   exit 0
 fi

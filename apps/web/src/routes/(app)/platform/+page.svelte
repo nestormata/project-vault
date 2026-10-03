@@ -1,4 +1,5 @@
 <script lang="ts">
+  import NavCards from '$lib/navigation/NavCards.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import PlatformOperatorRequiredNotice from '$lib/components/PlatformOperatorRequiredNotice.svelte'
@@ -42,64 +43,7 @@
 
     <PlatformWarningsBanner warnings={data.warnings} messages={WARNING_MESSAGES} />
 
-    <ul class="mt-8 divide-y divide-gray-200 rounded-lg border border-gray-200 bg-white">
-      <li>
-        <a
-          href={resolve('/platform/backups')}
-          class="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
-        >
-          <div>
-            <p class="font-medium text-gray-900">Backups</p>
-            <p class="text-sm text-gray-500">
-              Trigger, list, validate, and restore encrypted backups
-            </p>
-          </div>
-          <span class="text-gray-400">→</span>
-        </a>
-      </li>
-      <li>
-        <a
-          href={resolve('/platform/settings')}
-          class="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
-        >
-          <div>
-            <p class="font-medium text-gray-900">System Settings</p>
-            <p class="text-sm text-gray-500">
-              MFA policy, audit storage, organizations, and resource usage
-            </p>
-          </div>
-          <span class="text-gray-400">→</span>
-        </a>
-      </li>
-      <li>
-        <a
-          href={resolve('/platform/upgrade')}
-          class="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
-        >
-          <div>
-            <p class="font-medium text-gray-900">Version & Upgrade</p>
-            <p class="text-sm text-gray-500">
-              Current version, CLI version policy, and upgrade procedure
-            </p>
-          </div>
-          <span class="text-gray-400">→</span>
-        </a>
-      </li>
-      <li>
-        <a
-          href={resolve('/platform/audit')}
-          class="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
-        >
-          <div>
-            <p class="font-medium text-gray-900">Platform Operator Audit Log</p>
-            <p class="text-sm text-gray-500">
-              Search and export instance-wide platform admin events
-            </p>
-          </div>
-          <span class="text-gray-400">→</span>
-        </a>
-      </li>
-    </ul>
+    <NavCards surface="platform.index" />
   </div>
 {/if}
 <InjectionPoint name="platform.home.after" data={data?.__inject} />

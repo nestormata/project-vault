@@ -1,4 +1,6 @@
 import type { ProjectPath } from '$lib/app-paths.js'
+import { renderSurface } from '$lib/navigation/build-surface.js'
+import { PROJECT_TAB_SUFFIX, projectNavHref } from '$lib/navigation/surfaces/project.js'
 import { isActiveNavItem } from './nav-model.js'
 
 export type ProjectNavItem = {
@@ -11,43 +13,24 @@ export type ProjectNavItem = {
   matchExact: boolean
 }
 
-type ProjectNavItemDef = {
-  label: string
-  suffix: string
-  // AC-9: GET /:projectId/service-endpoints and GET /:projectId/alerts
-  // (apps/api/src/modules/monitoring/routes.ts) require org role >= member — an org-viewer
-  // hitting this tab today gets an uncaught 403 ApiClientError from the page's own loader (which
-  // only catches 404), landing on SvelteKit's generic error page with no explanation. Every other
-  // project tab's list endpoint is viewer-accessible (confirmed by direct source read across
-  // credentials/members/machine-users/services/certificates/domains/status-page), so Endpoints is
-  // the only tab that needs gating here.
-  hiddenForViewer?: boolean
-}
+export { projectNavHref }
 
-const PROJECT_NAV_ITEM_DEFS: ProjectNavItemDef[] = [
-  { label: 'Overview', suffix: '' },
-  { label: 'Secrets', suffix: 'credentials' },
-  { label: 'Members', suffix: 'members' },
-  { label: 'Machine Users', suffix: 'machine-users' },
-  { label: 'Services', suffix: 'services' },
-  { label: 'Certificates', suffix: 'certificates' },
-  { label: 'Domains', suffix: 'domains' },
-  { label: 'Endpoints', suffix: 'service-endpoints', hiddenForViewer: true },
-  { label: 'Status Page', suffix: 'status-page' },
-]
-
-export function projectNavHref(projectId: string, suffix: string): ProjectPath {
-  return suffix ? `/projects/${projectId}/${suffix}` : `/projects/${projectId}`
-}
-
+// Story 68.7 AC-1: a compatibility facade over the `project` surface's builder (nav as data), with
+// the EMPTY delta. AC-9 of the project nav still holds: GET /:projectId/service-endpoints and
+// GET /:projectId/alerts need org role >= member, so the Endpoints tab carries a `when` that hides
+// it from org viewers (every other tab's list endpoint is viewer-accessible). Labels are messages
+// now (Story 68.7 Q6; English text unchanged).
 export function getProjectNavItems(projectId: string, orgRole: string): ProjectNavItem[] {
-  return PROJECT_NAV_ITEM_DEFS.filter(
-    (item) => !(item.hiddenForViewer && orgRole === 'viewer')
-  ).map((item) => ({
-    label: item.label,
-    href: projectNavHref(projectId, item.suffix),
-    matchExact: item.suffix === '',
-  }))
+  return renderSurface('project', { projectId, orgRole, pathname: '' }, { delta: {} }).map(
+    (node) => {
+      const suffix = PROJECT_TAB_SUFFIX.get(node.id) ?? ''
+      return {
+        label: node.label,
+        href: projectNavHref(projectId, suffix),
+        matchExact: suffix === '',
+      }
+    }
+  )
 }
 
 export function isActiveProjectNavItem(item: ProjectNavItem, pathname: string): boolean {

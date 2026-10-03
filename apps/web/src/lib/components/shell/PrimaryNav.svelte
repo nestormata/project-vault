@@ -2,27 +2,43 @@
   import { resolve } from '$app/paths'
   import { page } from '$app/state'
   import type { ResolvedExtensionNavItem } from '$lib/api/extension-panel.js'
-  import { getPrimaryNavItems, isActiveNavItem } from './nav-model.js'
+  import { renderSurface } from '$lib/navigation/build-surface.js'
+  import type { NavNode, NavUser } from '$lib/navigation/types.js'
+  import { buildExtensionNavTopLevelItems, isActiveNavItem } from './nav-model.js'
 
   let {
     onsearch,
     isPlatformOperator = false,
     hasUiPanelExtension = false,
     extensionNavItems = [],
+    user,
   }: {
     onsearch?: () => void
     isPlatformOperator?: boolean
     hasUiPanelExtension?: boolean
     extensionNavItems?: ResolvedExtensionNavItem[]
+    /** Story 68.7: the signed-in user, for nav conditions (`when`) that read the org role. */
+    user?: NavUser
   } = $props()
 
-  // Story 28.4 AC2: $derived (not a plain const) so navItems re-reads the current locale on every
-  // reactive update, including immediately after a setLocale(..., { reload: false }) call
-  // elsewhere in the app — a plain const would only ever resolve getPrimaryNavItems() once, at
-  // whatever locale was active when this component first mounted.
-  const navItems = $derived(
-    getPrimaryNavItems({ isPlatformOperator, hasUiPanelExtension, extensionNavItems })
-  )
+  // Story 28.4 AC2 / Story 68.7 AC-4: one $derived over the props, so the labels re-resolve on every
+  // reactive update, including right after a setLocale(..., { reload: false }) elsewhere in the app
+  // (SvelteKit's update() hands this component fresh prop values such as a new `extensionNavItems`
+  // array). Story 68.7: PV's (and a composed app's) items come from the `primary` surface's data
+  // with the active nav delta applied; the frozen Story 29.3 `navItems` are appended after them,
+  // exactly as before, and are not part of the delta.
+  /** What main rendered between PV's search button and the first link (two whitespace nodes). */
+  const ACTION_GAP = '  '
+
+  const nav = $derived({
+    nodes: renderSurface('primary', {
+      pathname: page.url.pathname,
+      user: { isPlatformOperator, orgRole: user?.orgRole ?? '' },
+      hasUiPanelExtension,
+      search: () => onsearch?.(),
+    }),
+    legacy: buildExtensionNavTopLevelItems(extensionNavItems),
+  })
 
   /**
    * Story 29.3 AC6/AC12 — the host-owned icon-token-to-glyph map. An icon token with no matching
@@ -42,19 +58,105 @@
   data-testid="primary-nav"
   class="flex flex-col gap-2 md:flex-row md:items-center md:gap-3"
 >
-  <button
-    class="flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800"
-    type="button"
-    aria-label="Search (⌘K)"
-    title="Search (⌘K)"
-    onclick={() => onsearch?.()}
-  >
-    <span aria-hidden="true">⌕</span>
-    <span class="sr-only">Search</span>
-    <kbd class="hidden rounded border border-slate-300 px-1 text-xs sm:inline" aria-hidden="true"
-      >⌘K</kbd
-    >
-  </button>
+  {#snippet nodeLabel(node: NavNode)}
+    {#if node.icon}<node.icon />{/if}
+    <span class="hidden sm:inline">{node.label}</span>
+    <span class="sm:hidden">{node.mobileLabel}</span>
+  {/snippet}
+  <!--
+    Story 68.7 AC-3: one renderer for every depth. A node with children is a native
+    <details>/<summary> disclosure (keyboard: Tab focuses, Enter/Space toggles); its <summary> is
+    marked active while any descendant is. A node with both an href and children lists its own link
+    first inside the disclosure. Nested entries render like the legacy children below.
+  -->
+  {#snippet navNode(node: NavNode, nested: boolean)}
+    {#if node.children.length > 0}
+      <details class="relative">
+        <summary
+          class={`flex cursor-pointer list-none items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium ${node.current ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+        >
+          {@render nodeLabel(node)}
+        </summary>
+        <div
+          class="flex flex-col gap-1 py-1 md:absolute md:z-10 md:min-w-40 md:rounded-xl md:border md:border-slate-200 md:bg-white md:p-1 md:shadow-lg"
+        >
+          {#if node.href !== undefined || node.external !== undefined}
+            {@render navLeaf({ ...node, children: [] }, true)}
+          {/if}
+          {#each node.children as child (child.id)}
+            {@render navNode(child, true)}
+          {/each}
+        </div>
+      </details>
+    {:else}
+      {@render navLeaf(node, nested)}
+    {/if}
+  {/snippet}
+  <!--
+    An action: an icon-only action keeps its label as screen-reader text (its accessible name). A
+    top-level action is followed by the same two-space separator main's markup had after PV's search
+    button (AppShell's characterization test compares it byte for byte).
+  -->
+  {#snippet actionContent(node: NavNode)}
+    {#if node.icon}<node.icon />{/if}
+    <span class={node.icon ? 'sr-only' : undefined}>{node.label}</span>
+    {#if node.shortcut}<kbd
+        class="hidden rounded border border-slate-300 px-1 text-xs sm:inline"
+        aria-hidden="true">{node.shortcut}</kbd
+      >{/if}
+  {/snippet}
+  {#snippet navLeaf(node: NavNode, nested: boolean)}
+    {#if node.onSelect !== undefined && node.href === undefined && node.external === undefined}
+      {#if nested}
+        <button
+          class="rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100"
+          type="button"
+          title={node.title || undefined}
+          onclick={() => node.onSelect?.()}
+        >
+          {@render actionContent(node)}
+        </button>
+      {:else}
+        <button
+          class="flex min-h-11 min-w-11 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800"
+          type="button"
+          aria-label={node.title || undefined}
+          title={node.title || undefined}
+          onclick={() => node.onSelect?.()}
+        >
+          {@render actionContent(node)}
+        </button>{ACTION_GAP}
+      {/if}
+    {:else if node.external !== undefined}
+      <a
+        href={`${node.external.scheme}://${node.external.rest}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        class={nested
+          ? 'rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100'
+          : 'flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100'}
+      >
+        {@render nodeLabel(node)}
+      </a>
+    {:else if nested}
+      <a
+        class={`rounded-lg px-3 py-2 text-sm font-medium ${node.active ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+        aria-current={node.active ? 'page' : undefined}
+        href={node.href}
+      >
+        {#if node.icon}<node.icon />{/if}
+        {node.label}
+      </a>
+    {:else}
+      <a
+        class={`flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-medium ${node.active ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+        aria-current={node.active ? 'page' : undefined}
+        href={node.href}
+      >
+        {@render nodeLabel(node)}
+      </a>
+    {/if}
+  {/snippet}
   <!--
     Story 29.3 AC10/AC12 bug fix (found via Chrome-driven manual verification, 2026-08-29): keyed
     by array index, not `item.href`. AC10 does not forbid a manifest-declared `navItems` entry's
@@ -78,7 +180,10 @@
     <span class="hidden sm:inline">{item.label}</span>
     <span class="sm:hidden">{item.mobileLabel}</span>
   {/snippet}
-  {#each navItems as item, itemIndex (itemIndex)}
+  <!-- PV's and a composed app's items (keyed by id), then the frozen legacy tail (index keys). -->
+  {#each nav.nodes as node (node.id)}
+    {@render navNode(node, false)}
+  {/each}{#each nav.legacy as item, itemIndex (itemIndex)}
     {@const active = isActiveNavItem(item.href, page.url.pathname)}
     {#if item.children && item.children.length > 0}
       <!--

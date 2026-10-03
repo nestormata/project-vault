@@ -47,6 +47,11 @@ export interface CompositionLock {
    * Absent in locks written before it existed (read as none). */
   guardEntries?: Record<string, string>
   navIdsReferenced: { id: string; operative: boolean }[]
+  /** Story 68.7: the nav ids the pack inserts. Absent in older locks (read as none). */
+  navIdsDeclared?: string[]
+  /** Story 68.7 (informational): the web-host nav ids this lock was written against, so the next
+   * compose can name the ones that are new (inherited). Absent when the host has no nav delta. */
+  navIdsHost?: string[]
   /** Story 68.14: the module pack's `apiRoutes.override` table, sorted by `METHOD url`. */
   apiRouteOverrides: ApiRouteOverrideLock[]
   notes: string[]
@@ -65,6 +70,7 @@ const NORMATIVE = [
   'injections',
   'guardEntries',
   'navIdsReferenced',
+  'navIdsDeclared',
   'apiRouteOverrides',
 ] as const
 
@@ -73,6 +79,7 @@ const OPTIONAL_SECTIONS: ReadonlySet<string> = new Set([
   'injections',
   'guardEntries',
   'excludedPvTests',
+  'navIdsDeclared',
 ])
 
 export interface LockInput {
@@ -88,6 +95,8 @@ export interface LockInput {
   excludedPvTests: string[]
   guardEntries: Record<string, string>
   navIdsReferenced: { id: string; operative: boolean }[]
+  navIdsDeclared?: string[]
+  navIdsHost?: string[]
   apiRouteOverrides: ApiRouteOverrideLock[]
   notes: string[]
 }
@@ -120,6 +129,12 @@ export function buildLock(input: LockInput): CompositionLock {
     injections: input.injections,
     guardEntries: input.guardEntries,
     navIdsReferenced: sortBy(input.navIdsReferenced, (entry) => entry.id),
+    ...(input.navIdsDeclared === undefined
+      ? {}
+      : { navIdsDeclared: [...input.navIdsDeclared].sort(compareCodeUnits) }),
+    ...(input.navIdsHost === undefined
+      ? {}
+      : { navIdsHost: [...input.navIdsHost].sort(compareCodeUnits) }),
     apiRouteOverrides: sortBy(input.apiRouteOverrides, (entry) => `${entry.method} ${entry.url}`),
     notes: [...new Set(input.notes)].sort(compareCodeUnits),
   }
@@ -192,6 +207,7 @@ function normativeText(lock: CompositionLock): string {
       injections: lock.injections ?? [],
       guardEntries: lock.guardEntries ?? {},
       excludedPvTests: lock.excludedPvTests ?? [],
+      navIdsDeclared: lock.navIdsDeclared ?? [],
     }).filter(([key]) => (NORMATIVE as readonly string[]).includes(key))
   )
   const picked = {

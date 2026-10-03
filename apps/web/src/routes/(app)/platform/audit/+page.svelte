@@ -153,10 +153,7 @@
 
 <InjectionPoint name="platform.audit.before" data={data?.__inject} />
 <InjectionPoint name="platform.audit.header.actions" data={data?.__inject} />
-<PlatformBreadcrumb
-  allowed={data.allowed}
-  trail={[{ label: 'Platform Admin', href: '/platform' }, { label: 'Platform Operator Audit Log' }]}
->
+<PlatformBreadcrumb allowed={data.allowed} node="breadcrumbs.platform.audit">
   <h1 class="text-2xl font-bold text-gray-900">Platform Operator Audit Log</h1>
   <p class="mt-2 text-sm text-gray-500">
     This is a separate log from your organization's own audit log (<a
