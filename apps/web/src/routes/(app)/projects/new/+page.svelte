@@ -1,4 +1,6 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
+  let { data } = $props()
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { ApiClientError } from '$lib/api/client.js'
@@ -65,6 +67,8 @@
   <title>Create Project | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="project.new.before" data={data?.__inject} />
+<InjectionPoint name="project.new.header.actions" data={data?.__inject} />
 <section class="mx-auto max-w-2xl space-y-6">
   <div>
     <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">New project</p>
@@ -150,3 +154,4 @@
     />
   </form>
 </section>
+<InjectionPoint name="project.new.after" data={data?.__inject} />

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { page } from '$app/state'
@@ -16,7 +17,11 @@
   // Story 60.3 later added a `+page.server.ts` `load` for the claim exchange; Story 60.4 has it
   // return `centralizeMeOrigin` (server-side config only). `data` is optional so the page still
   // renders — with plain-text guidance — when no load data is supplied.
-  let { data }: { data?: { centralizeMeOrigin?: string | null } } = $props()
+  let {
+    data,
+  }: {
+    data?: { centralizeMeOrigin?: string | null; __inject?: App.PageData['__inject'] }
+  } = $props()
   let centralizeMeOrigin = $derived(data?.centralizeMeOrigin ?? null)
 
   // AC1.2: matches the opaque-identifier shape `handoff-routes.ts`'s `generateOpaqueId()`
@@ -123,6 +128,8 @@
   }
 </script>
 
+<InjectionPoint name="auth.handoff.before" data={data?.__inject} />
+<InjectionPoint name="auth.handoff.header.actions" data={data?.__inject} />
 <!-- Story 60.4 AC2/AC3 (F11): every terminal error state (no-params/malformed, rejected, and
 login_failed) shares this block — an error heading instead of "Confirm sign-in", the alert, and
 guidance back to CentralizeMe. The guidance is deliberately outside the role="alert" element (the
@@ -208,6 +215,7 @@ drift. -->
     </div>
   {/if}
 </div>
+<InjectionPoint name="auth.handoff.after" data={data?.__inject} />
 
 <svelte:head>
   <title>{m.auth_handoff_page_title()}</title>

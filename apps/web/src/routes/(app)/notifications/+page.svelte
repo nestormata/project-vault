@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { enhance } from '$app/forms'
   import { resolve } from '$app/paths'
   import DismissDormancyAlertForm from '$lib/components/notifications/DismissDormancyAlertForm.svelte'
@@ -64,6 +65,8 @@
   <title>Notifications | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="notifications.home.before" data={data?.__inject} />
+<InjectionPoint name="notifications.home.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-3xl px-4 py-8">
   <div class="mb-6 flex items-center justify-between">
     <h1 class="text-2xl font-bold text-gray-900">Notifications</h1>
@@ -377,3 +380,4 @@
     </div>
   {/if}
 </div>
+<InjectionPoint name="notifications.home.after" data={data?.__inject} />

@@ -1,0 +1,376 @@
+import { error, fail, redirect, type RequestEvent } from '@sveltejs/kit'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  createInjectBehavior,
+  injectActions,
+  injectLoad,
+  withInjectedLoad,
+  type BehaviorTables,
+} from './inject-behavior.js'
+
+// Story 68.4 AC-5 / AC-6 / AC-14: server load and action injection. The generated tables come from
+// the kit; here they are handed in directly.
+
+const event = { params: { projectId: 'p1' }, locals: { user: { userId: 'u1' } } } as never
+
+function delay<T>(ms: number, value: T): Promise<T> {
+  return new Promise((done) => setTimeout(() => done(value), ms))
+}
+
+function tables(partial: Partial<BehaviorTables>): BehaviorTables {
+  return { loads: {}, actions: {}, ...partial }
+}
+
+describe('PV build (empty virtual module): everything is a no-op', () => {
+  it('injectLoad resolves to an empty object with no __inject key', async () => {
+    const result = await injectLoad(event, '/(app)/projects/[projectId]', 'page')
+    expect(result).toEqual({})
+    expect('__inject' in result).toBe(false)
+  })
+
+  it('injectActions returns undefined, not {}, so Kit keeps its "no actions" 405 branch', () => {
+    expect(injectActions('/(app)/projects/[projectId]')).toBeUndefined()
+    expect({ ...{ own: 1 }, ...injectActions('/x') }).toEqual({ own: 1 })
+  })
+})
+
+describe('injectLoad', () => {
+  it('runs every load of the (route, scope) slice, aligned to contributions, with the same event', async () => {
+    const seen: unknown[] = []
+    const { injectLoad: run } = createInjectBehavior(
+      tables({
+        loads: {
+          '/r#page': [
+            {
+              point: 'a.b.after',
+              contributions: [
+                { order: 10, load: (e: unknown) => (seen.push(e), { healthy: 3 }) },
+                { order: 20, load: null },
+                { order: 30, load: () => undefined },
+              ],
+            },
+          ],
+        },
+      })
+    )
+    const result = await run(event, '/r', 'page')
+    expect(result).toEqual({ __inject: { 'a.b.after': [{ healthy: 3 }, null, null] } })
+    expect(seen[0]).toBe(event)
+    // another scope or route never runs here
+    expect(await run(event, '/r', 'layout')).toEqual({})
+    expect(await run(event, '/other', 'page')).toEqual({})
+  })
+
+  it('treats null, primitives and arrays as entries as returned', async () => {
+    const { injectLoad: run } = createInjectBehavior(
+      tables({
+        loads: {
+          '/r#page': [
+            {
+              point: 'a.b.c',
+              contributions: [
+                { order: 0, load: () => null },
+                { order: 1, load: () => 5 },
+                { order: 2, load: () => [1] },
+              ],
+            },
+          ],
+        },
+      })
+    )
+    expect(await run(event, '/r', 'page')).toEqual({ __inject: { 'a.b.c': [null, 5, [1]] } })
+  })
+
+  it('runs loads concurrently and keeps declaration order regardless of completion order', async () => {
+    const { injectLoad: run } = createInjectBehavior(
+      tables({
+        loads: {
+          '/r#page': [
+            {
+              point: 'a.b.c',
+              contributions: [
+                { order: 1, load: () => delay(50, 'slow') },
+                { order: 2, load: () => delay(10, 'fast') },
+              ],
+            },
+            { point: 'a.b.d', contributions: [{ order: 1, load: () => delay(30, 'mid') }] },
+          ],
+        },
+      })
+    )
+    const started = Date.now()
+    for (let i = 0; i < 3; i += 1) {
+      expect(await run(event, '/r', 'page')).toEqual({
+        __inject: { 'a.b.c': ['slow', 'fast'], 'a.b.d': ['mid'] },
+      })
+    }
+    expect(Date.now() - started).toBeLessThan(3 * 50 + 120)
+  })
+
+  it('passes redirect() and error() through untouched', async () => {
+    const make = (thrower: () => never) =>
+      createInjectBehavior(
+        tables({
+          loads: { '/r#page': [{ point: 'a.b.c', contributions: [{ order: 0, load: thrower }] }] },
+        })
+      ).injectLoad
+    await expect(make(() => redirect(303, '/login'))(event, '/r', 'page')).rejects.toMatchObject({
+      status: 303,
+      location: '/login',
+    })
+    await expect(make(() => error(404, 'gone'))(event, '/r', 'page')).rejects.toMatchObject({
+      status: 404,
+    })
+  })
+
+  it('wraps any other throw with the point and the error NAME only, keeping the cause', async () => {
+    const secret = new TypeError('password=hunter2')
+    const { injectLoad: run } = createInjectBehavior(
+      tables({
+        loads: {
+          '/r#page': [
+            {
+              point: 'project.detail.after',
+              contributions: [
+                {
+                  order: 0,
+                  load: () => {
+                    throw secret
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      })
+    )
+    const failure = (await run(event, '/r', 'page').catch((e: unknown) => e)) as Error
+    expect(failure.message).toBe('injection "project.detail.after" load failed: TypeError')
+    expect(failure.cause).toBe(secret)
+    expect(failure.message).not.toContain('hunter2')
+  })
+
+  it('uses NonError for a thrown string/object/null and cuts a long error name to 64 characters', async () => {
+    const run = (thrown: unknown) =>
+      createInjectBehavior(
+        tables({
+          loads: {
+            '/r#page': [
+              {
+                point: 'a.b.c',
+                contributions: [
+                  {
+                    order: 0,
+                    load: () => {
+                      throw thrown
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        })
+      ).injectLoad(event, '/r', 'page')
+    for (const thrown of ['boom', { name: 'Evil' }, null]) {
+      await expect(run(thrown)).rejects.toThrow('injection "a.b.c" load failed: NonError')
+    }
+    const long = new Error('x')
+    long.name = 'N'.repeat(100)
+    await expect(run(long)).rejects.toThrow(`load failed: ${'N'.repeat(64)}`)
+  })
+
+  it('awaits every load to settlement and rethrows the failure of the LOWEST order, deterministically', async () => {
+    const settled: string[] = []
+    const make = (fastFirst: boolean) =>
+      createInjectBehavior(
+        tables({
+          loads: {
+            '/r#page': [
+              {
+                point: 'a.b.c',
+                contributions: [
+                  {
+                    order: 20,
+                    load: async () => {
+                      await delay(fastFirst ? 5 : 40, null)
+                      settled.push('high')
+                      throw error(500, 'high')
+                    },
+                  },
+                  {
+                    order: 10,
+                    load: async () => {
+                      await delay(fastFirst ? 40 : 5, null)
+                      settled.push('low')
+                      throw redirect(303, '/low')
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        })
+      ).injectLoad
+    for (const fastFirst of [true, false, true, false]) {
+      settled.length = 0
+      await expect(make(fastFirst)(event, '/r', 'page')).rejects.toMatchObject({
+        location: '/low',
+      })
+      expect(settled).toHaveLength(2)
+    }
+  })
+
+  it('shares no state between interleaved requests of two users', async () => {
+    const { injectLoad: run } = createInjectBehavior(
+      tables({
+        loads: {
+          '/r#page': [
+            {
+              point: 'a.b.c',
+              contributions: [
+                {
+                  order: 0,
+                  load: async (e: unknown) => {
+                    await delay(Math.random() * 10, null)
+                    return (e as { locals: { user: string } }).locals.user
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      })
+    )
+    const users = Array.from({ length: 20 }, (_, i) => `user-${i % 2}`)
+    const results = await Promise.all(
+      users.map((user) => run({ locals: { user } } as never, '/r', 'page'))
+    )
+    expect(results).toEqual(users.map((user) => ({ __inject: { 'a.b.c': [user] } })))
+  })
+
+  it('makes no network call and logs nothing', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    await injectLoad(event, '/anything', 'layout')
+    expect(fetchSpy).not.toHaveBeenCalled()
+    fetchSpy.mockRestore()
+  })
+})
+
+describe('injectActions', () => {
+  const action = (run: (e: RequestEvent) => unknown) => ({
+    '/r#page': {
+      'credential.detail.after.share': { point: 'credential.detail.after', name: 'share', run },
+    },
+  })
+
+  it('exposes <point>.<name> keys, runs with the same event and passes results and fail() through', async () => {
+    const seen: unknown[] = []
+    const actions = createInjectBehavior(
+      tables({
+        actions: action((e) => (seen.push(e), fail(422, { message: 'empty' }))),
+      })
+    ).injectActions('/r')
+    expect(Object.keys(actions ?? {})).toEqual(['credential.detail.after.share'])
+    const result = await actions?.['credential.detail.after.share']?.(event)
+    expect(result).toMatchObject({ status: 422 })
+    expect(seen[0]).toBe(event)
+  })
+
+  it('has no inherited keys: __proto__, constructor and toString never resolve', () => {
+    const actions = createInjectBehavior(tables({ actions: action(() => 1) })).injectActions('/r')
+    expect(Object.getPrototypeOf(actions)).toBeNull()
+    expect(Object.isFrozen(actions)).toBe(true)
+    for (const key of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
+      expect(Reflect.get(actions ?? {}, key)).toBeUndefined()
+    }
+  })
+
+  it('wraps a throwing action with the point, action and error name; redirects pass through', async () => {
+    const throwing = createInjectBehavior(
+      tables({
+        actions: action(() => {
+          throw new RangeError('secret detail')
+        }),
+      })
+    ).injectActions('/r')
+    await expect(throwing?.['credential.detail.after.share']?.(event)).rejects.toThrow(
+      'injection "credential.detail.after" action "share" failed: RangeError'
+    )
+    const redirecting = createInjectBehavior(
+      tables({
+        actions: action(() => {
+          throw redirect(303, '/done')
+        }),
+      })
+    ).injectActions('/r')
+    await expect(redirecting?.['credential.detail.after.share']?.(event)).rejects.toMatchObject({
+      location: '/done',
+    })
+  })
+
+  it('returns undefined for a route with no injected actions', () => {
+    const { injectActions: run } = createInjectBehavior(tables({ actions: action(() => 1) }))
+    expect(run('/other')).toBeUndefined()
+    expect(
+      createInjectBehavior(tables({ actions: { '/r#page': {} } })).injectActions('/r')
+    ).toBeUndefined()
+  })
+})
+
+describe("withInjectedLoad: PV's own load first, then the injected data", () => {
+  it("is a no-op in PV's build: the own data comes back unchanged, with no __inject key", async () => {
+    const wrapped = withInjectedLoad(async () => ({ user: 'u1' }), '/r', 'page')
+    const result = await wrapped(event)
+    expect(result).toEqual({ user: 'u1' })
+    expect('__inject' in result).toBe(false)
+  })
+
+  it('merges the own data with the injected data, own load first, with the same event', async () => {
+    const order: string[] = []
+    const { withInjectedLoad: wrap } = createInjectBehavior({
+      loads: {
+        '/r#page': [
+          {
+            point: 'a.b.c',
+            contributions: [{ order: 0, load: () => (order.push('injected'), 'extra') }],
+          },
+        ],
+      },
+      actions: {},
+    })
+    const wrapped = wrap(async (e: unknown) => (order.push('own'), { seen: e }), '/r', 'page')
+    expect(await wrapped(event)).toEqual({ seen: event, __inject: { 'a.b.c': ['extra'] } })
+    expect(order).toEqual(['own', 'injected'])
+  })
+
+  it("short-circuits when PV's own load redirects: no contribution load runs", async () => {
+    let ran = 0
+    const { withInjectedLoad: wrap } = createInjectBehavior({
+      loads: {
+        '/r#page': [{ point: 'a.b.c', contributions: [{ order: 0, load: () => (ran += 1) }] }],
+      },
+      actions: {},
+    })
+    const wrapped = wrap(
+      () => {
+        throw redirect(303, '/login')
+      },
+      '/r',
+      'page'
+    )
+    await expect(wrapped(event)).rejects.toMatchObject({ status: 303 })
+    expect(ran).toBe(0)
+  })
+
+  it('tolerates a PV load that returns nothing', async () => {
+    const { withInjectedLoad: wrap } = createInjectBehavior({
+      loads: {
+        '/r#page': [{ point: 'a.b.c', contributions: [{ order: 0, load: () => 'extra' }] }],
+      },
+      actions: {},
+    })
+    expect(await wrap(() => undefined, '/r', 'page')(event)).toEqual({
+      __inject: { 'a.b.c': ['extra'] },
+    })
+  })
+})

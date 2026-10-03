@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { dev } from '$app/environment'
 import { env } from '$env/dynamic/private'
 import { proxyApiRequest } from '$lib/server/api-proxy.js'
@@ -77,13 +78,15 @@ async function parseExchangeResult(
  * session materializes, so this `load` never needs to itself distinguish or surface *why* no
  * cookie was set.
  */
-export const load: PageServerLoad = async (event) => {
+const ownLoad = (async (event) => {
   await exchangeClaimIntoCookie(event)
 
   // Story 60.4 AC3: resolved per request from the web process's own env (never cached, never
   // read from the query string), whatever the claim exchange's outcome.
   return { centralizeMeOrigin: resolveCentralizeMeOrigin(env.VAULT_HANDOFF_ISSUER) }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(ownLoad, '/(auth)/handoff', 'page')
 
 async function exchangeClaimIntoCookie(event: Parameters<PageServerLoad>[0]): Promise<void> {
   const pendingId = event.url.searchParams.get('pendingId')
@@ -104,3 +107,5 @@ async function exchangeClaimIntoCookie(event: Parameters<PageServerLoad>[0]): Pr
     maxAge: Math.floor(result.remainingMs / 1000),
   })
 }
+
+export const actions = injectActions('/(auth)/handoff')

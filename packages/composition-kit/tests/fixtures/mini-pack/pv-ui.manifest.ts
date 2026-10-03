@@ -40,7 +40,20 @@ export default defineUiPack({
     remove: ['/status'],
   },
   injections: {
-    'project.detail.tiles': [{ component: './injections/HealthTile.svelte', order: 10 }],
+    // Story 68.4 (M3): a component with server data and an action, a later one, a layout point and a
+    // head contribution, all at real registry points. HealthTile is imported by the billing page.
+    'auth.register.after': [
+      {
+        component: './injections/Tile.svelte',
+        order: 10,
+        load: './injections/tile.server.ts',
+        actions: './injections/tile.actions.ts',
+      },
+      { component: './injections/Late.svelte', order: 20 },
+    ],
+    'auth.layout.before': [{ component: './injections/LayoutNote.svelte' }],
+    'shell.head': [{ component: './injections/HeadMeta.svelte' }],
+    'dashboard.home.after': [{ component: './injections/HealthTile.svelte', order: 10 }],
   },
   replacements: {
     '$lib/components/shell/Footer.svelte': {

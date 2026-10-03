@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import { goto } from '$app/navigation'
   import { canCreateCredential } from '$lib/components/onboarding/onboarding-logic.js'
@@ -88,6 +89,8 @@
   <title>Secrets | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="project.credentials.before" data={data?.__inject} />
+<InjectionPoint name="project.credentials.header.actions" data={data?.__inject} />
 <section class="space-y-6">
   <div
     class="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between"
@@ -289,3 +292,4 @@
     {/if}
   {/if}
 </section>
+<InjectionPoint name="project.credentials.after" data={data?.__inject} />

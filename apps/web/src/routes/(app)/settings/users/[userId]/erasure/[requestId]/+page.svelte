@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import { invalidateAll } from '$app/navigation'
   import { executeErasure } from '$lib/api/compliance.js'
@@ -61,6 +62,8 @@
   <title>Erasure Request | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="settings.users-erasure-detail.before" data={data?.__inject} />
+<InjectionPoint name="settings.users-erasure-detail.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-3xl px-4 py-8">
   <h1 class="text-2xl font-bold text-gray-900">Erasure Request</h1>
   <a href={resolve('/settings/users')} class="mt-2 inline-block text-sm text-indigo-600 underline">
@@ -205,3 +208,4 @@
     </div>
   {/if}
 </div>
+<InjectionPoint name="settings.users-erasure-detail.after" data={data?.__inject} />

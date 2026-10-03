@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { isMfaRequiredError } from '$lib/api/client.js'
 import { listExternalIdentities, type ExternalIdentity } from '$lib/api/external-identities.js'
 import { listOrgUsers, type OrgUser } from '$lib/api/org-users.js'
@@ -23,10 +24,7 @@ export type ExternalIdentitiesPageData =
       errorMessage: string | null
     }
 
-export const load: PageServerLoad = async ({
-  fetch,
-  locals,
-}): Promise<ExternalIdentitiesPageData> => {
+const ownLoad = (async ({ fetch, locals }): Promise<ExternalIdentitiesPageData> => {
   const user = requireUser(locals)
   const orgRole = user.orgRole
 
@@ -73,4 +71,12 @@ export const load: PageServerLoad = async ({
       errorMessage: GENERIC_FETCH_ERROR,
     }
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(
+  ownLoad,
+  '/(app)/settings/external-identities',
+  'page'
+)
+
+export const actions = injectActions('/(app)/settings/external-identities')

@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { ApiClientError } from '$lib/api/client.js'
 import { listOrgSsoDomains, type OrgSsoDomain } from '$lib/api/org-sso-domains.js'
 import { requireUser } from '$lib/server/require-user.js'
@@ -26,7 +27,7 @@ function isMfaRequiredError(reason: unknown): boolean {
   return reason instanceof ApiClientError && reason.status === 403 && reason.code === 'mfa_required'
 }
 
-export const load: PageServerLoad = async ({ fetch, locals }): Promise<SsoDomainsPageData> => {
+const ownLoad = (async ({ fetch, locals }): Promise<SsoDomainsPageData> => {
   const user = requireUser(locals)
   const orgRole = user.orgRole
 
@@ -54,4 +55,8 @@ export const load: PageServerLoad = async ({ fetch, locals }): Promise<SsoDomain
       errorMessage: GENERIC_FETCH_ERROR,
     }
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(ownLoad, '/(app)/settings/sso-domains', 'page')
+
+export const actions = injectActions('/(app)/settings/sso-domains')

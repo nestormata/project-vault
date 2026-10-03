@@ -1,4 +1,6 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
+  let { data } = $props()
   import { resolve } from '$app/paths'
   import { page } from '$app/state'
   import { m } from '$lib/paraglide/messages.js'
@@ -16,6 +18,8 @@
   }
 </script>
 
+<InjectionPoint name="auth.register.before" data={data?.__inject} />
+<InjectionPoint name="auth.register.header.actions" data={data?.__inject} />
 <div class="space-y-6">
   {#key localeRevision}
     <div class="space-y-2">
@@ -35,6 +39,7 @@
   {/key}
   <RegisterForm {invitationToken} {prefillEmail} onLocaleChange={handleLocaleChange} />
 </div>
+<InjectionPoint name="auth.register.after" data={data?.__inject} />
 
 <svelte:head>
   <title>{pageTitle}</title>

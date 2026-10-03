@@ -36,7 +36,8 @@ export default defineUiPack({
     remove: ['/(app)/extensions/panels'], // route ids, files (src/..., static/...) or static assets
   },
   injections: {
-    'project.detail.tiles': [{ component: './injections/HealthTile.svelte', order: 10 }],
+    // a point from web-host's injection-points.json; load/actions are optional named exports
+    'project.detail.after': [{ component: './injections/HealthTile.svelte', order: 10 }],
   },
   replacements: {
     '$lib/components/shell/GlobalSearch.svelte': {

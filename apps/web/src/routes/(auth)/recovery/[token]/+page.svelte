@@ -1,4 +1,6 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
+  let { data } = $props()
   import { onMount } from 'svelte'
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
@@ -103,6 +105,8 @@
   <title>Reset your password | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="auth.recovery-detail.before" data={data?.__inject} />
+<InjectionPoint name="auth.recovery-detail.header.actions" data={data?.__inject} />
 <div class="space-y-6">
   {#if status === 'loading'}
     <p class="text-slate-600">Checking your recovery link...</p>
@@ -251,3 +255,4 @@
     </form>
   {/if}
 </div>
+<InjectionPoint name="auth.recovery-detail.after" data={data?.__inject} />

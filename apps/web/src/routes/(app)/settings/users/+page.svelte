@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { goto, invalidateAll } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { ApiClientError } from '$lib/api/client.js'
@@ -381,6 +382,8 @@
   }
 </script>
 
+<InjectionPoint name="settings.users.before" data={data?.__inject} />
+<InjectionPoint name="settings.users.header.actions" data={data?.__inject} />
 {#snippet WarningIcon()}
   <svg aria-hidden="true" class="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
     <path
@@ -821,3 +824,4 @@
     </div>
   {/if}
 </div>
+<InjectionPoint name="settings.users.after" data={data?.__inject} />

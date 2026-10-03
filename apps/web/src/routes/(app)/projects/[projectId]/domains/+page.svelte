@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { ApiClientError } from '$lib/api/client.js'
   import { deleteDomain } from '$lib/api/domains.js'
   import type { DomainRecord } from '$lib/api/domains.js'
@@ -46,6 +47,8 @@
   <title>Domains | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="project.domains.before" data={data?.__inject} />
+<InjectionPoint name="project.domains.header.actions" data={data?.__inject} />
 <section class="space-y-6">
   <AssetListHeader
     eyebrow="Domains"
@@ -86,3 +89,4 @@
     </AssetTable>
   {/if}
 </section>
+<InjectionPoint name="project.domains.after" data={data?.__inject} />

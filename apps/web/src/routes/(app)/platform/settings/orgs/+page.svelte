@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import PlatformSettingsBreadcrumb from '$lib/components/platform/PlatformSettingsBreadcrumb.svelte'
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
@@ -81,6 +82,8 @@
   <title>Organizations | Platform Admin | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="platform.settings-orgs.before" data={data?.__inject} />
+<InjectionPoint name="platform.settings-orgs.header.actions" data={data?.__inject} />
 <PlatformSettingsBreadcrumb allowed={data.allowed} leafLabel="Organizations">
   <h1 class="text-2xl font-bold text-gray-900">Organizations</h1>
   <p class="mt-1 text-gray-500">Manage all organizations on this instance.</p>
@@ -183,3 +186,4 @@
     </form>
   </div>
 </PlatformSettingsBreadcrumb>
+<InjectionPoint name="platform.settings-orgs.after" data={data?.__inject} />

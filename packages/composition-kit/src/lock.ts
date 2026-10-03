@@ -7,6 +7,7 @@ import { sortKeys } from './sort-keys.js'
 import type { InjectionPointRecord } from './registry.js'
 import type { AdditionRecord, OverrideRecord, RemovalRecord, ReplacementRecord } from './overlay.js'
 import type { Relocated } from './materialize.js'
+import type { LockInjection } from './injection.js'
 import type { CompatibilityTuple } from './types.js'
 
 export const LOCKFILE_VERSION = 1
@@ -31,6 +32,9 @@ export interface CompositionLock {
   contributions: Contributions
   excludedPvTests: string[]
   injectionPointsUsed: InjectionPointRecord[]
+  /** Story 68.4: every contribution, composed paths, in point and `order` order. Absent in locks
+   * written before it existed (read as none). */
+  injections?: LockInjection[]
   navIdsReferenced: { id: string; operative: boolean }[]
   apiRouteOverrides: string[]
   notes: string[]
@@ -45,9 +49,13 @@ const NORMATIVE = [
   'materialized',
   'contributions',
   'injectionPointsUsed',
+  'injections',
   'navIdsReferenced',
   'apiRouteOverrides',
 ] as const
+
+/** Sections a lock may lack and still be read (they were added after lockfileVersion 1). */
+const OPTIONAL_SECTIONS: ReadonlySet<string> = new Set(['injections'])
 
 export interface LockInput {
   tuple: CompatibilityTuple
@@ -58,6 +66,7 @@ export interface LockInput {
   relocated: Relocated[]
   contributions: Contributions
   injectionPointsUsed: InjectionPointRecord[]
+  injections: LockInjection[]
   navIdsReferenced: { id: string; operative: boolean }[]
   notes: string[]
 }
@@ -87,6 +96,7 @@ export function buildLock(input: LockInput): CompositionLock {
     contributions: input.contributions,
     excludedPvTests: [],
     injectionPointsUsed: sortBy(input.injectionPointsUsed, (entry) => entry.name),
+    injections: input.injections,
     navIdsReferenced: sortBy(input.navIdsReferenced, (entry) => entry.id),
     apiRouteOverrides: [],
     notes: [...new Set(input.notes)].sort(compareCodeUnits),
@@ -120,7 +130,9 @@ export function parseLock(
       problem: `${label} was written by a newer kit (lockfileVersion ${version}); upgrade @project-vault/composition-kit`,
     }
   }
-  const missing = [...NORMATIVE, 'removals', 'notes'].filter((key) => !(key in (record ?? {})))
+  const missing = [...NORMATIVE, 'removals', 'notes'].filter(
+    (key) => !OPTIONAL_SECTIONS.has(key) && !(key in (record ?? {}))
+  )
   if (missing.length > 0) {
     return { problem: `${label} is missing ${missing.join(', ')} (schema: ${SCHEMA_PATH})` }
   }
@@ -135,7 +147,9 @@ export function readLock(path: string): { lock?: CompositionLock; problem?: stri
 /** The normative part of a lock, as text, for `--check`. */
 function normativeText(lock: CompositionLock): string {
   const normative = new Map(
-    Object.entries(lock).filter(([key]) => (NORMATIVE as readonly string[]).includes(key))
+    Object.entries({ ...lock, injections: lock.injections ?? [] }).filter(([key]) =>
+      (NORMATIVE as readonly string[]).includes(key)
+    )
   )
   const picked = {
     ...Object.fromEntries(normative),

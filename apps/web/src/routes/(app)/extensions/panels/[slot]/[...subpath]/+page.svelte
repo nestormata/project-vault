@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { fetchWithSessionRefresh } from '$lib/api/client.js'
   import { renderPanelHtml } from '$lib/security/render-panel-html.js'
   import { EXTENSION_THEME_CSS_VARS } from '$lib/security/extension-theme-vars.js'
@@ -366,6 +367,8 @@
   <title>Extension | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="extensions.panels-detail.before" data={data?.__inject} />
+<InjectionPoint name="extensions.panels-detail.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-3xl px-4 py-8">
   <h1 bind:this={heading} tabindex="-1" class="text-2xl font-bold text-gray-900">Extension</h1>
 
@@ -439,3 +442,4 @@
   -->
   <p class="mt-4 text-sm text-slate-600" aria-live="polite">{statusMessage ?? ''}</p>
 </div>
+<InjectionPoint name="extensions.panels-detail.after" data={data?.__inject} />

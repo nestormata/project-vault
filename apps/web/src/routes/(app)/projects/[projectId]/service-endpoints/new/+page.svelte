@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { CHECK_FREQUENCY_MINUTES, createServiceEndpoint } from '$lib/api/service-endpoints.js'
@@ -58,6 +59,8 @@
   <title>New endpoint | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="project.service-endpoints-new.before" data={data?.__inject} />
+<InjectionPoint name="project.service-endpoints-new.header.actions" data={data?.__inject} />
 <section class="mx-auto max-w-2xl space-y-6">
   <div>
     <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">New endpoint</p>
@@ -103,3 +106,4 @@
     </AssetForm>
   {/if}
 </section>
+<InjectionPoint name="project.service-endpoints-new.after" data={data?.__inject} />

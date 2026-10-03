@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import PlatformOperatorRequiredNotice from '$lib/components/PlatformOperatorRequiredNotice.svelte'
   import PlatformWarningsBanner from '$lib/components/platform/PlatformWarningsBanner.svelte'
@@ -30,6 +31,8 @@
   <title>Platform Admin | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="platform.home.before" data={data?.__inject} />
+<InjectionPoint name="platform.home.header.actions" data={data?.__inject} />
 {#if !data.allowed}
   <PlatformOperatorRequiredNotice />
 {:else}
@@ -99,3 +102,4 @@
     </ul>
   </div>
 {/if}
+<InjectionPoint name="platform.home.after" data={data?.__inject} />

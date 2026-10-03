@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { ApiClientError } from '$lib/api/client.js'
 import { getExtensionStatus, type ExtensionStatus } from '$lib/api/extensions.js'
 import { fetchHealth, type HealthResponse } from '$lib/api/platform.js'
@@ -67,7 +68,7 @@ function resolveUnloadedState(orgRole: string, health: HealthResponse | null): A
   return allowedResult({ healthStatus: health.extensions_status }, orgRole)
 }
 
-export const load: PageServerLoad = async ({ fetch, locals }) => {
+const ownLoad = (async ({ fetch, locals }) => {
   const user = requireUser(locals)
   const orgRole = user.orgRole
 
@@ -113,4 +114,8 @@ export const load: PageServerLoad = async ({ fetch, locals }) => {
   }
 
   return resolveUnloadedState(orgRole, health)
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(ownLoad, '/(app)/settings/extensions', 'page')
+
+export const actions = injectActions('/(app)/settings/extensions')

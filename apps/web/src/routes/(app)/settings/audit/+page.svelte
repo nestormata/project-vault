@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import DataTable from '$lib/components/tables/DataTable.svelte'
   import AuditExportPanel from '$lib/components/audit/AuditExportPanel.svelte'
@@ -52,6 +53,8 @@
   <title>Audit Log | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="settings.audit.before" data={data?.__inject} />
+<InjectionPoint name="settings.audit.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-5xl px-4 py-8">
   <h1 class="text-2xl font-bold text-gray-900">Audit &amp; Compliance</h1>
   <p class="mt-2 text-gray-500">Search, export, and verify your organization's audit log.</p>
@@ -223,3 +226,4 @@
     </div>
   {/if}
 </div>
+<InjectionPoint name="settings.audit.after" data={data?.__inject} />

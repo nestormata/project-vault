@@ -5,9 +5,10 @@ import { appRootProblems } from './apply.js'
 import { assemble } from './assemble.js'
 import { checkCompatibility, checkRuntimeDependencies } from './compat.js'
 import { readComponentIndex, replacementNotes } from './component-index.js'
-import { collectRoots, contributionsOf, deferredNotes } from './contributions.js'
+import { collectRoots, composedPathOf, contributionsOf, deferredNotes } from './contributions.js'
 import { driftReport } from './drift.js'
 import { overlapProblems, ownershipProblems } from './guards.js'
+import { checkInjections } from './injection.js'
 import { buildLock, readLock, serializeLock, type CompositionLock } from './lock.js'
 import { materialize, type MaterializeResult } from './materialize.js'
 import { loadManifest, validateManifest } from './manifest.js'
@@ -308,6 +309,16 @@ function planStage(
   findings.add(addPvOriginalTypes(assembly.files, overlay, stage.host))
   const registry = registryFindings(stage, overlay)
   findings.add(registry)
+  const injections = checkInjections({
+    manifest: stage.manifest,
+    pack: stage.pack,
+    host: stage.host,
+    registries: stage.registries,
+    mat,
+    resolveFrom: options.resolveFrom ?? options.appRoot,
+    composedPath: composedPathOf,
+  })
+  findings.add(injections)
   findings.add({
     notes: [
       ...deferredNotes(stage.manifest),
@@ -332,6 +343,7 @@ function planStage(
     relocated: mat.relocated,
     contributions: contributionsOf(stage.manifest, mat),
     injectionPointsUsed: registry.used,
+    injections: injections.lock,
     navIdsReferenced: registry.navRefs,
     notes,
   })

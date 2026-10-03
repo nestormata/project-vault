@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import type { MachineUserSummary } from '@project-vault/shared'
 import { listApiKeys, listMachineUsers } from '$lib/api/machine-users.js'
 import type { OrgRole } from '$lib/machine-users/permissions.js'
@@ -18,7 +19,7 @@ type LoadResult = {
 // for is derived here with one `listApiKeys` call per machine user rather than changing the API
 // contract. Project-scoped machine-user lists are expected to be small (admin-provisioned CI/CD
 // identities, not an end-user-facing high-cardinality list).
-export const load: PageServerLoad = ({ params, fetch, locals }) =>
+const ownLoad = (({ params, fetch, locals }) =>
   loadOr404WithOrgRole<LoadResult>(
     locals,
     async (orgRole) => {
@@ -43,4 +44,12 @@ export const load: PageServerLoad = ({ params, fetch, locals }) =>
       machineUsers: { items: [], total: 0 },
       notFound: true,
     })
-  )
+  )) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(
+  ownLoad,
+  '/(app)/projects/[projectId]/machine-users',
+  'page'
+)
+
+export const actions = injectActions('/(app)/projects/[projectId]/machine-users')

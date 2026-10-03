@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { ApiClientError } from '$lib/api/client.js'
 import {
   createErasureRequest,
@@ -79,7 +80,7 @@ async function resolveNotYetCompleted(
 // D6 — there is no dedicated `GET`-by-userId endpoint for "the current erasure request for user
 // X"; `GET .../report` doubles as a status probe: 200 means completed, a `409
 // erasure_not_yet_completed` distinguishes pending/in_progress, and 404 means no such request.
-export const load: PageServerLoad = async ({ fetch, params, locals }) => {
+const ownLoad = (async ({ fetch, params, locals }) => {
   const user = requireUser(locals)
   const { userId, requestId } = params
 
@@ -108,4 +109,12 @@ export const load: PageServerLoad = async ({ fetch, params, locals }) => {
     }
     throw err
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(
+  ownLoad,
+  '/(app)/settings/users/[userId]/erasure/[requestId]',
+  'page'
+)
+
+export const actions = injectActions('/(app)/settings/users/[userId]/erasure/[requestId]')

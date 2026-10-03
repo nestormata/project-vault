@@ -17,7 +17,8 @@ own app and builds it.
 | `messages/`, `project.inlang/settings.json`, `inlang-plugins/` | The translations, the inlang project, and a copy of the pinned message-format plugin (MIT, hash-checked at pack time) that the packed `settings.json` loads, so message compilation works offline. |
 | `vendor/shared/src/` | `@project-vault/shared`'s TypeScript source, vendored byte for byte. Only the files reachable from its three entry points are copied. |
 | `config/` | Compiled config factories (`.js` + `.d.ts`): `svelte.config`, `vite.config`, `vitest.config`, `app-css-source`. |
-| `manifests/compatibility.json` | The compatibility manifest (below). Later generated manifests (`injection-points.json`, `nav-ids.json`) land here when their stories ship. |
+| `manifests/compatibility.json` | The compatibility manifest (below). |
+| `manifests/injection-points.json` | The injection point registry (Story 68-4), generated at pack time from `injection-points.ts` and the route files that render each point: `{ schemaVersion: 1, points: [{ name, file, kind, propsType, routeId, scope }] }`. The kit reads `name`, `file`, `routeId` and `scope`. A later generated manifest (`nav-ids.json`) lands here when its story ships. |
 | `manifests/component-index.json` | Story 68.5: generated into the staging directory on every pack (never committed): `{ schemaVersion: 1, components: [{ path, stability, hash }] }` for every `.svelte` file under `src/lib/components` and every non-test `.ts` module under `src/lib`, sorted by `path`. `hash` is SHA-256 of the raw bytes (the `hostSha256` of a replacement); `stability` is `stable` when the file's first top-level comment carries `@pv-stable` (the first `<!-- -->` of a `.svelte` file, the first `/** */` of a `.ts` file), else `unmarked`. A signal for composers, never a restriction: any module may be replaced. |
 | `tsconfig.base.json` | PV's compiler options, for a consumer's `tsconfig.json` to extend. |
 | `LICENSE`, `README.md` | AGPL-3.0-or-later, and what the package is. |
@@ -27,11 +28,13 @@ so a composer can run them over a composed tree (story 68-9) with `vitestConfig(
 classifies every test structurally and ships it only when its imports stay inside `src/` and the
 vendored shared source, it imports no other workspace package, and no relative path in its code
 leaves `src/`. Cross-package tests, which read `apps/api`, `packages/db` or PV's own config files,
-are excluded and logged with the rule they break. The packages only the tests import
+are excluded and logged with the rule they break. So is the route render snapshot
+(`src/routes/route-render-snapshot.test.ts`): it is the oracle of PV's own un-composed markup, so it
+is valid only on PV's tree and cannot match once a pack overrides or injects. The packages only the tests import
 (`@testing-library/svelte`, `jsdom`, `@vitest/coverage-v8`) are optional exact peers. The consumer
 fixture runs every shipped test from the tarball, and they must all pass.
 
-Not shipped: cross-package tests, Playwright e2e, generated Paraglide output, build output, the
+Not shipped: cross-package tests, the PV-tree-only route snapshot, Playwright e2e, generated Paraglide output, build output, the
 Dockerfile and PV's dev tooling.
 
 ## Using it

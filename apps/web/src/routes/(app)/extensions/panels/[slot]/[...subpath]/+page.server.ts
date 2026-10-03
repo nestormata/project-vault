@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { getExtensionPanel } from '$lib/api/extension-panel.js'
 import { getThemes } from '$lib/api/themes.js'
 import { requireUser } from '$lib/server/require-user.js'
@@ -52,7 +53,7 @@ async function resolveThemeVars(fetchFn: typeof fetch): Promise<ExtensionThemeVa
   }
 }
 
-export const load: PageServerLoad = async ({ params, fetch, locals }) => {
+const ownLoad = (async ({ params, fetch, locals }) => {
   // Defense in depth alongside auth-guard.ts's isProtectedAppPath redirect-to-login (AC1) — this
   // page is unreachable server-side without a resolved session either way.
   requireUser(locals)
@@ -85,4 +86,12 @@ export const load: PageServerLoad = async ({ params, fetch, locals }) => {
       actionEndpoint: undefined,
     } satisfies ExtensionPanelPageData
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(
+  ownLoad,
+  '/(app)/extensions/panels/[slot]/[...subpath]',
+  'page'
+)
+
+export const actions = injectActions('/(app)/extensions/panels/[slot]/[...subpath]')

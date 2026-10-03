@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { revealCredentialShare } from '$lib/api/credential-shares.js'
   import { ApiClientError } from '$lib/api/client.js'
   import { mapShareRevealError } from '$lib/api/credential-share-reveal-error.js'
@@ -35,6 +36,8 @@
   <title>Shared secret</title>
 </svelte:head>
 
+<InjectionPoint name="shares.detail.before" data={data?.__inject} />
+<InjectionPoint name="shares.detail.header.actions" data={data?.__inject} />
 <section class="mx-auto max-w-lg space-y-6 p-6">
   <h1 class="text-lg font-semibold text-slate-950">Shared secret</h1>
 
@@ -80,3 +83,4 @@
     </div>
   {/if}
 </section>
+<InjectionPoint name="shares.detail.after" data={data?.__inject} />

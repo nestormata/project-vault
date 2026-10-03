@@ -1,3 +1,4 @@
+import { withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { ApiClientError } from '$lib/api/client.js'
 import { getProject } from '$lib/api/projects.js'
 import { requireUser } from '$lib/server/require-user.js'
@@ -9,7 +10,7 @@ import type { LayoutServerLoad } from './$types.js'
 // 404/foreign-org project (same convention as every other project-scoped loader in this tree) so
 // the sub-nav still renders its static tab set — each sub-page independently handles its own
 // not-found presentation, unaffected by this addition.
-export const load: LayoutServerLoad = async ({ params, fetch, locals }) => {
+const ownLoad = (async ({ params, fetch, locals }) => {
   const orgRole = requireUser(locals).orgRole
 
   try {
@@ -21,4 +22,10 @@ export const load: LayoutServerLoad = async ({ params, fetch, locals }) => {
     }
     throw error
   }
-}
+}) satisfies LayoutServerLoad
+
+export const load: LayoutServerLoad = withInjectedLoad(
+  ownLoad,
+  '/(app)/projects/[projectId]',
+  'layout'
+)

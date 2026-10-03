@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { invalidateAll } from '$app/navigation'
   import { ApiClientError } from '$lib/api/client.js'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
@@ -121,6 +122,8 @@
   <title>SSO Domains | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="settings.sso-domains.before" data={data?.__inject} />
+<InjectionPoint name="settings.sso-domains.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-3xl px-4 py-8">
   <h1 class="text-2xl font-bold text-gray-900">SSO Domains</h1>
   <p class="mt-2 text-gray-500">
@@ -297,3 +300,4 @@
     </div>
   </SettingsFormGate>
 </div>
+<InjectionPoint name="settings.sso-domains.after" data={data?.__inject} />

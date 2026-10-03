@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { ApiClientError } from '$lib/api/client.js'
 import { listCertificates } from '$lib/api/certificates.js'
 import { getOrgDashboard } from '$lib/api/dashboard.js'
@@ -66,7 +67,7 @@ function isMissingProject(
   return selectedProject !== null && result.status === 'fulfilled' && dashboard === null
 }
 
-export const load: PageServerLoad = async ({ fetch, url }) => {
+const ownLoad = (async ({ fetch, url }) => {
   const projectLoad = await loadProjects(fetch)
   if (projectLoad.vaultSealed) return projectLoad
 
@@ -111,4 +112,8 @@ export const load: PageServerLoad = async ({ fetch, url }) => {
       domains: streamedAssetState(domainsPromise),
     },
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(ownLoad, '/(app)/dashboard', 'page')
+
+export const actions = injectActions('/(app)/dashboard')

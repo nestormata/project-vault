@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import DataTable from '$lib/components/tables/DataTable.svelte'
   import { canManageMachineUsers } from '$lib/machine-users/permissions.js'
@@ -20,6 +21,8 @@
   <title>Machine users | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="project.machine-users.before" data={data?.__inject} />
+<InjectionPoint name="project.machine-users.header.actions" data={data?.__inject} />
 <section class="space-y-6">
   <div
     class="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between"
@@ -108,3 +111,4 @@
     </DataTable>
   {/if}
 </section>
+<InjectionPoint name="project.machine-users.after" data={data?.__inject} />

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { goto, invalidateAll } from '$app/navigation'
   import { resolve } from '$app/paths'
@@ -160,6 +161,8 @@
   <title>Projects | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="project.home.before" data={data?.__inject} />
+<InjectionPoint name="project.home.header.actions" data={data?.__inject} />
 <section class="space-y-6">
   <div
     class="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between"
@@ -340,3 +343,4 @@
     </ul>
   {/if}
 </section>
+<InjectionPoint name="project.home.after" data={data?.__inject} />

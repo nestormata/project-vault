@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import { invalidateAll } from '$app/navigation'
   import { ApiClientError, isMfaRequiredError } from '$lib/api/client.js'
@@ -129,6 +130,8 @@
   <title>Themes | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="settings.themes.before" data={data?.__inject} />
+<InjectionPoint name="settings.themes.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-3xl px-4 py-8">
   <a href={resolve('/settings')} class="text-sm text-indigo-600 hover:text-indigo-800">← Settings</a
   >
@@ -262,3 +265,4 @@
     </div>
   {/if}
 </div>
+<InjectionPoint name="settings.themes.after" data={data?.__inject} />

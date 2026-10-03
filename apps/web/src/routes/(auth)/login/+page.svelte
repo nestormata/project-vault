@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import { page } from '$app/state'
   import LoginForm from '$lib/components/auth/LoginForm.svelte'
@@ -14,8 +15,11 @@
   // Story 23.2 AC-13: `data.nativeLoginEnabled` defaults to `true` when the prop itself is
   // absent (existing tests that render this page without SvelteKit's load — byte-identical to
   // today, AC-16) — `null` (the load's own cold-start-failure signal) is preserved as-is.
-  let { data = { nativeLoginEnabled: true } }: { data?: { nativeLoginEnabled: boolean | null } } =
-    $props()
+  let {
+    data = { nativeLoginEnabled: true },
+  }: {
+    data?: { nativeLoginEnabled: boolean | null; __inject?: App.PageData['__inject'] }
+  } = $props()
 
   let localeRevision = $state(0)
   let nextPath = $derived(safeNextPath(page.url.searchParams.get('next')))
@@ -43,6 +47,8 @@
   }
 </script>
 
+<InjectionPoint name="auth.login.before" data={data?.__inject} />
+<InjectionPoint name="auth.login.header.actions" data={data?.__inject} />
 <div class="space-y-6">
   {#key localeRevision}
     <div class="space-y-2">
@@ -90,6 +96,7 @@
     />
   {/if}
 </div>
+<InjectionPoint name="auth.login.after" data={data?.__inject} />
 
 <svelte:head>
   <title>{pageTitle}</title>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import PlatformOperatorRequiredNotice from '$lib/components/PlatformOperatorRequiredNotice.svelte'
   import CliVersionPolicySection from '$lib/components/platform/CliVersionPolicySection.svelte'
@@ -11,6 +12,8 @@
   <title>Version & Upgrade | Platform Admin | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="platform.upgrade.before" data={data?.__inject} />
+<InjectionPoint name="platform.upgrade.header.actions" data={data?.__inject} />
 {#if !data.allowed}
   <PlatformOperatorRequiredNotice />
 {:else}
@@ -94,3 +97,4 @@
     </section>
   </div>
 {/if}
+<InjectionPoint name="platform.upgrade.after" data={data?.__inject} />

@@ -62,9 +62,80 @@ sorted keys and arrays and no timestamps or absolute paths, and validates agains
 [`composition.lock.schema.json`](../packages/composition-kit/schema/composition.lock.schema.json).
 It records the compatibility tuple, every override (`hostSha256`, `cmSha256`, `story`, `hostVersion`),
 addition, removal and replacement, the materialized files, the contributions later stories apply
-(hooks, nav, theme, protected paths), the injection points used, and informational notes. The sections
+(hooks, nav, theme, protected paths), the injection points used, every injection contribution (composed
+paths, `order`, route id and scope; an optional section a lock written before 0.2.0 lacks) and informational
+notes. The sections
 `excludedPvTests` and `apiRouteOverrides` are written empty: Story 68-9 fills the first, Stories
 68-3/68-8 (whichever lands second) wire the second.
+
+## Injection points
+
+Injection points are how a pack adds components and behavior to a native PV page without overriding it
+(M3). PV renders `<InjectionPoint name="project.detail.after" ... />` at named places; a pack lists what
+goes there in its manifest's `injections`.
+
+**Choosing between injection and override** (ADR 0007 guardrail 3, decided by Nestor 2026-09-30): choose
+whichever mechanism delivers the intended UX and behaviour. When injection and override deliver it
+**equally**, prefer injection (lower drift cost). Never accept a worse UX or missing behaviour to avoid an
+override; when injection falls short, the override is the correct choice, not a compromise. A point that
+does not exist yet never blocks a pack: override the page (M1) or replace the component (M4) the same day,
+and ask for the point in PV (a repeated need is a PV story).
+
+- **Names** follow `<area>.<page>.<region>[.<position>]`: lowercase, dot-separated, hyphens allowed inside a
+  segment (`project.service-endpoints.after`). Shell points have two segments (`shell.head`). Every PV page,
+  layout and error file renders `<prefix>.before`, `<prefix>.after` and `<prefix>.header.actions`; a layout
+  and its page cannot share a prefix, so layouts use `<area>.layout` (`project.layout`) and the root error
+  file is `root.error`. The shell exposes `shell.head` (inside `<svelte:head>`, after PV's own head content),
+  `shell.header.end` (authenticated pages) and `shell.body.end`.
+- **The registry** is `apps/web/src/lib/components/composition/injection-points.ts` (names, kinds and the
+  props each point passes). `pnpm pack:web-host` joins it with the files that render each point and ships
+  `manifests/injection-points.json` (`schemaVersion` 1: `name`, `file`, plus `kind`, `propsType`, `routeId`
+  and `scope`, which the kit uses to route behavior). The composer fails on a name the registry does not
+  have, and only notes it when the pack itself overrode the page that held the point.
+- **Contributions** are `{ component, order?, load?, actions? }`, with `order` ascending (default 0, ties keep
+  manifest order). `component` is any Svelte component; it runs in PV's own document, router, stores and
+  session, with no sanitizer, wrapper or boundary, and receives `routeId`, `params`, the page's primary
+  entity where it has one (`project`, `credential`) and `data`.
+- **`load`** is a pack file with a named `export const load`. PV's `injectLoad(event, '<route id>', '<scope>')`
+  runs it after PV's own load finished (a PV redirect or error short-circuits), with the SAME `RequestEvent`,
+  concurrently with the other contributions. The result reaches the component as `data`: `data.__inject['<point>']`
+  is an array aligned with the point's contributions (`null` where a contribution has no `load`). Redirects and
+  errors a contribution throws pass through; any other throw is rethrown as
+  `injection "<point>" load failed: <ErrorName>` with the original as `cause`. **Never return secrets from a
+  contribution `load`:** its data is serialized to the browser, and on a public route (register, status, shares) it
+  is served to anonymous visitors.
+- **`actions`** is a pack file with a named `export const actions = { ... }`. Each action is exposed as
+  `?/<point>.<name>` on the point's page (`?/credential.detail.after.share`), through Kit's normal form pipeline
+  (CSRF origin check included). Two contributions at one point cannot export the same name. Kit forbids a
+  `default` action next to named ones: if the PV page exports `default`, the composition fails with "PV story
+  needed: convert the default action to a named one, or override the page (M1)".
+- **Layout and page data merge shallowly** in SvelteKit, so a page's `__inject` replaces its layout's. Every
+  file's points read the `data` of their own file; do not deep-merge.
+- **`fallback`** renders only when a point has no contribution (PV's own build: every point is empty).
+- **PV's own build is unchanged**: `injectLoad` resolves to `{}` and `injectActions` returns `undefined` (so Kit
+  keeps its 405 for a stray POST). `+error.svelte` has no load; its points get `data` only from an ancestor
+  layout load that ran.
+- **Dispatch is keyed by (route id, scope)** (`/(app)/projects/[projectId]#page` and `#layout`), because a
+  layout and its page share a route id. Behavior for a point inside a shared `$lib` component (scope `component`)
+  is recorded in the lock and inert until Epic 69 decides how it runs.
+
+The kit's `pvInject()` Vite plugin (`@project-vault/composition-kit/vite`, `enforce: 'pre'`) serves
+`virtual:pv-inject/<point>` (the point's components, statically imported, in order) and
+`virtual:pv-inject-behavior` (the load and action tables) from the lock's `injections` section. PV's own
+build resolves the same ids to empty lists through `emptyInjectionModules()`, and PV's `injectionEntries()`
+transform adds the static per-point import to every `<InjectionPoint>` with a literal `name` (an ES import
+cannot take a variable, so a non-literal name is a build error). Add `pvInject({ lockPath })` to the
+consumer's Vite config next to `pvComposeDev`.
+
+`scripts/check-injection-point-coverage.ts` is a PV CI guard: every PV route file renders its three standard
+points, every `<!-- @region name -->` block (a comment before an element or block, used in `$lib` components)
+contains a point, every name is registered, and every page and layout server file calls `injectLoad` /
+`injectActions` with its own route id and scope. Run over a composed tree with `--lock composition.lock.json`,
+it skips the files the lock records as CM's.
+
+**Hash drift:** this change adds injection points and server calls to about 70 PV route files, so the hash of
+every file a pack overrides there changes with the next web-host release. That is the intended signal;
+reconcile it with `pv-compose --accept-host`.
 
 ## Drift and the upgrade flow
 
@@ -92,7 +163,7 @@ Upgrade flow (design section 11):
 
 `pv-compose --check` (CI) fails when the committed lock differs from the regenerated one in the
 normative sections (`compatibility`, `overrides`, `additions`, `replacements`, `materialized`,
-`contributions`, `injectionPointsUsed`, `navIdsReferenced`, `apiRouteOverrides`, and the removals'
+`contributions`, `injectionPointsUsed`, `injections`, `navIdsReferenced`, `apiRouteOverrides`, and the removals'
 paths). `notes` and the removed files' hashes never fail it.
 
 ## The version tuple
@@ -131,4 +202,6 @@ required check, the first real publish, and promotion to `latest`.
   HTTP and in the built CSS. Variants prove that `svelte-check` fails on a lying `./$types`, that
   Kit's server-only guard rejects a client import of materialized server-only code (and accepts the
   same import from `+page.server.ts`), and that the Vite dev plugin mirrors a pack edit, an added
-  route and a deleted override.
+  route and a deleted override. The main variant also serves the M3 mechanism from the packed `web-host` (an
+  injected component with server data and a form action, a layout point and a `shell.head` meta) and proves an
+  unknown injection point fails with the way out.

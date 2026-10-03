@@ -1,4 +1,6 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
+  let { data } = $props()
   import { resolve } from '$app/paths'
   import { requestRecovery } from '$lib/api/recovery.js'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
@@ -45,6 +47,8 @@
   <title>Recover your account | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="auth.recovery.before" data={data?.__inject} />
+<InjectionPoint name="auth.recovery.header.actions" data={data?.__inject} />
 <div class="space-y-6">
   <div class="space-y-2">
     <h1 class="text-3xl font-bold">Recover your account</h1>
@@ -97,3 +101,4 @@
     >
   </p>
 </div>
+<InjectionPoint name="auth.recovery.after" data={data?.__inject} />

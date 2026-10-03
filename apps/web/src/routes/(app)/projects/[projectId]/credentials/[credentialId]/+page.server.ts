@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { error } from '@sveltejs/kit'
 import { assertTrustedOrigin } from '@project-vault/shared'
 import {
@@ -127,7 +128,7 @@ function parseSharesQuery(url: URL): { status: string | undefined; page: number 
   }
 }
 
-export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
+const ownLoad = (async ({ params, fetch, locals, url }) => {
   const user = requireUser(locals)
   const orgRole = user.orgRole
   const origin = resolveTrustedOrigin(url)
@@ -197,4 +198,12 @@ export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
       origin
     )
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(
+  ownLoad,
+  '/(app)/projects/[projectId]/credentials/[credentialId]',
+  'page'
+)
+
+export const actions = injectActions('/(app)/projects/[projectId]/credentials/[credentialId]')

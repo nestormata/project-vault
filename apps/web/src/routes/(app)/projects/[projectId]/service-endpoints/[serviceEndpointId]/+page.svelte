@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { ApiClientError } from '$lib/api/client.js'
@@ -178,6 +179,8 @@
   <title>{data.endpoint?.name ?? 'Endpoint'} | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="project.service-endpoints-detail.before" data={data?.__inject} />
+<InjectionPoint name="project.service-endpoints-detail.header.actions" data={data?.__inject} />
 <section class="mx-auto max-w-2xl space-y-6">
   {#if data.notFound || !data.endpoint}
     <EntityNotFoundBanner
@@ -289,3 +292,4 @@
     <BackLink href={`/projects/${data.projectId}/service-endpoints`} label="Back to endpoints" />
   {/if}
 </section>
+<InjectionPoint name="project.service-endpoints-detail.after" data={data?.__inject} />

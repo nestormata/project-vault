@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import { describeBackupCron } from '@project-vault/shared'
   import PlatformOperatorRequiredNotice from '$lib/components/PlatformOperatorRequiredNotice.svelte'
@@ -242,6 +243,8 @@
   <title>System Settings | Platform Admin | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="platform.settings.before" data={data?.__inject} />
+<InjectionPoint name="platform.settings.header.actions" data={data?.__inject} />
 {#if !data.allowed}
   <PlatformOperatorRequiredNotice />
 {:else}
@@ -629,3 +632,4 @@
     {/if}
   </div>
 {/if}
+<InjectionPoint name="platform.settings.after" data={data?.__inject} />

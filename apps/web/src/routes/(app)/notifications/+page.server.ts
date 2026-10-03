@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { fail, error } from '@sveltejs/kit'
 import { ApiClientError } from '$lib/api/client.js'
 import {
@@ -50,7 +51,7 @@ async function loadDormancyAlerts(
   }
 }
 
-export const load: PageServerLoad = async ({ fetch, url, locals }) => {
+const ownLoad = (async ({ fetch, url, locals }) => {
   const page = Number(url.searchParams.get('page') ?? '1')
   const status = (url.searchParams.get('status') ?? 'all') as 'all' | 'unread' | 'read'
   const orgRole = requireUser(locals).orgRole
@@ -86,9 +87,11 @@ export const load: PageServerLoad = async ({ fetch, url, locals }) => {
     dormancyAlerts,
     userDormancyAlerts,
   }
-}
+}) satisfies PageServerLoad
 
-export const actions = {
+export const load: PageServerLoad = withInjectedLoad(ownLoad, '/(app)/notifications', 'page')
+
+const ownActions = {
   markRead: async ({ request, fetch }) => {
     const data = await request.formData()
     const id = String(data.get('id'))
@@ -180,3 +183,5 @@ export const actions = {
     return { success: true }
   },
 } satisfies Actions
+
+export const actions = { ...ownActions, ...injectActions('/(app)/notifications') }

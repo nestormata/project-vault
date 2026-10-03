@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { ApiClientError } from '$lib/api/client.js'
   import { deleteService } from '$lib/api/services.js'
   import type { PaymentRecord } from '$lib/api/services.js'
@@ -47,6 +48,8 @@
   <title>Services | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="project.services.before" data={data?.__inject} />
+<InjectionPoint name="project.services.header.actions" data={data?.__inject} />
 <section class="space-y-6">
   <AssetListHeader
     eyebrow="Services"
@@ -88,3 +91,4 @@
     </AssetTable>
   {/if}
 </section>
+<InjectionPoint name="project.services.after" data={data?.__inject} />

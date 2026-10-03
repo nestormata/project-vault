@@ -1,4 +1,6 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
+  let { data } = $props()
   import ProjectDashboardEmptyState from '$lib/components/dashboard/ProjectDashboardEmptyState.svelte'
   import { getPreviewProject } from '$lib/state/preview-project.svelte.js'
 
@@ -9,6 +11,8 @@
   <title>Preview Project | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="project.preview.before" data={data?.__inject} />
+<InjectionPoint name="project.preview.header.actions" data={data?.__inject} />
 {#if project}
   <ProjectDashboardEmptyState {project} />
 {:else}
@@ -19,3 +23,4 @@
     </p>
   </section>
 {/if}
+<InjectionPoint name="project.preview.after" data={data?.__inject} />
