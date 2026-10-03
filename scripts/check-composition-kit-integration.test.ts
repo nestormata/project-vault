@@ -116,6 +116,9 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
       expect(output).toContain('OK: /login, /billing, /billing/export, /recovery, /m4 served')
       expect(output).toContain('OK: an unknown injection point fails with the way out')
       expect(output).toContain(
+        'OK: the generated guard entries module is absent from the built app'
+      )
+      expect(output).toContain(
         'OK: injected markup (in order), load data, layout point, shell head and action served'
       )
       // Story 68-6: hook bundles, derived protection, the reroute bypass and the CM policy delta.

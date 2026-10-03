@@ -203,8 +203,20 @@ compose_remove_replacement_file() {
   return 0
 }
 
+# Story 68.9 AC-15: the generated guard entries module is read by test code only, so it must never
+# reach the app bundle (it holds reviewed carve-outs, not runtime data).
+compose_assert_no_guard_entries_in_bundle() {
+  if grep -rqs 'guard-entries' "$APP/build"; then
+    echo 'fixture: the generated guard entries module leaked into the built app' >&2
+    exit 1
+  fi
+  log 'OK: the generated guard entries module is absent from the built app'
+  return 0
+}
+
 compose_assert_css() {
   compose_assert_hook_markers
+  compose_assert_no_guard_entries_in_bundle
   local css
   css="$(cat "$APP"/build/client/_app/immutable/assets/*.css)"
   local needle
