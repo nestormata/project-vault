@@ -197,6 +197,10 @@ describe('web-host tarball: this checkout (Story 68.2 AC-7)', () => {
     ]) {
       expect(excluded.get(file)?.join(' '), file).toMatch(/outside the package/)
     }
+    // The PV-tree-only route snapshot oracle is excluded with its reason, never shipped.
+    expect(excluded.get('apps/web/src/routes/route-render-snapshot.test.ts')).toEqual([
+      "oracle of PV's own un-composed markup; valid only on PV's tree",
+    ])
     for (const reasons of excluded.values()) expect(reasons.length).toBeGreaterThan(0)
   })
 

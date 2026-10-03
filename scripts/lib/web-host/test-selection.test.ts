@@ -63,6 +63,16 @@ describe('classifyTest', () => {
     expect(classify("import './gone'").reasons[0]).toMatch(/^unresolvable import/)
   })
 
+  it("excludes the route render snapshot oracle, which is valid only on PV's own tree", () => {
+    const file = `${WEB_SRC}/routes/route-render-snapshot.test.ts`
+    const result = classifyTest(file, "import { it } from 'vitest'", context({ [file]: '' }))
+    expect(result.selfContained).toBe(false)
+    expect(result.reasons).toEqual([
+      "oracle of PV's own un-composed markup; valid only on PV's tree",
+    ])
+    expect(classify("import { it } from 'vitest'").selfContained).toBe(true)
+  })
+
   it('ignores relative paths that only appear in comments', () => {
     expect(relativePathLiterals("// see '../../../api/x.ts'\nconst a = './b'")).toEqual(['./b'])
   })

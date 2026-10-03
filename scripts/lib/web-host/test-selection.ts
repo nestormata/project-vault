@@ -7,7 +7,8 @@
 //       (never another workspace package such as a fixture or @project-vault/db);
 //   (3) no relative path string in its code (a file it reads, `new URL('../x', import.meta.url)`)
 //       resolves outside apps/web/src.
-// A test that breaks any rule is excluded with its reasons; nothing is excluded by name.
+//   (4) it is not on PV_TREE_ONLY_TESTS (an oracle of PV's own un-composed markup).
+// A test that breaks any rule is excluded with its reasons; only PV_TREE_ONLY_TESTS is by path.
 import { dirname, join, relative, sep } from 'node:path'
 import ts from 'typescript'
 import { walkImportGraph, type GraphResolver } from './import-graph.js'
@@ -31,6 +32,23 @@ export interface TestClassification {
   reasons: string[]
   /** Bare packages the test (and the test-support code it reaches) imports. */
   bareImports: string[]
+}
+
+/** Tests that are self-contained by import graph but only valid on PV's own un-composed tree,
+ * keyed by path suffix under apps/web, with the reason they are excluded from the tarball. */
+export const PV_TREE_ONLY_TESTS: ReadonlyMap<string, string> = new Map([
+  [
+    'src/routes/route-render-snapshot.test.ts',
+    "oracle of PV's own un-composed markup; valid only on PV's tree",
+  ],
+])
+
+function pvTreeOnlyReason(file: string): string | undefined {
+  const normalized = file.split(sep).join('/')
+  for (const [suffix, reason] of PV_TREE_ONLY_TESTS) {
+    if (normalized.endsWith(`/${suffix}`)) return reason
+  }
+  return undefined
 }
 
 function isInside(root: string, path: string): boolean {
@@ -87,5 +105,7 @@ export function classifyTest(
       reasons.push(`reads ${JSON.stringify(literal)}, outside the package`)
     }
   }
+  const pvOnly = pvTreeOnlyReason(file)
+  if (pvOnly !== undefined) reasons.push(pvOnly)
   return { file, selfContained: reasons.length === 0, reasons, bareImports }
 }

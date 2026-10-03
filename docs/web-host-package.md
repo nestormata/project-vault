@@ -27,11 +27,13 @@ so a composer can run them over a composed tree (story 68-9) with `vitestConfig(
 classifies every test structurally and ships it only when its imports stay inside `src/` and the
 vendored shared source, it imports no other workspace package, and no relative path in its code
 leaves `src/`. Cross-package tests, which read `apps/api`, `packages/db` or PV's own config files,
-are excluded and logged with the rule they break. The packages only the tests import
+are excluded and logged with the rule they break. So is the route render snapshot
+(`src/routes/route-render-snapshot.test.ts`): it is the oracle of PV's own un-composed markup, so it
+is valid only on PV's tree and cannot match once a pack overrides or injects. The packages only the tests import
 (`@testing-library/svelte`, `jsdom`, `@vitest/coverage-v8`) are optional exact peers. The consumer
 fixture runs every shipped test from the tarball, and they must all pass.
 
-Not shipped: cross-package tests, Playwright e2e, generated Paraglide output, build output, the
+Not shipped: cross-package tests, the PV-tree-only route snapshot, Playwright e2e, generated Paraglide output, build output, the
 Dockerfile and PV's dev tooling.
 
 ## Using it
