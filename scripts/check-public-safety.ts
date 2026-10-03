@@ -54,7 +54,9 @@ const SECRET_ASSIGNMENT_PATTERNS = [
   /\bclient[_-]?secret\b\s*[:=]\s*["'`][^"'`\n]{8,200}["'`]/i,
 ]
 const NO_NEWLINE_MARKER = String.raw`\ No newline at end of file`
-const EMAIL_PATTERN = /\b([A-Z0-9._%+-]+)@([A-Z0-9.-]+\.[A-Z]{2,})\b/gi
+// A domain starts with a letter or digit: `+page@.server.ts` (a SvelteKit layout-reset file name)
+// has no domain after the `@`, so it is not an address.
+const EMAIL_PATTERN = /\b([A-Z0-9._%+-]+)@([A-Z0-9][A-Z0-9.-]*\.[A-Z]{2,})\b/gi
 // --- published project contact mailboxes ----------------------------------------------------
 //
 // The personal-email rule exists to keep personal contact information out of public history. A
