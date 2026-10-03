@@ -189,10 +189,7 @@
 
 <InjectionPoint name="platform.backups.before" data={data?.__inject} />
 <InjectionPoint name="platform.backups.header.actions" data={data?.__inject} />
-<PlatformBreadcrumb
-  allowed={data.allowed}
-  trail={[{ label: 'Platform Admin', href: '/platform' }, { label: 'Backups' }]}
->
+<PlatformBreadcrumb allowed={data.allowed} node="breadcrumbs.platform.backups">
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-2xl font-bold text-gray-900">Backups</h1>

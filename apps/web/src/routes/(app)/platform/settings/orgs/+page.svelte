@@ -84,7 +84,7 @@
 
 <InjectionPoint name="platform.settings-orgs.before" data={data?.__inject} />
 <InjectionPoint name="platform.settings-orgs.header.actions" data={data?.__inject} />
-<PlatformSettingsBreadcrumb allowed={data.allowed} leafLabel="Organizations">
+<PlatformSettingsBreadcrumb allowed={data.allowed} node="breadcrumbs.platform.settings.orgs">
   <h1 class="text-2xl font-bold text-gray-900">Organizations</h1>
   <p class="mt-1 text-gray-500">Manage all organizations on this instance.</p>
 
