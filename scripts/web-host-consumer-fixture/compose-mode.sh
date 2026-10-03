@@ -80,7 +80,9 @@ compose_prepare_app() {
   # Story 68-6: the mini pack contributes hooks and a header-policy delta, so PV's own tests that pin
   # PV's exact hooks behaviour (the whole-response oracle, the no-contribution hooks exports, the
   # direct handle tests) describe PV, not this composed app. The pack also overrides PV's
-  # (app)/shares/[token] load, so PV's tests of that page are out too.
+  # (app)/shares/[token] load, so PV's tests of that page are out too. Story 68-4's
+  # server-files-wiring.test.ts globs every route server file and pins PV's own (no `actions` on a
+  # page without its own); the pack's CM (app)/cm-area page has a form action on purpose (AC-9).
   # Story 68-9 turns all of these into the lock's `excludedPvTests`, keyed on the replaced or
   # overridden host file; until then the fixture leaves exactly these tests out of its run.
   VITEST_ARGS=(
@@ -94,6 +96,7 @@ compose_prepare_app() {
     --exclude 'src/hooks-files.test.ts'
     --exclude 'src/hooks.server.test.ts'
     --exclude 'src/lib/server/composition/hooks-oracle.test.ts'
+    --exclude 'src/routes/server-files-wiring.test.ts'
   )
   return 0
 }
