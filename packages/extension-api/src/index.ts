@@ -149,7 +149,6 @@ export type {
   AppBehaviourHooks,
   AppErrorHandler,
   AppErrorWrapHandler,
-  AppHookPhase,
   AppNotFoundHandler,
   AppNotFoundWrapHandler,
   ApiRouteSecurity,

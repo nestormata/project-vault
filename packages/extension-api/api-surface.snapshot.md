@@ -341,8 +341,8 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - union-members: `undefined`, `"replace"`, `"wrap"`
 - member: `hooks?`
   - since: 3.29.0
-  - type: `{ prepend?: AppHookPhase[]; append?: AppHookPhase[]; } | undefined`
-  - union-members: `undefined`, `{ prepend?: AppHookPhase[]; append?: AppHookPhase[]; }`
+  - type: `{ prepend?: ApiRouteHookPhase[]; append?: ApiRouteHookPhase[]; } | undefined`
+  - union-members: `undefined`, `{ prepend?: ApiRouteHookPhase[]; append?: ApiRouteHookPhase[]; }`
 - member: `notFoundHandler?`
   - since: 3.29.0
   - type: `"replace" | "wrap" | undefined`
@@ -460,13 +460,6 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - kind: type
 - type: `AppErrorWrapHandler<Req, Reply>`
 - call-signature: `(error: Error, req: Req, reply: Reply, next: () => Promise<unknown>): unknown`
-
-## export `AppHookPhase`
-
-- since: 3.29.0
-- kind: type
-- type: `"onRequest" | "preValidation" | "preHandler" | "onSend"`
-- union-members: `"onRequest"`, `"preValidation"`, `"preHandler"`, `"onSend"`
 
 ## export `AppNotFoundHandler`
 

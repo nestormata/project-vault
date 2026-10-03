@@ -4,7 +4,7 @@ The contract hash covers the checked-in public API surface and contract-behaviou
 
 ## 3.29.0 — 2026-10-03
 
-contract-hash: sha256:4db413b5e7a61f453ff3e740bb8564990c5089f876e218d0ae5ca8d6db568c8d
+contract-hash: sha256:792e06e450ba9d272733467e161a400798b828f8bbe682f70fe8382d24ce1359
 
 ### Added
 
@@ -17,7 +17,7 @@ contract-hash: sha256:4db413b5e7a61f453ff3e740bb8564990c5089f876e218d0ae5ca8d6db
 - `ApiRoutesHooks.app` (optional): the functions behind `apiRoutes.app` (`hooks`, `errorHandler`,
   `notFoundHandler`). After `hooksFactory()` a declared handler or hook phase must have a function;
   an implementation with no declaration only warns.
-- New exported types `ApiRoutesAppDeclaration`, `AppBehaviourHooks`, `AppHookPhase`,
+- New exported types `ApiRoutesAppDeclaration`, `AppBehaviourHooks`,
   `AppErrorHandler`, `AppErrorWrapHandler`, `AppNotFoundHandler` and `AppNotFoundWrapHandler`.
 
 Validation is integrity only (known keys, the closed phase list, `wrap`/`replace`); there is no

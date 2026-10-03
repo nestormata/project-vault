@@ -90,13 +90,6 @@ export type ApiRouteOverrideDeclaration = {
 }
 
 /**
- * The request-lifecycle phases an extension may contribute app-wide (global) hook functions to:
- * the same closed list as the per-route phases (`API_ROUTE_HOOK_PHASES`). `onRoute`, `onRegister`, `onReady` and `onClose`
- * are not request phases and are not accepted.
- */
-export type AppHookPhase = ApiRouteHookPhase
-
-/**
  * Story 68.14 — app-level API behaviour: PV's global hooks, error handler and not-found handler,
  * changed with the same `wrap`/`replace` model as routes.
  *
@@ -108,7 +101,7 @@ export type AppHookPhase = ApiRouteHookPhase
  *   back to PV's handler with the original error.
  */
 export type ApiRoutesAppDeclaration = {
-  hooks?: { prepend?: AppHookPhase[]; append?: AppHookPhase[] }
+  hooks?: { prepend?: ApiRouteHookPhase[]; append?: ApiRouteHookPhase[] }
   errorHandler?: 'wrap' | 'replace'
   notFoundHandler?: 'wrap' | 'replace'
 }
@@ -249,7 +242,7 @@ export type AppNotFoundWrapHandler<Req = ApiRouteRequest, Reply = ApiRouteReply>
 
 /** The functions behind `apiRoutes.app`. Typed loosely, like `ApiRouteImplementation.handler`. */
 export type AppBehaviourHooks = {
-  hooks?: Partial<Record<AppHookPhase, ApiRouteAnyFunction | ApiRouteAnyFunction[]>>
+  hooks?: Partial<Record<ApiRouteHookPhase, ApiRouteAnyFunction | ApiRouteAnyFunction[]>>
   errorHandler?: ApiRouteAnyFunction
   notFoundHandler?: ApiRouteAnyFunction
 }
