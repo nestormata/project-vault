@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { basename, dirname, join, relative, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { basename } from 'node:path'
+import { assertNotVacuous, guardSources, readGuardSource } from '../test/guard-root.js'
 
 /**
+ * @pv-guard form-secret-inputs
+ *
  * Story 66.3 AC-11 (Red Team): a `<form>` without `method` submits with GET. If a submit lands
  * before hydration attaches the Svelte `onsubmit` handler (or the JS never loads), the browser
  * navigates to `<current-url>?<name>=<value>…` — so every NAMED input ends up in the URL, the
@@ -19,17 +20,6 @@ import { fileURLToPath } from 'node:url'
  *    a form action, so a pre-hydration native POST gets SvelteKit's 405 rendered as the app's
  *    error page: no echo, no 500, no secret anywhere.
  */
-
-const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-
-function svelteFiles(dir: string): string[] {
-  return readdirSync(dir).flatMap((entry) => {
-    const path = join(dir, entry)
-    if (entry === 'paraglide') return []
-    if (statSync(path).isDirectory()) return svelteFiles(path)
-    return path.endsWith('.svelte') ? [path] : []
-  })
-}
 
 type Tag = { name: string; start: number; source: string }
 
@@ -228,15 +218,15 @@ describe('secret inputs never reach a URL through a native form submission (AC-1
     ).toEqual(new Set(['Editor', 'Wrapper']))
   })
 
-  it('holds for every Svelte component in apps/web/src', () => {
-    const files = new Map(
-      svelteFiles(sourceRoot).map((file) => [file, readFileSync(file, 'utf-8')])
-    )
+  it('holds for every Svelte component in the tree under test (PV src, or a composed app root)', () => {
+    const sources = guardSources(/\.svelte$/)
+    assertNotVacuous(sources)
+    const files = new Map(sources.map((source) => [source.path, readGuardSource(source)]))
     const exposing = secretExposingComponents(files)
     const offenders = [...files].flatMap(([file, source]) => [
-      ...namedSecretInputs(source).map((name) => `${relative(sourceRoot, file)}: name="${name}"`),
+      ...namedSecretInputs(source).map((name) => `${file}: name="${name}"`),
       ...secretFormsWithoutPost(source, exposing).map(
-        (index) => `${relative(sourceRoot, file)}: form #${index + 1} has no method="post"`
+        (index) => `${file}: form #${index + 1} has no method="post"`
       ),
     ])
     expect(offenders).toEqual([])

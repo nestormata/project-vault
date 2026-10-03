@@ -6,6 +6,11 @@ import {
   VENDORED_SHARED_SOURCE_GLOB,
   rewriteSharedSource,
 } from '../config/app-css-source.ts'
+import {
+  MONOREPO_SHARED_LINE as GUARD_MONOREPO_LINE,
+  VENDORED_SHARED_LINE as GUARD_VENDORED_LINE,
+  tailwindBoundaryProblems,
+} from './lib/security/tailwind-boundary.ts'
 
 const MONOREPO_SHARED_SOURCE = '@source "../../../packages/shared/src/**/*.ts";'
 
@@ -44,5 +49,17 @@ describe('Tailwind source detection', () => {
     ).toThrow(/@source/)
     const twice = `${SHARED_SOURCE_MARKER}\n@source "a";\n${SHARED_SOURCE_MARKER}\n@source "b";`
     expect(() => rewriteSharedSource(twice, VENDORED_SHARED_SOURCE_GLOB)).toThrow(/exactly once/)
+  })
+
+  // Story 68.9 AC-7: the shipped composed-tree guard duplicates two line constants (it cannot import
+  // outside src); this test pins the copies to the config module and proves both guards agree.
+  it('keeps the shipped tailwind-boundary guard in step with the monorepo check', async () => {
+    expect(GUARD_MONOREPO_LINE).toBe(MONOREPO_SHARED_SOURCE)
+    expect(GUARD_VENDORED_LINE).toBe(`@source "${VENDORED_SHARED_SOURCE_GLOB}";`)
+    const css = await readFile(join(process.cwd(), 'src/app.css'), 'utf8')
+    expect(tailwindBoundaryProblems(css, false)).toEqual([])
+    expect(
+      tailwindBoundaryProblems(rewriteSharedSource(css, VENDORED_SHARED_SOURCE_GLOB), false)
+    ).toEqual([])
   })
 })

@@ -1,0 +1,7 @@
+{
+  "_generated": "pv-compose writes this file from the UI pack's guards entries; PV commits it with every section empty. Do not edit by hand.",
+  "browserStorage": { "sessionStorage": [], "localStorage": [], "release": [] },
+  "internalApiConsumers": { "add": [], "release": [] },
+  "routeClassifications": [],
+  "externalHrefs": { "allow": [] }
+}
