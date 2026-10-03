@@ -1,0 +1,20 @@
+// Story 68.6 AC-10 red-proof fixture: Kit 2.70.3's ServerHooks/ClientHooks with one extra
+// server hook (`handleNewThing`). Not compiled; read as text by hook-surface.test.ts.
+export interface ServerHooks {
+	handleFetch: HandleFetch;
+	handle: Handle;
+	handleError: HandleServerError;
+	handleValidationError: HandleValidationError;
+	reroute: Reroute;
+	transport: Transport;
+	init?: ServerInit;
+	handleNewThing: HandleFetch;
+}
+
+export interface ClientHooks {
+	handleError: HandleClientError;
+	reroute: Reroute;
+	transport: Transport;
+	init?: ClientInit;
+}
+
