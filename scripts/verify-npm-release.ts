@@ -118,7 +118,7 @@ function statementChecks(
   expected: Expectations
 ): Check[] {
   const { repository, path, ref, subject, digest } = claimsOf(statement)
-  const purl = `pkg:npm/${expected.packageName.replace('@', '%40')}@${expected.version}`
+  const purl = `pkg:npm/${expected.packageName.replaceAll('@', '%40')}@${expected.version}`
   const integrity = integrityHex(entry.dist?.integrity)
   const digestMatches = integrity !== undefined && digest === integrity
   return [
@@ -208,7 +208,7 @@ async function provenanceOf(url: string | undefined, fetchImpl: typeof fetch): P
 
 async function collect(expected: Expectations, fetchImpl: typeof fetch): Promise<Check[]> {
   const fetched = await fetchJson(
-    `${REGISTRY}${expected.packageName.replace('/', '%2f')}`,
+    `${REGISTRY}${expected.packageName.replaceAll('/', '%2f')}`,
     fetchImpl
   )
   if (!fetched.ok) return [check(false, 'packument', fetched.error)]
