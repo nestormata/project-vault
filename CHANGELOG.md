@@ -15,9 +15,10 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   every SvelteKit hook (server, universal, client), change PV's security-header policy and get its
   `(app)` routes protected, through `pvHooks()` in `@project-vault/composition-kit` 0.4.0 and the new
   web-host `manifests/hooks-surface.json`. PV's own responses, redirects and cookies are unchanged,
-  with one intended tightening: a percent-encoded URL of a protected route (for example
+  with two intended tightenings: a percent-encoded URL of a protected route (for example
   `/%73ettings/notifications`), or a URL rerouted onto one, is now redirected by the hook like the
-  plain URL. `apps/web` gains `src/hooks.ts` and `src/hooks.client.ts` (no-op in PV's build), and
+  plain URL; and a header rule also matches the decoded pathname, so `/%68andoff` now carries the
+  handoff headers (`referrer-policy: strict-origin`) like `/handoff`. `apps/web` gains `src/hooks.ts` and `src/hooks.client.ts` (no-op in PV's build), and
   `src/hooks.server.ts` changes, so its `hostSha256` drifts: any CM override of it must be
   re-accepted. See [docs/composition-kit.md](docs/composition-kit.md#hooks-header-policy-and-protected-paths).
 - **`@project-vault/composition-kit` (MIT):** the `pv-compose` composer that overlays a UI pack onto

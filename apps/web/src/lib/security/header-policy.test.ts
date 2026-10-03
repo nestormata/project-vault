@@ -63,6 +63,64 @@ describe('PV_HEADER_POLICY (AC-5)', () => {
   })
 })
 
+// Code review 68-6 (Nestor 2026-10-03): Kit decodes the path before it matches a route, so an
+// `exact`/`startsWith` rule matching only the raw pathname let `/%68andoff` render the handoff page
+// with the defaults. Rules now match when the raw OR the decoded pathname matches, decoded exactly
+// as Kit's `decode_pathname` does (so a rule matches iff Kit renders the route it names).
+describe('exact/startsWith also match the decoded pathname (code review 68-6)', () => {
+  const policy = validateHeaderPolicy(
+    withRules({ id: 'cm', match: { startsWith: '/cm-area/' }, headers: { 'x-a': 'cm' } })
+  )
+
+  it('a percent-encoded URL gets the rule its decoded path matches', () => {
+    expect(resolveHeaders(PV_HEADER_POLICY, req('/%68andoff'))).toEqual(getHandoffSecurityHeaders())
+    expect(resolveHeaders(PV_HEADER_POLICY, req('/h%61ndoff'))).toEqual(getHandoffSecurityHeaders())
+    expect(resolveHeaders(policy, req('/%63m-area/x'))).toEqual({ 'x-a': 'cm' })
+  })
+
+  it('the raw pathname still matches (a rule written with an encoded character)', () => {
+    const encoded = validateHeaderPolicy(
+      withRules({ id: 'enc', match: { exact: '/a%20b' }, headers: { 'x-a': 'enc' } })
+    )
+    expect(resolveHeaders(encoded, req('/a%20b'))).toEqual({ 'x-a': 'enc' })
+  })
+
+  it('%2F stays encoded, as in Kit: it is not a path separator for matching', () => {
+    expect(resolveHeaders(policy, req('/cm-area%2Fx'))).toEqual(getFrameProtectionHeaders())
+  })
+
+  it('decodes once: a double-encoded URL does not match (Kit routes it nowhere either)', () => {
+    expect(resolveHeaders(PV_HEADER_POLICY, req('/%2568andoff'))).toEqual(
+      getFrameProtectionHeaders()
+    )
+  })
+
+  it('a malformed escape does not throw: the raw pathname is used', () => {
+    expect(resolveHeaders(PV_HEADER_POLICY, req('/handoff%E0%A4%A'))).toEqual(
+      getFrameProtectionHeaders()
+    )
+    expect(resolveHeaders(policy, req('/cm-area/%E0%A4%A'))).toEqual({ 'x-a': 'cm' })
+  })
+
+  it('a test predicate and a routeId rule see the request unchanged', () => {
+    const seen: string[] = []
+    const pred = validateHeaderPolicy(
+      withRules({
+        id: 'pred',
+        match: {
+          test: ({ pathname }) => {
+            seen.push(pathname)
+            return false
+          },
+        },
+        headers: { 'x-a': 'p' },
+      })
+    )
+    resolveHeaders(pred, req('/%63m'))
+    expect(seen).toEqual(['/%63m'])
+  })
+})
+
 describe('validateHeaderPolicy — integrity only (AC-5)', () => {
   const bad: Array<[string, HeaderPolicy, RegExp]> = [
     [

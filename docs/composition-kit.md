@@ -176,10 +176,14 @@ every added, changed and removed header and rule (a `test` predicate rule is rep
 `(opaque match)`). PV's policy applies to CM UI exactly as to PV UI: no rule is keyed on where a
 route came from.
 
-- **Key a security-relevant rule on `routeId`.** `exact` and `startsWith` compare the raw
-  `event.url.pathname`, which keeps percent-encoding, while Kit decodes the path before it matches a
-  route: `/%63m-area` renders `/cm-area` but does not match `{ startsWith: '/cm-area' }`, so it gets
-  the defaults instead of that rule. A `{ routeId }` rule matches however the URL is spelled.
+- **`exact` and `startsWith` match the raw or the decoded pathname.** `event.url.pathname` keeps
+  percent-encoding, while Kit decodes the path before it matches a route, so a rule matches when
+  either spelling does: `/%63m-area/x` gets a `{ startsWith: '/cm-area/' }` rule and `/%68andoff`
+  gets PV's handoff headers. The decoding is Kit's own (`decodeURI` around `%25`): `%2F` and other
+  reserved escapes stay encoded, nothing is decoded twice (`/%2568andoff` matches no rule, and Kit
+  routes it nowhere), and a malformed escape falls back to the raw pathname. A `{ test }` predicate
+  receives the raw pathname. A `{ routeId }` rule matches however the URL is spelled. The frozen
+  extension-panel branch (below) keeps its raw `startsWith` until 68-11.
 - **Change headers through `headerPolicy`, not `event.setHeaders` in a handle:** a handle that sets a
   name the policy already set makes Kit throw `"<name>" header is already set` on that request.
 - **Route-level `setHeaders` conflicts fail at start-up (Q2).** `/shares/[token]` and

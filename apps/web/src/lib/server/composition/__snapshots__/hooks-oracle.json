@@ -180,11 +180,11 @@
     "/%73ettings/notifications authenticated vault=sealed": "status=303 location=/vault setHeaders=H1 headers=H3 cookies=[] user=unset resolved=[] chunk=null",
     "/%73ettings/notifications session-expired vault=ready": "status=303 location=/login?reason=session-expired setHeaders=H1 headers=H6 cookies=[\"refresh-token=rotated; Path=/; HttpOnly\"] user=null resolved=[] chunk=null",
     "/%73ettings/notifications session-expired vault=sealed": "status=303 location=/vault setHeaders=H1 headers=H3 cookies=[] user=unset resolved=[] chunk=null",
-    "/%68andoff anonymous vault=ready": "status=200 location=null setHeaders=H1 headers=H2 cookies=[] user=null resolved=[\"/%68andoff\"] chunk=<html lang=\"en\">",
-    "/%68andoff anonymous vault=sealed": "status=200 location=null setHeaders=H1 headers=H2 cookies=[] user=null resolved=[\"/%68andoff\"] chunk=<html lang=\"en\">",
-    "/%68andoff authenticated vault=ready": "status=200 location=null setHeaders=H1 headers=H2 cookies=[\"access-token=renewed; Path=/; HttpOnly\"] user={\"id\":\"u1\",\"orgRole\":\"member\"} resolved=[\"/%68andoff\"] chunk=<html lang=\"es\">",
-    "/%68andoff authenticated vault=sealed": "status=200 location=null setHeaders=H1 headers=H2 cookies=[\"access-token=renewed; Path=/; HttpOnly\"] user={\"id\":\"u1\",\"orgRole\":\"member\"} resolved=[\"/%68andoff\"] chunk=<html lang=\"es\">",
-    "/%68andoff session-expired vault=ready": "status=200 location=null setHeaders=H1 headers=H2 cookies=[\"refresh-token=rotated; Path=/; HttpOnly\"] user=null resolved=[\"/%68andoff\"] chunk=<html lang=\"en\">",
-    "/%68andoff session-expired vault=sealed": "status=200 location=null setHeaders=H1 headers=H2 cookies=[\"refresh-token=rotated; Path=/; HttpOnly\"] user=null resolved=[\"/%68andoff\"] chunk=<html lang=\"en\">"
+    "/%68andoff anonymous vault=ready": "status=200 location=null setHeaders=H7 headers=H8 cookies=[] user=null resolved=[\"/%68andoff\"] chunk=<html lang=\"en\">",
+    "/%68andoff anonymous vault=sealed": "status=200 location=null setHeaders=H7 headers=H8 cookies=[] user=null resolved=[\"/%68andoff\"] chunk=<html lang=\"en\">",
+    "/%68andoff authenticated vault=ready": "status=200 location=null setHeaders=H7 headers=H8 cookies=[\"access-token=renewed; Path=/; HttpOnly\"] user={\"id\":\"u1\",\"orgRole\":\"member\"} resolved=[\"/%68andoff\"] chunk=<html lang=\"es\">",
+    "/%68andoff authenticated vault=sealed": "status=200 location=null setHeaders=H7 headers=H8 cookies=[\"access-token=renewed; Path=/; HttpOnly\"] user={\"id\":\"u1\",\"orgRole\":\"member\"} resolved=[\"/%68andoff\"] chunk=<html lang=\"es\">",
+    "/%68andoff session-expired vault=ready": "status=200 location=null setHeaders=H7 headers=H8 cookies=[\"refresh-token=rotated; Path=/; HttpOnly\"] user=null resolved=[\"/%68andoff\"] chunk=<html lang=\"en\">",
+    "/%68andoff session-expired vault=sealed": "status=200 location=null setHeaders=H7 headers=H8 cookies=[\"refresh-token=rotated; Path=/; HttpOnly\"] user=null resolved=[\"/%68andoff\"] chunk=<html lang=\"en\">"
   }
 }

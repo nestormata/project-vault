@@ -73,9 +73,29 @@ function matchEntry(match: object): [string, unknown] | undefined {
   return Object.entries(match).find(([key]) => (MATCH_KEYS as readonly string[]).includes(key))
 }
 
+/** The pathname as Kit decodes it before matching a route (`decode_pathname`: `decodeURI` around
+ * `%25`, so `%2F` and other reserved escapes stay encoded and nothing is decoded twice). A malformed
+ * escape yields the raw pathname (Kit answers such a request 400 before any hook runs). */
+export function decodedPathname(pathname: string): string {
+  try {
+    return pathname.split('%25').map(decodeURI).join('%25')
+  } catch {
+    return pathname
+  }
+}
+
+/** `exact`/`startsWith` match when the raw OR the decoded pathname does (code review 68-6, Nestor
+ * 2026-10-03): `/%68andoff` renders the handoff page, so it gets the handoff rule. */
+function pathMatches(pathname: string, test: (path: string) => boolean): boolean {
+  if (test(pathname)) return true
+  const decoded = decodedPathname(pathname)
+  return decoded !== pathname && test(decoded)
+}
+
 function matches(match: HeaderMatch, req: HeaderRequest): boolean {
-  if ('exact' in match) return req.pathname === match.exact
-  if ('startsWith' in match) return req.pathname.startsWith(match.startsWith)
+  if ('exact' in match) return pathMatches(req.pathname, (path) => path === match.exact)
+  if ('startsWith' in match)
+    return pathMatches(req.pathname, (path) => path.startsWith(match.startsWith))
   if ('routeId' in match) return req.routeId === match.routeId
   return match.test(req)
 }
