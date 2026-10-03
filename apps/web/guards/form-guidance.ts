@@ -230,3 +230,12 @@ export function scanFormGuidanceTree(
     )
   )
 }
+
+/** The script-guard contract (`manifests/guards.json`, kind "script"): scan one app root and return
+ * the findings, each with the composed file path and a message that names its rule. */
+export function runGuard(appRoot: string): { file: string; message: string }[] {
+  return scanFormGuidanceTree(join(appRoot, 'src'), appRoot).map((finding) => ({
+    file: finding.file,
+    message: `${finding.kind} ${finding.file}:${finding.line}: ${finding.message}`,
+  }))
+}

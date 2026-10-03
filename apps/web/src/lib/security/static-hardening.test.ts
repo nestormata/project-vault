@@ -42,12 +42,13 @@ describe('static frontend hardening', () => {
   })
 
   it('uses the generated guard entries exactly as the lock recorded them', () => {
-    expect(entriesTamperProblem()).toBeNull()
+    const problem = entriesTamperProblem()
+    expect(problem, problem ?? '').toBeNull()
   })
 
   it('does not use browser storage APIs for token, MFA, or vault material', () => {
     const problems = storageViolations(scanned(), readGuardEntries().browserStorage, removedFiles())
-    expect(problems).toEqual([])
+    expect(problems, problems.join('\n')).toEqual([])
   })
 
   it('Story 16.6 AC-1/AC-2: every reviewed local-storage carve-out is a documented, non-sensitive key', () => {
@@ -70,7 +71,8 @@ describe('static frontend hardening', () => {
   })
 
   it('does not use raw HTML rendering', () => {
-    expect(rawHtmlViolations(scanned())).toEqual([])
+    const problems = rawHtmlViolations(scanned())
+    expect(problems, problems.join('\n')).toEqual([])
   })
 
   it('defines clickjacking protection headers for web responses', () => {

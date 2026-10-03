@@ -197,6 +197,49 @@ describe('compose: pack guard entries (Story 68.9 AC-3)', () => {
   })
 })
 
+describe('compose: guard files a pack overrides (Story 68.9 Q3)', () => {
+  const REGISTRY = JSON.stringify({
+    schemaVersion: 1,
+    guards: [
+      {
+        id: 'mini',
+        kind: 'test',
+        file: 'src/lib/g.test.ts',
+        scope: 'all-files',
+        closure: [{ file: UTIL, sha256: 'a'.repeat(64) }],
+      },
+    ],
+  })
+
+  it('composes (M1 floor) and notes a pack override of a guard file or of its helper closure', async () => {
+    const world = makeWorld({
+      hostFiles: { 'manifests/guards.json': REGISTRY, 'src/lib/g.test.ts': 'guard\n' },
+      packFiles: { [UTIL]: OVERRIDE_BODY },
+    })
+    const result = await run(world, {
+      routes: { overrides: [{ path: UTIL, hostSha256: sha(world, UTIL) }] },
+    })
+    expect(result.ok).toBe(true)
+    expect((lockOf(world) as { notes: string[] }).notes).toContain(
+      `guard-file-overridden: ${UTIL} (pv-verify runs the pristine PV copy)`
+    )
+  })
+
+  it('adds no note when no guard file was changed, or the host has no registry', async () => {
+    const quiet = makeWorld({
+      hostFiles: { 'manifests/guards.json': REGISTRY },
+      packFiles: { [LOGIN]: '<h1>cm</h1>\n' },
+    })
+    await run(quiet, { routes: { overrides: [{ path: LOGIN, hostSha256: sha(quiet, LOGIN) }] } })
+    const notes = (lockOf(quiet) as { notes: string[] }).notes
+    expect(notes.filter((note) => note.startsWith('guard-file-overridden'))).toEqual([])
+    const none = makeWorld({ packFiles: { [UTIL]: OVERRIDE_BODY } })
+    expect(
+      (await run(none, { routes: { overrides: [{ path: UTIL, hostSha256: sha(none, UTIL) }] } })).ok
+    ).toBe(true)
+  })
+})
+
 describe('compose: excludedPvTests (Story 68.9 AC-10)', () => {
   const SUBJECT_MAP = {
     [UTIL_TEST]: [UTIL],

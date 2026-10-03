@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Build-time composer for Project Vault's web-host: overlays a UI pack onto the web source, locks drift and checks version compatibility.",
   "bin": {
-    "pv-compose": "./dist/cli.js"
+    "pv-compose": "./dist/cli.js",
+    "pv-verify": "./dist/verify-cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

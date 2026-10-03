@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { scanFormGuidanceTree } from '../apps/web/guards/form-guidance'
+import { runGuard, scanFormGuidanceTree } from '../apps/web/guards/form-guidance'
 import { scanFormGuidance, scanWebFormGuidance } from './check-form-guidance'
 import { toRepoPath, walkFiles } from './lib/scan-utils'
 
@@ -126,6 +126,17 @@ describe('scanFormGuidanceTree over a composed tree', () => {
     )
     const scanned = scanFormGuidanceTree(join(root, 'src')).map((finding) => finding.file)
     expect([...new Set(scanned)].sort()).toEqual(walked.sort())
+  })
+
+  it('exposes the script-guard contract: findings with composed paths and the rule in the message', () => {
+    const root = composed({ 'src/lib/_cm/Invite.svelte': '<input id="email" />' })
+    expect(runGuard(root)).toEqual([
+      {
+        file: 'src/lib/_cm/Invite.svelte',
+        message: expect.stringContaining('missing-description src/lib/_cm/Invite.svelte:1'),
+      },
+    ])
+    expect(runGuard(composed({ 'src/ok.svelte': '<p>x</p>' }))).toEqual([])
   })
 
   it('finds nothing in PV itself', () => {

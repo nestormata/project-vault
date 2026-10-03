@@ -23,7 +23,8 @@ describe('Tailwind source boundary (Story 68.9 AC-7)', () => {
   it('holds for the app.css of the tree under test', () => {
     const root = guardAppRoot()
     const css = readFileSync(join(root, 'src/app.css'), 'utf8')
-    expect(tailwindBoundaryProblems(css, existsSync(join(root, 'src/lib/_cm')))).toEqual([])
+    const problems = tailwindBoundaryProblems(css, existsSync(join(root, 'src/lib/_cm')))
+    expect(problems, problems.join('\n')).toEqual([])
   })
 
   it('accepts the PV, packed and composed shapes', () => {

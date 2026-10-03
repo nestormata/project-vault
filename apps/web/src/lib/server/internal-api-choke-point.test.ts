@@ -29,17 +29,25 @@ function scanned(): GuardFile[] {
 
 describe('internalApiFetch is the only path from API_BASE_URL to the api (Story 43.16 AC-2)', () => {
   it('uses the generated guard entries exactly as the lock recorded them', () => {
-    expect(entriesTamperProblem()).toBeNull()
+    const problem = entriesTamperProblem()
+    expect(problem, problem ?? '').toBeNull()
   })
 
   it('scans the known API_BASE_URL consumers', () => {
-    expect(
-      consumerViolations(scanned(), readGuardEntries().internalApiConsumers, removedFiles())
-    ).toEqual([])
+    const problems = consumerViolations(
+      scanned(),
+      readGuardEntries().internalApiConsumers,
+      removedFiles()
+    )
+    expect(problems, problems.join('\n')).toEqual([])
   })
 
   it('no module pairs API_BASE_URL with a raw globalThis.fetch', () => {
-    expect(chokePointOffenders(scanned())).toEqual([])
+    const offenders = chokePointOffenders(scanned())
+    expect(
+      offenders,
+      `raw global fetch next to the API base URL in: ${offenders.join(', ')}`
+    ).toEqual([])
   })
 
   it('flags the regression shape and ignores the typeof annotation (guard self-test)', () => {

@@ -228,6 +228,6 @@ describe('secret inputs never reach a URL through a native form submission (AC-1
         (index) => `${file}: form #${index + 1} has no method="post"`
       ),
     ])
-    expect(offenders).toEqual([])
+    expect(offenders, offenders.join('\n')).toEqual([])
   })
 })

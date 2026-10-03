@@ -2,6 +2,7 @@
 // field `guards`), merges them into the generated data module PV's web guards read, records the
 // per-section hashes the guards verify, and computes `excludedPvTests` from the host's subject map.
 import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   GUARD_ENTRIES_PATH,
   generatedEntriesText,
@@ -147,12 +148,42 @@ function testStage(
   }
 }
 
+/** Q3: a pack may override a guard test or one of its helper files (the compose succeeds); the
+ * verify command then runs the pristine PV copy. The lock says so, so a reviewer sees it. */
+function overriddenGuardNotes(input: GuardStageInput): string[] {
+  const path = join(input.host.dir, 'manifests', 'guards.json')
+  if (!existsSync(path)) return []
+  try {
+    const registry = JSON.parse(readFileSync(path, 'utf8')) as {
+      guards?: { file?: string; closure?: { file: string }[] }[]
+    }
+    const changed = new Set([
+      ...input.overlay.changedHostPaths,
+      ...input.overlay.replacements.map((entry) => entry.hostPath),
+    ])
+    const files = (registry.guards ?? []).flatMap((guard) => [
+      ...(guard.file === undefined ? [] : [guard.file]),
+      ...(guard.closure ?? []).map((entry) => entry.file),
+    ])
+    return [...new Set(files.filter((file) => changed.has(file)))].map(
+      (file) => `guard-file-overridden: ${file} (pv-verify runs the pristine PV copy)`
+    )
+  } catch {
+    return []
+  }
+}
+
 export function guardStage(input: GuardStageInput): GuardStage {
   const entries = entriesStage(input)
   const tests = testStage(input)
   return {
     problems: [...entries.problems, ...tests.problems],
-    notes: [...input.loaded.notes, ...entries.notes, ...tests.notes],
+    notes: [
+      ...input.loaded.notes,
+      ...entries.notes,
+      ...tests.notes,
+      ...overriddenGuardNotes(input),
+    ],
     guardEntries: entries.guardEntries,
     excludedPvTests: tests.excludedPvTests,
   }
