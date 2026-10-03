@@ -2,6 +2,30 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.28.0 — 2026-10-02
+
+contract-hash: sha256:432993f45a239971e9a502dcc302236499349966c967776f2f47f9af01a4734f
+
+### Added
+
+- `AuditEventSourceWriteInput.idempotencyKey` (optional, `string`, Story 71.1): a stable key,
+  `^[A-Za-z0-9._:-]{1,128}$`, that makes `writeAuditEvent` idempotent. Same org, same extension
+  `manifest.name`, same key and identical content (`eventType`, `resourceType`, `resourceId`,
+  `projectId`, `payload`; key order ignored, `undefined` equals absent, `null` does not) returns the
+  first call's `{ id, createdAt }` and writes no row, including under concurrent duplicates. The
+  same key with different content rejects with a non-retryable conflict error and never overwrites.
+  A replay is not rate-limited or storage-gated; a first write that is rejected or rolls back
+  leaves no key. A key lives exactly as long as its audit row.
+
+### Changed
+
+- The `AuditEventSourceHost` documentation no longer says there is no idempotency: it is now
+  available opt-in. Callers that omit `idempotencyKey` are unaffected (two calls still write two
+  rows).
+
+Per `docs/extension-api-versioning-policy.md` row 1 ("adding an optional field to any exported
+object type"), this change is NON-BREAKING — a MINOR. The floor stays `>=3.0.0`.
+
 ## 3.27.0 — 2026-10-02
 
 contract-hash: sha256:1395088e2b26df5007845ff462a355fc077405aeac6025dd30460a1d6786c3d5

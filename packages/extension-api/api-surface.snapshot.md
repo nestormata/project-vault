@@ -421,6 +421,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - member: `eventType`
   - since: 1.0.0
   - type: `string`
+- member: `idempotencyKey?`
+  - since: 3.26.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
 - member: `orgId`
   - since: 1.0.0
   - type: `string`
@@ -974,7 +978,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.27.0"`
+- type: `"3.28.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 

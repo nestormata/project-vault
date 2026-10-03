@@ -145,7 +145,7 @@ service is always an additive change.
 
 | Field | Type | What it does |
 |---|---|---|
-| `auditEventSource` | `AuditEventSourceHost` | `writeAuditEvent(input)` writes a tamper-evident, namespaced (`ext.<your-manifest-name>.*`) audit row. The host performs HMAC signing and key-versioning, so no key material or transaction handle ever crosses the extension boundary. |
+| `auditEventSource` | `AuditEventSourceHost` | `writeAuditEvent(input)` writes a tamper-evident, namespaced (`ext.<your-manifest-name>.*`) audit row. The host performs HMAC signing and key-versioning, so no key material or transaction handle ever crosses the extension boundary. An optional `idempotencyKey` (3.26.0+) makes retries safe: a replay with identical content returns the first call's receipt and writes no row. |
 | `orgAuthorization` | `OrgAuthorizationHost` | `checkMembership()` — is this identity a member of the current organization at this role or above. |
 | `projectAuthorization` | `ProjectAuthorizationHost` | `checkProjectMembership()` — the project-scoped sibling of the above, reusing PV's own effective-project-role semantics (org owner/admin bypass, explicit membership row fallback). |
 | `ephemeralState` | `EphemeralStateHost` | Short-lived, org-scoped key/value state. Resolves the current request's org at call time. |

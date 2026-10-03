@@ -161,7 +161,7 @@ npm dist-tag add @project-vault/extension-api@X.Y.Z latest
 
 **Current state (2026-10-01):** npm `latest` is `1.1.0` and `next` is `3.25.0` (published tags:
 `extension-api-v1.1.0`, `-v3.15.0`, `-v3.23.0`, `-v3.24.1`, `-v3.25.0`). The package source is at
-`3.25.0`. `3.24.2` was a documentation-only patch that was never published; `3.25.0` supersedes it.
+`3.26.0` (unreleased; the tag push is maintainer-only, Story 71.1 only bumps the source). `3.24.2` was a documentation-only patch that was never published; `3.25.0` supersedes it.
 `3.24.0` was never tagged and is superseded by `3.24.1`. Every other intermediate contract version
 was never tagged or published, and cannot be reconstructed.
 Version `3.0.0` contains a breaking change for the CentralizeMe consumer, so `latest` still points

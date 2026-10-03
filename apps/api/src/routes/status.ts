@@ -60,6 +60,7 @@ const AuditEventSourceStatusSchema = z.object({
     writes: z.number(),
     succeeded: z.number(),
     rejected: z.number(),
+    deduped: z.number(),
   }),
 })
 

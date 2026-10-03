@@ -169,6 +169,10 @@ describe('OperationalEvent', () => {
     expect(OperationalEvent.EXTENSION_AUDIT_EVENT_WRITE_REJECTED).toBe(
       'extension_audit_event.write_rejected'
     )
+    // Story 71.1 AC-7: an idempotent replay is logged distinctly from a fresh write.
+    expect(OperationalEvent.EXTENSION_AUDIT_EVENT_WRITE_DEDUPED).toBe(
+      'extension_audit_event.write_deduped'
+    )
   })
 
   it('exposes the Story 25.5 module-action-dispatch-failed event type (AC5)', () => {

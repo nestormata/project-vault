@@ -444,6 +444,9 @@ export const OperationalEvent = {
   // limited to a fixed enum — never the raw payload or exception message.
   EXTENSION_AUDIT_EVENT_WRITE_SUCCEEDED: 'extension_audit_event.write_succeeded',
   EXTENSION_AUDIT_EVENT_WRITE_REJECTED: 'extension_audit_event.write_rejected',
+  // Story 71.1 AC-7: an idempotent replay (same org + extension + key + content) that returned the
+  // original receipt without writing a row. Logged rate-limited, never with the key or payload.
+  EXTENSION_AUDIT_EVENT_WRITE_DEDUPED: 'extension_audit_event.write_deduped',
 
   // Story 23.9 AC8: structured audit-log entry written for EVERY orgAuthorization.checkMembership()
   // call (authorized, denied, or errored) — bounds blast radius from a bug/compromise in the

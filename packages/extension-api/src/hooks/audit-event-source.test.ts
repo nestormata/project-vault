@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 import type {
   AuditEventSourceHost,
   AuditEventSourceWriteInput,
@@ -21,10 +21,29 @@ describe('AuditEventSourceWriteInput / AuditEventSourceWriteResult — exact-sha
       resourceId: 'resource_1',
       resourceType: 'widget',
       payload: { foo: 'bar' },
+      idempotencyKey: 'cm-evt-123:v1',
     }
     expect(new Set(Object.keys(fixture))).toEqual(
-      new Set(['eventType', 'orgId', 'projectId', 'resourceId', 'resourceType', 'payload'])
+      new Set([
+        'eventType',
+        'orgId',
+        'projectId',
+        'resourceId',
+        'resourceType',
+        'payload',
+        'idempotencyKey',
+      ])
     )
+  })
+
+  it('idempotencyKey is optional and string-typed (Story 71.1 AC-1, additive minor)', () => {
+    const withoutKey: AuditEventSourceWriteInput = {
+      eventType: FIXTURE_EVENT_TYPE,
+      orgId: 'org_1',
+      payload: {},
+    }
+    expect(withoutKey.idempotencyKey).toBeUndefined()
+    expectTypeOf<AuditEventSourceWriteInput['idempotencyKey']>().toEqualTypeOf<string | undefined>()
   })
 
   it('AuditEventSourceWriteInput accepts the minimal required shape', () => {

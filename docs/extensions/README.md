@@ -100,7 +100,7 @@ factory declaring zero parameters stays valid, so new services are always additi
 
 | Service | Method(s) | Purpose |
 |---|---|---|
-| `auditEventSource` | `writeAuditEvent(input)` | Write a tamper-evident audit row, namespaced `ext.<your-manifest-name>.*`. The host does the HMAC signing and key versioning; no key material or transaction handle crosses the boundary. |
+| `auditEventSource` | `writeAuditEvent(input)` | Write a tamper-evident audit row, namespaced `ext.<your-manifest-name>.*`. The host does the HMAC signing and key versioning; no key material or transaction handle crosses the boundary. Pass an optional `idempotencyKey` (3.26.0+) to make retries safe: a replay returns the original receipt instead of writing a second row. |
 | `orgAuthorization` | `checkMembership()` | Is this identity a member of the current organization at this role or above. |
 | `projectAuthorization` | `checkProjectMembership()` | The project-scoped sibling, reusing Project Vault's own effective-project-role semantics (org owner/admin bypass, explicit membership-row fallback). |
 | `ephemeralState` | key/value read/write | Short-lived, org-scoped state. Resolves the current request's organization at call time. |
