@@ -109,13 +109,15 @@ export function pvHooks(options: PvHooksOptions = {}): Plugin {
       const lock = lockPath()
       let last = signature(readContributions(lock))
       dev.watcher.add(lock)
-      dev.watcher.on('change', (path: string) => {
+      // The composer writes the lock atomically (a rename), which a watcher may report as `add`.
+      const onLock = (path: string) => {
         if (resolve(path) !== lock) return
         const next = signature(readContributions(lock))
         if (next === last) return
         last = next
         void dev.restart()
-      })
+      }
+      for (const event of ['add', 'change']) dev.watcher.on(event, onLock)
     },
   }
 }

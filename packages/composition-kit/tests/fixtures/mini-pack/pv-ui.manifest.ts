@@ -24,6 +24,8 @@ const release = (
 ).pvRelease
 
 const OVERRIDES = [
+  // Present only in the integration job's compose-full-override variant (Story 68-6 AC-11).
+  'src/hooks.server.ts',
   'src/routes/(auth)/recovery/+page.svelte',
   'src/routes/(auth)/login/+page.server.ts',
   'src/app.html',

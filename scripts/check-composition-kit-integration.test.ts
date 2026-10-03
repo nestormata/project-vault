@@ -48,9 +48,13 @@ function webVersion(name: string): string {
   return (requireFromWeb(`${name}/package.json`) as { version: string }).version
 }
 
-function runVariant(variant: string): { status: number | null; output: string } {
+function runVariant(
+  variant: string,
+  extraEnv: NodeJS.ProcessEnv = {}
+): { status: number | null; output: string } {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    ...extraEnv,
     WEB_HOST_FIXTURE_CACHE: join(workDir, 'npm-cache'),
     COMPOSITION_KIT_TARBALL: kitTarball,
     COMPOSITION_KIT_FIXTURES: FIXTURES_DIR,
@@ -113,9 +117,9 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
         'OK: server hook code stays out of the client bundle; universal/client hooks reach it'
       )
       expect(output).toContain(
-        'OK: CM (app) page, data request, action and endpoint, and a rerouted URL redirect anonymous users; CM policy and handle applied'
+        'OK: AC-9 table (anonymous, session-expired, sealed, authenticated, CSRF) with handler counters; handleFetch, transport, init, handleError and the CM policy applied'
       )
-      expect(output).toContain('pv-compose: protected paths: 2 derived (app) routes')
+      expect(output).toContain('pv-compose: protected paths: 3 derived (app) routes')
       expect(status, output).toBe(0)
     },
     VARIANT_TIMEOUT_MS
@@ -149,6 +153,50 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
     () => {
       const { status, output } = runVariant('compose-dev')
       expect(output).toContain('OK: dev mode mirrored an edit, an addition and a deleted override')
+      expect(output).toContain('OK: dev mode protected a CM (app) route added while running')
+      expect(status, output).toBe(0)
+    },
+    VARIANT_TIMEOUT_MS
+  )
+
+  it(
+    "Kit's server-only guard rejects a client import of virtual:pv-hooks/server (Story 68-6 AC-1)",
+    () => {
+      const { status, output } = runVariant('compose-hooks-leak')
+      expect(status, output).not.toBe(0)
+      expect(output).toMatch(
+        /Cannot import .*_cm\/hooks\.server.* into code that runs in the browser/
+      )
+    },
+    VARIANT_TIMEOUT_MS
+  )
+
+  it(
+    'a full-file override of src/hooks.server.ts composes, builds, serves and keeps derived protection (Story 68-6 AC-11)',
+    () => {
+      const { status, output } = runVariant('compose-full-override')
+      expect(output).toContain(
+        'OK: a full override of src/hooks.server.ts composes, builds, serves and keeps derived protection'
+      )
+      expect(status, output).toBe(0)
+    },
+    VARIANT_TIMEOUT_MS
+  )
+
+  it(
+    "PV's own packed web-host answers exactly as main's did (Story 68-6 AC-3)",
+    () => {
+      // pv-responses.main.json was recorded from main's (c4482a44) packed web-host with the same
+      // pv-responses.sh; the variant diffs the current packed web-host's answers against it.
+      const { status, output } = runVariant('pv-responses', {
+        WEB_HOST_FIXTURE_RESPONSES_EXPECTED: join(
+          repositoryRoot,
+          'scripts',
+          'web-host-consumer-fixture',
+          'pv-responses.main.json'
+        ),
+      })
+      expect(output).toContain("OK: PV's responses equal the main snapshot")
       expect(status, output).toBe(0)
     },
     VARIANT_TIMEOUT_MS

@@ -5,7 +5,8 @@
 #
 # variant: `ok` (default), `missing-vendored-shared` (vendor/shared removed from the tarball) or
 # `missing-dependency` (cron-parser removed from the tarball's dependencies). The two broken
-# variants must fail; scripts/check-web-host-consumer-fixture.test.ts asserts that.
+# variants must fail; scripts/check-web-host-consumer-fixture.test.ts asserts that. `pv-responses`
+# (Story 68.6 AC-3) is `ok` plus a recording of PV's responses (pv-responses.sh).
 #
 # Story 68.3: the variants named `compose*` install the composition kit tarball as well and compose
 # a UI pack onto the installed web-host (instead of a plain copy) before building. They are driven
@@ -107,7 +108,7 @@ free_port() {
 mkdir -p "$WORK/home" "$CACHE" "$APP"
 
 # Variants rewrite a copy of the tarball; the original is never touched.
-if [[ "$VARIANT" != 'ok' && "$COMPOSE_MODE" == 0 ]]; then
+if [[ "$VARIANT" != 'ok' && "$VARIANT" != 'pv-responses' && "$COMPOSE_MODE" == 0 ]]; then
   mkdir -p "$WORK/repack"
   tar -xzf "$TARBALL" -C "$WORK/repack"
   case "$VARIANT" in
@@ -234,20 +235,16 @@ fi
 start_api_stub() {
   API_PORT="$(free_port)"
   (
-    exec env -i PATH="$NODE_DIR:/usr/bin:/bin" "$NODE_BIN" -e '
-      const http = require("node:http")
-      http.createServer((req, res) => {
-        res.setHeader("content-type", "application/json")
-        if (["/ready", "/health", "/api/health"].includes(req.url)) {
-          res.end(JSON.stringify({ status: "ready", nativeLoginEnabled: true }))
-          return
-        }
-        res.statusCode = 404
-        res.end(JSON.stringify({ error: { code: "not_found", message: "fixture API stub" } }))
-      }).listen(Number(process.argv[1]), "127.0.0.1")
-    ' "$API_PORT"
+    exec env -i PATH="$NODE_DIR:/usr/bin:/bin" "$NODE_BIN" "$FIXTURE_DIR/api-stub.mjs" "$API_PORT"
   ) &
   API_PID=$!
+  local _
+  for _ in $(seq 1 50); do
+    curl -s -o /dev/null "http://127.0.0.1:${API_PORT}/ready" && return 0
+    sleep 0.1
+  done
+  echo 'fixture: the API stub did not start' >&2
+  exit 1
 }
 
 if [[ "$VARIANT" == 'compose-dev' ]]; then
@@ -262,7 +259,7 @@ if [[ ! -f "$APP/build/index.js" || ! -d "$APP/build/client/_app" ]]; then
   echo 'fixture: vite build produced no build/index.js or build/client/_app' >&2
   exit 1
 fi
-if [[ "$VARIANT" == 'compose-server-leak' || "$VARIANT" == 'compose-server-twin' ]]; then
+if [[ "$VARIANT" == 'compose-server-leak' || "$VARIANT" == 'compose-server-twin' || "$VARIANT" == 'compose-hooks-leak' ]]; then
   log "OK: vite build succeeded for $VARIANT"
   exit 0
 fi
@@ -272,19 +269,22 @@ fi
 
 # Story 68.2 (Nestor 2026-10-02): the package ships PV's self-contained unit tests so a composer can
 # run them over a composed tree (story 68-9). Run every shipped test, through the exported vitest
-# config factory, over the copied source: they must all pass outside PV's monorepo.
-SHIPPED_TESTS="$(find "$APP/src" -name '*.test.ts' | wc -l)"
-readonly SHIPPED_TESTS
-log "running the ${SHIPPED_TESTS} shipped unit test files with the exported vitest config"
-if [[ "$SHIPPED_TESTS" -eq 0 ]]; then
-  echo 'fixture: the package shipped no unit tests' >&2
-  exit 1
+# config factory, over the copied source: they must all pass outside PV's monorepo. The Story 68-6
+# full-override and response-recording variants only build and serve (the compose and ok variants
+# already run the tests from the same tarball).
+if [[ "$VARIANT" != 'compose-full-override' && "$VARIANT" != 'pv-responses' ]]; then
+  SHIPPED_TESTS="$(find "$APP/src" -name '*.test.ts' | wc -l)"
+  log "running the ${SHIPPED_TESTS} shipped unit test files with the exported vitest config"
+  if [[ "$SHIPPED_TESTS" -eq 0 ]]; then
+    echo 'fixture: the package shipped no unit tests' >&2
+    exit 1
+  fi
+  (cd "$APP" && clean_env "$NODE_BIN" node_modules/vitest/vitest.mjs run --reporter=dot "${VITEST_ARGS[@]}")
+  log "OK: ${SHIPPED_TESTS} shipped unit test files passed"
 fi
-(cd "$APP" && clean_env "$NODE_BIN" node_modules/vitest/vitest.mjs run --reporter=dot "${VITEST_ARGS[@]}")
-log "OK: ${SHIPPED_TESTS} shipped unit test files passed"
 
-# A stand-in for the PV API: /ready and /health say "ready, native login enabled", which is all
-# /login's server-side load needs to render the sign-in form. Everything else is a JSON 404.
+# A stand-in for the PV API (api-stub.mjs): /ready and /health say "ready, native login enabled",
+# which is all /login's server-side load needs to render the sign-in form.
 start_api_stub
 readonly API_PORT
 
@@ -326,5 +326,10 @@ if ! grep -q '<form' "$WORK/login.html" || ! grep -q '<title>Sign in | Project V
 fi
 if [[ "$COMPOSE_MODE" == 1 ]]; then
   compose_http_checks "$PORT"
+fi
+if [[ "$VARIANT" == 'pv-responses' ]]; then
+  # shellcheck source=pv-responses.sh
+  source "$FIXTURE_DIR/pv-responses.sh"
+  pv_record_responses "$PORT"
 fi
 log "OK: /login server-rendered the sign-in form (HTTP 200) from $(basename "$TARBALL")"

@@ -1,7 +1,15 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { makeWorld, manifest, sha, useWorlds, writeAll } from '../../tests/compose-test-helpers.js'
+import {
+  makeWorld,
+  manifest,
+  sha,
+  shaOf,
+  useWorlds,
+  writeAll,
+} from '../../tests/compose-test-helpers.js'
+import { hasher } from '../sources.js'
 import {
   invalidateVirtualModules,
   pvComposeDev,
@@ -115,6 +123,29 @@ describe('pvComposeDev: watching (AC-13)', () => {
     expect(JSON.stringify(fake.sent)).toContain('Collision')
     expect(readFileSync(join(world.app, 'src/routes/login/+page.svelte'), 'utf8')).toBe(
       '<h1>Login</h1>\n'
+    )
+  })
+
+  it('a restarted dev server (new plugin instance, same process) updates the tree incrementally (Story 68.6)', async () => {
+    const { world } = await started()
+    // A file another plugin generated inside the composed tree (Paraglide's output, for example).
+    writeAll(world.app, { 'src/lib/paraglide/server.js': 'export const generated = 1\n' })
+    writeAll(world.pack, { [DASHBOARD]: 'cm v3\n' })
+    const restarted = pvComposeDev({
+      appRoot: world.app,
+      packRoot: world.pack,
+      hostDir: world.host,
+      manifest: manifest({
+        routes: { overrides: [{ path: DASHBOARD, hostSha256: sha(world, DASHBOARD) }] },
+      }),
+    })
+    await (restarted.configureServer as (server: DevServerLike) => Promise<void>)(
+      fakeServer().server
+    )
+    const hash = hasher()
+    expect(hash(join(world.app, DASHBOARD))).toBe(shaOf('cm v3\n'))
+    expect(hash(join(world.app, 'src/lib/paraglide/server.js'))).toBe(
+      shaOf('export const generated = 1\n')
     )
   })
 

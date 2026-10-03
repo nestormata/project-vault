@@ -13,6 +13,13 @@ const MANIFEST_BASENAME = 'pv-ui.manifest'
 // provides only the registry and the invalidation hook they plug into.
 const virtualPrefixes = new Set<string>()
 
+// Story 68.6: the signatures of every tree this process composed, by app root. A dev-server restart
+// (pvHooks() restarts it when the hooks or protected-path contribution changes) creates a new plugin
+// instance in the same process; it then brings the existing tree up to date incrementally instead
+// of swapping in a fresh copy, which would drop files other plugins generated inside it (for
+// example the Paraglide output under src/lib/paraglide).
+const composedTrees = new Map<string, Signatures>()
+
 /** Registers a virtual module id prefix (for example `virtual:pv-inject/`) so a manifest change
  * invalidates every module under it, in both the client and the SSR module graphs. */
 export function registerVirtualModulePrefix(prefix: string): void {
@@ -69,7 +76,10 @@ function inside(root: string, path: string): boolean {
 export function pvComposeDev(options: PvComposeDevOptions): Plugin {
   const packRoot = realpathSync(options.packRoot)
   const hostRoot = realpathSync(options.hostDir)
+  const treeKey = resolve(options.appRoot)
   const state: { signatures?: Signatures; failed: boolean } = { failed: false }
+  const previous = composedTrees.get(treeKey)
+  if (previous !== undefined) state.signatures = previous
 
   async function compose(): Promise<{ problems: string[] }> {
     const composed = await plan(options)
@@ -79,6 +89,7 @@ export function pvComposeDev(options: PvComposeDevOptions): Plugin {
       state.signatures === undefined
         ? signaturesOf(composed)
         : applyIncremental(composed, options.appRoot, state.signatures)
+    composedTrees.set(treeKey, state.signatures)
     return { problems: [] }
   }
 
