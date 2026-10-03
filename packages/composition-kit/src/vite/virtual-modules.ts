@@ -1,27 +1,14 @@
 // The virtual-module registry of the kit's Vite plugins: each plugin registers the id prefix of
 // the modules it serves (`virtual:pv-inject/`; 68-5 and 68-7 add theirs), and a manifest change
 // invalidates every registered module in both module graphs.
+import type { DevServerLike } from './dev-server.js'
+
 const virtualPrefixes = new Set<string>()
 
 /** Registers a virtual module id prefix (for example `virtual:pv-inject/`) so a manifest change
  * invalidates every module under it, in both the client and the SSR module graphs. */
 export function registerVirtualModulePrefix(prefix: string): void {
   virtualPrefixes.add(prefix)
-}
-
-export interface ModuleGraphLike {
-  idToModuleMap: Map<string, unknown>
-  invalidateModule: (module: never) => void
-}
-
-/** The subset of Vite's dev server the plugin uses (Vite 8's `environments` API). */
-export interface DevServerLike {
-  watcher: {
-    add: (paths: string | readonly string[]) => unknown
-    on: (event: string, listener: (path: string) => void) => unknown
-  }
-  ws: { send: (payload: unknown) => void }
-  environments: Record<string, { moduleGraph: ModuleGraphLike }>
 }
 
 /** Invalidates every registered virtual module in the `client` and `ssr` environments' module

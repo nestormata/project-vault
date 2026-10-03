@@ -58,6 +58,46 @@ describe('applyIncremental (AC-13: dev mode mirrors changes)', () => {
     expect(state.has(DASHBOARD)).toBe(true)
   })
 
+  // Story 68.5 AC-2/AC-7: the replacement map follows the manifest in dev mode, and the CM file of
+  // a removed replacement leaves with it.
+  it('refreshes the replacement map when a replacement is added or removed', async () => {
+    const world = makeWorld({ packFiles: { 'r/Search.svelte': '<input />\n' } })
+    const options = { appRoot: world.app, packRoot: world.pack, hostDir: world.host }
+    const base = await plan({ ...options, manifest: manifest() })
+    apply(base, world.app)
+    const mapPath = join(world.app, '.pv-compose/replacements.json')
+    expect(JSON.parse(readFileSync(mapPath, 'utf8'))).toEqual({
+      schemaVersion: 1,
+      replacements: [],
+    })
+    let state = signaturesOf(base)
+
+    const target = 'src/lib/components/shell/GlobalSearch.svelte'
+    const withReplacement = manifest({
+      replacements: {
+        '$lib/components/shell/GlobalSearch.svelte': {
+          with: './r/Search.svelte',
+          hostSha256: sha(world, target),
+        },
+      },
+    })
+    state = applyIncremental(
+      await plan({ ...options, manifest: withReplacement }),
+      world.app,
+      state
+    )
+    expect(readFileSync(mapPath, 'utf8')).toContain('"with": "src/lib/_cm/r/Search.svelte"')
+    expect(existsSync(join(world.app, 'src/lib/_cm/r/Search.svelte'))).toBe(true)
+
+    state = applyIncremental(await plan({ ...options, manifest: manifest() }), world.app, state)
+    expect(JSON.parse(readFileSync(mapPath, 'utf8'))).toEqual({
+      schemaVersion: 1,
+      replacements: [],
+    })
+    expect(existsSync(join(world.app, 'src/lib/_cm/r/Search.svelte'))).toBe(false)
+    expect(state.size).toBeGreaterThan(0)
+  })
+
   it('adds new pack files (M2) and removes files that left the plan', async () => {
     const world = makeWorld({ packFiles: { [BILLING_PAGE]: 'b\n' } })
     const base = await plan({

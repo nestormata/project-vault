@@ -488,6 +488,25 @@ describe('AC-6: replacements', () => {
     ])
   })
 
+  it('fails when two manifest keys resolve to the same host file (no silent last-wins)', async () => {
+    const world = makeWorld({
+      packFiles: { [REPLACEMENT_FILE]: 'x\n', 'replacements/other.svelte': 'y\n' },
+    })
+    const hostSha256 = sha(world, HOST_PATH)
+    const result = await run(
+      world,
+      manifest({
+        replacements: {
+          [TARGET]: { with: REPLACEMENT_WITH, hostSha256 },
+          '$lib/components/shell/GlobalSearch': { with: './replacements/other.svelte', hostSha256 },
+        },
+      })
+    )
+    expect(result.messages).toEqual([
+      `Conflict: ${HOST_PATH} is replaced twice (replacements ${TARGET} and $lib/components/shell/GlobalSearch). Choose one.`,
+    ])
+  })
+
   it('fails a missing target, a missing "with", a removed target and drift', async () => {
     const world = makeWorld({ packFiles: { [REPLACEMENT_FILE]: 'x\n' } })
     expect((await run(world, replace(world, '$lib/components/nope.svelte'))).messages).toEqual([

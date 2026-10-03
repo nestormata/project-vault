@@ -288,13 +288,30 @@ function planOverrides(
   }
 }
 
+/** TypeScript's "write `.js`, mean `.ts`" convention: the import spelling and the file on disk. */
+const TS_SPELLING: ReadonlyMap<string, string> = new Map([
+  ['.js', '.ts'],
+  ['.jsx', '.tsx'],
+  ['.mjs', '.mts'],
+])
+
+function tsSpelling(base: string): string[] {
+  for (const [js, ts] of TS_SPELLING) {
+    if (base.endsWith(js)) return [`${base.slice(0, -js.length)}${ts}`]
+  }
+  return []
+}
+
+/** The web-host files a `$lib/...` key can mean: the spelled path, with an extension appended, as a
+ * directory index, or (for `.js`, `.jsx`, `.mjs`) as the TypeScript file PV's import really names. */
 export function resolveLibTarget(target: string, hostPaths: ReadonlySet<string>): string[] {
   const base = `${LIB}${target.slice('$lib/'.length)}`
   const candidates = [
     ...LIB_EXTENSIONS.map((extension) => `${base}${extension}`),
+    ...tsSpelling(base),
     ...LIB_INDEXES.map((suffix) => `${base}${suffix}`),
   ]
-  return candidates.filter((candidate) => hostPaths.has(candidate))
+  return [...new Set(candidates)].filter((candidate) => hostPaths.has(candidate))
 }
 
 function replacementTarget(input: OverlayInput, target: string, out: OverlayResult): string | null {
@@ -380,11 +397,22 @@ function planReplacements(
   removals: readonly Removal[],
   out: OverlayResult
 ): void {
+  const claimedBy = new Map<string, string>()
   for (const [target, entry] of Object.entries(input.manifest.replacements ?? {})) {
     const hostPath = replacementTarget(input, target, out)
     const withRel = normalizePackPath(entry.with)
     // A missing "with" file is reported once, with the manifest's other named files (plan.ts).
     if (hostPath === null || withRel === null || !input.pack.files.has(withRel)) continue
+    // Two spellings of one file (`$lib/x` and `$lib/x.ts`) must not both be accepted: the map
+    // would hold two entries for one host and the later one would silently win.
+    const first = claimedBy.get(hostPath)
+    if (first !== undefined) {
+      out.problems.push(
+        `Conflict: ${hostPath} is replaced twice (replacements ${first} and ${target}). Choose one.`
+      )
+      continue
+    }
+    claimedBy.set(hostPath, target)
     const conflict = replacementConflict(target, hostPath, input, removals)
     if (conflict === null) planReplacement(target, entry, hostPath, withRel, input, out)
     else out.problems.push(conflict)

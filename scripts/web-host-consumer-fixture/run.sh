@@ -92,6 +92,7 @@ clean_env() {
   env -i \
     PATH="$NODE_DIR:/usr/local/bin:/usr/bin:/bin" \
     HOME="$WORK/home" \
+    PV_FIXTURE_VARIANT="$VARIANT" \
     npm_config_cache="$CACHE" \
     npm_config_update_notifier=false \
     "$@"
@@ -231,6 +232,10 @@ if [[ "$VARIANT" == 'compose' || "$VARIANT" == 'compose-types-negative' ]]; then
 fi
 if [[ "$VARIANT" == 'compose' ]]; then
   compose_plant_probe
+  compose_plant_parity_test
+fi
+if [[ "$VARIANT" == 'compose-missing-with' ]]; then
+  compose_remove_replacement_file
 fi
 
 # The dev variant never builds: it needs the API stub, then drives the Vite dev server.
@@ -265,7 +270,7 @@ if [[ ! -f "$APP/build/index.js" || ! -d "$APP/build/client/_app" ]]; then
   echo 'fixture: vite build produced no build/index.js or build/client/_app' >&2
   exit 1
 fi
-if [[ "$VARIANT" == 'compose-server-leak' || "$VARIANT" == 'compose-server-twin' ]]; then
+if [[ "$VARIANT" == 'compose-server-leak' || "$VARIANT" == 'compose-server-twin' || "$VARIANT" == 'compose-replace-leak' ]]; then
   log "OK: vite build succeeded for $VARIANT"
   exit 0
 fi

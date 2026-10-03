@@ -13,6 +13,7 @@ import {
   type PackResult,
 } from './pack-web-host.js'
 import { makeRecipe, recipeRunsCommand, workflowRunCommands } from './lib/ci-wiring.js'
+import { readComponentIndex } from './lib/web-host/component-index.js'
 import { isTestFile } from './lib/web-host/import-graph.js'
 import { packageJsonProblems, packageJsonShape } from './lib/web-host/package-manifest.js'
 import {
@@ -351,10 +352,35 @@ describe('compatibility manifest (Story 68.2 AC-9)', () => {
   })
 
   it('packs only the manifests generated so far, never an empty stub for a later one', () => {
+    // component-index.json (Story 68.5) and injection-points.json (Story 68-4) are generated on
+    // every pack; nav-ids.json (68-7) is not, and a missing one is never stubbed.
     expect(paths.filter((path) => path.startsWith('manifests/'))).toEqual([
       'manifests/compatibility.json',
+      'manifests/component-index.json',
       'manifests/injection-points.json',
     ])
+  })
+
+  it('ships a parsable component-index.json that lists real shell components (Story 68.5 AC-9)', async () => {
+    const index = readComponentIndex(
+      await fileText(join(STAGE_DIR, 'manifests', 'component-index.json'))
+    )
+    expect(index).not.toBeNull()
+    const byPath = new Map((index?.components ?? []).map((entry) => [entry.path, entry]))
+    const search = byPath.get('src/lib/components/shell/GlobalSearch.svelte')
+    expect(search?.stability).toBe('stable')
+    expect(byPath.get('src/lib/components/shell/ShellAccount.svelte')?.stability).toBe('stable')
+    expect(byPath.get('src/lib/components/shell/Footer.svelte')?.stability).toBe('unmarked')
+    expect(byPath.get('src/lib/server/require-user.ts')).toBeDefined()
+    expect(byPath.get('src/lib/api/audit.ts')).toBeDefined()
+    // hash equals the sha256 of the shipped file's raw bytes (what a pack author puts in hostSha256)
+    expect(search?.hash).toBe(
+      sha256(await fileBytes(join(STAGE_DIR, 'src/lib/components/shell/GlobalSearch.svelte')))
+    )
+    for (const path of byPath.keys()) {
+      expect(isTestFile(path), path).toBe(false)
+      expect(path.startsWith('src/routes/'), path).toBe(false)
+    }
   })
 })
 

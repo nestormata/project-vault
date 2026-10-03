@@ -35,6 +35,7 @@ import { parseArgs } from 'node:util'
 import { DEFAULT_RELEASE_REPOSITORY, releaseImageRef } from './lib/release-image.js'
 import { resolveBin, trustedGit } from './lib/trusted-executable.js'
 import { extensionApiVersion } from './lib/version-triangle.js'
+import { buildComponentIndex, componentIndexText } from './lib/web-host/component-index.js'
 import {
   compareCodeUnits,
   isTestFile,
@@ -405,15 +406,20 @@ function writeTsconfigBase(): void {
   )
 }
 
-/** Copies the later stories' generated manifests that exist in apps/web/manifests/ (68-4, 68-5,
- * 68-7); a missing one is simply not packed, never stubbed. */
+/** Copies the later stories' generated manifests that exist in apps/web/manifests/ (68-4, 68-7); a
+ * missing one is simply not packed, never stubbed. `component-index.json` (Story 68.5) is generated
+ * into the staging directory from the staged `src/lib` tree on every pack and never committed, so a
+ * stale copy cannot exist: it is written last and wins over any file of the same name. */
 function packOptionalManifests(): string[] {
   const existing = new Set(globSync('*.json', { cwd: join(WEB_DIR, 'manifests') }))
-  const packed = optionalManifestsToPack(existing)
-  for (const name of packed) {
+  for (const name of optionalManifestsToPack(existing)) {
     cpSync(join(WEB_DIR, 'manifests', name), join(STAGE_DIR, 'manifests', name))
   }
-  return packed
+  writeFileSync(
+    join(STAGE_DIR, 'manifests', 'component-index.json'),
+    componentIndexText(buildComponentIndex(STAGE_DIR))
+  )
+  return optionalManifestsToPack(new Set([...existing, 'component-index.json']))
 }
 
 export async function packWebHost(options: PackOptions): Promise<PackResult> {

@@ -30,11 +30,17 @@ describe('package.json (Story 68.3 AC-1)', () => {
   it('exposes the pv-compose bin, the library entry and the Vite plugin entry', () => {
     expect(manifest.bin).toEqual({ 'pv-compose': './dist/cli.js' })
     const exportedEntries = Object.keys(manifest.exports as object).sort()
-    expect(exportedEntries).toEqual(['.', './package.json', './vite'])
+    expect(exportedEntries).toEqual(['.', './package.json', './pv-original', './vite'])
   })
 
-  it('ships only dist, LICENSE, README.md and CHANGELOG.md', () => {
-    expect(manifest.files).toEqual(['dist', 'LICENSE', 'README.md', 'CHANGELOG.md'])
+  it('ships only dist, the pv-original typings, LICENSE, README.md and CHANGELOG.md', () => {
+    expect(manifest.files).toEqual([
+      'dist',
+      'pv-original.d.ts',
+      'LICENSE',
+      'README.md',
+      'CHANGELOG.md',
+    ])
   })
 
   it('runs no code on install and depends on no workspace package or web-host', () => {

@@ -16,7 +16,7 @@
 
 compose_pack_name() {
   case "$VARIANT" in
-    compose-server-leak | compose-server-twin) echo negative-pack ;;
+    compose-server-leak | compose-server-twin | compose-replace-leak | compose-replace-first-leak) echo negative-pack ;;
     *) echo mini-pack ;;
   esac
   return 0
@@ -47,7 +47,9 @@ compose_prepare_app() {
   # A pack in a workspace resolves @project-vault/composition-kit from the install next to it.
   ln -s "$APP/node_modules" "$PACK/node_modules"
   case "$VARIANT" in
-    compose-server-twin) rm -rf "$PACK/src/routes/leak" ;;
+    compose-server-leak) rm -rf "$PACK/src/routes/leak-replaced" ;;
+    compose-replace-leak | compose-replace-first-leak) rm -rf "$PACK/src/routes/leak" ;;
+    compose-server-twin) rm -rf "$PACK/src/routes/leak" "$PACK/src/routes/leak-replaced" ;;
     compose-types-negative)
       sed -i 's/data\.plan/data.nope/' "$PACK/src/routes/billing/+page.svelte"
       ;;
@@ -55,9 +57,19 @@ compose_prepare_app() {
   esac
   readonly PACK
   # The pack overrides PV's recovery page, so PV's own test of that page no longer applies to the
-  # composed tree. Story 68-9 turns this into the lock's `excludedPvTests`; until then the fixture
-  # leaves that one test directory out of its run.
-  VITEST_ARGS=(--exclude '**/node_modules/**' --exclude 'src/routes/*/recovery/**')
+  # composed tree. Story 68.5 (`pvReplace()` is in this app's vitest plugins) makes the same true of
+  # a test whose subject is a REPLACED file: it now exercises CM's replacement, which changes the
+  # behaviour the test pins on purpose (the audit download URL, the org name `requireUser` returns,
+  # the header markup). Story 68-9 turns both into the lock's `excludedPvTests`, keyed on the
+  # replaced host file; until then the fixture leaves exactly these tests out of its run.
+  VITEST_ARGS=(
+    --exclude '**/node_modules/**'
+    --exclude 'src/routes/*/recovery/**'
+    --exclude 'src/lib/api/audit.test.ts'
+    --exclude 'src/lib/server/require-platform-operator.test.ts'
+    --exclude 'src/lib/components/audit/AuditExportPanel.test.ts'
+    --exclude 'src/lib/components/shell/AppShell.characterization.test.ts'
+  )
   return 0
 }
 
@@ -149,6 +161,19 @@ compose_plant_probe() {
   return 0
 }
 
+# Story 68.5 AC-16: a PV-style unit test over the composed tree that imports a replaced module. It
+# is written into the composed copy (gitignored output), so the kit's own vitest never sees it.
+compose_plant_parity_test() {
+  cp "$FIXTURE_DIR/compose-app/replacement-parity.test.ts.txt" "$APP/src/lib/replacement-parity.test.ts"
+  return 0
+}
+
+# Story 68.5 AC-12: the map names a CM file that is not there. `vite build` must fail naming the fix.
+compose_remove_replacement_file() {
+  rm "$APP/src/lib/_cm/replacements/Footer.svelte"
+  return 0
+}
+
 compose_assert_css() {
   local css
   css="$(cat "$APP"/build/client/_app/immutable/assets/*.css)"
@@ -237,7 +262,15 @@ compose_http_checks() {
   compose_expect "$port" /billing/export 200 '"exported":true'
   compose_expect "$port" /recovery 200 'Acme recovery'
   compose_expect "$port" /status/abc 404 ''
-  log "OK: /login, /billing, /billing/export, /recovery served; the removed /status route is 404"
+  # Story 68.5 AC-12 (M4): PV's own (auth) layout and AppShell import PV's Footer and ShellAccount;
+  # both resolve to CM's replacements, and PV's original output is still inside the wrap.
+  compose_expect "$port" /login 200 'Acme footer'
+  compose_expect "$port" /m4 200 'Acme footer'
+  compose_expect "$port" /m4 200 'Acme health: ok'
+  compose_expect "$port" /m4 200 'Role: owner'
+  compose_expect "$port" /m4 200 'Org: Acme Inc (acme-server)'
+  compose_expect "$port" /m4 200 '/api/v1/org/audit/exports/job-1/download?via=acme'
+  log "OK: /login, /billing, /billing/export, /recovery, /m4 served; the removed /status route is 404"
   return 0
 }
 

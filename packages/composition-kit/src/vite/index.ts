@@ -4,17 +4,18 @@ import type { Plugin } from 'vite'
 import { apply } from '../apply.js'
 import { applyIncremental, signaturesOf, type Signatures } from '../incremental.js'
 import { plan, type ComposeOptions } from '../plan.js'
+import type { DevServerLike } from './dev-server.js'
 import { createComposeQueue, type ComposeBatch } from './queue.js'
-import { invalidateVirtualModules, type DevServerLike } from './virtual-modules.js'
+import { invalidateVirtualModules } from './virtual-modules.js'
+
+export { pvReplace, PV_ORIGINAL_PREFIX } from './replace.js'
+export type { PvReplaceOptions } from './replace.js'
+export type { DevServerLike } from './dev-server.js'
 
 const DEFAULT_DEBOUNCE_MS = 100
 const MANIFEST_BASENAME = 'pv-ui.manifest'
 
-export {
-  invalidateVirtualModules,
-  registerVirtualModulePrefix,
-  type DevServerLike,
-} from './virtual-modules.js'
+export { invalidateVirtualModules, registerVirtualModulePrefix } from './virtual-modules.js'
 export { BEHAVIOR_ID, POINT_PREFIX, pvInject, type PvInjectOptions } from './inject.js'
 
 export interface PvComposeDevOptions extends ComposeOptions {

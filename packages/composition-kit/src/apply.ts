@@ -15,6 +15,7 @@ import { dirname, join, parse } from 'node:path'
 import { writeFileAtomic } from './lock.js'
 import { patchAcceptances, type PatchEntry } from './lock-patch.js'
 import type { FileSource } from './overlay.js'
+import { writeReplacementMap } from './replacement-map.js'
 import { OWNED_DIRECTORIES } from './sources.js'
 import type { ComposePlan } from './plan.js'
 
@@ -88,6 +89,7 @@ export function apply(plan: ComposePlan, appRoot: string): void {
     for (const owned of OWNED_DIRECTORIES) mkdirSync(join(fresh, owned), { recursive: true })
     for (const [dest, source] of plan.files) writeSource(join(fresh, dest), source)
     swapIn(appRoot, stage)
+    if (plan.replacementMapText !== undefined) writeReplacementMap(appRoot, plan.replacementMapText)
     if (plan.lockText !== undefined) writeFileAtomic(plan.lockPath, plan.lockText)
   } finally {
     rmSync(stage, { recursive: true, force: true })
