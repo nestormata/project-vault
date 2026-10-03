@@ -128,9 +128,8 @@ function storageEntryProblems(api: string, entry: unknown, index: number): strin
   const label = `browserStorage.${api}[${index}]`
   if (!isRecord(entry)) return [`${label} must be an object`]
   const file = pathProblem(`${label}.file`, entry.file)
-  const reasonProblem = nonEmptyString(entry.reason)
-    ? []
-    : [`${label} has no reason.${ready(`browserStorage.${api}`, STORAGE_SNIPPET)}`]
+  const hint = ready(`browserStorage.${api}`, STORAGE_SNIPPET)
+  const reasonProblem = nonEmptyString(entry.reason) ? [] : [`${label} has no reason.${hint}`]
   return [...(file === null ? [] : [file]), ...reasonProblem, ...keyProblems(label, entry.keys)]
 }
 
