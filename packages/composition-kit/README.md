@@ -125,11 +125,21 @@ including ones a later web-host adds, are inherited). web-host lists every surfa
 ```ts
 // nav.ts (client-safe: it renders in the browser too, so never import $lib/server/*)
 import { resolve } from '$app/paths'
-import { defineNavDelta, hide, insert, move, relabel, replace } from '@project-vault/composition-kit/nav'
+import {
+  defineNavDelta,
+  hide,
+  insert,
+  move,
+  relabel,
+  replace,
+} from '@project-vault/composition-kit/nav'
 
 export default defineNavDelta({
   primary: [
-    insert({ after: 'primary.projects', item: { id: 'cm.billing', label: () => t('billing'), href: () => resolve('/billing') } }),
+    insert({
+      after: 'primary.projects',
+      item: { id: 'cm.billing', label: () => t('billing'), href: () => resolve('/billing') },
+    }),
     insert({ parent: 'primary', item: { id: 'cm.ops', label: 'Ops', children: [] } }),
     move('primary.health', { parent: 'cm.ops' }),
     relabel('primary.secrets', () => t('vault')),
