@@ -188,3 +188,9 @@ export function findNodePath(nodes: readonly NavNode[], id: string): NavNode[] |
   }
   return undefined
 }
+
+/** A node and its descendants, depth first: how single-link surfaces (back links, auth links)
+ * render a node's children, as sibling links after it. */
+export function withDescendants(node: NavNode): NavNode[] {
+  return [node, ...node.children.flatMap(withDescendants)]
+}

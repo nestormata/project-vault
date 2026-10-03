@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { resolve } from '$app/paths'
+  import NavEntry from '$lib/navigation/NavEntry.svelte'
+  import { renderSurface, withDescendants } from '$lib/navigation/build-surface.js'
+  import { MFA_SETTINGS_PATH } from '$lib/navigation/surfaces/shell.js'
   import type { ResolvedExtensionNavItem } from '$lib/api/extension-panel.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import Footer from './Footer.svelte'
@@ -29,7 +31,15 @@
     injected?: App.PageData['__inject']
   } = $props()
   let logoutError = $state(null)
-  const MFA_SETTINGS_PATH = '/settings/security'
+
+  // Story 68.7 (S5): the MFA banner's message names `/settings/security`; the link spliced in its
+  // place is the `shell.mfa-banner` surface's data (its children follow it as sibling links). With
+  // that item hidden or removed, the message renders as plain text.
+  const bannerMessage = $derived(user.mfaStatus.bannerMessage ?? '')
+  const bannerLinks = $derived(
+    renderSurface('shell.mfa-banner', { pathname: '', bannerMessage }).flatMap(withDescendants)
+  )
+  const bannerAt = $derived(bannerMessage.indexOf(MFA_SETTINGS_PATH))
 </script>
 
 <div class="min-h-screen bg-slate-50 text-slate-950">
@@ -42,6 +52,7 @@
         <PrimaryNav
           {onsearch}
           isPlatformOperator={user.isPlatformOperator}
+          {user}
           {hasUiPanelExtension}
           {extensionNavItems}
         />
@@ -55,15 +66,11 @@
     </div>
     {#if user.mfaStatus.enrollmentRequired || user.mfaStatus.bannerMessage}
       <div class="border-t border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-        {#if user.mfaStatus.bannerMessage && user.mfaStatus.bannerMessage.includes(MFA_SETTINGS_PATH)}
-          {user.mfaStatus.bannerMessage.slice(
-            0,
-            user.mfaStatus.bannerMessage.indexOf(MFA_SETTINGS_PATH)
-          )}<a class="font-medium underline" href={resolve(MFA_SETTINGS_PATH)}
-            >{MFA_SETTINGS_PATH}</a
-          >{user.mfaStatus.bannerMessage.slice(
-            user.mfaStatus.bannerMessage.indexOf(MFA_SETTINGS_PATH) + MFA_SETTINGS_PATH.length
-          )}
+        {#if bannerAt >= 0 && bannerLinks.length > 0}
+          {bannerMessage.slice(0, bannerAt)}{#each bannerLinks as link (link.id)}<NavEntry
+              node={link}
+              class="font-medium underline"
+            />{/each}{bannerMessage.slice(bannerAt + MFA_SETTINGS_PATH.length)}
         {:else}
           {user.mfaStatus.bannerMessage}
         {/if}
