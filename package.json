@@ -45,6 +45,8 @@
     "check-extension-api-license": "tsx scripts/check-extension-api-license.ts",
     "check-composition-kit-boundary": "tsx scripts/check-composition-kit-boundary.ts",
     "check-injection-point-coverage": "tsx scripts/check-injection-point-coverage.ts",
+    "check-nav-ids": "tsx scripts/check-nav-ids.ts",
+    "check-nav-surfaces": "tsx scripts/check-nav-surfaces.ts",
     "check-migration-compatibility": "tsx scripts/migration-compatibility-check.ts",
     "check-public-safety": "tsx scripts/check-public-safety.ts",
     "check-form-guidance": "tsx scripts/check-form-guidance.ts",

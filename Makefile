@@ -230,6 +230,11 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	@# Story 68.4: every PV route file exposes the standard injection points
 	pnpm check-injection-point-coverage
 	pnpm vitest run scripts/check-injection-point-coverage.test.ts
+	@# Story 68.7: every PV nav item has a stable id; every nav surface is rendered from nav data
+	pnpm check-nav-ids
+	pnpm vitest run scripts/check-nav-ids.test.ts
+	pnpm check-nav-surfaces
+	pnpm vitest run scripts/check-nav-surfaces.test.ts
 	pnpm vitest run scripts/extension-authoring-docs.test.ts # Story 59.2 AC-3 authoring-doc drift guard
 	pnpm check-native-credential-surface
 	pnpm check-no-sonar-suppressions # Story 43.9 AC-9: no unsigned Sonar suppressions
