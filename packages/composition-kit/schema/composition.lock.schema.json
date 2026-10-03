@@ -165,6 +165,24 @@
         "properties": { "name": { "type": "string" }, "file": { "$ref": "#/definitions/nullableString" } }
       }
     },
+    "injections": {
+      "description": "Story 68.4: every injection contribution (composed paths) in point and order order. Optional: a lock written before it existed is read as having none.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["point", "component", "order", "load", "actions", "routeId", "scope"],
+        "properties": {
+          "point": { "type": "string" },
+          "component": { "type": "string" },
+          "order": { "type": "number" },
+          "load": { "$ref": "#/definitions/nullableString" },
+          "actions": { "$ref": "#/definitions/nullableString" },
+          "routeId": { "$ref": "#/definitions/nullableString" },
+          "scope": { "$ref": "#/definitions/nullableString" }
+        }
+      }
+    },
     "navIdsReferenced": {
       "type": "array",
       "items": {

@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { ApiClientError } from '$lib/api/client.js'
 import { getProject, getProjectDashboard } from '$lib/api/projects.js'
 import { requireUser } from '$lib/server/require-user.js'
@@ -7,7 +8,7 @@ import type { PageServerLoad } from './$types.js'
 // loader's shape (only 404 is special-cased to an honest not-found result; every other error,
 // including the 422 a malformed project ID produces, propagates unmodified — AC-4 requires reusing
 // that exact established pattern rather than inventing new validation here).
-export const load: PageServerLoad = async ({ params, fetch, locals }) => {
+const ownLoad = (async ({ params, fetch, locals }) => {
   const orgRole = requireUser(locals).orgRole
 
   try {
@@ -28,4 +29,8 @@ export const load: PageServerLoad = async ({ params, fetch, locals }) => {
     }
     throw error
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(ownLoad, '/(app)/projects/[projectId]', 'page')
+
+export const actions = injectActions('/(app)/projects/[projectId]')

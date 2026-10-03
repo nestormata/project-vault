@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { invalidateAll } from '$app/navigation'
   import { resolve } from '$app/paths'
   import {
@@ -136,6 +137,8 @@
   <title>{data.machineUser?.name ?? 'Machine user'} | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="project.machine-users-detail.before" data={data?.__inject} />
+<InjectionPoint name="project.machine-users-detail.header.actions" data={data?.__inject} />
 <section class="space-y-6">
   {#if data.notFound || !data.machineUser}
     <PageAlertBanner
@@ -368,3 +371,4 @@
     </a>
   {/if}
 </section>
+<InjectionPoint name="project.machine-users-detail.after" data={data?.__inject} />

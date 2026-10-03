@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import { updateAuditForwarding, updateAuditRetention } from '$lib/api/audit.js'
   import { ApiClientError } from '$lib/api/client.js'
@@ -139,6 +140,8 @@
   <title>Forwarding & Retention | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="settings.audit-forwarding.before" data={data?.__inject} />
+<InjectionPoint name="settings.audit-forwarding.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-3xl px-4 py-8">
   <h1 class="text-2xl font-bold text-gray-900">Forwarding &amp; Retention</h1>
   <a href={resolve('/settings/audit')} class="mt-2 inline-block text-sm text-indigo-600 underline">
@@ -371,3 +374,4 @@
     </div>
   {/if}
 </div>
+<InjectionPoint name="settings.audit-forwarding.after" data={data?.__inject} />

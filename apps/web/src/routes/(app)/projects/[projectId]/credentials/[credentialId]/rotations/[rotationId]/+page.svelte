@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { onDestroy, onMount } from 'svelte'
   import { resolve } from '$app/paths'
   import { ApiClientError } from '$lib/api/client.js'
@@ -336,6 +337,8 @@
   })
 </script>
 
+<InjectionPoint name="project.credentials-rotations-detail.before" data={data?.__inject} />
+<InjectionPoint name="project.credentials-rotations-detail.header.actions" data={data?.__inject} />
 {#snippet noDependenciesCheckbox()}
   <label class="mt-3 flex items-start gap-2 text-sm text-slate-800">
     <input
@@ -618,3 +621,4 @@
     </a>
   {/if}
 </section>
+<InjectionPoint name="project.credentials-rotations-detail.after" data={data?.__inject} />

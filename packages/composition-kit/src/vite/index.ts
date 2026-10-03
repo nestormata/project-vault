@@ -6,6 +6,7 @@ import { applyIncremental, signaturesOf, type Signatures } from '../incremental.
 import { plan, type ComposeOptions } from '../plan.js'
 import type { DevServerLike } from './dev-server.js'
 import { createComposeQueue, type ComposeBatch } from './queue.js'
+import { invalidateVirtualModules } from './virtual-modules.js'
 
 export { pvReplace, PV_ORIGINAL_PREFIX } from './replace.js'
 export type { PvReplaceOptions } from './replace.js'
@@ -14,9 +15,8 @@ export type { DevServerLike } from './dev-server.js'
 const DEFAULT_DEBOUNCE_MS = 100
 const MANIFEST_BASENAME = 'pv-ui.manifest'
 
-// Virtual modules registered by later stories (68-4 `virtual:pv-inject/*`, 68-5, 68-7). This story
-// provides only the registry and the invalidation hook they plug into.
-const virtualPrefixes = new Set<string>()
+export { invalidateVirtualModules, registerVirtualModulePrefix } from './virtual-modules.js'
+export { BEHAVIOR_ID, POINT_PREFIX, pvInject, type PvInjectOptions } from './inject.js'
 
 // Story 68.6: the signatures of every tree this process composed, by app root. A dev-server restart
 // (pvHooks() restarts it when the hooks or protected-path contribution changes) creates a new plugin
@@ -24,26 +24,6 @@ const virtualPrefixes = new Set<string>()
 // of swapping in a fresh copy, which would drop files other plugins generated inside it (for
 // example the Paraglide output under src/lib/paraglide).
 const composedTrees = new Map<string, Signatures>()
-
-/** Registers a virtual module id prefix (for example `virtual:pv-inject/`) so a manifest change
- * invalidates every module under it, in both the client and the SSR module graphs. */
-export function registerVirtualModulePrefix(prefix: string): void {
-  virtualPrefixes.add(prefix)
-}
-
-/** Invalidates every registered virtual module in the `client` and `ssr` environments' module
- * graphs (`server.environments.<env>.moduleGraph`, not the legacy `server.moduleGraph` alone). */
-export function invalidateVirtualModules(server: DevServerLike): void {
-  const prefixes = [...virtualPrefixes].flatMap((prefix) => [prefix, `\0${prefix}`])
-  const environments = new Map(Object.entries(server.environments))
-  for (const name of ['client', 'ssr']) {
-    const graph = environments.get(name)?.moduleGraph
-    if (graph === undefined) continue
-    for (const [id, module] of graph.idToModuleMap) {
-      if (prefixes.some((prefix) => id.startsWith(prefix))) graph.invalidateModule(module as never)
-    }
-  }
-}
 
 export interface PvComposeDevOptions extends ComposeOptions {
   /** Quiet period before a burst of file events becomes one compose (default 100 ms). */

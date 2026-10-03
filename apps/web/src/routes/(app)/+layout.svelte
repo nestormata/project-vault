@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import AppShell from '$lib/components/shell/AppShell.svelte'
   import GlobalSearch from '$lib/components/shell/GlobalSearch.svelte'
   import OnboardingWizard from '$lib/components/onboarding/OnboardingWizard.svelte'
@@ -72,6 +73,8 @@
   const appliedTheme = $derived(getAppliedTheme())
 </script>
 
+<InjectionPoint name="app.layout.before" data={data?.__inject} />
+<InjectionPoint name="app.layout.header.actions" data={data?.__inject} />
 <GlobalSearch bind:open={searchOpen} />
 
 {#if data.themeCss}
@@ -111,6 +114,7 @@
     {unreadCount}
     hasUiPanelExtension={data.hasUiPanelExtension}
     extensionNavItems={data.extensionNavItems}
+    injected={data.__inject}
     onsearch={() => {
       searchOpen = true
     }}
@@ -139,3 +143,4 @@
     {/if}
   </AppShell>
 </div>
+<InjectionPoint name="app.layout.after" data={data?.__inject} />

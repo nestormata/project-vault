@@ -1,9 +1,10 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { listInvitations } from '$lib/api/invitations.js'
 import { listProjectMembers, type ProjectMember } from '$lib/api/org-users.js'
 import { requireUser } from '$lib/server/require-user.js'
 import type { PageServerLoad } from './$types.js'
 
-export const load: PageServerLoad = async ({ params, fetch, locals }) => {
+const ownLoad = (async ({ params, fetch, locals }) => {
   const user = requireUser(locals)
   const orgRole = user.orgRole
   const isOrgAdminOrOwner = orgRole === 'owner' || orgRole === 'admin'
@@ -42,4 +43,12 @@ export const load: PageServerLoad = async ({ params, fetch, locals }) => {
     invitations,
     members,
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(
+  ownLoad,
+  '/(app)/projects/[projectId]/members',
+  'page'
+)
+
+export const actions = injectActions('/(app)/projects/[projectId]/members')

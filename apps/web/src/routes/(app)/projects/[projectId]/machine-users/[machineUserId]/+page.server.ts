@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import type { ApiKeyMetadata, MachineUserDetail } from '@project-vault/shared'
 import { getMachineUser, listApiKeys } from '$lib/api/machine-users.js'
 import type { OrgRole } from '$lib/machine-users/permissions.js'
@@ -13,7 +14,7 @@ type LoadResult = {
   notFound: boolean
 }
 
-export const load: PageServerLoad = ({ params, fetch, locals }) =>
+const ownLoad = (({ params, fetch, locals }) =>
   loadOr404WithOrgRole<LoadResult>(
     locals,
     async (orgRole) => {
@@ -39,4 +40,12 @@ export const load: PageServerLoad = ({ params, fetch, locals }) =>
       apiKeys: { items: [], total: 0 },
       notFound: true,
     })
-  )
+  )) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(
+  ownLoad,
+  '/(app)/projects/[projectId]/machine-users/[machineUserId]',
+  'page'
+)
+
+export const actions = injectActions('/(app)/projects/[projectId]/machine-users/[machineUserId]')

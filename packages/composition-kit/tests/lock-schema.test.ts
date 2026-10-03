@@ -82,12 +82,31 @@ describe('composition.lock.schema.json (Story 68.3 AC-8)', () => {
     expect(validate(lock), JSON.stringify(validate.errors)).toBe(true)
   })
 
-  it('fails a lock missing lockfileVersion or any section', async () => {
+  it('fails a lock missing lockfileVersion or any required section', async () => {
     const lock = await composedLock()
-    for (const key of Object.keys(lock)) {
+    for (const key of Object.keys(lock).filter((name) => name !== 'injections')) {
       const { [key]: _dropped, ...rest } = lock
       expect(validate(rest), key).toBe(false)
     }
+  })
+
+  it('accepts a lock written before injections existed, and validates the section when present', async () => {
+    const lock = await composedLock()
+    const { injections: _injections, ...older } = lock
+    expect(validate(older), JSON.stringify(validate.errors)).toBe(true)
+    expect(parseLock(JSON.stringify(older), 'lock').problem).toBeUndefined()
+    const entry = {
+      point: 'a.b.c',
+      component: 'src/lib/_cm/x.svelte',
+      order: 0,
+      load: null,
+      actions: null,
+      routeId: null,
+      scope: null,
+    }
+    expect(validate({ ...lock, injections: [entry] })).toBe(true)
+    expect(validate({ ...lock, injections: [{ ...entry, order: 'x' }] })).toBe(false)
+    expect(validate({ ...lock, injections: [{ ...entry, extra: 1 }] })).toBe(false)
   })
 
   it('fails a malformed hash and a missing story field', async () => {

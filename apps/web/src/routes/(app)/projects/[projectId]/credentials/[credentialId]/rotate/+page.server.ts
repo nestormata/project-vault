@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { redirect } from '@sveltejs/kit'
 import { getCredential, listCredentialDependencies } from '$lib/api/credentials.js'
 import { listRotations } from '$lib/api/rotations.js'
@@ -23,7 +24,7 @@ const REDIRECT_AWAY_ROTATION_STATUSES = new Set(['in_progress', 'stale_recovery'
 // that would just 409 (AC-6), rather than only surfacing the conflict after a failed POST.
 const ACTIVE_ROTATION_STATUSES = new Set(['in_progress', 'staged', 'promoted', 'stale_recovery'])
 
-export const load: PageServerLoad = async ({ params, fetch, locals }) => {
+const ownLoad = (async ({ params, fetch, locals }) => {
   const orgRole = requireUser(locals).orgRole
 
   // AC-6: a member/viewer never triggers any fetch here — the page renders AccessNotice only,
@@ -88,4 +89,14 @@ export const load: PageServerLoad = async ({ params, fetch, locals }) => {
     }
     throw error
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(
+  ownLoad,
+  '/(app)/projects/[projectId]/credentials/[credentialId]/rotate',
+  'page'
+)
+
+export const actions = injectActions(
+  '/(app)/projects/[projectId]/credentials/[credentialId]/rotate'
+)

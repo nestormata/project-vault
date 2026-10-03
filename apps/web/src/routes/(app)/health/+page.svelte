@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import ServiceStatusItem from '$lib/components/dashboard/ServiceStatusItem.svelte'
 
@@ -11,6 +12,8 @@
   <title>Health | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="health.home.before" data={data?.__inject} />
+<InjectionPoint name="health.home.header.actions" data={data?.__inject} />
 <section class="space-y-6">
   <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
     <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Health</p>
@@ -89,3 +92,4 @@
     </div>
   {/if}
 </section>
+<InjectionPoint name="health.home.after" data={data?.__inject} />

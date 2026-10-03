@@ -9,6 +9,7 @@ import { readComponentIndex, replacementNotes } from './component-index.js'
 import { collectRoots, composedPathOf, contributionsOf, deferredNotes } from './contributions.js'
 import { driftReport } from './drift.js'
 import { overlapProblems, ownershipProblems } from './guards.js'
+import { checkInjections } from './injection.js'
 import { buildLock, readLock, serializeLock, type CompositionLock } from './lock.js'
 import { materialize, type MaterializeResult } from './materialize.js'
 import { loadManifest, validateManifest } from './manifest.js'
@@ -372,6 +373,16 @@ function planStage(
   findings.add(addPvOriginalTypes(assembly.files, overlay, stage.host))
   const registry = registryFindings(stage, overlay)
   findings.add(registry)
+  const injections = checkInjections({
+    manifest: stage.manifest,
+    pack: stage.pack,
+    host: stage.host,
+    registries: stage.registries,
+    mat,
+    resolveFrom: options.resolveFrom ?? options.appRoot,
+    composedPath: composedPathOf,
+  })
+  findings.add(injections)
   const hooks = hooksFindings(stage, overlay, mat, log)
   findings.add(hooks)
   findings.add({
@@ -398,6 +409,7 @@ function planStage(
     relocated: mat.relocated,
     contributions: contributionsOf(stage.manifest, mat, hooks.record),
     injectionPointsUsed: registry.used,
+    injections: injections.lock,
     navIdsReferenced: registry.navRefs,
     notes,
   })

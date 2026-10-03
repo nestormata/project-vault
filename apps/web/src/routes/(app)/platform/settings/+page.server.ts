@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import type { PageServerLoad } from './$types.js'
 import { platformOperatorGate } from '$lib/server/require-platform-operator.js'
 import {
@@ -40,10 +41,14 @@ async function fetchStatusTokenMetadata(
   }
 }
 
-export const load: PageServerLoad = async ({ fetch, locals }) => {
+const ownLoad = (async ({ fetch, locals }) => {
   const gateResult = platformOperatorGate(locals)
   if (!gateResult.allowed) return { allowed: false as const }
   const data = await fetchSettingsData(fetch)
   const { statusToken, statusTokenLoadFailed } = await fetchStatusTokenMetadata(fetch)
   return { allowed: true as const, ...data, statusToken, statusTokenLoadFailed }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(ownLoad, '/(app)/platform/settings', 'page')
+
+export const actions = injectActions('/(app)/platform/settings')

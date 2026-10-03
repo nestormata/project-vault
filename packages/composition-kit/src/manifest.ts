@@ -95,6 +95,7 @@ function checkInjections(value: unknown, problems: string[]): void {
       problems.push(`injections.${name} must be an array`)
       continue
     }
+    const listed = new Set<string>()
     list.forEach((entry: unknown, index) => {
       const label = `injections.${name}[${index}]`
       if (!isRecord(entry)) {
@@ -102,8 +103,11 @@ function checkInjections(value: unknown, problems: string[]): void {
         return
       }
       if (typeof entry.component !== 'string') problems.push(`${label}.component must be a string`)
-      if (entry.order !== undefined && typeof entry.order !== 'number') {
-        problems.push(`${label}.order must be a number`)
+      else if (listed.size === listed.add(entry.component).size) {
+        problems.push(`${label}.component: ${entry.component} is already listed at this point`)
+      }
+      if (entry.order !== undefined && !Number.isFinite(entry.order)) {
+        problems.push(`${label}.order must be a finite number`)
       }
       optionalString(entry.load, `${label}.load`, problems)
       optionalString(entry.actions, `${label}.actions`, problems)

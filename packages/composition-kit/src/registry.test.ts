@@ -6,6 +6,9 @@ import { checkInjectionPoints, checkNavIds, readRegistries } from './registry.js
 
 const A_PAGE = 'src/routes/a/+page.svelte'
 
+const B_PAGE = 'src/routes/b/+page.svelte'
+const SHELL_HEAD = 'shell.head'
+const OLD_POINT = 'old.point.x'
 const roots: string[] = []
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
@@ -82,9 +85,9 @@ describe('checkInjectionPoints (AC-7, AC-9)', () => {
   })
 
   it('fails a vanished point CM did not cause, naming the file it used to live in', () => {
-    const previous = [{ name: 'gone', file: 'src/routes/b/+page.svelte' }]
+    const previous = [{ name: 'gone', file: B_PAGE }]
     const result = checkInjectionPoints(['gone'], points, new Set(), previous)
-    expect(result.problems).toEqual([expect.stringContaining('src/routes/b/+page.svelte')])
+    expect(result.problems).toEqual([expect.stringContaining(B_PAGE)])
   })
 
   it('records the file for known points', () => {
@@ -107,5 +110,61 @@ describe('checkNavIds (design section 11)', () => {
     )
     expect(result.problems).toEqual([expect.stringContaining('gone-op')])
     expect(result.notes).toEqual([expect.stringContaining('gone-hide')])
+  })
+})
+
+describe('route ids and scopes for behavior injection (Story 68.4 AC-17)', () => {
+  it('reads routeId and scope as additive fields without changing the minimal record', () => {
+    const registries = readRegistries(
+      hostWith({
+        'injection-points.json': {
+          schemaVersion: 1,
+          points: [
+            { name: 'a.b.after', file: A_PAGE, routeId: '/(app)/a', scope: 'page' },
+            {
+              name: SHELL_HEAD,
+              file: 'src/routes/+layout.svelte',
+              routeId: '/',
+              scope: 'layout',
+            },
+            { name: OLD_POINT, file: A_PAGE },
+          ],
+        },
+      })
+    )
+    expect(registries.injectionPoints).toEqual([
+      { name: 'a.b.after', file: A_PAGE },
+      { name: SHELL_HEAD, file: 'src/routes/+layout.svelte' },
+      { name: OLD_POINT, file: A_PAGE },
+    ])
+    expect(registries.pointRoutes).toEqual([
+      { name: 'a.b.after', routeId: '/(app)/a', scope: 'page' },
+      { name: SHELL_HEAD, routeId: '/', scope: 'layout' },
+      { name: OLD_POINT, routeId: null, scope: null },
+    ])
+  })
+
+  it('fails closed on a duplicate name in the registry file', () => {
+    const registries = readRegistries(
+      hostWith({
+        'injection-points.json': {
+          schemaVersion: 1,
+          points: [
+            { name: 'a.b.after', file: A_PAGE },
+            { name: 'a.b.after', file: B_PAGE },
+          ],
+        },
+      })
+    )
+    expect(registries.problems).toEqual([
+      'manifests/injection-points.json: duplicate injection point name "a.b.after"',
+    ])
+  })
+
+  it('ends the unknown-point message with the way out: override the page or replace the component', () => {
+    const result = checkInjectionPoints(['nope'], [{ name: 'a.b', file: A_PAGE }], new Set())
+    expect(result.problems).toEqual([
+      'Injection point "nope" does not exist in web-host\'s injection-points.json. If this point is missing, override the page (M1) or replace the component (M4); a missing point never blocks you. Ask for the point in PV.',
+    ])
   })
 })

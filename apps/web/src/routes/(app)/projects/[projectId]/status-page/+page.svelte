@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import { buildAbsoluteUrl, CapabilityId } from '@project-vault/shared'
   import { ApiClientError } from '$lib/api/client.js'
@@ -244,6 +245,8 @@
   <title>Public status page | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="project.status-page.before" data={data?.__inject} />
+<InjectionPoint name="project.status-page.header.actions" data={data?.__inject} />
 <section class="space-y-6">
   <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
     <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Project settings</p>
@@ -441,3 +444,4 @@
     {/if}
   {/if}
 </section>
+<InjectionPoint name="project.status-page.after" data={data?.__inject} />

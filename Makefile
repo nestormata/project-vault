@@ -227,6 +227,9 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm vitest run scripts/check-extension-api-license.test.ts
 	pnpm check-composition-kit-boundary # Story 68.3: the MIT kit imports no AGPL code and has permissive dependencies only
 	pnpm vitest run scripts/check-composition-kit-boundary.test.ts
+	@# Story 68.4: every PV route file exposes the standard injection points
+	pnpm check-injection-point-coverage
+	pnpm vitest run scripts/check-injection-point-coverage.test.ts
 	pnpm vitest run scripts/extension-authoring-docs.test.ts # Story 59.2 AC-3 authoring-doc drift guard
 	pnpm check-native-credential-surface
 	pnpm check-no-sonar-suppressions # Story 43.9 AC-9: no unsigned Sonar suppressions

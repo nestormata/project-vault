@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import type { PageServerLoad } from './$types.js'
 import { platformOperatorGate } from '$lib/server/require-platform-operator.js'
 import { listBackups, type BackupListItem } from '$lib/api/platform.js'
@@ -18,8 +19,12 @@ async function fetchBackupsData(fetch: typeof globalThis.fetch) {
   }
 }
 
-export const load: PageServerLoad = async ({ fetch, locals }) => {
+const ownLoad = (async ({ fetch, locals }) => {
   const { allowed } = platformOperatorGate(locals)
   if (!allowed) return { allowed: false as const }
   return { allowed: true as const, ...(await fetchBackupsData(fetch)) }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(ownLoad, '/(app)/platform/backups', 'page')
+
+export const actions = injectActions('/(app)/platform/backups')

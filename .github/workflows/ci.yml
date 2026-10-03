@@ -224,6 +224,11 @@ jobs:
           pnpm check-composition-kit-boundary &&
           pnpm vitest run scripts/check-composition-kit-boundary.test.ts
 
+      - name: Check injection point coverage (Story 68.4)
+        run: |
+          pnpm check-injection-point-coverage &&
+          pnpm vitest run scripts/check-injection-point-coverage.test.ts
+
       - name: Check native-credential surface (Story 23.2 AC19)
         run: pnpm check-native-credential-surface
 

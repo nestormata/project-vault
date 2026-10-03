@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import AuthBrandHeader from '$lib/components/shell/AuthBrandHeader.svelte'
@@ -37,6 +38,8 @@
   <title>Vault readiness | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="vault.home.before" data={data?.__inject} />
+<InjectionPoint name="vault.home.header.actions" data={data?.__inject} />
 <main class="min-h-screen bg-slate-50 px-4 py-10 text-slate-950">
   <div class="mx-auto max-w-3xl">
     <AuthBrandHeader />
@@ -48,3 +51,4 @@
     onUnseal={handleUnseal}
   />
 </main>
+<InjectionPoint name="vault.home.after" data={data?.__inject} />

@@ -1,8 +1,9 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { getHealthDashboard } from '$lib/api/health-dashboard.js'
 import { listProjects } from '$lib/api/projects.js'
 import type { PageServerLoad } from './$types.js'
 
-export const load: PageServerLoad = async ({ fetch }) => {
+const ownLoad = (async ({ fetch }) => {
   // Code-review finding: listProjects only supports the cosmetic "link straight to the sole
   // project" empty-state shortcut (AC-A2) — it must never be able to take down the whole,
   // otherwise-independent health dashboard if it fails. Fetch both in parallel but isolate
@@ -22,4 +23,8 @@ export const load: PageServerLoad = async ({ fetch }) => {
       : null
 
   return { dashboard: dashboardResult.value, singleProjectId }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(ownLoad, '/(app)/health', 'page')
+
+export const actions = injectActions('/(app)/health')

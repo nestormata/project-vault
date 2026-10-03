@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { listCredentials } from '$lib/api/credentials.js'
 import { ApiClientError } from '$lib/api/client.js'
 import {
@@ -7,7 +8,7 @@ import {
 import { requireUser } from '$lib/server/require-user.js'
 import type { PageServerLoad } from './$types.js'
 
-export const load: PageServerLoad = async ({ params, fetch, url, locals }) => {
+const ownLoad = (async ({ params, fetch, url, locals }) => {
   const filters = parseCredentialListFilters(url)
   const orgRole = requireUser(locals).orgRole
   const filterView = credentialListFilterView(filters)
@@ -27,4 +28,12 @@ export const load: PageServerLoad = async ({ params, fetch, url, locals }) => {
     }
     throw error
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(
+  ownLoad,
+  '/(app)/projects/[projectId]/credentials',
+  'page'
+)
+
+export const actions = injectActions('/(app)/projects/[projectId]/credentials')

@@ -11,7 +11,7 @@
 import { isAbsolute, join, resolve } from 'node:path'
 import type { Plugin } from 'vite'
 import { readLock, type CompositionLock } from '../lock.js'
-import { registerVirtualModulePrefix } from './index.js'
+import { registerVirtualModulePrefix } from './virtual-modules.js'
 
 export const PV_HOOKS_PREFIX = 'virtual:pv-hooks/'
 /** web-host's empty provider recognizes the kit plugin by this name. */

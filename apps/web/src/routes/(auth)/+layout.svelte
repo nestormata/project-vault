@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { onMount } from 'svelte'
   import AuthBrandHeader from '$lib/components/shell/AuthBrandHeader.svelte'
   import Footer from '$lib/components/shell/Footer.svelte'
@@ -8,7 +9,7 @@
     seedPreAuthThemeFromCache,
   } from '$lib/state/theme.svelte.js'
 
-  let { children } = $props()
+  let { children, data }: { children: import('svelte').Snippet; data?: App.PageData } = $props()
 
   // Story 16.4 AC-3/Task 7.2: reactively picks up whatever LoginForm's domain-lookup call last
   // resolved (or clears back to base on a miss/fail-open path) — no server load exists for this
@@ -39,7 +40,9 @@
 >
   <section class="mx-auto max-w-xl rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
     <AuthBrandHeader />
-    {@render children()}
+    <InjectionPoint name="auth.layout.before" data={data?.__inject} />
+    <InjectionPoint name="auth.layout.header.actions" data={data?.__inject} />
+    {@render children()}<InjectionPoint name="auth.layout.after" data={data?.__inject} />
   </section>
   <div class="mx-auto mt-6 max-w-xl">
     <Footer />

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import { m } from '$lib/paraglide/messages.js'
   import CrossProjectEmptyState from '$lib/components/dashboard/CrossProjectEmptyState.svelte'
@@ -28,6 +29,8 @@
   <title>{m.dashboard_page_title()} | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="dashboard.home.before" data={data?.__inject} />
+<InjectionPoint name="dashboard.home.header.actions" data={data?.__inject} />
 {#if data.vaultSealed}
   <PageAlertBanner
     title={m.dashboard_vault_sealed_title()}
@@ -296,3 +299,4 @@
     </div>
   {/if}
 {/if}
+<InjectionPoint name="dashboard.home.after" data={data?.__inject} />

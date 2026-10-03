@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { invalidateAll } from '$app/navigation'
   import { ApiClientError } from '$lib/api/client.js'
   import SettingsFormGate from '$lib/components/settings/SettingsFormGate.svelte'
@@ -90,6 +91,8 @@
   <title>External Identities | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="settings.external-identities.before" data={data?.__inject} />
+<InjectionPoint name="settings.external-identities.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-3xl px-4 py-8">
   <h1 class="text-2xl font-bold text-gray-900">External Identities</h1>
   <p class="mt-2 text-gray-500">
@@ -210,3 +213,4 @@
     </div>
   </SettingsFormGate>
 </div>
+<InjectionPoint name="settings.external-identities.after" data={data?.__inject} />

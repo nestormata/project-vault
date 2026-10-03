@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import PlatformBreadcrumb from '$lib/components/platform/PlatformBreadcrumb.svelte'
   import DataTable from '$lib/components/tables/DataTable.svelte'
@@ -186,6 +187,8 @@
   <title>Backups | Platform Admin | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="platform.backups.before" data={data?.__inject} />
+<InjectionPoint name="platform.backups.header.actions" data={data?.__inject} />
 <PlatformBreadcrumb
   allowed={data.allowed}
   trail={[{ label: 'Platform Admin', href: '/platform' }, { label: 'Backups' }]}
@@ -396,3 +399,4 @@
     {/if}
   </div>
 </PlatformBreadcrumb>
+<InjectionPoint name="platform.backups.after" data={data?.__inject} />

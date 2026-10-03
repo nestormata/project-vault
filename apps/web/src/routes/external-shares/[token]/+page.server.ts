@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { getExternalShareMetadata, type ExternalShareMetadata } from '$lib/api/credential-shares.js'
 import { ApiClientError } from '$lib/api/client.js'
 import type { PageServerLoad } from './$types.js'
@@ -13,7 +14,7 @@ export type ExternalShareAccessPageData = {
   error: 'not_found' | 'unavailable' | null
 }
 
-export const load: PageServerLoad = async ({ params, fetch, setHeaders }) => {
+const ownLoad = (async ({ params, fetch, setHeaders }) => {
   // AC-10/PR #251 lesson: this page's own document response — the URL that actually carries the
   // raw bearer token in the browser — must set Referrer-Policy itself, not just the API JSON
   // responses (which access-routes.ts already sets). Set from this route's first commit.
@@ -42,4 +43,8 @@ export const load: PageServerLoad = async ({ params, fetch, setHeaders }) => {
     }
     throw error
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(ownLoad, '/external-shares/[token]', 'page')
+
+export const actions = injectActions('/external-shares/[token]')

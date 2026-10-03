@@ -114,6 +114,10 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
       // Story 68.5 AC-12 (M4): the same run replaces a shell component (wrapped through
       // `pv-original:`), a `$lib/api` module and a `$lib/server` module, and PV's own files get them.
       expect(output).toContain('OK: /login, /billing, /billing/export, /recovery, /m4 served')
+      expect(output).toContain('OK: an unknown injection point fails with the way out')
+      expect(output).toContain(
+        'OK: injected markup (in order), load data, layout point, shell head and action served'
+      )
       // Story 68-6: hook bundles, derived protection, the reroute bypass and the CM policy delta.
       expect(output).toContain(
         'OK: server hook code stays out of the client bundle; universal/client hooks reach it'

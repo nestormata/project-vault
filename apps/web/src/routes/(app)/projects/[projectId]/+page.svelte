@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { downloadExportBlob, exportProject } from '$lib/api/project-export.js'
   import { ApiClientError } from '$lib/api/client.js'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
@@ -51,6 +52,16 @@
   <title>{data.project ? `${data.project.name} | Project Vault` : 'Project | Project Vault'}</title>
 </svelte:head>
 
+<InjectionPoint
+  name="project.detail.before"
+  props={{ project: data.project }}
+  data={data.__inject}
+/>
+<InjectionPoint
+  name="project.detail.header.actions"
+  props={{ project: data.project }}
+  data={data.__inject}
+/>
 {#if data.notFound || !data.project}
   <section class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6">
     <h1 class="text-xl font-semibold text-slate-950">Project not found</h1>
@@ -177,3 +188,8 @@
     {/if}
   </section>
 {/if}
+<InjectionPoint
+  name="project.detail.after"
+  props={{ project: data.project }}
+  data={data.__inject}
+/>

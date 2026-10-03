@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { deleteDomain, updateDomain } from '$lib/api/domains.js'
@@ -86,6 +87,8 @@
   <title>{data.domain?.domainName ?? 'Domain'} | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="project.domains-detail.before" data={data?.__inject} />
+<InjectionPoint name="project.domains-detail.header.actions" data={data?.__inject} />
 <section class="mx-auto max-w-2xl space-y-6">
   {#if data.notFound || !data.domain}
     <EntityNotFoundBanner
@@ -132,3 +135,4 @@
     />
   {/if}
 </section>
+<InjectionPoint name="project.domains-detail.after" data={data?.__inject} />

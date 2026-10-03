@@ -198,6 +198,10 @@ describe('web-host tarball: this checkout (Story 68.2 AC-7)', () => {
     ]) {
       expect(excluded.get(file)?.join(' '), file).toMatch(/outside the package/)
     }
+    // The PV-tree-only route snapshot oracle is excluded with its reason, never shipped.
+    expect(excluded.get('apps/web/src/routes/route-render-snapshot.test.ts')).toEqual([
+      "oracle of PV's own un-composed markup; valid only on PV's tree",
+    ])
     for (const reasons of excluded.values()) expect(reasons.length).toBeGreaterThan(0)
   })
 
@@ -347,14 +351,15 @@ describe('compatibility manifest (Story 68.2 AC-9)', () => {
     }
   })
 
-  it('packs no empty stub for a manifest a later story has not generated yet', () => {
-    // component-index.json (Story 68.5) and hooks-surface.json (Story 68.6) are generated on
-    // every pack; injection-points.json and nav-ids.json (68-4, 68-7) are not, and a missing one
-    // is never stubbed.
+  it('packs only the manifests generated so far, never an empty stub for a later one', () => {
+    // component-index.json (Story 68.5), injection-points.json (Story 68-4) and hooks-surface.json
+    // (Story 68.6) are generated on every pack; nav-ids.json (68-7) is not, and a missing one is
+    // never stubbed.
     expect(paths.filter((path) => path.startsWith('manifests/')).sort()).toEqual([
       'manifests/compatibility.json',
       'manifests/component-index.json',
       'manifests/hooks-surface.json',
+      'manifests/injection-points.json',
     ])
   })
 

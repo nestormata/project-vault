@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { ApiClientError } from '$lib/api/client.js'
 import { runAccessReport, type AccessReportResult } from '$lib/api/audit.js'
 import { toIsoRangeStart } from '$lib/audit/date-range.js'
@@ -34,11 +35,7 @@ type AccessReportPageData =
       errorMessage: string | null
     }
 
-export const load: PageServerLoad = async ({
-  fetch,
-  url,
-  locals,
-}): Promise<AccessReportPageData> => {
+const ownLoad = (async ({ fetch, url, locals }): Promise<AccessReportPageData> => {
   const user = requireUser(locals)
   const orgRole = user.orgRole
 
@@ -68,4 +65,12 @@ export const load: PageServerLoad = async ({
         : 'Failed to generate access report'
     return { orgRole, allowed: true as const, asOf, page, report: null, errorMessage: message }
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(
+  ownLoad,
+  '/(app)/settings/audit/access-report',
+  'page'
+)
+
+export const actions = injectActions('/(app)/settings/audit/access-report')

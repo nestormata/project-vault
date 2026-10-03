@@ -13,8 +13,17 @@ export interface InjectionPointRecord {
   file: string | null
 }
 
+/** Where a point's behavior (`load`/`actions`) runs: Story 68.4 registry fields, additive to the
+ * minimal record. Null when the host's registry predates them. */
+export interface PointRoute {
+  name: string
+  routeId: string | null
+  scope: string | null
+}
+
 export interface Registries {
   injectionPoints?: InjectionPointRecord[]
+  pointRoutes?: PointRoute[]
   navIds?: string[]
   problems: string[]
 }
@@ -60,18 +69,40 @@ function readList(
   }
 }
 
+function duplicateName(names: readonly string[]): string | undefined {
+  const seen = new Set<string>()
+  return names.find((name) => seen.size === seen.add(name).size)
+}
+
 export function readRegistries(host: string): Registries {
   const problems: string[] = []
   const points = readList(host, 'injection-points.json', 'points', problems, (entry) => ({
     name: String(entry.name),
     file: typeof entry.file === 'string' ? entry.file : null,
-  }))
+    routeId: typeof entry.routeId === 'string' ? entry.routeId : null,
+    scope: typeof entry.scope === 'string' ? entry.scope : null,
+  })) as (InjectionPointRecord & Omit<PointRoute, 'name'>)[] | undefined
   const ids = readList(host, 'nav-ids.json', 'ids', problems, (entry) => String(entry.id))
   const registries: Registries = { problems }
-  if (points !== undefined) registries.injectionPoints = points as InjectionPointRecord[]
+  if (points !== undefined) {
+    const duplicate = duplicateName(points.map((point) => point.name))
+    if (duplicate !== undefined) {
+      problems.push(
+        `manifests/injection-points.json: duplicate injection point name "${duplicate}"`
+      )
+    } else {
+      registries.injectionPoints = points.map(({ name, file }) => ({ name, file }))
+      registries.pointRoutes = points.map(({ name, routeId, scope }) => ({ name, routeId, scope }))
+    }
+  }
   if (ids !== undefined) registries.navIds = ids as string[]
   return registries
 }
+
+/** A missing injection point never limits CM: it may override the page or replace the component. */
+const WAY_OUT =
+  'If this point is missing, override the page (M1) or replace the component (M4); ' +
+  'a missing point never blocks you. Ask for the point in PV.'
 
 export interface InjectionCheck {
   problems: string[]
@@ -94,7 +125,7 @@ function checkOne(
   out.used.push({ name, file: lastFile ?? null })
   if (lastFile === undefined || lastFile === null) {
     out.problems.push(
-      `Injection point "${name}" does not exist in web-host's injection-points.json`
+      `Injection point "${name}" does not exist in web-host's injection-points.json. ${WAY_OUT}`
     )
   } else if (changedFiles.has(lastFile)) {
     out.notes.push(

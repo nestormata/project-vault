@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
   import DataTable from '$lib/components/tables/DataTable.svelte'
@@ -150,6 +151,8 @@
   <title>Platform Operator Audit Log | Platform Admin | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="platform.audit.before" data={data?.__inject} />
+<InjectionPoint name="platform.audit.header.actions" data={data?.__inject} />
 <PlatformBreadcrumb
   allowed={data.allowed}
   trail={[{ label: 'Platform Admin', href: '/platform' }, { label: 'Platform Operator Audit Log' }]}
@@ -456,3 +459,4 @@
     {/if}
   </div>
 </PlatformBreadcrumb>
+<InjectionPoint name="platform.audit.after" data={data?.__inject} />
