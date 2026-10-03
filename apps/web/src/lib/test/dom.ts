@@ -17,10 +17,10 @@ export function nth<T>(items: readonly T[], index: number): T {
  */
 export function serializeWithoutNoise(root: Element): string {
   const copy = root.cloneNode(true) as Element
-  const comments: Node[] = []
+  const comments: Comment[] = []
   const walker = copy.ownerDocument.createTreeWalker(copy, NodeFilter.SHOW_COMMENT)
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) comments.push(node)
-  for (const comment of comments) comment.parentNode?.removeChild(comment)
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) comments.push(node as Comment)
+  for (const comment of comments) comment.remove()
   for (const script of copy.querySelectorAll('script')) script.textContent = ''
   return copy.innerHTML
 }

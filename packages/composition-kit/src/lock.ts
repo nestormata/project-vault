@@ -55,7 +55,7 @@ const NORMATIVE = [
 ] as const
 
 /** Sections a lock may lack and still be read (they were added after lockfileVersion 1). */
-const OPTIONAL_SECTIONS: readonly string[] = ['injections']
+const OPTIONAL_SECTIONS: ReadonlySet<string> = new Set(['injections'])
 
 export interface LockInput {
   tuple: CompatibilityTuple
@@ -131,7 +131,7 @@ export function parseLock(
     }
   }
   const missing = [...NORMATIVE, 'removals', 'notes'].filter(
-    (key) => !OPTIONAL_SECTIONS.includes(key) && !(key in (record ?? {}))
+    (key) => !OPTIONAL_SECTIONS.has(key) && !(key in (record ?? {}))
   )
   if (missing.length > 0) {
     return { problem: `${label} is missing ${missing.join(', ')} (schema: ${SCHEMA_PATH})` }

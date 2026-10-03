@@ -74,6 +74,33 @@ function isRegistryDeclaration(node: ts.Node): node is ts.VariableDeclaration {
   )
 }
 
+function stringList(expression: ts.Expression | undefined): string[] {
+  if (expression === undefined || !ts.isArrayLiteralExpression(expression)) return []
+  return expression.elements.filter(ts.isStringLiteralLike).map((entry) => entry.text)
+}
+
+/** The rows one `INJECTION_POINTS` element stands for: an object literal is one row, and a
+ * `...pagePoints('<propsType>', ['<area>.<page>', ...])` spread is the three standard points of
+ * each listed page (the registry module expands it the same way at runtime). */
+function registryRows(element: ts.Expression): Map<string, string>[] {
+  if (ts.isObjectLiteralExpression(element)) return [stringFields(element)]
+  if (!ts.isSpreadElement(element) || !ts.isCallExpression(element.expression)) return []
+  const call = element.expression
+  if (!ts.isIdentifier(call.expression) || call.expression.text !== 'pagePoints') return []
+  const [propsType, pages] = call.arguments
+  if (propsType === undefined || !ts.isStringLiteralLike(propsType)) return []
+  return stringList(pages).flatMap((page) =>
+    STANDARD_SUFFIXES.map(
+      (suffix) =>
+        new Map([
+          ['name', `${page}.${suffix}`],
+          ['kind', 'standard'],
+          ['propsType', propsType.text],
+        ])
+    )
+  )
+}
+
 /** Every registered point's string fields (`name`, `kind`, `propsType`, optional `hostRouteId`),
  * read with the TypeScript parser. */
 export function readRegistryFields(webRoot: string): Map<string, Map<string, string>> | null {
@@ -89,8 +116,7 @@ export function readRegistryFields(webRoot: string): Map<string, Map<string, str
     if (isRegistryDeclaration(node) && node.initializer !== undefined) {
       const list = unwrap(node.initializer)
       const elements = ts.isArrayLiteralExpression(list) ? list.elements : []
-      for (const element of elements.filter(ts.isObjectLiteralExpression)) {
-        const fields = stringFields(element)
+      for (const fields of elements.flatMap(registryRows)) {
         const name = fields.get('name')
         if (name !== undefined) registry.set(name, fields)
       }
@@ -202,7 +228,7 @@ export function registryProblems(
 
 function prefixesOf(names: readonly (string | null)[]): string[] {
   return names
-    .filter((name): name is string => name !== null && name.endsWith(BEFORE))
+    .filter((name): name is string => name?.endsWith(BEFORE) === true)
     .map((name) => name.slice(0, -BEFORE.length))
 }
 

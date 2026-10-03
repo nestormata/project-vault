@@ -235,7 +235,7 @@ function checkActionNames(ctx: Context, point: string, declared: readonly Declar
   for (const { entry } of declared) {
     const rel = packPath(entry.actions)
     const info = rel === null ? undefined : ctx.reader.info(rel)
-    if (rel === null || info === undefined || !info.actionsIsLiteral) continue
+    if (rel === null || !info?.actionsIsLiteral) continue
     for (const key of info.actionKeys) {
       const full = `${point}.${key}`
       const owner = owners.get(full)
@@ -263,7 +263,7 @@ function defaultActionProblem(ctx: Context, point: string, file: string | null):
 }
 
 function behaviorNeedsRoute(route: PointRoute | undefined): boolean {
-  return route === undefined || route.scope === null || route.routeId === null
+  return (route?.scope ?? null) === null || (route?.routeId ?? null) === null
 }
 
 function declaresBehavior(declared: readonly Declared[]): boolean {

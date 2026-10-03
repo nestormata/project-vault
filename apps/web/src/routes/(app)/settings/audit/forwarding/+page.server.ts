@@ -6,7 +6,7 @@ const FORWARDING_MANAGE_ROLES = new Set(['owner', 'admin'])
 
 // D2 — no GET readback exists for forwarding/retention config, so this load never calls the API;
 // it only resolves the role gate and hands the org id down for the write-only forms below.
-const ownLoad = (async ({ locals }) => {
+const ownLoad = (({ locals }) => {
   const user = requireUser(locals)
   const orgRole = user.orgRole
 

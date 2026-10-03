@@ -2,7 +2,7 @@ import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-
 import { requireUser } from '$lib/server/require-user.js'
 import type { PageServerLoad } from './$types.js'
 
-const ownLoad = (async ({ params, locals }) => {
+const ownLoad = (({ params, locals }) => {
   const orgRole = requireUser(locals).orgRole
   return {
     projectId: params.projectId,

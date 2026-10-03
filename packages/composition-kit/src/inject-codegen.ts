@@ -49,10 +49,10 @@ export function generatePointModule(point: string, unordered: readonly CodegenIn
   const imports = entries.map(
     (entry, index) => `import c${index} from ${json(composedSpecifier(entry.component))}`
   )
-  const items = entries.map(
-    (entry, index) =>
-      `  { id: ${json(`${point}#${index}`)}, order: ${json(entry.order)}, component: c${index} },`
-  )
+  const items = entries.map((entry, index) => {
+    const id = `${point}#${index}`
+    return `  { id: ${json(id)}, order: ${json(entry.order)}, component: c${index} },`
+  })
   return `${imports.join('\n')}\nexport default [\n${items.join('\n')}\n]\n`
 }
 

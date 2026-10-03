@@ -188,7 +188,8 @@ compose_expect() { # port path status needle
 # injected form action are all served with no session; the layout point and the shell head meta
 # prove layout-, page- and shell-scoped points together.
 compose_offset() { # needle -> byte offset of the first match in $WORK/body.txt, or empty
-  grep -ob -- "$1" "$WORK/body.txt" | head -n 1 | cut -d: -f1
+  local needle=$1
+  grep -ob -- "$needle" "$WORK/body.txt" | head -n 1 | cut -d: -f1
   return 0
 }
 

@@ -79,7 +79,7 @@ export function listRouteFiles(webRoot: string): RouteScan {
     }
   }
   const byPath = (a: { rel: string }, b: { rel: string }): number => a.rel.localeCompare(b.rel)
-  return { routes: routes.sort(byPath), servers: servers.sort(byPath) }
+  return { routes: routes.toSorted(byPath), servers: servers.toSorted(byPath) }
 }
 
 // --- markup: injection points and @region blocks ---------------------------------------------

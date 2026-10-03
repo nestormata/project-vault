@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { makeRecipe, recipeRunsCommand, workflowRunCommands } from './lib/ci-wiring.js'
 import { useFixtureRoots, writeFixture } from './lib/fixture-test-helpers.js'
-import { checkInjectionPointCoverage } from './lib/injection-point-coverage.js'
+import { checkInjectionPointCoverage, readRegistryFields } from './lib/injection-point-coverage.js'
+import { INJECTION_POINTS } from '../apps/web/src/lib/components/composition/injection-points.js'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const WEB = resolve(repositoryRoot, 'apps/web')
@@ -68,9 +69,38 @@ describe('check-injection-point-coverage: mutation self-tests (Story 68.4 AC-10)
     expect(result.problems.join('\n')).toContain('scanned 0 route files')
   })
 
+  it('reads the shipped registry exactly as the registry module builds it at runtime', () => {
+    const read = readRegistryFields(WEB)
+    expect(read?.size).toBe(INJECTION_POINTS.length)
+    for (const point of INJECTION_POINTS) {
+      expect(Object.fromEntries(read?.get(point.name) ?? [])).toEqual({ ...point })
+    }
+  })
+
+  it('expands a pagePoints spread into the three standard points of each page', () => {
+    const root = makeRoot()
+    writeFixture(
+      root,
+      REGISTRY,
+      "export const INJECTION_POINTS = [\n  ...pagePoints('X', ['foo.page']),\n]\n"
+    )
+    const fields = readRegistryFields(root)
+    expect([...(fields?.keys() ?? [])].sort()).toEqual(
+      SUFFIXES.map((suffix) => `foo.page.${suffix}`).sort()
+    )
+    expect(fields?.get('foo.page.after')?.get('propsType')).toBe('X')
+  })
+
   it('flags a page missing its .after point', () => {
     const root = cleanTree()
-    writeFixture(root, PAGE, points('foo.page', ['before', 'header.actions']))
+    writeFixture(
+      root,
+      PAGE,
+      points(
+        'foo.page',
+        SUFFIXES.filter((suffix) => suffix !== 'after')
+      )
+    )
     expect(problemsOf(root).problems).toContain(`${PAGE}: lacks injection point "foo.page.after"`)
   })
 

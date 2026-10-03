@@ -141,7 +141,8 @@ export function rewriteInjectionPoints(code: string, file: string): string | nul
   for (const [index, node] of todo.entries()) {
     const name = literalName(code, file, node)
     const identifier = freeImportName(code, taken, index)
-    imports.push(`import ${identifier} from ${JSON.stringify(`${INJECTION_MODULE_PREFIX}${name}`)}`)
+    const specifier = `${INJECTION_MODULE_PREFIX}${name}`
+    imports.push(`import ${identifier} from ${JSON.stringify(specifier)}`)
     edits.push({ at: node.start + 1 + COMPONENT_NAME.length, text: ` entries={${identifier}}` })
   }
   const block = imports.join('\n')
@@ -153,7 +154,7 @@ export function rewriteInjectionPoints(code: string, file: string): string | nul
   }
   // Apply from the end of the file backwards so earlier offsets stay valid.
   let output = code
-  for (const edit of edits.sort((a, b) => b.at - a.at)) {
+  for (const edit of edits.toSorted((a, b) => b.at - a.at)) {
     output = `${output.slice(0, edit.at)}${edit.text}${output.slice(edit.at)}`
   }
   return output
