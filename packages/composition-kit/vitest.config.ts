@@ -5,6 +5,8 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+    // Several suites compose a tree and spawn a nested vitest run; 3-6 s each on a loaded CI runner.
+    testTimeout: 30_000,
     coverage: {
       provider: 'v8',
       // An explicit include: a new file with no entry here silently reports 0% to Sonar.
