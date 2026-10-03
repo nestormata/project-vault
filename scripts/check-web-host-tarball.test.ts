@@ -206,6 +206,12 @@ describe('web-host tarball: this checkout (Story 68.2 AC-7)', () => {
     expect(excluded.get('apps/web/src/lib/navigation/nav-render-oracle.test.ts')).toEqual([
       "oracle of PV's own un-composed nav markup (Story 68.7); valid only on PV's tree",
     ])
+    expect(excluded.get('apps/web/src/lib/navigation/nav-ssr.test.ts')).toEqual([
+      "compares PV's server render with the nav render oracle (Story 68.7); valid only on PV's tree",
+    ])
+    expect(excluded.get('apps/web/src/lib/navigation/nav-not-security.test.ts')).toEqual([
+      "pins PV's own hooks and (app) layout answers (Story 68.7); valid only on PV's tree",
+    ])
     for (const reasons of excluded.values()) expect(reasons.length).toBeGreaterThan(0)
   })
 

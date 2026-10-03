@@ -45,6 +45,14 @@ export const PV_TREE_ONLY_TESTS: ReadonlyMap<string, string> = new Map([
     'src/lib/navigation/nav-render-oracle.test.ts',
     "oracle of PV's own un-composed nav markup (Story 68.7); valid only on PV's tree",
   ],
+  [
+    'src/lib/navigation/nav-ssr.test.ts',
+    "compares PV's server render with the nav render oracle (Story 68.7); valid only on PV's tree",
+  ],
+  [
+    'src/lib/navigation/nav-not-security.test.ts',
+    "pins PV's own hooks and (app) layout answers (Story 68.7); valid only on PV's tree",
+  ],
 ])
 
 function pvTreeOnlyReason(file: string): string | undefined {
