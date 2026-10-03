@@ -6,6 +6,7 @@ import type {
   ApiRouteOverrideDeclaration,
 } from '@project-vault/extension-api'
 import type { ExtensionState } from '../extensions/loader.js'
+import { appSpecOf, type AppBehaviourSpec } from '../extensions/api-routes/app-behaviour.js'
 
 /**
  * Story 68.8 (M7) — the per-app apiRoutes override table, its key normalization and the pieces
@@ -63,6 +64,8 @@ export type ApiRouteTable = Readonly<{
   consumed: Set<string>
   /** Per-app: which mechanism applied each consumed override (status endpoint `target`). */
   targets: Map<string, 'secureRoute' | 'raw'>
+  /** Story 68.14: the declared app-level hooks, error handler and not-found handler. */
+  app: AppBehaviourSpec | undefined
 }>
 
 /** The route URL as Fastify serves it under `ignoreTrailingSlash: true`. */
@@ -124,6 +127,7 @@ export function buildApiRouteTable(state: ExtensionState): ApiRouteTable | undef
     adds: Object.freeze(adds),
     consumed: new Set<string>(),
     targets: new Map<string, 'secureRoute' | 'raw'>(),
+    app: appSpecOf(declaration, state.hooks.apiRoutes?.app),
   })
 }
 

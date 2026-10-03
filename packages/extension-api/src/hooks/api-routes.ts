@@ -89,9 +89,28 @@ export type ApiRouteOverrideDeclaration = {
   security?: ApiRouteSecurity
 }
 
+/**
+ * Story 68.14 — app-level API behaviour: PV's global hooks, error handler and not-found handler,
+ * changed with the same `wrap`/`replace` model as routes.
+ *
+ * - `hooks.prepend`: the declared phases' functions run on every request BEFORE PV's own app-wide
+ *   hooks (vault guard, structured logging, metrics). They also run while the vault is sealed.
+ * - `hooks.append`: they run after PV's last app-wide hook and before PV's route plugins.
+ * - `errorHandler` / `notFoundHandler`: `replace` makes the extension's function the handler;
+ *   `wrap` gives it a `next()` that runs PV's own handler. A function that throws or rejects falls
+ *   back to PV's handler with the original error.
+ */
+export type ApiRoutesAppDeclaration = {
+  hooks?: { prepend?: ApiRouteHookPhase[]; append?: ApiRouteHookPhase[] }
+  errorHandler?: 'wrap' | 'replace'
+  notFoundHandler?: 'wrap' | 'replace'
+}
+
 export type ApiRoutesDeclaration = {
   add?: ApiRouteAddDeclaration[]
   override?: ApiRouteOverrideDeclaration[]
+  /** Story 68.14: app-wide hooks, error handler and not-found handler. */
+  app?: ApiRoutesAppDeclaration
 }
 
 /** The host's request transaction. At runtime it is a drizzle `PgTransaction`. */
@@ -193,6 +212,43 @@ export type ApiRouteImplementation = {
   hooks?: Partial<Record<ApiRouteHookPhase, ApiRouteAnyFunction | ApiRouteAnyFunction[]>>
 }
 
+/** `errorHandler` with `replace`: owns the response for every error. */
+export type AppErrorHandler<Req = ApiRouteRequest, Reply = ApiRouteReply> = (
+  error: Error,
+  req: Req,
+  reply: Reply
+) => unknown
+
+/** `errorHandler` with `wrap`: `next()` runs PV's own error handler with the same error. */
+export type AppErrorWrapHandler<Req = ApiRouteRequest, Reply = ApiRouteReply> = (
+  error: Error,
+  req: Req,
+  reply: Reply,
+  next: () => Promise<unknown>
+) => unknown
+
+/** `notFoundHandler` with `replace`. */
+export type AppNotFoundHandler<Req = ApiRouteRequest, Reply = ApiRouteReply> = (
+  req: Req,
+  reply: Reply
+) => unknown
+
+/** `notFoundHandler` with `wrap`: `next()` runs PV's own not-found handler. */
+export type AppNotFoundWrapHandler<Req = ApiRouteRequest, Reply = ApiRouteReply> = (
+  req: Req,
+  reply: Reply,
+  next: () => Promise<unknown>
+) => unknown
+
+/** The functions behind `apiRoutes.app`. Typed loosely, like `ApiRouteImplementation.handler`. */
+export type AppBehaviourHooks = {
+  hooks?: Partial<Record<ApiRouteHookPhase, ApiRouteAnyFunction | ApiRouteAnyFunction[]>>
+  errorHandler?: ApiRouteAnyFunction
+  notFoundHandler?: ApiRouteAnyFunction
+}
+
 export type ApiRoutesHooks = {
   routes?: Partial<Record<ApiRouteKey, ApiRouteImplementation>>
+  /** Story 68.14: the functions behind `ExtensionManifest.apiRoutes.app`. */
+  app?: AppBehaviourHooks
 }

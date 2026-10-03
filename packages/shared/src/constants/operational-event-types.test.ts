@@ -49,6 +49,15 @@ describe('OperationalEvent', () => {
     )
   })
 
+  it('exposes the Story 68.14 app-level apiRoutes event types', () => {
+    expect(OperationalEvent.EXTENSION_API_ROUTE_APP_OVERRIDE).toBe(
+      'extension.api_route.app_override'
+    )
+    expect(OperationalEvent.EXTENSION_API_ROUTE_APP_HANDLER_FAILED).toBe(
+      'extension.api_route.app_handler_failed'
+    )
+  })
+
   it('exposes the Story 43.16 internal TLS event types', () => {
     expect(OperationalEvent.INTERNAL_TLS_CONFIGURED).toBe('internal_tls.configured')
     expect(OperationalEvent.INTERNAL_TLS_CERT_EXPIRING).toBe('internal_tls.cert_expiring')

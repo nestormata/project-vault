@@ -580,7 +580,11 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // Story 71.1 — bumped as a minor (3.27.0 -> 3.28.0): `AuditEventSourceWriteInput` gains the
 // optional `idempotencyKey` (an optional field on an exported object type: non-breaking, policy
 // table row 1). Omitting it keeps the previous behaviour exactly.
-export const EXTENSION_API_VERSION = '3.28.0'
+// Story 68.14 — bumped as a minor (3.28.0 -> 3.29.0): `ApiRoutesDeclaration` gains the optional
+// `app` (app-level hooks, error handler and not-found handler, wrap/replace) and `ApiRoutesHooks`
+// the optional `app` implementations. New optional fields only (policy rows 1 and 11); a 3.27/3.28
+// pack without `app` loads unchanged.
+export const EXTENSION_API_VERSION = '3.29.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

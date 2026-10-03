@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `composition.lock.json` is `lockfileVersion` 2 (Story 68-14). `apiRouteOverrides` is now a sorted list of
+  `{ method, url, mode, replaceSecurity }` objects: with `--module-pack <dir>` the kit imports the module
+  pack's entry (`exports["."]`, else `main`; this runs its top-level code, inside the pack directory, after
+  the extension-api tuple check), reads `default.manifest.apiRoutes.override` and never calls
+  `hooksFactory()`. Without `--module-pack` the section is empty. `--check` compares the section and names
+  it when it drifts. A version 1 lock is still read: recomposing rewrites it as version 2, and `--check`
+  on a version 1 lock fails with a version-mismatch message. **Migration:** run `pv-compose` once and
+  commit the rewritten lock. `--module-pack` now names the module pack's package root (it already had to
+  resolve `@project-vault/extension-api`).
+
 ## 0.4.0
 
 - `pvHooks()` Vite plugin (`@project-vault/composition-kit/vite`): generates `virtual:pv-hooks/server`,

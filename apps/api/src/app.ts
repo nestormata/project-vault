@@ -65,9 +65,18 @@ import { extensionPanelRoutes } from './extensions/panel-routes.js'
 import { moduleDataRoutes } from './extensions/module-data-routes.js'
 import { oauthHandoffRoutes } from './modules/extensions/oauth-handoff-routes.js'
 import { publicRouteRoutes } from './modules/extensions/public-route-routes.js'
-import { loadExtension, getExtensionStatus } from './extensions/loader.js'
+import { loadExtension, getExtensionStatus, type LoadExtensionDeps } from './extensions/loader.js'
 import { assertExtensionRequirement } from './extensions/boot-errors.js'
-import { installApiRoutes, registerApiRouteAdds } from './extensions/api-routes/install.js'
+import {
+  installApiRoutes,
+  installAppendedAppHooks,
+  registerApiRouteAdds,
+} from './extensions/api-routes/install.js'
+import { installRouteObserver, type RouteObserver } from './extensions/api-routes/route-observer.js'
+import {
+  resolveErrorHandler,
+  resolveNotFoundHandler,
+} from './extensions/api-routes/app-behaviour.js'
 import { themingRoutes } from './modules/theming/routes.js'
 import { themeSelectionRoutes } from './modules/theming/selection-routes.js'
 import { reloadThemesWithFanout } from './modules/theming/service.js'
@@ -80,7 +89,6 @@ import {
 } from './lib/delivery-provider.js'
 import { resolveNativeLoginPolicy } from './modules/auth/native-login-policy.js'
 import { resolveHandoffAuthStrategy } from './modules/auth/handoff-boot.js'
-import { writeHandoffSecurityEvent } from './modules/auth/handoff-security-events.js'
 import { ssoRoutes } from './modules/auth/sso-routes.js'
 import { handoffRoutes } from './modules/auth/handoff-routes.js'
 import { domainLookupRoutes } from './modules/auth/domain-lookup-routes.js'
@@ -92,14 +100,11 @@ import { machineJwtPlugin } from './plugins/machine-jwt.js'
 import authenticatePlugin from './plugins/authenticate.js'
 import { structuredLoggingPlugin } from './plugins/structured-logging.js'
 import { httpMetricsPlugin } from './plugins/http-metrics.js'
-import { createLoggerConfig, serializeLogError } from './lib/logger.js'
+import { createLoggerConfig } from './lib/logger.js'
 import { env } from './config/env.js'
-import { AppError } from './lib/errors.js'
 import { resolveTrustProxy } from './lib/trust-proxy.js'
 import type { FastifyApp } from './lib/fastify-app.js'
 import { getReleaseVersion } from './lib/package-version.js'
-import { HandoffEvent, OperationalEvent } from '@project-vault/shared'
-import type { FastifyRequest } from 'fastify'
 import type { X509Certificate } from 'node:crypto'
 import {
   resolveApiListenerTls,
@@ -132,6 +137,24 @@ export type AppOptions = {
    * (`API_TLS_*`, `DATABASE_TLS_*`); tests pass it explicitly. `listener: null` is plain HTTP.
    */
   internalTls?: { listener: ApiListenerTls | null; dbClientLeaf?: X509Certificate | null }
+  /**
+   * Story 68.14: selects the extension explicitly instead of `VAULT_EXTENSIONS_PACKAGE` (the
+   * runtime route audit and `generate-spec --extension`). `loaderDeps` forwards a subset of the
+   * loader's injection seams so a DB-free boot is possible. Omitted in every production start:
+   * the loader call is then exactly what it was.
+   */
+  extension?: {
+    packageName: string
+    loaderDeps?: Pick<
+      LoadExtensionDeps,
+      'importFn' | 'listOrgIds' | 'auditWriter' | 'timeoutMs' | 'readPackageVersion'
+    >
+  }
+  /**
+   * Story 68.14: called once for every route Fastify registers, after the extension's overrides
+   * were applied (the runtime route audit). Undefined in production: no hook is installed.
+   */
+  routeObserver?: RouteObserver
 }
 
 /** Resolves (and records for /ready and /metrics) the internal TLS this app instance uses. */
@@ -160,41 +183,6 @@ function listenerHttpsOptions(listener: ApiListenerTls | null) {
       : { ca: [listener.clientCa], requestCert: true, rejectUnauthorized: true }),
   }
   return { https }
-}
-
-function shouldNormalizeMfaParserError(
-  url: string,
-  statusCode: number | undefined,
-  parserErrorCode: string | undefined
-): boolean {
-  const path = url.split('?')[0]
-  return (
-    path === '/api/v1/auth/mfa/verify-login' &&
-    (statusCode === 413 ||
-      statusCode === 415 ||
-      parserErrorCode === 'FST_ERR_CTP_BODY_TOO_LARGE' ||
-      parserErrorCode === 'FST_ERR_CTP_INVALID_MEDIA_TYPE')
-  )
-}
-
-const HANDOFF_GENERIC_REJECTION_MESSAGE = 'Sign-in could not be verified. Please start again.'
-
-// Story 30.2 AC3.8: an oversized /auth/handoff/prepare body is rejected by Fastify's body
-// parser (the route's own `bodyLimit: 16 * 1024`) BEFORE handlePrepare ever runs, so
-// verifyHandoffToken's own MAX_HANDOFF_TOKEN_BYTES branch (which would emit
-// handoff_claims_oversized) is unreachable for this case. Mirrors shouldNormalizeMfaParserError's
-// precedent: normalize the parser-level 413 to the route's own generic rejection contract and
-// still record the required security event.
-function shouldNormalizeHandoffParserError(
-  url: string,
-  statusCode: number | undefined,
-  parserErrorCode: string | undefined
-): boolean {
-  const path = url.split('?')[0]
-  return (
-    path === '/api/v1/auth/handoff/prepare' &&
-    (statusCode === 413 || parserErrorCode === 'FST_ERR_CTP_BODY_TOO_LARGE')
-  )
 }
 
 /**
@@ -375,6 +363,42 @@ function openapiTagForUrl(url: string): string {
   return OPENAPI_TAG_BY_PATH_SEGMENT.get(segment) ?? TAG.other
 }
 
+/**
+ * Loads the extension and installs everything that must exist before the first route: the
+ * per-app override table and root `onRoute` hook, the route observer, PV's (optionally wrapped or
+ * replaced) error and not-found handlers. Returns the per-app apiRoutes runtime.
+ */
+async function bootExtension(fastify: FastifyApp, options: AppOptions) {
+  const extensionPackage = options.extension?.packageName ?? env.VAULT_EXTENSIONS_PACKAGE
+  await loadExtension(extensionPackage, {
+    logger: fastify.log,
+    allowApiVersionAboveHost: env.VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST,
+    required: env.VAULT_EXTENSIONS_REQUIRED,
+    ...options.extension?.loaderDeps,
+  })
+  // AC-11: with VAULT_EXTENSIONS_REQUIRED=true, a missing package or a load failure stops the
+  // boot here, before any route registers. Unset/false stays fail-open.
+  assertExtensionRequirement({
+    required: env.VAULT_EXTENSIONS_REQUIRED,
+    packageName: extensionPackage,
+    state: getExtensionStatus(),
+  })
+  // AC-3/AC-8: the per-app override table, the eager schema check and the root onRoute hook,
+  // installed before any route or route-registering plugin (including @fastify/swagger, so the
+  // live OpenAPI document shows the effective schemas).
+  const apiRoutes = installApiRoutes(fastify as never, getExtensionStatus())
+  // Story 68.14: the route observer runs after the override hook, so it sees the final config.
+  installRouteObserver(fastify as never, options.routeObserver)
+  // Story 68.14: PV's error and not-found handlers, optionally wrapped or replaced by the
+  // extension. Installed here (not later): Fastify copies the root error handler into each route
+  // context when its plugin loads.
+  const appSpec = apiRoutes.table?.app
+  const extensionName = apiRoutes.table?.extensionName ?? ''
+  fastify.setErrorHandler(resolveErrorHandler(extensionName, appSpec) as never)
+  fastify.setNotFoundHandler(resolveNotFoundHandler(extensionName, appSpec) as never)
+  return apiRoutes
+}
+
 export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // Story 9.10 AC-1: read fresh on every createApp() call (not cached at module load) — the
   // env var is fixed for the life of a real process, but reading it here (rather than at
@@ -431,91 +455,8 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   // throws, and every consumer reads getExtensionStatus() per request, so loading earlier changes
   // no core route's registration. The auth-strategy / capability-gate / delivery-provider wiring
   // below still runs after every core route (Story 14.2 local-first order).
-  await loadExtension(env.VAULT_EXTENSIONS_PACKAGE, {
-    logger: fastify.log,
-    allowApiVersionAboveHost: env.VAULT_EXTENSIONS_ALLOW_API_VERSION_ABOVE_HOST,
-    required: env.VAULT_EXTENSIONS_REQUIRED,
-  })
-  // AC-11: with VAULT_EXTENSIONS_REQUIRED=true, a missing package or a load failure stops the
-  // boot here, before any route registers. Unset/false stays fail-open.
-  assertExtensionRequirement({
-    required: env.VAULT_EXTENSIONS_REQUIRED,
-    packageName: env.VAULT_EXTENSIONS_PACKAGE,
-    state: getExtensionStatus(),
-  })
-  // AC-3/AC-8: the per-app override table, the eager schema check and the root onRoute hook,
-  // installed before any route or route-registering plugin (including @fastify/swagger, so the
-  // live OpenAPI document shows the effective schemas).
-  const apiRoutes = installApiRoutes(fastify as never, getExtensionStatus())
+  const apiRoutes = await bootExtension(fastify, options)
   const apiDocsEnabled = docsEnabled({ enableApiDocs: env.ENABLE_API_DOCS, nodeEnv: env.NODE_ENV })
-
-  fastify.setErrorHandler(
-    async (
-      error: Error & { statusCode?: number },
-      req: FastifyRequest,
-      reply: { status: (code: number) => { send: (body: unknown) => unknown } }
-    ) => {
-      if (error instanceof AppError) {
-        return reply.status(error.statusCode).send({
-          error: error.code.toLowerCase(), // e.g. 'unseal_failed' — match epics snake_case convention
-          message: error.message,
-        })
-      }
-      // Rate-limit 429 errors from @fastify/rate-limit — map to canonical API shape (AC-24)
-      if (error.statusCode === 429) {
-        // Route-scoped rate limiters (e.g. authRoutes) build their own { code, message } body
-        // via errorResponseBuilder — pass it through as-is instead of the vault-unseal default.
-        const { code } = error as unknown as { code?: string }
-        if (code) {
-          return reply.status(429).send({ code, message: error.message })
-        }
-        return reply.status(429).send({
-          error: 'rate_limited',
-          message: 'Too many unseal attempts',
-          retryAfter: (error as unknown as { ttl?: number }).ttl
-            ? Math.ceil((error as unknown as { ttl: number }).ttl / 1000)
-            : undefined,
-        })
-      }
-      // Body parsing happens before route handlers run, so the MFA verify-login route cannot
-      // use its normal Zod parser for Fastify's 413/415 errors. Normalize both to the route's
-      // documented validation contract without exposing parser internals.
-      const parserErrorCode = (error as Error & { code?: string }).code
-      if (shouldNormalizeMfaParserError(req.url, error.statusCode, parserErrorCode)) {
-        return reply.status(422).send({
-          code: 'validation_error',
-          message: 'Request validation failed',
-        })
-      }
-      if (shouldNormalizeHandoffParserError(req.url, error.statusCode, parserErrorCode)) {
-        await writeHandoffSecurityEvent({
-          eventType: HandoffEvent.HANDOFF_CLAIMS_OVERSIZED,
-          meta: {
-            ipAddress: req.ip,
-            userAgent:
-              typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
-          },
-        })
-        return reply
-          .status(401)
-          .send({ code: 'handoff_rejected', message: HANDOFF_GENERIC_REJECTION_MESSAGE })
-      }
-      // Preserve Fastify/Zod validation errors (statusCode already set)
-      if (typeof error.statusCode === 'number') {
-        return reply.status(error.statusCode).send({
-          error: 'validation_error',
-          message: error.message,
-        })
-      }
-      req.log.error(
-        { eventType: OperationalEvent.HTTP_REQUEST_FAILED, err: serializeLogError(error) },
-        'Unhandled request error'
-      )
-      return reply
-        .status(500)
-        .send({ error: 'internal_error', message: 'An unexpected error occurred' })
-    }
-  )
 
   await fastify.register(swagger, {
     openapi: {
@@ -613,6 +554,9 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyApp> {
   if (options.vaultGuardEnabled) {
     await fastify.register(vaultGuardPlugin)
   }
+  // Story 68.14: appended app-level hooks sit right after the vault-guard slot, before the first
+  // route plugin (a root hook added after the route plugins would never reach their routes).
+  installAppendedAppHooks(fastify as never, apiRoutes)
 
   await fastify.register(healthRoutes, { dbPool: options.dbPool })
   // Story 43.6 — public CLI version policy; resolved once at boot (tighten-only merge of the baked

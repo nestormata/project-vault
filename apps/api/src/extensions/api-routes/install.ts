@@ -10,6 +10,13 @@ import {
 } from '../../lib/secure-route-overrides.js'
 import { secureAddedApiRoute, type SecureRouteRegistration } from '../../lib/secure-route.js'
 import type { ExtensionState } from '../loader.js'
+import {
+  appChangeLabels,
+  appChanges,
+  appStatus,
+  installAppHooks,
+  logAppOverrides,
+} from './app-behaviour.js'
 import { installRawRouteOverrideHook } from './raw-route-overrides.js'
 
 /**
@@ -32,7 +39,7 @@ type BootLogger = Parameters<typeof operationalLog>[0]
 
 type ApiRoutesHost = {
   decorate: (name: string, value: unknown) => unknown
-  addHook: (name: 'onRoute', hook: never) => unknown
+  addHook: (name: string, hook: never) => unknown
   register: (plugin: (instance: AddPluginHost) => Promise<void>) => PromiseLike<unknown>
 }
 
@@ -57,7 +64,18 @@ export function installApiRoutes(fastify: ApiRoutesHost, state: ExtensionState):
   // Per-app, in registration order: what the missing-target hints and Story 68-14's runtime route
   // audit read. Never consulted by a request path.
   fastify.decorate('pvRouteIndex', routeIndex)
+  // Story 68.14: prepended app-level hooks go on the root now, before every PV plugin hook.
+  installAppHooks(fastify as never, table?.app, 'prepend')
   return { table, registry, routeIndex }
+}
+
+/**
+ * Story 68.14: appended app-level hooks. Called right after the vault-guard slot (the guard
+ * plugin when `vaultGuardEnabled`, an empty slot otherwise) and before the first route plugin, so
+ * the hooks are on the root before any route context copies them.
+ */
+export function installAppendedAppHooks(fastify: ApiRoutesHost, runtime: ApiRoutesRuntime): void {
+  installAppHooks(fastify as never, runtime.table?.app, 'append')
 }
 
 const METHOD_ORDER = ['HEAD', 'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
@@ -156,8 +174,9 @@ function overrideRecord(entry: ApiRouteOverrideEntry, table: ApiRouteTable) {
 
 /** AC-6 (2): the `apiRoutes` object of `GET /api/v1/admin/extensions/status` (keys and flags). */
 export function apiRoutesStatus(table: ApiRouteTable | undefined) {
-  if (!table) return { added: [], overrides: [] }
+  if (!table) return { added: [], overrides: [], app: appStatus(undefined) }
   return {
+    app: appStatus(table.app),
     added: [...table.adds].sort(addOrder).map((entry) => {
       const capability = entry.declaration.options?.security?.capability
       return { method: entry.method, url: entry.url, ...(capability ? { capability } : {}) }
@@ -170,7 +189,9 @@ export function apiRoutesStatus(table: ApiRouteTable | undefined) {
 
 function logApplied(table: ApiRouteTable, logger: BootLogger): void {
   const status = apiRoutesStatus(table)
-  if (status.added.length === 0 && status.overrides.length === 0) return
+  if (status.added.length === 0 && status.overrides.length === 0 && !appChanges(table.app).length) {
+    return
+  }
   const added = status.added.map((entry) => `${entry.method} ${entry.url}`)
   const overrides = status.overrides.map(({ method, url, ...flags }) => ({
     key: `${method} ${url}`,
@@ -187,8 +208,10 @@ function logApplied(table: ApiRouteTable, logger: BootLogger): void {
       overrideCount: overrides.length,
       added,
       overrides,
+      app: appChangeLabels(table.app),
     }
   )
+  logAppOverrides(table.extensionName, table.app, logger)
   for (const entry of status.overrides.filter((override) => override.replaceSecurity)) {
     operationalLog(
       logger,

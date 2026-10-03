@@ -121,7 +121,11 @@ describe('GET /api/v1/admin/extensions/status', () => {
       'nativeLoginPolicy',
     ])
     // Story 68.8 AC-6 (2): zero-valued, not absent, when no extension declares apiRoutes.
-    expect(body['apiRoutes']).toEqual({ added: [], overrides: [] })
+    expect(body['apiRoutes']).toEqual({
+      added: [],
+      overrides: [],
+      app: { errorHandler: null, notFoundHandler: null, hooks: { prepend: [], append: [] } },
+    })
     expect(Object.keys(body['clockSkew'] ?? {}).sort()).toEqual([
       'lastMeasuredMs',
       'measuredAt',

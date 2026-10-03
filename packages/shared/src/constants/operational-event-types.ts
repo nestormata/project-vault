@@ -282,6 +282,12 @@ export const OperationalEvent = {
   EXTENSION_API_ROUTES_APPLIED: 'extension.api_routes.applied',
   EXTENSION_API_ROUTE_REPLACE_SECURITY: 'extension.api_route.replace_security',
   EXTENSION_API_ROUTE_SHARED_DEFAULT_KEY: 'extension.api_route.shared_default_key',
+  // Story 68.14: one warn per app-level change an extension's `apiRoutes.app` makes at boot (error
+  // handler / not-found handler wrap or replace, each prepended or appended global hook phase;
+  // never handler source), and one error per request whose extension error/not-found handler threw
+  // (route key and error class only; PV's own handler answers with the original error).
+  EXTENSION_API_ROUTE_APP_OVERRIDE: 'extension.api_route.app_override',
+  EXTENSION_API_ROUTE_APP_HANDLER_FAILED: 'extension.api_route.app_handler_failed',
   // Story 25.1 AC3: a UI panel render call degraded (threw, timed out, returned a malformed
   // result, or the extension/hook was gone at request time). Never carries the hook's raw
   // exception message/stack — fixed-enum `subReason` only, same never-leak-internal-detail

@@ -82,8 +82,8 @@ describe('Story 68.8 AC-1 — apiRoutes on the manifest and hooks', () => {
     expect(() => registerExtension(manifest, () => ({}))).toThrow(ExtensionRegistrationError)
   })
 
-  it('apiRoutes.app is not part of this release and fails as an unknown entry key', () => {
-    expectInvalid({ app: { errorHandler: 'wrap' } }, 'apiRoutes has unknown key "app"')
+  it('an unknown top-level apiRoutes key still fails (apiRoutes.app became valid in 3.29.0)', () => {
+    expectInvalid({ apps: { errorHandler: 'wrap' } }, 'apiRoutes has unknown key "apps"')
   })
 })
 
@@ -492,5 +492,124 @@ describe('Story 68.8 AC-2 (a) — the security object inside an entry is integri
       },
       'apiRoutes.override[1] duplicates GET /x'
     )
+  })
+})
+
+describe('Story 68.14 AC-5 — apiRoutes.app (app-level hooks, error handler, not-found handler)', () => {
+  const fn = () => undefined
+  const fullApp = {
+    hooks: { prepend: ['onRequest'], append: ['onSend'] },
+    errorHandler: 'wrap',
+    notFoundHandler: 'replace',
+  }
+  const fullImplementation = {
+    hooks: { onRequest: fn, onSend: [fn, fn] },
+    errorHandler: fn,
+    notFoundHandler: fn,
+  }
+  const register = (app: unknown, implementation: unknown, warn = vi.fn()) =>
+    registerExtension(
+      manifestWith({ app }),
+      () => ({ apiRoutes: { app: implementation } }) as never,
+      { logger: { warn } }
+    )
+  const expectAppInvalid = (app: unknown, implementation: unknown, messagePart: string): void => {
+    let caught: unknown
+    try {
+      register(app, implementation)
+    } catch (error) {
+      caught = error
+    }
+    expect(caught).toBeInstanceOf(ExtensionRegistrationError)
+    expect((caught as ExtensionRegistrationError).reason).toBe('invalid-manifest-field')
+    expect((caught as Error).message).toContain(messagePart)
+  }
+
+  it('a full app declaration with its implementations registers and is returned unchanged', () => {
+    const warn = vi.fn()
+    const result = register(fullApp, fullImplementation, warn)
+    expect(result.manifest.apiRoutes).toEqual({ app: fullApp })
+    expect(result.hooks.apiRoutes?.app?.errorHandler).toBe(fn)
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('an empty app object is valid and installs nothing', () => {
+    expect(() => register({}, undefined)).not.toThrow()
+  })
+
+  it('a pack without app (3.27/3.28 shape) loads unchanged', () => {
+    const declaration: ApiRoutesDeclaration = { add: [{ method: 'GET', url: DOCS_URL }] }
+    const result = registerExtension(
+      manifestWith(declaration),
+      hooksFor({ [DOCS_KEY]: { handler } })
+    )
+    expect(result.manifest.apiRoutes?.app).toBeUndefined()
+  })
+
+  it('app may be combined with add and override entries', () => {
+    const declaration = { add: [{ method: 'GET', url: DOCS_URL }], app: { errorHandler: 'wrap' } }
+    expect(() =>
+      registerExtension(manifestWith(declaration), () => ({
+        apiRoutes: { routes: { [DOCS_KEY]: { handler } }, app: { errorHandler: fn } },
+      }))
+    ).not.toThrow()
+  })
+
+  it.each([
+    [{ errorHandler: 'append' }, "apiRoutes.app.errorHandler must be 'wrap' or 'replace'"],
+    [{ notFoundHandler: true }, "apiRoutes.app.notFoundHandler must be 'wrap' or 'replace'"],
+    [{ hooks: { prepend: ['onReady'] } }, 'apiRoutes.app.hooks.prepend[0] must be one of'],
+    [{ hooks: { append: ['onRequest', 5] } }, 'apiRoutes.app.hooks.append[1] must be one of'],
+    [{ hooks: { prepend: 'onRequest' } }, 'apiRoutes.app.hooks.prepend must be an array'],
+    [{ hooks: { middle: [] } }, 'apiRoutes.app.hooks has unknown key "middle"'],
+    [{ hooks: [] }, 'apiRoutes.app.hooks must be an object'],
+    [{ errorhandler: 'wrap' }, 'apiRoutes.app has unknown key "errorhandler"'],
+  ])('app %j fails registration as an integrity error', (app, message) => {
+    expectAppInvalid(app, {}, message)
+  })
+
+  it('an app that is not an object fails', () => {
+    expectAppInvalid([], undefined, 'apiRoutes.app must be an object')
+    expectAppInvalid('wrap', undefined, 'apiRoutes.app must be an object')
+  })
+
+  it('a declared error handler without a function fails after hooksFactory()', () => {
+    expectAppInvalid(
+      { errorHandler: 'wrap' },
+      {},
+      'apiRoutes.app declares an errorHandler but hooks.apiRoutes.app has no function for it'
+    )
+  })
+
+  it('a declared not-found handler without a function fails after hooksFactory()', () => {
+    expectAppInvalid(
+      { notFoundHandler: 'replace' },
+      { notFoundHandler: 'nope' },
+      'apiRoutes.app declares a notFoundHandler but hooks.apiRoutes.app has no function for it'
+    )
+  })
+
+  it('a declared hook phase without a function fails after hooksFactory()', () => {
+    expectAppInvalid(
+      { hooks: { prepend: ['onRequest'] } },
+      { hooks: {} },
+      'apiRoutes.app declares an onRequest hook but hooks.apiRoutes.app has no function for it'
+    )
+    expectAppInvalid(
+      { hooks: { append: ['onSend'] } },
+      undefined,
+      'apiRoutes.app declares an onSend hook but hooks.apiRoutes.app has no function for it'
+    )
+  })
+
+  it('undeclared app implementations only warn', () => {
+    const warn = vi.fn()
+    register({}, { errorHandler: fn, notFoundHandler: fn, hooks: { onRequest: fn } }, warn)
+    const messages = warn.mock.calls.map((call) => String(call[0]))
+    expect(messages).toEqual([
+      'hooks.apiRoutes.app has an implementation for undeclared errorHandler',
+      'hooks.apiRoutes.app has an implementation for undeclared notFoundHandler',
+      'hooks.apiRoutes.app has an implementation for undeclared hook phase "onRequest"',
+    ])
   })
 })

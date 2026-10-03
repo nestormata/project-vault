@@ -27,6 +27,7 @@
     "test": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "generate-spec": "tsx src/scripts/generate-spec.ts",
+    "route-audit:runtime": "tsx src/scripts/runtime-route-audit.ts",
     "sso:qa": "tsx src/scripts/sso-qa.ts",
     "operator:recovery-link": "tsx src/scripts/operator-recovery-link.ts"
   },

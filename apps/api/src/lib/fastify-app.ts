@@ -4,6 +4,7 @@ export type FastifyInjectResponse = {
   statusCode: number
   headers: Record<string, string | string[] | undefined>
   json<T>(): T
+  body: string
 }
 
 type FastifyLogger = {
@@ -23,6 +24,7 @@ export type FastifyApp = {
   setValidatorCompiler: (compiler: unknown) => FastifyApp
   setSerializerCompiler: (compiler: unknown) => FastifyApp
   setErrorHandler: (handler: unknown) => FastifyApp
+  setNotFoundHandler: (handler: unknown) => FastifyApp
   register: (plugin: unknown, opts?: unknown) => Promise<unknown>
   get: (path: string, handler: unknown) => FastifyApp
   route: (options: unknown) => FastifyApp
