@@ -23,6 +23,13 @@ function readJson(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8')) as unknown
 }
 
+/** A web-host `manifests/<name>` JSON file, or `undefined` when this web-host does not ship it.
+ * Throws on invalid JSON (callers report it as a problem). */
+export function readHostManifest(host: string, name: string): unknown {
+  const path = join(host, 'manifests', name)
+  return existsSync(path) ? readJson(path) : undefined
+}
+
 type Rec = Record<string, unknown>
 
 function isRecord(value: unknown): value is Rec {
@@ -36,10 +43,9 @@ function readList(
   problems: string[],
   pick: (entry: Rec) => unknown
 ): unknown[] | undefined {
-  const path = join(host, 'manifests', name)
-  if (!existsSync(path)) return undefined
   try {
-    const raw = readJson(path)
+    const raw = readHostManifest(host, name)
+    if (raw === undefined) return undefined
     const list = isRecord(raw) ? new Map(Object.entries(raw)).get(key) : undefined
     if (!isRecord(raw) || raw.schemaVersion !== SUPPORTED_SCHEMA || !Array.isArray(list)) {
       throw new Error(`expected { schemaVersion: ${SUPPORTED_SCHEMA}, ${key}: [...] }`)

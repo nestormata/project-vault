@@ -8,6 +8,7 @@ import type { InjectionPointRecord } from './registry.js'
 import type { AdditionRecord, OverrideRecord, RemovalRecord, ReplacementRecord } from './overlay.js'
 import type { Relocated } from './materialize.js'
 import type { CompatibilityTuple } from './types.js'
+import type { ProtectedPathsRecord } from './protected-paths.js'
 
 export const LOCKFILE_VERSION = 1
 export const SCHEMA_PATH = 'packages/composition-kit/schema/composition.lock.schema.json'
@@ -17,7 +18,9 @@ export interface Contributions {
   hooks: Record<string, string>
   nav: string | null
   theme: string | null
-  protectedPaths: { add: string[]; remove: string[] } | null
+  /** Story 68.6: `derived` lists the CM `(app)` routes the composer protects. A lock written
+   * before 68.6 has no `derived` and is read as `derived: []` (additive, no version bump). */
+  protectedPaths: ProtectedPathsRecord | null
 }
 
 export interface CompositionLock {
@@ -124,7 +127,20 @@ export function parseLock(
   if (missing.length > 0) {
     return { problem: `${label} is missing ${missing.join(', ')} (schema: ${SCHEMA_PATH})` }
   }
-  return { lock: record as unknown as CompositionLock }
+  return { lock: withDerivedDefault(record as unknown as CompositionLock) }
+}
+
+/** Locks written before Story 68.6 have no `contributions.protectedPaths.derived`. */
+function withDerivedDefault(lock: CompositionLock): CompositionLock {
+  const paths = lock.contributions?.protectedPaths as Partial<ProtectedPathsRecord> | null
+  if (paths === null || paths === undefined || Array.isArray(paths.derived)) return lock
+  return {
+    ...lock,
+    contributions: {
+      ...lock.contributions,
+      protectedPaths: { add: paths.add ?? [], remove: paths.remove ?? [], derived: [] },
+    },
+  }
 }
 
 export function readLock(path: string): { lock?: CompositionLock; problem?: string } | null {

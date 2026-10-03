@@ -47,6 +47,21 @@ export interface UiPackManifest {
   protectedPaths?: { add?: string[]; remove?: string[] }
 }
 
+/** Story 68.6: the shape of `virtual:pv-hooks/universal` and `virtual:pv-hooks/client` (web-host
+ * declares the same structural shape; a contract test keeps the two assignable both ways). */
+export interface PvHooksModule {
+  readonly hooks: Readonly<Record<string, unknown>>
+}
+
+/** Story 68.6: the shape of `virtual:pv-hooks/server`. */
+export interface PvServerHooksModule extends PvHooksModule {
+  readonly protectedPaths: {
+    readonly routeIds: readonly string[]
+    readonly add: readonly string[]
+    readonly remove: readonly string[]
+  }
+}
+
 /** Identity at runtime, typed at compile time. */
 export function defineUiPack(pack: UiPackManifest): UiPackManifest {
   return pack

@@ -1,4 +1,5 @@
 import type { Contributions } from './lock.js'
+import type { ProtectedPathsRecord } from './protected-paths.js'
 import type { MaterializeResult, MaterializeRoot } from './materialize.js'
 import { compareCodeUnits, normalizePackPath } from './paths.js'
 import type { Pack } from './sources.js'
@@ -77,8 +78,14 @@ export function composedPathOf(
   return mat.relocated.find((entry) => entry.source === rel)?.dest ?? rel
 }
 
-/** What the lock records for the contributions later stories apply (hooks, nav, theme, paths). */
-export function contributionsOf(manifest: UiPackManifest, mat: MaterializeResult): Contributions {
+/** What the lock records for the contributions later stories apply (hooks, nav, theme, paths).
+ * `protectedPaths` (Story 68.6) is the validated record when the web-host supports the hooks
+ * surface; for an older web-host it stays 68-3's add/remove record with `derived: []`. */
+export function contributionsOf(
+  manifest: UiPackManifest,
+  mat: MaterializeResult,
+  protectedPaths?: ProtectedPathsRecord
+): Contributions {
   const hooks = Object.fromEntries(
     Object.entries(manifest.hooks ?? {}).flatMap(([kind, ref]) => {
       const where = composedPathOf(ref, mat)
@@ -90,20 +97,29 @@ export function contributionsOf(manifest: UiPackManifest, mat: MaterializeResult
     hooks,
     nav: composedPathOf(manifest.nav, mat),
     theme: composedPathOf(manifest.theme, mat),
-    protectedPaths:
-      paths === undefined
-        ? null
-        : {
-            add: [...(paths.add ?? [])].sort(compareCodeUnits),
-            remove: [...(paths.remove ?? [])].sort(compareCodeUnits),
-          },
+    protectedPaths: protectedPathsRecord(paths, protectedPaths),
   }
 }
 
-/** Contributions this story validates and records but does not apply (68-6, 68-7 own them). */
-export function deferredNotes(manifest: UiPackManifest): string[] {
+function protectedPathsRecord(
+  paths: UiPackManifest['protectedPaths'],
+  record: ProtectedPathsRecord | undefined
+): ProtectedPathsRecord | null {
+  if (record !== undefined && (paths !== undefined || record.derived.length > 0)) return record
+  if (paths === undefined) return null
+  return {
+    add: [...(paths.add ?? [])].sort(compareCodeUnits),
+    remove: [...(paths.remove ?? [])].sort(compareCodeUnits),
+    derived: [],
+  }
+}
+
+/** Contributions validated and recorded but not applied by this web-host. `hooksSupported` is true
+ * when the web-host ships `manifests/hooks-surface.json` (Story 68.6), which applies hooks and
+ * protected paths. */
+export function deferredNotes(manifest: UiPackManifest, hooksSupported = false): string[] {
   const notes: string[] = []
-  if (Object.keys(manifest.hooks ?? {}).length > 0) {
+  if (!hooksSupported && Object.keys(manifest.hooks ?? {}).length > 0) {
     notes.push(
       'hook composition not applied: requires web-host with composeHandles (Story 68-6); the hook files were materialized'
     )
@@ -113,7 +129,7 @@ export function deferredNotes(manifest: UiPackManifest): string[] {
       'nav delta not applied: requires web-host with navigation as data (Story 68-7); the nav file was materialized'
     )
   }
-  if (manifest.protectedPaths !== undefined) {
+  if (!hooksSupported && manifest.protectedPaths !== undefined) {
     notes.push('protectedPaths not applied: requires Story 68-6; recorded in the lock')
   }
   return notes

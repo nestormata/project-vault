@@ -67,6 +67,7 @@ import {
   PEER_PACKAGES,
   VENDORED_SHARED_DIR,
   buildCompatibilityManifest,
+  buildHooksSurfaceManifest,
   buildPackageJson,
   kitVersionProblems,
   optionalManifestsToPack,
@@ -78,6 +79,8 @@ import {
   rewriteSharedSource,
 } from '../apps/web/config/app-css-source.ts'
 import { paraglideOptions } from '../apps/web/config/paths.ts'
+import { HOOK_SURFACE } from '../apps/web/src/lib/composition/hook-surface.ts'
+import { PV_PROTECTED_PREFIXES } from '../apps/web/src/lib/server/protected-paths.ts'
 import { npmPackArgs, packDestination } from './lib/web-host/pack-destination.js'
 
 export const REPO_ROOT = join(import.meta.dirname, '..')
@@ -528,7 +531,16 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
     apiImageTag: releaseImageRef(options.repository, 'api', options.version),
   })
   writeFileSync(join(STAGE_DIR, 'manifests', 'compatibility.json'), compatibilityManifest)
-  const optional = packOptionalManifests()
+  // Story 68.6 AC-12: generated from PV's own HOOK_SURFACE (the table hook-surface.test.ts keeps
+  // equal to the installed SvelteKit's hooks) and PV's protected prefixes.
+  writeFileSync(
+    join(STAGE_DIR, 'manifests', 'hooks-surface.json'),
+    buildHooksSurfaceManifest({
+      hookSurface: HOOK_SURFACE,
+      protectedPrefixes: PV_PROTECTED_PREFIXES,
+    })
+  )
+  const optional = ['hooks-surface.json', ...packOptionalManifests()]
   writeFileSync(join(STAGE_DIR, MANIFEST), `${JSON.stringify(packageJson, null, 2)}\n`)
   const manifests = ['compatibility.json', ...optional].join(', ')
   log(

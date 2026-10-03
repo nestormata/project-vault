@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   OPTIONAL_MANIFESTS,
+  buildHooksSurfaceManifest,
   buildCompatibilityManifest,
   buildPackageJson,
   kitVersionProblems,
@@ -118,6 +119,39 @@ describe('compatibility manifest (Story 68.2 AC-9)', () => {
     expect(Object.keys(parsed.toolchain as object)).toEqual(['kit', 'svelte', 'typescript', 'vite'])
     expect(parsed.kitVersion).toBe('0.1.0')
     expect(parsed.schemaVersion).toBe(1)
+  })
+})
+
+describe('hooks-surface.json (Story 68.6 AC-12)', () => {
+  it('is deterministic: sorted lists, sorted keys, both contribution flags', () => {
+    const text = buildHooksSurfaceManifest({
+      hookSurface: {
+        server: ['init', 'handle'],
+        universal: ['transport', 'reroute'],
+        client: ['init', 'handleError'],
+      },
+      protectedPrefixes: ['/settings', '/dashboard'],
+    })
+    expect(JSON.parse(text)).toEqual({
+      client: ['handleError', 'init'],
+      headerPolicy: true,
+      protectedPaths: true,
+      protectedPrefixes: ['/dashboard', '/settings'],
+      schemaVersion: 1,
+      server: ['handle', 'init'],
+      universal: ['reroute', 'transport'],
+    })
+    expect(Object.keys(JSON.parse(text) as object)).toEqual([
+      'client',
+      'headerPolicy',
+      'protectedPaths',
+      'protectedPrefixes',
+      'schemaVersion',
+      'server',
+      'universal',
+    ])
+    expect(text.endsWith('}\n')).toBe(true)
+    expect(OPTIONAL_MANIFESTS).toContain('hooks-surface.json')
   })
 })
 

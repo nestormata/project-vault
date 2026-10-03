@@ -347,9 +347,23 @@ describe('compatibility manifest (Story 68.2 AC-9)', () => {
   })
 
   it('packs no empty stub for a manifest a later story has not generated yet', () => {
-    expect(paths.filter((path) => path.startsWith('manifests/'))).toEqual([
+    expect(paths.filter((path) => path.startsWith('manifests/')).sort()).toEqual([
       'manifests/compatibility.json',
+      'manifests/hooks-surface.json',
     ])
+  })
+
+  it('packs hooks-surface.json from PV HOOK_SURFACE and protected prefixes (Story 68.6 AC-12)', async () => {
+    const surface = JSON.parse(
+      await fileText(join(STAGE_DIR, 'manifests', 'hooks-surface.json'))
+    ) as Record<string, unknown>
+    expect(surface).toMatchObject({
+      schemaVersion: 1,
+      headerPolicy: true,
+      protectedPaths: true,
+      universal: ['reroute', 'transport'],
+    })
+    expect(surface.protectedPrefixes).toContain('/extensions/panels')
   })
 })
 

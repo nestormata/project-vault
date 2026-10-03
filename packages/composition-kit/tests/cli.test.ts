@@ -57,6 +57,29 @@ describe('pv-compose CLI contract (AC-2)', () => {
     )
   })
 
+  it('prints the protected-paths line, and each derived route under --verbose (Story 68.6)', async () => {
+    const world = makeWorld({
+      hostFiles: {
+        'manifests/hooks-surface.json': JSON.stringify({
+          schemaVersion: 1,
+          server: ['handle'],
+          universal: ['reroute'],
+          client: ['init'],
+          protectedPrefixes: ['/dashboard'],
+        }),
+      },
+      packFiles: { 'src/routes/(app)/cm-area/+page.svelte': 'cm\n' },
+    })
+    writeManifest(world, manifest())
+    const quiet = await cli(baseArgs(world))
+    expect(quiet.out).toContain(
+      'pv-compose: protected paths: 1 derived (app) routes, 0 added, 0 removed (0 notes)'
+    )
+    expect(quiet.out).not.toContain('pv-compose:   protected /(app)/cm-area')
+    const verbose = await cli([...baseArgs(world), '--verbose'])
+    expect(verbose.out).toContain('pv-compose:   protected /(app)/cm-area')
+  })
+
   it('exits 1 on an integrity failure, printing every problem then a count', async () => {
     const world = makeWorld({
       packFiles: { 'src/routes/login/+page.svelte': 'x\n', [DASHBOARD]: 'y\n' },

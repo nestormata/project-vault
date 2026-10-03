@@ -10,7 +10,8 @@
 //   - the route id is one the composer derived from a CM route under `(app)` (exact, Q4).
 // Remote functions (`/_app/remote/...`) carry no route id and are not gated here (Q9): they must
 // call `requireUser` themselves.
-import { stripRouteGroups } from '$lib/composition/route-id.js'
+// Relative (not `$lib`) so the web-host pack script can import this data with tsx.
+import { stripRouteGroups } from '../composition/route-id.js'
 
 export const PV_PROTECTED_PREFIXES: readonly string[] = Object.freeze([
   '/dashboard',

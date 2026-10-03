@@ -51,9 +51,11 @@ export const CONFIG_EXPORTS = [
   'app-css-source',
 ] as const
 
-/** Generated manifests later stories add (68-4, 68-5, 68-7): packed when generated, never stubbed. */
+/** Generated manifests later stories add (68-4, 68-5, 68-6, 68-7): packed when generated, never
+ * stubbed. A composition kit treats each as optional (an older web-host does not ship it). */
 export const OPTIONAL_MANIFESTS = [
   'component-index.json',
+  'hooks-surface.json',
   'injection-points.json',
   'nav-ids.json',
 ] as const
@@ -196,6 +198,30 @@ export function buildCompatibilityManifest(input: CompatibilityInput): string {
     kitVersion: input.kitVersion,
     toolchain: input.toolchain,
     apiImageTag: input.apiImageTag,
+  }
+  return `${JSON.stringify(sortKeys(manifest), null, 2)}\n`
+}
+
+export interface HooksSurfaceInput {
+  hookSurface: Readonly<Record<'server' | 'universal' | 'client', readonly string[]>>
+  protectedPrefixes: readonly string[]
+}
+
+const byCodeUnit = (a: string, b: string) => (a < b ? -1 : Number(a > b))
+
+/** manifests/hooks-surface.json (Story 68.6 AC-12): the SvelteKit hooks PV's composition covers per
+ * hooks file, that header policy and protected paths are contribution surfaces, and PV's own
+ * protected prefixes (the kit derives notes from them). Deterministic: sorted lists and keys. */
+export function buildHooksSurfaceManifest(input: HooksSurfaceInput): string {
+  const sorted = (list: readonly string[]) => [...list].sort(byCodeUnit)
+  const manifest = {
+    schemaVersion: 1,
+    server: sorted(input.hookSurface.server),
+    universal: sorted(input.hookSurface.universal),
+    client: sorted(input.hookSurface.client),
+    headerPolicy: true,
+    protectedPaths: true,
+    protectedPrefixes: sorted(input.protectedPrefixes),
   }
   return `${JSON.stringify(sortKeys(manifest), null, 2)}\n`
 }
