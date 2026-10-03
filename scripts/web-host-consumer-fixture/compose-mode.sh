@@ -649,18 +649,19 @@ compose_nav_test() {
 }
 
 compose_before() { # needle-a needle-b context: a must come before b in $WORK/body.txt
-  local a b
-  a="$(compose_offset "$1")"
-  b="$(compose_offset "$2")"
+  local first="$1" second="$2" context="$3" a b
+  a="$(compose_offset "$first")"
+  b="$(compose_offset "$second")"
   if [[ -z "$a" || -z "$b" || "$a" -ge "$b" ]]; then
-    compose_fail "$3: expected '$1' before '$2'"
+    compose_fail "$context: expected '$first' before '$second'"
   fi
   return 0
 }
 
 compose_absent() { # needle context
-  if grep -qF -- "$1" "$WORK/body.txt"; then
-    compose_fail "$2: unexpected $1"
+  local needle="$1" context="$2"
+  if grep -qF -- "$needle" "$WORK/body.txt"; then
+    compose_fail "$context: unexpected $needle"
   fi
   return 0
 }
