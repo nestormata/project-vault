@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
+import type * as TypeScript from 'typescript'
 import { acceptedState, applyAcceptances, type AcceptedEntry } from './accept.js'
 import { appRootProblems } from './apply.js'
 import { assemble } from './assemble.js'
@@ -18,6 +19,16 @@ import { checkInjectionPoints, checkNavIds, readRegistries, type Registries } fr
 import { PV_ORIGINAL_TYPES_PATH, pvOriginalDeclarations } from './pv-original-types.js'
 import { replacementMapText } from './replacement-map.js'
 import { hasher, loadHost, loadPack, type Host, type Pack } from './sources.js'
+import {
+  exportNames,
+  hookEntries,
+  hookExportNotes,
+  overriddenHookNotes,
+  readHooksSurface,
+  type HooksSurface,
+} from './hooks-surface.js'
+import { protectedPathsFindings, type ProtectedPathsRecord } from './protected-paths.js'
+import { requirePeer } from './peers.js'
 import type { UiPackManifest } from './types.js'
 
 export { GENERATED_MARKER } from './assemble.js'
@@ -43,6 +54,8 @@ export interface ComposeOptions {
   /** Where `typescript` and `svelte/compiler` are resolved from (default: the app root). */
   resolveFrom?: string
   log?: (line: string) => void
+  /** Also log each derived protected route (Story 68.6). */
+  verbose?: boolean
 }
 
 export interface ComposeSummary {
@@ -205,6 +218,57 @@ function unreachedNotes(stage: Stage, reached: ReadonlySet<string>): string[] {
     )
 }
 
+/** Story 68.6: hook export notes, full-override notes and protected-path derivation, when the
+ * web-host ships `manifests/hooks-surface.json`. An older web-host keeps 68-3's behaviour. */
+function hookFileNotes(stage: Stage, mat: MaterializeResult, surface: HooksSurface): string[] {
+  const entries = hookEntries(stage.manifest.hooks)
+  if (entries.length === 0) return []
+  const ts = requirePeer<typeof TypeScript>(
+    'typescript',
+    stage.options.resolveFrom ?? stage.options.appRoot
+  )
+  return entries.flatMap(([kind, ref]) => {
+    const dest = composedPathOf(ref, mat)
+    const bytes = dest === null ? undefined : mat.files.get(dest)
+    // A missing file was already reported by collectRoots.
+    if (bytes === undefined) return []
+    return hookExportNotes(kind, exportNames(bytes.toString('utf8'), ts, dest ?? ref), surface)
+  })
+}
+
+/** Story 68.6: hook export notes, full-override notes and protected-path derivation, when the
+ * web-host ships `manifests/hooks-surface.json`. An older web-host keeps 68-3's behaviour. */
+function hooksFindings(
+  stage: Stage,
+  overlay: OverlayResult,
+  mat: MaterializeResult,
+  log: (line: string) => void
+): { problems: string[]; notes: string[]; surface?: HooksSurface; record?: ProtectedPathsRecord } {
+  const read = readHooksSurface(stage.host.dir)
+  if (read.surface === undefined) return { problems: read.problems, notes: [] }
+  const surface = read.surface
+  const overridden = new Set(overlay.overrides.map((entry) => entry.path))
+  const paths = protectedPathsFindings({
+    manifest: stage.manifest,
+    cmRouteFiles: [...overlay.overrides, ...overlay.additions].map((entry) => entry.path),
+    pvPrefixes: surface.protectedPrefixes,
+  })
+  log(`pv-compose: ${paths.summary}`)
+  if (stage.options.verbose === true) {
+    for (const route of paths.record.derived) log(`pv-compose:   protected ${route.routeId}`)
+  }
+  return {
+    problems: paths.problems,
+    notes: [
+      ...overriddenHookNotes(stage.manifest.hooks, overridden),
+      ...hookFileNotes(stage, mat, surface),
+      ...paths.notes,
+    ],
+    surface,
+    record: paths.record,
+  }
+}
+
 function summaryOf(
   overlay: OverlayResult,
   mat: MaterializeResult,
@@ -319,9 +383,11 @@ function planStage(
     composedPath: composedPathOf,
   })
   findings.add(injections)
+  const hooks = hooksFindings(stage, overlay, mat, log)
+  findings.add(hooks)
   findings.add({
     notes: [
-      ...deferredNotes(stage.manifest),
+      ...deferredNotes(stage.manifest, hooks.surface !== undefined),
       ...unreachedNotes(stage, new Set([...mat.reached, ...overlayPaths])),
     ],
   })
@@ -341,7 +407,7 @@ function planStage(
     removals: overlay.removals,
     replacements: overlay.replacements,
     relocated: mat.relocated,
-    contributions: contributionsOf(stage.manifest, mat),
+    contributions: contributionsOf(stage.manifest, mat, hooks.record),
     injectionPointsUsed: registry.used,
     injections: injections.lock,
     navIdsReferenced: registry.navRefs,

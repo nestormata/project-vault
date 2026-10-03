@@ -20,6 +20,7 @@ own app and builds it.
 | `manifests/compatibility.json` | The compatibility manifest (below). |
 | `manifests/injection-points.json` | The injection point registry (Story 68-4), generated at pack time from `injection-points.ts` and the route files that render each point: `{ schemaVersion: 1, points: [{ name, file, kind, propsType, routeId, scope }] }`. The kit reads `name`, `file`, `routeId` and `scope`. A later generated manifest (`nav-ids.json`) lands here when its story ships. |
 | `manifests/component-index.json` | Story 68.5: generated into the staging directory on every pack (never committed): `{ schemaVersion: 1, components: [{ path, stability, hash }] }` for every `.svelte` file under `src/lib/components` and every non-test `.ts` module under `src/lib`, sorted by `path`. `hash` is SHA-256 of the raw bytes (the `hostSha256` of a replacement); `stability` is `stable` when the file's first top-level comment carries `@pv-stable` (the first `<!-- -->` of a `.svelte` file, the first `/** */` of a `.ts` file), else `unmarked`. A signal for composers, never a restriction: any module may be replaced. |
+| `manifests/hooks-surface.json` | Story 68-6: generated at pack time from PV's `HOOK_SURFACE` and `PV_PROTECTED_PREFIXES`: the SvelteKit hooks PV's composition covers per hooks file (`server`, `universal`, `client`), `headerPolicy: true`, `protectedPaths: true` and PV's own `protectedPrefixes`. The composition kit reads it; with an older web-host that lacks it, hooks and protected paths stay unapplied. |
 | `tsconfig.base.json` | PV's compiler options, for a consumer's `tsconfig.json` to extend. |
 | `LICENSE`, `README.md` | AGPL-3.0-or-later, and what the package is. |
 
@@ -33,6 +34,15 @@ are excluded and logged with the rule they break. So is the route render snapsho
 is valid only on PV's tree and cannot match once a pack overrides or injects. The packages only the tests import
 (`@testing-library/svelte`, `jsdom`, `@vitest/coverage-v8`) are optional exact peers. The consumer
 fixture runs every shipped test from the tarball, and they must all pass.
+
+**Composition modules (Story 68-6).** A full override of a hooks file can rebuild PV's pipeline
+around its own code from `$lib/server/composition/index.js` (`createPvHandle`, `composeHandles`,
+`composeServerHooks`, `PV_HEADER_POLICY`, `composeProtectedPaths`, `PV_PROTECTED_PREFIXES`,
+`isProtectedRequest`) and the client-safe `$lib/composition/index.js` (`composeChainHook`,
+`composeUniversalHooks`, `composeClientHooks`, `HOOK_SURFACE`, the header-policy functions).
+`src/hooks.ts` and `src/hooks.client.ts` exist (empty compositions in PV's build). The vite and
+vitest factories include an empty provider for `virtual:pv-hooks/*` that refuses a composed tree
+without the kit's `pvHooks()` plugin. See [docs/composition-kit.md](composition-kit.md).
 
 Not shipped: cross-package tests, the PV-tree-only route snapshot, Playwright e2e, generated Paraglide output, build output, the
 Dockerfile and PV's dev tooling.

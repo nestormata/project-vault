@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { pvComposeDev, pvInject, pvReplace } from '@project-vault/composition-kit/vite'
+import { pvComposeDev, pvHooks, pvInject, pvReplace } from '@project-vault/composition-kit/vite'
 import { viteConfig } from '@project-vault/web-host/vite.config'
 
 // Vite bundles this file into a temporary one, where only import.meta.url is reliable.
@@ -18,10 +18,14 @@ const inject = pvInject({
 })
 
 // The dev variant also runs the composer in watch mode (the plugin only applies to `vite dev`).
+// pvHooks() (Story 68-6) generates the virtual:pv-hooks/* modules from the lock; without it
+// web-host's empty provider refuses to build a composed tree.
 const dev = process.env.PV_FIXTURE_DEV === '1'
-const plugins = dev
-  ? [pvComposeDev({ appRoot, packRoot: process.env.PV_FIXTURE_PACK ?? '', hostDir }), inject]
-  : [inject]
+const plugins = [
+  pvHooks({ appRoot }),
+  ...(dev ? [pvComposeDev({ appRoot, packRoot: process.env.PV_FIXTURE_PACK ?? '', hostDir })] : []),
+  inject,
+]
 
 // Story 68.5: `pvReplace()` is listed AFTER PV's own plugins (`sveltekit()` among them), which is
 // where `viteConfig` puts a caller's plugins: SvelteKit's import guard must see every import before

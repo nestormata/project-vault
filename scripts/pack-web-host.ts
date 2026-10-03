@@ -32,6 +32,7 @@ import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
+import { tsImport } from 'tsx/esm/api'
 import { DEFAULT_RELEASE_REPOSITORY, releaseImageRef } from './lib/release-image.js'
 import { resolveBin, trustedGit } from './lib/trusted-executable.js'
 import { extensionApiVersion } from './lib/version-triangle.js'
@@ -68,6 +69,9 @@ import {
   PEER_PACKAGES,
   VENDORED_SHARED_DIR,
   buildCompatibilityManifest,
+  buildHooksSurfaceManifest,
+  HOOKS_SURFACE_MANIFEST,
+  type HooksSurfaceInput,
   buildPackageJson,
   kitVersionProblems,
   optionalManifestsToPack,
@@ -422,6 +426,28 @@ function packOptionalManifests(): string[] {
   return optionalManifestsToPack(new Set([...existing, 'component-index.json']))
 }
 
+type HookSurfaceModule = typeof import('../apps/web/src/lib/composition/hook-surface.ts')
+type ProtectedPathsModule = typeof import('../apps/web/src/lib/server/protected-paths.ts')
+
+/**
+ * Story 68.6 AC-12: read HOOK_SURFACE and PV_PROTECTED_PREFIXES from apps/web/src itself (the one
+ * source of truth) through tsx with no tsconfig. A static import would hand these files to the
+ * caller's transformer, and under Vitest that resolves apps/web/tsconfig.json, which extends the
+ * generated .svelte-kit/tsconfig.json that only exists after `svelte-kit sync` (absent in the CI
+ * jobs that run the pack tests). Both modules are plain data plus pure helpers, so no tsconfig
+ * setting changes how they load.
+ */
+async function loadHooksSurfaceInput(): Promise<HooksSurfaceInput> {
+  const load = (file: string): Promise<unknown> =>
+    tsImport(pathToFileURL(join(WEB_DIR, file)).href, {
+      parentURL: import.meta.url,
+      tsconfig: false,
+    })
+  const surface = (await load('src/lib/composition/hook-surface.ts')) as HookSurfaceModule
+  const paths = (await load('src/lib/server/protected-paths.ts')) as ProtectedPathsModule
+  return { hookSurface: surface.HOOK_SURFACE, protectedPrefixes: paths.PV_PROTECTED_PREFIXES }
+}
+
 export async function packWebHost(options: PackOptions): Promise<PackResult> {
   const log = options.log ?? ((line: string) => process.stdout.write(`${line}\n`))
   const problems: string[] = []
@@ -542,9 +568,20 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
   })
   writeFileSync(join(STAGE_DIR, 'manifests', 'compatibility.json'), compatibilityManifest)
   writeFileSync(join(STAGE_DIR, 'manifests', INJECTION_POINTS_MANIFEST), injectionPoints.text)
+  // Story 68.6 AC-12: generated from PV's own HOOK_SURFACE (the table hook-surface.test.ts keeps
+  // equal to the installed SvelteKit's hooks) and PV's protected prefixes.
+  writeFileSync(
+    join(STAGE_DIR, 'manifests', 'hooks-surface.json'),
+    buildHooksSurfaceManifest(await loadHooksSurfaceInput())
+  )
   const optional = packOptionalManifests()
   writeFileSync(join(STAGE_DIR, MANIFEST), `${JSON.stringify(packageJson, null, 2)}\n`)
-  const manifests = ['compatibility.json', INJECTION_POINTS_MANIFEST, ...optional].join(', ')
+  const manifests = [
+    'compatibility.json',
+    INJECTION_POINTS_MANIFEST,
+    HOOKS_SURFACE_MANIFEST,
+    ...optional,
+  ].join(', ')
   log(
     `pack-web-host: done: ${options.version}, ${shippedWebFiles.length + shared.files.length} source files, ` +
       `manifests: ${manifests}`

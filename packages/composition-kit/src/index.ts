@@ -4,6 +4,8 @@ export type {
   CompatibilityTuple,
   HooksContribution,
   InjectionContribution,
+  PvHooksModule,
+  PvServerHooksModule,
   Replacement,
   RouteOverride,
   UiPackManifest,

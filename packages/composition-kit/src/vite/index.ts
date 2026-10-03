@@ -18,6 +18,13 @@ const MANIFEST_BASENAME = 'pv-ui.manifest'
 export { invalidateVirtualModules, registerVirtualModulePrefix } from './virtual-modules.js'
 export { BEHAVIOR_ID, POINT_PREFIX, pvInject, type PvInjectOptions } from './inject.js'
 
+// Story 68.6: the signatures of every tree this process composed, by app root. A dev-server restart
+// (pvHooks() restarts it when the hooks or protected-path contribution changes) creates a new plugin
+// instance in the same process; it then brings the existing tree up to date incrementally instead
+// of swapping in a fresh copy, which would drop files other plugins generated inside it (for
+// example the Paraglide output under src/lib/paraglide).
+const composedTrees = new Map<string, Signatures>()
+
 export interface PvComposeDevOptions extends ComposeOptions {
   /** Quiet period before a burst of file events becomes one compose (default 100 ms). */
   debounceMs?: number
@@ -39,7 +46,10 @@ function inside(root: string, path: string): boolean {
 export function pvComposeDev(options: PvComposeDevOptions): Plugin {
   const packRoot = realpathSync(options.packRoot)
   const hostRoot = realpathSync(options.hostDir)
+  const treeKey = resolve(options.appRoot)
   const state: { signatures?: Signatures; failed: boolean } = { failed: false }
+  const previous = composedTrees.get(treeKey)
+  if (previous !== undefined) state.signatures = previous
 
   async function compose(): Promise<{ problems: string[] }> {
     const composed = await plan(options)
@@ -49,6 +59,7 @@ export function pvComposeDev(options: PvComposeDevOptions): Plugin {
       state.signatures === undefined
         ? signaturesOf(composed)
         : applyIncremental(composed, options.appRoot, state.signatures)
+    composedTrees.set(treeKey, state.signatures)
     return { problems: [] }
   }
 
@@ -99,3 +110,6 @@ export function pvComposeDev(options: PvComposeDevOptions): Plugin {
     },
   }
 }
+
+export { pvHooks, hooksModuleCode, PV_HOOKS_PLUGIN_NAME, PV_HOOKS_PREFIX } from './hooks.js'
+export type { PvHooksOptions } from './hooks.js'

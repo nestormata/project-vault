@@ -1,0 +1,104 @@
+{
+  "responses": {
+    "login-anonymous": {
+      "status": 200,
+      "headers": {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      },
+      "setCookie": []
+    },
+    "register-anonymous": {
+      "status": 200,
+      "headers": {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      },
+      "setCookie": []
+    },
+    "status-public": {
+      "status": 200,
+      "headers": {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      },
+      "setCookie": []
+    },
+    "handoff-anonymous": {
+      "status": 200,
+      "headers": {
+        "content-security-policy": "frame-ancestors 'none'",
+        "referrer-policy": "strict-origin",
+        "x-frame-options": "DENY"
+      },
+      "setCookie": []
+    },
+    "dashboard-anonymous": {
+      "status": 303,
+      "headers": {
+        "location": "/login"
+      },
+      "setCookie": []
+    },
+    "dashboard-session-expired": {
+      "status": 303,
+      "headers": {
+        "location": "/login?reason=session-expired"
+      },
+      "setCookie": []
+    },
+    "dashboard-authenticated-data": {
+      "status": 200,
+      "headers": {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      },
+      "setCookie": []
+    },
+    "login-authenticated": {
+      "status": 303,
+      "headers": {
+        "location": "/dashboard"
+      },
+      "setCookie": []
+    },
+    "panel-anonymous": {
+      "status": 303,
+      "headers": {
+        "location": "/login"
+      },
+      "setCookie": []
+    },
+    "panel-authenticated": {
+      "status": 200,
+      "headers": {
+        "content-security-policy": "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      },
+      "setCookie": []
+    },
+    "settings-action-anonymous": {
+      "status": 303,
+      "headers": {
+        "location": "/login"
+      },
+      "setCookie": []
+    },
+    "dashboard-sealed": {
+      "status": 303,
+      "headers": {
+        "location": "/vault"
+      },
+      "setCookie": []
+    },
+    "unmatched": {
+      "status": 404,
+      "headers": {
+        "content-security-policy": "frame-ancestors 'none'",
+        "x-frame-options": "DENY"
+      },
+      "setCookie": []
+    }
+  },
+  "kitDefaultErrorLogged": true
+}

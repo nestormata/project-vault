@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { REPO_ROOT, STAGE_DIR, packWebHost } from './pack-web-host.js'
 import { makeRecipe } from './lib/ci-wiring.js'
-import { resolveBin, resolveTrustedExecutable } from './lib/trusted-executable.js'
+import { resolveBin, resolveTrustedExecutable, trustedGit } from './lib/trusted-executable.js'
 import { extensionApiVersion, packInto, resolveExtensionApi } from './lib/web-host/fixture-pack.js'
 import { parseYaml } from './lib/yaml.js'
 
@@ -48,9 +48,13 @@ function webVersion(name: string): string {
   return (requireFromWeb(`${name}/package.json`) as { version: string }).version
 }
 
-function runVariant(variant: string): { status: number | null; output: string } {
+function runVariant(
+  variant: string,
+  extraEnv: NodeJS.ProcessEnv = {}
+): { status: number | null; output: string } {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    ...extraEnv,
     WEB_HOST_FIXTURE_CACHE: join(workDir, 'npm-cache'),
     COMPOSITION_KIT_TARBALL: kitTarball,
     COMPOSITION_KIT_FIXTURES: FIXTURES_DIR,
@@ -114,6 +118,24 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
       expect(output).toContain(
         'OK: injected markup (in order), load data, layout point, shell head and action served'
       )
+      // Story 68-6: hook bundles, derived protection, the reroute bypass and the CM policy delta.
+      expect(output).toContain(
+        'OK: server hook code stays out of the client bundle; universal/client hooks reach it'
+      )
+      expect(output).toContain(
+        'OK: AC-9 table (anonymous, session-expired, sealed, authenticated, CSRF) with handler counters; handleFetch, transport, init, handleError and the CM policy applied'
+      )
+      expect(output).toContain(
+        'pv-compose: protected paths: 5 derived (app) routes, 1 added, 1 removed'
+      )
+      // Code review 68-6: AC-8 derived ids vs Kit's route list, the remaining AC-9 rows, and the
+      // header-policy delta printed by composed-hooks-init.test.ts in the composed tree (Q3).
+      expect(output).toContain('OK: 5 derived route ids are all Kit routes')
+      expect(output).toContain(
+        'OK: protectedPaths add/remove, CM shares override, refreshed cookies (incl. an immutable proxied response) and the rerouted action'
+      )
+      expect(output).toContain('pv-compose: header policy: added defaults.x-cm-policy')
+      expect(output).toContain('pv-compose: header policy: added rules.cm-billing')
       expect(status, output).toBe(0)
     },
     VARIANT_TIMEOUT_MS
@@ -182,6 +204,61 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
     () => {
       const { status, output } = runVariant('compose-dev')
       expect(output).toContain('OK: dev mode mirrored an edit, an addition and a deleted override')
+      expect(output).toContain('OK: dev mode protected a CM (app) route added while running')
+      expect(status, output).toBe(0)
+    },
+    VARIANT_TIMEOUT_MS
+  )
+
+  it(
+    "Kit's server-only guard rejects a client import of virtual:pv-hooks/server (Story 68-6 AC-1)",
+    () => {
+      const { status, output } = runVariant('compose-hooks-leak')
+      expect(status, output).not.toBe(0)
+      expect(output).toMatch(
+        /Cannot import .*_cm\/hooks\.server.* into code that runs in the browser/
+      )
+    },
+    VARIANT_TIMEOUT_MS
+  )
+
+  it(
+    'a full-file override of src/hooks.server.ts composes, builds, serves and keeps derived protection (Story 68-6 AC-11)',
+    () => {
+      const { status, output } = runVariant('compose-full-override')
+      expect(output).toContain(
+        'OK: a full override of src/hooks.server.ts composes, builds, serves and keeps derived protection'
+      )
+      expect(status, output).toBe(0)
+    },
+    VARIANT_TIMEOUT_MS
+  )
+
+  it(
+    'an invalid pack headerPolicy fails composed-hooks-init.test.ts before any build (Story 68-6 AC-6)',
+    () => {
+      const { status, output } = runVariant('compose-bad-policy')
+      expect(status, output).not.toBe(0)
+      expect(output).toContain('composed-hooks-init.test.ts')
+      expect(output).toContain('header "x-cm-policy" must be a non-empty string')
+    },
+    VARIANT_TIMEOUT_MS
+  )
+
+  it(
+    "PV's own packed web-host answers exactly as main's did (Story 68-6 AC-3)",
+    () => {
+      // pv-responses.main.json was recorded from main's (c4482a44) packed web-host with the same
+      // pv-responses.sh; the variant diffs the current packed web-host's answers against it.
+      const { status, output } = runVariant('pv-responses', {
+        WEB_HOST_FIXTURE_RESPONSES_EXPECTED: join(
+          repositoryRoot,
+          'scripts',
+          'web-host-consumer-fixture',
+          'pv-responses.main.json'
+        ),
+      })
+      expect(output).toContain("OK: PV's responses equal the main snapshot")
       expect(status, output).toBe(0)
     },
     VARIANT_TIMEOUT_MS
@@ -194,6 +271,23 @@ function rmSyncDist(): void {
 
 describe('composition kit integration: wiring (Story 68.3 AC-12)', () => {
   const command = 'pnpm vitest run scripts/check-composition-kit-integration.test.ts'
+
+  it('no fixture file the integration copies is gitignored, so CI composes what a dev composes (Story 68-6)', () => {
+    // A root .gitignore pattern (Stryker's `reports/`) once hid the mini pack's
+    // `(app)/(nested)/reports/[id]` route: present on disk, never committed, so only CI lacked it.
+    // `--cached --others` lists tracked and untracked files that match an ignore pattern.
+    const ignored = trustedGit(repositoryRoot, [
+      'ls-files',
+      '--cached',
+      '--others',
+      '--ignored',
+      '--exclude-standard',
+      '--',
+      'packages/composition-kit/tests/fixtures',
+      'scripts/web-host-consumer-fixture',
+    ])
+    expect(ignored.split('\n').filter(Boolean)).toEqual([])
+  })
 
   it('the CI Composition kit integration job runs it with COMPOSITION_KIT_INTEGRATION=1, so it can never skip there', () => {
     const ci = parseYaml(

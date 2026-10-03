@@ -136,7 +136,20 @@
               "required": ["add", "remove"],
               "properties": {
                 "add": { "$ref": "#/definitions/stringArray" },
-                "remove": { "$ref": "#/definitions/stringArray" }
+                "remove": { "$ref": "#/definitions/stringArray" },
+                "derived": {
+                  "description": "Story 68.6: CM routes under (app) the composer protects. Absent in locks written before 68.6 (read as []).",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["routeId", "urlPattern"],
+                    "properties": {
+                      "routeId": { "type": "string" },
+                      "urlPattern": { "type": "string" }
+                    }
+                  }
+                }
               }
             }
           ]

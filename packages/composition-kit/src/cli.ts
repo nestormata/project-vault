@@ -19,6 +19,7 @@ Composes a UI pack onto @project-vault/web-host in the app root, writes composit
   --dry-run                print the plan summary and write nothing
   --accept-host <path>     accept the current web-host hash of a declared override or replacement (repeatable)
   --previous-host <dir>    a previous web-host directory, for the true old-to-new PV diff
+  --verbose                also print each derived protected (app) route
   -h, --help               print this help
 
 Exit codes: 0 success, 1 an integrity, drift, compatibility or --check failure, 2 a usage error.
@@ -40,6 +41,7 @@ const OPTIONS = {
   'dry-run': { type: 'boolean' },
   'accept-host': { type: 'string', multiple: true },
   'previous-host': { type: 'string' },
+  verbose: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
 } as const
 
@@ -76,6 +78,7 @@ function optionalOptions(values: Values): Partial<RunOptions> {
     ['acceptHost', values['accept-host']],
     ['check', values.check === true ? true : undefined],
     ['dryRun', values['dry-run'] === true ? true : undefined],
+    ['verbose', values.verbose === true ? true : undefined],
   ]
   return Object.fromEntries(
     entries.filter(([, value]) => value !== undefined)

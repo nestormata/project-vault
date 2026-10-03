@@ -352,13 +352,28 @@ describe('compatibility manifest (Story 68.2 AC-9)', () => {
   })
 
   it('packs only the manifests generated so far, never an empty stub for a later one', () => {
-    // component-index.json (Story 68.5) and injection-points.json (Story 68-4) are generated on
-    // every pack; nav-ids.json (68-7) is not, and a missing one is never stubbed.
-    expect(paths.filter((path) => path.startsWith('manifests/'))).toEqual([
+    // component-index.json (Story 68.5), injection-points.json (Story 68-4) and hooks-surface.json
+    // (Story 68.6) are generated on every pack; nav-ids.json (68-7) is not, and a missing one is
+    // never stubbed.
+    expect(paths.filter((path) => path.startsWith('manifests/')).sort()).toEqual([
       'manifests/compatibility.json',
       'manifests/component-index.json',
+      'manifests/hooks-surface.json',
       'manifests/injection-points.json',
     ])
+  })
+
+  it('packs hooks-surface.json from PV HOOK_SURFACE and protected prefixes (Story 68.6 AC-12)', async () => {
+    const surface = JSON.parse(
+      await fileText(join(STAGE_DIR, 'manifests', 'hooks-surface.json'))
+    ) as Record<string, unknown>
+    expect(surface).toMatchObject({
+      schemaVersion: 1,
+      headerPolicy: true,
+      protectedPaths: true,
+      universal: ['reroute', 'transport'],
+    })
+    expect(surface.protectedPrefixes).toContain('/extensions/panels')
   })
 
   it('ships a parsable component-index.json that lists real shell components (Story 68.5 AC-9)', async () => {

@@ -46,6 +46,37 @@ async function composedLock(): Promise<Record<string, unknown>> {
 }
 
 describe('composition.lock.schema.json (Story 68.3 AC-8)', () => {
+  it('validates a lock with derived protected routes (Story 68.6), and one without derived', async () => {
+    const world = makeWorld({
+      hostFiles: {
+        'manifests/hooks-surface.json': JSON.stringify({
+          schemaVersion: 1,
+          server: ['handle'],
+          universal: ['reroute'],
+          client: ['init'],
+          protectedPrefixes: ['/dashboard'],
+        }),
+      },
+      packFiles: { 'src/routes/(app)/cm-area/+page.svelte': 'cm\n' },
+    })
+    const result = await compose({
+      appRoot: world.app,
+      packRoot: world.pack,
+      hostDir: world.host,
+      manifest: manifest({ protectedPaths: { add: ['/public-cm'] } }),
+    })
+    expect(result.messages).toEqual([])
+    const lock = JSON.parse(result.plan.lockText ?? '{}') as {
+      contributions: { protectedPaths: { derived?: unknown } }
+    }
+    expect(lock.contributions.protectedPaths.derived).toEqual([
+      { routeId: '/(app)/cm-area', urlPattern: '/cm-area' },
+    ])
+    expect(validate(lock), JSON.stringify(validate.errors)).toBe(true)
+    delete lock.contributions.protectedPaths.derived
+    expect(validate(lock)).toBe(true)
+  })
+
   it('validates the lock the composer writes', async () => {
     const lock = await composedLock()
     expect(validate(lock), JSON.stringify(validate.errors)).toBe(true)

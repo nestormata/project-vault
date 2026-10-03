@@ -1,6 +1,7 @@
 // The mini UI pack of the kit's integration job. It exercises overrides (a page, a server load, the
 // app shell template, a static asset), M2 additions, a route removal, an injection component, a
-// replacement, a server hook, a theme and message overlays. Hashes are computed from the installed
+// replacement, server/universal/client hooks with a header-policy delta, CM routes under (app)
+// (protected by derivation, Story 68-6), a theme and message overlays. Hashes are computed from the installed
 // web-host when the manifest loads, never hard-coded, and an override is declared only while its
 // file exists in the pack (so deleting an override in dev mode restores the PV file).
 import { createHash } from 'node:crypto'
@@ -23,6 +24,9 @@ const release = (
 ).pvRelease
 
 const OVERRIDES = [
+  // Present only in the integration job's compose-full-override variant (Story 68-6 AC-11).
+  'src/hooks.server.ts',
+  'src/routes/(app)/shares/[token]/+page.server.ts',
   'src/routes/(auth)/recovery/+page.svelte',
   'src/routes/(auth)/login/+page.server.ts',
   'src/app.html',
@@ -75,7 +79,14 @@ export default defineUiPack({
       hostSha256: sha('src/lib/server/require-user.ts'),
     },
   },
-  hooks: { server: './hooks.server.ts' },
+  hooks: {
+    server: './hooks.server.ts',
+    universal: './hooks.universal.ts',
+    client: './hooks.client.ts',
+  },
+  // Story 68-6 (code review): a CM page outside (app) protected on purpose, and a callback-shaped
+  // CM route under (app) made reachable anonymously.
+  protectedPaths: { add: ['/public-cm'], remove: ['/(app)/cm-area/callback'] },
   theme: './theme.css',
   messages: './messages',
 })

@@ -69,6 +69,18 @@ describe('check-public-safety', () => {
     ).not.toContainEqual(expect.objectContaining({ rule: PERSONAL_EMAIL_RULE }))
   })
 
+  it('does not read a SvelteKit layout-reset file name as an address, but still flags one', () => {
+    const file = 'packages/composition-kit/tests/routes.test.ts'
+    expect(rules(file, "routeIdOfFile('src/routes/x/+page@.server.ts')")).not.toContain(
+      PERSONAL_EMAIL_RULE
+    )
+    expect(rules(file, "routeIdOfFile('src/routes/x/+layout@.server.js')")).not.toContain(
+      PERSONAL_EMAIL_RULE
+    )
+    expect(rules(file, 'Contact page@server.example.io')).toContain(PERSONAL_EMAIL_RULE)
+    expect(rules(file, 'Contact a@b.io')).toContain(PERSONAL_EMAIL_RULE)
+  })
+
   describe('published project contact mailboxes', () => {
     const SECURITY_POLICY = 'SECURITY.md'
     const CODE_OF_CONDUCT = 'CODE_OF_CONDUCT.md'
