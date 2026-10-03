@@ -7,7 +7,7 @@
 
   const links = $derived(renderSurface('footer', { pathname: '' }))
   const LINK_CLASS = 'text-brand-600 hover:text-brand-700'
-  /** The whitespace main's markup had before each link. */
+  /** The whitespace main's markup had between two links. */
   const GAP = ' '
 </script>
 
@@ -15,7 +15,7 @@
   class="flex flex-col items-center justify-center gap-2 px-4 py-4 text-sm text-slate-500 sm:flex-row sm:gap-4"
 >
   <p>© {new Date().getFullYear()} Project Vault</p>
-  {#each links as link (link.id)}{GAP}{#if link.children.length > 0}<NavDisclosure
+  {#each links as link, index (link.id)}{#if index > 0}{GAP}{/if}{#if link.children.length > 0}<NavDisclosure
         node={link}
         class={LINK_CLASS}
       />{:else}<NavEntry node={link} class={LINK_CLASS} />{/if}{/each}
