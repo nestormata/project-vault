@@ -155,17 +155,64 @@ describe('test subjects (Story 68.9 AC-10, Q2)', () => {
     expect(sibling.subjects['src/lib/ui/Card.test.ts']).toEqual(['src/lib/ui/Card.svelte'])
   })
 
-  it('does not list transitive imports', () => {
-    const direct = buildTestSubjects({
-      webDir: WEB,
-      testFiles: ['/w/src/lib/security/x.test.ts'],
-      resolver: resolverOf({
-        '/w/src/lib/security/x.test.ts': "import { header } from './hardening.js'\n",
-        '/w/src/lib/security/hardening.ts': FILES['/w/src/lib/security/hardening.ts'] ?? '',
-        '/w/src/lib/security/deep.ts': FILES['/w/src/lib/security/deep.ts'] ?? '',
-      }),
-    })
-    expect(direct.subjects['src/lib/security/x.test.ts']).toEqual(['src/lib/security/hardening.ts'])
+  const subjectsOf = (files: Record<string, string>, test: string): string[] =>
+    buildTestSubjects({ webDir: WEB, testFiles: [test], resolver: resolverOf(files) }).subjects[
+      test.replace('/w/', '')
+    ] ?? []
+
+  it('walks imports transitively inside src/lib, memoised and cycle-safe', () => {
+    const files = {
+      '/w/src/lib/a/x.test.ts': "import { header } from './hardening.js'\n",
+      '/w/src/lib/a/hardening.ts': "import { deep } from './deep.js'\nexport const header = deep\n",
+      '/w/src/lib/a/deep.ts':
+        "import { header } from './hardening.js'\nexport const deep = header\n",
+      '/w/src/lib/b/y.test.ts': "import { header } from '../a/hardening.js'\n",
+    }
+    expect(subjectsOf(files, '/w/src/lib/a/x.test.ts')).toEqual([
+      'src/lib/a/deep.ts',
+      'src/lib/a/hardening.ts',
+    ])
+    expect(subjectsOf(files, '/w/src/lib/b/y.test.ts')).toEqual([
+      'src/lib/a/deep.ts',
+      'src/lib/a/hardening.ts',
+    ])
+  })
+
+  it('does not walk through support files, tests, paraglide, declarations or outside src/lib', () => {
+    const files = {
+      '/w/src/lib/a/x.test.ts': "import { a } from './a.js'\n",
+      '/w/src/lib/a/a.ts': [
+        "import { fixture } from '../test/fixtures.js'",
+        "import { m } from '../paraglide/messages.js'",
+        "import { page } from '../../routes/page.js'",
+        "import type { T } from './types.d.js'",
+        "import { leaf } from './leaf.js'",
+      ].join('\n'),
+      '/w/src/lib/test/fixtures.ts':
+        "import { hidden } from '../a/hidden.js'\nexport const fixture = 1\n",
+      '/w/src/lib/a/hidden.ts': 'export const hidden = 1\n',
+      '/w/src/lib/paraglide/messages.ts': "import { p } from '../a/pmsg.js'\nexport const m = 1\n",
+      '/w/src/lib/a/pmsg.ts': 'export const p = 1\n',
+      '/w/src/routes/page.ts': "import { r } from '../lib/a/routed.js'\nexport const page = 1\n",
+      '/w/src/lib/a/routed.ts': 'export const r = 1\n',
+      '/w/src/lib/a/leaf.ts': 'export const leaf = 1\n',
+    }
+    // routes/page.ts is a direct import of a.ts, not of the test: reached transitively but outside
+    // src/lib, so it is neither listed nor walked.
+    expect(subjectsOf(files, '/w/src/lib/a/x.test.ts')).toEqual([
+      'src/lib/a/a.ts',
+      'src/lib/a/leaf.ts',
+    ])
+  })
+
+  it('still lists a direct import outside src/lib and does not walk from it', () => {
+    const files = {
+      '/w/src/routes/p/x.test.ts': "import { load } from './+page.server.js'\n",
+      '/w/src/routes/p/+page.server.ts':
+        "import { l } from '../../lib/a/l.js'\nexport const load = l\n",
+      '/w/src/lib/a/l.ts': 'export const l = 1\n',
+    }
+    expect(subjectsOf(files, '/w/src/routes/p/x.test.ts')).toEqual(['src/routes/p/+page.server.ts'])
   })
 
   it('is byte-stable', () => {
