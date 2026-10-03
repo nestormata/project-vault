@@ -309,8 +309,24 @@ describe('generated virtual modules (AC-1)', () => {
     expect(resolveId('virtual:pv-hooks/server')).toBe(SERVER_MODULE_ID)
     expect(resolveId('virtual:pv-hooks/nope')).toBeNull()
     expect(resolveId('other')).toBeNull()
-    expect(load('\0virtual:pv-hooks/client')).toBe('export const hooks = Object.freeze({})\n')
     expect(load('\0other')).toBeNull()
+  })
+
+  it('a missing lock fails closed with a clear message (code review 68-6), in load only', () => {
+    const plugin = pvHooks({ appRoot: '/nonexistent-app' })
+    const load = plugin.load as (id: string) => string | null
+    for (const kind of ['server', 'universal', 'client']) {
+      expect(() => load(`\0virtual:pv-hooks/${kind}`)).toThrow(
+        'pvHooks(): no composition.lock.json at /nonexistent-app/composition.lock.json'
+      )
+    }
+    // The dev server may start before pvComposeDev writes the first lock: no throw there.
+    expect(() =>
+      (plugin.configureServer as (server: unknown) => void)({
+        watcher: { add: () => undefined, on: () => undefined },
+        restart: async () => undefined,
+      })
+    ).not.toThrow()
   })
 })
 

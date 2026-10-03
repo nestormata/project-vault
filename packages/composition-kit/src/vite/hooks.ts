@@ -34,6 +34,18 @@ function readContributions(lockPath: string): Contributions | undefined {
   return read?.lock?.contributions
 }
 
+/** Code review 68-6: fail closed. Without the lock the modules would be empty, so the composed app
+ * would ship with no CM hooks and no derived protection for CM `(app)` routes. */
+function requireContributions(lockPath: string): Contributions | undefined {
+  if (readLock(lockPath) === null) {
+    throw new Error(
+      `pvHooks(): no composition.lock.json at ${lockPath}; run pv-compose for this app first ` +
+        '(without it the app would get no CM hooks and no protection for CM (app) routes)'
+    )
+  }
+  return readContributions(lockPath)
+}
+
 /** The import specifier for a composed-tree path: `$lib/...` under src/lib, else absolute. */
 function specifierFor(appRoot: string, rel: string): string {
   return rel.startsWith('src/lib/') ? `$lib/${rel.slice('src/lib/'.length)}` : join(appRoot, rel)
@@ -102,7 +114,7 @@ export function pvHooks(options: PvHooksOptions = {}): Plugin {
     load(id) {
       if (!id.startsWith(`\0${PV_HOOKS_PREFIX}`)) return null
       const kind = id.slice(PV_HOOKS_PREFIX.length + 1) as Kind
-      return hooksModuleCode(kind, readContributions(lockPath()), appRoot)
+      return hooksModuleCode(kind, requireContributions(lockPath()), appRoot)
     },
     configureServer(server) {
       const dev = server as unknown as DevServer
