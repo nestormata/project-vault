@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,6 +15,11 @@ import {
 // The failure-path variants are committed, read-only fixture directories under
 // fixtures/surface-variants/ rather than files written at test time: they render through the
 // generator's real on-disk path and stay safe under concurrent runs.
+
+// Each test builds a fresh in-process TS program; the first one in a worker also pays the cold
+// lib/ts load, which hit 5.2s (default budget 5s) when the nightly flaky-repeat legs run 27
+// workers in parallel. The cost is CPU contention, not a hang, so the budget is explicit and bounded.
+vi.setConfig({ testTimeout: 30_000 })
 
 const fixtureRoot = join(import.meta.dirname, 'fixtures', 'surface-mini')
 const variantsRoot = join(import.meta.dirname, 'fixtures', 'surface-variants')
@@ -69,114 +74,105 @@ afterEach(() => {
   for (const root of tempRoots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-// Each test builds a fresh in-process TS program; the first one in a worker also pays the cold
-// lib/ts load, which exceeded the 5s default (5.2s) when the nightly flaky-repeat legs run 27
-// workers in parallel. Cost is CPU contention, not a hang, so the budget is explicit and bounded.
-const BUILD_TEST_TIMEOUT_MS = 30_000
+describe('surface renderer over the surface-mini fixture package', () => {
+  it('renders members, readonly and optional modifiers, index and call signatures', () => {
+    const probe = section(generateSurfaceSnapshot(fixtureRoot), 'Probe')
 
-describe(
-  'surface renderer over the surface-mini fixture package',
-  { timeout: BUILD_TEST_TIMEOUT_MS },
-  () => {
-    it('renders members, readonly and optional modifiers, index and call signatures', () => {
-      const probe = section(generateSurfaceSnapshot(fixtureRoot), 'Probe')
+    expect(probe).toContain('- kind: type')
+    expect(probe).toContain('- member: `readonly id`')
+    expect(probe).toContain('- member: `tags?`')
+    expect(probe).toContain('- type: `string`')
+    expect(probe).toContain('- index-signature: `[string]: unknown`')
+    expect(probe).toContain('- call-signature: `(): void`')
+  })
 
-      expect(probe).toContain('- kind: type')
-      expect(probe).toContain('- member: `readonly id`')
-      expect(probe).toContain('- member: `tags?`')
-      expect(probe).toContain('- type: `string`')
-      expect(probe).toContain('- index-signature: `[string]: unknown`')
-      expect(probe).toContain('- call-signature: `(): void`')
-    })
+  it('renders union and intersection members', () => {
+    const snapshot = generateSurfaceSnapshot(fixtureRoot)
 
-    it('renders union and intersection members', () => {
-      const snapshot = generateSurfaceSnapshot(fixtureRoot)
+    expect(section(snapshot, 'Choice')).toContain('- union-members: `"a"`, `"b"`')
+    expect(section(snapshot, 'Both')).toContain('- intersection-members: `Left`, `Right`')
+  })
 
-      expect(section(snapshot, 'Choice')).toContain('- union-members: `"a"`, `"b"`')
-      expect(section(snapshot, 'Both')).toContain('- intersection-members: `Left`, `Right`')
-    })
+  it('renders value exports and function call signatures', () => {
+    const greet = section(generateSurfaceSnapshot(fixtureRoot), 'greet')
 
-    it('renders value exports and function call signatures', () => {
-      const greet = section(generateSurfaceSnapshot(fixtureRoot), 'greet')
+    expect(greet).toContain('- kind: value')
+    expect(greet).toContain('- type: `(name: string) => string`')
+    expect(greet).toContain('- call-signature: `(name: string): string`')
+  })
 
-      expect(greet).toContain('- kind: value')
-      expect(greet).toContain('- type: `(name: string) => string`')
-      expect(greet).toContain('- call-signature: `(name: string): string`')
-    })
+  it('does not expand arrays or tuples into their methods', () => {
+    const probe = section(generateSurfaceSnapshot(fixtureRoot), 'Probe')
 
-    it('does not expand arrays or tuples into their methods', () => {
-      const probe = section(generateSurfaceSnapshot(fixtureRoot), 'Probe')
+    expect(probe).toContain('- type: `[string, number]`')
+    expect(probe).toContain('- type: `string[]`')
+    expect(probe).not.toContain('- member: `length`')
+    expect(probe).not.toContain('- member: `push`')
+  })
 
-      expect(probe).toContain('- type: `[string, number]`')
-      expect(probe).toContain('- type: `string[]`')
-      expect(probe).not.toContain('- member: `length`')
-      expect(probe).not.toContain('- member: `push`')
-    })
+  it('renders a self-referential type once and stops', () => {
+    const chain = section(generateSurfaceSnapshot(fixtureRoot), 'Chain')
 
-    it('renders a self-referential type once and stops', () => {
-      const chain = section(generateSurfaceSnapshot(fixtureRoot), 'Chain')
+    expect(chain.match(/- member: `head`/g)).toHaveLength(1)
+    expect(chain.match(/- member: `next\?`/g)).toHaveLength(1)
+    expect(chain.match(/- member: `value`/g)).toHaveLength(1)
+    expect(chain.split('\n').length).toBeLessThan(20)
+  })
 
-      expect(chain.match(/- member: `head`/g)).toHaveLength(1)
-      expect(chain.match(/- member: `next\?`/g)).toHaveLength(1)
-      expect(chain.match(/- member: `value`/g)).toHaveLength(1)
-      expect(chain.split('\n').length).toBeLessThan(20)
-    })
+  it('keeps since versions recorded in the existing snapshot and dates new entries at the package version', () => {
+    const probe = section(generateSurfaceSnapshot(fixtureRoot), 'Probe')
 
-    it('keeps since versions recorded in the existing snapshot and dates new entries at the package version', () => {
-      const probe = section(generateSurfaceSnapshot(fixtureRoot), 'Probe')
+    expect(probe).toMatch(/- member: `readonly id`\n {2}- since: 0\.9\.0/)
+    expect(probe).toMatch(/- member: `run`\n {2}- since: 1\.0\.0/)
+  })
 
-      expect(probe).toMatch(/- member: `readonly id`\n {2}- since: 0\.9\.0/)
-      expect(probe).toMatch(/- member: `run`\n {2}- since: 1\.0\.0/)
-    })
+  it('dates every entry at the package version when there is no previous snapshot', () => {
+    const snapshot = generateSurfaceSnapshot(tempCopyWithoutSnapshot())
 
-    it('dates every entry at the package version when there is no previous snapshot', () => {
-      const snapshot = generateSurfaceSnapshot(tempCopyWithoutSnapshot())
+    expect(snapshot).not.toContain('- since: 0.9.0')
+    expect(snapshot).toContain('- since: 1.0.0')
+  })
 
-      expect(snapshot).not.toContain('- since: 0.9.0')
-      expect(snapshot).toContain('- since: 1.0.0')
-    })
-
-    it('matches the committed fixture snapshot through the in-process freshness check', () => {
-      expect(
-        assertSurfaceSnapshotIsFresh(fixtureRoot, generateSurfaceSnapshot(fixtureRoot))
-      ).toEqual({ ok: true })
-    })
-
-    it('fails closed with a readable message on a missing tsconfig, source or module symbol', () => {
-      expect(() => generateSurfaceSnapshot(emptyTempRoot())).toThrow(/tsconfig\.json/)
-      expect(() => generateSurfaceSnapshot(NO_INDEX_SOURCE_ROOT)).toThrow(
-        'could not load extension-api src/index.ts'
-      )
-    })
-
-    it('throws when src/index.ts is not a module', () => {
-      expect(() => generateSurfaceSnapshot(join(variantsRoot, 'not-a-module'))).toThrow(
-        'could not resolve index.ts module symbol'
-      )
-    })
-
-    // The generator builds with `types: []` (no @types/node) for speed. A source that starts to
-    // depend on a Node global would otherwise render it as an unresolved type silently, so any
-    // semantic diagnostic in the package's own src files must fail the generation.
-    it('fails closed when a src file references a name the narrowed program cannot resolve', () => {
-      expect(() => generateSurfaceSnapshot(join(variantsRoot, 'node-global'))).toThrow(
-        /src\/helper\.ts.*Cannot find name 'Buffer'/
-      )
-    })
-
-    // Without an explicit `lib`, the generator uses the target's ECMAScript lib without the DOM
-    // (lib.dom.d.ts is the largest lib file). A src file that needs a DOM type fails closed.
-    // es5 and es2015 default to lib.d.ts / lib.es6.d.ts, which do not follow the `.full.d.ts` naming.
-    it.each(['es5', 'es2015', 'es2022'])(
-      'builds without the DOM lib for target %s when tsconfig has no explicit lib, and fails closed on DOM names',
-      (target) => {
-        expect(() => generateSurfaceSnapshot(join(variantsRoot, `dom-${target}`))).toThrow(
-          /src\/index\.ts.*Cannot find name 'HTMLElement'/
-        )
-      }
+  it('matches the committed fixture snapshot through the in-process freshness check', () => {
+    expect(assertSurfaceSnapshotIsFresh(fixtureRoot, generateSurfaceSnapshot(fixtureRoot))).toEqual(
+      { ok: true }
     )
-  }
-)
+  })
+
+  it('fails closed with a readable message on a missing tsconfig, source or module symbol', () => {
+    expect(() => generateSurfaceSnapshot(emptyTempRoot())).toThrow(/tsconfig\.json/)
+    expect(() => generateSurfaceSnapshot(NO_INDEX_SOURCE_ROOT)).toThrow(
+      'could not load extension-api src/index.ts'
+    )
+  })
+
+  it('throws when src/index.ts is not a module', () => {
+    expect(() => generateSurfaceSnapshot(join(variantsRoot, 'not-a-module'))).toThrow(
+      'could not resolve index.ts module symbol'
+    )
+  })
+
+  // The generator builds with `types: []` (no @types/node) for speed. A source that starts to
+  // depend on a Node global would otherwise render it as an unresolved type silently, so any
+  // semantic diagnostic in the package's own src files must fail the generation.
+  it('fails closed when a src file references a name the narrowed program cannot resolve', () => {
+    expect(() => generateSurfaceSnapshot(join(variantsRoot, 'node-global'))).toThrow(
+      /src\/helper\.ts.*Cannot find name 'Buffer'/
+    )
+  })
+
+  // Without an explicit `lib`, the generator uses the target's ECMAScript lib without the DOM
+  // (lib.dom.d.ts is the largest lib file). A src file that needs a DOM type fails closed.
+  // es5 and es2015 default to lib.d.ts / lib.es6.d.ts, which do not follow the `.full.d.ts` naming.
+  it.each(['es5', 'es2015', 'es2022'])(
+    'builds without the DOM lib for target %s when tsconfig has no explicit lib, and fails closed on DOM names',
+    (target) => {
+      expect(() => generateSurfaceSnapshot(join(variantsRoot, `dom-${target}`))).toThrow(
+        /src\/index\.ts.*Cannot find name 'HTMLElement'/
+      )
+    }
+  )
+})
 
 describe('assertSurfaceSnapshotIsFresh (parent-side compare)', () => {
   it('reports since-index errors before comparing', () => {
