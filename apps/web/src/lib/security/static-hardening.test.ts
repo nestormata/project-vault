@@ -1,5 +1,7 @@
 /**
  * @pv-guard static-hardening
+ * @pv-entries browserStorage
+ * @pv-subject ./hardening.js
  *
  * Scans the whole source tree (PV's own, or a composed app root through `PV_GUARD_APP_ROOT`) for raw
  * HTML rendering and browser storage, with the pack's entries merged (Story 68.9). The rules live

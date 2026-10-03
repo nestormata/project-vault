@@ -1,3 +1,4 @@
+// @pv-not-guard asserts PV's own hooks modules and who imports the virtual hooks module in PV's own build
 // Story 68.6 AC-1/AC-2/AC-3 — the three hooks files in PV's own build (empty contributions).
 import { describe, expect, it } from 'vitest'
 import * as serverHooks from './hooks.server.js'

@@ -1,5 +1,6 @@
 /**
  * @pv-guard internal-api-choke-point
+ * @pv-entries internalApiConsumers
  *
  * Story 43.16 AC-2 regression guard: every server-side consumer of `API_BASE_URL` must go through
  * `internalApiFetch` (the internal-TLS choke point in `internal-api-tls.ts`). A module that reads

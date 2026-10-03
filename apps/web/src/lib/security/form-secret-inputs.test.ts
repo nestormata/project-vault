@@ -1,7 +1,3 @@
-import { describe, expect, it } from 'vitest'
-import { basename } from 'node:path'
-import { assertNotVacuous, guardSources, readGuardSource } from '../test/guard-root.js'
-
 /**
  * @pv-guard form-secret-inputs
  *
@@ -20,6 +16,9 @@ import { assertNotVacuous, guardSources, readGuardSource } from '../test/guard-r
  *    a form action, so a pre-hydration native POST gets SvelteKit's 405 rendered as the app's
  *    error page: no echo, no 500, no secret anywhere.
  */
+import { describe, expect, it } from 'vitest'
+import { basename } from 'node:path'
+import { assertNotVacuous, guardSources, readGuardSource } from '../test/guard-root.js'
 
 type Tag = { name: string; start: number; source: string }
 

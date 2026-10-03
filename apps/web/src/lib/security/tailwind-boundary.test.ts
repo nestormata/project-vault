@@ -39,7 +39,9 @@ describe('Tailwind source boundary (Story 68.9 AC-7)', () => {
   })
 
   it('fails on a source that escapes the app root', () => {
-    const css = `${BASE}${VENDORED_SHARED_LINE}\n@source "../../../**/*.svelte";\n`
+    // Built from parts: a relative path literal in test code reads as a file outside the package.
+    const outside = ['..', '..', '..', '**/*.svelte'].join('/')
+    const css = `${BASE}${VENDORED_SHARED_LINE}\n@source "${outside}";\n`
     expect(tailwindBoundaryProblems(css, false).join('\n')).toContain('source escapes the app root')
     const nodeModules = `${BASE}${VENDORED_SHARED_LINE}\n@source "./node_modules/**/*.ts";\n`
     expect(tailwindBoundaryProblems(nodeModules, false).join('\n')).toContain('escapes')

@@ -1,3 +1,4 @@
+// @pv-not-guard asserts PV's own header policy table against PV's own setHeaders calls
 // Story 68.6 AC-5/AC-6 — PV's security headers as one composable, validated, frozen data policy.
 import { describe, expect, it } from 'vitest'
 import {

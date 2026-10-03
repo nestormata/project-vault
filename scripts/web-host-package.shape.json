@@ -30,6 +30,10 @@
       "types": "./config/app-css-source.d.ts",
       "default": "./config/app-css-source.js"
     },
+    "./guards/*": {
+      "types": "./guards/*.d.ts",
+      "default": "./guards/*.js"
+    },
     "./manifest": "./manifests/compatibility.json",
     "./manifests/*": "./manifests/*",
     "./tsconfig.base.json": "./tsconfig.base.json",
@@ -44,6 +48,7 @@
     "LICENSE",
     "README.md",
     "config",
+    "guards",
     "inlang-plugins",
     "manifests",
     "messages",

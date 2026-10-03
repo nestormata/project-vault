@@ -1,3 +1,5 @@
+// @pv-guard form-guidance
+//
 // Story 68.9 AC-8: the G5 form-guidance scanner (every user-facing native form control exposes a
 // visible description through aria-describedby), shipped with web-host so a composed tree is scanned
 // with the same rules as PV's own. This is intentionally a small Svelte-aware scanner rather than a

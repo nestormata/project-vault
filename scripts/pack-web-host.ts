@@ -87,6 +87,12 @@ import {
   buildInjectionPointsManifest,
   INJECTION_POINTS_MANIFEST,
 } from './lib/web-host/injection-points-manifest.js'
+import {
+  buildGuardRegistry,
+  GUARDS_MANIFEST,
+  unshippedGuardProblems,
+} from './lib/web-host/guard-registry.js'
+import { buildTestSubjects, TEST_SUBJECTS_MANIFEST } from './lib/web-host/test-subjects.js'
 import { npmPackArgs, packDestination } from './lib/web-host/pack-destination.js'
 
 export const REPO_ROOT = join(import.meta.dirname, '..')
@@ -398,6 +404,29 @@ function compileConfigFactories(): void {
   )
 }
 
+/** Story 68.9 AC-8: the script guards ship compiled (`guards/<name>.js` + `.d.ts`), so a composer
+ * can import them from node_modules, where Node does not strip types. */
+function compileGuards(): string[] {
+  const tsc = resolveBin('typescript', 'tsc', WEB_DIR)
+  runNode(
+    tsc,
+    [
+      '-p',
+      'guards/tsconfig.json',
+      '--noEmit',
+      'false',
+      '--declaration',
+      '--outDir',
+      join(STAGE_DIR, 'guards'),
+    ],
+    WEB_DIR
+  )
+  return trackedFiles(['apps/web/guards'])
+    .map((entry) => entry.path)
+    .filter((path) => path.endsWith('.ts') && !isTestFile(path))
+    .map((path) => join(REPO_ROOT, path))
+}
+
 function writeTsconfigBase(): void {
   const webTsconfig = JSON.parse(readFileSync(join(WEB_DIR, 'tsconfig.json'), 'utf8')) as {
     compilerOptions: Record<string, unknown>
@@ -551,6 +580,7 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
   const kitVersion = readKitVersion(problems)
   if (problems.length > 0) throw new PackError(problems)
   compileConfigFactories()
+  const scriptGuards = compileGuards()
   writeTsconfigBase()
   cpSync(join(REPO_ROOT, 'LICENSE'), join(STAGE_DIR, 'LICENSE'))
   writeFileSync(join(STAGE_DIR, 'README.md'), packageReadme(options.version))
@@ -574,12 +604,39 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
     join(STAGE_DIR, 'manifests', 'hooks-surface.json'),
     buildHooksSurfaceManifest(await loadHooksSurfaceInput())
   )
+  // Story 68.9: the guard registry and the test-subject map, generated from the guard files and the
+  // shipped tests themselves (never a hand-written list).
+  const shippedTestFiles = tests.shipped.map((entry) => entry.file)
+  const registry = buildGuardRegistry({
+    webDir: WEB_DIR,
+    testFiles: shippedTestFiles,
+    scriptFiles: scriptGuards,
+    resolver: webResolver(),
+  })
+  problems.push(
+    ...registry.problems,
+    ...unshippedGuardProblems(
+      testCandidates.map((path) => join(REPO_ROOT, path)),
+      new Set(shippedTestFiles),
+      webResolver(),
+      WEB_DIR
+    )
+  )
+  if (problems.length > 0) throw new PackError(problems)
+  writeFileSync(join(STAGE_DIR, 'manifests', GUARDS_MANIFEST), registry.text)
+  writeFileSync(
+    join(STAGE_DIR, 'manifests', TEST_SUBJECTS_MANIFEST),
+    buildTestSubjects({ webDir: WEB_DIR, testFiles: shippedTestFiles, resolver: webResolver() })
+      .text
+  )
   const optional = packOptionalManifests()
   writeFileSync(join(STAGE_DIR, MANIFEST), `${JSON.stringify(packageJson, null, 2)}\n`)
   const manifests = [
     'compatibility.json',
     INJECTION_POINTS_MANIFEST,
     HOOKS_SURFACE_MANIFEST,
+    GUARDS_MANIFEST,
+    TEST_SUBJECTS_MANIFEST,
     ...optional,
   ].join(', ')
   log(
