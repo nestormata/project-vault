@@ -67,7 +67,7 @@ function mockAuth(auth: AuthCase) {
       switch (auth) {
         case 'authenticated':
           forwardSetCookie?.('access-token=renewed; Path=/; HttpOnly')
-          return { status: 'authenticated', user: { id: 'u1', email: 'u1@example.test' } }
+          return { status: 'authenticated', user: { id: 'u1', orgRole: 'member' } }
         case 'session-expired':
           forwardSetCookie?.('refresh-token=rotated; Path=/; HttpOnly')
           return { status: 'unauthenticated', reason: 'session-expired' }
