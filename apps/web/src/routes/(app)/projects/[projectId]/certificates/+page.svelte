@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { ApiClientError } from '$lib/api/client.js'
   import { deleteCertificate } from '$lib/api/certificates.js'
   import type { CertificateRecord } from '$lib/api/certificates.js'
@@ -41,6 +42,8 @@
   <title>Certificates | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="project.certificates.before" data={data?.__inject} />
+<InjectionPoint name="project.certificates.header.actions" data={data?.__inject} />
 <section class="space-y-6">
   <AssetListHeader
     eyebrow="Certificates"
@@ -83,3 +86,4 @@
     </AssetTable>
   {/if}
 </section>
+<InjectionPoint name="project.certificates.after" data={data?.__inject} />

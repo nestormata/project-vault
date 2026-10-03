@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { getShareMetadata, type ShareMetadata } from '$lib/api/credential-shares.js'
 import { ApiClientError } from '$lib/api/client.js'
 import { requireUser } from '$lib/server/require-user.js'
@@ -12,7 +13,7 @@ export type ShareAccessPageData = {
   error: 'not_found' | 'session_mismatch' | null
 }
 
-export const load: PageServerLoad = async ({ params, fetch, locals, setHeaders }) => {
+const ownLoad = (async ({ params, fetch, locals, setHeaders }) => {
   requireUser(locals)
 
   // AC-17: this page's own URL carries the raw bearer token — the document response itself
@@ -40,4 +41,8 @@ export const load: PageServerLoad = async ({ params, fetch, locals, setHeaders }
     }
     throw error
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(ownLoad, '/(app)/shares/[token]', 'page')
+
+export const actions = injectActions('/(app)/shares/[token]')

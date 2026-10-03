@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { ApiClientError } from '$lib/api/client.js'
   import { deleteServiceEndpoint, updateServiceEndpoint } from '$lib/api/service-endpoints.js'
   import type { ServiceEndpointDetail } from '$lib/api/service-endpoints.js'
@@ -69,6 +70,8 @@
   <title>Service endpoints | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="project.service-endpoints.before" data={data?.__inject} />
+<InjectionPoint name="project.service-endpoints.header.actions" data={data?.__inject} />
 <section class="space-y-6">
   <AssetListHeader
     eyebrow="Endpoints"
@@ -162,3 +165,4 @@
     {/if}
   {/if}
 </section>
+<InjectionPoint name="project.service-endpoints.after" data={data?.__inject} />

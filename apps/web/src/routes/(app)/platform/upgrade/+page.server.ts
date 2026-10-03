@@ -1,8 +1,9 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import type { PageServerLoad } from './$types.js'
 import { platformOperatorGate } from '$lib/server/require-platform-operator.js'
 import { fetchClientVersionPolicy, fetchHealth, probeApiDocsEnabled } from '$lib/api/platform.js'
 
-export const load: PageServerLoad = async ({ fetch, locals }) => {
+const ownLoad = (async ({ fetch, locals }) => {
   // Story 43.7 AC-5: the gate runs before any fetch — a non-operator triggers no request at all.
   const gate = platformOperatorGate(locals)
   if (!gate.allowed) return { allowed: false as const }
@@ -23,4 +24,8 @@ export const load: PageServerLoad = async ({ fetch, locals }) => {
     apiDocsEnabled,
     cliPolicy,
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(ownLoad, '/(app)/platform/upgrade', 'page')
+
+export const actions = injectActions('/(app)/platform/upgrade')

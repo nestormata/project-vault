@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { invalidateAll } from '$app/navigation'
   import { ApiClientError } from '$lib/api/client.js'
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
@@ -125,6 +126,8 @@
   <title>Members | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="project.members.before" data={data?.__inject} />
+<InjectionPoint name="project.members.header.actions" data={data?.__inject} />
 <section class="space-y-6">
   <div
     class="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between"
@@ -335,3 +338,4 @@
     </div>
   {/if}
 </section>
+<InjectionPoint name="project.members.after" data={data?.__inject} />

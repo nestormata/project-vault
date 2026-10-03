@@ -7,9 +7,9 @@ vi.mock('$lib/server/require-user.js', () => ({
 import { load } from './+page.server.js'
 
 describe('/settings/security +page.server.ts', () => {
-  it('returns the authenticated user from requireUser', () => {
+  it('returns the authenticated user from requireUser', async () => {
     const user = { orgRole: 'owner' }
-    const result = load({ locals: { user } } as never)
+    const result = await load({ locals: { user } } as never)
     expect(result).toEqual({ user })
   })
 })

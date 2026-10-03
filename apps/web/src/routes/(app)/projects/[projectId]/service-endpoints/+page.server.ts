@@ -1,10 +1,11 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { ApiClientError } from '$lib/api/client.js'
 import { listAlerts } from '$lib/api/monitoring-alerts.js'
 import { listServiceEndpointDetails } from '$lib/api/service-endpoints.js'
 import { requireUser } from '$lib/server/require-user.js'
 import type { PageServerLoad } from './$types.js'
 
-export const load: PageServerLoad = async ({ params, fetch, locals }) => {
+const ownLoad = (async ({ params, fetch, locals }) => {
   const orgRole = requireUser(locals).orgRole
 
   try {
@@ -35,4 +36,12 @@ export const load: PageServerLoad = async ({ params, fetch, locals }) => {
     }
     throw error
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(
+  ownLoad,
+  '/(app)/projects/[projectId]/service-endpoints',
+  'page'
+)
+
+export const actions = injectActions('/(app)/projects/[projectId]/service-endpoints')

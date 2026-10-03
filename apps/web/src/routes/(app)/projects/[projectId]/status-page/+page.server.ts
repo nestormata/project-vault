@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { error } from '@sveltejs/kit'
 import { assertTrustedOrigin, CapabilityId, type StatusPageConfig } from '@project-vault/shared'
 import { listProjectMembers } from '$lib/api/org-users.js'
@@ -81,7 +82,7 @@ function resolveTrustedOrigin(url: URL): string {
 // condition as the backend — not project-owner alone. An org owner who isn't a project member
 // still passes every backend authorization check, so the UI must check both axes too, or they
 // would be unable to find this section. Server-side enforcement remains authoritative regardless.
-export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
+const ownLoad = (async ({ params, fetch, locals, url }) => {
   const user = requireUser(locals)
   const isOrgOwner = user.orgRole === 'owner'
 
@@ -131,4 +132,12 @@ export const load: PageServerLoad = async ({ params, fetch, locals, url }) => {
     serviceEndpoints,
     capabilities,
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(
+  ownLoad,
+  '/(app)/projects/[projectId]/status-page',
+  'page'
+)
+
+export const actions = injectActions('/(app)/projects/[projectId]/status-page')

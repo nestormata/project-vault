@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import type { PageServerLoad } from './$types.js'
 import { platformOperatorGate } from '$lib/server/require-platform-operator.js'
 import { fetchReady } from '$lib/api/platform.js'
@@ -11,9 +12,13 @@ async function fetchPlatformWarnings(fetch: typeof globalThis.fetch): Promise<st
   }
 }
 
-export const load: PageServerLoad = async ({ fetch, locals }) => {
+const ownLoad = (async ({ fetch, locals }) => {
   const gate = platformOperatorGate(locals)
   if (!gate.allowed) return { allowed: false as const }
   const warnings = await fetchPlatformWarnings(fetch)
   return { allowed: true as const, warnings }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(ownLoad, '/(app)/platform', 'page')
+
+export const actions = injectActions('/(app)/platform')

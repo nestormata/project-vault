@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import type { PageServerLoad } from './$types.js'
 import { platformOperatorGate } from '$lib/server/require-platform-operator.js'
 import {
@@ -75,7 +76,7 @@ function extractMaintenanceData(result: PromiseSettledResult<MaintenanceModeStat
   }
 }
 
-export const load: PageServerLoad = async ({ fetch, url, locals }) => {
+const ownLoad = (async ({ fetch, url, locals }) => {
   const gate = platformOperatorGate(locals)
   if (!gate.allowed) return { allowed: false as const }
 
@@ -97,4 +98,8 @@ export const load: PageServerLoad = async ({ fetch, url, locals }) => {
     ...eventsData,
     ...maintenanceData,
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(ownLoad, '/(app)/platform/audit', 'page')
+
+export const actions = injectActions('/(app)/platform/audit')

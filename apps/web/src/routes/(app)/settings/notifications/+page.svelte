@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { enhance } from '$app/forms'
   import { resolve } from '$app/paths'
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
@@ -19,6 +20,8 @@
   <title>Notification Preferences | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="settings.notifications.before" data={data?.__inject} />
+<InjectionPoint name="settings.notifications.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-4xl px-4 py-8">
   <div class="mb-8">
     <a href={resolve('/settings')} class="text-sm text-indigo-600 hover:text-indigo-800"
@@ -205,3 +208,4 @@
     </div>
   {/if}
 </div>
+<InjectionPoint name="settings.notifications.after" data={data?.__inject} />

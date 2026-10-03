@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { ApiClientError } from '$lib/api/client.js'
 import { listAuditEvents, type AuditEventItem } from '$lib/api/audit.js'
 import { requireUser } from '$lib/server/require-user.js'
@@ -16,16 +17,17 @@ export type AuditFilters = {
   to?: string
 }
 
+const FILTER_KEYS = ['actorId', 'eventType', 'resourceId', 'projectId', 'from', 'to'] as const
+
 function readFilters(url: URL): AuditFilters {
-  const filters: AuditFilters = {}
-  for (const key of ['actorId', 'eventType', 'resourceId', 'projectId', 'from', 'to'] as const) {
+  const present = FILTER_KEYS.flatMap((key) => {
     const value = url.searchParams.get(key)
-    if (value) filters[key] = value
-  }
-  return filters
+    return value ? [[key, value] as const] : []
+  })
+  return Object.fromEntries(present) as AuditFilters
 }
 
-export const load: PageServerLoad = async ({ fetch, url, locals }) => {
+const ownLoad = (async ({ fetch, url, locals }) => {
   const user = requireUser(locals)
   const orgRole = user.orgRole
   const filters = readFilters(url)
@@ -68,4 +70,8 @@ export const load: PageServerLoad = async ({ fetch, url, locals }) => {
       errorMessage,
     }
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(ownLoad, '/(app)/settings/audit', 'page')
+
+export const actions = injectActions('/(app)/settings/audit')

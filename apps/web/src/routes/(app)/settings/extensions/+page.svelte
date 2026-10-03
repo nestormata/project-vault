@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
 
   let { data } = $props()
@@ -26,6 +27,8 @@
   <title>Extensions | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="settings.extensions.before" data={data?.__inject} />
+<InjectionPoint name="settings.extensions.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-3xl px-4 py-8">
   <h1 class="text-2xl font-bold text-gray-900">Extensions</h1>
   <p class="mt-2 text-gray-500">See whether a configured extension is loaded for this vault.</p>
@@ -159,3 +162,4 @@
     </div>
   {/if}
 </div>
+<InjectionPoint name="settings.extensions.after" data={data?.__inject} />

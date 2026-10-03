@@ -1,3 +1,4 @@
+import { withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { redirect } from '@sveltejs/kit'
 import { getOnboardingStatus } from '$lib/api/onboarding.js'
 import { listProjects } from '$lib/api/projects.js'
@@ -80,7 +81,7 @@ async function resolveExtensionNavLoad(fetchFn: typeof fetch): Promise<Extension
   }
 }
 
-export const load: LayoutServerLoad = async ({ locals, fetch }) => {
+const ownLoad = (async ({ locals, fetch }) => {
   if (!locals.user) throw redirect(303, '/login')
 
   let onboardingCompleted = true
@@ -126,4 +127,6 @@ export const load: LayoutServerLoad = async ({ locals, fetch }) => {
     ...extensionNavLoad,
     ...themeLoad,
   }
-}
+}) satisfies LayoutServerLoad
+
+export const load: LayoutServerLoad = withInjectedLoad(ownLoad, '/(app)', 'layout')

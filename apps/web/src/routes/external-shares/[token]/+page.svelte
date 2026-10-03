@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { revealExternalCredentialShare } from '$lib/api/credential-shares.js'
   import { mapShareRevealError } from '$lib/api/credential-share-reveal-error.js'
   import SharedCredentialSummary from '$lib/components/credential-shares/SharedCredentialSummary.svelte'
@@ -28,6 +29,8 @@
   <title>Shared secret</title>
 </svelte:head>
 
+<InjectionPoint name="external-shares.detail.before" data={data?.__inject} />
+<InjectionPoint name="external-shares.detail.header.actions" data={data?.__inject} />
 <!--
   Story 17.2 AC-10 (F1): no third-party-origin resources anywhere on this page — no external
   images/fonts/scripts/analytics/embeds. Referrer-Policy alone only governs this page's own
@@ -75,3 +78,4 @@
     </div>
   {/if}
 </section>
+<InjectionPoint name="external-shares.detail.after" data={data?.__inject} />

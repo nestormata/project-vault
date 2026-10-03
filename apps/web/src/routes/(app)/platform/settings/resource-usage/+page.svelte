@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import PlatformSettingsBreadcrumb from '$lib/components/platform/PlatformSettingsBreadcrumb.svelte'
   import PlatformWarningsBanner from '$lib/components/platform/PlatformWarningsBanner.svelte'
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
@@ -190,6 +191,8 @@
   <title>Resource Usage | Platform Admin | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="platform.settings-resource-usage.before" data={data?.__inject} />
+<InjectionPoint name="platform.settings-resource-usage.header.actions" data={data?.__inject} />
 <PlatformSettingsBreadcrumb allowed={data.allowed} leafLabel="Resource Usage">
   <h1 class="text-2xl font-bold text-gray-900">Resource Usage</h1>
   <p class="mt-1 text-gray-500">Monitor instance-wide resource consumption and limits.</p>
@@ -566,3 +569,4 @@
     </div>
   {/if}
 </PlatformSettingsBreadcrumb>
+<InjectionPoint name="platform.settings-resource-usage.after" data={data?.__inject} />

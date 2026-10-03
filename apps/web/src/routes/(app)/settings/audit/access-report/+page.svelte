@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
   import DataTable from '$lib/components/tables/DataTable.svelte'
   import ProjectsListCell from '$lib/components/tables/ProjectsListCell.svelte'
@@ -45,6 +46,8 @@
   <title>Access Report | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="settings.audit-access-report.before" data={data?.__inject} />
+<InjectionPoint name="settings.audit-access-report.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-5xl px-4 py-8">
   <h1 class="text-2xl font-bold text-gray-900">Access Report</h1>
   <p class="mt-2 text-gray-500">Who had access, as of any point in time.</p>
@@ -168,3 +171,4 @@
     {/if}
   {/if}
 </div>
+<InjectionPoint name="settings.audit-access-report.after" data={data?.__inject} />

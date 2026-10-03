@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import type { PageServerLoad } from './$types.js'
 import { platformOperatorGate } from '$lib/server/require-platform-operator.js'
 import { getResourceUsage, fetchReady, type ResourceUsageResponse } from '$lib/api/platform.js'
@@ -32,9 +33,17 @@ async function fetchUsageData(
   }
 }
 
-export const load: PageServerLoad = async ({ fetch, locals }) => {
+const ownLoad = (async ({ fetch, locals }) => {
   const gate = platformOperatorGate(locals)
   if (!gate.allowed) return { allowed: false as const }
   const warnings = await fetchResourceWarnings(fetch)
   return { allowed: true as const, ...(await fetchUsageData(fetch, warnings)) }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(
+  ownLoad,
+  '/(app)/platform/settings/resource-usage',
+  'page'
+)
+
+export const actions = injectActions('/(app)/platform/settings/resource-usage')

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { resolve } from '$app/paths'
 
   let { data } = $props()
@@ -8,6 +9,8 @@
   <title>Secrets | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="credentials.home.before" data={data?.__inject} />
+<InjectionPoint name="credentials.home.header.actions" data={data?.__inject} />
 <section class="space-y-6">
   <div
     class="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between"
@@ -69,3 +72,4 @@
     </ul>
   {/if}
 </section>
+<InjectionPoint name="credentials.home.after" data={data?.__inject} />

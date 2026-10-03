@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { getThemes, type ThemeListItem } from '$lib/api/themes.js'
 import { requireUser } from '$lib/server/require-user.js'
 import type { PageServerLoad } from './$types.js'
@@ -14,6 +15,8 @@ export type ThemesPageData = {
   // Story 16.4 Task 5.2 — the org's current default-theme setting, already available from
   // `getThemes()`'s `orgDefaultThemeName` field (Task 3), so no new fetch is needed here.
   orgDefaultThemeName: string | null
+  // Story 68.4: contribution data for the page's injection points.
+  __inject?: App.PageData['__inject']
 }
 
 // Story 16.3 AC-1 — the reload endpoint is `minimumRole: 'admin'`, which does not follow
@@ -29,7 +32,7 @@ function canReloadThemes(orgRole: string): boolean {
 // Story 16.2 — this page mirrors `(app)/settings/language/`'s structure (a personal
 // preference, no role-gate) rather than `sso-domains`/`extensions`'s OrgAdmin-gated pattern: every
 // authenticated org member, including a viewer, may select their own theme (AC-5).
-export const load: PageServerLoad = async ({ fetch, locals }): Promise<ThemesPageData> => {
+const ownLoad = (async ({ fetch, locals }): Promise<ThemesPageData> => {
   const user = requireUser(locals)
   const orgRole = user.orgRole
   const canReload = canReloadThemes(orgRole)
@@ -56,4 +59,8 @@ export const load: PageServerLoad = async ({ fetch, locals }): Promise<ThemesPag
       orgDefaultThemeName: null,
     }
   }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(ownLoad, '/(app)/settings/themes', 'page')
+
+export const actions = injectActions('/(app)/settings/themes')

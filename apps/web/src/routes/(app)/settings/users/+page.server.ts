@@ -1,9 +1,10 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { listOrgUsers, type OrgUser } from '$lib/api/org-users.js'
 import { requireUser } from '$lib/server/require-user.js'
 import { resolveNativeLoginEnabled } from '$lib/server/native-login-status.js'
 import type { PageServerLoad } from './$types.js'
 
-export const load: PageServerLoad = async ({ fetch, locals }) => {
+const ownLoad = (async ({ fetch, locals }) => {
   const user = requireUser(locals)
   const orgRole = user.orgRole
   const canManage = orgRole === 'owner' || orgRole === 'admin'
@@ -24,4 +25,8 @@ export const load: PageServerLoad = async ({ fetch, locals }) => {
   const nativeLoginEnabled = (await resolveNativeLoginEnabled(fetch)) ?? true
 
   return { canManage, orgRole, orgId: user.orgId, users, nativeLoginEnabled }
-}
+}) satisfies PageServerLoad
+
+export const load: PageServerLoad = withInjectedLoad(ownLoad, '/(app)/settings/users', 'page')
+
+export const actions = injectActions('/(app)/settings/users')

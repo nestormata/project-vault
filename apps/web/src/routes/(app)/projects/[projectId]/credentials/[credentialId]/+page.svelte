@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { onDestroy, onMount } from 'svelte'
   import { SvelteMap } from 'svelte/reactivity'
   import { invalidateAll } from '$app/navigation'
@@ -1111,6 +1112,16 @@
   <title>{data.credential?.name ?? 'Secret'} | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint
+  name="credential.detail.before"
+  props={{ credential: data.credential }}
+  data={data.__inject}
+/>
+<InjectionPoint
+  name="credential.detail.header.actions"
+  props={{ credential: data.credential }}
+  data={data.__inject}
+/>
 <section class="space-y-6">
   {#if data.vaultSealed}
     <PageAlertBanner title="Vault sealed" message={onboardingCopy.vaultSealedMessage} />
@@ -2266,3 +2277,8 @@
     </a>
   {/if}
 </section>
+<InjectionPoint
+  name="credential.detail.after"
+  props={{ credential: data.credential }}
+  data={data.__inject}
+/>

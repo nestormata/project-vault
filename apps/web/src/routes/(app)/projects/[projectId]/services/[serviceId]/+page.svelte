@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { deleteService, updateService } from '$lib/api/services.js'
@@ -86,6 +87,8 @@
   <title>{data.service?.name ?? 'Service'} | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="project.services-detail.before" data={data?.__inject} />
+<InjectionPoint name="project.services-detail.header.actions" data={data?.__inject} />
 <section class="mx-auto max-w-2xl space-y-6">
   {#if data.notFound || !data.service}
     <EntityNotFoundBanner
@@ -142,3 +145,4 @@
     />
   {/if}
 </section>
+<InjectionPoint name="project.services-detail.after" data={data?.__inject} />

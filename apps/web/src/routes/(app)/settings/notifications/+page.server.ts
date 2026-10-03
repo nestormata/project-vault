@@ -1,3 +1,4 @@
+import { injectActions, withInjectedLoad } from '$lib/server/composition/inject-behavior.js'
 import { fail } from '@sveltejs/kit'
 import { NOTIFICATION_ALERT_TYPES } from '@project-vault/shared'
 import {
@@ -23,7 +24,7 @@ function describeTestNotificationError(error: unknown): string {
   return String(error)
 }
 
-export const load: PageServerLoad = async ({ fetch, locals }) => {
+const ownLoad = (async ({ fetch, locals }) => {
   const isAdmin = locals.user ? isAdminRole(locals.user.orgRole) : false
   const canSendTest = locals.user ? canSendTestNotification(locals.user) : false
 
@@ -39,9 +40,15 @@ export const load: PageServerLoad = async ({ fetch, locals }) => {
   }
 
   return { preferences, routing, isAdmin, canSendTest }
-}
+}) satisfies PageServerLoad
 
-export const actions: Actions = {
+export const load: PageServerLoad = withInjectedLoad(
+  ownLoad,
+  '/(app)/settings/notifications',
+  'page'
+)
+
+const ownActions = {
   updatePreference: async ({ request, fetch }) => {
     const data = await request.formData()
     const alertType = String(data.get('alertType'))
@@ -109,4 +116,9 @@ export const actions: Actions = {
       return fail(422, { error: 'Failed to send test notification' })
     }
   },
-}
+} satisfies Actions
+
+export const actions = {
+  ...ownActions,
+  ...injectActions('/(app)/settings/notifications'),
+} satisfies Actions

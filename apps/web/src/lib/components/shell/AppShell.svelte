@@ -4,6 +4,7 @@
   import { m } from '$lib/paraglide/messages.js'
   import { logout } from '$lib/api/auth.js'
   import type { ResolvedExtensionNavItem } from '$lib/api/extension-panel.js'
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import Footer from './Footer.svelte'
   import PrimaryNav from './PrimaryNav.svelte'
 
@@ -15,6 +16,7 @@
     onsearch,
     hasUiPanelExtension = false,
     extensionNavItems = [],
+    injected,
   }: {
     user: import('$lib/api/auth.js').AuthUser
     children: import('svelte').Snippet
@@ -23,6 +25,8 @@
     onsearch?: () => void
     hasUiPanelExtension?: boolean
     extensionNavItems?: ResolvedExtensionNavItem[]
+    /** The `(app)` layout's `data.__inject`, for the `shell.header.end` point. */
+    injected?: App.PageData['__inject']
   } = $props()
   let logoutError = $state(null)
   const MFA_SETTINGS_PATH = '/settings/security'
@@ -117,7 +121,7 @@
           onclick={signOut}
         >
           {signOutLabel}
-        </button>
+        </button><InjectionPoint name="shell.header.end" data={injected} />
       </div>
     </div>
     {#if user.mfaStatus.enrollmentRequired || user.mfaStatus.bannerMessage}

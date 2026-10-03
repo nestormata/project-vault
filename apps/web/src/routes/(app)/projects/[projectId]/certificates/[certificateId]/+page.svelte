@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { deleteCertificate, updateCertificate } from '$lib/api/certificates.js'
@@ -89,6 +90,8 @@
   <title>{data.certificate?.domain ?? 'Certificate'} | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="project.certificates-detail.before" data={data?.__inject} />
+<InjectionPoint name="project.certificates-detail.header.actions" data={data?.__inject} />
 <section class="mx-auto max-w-2xl space-y-6">
   {#if data.notFound || !data.certificate}
     <EntityNotFoundBanner
@@ -135,3 +138,4 @@
     />
   {/if}
 </section>
+<InjectionPoint name="project.certificates-detail.after" data={data?.__inject} />

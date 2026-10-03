@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { page } from '$app/state'
   import { resolve } from '$app/paths'
 
@@ -32,6 +33,8 @@
   <title>{heading} | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="root.error.before" data={page.data?.__inject} />
+<InjectionPoint name="root.error.header.actions" data={page.data?.__inject} />
 <div class="min-h-screen bg-slate-50 text-slate-950">
   <header class="border-b border-slate-200 bg-white">
     <div class="mx-auto max-w-7xl px-4 py-4">
@@ -56,3 +59,4 @@
     </nav>
   </main>
 </div>
+<InjectionPoint name="root.error.after" data={page.data?.__inject} />

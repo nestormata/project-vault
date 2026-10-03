@@ -1,4 +1,5 @@
 <script lang="ts">
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import ServiceStatusItem from '$lib/components/dashboard/ServiceStatusItem.svelte'
 
   let { data } = $props()
@@ -8,6 +9,8 @@
   <title>Status | Project Vault</title>
 </svelte:head>
 
+<InjectionPoint name="status.detail.before" data={data?.__inject} />
+<InjectionPoint name="status.detail.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-2xl px-4 py-10">
   {#if data.statusPage}
     <h1 class="text-2xl font-bold text-slate-950">Service status</h1>
@@ -35,3 +38,4 @@
     </p>
   {/if}
 </div>
+<InjectionPoint name="status.detail.after" data={data?.__inject} />
