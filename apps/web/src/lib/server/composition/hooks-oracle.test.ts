@@ -78,22 +78,48 @@ function mockAuth(auth: AuthCase) {
   )
 }
 
-async function runCase(path: string, routeId: string | null, auth: AuthCase, vault: string) {
+/** Header maps are recorded verbatim once and referenced by name, so each case is one line. */
+class HeaderSets {
+  readonly byJson = new Map<string, string>()
+  name(headers: Record<string, string>): string {
+    const json = JSON.stringify(headers)
+    let name = this.byJson.get(json)
+    if (name === undefined) {
+      name = `H${this.byJson.size + 1}`
+      this.byJson.set(json, name)
+    }
+    return name
+  }
+}
+
+async function runCase(
+  sets: HeaderSets,
+  path: string,
+  routeId: string | null,
+  auth: AuthCase,
+  vault: string
+) {
   getVaultReadinessMock.mockReset()
   getVaultReadinessMock.mockResolvedValue(
     vault === 'ready' ? { state: 'ready' } : { state: 'sealed', message: 'sealed' }
   )
   mockAuth(auth)
   const req = fakeKitRequest(path, { cookie: COOKIES.get(auth) ?? null, routeId })
-  const response = await handle({ event: req.event, resolve: req.resolve } as never)
-  return {
-    case: `${path} ${auth} vault=${vault}`,
-    setHeadersCalls: req.setHeadersCalls,
-    resolvedPathnames: req.resolvedPathnames,
-    ...describeResponse(response),
-    localsUser: req.event.locals.user === undefined ? 'unset' : req.event.locals.user,
-    chunk: req.chunk,
-  }
+  const response = describeResponse(
+    await handle({ event: req.event, resolve: req.resolve } as never)
+  )
+  const user = req.event.locals.user === undefined ? 'unset' : JSON.stringify(req.event.locals.user)
+  const summary = [
+    `status=${response.status}`,
+    `location=${String(response.location)}`,
+    `setHeaders=${req.setHeadersCalls.map((call) => sets.name(call)).join(',')}`,
+    `headers=${sets.name(response.headers)}`,
+    `cookies=${JSON.stringify(response.setCookie)}`,
+    `user=${user}`,
+    `resolved=${JSON.stringify(req.resolvedPathnames)}`,
+    `chunk=${String(req.chunk)}`,
+  ].join(' ')
+  return { name: `${path} ${auth} vault=${vault}`, summary, setHeadersCalls: req.setHeadersCalls }
 }
 
 describe('hooks.server handle — AC-5 whole-response oracle', () => {
@@ -102,18 +128,21 @@ describe('hooks.server handle — AC-5 whole-response oracle', () => {
   })
 
   it('matches the snapshot recorded on main for every path x auth x vault case', async () => {
-    const results = []
+    const sets = new HeaderSets()
+    const cases = new Map<string, string>()
     for (const [path, routeId] of PATHS) {
       for (const auth of AUTH_CASES) {
         for (const vault of VAULT_CASES) {
-          results.push(await runCase(path, routeId, auth, vault))
+          const result = await runCase(sets, path, routeId, auth, vault)
+          // One setHeaders call per request, redirected or not (AC-5 ordering note).
+          expect(result.setHeadersCalls).toHaveLength(1)
+          cases.set(result.name, result.summary)
         }
       }
     }
-    // One setHeaders call per request, redirected or not (AC-5 "ordering change made explicit").
-    for (const result of results) expect(result.setHeadersCalls).toHaveLength(1)
-    await expect(`${JSON.stringify(results, null, 2)}\n`).toMatchFileSnapshot(
-      './__snapshots__/hooks-oracle.json'
-    )
+    const headerSets = Object.fromEntries([...sets.byJson].map(([json, name]) => [name, json]))
+    await expect(
+      `${JSON.stringify({ headerSets, cases: Object.fromEntries(cases) }, null, 2)}\n`
+    ).toMatchFileSnapshot('./__snapshots__/hooks-oracle.json')
   })
 })
