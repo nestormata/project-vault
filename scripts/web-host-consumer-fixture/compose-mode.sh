@@ -19,6 +19,9 @@
 # directory), COMPOSITION_KIT_SVELTE_CHECK and COMPOSITION_KIT_TYPES_NODE (the versions PV pins).
 # Uses run.sh's WORK, APP, NODE_BIN, NODE_DIR, VARIANT, clean_env, log, free_port.
 
+# curl's write-out format for printing only the HTTP status code.
+readonly CURL_STATUS_FORMAT='%{http_code}'
+
 compose_pack_name() {
   case "$VARIANT" in
     compose-server-leak | compose-server-twin | compose-replace-leak | compose-replace-first-leak) echo negative-pack ;;
@@ -218,7 +221,7 @@ compose_assert_css() {
 # GET <path> -> body in $WORK/body.txt, status echoed.
 compose_get() {
   local port="$1" path="$2"
-  curl -s -o "$WORK/body.txt" -w '%{http_code}' "http://127.0.0.1:${port}${path}" || true
+  curl -s -o "$WORK/body.txt" -w "$CURL_STATUS_FORMAT" "http://127.0.0.1:${port}${path}" || true
   return 0
 }
 
@@ -248,7 +251,7 @@ compose_request() { # port method path [cookie|-] [origin] [form body] -> status
   if [[ -n "$form" ]]; then
     args+=(--data "$form")
   fi
-  curl "${args[@]}" -w '%{http_code}' "http://127.0.0.1:${port}${path}" || true
+  curl "${args[@]}" -w "$CURL_STATUS_FORMAT" "http://127.0.0.1:${port}${path}" || true
   return 0
 }
 
@@ -572,14 +575,14 @@ compose_injection_checks() {
   fi
   compose_expect "$port" /register/__data.json 200 'healthy'
   local status
-  status="$(curl -s -o "$WORK/body.txt" -w '%{http_code}' -X POST \
+  status="$(curl -s -o "$WORK/body.txt" -w "$CURL_STATUS_FORMAT" -X POST \
     -H "Origin: http://127.0.0.1:${port}" -H 'x-sveltekit-action: true' \
     --data-urlencode 'note=hello' "http://127.0.0.1:${port}/register?/auth.register.after.share")"
   if [[ "$status" != '200' ]] || ! grep -q '"type":"success"' "$WORK/body.txt"; then
     echo "fixture: the injected action answered HTTP $status: $(cat "$WORK/body.txt")" >&2
     exit 1
   fi
-  status="$(curl -s -o "$WORK/body.txt" -w '%{http_code}' -X POST \
+  status="$(curl -s -o "$WORK/body.txt" -w "$CURL_STATUS_FORMAT" -X POST \
     -H "Origin: http://127.0.0.1:${port}" -H 'x-sveltekit-action: true' \
     "http://127.0.0.1:${port}/register?/auth.register.after.nope")"
   if [[ "$status" != '404' ]]; then
