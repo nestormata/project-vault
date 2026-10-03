@@ -596,13 +596,16 @@ function isDoubleInvocation(logger: LoaderLogger): boolean {
 async function applyOutcome(
   packageName: string,
   result: RaceResult,
-  listOrgIds: ListOrgIdsFn,
-  auditWriter: AuditWriterFn,
-  logger: LoaderLogger,
-  allowApiVersionAboveHost: boolean,
-  readPackageVersion: (packageName: string) => string | undefined,
-  required: boolean
+  deps: ResolvedLoadExtensionDeps
 ): Promise<void> {
+  const {
+    listOrgIds,
+    auditWriter,
+    logger,
+    allowApiVersionAboveHost,
+    readPackageVersion,
+    required,
+  } = deps
   if (result.outcome) {
     const { manifest, hooks, hostServices } = result.outcome
     // Story 25.9 AC4: never let a throwing readPackageVersion() implementation (defensive test
@@ -710,16 +713,8 @@ export async function loadExtension(
   packageName: string | undefined,
   deps: LoadExtensionDeps = {}
 ): Promise<void> {
-  const {
-    logger,
-    importFn,
-    timeoutMs,
-    listOrgIds,
-    auditWriter,
-    allowApiVersionAboveHost,
-    readPackageVersion,
-    required,
-  } = resolveLoadExtensionDeps(deps)
+  const resolved = resolveLoadExtensionDeps(deps)
+  const { logger, importFn, timeoutMs, allowApiVersionAboveHost } = resolved
   if (!packageName) return
   if (isDoubleInvocation(logger)) return
 
@@ -730,14 +725,5 @@ export async function loadExtension(
     allowApiVersionAboveHost,
     logger
   )
-  await applyOutcome(
-    packageName,
-    result,
-    listOrgIds,
-    auditWriter,
-    logger,
-    allowApiVersionAboveHost,
-    readPackageVersion,
-    required
-  )
+  await applyOutcome(packageName, result, resolved)
 }

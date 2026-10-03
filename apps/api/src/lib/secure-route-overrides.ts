@@ -148,6 +148,22 @@ export type RawFn = (this: unknown, req: unknown, reply: unknown) => unknown
 export type RawWrapFn = (req: unknown, reply: unknown, next: NextFn) => unknown
 
 /**
+ * Builds a wrap's `next()`. It always returns a promise: the after-settle guard rejects, and a
+ * synchronous throw from PV's handler also becomes a rejection (the Promise executor turns a throw
+ * into one), while PV's handler still starts synchronously inside the `next()` call.
+ */
+function guardedNext(key: string, isSettled: () => boolean, run: () => unknown): NextFn {
+  return () =>
+    new Promise<unknown>((resolve, reject) => {
+      if (isSettled()) {
+        reject(new Error(`apiRoutes wrap next() called after the handler settled: ${key}`))
+        return
+      }
+      resolve(run())
+    })
+}
+
+/**
  * `wrap` for a `secureRoute` business handler. `next()` runs PV's handler with the same context,
  * request and reply. It may be called more than once or never; a call after the wrap's own
  * promise settled rejects instead of running PV's handler against a finished transaction (Q9).
@@ -159,10 +175,11 @@ export function wrapBusinessHandler(
 ): (ctx: unknown, req: unknown, reply: unknown) => Promise<unknown> {
   return async (ctx, req, reply) => {
     let settled = false
-    const next = async (): Promise<unknown> => {
-      if (settled) throw new Error(`apiRoutes wrap next() called after the handler settled: ${key}`)
-      return pv(ctx, req, reply)
-    }
+    const next = guardedNext(
+      key,
+      () => settled,
+      () => pv(ctx, req, reply)
+    )
     try {
       return await cm(ctx, req, reply, next)
     } finally {
@@ -179,10 +196,11 @@ export function wrapRawHandler(
 ): (this: unknown, req: unknown, reply: unknown) => Promise<unknown> {
   return async function (this: unknown, req: unknown, reply: unknown) {
     let settled = false
-    const next = async (): Promise<unknown> => {
-      if (settled) throw new Error(`apiRoutes wrap next() called after the handler settled: ${key}`)
-      return pv.call(this, req, reply)
-    }
+    const next = guardedNext(
+      key,
+      () => settled,
+      () => pv.call(this, req, reply)
+    )
     try {
       return await cm(req, reply, next)
     } finally {

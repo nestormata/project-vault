@@ -59,8 +59,9 @@ export function stubInstance(
     ...(orgRole === null
       ? {}
       : {
-          authenticate: vi.fn(async (req: { authContext?: unknown }) => {
+          authenticate: vi.fn((req: { authContext?: unknown }) => {
             req.authContext = stubAuthContext(orgRole)
+            return Promise.resolve()
           }),
         }),
     ...(options.table ? { pvApiRouteOverrides: options.table } : {}),
@@ -127,8 +128,8 @@ export function stubDb(): {
   transaction: (fn: (tx: unknown) => Promise<unknown>) => Promise<unknown>
   tx: { execute: ReturnType<typeof vi.fn> }
 } {
-  const tx = { execute: vi.fn(async () => undefined) }
-  return { tx, transaction: async (fn) => fn(tx) }
+  const tx = { execute: vi.fn(() => Promise.resolve(undefined)) }
+  return { tx, transaction: (fn) => fn(tx) }
 }
 
 export function loadedApiRoutesState(

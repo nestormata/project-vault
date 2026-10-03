@@ -47,7 +47,7 @@ export async function expireMfaGracePeriod(orgId: string, userId: string): Promi
   )
 }
 
-export async function auditRowCount(orgId: string, eventType: string): Promise<number> {
+export function auditRowCount(orgId: string, eventType: string): Promise<number> {
   return withOrg(orgId, async (tx) => {
     const rows = await tx
       .select({ id: auditLogEntries.id })
@@ -57,7 +57,7 @@ export async function auditRowCount(orgId: string, eventType: string): Promise<n
   })
 }
 
-export async function fixtureAlertCount(orgId: string): Promise<number> {
+export function fixtureAlertCount(orgId: string): Promise<number> {
   return withOrg(orgId, async (tx) => {
     const rows = await tx.execute(
       sql`select id from security_alerts where org_id = ${orgId} and alert_type = 'cm.fixture_write'`

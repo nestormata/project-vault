@@ -84,18 +84,26 @@ function isDuplicatedRouteError(error: unknown): boolean {
   return (error as { code?: unknown } | null)?.code === 'FST_ERR_DUPLICATED_ROUTE'
 }
 
-function addPlugin(table: ApiRouteTable) {
-  return async (instance: AddPluginHost): Promise<void> => {
-    for (const entry of [...table.adds].sort(addOrder)) {
-      if (instance.hasRoute({ method: entry.method, url: entry.url })) throw collisionError(entry)
-      try {
-        secureAddedApiRoute(instance as never, entry)
-      } catch (error) {
-        if (isDuplicatedRouteError(error)) throw collisionError(entry)
-        throw error
-      }
+function registerAdds(instance: AddPluginHost, table: ApiRouteTable): void {
+  for (const entry of [...table.adds].sort(addOrder)) {
+    if (instance.hasRoute({ method: entry.method, url: entry.url })) throw collisionError(entry)
+    try {
+      secureAddedApiRoute(instance as never, entry)
+    } catch (error) {
+      if (isDuplicatedRouteError(error)) throw collisionError(entry)
+      throw error
     }
   }
+}
+
+// The plugin returns a promise so `register` rejects on a collision: the Promise executor turns
+// registerAdds' synchronous throw into that rejection.
+function addPlugin(table: ApiRouteTable) {
+  return (instance: AddPluginHost): Promise<void> =>
+    new Promise<void>((resolve) => {
+      registerAdds(instance, table)
+      resolve()
+    })
 }
 
 const DOCS_GATED_PATHS = ['/api/v1/openapi.json', '/api/v1/docs']

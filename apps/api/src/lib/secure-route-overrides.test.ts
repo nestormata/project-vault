@@ -203,6 +203,21 @@ describe('Story 68.8 AC-4 / Q9 — wrap and next()', () => {
     expect(pv).not.toHaveBeenCalled()
   })
 
+  it('a synchronous throw from PV handler reaches the wrap as a rejected next() promise', async () => {
+    const boom = (): never => {
+      throw new Error('pv boom')
+    }
+    const settle = (next: () => Promise<unknown>) =>
+      next().then(
+        () => 'resolved',
+        (error: Error) => `rejected: ${error.message}`
+      )
+    const business = wrapBusinessHandler('GET /x', (_c, _q, _r, next) => settle(next), boom)
+    await expect(business({}, 'req', 'reply')).resolves.toBe('rejected: pv boom')
+    const raw = wrapRawHandler('GET /raw', (_req, _reply, next) => settle(next), boom)
+    await expect(raw.call({}, 'req', 'reply')).resolves.toBe('rejected: pv boom')
+  })
+
   it('a raw wrap passes the Fastify instance as this to PV handler', async () => {
     const instance = { name: 'fastify' }
     const pv = vi.fn(function (this: unknown) {

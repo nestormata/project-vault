@@ -320,7 +320,7 @@ describe('Story 68.8 AC-3/AC-4 — replace and wrap swap only the business handl
     }
   })
 
-  it('logs a pvRoute binding for every request an override answers', async () => {
+  it('logs a pvRoute binding for every request an override answers', () => {
     const table = tableFor(
       { override: [{ method: 'GET', url: PROJECT_FULL_URL, mode: 'wrap' }] },
       {
@@ -329,10 +329,16 @@ describe('Story 68.8 AC-3/AC-4 — replace and wrap swap only the business handl
     )
     const instance = stubInstance({ prefix: PROJECTS_PREFIX, table })
     register(instance, pvProjectRoute().options)
-    const onRequest = [instance.routes[0]?.onRequest].flat()[0] as (req: unknown) => Promise<void>
+    const onRequest = [instance.routes[0]?.onRequest].flat()[0] as (
+      req: unknown,
+      reply: unknown,
+      done: () => void
+    ) => void
     const child = vi.fn(() => ({ child: true }))
     const req = { log: { child } }
-    await onRequest(req)
+    const done = vi.fn()
+    onRequest(req, {}, done)
+    expect(done).toHaveBeenCalledOnce()
     expect(child).toHaveBeenCalledWith({ pvRoute: { override: 'wrap' } })
     expect(req.log).toEqual({ child: true })
   })

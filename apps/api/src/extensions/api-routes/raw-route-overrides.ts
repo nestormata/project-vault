@@ -95,8 +95,13 @@ function applyReplaceSecurity(
 }
 
 function bindRequestLog(options: MutableRouteOptions, mode: string): void {
-  const binding = async (request: { log: { child: (bindings: object) => unknown } }) => {
+  const binding = (
+    request: { log: { child: (bindings: object) => unknown } },
+    _reply: unknown,
+    done: () => void
+  ): void => {
     request.log = request.log.child({ pvRoute: { override: mode } }) as typeof request.log
+    done()
   }
   const existing = new Map(Object.entries(options)).get('onRequest')
   options['onRequest'] = [binding, ...(existing === undefined ? [] : [existing].flat())]

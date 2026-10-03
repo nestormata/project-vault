@@ -1,4 +1,10 @@
-import type { FastifyReply, FastifyRequest, FastifySchema, preHandlerHookHandler } from 'fastify'
+import type {
+  FastifyReply,
+  FastifyRequest,
+  FastifySchema,
+  HookHandlerDoneFunction,
+  preHandlerHookHandler,
+} from 'fastify'
 import type { CapabilityDecision } from '@project-vault/extension-api'
 import { getDb, type Tx } from '@project-vault/db'
 import { auditLogEntries } from '@project-vault/db/schema'
@@ -979,9 +985,12 @@ type RegistrationPlan = {
 
 // Story 68.8 AC-6: every request an extension route answers carries a `pvRoute` binding in PV's
 // request logs (no metrics label, so http-metrics cardinality is unchanged).
+// Callback-style hook: the work is synchronous, and Fastify's hook runner turns a throw into a
+// request error either way.
 function pvRouteLogBinding(binding: Record<string, unknown>) {
-  return async (request: FastifyRequest): Promise<void> => {
+  return (request: FastifyRequest, _reply: FastifyReply, done: HookHandlerDoneFunction): void => {
     request.log = request.log.child({ pvRoute: binding })
+    done()
   }
 }
 
