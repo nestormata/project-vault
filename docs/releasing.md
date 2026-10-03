@@ -159,13 +159,17 @@ only after the downstream consumer has verified the build:
 npm dist-tag add @project-vault/extension-api@X.Y.Z latest
 ```
 
-**Current state (2026-10-01):** npm `latest` is `1.1.0` and `next` is `3.25.0` (published tags:
-`extension-api-v1.1.0`, `-v3.15.0`, `-v3.23.0`, `-v3.24.1`, `-v3.25.0`). The package source is at
-`3.26.0` (unreleased; the tag push is maintainer-only, Story 71.1 only bumps the source). `3.24.2` was a documentation-only patch that was never published; `3.25.0` supersedes it.
+**Current state (2026-10-03):** npm `latest` is `3.25.0` and `next` is `3.27.0` (published tags:
+`extension-api-v1.1.0`, `-v3.15.0`, `-v3.23.0`, `-v3.24.1`, `-v3.25.0`, `-v3.27.0`). `3.27.0` (Story 68.8,
+M7 `apiRoutes`) was tagged on merge commit `c610e486`, published by run `37088769144` (shasum
+`7f9423e286a678c41a679363ff1d170c90df83df`); `latest` moves to it only after CentralizeMe verifies it.
+The package source is at `3.28.0` (Story 71.1, unreleased; the tag push is maintainer-only).
+`3.26.0` was never published (71.1 renumbered to `3.28.0` after 68.8 took `3.27.0`). `3.24.2` was a
+documentation-only patch that was never published; `3.25.0` supersedes it.
 `3.24.0` was never tagged and is superseded by `3.24.1`. Every other intermediate contract version
 was never tagged or published, and cannot be reconstructed.
-Version `3.0.0` contains a breaking change for the CentralizeMe consumer, so `latest` still points
-at `1.1.0`: coordinate the `latest` promotion with it.
+Version `3.0.0` contained a breaking change for the CentralizeMe consumer: coordinate every `latest`
+promotion with it.
 
 ## 6. vault-action (only when `packages/vault-action` changed)
 
