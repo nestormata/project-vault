@@ -60,7 +60,7 @@ export function guardSources(pattern: RegExp, appRoot: string = guardAppRoot()):
     for (const entry of readdirSync(dir).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
       const abs = join(dir, entry)
       // Only the generated output is skipped, by its exact path: a directory that merely carries
-      // the name elsewhere (for example under `_cm`) is ordinary source.
+      // the name elsewhere (for example a nested copy) is ordinary source.
       if (toPosix(relative(appRoot, abs)) === GENERATED_PARAGLIDE) continue
       if (statSync(abs).isDirectory()) walk(abs)
       else if (pattern.test(entry) && !/\.test\.ts$/.test(entry)) {

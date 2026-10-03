@@ -75,29 +75,13 @@ compose_prepare_app() {
     *) ;;
   esac
   readonly PACK
-  # Story 68-9: a PV test whose SUBJECT (a direct import or its sibling) the pack overrode, replaced
-  # or removed is excluded by the lock's `excludedPvTests`, which the exported vitest config factory
-  # reads: PV's recovery and shares pages and `audit.test.ts` (it imports the replaced
-  # `$lib/api/audit`) are no longer listed here. What stays listed are tests the lock cannot name,
-  # by Q2 (a subject is a DIRECT import, never a transitive one):
-  #   - AuditExportPanel.test.ts and require-platform-operator.test.ts test code that merely IMPORTS a
-  #     replaced module (`$lib/api/audit`, `$lib/server/require-user`), so the replacement changes
-  #     what they pin on purpose;
-  #   - AppShell.characterization.test.ts pins the header markup around a ShellAccount the pack wraps;
-  #   - Story 68-6's hooks tests (the whole-response oracle, the no-contribution hooks exports, the
-  #     direct handle tests) describe PV with no contributions, and Story 68-4's
-  #     server-files-wiring.test.ts globs every route server file (the pack's CM (app)/cm-area page has
-  #     a form action on purpose, AC-9).
-  # Whether the kit should also exclude these is an open decision (Story 68-9 Dev Notes).
+  # Story 68-9: a PV test whose subject the pack overrode, replaced or removed is excluded by the
+  # lock's `excludedPvTests`, which the exported vitest config factory reads. A subject is a direct
+  # import, the sibling, and what those reach inside src/lib (DW-493). The tests that pin PV's own
+  # build (hooks-files, server-files-wiring) are not shipped, and the hooks.server tests mock the
+  # contribution module, so nothing is excluded by hand here.
   VITEST_ARGS=(
     --exclude '**/node_modules/**'
-    --exclude 'src/lib/components/audit/AuditExportPanel.test.ts'
-    --exclude 'src/lib/server/require-platform-operator.test.ts'
-    --exclude 'src/lib/components/shell/AppShell.characterization.test.ts'
-    --exclude 'src/hooks-files.test.ts'
-    --exclude 'src/hooks.server.test.ts'
-    --exclude 'src/lib/server/composition/hooks-oracle.test.ts'
-    --exclude 'src/routes/server-files-wiring.test.ts'
   )
   return 0
 }
