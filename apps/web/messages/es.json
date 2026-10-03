@@ -219,5 +219,14 @@
   "nav_platform_admin": "Administración de plataforma",
   "nav_platform_admin_mobile": "Plataforma",
   "nav_extension": "Extensión",
+  "nav_project_overview": "Resumen",
+  "nav_project_secrets": "Secretos",
+  "nav_project_members": "Miembros",
+  "nav_project_machine_users": "Usuarios de máquina",
+  "nav_project_services": "Servicios",
+  "nav_project_certificates": "Certificados",
+  "nav_project_domains": "Dominios",
+  "nav_project_endpoints": "Endpoints",
+  "nav_project_status_page": "Página de estado",
   "shell_sign_out": "Cerrar sesión"
 }

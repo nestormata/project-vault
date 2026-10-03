@@ -5,6 +5,7 @@ import { sveltekit } from '@sveltejs/kit/vite'
 import { coverageConfigDefaults, mergeConfig, type ViteUserConfig } from 'vitest/config'
 import { emptyHooksModules } from './hooks-plugins.ts'
 import { emptyInjectionModules, injectionEntries } from './injection-plugins.ts'
+import { emptyNavModule } from './nav-plugins.ts'
 import { paraglideOptions } from './paths.ts'
 import type { WebHostBuildOptions } from './vite.config.ts'
 
@@ -30,12 +31,16 @@ function webHostTestConfig(options: WebHostBuildOptions): ViteUserConfig {
       injectionEntries(),
       emptyInjectionModules(),
       emptyHooksModules({ composed: options.composedRoot !== undefined }),
+      emptyNavModule({ composed: options.composedRoot !== undefined }),
       sveltekit(),
     ],
     resolve: { conditions: ['browser'] },
     test: {
       include: ['src/**/*.test.ts', 'scripts/**/*.test.ts'],
       environment: 'jsdom',
+      // Story 68.7 AC-8: PV's tests render PV's own nav (the empty delta), also when they run over a
+      // composed tree whose `virtual:pv-nav` holds CM's delta (story 68-9).
+      setupFiles: ['src/lib/test/setup-nav.ts'],
       coverage: {
         ...WEB_HOST_COVERAGE,
         include: ['src/**/*.{ts,svelte}'],

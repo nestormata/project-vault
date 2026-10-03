@@ -1,5 +1,23 @@
 import { baseRules, secretsRules, svelteRules, webEnforcement } from '@project-vault/eslint-config'
 
+// Story 68.7 Q1 (option A): the nav renderers render hrefs that come from nav data (PV's and, in a
+// composed app, CM's), typed `ResolvedPathname` because every link item's href is produced by
+// `resolve()` where the item is defined. Type-aware parsing lets `svelte/no-navigation-without-resolve`
+// accept exactly that type (a tightening: these files also get the type-aware rules). Scoped to the
+// renderers, which keeps `eslint .` within 1.2x of its untyped time (10.2 s -> 11.6 s measured);
+// `src/lib/navigation/nav-lint-scope.test.ts` keeps every registered renderer in this list.
+export const NAV_RENDERER_FILES = [
+  'src/lib/navigation/**/*.svelte',
+  'src/lib/components/shell/AppShell.svelte',
+  'src/lib/components/shell/Footer.svelte',
+  'src/lib/components/shell/NotificationsLink.svelte',
+  'src/lib/components/shell/PrimaryNav.svelte',
+  'src/lib/components/shell/ProjectNav.svelte',
+  'src/lib/components/shell/ShellAccount.svelte',
+  'src/lib/components/shell/ShellBrand.svelte',
+  'src/routes/+error.svelte',
+]
+
 export default [
   {
     ignores: [
@@ -20,6 +38,12 @@ export default [
   ...secretsRules,
   ...svelteRules,
   ...webEnforcement,
+  {
+    files: NAV_RENDERER_FILES,
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+  },
   {
     files: ['src/**/*.test.ts'],
     rules: {

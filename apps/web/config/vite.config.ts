@@ -6,6 +6,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { mergeConfig, type PluginOption, type UserConfig } from 'vite'
 import { emptyHooksModules } from './hooks-plugins.ts'
 import { emptyInjectionModules, injectionEntries } from './injection-plugins.ts'
+import { emptyNavModule } from './nav-plugins.ts'
 import { paraglideOptions } from './paths.ts'
 
 export interface WebHostBuildOptions {
@@ -21,7 +22,7 @@ export interface WebHostBuildOptions {
  * point transform and PV's empty answer to the injection virtual modules (Story 68.4; a composition
  * kit's own plugin runs `enforce: 'pre'` and wins), then PV's empty providers for the hooks
  * virtual modules (Story 68.6: `virtual:pv-hooks/*`, failing closed on a composed tree), then
- * SvelteKit. */
+ * PV's empty nav delta (Story 68.7: `virtual:pv-nav`, failing closed the same way), then SvelteKit. */
 export function webHostPlugins(options: WebHostBuildOptions = {}): PluginOption[] {
   return [
     tailwindcss(),
@@ -29,6 +30,7 @@ export function webHostPlugins(options: WebHostBuildOptions = {}): PluginOption[
     injectionEntries(),
     emptyInjectionModules(),
     emptyHooksModules({ composed: options.composedRoot !== undefined }),
+    emptyNavModule({ composed: options.composedRoot !== undefined }),
     sveltekit(),
   ]
 }
