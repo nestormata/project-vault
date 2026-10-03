@@ -301,7 +301,8 @@ class Application<C> {
     const item = own(op, 'item')
     const itemId = isRecord(item) ? own(item, 'id') : undefined
     if (itemId !== undefined && itemId !== node.id) {
-      this.fail(`keeps the target id; item.id "${String(itemId)}" must be omitted`)
+      const shown = typeof itemId === 'string' ? itemId : JSON.stringify(itemId)
+      this.fail(`keeps the target id; item.id "${shown}" must be omitted`)
     }
     this.released = new Set(subtreeIds(node.children ?? []))
     try {

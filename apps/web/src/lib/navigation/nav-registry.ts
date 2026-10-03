@@ -283,7 +283,8 @@ const RESERVED_SEGMENTS: ReadonlySet<string> = new Set([
   'valueOf',
 ])
 
-function isLowerAlnum(code: number): boolean {
+function isLowerAlnum(code: number | undefined): boolean {
+  if (code === undefined) return false
   return (code >= 97 && code <= 122) || (code >= 48 && code <= 57)
 }
 
@@ -292,7 +293,7 @@ function isSegment(segment: string): boolean {
   if (segment.length === 0 || RESERVED_SEGMENTS.has(segment)) return false
   let previousHyphen = true
   for (let index = 0; index < segment.length; index += 1) {
-    const code = segment.charCodeAt(index)
+    const code = segment.codePointAt(index)
     const hyphen = code === 45
     if (hyphen ? previousHyphen : !isLowerAlnum(code)) return false
     previousHyphen = hyphen

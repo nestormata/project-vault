@@ -81,8 +81,7 @@ export function validateNavDelta(delta: unknown): NavDeltaFindings {
     return { problems: ['nav delta must be an object of surfaces'], notes: [] }
   }
   for (const [surface, ops] of Object.entries(delta)) surfaceFindings(surface, ops, findings)
-  return {
-    problems: findings.problems.sort(compareCodeUnits),
-    notes: findings.notes.sort(compareCodeUnits),
-  }
+  findings.problems.sort(compareCodeUnits)
+  findings.notes.sort(compareCodeUnits)
+  return findings
 }

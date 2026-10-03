@@ -13,7 +13,6 @@ import { applyNavDelta, kindOf, visibleItems, type TreeItem } from './apply-delt
 import { surfaceOfNavId } from './nav-registry.js'
 import { surfaceItems } from './surfaces/index.js'
 import type {
-  ExternalUrl,
   NavContexts,
   NavDelta,
   NavItem,
@@ -97,8 +96,8 @@ function isSameOriginPath(href: string): href is ResolvedPathname {
 }
 
 /** Is this code unit a C0 control or a space (what the URL parser trims from both ends)? */
-function isC0OrSpace(code: number): boolean {
-  return code <= 0x20
+function isC0OrSpace(code: number | undefined): boolean {
+  return code !== undefined && code <= 0x20
 }
 
 /** The href as the browser's URL parser sees it: leading and trailing C0 controls and spaces
@@ -107,8 +106,8 @@ function isC0OrSpace(code: number): boolean {
 function asBrowserParses(href: string): string {
   let start = 0
   let end = href.length
-  while (start < end && isC0OrSpace(href.charCodeAt(start))) start += 1
-  while (end > start && isC0OrSpace(href.charCodeAt(end - 1))) end -= 1
+  while (start < end && isC0OrSpace(href.codePointAt(start))) start += 1
+  while (end > start && isC0OrSpace(href.codePointAt(end - 1))) end -= 1
   let out = ''
   for (let index = start; index < end; index += 1) {
     const char = href.charAt(index)
@@ -129,7 +128,8 @@ function hrefFields<C>(
   ctx: C
 ): Pick<NavNode, 'href' | 'external'> {
   if (item.href === undefined) return {}
-  const href: ResolvedPathname | ExternalUrl | string = item.href(ctx)
+  // Widened on purpose: a function typed to return a path or URL may return any string at run time.
+  const href: string = item.href(ctx)
   if (kind === 'external') return { external: externalOf(href) }
   if (!isSameOriginPath(href)) {
     throw new NavItemError(
@@ -211,9 +211,8 @@ export function renderSurface<S extends NavSurfaceId>(
   }
   const built = buildSurface(surface, ctx, options.delta ?? activeDelta, fail)
   if (strict && built.problems.length > 0) {
-    throw new Error(
-      `nav delta problems in surface "${surface}":\n${built.problems.map((p) => `  - ${p}`).join('\n')}`
-    )
+    const list = built.problems.map((problem) => `  - ${problem}`).join('\n')
+    throw new Error(`nav delta problems in surface "${surface}":\n${list}`)
   }
   return render(built.visible, ctx, fail)
 }
