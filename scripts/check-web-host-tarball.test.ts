@@ -202,6 +202,10 @@ describe('web-host tarball: this checkout (Story 68.2 AC-7)', () => {
     expect(excluded.get('apps/web/src/routes/route-render-snapshot.test.ts')).toEqual([
       "oracle of PV's own un-composed markup; valid only on PV's tree",
     ])
+    // Story 68.7 AC-3: the nav render oracle is PV-tree-only for the same reason.
+    expect(excluded.get('apps/web/src/lib/navigation/nav-render-oracle.test.ts')).toEqual([
+      "oracle of PV's own un-composed nav markup (Story 68.7); valid only on PV's tree",
+    ])
     for (const reasons of excluded.values()) expect(reasons.length).toBeGreaterThan(0)
   })
 

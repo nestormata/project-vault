@@ -41,6 +41,10 @@ export const PV_TREE_ONLY_TESTS: ReadonlyMap<string, string> = new Map([
     'src/routes/route-render-snapshot.test.ts',
     "oracle of PV's own un-composed markup; valid only on PV's tree",
   ],
+  [
+    'src/lib/navigation/nav-render-oracle.test.ts',
+    "oracle of PV's own un-composed nav markup (Story 68.7); valid only on PV's tree",
+  ],
 ])
 
 function pvTreeOnlyReason(file: string): string | undefined {
