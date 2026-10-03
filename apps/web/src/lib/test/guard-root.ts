@@ -52,18 +52,24 @@ function toPosix(path: string): string {
   return path.split(sep).join('/')
 }
 
+/** Code-unit order (not locale order), so counts and failures are the same on every machine. */
+function compareCodeUnits(a: string, b: string): number {
+  if (a < b) return -1
+  return a > b ? 1 : 0
+}
+
 /** Every file under `<app>/src` whose name matches `pattern`, minus the generated paraglide
  * output (not hand-written source) and `*.test.ts`. Sorted, so counts and failures are stable. */
 export function guardSources(pattern: RegExp, appRoot: string = guardAppRoot()): GuardSource[] {
   const found: GuardSource[] = []
   const walk = (dir: string): void => {
-    for (const entry of readdirSync(dir).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
+    for (const entry of readdirSync(dir).sort(compareCodeUnits)) {
       const abs = join(dir, entry)
       // Only the generated output is skipped, by its exact path: a directory that merely carries
       // the name elsewhere (for example a nested copy) is ordinary source.
       if (toPosix(relative(appRoot, abs)) === GENERATED_PARAGLIDE) continue
       if (statSync(abs).isDirectory()) walk(abs)
-      else if (pattern.test(entry) && !/\.test\.ts$/.test(entry)) {
+      else if (pattern.test(entry) && !entry.endsWith('.test.ts')) {
         found.push({ path: toPosix(relative(appRoot, abs)), abs })
       }
     }
@@ -134,7 +140,7 @@ export function canonicalJson(value: unknown): string {
     if (input !== null && typeof input === 'object') {
       return Object.fromEntries(
         Object.entries(input as Record<string, unknown>)
-          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+          .sort(([a], [b]) => compareCodeUnits(a, b))
           .map(([key, entry]) => [key, sort(entry)])
       )
     }
@@ -177,7 +183,7 @@ export function entriesTamperProblem(appRoot: string = guardAppRoot()): string |
     ...[...raw.keys()].filter((k) => k !== '_generated'),
   ])
   const differing = [...sections]
-    .sort()
+    .sort(compareCodeUnits)
     .filter((section) => sectionHash(raw.get(section) ?? null) !== recordedHashes.get(section))
   return differing.length === 0
     ? null

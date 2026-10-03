@@ -30,9 +30,9 @@ verify_pack_copy() { # name -> prints the directory
 
 # pv-compose a pack into the app. Output in $WORK/verify-compose.out; the exit status is returned.
 verify_compose() { # pack
-  local status=0
+  local pack="$1" status=0
   (cd "$APP" && clean_env PV_FIXTURE_HOST="$INSTALLED" "$NODE_BIN" "$COMPOSE_BIN" \
-    --pack "$1" --module-pack "$APP") > "$WORK/verify-compose.out" 2>&1 || status=$?
+    --pack "$pack" --module-pack "$APP") > "$WORK/verify-compose.out" 2>&1 || status=$?
   return "$status"
 }
 
@@ -69,38 +69,45 @@ verify_mutation_red() { # name pack needle
 # Add a PV file path to the pack manifest's OVERRIDES list (the manifest declares an override only
 # while its file exists in the pack).
 verify_declare_override() { # pack path
-  sed -i "s#^  'static/favicon.png',#  'static/favicon.png',\n  '$2',#" "$1/pv-ui.manifest.ts"
+  local pack="$1" path="$2"
+  sed -i "s#^  'static/favicon.png',#  'static/favicon.png',\n  '$path',#" "$pack/pv-ui.manifest.ts"
   return 0
 }
 
 verify_mutate_html() { # pack
-  printf '<script lang="ts">\n  let { userBio }: { userBio: string } = $props()\n</script>\n<div>{@html userBio}</div>\n' > "$1/src/lib/BadHtml.svelte"
+  local pack="$1"
+  printf '<script lang="ts">\n  let { userBio }: { userBio: string } = $props()\n</script>\n<div>{@html userBio}</div>\n' > "$pack/src/lib/BadHtml.svelte"
   return 0
 }
 
 verify_mutate_storage() { # pack
-  printf "export const remember = (value: string): void => globalThis.sessionStorage?.setItem('cm:other', value)\n" > "$1/src/lib/session-cache.ts"
+  local pack="$1"
+  printf "export const remember = (value: string): void => globalThis.sessionStorage?.setItem('cm:other', value)\n" > "$pack/src/lib/session-cache.ts"
   return 0
 }
 
 verify_mutate_key() { # pack: the declared file uses a key its entry does not declare
-  sed -i "s#'cm:billing-draft'#'cm:other-draft'#" "$1/src/lib/billing-draft.ts"
+  local pack="$1"
+  sed -i "s#'cm:billing-draft'#'cm:other-draft'#" "$pack/src/lib/billing-draft.ts"
   return 0
 }
 
 verify_mutate_fetch() { # pack
-  printf "export const call = (base: string | undefined = process.env.API_BASE_URL): Promise<Response> => globalThis.fetch(String(base))\n" > "$1/src/lib/server/cm-crm.ts"
+  local pack="$1"
+  printf "export const call = (base: string | undefined = process.env.API_BASE_URL): Promise<Response> => globalThis.fetch(String(base))\n" > "$pack/src/lib/server/cm-crm.ts"
   return 0
 }
 
 verify_mutate_input() { # pack
-  printf '<input id="cm-note" />\n' > "$1/src/lib/BadInput.svelte"
+  local pack="$1"
+  printf '<input id="cm-note" />\n' > "$pack/src/lib/BadInput.svelte"
   return 0
 }
 
 verify_mutate_css() { # pack: an app.css override that drops source(none)
-  printf '@import "tailwindcss";\n@source "./**/*.{svelte,ts}";\n' > "$1/src/app.css"
-  verify_declare_override "$1" 'src/app.css'
+  local pack="$1"
+  printf '@import "tailwindcss";\n@source "./**/*.{svelte,ts}";\n' > "$pack/src/app.css"
+  verify_declare_override "$pack" 'src/app.css'
   return 0
 }
 

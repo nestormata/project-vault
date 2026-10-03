@@ -67,7 +67,7 @@ describe('guard entries validation (Story 68.9 AC-3)', () => {
         'holds a quote, backtick, backslash or newline'
       )
     }
-    expect(problemsOf(entry(['cm:préférences:é'])).length).toBe(0)
+    expect(problemsOf(entry(['cm:préférences:é']))).toHaveLength(0)
   })
 
   it('rejects a duplicate (api, file) pair instead of unioning the keys', () => {

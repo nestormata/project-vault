@@ -128,13 +128,10 @@ function storageEntryProblems(api: string, entry: unknown, index: number): strin
   const label = `browserStorage.${api}[${index}]`
   if (!isRecord(entry)) return [`${label} must be an object`]
   const file = pathProblem(`${label}.file`, entry.file)
-  return [
-    ...(file === null ? [] : [file]),
-    ...(nonEmptyString(entry.reason)
-      ? []
-      : [`${label} has no reason.${ready(`browserStorage.${api}`, STORAGE_SNIPPET)}`]),
-    ...keyProblems(label, entry.keys),
-  ]
+  const reasonProblem = nonEmptyString(entry.reason)
+    ? []
+    : [`${label} has no reason.${ready(`browserStorage.${api}`, STORAGE_SNIPPET)}`]
+  return [...(file === null ? [] : [file]), ...reasonProblem, ...keyProblems(label, entry.keys)]
 }
 
 function checkStorage(api: string, value: unknown, problems: string[]): void {

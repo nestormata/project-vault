@@ -23,7 +23,7 @@ const SUPPORTED_REGISTRY = 1
 /** Guards a later story adds (68-4's coverage guard, 68-10's monolithic-region guard): their absence
  * from an older web-host is not a weakening, so it is reported, not failed. */
 const PV_DUTY_GUARDS = ['injection-point-coverage', 'monolithic-region'] as const
-const SCOPES = ['all-files', 'pv-originated-only']
+const SCOPES = new Set(['all-files', 'pv-originated-only'])
 
 export interface GuardRegistryEntry {
   id: string
@@ -166,7 +166,7 @@ function configText(scratch: string, testFiles: readonly string[]): string {
   return [
     'export default {',
     `  test: { include: ${JSON.stringify(testFiles)}, environment: 'node' },`,
-    `  resolve: { alias: [{ find: /^\\$lib\\//, replacement: ${libDir} }] },`,
+    String.raw`  resolve: { alias: [{ find: /^\$lib\//, replacement: ${libDir} }] },`,
     '}',
     '',
   ].join('\n')
@@ -183,7 +183,7 @@ export function cmOriginatedFiles(lock: CompositionLock): string[] {
 
 function outcomeOf(guard: GuardRegistryEntry, report: VitestReport): GuardOutcome {
   const suite: VitestSuite | undefined = report.testResults.find((entry) =>
-    entry.name.split('\\').join('/').endsWith(`/${guard.file}`)
+    entry.name.replaceAll('\\', '/').endsWith(`/${guard.file}`)
   )
   if (suite === undefined) {
     return { id: guard.id, kind: guard.kind, ok: false, ms: 0, failures: ['the guard did not run'] }
@@ -288,7 +288,7 @@ export async function runGuards(input: {
   const guards = registry.guards
   const scratch = join(input.appRoot, '.pv-compose', 'guard-run')
   const problems = guards
-    .filter((guard) => !SCOPES.includes(guard.scope))
+    .filter((guard) => !SCOPES.has(guard.scope))
     .map(
       (guard) =>
         `guard ${guard.id} has an unknown scope "${guard.scope}"; upgrade @project-vault/composition-kit`

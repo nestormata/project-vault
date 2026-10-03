@@ -6,13 +6,9 @@
  * scanned with the same rules; this is the repository's thin CLI over it.
  */
 import { basename, resolve } from 'node:path'
-import {
-  scanFormGuidance,
-  scanFormGuidanceTree,
-  type FormGuidanceFinding,
-} from '../apps/web/guards/form-guidance.js'
+import { scanFormGuidanceTree, type FormGuidanceFinding } from '../apps/web/guards/form-guidance.js'
 
-export { scanFormGuidance, type FormGuidanceFinding }
+export { scanFormGuidance, type FormGuidanceFinding } from '../apps/web/guards/form-guidance.js'
 
 export function scanWebFormGuidance(rootDir = process.cwd()): FormGuidanceFinding[] {
   const root = resolve(rootDir)

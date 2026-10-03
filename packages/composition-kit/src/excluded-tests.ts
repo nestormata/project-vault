@@ -99,7 +99,7 @@ export function exclusionConsistencyProblems(lock: CompositionLock, hostDir: str
   ]
 }
 
-const SECURITY_PATH = /(^|\/)(server|hooks|auth)(\/|\.|-)|routes\/\(auth\)/
+const SECURITY_PATH = /(^|\/)(server|hooks|auth)[/.-]|routes\/\(auth\)/
 
 /** Excluded tests whose path suggests they guard security behaviour (report-only, never refused). */
 export function securityRelevant(excluded: readonly string[]): string[] {

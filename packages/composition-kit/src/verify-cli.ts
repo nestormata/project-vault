@@ -84,10 +84,11 @@ function testLines(report: VerifyReport): string[] {
 
 /** The human report: one section per step, warnings and entry counts last. */
 export function formatReport(report: VerifyReport, explain: boolean): string {
+  const lockNote = report.preflight.regenerated
+    ? 'lock regenerated and equal'
+    : 'lock present, pass --pack to also regenerate it'
   const lines = [
-    report.preflight.ok
-      ? `pv-verify: preflight ok (${report.preflight.regenerated ? 'lock regenerated and equal' : 'lock present, pass --pack to also regenerate it'})`
-      : 'pv-verify: preflight FAILED',
+    report.preflight.ok ? `pv-verify: preflight ok (${lockNote})` : 'pv-verify: preflight FAILED',
     ...report.preflight.problems.map((line) => `  ${line}`),
     ...guardLines(report),
     ...testLines(report),
