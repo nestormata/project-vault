@@ -3,6 +3,7 @@
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
 import { sveltekit } from '@sveltejs/kit/vite'
 import { coverageConfigDefaults, mergeConfig, type ViteUserConfig } from 'vitest/config'
+import { emptyInjectionModules, injectionEntries } from './injection-plugins.ts'
 import { paraglideOptions } from './paths.ts'
 import type { WebHostBuildOptions } from './vite.config.ts'
 
@@ -25,6 +26,8 @@ function webHostTestConfig(options: WebHostBuildOptions): ViteUserConfig {
   return {
     plugins: [
       paraglideVitePlugin(paraglideOptions(options.appRoot, options.composedRoot)),
+      injectionEntries(),
+      emptyInjectionModules(),
       sveltekit(),
     ],
     resolve: { conditions: ['browser'] },
