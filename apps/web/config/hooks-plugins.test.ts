@@ -102,6 +102,16 @@ describe('emptyHooksModules (AC-1)', () => {
     await expect(bundle(COMPOSED_TREE, [emptyHooksModules(), fakeKit])).resolves.toContain('"kit"')
   })
 
+  it('fails closed on a composed tree whose lock is missing (pv-compose marker in src/)', async () => {
+    // Code review 68-6 (AC-1): pv-compose writes src/.pv-compose-generated in every composed tree,
+    // including one with CM code under src/lib/server/_cm/.
+    const marked = join(import.meta.dirname, 'fixtures', 'marked-tree')
+    await expect(bundle(marked, [emptyHooksModules()])).rejects.toThrow(
+      COMPOSED_WITHOUT_KIT_MESSAGE
+    )
+    await expect(bundle(marked, [emptyHooksModules(), fakeKit])).resolves.toContain('"kit"')
+  })
+
   it('fails closed when the factories were given a composed root and the kit plugin is missing', async () => {
     await expect(bundle(PV_TREE, [emptyHooksModules({ composed: true })])).rejects.toThrow(
       COMPOSED_WITHOUT_KIT_MESSAGE

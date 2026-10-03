@@ -22,14 +22,23 @@ const requireFromHere = createRequire(import.meta.url)
 export const COMPOSED_WITHOUT_KIT_MESSAGE =
   'composed tree detected but pvHooks() from @project-vault/composition-kit/vite is not in the plugin list'
 
-function hasLockFile(root: string): boolean {
+function fileExists(path: string): boolean {
   try {
     // require.resolve() of an absolute path succeeds only when the file exists.
-    requireFromHere.resolve(join(root, 'composition.lock.json'))
+    requireFromHere.resolve(path)
     return true
   } catch {
     return false
   }
+}
+
+/** A composed tree: its lock, or the marker pv-compose writes in every directory it owns (src/,
+ * so also a tree with CM code under src/lib/server/_cm/ whose lock went missing). */
+function isComposedTree(root: string): boolean {
+  return (
+    fileExists(join(root, 'composition.lock.json')) ||
+    fileExists(join(root, 'src', '.pv-compose-generated'))
+  )
 }
 
 /** The generated module for one hooks file in PV's own build. */
@@ -51,7 +60,7 @@ export function emptyHooksModules(options: EmptyHooksOptions = {}): Plugin {
     enforce: 'post',
     configResolved(config) {
       const kitPresent = config.plugins.some((plugin) => plugin.name === PV_HOOKS_KIT_PLUGIN)
-      if (!kitPresent && (options.composed === true || hasLockFile(config.root))) {
+      if (!kitPresent && (options.composed === true || isComposedTree(config.root))) {
         throw new Error(COMPOSED_WITHOUT_KIT_MESSAGE)
       }
     },
