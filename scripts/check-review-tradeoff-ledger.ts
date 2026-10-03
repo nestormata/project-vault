@@ -385,7 +385,13 @@ const STORY_KEY_IN_TEXT = /(?<![\w-])\d+-\d+[a-z]?-[a-z][a-z0-9-]*/g
 
 /** Story keys written in `text`, trailing hyphens trimmed. */
 function citedStoryKeys(text: string): string[] {
-  return [...text.matchAll(STORY_KEY_IN_TEXT)].map((m) => m[0].replace(/-+$/, ''))
+  return [...text.matchAll(STORY_KEY_IN_TEXT)].map((m) => trimTrailingHyphens(m[0]))
+}
+
+function trimTrailingHyphens(value: string): string {
+  let end = value.length
+  while (end > 0 && value[end - 1] === '-') end -= 1
+  return value.slice(0, end)
 }
 
 type CitationContext = { ledger: Ledger; sprintKeys: Set<string> }

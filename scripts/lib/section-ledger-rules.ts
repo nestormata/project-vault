@@ -125,7 +125,7 @@ export const DISPOSITION_PHRASES: readonly RegExp[] = [
   /\bdefer(?:red|s|ring)?\b/gi,
 ]
 
-const TRAILING_NONE = /^\**\s*:\s*\**\s*(?:none|n\/a|nothing)\b/i
+const TRAILING_NONE = /^[*\s]*:[*\s]*(?:none|n\/a|nothing)\b/i
 const NONE_PARAGRAPH = /^\W*(?:none|n\/a|nothing)\b/i
 
 /** Offset of the first non-negated disposition phrase in `text`, or undefined. */
@@ -240,7 +240,7 @@ export function dispositionHits(section: RiskScopeSection): SectionHit[] {
   })
 }
 
-const CHECKED_DEFER = /^\s*[-*]\s+\[[xX]\]\s+\[Review\]\[Defer\]/i
+const CHECKED_DEFER = /^\s*[-*]\s+\[x\]\s+\[Review\]\[Defer\]/i
 const ANY_BULLET = /^(\s*)(?:[-*]|\d+\.)\s/
 
 export type CheckedDefer = { line: number; endLine: number; text: string }
