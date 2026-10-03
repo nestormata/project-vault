@@ -12,6 +12,13 @@
 - `pvNav()` Vite plugin (`@project-vault/composition-kit/vite`): resolves `virtual:pv-nav` to a
   re-export of the pack's materialized `nav.ts` (an empty delta without one, or for a lock written
   against an older web-host). A missing lock fails the build.
+- `pvReplace()` no longer passes a "leave this id alone" flag to nested resolves in `custom`. Rolldown
+  1.2.x can hand one concurrent `this.resolve` call another's `custom`, so the flag sometimes reached
+  SvelteKit's import guard on an unrelated import: the guard then recorded PV's file instead of the
+  replacement and failed a client import of a replaced `$lib/server` module with "An impossible
+  situation occurred" instead of its own "Cannot import ... into code that runs in the browser". The
+  plugin now decides from the resolved id alone: an answer that is already a replacement is kept, and
+  `pv-original:` maps one back to PV's file.
 - With a web-host that ships `manifests/nav-ids.json` with `delta: 1`, the composer reads `nav.ts`
   with the app's TypeScript and records every string-literal id: `navIdsReferenced` (targets and
   anchors operative, except `hide`/`remove` targets), the new `navIdsDeclared` (ids the pack inserts)
