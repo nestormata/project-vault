@@ -283,12 +283,50 @@ mock_pack_export_context() {
   return 0
 }
 
+# M5 failure row: an id web-host does not have is RECORDED and REPORTED, never refused: the lock lists
+# every id the pack's nav delta declares and references, and the compose output notes the vanished one.
+mock_check_m5() {
+  local lock="$APP/composition.lock.json" id
+  for id in mock.billing mock.tools.reports.daily mock.crumb.deep mock.account.more.one; do
+    grep -qF "\"$id\"" "$lock" || mock_fail "the lock does not record the declared nav id $id"
+  done
+  for id in primary.secrets primary.health primary.mock-not-a-pv-item breadcrumbs.platform; do
+    grep -qF "\"$id\"" "$lock" || mock_fail "the lock does not record the referenced nav id $id"
+  done
+  # the notes are recorded in the lock (the composition succeeded, so nothing was refused)
+  for needle in 'nav references: ' \
+    'nav id \"primary.mock-not-a-pv-item\" vanished from web-host; it is only hidden or removed'; do
+    grep -qF -- "$needle" "$lock" || mock_fail "the lock notes lack: $needle"
+  done
+  log 'OK: M5 nav ids recorded in the lock; an unknown hidden id is noted, not refused'
+  return 0
+}
+
+# AC-7.1: the lock records the module pack's two security changes (one loosened on purpose, one
+# tightened) and every other override as `replaceSecurity: false`: recorded, never refused.
+mock_check_m7_lock() {
+  clean_env "$NODE_BIN" -e '
+    const lock = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"))
+    const rows = lock.apiRouteOverrides
+    const find = (method, url) => rows.find((row) => row.method === method && row.url === url)
+    const fail = (message) => { console.error("fixture: " + message); process.exit(1) }
+    if (!Array.isArray(rows) || rows.length < 4) fail("the lock lacks apiRouteOverrides: " + JSON.stringify(rows))
+    if (find("POST", "/api/v1/auth/cli-login")?.replaceSecurity !== true) fail("the loosened route is not recorded as replaceSecurity")
+    if (find("GET", "/api/v1/capabilities")?.replaceSecurity !== true) fail("the tightened route is not recorded as replaceSecurity")
+    const plain = find("GET", "/api/v1/users/me")
+    if (plain === undefined || plain.mode !== "replace" || plain.replaceSecurity) fail("the plain replace is missing or marked replaceSecurity")
+  ' "$APP/composition.lock.json" || mock_fail 'the lock does not record the module pack route overrides'
+  log 'OK: the lock records the loosened and tightened routes and the plain replace'
+  return 0
+}
+
 compose_mock_pack_checks() {
   local port="$1"
   mock_check_m1 "$port"
   mock_check_m2 "$port"
   mock_check_m3 "$port"
   mock_check_m4_m6 "$port"
+  mock_check_m5
   mock_pack_export_context
   return 0
 }

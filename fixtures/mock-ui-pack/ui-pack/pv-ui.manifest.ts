@@ -92,6 +92,8 @@ export default defineUiPack({
   },
   // M2: one CM route outside `(app)` declared protected, one under `(app)` declared public.
   protectedPaths: { add: ['/protected-cm'], remove: ['/(app)/cm-area/public-callback'] },
+  // M5: the nav delta (every operation on native and pack items, nested, inherited; see nav.ts).
+  nav: './nav.ts',
   // M6: tokens (colors, radius, font) plus the pack's own styles.
   theme: './theme.css',
   messages: './messages',
