@@ -893,8 +893,17 @@ compose_chunk_checks() {
     fi
     seen="${seen} ${files}"
   done
-  if grep -rlF -e "$WHO_MARKER" -e "$THEME_MARKER" -e "$PROJECT_MARKER" "$APP/build/client/_app/immutable/entry" > /dev/null 2>&1; then
+  local entry_dir="$APP/build/client/_app/immutable/entry" entry_status=0
+  # An absent entry directory would make the grep below fail the same way as "no match": require it.
+  if [[ ! -d "$entry_dir" ]]; then
+    compose_fail "chunk placement: ${entry_dir} does not exist, so the entry chunks were not checked"
+  fi
+  grep -rlF -e "$WHO_MARKER" -e "$THEME_MARKER" -e "$PROJECT_MARKER" "$entry_dir" > /dev/null || entry_status=$?
+  if [[ "$entry_status" == '0' ]]; then
     compose_fail 'chunk placement: an injected component marker reached an entry chunk'
+  fi
+  if [[ "$entry_status" != '1' ]]; then
+    compose_fail "chunk placement: grep over the entry chunks failed (exit ${entry_status})"
   fi
   log 'OK: each injected component lives in the client chunk of the one page that renders its point, in no entry chunk and no other page'
   return 0
