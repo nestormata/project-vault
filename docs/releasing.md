@@ -498,13 +498,14 @@ That message is the signal for CentralizeMe's implementation gate (CM-E16 16-1).
 pins exactly and never follows `next`.
 
 **Current state (2026-10-04):** `v1.4.0` (tag on `4a17f55d`) was the first release to publish both packages:
-`@project-vault/web-host@1.4.0` and `@project-vault/composition-kit@0.7.0` are on `next`, with provenance
-verified by `scripts/verify-npm-release.ts` (push run `37170315890`, preceded by the dry run
-`37170400167`). `latest` is still the deprecated placeholder `0.0.1-bootstrap.0` on both until the
-CentralizeMe consumer build (CM 16-1) passes against the exact versions; then `npm dist-tag add … latest`.
-`web-host` no longer has a `bootstrap` dist-tag; `composition-kit` still does. Re-wording the placeholder's
-deprecation message ("use the latest dist-tag" is circular while `latest` is the placeholder) is pending
-(Stories 68-17 and 68-18).
+`@project-vault/web-host@1.4.0` and `@project-vault/composition-kit@0.7.0`, with provenance verified by
+`scripts/verify-npm-release.ts` (push run `37170315890`, preceded by the dry run `37170400167`; both
+`publish-kit` legs finished before any `publish` leg started). CentralizeMe 16-1 pins both versions exactly.
+Both packages were promoted to `latest` on 2026-10-04 (`npm dist-tag add … latest`, registry modified
+10:33Z), so the dist-tags are `latest` = `next` = `1.4.0` (web-host) and `0.7.0` (composition-kit). The
+placeholder `0.0.1-bootstrap.0` stays deprecated on both ("use the latest dist-tag" is accurate again). The
+`bootstrap` dist-tag is removed on `web-host`; on `composition-kit` it is removed by Story 68-18 (check
+`npm view @project-vault/composition-kit dist-tags`).
 
 ## Tooling note
 
