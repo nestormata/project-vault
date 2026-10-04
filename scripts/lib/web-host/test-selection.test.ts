@@ -60,6 +60,21 @@ describe('classifyTest', () => {
     ])
   })
 
+  it('lists type-only packages in bareImports once, merged with runtime ones (Story 68.22)', () => {
+    const result = classify("import { it } from 'vitest'\nimport { h } from './helpers'", {
+      [`${WEB_SRC}/lib/helpers.ts`]:
+        "import type { f } from 'zod'\nimport type { g } from 'vitest'",
+    })
+    expect(result.selfContained).toBe(true)
+    expect(result.bareImports).toEqual(['vitest', 'zod'])
+  })
+
+  it('excludes a test that only type-imports a package apps/web does not resolve (Story 68.22)', () => {
+    const result = classify("import type { x } from 'left-pad'")
+    expect(result.selfContained).toBe(false)
+    expect(result.reasons).toEqual(['imports left-pad, which apps/web does not resolve'])
+  })
+
   it('excludes a test with an unresolvable relative import', () => {
     expect(classify("import './gone'").reasons[0]).toMatch(/^unresolvable import/)
   })

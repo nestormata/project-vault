@@ -30,7 +30,7 @@ export interface TestClassification {
   file: string
   selfContained: boolean
   reasons: string[]
-  /** Bare packages the test (and the test-support code it reaches) imports. */
+  /** Bare packages the test (and the test-support code it reaches) imports, runtime or type-only. */
   bareImports: string[]
 }
 
@@ -96,7 +96,10 @@ function graphReasons(file: string, context: TestSelectionContext) {
     const shipped = isInside(context.webSrc, reached) || context.vendoredShared.has(reached)
     if (!shipped) reasons.push(`imports ${context.display(reached)}, outside the package`)
   }
-  const bareImports = [...graph.bareImports.keys()].sort((a, b) => a.localeCompare(b))
+  // Type-only packages count too (Story 68.22): the shipped test needs them at type-check time.
+  const bareImports = [
+    ...new Set([...graph.bareImports.keys(), ...graph.typeBareImports.keys()]),
+  ].sort((a, b) => a.localeCompare(b))
   for (const name of bareImports) {
     const workspace = name.startsWith('@project-vault/')
     if (

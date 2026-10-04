@@ -4,8 +4,9 @@
 //   1. which bare packages the shipped app source needs at runtime (its `dependencies`);
 //   2. which @project-vault/shared files the app reaches (what gets vendored);
 //   3. whether shipped source imports a test file (a packaging error).
-// Type-only imports (`import type`, `export type`) are skipped: they vanish at compile time and
-// never need a runtime dependency. File text is read through `ts.sys`, the compiler's own host.
+// Type-only imports (`import type`, `export type`) never add files to the graph and never count as
+// runtime dependencies (they vanish at compile time), but their bare packages are reported
+// separately (`typeBareImports`): a shipped test still needs them at type-check time (Story 68.22). File text is read through `ts.sys`, the compiler's own host.
 import { builtinModules, createRequire } from 'node:module'
 import { dirname, extname, join, relative, sep } from 'node:path'
 import ts from 'typescript'
@@ -143,6 +144,9 @@ export interface GraphResult {
   files: Set<string>
   /** package name -> every file (absolute) that imports it at runtime. */
   bareImports: Map<string, string[]>
+  /** package name -> every file (absolute) that imports it only as a type (`import type`,
+   * `export type ... from`). Files behind type-only imports are not followed. */
+  typeBareImports: Map<string, string[]>
   /** Packaging errors: unresolvable relative imports, shipped source importing a test file. */
   errors: string[]
 }
@@ -153,7 +157,12 @@ export function walkImportGraph(
   resolver: GraphResolver,
   display: (path: string) => string = (path) => path
 ): GraphResult {
-  const result: GraphResult = { files: new Set(), bareImports: new Map(), errors: [] }
+  const result: GraphResult = {
+    files: new Set(),
+    bareImports: new Map(),
+    typeBareImports: new Map(),
+    errors: [],
+  }
   const queue = [...roots]
   const record = (file: string, specifier: string): void => {
     const target = resolveSpecifier(specifier, file, resolver)
@@ -167,6 +176,13 @@ export function walkImportGraph(
       queue.push(target.path)
     }
   }
+  const recordType = (file: string, specifier: string): void => {
+    const target = resolveSpecifier(specifier, file, resolver)
+    if (target.kind === 'package') {
+      const importers = result.typeBareImports.get(target.name) ?? []
+      result.typeBareImports.set(target.name, [...importers, file])
+    }
+  }
   for (let file = queue.shift(); file !== undefined; file = queue.shift()) {
     if (result.files.has(file)) continue
     result.files.add(file)
@@ -176,7 +192,8 @@ export function walkImportGraph(
       continue
     }
     for (const { specifier, typeOnly } of moduleSpecifiers(code, file)) {
-      if (!typeOnly) record(file, specifier)
+      if (typeOnly) recordType(file, specifier)
+      else record(file, specifier)
     }
   }
   return result

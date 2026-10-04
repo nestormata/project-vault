@@ -56,6 +56,7 @@ import {
   type TestClassification,
   type TestSelectionContext,
 } from './lib/web-host/test-selection.js'
+import { undeclaredTestImports } from './lib/web-host/test-imports-guard.js'
 import {
   isExactVersion,
   findDrift,
@@ -568,6 +569,16 @@ export async function packWebHost(options: PackOptions): Promise<PackResult> {
   })
   const optionalTestPeers = testPeers(tests.shipped, runtime, webLocked)
   const peerDependencies = { ...runtime.peerDependencies, ...optionalTestPeers }
+  problems.push(
+    ...undeclaredTestImports(
+      tests.shipped.map((entry) => ({
+        file: relativePosix(REPO_ROOT, entry.file),
+        bareImports: entry.bareImports,
+      })),
+      { dependencies, peerDependencies },
+      [SHARED_PACKAGE, EXTENSION_API_PACKAGE]
+    )
+  )
   log(
     `pack-web-host: ${tests.shipped.length} self-contained tests shipped, ${tests.excluded.length} cross-package tests excluded`
   )

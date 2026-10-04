@@ -287,6 +287,17 @@ describe('web-host package.json (Story 68.2 AC-2/AC-6)', () => {
     expect(packageJsonShape(result.packageJson)).toEqual(golden)
   })
 
+  it('declares @testing-library/dom as an exact optional peer; meta keys are declared optional peers (Story 68.22)', () => {
+    const peers = result.packageJson.peerDependencies as Record<string, string>
+    const meta = result.packageJson.peerDependenciesMeta as Record<string, { optional?: boolean }>
+    expect(peers['@testing-library/dom']).toMatch(/^\d+\.\d+\.\d+$/)
+    expect(meta['@testing-library/dom']).toEqual({ optional: true })
+    for (const [name, entry] of Object.entries(meta)) {
+      expect(peers, name).toHaveProperty([name])
+      expect(entry, name).toEqual({ optional: true })
+    }
+  })
+
   it('pins the toolchain peers to the lockfile versions and computes the runtime dependency set', () => {
     const peers = result.packageJson.peerDependencies as Record<string, string>
     const dependencies = result.packageJson.dependencies as Record<string, string>

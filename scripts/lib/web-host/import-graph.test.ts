@@ -118,6 +118,43 @@ describe('walkImportGraph', () => {
     expect(graph.errors).toEqual([])
   })
 
+  it('collects type-only package imports separately and follows no type-only file (Story 68.22)', () => {
+    const resolver = memoryResolver({
+      [APP_A]: [
+        "import type { x } from '@testing-library/dom'",
+        "export type { y } from 'pkg-y/sub'",
+        "import { type z } from 'inline-pkg'",
+        "import type { T } from './types-only'",
+        "import type { N } from 'node:fs'",
+        "import type { V } from 'virtual:x'",
+        "import 'runtime-pkg'",
+        "import type { R } from 'runtime-pkg'",
+      ].join('\n'),
+      '/app/types-only.ts': "import 'never-followed'",
+    })
+    const graph = walkImportGraph([APP_A], resolver)
+    expect([...graph.typeBareImports.keys()].sort()).toEqual([
+      '@testing-library/dom',
+      'pkg-y',
+      'runtime-pkg',
+    ])
+    expect(graph.typeBareImports.get('@testing-library/dom')).toEqual([APP_A])
+    expect([...graph.bareImports.keys()].sort()).toEqual(['inline-pkg', 'runtime-pkg'])
+    expect(graph.files.has('/app/types-only.ts')).toBe(false)
+    expect(graph.errors).toEqual([])
+  })
+
+  it('collects type-only package imports from Svelte script blocks (Story 68.22)', () => {
+    const graph = walkImportGraph(
+      ['/app/C.svelte'],
+      memoryResolver({
+        '/app/C.svelte': '<script lang="ts">\n  import type { P } from "types-only"\n</script>',
+      })
+    )
+    expect([...graph.typeBareImports.keys()]).toEqual(['types-only'])
+    expect(graph.bareImports.size).toBe(0)
+  })
+
   it('fails when shipped source imports a test file, naming both files', () => {
     const graph = walkImportGraph(
       [APP_A],
