@@ -1,11 +1,19 @@
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { compose } from '../src/compose.js'
 import { sha256Hex } from '../src/hash.js'
 import { runVerifyCli } from '../src/verify-cli.js'
-import { acquireRunLock, verify } from '../src/verify.js'
+import { acquireRunLock, extractClassifications, verify } from '../src/verify.js'
 import {
   makeWorld,
   manifest,
@@ -466,6 +474,163 @@ it('the subject answers pv', () => expect(value).toBe('pv'))
   })
 })
 
+const io = () => {
+  const out: string[] = []
+  const err: string[] = []
+  return { out, err, io: { out: (t: string) => out.push(t), err: (t: string) => err.push(t) } }
+}
+
+const SCRATCH_DIR = '.pv-compose'
+const WEBHOOK_REASON = 'signed webhook'
+const CLASSIFICATIONS_PACK = {
+  'pv-guards.json': JSON.stringify({
+    routeClassifications: [
+      { route: 'POST /api/v1/cm/hook', reason: WEBHOOK_REASON },
+      { route: 'GET /api/v1/cm/health', reason: 'public liveness probe', temporary: false },
+    ],
+  }),
+}
+const classifiedWorld = (): Promise<World> =>
+  composedWorld({
+    packFiles: CLASSIFICATIONS_PACK,
+    manifest: () => ({ guards: 'pv-guards.json' }),
+  })
+const GENERATED_ENTRIES = 'src/lib/composition/guard-entries.generated.json'
+
+describe('pv-verify --only classifications (Story 68-16 AC-2)', () => {
+  it('writes the merged entries as a sorted, deterministic JSON array and runs nothing else', async () => {
+    const world = await classifiedWorld()
+    const out = join(world.root, 'audit-classifications.json')
+    const first = await extractClassifications({ ...options(world), out })
+    expect(first).toEqual({ ok: true, entries: 2, problems: [] })
+    const text = readFileSync(out, 'utf8')
+    // entries are sorted by route; keys keep the generated file's canonical (sorted) order
+    expect(text).toBe(
+      `${JSON.stringify(
+        [
+          { reason: 'public liveness probe', route: 'GET /api/v1/cm/health', temporary: false },
+          { reason: WEBHOOK_REASON, route: 'POST /api/v1/cm/hook' },
+        ],
+        null,
+        2
+      )}\n`
+    )
+    await extractClassifications({ ...options(world), out })
+    expect(readFileSync(out, 'utf8')).toBe(text)
+    expect(readdirSync(world.root).filter((name) => name.includes('.tmp'))).toEqual([])
+    // no guards or tests ran: nothing was written under the verify scratch dir
+    expect(existsSync(join(world.app, SCRATCH_DIR, 'verify.vitest.config.mjs'))).toBe(false)
+  })
+
+  it('writes [] when the pack has no classifications', async () => {
+    const world = await composedWorld()
+    const out = join(world.root, 'empty.json')
+    expect(await extractClassifications({ ...options(world), out })).toEqual({
+      ok: true,
+      entries: 0,
+      problems: [],
+    })
+    expect(readFileSync(out, 'utf8')).toBe('[]\n')
+  })
+
+  it('writes no file when the generated entries were tampered with', async () => {
+    const world = await classifiedWorld()
+    const path = join(world.app, GENERATED_ENTRIES)
+    const generated = JSON.parse(readFileSync(path, 'utf8')) as {
+      routeClassifications: unknown[]
+    }
+    generated.routeClassifications.push({ route: 'GET /api/v1/evil', reason: 'sneaked in' })
+    writeFileSync(path, JSON.stringify(generated))
+    const out = join(world.root, 'tampered.json')
+    const result = await extractClassifications({ ...options(world), out })
+    expect(result.ok).toBe(false)
+    expect(result.problems.join('\n')).toContain('routeClassifications')
+    expect(existsSync(out)).toBe(false)
+  })
+
+  it('writes no file without a lock', async () => {
+    const world = await classifiedWorld()
+    rmSync(join(world.app, LOCK_FILE))
+    const out = join(world.root, 'nolock.json')
+    expect((await extractClassifications({ ...options(world), out })).ok).toBe(false)
+    expect(existsSync(out)).toBe(false)
+  })
+
+  it('refuses a directory target and a missing parent directory, leaving nothing behind', async () => {
+    const world = await classifiedWorld()
+    const directory = await extractClassifications({ ...options(world), out: world.root })
+    expect(directory.ok).toBe(false)
+    expect(directory.problems[0]).toContain('is a directory')
+    const missing = join(world.root, 'nope', 'x.json')
+    const parent = await extractClassifications({ ...options(world), out: missing })
+    expect(parent.ok).toBe(false)
+    expect(parent.problems[0]).toContain('parent directory does not exist')
+    expect(readdirSync(world.root).filter((name) => name.includes('.tmp'))).toEqual([])
+  })
+
+  it('does not replace an existing file when the run fails', async () => {
+    const world = await classifiedWorld()
+    const out = join(world.root, 'keep.json')
+    writeFileSync(out, 'old\n')
+    rmSync(join(world.app, LOCK_FILE))
+    await extractClassifications({ ...options(world), out })
+    expect(readFileSync(out, 'utf8')).toBe('old\n')
+  })
+})
+
+describe('pv-verify --only classifications: command line (Story 68-16 AC-2)', () => {
+  const sink = io
+
+  it('exits 2 naming --out when it is missing, and when --out is combined with another step', async () => {
+    const missing = sink()
+    expect(await runVerifyCli(['--only', 'classifications'], missing.io)).toBe(2)
+    expect(missing.err.join('')).toContain('--out')
+    for (const argv of [
+      ['--out', 'x.json'],
+      ['--only', 'guards', '--out', 'x.json'],
+      ['--only', 'tests', '--out', 'x.json'],
+    ]) {
+      const other = sink()
+      expect(await runVerifyCli(argv, other.io), argv.join(' ')).toBe(2)
+      expect(other.err.join('')).toContain('--out')
+    }
+  })
+
+  it('writes the file (0), prints the count and never echoes entries', async () => {
+    const world = await classifiedWorld()
+    const out = join(world.root, 'cli-out.json')
+    const text = sink()
+    const argv = ['--app', world.app, '--host', world.host, '--only', 'classifications']
+    expect(await runVerifyCli([...argv, '--out', out], text.io)).toBe(0)
+    expect(text.out.join('')).toContain('pv-verify: classifications: 2 entries written')
+    expect(text.out.join('')).not.toContain(WEBHOOK_REASON)
+    expect(existsSync(out)).toBe(true)
+    const json = sink()
+    expect(await runVerifyCli([...argv, '--out', out, '--json'], json.io)).toBe(0)
+    expect(JSON.parse(json.out.join(''))).toEqual({ ok: true, entries: 2 })
+  })
+
+  it('exits 1 with the problem and writes nothing on a failing preflight or a directory target', async () => {
+    const world = await classifiedWorld()
+    const argv = ['--app', world.app, '--host', world.host, '--only', 'classifications']
+    const dir = sink()
+    expect(await runVerifyCli([...argv, '--out', world.root], dir.io)).toBe(1)
+    expect(dir.out.join('') + dir.err.join('')).toContain('is a directory')
+    rmSync(join(world.app, LOCK_FILE))
+    const out = join(world.root, 'x.json')
+    const failed = sink()
+    expect(await runVerifyCli([...argv, '--out', out], failed.io)).toBe(1)
+    expect(existsSync(out)).toBe(false)
+  })
+
+  it('documents --only classifications --out in the usage', () => {
+    const source = readFileSync(join(import.meta.dirname, '..', 'src', 'verify-cli.ts'), 'utf8')
+    const usage = /const USAGE = `([\s\S]*?)`/.exec(source)?.[1] ?? ''
+    expect(usage).toContain('--only <step>      run one step: guards, tests or classifications')
+    expect(usage).toContain('--out <file>')
+  })
+})
+
 describe('pv-verify run lock (Story 68.9 AC-15 concurrency)', () => {
   it('fails fast on a second run on one app root and replaces a stale lock', () => {
     const world = makeWorld()
@@ -473,8 +638,8 @@ describe('pv-verify run lock (Story 68.9 AC-15 concurrency)', () => {
     expect('release' in first).toBe(true)
     expect(acquireRunLock(world.app)).toEqual({ heldBy: process.pid })
     if ('release' in first) first.release()
-    expect(existsSync(join(world.app, '.pv-compose', 'verify.lock'))).toBe(false)
-    writeFileSync(join(world.app, '.pv-compose', 'verify.lock'), '2147483646')
+    expect(existsSync(join(world.app, SCRATCH_DIR, 'verify.lock'))).toBe(false)
+    writeFileSync(join(world.app, SCRATCH_DIR, 'verify.lock'), '2147483646')
     const replaced = acquireRunLock(world.app)
     expect('release' in replaced).toBe(true)
     if ('release' in replaced) replaced.release()
@@ -482,12 +647,6 @@ describe('pv-verify run lock (Story 68.9 AC-15 concurrency)', () => {
 })
 
 describe('pv-verify command line (Story 68.9 AC-9, Q5)', () => {
-  const io = () => {
-    const out: string[] = []
-    const err: string[] = []
-    return { out, err, io: { out: (t: string) => out.push(t), err: (t: string) => err.push(t) } }
-  }
-
   it('prints help (0) and rejects unknown flags and steps (2)', async () => {
     const sink = io()
     expect(await runVerifyCli(['--help'], sink.io)).toBe(0)
@@ -510,7 +669,7 @@ describe('pv-verify command line (Story 68.9 AC-9, Q5)', () => {
     const usage = /const USAGE = `([\s\S]*?)`/.exec(source)?.[1] ?? ''
     expect(usage).toContain('There is no flag that skips')
     const flags = [...usage.matchAll(/^\s+(--[a-z-]+)/gm)].map((match) => match[1])
-    expect(flags).toEqual(['--app', '--host', '--pack', '--only', '--explain', '--json'])
+    expect(flags).toEqual(['--app', '--host', '--pack', '--only', '--out', '--explain', '--json'])
     expect(flags.join(' ')).not.toMatch(/skip|disable|ignore|allow|exclude|force/)
   })
 

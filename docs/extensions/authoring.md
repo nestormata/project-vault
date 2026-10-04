@@ -650,6 +650,12 @@ Project Vault entries are reviewed under the same rules: the audit never decides
 public. An unclassified route, a duplicate key and a **stale** classification (a key for a route that does
 not exist) all fail, naming the key. The report is sorted and holds no absolute path or env value.
 
+A UI pack (composition kit 0.7.0+) authors its classifications in `guards.routeClassifications` with the same
+entry shape and rules, and `pv-verify --app <dir> --only classifications --out <file>` writes the file this
+audit reads (one file per composed variant, never a shared union, regenerated whenever the pack changes: a
+stale entry fails). An entry that restates a Project Vault classification is an error; the audit must run
+with API docs enabled, which its CLI forces.
+
 `generate-spec --extension` writes the composed document atomically; a boot failure or a package that
 does not load exits 1 and leaves the old `--out` untouched. The committed `packages/shared/openapi.json`
 stays Project Vault-only: `--out` spellings that resolve to it (relative, `..`, `//`, a symlink or a hard

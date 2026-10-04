@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,6 +15,11 @@ import {
 // The failure-path variants are committed, read-only fixture directories under
 // fixtures/surface-variants/ rather than files written at test time: they render through the
 // generator's real on-disk path and stay safe under concurrent runs.
+
+// Each test builds a fresh in-process TS program; the first one in a worker also pays the cold
+// lib/ts load, which hit 5.2s (default budget 5s) when the nightly flaky-repeat legs run 27
+// workers in parallel. The cost is CPU contention, not a hang, so the budget is explicit and bounded.
+vi.setConfig({ testTimeout: 30_000 })
 
 const fixtureRoot = join(import.meta.dirname, 'fixtures', 'surface-mini')
 const variantsRoot = join(import.meta.dirname, 'fixtures', 'surface-variants')

@@ -118,6 +118,9 @@ jobs:
       - name: Check the composition kit's release version triangle and integration wiring (Story 68.3)
         run: pnpm vitest run scripts/check-release-version-triangle.test.ts scripts/check-composition-kit-integration.test.ts
 
+      - name: Check the kit's route classification file parses with the runtime route audit (Story 68-16)
+        run: pnpm vitest run scripts/check-composition-kit-route-classifications.test.ts
+
       - name: Check PV web guards run over a composed tree (Story 68.9)
         run: pnpm vitest run scripts/check-web-guard-completeness.test.ts scripts/check-web-guard-symmetry.test.ts scripts/check-web-guard-wiring.test.ts scripts/check-form-guidance.test.ts
 

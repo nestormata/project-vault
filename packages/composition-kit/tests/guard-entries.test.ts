@@ -104,19 +104,63 @@ describe('guard entries validation (Story 68.9 AC-3)', () => {
     expect(problemsOf([])[0]).toContain('must be an object')
   })
 
-  it('validates route classifications: shape, reason and duplicate METHOD URL', () => {
-    const entry = { method: 'GET', url: '/api/v1/cm/health', class: 'public', reason: 'health' }
+  it('validates route classifications against the audit entry shape (Story 68-16 AC-1)', () => {
+    const entry = { route: 'GET /api/v1/cm/health', reason: 'public liveness probe' }
     expect(problemsOf({ routeClassifications: [entry] })).toEqual([])
+    const maximal = {
+      route: 'OPTIONS *',
+      reason: 'r',
+      securityOwner: 'cm-security',
+      compensatingControls: ['rate limit'],
+      expiresAfterStory: null,
+      revisitBy: '2027-01-01',
+      temporary: true,
+    }
+    expect(problemsOf({ routeClassifications: [maximal] })).toEqual([])
+    expect(problemsOf({ routeClassifications: [{ route: 'HEAD /x', reason: 'r' }] })).toEqual([])
+    expect(problemsOf({ routeClassifications: [entry, entry] })).toHaveLength(1)
     expect(problemsOf({ routeClassifications: [entry, entry] })[0]).toContain('classified twice')
-    expect(problemsOf({ routeClassifications: [{ ...entry, method: 'get' }] })[0]).toContain(
-      'upper-case'
-    )
-    expect(problemsOf({ routeClassifications: [{ ...entry, url: 'api' }] })[0]).toContain(
-      'starting with "/"'
-    )
-    expect(problemsOf({ routeClassifications: [{ ...entry, reason: '' }] })[0]).toContain(
-      'no reason'
-    )
+    for (const bad of [
+      { ...entry, route: 'get /x' },
+      { ...entry, route: 'GET x' },
+      { ...entry, route: 'GET /a b' },
+      { ...entry, route: 'TRACE /x' },
+      { ...entry, route: '' },
+      { reason: 'r' },
+      { ...entry, reason: '' },
+      { ...entry, reason: '  ' },
+      { ...entry, securityOwner: '' },
+      { ...entry, revisitBy: 3 },
+      { ...entry, compensatingControls: 'x' },
+      { ...entry, compensatingControls: [''] },
+      { ...entry, expiresAfterStory: '' },
+      { ...entry, temporary: 'yes' },
+      { ...entry, extra: 1 },
+    ]) {
+      expect(problemsOf({ routeClassifications: [bad] }), JSON.stringify(bad)).toHaveLength(1)
+    }
+  })
+
+  it('rejects the 68-9 shape with the migration hint (Story 68-16 AC-1)', () => {
+    const old = { method: 'GET', url: '/x', class: 'public', reason: 'r' }
+    const problems = problemsOf({ routeClassifications: [old] })
+    expect(problems.length).toBeGreaterThan(0)
+    const text = problems.join('\n')
+    for (const field of ['method', 'url', 'class']) expect(text).toContain(`"${field}"`)
+    expect(text).toContain('use { route: "GET /api/v1/x", reason }')
+  })
+
+  it('sorts merged classifications by route in code-unit order (Story 68-16 AC-3)', () => {
+    const entries = {
+      routeClassifications: [
+        { route: 'POST /b', reason: 'r' },
+        { route: 'GET /b', reason: 'r' },
+        { route: 'GET /a', reason: 'r' },
+      ],
+    }
+    expect(
+      mergeGuardEntries(entries, context).merged.routeClassifications.map((e) => e.route)
+    ).toEqual(['GET /a', 'GET /b', 'POST /b'])
   })
 
   it('has no count or length cap', () => {

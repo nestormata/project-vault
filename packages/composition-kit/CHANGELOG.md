@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.7.0
+
+- **Breaking: the `routeClassifications` authoring shape** (Story 68-16). An entry is now the runtime
+  route audit's own entry shape, `{ route: 'GET /api/v1/x', reason, securityOwner?,
+compensatingControls?, expiresAfterStory?, revisitBy?, temporary? }`, validated with the same rules
+  (route regex, non-empty text, unknown fields and duplicate routes rejected). `method`, `url` and `class`
+  are removed; `pv-compose` rejects them with a message naming the migration. Entries are merged sorted by
+  `route`, so a lock written under the old shape differs after one recompose (run `pv-compose` once and
+  commit the lock). The kit never decides which routes may be public and emits no note for a route Project
+  Vault already classifies: the audit fails that duplicate itself.
+- `pv-verify --only classifications --out <file>` writes the merged, locked classification entries as the
+  JSON array `pnpm --filter @project-vault/api route-audit:runtime --classifications <file>` reads
+  (sorted by `route`, deterministic, written atomically, `[]` when the pack has none). It runs the
+  preflight first (lock, PV release, tamper check of the generated entries) and writes nothing when it
+  fails; no guard or test runs. `--out` is only valid with this step. Use one file per composed variant:
+  a stale entry (a route not on that composed API) fails the audit.
+
 ## 0.6.0
 
 - Navigation delta (Story 68-7, ADR 0007 M5). New subpath `@project-vault/composition-kit/nav`
