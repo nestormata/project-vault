@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AuditEvent, HandoffEvent } from './audit-events.js'
+import { AuditEvent, DelegationEvent, HandoffEvent } from './audit-events.js'
 import type { AuthAuditEventType } from './audit-events.js'
 
 function assertValidAuditEventType(value: AuthAuditEventType): AuthAuditEventType {
@@ -208,5 +208,16 @@ describe('HandoffEvent (Story 30.2 AC6.21)', () => {
     for (const value of Object.values(HandoffEvent)) {
       expect(value.startsWith('handoff_')).toBe(true)
     }
+  })
+})
+
+describe('DelegationEvent (Story 71.3 AC-8)', () => {
+  it('exposes one platform security event type for a rejected delegated actor assertion', () => {
+    expect(Object.values(DelegationEvent)).toEqual(['delegation_assertion_rejected'])
+  })
+
+  it('is distinct from every handoff and audit event name', () => {
+    const others = new Set<string>([...Object.values(HandoffEvent), ...Object.values(AuditEvent)])
+    for (const value of Object.values(DelegationEvent)) expect(others.has(value)).toBe(false)
   })
 })
