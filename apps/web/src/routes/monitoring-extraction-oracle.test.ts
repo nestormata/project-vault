@@ -11,9 +11,9 @@ import EndpointListPage from './(app)/projects/[projectId]/service-endpoints/+pa
 import EndpointNewPage from './(app)/projects/[projectId]/service-endpoints/new/+page.svelte'
 import EndpointDetailPage from './(app)/projects/[projectId]/service-endpoints/[serviceEndpointId]/+page.svelte'
 import StatusPageAdmin from './(app)/projects/[projectId]/status-page/+page.svelte'
-import PublicStatusPage from './status/[token]/+page.svelte'
 
-// Story 69.3 AC-2: characterization oracle for the monitoring region extraction. The 68-4 route-render
+// Story 69.3 AC-2: characterization oracle for the monitoring region extraction (the public status page,
+// which a composition may remove, has its own oracle next to its route). The 68-4 route-render
 // oracle renders each route once against a permissive Proxy, which pins none of the states below (the
 // endpoint list had no markup test at all). This one renders the five routes of Story 69.3 with explicit
 // fixture data for every branch of the regions 69.3 extracts, including the interactive ones (delete,
@@ -102,7 +102,6 @@ type ListData = ComponentProps<typeof EndpointListPage>['data']
 type NewData = ComponentProps<typeof EndpointNewPage>['data']
 type DetailData = ComponentProps<typeof EndpointDetailPage>['data']
 type StatusAdminData = ComponentProps<typeof StatusPageAdmin>['data']
-type PublicData = ComponentProps<typeof PublicStatusPage>['data']
 
 function listData(overrides: Record<string, unknown> = {}): ListData {
   return {
@@ -482,35 +481,17 @@ async function statusAdminStates(): Promise<Record<string, string>> {
   return out
 }
 
-function publicStates(): Record<string, string> {
-  const page = (services: unknown[]) => ({ statusPage: { services } }) as unknown as PublicData
-  return {
-    'public valid with services': renderIt(
-      PublicStatusPage as never,
-      page([
-        { displayName: 'API', status: 'healthy', lastCheckedAt: NOON },
-        { displayName: 'Database', status: 'degraded', lastCheckedAt: LATER },
-        { displayName: 'Worker', status: 'down', lastCheckedAt: NOON },
-        { displayName: 'Never checked', status: 'healthy', lastCheckedAt: null },
-      ])
-    ),
-    'public valid with no services': renderIt(PublicStatusPage as never, page([])),
-    'public invalid token': renderIt(PublicStatusPage as never, { statusPage: null }),
-  }
-}
-
 describe('monitoring region extraction oracle (Story 69.3 AC-2)', () => {
-  it('renders the five monitoring routes exactly as before the extraction', async () => {
+  it('renders the four monitoring routes exactly as before the extraction', async () => {
     const result = {
       ...(await listStates()),
       ...newStates(),
       ...(await detailStates()),
       ...(await statusAdminStates()),
-      ...publicStates(),
     }
     await expect(`${JSON.stringify(result, null, 2)}\n`).toMatchFileSnapshot(
       './monitoring-extraction.snapshot.json'
     )
-    expect(Object.keys(result).length).toBeGreaterThanOrEqual(35)
+    expect(Object.keys(result).length).toBeGreaterThanOrEqual(40)
   })
 })
