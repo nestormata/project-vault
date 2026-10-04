@@ -4,6 +4,7 @@
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import RotationBadge from '$lib/components/rotations/RotationBadge.svelte'
   import { m } from '$lib/paraglide/messages.js'
+  import { formatDate } from '$lib/datetime.js'
   import DashboardListSection from './DashboardListSection.svelte'
 
   // Story 69.1: the "Upcoming rotations" card as one replaceable region. It receives `{ project }`
@@ -17,14 +18,6 @@
     rotations: ProjectDashboard['upcomingRotations']
     data?: Record<string, readonly unknown[]> | undefined
   } = $props()
-
-  function formatDate(value: string): string {
-    return new Date(value).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    })
-  }
 </script>
 
 <!-- @region dashboard.home.rotations -->

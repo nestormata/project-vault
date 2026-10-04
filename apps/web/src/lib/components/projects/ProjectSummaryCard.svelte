@@ -2,6 +2,7 @@
   import type { ProjectOverview } from '@project-vault/shared'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import ArchivedBadge from './ArchivedBadge.svelte'
+  import { formatDate } from '$lib/datetime.js'
 
   // Story 69.1: the project page's header card (name, archived badge, description, tags, created
   // and role) as one replaceable region. It receives `{ project }` and nothing else.
@@ -9,14 +10,6 @@
     project,
     data,
   }: { project: ProjectOverview; data?: Record<string, readonly unknown[]> | undefined } = $props()
-
-  function formatDate(value: string): string {
-    return new Date(value).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    })
-  }
 </script>
 
 <!-- @region project.detail.summary -->

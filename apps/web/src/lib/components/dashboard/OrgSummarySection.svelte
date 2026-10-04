@@ -4,6 +4,7 @@
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import StatTile from '$lib/components/StatTile.svelte'
   import { m } from '$lib/paraglide/messages.js'
+  import { formatDate } from '$lib/datetime.js'
 
   // Story 69.1: the organization summary (totals and the expiring-soon list) as one replaceable
   // region. It receives no point props: the figures are its own source, never handed to a contribution.
@@ -14,14 +15,6 @@
     orgDashboard: Awaited<ReturnType<typeof getOrgDashboard>>
     data?: Record<string, readonly unknown[]> | undefined
   } = $props()
-
-  function formatDate(value: string): string {
-    return new Date(value).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    })
-  }
 </script>
 
 <!-- @region dashboard.home.org-summary -->

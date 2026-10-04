@@ -10,3 +10,12 @@ export function formatDateTime(value: string | null): string {
     minute: '2-digit',
   })
 }
+
+/** "Mon D, YYYY" for a date-only display (the dashboard and project cards). */
+export function formatDate(value: string): string {
+  return new Date(value).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
