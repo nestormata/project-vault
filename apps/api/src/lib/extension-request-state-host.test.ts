@@ -22,6 +22,16 @@ describe('createExtensionRequestStateHost — HostServices.extensionRequestState
     await expect(host.consume()).resolves.toBeUndefined()
   })
 
+  it('resolves undefined when the bound context has an org but no user (Story 71.3 unlinked delegated actor)', async () => {
+    const host = createExtensionRequestStateHost(MANIFEST_NAME)
+    await runWithRequestContext(
+      { orgId: 'org-1', extensionRequestStateCookie: 'any-cookie-value' },
+      async () => {
+        await expect(host.consume()).resolves.toBeUndefined()
+      }
+    )
+  })
+
   it('resolves undefined when context is bound but carries no cookie (AC4)', async () => {
     const host = createExtensionRequestStateHost(MANIFEST_NAME)
     await runWithRequestContext({ orgId: 'org-1', userId: 'user-1' }, async () => {

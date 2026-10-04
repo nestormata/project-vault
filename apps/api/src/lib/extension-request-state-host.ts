@@ -20,7 +20,9 @@ export function createExtensionRequestStateHost(
       // `RequestContext`'s own doc comment) resolves to `undefined`, never throws. Mirrors this
       // story's own generic-collapse discipline: a caller cannot distinguish "no context" from
       // "no cookie" from "wrong org" from "already consumed".
-      if (!context) return undefined
+      // Story 71.3: a delegated request whose actor has no PV user binds the org but no user;
+      // the pending state is scoped to an identity, so it resolves to `undefined` too.
+      if (context?.userId === undefined) return undefined
       return consumeRequestState(context.extensionRequestStateCookie, {
         extensionName: manifestName,
         orgId: context.orgId,

@@ -47,6 +47,7 @@ import {
   SecurityAlertsQuerySchema,
   SoleOwnerConflictResponseSchema,
 } from './schema.js'
+import { orgRoleOrDeny } from '../../lib/auth-role.js'
 
 const USER_NOT_FOUND = { code: 'user_not_found', message: 'User not found' } as const
 
@@ -77,7 +78,7 @@ function blockPeerOrHigherRole(
   reply: FastifyReply,
   message: string
 ): boolean {
-  if (roleRank(target.orgRole as OrgRole) < roleRank(secureCtx.auth.orgRole)) return false
+  if (roleRank(target.orgRole as OrgRole) < roleRank(orgRoleOrDeny(secureCtx.auth))) return false
   reply.status(403).send({ code: 'insufficient_role', message })
   return true
 }
@@ -783,7 +784,10 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
         .limit(1)
       // If the target is not in the caller's org at all, let the membership lookup below
       // produce the standard 404 (enumeration-prevention); skip the D9 comparison here.
-      if (targetOrg && roleRank(targetOrg.orgRole as OrgRole) >= roleRank(secureCtx.auth.orgRole)) {
+      if (
+        targetOrg &&
+        roleRank(targetOrg.orgRole as OrgRole) >= roleRank(orgRoleOrDeny(secureCtx.auth))
+      ) {
         return reply.status(403).send({
           code: 'insufficient_role',
           message: 'Cannot modify a user with an equal or higher organization role',
@@ -791,7 +795,7 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       }
 
       // NFR-SEC10 role-elevation check (currently unreachable via HTTP).
-      if (roleRank(parsed.data.role as OrgRole) > roleRank(secureCtx.auth.orgRole)) {
+      if (roleRank(parsed.data.role as OrgRole) > roleRank(orgRoleOrDeny(secureCtx.auth))) {
         return reply.status(403).send({
           code: 'insufficient_role',
           message: 'Cannot assign a role higher than your own',

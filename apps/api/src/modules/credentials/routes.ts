@@ -115,6 +115,7 @@ import {
   findBlockingShareIdsForCredential,
   rejectIfCredentialArchived,
 } from './archive-guards.js'
+import { orgRoleOrDeny } from '../../lib/auth-role.js'
 
 type CredentialAuditInput = Omit<SameTransactionAuditInput, 'resourceType'> & {
   eventType:
@@ -298,7 +299,7 @@ export async function rejectIfProjectNotVisible(
   logVisibilityDenied(req, {
     projectId,
     callerId: secureCtx.auth.userId,
-    orgRole: secureCtx.auth.orgRole,
+    orgRole: orgRoleOrDeny(secureCtx.auth),
   })
   reply.status(404).send(notFoundBody)
   return true
@@ -556,7 +557,7 @@ async function callerCredentialArchiveAuthorization(
   projectId: string
 ): Promise<'project_owner' | 'org_owner' | null> {
   const callerRole = await callerProjectRole(secureCtx, projectId)
-  return resolveArchiveAuthorization(callerRole, secureCtx.auth.orgRole)
+  return resolveArchiveAuthorization(callerRole, orgRoleOrDeny(secureCtx.auth))
 }
 
 // Story 28.5 AC2 "Audit gap (denied/blocked attempts)": mirrors project archival's

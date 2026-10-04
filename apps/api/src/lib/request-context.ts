@@ -8,7 +8,11 @@ import { AsyncLocalStorage } from 'node:async_hooks'
  */
 export type RequestContext = {
   orgId: string
-  userId: string
+  /**
+   * Absent only for a service-delegated request whose actor has no PV user (Story 71.3, an
+   * unlinked actor): the org is bound, no user is. Readers that need a user fail closed.
+   */
+  userId?: string
   /**
    * Story 40.1 — the raw `extension-request-state` cookie value on the CURRENT `moduleAction`
    * request, if any (`undefined` on every other request kind — `uiPanel`, `oauth-handoff`, etc.

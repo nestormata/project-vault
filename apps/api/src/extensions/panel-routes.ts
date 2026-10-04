@@ -22,6 +22,7 @@ import { mapActionResultToResponse } from '../lib/action-result-response.js'
 import { getExtensionStatus } from './loader.js'
 import { REQUEST_STATE_COOKIE_NAME } from '../lib/extension-request-state.js'
 import { bindRequestContext } from '../lib/request-context.js'
+import { orgRoleOrDeny } from '../lib/auth-role.js'
 
 const ExtensionPanelParamsSchema = z.object({ slot: z.string() })
 
@@ -306,7 +307,7 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
         {
           userId: secureCtx.auth.userId,
           orgId: secureCtx.auth.orgId,
-          orgRole: secureCtx.auth.orgRole,
+          orgRole: orgRoleOrDeny(secureCtx.auth),
         },
         secureCtx.tx,
         { projectId, resourceId, subpath }
@@ -423,7 +424,7 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
         {
           userId: secureCtx.auth.userId,
           orgId: secureCtx.auth.orgId,
-          orgRole: secureCtx.auth.orgRole,
+          orgRole: orgRoleOrDeny(secureCtx.auth),
         },
         secureCtx.tx,
         { request: action, requestStateCookie },
