@@ -868,8 +868,8 @@ compose_anonymous_counter_checks() {
 }
 
 # Story 68-25 (DW-509 item 6): the last response is a SvelteKit __data.json (devalue). Decode it
-# and require the injected load's `project` value to be exactly the number 404, in every node that
-# carries one; a text match on ",404" would also pass on ",4040" or a 404 under another key.
+# and require the injected load's `project` value (an index into the flat array, whichever object
+# holds it) to be exactly the number 404, in every node that carries one; a text match on ",404" would also pass on ",4040" or a 404 under another key.
 compose_data_json_project_status() { # context
   local context="$1" verdict
   verdict="$(clean_env "$NODE_BIN" -e '
@@ -884,10 +884,11 @@ compose_data_json_project_status() { # context
     const nodes = Array.isArray(payload && payload.nodes) ? payload.nodes : [];
     const statuses = [];
     for (const node of nodes) {
-      const data = node && node.data;
-      const head = Array.isArray(data) ? data[0] : null;
-      if (head !== null && typeof head === "object" && "project" in head) {
-        statuses.push(data[head.project]);
+      const data = node && Array.isArray(node.data) ? node.data : [];
+      for (const entry of data) {
+        if (entry !== null && typeof entry === "object" && !Array.isArray(entry) && "project" in entry) {
+          statuses.push(data[entry.project]);
+        }
       }
     }
     if (statuses.length === 0) {
@@ -989,6 +990,8 @@ compose_browser_checks() {
 compose_data_json_selftest() {
   local ok='{"type":"data","nodes":[null,{"type":"data","data":[{"who":1,"project":2},"iso:u1",404],"uses":{}}]}'
   printf '%s' "$ok" > "$WORK/body.txt"
+  compose_data_json_project_status "$SELFTEST_LABEL"
+  printf '%s' '{"type":"data","nodes":[null,{"type":"data","data":[{"inject":1},{"who":2,"project":3},"iso:u1",404],"uses":{}}]}' > "$WORK/body.txt"
   compose_data_json_project_status "$SELFTEST_LABEL"
   printf '%s' '{"type":"data","nodes":[{"type":"data","data":[{"project":1},200],"uses":{}}]}' > "$WORK/body.txt"
   compose_expect_failure_message 'expected exactly 404' compose_data_json_project_status "$SELFTEST_LABEL"
