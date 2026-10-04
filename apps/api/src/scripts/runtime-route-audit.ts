@@ -152,8 +152,8 @@ export async function runCli(
  * routes are always audited, whatever the shell's NODE_ENV.
  */
 export function prepareAuditEnv(settings: NodeJS.ProcessEnv): void {
-  settings['DATABASE_URL'] ??= 'postgresql://vault_app@localhost:5432/project_vault'
-  settings['ADMIN_DATABASE_URL'] ??= 'postgresql://vault_admin@localhost:5432/project_vault'
+  settings['DATABASE_URL'] ??= 'postgresql://vault_app@localhost/project_vault'
+  settings['ADMIN_DATABASE_URL'] ??= 'postgresql://vault_admin@localhost/project_vault'
   settings['ENABLE_API_DOCS'] = 'true'
   prepareSpecGenerationEnv(settings)
 }
