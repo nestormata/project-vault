@@ -36,6 +36,10 @@ type DashboardData = ComponentProps<typeof DashboardPage>['data']
 type LoadedDashboardData = Exclude<DashboardData, { vaultSealed: true }>
 type ProjectData = ComponentProps<typeof ProjectPage>['data']
 
+// The snapshot carries localized times (formatDateTime prints hours), so pin the zone: the committed
+// markup is the UTC rendering and must not depend on the machine running the test.
+process.env.TZ = 'UTC'
+
 // Noon UTC dates keep the localized day stable in any test time zone.
 const NOON = '2026-07-01T12:00:00.000Z'
 const LATER = '2026-07-15T12:00:00.000Z'
