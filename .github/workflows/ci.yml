@@ -1098,8 +1098,8 @@ jobs:
   # it, so this job always finishes green and only its heavy steps are conditional. Push to main and
   # dev and manual dispatch always run it. It needs no secret, no OIDC and no registry write, so fork
   # PRs run it too (it does need the public npm registry and Docker Hub).
-  # Required-check name once green on main: "Mock UI pack mechanism e2e" (required in intent, enforced
-  # by scripts/check-mock-ui-pack-e2e-wiring.test.ts; branch protection is a maintainer hand-off).
+  # Required status check on main since 2026-10-04 (story 68-19): "Mock UI pack mechanism e2e". The job
+  # name is pinned by scripts/check-mock-ui-pack-e2e-wiring.test.ts; renaming it needs a branch-protection change.
   mock-ui-pack-e2e:
     name: Mock UI pack mechanism e2e
     runs-on: ubuntu-latest
