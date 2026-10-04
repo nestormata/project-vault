@@ -1,6 +1,8 @@
 import { randomBytes, randomUUID } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 import type {
   APIRequestContext,
+  Browser,
   BrowserContext,
   Page,
   PlaywrightWorkerArgs,
@@ -10,6 +12,9 @@ import { seedRegisterAndLogin } from './seed-guard.js'
 import postgres from 'postgres'
 import { superuserDatabaseUrl } from '../fixtures/db.js'
 import { gotoHydrated } from '../fixtures/hydration.js'
+import { enrollMfaViaApi, registerViaInvitation } from '../fixtures/auth.js'
+import { createInvitationViaApi } from '../fixtures/api.js'
+import { extractTokenFromAcceptUrl, readLatestInvitationAcceptUrl } from '../fixtures/db.js'
 import { uniqueEmail, uniqueOrgName } from '../fixtures/ids.js'
 
 // Story 68.10 AC-5: the shared helpers of the mechanism specs, built on the existing e2e fixtures
@@ -121,4 +126,46 @@ export function trackHydrationMismatch(page: Page): () => string[] {
     if (message.text().includes('hydration_mismatch')) seen.push(message.text())
   })
   return () => seen
+}
+
+export type SeededMember = { context: BrowserContext; user: SeededUser }
+
+/** A plain org member of the owner's org (Story 69.4), seeded through the REAL invitation flow: the
+ * owner (MFA enrolled, as PV requires to invite) invites a new email to one of their projects, the
+ * invitee registers through the accept link and logs in. No product back door and no SQL role edit.
+ * The returned context holds the member's session and has finished onboarding. */
+export async function seedOrgMember(
+  browser: Browser,
+  owner: { context: BrowserContext; projectId: string },
+  label: string
+): Promise<SeededMember> {
+  await enrollMfaViaApi(owner.context)
+  const email = uniqueEmail(`mock-${label}`)
+  await createInvitationViaApi(owner.context, owner.projectId, { email, role: 'member' })
+  const token = extractTokenFromAcceptUrl(await readLatestInvitationAcceptUrl(email))
+  const context = await browser.newContext({ baseURL: process.env['E2E_BASE_URL'] })
+  const page = await context.newPage()
+  await registerViaInvitation(page, token, testPassword)
+  await page.close()
+  const login = await context.request.post('/api/v1/auth/login', {
+    data: { email, password: testPassword },
+  })
+  expect(login.ok(), await login.text()).toBeTruthy()
+  const body = (await login.json()) as { data: { userId: string; orgId: string } }
+  const onboarding = await context.request.post('/api/v1/users/me/onboarding', {
+    data: { completed: true },
+  })
+  expect(onboarding.ok(), await onboarding.text()).toBeTruthy()
+  return { context, user: { userId: body.data.userId, orgId: body.data.orgId, email } }
+}
+
+/** The recent output of the composed web container of this run (read-only). The project name comes
+ * from the runner's environment; callers assert on error names, never on a secret. */
+export function readWebLog(): string {
+  const project = process.env['COMPOSE_PROJECT_NAME'] ?? ''
+  if (project === '') throw new Error('COMPOSE_PROJECT_NAME is required: run through the runner')
+  const run = spawnSync('docker', ['logs', '--tail', '500', `${project}-web-1`], {
+    encoding: 'utf8',
+  })
+  return `${run.stdout}${run.stderr}`
 }
