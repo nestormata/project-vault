@@ -46,23 +46,28 @@ GATED_PREFIXES=(
 
 append() {
   # $1 = target file, $2 = line. An unset target (local proof run) writes to stdout instead.
-  if [[ -n "$1" ]]; then
-    echo "$2" >> "$1"
+  local target_file="$1"
+  local line="$2"
+  if [[ -n "$target_file" ]]; then
+    echo "$line" >> "$target_file"
   else
-    echo "$2"
+    echo "$line"
   fi
 }
 
 emit() {
   # $1 = run value, $2 = summary line
-  append "$output_file" "run=$1"
-  append "$summary_file" "$2"
+  local run_value="$1"
+  local summary_line="$2"
+  append "$output_file" "run=${run_value}"
+  append "$summary_file" "$summary_line"
 }
 
 fail_open() {
   # Collapse newlines: a workflow command annotation must stay on one line.
-  echo "::warning::PR e2e smoke gate: $1; running the smoke job anyway"
-  emit true "Running: $1, failing open on ${event_name}"
+  local reason="$1"
+  echo "::warning::PR e2e smoke gate: ${reason}; running the smoke job anyway"
+  emit true "Running: ${reason}, failing open on ${event_name}"
   exit 0
 }
 
