@@ -5,6 +5,7 @@ import { enablePublicStatusPageViaUi } from '../fixtures/status-page-ui.js'
 import {
   countAuditEvents,
   createProject,
+  expectAnonymousLoginRedirect,
   open,
   seedOrgOwner,
   trackHydrationMismatch,
