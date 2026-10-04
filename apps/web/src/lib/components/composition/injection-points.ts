@@ -9,6 +9,11 @@ import type { Component } from 'svelte'
 import type { getCredential } from '$lib/api/credentials.js'
 import type { getProject } from '$lib/api/projects.js'
 import type { ProjectSummary } from '@project-vault/shared'
+import type { AuthUser } from '$lib/api/auth.js'
+import type { AuditEventItem } from '$lib/api/audit.js'
+import type { PreferenceItem, RoutingItem } from '$lib/api/notifications.js'
+import type { ProjectInvitation } from '$lib/api/invitations.js'
+import type { ProjectMember } from '$lib/api/org-users.js'
 
 /** One contribution at a point, as the point's virtual module lists it (already in `order`). */
 export interface InjectionEntry {
@@ -34,6 +39,55 @@ export interface DashboardProjectPointProps extends StandardPointProps {
 
 export interface CredentialPointProps extends StandardPointProps {
   credential: Awaited<ReturnType<typeof getCredential>> | null
+}
+
+/** Story 69.4: the settings audit page. The ungated regions (header, notice, navigation) carry only
+ * the viewer's role and whether PV let them in; the owner-only regions carry the loaded results. */
+export interface SettingsAuditPointProps extends StandardPointProps {
+  orgRole: AuthUser['orgRole']
+  allowed: boolean
+}
+
+export interface SettingsAuditResultsPointProps extends SettingsAuditPointProps {
+  filters: Partial<
+    Record<'actorId' | 'eventType' | 'resourceId' | 'projectId' | 'from' | 'to', string>
+  >
+  events: readonly AuditEventItem[]
+  page: number
+  total: number
+  hasNext: boolean
+  errorMessage: string | null
+}
+
+/** Story 69.4: the settings notifications page. */
+export interface NotificationSettingsPointProps extends StandardPointProps {
+  isAdmin: boolean
+  canSendTest: boolean
+}
+
+export interface NotificationPreferencesPointProps extends NotificationSettingsPointProps {
+  preferences: readonly PreferenceItem[]
+}
+
+export interface NotificationRoutingPointProps extends NotificationSettingsPointProps {
+  routing: readonly RoutingItem[]
+}
+
+/** Story 69.4: the project members page. The ungated regions get no member or invitation data. */
+export interface ProjectMembersBasePointProps extends StandardPointProps {
+  projectId: string
+  userId: string
+  canManage: boolean
+  canManageMembers: boolean
+  canTransferOwnership: boolean
+}
+
+export interface ProjectMembersPointProps extends ProjectMembersBasePointProps {
+  members: readonly ProjectMember[]
+}
+
+export interface ProjectMembersInvitationsPointProps extends ProjectMembersBasePointProps {
+  invitations: readonly ProjectInvitation[]
 }
 
 export interface InjectionPointProps {
@@ -261,6 +315,23 @@ export interface InjectionPointProps {
   'status.detail.after': StandardPointProps
   'status.detail.before': StandardPointProps
   'status.detail.header.actions': StandardPointProps
+  'settings.audit.error': SettingsAuditResultsPointProps
+  'settings.audit.export': SettingsAuditPointProps
+  'settings.audit.header': SettingsAuditPointProps
+  'settings.audit.navigation': SettingsAuditPointProps
+  'settings.audit.notice': SettingsAuditPointProps
+  'settings.audit.results': SettingsAuditResultsPointProps
+  'settings.audit.search': SettingsAuditResultsPointProps
+  'settings.audit.verify': SettingsAuditPointProps
+  'settings.notifications.channels': NotificationPreferencesPointProps
+  'settings.notifications.header': NotificationSettingsPointProps
+  'settings.notifications.routing': NotificationRoutingPointProps
+  'settings.notifications.test': NotificationSettingsPointProps
+  'project.members.access': ProjectMembersPointProps
+  'project.members.header': ProjectMembersBasePointProps
+  'project.members.invitations': ProjectMembersInvitationsPointProps
+  'project.members.invite': ProjectMembersBasePointProps
+  'project.members.notice': ProjectMembersBasePointProps
   'vault.home.after': StandardPointProps
   'vault.home.before': StandardPointProps
   'vault.home.header.actions': StandardPointProps
@@ -433,6 +504,36 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     'status.detail',
     'vault.home',
   ]),
+  ...regionPoints(
+    'SettingsAuditPointProps',
+    [],
+    [
+      'settings.audit.export',
+      'settings.audit.header',
+      'settings.audit.navigation',
+      'settings.audit.notice',
+      'settings.audit.verify',
+    ]
+  ),
+  ...regionPoints(
+    'SettingsAuditResultsPointProps',
+    [],
+    ['settings.audit.error', 'settings.audit.results', 'settings.audit.search']
+  ),
+  ...regionPoints(
+    'NotificationSettingsPointProps',
+    [],
+    ['settings.notifications.header', 'settings.notifications.test']
+  ),
+  ...regionPoints('NotificationPreferencesPointProps', [], ['settings.notifications.channels']),
+  ...regionPoints('NotificationRoutingPointProps', [], ['settings.notifications.routing']),
+  ...regionPoints(
+    'ProjectMembersBasePointProps',
+    [],
+    ['project.members.header', 'project.members.invite', 'project.members.notice']
+  ),
+  ...regionPoints('ProjectMembersPointProps', [], ['project.members.access']),
+  ...regionPoints('ProjectMembersInvitationsPointProps', [], ['project.members.invitations']),
   { name: 'shell.body.end', kind: 'shell', propsType: 'StandardPointProps' },
   { name: 'shell.head', kind: 'shell', propsType: 'StandardPointProps' },
   {
