@@ -321,6 +321,9 @@ function stripQuotes(value: string): string {
   return value.replace(/^["']|["']$/g, '')
 }
 
+/** A compose `extends: { file: docker-compose.yml }` names another compose file, never a Dockerfile. */
+const COMPOSE_FILE_RE = /\.ya?ml$/i
+
 /** Dockerfile paths a referrer names: `dockerfile = "x"` (fly toml), `dockerfile: x` / `file: x` /
  * `DOCKERFILE: x` (compose, workflows) and `docker build ... -f x`. Values containing `$` (matrix
  * expressions) cannot be resolved statically and are skipped; every literal one is covered by the
@@ -338,7 +341,9 @@ export function extractReferences(referrer: string, text: string): Reference[] {
       const flag = tokens.indexOf('-f')
       value = flag === -1 ? undefined : tokens.at(flag + 1)
     }
-    if (value && !value.includes('$')) references.push({ referrer, path: stripQuotes(value) })
+    if (value && !value.includes('$') && !COMPOSE_FILE_RE.test(stripQuotes(value))) {
+      references.push({ referrer, path: stripQuotes(value) })
+    }
   }
   return references
 }
@@ -564,6 +569,8 @@ describe('base image pin guard', () => {
         ...extractReferences('n.yml', '          DOCKERFILE: ${{ matrix.file }}\n'),
         ...extractReferences('c.yml', '#  file: ignored/Dockerfile\n  files: nope\n'),
         ...extractReferences('e.sh', 'COMPOSE=(-f docker-compose.yml -f docker-compose.e2e.yml)\n'),
+        ...extractReferences('x.yml', '    extends:\n      file: docker-compose.yml\n'),
+        ...extractReferences('v.yml', '      dockerfile: ${DOCKERFILE_PATH:-web.Dockerfile}\n'),
       ]
       expect(unresolvedReferences(references, FLOOR_DOCKERFILES)).toEqual([
         { referrer: 'fly.foo.toml', path: 'infra/web.docker' },

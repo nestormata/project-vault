@@ -35,7 +35,7 @@ services:
   web:
     build:
       context: ${MOCK_UI_PACK_WEB_CONTEXT:?MOCK_UI_PACK_WEB_CONTEXT is the exported composed app}
-      dockerfile: web.Dockerfile
+      dockerfile: ${MOCK_UI_PACK_WEB_DOCKERFILE:-web.Dockerfile}
     ports: !override
       - '127.0.0.1:${WEB_HOST_PORT:?WEB_HOST_PORT is allocated by scripts/e2e-stack.sh plan}:3000'
   api-faulty:
