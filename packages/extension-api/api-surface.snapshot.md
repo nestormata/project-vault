@@ -182,12 +182,109 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - type: `object | undefined`
   - union-members: `undefined`, `object`
 
+## export `ApiRouteDelegatedAuthContext`
+
+- since: 3.31.0
+- kind: type
+- type: `ApiRouteDelegatedAuthContext`
+- member: `delegation`
+  - since: 3.31.0
+  - type: `true`
+- member: `isPlatformOperator`
+  - since: 3.31.0
+  - type: `false`
+- member: `orgId`
+  - since: 3.31.0
+  - type: `string`
+- member: `orgRole?`
+  - since: 3.31.0
+  - type: `ApiRouteOrgRole | undefined`
+  - union-members: `undefined`, `"owner"`, `"admin"`, `"member"`, `"viewer"`
+- member: `sessionId`
+  - since: 3.31.0
+  - type: `"delegation"`
+- member: `userId`
+  - since: 3.31.0
+  - type: `string`
+
+## export `ApiRouteDelegatedContext`
+
+- since: 3.31.0
+- kind: type
+- type: `ApiRouteDelegatedContext`
+- intersection-members: `Omit<ApiRouteContext, "auth">`, `{ auth: ApiRouteDelegatedAuthContext; delegation: ApiRouteDelegation; }`
+
+## export `ApiRouteDelegatedHandler`
+
+- since: 3.31.0
+- kind: type
+- type: `ApiRouteDelegatedHandler<Req, Reply>`
+- call-signature: `(ctx: ApiRouteDelegatedContext, req: Req, reply: Reply): unknown`
+
+## export `ApiRouteDelegatedWrapHandler`
+
+- since: 3.31.0
+- kind: type
+- type: `ApiRouteDelegatedWrapHandler<Req, Reply>`
+- call-signature: `(ctx: ApiRouteDelegatedContext, req: Req, reply: Reply, next: () => Promise<unknown>): unknown`
+
+## export `ApiRouteDelegation`
+
+- since: 3.31.0
+- kind: type
+- type: `ApiRouteDelegation`
+- member: `actorAttestation`
+  - since: 3.31.0
+  - type: `"pv_verified" | "issuer_attested"`
+  - union-members: `"pv_verified"`, `"issuer_attested"`
+- member: `actorId`
+  - since: 3.31.0
+  - type: `string`
+- member: `actorProvider`
+  - since: 3.31.0
+  - type: `string`
+- member: `actorUserId`
+  - since: 3.31.0
+  - type: `string | null`
+  - union-members: `null`, `string`
+- member: `assertionId`
+  - since: 3.31.0
+  - type: `string`
+- member: `delegatedBy`
+  - since: 3.31.0
+  - type: `{ kid: string; issuer: string; }`
+  - member: `issuer`
+    - since: 3.31.0
+    - type: `string`
+  - member: `kid`
+    - since: 3.31.0
+    - type: `string`
+- member: `issuedAt`
+  - since: 3.31.0
+  - type: `number`
+- member: `operation`
+  - since: 3.31.0
+  - type: `string`
+- member: `orgId`
+  - since: 3.31.0
+  - type: `string`
+
+## export `ApiRouteDelegationDeclaration`
+
+- since: 3.31.0
+- kind: type
+- type: `ApiRouteDelegationDeclaration`
+- member: `subjectFields?`
+  - since: 3.31.0
+  - type: `{ org?: ApiRouteSubjectField; actor?: ApiRouteSubjectField; } | undefined`
+  - union-members: `undefined`, `{ org?: ApiRouteSubjectField; actor?: ApiRouteSubjectField; }`
+
 ## export `ApiRouteHandler`
 
 - since: 3.27.0
 - kind: type
-- type: `ApiRouteHandler<Req, Reply>`
-- call-signature: `(ctx: ApiRouteContext | ApiRoutePublicContext, req: Req, reply: Reply): unknown`
+- type: `ApiRouteHandler<Req, Reply, Ctx>`
+- call-signature: `(ctx: Ctx, req: Req, reply: Reply): unknown`
 
 ## export `ApiRouteHookFn`
 
@@ -379,6 +476,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.27.0
   - type: `string | undefined`
   - union-members: `undefined`, `string`
+- member: `delegation?`
+  - since: 3.31.0
+  - type: `boolean | ApiRouteDelegationDeclaration | undefined`
+  - union-members: `undefined`, `false`, `true`, `ApiRouteDelegationDeclaration`
 - member: `minimumRole?`
   - since: 3.27.0
   - type: `ApiRouteOrgRole | undefined`
@@ -422,12 +523,25 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - type: `Partial<Record<`GET ${string}` | `HEAD ${string}` | `POST ${string}` | `PUT ${string}` | `PATCH ${string}` | `DELETE ${string}` | `OPTIONS ${string}`, ApiRouteImplementation>> | undefined`
   - union-members: `undefined`, `Partial<Record<`GET ${string}` | `HEAD ${string}` | `POST ${string}` | `PUT ${string}` | `PATCH ${string}` | `DELETE ${string}` | `OPTIONS ${string}`, ApiRouteImplementation>>`
 
+## export `ApiRouteSubjectField`
+
+- since: 3.31.0
+- kind: type
+- type: `ApiRouteSubjectField`
+- member: `in`
+  - since: 3.31.0
+  - type: `"body" | "params"`
+  - union-members: `"body"`, `"params"`
+- member: `name`
+  - since: 3.31.0
+  - type: `string`
+
 ## export `ApiRouteWrapHandler`
 
 - since: 3.27.0
 - kind: type
-- type: `ApiRouteWrapHandler<Req, Reply>`
-- call-signature: `(ctx: ApiRouteContext | ApiRoutePublicContext, req: Req, reply: Reply, next: () => Promise<unknown>): unknown`
+- type: `ApiRouteWrapHandler<Req, Reply, Ctx>`
+- call-signature: `(ctx: Ctx, req: Req, reply: Reply, next: () => Promise<unknown>): unknown`
 
 ## export `AppBehaviourHooks`
 
@@ -1050,7 +1164,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.30.0"`
+- type: `"3.31.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 
@@ -1504,6 +1618,13 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.27.0
 - kind: type
 - type: `object`
+
+## export `isApiRouteDelegatedContext`
+
+- since: 3.31.0
+- kind: value
+- type: `(ctx: ApiRouteContext | ApiRoutePublicContext | ApiRouteDelegatedContext) => ctx is ApiRouteDelegatedContext`
+- call-signature: `(ctx: ApiRouteContext | ApiRoutePublicContext | ApiRouteDelegatedContext): ctx is ApiRouteDelegatedContext`
 
 ## export `isExtensionApiVersionSupported`
 
