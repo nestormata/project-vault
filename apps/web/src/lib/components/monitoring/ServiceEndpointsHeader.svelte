@@ -1,8 +1,8 @@
 <script lang="ts">
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import RegionFragment from '$lib/components/composition/RegionFragment.svelte'
-  import type { EndpointListPointProps } from '$lib/components/composition/injection-points.js'
   import AssetListHeader from './AssetListHeader.svelte'
+  import type { EndpointListRegionProps } from './endpoint-region-props.js'
 
   // Story 69.3: the endpoint list's header card (eyebrow, title, add link) as one replaceable
   // region. A contribution at `project.service-endpoints.header` receives `{ project, orgRole, endpoints }` and renders
@@ -14,14 +14,7 @@
     projectId,
     canManage,
     data,
-  }: {
-    project: EndpointListPointProps['project']
-    orgRole: EndpointListPointProps['orgRole']
-    endpoints: EndpointListPointProps['endpoints']
-    projectId: string
-    canManage: boolean
-    data?: Record<string, readonly unknown[]> | undefined
-  } = $props()
+  }: EndpointListRegionProps & { projectId: string; canManage: boolean } = $props()
 </script>
 
 <!-- @region project.service-endpoints.header -->

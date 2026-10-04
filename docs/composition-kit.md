@@ -170,7 +170,19 @@ and ask for the point in PV (a repeated need is a PV story).
   SvelteKit runs actions without running the page `load`, so an injected action on a `[projectId]` or
   `[credentialId]` page authorizes itself through the API (RLS is the enforcement, and a foreign id answers like
   a missing one). Point props (`orgRole`, `projectRole`, `project`, `credential`) are display data, never
-  authorization input: a composed action decides from server state, never from a posted role field.
+  authorization input: a composed action decides from server state, never from a posted role field. The
+  endpoint list and detail routes return `notFound: true` too, so a foreign or nonexistent endpoint id runs no
+  contribution load either.
+- **A typed `skipInjectedLoads: true` marker does the same where PV's "nothing here" answer has another shape**
+  (Story 69-3). The public status page (`/status/<token>`) answers an invalid, disabled or sealed-vault token
+  with `statusPage: null`; its own load marks that result `skipInjectedLoads: true`, so no contribution load
+  runs for it (a pack cannot use its own load as a token-validity oracle, and the three cases stay one
+  identical response). `withInjectedLoad` consumes the marker and strips it from the returned data, so PV's own
+  data shape is unchanged. **Public-page rule:** a region on `/status/<token>` is anonymous. Its `load` runs
+  without `locals.user`, only for a valid token, and its result is serialized into public HTML and
+  `__data.json`: return public-safe data only (never the token, never anything that varies by viewer), and
+  own the cost of the extra server call per anonymous request. The page's `actions` are anonymous too and rely
+  on Kit's origin check; PV's own public status API limiter is unaffected.
 - **Failure modes you own.** A contribution `load` that throws takes the whole page to the error page (all
   loads settle first, the failing one with the lowest `order` is reported by point name and error name only).
   A hung load hangs the page: PV sets no timeout, because a PV timeout would be a limit on CM; use your own
@@ -184,10 +196,25 @@ and ask for the point in PV (a repeated need is a PV story).
   `project.detail.tiles` and `dashboard.home.project-summary` render at the end of their stat `<dl>`, so their
   fills should be `<div><dt/><dd/></div>` shaped; `dashboard.home.suggested-actions` at the end of its `<ul>`
   (fills are `<li>`); `dashboard.home.monitoring` at the start of the grid; the others after their content.
-  A region point renders only when its region renders. `project.detail.export` receives `{ project }` only:
+  A region point renders only when its region renders. The monitoring regions of Story 69-3 render their point
+  right after the PV component they wrap (outside its card, as its sibling; the per-row point and the history,
+  link and services points sit inside their cell or card): PV's own markup is byte-identical because the
+  wrapper emits no element. **The per-row region** `project.service-endpoints.row` is one point rendered N
+  times, inside the row's Monitoring cell (never between `<tr>` siblings); its `data` is the page's
+  `__inject` entry, not per row, so a fill that needs per-row data reads `props.endpoint.id`.
+  `project.detail.export` receives `{ project }` only:
   the one-time export key never reaches a contribution. The regions are `project.detail.{summary,export,tiles,
 not-found}`, `project.layout.nav` and `dashboard.home.{vault-sealed,org-summary,project-summary,rotations,
 activity,monitoring,suggested-actions,summary-unavailable,empty}`, each a component you can replace (M4).
+  Story 69-3 adds the monitoring regions: `project.service-endpoints.{header,alerts,table,row,empty,not-found}`,
+  `project.service-endpoints-new.{header,form}`,
+  `project.service-endpoints-detail.{title,pause,settings,history,delete,not-found}`,
+  `project.status-page.{header,read-only,disabled,link,services}` and `status.detail.{header,services,unavailable}`.
+  Per state: the not-found regions render in the not-found state only; `project.status-page.read-only` renders
+  instead of the manage regions for a caller who cannot manage, and `disabled` / `link` / `services` render only
+  for a manager (`disabled` when the page is off, `link` and `services` when it is on). The
+  `project.status-page.link` point receives `{ project, hasPublicUrl, isLegacy }`: never the public token or the
+  URL built from it.
 
 **Credential detail regions (Story 69-2).** The credential page (`/projects/[projectId]/credentials/[credentialId]`)
 has the three standard points and 13 region points, every point receiving ONE props contract:
@@ -232,10 +259,17 @@ member) whose binding is imported from a `.svelte` file in the same file's scrip
 monolithic. The check is about replaceability, not size: a region wrapped in a trivial component passes (whether
 the extraction is meaningful is the componentization audit of story 69.5). An unparseable `.svelte` file is a
 finding, never a silent skip. Files the lock records as CM's are exempt by provenance (the guard has
-`@pv-scope pv-originated-only`); there is no suppression syntax, baseline or allow-list. PV's own tree has 44
-`@region` markers since Story 69-4 (14 from story 69-1: the project page, the project nav and the dashboard; 13 from
-story 69-2: the credential detail page; 17 from story 69-4: the settings audit, settings notifications and project members pages; see "Region points" below); the guard prints the
-count (`scanned N files, 44 regions`) and a test pins it from below.
+`@pv-scope pv-originated-only`); there is no suppression syntax, baseline or allow-list. PV's own tree has 66
+`@region` markers since Story 69-3 (14 from story 69-1: the project page, the project nav and the dashboard; 13 from
+story 69-2: the credential detail page; 17 from story 69-4: the settings audit, settings notifications and project
+members pages; 22 from story 69-3: the endpoint list, add and detail pages, the status page admin screen and the
+public status page; see "Region points" below); the guard prints the count (`scanned N files, 66 regions`) and a test
+pins it from below, and a per-file test pins each monitoring region file.
+
+**Hash drift (Story 69-3):** the five monitoring `+page.svelte` files (endpoint list, add and detail, status
+page admin, public status page) and the public status `+page.server.ts` changed, and `inject-behavior.ts`
+gained the `skipInjectedLoads` marker, so a pack that overrides one of them sees its `hostSha256` drift with
+the next web-host release; reconcile it with `pv-compose --accept-host`.
 
 **Hash drift (Story 69-1):** the dashboard page, the project page, the project layout, `ProjectNav`,
 `PageAlertBanner` and `DashboardPlaceholderGrid` changed, so a pack that overrides one of them sees its
