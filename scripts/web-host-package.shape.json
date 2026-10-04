@@ -74,6 +74,7 @@
     "@sveltejs/kit": "<exact>",
     "@sveltejs/vite-plugin-svelte": "<exact>",
     "@tailwindcss/vite": "<exact>",
+    "@testing-library/dom": "<exact>",
     "@testing-library/svelte": "<exact>",
     "@vitest/coverage-v8": "<exact>",
     "jsdom": "<exact>",
@@ -84,6 +85,9 @@
     "vitest": "<exact>"
   },
   "peerDependenciesMeta": {
+    "@testing-library/dom": {
+      "optional": true
+    },
     "@testing-library/svelte": {
       "optional": true
     },
