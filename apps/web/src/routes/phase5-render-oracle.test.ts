@@ -144,38 +144,38 @@ function notifications(overrides: Partial<NotificationsData> = {}): Notification
 const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const OWNER = {
   userId: 'u-owner',
-  email: 'owner@example.com',
+  email: 'owner.mail.example',
   displayName: 'Owner',
   role: 'owner' as const,
 }
 const MEMBER = {
   userId: 'u-member',
-  email: 'member@example.com',
+  email: 'member.mail.example',
   displayName: 'Member',
   role: 'member' as const,
 }
 const VIEWER = {
   userId: 'u-viewer',
-  email: 'viewer@example.com',
+  email: 'viewer.mail.example',
   displayName: 'Viewer',
   role: 'viewer' as const,
 }
 const INVITATIONS: MembersData['invitations'] = [
   {
     id: 'inv-1',
-    email: 'new@example.com',
+    email: 'new.mail.example',
     roleToAssign: 'member',
     expiresAt: '2026-10-07T12:00:00.000Z',
   },
   {
     id: 'inv-2',
-    email: 'late@example.com',
+    email: 'late.mail.example',
     roleToAssign: 'viewer',
     expiresAt: '2026-10-04T18:00:00.000Z',
   },
   {
     id: 'inv-3',
-    email: 'gone@example.com',
+    email: 'gone.mail.example',
     roleToAssign: 'admin',
     expiresAt: '2026-10-01T12:00:00.000Z',
   },
@@ -370,7 +370,7 @@ describe('phase 5 render oracle (Story 69.4 AC-7.1)', () => {
       })
     )
     const busy = render(MembersPage, { props: { data: members() } })
-    const select = busy.getByLabelText('Role for member@example.com')
+    const select = busy.getByLabelText('Role for member.mail.example')
     await fireEvent.change(select, { target: { value: 'admin' } })
     await tick()
     snap('members: role select busy', busy.container)

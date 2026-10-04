@@ -193,8 +193,8 @@ describe('notification region components', () => {
   })
 })
 
-const OWNER = { userId: 'u1', email: 'owner@example.com', displayName: 'Owner', role: 'owner' }
-const MEMBER = { userId: 'u2', email: 'member@example.com', displayName: 'Member', role: 'member' }
+const OWNER = { userId: 'u1', email: 'owner.mail.example', displayName: 'Owner', role: 'owner' }
+const MEMBER = { userId: 'u2', email: 'member.mail.example', displayName: 'Member', role: 'member' }
 
 describe('project members region components', () => {
   it('header shows the Invite toggle only for a manager and calls back on click', async () => {
@@ -235,7 +235,7 @@ describe('project members region components', () => {
     })
     await fireEvent.click(getByRole('button', { name: 'Remove' }))
     expect(onRemove).toHaveBeenCalledWith(MEMBER)
-    await fireEvent.change(getByLabelText('Role for member@example.com'), {
+    await fireEvent.change(getByLabelText('Role for member.mail.example'), {
       target: { value: 'admin' },
     })
     expect(onChangeRole).toHaveBeenCalledWith(MEMBER, 'admin')
@@ -278,7 +278,7 @@ describe('project members region components', () => {
     const now = Date.now()
     const invitation = (id: string, offsetMs: number) => ({
       id,
-      email: `${id}@example.com`,
+      email: `${id}.mail.example`,
       roleToAssign: 'member',
       expiresAt: new Date(now + offsetMs).toISOString(),
     })
