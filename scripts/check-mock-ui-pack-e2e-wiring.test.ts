@@ -5,14 +5,11 @@
 // Making the check REQUIRED is a repo-admin action (branch protection has no required status checks
 // today) and is a hand-off, not something this test can do: until it is done the docs say "required
 // in intent, enforced by this wiring test, not yet by branch protection".
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { makeRecipe } from './lib/ci-wiring.js'
 import { WORKSPACE_CLASSES, decide } from './lib/mock-ui-pack-paths.js'
 import { filterFor } from './mock-ui-pack-e2e-filter.js'
 
-const ROOT = join(import.meta.dirname, '..')
 const WORKFLOW: Record<string, string> = import.meta.glob('../.github/workflows/ci.yml', {
   query: '?raw',
   import: 'default',
@@ -36,6 +33,28 @@ const CONFIG: Record<string, string> = import.meta.glob(
     import: 'default',
     eager: true,
   }
+)
+
+// Static repository text read through Vite (no dynamic fs path anywhere in this test). Keys keep the
+// pattern's relative spelling (`../apps/web/e2e/tsconfig.json`).
+const REPO_TEXT = new Map(
+  Object.entries(
+    import.meta.glob(
+      [
+        '../apps/web/e2e/tsconfig.json',
+        '../fixtures/mock-ui-pack/docker/web.Dockerfile',
+        '../fixtures/mock-ui-pack/docker/.dockerignore',
+        '../docker-compose.mock-ui-pack.yml',
+        './e2e-stack.sh',
+      ],
+      { query: '?raw', import: 'default', eager: true }
+    )
+  ).map(([key, text]) => [key, String(text)] as const)
+)
+/** The workspace members (every `apps/<dir>` and `packages/<dir>` is a package with a manifest). */
+const WORKSPACE_MANIFESTS: Record<string, string> = import.meta.glob(
+  '../{apps,packages}/*/package.json',
+  { query: '?raw', import: 'default', eager: true }
 )
 
 const workflow = Object.values(WORKFLOW)[0] ?? ''
@@ -146,19 +165,17 @@ describe('the path filter (Story 68.10 AC-3.1, AC-3.2)', () => {
   })
 
   it('classifies every real apps/* and packages/* directory, with a reason for each irrelevant one', () => {
-    const dirs = ['apps', 'packages'].flatMap((root) =>
-      readdirSync(join(ROOT, root), { withFileTypes: true })
-        .filter((entry) => entry.isDirectory() && entry.name !== 'node_modules')
-        .map((entry) => `${root}/${entry.name}`)
-    )
+    const dirs = Object.keys(WORKSPACE_MANIFESTS)
+      .map((key) => key.slice('../'.length, -'/package.json'.length))
+      .toSorted()
     expect(dirs.length).toBeGreaterThan(5)
     for (const dir of dirs) {
-      const known = WORKSPACE_CLASSES[dir]
+      const known = WORKSPACE_CLASSES.get(dir)
       expect(known, `${dir} is not classified in WORKSPACE_CLASSES`).toBeDefined()
       if (known?.runs === false) expect(known.reason, dir).toBeTruthy()
     }
     // and nothing classified that no longer exists
-    expect(Object.keys(WORKSPACE_CLASSES).filter((dir) => !dirs.includes(dir))).toEqual([])
+    expect([...WORKSPACE_CLASSES.keys()].filter((dir) => !dirs.includes(dir))).toEqual([])
   })
 
   it('fails OPEN when the diff cannot be computed or the base ref is unusable', () => {
@@ -178,17 +195,16 @@ describe('the mechanism specs cannot pass vacuously (Story 68.10 AC-3.3)', () =>
   const byName = new Map(
     Object.entries(SPECS).map(([path, text]) => [path.split('/').at(-1) ?? path, text])
   )
-  // M5 needs story 68-7 (navigation as data), which is not on main: its spec lands with that story.
-  // This list is deliberately explicit; adding m5-navigation.spec.ts must update it.
+  // This list is deliberately explicit; adding a capability spec must update it.
   const REQUIRED = [
     'm1-page-override.spec.ts',
     'm2-new-pages.spec.ts',
     'm3-injection.spec.ts',
     'm4-component-replacement.spec.ts',
+    'm5-navigation.spec.ts',
     'm6-theme.spec.ts',
     'm7-api-routes.spec.ts',
   ]
-  const PENDING_68_7 = 'm5-navigation.spec.ts'
 
   it('has one spec file per capability, each with a positive and a failure case in its titles', () => {
     for (const file of REQUIRED) {
@@ -216,10 +232,6 @@ describe('the mechanism specs cannot pass vacuously (Story 68.10 AC-3.3)', () =>
     }
   })
 
-  it('keeps m5 pending exactly until story 68-7 lands (delete this test and add m5 to REQUIRED then)', () => {
-    expect(existsSync(join(ROOT, 'apps/web/e2e/mechanism', PENDING_68_7))).toBe(false)
-  })
-
   it('pins forbidOnly, zero retries and no trace, video or screenshot in the mechanism config', () => {
     const config = Object.values(CONFIG)[0] ?? ''
     expect(config).toContain('forbidOnly: true')
@@ -232,14 +244,19 @@ describe('the mechanism specs cannot pass vacuously (Story 68.10 AC-3.3)', () =>
   })
 
   it('lists the mechanism config in the e2e tsconfig so no spec goes untypechecked', () => {
-    const tsconfig = readFileSync(join(ROOT, 'apps/web/e2e/tsconfig.json'), 'utf8')
+    const tsconfig = REPO_TEXT.get('../apps/web/e2e/tsconfig.json') ?? ''
     expect(tsconfig).toContain('../playwright.mechanism.config.ts')
     expect(tsconfig).toContain('"**/*.ts"')
   })
 })
 
 describe('the composed image and stack flavour (Story 68.10 AC-2.2, AC-2.4, AC-2.5)', () => {
-  const read = (path: string): string => readFileSync(join(ROOT, path), 'utf8')
+  const read = (path: string): string => {
+    const key = path.startsWith('scripts/') ? `./${path.slice('scripts/'.length)}` : `../${path}`
+    const text = REPO_TEXT.get(key)
+    expect(text, `${path} is not loaded`).toBeTruthy()
+    return text ?? ''
+  }
 
   it('pins the base image by digest, has a .dockerignore and builds from the composed context only', () => {
     const dockerfile = read('fixtures/mock-ui-pack/docker/web.Dockerfile')
@@ -248,7 +265,7 @@ describe('the composed image and stack flavour (Story 68.10 AC-2.2, AC-2.4, AC-2
     for (const line of froms) expect(line, line).toMatch(/^FROM node@sha256:[0-9a-f]{64} AS /)
     const code = dockerfile.split('\n').filter((line) => !line.trim().startsWith('#'))
     expect(code.join('\n')).not.toMatch(/apps\/web|packages\//)
-    expect(existsSync(join(ROOT, 'fixtures/mock-ui-pack/docker/.dockerignore'))).toBe(true)
+    expect(read('fixtures/mock-ui-pack/docker/.dockerignore')).toContain('node_modules')
   })
 
   it('layers on the e2e override, gates the fault service behind a profile and rebinds ports to loopback', () => {

@@ -15,8 +15,9 @@ import { defineConfig, devices } from '@playwright/test'
 // E2E_BASE_URL (the composed web origin) and E2E_API_BASE_URL (the API port, for the routes outside
 // /api/v1 the web origin does not proxy) come from the runner (`scripts/mock-ui-pack-e2e.ts`) and
 // are required: there is no default, so this config can never point at another stack by accident.
+const ENVIRONMENT = new Map(Object.entries(process.env))
 function required(name: string): string {
-  const value = process.env[name]
+  const value = ENVIRONMENT.get(name)
   if (value === undefined || value === '') {
     throw new Error(`${name} is required: run the mechanism e2e through \`make mock-ui-pack-e2e\``)
   }

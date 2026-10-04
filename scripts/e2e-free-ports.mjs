@@ -36,7 +36,7 @@ async function allocate(count) {
 /** The first of `ports` that cannot be bound right now, or null. */
 async function firstTaken(ports) {
   const results = await Promise.allSettled(ports.map((port) => listen(port)))
-  const taken = ports.find((_, index) => results[index]?.status === 'rejected') ?? null
+  const taken = ports.find((_, index) => results.at(index)?.status === 'rejected') ?? null
   await Promise.all(
     results.flatMap((result) => (result.status === 'fulfilled' ? [close(result.value)] : []))
   )

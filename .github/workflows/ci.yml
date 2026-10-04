@@ -241,7 +241,7 @@ jobs:
           pnpm vitest run scripts/check-monolithic-regions.test.ts scripts/lib/route-files.test.ts
 
       - name: Check the mock UI pack mechanism wiring (Story 68.10)
-        run: pnpm vitest run scripts/check-mock-ui-pack-e2e-wiring.test.ts scripts/lib/web-host/consumer-tarballs.test.ts
+        run: pnpm vitest run scripts/check-mock-ui-pack-e2e-wiring.test.ts scripts/lib/web-host/consumer-tarballs.test.ts scripts/mock-ui-pack-seed.test.ts scripts/check-pv-nav-snapshot.test.ts scripts/check-mock-ui-pack-not-in-production.test.ts
 
       - name: Check nav ids and nav surfaces (Story 68.7)
         run: |
@@ -1126,7 +1126,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           if [ "$EVENT_NAME" = "pull_request" ]; then
-            pnpm tsx scripts/mock-ui-pack-e2e-filter.ts "$BASE_REF"
+            pnpm tsx scripts/mock-ui-pack-e2e-filter.ts "$BASE_REF" >> "$GITHUB_OUTPUT"
           else
             echo "mock-ui-pack-e2e filter: $EVENT_NAME always runs the job"
             echo "run=true" >> "$GITHUB_OUTPUT"

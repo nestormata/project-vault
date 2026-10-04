@@ -569,5 +569,9 @@ API carrying the mock module pack (`VAULT_EXTENSIONS_REQUIRED=true`) and a real 
 runs Playwright (`apps/web/playwright.mechanism.config.ts`: retries 0, traces off) with one spec file per
 capability under `apps/web/e2e/mechanism/`. The CI job `Mock UI pack mechanism e2e` runs it with an in-workflow
 path filter that fails open. It is **required in intent and enforced by `scripts/check-mock-ui-pack-e2e-wiring.test.ts`,
-not yet by branch protection** (making it a required status check is a repo-admin step). M5 (navigation as
-data) needs story 68-7 and is not covered yet.
+not yet by branch protection** (making it a required status check is a repo-admin step). M5 (navigation as data, story 68-7) is covered by
+`m5-navigation.spec.ts` over the pack's `nav.ts`: add, remove, hide, rename, reorder, nest (a pack item two
+levels deep and a native item moved under it), an inherited project tab, and an operation on an unknown id
+that is recorded, never a crash. PV's own native nav is pinned by
+`scripts/web-host-consumer-fixture/pv-nav.main.json` (`check-pv-nav-snapshot.test.ts`): a PV nav change updates
+the snapshot in the same PR.

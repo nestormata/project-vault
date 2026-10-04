@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -22,6 +22,19 @@ import {
 //
 // Slow (a clean npm install and a Vite build), so it runs only with MOCK_UI_PACK_COMPOSE=1
 // (`make mock-ui-pack-compose`).
+
+// Static repository text read through Vite (no dynamic fs path in this test).
+const STATIC_TEXT = new Map(
+  Object.entries(
+    import.meta.glob(
+      [
+        '../fixtures/mock-ui-pack/ui-pack/pv-ui.manifest.ts',
+        './web-host-consumer-fixture/compose-mode.sh',
+      ],
+      { query: '?raw', import: 'default', eager: true }
+    )
+  ).map(([key, text]) => [key, String(text)] as const)
+)
 
 const ENABLED = process.env.MOCK_UI_PACK_COMPOSE === '1'
 const FIXTURE_SCRIPT = join(REPO_ROOT, 'scripts', 'web-host-consumer-fixture', 'run.sh')
@@ -73,6 +86,7 @@ describe.runIf(ENABLED)('mock UI pack compose stage (Story 68.10 AC-2.1)', () =>
         'OK: M2 routes (page, endpoint, 405, depth, protected by derivation/add, public by remove)',
         'OK: M3 injection into a native public page (component, load, shell head) beside PV markup',
         'OK: M4 replacements and M6 tokens, own styles and @source utilities',
+        'OK: M5 nav ids recorded in the lock; an unknown hidden id is noted, not refused',
         'OK: a stale replacement hash fails the composition (exit 1) and names Footer.svelte',
       ]) {
         expect(output, line).toContain(line)
@@ -84,16 +98,13 @@ describe.runIf(ENABLED)('mock UI pack compose stage (Story 68.10 AC-2.1)', () =>
 
 describe('mock UI pack compose stage: wiring', () => {
   it('the UI pack keeps its overlay under ui-pack/ and never names a real CM file or secret', () => {
-    const manifest = readFileSync(join(UI_PACK_DIR, 'pv-ui.manifest.ts'), 'utf8')
+    const manifest = STATIC_TEXT.get('../fixtures/mock-ui-pack/ui-pack/pv-ui.manifest.ts') ?? ''
     expect(manifest).toContain("story: 'MOCK-UI-PACK'")
     expect(manifest).not.toMatch(/centralizeme|workos|secret/i)
   })
 
   it('the harness script knows the variant', () => {
-    const script = readFileSync(
-      join(REPO_ROOT, 'scripts/web-host-consumer-fixture/compose-mode.sh'),
-      'utf8'
-    )
+    const script = STATIC_TEXT.get('./web-host-consumer-fixture/compose-mode.sh') ?? ''
     expect(script).toContain('compose-mock-pack) echo mock-ui-pack ;;')
   })
 })

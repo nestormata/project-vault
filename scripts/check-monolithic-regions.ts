@@ -9,10 +9,10 @@
  * With `--lock`, files the lock records as CM's (overrides, additions, materialized) are not
  * checked: provenance, never a path list. No other file is ever exempted.
  */
-import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { scanMonolithicRegionsTree } from '../apps/web/guards/monolithic-region.js'
+import { readOverlayFile } from './lib/scan-utils.js'
 
 interface LockProvenance {
   overrides?: { path: string }[]
@@ -46,11 +46,12 @@ export function run(args: readonly string[], io: Io = STD): number {
   const lockPath = option(args, '--lock')
   let exempt: string[] = []
   if (lockPath !== undefined) {
-    if (!existsSync(resolve(lockPath))) {
-      io.err(`FATAL: --lock ${lockPath} does not exist\n`)
+    const lockText = readOverlayFile(process.cwd(), lockPath)
+    if (lockText === undefined) {
+      io.err(`FATAL: --lock ${lockPath} does not exist or cannot be read\n`)
       return 1
     }
-    exempt = cmFiles(JSON.parse(readFileSync(resolve(lockPath), 'utf8')) as LockProvenance)
+    exempt = cmFiles(JSON.parse(lockText) as LockProvenance)
   }
   const result = scanMonolithicRegionsTree(webRoot, exempt)
   const problems = result.findings.map(

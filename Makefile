@@ -234,7 +234,7 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-monolithic-regions
 	pnpm vitest run scripts/check-monolithic-regions.test.ts scripts/lib/route-files.test.ts
 	@# Story 68.10: the mechanism e2e job wiring, its path filter and the mechanism specs cannot pass vacuously
-	pnpm vitest run scripts/check-mock-ui-pack-e2e-wiring.test.ts scripts/lib/web-host/consumer-tarballs.test.ts
+	pnpm vitest run scripts/check-mock-ui-pack-e2e-wiring.test.ts scripts/lib/web-host/consumer-tarballs.test.ts scripts/mock-ui-pack-seed.test.ts scripts/check-pv-nav-snapshot.test.ts scripts/check-mock-ui-pack-not-in-production.test.ts
 	@# Story 68.7: every PV nav item has a stable id; every nav surface is rendered from nav data
 	pnpm check-nav-ids
 	pnpm vitest run scripts/check-nav-ids.test.ts

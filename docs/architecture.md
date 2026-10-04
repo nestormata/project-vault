@@ -183,7 +183,7 @@ When an extension does need its own tables, it connects through the least-privil
 > kit (`pv-compose`, `pv-verify`, lock v2), injection points, component replacement, composable hooks and
 > header policy, `apiRoutes` including app-level behaviour, PV's web guards over a composed tree (including
 > the `monolithic-region` guard) and the mock-UI-pack mechanism e2e on a composed image with a real API and
-> database (Story 68.10; navigation as data lands with story 68-7).
+> database (Story 68.10), including navigation as data (Story 68-7).
 >
 > **`navItems` and `moduleDataRoutes` are deprecated and frozen** (no new features or fixes; kept
 > until removed; security issues resolved by replacement or removal). They are separate extension

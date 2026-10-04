@@ -9,7 +9,6 @@
  * diff (an unresolvable base, a shallow clone, a git error) FAILS OPEN to `run=true` and says why: a
  * diff error must never skip the job.
  */
-import { appendFileSync } from 'node:fs'
 import { REPO_ROOT } from './pack-web-host.js'
 import { decide, type Decision } from './lib/mock-ui-pack-paths.js'
 import { trustedGit } from './lib/trusted-executable.js'
@@ -38,11 +37,10 @@ export function filterFor(base: string, read: DiffReader = readDiff): Decision {
 
 function main(): void {
   const decision = filterFor(process.argv[2] ?? '')
-  process.stdout.write(`mock-ui-pack-e2e filter: ${decision.reason}\n`)
-  const line = `run=${decision.run ? 'true' : 'false'}\n`
-  const output = process.env['GITHUB_OUTPUT']
-  if (output === undefined || output === '') process.stdout.write(line)
-  else appendFileSync(output, line)
+  // stderr is the human line (it shows in the job log); stdout is exactly `run=true|false`, which the
+  // workflow step appends to $GITHUB_OUTPUT itself, so this script does no filesystem write.
+  process.stderr.write(`mock-ui-pack-e2e filter: ${decision.reason}\n`)
+  process.stdout.write(`run=${decision.run ? 'true' : 'false'}\n`)
 }
 
 if (process.argv[1]?.endsWith('mock-ui-pack-e2e-filter.ts') === true) main()

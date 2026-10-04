@@ -2,7 +2,6 @@
 // PV-originated `.svelte` file must be a component or contain one (an imported `.svelte` binding, a
 // `<svelte:component>` or a `{@render}`), so it can be replaced individually through M4.
 // `<InjectionPoint>` never counts. Fixtures are written to temp trees, never committed under `src/`.
-import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -15,6 +14,13 @@ import { guardMarker } from './lib/web-host/guard-registry.js'
 import { scanMarkup } from './lib/injection-point-coverage.js'
 import { run } from './check-monolithic-regions.js'
 import { useFixtureRoots, writeFixture } from './lib/fixture-test-helpers.js'
+
+// The shipped guard sources, read through Vite (no dynamic fs path in the test).
+const GUARD_SOURCES = new Map(
+  Object.entries(
+    import.meta.glob('../apps/web/guards/*.ts', { query: '?raw', import: 'default', eager: true })
+  ).map(([key, text]) => [key.slice('../apps/web/'.length), String(text)] as const)
+)
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const WEB = join(repositoryRoot, 'apps/web')
@@ -239,7 +245,8 @@ describe('monolithic-region: tree scan, provenance exemption and the shipped con
   })
 
   it('carries the registry marker with scope pv-originated-only and no suppression syntax', () => {
-    const code = readFileSync(join(WEB, 'guards/monolithic-region.ts'), 'utf8')
+    const code = GUARD_SOURCES.get('guards/monolithic-region.ts') ?? ''
+    expect(code).not.toBe('')
     expect(guardMarker(code)).toEqual({
       id: 'monolithic-region',
       scope: 'pv-originated-only',
@@ -254,7 +261,8 @@ describe('monolithic-region: tree scan, provenance exemption and the shipped con
       'guards/region-markup.ts',
       'guards/svelte-files.ts',
     ]) {
-      const code = readFileSync(join(WEB, file), 'utf8')
+      const code = GUARD_SOURCES.get(file) ?? ''
+      expect(code, file).not.toBe('')
       const specifiers = [...code.matchAll(/^import[^'"]*['"]([^'"]+)['"]/gm)].map((m) => m[1])
       for (const specifier of specifiers) {
         expect(

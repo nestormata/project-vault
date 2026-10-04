@@ -17,31 +17,33 @@ export interface WorkspaceClass {
 }
 
 /** Every top-level directory of `apps/` and `packages/`, classified. */
-export const WORKSPACE_CLASSES: Readonly<Record<string, WorkspaceClass>> = {
-  'apps/api': { runs: true },
-  'apps/web': { runs: true },
-  'packages/agent': { runs: true },
-  'packages/composition-kit': { runs: true },
-  'packages/crypto': { runs: true },
-  'packages/db': { runs: true },
-  // lint and type configuration can change a build
-  'packages/eslint-config': { runs: true },
-  'packages/extension-api': { runs: true },
-  'packages/shared': { runs: true },
-  'packages/tsconfig': { runs: true },
-  'packages/api-contract-tests': {
-    runs: false,
-    reason: 'a contract-test package neither the api nor the web app depends on',
-  },
-  'packages/cli': {
-    runs: false,
-    reason: 'the pvault CLI: not a dependency of the api or the web app',
-  },
-  'packages/vault-action': {
-    runs: false,
-    reason: 'the GitHub Action bundle: not a dependency of the api or the web app',
-  },
-}
+export const WORKSPACE_CLASSES: ReadonlyMap<string, WorkspaceClass> = new Map(
+  Object.entries<WorkspaceClass>({
+    'apps/api': { runs: true },
+    'apps/web': { runs: true },
+    'packages/agent': { runs: true },
+    'packages/composition-kit': { runs: true },
+    'packages/crypto': { runs: true },
+    'packages/db': { runs: true },
+    // lint and type configuration can change a build
+    'packages/eslint-config': { runs: true },
+    'packages/extension-api': { runs: true },
+    'packages/shared': { runs: true },
+    'packages/tsconfig': { runs: true },
+    'packages/api-contract-tests': {
+      runs: false,
+      reason: 'a contract-test package neither the api nor the web app depends on',
+    },
+    'packages/cli': {
+      runs: false,
+      reason: 'the pvault CLI: not a dependency of the api or the web app',
+    },
+    'packages/vault-action': {
+      runs: false,
+      reason: 'the GitHub Action bundle: not a dependency of the api or the web app',
+    },
+  })
+)
 
 /** Files and directories (outside apps/ and packages/) the job depends on. */
 const RUN_PREFIXES: readonly string[] = [
@@ -81,7 +83,7 @@ function workspaceDirOf(path: string): string | null {
 function fileDecision(path: string): Decision | null {
   const workspace = workspaceDirOf(path)
   if (workspace !== null) {
-    const known = WORKSPACE_CLASSES[workspace]
+    const known = WORKSPACE_CLASSES.get(workspace)
     // an unclassified workspace directory fails open
     if (known === undefined) return { run: true, reason: `${workspace} is not classified` }
     return known.runs ? { run: true, reason: `${workspace} is a runtime input` } : null
