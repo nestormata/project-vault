@@ -171,11 +171,12 @@ only after the downstream consumer has verified the build:
 npm dist-tag add @project-vault/extension-api@X.Y.Z latest
 ```
 
-**Current state (2026-10-03):** npm `latest` is `3.25.0` and `next` is `3.27.0` (published tags:
-`extension-api-v1.1.0`, `-v3.15.0`, `-v3.23.0`, `-v3.24.1`, `-v3.25.0`, `-v3.27.0`). `3.27.0` (Story 68.8,
+**Current state (2026-10-04):** npm `latest` is `3.25.0` and `next` is `3.29.0` (published tags:
+`extension-api-v1.1.0`, `-v3.15.0`, `-v3.23.0`, `-v3.24.1`, `-v3.25.0`, `-v3.27.0`, `-v3.29.0`). `3.27.0` (Story 68.8,
 M7 `apiRoutes`) was tagged on merge commit `c610e486`, published by run `37088769144` (shasum
-`7f9423e286a678c41a679363ff1d170c90df83df`); `latest` moves to it only after CentralizeMe verifies it.
-The package source is at `3.29.0` (Story 68.14, unreleased; the tag push is maintainer-only). `3.28.0` (Story 71.1) is also unreleased.
+`7f9423e286a678c41a679363ff1d170c90df83df`). `3.29.0` (Story 68.14, app-level `apiRoutes`) was tagged on
+`49c27b34` and published by run `37166931749` on 2026-10-04; it includes `3.28.0` (Story 71.1), which was never
+published on its own. `latest` moves only after CentralizeMe verifies the version.
 `3.26.0` was never published (71.1 renumbered to `3.28.0` after 68.8 took `3.27.0`). `3.24.2` was a
 documentation-only patch that was never published; `3.25.0` supersedes it.
 `3.24.0` was never tagged and is superseded by `3.24.1`. Every other intermediate contract version
@@ -496,11 +497,14 @@ tar -xOf /tmp/project-vault-web-host-X.Y.Z.tgz package/manifests/compatibility.j
 That message is the signal for CentralizeMe's implementation gate (CM-E16 16-1). CentralizeMe
 pins exactly and never follows `next`.
 
-**Current state (2026-10-03):** only the bootstrap placeholder `0.0.1-bootstrap.0` is on npm for
-`@project-vault/web-host` (dist-tags `bootstrap` and `latest`, deprecated) and for
-`@project-vault/composition-kit` (same shape). No real version has been published yet: the first
-one comes with the next `vX.Y.Z` tag. Removing the `bootstrap` dist-tag and re-wording the
-placeholder's deprecation message are pending maintainer steps (Story 68-17).
+**Current state (2026-10-04):** `v1.4.0` (tag on `4a17f55d`) was the first release to publish both packages:
+`@project-vault/web-host@1.4.0` and `@project-vault/composition-kit@0.7.0` are on `next`, with provenance
+verified by `scripts/verify-npm-release.ts` (push run `37170315890`, preceded by the dry run
+`37170400167`). `latest` is still the deprecated placeholder `0.0.1-bootstrap.0` on both until the
+CentralizeMe consumer build (CM 16-1) passes against the exact versions; then `npm dist-tag add … latest`.
+`web-host` no longer has a `bootstrap` dist-tag; `composition-kit` still does. Re-wording the placeholder's
+deprecation message ("use the latest dist-tag" is circular while `latest` is the placeholder) is pending
+(Stories 68-17 and 68-18).
 
 ## Tooling note
 
