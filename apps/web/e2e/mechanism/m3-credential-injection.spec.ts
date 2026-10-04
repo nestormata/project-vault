@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test, type Page } from '@playwright/test'
+import { setOrganizationRoleViaDb } from '../fixtures/db.js'
 import {
   apiContextFor,
   countAuditEvents,
@@ -112,12 +113,15 @@ test.describe('M3 region points on the credential detail page (Story 69.2)', () 
     const viewerContext = await browser.newContext({ baseURL: process.env['E2E_BASE_URL'] })
     try {
       const viewerPage = await viewerContext.newPage()
-      await seedProjectViewer(context, viewerContext, projectId, 'm3c-viewer')
+      const viewer = await seedProjectViewer(context, viewerContext, projectId, 'm3c-viewer')
+      // DW-536: PV's credential page 500s for an org member or viewer (its load reads the admin-only
+      // org user list), so the project viewer is an org admin here: the project role is what matters.
+      await setOrganizationRoleViaDb(viewer.orgId, viewer.email, 'admin')
       const before = await countAuditEvents(owner.orgId, DOCUMENT_EVENT)
       await open(viewerPage, pathOf(projectId, credentialId), NOTE(viewerPage))
       const actions = viewerPage.getByTestId(ACTIONS_FILL)
       await expect(actions).toHaveAttribute('data-project-role', 'viewer')
-      await expect(actions).toHaveAttribute('data-org-role', 'member')
+      await expect(actions).toHaveAttribute('data-org-role', 'admin')
       // PV's own controls follow PV's own gating: no archive, no reveal
       await expect(viewerPage.getByRole('button', { name: 'Archive secret' })).toHaveCount(0)
       await expect(viewerPage.getByRole('button', { name: 'Reveal value' })).toHaveCount(0)
