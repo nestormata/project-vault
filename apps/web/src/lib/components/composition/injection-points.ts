@@ -8,6 +8,7 @@
 import type { Component } from 'svelte'
 import type { getCredential } from '$lib/api/credentials.js'
 import type { getProject } from '$lib/api/projects.js'
+import type { ProjectSummary } from '@project-vault/shared'
 
 /** One contribution at a point, as the point's virtual module lists it (already in `order`). */
 export interface InjectionEntry {
@@ -24,6 +25,11 @@ export interface StandardPointProps {
 
 export interface ProjectPointProps extends StandardPointProps {
   project: Awaited<ReturnType<typeof getProject>> | null
+}
+
+/** The dashboard's selected project; null in the branches that render without one. */
+export interface DashboardProjectPointProps extends StandardPointProps {
+  project: ProjectSummary | null
 }
 
 export interface CredentialPointProps extends StandardPointProps {
@@ -64,9 +70,18 @@ export interface InjectionPointProps {
   'credentials.import.after': StandardPointProps
   'credentials.import.before': StandardPointProps
   'credentials.import.header.actions': StandardPointProps
+  'dashboard.home.activity': DashboardProjectPointProps
   'dashboard.home.after': StandardPointProps
   'dashboard.home.before': StandardPointProps
+  'dashboard.home.empty': StandardPointProps
   'dashboard.home.header.actions': StandardPointProps
+  'dashboard.home.monitoring': DashboardProjectPointProps
+  'dashboard.home.org-summary': StandardPointProps
+  'dashboard.home.project-summary': DashboardProjectPointProps
+  'dashboard.home.rotations': DashboardProjectPointProps
+  'dashboard.home.suggested-actions': DashboardProjectPointProps
+  'dashboard.home.summary-unavailable': DashboardProjectPointProps
+  'dashboard.home.vault-sealed': StandardPointProps
   'extensions.panels-detail.after': StandardPointProps
   'extensions.panels-detail.before': StandardPointProps
   'extensions.panels-detail.header.actions': StandardPointProps
@@ -126,7 +141,11 @@ export interface InjectionPointProps {
   'project.credentials.header.actions': StandardPointProps
   'project.detail.after': ProjectPointProps
   'project.detail.before': ProjectPointProps
+  'project.detail.export': ProjectPointProps
   'project.detail.header.actions': ProjectPointProps
+  'project.detail.not-found': ProjectPointProps
+  'project.detail.summary': ProjectPointProps
+  'project.detail.tiles': ProjectPointProps
   'project.domains-detail.after': StandardPointProps
   'project.domains-detail.before': StandardPointProps
   'project.domains-detail.header.actions': StandardPointProps
@@ -145,6 +164,7 @@ export interface InjectionPointProps {
   'project.layout.after': ProjectPointProps
   'project.layout.before': ProjectPointProps
   'project.layout.header.actions': ProjectPointProps
+  'project.layout.nav': ProjectPointProps
   'project.machine-users-detail.after': StandardPointProps
   'project.machine-users-detail.before': StandardPointProps
   'project.machine-users-detail.header.actions': StandardPointProps
@@ -262,6 +282,10 @@ export interface InjectionPointDefinition {
   propsType: string
   /** For a shell point rendered inside a shared component: the route whose layout load feeds it. */
   hostRouteId?: string
+  /** For a region point: the `<routeId>#<scope>` host routes that render its component. The pack
+   * script derives the same list from the import graph and the guards fail on a mismatch, so this
+   * declaration is checked, never trusted. A contribution's `hostRoutes` opt-in names these. */
+  hostRoutes?: readonly string[]
 }
 
 const POINT_POSITIONS = ['after', 'before', 'header.actions'] as const
@@ -277,6 +301,22 @@ function pagePoints(propsType: string, pages: readonly string[]): InjectionPoint
       propsType,
     }))
   )
+}
+
+/** Region points (Story 69.1): `<area>.<page>.<region>` points rendered inside a shared component,
+ * all hosted by the same routes. `check-injection-point-coverage` reads these calls with the
+ * TypeScript parser, so the arguments stay string literals. */
+function regionPoints(
+  propsType: string,
+  hostRoutes: readonly string[],
+  names: readonly string[]
+): InjectionPointDefinition[] {
+  return names.map((name) => ({
+    name: name as InjectionPointName,
+    kind: 'region' as const,
+    propsType,
+    hostRoutes,
+  }))
 }
 
 export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
@@ -338,6 +378,38 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     'project.status-page',
   ]),
   ...pagePoints('ProjectPointProps', ['project.detail', 'project.layout']),
+  ...regionPoints(
+    'ProjectPointProps',
+    ['/(app)/projects/[projectId]#page'],
+    [
+      'project.detail.export',
+      'project.detail.not-found',
+      'project.detail.summary',
+      'project.detail.tiles',
+    ]
+  ),
+  ...regionPoints(
+    'ProjectPointProps',
+    ['/(app)/projects/[projectId]#layout'],
+    ['project.layout.nav']
+  ),
+  ...regionPoints(
+    'DashboardProjectPointProps',
+    ['/(app)/dashboard#page'],
+    [
+      'dashboard.home.activity',
+      'dashboard.home.monitoring',
+      'dashboard.home.project-summary',
+      'dashboard.home.rotations',
+      'dashboard.home.suggested-actions',
+      'dashboard.home.summary-unavailable',
+    ]
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/dashboard#page'],
+    ['dashboard.home.empty', 'dashboard.home.org-summary', 'dashboard.home.vault-sealed']
+  ),
   ...pagePoints('StandardPointProps', [
     'settings.audit-access-report',
     'settings.audit-forwarding',

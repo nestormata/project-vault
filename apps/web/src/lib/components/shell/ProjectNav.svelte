@@ -1,14 +1,27 @@
 <script lang="ts">
   import { page } from '$app/state'
+  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
+  import ArchivedBadge from '$lib/components/projects/ArchivedBadge.svelte'
   import NavEntry from '$lib/navigation/NavEntry.svelte'
   import { renderSurface } from '$lib/navigation/build-surface.js'
   import type { NavNode } from '$lib/navigation/types.js'
+  import type { ProjectOverview } from '@project-vault/shared'
 
+  // Story 69.1: `project` and `data` feed the `project.layout.nav` region point at the end of the
+  // `<nav>` (the layout passes its own `__inject` map; a caller that passes neither renders none).
   let {
     projectId,
     orgRole,
     isArchived = false,
-  }: { projectId: string; orgRole: string; isArchived?: boolean } = $props()
+    project = null,
+    data,
+  }: {
+    projectId: string
+    orgRole: string
+    isArchived?: boolean
+    project?: ProjectOverview | null
+    data?: Record<string, readonly unknown[]> | undefined
+  } = $props()
 
   // Story 68.7 AC-4: the tabs come from the `project` surface's data (the active nav delta
   // applied), evaluated per render. `page.data` is read so this re-derives after SvelteKit's
@@ -55,20 +68,16 @@
   {/if}
 {/snippet}
 
+<!-- @region project.layout.nav -->
 <nav
   aria-label="Project navigation"
   data-testid="project-nav"
   class="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3"
 >
   {#if isArchived}
-    <span
-      class="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-normal text-slate-700"
-      data-testid="project-nav-archived-badge"
-    >
-      Archived
-    </span>
+    <ArchivedBadge testid="project-nav-archived-badge" />
   {/if}
   {#each navNodes as node (node.id)}
     {@render tab(node)}
-  {/each}
+  {/each}<InjectionPoint name="project.layout.nav" props={{ project }} {data} />
 </nav>

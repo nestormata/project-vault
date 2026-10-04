@@ -10,7 +10,16 @@ import type { LayoutServerLoad } from './$types.js'
 // 404/foreign-org project (same convention as every other project-scoped loader in this tree) so
 // the sub-nav still renders its static tab set — each sub-page independently handles its own
 // not-found presentation, unaffected by this addition.
-const ownLoad = (async ({ params, fetch, locals }) => {
+interface OwnLayoutData {
+  projectId: string
+  orgRole: ReturnType<typeof requireUser>['orgRole']
+  project: Awaited<ReturnType<typeof getProject>> | null
+  /** Only on a 404: `withInjectedLoad` skips contribution loads when it is `true` (Story 69.1 Q2).
+   * Optional, so the layout data keeps one `project` shape for every consumer. */
+  notFound?: true
+}
+
+const ownLoad = (async ({ params, fetch, locals }): Promise<OwnLayoutData> => {
   const orgRole = requireUser(locals).orgRole
 
   try {
@@ -18,8 +27,7 @@ const ownLoad = (async ({ params, fetch, locals }) => {
     return { projectId: params.projectId, orgRole, project }
   } catch (error) {
     if (error instanceof ApiClientError && error.status === 404) {
-      // `notFound: true` lets `withInjectedLoad` skip contribution loads on a 404 (Story 69.1 Q2).
-      return { projectId: params.projectId, orgRole, project: null, notFound: true as const }
+      return { projectId: params.projectId, orgRole, project: null, notFound: true }
     }
     throw error
   }

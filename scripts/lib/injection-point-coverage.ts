@@ -164,6 +164,12 @@ function registryNameProblems(registry: Registry): string[] {
         `${REGISTRY_FILE}: "${name}" breaks the naming rule <area>.<page>.<region> (lowercase, dot-separated, at least ${minimum} segments)`
       )
     }
+    // A region point is never one of a page's three standard points: those belong to route files.
+    if (kind === 'region' && STANDARD_SUFFIXES.some((suffix) => name.endsWith(`.${suffix}`))) {
+      problems.push(
+        `${REGISTRY_FILE}: region point "${name}" ends in a standard position (${STANDARD_SUFFIXES.join(', ')}); those belong to route files, give the region its own name`
+      )
+    }
   }
   return problems
 }

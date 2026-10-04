@@ -190,10 +190,11 @@ function dashboardMatrix(): Record<string, string> {
   )
   out['dashboard selected, monitoring assets errored'] = renderDashboard(
     dashboardData({
+      // plain (already settled) card states: the grid accepts them as well as the streamed promises
       monitoringAssets: {
         certificates: { status: 'error', count: 0 },
         domains: { status: 'loading', count: 0 },
-      },
+      } as never,
     })
   )
   out['dashboard summary unavailable (orphan dt/dd)'] = renderDashboard(

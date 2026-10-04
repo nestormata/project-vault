@@ -21,6 +21,8 @@ const GUARD_SOURCES = new Map(
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const WEB = join(repositoryRoot, 'apps/web')
+/** 4 on the project page, 1 in the project nav, 9 on the dashboard (Story 69.1). */
+const REGIONS_ADDED_BY_69_1 = 14
 const makeRoot = useFixtureRoots('monolithic-region-', ['src'])
 
 const PV_FILE = 'src/a.svelte'
@@ -68,6 +70,14 @@ describe("monolithic-region on PV's own tree (AC-4.6)", () => {
     // The 68-4 coverage guard scans the same `.svelte` set; a silent scan of nothing cannot pass.
     const coverageFiles = scanSvelteCount()
     expect(own.files).toBe(coverageFiles)
+  })
+
+  // Story 69.1 AC-3: the first story to add regions to PV's tree. A guard that counted none would
+  // stay green with every marker deleted, so the count is pinned from below.
+  it('counts at least the regions Story 69.1 added, all replaceable components', () => {
+    const own = scanMonolithicRegionsTree(WEB)
+    expect(own.regions).toBeGreaterThanOrEqual(REGIONS_ADDED_BY_69_1)
+    expect(own.findings).toEqual([])
   })
 })
 
