@@ -504,8 +504,8 @@ pins exactly and never follows `next`.
 Both packages were promoted to `latest` on 2026-10-04 (`npm dist-tag add … latest`, registry modified
 10:33Z), so the dist-tags are `latest` = `next` = `1.4.0` (web-host) and `0.7.0` (composition-kit). The
 placeholder `0.0.1-bootstrap.0` stays deprecated on both ("use the latest dist-tag" is accurate again). The
-`bootstrap` dist-tag is removed on `web-host`; on `composition-kit` it is removed by Story 68-18 (check
-`npm view @project-vault/composition-kit dist-tags`).
+`bootstrap` dist-tag is removed on both packages (composition-kit on 2026-10-04, 14:02Z), leaving only
+`latest` and `next`.
 
 ## Tooling note
 
