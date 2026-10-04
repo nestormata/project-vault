@@ -114,15 +114,12 @@ function runAction(entry: ActionEntry): Action {
   }
 }
 
-/** The own-result flags that mean "there is nothing a contribution load could read": PV's 404
- * answer (`notFound: true`, no such entity for you) and its sealed-vault answer (`vaultSealed:
- * true`, every PV API call 503s). One shared constant, so the two cases can never drift apart. */
-const SKIP_LOAD_FLAGS = ['notFound', 'vaultSealed'] as const
-
-/** PV's own load answered with one of the literal `true` flags above. */
+/** One predicate for the own-result flags that mean "there is nothing a contribution load could
+ * read": PV's 404 answer (`notFound: true`, no such entity for you) and its sealed-vault answer
+ * (`vaultSealed: true`, every PV API call 503s). Only the literal `true` counts. */
 function isLoadSkipped(data: object | undefined): boolean {
-  const record = data as Record<string, unknown> | undefined
-  return SKIP_LOAD_FLAGS.some((flag) => record?.[flag] === true)
+  const { notFound, vaultSealed } = (data ?? {}) as { notFound?: unknown; vaultSealed?: unknown }
+  return notFound === true || vaultSealed === true
 }
 
 /** No load ran: one null entry per contribution of every point of the slice, or nothing at all when

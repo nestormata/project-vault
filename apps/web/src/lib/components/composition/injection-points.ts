@@ -9,6 +9,7 @@ import type { Component } from 'svelte'
 import type { getCredential } from '$lib/api/credentials.js'
 import type { getProject } from '$lib/api/projects.js'
 import type { ProjectSummary } from '@project-vault/shared'
+import type { OrgRole } from '$lib/credentials/permissions.js'
 
 /** One contribution at a point, as the point's virtual module lists it (already in `order`). */
 export interface InjectionEntry {
@@ -32,8 +33,24 @@ export interface DashboardProjectPointProps extends StandardPointProps {
   project: ProjectSummary | null
 }
 
+/**
+ * What every point of the credential detail page receives (Story 69.2): the credential (null in the
+ * not-found and vault-sealed states), the project, and the caller's roles. `project` is the project
+ * layout's result or null; `projectRole` is `project?.role ?? null`; `orgRole` is the caller's org
+ * role. These are DISPLAY data, never authorization input: a composed action must authorize through
+ * PV's API (RLS and the project role are enforced server-side). Never carries a revealed value, a
+ * share token or a step-up secret. Every field is additive, so a fill written against `{ credential }`
+ * keeps working.
+ *
+ * @pv-stable
+ */
 export interface CredentialPointProps extends StandardPointProps {
   credential: Awaited<ReturnType<typeof getCredential>> | null
+  project: Awaited<ReturnType<typeof getProject>> | null
+  projectId: string
+  credentialId: string
+  orgRole: OrgRole
+  projectRole: Awaited<ReturnType<typeof getProject>>['role'] | null
 }
 
 export interface InjectionPointProps {
@@ -61,9 +78,22 @@ export interface InjectionPointProps {
   'auth.register.after': StandardPointProps
   'auth.register.before': StandardPointProps
   'auth.register.header.actions': StandardPointProps
+  'credential.detail.actions': CredentialPointProps
   'credential.detail.after': CredentialPointProps
   'credential.detail.before': CredentialPointProps
+  'credential.detail.dependencies': CredentialPointProps
+  'credential.detail.footer': CredentialPointProps
   'credential.detail.header.actions': CredentialPointProps
+  'credential.detail.lifecycle': CredentialPointProps
+  'credential.detail.metadata': CredentialPointProps
+  'credential.detail.not-found': CredentialPointProps
+  'credential.detail.nudges': CredentialPointProps
+  'credential.detail.rotation': CredentialPointProps
+  'credential.detail.shares': CredentialPointProps
+  'credential.detail.summary': CredentialPointProps
+  'credential.detail.value': CredentialPointProps
+  'credential.detail.vault-sealed': CredentialPointProps
+  'credential.detail.versions': CredentialPointProps
   'credentials.home.after': StandardPointProps
   'credentials.home.before': StandardPointProps
   'credentials.home.header.actions': StandardPointProps
@@ -331,6 +361,25 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     'auth.register',
   ]),
   ...pagePoints('CredentialPointProps', ['credential.detail']),
+  ...regionPoints(
+    'CredentialPointProps',
+    ['/(app)/projects/[projectId]/credentials/[credentialId]#page'],
+    [
+      'credential.detail.actions',
+      'credential.detail.dependencies',
+      'credential.detail.footer',
+      'credential.detail.lifecycle',
+      'credential.detail.metadata',
+      'credential.detail.not-found',
+      'credential.detail.nudges',
+      'credential.detail.rotation',
+      'credential.detail.shares',
+      'credential.detail.summary',
+      'credential.detail.value',
+      'credential.detail.vault-sealed',
+      'credential.detail.versions',
+    ]
+  ),
   ...pagePoints('StandardPointProps', [
     'credentials.home',
     'credentials.import',
