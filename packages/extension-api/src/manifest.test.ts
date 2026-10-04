@@ -71,8 +71,9 @@ describe('EXTENSION_API_VERSION', () => {
     // Story 68.8 — optional apiRoutes manifest + hooks fields (additive-minor, rows 1 and 11):
     // 3.25.0 -> 3.27.0. Story 71.1 — optional AuditEventSourceWriteInput.idempotencyKey
     // (additive-minor, policy row 1): 3.27.0 -> 3.28.0. Story 68.14 — optional
-    // apiRoutes.app declaration + hooks (additive-minor, rows 1 and 11): 3.28.0 -> 3.29.0.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.29.0')
+    // apiRoutes.app declaration + hooks (additive-minor, rows 1 and 11): 3.28.0 -> 3.29.0. Story 68.11 — deprecation markers and the
+    // neutral `ExtensionRequestContext`/`ExtensionActionResult` types (additive-minor): 3.29.0 -> 3.30.0.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.30.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

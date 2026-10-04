@@ -1,4 +1,4 @@
-import type { UIPanelContext } from './ui-panel.js'
+import type { ExtensionActionResult, ExtensionRequestContext } from './extension-request-context.js'
 
 /**
  * Story 25.5 AC1 — an action request needs the exact same identity/org/project/locale/theme
@@ -14,28 +14,24 @@ import type { UIPanelContext } from './ui-panel.js'
  * structural typing means no existing caller that merely reads fields off either type can
  * observe the split; see `module-action.test.ts`'s type-contract test proving the two types are
  * no longer structurally identical.
+ *
+ * Deprecated in 3.30.0 (replacement: ExtensionRequestContext). The policy-grade `@deprecated`
+ * marker lives on this symbol's `src/index.ts` export; it is deliberately not repeated on this
+ * declaration so the package's own internal uses do not raise deprecation diagnostics.
  */
-export type ModuleActionContext = UIPanelContext & {
+export type ModuleActionContext = ExtensionRequestContext & {
+  /** Which named panel slot the action was dispatched from (panel-only; see `UIPanelContext`). */
+  slot: string
   /**
-   * Story 40.1 AC2/AC8 — present only when the inbound request carries PV's
-   * `extension-request-state` cookie AND a matching, unexpired, unconsumed
-   * `extension_request_states` row exists for the currently loaded extension, scoped to the
-   * CURRENT request's `orgId`/`identity` (AC12 — a hash match against a row minted under a
-   * DIFFERENT org/identity resolves to `undefined`, never returns the row's data). Non-
-   * destructive: reading this field never consumes the underlying row (mirrors CM's own
-   * `peekPendingRepositorySelection`) — repeatable across any number of separate requests within
-   * the row's TTL window. Deliberately scoped to `ModuleActionContext` only — `UIPanelContext`
-   * does NOT gain this field, so a sandboxed-iframe panel-render request never sees it, even if
-   * its inbound request happens to carry a valid cookie (AC8).
-   *
-   * Like `resourceId`, PV validates nothing about the CONTENTS of this value (only that it
-   * round-trips the extension's own prior `persistState` verbatim) — the extension is solely
-   * responsible for interpreting it. Computed once, at context-build time, BEFORE `onAction()`
-   * runs: a `host.extensionRequestState.consume()` call made earlier in the SAME `onAction()`
-   * invocation does NOT retroactively change this field's value for that same request — it is a
-   * point-in-time snapshot, not a live re-read.
+   * Panel-only: the absolute path of the panel actions route, present only when the extension
+   * declares `moduleActions` for this slot (see `UIPanelContext.actionEndpoint`).
    */
-  requestState?: Record<string, unknown>
+  actionEndpoint?: string
+  /**
+   * Panel-only: the URL sub-path the deep-linkable panel route matched, `undefined` when empty
+   * (see `UIPanelContext.subpath`).
+   */
+  subpath?: string
 }
 
 /**
@@ -44,6 +40,10 @@ export type ModuleActionContext = UIPanelContext & {
  * extension's declared `moduleActions` allowlist before this ever reaches `onAction()`.
  * Deliberately type-erased beyond `kind` so no accidental structural read of a client-supplied
  * identity claim (e.g. `orgId`) can compile anywhere in the host's own routing code (AC3).
+ *
+ * Deprecated in 3.30.0 (replacement: composed UI (ADR 0007 build-time composition) for panel actions and M7 apiRoutes). The policy-grade `@deprecated`
+ * marker lives on this symbol's `src/index.ts` export; it is deliberately not repeated on this
+ * declaration so the package's own internal uses do not raise deprecation diagnostics.
  */
 export type ModuleActionRequest = {
   action: Record<string, unknown> & { kind: string }
@@ -73,14 +73,18 @@ export type ModuleActionRequest = {
  *   A non-string `html` on any outcome makes the whole result malformed.
  * - (e) PV does not inspect, cache or re-scope `html`: the extension alone is responsible for
  *   rendering only data belonging to the request's `context.orgId`/`context.identity`.
+ *
+ * Deprecated in 3.30.0 (replacement: ExtensionActionResult). The policy-grade `@deprecated`
+ * marker lives on this symbol's `src/index.ts` export; it is deliberately not repeated on this
+ * declaration so the package's own internal uses do not raise deprecation diagnostics.
  */
-export type ActionResult =
-  | { outcome: 'ok'; html?: string; message?: string }
-  | { outcome: 'validation_failed'; message: string; html?: string }
-  | { outcome: 'denied'; message?: string; html?: string }
-  | { outcome: 'conflict'; message?: string; html?: string }
-  | { outcome: 'error'; html?: string }
+export type ActionResult = ExtensionActionResult
 
+/**
+ * Deprecated in 3.30.0 (replacement: composed UI (ADR 0007 build-time composition) for panel actions and M7 apiRoutes). The policy-grade `@deprecated`
+ * marker lives on this symbol's `src/index.ts` export; it is deliberately not repeated on this
+ * declaration so the package's own internal uses do not raise deprecation diagnostics.
+ */
 export type ModuleAction = {
   onAction(context: ModuleActionContext, request: ModuleActionRequest): Promise<ActionResult>
 }

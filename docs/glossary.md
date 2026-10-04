@@ -62,6 +62,8 @@ deprecated and frozen in their own right; their forward paths are build-time UI 
 navigation and first-party API route composition. A separate build-time composition tier for a first-party,
 trusted UI package is the planned forward path and is not built yet.
 
+**Removal schedule (Story 68.11, `@project-vault/extension-api` 3.30.0).** These surfaces are now formally deprecated: `@deprecated` markers on every exported symbol and manifest field, and a `### Deprecated` entry in the package CHANGELOG. Nothing is removed and nothing changes at runtime. Removal happens no earlier than the next major (4.0.0 at time of writing) and only after the notice window ends on 2027-01-14 (projected: clock not started, the 90 days run from the day 3.30.0 is published). Replacements: composed UI (ADR 0007 build-time composition) for the panel API; the M5 nav delta of the UI pack for `navItems`; M7 `apiRoutes` for `moduleDataRoutes`/`moduleData`; `ExtensionRequestContext` and `ExtensionActionResult` for `ModuleActionContext` and `ActionResult`.
+
 **"Module pack"** is CentralizeMe's name for the same thing — an extension packaged for
 installation into a hosted instance. The lifecycle runbook uses that term; everywhere else,
 prefer "extension".

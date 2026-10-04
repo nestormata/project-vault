@@ -115,6 +115,28 @@ export default { manifest, hooksFactory }
 | `dbScope` | Optional and operator-approved: a request for a separate least-privilege database handle. |
 | `apiRoutes` | Optional (since 3.27.0), and not gated on any capability. Adds API routes at any URL and overrides (`replace`) or wraps (`wrap`) Project Vault's own API routes, all inside Project Vault's security pipeline. Declarations are data here; handlers, schemas and hook functions go in `hooks.apiRoutes.routes`. Validation is integrity only: no URL prefix, count cap, capability or allowlist. See [API routes (`apiRoutes`)](#api-routes-apiroutes) and, for the global hooks and error handlers (since 3.29.0), [App-level behaviour](#app-level-behaviour-apiroutesapp). |
 
+**Removal schedule (Story 68.11, `@project-vault/extension-api` 3.30.0).** These surfaces are now formally deprecated: `@deprecated` markers on every exported symbol and manifest field, and a `### Deprecated` entry in the package CHANGELOG. Nothing is removed and nothing changes at runtime. Removal happens no earlier than the next major (4.0.0 at time of writing) and only after the notice window ends on 2027-01-14 (projected: clock not started, the 90 days run from the day 3.30.0 is published). Replacements: composed UI (ADR 0007 build-time composition) for the panel API; the M5 nav delta of the UI pack for `navItems`; M7 `apiRoutes` for `moduleDataRoutes`/`moduleData`; `ExtensionRequestContext` and `ExtensionActionResult` for `ModuleActionContext` and `ActionResult`.
+
+New code that needs the request context of an `oauthHandoff` or `publicRoute` hook should type it with the neutral names, which carry no panel vocabulary (`ExtensionRequestContext` has no `slot`, `actionEndpoint` or `subpath`; the `slot` value the host still passes to `oauthHandoff` is not part of the contract, do not read it):
+
+```ts
+import type {
+  ExtensionActionResult,
+  ExtensionRequestContext,
+  OAuthHandoffRedirectResult,
+} from '@project-vault/extension-api'
+
+async function onOAuthStart(
+  context: ExtensionRequestContext
+): Promise<OAuthHandoffRedirectResult | ExtensionActionResult> {
+  return context.projectId === undefined
+    ? { outcome: 'validation_failed', message: 'Pick a project first.' }
+    : { outcome: 'ok' }
+}
+```
+
+The `OAuthHandoffHooks.onOAuthStart` parameter type is still `ModuleActionContext` in 3.30.0; a handler typed with `ExtensionRequestContext` is assignable to it.
+
 ### Why `EXTENSION_API_VERSION` rather than a version string
 
 The host accepts `>=MAJOR.0.0 <=<the host's own version>` and rejects everything else. Hardcoding

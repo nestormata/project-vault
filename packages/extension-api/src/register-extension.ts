@@ -25,7 +25,7 @@ import {
   SCHEDULED_TASK_NAME_PATTERN,
   UI_PANEL_SLOT_NAME_PATTERN,
 } from './manifest.js'
-import type { ExtensionManifest, ModuleDataRouteDeclaration } from './manifest.js'
+import type { ExtensionManifest, ExtensionNavItem, ModuleDataRouteDeclaration } from './manifest.js'
 import type { AuthStrategy } from './hooks/auth-strategy.js'
 import type { NotificationChannel } from './hooks/notification-channel.js'
 import type { UIPanel } from './hooks/ui-panel.js'
@@ -68,6 +68,14 @@ const REVERSE_DNS_NAME_PATTERN = /^[a-z0-9]+(\.[a-z0-9-]+)+$/
 export type ExtensionHooks = {
   authStrategy?: AuthStrategy
   notificationChannel?: NotificationChannel
+  /**
+   * Story 25.1 — the legacy runtime UI-panel render hook.
+   *
+   * @deprecated
+   * replacement: composed UI (ADR 0007 build-time composition)
+   * earliest-removal: 4.0.0
+   * notice-window-ends: 2027-01-14
+   */
   uiPanel?: UIPanel
   capabilityGate?: CapabilityGate
   projectLifecycle?: ProjectCreatePolicy
@@ -81,8 +89,15 @@ export type ExtensionHooks = {
    * `onBeforeCreateProject`.
    */
   projectArchiveNotifier?: ProjectArchiveNotifier
-  /** Story 25.5 AC1 — dispatch target for `POST /extensions/panels/:slot/actions`. Only legal
-   * (checked by `hasCallableModuleActionHook()`) when the manifest declares `moduleActions`. */
+  /**
+   * Story 25.5 AC1 — dispatch target for `POST /extensions/panels/:slot/actions`. Only legal
+   * (checked by `hasCallableModuleActionHook()`) when the manifest declares `moduleActions`.
+   *
+   * @deprecated
+   * replacement: composed UI (ADR 0007 build-time composition) for panel actions and M7 apiRoutes
+   * earliest-removal: 4.0.0
+   * notice-window-ends: 2027-01-14
+   */
   moduleAction?: ModuleAction
   /**
    * Story 29.4 AC3 — keyed by the exact `"GET <path>"` string of each `moduleDataRoutes`-declared
@@ -90,6 +105,11 @@ export type ExtensionHooks = {
    * router. Cross-checked against `moduleDataRoutes` at `registerExtension()` time (checked by
    * `hasCallableModuleDataHooks()`) — every declared route must have exactly one matching
    * handler.
+   *
+   * @deprecated
+   * replacement: M7 apiRoutes
+   * earliest-removal: 4.0.0
+   * notice-window-ends: 2027-01-14
    */
   moduleData?: Record<string, ModuleDataRouteHandler>
   /**
@@ -132,6 +152,35 @@ export type ExtensionHooks = {
    * and a declared hook phase has a function.
    */
   apiRoutes?: ApiRoutesHooks
+}
+
+/**
+ * Story 68.11 — the deprecated legacy panel/nav/module-data manifest fields, as this package's own
+ * runtime sees them. The public `ExtensionManifest` fields carry the policy-grade `@deprecated`
+ * markers; registration must still validate and forward them until the 4.0.0 removal, so it reads
+ * them through this non-deprecated structural view instead of tripping its own deprecation
+ * diagnostics (SonarCloud `typescript:S1874`). Pure typing: `ExtensionManifest` is assignable as-is.
+ */
+type LegacyManifestFields = {
+  uiPanelSlots?: string[]
+  moduleActions?: string[]
+  navItems?: ExtensionNavItem[]
+  moduleDataRoutes?: ModuleDataRouteDeclaration[]
+}
+
+/** Story 68.11 — non-deprecated structural view of the deprecated hook fields (see above). */
+type LegacyHookFields = {
+  uiPanel?: UIPanel
+  moduleAction?: ModuleAction
+  moduleData?: Record<string, ModuleDataRouteHandler>
+}
+
+function legacyManifest(manifest: ExtensionManifest): LegacyManifestFields {
+  return manifest
+}
+
+function legacyHooks(hooks: ExtensionHooks): LegacyHookFields {
+  return hooks
 }
 
 /** Default `HostServices` used when a caller (typically a test) invokes `registerExtension()`
@@ -432,31 +481,32 @@ function validateReplacesNativeLoginShape(manifest: ExtensionManifest): void {
  * `hooksFactory()` is invoked (see `hasCallableUiPanelHook` below).
  */
 function validateUiPanelSlotsShape(manifest: ExtensionManifest): void {
-  if (manifest.uiPanelSlots === undefined) return
+  const legacy = legacyManifest(manifest)
+  if (legacy.uiPanelSlots === undefined) return
 
-  if (!Array.isArray(manifest.uiPanelSlots)) {
+  if (!Array.isArray(legacy.uiPanelSlots)) {
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
-      `Extension manifest field "uiPanelSlots" must be an array, got ${JSON.stringify(manifest.uiPanelSlots)}`
+      `Extension manifest field "uiPanelSlots" must be an array, got ${JSON.stringify(legacy.uiPanelSlots)}`
     )
   }
 
-  if (manifest.uiPanelSlots.length === 0) {
+  if (legacy.uiPanelSlots.length === 0) {
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
       'Extension manifest field "uiPanelSlots" must not be an empty array — omit the field entirely to declare no slots'
     )
   }
 
-  if (manifest.uiPanelSlots.length > MAX_UI_PANEL_SLOTS) {
+  if (legacy.uiPanelSlots.length > MAX_UI_PANEL_SLOTS) {
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
-      `Extension manifest field "uiPanelSlots" declares ${manifest.uiPanelSlots.length} entries, exceeding the maximum of ${MAX_UI_PANEL_SLOTS}`
+      `Extension manifest field "uiPanelSlots" declares ${legacy.uiPanelSlots.length} entries, exceeding the maximum of ${MAX_UI_PANEL_SLOTS}`
     )
   }
 
   const seen = new Set<string>()
-  for (const slot of manifest.uiPanelSlots) {
+  for (const slot of legacy.uiPanelSlots) {
     if (typeof slot !== 'string' || !UI_PANEL_SLOT_NAME_PATTERN.test(slot)) {
       throw new ExtensionRegistrationError(
         INVALID_MANIFEST_FIELD,
@@ -490,31 +540,32 @@ function validateUiPanelSlotsShape(manifest: ExtensionManifest): void {
  * below).
  */
 function validateModuleActionsShape(manifest: ExtensionManifest): void {
-  if (manifest.moduleActions === undefined) return
+  const legacy = legacyManifest(manifest)
+  if (legacy.moduleActions === undefined) return
 
-  if (!Array.isArray(manifest.moduleActions)) {
+  if (!Array.isArray(legacy.moduleActions)) {
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
-      `Extension manifest field "moduleActions" must be an array, got ${JSON.stringify(manifest.moduleActions)}`
+      `Extension manifest field "moduleActions" must be an array, got ${JSON.stringify(legacy.moduleActions)}`
     )
   }
 
-  if (manifest.moduleActions.length === 0) {
+  if (legacy.moduleActions.length === 0) {
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
       'Extension manifest field "moduleActions" must not be an empty array — omit the field entirely to declare no actions'
     )
   }
 
-  if (manifest.moduleActions.length > MAX_MODULE_ACTIONS) {
+  if (legacy.moduleActions.length > MAX_MODULE_ACTIONS) {
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
-      `Extension manifest field "moduleActions" declares ${manifest.moduleActions.length} entries, exceeding the maximum of ${MAX_MODULE_ACTIONS}`
+      `Extension manifest field "moduleActions" declares ${legacy.moduleActions.length} entries, exceeding the maximum of ${MAX_MODULE_ACTIONS}`
     )
   }
 
   const seen = new Set<string>()
-  for (const action of manifest.moduleActions) {
+  for (const action of legacy.moduleActions) {
     if (typeof action !== 'string' || !MODULE_ACTION_NAME_PATTERN.test(action)) {
       throw new ExtensionRegistrationError(
         INVALID_MANIFEST_FIELD,
@@ -661,31 +712,32 @@ function validateSingleModuleDataRoute(route: unknown, seen: Set<string>): void 
 }
 
 function validateModuleDataRoutesShape(manifest: ExtensionManifest): void {
-  if (manifest.moduleDataRoutes === undefined) return
+  const legacy = legacyManifest(manifest)
+  if (legacy.moduleDataRoutes === undefined) return
 
-  if (!Array.isArray(manifest.moduleDataRoutes)) {
+  if (!Array.isArray(legacy.moduleDataRoutes)) {
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
-      `Extension manifest field "moduleDataRoutes" must be an array, got ${JSON.stringify(manifest.moduleDataRoutes)}`
+      `Extension manifest field "moduleDataRoutes" must be an array, got ${JSON.stringify(legacy.moduleDataRoutes)}`
     )
   }
 
-  if (manifest.moduleDataRoutes.length === 0) {
+  if (legacy.moduleDataRoutes.length === 0) {
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
       'Extension manifest field "moduleDataRoutes" must not be an empty array — omit the field entirely to declare no module-data routes'
     )
   }
 
-  if (manifest.moduleDataRoutes.length > MAX_MODULE_DATA_ROUTES) {
+  if (legacy.moduleDataRoutes.length > MAX_MODULE_DATA_ROUTES) {
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
-      `Extension manifest field "moduleDataRoutes" declares ${manifest.moduleDataRoutes.length} entries, exceeding the maximum of ${MAX_MODULE_DATA_ROUTES}`
+      `Extension manifest field "moduleDataRoutes" declares ${legacy.moduleDataRoutes.length} entries, exceeding the maximum of ${MAX_MODULE_DATA_ROUTES}`
     )
   }
 
   const seen = new Set<string>()
-  for (const route of manifest.moduleDataRoutes) {
+  for (const route of legacy.moduleDataRoutes) {
     validateSingleModuleDataRoute(route, seen)
   }
 }
@@ -1083,35 +1135,36 @@ function validateNavItemParentIds(items: NavItemCandidate[], seenIds: Set<string
  * `validateModuleActionsShape`/`readValidatedPanelDataPaths`'s shared capability-gate pattern.
  */
 function validateNavItemsShape(manifest: ExtensionManifest): void {
-  if (manifest.navItems === undefined) return
+  const legacy = legacyManifest(manifest)
+  if (legacy.navItems === undefined) return
 
-  if (!Array.isArray(manifest.navItems)) {
+  if (!Array.isArray(legacy.navItems)) {
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
-      `Extension manifest field "navItems" must be an array, got ${JSON.stringify(manifest.navItems)}`
+      `Extension manifest field "navItems" must be an array, got ${JSON.stringify(legacy.navItems)}`
     )
   }
 
-  if (manifest.navItems.length === 0) {
+  if (legacy.navItems.length === 0) {
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
       'Extension manifest field "navItems" must not be an empty array — omit the field entirely to declare no nav items'
     )
   }
 
-  if (manifest.navItems.length > MAX_NAV_ITEMS) {
+  if (legacy.navItems.length > MAX_NAV_ITEMS) {
     throw new ExtensionRegistrationError(
       INVALID_MANIFEST_FIELD,
-      `Extension manifest field "navItems" declares ${manifest.navItems.length} entries, exceeding the maximum of ${MAX_NAV_ITEMS}`
+      `Extension manifest field "navItems" declares ${legacy.navItems.length} entries, exceeding the maximum of ${MAX_NAV_ITEMS}`
     )
   }
 
   const seenIds = new Set<string>()
-  for (const item of manifest.navItems) {
+  for (const item of legacy.navItems) {
     validateSingleNavItemFields(item, seenIds)
   }
 
-  validateNavItemParentIds(manifest.navItems, seenIds)
+  validateNavItemParentIds(legacy.navItems, seenIds)
 }
 
 const DB_SCOPE_TABLE_PATTERN = /^[a-z][a-z0-9_]*$/
@@ -1233,8 +1286,9 @@ function hasCallableProjectArchiveNotifierHook(
  * path depends on that exact combination staying legal.
  */
 function hasCallableUiPanelHook(manifest: ExtensionManifest, hooks: ExtensionHooks): boolean {
-  if (!manifest.uiPanelSlots) return true
-  return hooks.uiPanel !== undefined && typeof hooks.uiPanel.onRenderPanel === 'function'
+  if (!legacyManifest(manifest).uiPanelSlots) return true
+  const { uiPanel } = legacyHooks(hooks)
+  return uiPanel !== undefined && typeof uiPanel.onRenderPanel === 'function'
 }
 
 /**
@@ -1244,8 +1298,9 @@ function hasCallableUiPanelHook(manifest: ExtensionManifest, hooks: ExtensionHoo
  * `hasCallableUiPanelHook` exactly.
  */
 function hasCallableModuleActionHook(manifest: ExtensionManifest, hooks: ExtensionHooks): boolean {
-  if (!manifest.moduleActions) return true
-  return hooks.moduleAction !== undefined && typeof hooks.moduleAction.onAction === 'function'
+  if (!legacyManifest(manifest).moduleActions) return true
+  const { moduleAction } = legacyHooks(hooks)
+  return moduleAction !== undefined && typeof moduleAction.onAction === 'function'
 }
 
 /**
@@ -1259,11 +1314,13 @@ function findMissingModuleDataRoute(
   manifest: ExtensionManifest,
   hooks: ExtensionHooks
 ): string | undefined {
-  if (!manifest.moduleDataRoutes) return undefined
-  for (const route of manifest.moduleDataRoutes) {
+  const routes = legacyManifest(manifest).moduleDataRoutes
+  if (!routes) return undefined
+  const { moduleData } = legacyHooks(hooks)
+  for (const route of routes) {
     const key = `${route.method} ${route.path}`
     // eslint-disable-next-line security/detect-object-injection -- key is derived from this same manifest's own moduleDataRoutes entries (already charset/shape-validated by validateModuleDataRoutesShape), never from untrusted input.
-    if (typeof hooks.moduleData?.[key] !== 'function') return key
+    if (typeof moduleData?.[key] !== 'function') return key
   }
   return undefined
 }
@@ -1477,6 +1534,8 @@ export function registerExtension(
   )
   assertAppImplementations(manifest.apiRoutes, hooks.apiRoutes, (message) => logger.warn(message))
 
+  const legacy = legacyManifest(manifest)
+
   return {
     manifest: {
       name: manifest.name,
@@ -1484,11 +1543,11 @@ export function registerExtension(
       capabilities: manifest.capabilities,
       replacesNativeLogin: manifest.replacesNativeLogin,
       dbScope: manifest.dbScope,
-      uiPanelSlots: manifest.uiPanelSlots,
-      moduleActions: manifest.moduleActions,
+      uiPanelSlots: legacy.uiPanelSlots,
+      moduleActions: legacy.moduleActions,
       panelDataPaths: validatedPanelDataPaths,
-      navItems: manifest.navItems,
-      moduleDataRoutes: manifest.moduleDataRoutes,
+      navItems: legacy.navItems,
+      moduleDataRoutes: legacy.moduleDataRoutes,
       redirectOrigins: manifest.redirectOrigins,
       scheduledTasks: manifest.scheduledTasks,
       anonymousRoutePaths: manifest.anonymousRoutePaths,

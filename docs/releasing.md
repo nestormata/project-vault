@@ -177,6 +177,7 @@ M7 `apiRoutes`) was tagged on merge commit `c610e486`, published by run `3708876
 `7f9423e286a678c41a679363ff1d170c90df83df`). `3.29.0` (Story 68.14, app-level `apiRoutes`) was tagged on
 `49c27b34` and published by run `37166931749` on 2026-10-04; it includes `3.28.0` (Story 71.1), which was never
 published on its own. `latest` moves only after CentralizeMe verifies the version.
+The package source is at `3.30.0` (Story 68.11 Phase A: deprecation markers and neutral request types), unreleased: the tag push, the `npm-publish` approval, the GitHub Release `extension-api-v3.30.0` and the issue on the CM repository are maintainer-only steps handed to story 68-24; the 90-day notice clock starts only when it is published.
 `3.26.0` was never published (71.1 renumbered to `3.28.0` after 68.8 took `3.27.0`). `3.24.2` was a
 documentation-only patch that was never published; `3.25.0` supersedes it.
 `3.24.0` was never tagged and is superseded by `3.24.1`. Every other intermediate contract version

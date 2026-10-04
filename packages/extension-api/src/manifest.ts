@@ -8,6 +8,9 @@ import type { ApiRoutesDeclaration } from './hooks/api-routes.js'
 export type ExtensionCapability =
   | 'auth-provider'
   | 'notification-channel'
+  // Story 68.11 — DEPRECATED (legacy runtime UI-panel API, replacement: composed UI per ADR 0007;
+  // earliest-removal: 4.0.0). A union member cannot carry its own JSDoc tag the marker lint reads,
+  // so the notice is this comment plus the CHANGELOG `### Deprecated` entry.
   | 'ui-panel'
   | 'capability-gate'
   | 'audit-event-source'
@@ -61,6 +64,11 @@ export type ExtensionManifest = {
    * non-empty array of unique strings each matching `UI_PANEL_SLOT_NAME_PATTERN`, capped at
    * `MAX_UI_PANEL_SLOTS` entries, and only legal alongside `'ui-panel'` in `capabilities[]` —
    * validated by `registerExtension()`'s `validateUiPanelSlotsShape`.
+   *
+   * @deprecated
+   * replacement: composed UI (ADR 0007 build-time composition)
+   * earliest-removal: 4.0.0
+   * notice-window-ends: 2027-01-14
    */
   uiPanelSlots?: string[]
   /**
@@ -73,6 +81,11 @@ export type ExtensionManifest = {
    * backward-compatible: the host serves zero declared actions, every action request 404s.
    * Only legal alongside `'ui-panel'` in `capabilities[]` — validated by `registerExtension()`'s
    * `validateModuleActionsShape()`.
+   *
+   * @deprecated
+   * replacement: composed UI (ADR 0007 build-time composition) for panel actions and M7 apiRoutes
+   * earliest-removal: 4.0.0
+   * notice-window-ends: 2027-01-14
    */
   moduleActions?: string[]
   /**
@@ -109,6 +122,11 @@ export type ExtensionManifest = {
    * present, must be a non-empty array of unique-`id` items, capped at `MAX_NAV_ITEMS`, each
    * validated by `registerExtension()`'s `validateNavItemsShape()` — see that function for the
    * exact id/href/icon/label/parentId rules (AC2-AC6).
+   *
+   * @deprecated
+   * replacement: M5 nav delta (UI pack nav)
+   * earliest-removal: 4.0.0
+   * notice-window-ends: 2027-01-14
    */
   navItems?: ExtensionNavItem[]
   /**
@@ -122,6 +140,11 @@ export type ExtensionManifest = {
    * backward-compatible: zero module-data routes are mounted. Validated by `registerExtension()`'s
    * `validateModuleDataRoutesShape()`, and cross-checked against `ExtensionHooks.moduleData` post-
    * `hooksFactory()` (AC3) — every declared route must have a matching callable handler.
+   *
+   * @deprecated
+   * replacement: M7 apiRoutes
+   * earliest-removal: 4.0.0
+   * notice-window-ends: 2027-01-14
    */
   moduleDataRoutes?: ModuleDataRouteDeclaration[]
   /**
@@ -194,6 +217,10 @@ export type ScheduledTaskDeclaration = {
  * routes; a future story may widen this to other read-shaped methods. `path` is a
  * `/`-separated route path (Fastify-native `:param` syntax, no translation needed) matching
  * `MODULE_DATA_ROUTE_PATH_PATTERN`.
+ *
+ * Deprecated in 3.30.0 (replacement: M7 apiRoutes). The policy-grade `@deprecated`
+ * marker lives on this symbol's `src/index.ts` export; it is deliberately not repeated on this
+ * declaration so the package's own internal uses do not raise deprecation diagnostics.
  */
 export type ModuleDataRouteDeclaration = {
   method: 'GET'
@@ -209,6 +236,10 @@ export type ModuleDataRouteDeclaration = {
  * it is rendered as a live, unsanitized `<a href>` attribute. `icon`, when present, must be one of
  * `NAV_ITEM_ICON_TOKENS` — a closed set the host owns and maps to its own glyphs, never freeform
  * markup or a URL (AC6).
+ *
+ * Deprecated in 3.30.0 (replacement: M5 nav delta (UI pack nav)). The policy-grade `@deprecated`
+ * marker lives on this symbol's `src/index.ts` export; it is deliberately not repeated on this
+ * declaration so the package's own internal uses do not raise deprecation diagnostics.
  */
 export type ExtensionNavItem = {
   id: string
@@ -584,7 +615,11 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // `app` (app-level hooks, error handler and not-found handler, wrap/replace) and `ApiRoutesHooks`
 // the optional `app` implementations. New optional fields only (policy rows 1 and 11); a 3.27/3.28
 // pack without `app` loads unchanged.
-export const EXTENSION_API_VERSION = '3.29.0'
+// Story 68.11 — bumped as a minor (3.29.0 -> 3.30.0): policy-grade `@deprecated` markers on the
+// legacy UI-panel, `navItems` and `moduleDataRoutes` surface, plus the additive neutral
+// `ExtensionRequestContext` / `ExtensionActionResult` types. No removal, no behaviour change; a
+// 3.x extension loads and type-checks unchanged.
+export const EXTENSION_API_VERSION = '3.30.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

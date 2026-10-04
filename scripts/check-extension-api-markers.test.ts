@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { latestChangelogEntry } from './lib/extension-api-changelog.js'
 import { checkExperimentalMarkers, checkDeprecationMarkers } from './check-extension-api-markers.js'
 
 const CURRENT_CHANGELOG = '# Changelog\n\n## 1.4.0 — 2026-08-18'
@@ -98,5 +100,90 @@ export type OldFoo = string`,
     })
 
     expect(errors.join('\n')).toContain('CHANGELOG')
+  })
+})
+
+// Story 68.11 AC-1 — the legacy panel / navItems / moduleDataRoutes surface carries
+// policy-grade markers on the real `index.ts`, announced by the real CHANGELOG.
+const LEGACY_DEPRECATED_EXPORTS = [
+  'UIPanel',
+  'UIPanelContext',
+  'UIPanelResult',
+  'ModuleAction',
+  'ModuleActionRequest',
+  'ModuleActionContext',
+  'ActionResult',
+  'ModuleDataRequestContext',
+  'ModuleDataResult',
+  'ModuleDataRouteHandler',
+  'ExtensionNavItem',
+  'ModuleDataRouteDeclaration',
+]
+
+describe('Story 68.11 — the legacy UI-panel surface is deprecated through the policy lifecycle', () => {
+  const indexSource = readFileSync('packages/extension-api/src/index.ts', 'utf8')
+  const changelogSource = readFileSync('packages/extension-api/CHANGELOG.md', 'utf8')
+  const manifestSource = readFileSync('packages/extension-api/src/manifest.ts', 'utf8')
+  const { version } = JSON.parse(readFileSync('packages/extension-api/package.json', 'utf8')) as {
+    version: string
+  }
+
+  it('passes the real marker lint', () => {
+    expect(
+      checkDeprecationMarkers({ indexSource, changelogSource, currentVersion: version })
+    ).toEqual([])
+  })
+
+  // The five marker lines directly above a declaration line, with the doc indentation stripped.
+  function markerAbove(source: string, declaration: (line: string) => boolean): string[] {
+    const lines = source.split('\n')
+    const at = lines.findIndex(declaration)
+    expect(at).toBeGreaterThanOrEqual(6)
+    return lines.slice(at - 6, at).map((line) => line.trim())
+  }
+
+  function expectPolicyMarker(marker: string[]): void {
+    expect(marker[0]).toBe('/**')
+    expect(marker[1]).toBe('* @deprecated')
+    expect(marker[2]).toMatch(/^\* replacement: \S/)
+    expect(marker[3]).toBe('* earliest-removal: 4.0.0')
+    expect(marker[4]).toMatch(/^\* notice-window-ends: \d{4}-\d{2}-\d{2}$/)
+    expect(marker[5]).toBe('*/')
+  }
+
+  it.each(LEGACY_DEPRECATED_EXPORTS)('%s has a @deprecated marker on its index export', (name) => {
+    expectPolicyMarker(
+      markerAbove(indexSource, (line) => line.startsWith(`export type { ${name} } from `))
+    )
+  })
+
+  it.each(['uiPanelSlots', 'moduleActions', 'navItems', 'moduleDataRoutes'])(
+    'manifest field %s carries a field-level @deprecated marker',
+    (field) => {
+      const marker = markerAbove(manifestSource, (line) => line.startsWith(`  ${field}?:`))
+      // A field's JSDoc starts earlier than the five-line window; check its tail.
+      expect(marker.slice(0, 5).join('\n')).toContain('@deprecated')
+      expect(marker.join('\n')).toMatch(/earliest-removal: 4\.0\.0/)
+      expect(marker[4]).toMatch(/^\* notice-window-ends: \d{4}-\d{2}-\d{2}$/)
+      expect(marker[5]).toBe('*/')
+    }
+  )
+
+  it('the newest CHANGELOG entry lists the deprecated fields, hooks and capability member', () => {
+    const entry = latestChangelogEntry(changelogSource) ?? ''
+    for (const token of [
+      'uiPanelSlots',
+      'moduleActions',
+      'navItems',
+      'moduleDataRoutes',
+      '`uiPanel`',
+      '`moduleAction`',
+      '`moduleData`',
+      "'ui-panel'",
+      'ExtensionRequestContext',
+      'ExtensionActionResult',
+      'Notified:',
+    ])
+      expect(entry).toContain(token)
   })
 })
