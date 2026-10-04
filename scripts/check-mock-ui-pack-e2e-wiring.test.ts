@@ -162,6 +162,7 @@ describe('the path filter (Story 68.10 AC-3.1, AC-3.2)', () => {
     '.node-version',
     'turbo.json',
     'scripts/lib/trusted-executable.ts',
+    'scripts/lib/shipped-route-audit.ts',
   ])('runs the job for %s', (path) => {
     expect(decide([path]).run).toBe(true)
   })

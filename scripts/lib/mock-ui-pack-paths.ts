@@ -62,6 +62,7 @@ const RUN_FILES: ReadonlySet<string> = new Set([
   'turbo.json',
   // helpers the runner and the packer import
   'scripts/lib/release-image.ts',
+  'scripts/lib/shipped-route-audit.ts',
   'scripts/lib/trusted-executable.ts',
   'scripts/lib/version-triangle.ts',
   '.github/workflows/ci.yml',

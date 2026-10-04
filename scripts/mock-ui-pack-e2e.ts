@@ -11,6 +11,11 @@
  *   Build composed image + Boot stack
  *                      scripts/e2e-stack.sh with E2E_STACK_FLAVOR=mock-ui-pack (real API, real
  *                      database, the composed web image); ports and project name are per run
+ *   Shipped route audit
+ *                      Story 68.23: `node dist/scripts/runtime-route-audit.js` in the API image just built
+ *                      (the form a consumer runs, no tsx, no PV checkout) against the classifications
+ *                      `pv-verify --only classifications --out` extracted from the composed pack:
+ *                      exit 0 on the pack, exit 1 on a stale entry, exit 2 on a usage error
  *   Mechanism e2e      Playwright (apps/web/e2e/mechanism/playwright.config.ts), one file per capability
  *   Teardown           `down -v --remove-orphans` by project name, always (unless E2E_STACK_KEEP=1)
  *
@@ -26,6 +31,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { REPO_ROOT } from './pack-web-host.js'
 import { resolveBin, resolveTrustedExecutable } from './lib/trusted-executable.js'
+import { proveShippedAudit, staleClassificationsText } from './lib/shipped-route-audit.js'
 import {
   consumerFixtureEnv,
   packConsumerTarballs,
@@ -44,6 +50,8 @@ const OVERLAY_DIR = process.env['MOCK_UI_PACK_OVERLAY_DIR'] ?? join(PACK_DIR, 'u
 const WEB_DIR = join(REPO_ROOT, 'apps', 'web')
 const COMPOSE_TIMEOUT_MS = 30 * 60_000
 const FLAVOR = 'mock-ui-pack'
+const AUDIT_TIMEOUT_MS = 3 * 60_000
+const CLASSIFICATIONS_FILE = 'classifications.json'
 
 function stage(name: string): void {
   process.stdout.write(`\n=== ${name} ===\n`)
@@ -69,7 +77,12 @@ function parsePlan(output: string): Record<string, string> {
   )
 }
 
-function compose(workDir: string, tarballs: ConsumerTarballs, contextDir: string): void {
+function compose(
+  workDir: string,
+  tarballs: ConsumerTarballs,
+  contextDir: string,
+  classificationsFile: string
+): void {
   const env = consumerFixtureEnv(process.env, workDir, tarballs, {
     fixturesDir: join(workDir, FIXTURES),
   })
@@ -78,6 +91,7 @@ function compose(workDir: string, tarballs: ConsumerTarballs, contextDir: string
     {
       ...env,
       MOCK_UI_PACK_CONTEXT_OUT: contextDir,
+      MOCK_UI_PACK_CLASSIFICATIONS_OUT: classificationsFile,
     },
     { inherit: true }
   )
@@ -85,6 +99,35 @@ function compose(workDir: string, tarballs: ConsumerTarballs, contextDir: string
   const docker = join(PACK_DIR, 'docker')
   cpSync(join(docker, 'web.Dockerfile'), join(contextDir, 'web.Dockerfile'))
   cpSync(join(docker, '.dockerignore'), join(contextDir, '.dockerignore'))
+}
+
+/**
+ * Story 68.23: the documented consumer invocation, run in the image the stack just built. The audit
+ * directory is world-readable because the entrypoint drops to the image's `node` user.
+ */
+function proveRouteAudit(stack: NodeJS.ProcessEnv, auditDir: string, extracted: string): void {
+  const image = `${stack['COMPOSE_PROJECT_NAME'] ?? ''}-api`
+  const stale = 'stale.json'
+  const prepared = bash(
+    [
+      '-c',
+      'umask 022 && printf %s "$STALE_CLASSIFICATIONS" > "$1/$2" && chmod 755 "$1" && chmod 644 "$1"/*.json',
+      'prepare-audit-dir',
+      auditDir,
+      stale,
+    ],
+    { ...process.env, STALE_CLASSIFICATIONS: staleClassificationsText() },
+    { inherit: true }
+  )
+  if (prepared.status !== 0) throw new Error('could not prepare the audit directory')
+  const docker = resolveTrustedExecutable('docker')
+  const problems = proveShippedAudit(image, auditDir, { extracted, stale }, (argv) => {
+    const run = spawnSync(docker, argv, { encoding: 'utf8', timeout: AUDIT_TIMEOUT_MS })
+    process.stdout.write(`docker ${argv.slice(-4).join(' ')} -> exit ${String(run.status)}\n`)
+    return { status: run.status, stdout: run.stdout, stderr: run.stderr }
+  })
+  if (problems.length > 0)
+    throw new Error(`Shipped route audit failed:\n  ${problems.join('\n  ')}`)
 }
 
 function planStack(contextDir: string): NodeJS.ProcessEnv {
@@ -121,6 +164,7 @@ async function main(): Promise<number> {
   const spec = process.argv[2]
   const workDir = mkdtempSync(join(tmpdir(), 'mock-ui-pack-e2e-'))
   const contextDir = join(workDir, 'context')
+  const auditDir = mkdtempSync(join(workDir, 'audit-'))
   let stack: NodeJS.ProcessEnv | undefined
   try {
     stage('Pack')
@@ -129,11 +173,13 @@ async function main(): Promise<number> {
       recursive: true,
     })
     stage('Compose')
-    compose(workDir, tarballs, contextDir)
+    compose(workDir, tarballs, contextDir, join(auditDir, CLASSIFICATIONS_FILE))
     stage('Build composed image and boot stack')
     stack = planStack(contextDir)
     const started = bash([STACK_SCRIPT, 'start'], stack, { inherit: true })
     if (started.status !== 0) throw new Error('Boot stack failed')
+    stage('Shipped route audit')
+    proveRouteAudit(stack, auditDir, CLASSIFICATIONS_FILE)
     stage('Mechanism e2e')
     return runPlaywright(stack, spec)
   } catch (error) {
