@@ -40,6 +40,9 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const SQLSTATE_PATTERN = /^[0-9A-Z]{5}$/
 // C0 controls (includes NUL), DEL and C1 controls.
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/
+// A lone UTF-16 surrogate is not encodable: the driver writes it as U+FFFD, so two distinct
+// values would collide on one stored key (a false `replayed`).
+const LONE_SURROGATE = /\p{Cs}/u
 
 export const DELEGATION_BURN_OUTCOMES = ['burned', 'replayed', 'store_unavailable'] as const
 
@@ -122,6 +125,9 @@ function assertKey(field: 'jti' | 'kid', value: unknown): void {
   }
   if (CONTROL_CHARACTER.test(value)) {
     throw new DelegationBurnInputError(field, 'must not contain control characters')
+  }
+  if (LONE_SURROGATE.test(value)) {
+    throw new DelegationBurnInputError(field, 'must be well-formed UTF-16 (no lone surrogate)')
   }
 }
 

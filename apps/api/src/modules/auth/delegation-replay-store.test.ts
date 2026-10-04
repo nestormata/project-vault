@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import postgres from 'postgres'
 import { and, eq, sql } from 'drizzle-orm'
 import { afterAll, describe, expect, expectTypeOf, it, vi } from 'vitest'
-import { withOrg, type Tx } from '@project-vault/db'
+import { getDb, withOrg, type Tx } from '@project-vault/db'
 import { delegationAssertionJti } from '@project-vault/db/schema'
 import { withTwoTestOrgs } from '@project-vault/db/test-helpers'
 import {
@@ -124,6 +124,10 @@ describe('burnDelegationAssertion contract (Story 71.7 AC-3, unit)', () => {
       ['an empty jti', { jti: '' }, 'jti'],
       ['a jti with a NUL byte', { jti: `a\u0000${SENTINEL_JTI}` }, 'jti'],
       ['a jti with a C1 control character', { jti: `a\u0085${SENTINEL_JTI}` }, 'jti'],
+      // Review fix: the driver encodes a lone UTF-16 surrogate as U+FFFD, so two distinct jtis
+      // ('a\uD800', 'a\uD801') would collide on one stored key and the second would be "replayed".
+      ['a jti with a lone surrogate', { jti: `a\uD800${SENTINEL_JTI}` }, 'jti'],
+      ['a kid with a lone surrogate', { kid: `${SENTINEL_KID}\uDC00` }, 'kid'],
       ['a 130-byte multibyte jti', { jti: 'é'.repeat(65) }, 'jti'],
       ['a 129-byte kid', { kid: 'k'.repeat(129) }, 'kid'],
       ['an empty kid', { kid: '' }, 'kid'],
@@ -174,6 +178,7 @@ describe('burnDelegationAssertion contract (Story 71.7 AC-3, unit)', () => {
     it.each([
       ['a 128-byte multibyte jti', { jti: 'é'.repeat(64) }],
       ['a 128-byte kid', { kid: 'k'.repeat(128) }],
+      ['a jti with a well-formed astral character (surrogate pair)', { jti: 'j-\u{1F511}' }],
       [
         'an exp exactly at lifetime + skew + tolerance',
         { assertionExpiresAtSeconds: FIXED_NOW_S + 95 },
@@ -406,6 +411,42 @@ describe('burnDelegationAssertion against real Postgres (Story 71.7 AC-3, AC-7.2
           assertionExpiresAtSeconds: exp,
         })
       ).resolves.toEqual({ outcome: 'burned' })
+    })
+  })
+
+  // Review fix (AC-4 realism): Promise.all races may serialize through the pool, so this pins the
+  // interleaving deterministically: the burn is observed WAITING on an uncommitted same-key insert,
+  // the holder commits, and the waiter must resolve to `replayed` (never `burned`, never a timeout).
+  it('a burn blocked on an uncommitted same-key insert resolves to replayed once the holder commits', async () => {
+    await withTwoTestOrgs(async ({ orgAId }) => {
+      const exp = nowSeconds() + 45
+      let waiter: Promise<DelegationBurnOutcome> | undefined
+      await holderSql.begin(async (tx) => {
+        await tx`SELECT set_config('app.current_org_id', ${orgAId}, true)`
+        await tx`INSERT INTO delegation_assertion_jti (org_id, jti, kid, expires_at)
+                 VALUES (${orgAId}, 'j-wait', 'k1', now() + interval '1 minute')`
+        waiter = burnDelegationAssertion({
+          orgId: orgAId,
+          jti: 'j-wait',
+          kid: 'k2',
+          assertionExpiresAtSeconds: exp,
+        })
+        await vi.waitFor(
+          async () => {
+            const waiting = await getDb().execute<{ n: number }>(
+              sql`SELECT count(*)::int AS n FROM pg_stat_activity
+                   WHERE wait_event_type = 'Lock'
+                     AND query ILIKE 'insert into "delegation_assertion_jti"%'`
+            )
+            expect(waiting[0]?.n).toBeGreaterThan(0)
+          },
+          { timeout: 1500, interval: 25 }
+        )
+      })
+      await expect(waiter).resolves.toEqual({ outcome: 'replayed' })
+      const rows = await burnRows(orgAId, 'j-wait')
+      expect(rows).toHaveLength(1)
+      expect(rows[0]?.kid).toBe('k1')
     })
   })
 
