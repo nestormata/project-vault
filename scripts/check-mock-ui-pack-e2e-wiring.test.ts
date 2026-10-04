@@ -2,9 +2,8 @@
 // (pure text in, assertions out, like check-web-guard-wiring.test.ts), the path filter behaves, and
 // the mechanism specs cannot pass vacuously (Playwright reports skipped tests as green).
 //
-// Making the check REQUIRED is a repo-admin action (branch protection has no required status checks
-// today) and is a hand-off, not something this test can do: until it is done the docs say "required
-// in intent, enforced by this wiring test, not yet by branch protection".
+// The check is a REQUIRED status check on main (branch protection, story 68-19, 2026-10-04). This test
+// pins the job name that protection depends on; renaming the job needs a branch-protection change too.
 import { describe, expect, it } from 'vitest'
 import { makeRecipe } from './lib/ci-wiring.js'
 import { WORKSPACE_CLASSES, decide } from './lib/mock-ui-pack-paths.js'
