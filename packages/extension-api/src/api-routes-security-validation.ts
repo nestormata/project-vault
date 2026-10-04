@@ -31,8 +31,8 @@ const SUBJECT_KEYS = ['org', 'actor']
 const SUBJECT_FIELD_KEYS = ['in', 'name']
 const SUBJECT_FIELD_LOCATIONS = ['body', 'params']
 /** A plain identifier: the host indexes a parsed body or the params with it (Story 71.8). */
-const SUBJECT_FIELD_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/
-const RESERVED_FIELD_NAMES = ['__proto__', 'constructor', 'prototype']
+const SUBJECT_FIELD_NAME = /^[A-Za-z_]\w{0,127}$/
+const RESERVED_FIELD_NAMES = new Set(['__proto__', 'constructor', 'prototype'])
 
 export type UnknownRecord = Record<string, unknown>
 
@@ -117,7 +117,7 @@ function validateSubjectField(value: unknown, path: string): string {
   if (
     typeof name !== 'string' ||
     !SUBJECT_FIELD_NAME.test(name) ||
-    RESERVED_FIELD_NAMES.includes(name)
+    RESERVED_FIELD_NAMES.has(name)
   ) {
     fail(`${path}.name must be a plain identifier of at most 128 characters`)
   }
