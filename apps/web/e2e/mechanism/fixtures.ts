@@ -10,11 +10,14 @@ import type {
 import { expect } from '@playwright/test'
 import { seedRegisterAndLogin } from './seed-guard.js'
 import postgres from 'postgres'
-import { superuserDatabaseUrl } from '../fixtures/db.js'
 import { gotoHydrated } from '../fixtures/hydration.js'
 import { enrollMfaViaApi, registerViaInvitation } from '../fixtures/auth.js'
 import { createInvitationViaApi } from '../fixtures/api.js'
-import { extractTokenFromAcceptUrl, readLatestInvitationAcceptUrl } from '../fixtures/db.js'
+import {
+  extractTokenFromAcceptUrl,
+  readLatestInvitationAcceptUrl,
+  superuserDatabaseUrl,
+} from '../fixtures/db.js'
 import { uniqueEmail, uniqueOrgName } from '../fixtures/ids.js'
 
 // Story 68.10 AC-5: the shared helpers of the mechanism specs, built on the existing e2e fixtures
@@ -159,10 +162,14 @@ export async function seedOrgMember(
 export function readWebLog(): string {
   const project = process.env['COMPOSE_PROJECT_NAME'] ?? ''
   if (project === '') throw new Error('COMPOSE_PROJECT_NAME is required: run through the runner')
-  const run = spawnSync('docker', ['logs', '--tail', '500', `${project}-web-1`], {
-    encoding: 'utf8',
-  })
-  return `${run.stdout}${run.stderr}`
+  // docker is resolved from fixed system directories, never from `$PATH` (Sonar S4036).
+  for (const docker of ['/usr/bin/docker', '/usr/local/bin/docker', '/bin/docker']) {
+    const run = spawnSync(docker, ['logs', '--tail', '500', `${project}-web-1`], {
+      encoding: 'utf8',
+    })
+    if (run.error === undefined) return `${run.stdout}${run.stderr}`
+  }
+  throw new Error('docker was not found in /usr/bin, /usr/local/bin or /bin')
 }
 
 /** POSTs JSON through the context's session and returns the parsed body, failing on a non-2xx. */
