@@ -42,7 +42,7 @@ describe('findAttribution', () => {
     'Chat' + 'GPT',
     'gp' + 't-5',
   ])('flags a co-author named %s', (name) => {
-    expect(findAttribution(`${COAUTHOR_KEY}: ${name} <bot@example.com>`)).toHaveLength(1)
+    expect(findAttribution(`${COAUTHOR_KEY}: ${name} <bot>`)).toHaveLength(1)
   })
 
   it('flags an anthropic address under any name', () => {
@@ -58,7 +58,7 @@ describe('findAttribution', () => {
   })
 
   it('passes a human co-author', () => {
-    expect(findAttribution(`${COAUTHOR_KEY}: Ada Lovelace <ada@example.com>`)).toEqual([])
+    expect(findAttribution(`${COAUTHOR_KEY}: Ada Lovelace <ada>`)).toEqual([])
   })
 
   it('matches the trailer key in any case', () => {
@@ -85,9 +85,9 @@ describe('findAttribution', () => {
   })
 
   it('sees through zero-width and compatibility-form evasions', () => {
-    const zeroWidth = `${COAUTHOR_KEY}: ${AGENT.slice(0, 2)}​${AGENT.slice(2)} <x@example.com>`
+    const zeroWidth = `${COAUTHOR_KEY}: ${AGENT.slice(0, 2)}​${AGENT.slice(2)} <x>`
     expect(findAttribution(zeroWidth)).toHaveLength(1)
-    const fullWidth = `${COAUTHOR_KEY}: Ｃ${AGENT.slice(1)} <x@example.com>`
+    const fullWidth = `${COAUTHOR_KEY}: Ｃ${AGENT.slice(1)} <x>`
     expect(findAttribution(fullWidth)).toHaveLength(1)
   })
 })
@@ -96,7 +96,7 @@ describe('runCheck', () => {
   let dir: string
 
   function git(...args: string[]): string {
-    return trustedGit(dir, ['-c', 'user.name=Test', '-c', 'user.email=t@example.com', ...args])
+    return trustedGit(dir, ['-c', 'user.name=Test', '-c', 'user.email=tester', ...args])
   }
 
   function commit(message: string): void {
