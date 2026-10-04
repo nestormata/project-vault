@@ -25,6 +25,32 @@ Two M3 fills target **region points** (points inside a shared PV component) and 
   `withInjectedLoad` call, which is what makes the opted-in load run. The one-project 303 auto-skip is CM's
   rule on its override and is not implemented in PV.
 
+## Credential detail regions (Story 69.2)
+
+Three M3 fills target **region points of PV's NATIVE credential detail page** (the pack does not override it) and
+opt in with `hostRoutes: ['/(app)/projects/[projectId]/credentials/[credentialId]#page']`:
+
+- `credential.detail.actions` (`injections/CredentialActionsFill.svelte`, action `?/credential.detail.actions.note`):
+  a control in the header card's action cluster for every role. The action reads the credential and the project
+  with the member's own session first (RLS), decides the caller's project role from THAT answer (a viewer gets
+  `fail(403)`; a forged `projectRole` form field is ignored), then writes through the pack's `/api/v1/cm/documents`
+  route, which writes the one audit row.
+- `credential.detail.shares` (`CredentialSharesFill.svelte`, `credential-shares.server.ts` load,
+  `?/credential.detail.shares.probe` action): renders at the end of the Shares section. The load returns ids, a
+  status and a per-load nonce only. The probe calls the rate-limited `GET /api/v1/cm/limited`, so a 429 reaches the
+  action result and the page re-renders with a fresh load.
+- `credential.detail.metadata` (`CredentialMetadataFill.svelte`): a tile inside PV's metadata `<dl>`.
+
+The pack replaces no credential region component on purpose: PV's own page tests run over the composed tree
+(`excludedPvTests` only excludes a test whose subject was replaced, and the subject walk stops at a route), so a
+replaced region would turn PV's own credential page tests red. The two-level Shares design (replace the INNER
+`CredentialSharesNative`, keep the fill in the OUTER `CredentialSharesRegion`) is therefore proven at index level
+by `scripts/lib/web-host/credential-regions-index.test.ts`. The spec is
+`apps/web/e2e/mechanism/m3-credential-injection.spec.ts`; the helpers `createCredential` and `seedProjectViewer`
+(a project viewer through PV's real invitation flow) are in `apps/web/e2e/mechanism/fixtures.ts`. A sealed vault
+cannot be produced in the shared stack without breaking other specs, so that case is proven at unit level and in the
+kit integration job against the API stub (`c-sealed`).
+
 ## No back doors
 
 The pack never bypasses authentication or tenancy to make a case pass: it reads data through the

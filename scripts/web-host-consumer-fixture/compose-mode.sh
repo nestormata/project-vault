@@ -780,6 +780,7 @@ readonly WHO_MARKER='PV_INJECT_WHO_MARKER_71c2e4'
 readonly THEME_MARKER='PV_INJECT_THEME_MARKER_5a90d3'
 readonly PROJECT_MARKER='PV_INJECT_PROJECT_MARKER_c4417b'
 readonly REGION_MARKER='PV_INJECT_REGION_MARKER_8e21f4'
+readonly CREDENTIAL_MARKER='PV_INJECT_CREDENTIAL_MARKER_2d9c71'
 
 # The body of the last compose_request must (not) contain a needle, with a message on failure.
 compose_body_has() { # needle context
@@ -976,7 +977,7 @@ compose_chunk_files() { # marker -> the files under build/client containing it
 compose_chunk_checks() {
   local marker files count
   local seen=''
-  for marker in "$WHO_MARKER" "$THEME_MARKER" "$PROJECT_MARKER"; do
+  for marker in "$WHO_MARKER" "$THEME_MARKER" "$PROJECT_MARKER" "$CREDENTIAL_MARKER"; do
     files="$(compose_chunk_files "$marker")"
     count="$(printf '%s\n' "$files" | grep -c . || true)"
     if [[ "$count" != '1' ]]; then
@@ -1004,7 +1005,7 @@ compose_chunk_checks() {
   if [[ ! -d "$entry_dir" ]]; then
     compose_fail "chunk placement: ${entry_dir} does not exist, so the entry chunks were not checked"
   fi
-  grep -rlF -e "$WHO_MARKER" -e "$THEME_MARKER" -e "$PROJECT_MARKER" -e "$REGION_MARKER" "$entry_dir" > /dev/null || entry_status=$?
+  grep -rlF -e "$WHO_MARKER" -e "$THEME_MARKER" -e "$PROJECT_MARKER" -e "$REGION_MARKER" -e "$CREDENTIAL_MARKER" "$entry_dir" > /dev/null || entry_status=$?
   if [[ "$entry_status" == '0' ]]; then
     compose_fail 'chunk placement: an injected component marker reached an entry chunk'
   fi
@@ -1111,19 +1112,20 @@ compose_stub_checks() {
 # point's: it runs as the caller (SSR HTML and __data.json carry only the caller's own marker over
 # interleaved requests), never runs for an anonymous request, for a foreign project id (PV's own
 # notFound skips contribution loads) or for PV's own failure, and runs once for an own project.
-compose_fire_region_isolation() { # port suffix dir
-  local port="$1" suffix="$2" dir="$3" round pid user
+compose_fire_region_isolation() { # port path-template dir (the template's @USER@ is the session user)
+  local port="$1" template="$2" dir="$3" round pid user path
   local pids=()
   rm -rf "$dir"
   mkdir -p "$dir"
   for round in $(seq 1 "$ISOLATION_ROUNDS"); do
     for user in u1 u2; do
-      curl -s -o "${dir}/${user}-${round}.body" -H "cookie: session=${user}" "http://127.0.0.1:${port}/projects/p-${user}${suffix}" &
+      path="${template//@USER@/${user}}"
+      curl -s -o "${dir}/${user}-${round}.body" -H "cookie: session=${user}" "http://127.0.0.1:${port}${path}" &
       pids+=($!)
     done
   done
   for pid in "${pids[@]}"; do
-    wait "$pid" || compose_fail "a region isolation request (GET /projects/p-<user>${suffix}) did not complete"
+    wait "$pid" || compose_fail "a region isolation request (GET ${template}) did not complete"
   done
   return 0
 }
@@ -1131,9 +1133,9 @@ compose_fire_region_isolation() { # port suffix dir
 compose_region_checks() {
   local port="$1" dir="$WORK/region" status
   fixture_stub reset > /dev/null
-  compose_fire_region_isolation "$port" '' "$dir/html"
+  compose_fire_region_isolation "$port" '/projects/p-@USER@' "$dir/html"
   compose_assert_isolation "$dir/html" 'region isolation (SSR HTML)' region
-  compose_fire_region_isolation "$port" /__data.json "$dir/data"
+  compose_fire_region_isolation "$port" '/projects/p-@USER@/__data.json' "$dir/data"
   compose_assert_isolation "$dir/data" 'region isolation (__data.json)' region
   fixture_expect_count inject-load-region $((ISOLATION_ROUNDS * 4))
   fixture_stub reset > /dev/null
@@ -1155,11 +1157,52 @@ compose_region_checks() {
   return 0
 }
 
+# Story 69.2 AC-6 / AC-9: a contribution at a REGION point of the credential detail page, opted in with
+# `hostRoutes`, behaves like the project page's: it runs as the caller (SSR HTML and __data.json carry
+# only the caller's own marker over interleaved requests), never runs for an anonymous request, for a
+# foreign credential id or for PV's own failure (counter 0), and never runs when PV's own load answers
+# a sealed vault (a 503 on the credential read: PV renders its banner with status 200, never a 500).
+compose_credential_checks() {
+  local port="$1" dir="$WORK/credential" status
+  local own='/projects/p-u1/credentials/c-u1'
+  fixture_stub reset > /dev/null
+  compose_fire_region_isolation "$port" '/projects/p-@USER@/credentials/c-@USER@' "$dir/html"
+  compose_assert_isolation "$dir/html" 'credential region isolation (SSR HTML)' credential
+  compose_fire_region_isolation "$port" '/projects/p-@USER@/credentials/c-@USER@/__data.json' "$dir/data"
+  compose_assert_isolation "$dir/data" 'credential region isolation (__data.json)' credential
+  fixture_expect_count inject-load-credential $((ISOLATION_ROUNDS * 4))
+  fixture_stub reset > /dev/null
+  compose_expect_redirect "$port" GET "$own" "$CM_ANON" 303 /login
+  compose_expect_data_redirect "$port" "${own}/__data.json" "$CM_ANON" /login
+  status="$(compose_request "$port" GET /projects/p-u2/credentials/c-u2 "$CM_U1")"
+  if [[ "$status" -ge 500 ]]; then
+    compose_fail "GET /projects/p-u2/credentials/c-u2 as u1 (another org) answered HTTP ${status}, expected PV's not-found card"
+  fi
+  compose_body_has 'Secret not found' 'foreign credential id'
+  compose_body_lacks 'credential:u1' 'foreign credential id'
+  status="$(compose_request "$port" GET /projects/p-u1/credentials/c-boom "$CM_U1")"
+  if [[ "$status" != '500' ]]; then
+    compose_fail "GET /projects/p-u1/credentials/c-boom answered HTTP ${status}, expected 500 from PV's own load"
+  fi
+  status="$(compose_request "$port" GET /projects/p-u1/credentials/c-sealed "$CM_U1")"
+  if [[ "$status" != '200' ]]; then
+    compose_fail "GET /projects/p-u1/credentials/c-sealed answered HTTP ${status}, expected PV's sealed banner with 200"
+  fi
+  compose_body_has 'Vault sealed' 'sealed credential read'
+  compose_body_lacks 'credential:u1' 'sealed credential read'
+  fixture_expect_count inject-load-credential 0
+  compose_expect_ok "$port" GET "$own" "$CM_U1" 'credential:u1'
+  fixture_expect_count inject-load-credential 1
+  log 'OK: a credential region fill ran as the caller (SSR HTML and __data.json, interleaved), never for an anonymous request, a foreign id, a failing PV load or a sealed vault (counter 0), and once for an own credential'
+  return 0
+}
+
 compose_session_injection_checks() {
   local port="$1"
   compose_stub_checks
   compose_isolation_checks "$port"
   compose_region_checks "$port"
+  compose_credential_checks "$port"
   compose_anonymous_counter_checks "$port"
   compose_cross_tenant_checks "$port"
   compose_chunk_checks

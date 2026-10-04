@@ -19,10 +19,22 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **Injection points on the credential detail page** (Story 69.2, Epic 69, web-host). The page is now 13
+  replaceable region components (`credential.detail.{vault-sealed,not-found,summary,actions,nudges,metadata,
+lifecycle,value,versions,dependencies,rotation,shares,footer}`, under
+  `$lib/components/credentials/detail/`), each with its own injection point, and every point of the page
+  receives one props contract: `{ routeId, params, credential, project, projectId, credentialId, orgRole,
+projectRole }` (additive). Credential and project context therefore reaches a composed product through
+  point props, never through a panel. A contribution `load` or form `action` at a credential region opts in
+  with `hostRoutes` (Story 69.1). When PV's own load answers `vaultSealed: true` (as it already did for
+  `notFound: true`), no contribution `load` runs and every contribution gets a `null` entry, so a
+  contribution that calls the API cannot turn PV's sealed banner into an error page. PV's rendered markup is
+  unchanged. Editing the credential page changes the hash of that overridable file: a pack that overrides it
+  re-accepts the new host with `pv-compose --accept-host`.
 - **The runtime route audit is runnable from the API image** (Story 68.23, Epic 68). A consumer proves its
   composed API's routes with Project Vault's own audit and without cloning Project Vault:
   `docker run --rm -v <dir>:/audit:ro <api-image> node dist/scripts/runtime-route-audit.js --extension <pkg>
-  --classifications /audit/classifications.json` (exit `0` pass, `1` audit failure or extension did not load,
+--classifications /audit/classifications.json` (exit `0` pass, `1` audit failure or extension did not load,
   `2` usage or input error; no database, network or secret needed). The compiled entry is a supported,
   versioned interface of the `api` image. The `Mock UI pack mechanism e2e` job now runs this shipped form
   against the mock UI pack, with classifications extracted by `pv-verify --only classifications`.

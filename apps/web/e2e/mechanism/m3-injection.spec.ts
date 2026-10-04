@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import {
   apiContextFor,
   countAuditEvents,
   createProject,
+  expectAnonymousLoginRedirect,
   open,
   seedOrgOwner,
   trackHydrationMismatch,
@@ -17,20 +18,6 @@ const TITLE_FIELD = (page: Page) => page.getByLabel('Document title')
 const PROBE = (page: Page) => page.getByTestId('mock-settings-tile-probe')
 const NOT_FOUND = 'status=404'
 
-/** An anonymous form POST to an injected action is redirected to /login before the action runs. */
-async function expectAnonymousLoginRedirect(
-  request: APIRequestContext,
-  path: string,
-  origin: string
-): Promise<void> {
-  const response = await request.post(path, {
-    form: { title: 'x' },
-    headers: { origin },
-    maxRedirects: 0,
-  })
-  expect(response.status()).toBe(303)
-  expect(response.headers()['location']).toBe('/login')
-}
 const DOCUMENT_EVENT = 'cm.document.created'
 
 test.describe('M3 injection into native PV pages', () => {

@@ -575,5 +575,7 @@ describe('credential detail render oracle (Story 69.2 AC-2)', () => {
       './credential-detail-render.snapshot.json'
     )
     expect(Object.keys(result).length).toBeGreaterThanOrEqual(50)
-  })
+    // One test renders ~60 states and drives ~25 interactions: about 4 s alone and 8 s on a loaded
+    // machine, so the 5 s default would flake. Measured, not a wall-clock assertion.
+  }, 30_000)
 })

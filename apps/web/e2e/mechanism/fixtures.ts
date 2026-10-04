@@ -7,6 +7,9 @@ import type {
 } from '@playwright/test'
 import { expect } from '@playwright/test'
 import { seedRegisterAndLogin } from './seed-guard.js'
+import { createInvitationViaApi } from '../fixtures/api.js'
+import { enrollMfaViaApi } from '../fixtures/auth.js'
+import { extractTokenFromAcceptUrl, readLatestInvitationAcceptUrl } from '../fixtures/db.js'
 import postgres from 'postgres'
 import { superuserDatabaseUrl } from '../fixtures/db.js'
 import { gotoHydrated } from '../fixtures/hydration.js'
@@ -49,6 +52,65 @@ export async function createProject(context: BrowserContext, name: string): Prom
   const response = await context.request.post('/api/v1/projects', { data: { name } })
   expect(response.ok(), await response.text()).toBeTruthy()
   return ((await response.json()) as { data: { id: string } }).data.id
+}
+
+/** A credential of the seeded user's project, created through the API with the session of `context`.
+ * The secret value is random per call, never a literal; only the id is returned. */
+export async function createCredential(
+  context: BrowserContext,
+  projectId: string,
+  name: string
+): Promise<string> {
+  const response = await context.request.post(`/api/v1/projects/${projectId}/credentials`, {
+    data: { name, value: randomBytes(18).toString('base64url') },
+  })
+  expect(response.ok(), await response.text()).toBeTruthy()
+  return ((await response.json()) as { data: { id: string } }).data.id
+}
+
+/** Adds a second user to the owner's org as a project `viewer`, through PV's real invitation flow
+ * (invite, read the queued accept URL, register with the invitation token, log in) and returns it. The
+ * viewer's session lives in `viewerContext`. The invitation endpoint needs an MFA-enrolled inviter, so
+ * the owner is enrolled first (the same precondition J2 sets up). */
+export async function seedProjectViewer(
+  ownerContext: BrowserContext,
+  viewerContext: BrowserContext,
+  projectId: string,
+  label: string
+): Promise<SeededUser> {
+  await enrollMfaViaApi(ownerContext)
+  const email = uniqueEmail(`mock-${label}`)
+  await createInvitationViaApi(ownerContext, projectId, { email, role: 'viewer' })
+  const token = extractTokenFromAcceptUrl(await readLatestInvitationAcceptUrl(email))
+  const register = await viewerContext.request.post('/api/v1/auth/register', {
+    data: { email, password: testPassword, invitationToken: token },
+  })
+  expect(register.ok(), `invited registration answered HTTP ${register.status()}`).toBeTruthy()
+  const login = await viewerContext.request.post('/api/v1/auth/login', {
+    data: { email, password: testPassword },
+  })
+  expect(login.ok(), `viewer login answered HTTP ${login.status()}`).toBeTruthy()
+  const body = (await login.json()) as { data: { userId: string; orgId: string } }
+  const onboarding = await viewerContext.request.post('/api/v1/users/me/onboarding', {
+    data: { completed: true },
+  })
+  expect(onboarding.ok(), `viewer onboarding answered HTTP ${onboarding.status()}`).toBeTruthy()
+  return { userId: body.data.userId, orgId: body.data.orgId, email }
+}
+
+/** An anonymous form POST to an injected action is redirected to /login before the action runs. */
+export async function expectAnonymousLoginRedirect(
+  request: APIRequestContext,
+  path: string,
+  origin: string
+): Promise<void> {
+  const response = await request.post(path, {
+    form: { title: 'x' },
+    headers: { origin },
+    maxRedirects: 0,
+  })
+  expect(response.status()).toBe(303)
+  expect(response.headers()['location']).toBe('/login')
 }
 
 /** A request context aimed at the API port with the session cookies of `context` (an API-level check

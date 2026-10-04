@@ -245,6 +245,17 @@ mock_check_m3() {
   compose_expect "$port" /login 200 'name="mock-ui-pack-injected" content="m3-shell-head"'
   compose_expect "$port" /login 200 '<form'
   log 'OK: M3 injection into a native public page (component, load, shell head) beside PV markup'
+  # Story 69.2 AC-8: the pack does not override the credential page, so the composer records its three
+  # fills as plain contributions and prints no "this pack overrides <file>" note for a credential point
+  # (the negative of the M1 note a point held by an overridden page gets).
+  local point
+  for point in credential.detail.actions credential.detail.shares credential.detail.metadata; do
+    grep -qF "\"$point\"" "$APP/composition.lock.json" || mock_fail "the lock does not record the credential point $point"
+  done
+  if grep -qF 'injections.credential.detail.' "$APP/composition.lock.json"; then
+    mock_fail 'the lock carries a compose note for a credential point (the pack does not override that page)'
+  fi
+  log 'OK: the credential region fills are recorded in the lock with no held-by-overridden-page note'
   return 0
 }
 

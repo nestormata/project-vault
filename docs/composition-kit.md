@@ -160,18 +160,24 @@ and ask for the point in PV (a repeated need is a PV story).
   override must call `withInjectedLoad` / `injectActions` (CM's own code; PV's guards cannot check it). A
   web-host that predates `hostRoutes` keeps components-only injection working and answers an opt-in with
   "needs a newer web-host"; an older kit ignores the additive field.
-- **A `notFound` result skips contribution loads** (DW-490 item 1). When PV's own load answers `notFound: true`
-  (a 404 or another org's id, for the project page and the project layout alike), `withInjectedLoad` runs no
-  contribution load and gives every contribution a `null` entry, so a contribution that calls the API for the
-  same id can neither turn PV's 404 into a 500 nor tell a foreign id from a missing one. A form action is not
-  covered: SvelteKit runs actions without running the page `load`, so an injected action on a `[projectId]`
-  page authorizes itself through the API (RLS is the enforcement, and a foreign id answers like a missing one).
+- **A `notFound` or a `vaultSealed` result skips contribution loads** (DW-490 item 1, Story 69-2). When PV's own
+  load answers `notFound: true` (a 404 or another org's id, for the project page, the project layout and the
+  credential page alike) or `vaultSealed: true` (every PV API call answers 503: the dashboard and the credential
+  page), `withInjectedLoad` runs no contribution load and gives every contribution a `null` entry. That way a
+  contribution that calls the API for the same id can neither turn PV's 404 into a 500 nor tell a foreign id
+  from a missing one, and cannot turn PV's friendly sealed banner into an error page. Only the literal `true`
+  counts, and the point's `data` stays aligned (`null` per contribution). A form action is not covered:
+  SvelteKit runs actions without running the page `load`, so an injected action on a `[projectId]` or
+  `[credentialId]` page authorizes itself through the API (RLS is the enforcement, and a foreign id answers like
+  a missing one). Point props (`orgRole`, `projectRole`, `project`, `credential`) are display data, never
+  authorization input: a composed action decides from server state, never from a posted role field.
 - **Failure modes you own.** A contribution `load` that throws takes the whole page to the error page (all
   loads settle first, the failing one with the lowest `order` is reported by point name and error name only).
   A hung load hangs the page: PV sets no timeout, because a PV timeout would be a limit on CM; use your own
-  `AbortSignal` on `event.fetch`. On the dashboard with a sealed vault (the API answers 503) PV renders its
-  banner and still runs contribution loads, so a load that calls the API must tolerate the 503 or the banner
-  becomes an error page. A region that renders on a route whose server file dropped `withInjectedLoad` (a CM
+  `AbortSignal` on `event.fetch`. With a sealed vault PV renders its banner and runs no contribution load (see
+  above). A contribution `load` that throws after a successful PV mutation (`invalidateAll()` after an archive
+  or a new version re-runs every load) turns the page into an error page: PV does not catch for CM, so a load
+  must not throw for a data miss. A region that renders on a route whose server file dropped `withInjectedLoad` (a CM
   override) gets `data = null` and never throws.
 - **Region points** (Story 69-1) sit INSIDE the marked element (the guards require the point in the subtree of
   the node `<!-- @region name -->` marks), adjacent to a sibling so PV's own markup gains no whitespace node:
@@ -182,6 +188,26 @@ and ask for the point in PV (a repeated need is a PV story).
   the one-time export key never reaches a contribution. The regions are `project.detail.{summary,export,tiles,
 not-found}`, `project.layout.nav` and `dashboard.home.{vault-sealed,org-summary,project-summary,rotations,
 activity,monitoring,suggested-actions,summary-unavailable,empty}`, each a component you can replace (M4).
+
+**Credential detail regions (Story 69-2).** The credential page (`/projects/[projectId]/credentials/[credentialId]`)
+has the three standard points and 13 region points, every point receiving ONE props contract:
+`{ routeId, params, credential, project, projectId, credentialId, orgRole, projectRole }` (`credential` is `null`
+in the sealed and not-found states, `projectRole` is `project?.role ?? null`; additive, so a fill written against
+`{ credential }` keeps working). The props never carry a revealed value, a share token or a step-up secret: those
+live in the owning component's local state. The regions are `credential.detail.{vault-sealed,not-found,summary,
+actions,nudges,metadata,lifecycle,value,versions,dependencies,rotation,shares,footer}`, each a component under
+`$lib/components/credentials/detail/` you can replace (M4). `credential.detail.actions` renders in the header
+card's action cluster for every role (PV hides nothing, the fill decides); `credential.detail.metadata` renders at
+the end of the metadata `<dl>`, so a fill must be a tile-shaped `<div><dt/><dd/></div>` block. The Shares region is
+two levels: the OUTER `CredentialSharesRegion` (section chrome, the `credential.detail.shares` point at its end)
+renders the INNER native sharer body `CredentialSharesNative`; replace the inner one (M4) and your own fill at
+`credential.detail.shares` still renders, replace the outer one and its point goes with it. A fill reaches the
+action result without PV forwarding anything: `use:enhance` receives the `ActionResult`, and the no-JS path
+re-renders the page with `page.form` (`$app/state`) readable from any component. After a SUCCESSFUL enhanced action Kit re-runs the page load; after a failed one (a denied or rate-limited action, `fail(403)`, `fail(429)`) `use:enhance` applies the result and leaves the loads alone, so a fill that needs fresh data then calls `invalidateAll()` itself (the no-JS POST always re-renders the page and re-runs every load). Where a region's PV control is
+conditional (`nudges`, `lifecycle`, `actions`, `footer`), its component takes the point as its `children`
+snippet, so the point renders whether or not the PV control does. Credential context reaches CentralizeMe through
+these point props, `params` and the server load event, never through a panel (the withdrawn 65-1 panel forwarding
+is superseded).
 
 The kit's `pvInject()` Vite plugin (`@project-vault/composition-kit/vite`, `enforce: 'pre'`) serves
 `virtual:pv-inject/<point>` (the point's components, statically imported, in order) and

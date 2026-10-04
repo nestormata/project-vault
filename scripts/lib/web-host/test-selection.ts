@@ -58,6 +58,10 @@ export const PV_TREE_ONLY_TESTS: ReadonlyMap<string, string> = new Map([
     "pins PV's hooks files with no contributions and who imports the virtual hooks modules; valid only on PV's own build",
   ],
   [
+    'src/routes/(app)/projects/[projectId]/credentials/[credentialId]/credential-detail-render.test.ts',
+    "oracle of PV's own un-composed credential page markup (Story 69.2); valid only on PV's tree",
+  ],
+  [
     'src/routes/server-files-wiring.test.ts',
     "pins the shape of every page and layout server file in PV's own build (no actions where PV has none); valid only on PV's own tree",
   ],

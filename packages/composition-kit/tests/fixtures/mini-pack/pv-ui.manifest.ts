@@ -69,6 +69,16 @@ export default defineUiPack({
         hostRoutes: ['/(app)/projects/[projectId]#page'],
       },
     ],
+    // Story 69.2: a fill at a REGION point of the credential detail page (inside PV's
+    // CredentialSharesRegion), opted in to behavior with `hostRoutes`.
+    'credential.detail.shares': [
+      {
+        component: './injections/CredentialRegionTile.svelte',
+        order: 10,
+        load: './injections/credential-region.server.ts',
+        hostRoutes: ['/(app)/projects/[projectId]/credentials/[credentialId]#page'],
+      },
+    ],
     // Story 68-15: contributions on protected pages. The who tile runs its load as the caller, the
     // theme probe reads the shared theme rune, and the project note's load must never run when PV's
     // own load fails.
