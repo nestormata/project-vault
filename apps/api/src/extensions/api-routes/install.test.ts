@@ -395,3 +395,43 @@ describe('Story 68.8 AC-18 — shared_default_key warn against PV explicit keys'
     await app.close()
   })
 })
+
+describe('Story 71.8 AC-5 — a declared security.delegation is inert on today’s host', () => {
+  const AUDIT_URL = '/cm/audit-events'
+  const AUDIT_KEY = `POST ${AUDIT_URL}`
+
+  async function bootAudit(delegation: boolean | undefined, handlerSpy: () => unknown) {
+    const security = { capability: 'cm.audit', ...(delegation === undefined ? {} : { delegation }) }
+    const declaration = {
+      add: [{ method: 'POST', url: AUDIT_URL, options: { security } }],
+    }
+    const state = loadedApiRoutesState(declaration as never, {
+      [AUDIT_KEY]: { handler: handlerSpy },
+    })
+    return boot(state, async (instance) => {
+      pvRoutes(instance)
+      await instance.after()
+    })
+  }
+
+  it('boots, answers 401 to a request without a session, never calls the handler, and leaves the status envelope unchanged', async () => {
+    const delegatedSpy = vi.fn(async () => ({ marker: SECRET_SOURCE_MARKER }))
+    const plainSpy = vi.fn(async () => ({ marker: SECRET_SOURCE_MARKER }))
+    const withDelegation = await bootAudit(true, delegatedSpy)
+    const plain = await bootAudit(undefined, plainSpy)
+
+    expect(withDelegation.runtime.registry.get(AUDIT_KEY)).toMatchObject({ origin: 'added' })
+    const res = await withDelegation.app.inject({ method: 'POST', url: AUDIT_URL })
+    expect(res.statusCode).toBe(401)
+    expect(res.json()).toMatchObject({ code: 'access_token_missing' })
+    const plainRes = await plain.app.inject({ method: 'POST', url: AUDIT_URL })
+    expect(plainRes.statusCode).toBe(401)
+    expect(plainRes.body).toBe(res.body)
+    expect(delegatedSpy).not.toHaveBeenCalled()
+    const status = JSON.stringify(apiRoutesStatus(withDelegation.runtime.table))
+    expect(status).toBe(JSON.stringify(apiRoutesStatus(plain.runtime.table)))
+    expect(status).not.toContain('delegation')
+    await withDelegation.app.close()
+    await plain.app.close()
+  })
+})
