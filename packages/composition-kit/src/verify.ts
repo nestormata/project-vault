@@ -35,6 +35,8 @@ export interface VerifyOptions {
 
 export interface TestsResult {
   ok: boolean
+  /** The app's own config file the tests ran with (relative to the app root). */
+  config?: string
   run: number
   failed: number
   excluded: string[]
@@ -126,6 +128,18 @@ async function preflight(
   return { lock, problems: [...tamperProblems(options.appRoot, lock), ...consistency] }
 }
 
+// Vitest's own lookup order: vitest.config.* before vite.config.*; the extensions in a fixed order.
+const CONFIG_EXTENSIONS = ['ts', 'mts', 'cts', 'js', 'mjs', 'cjs']
+const CONFIG_STEMS = ['vitest.config', 'vite.config']
+const EXCLUDED_FAILING_HINT =
+  "failing test is listed in composition.lock.json excludedPvTests; the app's vitest config must apply the lock's exclusions (vitestConfig({}, { composedRoot }))"
+
+/** The app's own Vitest/Vite config file name at the app root (no recursive search), or null. */
+export function findVitestConfig(appRoot: string): string | null {
+  const names = CONFIG_STEMS.flatMap((stem) => CONFIG_EXTENSIONS.map((ext) => `${stem}.${ext}`))
+  return names.find((name) => existsSync(join(appRoot, name))) ?? null
+}
+
 function testsStep(options: VerifyOptions, lock: CompositionLock): TestsResult {
   const excluded = [...lock.excludedPvTests]
   const empty = { ok: false, run: 0, failed: 0, excluded, failures: [] as string[] }
@@ -136,22 +150,22 @@ function testsStep(options: VerifyOptions, lock: CompositionLock): TestsResult {
       problems: ['cannot find vitest from the app root; install vitest in the app'],
     }
   }
+  const configName = findVitestConfig(options.appRoot)
+  if (configName === null) {
+    return {
+      ...empty,
+      problems: [
+        `no vitest.config.* or vite.config.* in ${options.appRoot}; pv-verify runs your tests with your own config so they see the same kit plugins as the build`,
+      ],
+    }
+  }
   const dir = join(options.appRoot, '.pv-compose')
   mkdirSync(dir, { recursive: true })
-  const config = join(dir, 'verify.vitest.config.mjs')
-  writeFileSync(
-    config,
-    [
-      "import { vitestConfig } from '@project-vault/web-host/vitest.config'",
-      `export default vitestConfig({}, { appRoot: ${JSON.stringify(options.appRoot)}, composedRoot: ${JSON.stringify(options.appRoot)} })`,
-      '',
-    ].join('\n')
-  )
   // The guards' scan root belongs to the guards step only: CM's own tests must not see it.
   const run = runVitest({
     bin,
     root: options.appRoot,
-    config,
+    config: join(options.appRoot, configName),
     reportFile: join(dir, 'verify-tests.json'),
     withoutEnv: ['PV_GUARD_APP_ROOT', 'PV_GUARD_EXEMPT_FILES'],
   })
@@ -164,7 +178,13 @@ function testsStep(options: VerifyOptions, lock: CompositionLock): TestsResult {
     }
   }
   const report: VitestReport = run.report
+  const excludedFailing = report.testResults.some(
+    (suite) =>
+      suiteFailures(suite).length > 0 &&
+      excluded.includes(suite.name.slice(options.appRoot.length + 1))
+  )
   return {
+    config: configName,
     ok: run.status === 0 && report.numFailedTests === 0,
     run: report.numTotalTests,
     failed: report.numFailedTests,
@@ -172,10 +192,12 @@ function testsStep(options: VerifyOptions, lock: CompositionLock): TestsResult {
     failures: report.testResults.flatMap((suite) =>
       suiteFailures(suite).map((line) => `${suite.name.slice(options.appRoot.length + 1)}: ${line}`)
     ),
-    problems:
-      run.status === 0 || report.numFailedTests > 0
+    problems: [
+      ...(run.status === 0 || report.numFailedTests > 0
         ? []
-        : [`vitest exited with code ${String(run.status)}`],
+        : [`vitest exited with code ${String(run.status)}`]),
+      ...(excludedFailing ? [EXCLUDED_FAILING_HINT] : []),
+    ],
   }
 }
 

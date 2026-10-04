@@ -8,12 +8,12 @@
 #   mutations 1-6, 8   each applied to a COPY of the pack, composed into the same app, and expected red
 #   mutation 7         a PV file the pack overrides: its test is in the lock's excludedPvTests and a
 #                      failing assertion planted in the composed copy of that test does not run
+#   mutation 10        the app's own vitest config without pvHooks() makes pv-verify --only tests red
 #   mutation 9         the pack overrides a guard test file itself: the pristine guard still runs, the
 #                      lock records it, and the guards stay green
 #
-# The unit-test step of pv-verify is proven for exclusion here and run in full by the `compose` variant
-# (which still passes its tree-pinned exclusions explicitly): a pack that contributes hooks changes what
-# a handful of PV tests pin about PV's own build.
+# The unit-test step of pv-verify runs here with the app's own vitest.config.ts (Story 68-21) and a
+# mutation without pvHooks() proves the run is not vacuous; exclusion is proven by mutation 7.
 
 readonly COMPOSE_BIN='node_modules/@project-vault/composition-kit/dist/cli.js'
 
@@ -164,6 +164,29 @@ verify_overridden_guard() {
   return 0
 }
 
+# Story 68-21: pv-verify --only tests runs the app's own vitest.config.ts (pvHooks, pvNav, pvReplace),
+# so the composed mini pack's hooks, nav and replacement resolve exactly as in the build. The mutation
+# drops pvHooks() from a copy of that config: the same run must go red, so the assertion is not vacuous.
+verify_own_config_tests() {
+  local status=0 config="$APP/vitest.config.ts" backup="$WORK/vitest.config.ts.orig"
+  verify_run --only tests || status=$?
+  if [[ "$status" != '0' ]] || ! grep -Eq 'pv-verify: tests: [1-9][0-9]* run' "$WORK/verify.out" ||
+    ! grep -qF 'config vitest.config.ts' "$WORK/verify.out"; then
+    verify_fail "pv-verify --only tests with the app's own config exited $status or did not report its run"
+  fi
+  log "OK: pv-verify tests ran the app's own vitest.config.ts over the composed mini pack (hooks, nav, replacement)"
+  cp "$config" "$backup"
+  sed -i '/pvHooks({ appRoot: composedRoot }),/d' "$config"
+  status=0
+  verify_run --only tests || status=$?
+  cp "$backup" "$config"
+  if [[ "$status" != '1' ]]; then
+    verify_fail "mutation 10: pv-verify tests exited $status over a config without pvHooks()"
+  fi
+  log 'OK: mutation 10 is red (the app config without pvHooks() fails the same tests run)'
+  return 0
+}
+
 compose_verify_cases() {
   local status=0 pack
   verify_run --only guards || status=$?
@@ -172,6 +195,7 @@ compose_verify_cases() {
   fi
   grep -q 'pv-verify: guards: .* passed, 0 failed' "$WORK/verify.out" || verify_fail 'the guards summary line is missing'
   log 'OK: pv-verify guards pass over the composed mini pack'
+  verify_own_config_tests
 
   pack="$(verify_pack_copy html)"
   verify_mutate_html "$pack"

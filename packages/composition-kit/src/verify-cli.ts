@@ -85,6 +85,7 @@ function testLines(report: VerifyReport): string[] {
   const failedNote = tests.failed > 0 ? `, ${tests.failed} failed` : ''
   return [
     `pv-verify: tests: ${tests.run} run, ${tests.excluded.length} excluded${failedNote}`,
+    ...(tests.config === undefined ? [] : [`  config ${tests.config}`]),
     ...tests.excluded.map((test) => `  excluded ${test}`),
     ...tests.failures.map((line) => `    ${line}`),
     ...tests.problems.map((line) => `  ${line}`),
