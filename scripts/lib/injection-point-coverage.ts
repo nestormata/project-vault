@@ -8,6 +8,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import ts from 'typescript'
+import { deriveRegionHosts } from './region-hosts.js'
 import {
   listRouteFiles,
   parseMarkup,
@@ -79,6 +80,23 @@ function stringList(expression: ts.Expression | undefined): string[] {
   return expression.elements.filter(ts.isStringLiteralLike).map((entry) => entry.text)
 }
 
+/** `...regionPoints('<propsType>', ['<routeId>#<scope>', ...], ['<region name>', ...])`: region
+ * points all hosted by the same routes. The host routes are stored comma-joined in `hostRoutes`
+ * (a route id never contains a comma). */
+function regionRows(call: ts.CallExpression): Map<string, string>[] {
+  const [propsType, hosts, names] = call.arguments
+  if (propsType === undefined || !ts.isStringLiteralLike(propsType)) return []
+  return stringList(names).map(
+    (name) =>
+      new Map([
+        ['name', name],
+        ['kind', 'region'],
+        ['propsType', propsType.text],
+        ['hostRoutes', stringList(hosts).join(',')],
+      ])
+  )
+}
+
 /** The rows one `INJECTION_POINTS` element stands for: an object literal is one row, and a
  * `...pagePoints('<propsType>', ['<area>.<page>', ...])` spread is the three standard points of
  * each listed page (the registry module expands it the same way at runtime). */
@@ -86,7 +104,9 @@ function registryRows(element: ts.Expression): Map<string, string>[] {
   if (ts.isObjectLiteralExpression(element)) return [stringFields(element)]
   if (!ts.isSpreadElement(element) || !ts.isCallExpression(element.expression)) return []
   const call = element.expression
-  if (!ts.isIdentifier(call.expression) || call.expression.text !== 'pagePoints') return []
+  if (!ts.isIdentifier(call.expression)) return []
+  if (call.expression.text === 'regionPoints') return regionRows(call)
+  if (call.expression.text !== 'pagePoints') return []
   const [propsType, pages] = call.arguments
   if (propsType === undefined || !ts.isStringLiteralLike(propsType)) return []
   return stringList(pages).flatMap((page) =>
@@ -225,6 +245,54 @@ export function registryProblems(
       problems.push(`${REGISTRY_FILE}: "${name}" is registered but no file renders it`)
   }
   return problems
+}
+
+export interface RegionHosts {
+  problems: string[]
+  /** Region point name -> the host routes DERIVED from the import graph. */
+  derived: Map<string, string[]>
+}
+
+/** Story 69.1 Q1: every region point's declared host routes (`regionPoints(...)`) checked against the
+ * routes whose import graph reaches the component that renders it, both ways. A region nobody reaches
+ * is a problem (an empty host list is a bug, not a stub). Only meaningful over a complete PV tree. */
+export function regionHostProblems(
+  webRoot: string,
+  registry: ReadonlyMap<string, ReadonlyMap<string, string>>,
+  scanned: readonly PointFile[]
+): RegionHosts {
+  const regions = [...registry].filter(([, fields]) => fields.get('kind') === 'region')
+  const fileOf = new Map(
+    regions.flatMap(([name]) => {
+      const file = scanned.find((candidate) =>
+        candidate.names.some((use) => use.name === name)
+      )?.rel
+      return file === undefined ? [] : [[name, file] as const]
+    })
+  )
+  const hostsByFile = deriveRegionHosts(webRoot, [...new Set(fileOf.values())])
+  const result: RegionHosts = { problems: [], derived: new Map() }
+  for (const [name, fields] of regions) {
+    const file = fileOf.get(name)
+    if (file === undefined) continue
+    const declared = (fields.get('hostRoutes') ?? '').split(',').filter((host) => host !== '')
+    const derived = hostsByFile.get(file) ?? []
+    result.derived.set(name, derived)
+    if (derived.length === 0) {
+      result.problems.push(`${REGISTRY_FILE}: "${name}" is rendered by no page or layout (${file})`)
+    }
+    for (const host of declared.filter((entry) => !derived.includes(entry))) {
+      result.problems.push(
+        `${REGISTRY_FILE}: "${name}" declares host route "${host}" but no such route renders ${file}`
+      )
+    }
+    for (const host of derived.filter((entry) => !declared.includes(entry))) {
+      result.problems.push(
+        `${REGISTRY_FILE}: "${name}" is rendered by "${host}" (it imports ${file}) but the registry does not declare it`
+      )
+    }
+  }
+  return result
 }
 
 function prefixesOf(names: readonly (string | null)[]): string[] {
@@ -394,6 +462,12 @@ export function checkInjectionPointCoverage(options: CoverageOptions): CoverageR
   )
   const markup = scanMarkup(options.webRoot, skip, problems)
   problems.push(...registryProblems(markup, known, skip.size === 0))
+  // Over a composed tree a CM override may stop importing a region component; only a complete PV
+  // tree is checked for host routes.
+  if (skip.size === 0 && registry !== null) {
+    const fields = readRegistryFields(options.webRoot) ?? new Map()
+    problems.push(...regionHostProblems(options.webRoot, fields, markup).problems)
+  }
   const namesOf = new Map(markup.map((file) => [file.rel, file.names.map((use) => use.name)]))
   problems.push(...routeProblems(pvRoutes, pvServers, namesOf))
   for (const server of pvServers) {

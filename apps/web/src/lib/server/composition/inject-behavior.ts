@@ -114,6 +114,22 @@ function runAction(entry: ActionEntry): Action {
   }
 }
 
+/** PV's own load answered "this entity does not exist for you": the literal `notFound: true`. */
+function isNotFound(data: object | undefined): boolean {
+  return (data as { notFound?: unknown } | undefined)?.notFound === true
+}
+
+/** No load ran: one null entry per contribution of every point of the slice, or nothing at all when
+ * the slice has no contributions (PV's own build). */
+function skippedLoads(points: readonly LoadPoint[] | undefined): InjectedData {
+  if (points === undefined || points.length === 0) return {}
+  return {
+    __inject: Object.fromEntries(
+      points.map((entry) => [entry.point, entry.contributions.map(() => null)])
+    ),
+  }
+}
+
 export function createInjectBehavior(tables: BehaviorTables) {
   const loads = new Map(Object.entries(tables.loads))
   const actions = new Map(Object.entries(tables.actions))
@@ -139,13 +155,19 @@ export function createInjectBehavior(tables: BehaviorTables) {
       routeId: string,
       scope: InjectScope
     ): (event: Event) => Promise<Awaited<Data> & InjectedData> {
-      return async (event) =>
-        ({
-          ...((await own(event)) as object),
-          // Kit hands the same event to PV's load and to this wrapper; PV's own load only needs the
-          // slice of it (params, locals, ...) it declares, so `Event` is not tied to Kit's event types.
-          ...(await injectLoad(event as BehaviorEvent, routeId, scope)),
-        }) as Awaited<Data> & InjectedData
+      return async (event) => {
+        const ownData = (await own(event)) as object | undefined
+        // Story 69.1 (Q2, DW-490 item 1): PV's own 404 result (`notFound: true`) means there is no
+        // entity a contribution could load for, and a contribution that calls the API for the same id
+        // would turn PV's 404 into a 500 or an existence oracle. No contribution load runs; every
+        // contribution still gets a null entry so the point's `data` stays aligned.
+        const injected = isNotFound(ownData)
+          ? skippedLoads(loads.get(`${routeId}#${scope}`))
+          : // Kit hands the same event to PV's load and to this wrapper; PV's own load only needs the
+            // slice of it (params, locals, ...) it declares, so `Event` is not tied to Kit's event types.
+            await injectLoad(event as BehaviorEvent, routeId, scope)
+        return { ...ownData, ...injected } as Awaited<Data> & InjectedData
+      }
     },
 
     /** The injected form actions of a page, keyed `<point>.<name>` (exact-match, null prototype),

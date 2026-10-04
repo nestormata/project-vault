@@ -14,6 +14,18 @@ const FOO = 'foo.page.before'
 const HEAD = 'shell.head'
 const END = 'shell.header.end'
 
+const FOO_HOST = '/(app)/foo#page'
+const REGION = 'region.thing.tiles'
+const REGION_FILE = 'src/lib/components/Region.svelte'
+const REGION_IMPORT = '$lib/components/Region.svelte'
+const PAGE_BODY = `<InjectionPoint name="${FOO}" />\n<Region />`
+
+/** A registry spread declaring the region point and the host routes that render it. */
+function regionRow(hosts: string, names = `'${REGION}'`): string {
+  const list = hosts === '' ? '' : hosts.split(',').map((host) => `'${host}'`)
+  return `  ...regionPoints('P', [${list}], [${names}]),`
+}
+
 function row(name: string, kind = 'standard', extra = ''): string {
   return `  { name: '${name}', kind: '${kind}', propsType: 'P'${extra} },`
 }
@@ -27,21 +39,17 @@ function tree(): string {
       row(FOO),
       row(HEAD, SHELL),
       row(END, SHELL, ", hostRouteId: '/(app)'"),
-      row('region.thing.tiles', 'region'),
+      regionRow(FOO_HOST),
     ].join('\n')}\n]\n`
   )
-  writeFixture(root, PAGE, `<InjectionPoint name="${FOO}" />`)
+  writeFixture(root, PAGE, `<script>import Region from '${REGION_IMPORT}'</script>\n${PAGE_BODY}`)
   writeFixture(
     root,
     'src/routes/+layout.svelte',
     `<svelte:head><InjectionPoint name="${HEAD}" /></svelte:head>`
   )
   writeFixture(root, 'src/lib/components/shell/AppShell.svelte', `<InjectionPoint name="${END}" />`)
-  writeFixture(
-    root,
-    'src/lib/components/Region.svelte',
-    '<InjectionPoint name="region.thing.tiles" />'
-  )
+  writeFixture(root, REGION_FILE, `<InjectionPoint name="${REGION}" />`)
   return root
 }
 
@@ -59,11 +67,12 @@ describe('buildInjectionPointsManifest (Story 68.4 AC-2)', () => {
         scope: 'page',
       },
       {
-        name: 'region.thing.tiles',
-        file: 'src/lib/components/Region.svelte',
+        name: REGION,
+        file: REGION_FILE,
         kind: 'region',
         propsType: 'P',
         scope: 'component',
+        hostRoutes: [FOO_HOST],
       },
       {
         name: HEAD,
@@ -123,6 +132,98 @@ describe('buildInjectionPointsManifest (Story 68.4 AC-2)', () => {
     expect(buildInjectionPointsManifest(root).problems.join('\n')).toContain(
       '"Foo.Bar" breaks the naming rule'
     )
+  })
+})
+
+// Story 69.1 AC-4 / Q1: a region point's host routes are DERIVED from the import graph (route files
+// to the region component, through other components too) and the registry declaration is checked
+// against it both ways. The manifest never trusts the declaration.
+describe('region point host routes (Story 69.1)', () => {
+  const problemsOf = (root: string): string =>
+    buildInjectionPointsManifest(root).problems.join('\n')
+
+  function declare(root: string, hosts: string, names?: string): void {
+    writeFixture(
+      root,
+      REGISTRY,
+      `export const INJECTION_POINTS = [\n${row(FOO)}\n${row(HEAD, SHELL)}\n${row(END, SHELL, ", hostRouteId: '/(app)'")}\n${regionRow(hosts, names)}\n]\n`
+    )
+  }
+
+  it('resolves a region reached through another component, and lists every host sorted', () => {
+    const root = tree()
+    writeFixture(root, REGION_FILE, `<InjectionPoint name="${REGION}" />`)
+    writeFixture(
+      root,
+      'src/lib/components/Wrapper.svelte',
+      `<script>import Region from './Region.svelte'</script><Region />`
+    )
+    writeFixture(
+      root,
+      PAGE,
+      `<script>import Wrapper from '$lib/components/Wrapper.svelte'</script>\n<InjectionPoint name="${FOO}" />\n<Wrapper />`
+    )
+    writeFixture(
+      root,
+      'src/routes/(app)/foo/+layout.svelte',
+      `<script>import Region from '${REGION_IMPORT}'</script><Region />`
+    )
+    declare(root, `${FOO_HOST},/(app)/foo#layout`)
+    const manifest = buildInjectionPointsManifest(root)
+    expect(manifest.problems).toEqual([])
+    expect(manifest.points.find((point) => point.name === REGION)).toMatchObject({
+      scope: 'component',
+      hostRoutes: ['/(app)/foo#layout', FOO_HOST],
+    })
+  })
+
+  it('fails a declared host route that does not import the region component', () => {
+    const root = tree()
+    declare(root, `${FOO_HOST},/(app)/bar#page`)
+    expect(problemsOf(root)).toContain(
+      `"${REGION}" declares host route "/(app)/bar#page" but no such route renders ${REGION_FILE}`
+    )
+  })
+
+  it('fails an importing route the registry does not declare', () => {
+    const root = tree()
+    writeFixture(
+      root,
+      'src/routes/(app)/bar/+page.svelte',
+      `<script>import Region from '${REGION_IMPORT}'</script><Region />\n<InjectionPoint name="bar.page.before" />`
+    )
+    expect(problemsOf(root)).toContain(
+      `"${REGION}" is rendered by "/(app)/bar#page" (it imports ${REGION_FILE}) but the registry does not declare it`
+    )
+  })
+
+  it('fails a region component that no route file reaches (an empty host list is a bug, not a stub)', () => {
+    const root = tree()
+    writeFixture(root, PAGE, PAGE_BODY.replace('<Region />', ''))
+    declare(root, '')
+    expect(problemsOf(root)).toContain(`"${REGION}" is rendered by no page or layout`)
+  })
+
+  it('ignores a type-only import of the region component', () => {
+    const root = tree()
+    writeFixture(
+      root,
+      PAGE,
+      `<script lang="ts">import type Region from '${REGION_IMPORT}'</script>\n<InjectionPoint name="${FOO}" />`
+    )
+    expect(problemsOf(root)).toContain(`"${REGION}" declares host route "${FOO_HOST}"`)
+  })
+
+  it('keeps schemaVersion 1 and a deterministic file with the additive hostRoutes field', () => {
+    const root = tree()
+    const { text } = buildInjectionPointsManifest(root)
+    const parsed = JSON.parse(text) as {
+      schemaVersion: number
+      points: { hostRoutes?: string[] }[]
+    }
+    expect(parsed.schemaVersion).toBe(1)
+    expect(parsed.points.filter((point) => point.hostRoutes !== undefined)).toHaveLength(1)
+    expect(text).toBe(buildInjectionPointsManifest(root).text)
   })
 })
 

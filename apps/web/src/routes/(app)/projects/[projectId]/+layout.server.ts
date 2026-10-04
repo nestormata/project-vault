@@ -18,7 +18,8 @@ const ownLoad = (async ({ params, fetch, locals }) => {
     return { projectId: params.projectId, orgRole, project }
   } catch (error) {
     if (error instanceof ApiClientError && error.status === 404) {
-      return { projectId: params.projectId, orgRole, project: null }
+      // `notFound: true` lets `withInjectedLoad` skip contribution loads on a 404 (Story 69.1 Q2).
+      return { projectId: params.projectId, orgRole, project: null, notFound: true as const }
     }
     throw error
   }
