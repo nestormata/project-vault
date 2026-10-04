@@ -7,6 +7,7 @@ import {
   createProject,
   expectAnonymousLoginRedirect,
   open,
+  seedCredentialPage,
   seedOrgOwner,
   seedProjectViewer,
   trackHydrationMismatch,
