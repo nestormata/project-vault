@@ -3,6 +3,16 @@ import { EXTENSION_DB_PLACEHOLDER_CREDENTIAL } from '@project-vault/db'
 import { DEV_AUTH_DUMMY_PASSWORD_HASH } from './dev-dummy-hash.js'
 import { validateInternalTlsEnv } from './internal-tls.js'
 import {
+  parseDelegationVerifyKeys,
+  validateDelegationVerifyKeys,
+  type DelegationVerifyKey,
+} from './delegation-verify-keys.js'
+import {
+  type VerifyKeySetParseError,
+  parseVerifyKeySet,
+  type VerifyKeySetEntry,
+} from './verify-key-set.js'
+import {
   CLI_MAX_VERSION_LENGTH,
   isCliAcceptedReleaseVersion,
   parseCliWithdrawnVersions,
@@ -652,65 +662,12 @@ function validateBackupEnv(
 }
 
 // Story 30.1 AC2/AC4/AC5: shape/format-only validation — no crypto (no
-// crypto.createPublicKey()/createVerify()), that is Story 30.2's request-time job.
-export type HandoffVerifyKey = { kid: string; publicKeyPem: string }
+// crypto.createPublicKey()/createVerify()), that is Story 30.2's request-time job. Story 71.6:
+// the parse itself now lives in verify-key-set.ts, shared with VAULT_DELEGATION_VERIFY_KEYS, so
+// the shape rules exist once; the handoff messages stay byte-identical (they carry the var name).
+export type HandoffVerifyKey = VerifyKeySetEntry
 
 export class HandoffVerifyKeysParseError extends Error {}
-
-const HANDOFF_PEM_HEADER = '-----BEGIN PUBLIC KEY-----'
-const HANDOFF_PEM_FOOTER = '-----END PUBLIC KEY-----'
-
-function parseHandoffVerifyKeysJson(raw: string): unknown {
-  try {
-    return JSON.parse(raw)
-  } catch {
-    throw new HandoffVerifyKeysParseError('VAULT_HANDOFF_VERIFY_KEYS must be valid JSON')
-  }
-}
-
-// Code-review finding (Blind Hunter/Edge Case Hunter): a bare `includes()` check on both the
-// header and footer accepts a reversed or duplicated-marker string (e.g. footer before header) as
-// "well-formed" — it only checked that both substrings appeared *somewhere*, not that the footer
-// actually closes a block opened by the header. Require the footer to start strictly after the
-// header ends, which also rejects an empty/overlapping header+footer pair. Split out of
-// toHandoffVerifyKey to keep it under the repo's eslint cyclomatic-complexity threshold.
-function isWellFormedHandoffPem(publicKeyPem: unknown): publicKeyPem is string {
-  if (typeof publicKeyPem !== 'string') return false
-  const headerIndex = publicKeyPem.indexOf(HANDOFF_PEM_HEADER)
-  const footerIndex = publicKeyPem.indexOf(HANDOFF_PEM_FOOTER)
-  return (
-    headerIndex !== -1 &&
-    footerIndex !== -1 &&
-    footerIndex >= headerIndex + HANDOFF_PEM_HEADER.length
-  )
-}
-
-// Split out of parseHandoffVerifyKeys to keep both functions under the repo's eslint
-// cyclomatic-complexity threshold — this validates and normalizes a single array element.
-function toHandoffVerifyKey(item: unknown, seenKids: Set<string>): HandoffVerifyKey {
-  if (!item || typeof item !== 'object') {
-    throw new HandoffVerifyKeysParseError(
-      'VAULT_HANDOFF_VERIFY_KEYS entries must be objects with kid/publicKeyPem'
-    )
-  }
-  const kid = (item as Record<string, unknown>)['kid']
-  const publicKeyPem = (item as Record<string, unknown>)['publicKeyPem']
-  if (typeof kid !== 'string' || kid.length < 1 || kid.length > 128) {
-    throw new HandoffVerifyKeysParseError(
-      'VAULT_HANDOFF_VERIFY_KEYS kid must be a non-empty string of at most 128 characters'
-    )
-  }
-  if (!isWellFormedHandoffPem(publicKeyPem)) {
-    throw new HandoffVerifyKeysParseError(
-      'VAULT_HANDOFF_VERIFY_KEYS publicKeyPem must be a well-formed PEM public key block'
-    )
-  }
-  if (seenKids.has(kid)) {
-    throw new HandoffVerifyKeysParseError('VAULT_HANDOFF_VERIFY_KEYS kid values must be unique')
-  }
-  seenKids.add(kid)
-  return { kid, publicKeyPem }
-}
 
 // Story 30.1 Task 2: the single, shared parse implementation — both the boot-time superRefine
 // below and the module's cached `handoffVerifyKeys` export (for Story 30.2 to import) call this
@@ -718,13 +675,12 @@ function toHandoffVerifyKey(item: unknown, seenKids: Set<string>): HandoffVerify
 // shape violation; callers decide how to surface that (a FATAL env issue at boot here, or a
 // pre-validated call after boot for 30.2).
 export function parseHandoffVerifyKeys(raw: string | undefined): HandoffVerifyKey[] {
-  if (!raw) return []
-  const parsed = parseHandoffVerifyKeysJson(raw)
-  if (!Array.isArray(parsed)) {
-    throw new HandoffVerifyKeysParseError('VAULT_HANDOFF_VERIFY_KEYS must be a JSON array')
+  try {
+    return parseVerifyKeySet(raw, 'VAULT_HANDOFF_VERIFY_KEYS')
+  } catch (err) {
+    // parseVerifyKeySet only ever throws VerifyKeySetParseError.
+    throw new HandoffVerifyKeysParseError((err as VerifyKeySetParseError).message)
   }
-  const seenKids = new Set<string>()
-  return parsed.map((item) => toHandoffVerifyKey(item, seenKids))
 }
 
 function validateHandoffVerifyKeys(raw: string | undefined, ctx: z.RefinementCtx): void {
@@ -734,6 +690,24 @@ function validateHandoffVerifyKeys(raw: string | undefined, ctx: z.RefinementCtx
   } catch (err) {
     const message = err instanceof Error ? err.message : 'VAULT_HANDOFF_VERIFY_KEYS is invalid'
     addEnvIssue(ctx, 'VAULT_HANDOFF_VERIFY_KEYS', `FATAL: ${message}`)
+  }
+}
+
+// Story 71.6 AC-4: reports one FATAL issue per problem; messages never carry PEM text.
+function reportDelegationVerifyKeys(
+  env: {
+    VAULT_DELEGATION_VERIFY_KEYS?: string
+    VAULT_HANDOFF_VERIFY_KEYS?: string
+    VAULT_HANDOFF_INSTANCE_ID?: string
+  },
+  ctx: z.RefinementCtx
+): void {
+  for (const message of validateDelegationVerifyKeys(
+    env.VAULT_DELEGATION_VERIFY_KEYS,
+    env.VAULT_HANDOFF_VERIFY_KEYS,
+    env.VAULT_HANDOFF_INSTANCE_ID
+  )) {
+    addEnvIssue(ctx, 'VAULT_DELEGATION_VERIFY_KEYS', `FATAL: ${message}`)
   }
 }
 
@@ -1502,6 +1476,14 @@ const envSchema = z
       (value) => (value === '' ? undefined : value),
       z.string().min(1).default('https://app.centralizeme.com')
     ),
+    // Story 71.6: public verification key(s) for service-delegated actor assertions, a JSON array
+    // of {kid, publicKeyPem}. Its own set, never the handoff set; validated at boot by
+    // reportDelegationVerifyKeys (delegation-verify-keys.ts) and parsed once into
+    // `delegationVerifyKeys` below. Empty/unset means delegated routes reject every call.
+    VAULT_DELEGATION_VERIFY_KEYS: z.preprocess(
+      (v) => (v === '' ? undefined : v),
+      z.string().optional()
+    ),
     // Story 43.6 (D5) — operator tightening of the CLI version policy served publicly by
     // GET /api/v1/client-version-policy. Versions only, never free text; merged tighten-only with
     // the baked upstream policy (modules/client-versions/cli-version-policy.ts).
@@ -1578,6 +1560,7 @@ const envSchema = z
     }
     validateBackupEnv(env, ctx)
     validateHandoffVerifyKeys(env.VAULT_HANDOFF_VERIFY_KEYS, ctx)
+    reportDelegationVerifyKeys(env, ctx)
     validateInternalTlsEnv(env, ctx)
   })
 
@@ -1705,4 +1688,10 @@ export const env = loadEnv()
 // directly rather than re-parsing raw env text per request.
 export const handoffVerifyKeys: HandoffVerifyKey[] = parseHandoffVerifyKeys(
   env.VAULT_HANDOFF_VERIFY_KEYS
+)
+
+// Story 71.6: same lifecycle as `handoffVerifyKeys` — parsed once at module load, after loadEnv()
+// has already exited on an invalid set; frozen so no consumer can mutate the live key set.
+export const delegationVerifyKeys: readonly DelegationVerifyKey[] = parseDelegationVerifyKeys(
+  env.VAULT_DELEGATION_VERIFY_KEYS
 )
