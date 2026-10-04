@@ -96,6 +96,15 @@ PEM string actually decodes to a usable Ed25519 key is done at request time by t
 | Valid array of `{ kid, publicKeyPem }` | Parses successfully; exposed as the cached `handoffVerifyKeys` export, never re-parsed per request. |
 | Not valid JSON, not an array, a duplicated `kid`, or a `publicKeyPem` missing its PEM header/footer | Boot `FATAL:` env issue — the process exits. Never a silently-ignored value, never a runtime 500 on first use. |
 
+### Delegation key set (Story 71.6)
+
+`VAULT_DELEGATION_VERIFY_KEYS` is a separate key set for service-delegated actor assertions. It is
+never the handoff set: its `kid` values and its public keys must both differ from
+`VAULT_HANDOFF_VERIFY_KEYS`, and boot fails if they overlap. It holds Ed25519 public keys only, needs
+`VAULT_HANDOFF_INSTANCE_ID` when non-empty, and does not depend on `VAULT_HANDOFF_ENABLED`. Like the
+handoff set it is parsed once at boot, so every instance restarts after a change. Rotation and
+emergency revoke procedure: Story 71-9.
+
 ---
 
 ## Clock-skew magnitude signal

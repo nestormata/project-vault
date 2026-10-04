@@ -1,5 +1,13 @@
-import { createPublicKey, verify as cryptoVerify, type KeyObject } from 'node:crypto'
+import type { KeyObject } from 'node:crypto'
 import { env, handoffVerifyKeys } from '../../config/env.js'
+import {
+  byteLength,
+  isPlainObject,
+  readStringClaim,
+  resolveEd25519Key,
+  verifyEdDsaJws,
+  type JwsCoreReason,
+} from './eddsa-jws-core.js'
 
 /**
  * Story 30.2 Task 4: the EdDSA compact-JWS verifier for CentralizeMe-issued handoff tokens.
@@ -60,62 +68,18 @@ function reject(reason: HandoffRejectReason): HandoffVerifyResult {
   return { ok: false, reason }
 }
 
-function base64UrlDecode(segment: string): Buffer | undefined {
-  try {
-    return Buffer.from(segment, 'base64url')
-  } catch {
-    return undefined
-  }
-}
-
-// `unknown` already admits `undefined`, so the failure case needs no separate union member.
-function parseJson(buf: Buffer): unknown {
-  try {
-    return JSON.parse(buf.toString('utf8'))
-  } catch {
-    return undefined
-  }
-}
-
-function byteLength(value: string): number {
-  return Buffer.byteLength(value, 'utf8')
-}
-
-type Header = { alg: unknown; kid: unknown; typ: unknown; enc?: unknown }
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function parseHeader(part: string): Header | undefined {
-  const raw = base64UrlDecode(part)
-  if (!raw) return undefined
-  const parsed = parseJson(raw)
-  if (!isPlainObject(parsed)) return undefined
-  return parsed as unknown as Header
+/** Maps the shared core's neutral reasons onto the handoff matrix (Story 71.6 AC-1.1). */
+const CORE_REASON_TO_HANDOFF: Record<JwsCoreReason, HandoffRejectReason> = {
+  oversized: 'handoff_claims_oversized',
+  malformed: 'handoff_malformed_claim',
+  unexpected_alg: 'handoff_unexpected_alg',
+  unknown_kid: 'handoff_unknown_kid',
+  signature_invalid: 'handoff_signature_invalid',
 }
 
 /** Resolves the EdDSA (Ed25519) public key for `kid` — exact match only, never a scan-and-try. */
 function resolveKey(kid: string): KeyObject | undefined {
-  const entry = handoffVerifyKeys.find((k) => k.kid === kid)
-  if (!entry) return undefined
-  try {
-    const keyObject = createPublicKey({ key: entry.publicKeyPem, format: 'pem' })
-    if (keyObject.asymmetricKeyType !== 'ed25519') return undefined
-    return keyObject
-  } catch {
-    return undefined
-  }
-}
-
-function verifySignature(signingInput: string, signaturePart: string, key: KeyObject): boolean {
-  const signature = base64UrlDecode(signaturePart)
-  if (!signature) return false
-  try {
-    return cryptoVerify(null, Buffer.from(signingInput, 'utf8'), key, signature)
-  } catch {
-    return false
-  }
+  return resolveEd25519Key(handoffVerifyKeys, kid)
 }
 
 type PayloadValidation =
@@ -126,12 +90,12 @@ function requireString(
   key: string,
   maxBytes = MAX_STRING_CLAIM_BYTES
 ): { ok: true; value: string } | { ok: false; reason: HandoffRejectReason } {
-  const value = payload[key]
-  if (value === undefined || value === null) return { ok: false, reason: 'handoff_missing_claim' }
-  if (typeof value !== 'string' || value.length === 0 || byteLength(value) > maxBytes) {
-    return { ok: false, reason: 'handoff_malformed_claim' }
+  const result = readStringClaim(payload, key, maxBytes)
+  if (result.ok) return result
+  return {
+    ok: false,
+    reason: result.kind === 'missing' ? 'handoff_missing_claim' : 'handoff_malformed_claim',
   }
-  return { ok: true, value }
 }
 
 function validateCapabilities(
@@ -336,57 +300,21 @@ function validatePayload(payload: unknown): PayloadValidation {
   }
 }
 
-type HeaderCheckResult = { ok: true; kid: string } | { ok: false; reason: HandoffRejectReason }
-
-/**
- * Structural header checks (typ/enc/alg) plus kid selection, in rejection-matrix order. Split out
- * of `verifyHandoffToken` to keep it under the repo's complexity threshold.
- */
-function checkHeader(headerPart: string): HeaderCheckResult {
-  const header = parseHeader(headerPart)
-  if (!header) return { ok: false, reason: 'handoff_malformed_claim' }
-  if (header.typ !== 'JWT') return { ok: false, reason: 'handoff_malformed_claim' }
-  if (header.enc !== undefined) return { ok: false, reason: 'handoff_malformed_claim' }
-  if (header.alg !== 'EdDSA') return { ok: false, reason: 'handoff_unexpected_alg' }
-  if (
-    typeof header.kid !== 'string' ||
-    header.kid.length < 1 ||
-    header.kid.length > MAX_KID_LENGTH
-  ) {
-    return { ok: false, reason: 'handoff_unknown_kid' }
-  }
-  return { ok: true, kid: header.kid }
-}
-
 /**
  * Verifies a compact-JWS handoff token end to end (rejection-matrix rows 1-6). Never throws —
- * every failure mode resolves to `{ ok: false, reason }`.
+ * every failure mode resolves to `{ ok: false, reason }`. The JWS mechanics live in the shared
+ * `eddsa-jws-core.ts` (Story 71.6); this function only supplies the handoff profile and the
+ * handoff payload validators.
  */
 export function verifyHandoffToken(token: string): HandoffVerifyResult {
-  if (typeof token !== 'string' || byteLength(token) > MAX_HANDOFF_TOKEN_BYTES) {
-    return reject('handoff_claims_oversized')
-  }
-
-  const parts = token.split('.')
-  if (parts.length !== 3) return reject('handoff_malformed_claim')
-  const [headerPart, payloadPart, signaturePart] = parts as [string, string, string]
-
-  const headerCheck = checkHeader(headerPart)
-  if (!headerCheck.ok) return reject(headerCheck.reason)
-
-  // AC3.10: exactly one key is selected by kid match — never "try every configured key".
-  const key = resolveKey(headerCheck.kid)
-  if (!key) return reject('handoff_unknown_kid')
-
-  const signingInput = `${headerPart}.${payloadPart}`
-  if (!verifySignature(signingInput, signaturePart, key)) {
-    return reject('handoff_signature_invalid')
-  }
-
-  const payloadRaw = base64UrlDecode(payloadPart)
-  if (!payloadRaw) return reject('handoff_malformed_claim')
-  const payload = parseJson(payloadRaw)
-  const validated = validatePayload(payload)
+  const jws = verifyEdDsaJws(token, {
+    expectedTyp: 'JWT',
+    maxTokenBytes: MAX_HANDOFF_TOKEN_BYTES,
+    maxKidLength: MAX_KID_LENGTH,
+    resolveKey,
+  })
+  if (!jws.ok) return reject(CORE_REASON_TO_HANDOFF[jws.reason])
+  const validated = validatePayload(jws.payload)
   if (!validated.ok) return reject(validated.reason)
   return { ok: true, claims: validated.claims }
 }
