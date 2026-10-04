@@ -209,6 +209,16 @@ types, `navItems` or `moduleDataRoutes` follows this policy's deprecation lifecy
 `### Deprecated` CHANGELOG entry, then a later major); a security issue may force earlier removal
 of the affected functionality, as for any other security break.
 
+Deprecation status (Story 68.11, extension-api 3.30.0): the panel types, `navItems`, `moduleDataRoutes`,
+their hooks and the `'ui-panel'` capability member now carry policy-grade `@deprecated` markers
+(`earliest-removal: 4.0.0`, the next major at time of writing; `notice-window-ends: 2027-01-14`) and a
+`### Deprecated` CHANGELOG entry with `Notified:`. The window is 90 days, confirmed by the CM maintainer of
+record on 2026-10-04. The clock starts when 3.30.0 is published, so the dates above are projected (publication
+date plus 90 days plus a 10-day slack) until the maintainer publishes and replaces them with real ones; a
+`notice-window-ends` may only move later. Removal waits for that date and for CentralizeMe to stop using the
+surfaces (CM story 16-15), then ships as a major. The neutral `ExtensionRequestContext` and
+`ExtensionActionResult` types are the replacements for `ModuleActionContext` and `ActionResult`.
+
 ## Version allocation
 
 Version numbers are allocated **at merge, not at planning**. Story 23.2 (`replacesNativeLogin`)

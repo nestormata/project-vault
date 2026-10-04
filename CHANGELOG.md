@@ -25,6 +25,21 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   is unreachable). Rows live about 90 seconds after the assertion expires plus a 5-minute prune
   grace; the new `delegation/prune-assertion-jti` job deletes expired rows every minute in one
   bounded batch. Nothing calls the store yet: the delegated route integration lands with Story 71.3.
+- **Neutral request types** (extension-api 3.30.0): `ExtensionRequestContext` and
+  `ExtensionActionResult`, for `oauthHandoff` and `publicRoute` code that should not depend on the
+  panel vocabulary. `ModuleActionContext` and `ActionResult` remain as deprecated names.
+
+### Deprecated
+
+- **Legacy UI-panel API, `navItems` and `moduleDataRoutes`** (Story 68.11, Phase A;
+  `@project-vault/extension-api` 3.30.0, released on its own tag). Nothing is removed and nothing
+  changes at runtime. The panel types and hooks (`uiPanel`, `moduleAction`, `UIPanel*`,
+  `ModuleAction*`, `ActionResult`, `ModuleData*`), the manifest fields `uiPanelSlots`,
+  `moduleActions`, `navItems` and `moduleDataRoutes`, and the `'ui-panel'` capability are marked
+  `@deprecated`. Removal is a later major (4.0.0 at time of writing), no earlier than 2027-01-14
+  (projected; the 90-day window starts when 3.30.0 is published) and only after CentralizeMe stops
+  using them. Replacements: composed UI (ADR 0007) for panels, the M5 nav delta for `navItems`, M7
+  `apiRoutes` for `moduleDataRoutes`.
 
 ## [1.4.0] - 2026-10-03
 
