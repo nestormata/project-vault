@@ -9,6 +9,7 @@ import {
   vi,
   type MockInstance,
 } from 'vitest'
+import { generateKeyPairSync } from 'node:crypto'
 import { createTestPki, type TestPki } from '@project-vault/shared/test-pki'
 
 const VAULT_APP_DATABASE_URL = 'postgresql://vault_app:secret@localhost:5432/project_vault'
@@ -2134,5 +2135,159 @@ describe('env internal TLS (Story 43.16)', () => {
     await expectInvalidEnv(exitSpy)
     expect(stderrText()).toContain('DATABASE_TLS_CA_B64 is not valid base64 PEM')
     expect(stderrText()).not.toContain('%%%')
+  })
+})
+
+// Story 71.6 AC-4 (B1-B15): VAULT_DELEGATION_VERIFY_KEYS boot validation. Keys are minted
+// in-test; every value is test-only material.
+describe('env VAULT_DELEGATION_VERIFY_KEYS (Story 71.6)', () => {
+  let exitSpy: MockInstance<(...args: never[]) => unknown>
+  let originalEnv: NodeJS.ProcessEnv
+
+  beforeEach(() => {
+    originalEnv = process.env
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    vi.resetModules()
+  })
+
+  afterEach(() => {
+    process.env = originalEnv
+    vi.restoreAllMocks()
+  })
+
+  const stderrText = () =>
+    (process.stderr.write as unknown as MockInstance).mock.calls.map(String).join('\n')
+
+  const newPem = () =>
+    generateKeyPairSync('ed25519').publicKey.export({ format: 'pem', type: 'spki' }).toString()
+  const keySet = (...entries: { kid: string; publicKeyPem: string }[]) => JSON.stringify(entries)
+  const bootEnv = (overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
+    ...BASE_ENV,
+    DATABASE_URL: VAULT_APP_DATABASE_URL,
+    ...overrides,
+  })
+
+  it('B1/B2/B3: unset, empty and [] boot with an empty delegation set', async () => {
+    for (const value of [undefined, '', '[]']) {
+      vi.resetModules()
+      process.env = bootEnv(value === undefined ? {} : { VAULT_DELEGATION_VERIFY_KEYS: value })
+      const mod = await import('./env.js')
+      expect(mod.delegationVerifyKeys).toEqual([])
+    }
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('B4/B5/B14: valid keys boot (even with the login toggle off) and keep their order', async () => {
+    const a = newPem()
+    const b = newPem()
+    process.env = bootEnv({
+      VAULT_HANDOFF_INSTANCE_ID: 'pv-test',
+      VAULT_DELEGATION_VERIFY_KEYS: keySet(
+        { kid: 'a', publicKeyPem: a },
+        { kid: 'b', publicKeyPem: b }
+      ),
+    })
+    const mod = await import('./env.js')
+    expect(mod.delegationVerifyKeys.map((k) => k.kid)).toEqual(['a', 'b'])
+    expect(mod.env.VAULT_HANDOFF_ENABLED).toBe(false)
+    expect(Object.isFrozen(mod.delegationVerifyKeys)).toBe(true)
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('B15: production mode accepts the same valid set with no extra requirement', async () => {
+    process.env = productionEnv({
+      COOKIE_SECURE: 'true',
+      TOTP_REPLAY_HMAC_SECRET: 'C'.repeat(64),
+      MFA_PENDING_SESSION_HMAC_SECRET: 'D'.repeat(64),
+      INVITATION_TOKEN_HMAC_SECRET: 'E'.repeat(64),
+      VAULT_HANDOFF_INSTANCE_ID: 'pv-test',
+      VAULT_DELEGATION_VERIFY_KEYS: keySet({ kid: 'a', publicKeyPem: newPem() }),
+    })
+    await import('./env.js')
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('B6/B7/B8/B17/B18: invalid sets exit with a FATAL naming the variable and no key text', async () => {
+    const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 })
+      .publicKey.export({ format: 'pem', type: 'spki' })
+      .toString()
+    const priv = generateKeyPairSync('ed25519')
+      .privateKey.export({ format: 'pem', type: 'pkcs8' })
+      .toString()
+    const one = newPem()
+    const bad = [
+      '{nope',
+      keySet({ kid: 'a', publicKeyPem: rsa }),
+      keySet({ kid: 'a', publicKeyPem: priv }),
+      keySet({ kid: 'a', publicKeyPem: `${one}${newPem()}` }),
+      keySet({ kid: 'a', publicKeyPem: one }, { kid: 'a', publicKeyPem: newPem() }),
+    ]
+    for (const value of bad) {
+      vi.resetModules()
+      exitSpy.mockClear()
+      ;(process.stderr.write as unknown as MockInstance).mockClear()
+      process.env = bootEnv({
+        VAULT_HANDOFF_INSTANCE_ID: 'pv-test',
+        VAULT_DELEGATION_VERIFY_KEYS: value,
+      })
+      await expectInvalidEnv(exitSpy)
+      const text = stderrText()
+      expect(text).toContain('FATAL: VAULT_DELEGATION_VERIFY_KEYS')
+      for (const body of [rsa, priv, one]) {
+        expect(text).not.toContain(body.split('\n')[1] as string)
+      }
+    }
+  })
+
+  it('B9/B10: kid or key material shared with the handoff set exits', async () => {
+    const shared = newPem()
+    const cases = [
+      [
+        keySet({ kid: 'same', publicKeyPem: newPem() }),
+        keySet({ kid: 'same', publicKeyPem: newPem() }),
+      ],
+      [keySet({ kid: 'd', publicKeyPem: shared }), keySet({ kid: 'h', publicKeyPem: shared })],
+    ] as const
+    for (const [deleg, handoff] of cases) {
+      vi.resetModules()
+      exitSpy.mockClear()
+      process.env = bootEnv({
+        VAULT_HANDOFF_INSTANCE_ID: 'pv-test',
+        VAULT_DELEGATION_VERIFY_KEYS: deleg,
+        VAULT_HANDOFF_VERIFY_KEYS: handoff,
+      })
+      await expectInvalidEnv(exitSpy)
+      expect(stderrText()).toMatch(/disjoint/)
+    }
+  })
+
+  it('B11: disjoint keys alongside a populated handoff set boot', async () => {
+    process.env = bootEnv({
+      VAULT_HANDOFF_INSTANCE_ID: 'pv-test',
+      VAULT_DELEGATION_VERIFY_KEYS: keySet({ kid: 'd', publicKeyPem: newPem() }),
+      VAULT_HANDOFF_VERIFY_KEYS: keySet({ kid: 'h', publicKeyPem: newPem() }),
+    })
+    await import('./env.js')
+    expect(exitSpy).not.toHaveBeenCalled()
+  })
+
+  it('B12: a malformed handoff set reports only the handoff issue', async () => {
+    process.env = bootEnv({
+      VAULT_HANDOFF_INSTANCE_ID: 'pv-test',
+      VAULT_DELEGATION_VERIFY_KEYS: keySet({ kid: 'd', publicKeyPem: newPem() }),
+      VAULT_HANDOFF_VERIFY_KEYS: '{nope',
+    })
+    await expectInvalidEnv(exitSpy)
+    expect(stderrText()).toContain('VAULT_HANDOFF_VERIFY_KEYS must be valid JSON')
+    expect(stderrText()).not.toContain('VAULT_DELEGATION_VERIFY_KEYS')
+  })
+
+  it('B13: a non-empty delegation set without VAULT_HANDOFF_INSTANCE_ID exits', async () => {
+    process.env = bootEnv({
+      VAULT_DELEGATION_VERIFY_KEYS: keySet({ kid: 'd', publicKeyPem: newPem() }),
+    })
+    await expectInvalidEnv(exitSpy)
+    expect(stderrText()).toContain('requires VAULT_HANDOFF_INSTANCE_ID')
   })
 })
