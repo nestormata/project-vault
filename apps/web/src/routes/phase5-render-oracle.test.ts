@@ -201,23 +201,23 @@ function snap(name: string, container: Element): void {
   rendered.set(name, serializeWithoutNoise(container))
 }
 
-async function renderAudit(name: string, data: AuditData): Promise<void> {
+function renderAudit(name: string, data: AuditData): void {
   const { container } = render(AuditPage, { props: { data } })
   snap(name, container)
   cleanup()
 }
 
-async function renderNotifications(
+function renderNotifications(
   name: string,
   data: NotificationsData,
   form: NotificationsProps['form'] = null
-): Promise<void> {
+): void {
   const { container } = render(NotificationsPage, { props: { data, form } })
   snap(name, container)
   cleanup()
 }
 
-async function renderMembers(name: string, data: MembersData): Promise<void> {
+function renderMembers(name: string, data: MembersData): void {
   const { container } = render(MembersPage, { props: { data } })
   snap(name, container)
   cleanup()
@@ -241,18 +241,18 @@ afterEach(() => {
 
 describe('phase 5 render oracle (Story 69.4 AC-7.1)', () => {
   it('renders the settings audit page exactly as it did before the region points existed', async () => {
-    await renderAudit('audit: member', {
+    renderAudit('audit: member', {
       ...appLayoutData(),
       orgRole: 'member',
       allowed: false,
     } as AuditData)
-    await renderAudit('audit: admin', {
+    renderAudit('audit: admin', {
       ...appLayoutData(),
       orgRole: 'admin',
       allowed: false,
     } as AuditData)
-    await renderAudit('audit: owner, 3 events, no filters', auditOwner())
-    await renderAudit(
+    renderAudit('audit: owner, 3 events, no filters', auditOwner())
+    renderAudit(
       'audit: owner, all six filters, page 2 of 3',
       auditOwner({
         filters: ALL_FILTERS,
@@ -262,15 +262,12 @@ describe('phase 5 render oracle (Story 69.4 AC-7.1)', () => {
         hasNext: true,
       })
     )
-    await renderAudit(
+    renderAudit(
       'audit: owner, empty result with filters',
       auditOwner({ filters: { eventType: 'nothing.here' }, events: [], total: 0 })
     )
-    await renderAudit(
-      'audit: owner, empty result without filters',
-      auditOwner({ events: [], total: 0 })
-    )
-    await renderAudit(
+    renderAudit('audit: owner, empty result without filters', auditOwner({ events: [], total: 0 }))
+    renderAudit(
       'audit: owner, load error',
       auditOwner({ events: [], total: 0, errorMessage: 'Could not load the audit log.' })
     )
@@ -289,16 +286,16 @@ describe('phase 5 render oracle (Story 69.4 AC-7.1)', () => {
   })
 
   it('renders the settings notifications page exactly as it did before the region points existed', async () => {
-    await renderNotifications('notifications: plain member', notifications())
-    await renderNotifications(
+    renderNotifications('notifications: plain member', notifications())
+    renderNotifications(
       'notifications: admin with routing and canSendTest',
       notifications({ isAdmin: true, routing: ROUTING, canSendTest: true })
     )
-    await renderNotifications(
+    renderNotifications(
       'notifications: admin with routing, no MFA',
       notifications({ isAdmin: true, routing: ROUTING, canSendTest: false })
     )
-    await renderNotifications(
+    renderNotifications(
       'notifications: admin, routing null (403)',
       notifications({ isAdmin: true, routing: null, canSendTest: true })
     )
@@ -307,18 +304,18 @@ describe('phase 5 render oracle (Story 69.4 AC-7.1)', () => {
       { email: 'failed', slack: 'not_configured' },
       { email: 'not_configured', slack: 'failed' },
     ] as const) {
-      await renderNotifications(
+      renderNotifications(
         `notifications: admin, testResult ${result.email}/${result.slack}`,
         notifications({ isAdmin: true, routing: ROUTING, canSendTest: true }),
         { testResult: result } as NotificationsProps['form']
       )
     }
-    await renderNotifications(
+    renderNotifications(
       'notifications: admin, form error',
       notifications({ isAdmin: true, routing: ROUTING, canSendTest: true }),
       { error: 'Too many test notifications. Try again later.' } as NotificationsProps['form']
     )
-    await renderNotifications(
+    renderNotifications(
       'notifications: plain member, form error (cross-talk, shown nowhere)',
       notifications(),
       { error: 'Invalid frequency.' } as NotificationsProps['form']
@@ -331,8 +328,8 @@ describe('phase 5 render oracle (Story 69.4 AC-7.1)', () => {
   })
 
   it('renders the project members page exactly as it did before the region points existed', async () => {
-    await renderMembers('members: org owner, members and invitations', members())
-    await renderMembers(
+    renderMembers('members: org owner, members and invitations', members())
+    renderMembers(
       'members: plain org member, read-only',
       members({
         orgRole: 'member',
@@ -344,7 +341,7 @@ describe('phase 5 render oracle (Story 69.4 AC-7.1)', () => {
         members: [OWNER, VIEWER],
       })
     )
-    await renderMembers(
+    renderMembers(
       'members: project admin who is only an org member',
       members({
         orgRole: 'member',
@@ -355,7 +352,7 @@ describe('phase 5 render oracle (Story 69.4 AC-7.1)', () => {
         invitations: [],
       })
     )
-    await renderMembers(
+    renderMembers(
       'members: empty members and invitations',
       members({ members: [], invitations: [], canTransferOwnership: false as never })
     )
