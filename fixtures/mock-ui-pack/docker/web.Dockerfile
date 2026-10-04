@@ -45,9 +45,10 @@ COPY --from=builder --chown=node:node /app/build ./build
 COPY --from=builder --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/package.json ./package.json
 
+ENV PORT=3000
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
-  CMD curl -f http://localhost:3000/ || exit 1
+  CMD curl -f "http://127.0.0.1:${PORT}/" || exit 1
 
 USER node
 CMD ["node", "build"]
