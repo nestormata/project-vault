@@ -396,14 +396,15 @@ describe("withInjectedLoad: PV's own load first, then the injected data", () => 
       })
     })
 
-    it('only a literal true skips: false, a string and a missing key still run the loads', async () => {
-      const { withInjectedLoad: wrap } = createInjectBehavior(sliceTables())
-      for (const own of [{ notFound: false }, { notFound: 'true' }, { project: null }]) {
+    it.each([[{ notFound: false }], [{ notFound: 'true' }], [{ project: null }]])(
+      'only a literal true skips: %j still runs the loads',
+      async (own) => {
+        const { withInjectedLoad: wrap } = createInjectBehavior(sliceTables())
         counter.ran = 0
         await wrap(async () => own, '/r', 'page')(event)
-        expect(counter.ran, JSON.stringify(own)).toBe(2)
+        expect(counter.ran).toBe(2)
       }
-    })
+    )
 
     it('skips for a layout slice too (the layout 404 result carries notFound: true)', async () => {
       counter.ran = 0

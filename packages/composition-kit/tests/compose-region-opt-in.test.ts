@@ -149,14 +149,15 @@ describe('opting a region point in to behavior (AC-4)', () => {
     expect(text).toContain(DASHBOARD_PAGE_HOST)
   })
 
-  it('fails a layout host for a region only a page renders, and a malformed or unknown-scope key', async () => {
-    const world = makeWorld({ hostFiles: hostRegistry(), packFiles: files() })
-    for (const bad of [`${DASHBOARD_ROUTE}#layout`, DASHBOARD_ROUTE, `${DASHBOARD_ROUTE}#shell`]) {
+  it.each([`${DASHBOARD_ROUTE}#layout`, DASHBOARD_ROUTE, `${DASHBOARD_ROUTE}#shell`])(
+    'fails a layout host for a region only a page renders, and a malformed or unknown-scope key: %s',
+    async (bad) => {
+      const world = makeWorld({ hostFiles: hostRegistry(), packFiles: files() })
       const result = await run(world, at(REGION, { load: `./${LOAD}`, hostRoutes: [bad] }))
-      expect(result.ok, bad).toBe(false)
-      expect(result.messages.join('\n'), bad).toContain(bad)
+      expect(result.ok).toBe(false)
+      expect(result.messages.join('\n')).toContain(bad)
     }
-  })
+  )
 
   it('fails an empty hostRoutes list: opted in to nothing is never a silent no-op', async () => {
     const world = makeWorld({ hostFiles: hostRegistry(), packFiles: files() })

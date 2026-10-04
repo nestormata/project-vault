@@ -208,17 +208,19 @@ test.describe('M3 region points (Story 69.1)', () => {
           { id: theirs, foreign: mine, text: await b.text() },
         ]
       }
-      for (const path of [
+      const steps = [
         (id: string) => `/projects/${id}`,
         (id: string) => `/projects/${id}/__data.json`,
-      ]) {
-        for (const round of rounds) {
-          for (const { id, foreign, text } of await fetchRound(path)) {
-            expect(text, `round ${round} ${path('<id>')}`).toContain(id)
-            expect(text).not.toContain(foreign)
-          }
+      ].flatMap((path) => rounds.map((round) => ({ path, round })))
+      // Strictly sequential on purpose (see the rate-limit note above): each step awaits the last.
+      await steps.reduce(async (previous, { path, round }) => {
+        await previous
+        const rows = await fetchRound(path)
+        for (const { id, foreign, text } of rows) {
+          expect(text, `round ${round} ${path('<id>')}`).toContain(id)
+          expect(text).not.toContain(foreign)
         }
-      }
+      }, Promise.resolve())
     } finally {
       await otherContext.close()
     }

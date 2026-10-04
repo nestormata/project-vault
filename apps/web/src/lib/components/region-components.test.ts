@@ -150,7 +150,11 @@ beforeAll(async () => {
       default: [{ id: `${point}#0`, order: 0, component: probe }],
     }))
   }
-  for (const entry of CASES) loaded.set(entry.point, (await entry.load()).default)
+  await Promise.all(
+    CASES.map(async (entry) => {
+      loaded.set(entry.point, (await entry.load()).default)
+    })
+  )
 })
 afterEach(cleanup)
 
