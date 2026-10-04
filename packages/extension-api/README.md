@@ -114,6 +114,74 @@ by first-party API route composition. Removal comes later, after the replacement
 
 **Removal schedule (since `@project-vault/extension-api` 3.30.0).** These surfaces are now formally deprecated: `@deprecated` markers on every exported symbol and manifest field, and a `### Deprecated` entry in the package CHANGELOG. Nothing is removed and nothing changes at runtime. Removal happens no earlier than the next major (4.0.0 at time of writing) and only after the notice window ends on 2027-01-14 (projected: clock not started, the 90 days run from the day 3.30.0 is published). Replacements: composed UI (ADR 0007 build-time composition) for the panel API; the M5 nav delta of the UI pack for `navItems`; M7 `apiRoutes` for `moduleDataRoutes`/`moduleData`; `ExtensionRequestContext` and `ExtensionActionResult` for `ModuleActionContext` and `ActionResult`.
 
+### Delegated routes (`apiRoutes` `security.delegation`)
+
+A route can declare `security.delegation` to accept a service-delegated actor assertion
+(a signed statement from a trusted service naming the org and the acting user) instead of a user
+session. The declaration is plain data and is validated at registration:
+
+- `delegation: true` or `{}` means "accepts a service assertion"; `false` or omitted is a plain session
+  route. `subjectFields` optionally names the body property or path parameter (`in: 'body' | 'params'`,
+  a plain identifier of at most 128 characters) that carries the org or the actor; `org` and `actor`
+  must not name the same field.
+- A delegated route is authenticated by the assertion alone, so it cannot also set `requireMfa: true`,
+  `requirePlatformOperator: true` or `requireAuth: false`: registration fails with `invalid-manifest-field`
+  naming the route (`"<METHOD> <url>"`) and the flag. Every other combination is accepted.
+- There is no plain-session fallback on a delegated route. An extension that wants both registers two routes.
+- The handler receives `ctx.delegation` (`ApiRouteDelegation`) and a `ctx.auth` with `sessionId: 'delegation'`,
+  `isPlatformOperator: false` and no `orgRole` for an unlinked or non-member actor. The host builds this
+  context only on a route that declared `delegation`. The handler never verifies an assertion and must
+  not read the `Authorization` header for one; the assertion alone creates no session. Use
+  `isApiRouteDelegatedContext(ctx)` to narrow, or annotate the handler as `ApiRouteDelegatedHandler`.
+- The existing handler types are unchanged: `ApiRouteHandler` and `ApiRouteWrapHandler` gained a third
+  type parameter that defaults to the previous context union.
+- **Inert until the host verifies assertions.** Until a Project Vault release that verifies service
+  assertions (Story 71-3), the host treats the declaration as a plain session route and rejects an
+  unauthenticated request with 401. Do not rely on `delegation` before that host version; see the
+  package CHANGELOG.
+
+```ts
+import type { ApiRoutesDeclaration, ApiRoutesHooks } from '@project-vault/extension-api'
+import { isApiRouteDelegatedContext } from '@project-vault/extension-api'
+
+// A service-to-service route: the caller presents a signed service assertion, not a user session.
+export const apiRoutes: ApiRoutesDeclaration = {
+  add: [
+    {
+      method: 'POST',
+      url: '/cm/audit-events',
+      options: {
+        security: {
+          delegation: {
+            // Optional: where the route carries a copy of the org and the actor, so the host can
+            // reject a body that disagrees with the verified assertion.
+            subjectFields: {
+              org: { in: 'body', name: 'orgId' },
+              actor: { in: 'body', name: 'actorId' },
+            },
+          },
+          minimumRole: 'member',
+          capability: 'cm.audit',
+        },
+      },
+    },
+  ],
+}
+
+export const apiRoutesHooks: ApiRoutesHooks = {
+  routes: {
+    'POST /cm/audit-events': {
+      handler: (ctx) => {
+        // Narrow with the guard: it needs both `ctx.delegation` and `ctx.auth.delegation === true`.
+        if (!isApiRouteDelegatedContext(ctx)) return { status: 'not-delegated' }
+        // `orgRole` is absent for an unlinked or non-member actor; `actorUserId` may be null.
+        return { org: ctx.delegation.orgId, role: ctx.auth.orgRole ?? null }
+      },
+    },
+  },
+}
+```
+
 ## Hooks returned by `hooksFactory()`
 
 `ExtensionHooks` is a single bag of optional fields. Every one of them is optional; return only

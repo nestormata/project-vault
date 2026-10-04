@@ -2,6 +2,72 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.31.0 — 2026-10-06
+
+contract-hash: sha256:03995fc4ace3ebda7d9749f526d0c466be17aa2fdb5ec5f2688fb9be24d1e202
+
+Story 71.8 (Epic 71, signed design 71-2). Contract only: this release adds no verification. Dates
+follow the unpublished 3.30.0 convention; the release itself is Story 71-5.
+
+### Added
+
+- `ApiRouteSecurity.delegation` (`boolean | ApiRouteDelegationDeclaration`): a route declares that
+  it accepts a service-delegated actor assertion. `true` and `{}` mean "accepts an assertion";
+  `false` or omitted is a plain session route. Validated like every other `security` key: a closed
+  shape, and a failure is `invalid-manifest-field`.
+- `ApiRouteDelegationDeclaration` (`subjectFields?`) and `ApiRouteSubjectField` (`{ in: 'body' |
+  'params'; name }`): where the route carries a copy of the org or the actor. `name` is a plain
+  identifier of at most 128 characters (`__proto__`, `constructor` and `prototype` are rejected);
+  `org` and `actor` must not name the same field.
+- Registration integrity: a delegated route that also sets `requireAuth: false`, `requireMfa: true`
+  or `requirePlatformOperator: true` fails registration with a message naming the route
+  (`"<METHOD> <url>"`) and the flag. Every other combination is accepted.
+- `ApiRouteDelegation`, `ApiRouteDelegatedAuthContext`, `ApiRouteDelegatedContext`: the
+  `ctx.delegation` / `ctx.auth` a delegated handler receives (`sessionId: 'delegation'`,
+  `isPlatformOperator: false`, `orgRole` absent for an unlinked or non-member actor).
+- `isApiRouteDelegatedContext(ctx)`: type guard, true only when `ctx.delegation` is an object and
+  `ctx.auth.delegation === true`.
+- `ApiRouteDelegatedHandler` and `ApiRouteDelegatedWrapHandler`: the handler aliases for a delegated
+  route.
+
+### Changed
+
+- `ApiRouteHandler` and `ApiRouteWrapHandler` gain a third type parameter `Ctx`, defaulting to the
+  previous `ApiRouteContext | ApiRoutePublicContext`, so every existing handler annotation compiles
+  unchanged.
+
+### Deprecated
+
+Carried forward unchanged from 3.30.0 (Story 68.11). This release deprecates nothing new. The
+marker lint requires the newest entry to announce every deprecated export, so the still-running
+notice is restated here; the clock, the dates and the replacements are those of 3.30.0, and every
+symbol below keeps working identically for the whole notice window.
+
+- Panel area: the exports `UIPanel`, `UIPanelContext`, `UIPanelResult`, `ModuleAction`,
+  `ModuleActionRequest`, `ModuleActionContext` and `ActionResult`; the manifest fields
+  `uiPanelSlots` and `moduleActions`; the hooks `uiPanel` and `moduleAction`; and the capability
+  member `'ui-panel'`.
+- Navigation area: the export `ExtensionNavItem` and the manifest field `navItems`.
+- Data-route area: the exports `ModuleDataRequestContext`, `ModuleDataResult`,
+  `ModuleDataRouteHandler` and `ModuleDataRouteDeclaration`; the manifest field `moduleDataRoutes`
+  and the hook `moduleData`.
+- `panelDataPaths` keeps its own earlier notice (window ending 2026-11-29).
+- Replacements: composed UI (ADR 0007) for `uiPanelSlots`, `moduleActions`, `uiPanel` and
+  `moduleAction`; the M5 nav delta (`nav`) for `navItems`; M7 `apiRoutes` for `moduleDataRoutes`
+  and `moduleData`; `ExtensionRequestContext` and `ExtensionActionResult` for the two context and
+  result types.
+  - Notified: 2026-10-06, carried forward from the 3.30.0 notification (CHANGELOG entry 3.30.0, GitHub Release `extension-api-v3.30.0`, issue on `centralizeme-sass`); recipient CentralizeMe maintainer. This entry makes no new notification; the date moves with 3.30.0's real publication date.
+  - earliest-removal: 4.0.0 (the next major at time of writing)
+  - notice-window-ends: 2027-01-14
+
+### Notes
+
+- The declaration is inert on a host older than the release that verifies assertions (Story 71-3):
+  such a host registers the route as an ordinary session route and rejects an unauthenticated
+  request with 401. Do not rely on `delegation` before that host version.
+- `historical` (a declaration key) and `ApiRouteDelegation.occurredAt` are reserved for Story 71-4
+  and are rejected as unknown until it adds them with its own minor bump.
+
 ## 3.30.0 — 2026-10-06
 
 contract-hash: sha256:0b7f7792778480221694d0ae64b3f1e47f8e699225772fad333689245c8f80f1

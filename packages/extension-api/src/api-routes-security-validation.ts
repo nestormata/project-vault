@@ -21,10 +21,18 @@ const SECURITY_KEYS = [
   'writeAuditEvent',
   'rateLimit',
   'capability',
+  'delegation',
 ]
 const BOOLEAN_KEYS = ['requireAuth', 'requireOrgScope', 'requireMfa', 'requirePlatformOperator']
 const RATE_LIMIT_KEYS = ['max', 'timeWindowMs', 'key']
 const AUDIT_KEYS = ['eventType', 'resourceType', 'resourceIdFromParams']
+const DELEGATION_KEYS = ['subjectFields']
+const SUBJECT_KEYS = ['org', 'actor']
+const SUBJECT_FIELD_KEYS = ['in', 'name']
+const SUBJECT_FIELD_LOCATIONS = ['body', 'params']
+/** A plain identifier: the host indexes a parsed body or the params with it (Story 71.8). */
+const SUBJECT_FIELD_NAME = /^[A-Za-z_]\w{0,127}$/
+const RESERVED_FIELD_NAMES = new Set(['__proto__', 'constructor', 'prototype'])
 
 export type UnknownRecord = Record<string, unknown>
 
@@ -97,8 +105,66 @@ function validateAudit(value: unknown, path: string): void {
   for (const key of AUDIT_KEYS) assertOptionalText(fields.get(key), `${path}.${key}`)
 }
 
-/** AC-2 (a): an entry's optional `security` object. */
-export function validateApiRouteSecurity(value: unknown, path: string): void {
+function validateSubjectField(value: unknown, path: string): string {
+  if (!isRecord(value)) fail(`${path} must be an object`)
+  assertOnlyKeys(value, SUBJECT_FIELD_KEYS, path)
+  const fields = fieldsOf(value)
+  const location = fields.get('in')
+  if (typeof location !== 'string' || !SUBJECT_FIELD_LOCATIONS.includes(location)) {
+    fail(`${path}.in must be one of ${SUBJECT_FIELD_LOCATIONS.join(', ')}`)
+  }
+  const name = fields.get('name')
+  if (
+    typeof name !== 'string' ||
+    !SUBJECT_FIELD_NAME.test(name) ||
+    RESERVED_FIELD_NAMES.has(name)
+  ) {
+    fail(`${path}.name must be a plain identifier of at most 128 characters`)
+  }
+  return `${location}:${name}`
+}
+
+/** Story 71.8 AC-1: `security.delegation` is a boolean or a closed `{ subjectFields }` object. */
+function validateDelegation(value: unknown, path: string): void {
+  if (value === undefined || typeof value === 'boolean') return
+  if (!isRecord(value)) fail(`${path} must be a boolean or an object`)
+  assertOnlyKeys(value, DELEGATION_KEYS, path)
+  const subjectFields = fieldsOf(value).get('subjectFields')
+  if (subjectFields === undefined) return
+  const subjectPath = `${path}.subjectFields`
+  if (!isRecord(subjectFields)) fail(`${subjectPath} must be an object`)
+  assertOnlyKeys(subjectFields, SUBJECT_KEYS, subjectPath)
+  const fields = fieldsOf(subjectFields)
+  const seen = SUBJECT_KEYS.flatMap((key) => {
+    const field = fields.get(key)
+    return field === undefined ? [] : [validateSubjectField(field, `${subjectPath}.${key}`)]
+  })
+  if (seen.length === 2 && seen[0] === seen[1]) {
+    fail(`${subjectPath} org and actor must not name the same field`)
+  }
+}
+
+/** Story 71.8 AC-2: a delegated route is authenticated by the assertion alone, no other way in. */
+function assertDelegationConsistent(fields: Map<string, unknown>, path: string, routeKey: string) {
+  const delegation = fields.get('delegation')
+  if (delegation === undefined || delegation === false) return
+  const contradictions: Array<[string, unknown, string]> = [
+    ['requireAuth', false, 'a delegated route is authenticated by the assertion'],
+    ['requireMfa', true, 'a service assertion is not proof of MFA'],
+    ['requirePlatformOperator', true, 'a service assertion confers no operator status'],
+  ]
+  for (const [flag, bad, why] of contradictions) {
+    if (fields.get(flag) === bad) {
+      fail(`${path}: ${routeKey} declares delegation and cannot set ${flag}: ${bad} (${why})`)
+    }
+  }
+}
+
+/**
+ * AC-2 (a): an entry's optional `security` object. `routeKey` (`"<METHOD> <url>"`) names the route
+ * in the delegation contradiction messages.
+ */
+export function validateApiRouteSecurity(value: unknown, path: string, routeKey = path): void {
   if (value === undefined) return
   if (!isRecord(value)) fail(`${path} must be an object`)
   assertOnlyKeys(value, SECURITY_KEYS, path)
@@ -111,4 +177,6 @@ export function validateApiRouteSecurity(value: unknown, path: string): void {
   validateAudit(fields.get('writeAuditEvent'), `${path}.writeAuditEvent`)
   validateRateLimit(fields.get('rateLimit'), `${path}.rateLimit`)
   assertOptionalText(fields.get('capability'), `${path}.capability`)
+  validateDelegation(fields.get('delegation'), `${path}.delegation`)
+  assertDelegationConsistent(fields, path, routeKey)
 }

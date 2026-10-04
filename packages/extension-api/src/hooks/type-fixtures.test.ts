@@ -3,6 +3,13 @@ import {
   nonPromiseAuthStrategyFixture,
   txShapedWriteInputFixture,
   hmacCarryingWriteInputFixture,
+  delegatedAliasFixture,
+  delegatedHandlerFixture,
+  delegatedWrapAliasFixture,
+  legacyApiRouteHandlerFixture,
+  legacyApiRouteWrapHandlerFixture,
+  nonNarrowedDelegationFixture,
+  nullableActorUserIdFixture,
 } from './type-fixtures.js'
 
 describe('AC3 — Promise-typed hook methods (compile-time negative fixture)', () => {
@@ -20,5 +27,21 @@ describe('Story 23.8 AC-2/AC-10 — AuditEventSourceWriteInput carries serializa
   it('exists purely to be typechecked — a Tx-shaped or hmac-carrying object must fail to satisfy AuditEventSourceWriteInput', () => {
     expect(txShapedWriteInputFixture).toBeDefined()
     expect(hmacCarryingWriteInputFixture).toBeDefined()
+  })
+})
+
+describe('Story 71.8 AC-3/AC-4 — delegated context types (compile-time fixtures)', () => {
+  it('exists purely to be typechecked: the legacy ctx union still fits, delegation needs the guard', () => {
+    for (const fixture of [
+      legacyApiRouteHandlerFixture,
+      legacyApiRouteWrapHandlerFixture,
+      delegatedHandlerFixture,
+      delegatedAliasFixture,
+      delegatedWrapAliasFixture,
+      nonNarrowedDelegationFixture,
+      nullableActorUserIdFixture,
+    ]) {
+      expect(fixture).toBeTypeOf('function')
+    }
   })
 })

@@ -87,11 +87,11 @@ function assertPhases(value: unknown, path: string): void {
   })
 }
 
-function validateAddOptions(value: unknown, path: string): void {
+function validateAddOptions(value: unknown, path: string, routeKey: string): void {
   if (value === undefined) return
   const options = assertRecord(value, path)
   assertKnownKeys(options, ADD_OPTION_KEYS, path)
-  validateApiRouteSecurity(options.security, `${path}.security`)
+  validateApiRouteSecurity(options.security, `${path}.security`, routeKey)
   if (options.schema !== undefined && typeof options.schema !== 'boolean') {
     fail(`${path}.schema must be a boolean`)
   }
@@ -111,7 +111,7 @@ function validateOverrideHooks(value: unknown, path: string): void {
   }
 }
 
-function validateOverrideFields(entry: UnknownRecord, path: string): void {
+function validateOverrideFields(entry: UnknownRecord, path: string, routeKey: string): void {
   if (entry.mode !== 'replace' && entry.mode !== 'wrap') {
     fail(`${path}.mode must be 'replace' or 'wrap'`)
   }
@@ -122,7 +122,7 @@ function validateOverrideFields(entry: UnknownRecord, path: string): void {
   if (entry.replaceSecurity !== undefined && typeof entry.replaceSecurity !== 'boolean') {
     fail(`${path}.replaceSecurity must be a boolean`)
   }
-  validateApiRouteSecurity(entry.security, `${path}.security`)
+  validateApiRouteSecurity(entry.security, `${path}.security`, routeKey)
   if (entry.security !== undefined && entry.replaceSecurity !== true) {
     fail(`${path}: security is only honoured with replaceSecurity: true`)
   }
@@ -153,8 +153,9 @@ function validateEntries(list: unknown, listName: 'add' | 'override', seen: Set<
     assertKnownKeys(entry, listName === 'add' ? ADD_KEYS : OVERRIDE_KEYS, entryPath)
     const method = assertMethod(entry.method, `${entryPath}.method`)
     const url = assertUrl(entry.url, `${entryPath}.url`)
-    if (listName === 'add') validateAddOptions(entry.options, `${entryPath}.options`)
-    else validateOverrideFields(entry, entryPath)
+    const routeKey = `${method} ${url}`
+    if (listName === 'add') validateAddOptions(entry.options, `${entryPath}.options`, routeKey)
+    else validateOverrideFields(entry, entryPath, routeKey)
     // The host serves `/x` and `/x/` as one route (`ignoreTrailingSlash`), so they are one key.
     const key = `${method} ${withoutTrailingSlash(url)}`
     if (seen.has(key)) fail(`${entryPath} duplicates ${key}`)

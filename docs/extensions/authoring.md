@@ -646,6 +646,76 @@ const manifest: ExtensionManifest = {
   `apiRoutes.app` (`errorHandler`, `notFoundHandler`, `hooks.prepend`, `hooks.append`; declaration data
   only).
 
+#### Delegated routes (`security.delegation`)
+
+A route can declare `security.delegation` to accept a service-delegated actor assertion
+(a signed statement from a trusted service naming the org and the acting user) instead of a user
+session. The declaration is plain data and is validated at registration:
+
+- `delegation: true` or `{}` means "accepts a service assertion"; `false` or omitted is a plain session
+  route. `subjectFields` optionally names the body property or path parameter (`in: 'body' | 'params'`,
+  a plain identifier of at most 128 characters) that carries the org or the actor; `org` and `actor`
+  must not name the same field.
+- A delegated route is authenticated by the assertion alone, so it cannot also set `requireMfa: true`,
+  `requirePlatformOperator: true` or `requireAuth: false`: registration fails with `invalid-manifest-field`
+  naming the route (`"<METHOD> <url>"`) and the flag. Every other combination is accepted.
+- There is no plain-session fallback on a delegated route. An extension that wants both registers two routes.
+- The handler receives `ctx.delegation` (`ApiRouteDelegation`) and a `ctx.auth` with `sessionId: 'delegation'`,
+  `isPlatformOperator: false` and no `orgRole` for an unlinked or non-member actor. The host builds this
+  context only on a route that declared `delegation`. The handler never verifies an assertion and must
+  not read the `Authorization` header for one; the assertion alone creates no session. Use
+  `isApiRouteDelegatedContext(ctx)` to narrow, or annotate the handler as `ApiRouteDelegatedHandler`.
+- The existing handler types are unchanged: `ApiRouteHandler` and `ApiRouteWrapHandler` gained a third
+  type parameter that defaults to the previous context union.
+- **Inert until the host verifies assertions.** Until a Project Vault release that verifies service
+  assertions (Story 71-3), the host treats the declaration as a plain session route and rejects an
+  unauthenticated request with 401. Do not rely on `delegation` before that host version; see the
+  package CHANGELOG.
+- **Hooks.** Use `append` hooks on a delegated route. Hooks declared with `prepend` run before Project
+  Vault's verification stages, so they see the request before the assertion is checked.
+
+```ts
+import type { ApiRoutesDeclaration, ApiRoutesHooks } from '@project-vault/extension-api'
+import { isApiRouteDelegatedContext } from '@project-vault/extension-api'
+
+// A service-to-service route: the caller presents a signed service assertion, not a user session.
+export const apiRoutes: ApiRoutesDeclaration = {
+  add: [
+    {
+      method: 'POST',
+      url: '/cm/audit-events',
+      options: {
+        security: {
+          delegation: {
+            // Optional: where the route carries a copy of the org and the actor, so the host can
+            // reject a body that disagrees with the verified assertion.
+            subjectFields: {
+              org: { in: 'body', name: 'orgId' },
+              actor: { in: 'body', name: 'actorId' },
+            },
+          },
+          minimumRole: 'member',
+          capability: 'cm.audit',
+        },
+      },
+    },
+  ],
+}
+
+export const apiRoutesHooks: ApiRoutesHooks = {
+  routes: {
+    'POST /cm/audit-events': {
+      handler: (ctx) => {
+        // Narrow with the guard: it needs both `ctx.delegation` and `ctx.auth.delegation === true`.
+        if (!isApiRouteDelegatedContext(ctx)) return { status: 'not-delegated' }
+        // `orgRole` is absent for an unlinked or non-member actor; `actorUserId` may be null.
+        return { org: ctx.delegation.orgId, role: ctx.auth.orgRole ?? null }
+      },
+    },
+  },
+}
+```
+
 #### Verifying a composed API: the runtime route audit and the composed spec
 
 Two tools boot the real `createApp()` with your extension, with no database (the loader's DB steps are

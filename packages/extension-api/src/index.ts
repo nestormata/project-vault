@@ -195,6 +195,12 @@ export type {
   ApiRouteAnyFunction,
   ApiRouteAuthContext,
   ApiRouteContext,
+  ApiRouteDelegatedAuthContext,
+  ApiRouteDelegatedContext,
+  ApiRouteDelegatedHandler,
+  ApiRouteDelegatedWrapHandler,
+  ApiRouteDelegation,
+  ApiRouteDelegationDeclaration,
   ApiRouteHandler,
   ApiRouteHookFn,
   ApiRouteHookPhase,
@@ -214,13 +220,18 @@ export type {
   AppNotFoundHandler,
   AppNotFoundWrapHandler,
   ApiRouteSecurity,
+  ApiRouteSubjectField,
   ApiRoutesHooks,
   ApiRouteWrapHandler,
   HostTransaction,
   RawRouteHandler,
   RawRouteWrapHandler,
 } from './hooks/api-routes.js'
-export { API_ROUTE_HOOK_PHASES, API_ROUTE_METHODS } from './hooks/api-routes.js'
+export {
+  API_ROUTE_HOOK_PHASES,
+  API_ROUTE_METHODS,
+  isApiRouteDelegatedContext,
+} from './hooks/api-routes.js'
 export { MAX_API_ROUTE_URL_LENGTH } from './api-routes-validation.js'
 export {
   NotificationOriginatorInvalidParamsError,

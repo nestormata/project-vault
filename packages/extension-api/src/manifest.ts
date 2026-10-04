@@ -619,7 +619,11 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // legacy UI-panel, `navItems` and `moduleDataRoutes` surface, plus the additive neutral
 // `ExtensionRequestContext` / `ExtensionActionResult` types. No removal, no behaviour change; a
 // 3.x extension loads and type-checks unchanged.
-export const EXTENSION_API_VERSION = '3.30.0'
+// Story 71.8 — bumped as a minor (3.30.0 -> 3.31.0): the optional `security.delegation` route
+// declaration and the delegated context types (`ctx.delegation`). New optional field and new
+// exported types only (policy rows 1 and 2); the handler types gain a defaulted `Ctx` type
+// parameter, so every existing handler annotation compiles unchanged.
+export const EXTENSION_API_VERSION = '3.31.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built
