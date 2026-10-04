@@ -67,6 +67,21 @@ describe('/dashboard +page.server.ts', () => {
     expect(result.vaultSealed).toBeFalsy()
   })
 
+  // Story 69.1 AC-8: the one-project 303 auto-skip is CentralizeMe's rule on its M1 override; PV's
+  // native dashboard renders for a user with exactly one project and never redirects.
+  it('does not redirect a user with exactly one project (the auto-skip is CM, not PV)', async () => {
+    listProjectsMock.mockResolvedValue({
+      items: [{ id: projectId, name: 'Only project', description: null }],
+      total: 1,
+      page: 1,
+      limit: 20,
+      hasNext: false,
+    })
+    const result = expectLoaded(await load(makeEvent()))
+    expect(result.selectedProject?.id).toBe(projectId)
+    expect(result.projects.items).toHaveLength(1)
+  })
+
   it('streams monitoring card states so the dashboard can render loading before they settle', async () => {
     listProjectsMock.mockResolvedValue({
       items: [{ id: projectId, name: 'Payments', description: null }],

@@ -181,6 +181,41 @@ test.describe('M3 region points (Story 69.1)', () => {
     ).toBe('alive')
   })
 
+  test('works: twenty interleaved requests from two users each carry only their own tile data, in the SSR HTML and in __data.json', async ({
+    context,
+    browser,
+  }) => {
+    const otherContext = await browser.newContext({ baseURL: process.env['E2E_BASE_URL'] })
+    try {
+      await seedOrgOwner(context, 'm3r-iso-a')
+      await seedOrgOwner(otherContext, 'm3r-iso-b')
+      const mine = await createProject(context, `m3r-ia-${randomUUID().slice(0, 8)}`)
+      const theirs = await createProject(otherContext, `m3r-ib-${randomUUID().slice(0, 8)}`)
+      const rounds = Array.from({ length: 10 }, (_, index) => index)
+      const fetchAll = (path: (id: string) => string) =>
+        Promise.all(
+          rounds.flatMap(() => [
+            context.request.get(path(mine)).then(async (r) => ({ id: mine, text: await r.text() })),
+            otherContext.request
+              .get(path(theirs))
+              .then(async (r) => ({ id: theirs, text: await r.text() })),
+          ])
+        )
+      for (const path of [
+        (id: string) => `/projects/${id}`,
+        (id: string) => `/projects/${id}/__data.json`,
+      ]) {
+        for (const { id, text } of await fetchAll(path)) {
+          const foreign = id === mine ? theirs : mine
+          expect(text).toContain(id)
+          expect(text).not.toContain(foreign)
+        }
+      }
+    } finally {
+      await otherContext.close()
+    }
+  })
+
   test('fails (denied): another org project id and a nonexistent id are one and the same 404 card, with no tile load and no 500', async ({
     page,
     context,
