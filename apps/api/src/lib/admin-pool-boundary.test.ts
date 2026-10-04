@@ -36,6 +36,9 @@ const importerAllowlist = new Set([
   'workers/extension-state-cleanup.ts',
   'workers/import-cleanup.ts',
   'workers/notification-inbox-purge.ts',
+  // Story 71.7: one bounded cross-org DELETE of expired delegation burn rows (FORCE-RLS table);
+  // column-level grant SELECT (org_id, jti, expires_at) + DELETE in migration 0103.
+  'workers/prune-delegation-assertion-jti.ts',
 ])
 
 describe('admin pool boundary drift guards', () => {

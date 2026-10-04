@@ -422,4 +422,11 @@ export const KNOWN_REVIEWED_DESTRUCTIVE_MIGRATIONS: Record<string, string> = {
   // (audit_log_entries stays untouched) and grants nothing beyond SELECT/INSERT.
   '0102_extension_audit_idempotency_keys':
     'Story 71.1 reviewed table-creation-time append-only (SELECT, INSERT) vault_app grant on the new extension_audit_idempotency_keys dedupe table; paired migration safety test proves it is a single additive CREATE TABLE that does not alter audit_log_entries.',
+  // Story 71.7 AC-2: brand-new, FORCE-RLS `delegation_assertion_jti` burn ledger. Its REVOKE/GRANT
+  // statements are table-creation-time ACLs on the new table only: an append-only vault_app grant
+  // (SELECT, INSERT) and the prune worker's least-privilege vault_admin grant (SELECT on
+  // org_id/jti/expires_at + DELETE, the 0085 shape). The paired migration-0103-safety.test.ts
+  // proves one additive CREATE TABLE, no ALTER on any pre-existing table and exactly these grants.
+  '0103_delegation_assertion_jti':
+    'Story 71.7 reviewed table-creation-time append-only (SELECT, INSERT) vault_app grant plus vault_admin prune grant (SELECT org_id/jti/expires_at + DELETE) on the new delegation_assertion_jti burn ledger; paired migration safety test proves it is a single additive CREATE TABLE that alters no pre-existing table.',
 }

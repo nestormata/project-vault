@@ -72,10 +72,14 @@ export const EXCLUDED_TABLES = new Set([
 // Story 71.1: extension_audit_idempotency_keys is append-only for vault_app too (SELECT, INSERT):
 // a key row is never updated or deleted by the app role; it disappears only through the audit-row
 // ON DELETE CASCADE of the sanctioned retention purge.
+// Story 71.7: delegation_assertion_jti is append-only for vault_app as well: a burned delegation
+// assertion can never be un-burned by application code; expired rows are reclaimed only by the
+// prune worker through vault_admin's column-level grant (migration 0103).
 const APPEND_ONLY_AUDIT_TABLES = new Set([
   'audit_log_entries',
   'platform_audit_events',
   'extension_audit_idempotency_keys',
+  'delegation_assertion_jti',
 ])
 
 export class RlsCoverageDriftError extends Error {

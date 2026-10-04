@@ -207,9 +207,13 @@ describe('checkRlsCoverage', () => {
     // threw — this hook only still matters if the process were killed before that `finally`
     // ran (e.g. OOM/SIGKILL mid-test), which inline `finally` blocks cannot protect against.
     // DROP/CREATE POLICY require table ownership — vault_app isn't the owner.
-    for (const policyName of Object.keys(POLICY_DEFS)) {
-      await restorePolicy(policyName)
-    }
+    // Restores stay strictly sequential (a promise chain, not Promise.all): concurrent statements
+    // would open extra adminSql pool connections, and the session-level advisory lock taken by
+    // withRlsPolicyMutationLock must keep being acquired and released on one connection.
+    await Object.keys(POLICY_DEFS).reduce<Promise<void>>(
+      (previous, policyName) => previous.then(() => restorePolicy(policyName)),
+      Promise.resolve()
+    )
   })
 
   it('resolves when every org_id table has an RLS policy', async () => {
@@ -256,7 +260,12 @@ describe('checkRlsCoverage', () => {
         JOIN LATERAL aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) acl ON true
         JOIN pg_catalog.pg_roles grantee ON grantee.oid = acl.grantee
        WHERE n.nspname = 'public'
-         AND c.relname IN ('audit_log_entries', 'platform_audit_events', 'extension_audit_idempotency_keys')
+         AND c.relname IN (
+           'audit_log_entries',
+           'platform_audit_events',
+           'extension_audit_idempotency_keys',
+           'delegation_assertion_jti'
+         )
          AND grantee.rolname = 'vault_app'
     `
     const byTable = new Map<string, Set<string>>()
@@ -270,9 +279,34 @@ describe('checkRlsCoverage', () => {
       'platform_audit_events',
       // Story 71.1: the idempotency dedupe table is registered as append-only too.
       'extension_audit_idempotency_keys',
+      // Story 71.7: a burned delegation assertion can never be un-burned by application code.
+      'delegation_assertion_jti',
     ]) {
       expect(byTable.get(table)).toEqual(new Set(['SELECT', 'INSERT']))
     }
+  })
+
+  // Story 71.7 AC-2: the delegation burn ledger is org-scoped (never exempt), forced and
+  // append-only, and the guard reports drift on either dimension by table name.
+  it('fails when delegation_assertion_jti loses FORCE ROW LEVEL SECURITY', async () => {
+    await withForceDropped('delegation_assertion_jti', async () => {
+      await expect(checkRlsCoverage(sql)).rejects.toThrow(
+        /ENABLE\/FORCE set equality drift detected: .*delegation_assertion_jti/
+      )
+    })
+  })
+
+  it('fails when vault_app is granted DELETE on delegation_assertion_jti', async () => {
+    await withRlsPolicyMutationLock(async () => {
+      await adminSql`GRANT DELETE ON TABLE delegation_assertion_jti TO vault_app`
+      try {
+        await expect(checkRlsCoverage(sql)).rejects.toThrow(
+          /vault_app table grants drift detected: .*delegation_assertion_jti \(role=vault_app; forbidden=DELETE\)/
+        )
+      } finally {
+        await adminSql`REVOKE DELETE ON TABLE delegation_assertion_jti FROM vault_app`
+      }
+    })
   })
 
   it('fails when an append-only audit table grants TRUNCATE', async () => {
