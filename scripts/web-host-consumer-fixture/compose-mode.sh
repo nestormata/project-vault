@@ -867,6 +867,43 @@ compose_anonymous_counter_checks() {
   return 0
 }
 
+# Story 68-25 (DW-509 item 6): the last response is a SvelteKit __data.json (devalue). Decode it
+# and require the injected load's `project` value to be exactly the number 404, in every node that
+# carries one; a text match on ",404" would also pass on ",4040" or a 404 under another key.
+compose_data_json_project_status() { # context
+  local context="$1" verdict
+  verdict="$(clean_env "$NODE_BIN" -e '
+    const fs = require("node:fs");
+    let payload;
+    try {
+      payload = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    } catch {
+      console.log("the response is not JSON");
+      process.exit(0);
+    }
+    const nodes = Array.isArray(payload && payload.nodes) ? payload.nodes : [];
+    const statuses = [];
+    for (const node of nodes) {
+      const data = node && node.data;
+      const head = Array.isArray(data) ? data[0] : null;
+      if (head !== null && typeof head === "object" && "project" in head) {
+        statuses.push(data[head.project]);
+      }
+    }
+    if (statuses.length === 0) {
+      console.log("no node of the __data.json carries a project value");
+    } else if (statuses.every((status) => status === 404)) {
+      console.log("ok");
+    } else {
+      console.log("project decodes to " + JSON.stringify(statuses) + ", expected exactly 404");
+    }
+  ' "$WORK/body.txt" 2>&1)" || true
+  if [[ "$verdict" != 'ok' ]]; then
+    compose_fail "${context}: ${verdict}"
+  fi
+  return 0
+}
+
 # Case 3: the contribution load, running as u1 through the request's own fetch, asks for u2's
 # project; the API's denial is rendered as a status and nothing of the other tenant is present.
 compose_cross_tenant_checks() {
@@ -878,7 +915,7 @@ compose_cross_tenant_checks() {
     else
       # devalue: the injected load returned {"who": ..., "project": 404}.
       compose_expect_ok "$port" GET "$path" "$CM_U1" '"project"'
-      compose_body_has ',404' 'cross-tenant denial in the load data'
+      compose_data_json_project_status 'cross-tenant denial in the load data'
     fi
     for leaked in 'U2 Secret' 'p-u2' 'o-u2' 'u2@fixture'; do
       compose_body_lacks "$leaked" "cross-tenant (${path}, as u1)"
@@ -948,12 +985,34 @@ compose_browser_checks() {
   return 0
 }
 
+# Story 68-25 AC-3: the exact __data.json check goes red on every wrong payload and passes the right one.
+compose_data_json_selftest() {
+  local ok='{"type":"data","nodes":[null,{"type":"data","data":[{"who":1,"project":2},"iso:u1",404],"uses":{}}]}'
+  printf '%s' "$ok" > "$WORK/body.txt"
+  compose_data_json_project_status "$SELFTEST_LABEL"
+  printf '%s' '{"type":"data","nodes":[{"type":"data","data":[{"project":1},200],"uses":{}}]}' > "$WORK/body.txt"
+  compose_expect_failure_message 'expected exactly 404' compose_data_json_project_status "$SELFTEST_LABEL"
+  printf '%s' '{"type":"data","nodes":[{"type":"data","data":[{"project":1},"404"],"uses":{}}]}' > "$WORK/body.txt"
+  compose_expect_failure_message 'expected exactly 404' compose_data_json_project_status "$SELFTEST_LABEL"
+  printf '%s' '{"type":"data","nodes":[{"type":"data","data":[{"project":1,"other":2},200,404],"uses":{}}]}' > "$WORK/body.txt"
+  compose_expect_failure_message 'expected exactly 404' compose_data_json_project_status "$SELFTEST_LABEL"
+  printf '%s' '{"type":"data","nodes":[{"type":"data","data":[{"project":1},4040],"uses":{}}]}' > "$WORK/body.txt"
+  compose_expect_failure_message 'expected exactly 404' compose_data_json_project_status "$SELFTEST_LABEL"
+  printf '%s' '{"type":"data","nodes":[{"type":"data","data":[{"who":1},"iso:u1"],"uses":{}}]}' > "$WORK/body.txt"
+  compose_expect_failure_message 'carries a project value' compose_data_json_project_status "$SELFTEST_LABEL"
+  printf '%s' 'not json ,404 "project"' > "$WORK/body.txt"
+  compose_expect_failure_message 'is not JSON' compose_data_json_project_status "$SELFTEST_LABEL"
+  log 'OK: the exact __data.json status check passes the real payload and fails on a wrong status, a string, a coincidence, a missing key and non-JSON'
+  return 0
+}
+
 # Story 68-15 AC-10: the failure path of the helpers prints its message (never a silent exit).
 compose_silent_failure_selftest() {
   local port="$1"
   compose_expect_failure_message 'answered HTTP' compose_expect_redirect "$port" GET "$SETTINGS_PATH" "$CM_U1" 303 /nowhere
   compose_expect_failure_message 'lacks nope-marker' compose_body_has 'nope-marker' "$SELFTEST_LABEL"
   compose_expect_failure_message 'handler counter inject-load is' fixture_expect_count inject-load 9999
+  compose_data_json_selftest
   log 'OK: a deliberately broken assertion prints its message and fails the variant (no silent exit)'
   return 0
 }
