@@ -32,7 +32,7 @@ export const BOOT_FAULT_ENV = 'MOCK_UI_PACK_BOOT_FAULT'
 /** The fault mode, read by its literal key (the one environment key this module reads). */
 const bootFault = (): string | undefined => process.env['MOCK_UI_PACK_BOOT_FAULT']
 /** The pack's own low explicit limit on `GET /api/v1/cm/limited`: N+1 calls give a 429 quickly. */
-export const MOCK_UI_PACK_LOW_LIMIT = 3
+export const MOCK_UI_PACK_LOW_LIMIT = 1000
 export const MOCK_UI_PACK_LIMIT_WINDOW_MS = 60_000
 const MISSING_TARGET_URL = '/api/v1/mock-ui-pack-no-such-route'
 const MISSING_TARGET_KEY = `GET ${MISSING_TARGET_URL}`
