@@ -39,6 +39,7 @@
     "check-implementation-artifacts-symlinks": "tsx scripts/check-implementation-artifacts-symlinks.ts",
     "check-post-merge-status-drift": "tsx scripts/check-post-merge-status-drift.ts",
     "check-no-sonar-suppressions": "tsx scripts/check-no-sonar-suppressions.ts",
+    "check-no-agent-attribution": "tsx scripts/check-no-agent-attribution.ts",
     "check-search-index": "tsx scripts/check-search-index.ts",
     "check-vault-action-dist": "tsx scripts/check-vault-action-dist-fresh.ts",
     "check-build-info-unstamped": "tsx scripts/check-build-info-unstamped.ts",
