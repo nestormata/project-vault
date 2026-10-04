@@ -47,25 +47,40 @@ export async function seedOrgOwner(context: BrowserContext, label: string): Prom
   return { userId, orgId, email }
 }
 
-/** A project of the seeded user's org, created through the API (the session of `context`). */
-export async function createProject(context: BrowserContext, name: string): Promise<string> {
-  const response = await context.request.post('/api/v1/projects', { data: { name } })
+async function postForId(context: BrowserContext, path: string, data: unknown): Promise<string> {
+  const response = await context.request.post(path, { data })
   expect(response.ok(), await response.text()).toBeTruthy()
   return ((await response.json()) as { data: { id: string } }).data.id
 }
 
+/** A project of the seeded user's org, created through the API (the session of `context`). */
+export function createProject(context: BrowserContext, name: string): Promise<string> {
+  return postForId(context, '/api/v1/projects', { name })
+}
+
 /** A credential of the seeded user's project, created through the API with the session of `context`.
  * The secret value is random per call, never a literal; only the id is returned. */
-export async function createCredential(
+export function createCredential(
   context: BrowserContext,
   projectId: string,
   name: string
 ): Promise<string> {
-  const response = await context.request.post(`/api/v1/projects/${projectId}/credentials`, {
-    data: { name, value: randomBytes(18).toString('base64url') },
+  return postForId(context, `/api/v1/projects/${projectId}/credentials`, {
+    name,
+    value: randomBytes(18).toString('base64url'),
   })
-  expect(response.ok(), await response.text()).toBeTruthy()
-  return ((await response.json()) as { data: { id: string } }).data.id
+}
+
+/** An org owner with one project and one credential, each uniquely named (Story 69.2). */
+export async function seedCredentialPage(
+  context: BrowserContext,
+  label: string
+): Promise<SeededUser & { projectId: string; credentialId: string; credentialName: string }> {
+  const user = await seedOrgOwner(context, label)
+  const projectId = await createProject(context, `${label}-${randomUUID().slice(0, 8)}`)
+  const credentialName = `${label}-${randomUUID().slice(0, 8)}`
+  const credentialId = await createCredential(context, projectId, credentialName)
+  return { ...user, projectId, credentialId, credentialName }
 }
 
 /** Adds a second user to the owner's org as a project `viewer`, through PV's real invitation flow

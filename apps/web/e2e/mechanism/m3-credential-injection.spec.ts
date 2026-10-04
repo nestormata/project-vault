@@ -4,7 +4,6 @@ import { setOrganizationRoleViaDb } from '../fixtures/db.js'
 import {
   apiContextFor,
   countAuditEvents,
-  createCredential,
   createProject,
   expectAnonymousLoginRedirect,
   open,
@@ -35,6 +34,15 @@ const NOT_FOUND_CARD = 'Secret not found'
 
 const pathOf = (projectId: string, credentialId: string) =>
   `/projects/${projectId}/credentials/${credentialId}`
+/** Saves a fresh note through the actions fill and expects the result and a fresh contribution load. */
+async function saveNote(page: Page): Promise<void> {
+  const firstNonce = await NONCE(page).textContent()
+  const note = noteName()
+  await NOTE(page).fill(note)
+  await SAVE(page).click()
+  await expect(RESULT(page)).toHaveText(`saved:${note}`)
+  await expect(NONCE(page)).not.toHaveText(firstNonce ?? '')
+}
 const noteName = () => `m3c-note-${randomUUID().slice(0, 8)}`
 
 /** The text with every id replaced, so two pages for different ids can be compared byte for byte. */
@@ -47,10 +55,11 @@ test.describe('M3 region points on the credential detail page (Story 69.2)', () 
     context,
   }) => {
     const mismatches = trackHydrationMismatch(page)
-    await seedOrgOwner(context, 'm3c-render')
-    const projectId = await createProject(context, `m3c-${randomUUID().slice(0, 8)}`)
-    const name = `m3c-cred-${randomUUID().slice(0, 8)}`
-    const credentialId = await createCredential(context, projectId, name)
+    const {
+      projectId,
+      credentialId,
+      credentialName: name,
+    } = await seedCredentialPage(context, 'm3c-render')
     await open(page, pathOf(projectId, credentialId), NOTE(page))
     // PV's own regions are still there beside the contributions
     await expect(page.getByRole('heading', { level: 1, name })).toBeVisible()
@@ -79,23 +88,12 @@ test.describe('M3 region points on the credential detail page (Story 69.2)', () 
     page,
     context,
   }) => {
-    const user = await seedOrgOwner(context, 'm3c-action')
-    const projectId = await createProject(context, `m3c-act-${randomUUID().slice(0, 8)}`)
-    const credentialId = await createCredential(
-      context,
-      projectId,
-      `m3c-${randomUUID().slice(0, 8)}`
-    )
-    const before = await countAuditEvents(user.orgId, DOCUMENT_EVENT)
+    const { orgId, projectId, credentialId } = await seedCredentialPage(context, 'm3c-action')
+    const before = await countAuditEvents(orgId, DOCUMENT_EVENT)
     await open(page, pathOf(projectId, credentialId), NOTE(page))
-    const firstNonce = await NONCE(page).textContent()
-    const note = noteName()
-    await NOTE(page).fill(note)
-    await SAVE(page).click()
-    await expect(RESULT(page)).toHaveText(`saved:${note}`)
-    await expect.poll(() => countAuditEvents(user.orgId, DOCUMENT_EVENT)).toBe(before + 1)
     // Kit re-ran the page load after the action: the contribution load is fresh
-    await expect(NONCE(page)).not.toHaveText(firstNonce ?? '')
+    await saveNote(page)
+    await expect.poll(() => countAuditEvents(orgId, DOCUMENT_EVENT)).toBe(before + 1)
     await expect(LOAD(page)).toContainText(`credential=${credentialId}`)
   })
 
@@ -103,13 +101,7 @@ test.describe('M3 region points on the credential detail page (Story 69.2)', () 
     context,
     browser,
   }) => {
-    const owner = await seedOrgOwner(context, 'm3c-viewer-owner')
-    const projectId = await createProject(context, `m3c-v-${randomUUID().slice(0, 8)}`)
-    const credentialId = await createCredential(
-      context,
-      projectId,
-      `m3c-${randomUUID().slice(0, 8)}`
-    )
+    const { orgId, projectId, credentialId } = await seedCredentialPage(context, 'm3c-viewer-owner')
     const viewerContext = await browser.newContext({ baseURL: process.env['E2E_BASE_URL'] })
     try {
       const viewerPage = await viewerContext.newPage()
@@ -117,7 +109,7 @@ test.describe('M3 region points on the credential detail page (Story 69.2)', () 
       // DW-536: PV's credential page 500s for an org member or viewer (its load reads the admin-only
       // org user list), so the project viewer is an org admin here: the project role is what matters.
       await setOrganizationRoleViaDb(viewer.orgId, viewer.email, 'admin')
-      const before = await countAuditEvents(owner.orgId, DOCUMENT_EVENT)
+      const before = await countAuditEvents(orgId, DOCUMENT_EVENT)
       await open(viewerPage, pathOf(projectId, credentialId), NOTE(viewerPage))
       const actions = viewerPage.getByTestId(ACTIONS_FILL)
       await expect(actions).toHaveAttribute('data-project-role', 'viewer')
@@ -132,7 +124,7 @@ test.describe('M3 region points on the credential detail page (Story 69.2)', () 
       await SAVE(viewerPage).click()
       await expect(RESULT(viewerPage)).toHaveText('error:viewer-denied')
       await expect(viewerPage.getByRole('heading', { level: 1 })).toBeVisible()
-      expect(await countAuditEvents(owner.orgId, DOCUMENT_EVENT)).toBe(before)
+      expect(await countAuditEvents(orgId, DOCUMENT_EVENT)).toBe(before)
     } finally {
       await viewerContext.close()
     }
@@ -142,13 +134,7 @@ test.describe('M3 region points on the credential detail page (Story 69.2)', () 
     page,
     context,
   }) => {
-    await seedOrgOwner(context, 'm3c-limit')
-    const projectId = await createProject(context, `m3c-l-${randomUUID().slice(0, 8)}`)
-    const credentialId = await createCredential(
-      context,
-      projectId,
-      `m3c-${randomUUID().slice(0, 8)}`
-    )
+    const { projectId, credentialId } = await seedCredentialPage(context, 'm3c-limit')
     const base = process.env['E2E_BASE_URL'] ?? ''
     const probe = () =>
       context.request.post(`${pathOf(projectId, credentialId)}?/credential.detail.shares.probe`, {
@@ -175,21 +161,10 @@ test.describe('M3 region points on the credential detail page (Story 69.2)', () 
     })
     try {
       const page = await noJs.newPage()
-      await seedOrgOwner(noJs, 'm3c-nojs')
-      const projectId = await createProject(noJs, `m3c-nj-${randomUUID().slice(0, 8)}`)
-      const credentialId = await createCredential(
-        noJs,
-        projectId,
-        `m3c-${randomUUID().slice(0, 8)}`
-      )
+      const { projectId, credentialId } = await seedCredentialPage(noJs, 'm3c-nojs')
       await page.goto(pathOf(projectId, credentialId))
-      const firstNonce = await NONCE(page).textContent()
-      const note = noteName()
-      await NOTE(page).fill(note)
-      await SAVE(page).click()
-      await expect(RESULT(page)).toHaveText(`saved:${note}`)
       // the POST answered with the page rendered anew: its load ran again
-      await expect(NONCE(page)).not.toHaveText(firstNonce ?? '')
+      await saveNote(page)
     } finally {
       await noJs.close()
     }
@@ -205,13 +180,8 @@ test.describe('M3 region points on the credential detail page (Story 69.2)', () 
     const ownProject = await createProject(context, `m3c-own-${randomUUID().slice(0, 8)}`)
     const otherContext = await browser.newContext({ baseURL: process.env['E2E_BASE_URL'] })
     try {
-      await seedOrgOwner(otherContext, 'm3c-other')
-      const foreignProject = await createProject(otherContext, `m3c-f-${randomUUID().slice(0, 8)}`)
-      const foreignCredential = await createCredential(
-        otherContext,
-        foreignProject,
-        `m3c-f-${randomUUID().slice(0, 8)}`
-      )
+      const { projectId: foreignProject, credentialId: foreignCredential } =
+        await seedCredentialPage(otherContext, 'm3c-other')
       const missingCredential = randomUUID()
       const foreign = await page.goto(pathOf(foreignProject, foreignCredential))
       await expect(page.getByText(NOT_FOUND_CARD)).toBeVisible()
@@ -256,19 +226,16 @@ test.describe('M3 region points on the credential detail page (Story 69.2)', () 
     browser,
   }) => {
     const base = process.env['E2E_BASE_URL'] ?? ''
-    const user = await seedOrgOwner(context, 'm3c-deny')
-    const own = await createProject(context, `m3c-own-${randomUUID().slice(0, 8)}`)
-    const ownCredential = await createCredential(context, own, `m3c-${randomUUID().slice(0, 8)}`)
+    const {
+      orgId,
+      projectId: own,
+      credentialId: ownCredential,
+    } = await seedCredentialPage(context, 'm3c-deny')
     const otherContext = await browser.newContext({ baseURL: base })
     try {
-      await seedOrgOwner(otherContext, 'm3c-deny-other')
-      const foreignProject = await createProject(otherContext, `m3c-df-${randomUUID().slice(0, 8)}`)
-      const foreignCredential = await createCredential(
-        otherContext,
-        foreignProject,
-        `m3c-df-${randomUUID().slice(0, 8)}`
-      )
-      const before = await countAuditEvents(user.orgId, DOCUMENT_EVENT)
+      const { projectId: foreignProject, credentialId: foreignCredential } =
+        await seedCredentialPage(otherContext, 'm3c-deny-other')
+      const before = await countAuditEvents(orgId, DOCUMENT_EVENT)
       const post = (projectId: string, credentialId: string, origin = base) =>
         context.request.post(`${pathOf(projectId, credentialId)}?/credential.detail.actions.note`, {
           form: { note: 'x', projectRole: 'owner' },
@@ -280,7 +247,7 @@ test.describe('M3 region points on the credential detail page (Story 69.2)', () 
       const missingResponse = await post(own, randomUUID())
       expect(foreignResponse.status()).toBe(missingResponse.status())
       expect(foreignResponse.status()).toBeLessThan(500)
-      expect(await countAuditEvents(user.orgId, DOCUMENT_EVENT)).toBe(before)
+      expect(await countAuditEvents(orgId, DOCUMENT_EVENT)).toBe(before)
       // cross-origin: Kit's origin check rejects before the action runs
       expect((await post(own, ownCredential, 'http://evil.example')).status()).toBe(403)
       // anonymous: PV's protected paths redirect before any action runs
@@ -289,7 +256,7 @@ test.describe('M3 region points on the credential detail page (Story 69.2)', () 
         `${pathOf(own, ownCredential)}?/credential.detail.actions.note`,
         base
       )
-      expect(await countAuditEvents(user.orgId, DOCUMENT_EVENT)).toBe(before)
+      expect(await countAuditEvents(orgId, DOCUMENT_EVENT)).toBe(before)
     } finally {
       await otherContext.close()
     }
