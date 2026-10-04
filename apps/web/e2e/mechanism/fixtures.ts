@@ -147,15 +147,10 @@ export async function seedOrgMember(
   const page = await context.newPage()
   await registerViaInvitation(page, token, testPassword)
   await page.close()
-  const login = await context.request.post('/api/v1/auth/login', {
-    data: { email, password: testPassword },
-  })
-  expect(login.ok(), await login.text()).toBeTruthy()
-  const body = (await login.json()) as { data: { userId: string; orgId: string } }
-  const onboarding = await context.request.post('/api/v1/users/me/onboarding', {
-    data: { completed: true },
-  })
-  expect(onboarding.ok(), await onboarding.text()).toBeTruthy()
+  const body = (await postOk(context, '/api/v1/auth/login', { email, password: testPassword })) as {
+    data: { userId: string; orgId: string }
+  }
+  await postOk(context, '/api/v1/users/me/onboarding', { completed: true })
   return { context, user: { userId: body.data.userId, orgId: body.data.orgId, email } }
 }
 
@@ -168,4 +163,29 @@ export function readWebLog(): string {
     encoding: 'utf8',
   })
   return `${run.stdout}${run.stderr}`
+}
+
+/** POSTs JSON through the context's session and returns the parsed body, failing on a non-2xx. */
+async function postOk(context: BrowserContext, route: string, data: unknown): Promise<unknown> {
+  const response = await context.request.post(route, { data })
+  expect(response.ok(), await response.text()).toBeTruthy()
+  return response.status() === 204 ? null : response.json()
+}
+
+/** A form POST from a foreign `origin` header, never following redirects: PV's CSRF check answers it. */
+export function postFromForeignOrigin(context: BrowserContext, path: string) {
+  return context.request.post(path, {
+    form: { title: 'x' },
+    headers: { origin: 'http://evil.example' },
+    maxRedirects: 0,
+  })
+}
+
+/** Revokes the session server-side while the browser keeps its (now stale) cookies, so the next
+ * navigation is an expired-session request rather than an anonymous one. */
+export async function revokeSessionKeepingCookies(context: BrowserContext): Promise<void> {
+  const stale = await context.cookies()
+  const logout = await context.request.post('/api/v1/auth/logout')
+  expect(logout.status(), await logout.text()).toBe(204)
+  await context.addCookies(stale)
 }

@@ -4,7 +4,9 @@ import {
   countAuditEvents,
   createProject,
   open,
+  postFromForeignOrigin,
   readWebLog,
+  revokeSessionKeepingCookies,
   seedOrgMember,
   seedOrgOwner,
   trackHydrationMismatch,
@@ -140,11 +142,7 @@ test.describe('M3 region points on settings audit, notifications and project mem
     })
     expect(anonymous.status()).toBe(303)
     expect(anonymous.headers()['location']).toBe('/login')
-    const foreign = await context.request.post(action, {
-      form: { title: 'x' },
-      headers: { origin: 'http://evil.example' },
-      maxRedirects: 0,
-    })
+    const foreign = await postFromForeignOrigin(context, action)
     expect(foreign.status()).toBe(403)
     expect(await countAuditEvents(user.orgId, DOCUMENT_EVENT)).toBe(before + 1)
   })
@@ -155,10 +153,7 @@ test.describe('M3 region points on settings audit, notifications and project mem
   }) => {
     await seedOrgOwner(context, 'p5-session')
     await open(page, NOTIFICATIONS, page.getByTestId(ID.channels))
-    const stale = await context.cookies()
-    const logout = await context.request.post('/api/v1/auth/logout')
-    expect(logout.status(), await logout.text()).toBe(204)
-    await context.addCookies(stale)
+    await revokeSessionKeepingCookies(context)
     await page.goto(AUDIT)
     await expect(page).toHaveURL(/\/login\?reason=session-expired/)
     expect(await page.content()).not.toContain('mock-ui-pack:m3-p5')
