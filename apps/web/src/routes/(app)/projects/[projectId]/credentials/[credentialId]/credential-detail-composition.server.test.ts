@@ -212,7 +212,7 @@ describe('region point behavior on the credential detail page', () => {
     await load(event)
     const second = await load(event)
     expect(runs).toBe(2)
-    expect(second.__inject['credential.detail.shares']).toEqual([{ run: 2 }])
+    expect(second.__inject?.['credential.detail.shares']).toEqual([{ run: 2 }])
   })
 
   it('does not run a contribution load for a notFound or a vaultSealed own result', async () => {
@@ -241,11 +241,11 @@ describe('region point behavior on the credential detail page', () => {
 })
 
 describe('the web app keeps the framework origin check (AC-4 red-team (c))', () => {
-  it('sets no `csrf` override in svelte.config.js, so a forged-origin POST is rejected by Kit', async () => {
-    const config = (await import('../../../../../../../svelte.config.js')) as {
-      default: { kit?: Record<string, unknown> }
-    }
-    expect(config.default.kit).toBeDefined()
-    expect(Object.keys(config.default.kit ?? {})).not.toContain('csrf')
+  it('sets no `csrf` override in svelte.config.js or the server hooks, so Kit rejects a forged origin', async () => {
+    const config = (await import('../../../../../../../svelte.config.js?raw')).default
+    const hooks = (await import('../../../../../../hooks.server.ts?raw')).default
+    expect(config).toContain('kit')
+    expect(config).not.toMatch(/\bcsrf\b/)
+    expect(hooks).not.toMatch(/\bcsrf\b/)
   })
 })
