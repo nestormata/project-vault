@@ -32,8 +32,10 @@ Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.4.0`
 (aliases `1.4`, `1`, `latest`). Extension API contract: the source is at
 `@project-vault/extension-api@3.29.0`, and this host loads extensions whose manifest `apiVersion`
 is in `>=3.0.0 <=3.29.0` (`HOST_SUPPORTED_EXTENSION_API_RANGE`). **The npm package is released on its
-own tags and is not part of this release:** `next` is `3.27.0` and `latest` is `3.25.0`, so
-`3.28.0` and `3.29.0` are not on npm yet. CLI: `pvault-1.4.0.mjs` on this release's assets.
+own tags and is not part of this release:** `3.29.0` was published to `next` from its own tag
+`extension-api-v3.29.0` (commit `49c27b34`) shortly before this release, and `latest` is still
+`3.25.0`. `3.28.0` was never published; `3.29.0` includes it. CLI: `pvault-1.4.0.mjs` on this
+release's assets.
 Build-time composition packages published from this tag to the npm `next` dist-tag:
 `@project-vault/web-host@1.4.0` and `@project-vault/composition-kit@0.7.0`.
 
