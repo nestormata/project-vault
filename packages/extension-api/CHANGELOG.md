@@ -2,6 +2,61 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.30.0 — 2026-10-06
+
+contract-hash: sha256:0b7f7792778480221694d0ae64b3f1e47f8e699225772fad333689245c8f80f1
+
+Clock not started; dates projected (Story 68.11, Phase A). The heading date is the PLANNED
+publication day, not a published fact: the 90-day notice window starts when the maintainer
+publishes this release, and the real dates replace the projected ones in a small follow-up commit
+(`notice-window-ends` may only move later). `notice-window-ends` below is the projected publication
+date + 90 days + a 10-day slack.
+
+### Added
+
+- `ExtensionRequestContext` (Story 68.11): the neutral, panel-free request context (`identity`,
+  `orgId`, `projectId?`, `resourceId?`, `locale`, `theme`, `requestState?`). It is the supertype of
+  the now-deprecated `ModuleActionContext`, which keeps every member it had (it adds only the
+  panel-only `slot`, `actionEndpoint?` and `subpath?`). It has no `slot`, `actionEndpoint` or
+  `subpath`.
+- `ExtensionActionResult` (Story 68.11): the typed-outcome result union of `oauthHandoff` and
+  `publicRoute` hooks, named without the panel vocabulary. The deprecated `ActionResult` is an
+  alias of it. `html?` stays on every outcome and is documented as an inert string field.
+
+The `oauthHandoff.onOAuthStart` parameter type stays `ModuleActionContext` in this release (no
+signature change the host could not honour); a handler written against `ExtensionRequestContext`
+is assignable to it. The hook parameter becomes `ExtensionRequestContext` only in the next major.
+The host-built context for `oauthHandoff` still carries a `slot` value; do not read it.
+
+### Deprecated
+
+The legacy runtime UI-panel API, `navItems` and `moduleDataRoutes` are deprecated through this
+policy's lifecycle. Nothing is removed and nothing changes at runtime: every symbol below keeps
+working identically for the whole notice window. Removal happens no earlier than the next major
+(4.0.0 at time of writing) and after the notice window ends.
+
+- Types: `UIPanel`, `UIPanelContext`, `UIPanelResult`, `ModuleAction`, `ModuleActionRequest`,
+  `ModuleActionContext` (replacement `ExtensionRequestContext`), `ActionResult` (replacement
+  `ExtensionActionResult`), `ModuleDataRequestContext`, `ModuleDataResult`,
+  `ModuleDataRouteHandler`, `ExtensionNavItem`, `ModuleDataRouteDeclaration`.
+- Manifest fields: `uiPanelSlots`, `moduleActions`, `navItems`, `moduleDataRoutes`
+  (`panelDataPaths` keeps its own earlier notice, window ending 2026-11-29).
+- Hooks: `uiPanel`, `moduleAction`, `moduleData`.
+- Capability member `'ui-panel'` (a union member cannot carry a JSDoc tag the marker lint reads, so
+  the notice is this entry and a comment on the member).
+- Replacements: `uiPanelSlots`, `moduleActions`, `uiPanel`, `moduleAction` and `onRenderPanel` are
+  replaced by composed UI (ADR 0007 build-time composition: a UI pack, never HTML strings);
+  `navItems` by the M5 nav delta of the UI pack (`nav`); `moduleDataRoutes` and `moduleData` by M7
+  `apiRoutes`; `ModuleActionContext` and `ActionResult` by `ExtensionRequestContext` and
+  `ExtensionActionResult`.
+  - Notified: 2026-10-06, CHANGELOG entry (this entry), GitHub Release `extension-api-v3.30.0` and an issue on `centralizeme-sass` naming CM story 16-15 as the removal owner; recipient CentralizeMe maintainer (Nestor Mata Cuthbert, who confirmed the 90-day window on 2026-10-04). Projected: the Release and the issue are maintainer-only and not yet opened (Story 68-24 hand-off).
+  - earliest-removal: 4.0.0 (the next major at time of writing)
+  - notice-window-ends: 2027-01-14
+
+Per `docs/extension-api-versioning-policy.md` rows 1 and 11 (adding exported types) and the
+deprecation lifecycle (markers only, no removal), this change is NON-BREAKING, a MINOR. The floor
+stays `>=3.0.0`.
+
 ## 3.29.0 — 2026-10-03
 
 contract-hash: sha256:792e06e450ba9d272733467e161a400798b828f8bbe682f70fe8382d24ce1359

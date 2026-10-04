@@ -19,6 +19,11 @@
  *   PV's small `--pv-ext-*` custom-property theming contract (`EXTENSION_THEME_CSS_VARS` /
  *   `ExtensionThemeCssVar`, `theme-contract.ts`) — consume those via `var(--pv-ext-ink, #yourFallback)`
  *   with a hardcoded fallback, the same pattern as an extension-local `var(--ext-ink, #24323b)`.
+ *
+ * @deprecated
+ * replacement: composed UI (ADR 0007 build-time composition)
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
  */
 export type UIPanelContext = {
   /** Which named panel slot core is asking the extension to render into. */
@@ -100,11 +105,23 @@ export type UIPanelContext = {
   subpath?: string
 }
 
+/**
+ * @deprecated
+ * replacement: composed UI (ADR 0007 build-time composition)
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
+ */
 export type UIPanelResult = {
   /** Serializable HTML fragment for core to render into the requested slot. */
   html: string
 }
 
+/**
+ * @deprecated
+ * replacement: composed UI (ADR 0007 build-time composition)
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
+ */
 export type UIPanel = {
   onRenderPanel(context: UIPanelContext): Promise<UIPanelResult>
 }

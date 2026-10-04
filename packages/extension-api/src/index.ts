@@ -10,13 +10,59 @@
  */
 export type { AuthResult, AuthStrategy } from './hooks/auth-strategy.js'
 export type { NotificationChannel, NotificationPayload } from './hooks/notification-channel.js'
-export type { UIPanel, UIPanelContext, UIPanelResult } from './hooks/ui-panel.js'
+/**
+ * @deprecated
+ * replacement: composed UI (ADR 0007 build-time composition)
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
+ */
+export type { UIPanel } from './hooks/ui-panel.js'
+/**
+ * @deprecated
+ * replacement: composed UI (ADR 0007 build-time composition)
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
+ */
+export type { UIPanelContext } from './hooks/ui-panel.js'
+/**
+ * @deprecated
+ * replacement: composed UI (ADR 0007 build-time composition)
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
+ */
+export type { UIPanelResult } from './hooks/ui-panel.js'
 export type {
-  ActionResult,
-  ModuleAction,
-  ModuleActionContext,
-  ModuleActionRequest,
-} from './hooks/module-action.js'
+  ExtensionRequestContext,
+  ExtensionActionResult,
+} from './hooks/extension-request-context.js'
+/**
+ * @deprecated
+ * replacement: ExtensionActionResult
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
+ */
+export type { ActionResult } from './hooks/module-action.js'
+/**
+ * @deprecated
+ * replacement: composed UI (ADR 0007 build-time composition) for panel actions and M7 apiRoutes
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
+ */
+export type { ModuleAction } from './hooks/module-action.js'
+/**
+ * @deprecated
+ * replacement: ExtensionRequestContext
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
+ */
+export type { ModuleActionContext } from './hooks/module-action.js'
+/**
+ * @deprecated
+ * replacement: composed UI (ADR 0007 build-time composition) for panel actions and M7 apiRoutes
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
+ */
+export type { ModuleActionRequest } from './hooks/module-action.js'
 export type {
   CapabilityDecision,
   CapabilityGate,
@@ -79,11 +125,27 @@ export type {
   ProjectCreatePolicy,
   ProjectCreatePolicyContext,
 } from './hooks/project-lifecycle.js'
-export type {
-  ModuleDataRequestContext,
-  ModuleDataResult,
-  ModuleDataRouteHandler,
-} from './hooks/module-data.js'
+/**
+ * @deprecated
+ * replacement: M7 apiRoutes
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
+ */
+export type { ModuleDataRequestContext } from './hooks/module-data.js'
+/**
+ * @deprecated
+ * replacement: M7 apiRoutes
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
+ */
+export type { ModuleDataResult } from './hooks/module-data.js'
+/**
+ * @deprecated
+ * replacement: M7 apiRoutes
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
+ */
+export type { ModuleDataRouteHandler } from './hooks/module-data.js'
 export type {
   DeliveryProvider,
   DeliveryProviderSendPayload,
@@ -182,10 +244,22 @@ export { EXTENSION_THEME_CSS_VARS } from './theme-contract.js'
 export type {
   ExtensionCapability,
   ExtensionManifest,
-  ExtensionNavItem,
-  ModuleDataRouteDeclaration,
   ScheduledTaskDeclaration,
 } from './manifest.js'
+/**
+ * @deprecated
+ * replacement: M5 nav delta (UI pack nav)
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
+ */
+export type { ExtensionNavItem } from './manifest.js'
+/**
+ * @deprecated
+ * replacement: M7 apiRoutes
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
+ */
+export type { ModuleDataRouteDeclaration } from './manifest.js'
 export type { NavItemIconToken } from './manifest.js'
 export {
   ANONYMOUS_ROUTE_PATH_PATTERN,

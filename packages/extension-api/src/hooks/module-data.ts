@@ -3,6 +3,11 @@
  * shape, plus `params`/`query` for the resolved route. Deliberately minimal, matching
  * `UIPanelContext`'s own "re-derived fresh from the request's own resolved session on every
  * call, never cached" discipline.
+ *
+ * @deprecated
+ * replacement: M7 apiRoutes
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
  */
 export type ModuleDataRequestContext = {
   /** Story 29.4 AC3 — who is asking, re-derived fresh from the request's own resolved session. */
@@ -28,12 +33,23 @@ export type ModuleDataRequestContext = {
  * Story 29.4 AC3 — `status` defaults to `200` when omitted; `body` is JSON-serialized verbatim by
  * the route (mirrors `onRenderPanel()`'s own "trusted-but-arbitrary in-process code" posture — no
  * re-sanitization of the module's own returned data shape).
+ *
+ * @deprecated
+ * replacement: M7 apiRoutes
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
  */
 export type ModuleDataResult = {
   status?: number
   body: unknown
 }
 
+/**
+ * @deprecated
+ * replacement: M7 apiRoutes
+ * earliest-removal: 4.0.0
+ * notice-window-ends: 2027-01-14
+ */
 export type ModuleDataRouteHandler = (
   context: ModuleDataRequestContext
 ) => Promise<ModuleDataResult>

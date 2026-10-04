@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 // check-action-pins.test.ts (no non-literal fs paths).
 const LIVE_FILES: Record<string, string> = import.meta.glob(
   [
-    '../packages/extension-api/src/hooks/module-action.ts',
+    '../packages/extension-api/src/hooks/extension-request-context.ts',
     '../docs/extensions/authoring.md',
     '../docs/extensions/README.md',
   ],
@@ -19,11 +19,11 @@ const LIVE_FILES: Record<string, string> = import.meta.glob(
 export const MODULE_ACTIONS_HEADING = '### Module actions and ActionResult'
 export const MODULE_ACTIONS_ANCHOR = 'module-actions-and-actionresult'
 
-const ACTION_RESULT_DECLARATION = 'export type ActionResult ='
+const ACTION_RESULT_DECLARATION = 'export type ExtensionActionResult ='
 const OUTCOME_LITERAL_RE = /outcome:\s*['"]([\w-]+)['"]/g
 const OUTCOME_KEY_RE = /\boutcome\??:/g
 
-/** Returns the `outcome` literals of the `export type ActionResult =` union, bounded to that
+/** Returns the `outcome` literals of the `export type ExtensionActionResult =` union, bounded to that
  * declaration (it ends at the first blank line or the next `export`). Throws when the declaration
  * is missing or yields no outcome, so a broken extractor can never pass vacuously. */
 export function extractActionResultOutcomes(source: string): string[] {
@@ -102,7 +102,7 @@ const DENIED_VARIANT = "  | { outcome: 'denied'; html?: string }"
 
 const FIXTURE_UNION = [
   '/** docs mentioning { outcome: `ok` } are ignored */',
-  'export type ActionResult =',
+  'export type ExtensionActionResult =',
   "  | { outcome: 'ok'; html?: string }",
   DENIED_VARIANT,
   '',
@@ -156,11 +156,11 @@ describe('extension authoring doc drift guard: fixtures', () => {
 
   it('never passes vacuously when there is no ActionResult declaration', () => {
     expect(() => extractActionResultOutcomes('export type Other = { outcome: "x" }')).toThrow(
-      /no "export type ActionResult =" declaration/
+      /no "export type ExtensionActionResult =" declaration/
     )
-    expect(() => extractActionResultOutcomes('export type ActionResult = never\n')).toThrow(
-      /declares no outcome literal/
-    )
+    expect(() =>
+      extractActionResultOutcomes('export type ExtensionActionResult = never\n')
+    ).toThrow(/declares no outcome literal/)
   })
 
   it('fails loudly on an outcome it cannot read as a literal', () => {
@@ -188,7 +188,7 @@ describe('extension authoring doc drift guard: live files', () => {
     expect(text, `${path} must be loadable`).toBeDefined()
     return text ?? ''
   }
-  const moduleActionSource = read('packages/extension-api/src/hooks/module-action.ts')
+  const moduleActionSource = read('packages/extension-api/src/hooks/extension-request-context.ts')
   const authoringGuide = read('docs/extensions/authoring.md')
   const hookCatalogue = read('docs/extensions/README.md')
 

@@ -68,6 +68,14 @@ const REVERSE_DNS_NAME_PATTERN = /^[a-z0-9]+(\.[a-z0-9-]+)+$/
 export type ExtensionHooks = {
   authStrategy?: AuthStrategy
   notificationChannel?: NotificationChannel
+  /**
+   * Story 25.1 — the legacy runtime UI-panel render hook.
+   *
+   * @deprecated
+   * replacement: composed UI (ADR 0007 build-time composition)
+   * earliest-removal: 4.0.0
+   * notice-window-ends: 2027-01-14
+   */
   uiPanel?: UIPanel
   capabilityGate?: CapabilityGate
   projectLifecycle?: ProjectCreatePolicy
@@ -81,8 +89,15 @@ export type ExtensionHooks = {
    * `onBeforeCreateProject`.
    */
   projectArchiveNotifier?: ProjectArchiveNotifier
-  /** Story 25.5 AC1 — dispatch target for `POST /extensions/panels/:slot/actions`. Only legal
-   * (checked by `hasCallableModuleActionHook()`) when the manifest declares `moduleActions`. */
+  /**
+   * Story 25.5 AC1 — dispatch target for `POST /extensions/panels/:slot/actions`. Only legal
+   * (checked by `hasCallableModuleActionHook()`) when the manifest declares `moduleActions`.
+   *
+   * @deprecated
+   * replacement: composed UI (ADR 0007 build-time composition) for panel actions and M7 apiRoutes
+   * earliest-removal: 4.0.0
+   * notice-window-ends: 2027-01-14
+   */
   moduleAction?: ModuleAction
   /**
    * Story 29.4 AC3 — keyed by the exact `"GET <path>"` string of each `moduleDataRoutes`-declared
@@ -90,6 +105,11 @@ export type ExtensionHooks = {
    * router. Cross-checked against `moduleDataRoutes` at `registerExtension()` time (checked by
    * `hasCallableModuleDataHooks()`) — every declared route must have exactly one matching
    * handler.
+   *
+   * @deprecated
+   * replacement: M7 apiRoutes
+   * earliest-removal: 4.0.0
+   * notice-window-ends: 2027-01-14
    */
   moduleData?: Record<string, ModuleDataRouteHandler>
   /**
