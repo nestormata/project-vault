@@ -1,12 +1,15 @@
 <script lang="ts">
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
-  import { resolve } from '$app/paths'
   import { buildAbsoluteUrl, CapabilityId } from '@project-vault/shared'
   import { ApiClientError } from '$lib/api/client.js'
   import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
-  import ConfirmDeleteButton from '$lib/components/forms/ConfirmDeleteButton.svelte'
-  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+  import StatusPageDisabled from '$lib/components/status-page/StatusPageDisabled.svelte'
+  import StatusPageHeader from '$lib/components/status-page/StatusPageHeader.svelte'
+  import StatusPageLink from '$lib/components/status-page/StatusPageLink.svelte'
+  import StatusPageReadOnly from '$lib/components/status-page/StatusPageReadOnly.svelte'
+  import StatusPageServices from '$lib/components/status-page/StatusPageServices.svelte'
   import type { ServiceEndpoint } from '$lib/api/service-endpoints.js'
+  import type { SelectedService, ServiceRow } from '$lib/components/status-page/service-row.js'
   import {
     disableStatusPage,
     enableStatusPage,
@@ -27,7 +30,6 @@
   const statusPageCapabilityDenied = $derived(
     data.capabilities?.[CapabilityId.MONITORING_PUBLIC_STATUS_PAGE] === false
   )
-  const CAPABILITY_DENIED_HELP_ID = 'status-page-capability-denied-help'
 
   // Story 68.1 AC-3: SvelteKit reuses this component across project A -> B navigation (same
   // route, new params), so everything seeded from `data.config` is a writable $derived: a new
@@ -47,7 +49,6 @@
   let isBusy = $state(false)
   let copied = $state(false)
 
-  type SelectedService = { serviceId: string; displayName: string }
   function persistedServices(): SelectedService[] {
     return (data.config.services ?? []).map((s) => ({
       serviceId: s.serviceId,
@@ -82,13 +83,6 @@
 
   function serviceLabel(serviceId: string, displayName: string): string {
     return data.serviceEndpoints.find((service) => service.id === serviceId)?.name ?? displayName
-  }
-
-  type ServiceRow = {
-    id: string
-    label: string
-    current: SelectedService | undefined
-    index: number
   }
 
   // Story 21.8: single merged row source — `selected` services first (preserving reorder-relevant
@@ -248,22 +242,20 @@
 <InjectionPoint name="project.status-page.before" data={data?.__inject} />
 <InjectionPoint name="project.status-page.header.actions" data={data?.__inject} />
 <section class="space-y-6">
-  <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-    <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Project settings</p>
-    <h1 class="mt-2 text-3xl font-bold text-slate-950">Public status page</h1>
-    <p class="mt-2 text-slate-600">
-      Share a read-only status page with stakeholders who don't have a Project Vault account. The
-      services shown here are your monitored HTTP endpoints — a separate list from any billing or
-      hosting "services" you've recorded elsewhere for this project.
-    </p>
-  </div>
+  <StatusPageHeader
+    project={data.project}
+    capabilities={data.capabilities}
+    serviceEndpoints={data.serviceEndpoints}
+    data={data.__inject}
+  />
 
   {#if !data.canManage}
-    <div class="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-      <p class="text-slate-600">
-        Only the project owner or an org owner can manage the public status page.
-      </p>
-    </div>
+    <StatusPageReadOnly
+      project={data.project}
+      capabilities={data.capabilities}
+      serviceEndpoints={data.serviceEndpoints}
+      data={data.__inject}
+    />
   {:else}
     <MfaAwareErrorAlert
       message={errorMessage}
@@ -271,176 +263,43 @@
     />
 
     {#if !enabled}
-      <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <p class="text-slate-600">No public status page has been created for this project yet.</p>
-        <button
-          class="mt-4 rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-          type="button"
-          disabled={isBusy || statusPageCapabilityDenied}
-          aria-describedby={statusPageCapabilityDenied ? CAPABILITY_DENIED_HELP_ID : undefined}
-          onclick={() => onEnable()}
-        >
-          Enable public status page
-        </button>
-        {#if statusPageCapabilityDenied}
-          <FormHelpText
-            id={CAPABILITY_DENIED_HELP_ID}
-            text="Your organization's plan doesn't include public status pages. Contact your administrator to upgrade."
-          />
-        {/if}
-      </div>
+      <StatusPageDisabled
+        project={data.project}
+        capabilities={data.capabilities}
+        serviceEndpoints={data.serviceEndpoints}
+        capabilityDenied={statusPageCapabilityDenied}
+        {isBusy}
+        {onEnable}
+        data={data.__inject}
+      />
     {:else}
-      <div class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div class="flex items-center justify-between">
-          <h2 class="text-xl font-semibold text-slate-950">Shareable link</h2>
-          <div class="flex gap-2">
-            <!-- Story 6.6 AC-3/AC-6: two-step confirm (reused ConfirmDeleteButton pattern) so
-                 rotation always requires an explicit label + a second click that warns the old
-                 link stops working, instead of firing on a single click. `variant="neutral"`
-                 keeps this visually distinct from the genuinely irreversible Disable button next
-                 to it — regenerating a link is not the same severity as disabling the page. -->
-            <ConfirmDeleteButton
-              label={legacyToken ? 'Migrate to persistent link' : 'Regenerate link'}
-              confirmLabel="Confirm — old link stops working?"
-              pendingLabel={legacyToken ? 'Migrating…' : 'Regenerating…'}
-              variant="neutral"
-              disabled={isBusy}
-              onConfirm={onRegenerate}
-            />
-            <button
-              class="rounded-xl border border-red-300 px-3 py-2 text-sm font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-              type="button"
-              disabled={isBusy}
-              onclick={() => onDisable()}
-            >
-              Disable
-            </button>
-          </div>
-        </div>
+      <StatusPageLink
+        project={data.project}
+        {publicUrl}
+        {legacyToken}
+        {copied}
+        {isBusy}
+        {onRegenerate}
+        {onDisable}
+        onCopy={copyUrl}
+        data={data.__inject}
+      />
 
-        {#if publicUrl}
-          <div class="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <div class="flex flex-wrap items-center gap-2">
-              <code class="break-all rounded-lg bg-white px-3 py-2 text-sm">{publicUrl}</code>
-              <button
-                class="rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white"
-                type="button"
-                onclick={() => copyUrl()}
-              >
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
-          </div>
-        {:else if legacyToken}
-          <!-- Story 6.6 AC-4: this URL predates persistent-link support and genuinely cannot be
-               reconstructed from its stored hash — distinct, honest copy from the transient
-               sealed-vault fallback below, plus the "Migrate to persistent link" action above. -->
-          <p class="text-sm text-slate-500">
-            This link was created before persistent links were supported, so it can't be redisplayed
-            — its hash can't be reversed into the original URL. The existing shared link keeps
-            working. Use "Migrate to persistent link" above for a link you can copy again later;
-            doing so invalidates the current shared URL.
-          </p>
-        {:else}
-          <p class="text-sm text-slate-500">
-            This link is temporarily unavailable — try again shortly, or regenerate to get a
-            persistent link.
-          </p>
-        {/if}
-      </div>
-
-      <div class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 class="text-xl font-semibold text-slate-950">Services shown on the public page</h2>
-        {#if serviceRows.length > 0}
-          <p class="text-sm text-slate-600">
-            Check a service to publish it and edit its public display name. Selected services are
-            listed first, in the order they'll appear — use the keyboard-operable move buttons to
-            reorder them when more than one is selected.
-          </p>
-          <ol aria-label="Services shown on the public page" class="space-y-3">
-            {#each serviceRows as row (row.id)}
-              <li class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 p-3">
-                <label class="flex min-w-[12rem] items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(row.current)}
-                    onchange={() => toggleService({ id: row.id, name: row.label })}
-                    aria-describedby={`status-page-service-help-${row.id}`}
-                  />
-                  <span class="text-sm text-slate-600">{row.label}</span>
-                </label>
-
-                <div class="flex min-w-0 flex-1 items-center gap-2">
-                  {#if row.current}
-                    <input
-                      class="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm"
-                      type="text"
-                      placeholder="Public display name"
-                      value={row.current.displayName}
-                      aria-describedby={`status-page-display-name-help-${row.id}`}
-                      oninput={(event) =>
-                        setDisplayName(row.id, (event.currentTarget as HTMLInputElement).value)}
-                    />
-                    <FormHelpText id={`status-page-display-name-help-${row.id}`} kind="text" />
-                  {/if}
-                </div>
-
-                <div class="flex shrink-0 items-center gap-1">
-                  {#if row.current && selected.length > 1}
-                    <button
-                      class="rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-                      type="button"
-                      aria-label={`Move ${row.label} up`}
-                      disabled={isBusy || row.index === 0}
-                      onclick={() => moveService(row.index, -1)}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      class="rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-                      type="button"
-                      aria-label={`Move ${row.label} down`}
-                      disabled={isBusy || row.index === selected.length - 1}
-                      onclick={() => moveService(row.index, 1)}
-                    >
-                      ↓
-                    </button>
-                  {/if}
-                </div>
-
-                <FormHelpText id={`status-page-service-help-${row.id}`} kind="checkbox" />
-              </li>
-            {/each}
-          </ol>
-        {/if}
-        {#if data.serviceEndpoints.length === 0}
-          <p class="text-slate-600">
-            No monitored service endpoints exist for this project yet —
-            <a
-              class="font-medium text-slate-950 underline"
-              href={resolve(`/projects/${data.projectId}/service-endpoints`)}
-            >
-              register one first
-            </a>
-            .
-          </p>
-        {/if}
-        <button
-          class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-          type="button"
-          disabled={isBusy || statusPageCapabilityDenied}
-          aria-describedby={statusPageCapabilityDenied ? CAPABILITY_DENIED_HELP_ID : undefined}
-          onclick={() => onSaveServices()}
-        >
-          Save services
-        </button>
-        {#if statusPageCapabilityDenied}
-          <FormHelpText
-            id={CAPABILITY_DENIED_HELP_ID}
-            text="Your organization's plan doesn't include public status pages. Contact your administrator to upgrade."
-          />
-        {/if}
-      </div>
+      <StatusPageServices
+        project={data.project}
+        capabilities={data.capabilities}
+        projectId={data.projectId}
+        serviceEndpoints={data.serviceEndpoints}
+        rows={serviceRows}
+        selectedCount={selected.length}
+        capabilityDenied={statusPageCapabilityDenied}
+        {isBusy}
+        onToggle={toggleService}
+        onSetDisplayName={setDisplayName}
+        onMove={moveService}
+        onSave={onSaveServices}
+        data={data.__inject}
+      />
     {/if}
   {/if}
 </section>

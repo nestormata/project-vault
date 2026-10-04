@@ -116,8 +116,8 @@ function listData(overrides: Record<string, unknown> = {}): ListData {
   } as unknown as ListData
 }
 
-function renderIt<C extends never>(component: C, data: unknown): string {
-  const { container } = render(component, { props: { data } as never })
+function renderIt(component: unknown, data: unknown): string {
+  const { container } = render(component as never, { props: { data } } as never)
   const html = normalize(container)
   cleanup()
   return html
@@ -147,7 +147,7 @@ const several = [
     healthCheckPausedAt: LATER,
   }),
   endpoint({ id: 'e3', name: 'Gamma', status: 'degraded', lastCheckedAt: null }),
-  endpoint({ id: 'e4', name: 'Delta', status: 'unknown', healthCheckPaused: undefined }),
+  endpoint({ id: 'e4', name: 'Delta', status: 'unknown' as never, healthCheckPaused: undefined }),
 ]
 
 async function listStates(): Promise<Record<string, string>> {
@@ -266,7 +266,9 @@ async function renderDetail(
   if (history instanceof Error) getHealthHistoryMock.mockRejectedValue(history)
   else getHealthHistoryMock.mockResolvedValue(history)
   const view = render(EndpointDetailPage, { props: { data } })
-  await waitFor(() => expect(getHealthHistoryMock).toHaveBeenCalled() || data.endpoint === null)
+  await waitFor(() => {
+    if (data.endpoint !== null) expect(getHealthHistoryMock).toHaveBeenCalled()
+  })
   await new Promise((resolve) => setTimeout(resolve, 0))
   return { html: normalize(view.container), container: view.container }
 }
