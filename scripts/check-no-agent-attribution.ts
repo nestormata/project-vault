@@ -24,7 +24,8 @@ const AGENT_NAMES = /claude|anthropic|copilot|codex|openai|gemini|chatgpt|gpt-/i
 const FOOTER_TOOLS = /claude|codex|copilot|chatgpt|gemini/i
 // Optional bullet/quote markers before the key: a PR body may render a trailer inside markdown.
 const CO_AUTHOR_KEY = /^[\s>*_-]*co-?authored-?by\s*:/i
-const SESSION_KEY = /^[\s>*_-]*[\w-]*session\s*:/i
+// Marker set and key set are disjoint (`_` and `-` are key characters), so no backtracking overlap.
+const SESSION_KEY = /^[\s>*]*[\w-]*session\s*:/i
 const LINE_BREAK = /\r\n|[\n\r\v\f\u0085\u2028\u2029]/
 const SESSION_URL = /claude\.ai\/code\/session/i
 const GENERATED_WITH = /\bgenerated with\b/i
