@@ -423,13 +423,17 @@ describe('compatibility manifest (Story 68.2 AC-9)', () => {
       'form-guidance',
       'form-secret-inputs',
       'internal-api-choke-point',
+      'monolithic-region',
       'route-exists',
       'static-hardening',
       'tailwind-boundary',
     ])
     for (const guard of registry.guards) {
       expect(paths, guard.id).toContain(guard.file)
-      expect(guard.scope, guard.id).toBe('all-files')
+      // Story 68.10: `monolithic-region` is the one PV-duty guard (CM files exempt by provenance).
+      expect(guard.scope, guard.id).toBe(
+        guard.id === 'monolithic-region' ? 'pv-originated-only' : 'all-files'
+      )
       expect(guard.license).toBe('AGPL-3.0-or-later')
     }
     for (const entry of registry.guards.flatMap((guard) => guard.closure)) {

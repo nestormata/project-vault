@@ -1,0 +1,5 @@
+{
+  "$schema": "https://inlang.com/schema/inlang-message-format",
+  "auth_login_page_description": "mock-ui-pack:m6-message",
+  "mock_ui_pack_only_key": "not merged"
+}

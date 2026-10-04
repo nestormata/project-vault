@@ -238,6 +238,14 @@ jobs:
           pnpm check-injection-point-coverage &&
           pnpm vitest run scripts/check-injection-point-coverage.test.ts
 
+      - name: Check monolithic regions (Story 68.10)
+        run: |
+          pnpm check-monolithic-regions &&
+          pnpm vitest run scripts/check-monolithic-regions.test.ts scripts/lib/route-files.test.ts
+
+      - name: Check the mock UI pack mechanism wiring (Story 68.10)
+        run: pnpm vitest run scripts/check-mock-ui-pack-e2e-wiring.test.ts scripts/lib/web-host/consumer-tarballs.test.ts scripts/mock-ui-pack-seed.test.ts scripts/check-pv-nav-snapshot.test.ts scripts/check-mock-ui-pack-not-in-production.test.ts
+
       - name: Check nav ids and nav surfaces (Story 68.7)
         run: |
           pnpm check-nav-ids &&
@@ -1069,9 +1077,105 @@ jobs:
       - name: Pack and check the web-host tarball (AC-2, AC-4, AC-6, AC-7, AC-9)
         run: pnpm vitest run scripts/check-web-host-tarball.test.ts
 
+      - name: Build PV's own web app (control group prerequisites)
+        run: pnpm turbo build --force --filter=@project-vault/web-host
+
+      - name: PV's own CM-free build is the control group (Story 68.10 AC-9)
+        run: pnpm vitest run scripts/check-pv-cm-free-build.test.ts
+
       - name: Dry-run npm pack of the staged package
         working-directory: .web-host-pack
         run: npm pack --dry-run --json
+
+  # Story 68.10 AC-2/AC-3: the mechanism e2e. It composes the mock UI pack onto the REAL packed
+  # web-host, builds the composed web image with Docker, boots it with a real API (the mock module
+  # pack, VAULT_EXTENSIONS_REQUIRED=true) and database, and runs Playwright (one spec file per
+  # capability M1-M7, retries 0, traces off). The path filter runs INSIDE the job and fails open: a
+  # workflow-level `paths:` filter would leave a REQUIRED check pending forever on a PR that skips
+  # it, so this job always finishes green and only its heavy steps are conditional. Push to main and
+  # dev and manual dispatch always run it. It needs no secret, no OIDC and no registry write, so fork
+  # PRs run it too (it does need the public npm registry and Docker Hub).
+  # Required-check name once green on main: "Mock UI pack mechanism e2e" (required in intent, enforced
+  # by scripts/check-mock-ui-pack-e2e-wiring.test.ts; branch protection is a maintainer hand-off).
+  mock-ui-pack-e2e:
+    name: Mock UI pack mechanism e2e
+    runs-on: ubuntu-latest
+    # Measured 2026-10-03 on a laptop: 7.6 minutes warm (npm and Docker caches), about 15 minutes with
+    # cold image builds (the api image is the long pole). 45 minutes keeps the cold run under 40 percent
+    # of the budget; the 5-minute split rule applies if it ever exceeds 45 (shard by capability).
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 11.28.3
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Path filter
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            pnpm tsx scripts/mock-ui-pack-e2e-filter.ts "$BASE_REF" >> "$GITHUB_OUTPUT"
+          else
+            echo "mock-ui-pack-e2e filter: $EVENT_NAME always runs the job"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Cache Playwright browsers
+        if: steps.filter.outputs.run == 'true'
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-mechanism-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Chromium
+        if: steps.filter.outputs.run == 'true'
+        run: pnpm --filter @project-vault/web-host exec playwright install --with-deps chromium
+
+      - name: Pack, compose, build the composed image, boot the stack, run the mechanism e2e
+        if: steps.filter.outputs.run == 'true'
+        # pipefail: a bare `| tee` would report tee's exit status and turn a failed e2e green. The raw
+        # copy lives outside the workspace: it holds the `::add-mask::<secret>` lines that make the
+        # runner mask the throwaway secrets in the live log, and those must never reach an artifact.
+        run: |
+          set -o pipefail
+          pnpm tsx scripts/mock-ui-pack-e2e.ts 2>&1 | tee "$RUNNER_TEMP/mock-ui-pack-e2e.raw.log"
+
+      - name: Strip the mask lines from the run log
+        if: always() && steps.filter.outputs.run == 'true'
+        run: sed '/^::add-mask::/d' "$RUNNER_TEMP/mock-ui-pack-e2e.raw.log" > mock-ui-pack-e2e.log
+
+      - name: Upload the report and the redacted run log (failure only)
+        if: failure() && steps.filter.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: mock-ui-pack-e2e-report
+          path: |
+            apps/web/playwright-mechanism-output/html
+            mock-ui-pack-e2e.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Tear down any leftover stack (cancelled runs included)
+        if: always()
+        run: |
+          docker ps -aq --filter "name=pv-mock-ui-pack-" | xargs -r docker rm -f
+          docker network ls -q --filter "name=pv-mock-ui-pack-" | xargs -r docker network rm
+          docker volume ls -q --filter "name=pv-mock-ui-pack-" | xargs -r docker volume rm
 
   # Story 68.3 AC-12: compose a small UI pack onto the REAL packed web-host in an isolated consumer
   # (fresh temp dir outside the repository, clean env, the packed tarballs only), then paraglide

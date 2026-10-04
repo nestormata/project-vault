@@ -239,6 +239,11 @@ fi
 if [[ "$VARIANT" == 'compose' || "$VARIANT" == 'compose-types-negative' ]]; then
   compose_svelte_check
 fi
+if [[ "$VARIANT" == 'compose-mock-pack' ]]; then
+  mock_pack_svelte_check
+  mock_pack_compose_check
+  mock_pack_verify_guards
+fi
 if [[ "$VARIANT" == 'compose' ]]; then
   compose_plant_probe
   compose_assert_derived_routes

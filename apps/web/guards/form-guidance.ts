@@ -5,8 +5,9 @@
 // with the same rules as PV's own. This is intentionally a small Svelte-aware scanner rather than a
 // formatter or a general HTML validator. It reports source locations so a reviewer can inspect each
 // result. It imports nothing outside `node:` so the compiled copy runs from a published package.
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
+import { walkSvelte } from './svelte-files.js'
 
 export type FormGuidanceFinding = {
   file: string
@@ -196,25 +197,6 @@ export function scanFormGuidance(source: string, file = '<source>'): FormGuidanc
     ...findControlFindings(controls, idsByName, file),
     ...findDuplicateFindings(controls, idsByName, file),
   ].sort((a, b) => a.line - b.line || a.kind.localeCompare(b.kind))
-}
-
-// Never descend into node_modules; follow symlinks (a dangling one is skipped, not fatal): the same
-// rules as the repository's own scan-utils walker, kept minimal because that one is not shipped.
-function walkSvelte(dir: string): string[] {
-  const found: string[] = []
-  for (const entry of readdirSync(dir).sort()) {
-    if (entry === 'node_modules') continue
-    const full = join(dir, entry)
-    let stat
-    try {
-      stat = statSync(full)
-    } catch {
-      continue
-    }
-    if (stat.isDirectory()) found.push(...walkSvelte(full))
-    else if (stat.isFile() && full.endsWith('.svelte')) found.push(full)
-  }
-  return found
 }
 
 /** Scans every `.svelte` file under `srcRoot`. Finding paths are relative to `labelRoot` (default:

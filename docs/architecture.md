@@ -179,7 +179,11 @@ When an extension does need its own tables, it connects through the least-privil
 > for a first-party, trusted UI package: Svelte code composed into a dedicated web image by a
 > Project Vault-owned Vite/SvelteKit plugin and component registry, with page overrides including `load` and form
 > actions, new routes at any path, injection points, component replacement, customizable
-> navigation, and theme tokens. It is not built yet.
+> navigation, and theme tokens. Shipped so far (Epic 68): the web-host package, the composition
+> kit (`pv-compose`, `pv-verify`, lock v2), injection points, component replacement, composable hooks and
+> header policy, `apiRoutes` including app-level behaviour, PV's web guards over a composed tree (including
+> the `monolithic-region` guard) and the mock-UI-pack mechanism e2e on a composed image with a real API and
+> database (Story 68.10), including navigation as data (Story 68-7).
 >
 > **`navItems` and `moduleDataRoutes` are deprecated and frozen** (no new features or fixes; kept
 > until removed; security issues resolved by replacement or removal). They are separate extension

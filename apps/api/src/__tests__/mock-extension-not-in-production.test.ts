@@ -24,6 +24,8 @@ const MOCK_AUDIT_EVENT_SOURCE_EXTENSION_PACKAGE_NAME =
 const MOCK_UI_PANEL_EXTENSION_PACKAGE_NAME = '@project-vault/mock-ui-panel-extension'
 // Story 68.8 Task 6: the M7 apiRoutes fixture extension gets the same guard as the five above.
 const MOCK_API_ROUTES_EXTENSION_PACKAGE_NAME = '@project-vault/mock-api-routes-extension'
+// Story 68.10 AC-8: the mock UI pack (its module pack is loaded by the composed mechanism e2e).
+const MOCK_UI_PACK_PACKAGE_NAME = '@project-vault/mock-ui-pack'
 const REPO_ROOT = resolve(process.cwd(), '../..')
 
 const PRODUCTION_CONFIG_FILES = [
@@ -60,6 +62,7 @@ describe.each([
     MOCK_API_ROUTES_EXTENSION_PACKAGE_NAME,
     'fixtures/mock-api-routes-extension/package.json',
   ],
+  ['mock-ui-pack', MOCK_UI_PACK_PACKAGE_NAME, 'fixtures/mock-ui-pack/package.json'],
 ])(
   '%s is never referenced by production config (AC-12/Story 23.2 AC-15)',
   (_label, packageName, pkgJsonRelPath) => {
@@ -81,3 +84,8 @@ describe.each([
     })
   }
 )
+
+// Story 68.10 AC-8: the repository text this guard reads is loaded through Vite (`import.meta.glob`),
+// so no test code builds a dynamic filesystem path. The globs name the production-reachable
+// configuration: root deploy manifests (`fly*.toml`, `docker-compose*.yml`), the production config
+// files and every Dockerfile that can install the pack.

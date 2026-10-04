@@ -1,13 +1,16 @@
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { REPO_ROOT, STAGE_DIR, packWebHost } from './pack-web-host.js'
+import { REPO_ROOT } from './pack-web-host.js'
 import { makeRecipe } from './lib/ci-wiring.js'
-import { resolveBin, resolveTrustedExecutable, trustedGit } from './lib/trusted-executable.js'
-import { extensionApiVersion, packInto, resolveExtensionApi } from './lib/web-host/fixture-pack.js'
+import { resolveTrustedExecutable, trustedGit } from './lib/trusted-executable.js'
+import {
+  consumerFixtureEnv,
+  packConsumerTarballs,
+  type ConsumerTarballs,
+} from './lib/web-host/consumer-tarballs.js'
 import { parseYaml } from './lib/yaml.js'
 
 // Story 68.3 AC-12/AC-13: the composition kit composes a small UI pack onto the REAL packed
@@ -25,8 +28,6 @@ import { parseYaml } from './lib/yaml.js'
 const repositoryRoot = join(import.meta.dirname, '..')
 const ENABLED = process.env.COMPOSITION_KIT_INTEGRATION === '1'
 const FIXTURE_SCRIPT = join(REPO_ROOT, 'scripts', 'web-host-consumer-fixture', 'run.sh')
-const KIT_DIR = join(REPO_ROOT, 'packages', 'composition-kit')
-const FIXTURES_DIR = join(KIT_DIR, 'tests', 'fixtures')
 const VARIANT_TIMEOUT_MS = 1_200_000
 
 if (!ENABLED) {
@@ -37,36 +38,18 @@ if (!ENABLED) {
 }
 
 let workDir = ''
-let webHostTarball = ''
-let kitTarball = ''
-let extensionApiTarball: string | undefined
+let tarballs: ConsumerTarballs
 const timings = new Map<string, number>()
-
-/** The version PV's web app has installed (the consumer pins the same, exactly). */
-function webVersion(name: string): string {
-  const requireFromWeb = createRequire(join(REPO_ROOT, 'apps', 'web', 'package.json'))
-  return (requireFromWeb(`${name}/package.json`) as { version: string }).version
-}
 
 function runVariant(
   variant: string,
   extraEnv: NodeJS.ProcessEnv = {}
 ): { status: number | null; output: string } {
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    ...extraEnv,
-    WEB_HOST_FIXTURE_CACHE: join(workDir, 'npm-cache'),
-    COMPOSITION_KIT_TARBALL: kitTarball,
-    COMPOSITION_KIT_FIXTURES: FIXTURES_DIR,
-    COMPOSITION_KIT_SVELTE_CHECK: webVersion('svelte-check'),
-    COMPOSITION_KIT_TYPES_NODE: webVersion('@types/node'),
-  }
-  if (extensionApiTarball !== undefined)
-    env.WEB_HOST_FIXTURE_EXTENSION_API_TARBALL = extensionApiTarball
+  const env = consumerFixtureEnv({ ...process.env, ...extraEnv }, workDir, tarballs)
   const started = Date.now()
   const run = spawnSync(
     resolveTrustedExecutable('bash'),
-    [FIXTURE_SCRIPT, webHostTarball, variant],
+    [FIXTURE_SCRIPT, tarballs.webHostTarball, variant],
     {
       encoding: 'utf8',
       env,
@@ -80,24 +63,7 @@ function runVariant(
 describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)', () => {
   beforeAll(async () => {
     workDir = mkdtempSync(join(tmpdir(), 'composition-kit-integration-'))
-    const { packageJson } = await packWebHost({
-      version: '0.0.0-fixture',
-      repository: 'nestormata/project-vault',
-      log: () => undefined,
-    })
-    webHostTarball = packInto(STAGE_DIR, workDir)
-    // The kit is built and packed the way the release workflow does it.
-    rmSyncDist()
-    const build = spawnSync(
-      process.execPath,
-      [resolveBin('typescript', 'tsc', KIT_DIR), '-p', 'tsconfig.build.json'],
-      { cwd: KIT_DIR, encoding: 'utf8' }
-    )
-    expect(build.status, `${build.stdout}${build.stderr}`).toBe(0)
-    kitTarball = packInto(KIT_DIR, workDir)
-    const extensionApi = extensionApiVersion(packageJson.dependencies as Record<string, string>)
-    expect(extensionApi, 'web-host depends on an exact extension-api version').toBeDefined()
-    extensionApiTarball = resolveExtensionApi(extensionApi ?? '', workDir)
+    tarballs = await packConsumerTarballs(workDir)
   }, 600_000)
 
   afterAll(() => {
@@ -335,10 +301,6 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
     VARIANT_TIMEOUT_MS
   )
 })
-
-function rmSyncDist(): void {
-  rmSync(join(KIT_DIR, 'dist'), { recursive: true, force: true })
-}
 
 describe('composition kit integration: wiring (Story 68.3 AC-12)', () => {
   const command = 'pnpm vitest run scripts/check-composition-kit-integration.test.ts'

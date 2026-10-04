@@ -30,10 +30,10 @@ pv-compose  ->  paraglide compile  ->  svelte-kit sync  ->  svelte-check  ->  gu
    skip every composed file, so the app's own `.gitignore` lists them). The kit owns these directories and
    refuses to replace one that has no header. It also refuses to run when the app root is a filesystem
    root, a home directory, has no `package.json`, or overlaps `web-host` or the pack.
-3. **Overlay** the pack's `src/` and `static/`. A pack file on an existing PV path is an *override* and
+3. **Overlay** the pack's `src/` and `static/`. A pack file on an existing PV path is an _override_ and
    must be declared in `routes.overrides` with the PV file's `hostSha256`; an undeclared collision
    fails (an integrity check against accidental shadowing, resolved by declaring it). A pack file on a
-   new path is an *addition* (M2) and needs no declaration.
+   new path is an _addition_ (M2) and needs no declaration.
 4. **Removals** (`routes.remove`): a route id such as `/(app)/extensions/panels` removes its whole
    subtree, including files PV adds there later; a `src/...` or `static/...` entry removes that file
    or directory. Removals are recorded with their hash. A changed removed file is informational. A
@@ -160,6 +160,18 @@ contains a point, every name is registered, and every page and layout server fil
 `injectActions` with its own route id and scope. Run over a composed tree with `--lock composition.lock.json`,
 it skips the files the lock records as CM's.
 
+**Monolithic regions (Story 68.10).** `scripts/check-monolithic-regions.ts` (`pnpm check-monolithic-regions`,
+shipped as the `monolithic-region` guard in `apps/web/guards/monolithic-region.ts` and run by `pv-verify` over a
+composed tree) adds a second rule to the same `<!-- @region name -->` marker: the marked block must be a component
+or contain one, so it can be replaced individually through M4. A component is a capitalized tag (or a dotted
+member) whose binding is imported from a `.svelte` file in the same file's scripts, a `<svelte:component>`, or a
+`{@render}` marked node. `<InjectionPoint>` never counts, so a region that is only plain HTML and a point is
+monolithic. The check is about replaceability, not size: a region wrapped in a trivial component passes (whether
+the extraction is meaningful is the componentization audit of story 69.5). An unparseable `.svelte` file is a
+finding, never a silent skip. Files the lock records as CM's are exempt by provenance (the guard has
+`@pv-scope pv-originated-only`); there is no suppression syntax, baseline or allow-list. PV's own tree has no
+`@region` marker yet, so today it scans N files and zero regions.
+
 **Hash drift:** this change adds injection points and server calls to about 70 PV route files, so the hash of
 every file a pack overrides there changes with the next web-host release. That is the intended signal;
 reconcile it with `pv-compose --accept-host`.
@@ -208,15 +220,15 @@ Every hook is a chain entry ("CM first, then PV") or `{ wrap: (pv) => replacemen
 PV nor the pack defines a hook, the composed export is `undefined`, so SvelteKit's own default runs.
 Entries are called as plain functions. A throw or rejection propagates exactly as from PV's own hook.
 
-| Hook (file) | Chain entry | Chain semantics | `wrap` receives |
-|---|---|---|---|
-| `handle` (server) | `Handle`, or `{ before?, after?, wrap? }` | `[...before, wrap ? wrap(pv) : pv, ...after]` with `sequence()` semantics | PV's handle |
-| `handleFetch` (server) | `HandleFetch` | CM runs; its `fetch` is PV's `handleFetch` bound to the real fetch | PV's, or a passthrough |
-| `handleError` (server, client) | `HandleServerError` / `HandleClientError` | CM then PV, both awaited; CM's result unless `undefined` | PV's, or one returning `undefined` |
-| `handleValidationError` (server) | `HandleValidationError` | CM first; the first non-`undefined` result | PV's, or one returning `undefined` |
-| `init` (server, client) | `ServerInit` / `ClientInit` | CM then PV, awaited in order | PV's, or a no-op |
-| `reroute` (universal) | `Reroute` | CM first; a string wins, `undefined` falls through to PV | PV's, or one returning `undefined` |
-| `transport` (universal) | `Transport` | `{ ...pv, ...cm }`; the same key on both sides fails at start-up | PV's, or `{}` |
+| Hook (file)                      | Chain entry                               | Chain semantics                                                           | `wrap` receives                    |
+| -------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------- |
+| `handle` (server)                | `Handle`, or `{ before?, after?, wrap? }` | `[...before, wrap ? wrap(pv) : pv, ...after]` with `sequence()` semantics | PV's handle                        |
+| `handleFetch` (server)           | `HandleFetch`                             | CM runs; its `fetch` is PV's `handleFetch` bound to the real fetch        | PV's, or a passthrough             |
+| `handleError` (server, client)   | `HandleServerError` / `HandleClientError` | CM then PV, both awaited; CM's result unless `undefined`                  | PV's, or one returning `undefined` |
+| `handleValidationError` (server) | `HandleValidationError`                   | CM first; the first non-`undefined` result                                | PV's, or one returning `undefined` |
+| `init` (server, client)          | `ServerInit` / `ClientInit`               | CM then PV, awaited in order                                              | PV's, or a no-op                   |
+| `reroute` (universal)            | `Reroute`                                 | CM first; a string wins, `undefined` falls through to PV                  | PV's, or one returning `undefined` |
+| `transport` (universal)          | `Transport`                               | `{ ...pv, ...cm }`; the same key on both sides fails at start-up          | PV's, or `{}`                      |
 
 **Where `handle` entries run (Q10).** `before` entries run outermost, before PV: there is no
 `locals.user` and no Paraglide locale yet, and they run for anonymous requests to protected paths
@@ -226,18 +238,28 @@ replaces PV's handle in place. Three examples:
 
 ```ts
 // 1. A request id on every response (before).
-export const handle = { before: [async ({ event, resolve }) => {
-  const response = await resolve(event)
-  response.headers.set('x-request-id', crypto.randomUUID())
-  return response
-}] }
+export const handle = {
+  before: [
+    async ({ event, resolve }) => {
+      const response = await resolve(event)
+      response.headers.set('x-request-id', crypto.randomUUID())
+      return response
+    },
+  ],
+}
 // 2. Tenant-scoped data for signed-in users only (after).
-export const handle = { after: [({ event, resolve }) => {
-  event.locals.tenant = tenantOf(event.locals.user)
-  return resolve(event)
-}] }
+export const handle = {
+  after: [
+    ({ event, resolve }) => {
+      event.locals.tenant = tenantOf(event.locals.user)
+      return resolve(event)
+    },
+  ],
+}
 // 3. Full replacement of PV's handle (wrap): call pv zero, one or several times.
-export const handle = { wrap: (pv) => async (input) => (shouldSkip(input.event) ? input.resolve(input.event) : pv(input)) }
+export const handle = {
+  wrap: (pv) => async (input) => (shouldSkip(input.event) ? input.resolve(input.event) : pv(input)),
+}
 ```
 
 PV composes `handle` with its own `composeHandles()`: Kit `sequence()`'s semantics (forward
@@ -253,7 +275,9 @@ longer runs, as in any SvelteKit app that defines `handleError`. Re-add logging 
 you want it:
 
 ```ts
-export const handleError = ({ error, status }) => { console.error(status, error) }
+export const handleError = ({ error, status }) => {
+  console.error(status, error)
+}
 ```
 
 ### Header policy
@@ -350,19 +374,19 @@ required for the pack's own items.
 `web-host`'s `manifests/nav-ids.json` lists every surface (its renderer file and context keys) and
 every PV item id (its surface, parent and whether it has a visibility condition). The surfaces are:
 
-| Surface | Where | Context (`ctx`) |
-|---|---|---|
-| `primary` | the primary nav (also the mobile nav) | `user`, `hasUiPanelExtension`, `pathname`, `search` |
-| `project` | the project tab bar | `projectId`, `orgRole`, `pathname` |
-| `shell.brand`, `shell.utility`, `shell.mfa-banner` | the header brand link, the notifications bell, the MFA banner's settings link | `hidePrimaryNav`, `unreadCount`, `bannerMessage` |
-| `account` | the account menu (`account.sign-out` is an action) | `user` |
-| `footer` | the footer links (external) | none |
-| `settings.index`, `platform.index` | the section index cards (`label` + `description`) | none |
-| `platform.settings.links`, `settings.audit.links` | sub-section link rows | none |
-| `notifications.tabs` | the notifications status tabs (`query`: `?status=…`) | `status` |
-| `breadcrumbs` | one tree; a page renders the path to its node (`<Breadcrumbs node="…">`) | `node` |
-| `back` | one back link per page (`<BackLink node="…">`, `<NavLink surface="back" node="…">`) | `projectId`, `credentialId` |
-| `error.nav`, `auth.links` | the error page's way back, the auth pages' cross-links | `authenticated` |
+| Surface                                            | Where                                                                               | Context (`ctx`)                                     |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `primary`                                          | the primary nav (also the mobile nav)                                               | `user`, `hasUiPanelExtension`, `pathname`, `search` |
+| `project`                                          | the project tab bar                                                                 | `projectId`, `orgRole`, `pathname`                  |
+| `shell.brand`, `shell.utility`, `shell.mfa-banner` | the header brand link, the notifications bell, the MFA banner's settings link       | `hidePrimaryNav`, `unreadCount`, `bannerMessage`    |
+| `account`                                          | the account menu (`account.sign-out` is an action)                                  | `user`                                              |
+| `footer`                                           | the footer links (external)                                                         | none                                                |
+| `settings.index`, `platform.index`                 | the section index cards (`label` + `description`)                                   | none                                                |
+| `platform.settings.links`, `settings.audit.links`  | sub-section link rows                                                               | none                                                |
+| `notifications.tabs`                               | the notifications status tabs (`query`: `?status=…`)                                | `status`                                            |
+| `breadcrumbs`                                      | one tree; a page renders the path to its node (`<Breadcrumbs node="…">`)            | `node`                                              |
+| `back`                                             | one back link per page (`<BackLink node="…">`, `<NavLink surface="back" node="…">`) | `projectId`, `credentialId`                         |
+| `error.nav`, `auth.links`                          | the error page's way back, the auth pages' cross-links                              | `authenticated`                                     |
 
 Every context also has `pathname`. Ids are a public contract named by meaning, not position: PV never
 renames one (a rename is a removal plus an addition, listed under "Nav ids removed" in the web-host
@@ -373,20 +397,52 @@ items and are not addressable by a delta.
 
 ```ts
 import { resolve } from '$app/paths'
-import { defineNavDelta, hide, insert, move, relabel, remove, reorder, replace } from '@project-vault/composition-kit/nav'
+import {
+  defineNavDelta,
+  hide,
+  insert,
+  move,
+  relabel,
+  remove,
+  reorder,
+  replace,
+} from '@project-vault/composition-kit/nav'
 
 export default defineNavDelta({
   primary: [
-    insert({ after: 'primary.projects', item: { id: 'cm.billing', label: () => t('billing'), href: () => resolve('/billing') } }),
-    insert({ parent: 'primary', item: { id: 'cm.ops', label: 'Ops', icon: OpsIcon, children: [] } }),
+    insert({
+      after: 'primary.projects',
+      item: { id: 'cm.billing', label: () => t('billing'), href: () => resolve('/billing') },
+    }),
+    insert({
+      parent: 'primary',
+      item: { id: 'cm.ops', label: 'Ops', icon: OpsIcon, children: [] },
+    }),
     move('primary.health', { parent: 'cm.ops' }),
     relabel('primary.secrets', () => t('vault')),
     reorder('primary', ['primary.projects', 'primary.dashboard']),
   ],
-  project: [insert({ parent: 'project', item: { id: 'cm.project-billing', label: 'Billing', href: (ctx) => resolve(`/projects/${ctx.projectId}/billing`) } })],
-  'settings.index': [hide('settings.index.sso-domains'), relabel('settings.index.users', { description: () => 'Seats and roles' })],
+  project: [
+    insert({
+      parent: 'project',
+      item: {
+        id: 'cm.project-billing',
+        label: 'Billing',
+        href: (ctx) => resolve(`/projects/${ctx.projectId}/billing`),
+      },
+    }),
+  ],
+  'settings.index': [
+    hide('settings.index.sso-domains'),
+    relabel('settings.index.users', { description: () => 'Seats and roles' }),
+  ],
   'shell.brand': [replace('shell.brand.home', { label: 'CentralizeMe', href: () => resolve('/') })],
-  account: [insert({ before: 'account.sign-out', item: { id: 'cm.account.billing', label: 'Billing', href: () => resolve('/billing') } })],
+  account: [
+    insert({
+      before: 'account.sign-out',
+      item: { id: 'cm.account.billing', label: 'Billing', href: () => resolve('/billing') },
+    }),
+  ],
 })
 ```
 
@@ -394,15 +450,15 @@ Wire `pvNav()` next to `pvHooks()` in the composed app's `vite.config.ts` and `v
 web-host refuses to build a composed tree without it. `nav.ts` renders in the browser too, so it must
 not import server-only code (Kit's server-only guard fails the build).
 
-| Op | Semantics | Problems (integrity only) |
-|---|---|---|
-| `insert({ after \| before \| parent, item })` | exactly one anchor; `parent` appends as the last child, `parent: '<surface>'` at the root | no anchor or two; an existing id ("use replace"); an anchor that was removed |
-| `remove(id)` | the item and its subtree leave the tree | none (an absent id is a note: the desired state holds) |
-| `hide(id)` | the item stays as an anchor for later ops; it and its subtree are not rendered | none (idempotent; an absent id is a note) |
-| `relabel(id, label \| { label, mobileLabel, description })` | replaces only the named labels | an empty object; an absent id |
-| `move(id, { after \| before \| parent })` | detaches and re-attaches the subtree | moving into its own subtree; a parent that is an action |
-| `replace(id, item)` | keeps the id; keeps PV's children and `when` unless the replacement declares its own (Q5) | a different `item.id` |
-| `reorder(parentId, ids)` | the listed children first, in order; the others (also future PV ones) keep their order after them | an id that is not a child; a duplicate |
+| Op                                                          | Semantics                                                                                         | Problems (integrity only)                                                    |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `insert({ after \| before \| parent, item })`               | exactly one anchor; `parent` appends as the last child, `parent: '<surface>'` at the root         | no anchor or two; an existing id ("use replace"); an anchor that was removed |
+| `remove(id)`                                                | the item and its subtree leave the tree                                                           | none (an absent id is a note: the desired state holds)                       |
+| `hide(id)`                                                  | the item stays as an anchor for later ops; it and its subtree are not rendered                    | none (idempotent; an absent id is a note)                                    |
+| `relabel(id, label \| { label, mobileLabel, description })` | replaces only the named labels                                                                    | an empty object; an absent id                                                |
+| `move(id, { after \| before \| parent })`                   | detaches and re-attaches the subtree                                                              | moving into its own subtree; a parent that is an action                      |
+| `replace(id, item)`                                         | keeps the id; keeps PV's children and `when` unless the replacement declares its own (Q5)         | a different `item.id`                                                        |
+| `reorder(parentId, ids)`                                    | the listed children first, in order; the others (also future PV ones) keep their order after them | an id that is not a child; a duplicate                                       |
 
 Rules:
 
@@ -513,7 +569,7 @@ required check, the first real publish, and promotion to `latest`.
 - `make composition-kit-integration` (CI job `Composition kit integration`) packs the real `web-host`
   and the kit, installs them from the tarballs into a fresh directory outside the repository under
   `env -i`, composes a small pack, then runs paraglide compile, `svelte-kit sync`, `svelte-check
-  --fail-on-warnings`, the shipped unit tests and `vite build`, boots the built server and asserts over
+--fail-on-warnings`, the shipped unit tests and `vite build`, boots the built server and asserts over
   HTTP and in the built CSS. Variants prove that `svelte-check` fails on a lying `./$types`, that
   Kit's server-only guard rejects a client import of materialized server-only code (and accepts the
   same import from `+page.server.ts`), and that the Vite dev plugin mirrors a pack edit, an added
@@ -527,3 +583,44 @@ required check, the first real publish, and promotion to `latest`.
   project; each injected component sits only in its page's client chunk; and a real Chromium (installed by a
   CI step in that job) checks hydration (with an oracle that fails on diverging server HTML), a client
   navigation without a document load, and the theme rune re-rendering an injected component.
+
+## Mechanism e2e (mock UI pack)
+
+Story 68.10 proves M1-M7 together against PV's own build with a mock UI pack
+(`fixtures/mock-ui-pack`: the overlay tree under `ui-pack/` and the mock module pack under `module/`, loaded by
+the real API through `VAULT_EXTENSIONS_PACKAGE`). It never contains real CentralizeMe code, a secret or a back
+door, and every capability is exercised at the breadth of design section 12; the lists there are a floor, not a
+ceiling. `make mock-ui-pack-compose` composes the pack onto the packed `web-host` in the kit's isolated consumer
+(`scripts/lib/web-host/consumer-tarballs.ts` is shared with the kit integration test) and runs `pv-compose
+--check`, `pv-verify --only guards` (including the monolithic-region guard and its CM-exemption proof),
+svelte-check, the shipped unit tests, `vite build`, a boot against the API stub and the HTTP/CSS assertions for
+M1, M2, M3 on public pages, M4 and M6. PV's own CM-free build is the control group
+(`scripts/check-pv-cm-free-build.test.ts`: every `virtual:pv-*` module of the built output is empty, and PV's own
+built server answers the committed `main` snapshot).
+
+**This job is red after my PV change.** A changed PV file that the pack overrides, replaces or wraps means the pack
+is updated in the same PR: that is the guardrail working, never a reason to skip, loosen or allowlist anything.
+Manifest hashes are computed when the manifest loads, so a mere PV edit never needs a hash bump. A PV change that
+makes a mechanism impossible is a design question for Nestor, not a pack edit.
+
+`make mock-ui-pack-e2e` runs the whole mechanism e2e on the host: it builds the composed web image
+(`fixtures/mock-ui-pack/docker/web.Dockerfile`, from the exported composed-app directory), boots it with a real
+API carrying the mock module pack (`VAULT_EXTENSIONS_REQUIRED=true`) and a real database through
+`scripts/e2e-stack.sh` with `E2E_STACK_FLAVOR=mock-ui-pack` (per-run host ports and compose project name), and
+runs Playwright (`apps/web/e2e/mechanism/playwright.config.ts`: retries 0, traces off) with one spec file per
+capability under `apps/web/e2e/mechanism/`. The CI job `Mock UI pack mechanism e2e` runs it with an in-workflow
+path filter that fails open. It is **required in intent and enforced by `scripts/check-mock-ui-pack-e2e-wiring.test.ts`,
+not yet by branch protection** (making it a required status check is a repo-admin step). M5 (navigation as data, story 68-7) is covered by
+`m5-navigation.spec.ts` over the pack's `nav.ts`: every operation (add, remove, hide, rename, move, reorder,
+replace), nesting (a pack group two levels deep and a child under a native item), an inherited project tab, on
+thirteen surfaces (the footer and the error page are replaced by the pack's M4/M1 content, so the shipped
+`composed-nav` test covers those), and an operation on an unknown id that is recorded, never a crash. A string
+`relabel` changes only the label (the narrow-screen label keeps PV's text), and a one-node surface such as the
+login links renders the node and its descendants, so a pack link there is a child of that node. The mutation
+proofs run the same job over a deliberately broken copy of the overlay
+(`MOCK_UI_PACK_OVERLAY_DIR=<copy of fixtures/mock-ui-pack/ui-pack>`, never set in CI): each break turns exactly its
+capability's spec red. The fail-closed boot checks (`scripts/e2e-stack.sh fault [mode] [required]`,
+`fault-optional`) show a route drift stops the API whatever `VAULT_EXTENSIONS_REQUIRED` says, and a load failure
+is contained only with `VAULT_EXTENSIONS_REQUIRED=false`. PV's own native nav is pinned by
+`scripts/web-host-consumer-fixture/pv-nav.main.json` (`check-pv-nav-snapshot.test.ts`): a PV nav change updates
+the snapshot in the same PR.

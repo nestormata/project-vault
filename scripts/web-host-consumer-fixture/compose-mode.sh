@@ -12,6 +12,9 @@
 #                      and protects a CM (app) route added while it runs (Story 68-6 AC-8)
 #   compose-hooks-leak       a client page imports virtual:pv-hooks/server: vite build must fail (68-6 AC-1)
 #   compose-full-override    the pack overrides src/hooks.server.ts wholesale (68-6 AC-11): build, serve
+#   compose-mock-pack        Story 68.10: the mock UI pack (COMPOSITION_KIT_FIXTURES/mock-ui-pack) composed,
+#                            checked, verified (pv-verify guards incl. monolithic-region), built and served
+#                            (compose-mock-pack.sh)
 #   compose-bad-policy       the pack's headerPolicy is invalid: composed-hooks-init.test.ts must fail
 #                            before any build (68-6 AC-6, code review)
 #   compose-nav-drift        web-host's nav-ids.json loses an id the pack's nav delta changes: pv-compose
@@ -30,6 +33,7 @@ readonly SELFTEST_LABEL='self-test'
 compose_pack_name() {
   case "$VARIANT" in
     compose-server-leak | compose-server-twin | compose-replace-leak | compose-replace-first-leak) echo negative-pack ;;
+    compose-mock-pack) echo mock-ui-pack ;;
     *) echo mini-pack ;;
   esac
   return 0
@@ -992,6 +996,10 @@ compose_session_injection_checks() {
 
 compose_http_checks() {
   local port="$1"
+  if [[ "$VARIANT" == 'compose-mock-pack' ]]; then
+    compose_mock_pack_checks "$port"
+    return 0
+  fi
   if [[ "$VARIANT" == 'compose-full-override' ]]; then
     compose_full_override_checks "$port"
     return 0
@@ -1102,3 +1110,6 @@ compose_dev() {
   cat "$WORK/dev.err" >&2
   return 1
 }
+
+# shellcheck source=compose-mock-pack.sh
+source "$FIXTURE_DIR/compose-mock-pack.sh"

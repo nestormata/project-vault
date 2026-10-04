@@ -1,0 +1,10 @@
+# The build context is the composed app directory. Nothing below may reach the image build: the
+# image installs its own dependencies from ./tarballs and builds from the composed sources.
+node_modules
+build
+.svelte-kit
+.pv-compose/guard-run
+coverage
+.env
+.env.*
+*.log

@@ -197,6 +197,9 @@ importers:
       '@project-vault/mock-sso-extension':
         specifier: workspace:*
         version: link:../../fixtures/mock-sso-extension
+      '@project-vault/mock-ui-pack':
+        specifier: workspace:*
+        version: link:../../fixtures/mock-ui-pack
       '@project-vault/mock-ui-panel-extension':
         specifier: workspace:*
         version: link:../../fixtures/mock-ui-panel-extension
@@ -454,6 +457,37 @@ importers:
       '@project-vault/extension-api':
         specifier: workspace:*
         version: link:../../packages/extension-api
+    devDependencies:
+      '@project-vault/eslint-config':
+        specifier: workspace:*
+        version: link:../../packages/eslint-config
+      '@project-vault/tsconfig':
+        specifier: workspace:*
+        version: link:../../packages/tsconfig
+      '@types/node':
+        specifier: ^26.6.2
+        version: 26.6.2
+      '@vitest/coverage-v8':
+        specifier: ^5.0.1
+        version: 5.0.1(vitest@5.0.1)
+      eslint:
+        specifier: ^10.11.0
+        version: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^5.0.1
+        version: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@26.6.2)(@vitest/coverage-v8@5.0.1)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@26.6.2)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.1)(yaml@2.9.1))
+
+  fixtures/mock-ui-pack:
+    dependencies:
+      '@project-vault/extension-api':
+        specifier: workspace:*
+        version: link:../../packages/extension-api
+      zod:
+        specifier: 3.25.76
+        version: 3.25.76
     devDependencies:
       '@project-vault/eslint-config':
         specifier: workspace:*

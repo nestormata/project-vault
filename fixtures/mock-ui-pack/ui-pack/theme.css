@@ -1,0 +1,17 @@
+/* M6: overrides of PV's theme-token contract (a color, the radius and a font token), a token PV
+   does not define (a plain custom property: carried through without error, integrity only) and the
+   pack's own, non-token styles. */
+@theme {
+  --color-primary-600: #0f766e;
+  --color-background: #f0fdfa;
+  --radius-md: 0.75rem;
+  --font-weight-body: 500;
+}
+
+:root {
+  --mock-ui-pack-unknown-token: 7px;
+}
+
+.mock-ui-pack-m6-own {
+  border: 3px dashed #123456;
+}

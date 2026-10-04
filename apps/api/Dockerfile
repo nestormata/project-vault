@@ -72,6 +72,11 @@ COPY fixtures/mock-ui-panel-extension/package.json ./fixtures/mock-ui-panel-exte
 # production dep), present in pnpm-lock.yaml, so the frozen-lockfile install needs its manifest.
 # apps/api's tests import it only by string specifier, so its dist is never needed in this image.
 COPY fixtures/mock-api-routes-extension/package.json ./fixtures/mock-api-routes-extension/
+# Story 68.10: @project-vault/mock-ui-pack (the mock module pack for the composed mechanism e2e) is a
+# devDependency of apps/api (never a production dep), present in pnpm-lock.yaml, so the
+# frozen-lockfile install needs its manifest. Its dist is built and shipped only behind the opt-in
+# INCLUDE_MOCK_UI_PACK_MODULE build arg below.
+COPY fixtures/mock-ui-pack/package.json ./fixtures/mock-ui-pack/
 
 # pnpm >= 11.28 refuses `--frozen-lockfile` when any workspace member recorded in
 # pnpm-lock.yaml lacks its package.json, even if this image never builds that member.
@@ -98,6 +103,7 @@ COPY fixtures/mock-envelope-extension ./fixtures/mock-envelope-extension
 COPY fixtures/mock-capability-gate-extension ./fixtures/mock-capability-gate-extension
 COPY fixtures/mock-audit-event-source-extension ./fixtures/mock-audit-event-source-extension
 COPY fixtures/mock-ui-panel-extension ./fixtures/mock-ui-panel-extension
+COPY fixtures/mock-ui-pack ./fixtures/mock-ui-pack
 
 # Split off from the final `builder` stage (Story 1.13 AC-D1) so the one-shot `migrate` service
 # (docker-compose.yml) doesn't have to build `agent`/`api` just to run a migration. `crypto` is
@@ -160,6 +166,13 @@ RUN if [ "$INCLUDE_MOCK_UI_PANEL_EXTENSION" = "true" ]; then \
       pnpm --filter @project-vault/mock-ui-panel-extension build; \
     fi
 
+# Story 68.10: same opt-in-only pattern for the mock module pack of the composed mechanism e2e
+# (docker-compose.mock-ui-pack.yml's `build.args` override only; the default is false everywhere).
+ARG INCLUDE_MOCK_UI_PACK_MODULE=false
+RUN if [ "$INCLUDE_MOCK_UI_PACK_MODULE" = "true" ]; then \
+      pnpm --filter @project-vault/mock-ui-pack build; \
+    fi
+
 # Bundle the api and its production deps into a self-contained directory. This runs in its
 # own stage (not in `app-builder`) because `pnpm deploy` prunes the workspace node_modules to
 # production-only in place — the `migrate` service targets `db-builder` directly (Story 1.13
@@ -174,6 +187,7 @@ ARG INCLUDE_MOCK_ENVELOPE_EXTENSION=false
 ARG INCLUDE_MOCK_CAPABILITY_GATE_EXTENSION=false
 ARG INCLUDE_MOCK_AUDIT_EVENT_SOURCE_EXTENSION=false
 ARG INCLUDE_MOCK_UI_PANEL_EXTENSION=false
+ARG INCLUDE_MOCK_UI_PACK_MODULE=false
 RUN pnpm --filter @project-vault/api deploy --prod --legacy /app/deploy
 # `pnpm deploy --legacy` leaves workspace links for injected packages on this pnpm version. Replace
 # the extension-api link with the exact npm pack boundary used for external consumers so the runner
@@ -246,6 +260,11 @@ RUN if [ "$INCLUDE_MOCK_UI_PANEL_EXTENSION" = "true" ]; then \
       mkdir -p /app/deploy/node_modules/@project-vault/mock-ui-panel-extension && \
       cp -r /app/fixtures/mock-ui-panel-extension/dist /app/deploy/node_modules/@project-vault/mock-ui-panel-extension/dist && \
       cp /app/fixtures/mock-ui-panel-extension/package.json /app/deploy/node_modules/@project-vault/mock-ui-panel-extension/package.json; \
+    fi
+RUN if [ "$INCLUDE_MOCK_UI_PACK_MODULE" = "true" ]; then \
+      mkdir -p /app/deploy/node_modules/@project-vault/mock-ui-pack && \
+      cp -r /app/fixtures/mock-ui-pack/dist /app/deploy/node_modules/@project-vault/mock-ui-pack/dist && \
+      cp /app/fixtures/mock-ui-pack/package.json /app/deploy/node_modules/@project-vault/mock-ui-pack/package.json; \
     fi
 
 # node:24-alpine, pinned by digest — see builder stage comment above.

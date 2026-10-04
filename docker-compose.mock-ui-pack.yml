@@ -1,0 +1,56 @@
+# Story 68.10: the mock UI pack flavour of the e2e stack. It LAYERS on docker-compose.yml and
+# docker-compose.e2e.yml (so VAULT_ALLOW_REMOTE_INIT, the raised auth rate limits and the handoff
+# test keys are inherited) and changes only what the composed mechanism e2e needs:
+#
+#   - api: the mock module pack (@project-vault/mock-ui-pack, built only through the opt-in
+#     INCLUDE_MOCK_UI_PACK_MODULE build arg) replaces the e2e file's mock-sso package, because a host
+#     loads exactly one extension package, and VAULT_EXTENSIONS_REQUIRED=true so a pack that fails to
+#     load stops the API instead of booting without it;
+#   - web: the image is the COMPOSED app (fixtures/mock-ui-pack/docker/web.Dockerfile, built from the
+#     exported composed-app context in MOCK_UI_PACK_WEB_CONTEXT), never apps/web;
+#   - the published ports (web, api and db) are rebound to loopback on host ports the runner
+#     pre-allocated for THIS run (WEB_HOST_PORT / API_HOST_PORT / DB_HOST_PORT). The base file bakes the web port into ORIGIN,
+#     CORS_ALLOWED_ORIGINS and WEB_BASE_URL at `up` time, so the ports must be known before it;
+#   - api-faulty: the same api with the boot-fault switch, behind the `fault` profile so `up` never
+#     starts it. `scripts/e2e-stack.sh fault` runs it once to prove the fail-closed boot.
+#
+# Start it ONLY through `scripts/e2e-stack.sh` with E2E_STACK_FLAVOR=mock-ui-pack (per-run throwaway
+# secrets, redacted dump, always-teardown by COMPOSE_PROJECT_NAME). Never merge any of this into the
+# base file, fly*.toml or an env example: scripts/e2e-stack.test.ts and
+# apps/api/src/__tests__/mock-extension-not-in-production.test.ts fail CI if it appears there. Never
+# set NODE_ENV or any secret here.
+services:
+  db:
+    ports: !override
+      - '127.0.0.1:${DB_HOST_PORT:?DB_HOST_PORT is allocated by scripts/e2e-stack.sh plan}:5432'
+  api:
+    build:
+      args:
+        INCLUDE_MOCK_UI_PACK_MODULE: 'true'
+    environment:
+      VAULT_EXTENSIONS_PACKAGE: '@project-vault/mock-ui-pack'
+      VAULT_EXTENSIONS_REQUIRED: 'true'
+    ports: !override
+      - '127.0.0.1:${API_HOST_PORT:?API_HOST_PORT is allocated by scripts/e2e-stack.sh plan}:3000'
+  web:
+    build:
+      context: ${MOCK_UI_PACK_WEB_CONTEXT:?MOCK_UI_PACK_WEB_CONTEXT is the exported composed app}
+      dockerfile: ${MOCK_UI_PACK_WEB_DOCKERFILE:-web.Dockerfile}
+    ports: !override
+      - '127.0.0.1:${WEB_HOST_PORT:?WEB_HOST_PORT is allocated by scripts/e2e-stack.sh plan}:3000'
+  api-faulty:
+    profiles: ['fault']
+    extends:
+      file: docker-compose.yml
+      service: api
+    # The SAME image the api service built (it already carries the mock module pack): the fault run
+    # must not rebuild it, so its bounded wait measures the boot, not a docker build.
+    image: ${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME is set by scripts/e2e-stack.sh plan}-api
+    build: !reset null
+    environment:
+      VAULT_EXTENSIONS_PACKAGE: '@project-vault/mock-ui-pack'
+      # scripts/e2e-stack.sh `fault` / `fault-optional` export these two for ONE run (validated against
+      # fixed lists there); the defaults are the fail-closed boot proof.
+      VAULT_EXTENSIONS_REQUIRED: ${E2E_FAULT_REQUIRED:-true}
+      MOCK_UI_PACK_BOOT_FAULT: ${E2E_FAULT_MODE:-missing-target}
+    ports: !reset []
