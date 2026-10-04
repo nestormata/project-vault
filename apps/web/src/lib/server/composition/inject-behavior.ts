@@ -114,9 +114,15 @@ function runAction(entry: ActionEntry): Action {
   }
 }
 
-/** PV's own load answered "this entity does not exist for you": the literal `notFound: true`. */
-function isNotFound(data: object | undefined): boolean {
-  return (data as { notFound?: unknown } | undefined)?.notFound === true
+/** The own-result flags that mean "there is nothing a contribution load could read": PV's 404
+ * answer (`notFound: true`, no such entity for you) and its sealed-vault answer (`vaultSealed:
+ * true`, every PV API call 503s). One shared constant, so the two cases can never drift apart. */
+const SKIP_LOAD_FLAGS = ['notFound', 'vaultSealed'] as const
+
+/** PV's own load answered with one of the literal `true` flags above. */
+function isLoadSkipped(data: object | undefined): boolean {
+  const record = data as Record<string, unknown> | undefined
+  return SKIP_LOAD_FLAGS.some((flag) => record?.[flag] === true)
 }
 
 /** No load ran: one null entry per contribution of every point of the slice, or nothing at all when
@@ -159,9 +165,11 @@ export function createInjectBehavior(tables: BehaviorTables) {
         const ownData = (await own(event)) as object | undefined
         // Story 69.1 (Q2, DW-490 item 1): PV's own 404 result (`notFound: true`) means there is no
         // entity a contribution could load for, and a contribution that calls the API for the same id
-        // would turn PV's 404 into a 500 or an existence oracle. No contribution load runs; every
-        // contribution still gets a null entry so the point's `data` stays aligned.
-        const injected = isNotFound(ownData)
+        // would turn PV's 404 into a 500 or an existence oracle. Story 69.2 (Q3): the same holds for
+        // `vaultSealed: true`, where a contribution calling the API would turn PV's sealed banner
+        // into a 500. No contribution load runs; every contribution still gets a null entry so the
+        // point's `data` stays aligned.
+        const injected = isLoadSkipped(ownData)
           ? skippedLoads(loads.get(`${routeId}#${scope}`))
           : // Kit hands the same event to PV's load and to this wrapper; PV's own load only needs the
             // slice of it (params, locals, ...) it declares, so `Event` is not tied to Kit's event types.

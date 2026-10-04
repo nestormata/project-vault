@@ -436,31 +436,67 @@ describe("withInjectedLoad: PV's own load first, then the injected data", () => 
     })
   })
 
-  // Story 69.1 Q5 default: PV changes nothing for a sealed vault. A contribution that calls the API
-  // gets the same 503 and, rethrown, turns the dashboard banner into an error: pinned as a visible
-  // contract (documented in docs/composition-kit.md), not left implicit.
-  it('a vaultSealed own result still runs the contribution loads, and a throwing one fails the load', async () => {
-    const { withInjectedLoad: wrap } = createInjectBehavior({
+  // Story 69.2 Q3 (widens 69.1's Q5 default): with the vault sealed every PV API call answers 503,
+  // so a contribution that calls the API would turn PV's friendly sealed banner into a 500. A
+  // `vaultSealed: true` own result therefore skips the contribution loads exactly like `notFound`,
+  // with one null entry per contribution (alignment) and PV's own data intact.
+  describe('a vaultSealed own result (Story 69.2)', () => {
+    const counter = { ran: 0 }
+    const sealedTables = (): BehaviorTables => ({
       loads: {
         '/r#page': [
           {
-            point: 'dashboard.home.activity',
+            point: 'credential.detail.shares',
             contributions: [
               {
                 order: 0,
                 load: () => {
+                  counter.ran += 1
                   throw new Error('Service Unavailable')
                 },
               },
+              { order: 1, load: null },
             ],
           },
+          { point: 'credential.detail.after', contributions: [{ order: 0, load: () => 1 }] },
         ],
       },
       actions: {},
     })
-    const wrapped = wrap(async () => ({ vaultSealed: true as const }), '/r', 'page')
-    await expect(wrapped(event)).rejects.toMatchObject({
-      message: 'injection "dashboard.home.activity" load failed: Error',
+
+    it('runs no contribution load (a throwing one never fails the page) and keeps the alignment', async () => {
+      counter.ran = 0
+      const { withInjectedLoad: wrap } = createInjectBehavior(sealedTables())
+      const own = { credential: null, vaultSealed: true as const }
+      const result = await wrap(async () => own, '/r', 'page')(event)
+      expect(counter.ran).toBe(0)
+      expect(result).toEqual({
+        credential: null,
+        vaultSealed: true,
+        __inject: { 'credential.detail.shares': [null, null], 'credential.detail.after': [null] },
+      })
+    })
+
+    it.each([[{ vaultSealed: false }], [{ vaultSealed: 'true' }], [{ credential: null }]])(
+      'only a literal true skips: %j still runs the loads',
+      async (own) => {
+        counter.ran = 0
+        const { withInjectedLoad: wrap } = createInjectBehavior(sealedTables())
+        await expect(wrap(async () => own, '/r', 'page')(event)).rejects.toMatchObject({
+          message: 'injection "credential.detail.shares" load failed: Error',
+        })
+        expect(counter.ran).toBe(1)
+      }
+    )
+
+    it('a notFound and a vaultSealed result share one skip predicate', async () => {
+      counter.ran = 0
+      const { withInjectedLoad: wrap } = createInjectBehavior(sealedTables())
+      for (const own of [{ notFound: true }, { vaultSealed: true }]) {
+        const result = await wrap(async () => own, '/r', 'page')(event)
+        expect(result).toMatchObject({ __inject: { 'credential.detail.after': [null] } })
+      }
+      expect(counter.ran).toBe(0)
     })
   })
 
