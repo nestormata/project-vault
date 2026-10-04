@@ -13,7 +13,7 @@ const reply = (status: number, body: unknown = {}): SeedResponse => ({
   json: async () => body,
 })
 
-const options = { email: 'a@example.test', password: 'pw', orgName: 'Org' }
+const options = { email: 'seed-user', password: 'pw', orgName: 'Org' }
 
 describe('seedRegisterAndLogin', () => {
   it('registers, logs in and completes onboarding, in that order, once each', async () => {
