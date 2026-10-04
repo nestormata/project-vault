@@ -22,6 +22,7 @@ const LAYOUT_SERVER = 'src/routes/(app)/+layout.server.ts'
 const FOO_ID = '/(app)/foo'
 const SUFFIXES = ['before', 'after', 'header.actions']
 const PREFIXES = ['foo.page', 'app.layout']
+const HEADER_REGION = 'foo.page.header'
 
 function registry(names: string[], shell: string[] = []): string {
   const rows = [
@@ -97,6 +98,40 @@ describe('check-injection-point-coverage: mutation self-tests (Story 68.4 AC-10)
       SUFFIXES.map((suffix) => `foo.page.${suffix}`).sort()
     )
     expect(fields?.get('foo.page.after')?.get('propsType')).toBe('X')
+  })
+
+  it('expands a regionPoints spread into one region row per listed name', () => {
+    const root = makeRoot()
+    writeFixture(
+      root,
+      REGISTRY,
+      `export const INJECTION_POINTS = [\n  ...regionPoints('Y', [], ['${HEADER_REGION}', 'foo.page.body']),\n]\n`
+    )
+    const fields = readRegistryFields(root)
+    expect([...(fields?.keys() ?? [])].sort()).toEqual(['foo.page.body', HEADER_REGION])
+    expect(fields?.get(HEADER_REGION)?.get('kind')).toBe('region')
+    expect(fields?.get(HEADER_REGION)?.get('propsType')).toBe('Y')
+  })
+
+  it('ignores a regionPoints call whose arguments are not string literals', () => {
+    const root = makeRoot()
+    writeFixture(
+      root,
+      REGISTRY,
+      `export const INJECTION_POINTS = [\n  ...regionPoints(TYPE, [], ['${HEADER_REGION}']),\n  ...regionPoints('Y', [], NAMES),\n]\n`
+    )
+    expect(readRegistryFields(root)?.size).toBe(0)
+  })
+
+  it('reports a region point that is registered but not rendered, and a mistyped rendered name', () => {
+    const root = cleanTree()
+    const all = PREFIXES.flatMap((prefix) => SUFFIXES.map((s) => `${prefix}.${s}`))
+    const rows = registry(all).replace('\n]\n', `\n  ...regionPoints('X', [], ['${HEADER_REGION}']),\n]\n`)
+    writeFixture(root, REGISTRY, rows)
+    writeFixture(root, PAGE, `${points('foo.page')}\n<InjectionPoint name="foo.page.heder" />`)
+    const text = problemsOf(root).problems.join('\n')
+    expect(text).toContain('"foo.page.heder" is not registered')
+    expect(text).toContain(HEADER_REGION)
   })
 
   it('flags a page missing its .after point', () => {
