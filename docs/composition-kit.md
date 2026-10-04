@@ -372,19 +372,19 @@ required for the pack's own items.
 `web-host`'s `manifests/nav-ids.json` lists every surface (its renderer file and context keys) and
 every PV item id (its surface, parent and whether it has a visibility condition). The surfaces are:
 
-| Surface | Where | Context (`ctx`) |
-|---|---|---|
-| `primary` | the primary nav (also the mobile nav) | `user`, `hasUiPanelExtension`, `pathname`, `search` |
-| `project` | the project tab bar | `projectId`, `orgRole`, `pathname` |
-| `shell.brand`, `shell.utility`, `shell.mfa-banner` | the header brand link, the notifications bell, the MFA banner's settings link | `hidePrimaryNav`, `unreadCount`, `bannerMessage` |
-| `account` | the account menu (`account.sign-out` is an action) | `user` |
-| `footer` | the footer links (external) | none |
-| `settings.index`, `platform.index` | the section index cards (`label` + `description`) | none |
-| `platform.settings.links`, `settings.audit.links` | sub-section link rows | none |
-| `notifications.tabs` | the notifications status tabs (`query`: `?status=…`) | `status` |
-| `breadcrumbs` | one tree; a page renders the path to its node (`<Breadcrumbs node="…">`) | `node` |
-| `back` | one back link per page (`<BackLink node="…">`, `<NavLink surface="back" node="…">`) | `projectId`, `credentialId` |
-| `error.nav`, `auth.links` | the error page's way back, the auth pages' cross-links | `authenticated` |
+| Surface                                            | Where                                                                               | Context (`ctx`)                                     |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `primary`                                          | the primary nav (also the mobile nav)                                               | `user`, `hasUiPanelExtension`, `pathname`, `search` |
+| `project`                                          | the project tab bar                                                                 | `projectId`, `orgRole`, `pathname`                  |
+| `shell.brand`, `shell.utility`, `shell.mfa-banner` | the header brand link, the notifications bell, the MFA banner's settings link       | `hidePrimaryNav`, `unreadCount`, `bannerMessage`    |
+| `account`                                          | the account menu (`account.sign-out` is an action)                                  | `user`                                              |
+| `footer`                                           | the footer links (external)                                                         | none                                                |
+| `settings.index`, `platform.index`                 | the section index cards (`label` + `description`)                                   | none                                                |
+| `platform.settings.links`, `settings.audit.links`  | sub-section link rows                                                               | none                                                |
+| `notifications.tabs`                               | the notifications status tabs (`query`: `?status=…`)                                | `status`                                            |
+| `breadcrumbs`                                      | one tree; a page renders the path to its node (`<Breadcrumbs node="…">`)            | `node`                                              |
+| `back`                                             | one back link per page (`<BackLink node="…">`, `<NavLink surface="back" node="…">`) | `projectId`, `credentialId`                         |
+| `error.nav`, `auth.links`                          | the error page's way back, the auth pages' cross-links                              | `authenticated`                                     |
 
 Every context also has `pathname`. Ids are a public contract named by meaning, not position: PV never
 renames one (a rename is a removal plus an addition, listed under "Nav ids removed" in the web-host
@@ -395,20 +395,52 @@ items and are not addressable by a delta.
 
 ```ts
 import { resolve } from '$app/paths'
-import { defineNavDelta, hide, insert, move, relabel, remove, reorder, replace } from '@project-vault/composition-kit/nav'
+import {
+  defineNavDelta,
+  hide,
+  insert,
+  move,
+  relabel,
+  remove,
+  reorder,
+  replace,
+} from '@project-vault/composition-kit/nav'
 
 export default defineNavDelta({
   primary: [
-    insert({ after: 'primary.projects', item: { id: 'cm.billing', label: () => t('billing'), href: () => resolve('/billing') } }),
-    insert({ parent: 'primary', item: { id: 'cm.ops', label: 'Ops', icon: OpsIcon, children: [] } }),
+    insert({
+      after: 'primary.projects',
+      item: { id: 'cm.billing', label: () => t('billing'), href: () => resolve('/billing') },
+    }),
+    insert({
+      parent: 'primary',
+      item: { id: 'cm.ops', label: 'Ops', icon: OpsIcon, children: [] },
+    }),
     move('primary.health', { parent: 'cm.ops' }),
     relabel('primary.secrets', () => t('vault')),
     reorder('primary', ['primary.projects', 'primary.dashboard']),
   ],
-  project: [insert({ parent: 'project', item: { id: 'cm.project-billing', label: 'Billing', href: (ctx) => resolve(`/projects/${ctx.projectId}/billing`) } })],
-  'settings.index': [hide('settings.index.sso-domains'), relabel('settings.index.users', { description: () => 'Seats and roles' })],
+  project: [
+    insert({
+      parent: 'project',
+      item: {
+        id: 'cm.project-billing',
+        label: 'Billing',
+        href: (ctx) => resolve(`/projects/${ctx.projectId}/billing`),
+      },
+    }),
+  ],
+  'settings.index': [
+    hide('settings.index.sso-domains'),
+    relabel('settings.index.users', { description: () => 'Seats and roles' }),
+  ],
   'shell.brand': [replace('shell.brand.home', { label: 'CentralizeMe', href: () => resolve('/') })],
-  account: [insert({ before: 'account.sign-out', item: { id: 'cm.account.billing', label: 'Billing', href: () => resolve('/billing') } })],
+  account: [
+    insert({
+      before: 'account.sign-out',
+      item: { id: 'cm.account.billing', label: 'Billing', href: () => resolve('/billing') },
+    }),
+  ],
 })
 ```
 
@@ -416,15 +448,15 @@ Wire `pvNav()` next to `pvHooks()` in the composed app's `vite.config.ts` and `v
 web-host refuses to build a composed tree without it. `nav.ts` renders in the browser too, so it must
 not import server-only code (Kit's server-only guard fails the build).
 
-| Op | Semantics | Problems (integrity only) |
-|---|---|---|
-| `insert({ after \| before \| parent, item })` | exactly one anchor; `parent` appends as the last child, `parent: '<surface>'` at the root | no anchor or two; an existing id ("use replace"); an anchor that was removed |
-| `remove(id)` | the item and its subtree leave the tree | none (an absent id is a note: the desired state holds) |
-| `hide(id)` | the item stays as an anchor for later ops; it and its subtree are not rendered | none (idempotent; an absent id is a note) |
-| `relabel(id, label \| { label, mobileLabel, description })` | replaces only the named labels | an empty object; an absent id |
-| `move(id, { after \| before \| parent })` | detaches and re-attaches the subtree | moving into its own subtree; a parent that is an action |
-| `replace(id, item)` | keeps the id; keeps PV's children and `when` unless the replacement declares its own (Q5) | a different `item.id` |
-| `reorder(parentId, ids)` | the listed children first, in order; the others (also future PV ones) keep their order after them | an id that is not a child; a duplicate |
+| Op                                                          | Semantics                                                                                         | Problems (integrity only)                                                    |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `insert({ after \| before \| parent, item })`               | exactly one anchor; `parent` appends as the last child, `parent: '<surface>'` at the root         | no anchor or two; an existing id ("use replace"); an anchor that was removed |
+| `remove(id)`                                                | the item and its subtree leave the tree                                                           | none (an absent id is a note: the desired state holds)                       |
+| `hide(id)`                                                  | the item stays as an anchor for later ops; it and its subtree are not rendered                    | none (idempotent; an absent id is a note)                                    |
+| `relabel(id, label \| { label, mobileLabel, description })` | replaces only the named labels                                                                    | an empty object; an absent id                                                |
+| `move(id, { after \| before \| parent })`                   | detaches and re-attaches the subtree                                                              | moving into its own subtree; a parent that is an action                      |
+| `replace(id, item)`                                         | keeps the id; keeps PV's children and `when` unless the replacement declares its own (Q5)         | a different `item.id`                                                        |
+| `reorder(parentId, ids)`                                    | the listed children first, in order; the others (also future PV ones) keep their order after them | an id that is not a child; a duplicate                                       |
 
 Rules:
 
@@ -570,8 +602,16 @@ runs Playwright (`apps/web/playwright.mechanism.config.ts`: retries 0, traces of
 capability under `apps/web/e2e/mechanism/`. The CI job `Mock UI pack mechanism e2e` runs it with an in-workflow
 path filter that fails open. It is **required in intent and enforced by `scripts/check-mock-ui-pack-e2e-wiring.test.ts`,
 not yet by branch protection** (making it a required status check is a repo-admin step). M5 (navigation as data, story 68-7) is covered by
-`m5-navigation.spec.ts` over the pack's `nav.ts`: add, remove, hide, rename, reorder, nest (a pack item two
-levels deep and a native item moved under it), an inherited project tab, and an operation on an unknown id
-that is recorded, never a crash. PV's own native nav is pinned by
+`m5-navigation.spec.ts` over the pack's `nav.ts`: every operation (add, remove, hide, rename, move, reorder,
+replace), nesting (a pack group two levels deep and a child under a native item), an inherited project tab, on
+thirteen surfaces (the footer and the error page are replaced by the pack's M4/M1 content, so the shipped
+`composed-nav` test covers those), and an operation on an unknown id that is recorded, never a crash. A string
+`relabel` changes only the label (the narrow-screen label keeps PV's text), and a one-node surface such as the
+login links renders the node and its descendants, so a pack link there is a child of that node. The mutation
+proofs run the same job over a deliberately broken copy of the overlay
+(`MOCK_UI_PACK_OVERLAY_DIR=<copy of fixtures/mock-ui-pack/ui-pack>`, never set in CI): each break turns exactly its
+capability's spec red. The fail-closed boot checks (`scripts/e2e-stack.sh fault [mode] [required]`,
+`fault-optional`) show a route drift stops the API whatever `VAULT_EXTENSIONS_REQUIRED` says, and a load failure
+is contained only with `VAULT_EXTENSIONS_REQUIRED=false`. PV's own native nav is pinned by
 `scripts/web-host-consumer-fixture/pv-nav.main.json` (`check-pv-nav-snapshot.test.ts`): a PV nav change updates
 the snapshot in the same PR.
