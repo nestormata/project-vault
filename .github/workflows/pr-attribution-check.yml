@@ -1,0 +1,43 @@
+name: PR attribution check
+
+# Story 66.21: the public repo lists Nestor only (AGENTS.md). Rejects agent co-author/session
+# trailers and "Generated with" footers in the PR's commits, title and body. `edited` re-triggers
+# the check when the PR body is fixed (full CI does not run on a body edit).
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  no-agent-attribution:
+    name: No agent attribution
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 11.28.3
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # PR text is untrusted input: it reaches the script only through step-level variables.
+      - name: Check commits, PR title and PR body
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: pnpm check-no-agent-attribution --base "$BASE_SHA"

@@ -104,6 +104,9 @@ jobs:
       - name: Check third-party action SHA pins (Story 64.2 AC-3)
         run: pnpm vitest run scripts/check-action-pins.test.ts
 
+      - name: Check the no-agent-attribution guard (Story 66.21 AC-7)
+        run: pnpm vitest run scripts/check-no-agent-attribution.test.ts
+
       - name: Check no pnpm override makes a declared range false (Story 68.2 AC-1)
         run: pnpm vitest run scripts/check-no-false-overrides.test.ts
 

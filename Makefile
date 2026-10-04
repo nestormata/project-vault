@@ -49,7 +49,7 @@ DB_URL_SUPERUSER ?= postgresql://postgres:password@$(DB_CONN_HOST):$(DB_HOST_POR
 DB_URL_APP        ?= postgresql://vault_app:dev-only-change-in-prod@$(DB_CONN_HOST):$(DB_HOST_PORT)/project_vault
 DB_URL_ADMIN      ?= postgresql://vault_admin:password@$(DB_CONN_HOST):$(DB_HOST_PORT)/project_vault
 
-.PHONY: help install dev build lint typecheck generate-spec jscpd audit sonar-issues check-public-safety check-form-guidance check-function-executability check-function-executability-tests \
+.PHONY: help install dev build lint typecheck generate-spec jscpd audit sonar-issues check-public-safety check-no-agent-attribution check-form-guidance check-function-executability check-function-executability-tests \
         db-up db-down db-migrate check-rls test test-repeat stryker ci ci-inner web-host-fixture composition-kit-integration mock-ui-pack-compose mock-ui-pack-e2e \
         check-extension-api-policy check-extension-api-policy-content check-extension-api-behaviour check-extension-api-markers check-extension-api-contract-changelog \
         bootstrap bootstrap-docker check-ports fix-ports \
@@ -94,6 +94,9 @@ sonar-issues: ## List open SonarCloud issues (needs SONAR_TOKEN/SONAR_ORGANIZATI
 
 check-public-safety: ## Review changed/untracked content for publication risks (BASE_REF=main; strict blocks all findings)
 	BASE_REF=$(BASE_REF) pnpm check-public-safety -- --base "$(BASE_REF)" --strict
+
+check-no-agent-attribution: ## Reject agent attribution in commits since BASE_REF (Story 66.21)
+	pnpm check-no-agent-attribution --base "$(BASE_REF)"
 
 check-form-guidance: ## Verify every user-facing web form control has localized accessible help
 	pnpm check-form-guidance
@@ -244,6 +247,7 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-native-credential-surface
 	pnpm check-no-sonar-suppressions # Story 43.9 AC-9: no unsigned Sonar suppressions
 	pnpm vitest run scripts/check-no-sonar-suppressions.test.ts scripts/lib/trusted-executable.test.ts
+	pnpm vitest run scripts/check-no-agent-attribution.test.ts # Story 66.21: public-repo no-agent-attribution guard
 	pnpm vitest run scripts/check-stryker-config.test.ts # Story 66-7: Stryker shard/threshold/vitest-5 patch invariants
 	pnpm vitest run scripts/check-nightly-workflow.test.ts # Story 66-11: nightly quiet-day gate + 5-leg flaky repeat matrix
 	pnpm vitest run scripts/pr-e2e-smoke-gate.test.ts # Story 66-20: PR-time e2e smoke gate + ci.yml job wiring
