@@ -598,7 +598,7 @@ makes a mechanism impossible is a design question for Nestor, not a pack edit.
 (`fixtures/mock-ui-pack/docker/web.Dockerfile`, from the exported composed-app directory), boots it with a real
 API carrying the mock module pack (`VAULT_EXTENSIONS_REQUIRED=true`) and a real database through
 `scripts/e2e-stack.sh` with `E2E_STACK_FLAVOR=mock-ui-pack` (per-run host ports and compose project name), and
-runs Playwright (`apps/web/playwright.mechanism.config.ts`: retries 0, traces off) with one spec file per
+runs Playwright (`apps/web/e2e/mechanism/playwright.config.ts`: retries 0, traces off) with one spec file per
 capability under `apps/web/e2e/mechanism/`. The CI job `Mock UI pack mechanism e2e` runs it with an in-workflow
 path filter that fails open. It is **required in intent and enforced by `scripts/check-mock-ui-pack-e2e-wiring.test.ts`,
 not yet by branch protection** (making it a required status check is a repo-admin step). M5 (navigation as data, story 68-7) is covered by

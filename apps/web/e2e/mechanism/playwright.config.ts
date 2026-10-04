@@ -12,6 +12,9 @@ import { defineConfig, devices } from '@playwright/test'
 //   - the output directory is named `playwright-mechanism-output` on purpose: the repo `.gitignore`
 //     hides any directory named `reports/` or `coverage/` from git and CI.
 //
+// The html reporter folder is relative to the working directory (apps/web, where the runner
+// starts Playwright); `outputDir` and the other paths here are relative to this file.
+//
 // E2E_BASE_URL (the composed web origin) and E2E_API_BASE_URL (the API port, for the routes outside
 // /api/v1 the web origin does not proxy) come from the runner (`scripts/mock-ui-pack-e2e.ts`) and
 // are required: there is no default, so this config can never point at another stack by accident.
@@ -25,9 +28,9 @@ function required(name: string): string {
 }
 
 export default defineConfig({
-  testDir: './e2e/mechanism',
+  testDir: '.',
   testMatch: '**/*.spec.ts',
-  globalSetup: './e2e/mechanism/global-setup.ts',
+  globalSetup: './global-setup.ts',
   fullyParallel: false,
   workers: 1,
   retries: 0,
@@ -38,7 +41,7 @@ export default defineConfig({
     ['html', { open: 'never' as const, outputFolder: './playwright-mechanism-output/html' }],
     ['list'],
   ],
-  outputDir: './playwright-mechanism-output/artifacts',
+  outputDir: '../../playwright-mechanism-output/artifacts',
   use: {
     baseURL: required('E2E_BASE_URL'),
     actionTimeout: 15_000,

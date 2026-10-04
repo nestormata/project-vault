@@ -11,7 +11,7 @@
  *   Build composed image + Boot stack
  *                      scripts/e2e-stack.sh with E2E_STACK_FLAVOR=mock-ui-pack (real API, real
  *                      database, the composed web image); ports and project name are per run
- *   Mechanism e2e      Playwright (apps/web/playwright.mechanism.config.ts), one file per capability
+ *   Mechanism e2e      Playwright (apps/web/e2e/mechanism/playwright.config.ts), one file per capability
  *   Teardown           `down -v --remove-orphans` by project name, always (unless E2E_STACK_KEEP=1)
  *
  *   tsx scripts/mock-ui-pack-e2e.ts [<spec path relative to apps/web>]
@@ -97,7 +97,13 @@ function planStack(contextDir: string): NodeJS.ProcessEnv {
 function runPlaywright(stack: NodeJS.ProcessEnv, spec: string | undefined): number {
   const playwright = resolveBin('@playwright/test', 'playwright', WEB_DIR)
   const dbPort = stack['DB_HOST_PORT'] ?? ''
-  const args = [playwright, 'test', '-c', 'playwright.mechanism.config.ts', ...(spec ? [spec] : [])]
+  const args = [
+    playwright,
+    'test',
+    '-c',
+    'e2e/mechanism/playwright.config.ts',
+    ...(spec ? [spec] : []),
+  ]
   const run = spawnSync(process.execPath, args, {
     cwd: WEB_DIR,
     stdio: 'inherit',

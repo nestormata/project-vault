@@ -27,7 +27,7 @@ const SPECS: Record<string, string> = import.meta.glob('../apps/web/e2e/mechanis
   eager: true,
 })
 const CONFIG: Record<string, string> = import.meta.glob(
-  '../apps/web/playwright.mechanism.config.ts',
+  '../apps/web/e2e/mechanism/playwright.config.ts',
   {
     query: '?raw',
     import: 'default',
@@ -157,7 +157,7 @@ describe('the path filter (Story 68.10 AC-3.1, AC-3.2)', () => {
     'pnpm-lock.yaml',
     '.github/workflows/ci.yml',
     'apps/web/e2e/mechanism/m1-page-override.spec.ts',
-    'apps/web/playwright.mechanism.config.ts',
+    'apps/web/e2e/mechanism/playwright.config.ts',
     '.dockerignore',
     '.npmrc',
     '.node-version',
@@ -265,9 +265,9 @@ describe('the mechanism specs cannot pass vacuously (Story 68.10 AC-3.3)', () =>
     expect(config).toContain('playwright-mechanism-output')
   })
 
-  it('lists the mechanism config in the e2e tsconfig so no spec goes untypechecked', () => {
+  it('keeps the mechanism config under the e2e tsconfig glob so no spec goes untypechecked', () => {
     const tsconfig = REPO_TEXT.get('../apps/web/e2e/tsconfig.json') ?? ''
-    expect(tsconfig).toContain('../playwright.mechanism.config.ts')
+    expect(Object.keys(CONFIG)).toEqual(['../apps/web/e2e/mechanism/playwright.config.ts'])
     expect(tsconfig).toContain('"**/*.ts"')
   })
 })
