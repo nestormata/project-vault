@@ -15,10 +15,9 @@ import type { ExtensionActionResult, ExtensionRequestContext } from './extension
  * observe the split; see `module-action.test.ts`'s type-contract test proving the two types are
  * no longer structurally identical.
  *
- * @deprecated
- * replacement: ExtensionRequestContext
- * earliest-removal: 4.0.0
- * notice-window-ends: 2027-01-14
+ * Deprecated in 3.30.0 (replacement: ExtensionRequestContext). The policy-grade `@deprecated`
+ * marker lives on this symbol's `src/index.ts` export; it is deliberately not repeated on this
+ * declaration so the package's own internal uses do not raise deprecation diagnostics.
  */
 export type ModuleActionContext = ExtensionRequestContext & {
   /** Which named panel slot the action was dispatched from (panel-only; see `UIPanelContext`). */
@@ -42,10 +41,9 @@ export type ModuleActionContext = ExtensionRequestContext & {
  * Deliberately type-erased beyond `kind` so no accidental structural read of a client-supplied
  * identity claim (e.g. `orgId`) can compile anywhere in the host's own routing code (AC3).
  *
- * @deprecated
- * replacement: composed UI (ADR 0007 build-time composition) for panel actions and M7 apiRoutes
- * earliest-removal: 4.0.0
- * notice-window-ends: 2027-01-14
+ * Deprecated in 3.30.0 (replacement: composed UI (ADR 0007 build-time composition) for panel actions and M7 apiRoutes). The policy-grade `@deprecated`
+ * marker lives on this symbol's `src/index.ts` export; it is deliberately not repeated on this
+ * declaration so the package's own internal uses do not raise deprecation diagnostics.
  */
 export type ModuleActionRequest = {
   action: Record<string, unknown> & { kind: string }
@@ -76,18 +74,16 @@ export type ModuleActionRequest = {
  * - (e) PV does not inspect, cache or re-scope `html`: the extension alone is responsible for
  *   rendering only data belonging to the request's `context.orgId`/`context.identity`.
  *
- * @deprecated
- * replacement: ExtensionActionResult
- * earliest-removal: 4.0.0
- * notice-window-ends: 2027-01-14
+ * Deprecated in 3.30.0 (replacement: ExtensionActionResult). The policy-grade `@deprecated`
+ * marker lives on this symbol's `src/index.ts` export; it is deliberately not repeated on this
+ * declaration so the package's own internal uses do not raise deprecation diagnostics.
  */
 export type ActionResult = ExtensionActionResult
 
 /**
- * @deprecated
- * replacement: composed UI (ADR 0007 build-time composition) for panel actions and M7 apiRoutes
- * earliest-removal: 4.0.0
- * notice-window-ends: 2027-01-14
+ * Deprecated in 3.30.0 (replacement: composed UI (ADR 0007 build-time composition) for panel actions and M7 apiRoutes). The policy-grade `@deprecated`
+ * marker lives on this symbol's `src/index.ts` export; it is deliberately not repeated on this
+ * declaration so the package's own internal uses do not raise deprecation diagnostics.
  */
 export type ModuleAction = {
   onAction(context: ModuleActionContext, request: ModuleActionRequest): Promise<ActionResult>

@@ -218,10 +218,9 @@ export type ScheduledTaskDeclaration = {
  * `/`-separated route path (Fastify-native `:param` syntax, no translation needed) matching
  * `MODULE_DATA_ROUTE_PATH_PATTERN`.
  *
- * @deprecated
- * replacement: M7 apiRoutes
- * earliest-removal: 4.0.0
- * notice-window-ends: 2027-01-14
+ * Deprecated in 3.30.0 (replacement: M7 apiRoutes). The policy-grade `@deprecated`
+ * marker lives on this symbol's `src/index.ts` export; it is deliberately not repeated on this
+ * declaration so the package's own internal uses do not raise deprecation diagnostics.
  */
 export type ModuleDataRouteDeclaration = {
   method: 'GET'
@@ -238,10 +237,9 @@ export type ModuleDataRouteDeclaration = {
  * `NAV_ITEM_ICON_TOKENS` — a closed set the host owns and maps to its own glyphs, never freeform
  * markup or a URL (AC6).
  *
- * @deprecated
- * replacement: M5 nav delta (UI pack nav)
- * earliest-removal: 4.0.0
- * notice-window-ends: 2027-01-14
+ * Deprecated in 3.30.0 (replacement: M5 nav delta (UI pack nav)). The policy-grade `@deprecated`
+ * marker lives on this symbol's `src/index.ts` export; it is deliberately not repeated on this
+ * declaration so the package's own internal uses do not raise deprecation diagnostics.
  */
 export type ExtensionNavItem = {
   id: string

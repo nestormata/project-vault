@@ -4,10 +4,9 @@
  * `UIPanelContext`'s own "re-derived fresh from the request's own resolved session on every
  * call, never cached" discipline.
  *
- * @deprecated
- * replacement: M7 apiRoutes
- * earliest-removal: 4.0.0
- * notice-window-ends: 2027-01-14
+ * Deprecated in 3.30.0 (replacement: M7 apiRoutes). The policy-grade `@deprecated`
+ * marker lives on this symbol's `src/index.ts` export; it is deliberately not repeated on this
+ * declaration so the package's own internal uses do not raise deprecation diagnostics.
  */
 export type ModuleDataRequestContext = {
   /** Story 29.4 AC3 — who is asking, re-derived fresh from the request's own resolved session. */
@@ -34,10 +33,9 @@ export type ModuleDataRequestContext = {
  * the route (mirrors `onRenderPanel()`'s own "trusted-but-arbitrary in-process code" posture — no
  * re-sanitization of the module's own returned data shape).
  *
- * @deprecated
- * replacement: M7 apiRoutes
- * earliest-removal: 4.0.0
- * notice-window-ends: 2027-01-14
+ * Deprecated in 3.30.0 (replacement: M7 apiRoutes). The policy-grade `@deprecated`
+ * marker lives on this symbol's `src/index.ts` export; it is deliberately not repeated on this
+ * declaration so the package's own internal uses do not raise deprecation diagnostics.
  */
 export type ModuleDataResult = {
   status?: number
@@ -45,10 +43,9 @@ export type ModuleDataResult = {
 }
 
 /**
- * @deprecated
- * replacement: M7 apiRoutes
- * earliest-removal: 4.0.0
- * notice-window-ends: 2027-01-14
+ * Deprecated in 3.30.0 (replacement: M7 apiRoutes). The policy-grade `@deprecated`
+ * marker lives on this symbol's `src/index.ts` export; it is deliberately not repeated on this
+ * declaration so the package's own internal uses do not raise deprecation diagnostics.
  */
 export type ModuleDataRouteHandler = (
   context: ModuleDataRequestContext
