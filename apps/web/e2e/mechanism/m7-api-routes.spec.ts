@@ -257,6 +257,8 @@ test.describe('M7 API routes', () => {
   })
 
   test('fails (rejected): the fail-closed boot makes a REQUIRED pack with a missing wrap target exit non-zero with a bounded startup.failed line', async () => {
+    // the stack script's own bounded wait (60 s) plus compose start-up must fit: the default 60 s test timeout is too tight
+    test.setTimeout(150_000)
     const { status, output } = runStack(['fault'], {
       E2E_FAULT_TIMEOUT_SECONDS: FAULT_TIMEOUT_SECONDS,
     })
@@ -273,6 +275,8 @@ test.describe('M7 API routes', () => {
   })
 
   test('fails (rejected): a drift is never fail-open, VAULT_EXTENSIONS_REQUIRED=false still stops the boot', async () => {
+    // the stack script's own bounded wait (60 s) plus compose start-up must fit: the default 60 s test timeout is too tight
+    test.setTimeout(150_000)
     const { status, output } = runStack(['fault', 'missing-target', 'false'], {
       E2E_FAULT_TIMEOUT_SECONDS: FAULT_TIMEOUT_SECONDS,
     })
@@ -283,6 +287,8 @@ test.describe('M7 API routes', () => {
   })
 
   test('works: with VAULT_EXTENSIONS_REQUIRED=false a load failure is contained, the API keeps running without the pack and says so', async () => {
+    // the stack script's own bounded wait (60 s) plus compose start-up must fit: the default 60 s test timeout is too tight
+    test.setTimeout(150_000)
     const { status, output } = runStack(['fault-optional'], { E2E_FAULT_OPTIONAL_SECONDS: '40' })
     // exit 0 means: the bounded run ended by its timeout (the API stayed up) AND the contained load
     // failure was logged

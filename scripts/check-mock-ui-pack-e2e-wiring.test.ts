@@ -86,6 +86,23 @@ describe('the mock UI pack mechanism job is wired as a required check (Story 68.
     }
   })
 
+  it('does not let `| tee` mask a failed e2e (GitHub runs `bash -e` without pipefail)', () => {
+    const runStep = job.slice(job.indexOf(RUN_COMMAND) - 200, job.indexOf(RUN_COMMAND) + 120)
+    if (runStep.includes('| tee')) expect(runStep).toContain('set -o pipefail')
+    expect(job).not.toMatch(/\|\| true/)
+  })
+
+  it('never uploads the raw run log: it holds ::add-mask:: lines with the throwaway secrets', () => {
+    // the raw tee target is outside the workspace and the uploaded copy has the mask lines stripped
+    expect(job).toContain('$RUNNER_TEMP/mock-ui-pack-e2e.raw.log')
+    expect(job).toContain("sed '/^::add-mask::/d'")
+    const upload = job.slice(job.indexOf('actions/upload-artifact'))
+    expect(upload).not.toContain('raw.log')
+    // a captured-stdout subcommand of the stack script never prints a mask line
+    const stack = REPO_TEXT.get('./e2e-stack.sh') ?? ''
+    expect(stack).toMatch(/GITHUB_ACTIONS="" prepare_secrets\n[\s\S]*?FAULT_OUT=/)
+  })
+
   it('filters INSIDE the workflow (never a workflow-level paths filter) and fails open', () => {
     expect(workflow).not.toMatch(/^on:[\s\S]*?\n\s+paths:/m)
     expect(job).toContain('pnpm tsx scripts/mock-ui-pack-e2e-filter.ts')
@@ -141,6 +158,11 @@ describe('the path filter (Story 68.10 AC-3.1, AC-3.2)', () => {
     '.github/workflows/ci.yml',
     'apps/web/e2e/mechanism/m1-page-override.spec.ts',
     'apps/web/playwright.mechanism.config.ts',
+    '.dockerignore',
+    '.npmrc',
+    '.node-version',
+    'turbo.json',
+    'scripts/lib/trusted-executable.ts',
   ])('runs the job for %s', (path) => {
     expect(decide([path]).run).toBe(true)
   })

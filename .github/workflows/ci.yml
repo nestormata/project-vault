@@ -1148,7 +1148,16 @@ jobs:
 
       - name: Pack, compose, build the composed image, boot the stack, run the mechanism e2e
         if: steps.filter.outputs.run == 'true'
-        run: pnpm tsx scripts/mock-ui-pack-e2e.ts 2>&1 | tee mock-ui-pack-e2e.log
+        # pipefail: a bare `| tee` would report tee's exit status and turn a failed e2e green. The raw
+        # copy lives outside the workspace: it holds the `::add-mask::<secret>` lines that make the
+        # runner mask the throwaway secrets in the live log, and those must never reach an artifact.
+        run: |
+          set -o pipefail
+          pnpm tsx scripts/mock-ui-pack-e2e.ts 2>&1 | tee "$RUNNER_TEMP/mock-ui-pack-e2e.raw.log"
+
+      - name: Strip the mask lines from the run log
+        if: always() && steps.filter.outputs.run == 'true'
+        run: sed '/^::add-mask::/d' "$RUNNER_TEMP/mock-ui-pack-e2e.raw.log" > mock-ui-pack-e2e.log
 
       - name: Upload the report and the redacted run log (failure only)
         if: failure() && steps.filter.outputs.run == 'true'

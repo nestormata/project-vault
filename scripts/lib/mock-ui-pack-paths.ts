@@ -54,6 +54,16 @@ const RUN_PREFIXES: readonly string[] = [
 ]
 
 const RUN_FILES: readonly string[] = [
+  // root build inputs of the image builds and the install: a change here can break the stack
+  '.dockerignore',
+  '.node-version',
+  '.npmrc',
+  '.nvmrc',
+  'turbo.json',
+  // helpers the runner and the packer import
+  'scripts/lib/release-image.ts',
+  'scripts/lib/trusted-executable.ts',
+  'scripts/lib/version-triangle.ts',
   '.github/workflows/ci.yml',
   'Dockerfile.ci',
   'Makefile',

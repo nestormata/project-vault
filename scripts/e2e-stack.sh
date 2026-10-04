@@ -266,7 +266,9 @@ cmd_fault() {
   require_flavor_inputs
   [[ "$FLAVOR" == "mock-ui-pack" ]] || die "fault needs E2E_STACK_FLAVOR=mock-ui-pack"
   seconds="$(positive_int E2E_FAULT_TIMEOUT_SECONDS "${E2E_FAULT_TIMEOUT_SECONDS:-60}")"
-  prepare_secrets
+  # No ::add-mask:: here: this process's stdout is captured by a spec and can end up in a failure message
+  # (and so in the HTML report artifact). `redact` already scrubs these fresh throwaway values.
+  GITHUB_ACTIONS="" prepare_secrets
   FAULT_OUT="$(mktemp)"
   trap remove_fault_capture EXIT
   export E2E_FAULT_MODE="$FAULT_MODE" E2E_FAULT_REQUIRED="$FAULT_REQUIRED"
@@ -292,7 +294,7 @@ cmd_fault_optional() {
   require_flavor_inputs
   [[ "$FLAVOR" == "mock-ui-pack" ]] || die "fault-optional needs E2E_STACK_FLAVOR=mock-ui-pack"
   seconds="$(positive_int E2E_FAULT_OPTIONAL_SECONDS "${E2E_FAULT_OPTIONAL_SECONDS:-30}")"
-  prepare_secrets
+  GITHUB_ACTIONS="" prepare_secrets # captured stdout: never print a mask line (see cmd_fault)
   FAULT_OUT="$(mktemp)"
   FAULT_OPTIONAL_NAME="${COMPOSE_PROJECT_NAME}-api-fault-optional"
   trap remove_fault_optional EXIT
