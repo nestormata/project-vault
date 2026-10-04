@@ -129,24 +129,27 @@ mock_pack_verify_guards() {
 }
 
 mock_compose_pack() { # pack
+  local pack="$1"
   (cd "$APP" && clean_env PV_FIXTURE_HOST="$INSTALLED" "$NODE_BIN" "$MOCK_COMPOSE_BIN" \
-    --pack "$1" --module-pack "$APP") > "$WORK/mock-compose.out" 2>&1 || {
+    --pack "$pack" --module-pack "$APP") > "$WORK/mock-compose.out" 2>&1 || {
     cat "$WORK/mock-compose.out" >&2
-    mock_fail "pv-compose --pack $(basename "$1") failed"
+    mock_fail "pv-compose --pack $(basename "$pack") failed"
   }
   return 0
 }
 
 mock_expect_in_css() { # needle
-  if ! cat "$APP"/build/client/_app/immutable/assets/*.css | grep -q -- "$1"; then
-    mock_fail "the built CSS lacks $1"
+  local needle="$1"
+  if ! cat "$APP"/build/client/_app/immutable/assets/*.css | grep -q -- "$needle"; then
+    mock_fail "the built CSS lacks $needle"
   fi
   return 0
 }
 
 mock_expect_no_stack() { # label
+  local label="$1"
   if grep -Eq '(^|[^a-z])at [A-Za-z_.<>]+ \(|node_modules|\.ts:[0-9]+' "$WORK/body.txt"; then
-    mock_fail "$1 leaked a stack trace"
+    mock_fail "$label leaked a stack trace"
   fi
   return 0
 }

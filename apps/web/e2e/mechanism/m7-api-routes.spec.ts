@@ -66,7 +66,7 @@ test.describe('M7 API routes', () => {
       const head = await a.head(`/api/v1/projects/${projectA}`)
       expect(head.status()).toBe(200)
       expect(head.headers()['x-cm-head']).toBe('explicit')
-      expect((await head.body()).length).toBe(0)
+      expect(await head.body()).toHaveLength(0)
       const replaced = await a.get('/api/v1/users/me')
       expect((await replaced.json()) as unknown).toEqual({
         data: { cm: 'mock-ui-pack:m7-replaced' },

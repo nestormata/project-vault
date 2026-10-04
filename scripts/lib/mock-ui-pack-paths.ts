@@ -53,7 +53,7 @@ const RUN_PREFIXES: readonly string[] = [
   'patches/',
 ]
 
-const RUN_FILES: readonly string[] = [
+const RUN_FILES: ReadonlySet<string> = new Set([
   // root build inputs of the image builds and the install: a change here can break the stack
   '.dockerignore',
   '.node-version',
@@ -76,7 +76,7 @@ const RUN_FILES: readonly string[] = [
   'scripts/mock-ui-pack-e2e.ts',
   'scripts/pack-web-host.ts',
   'scripts/lib/mock-ui-pack-paths.ts',
-]
+])
 
 const RUN_PATTERNS: readonly RegExp[] = [/^docker-compose[^/]*\.ya?ml$/]
 
@@ -98,7 +98,7 @@ function fileDecision(path: string): Decision | null {
     if (known === undefined) return { run: true, reason: `${workspace} is not classified` }
     return known.runs ? { run: true, reason: `${workspace} is a runtime input` } : null
   }
-  if (RUN_FILES.includes(path)) return { run: true, reason: `${path} is part of the job` }
+  if (RUN_FILES.has(path)) return { run: true, reason: `${path} is part of the job` }
   const prefix = RUN_PREFIXES.find((candidate) => path.startsWith(candidate))
   if (prefix !== undefined) return { run: true, reason: `${prefix}** is part of the job` }
   if (RUN_PATTERNS.some((pattern) => pattern.test(path))) {

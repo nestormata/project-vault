@@ -140,7 +140,10 @@ async function main(): Promise<number> {
     } else if (stack !== undefined) {
       const names = ['COMPOSE_PROJECT_NAME', 'WEB_HOST_PORT', 'API_HOST_PORT', 'DB_HOST_PORT']
       const values = new Map(Object.entries(stack))
-      const kept = names.map((name) => `${name}=${values.get(name) ?? ''}`)
+      const kept = names.map((name) => {
+        const value = values.get(name)
+        return `${name}=${typeof value === 'string' ? value : ''}`
+      })
       process.stdout.write(`kept stack (E2E_STACK_KEEP=1): ${kept.join(' ')}\n`)
     }
     rmSync(workDir, { recursive: true, force: true })

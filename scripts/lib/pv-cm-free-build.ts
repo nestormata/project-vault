@@ -76,7 +76,7 @@ export function emptyVirtualModuleProblems(files: Readonly<Record<string, string
       if (!regionIds.has(id)) problems.push(`${file}: unresolved virtual import ${id}`)
     }
   }
-  return problems.toSorted()
+  return problems.toSorted((a, b) => a.localeCompare(b))
 }
 
 /** The injection point names whose empty module is in the output. */
@@ -88,7 +88,7 @@ export function emptyPointNames(files: Readonly<Record<string, string>>): string
         .filter((id) => id.startsWith(POINT_PREFIX))
         .map((id) => id.slice(POINT_PREFIX.length))
     ),
-  ].toSorted()
+  ].toSorted((a, b) => a.localeCompare(b))
 }
 
 // --- response snapshot -------------------------------------------------------------------------
@@ -152,7 +152,7 @@ function diffResponse(name: string, want: RecordedResponse, got: RecordedRespons
   const wantHeaders = new Map(Object.entries(want.headers))
   const gotHeaders = new Map(Object.entries(got.headers))
   const keys = new Set([...wantHeaders.keys(), ...gotHeaders.keys()])
-  for (const key of [...keys].toSorted()) {
+  for (const key of [...keys].toSorted((a, b) => a.localeCompare(b))) {
     if (wantHeaders.get(key) !== gotHeaders.get(key)) {
       lines.push(
         `${name}: header ${key} is ${JSON.stringify(gotHeaders.get(key) ?? null)}, expected ${JSON.stringify(wantHeaders.get(key) ?? null)}`
@@ -175,7 +175,7 @@ export function diffResponseSnapshots(
   const wanted = new Map(Object.entries(expected.responses))
   const recorded = new Map(Object.entries(actual.responses))
   const names = new Set([...wanted.keys(), ...recorded.keys()])
-  for (const name of [...names].toSorted()) {
+  for (const name of [...names].toSorted((a, b) => a.localeCompare(b))) {
     const want = wanted.get(name)
     const got = recorded.get(name)
     if (want === undefined || got === undefined) {

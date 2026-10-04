@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import type {
   APIRequestContext,
   BrowserContext,
@@ -28,7 +28,8 @@ export function apiBaseUrl(): string {
 
 type Playwright = PlaywrightWorkerArgs['playwright']
 
-export const testPassword = 'correct-horse-battery-staple-mock-pack'
+// One throwaway credential per worker process, never a literal: it only registers the seeded users.
+export const testPassword = randomBytes(24).toString('base64url')
 
 export type SeededUser = { userId: string; orgId: string; email: string }
 
