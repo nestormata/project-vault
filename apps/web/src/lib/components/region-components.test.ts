@@ -8,6 +8,17 @@ import { serializeWithoutNoise } from '$lib/test/dom.js'
 // `__inject` map to it (undefined and null-less maps render components with `data = null` and never
 // throw), and hands a contribution only the props listed for that point in the registry.
 
+vi.mock('$lib/api/service-endpoints.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/api/service-endpoints.js')>()),
+  getHealthHistory: vi.fn(async () => ({
+    items: [],
+    page: 1,
+    limit: 20,
+    total: 0,
+    hasNext: false,
+  })),
+}))
+
 const pageState = vi.hoisted(() => ({
   route: { id: '/(app)/test' } as { id: string | null },
   params: {} as Record<string, string>,
@@ -28,6 +39,28 @@ const POINTS = [
   'dashboard.home.suggested-actions',
   'dashboard.home.summary-unavailable',
   'dashboard.home.empty',
+  'project.service-endpoints.header',
+  'project.service-endpoints.alerts',
+  'project.service-endpoints.table',
+  'project.service-endpoints.row',
+  'project.service-endpoints.empty',
+  'project.service-endpoints.not-found',
+  'project.service-endpoints-new.header',
+  'project.service-endpoints-new.form',
+  'project.service-endpoints-detail.title',
+  'project.service-endpoints-detail.pause',
+  'project.service-endpoints-detail.settings',
+  'project.service-endpoints-detail.history',
+  'project.service-endpoints-detail.delete',
+  'project.service-endpoints-detail.not-found',
+  'project.status-page.header',
+  'project.status-page.read-only',
+  'project.status-page.disabled',
+  'project.status-page.link',
+  'project.status-page.services',
+  'status.detail.header',
+  'status.detail.services',
+  'status.detail.unavailable',
 ] as const
 
 type Loader = () => Promise<{ default: Component<never> }>
@@ -50,6 +83,43 @@ const cards = {
   certificates: { status: 'ready', count: 0 },
   domains: { status: 'ready', count: 0 },
 }
+
+// Story 69.3 fixtures: the monitoring pages' own data.
+const orgRole = 'owner' as const
+const noop = () => undefined
+const endpoint = {
+  id: 'e1',
+  orgId: 'o1',
+  projectId: 'p1',
+  name: 'API health',
+  url: 'https://api.example.com/health',
+  checkFrequencyMinutes: 5,
+  downThresholdFailures: 2,
+  status: 'healthy' as const,
+  consecutiveFailures: 0,
+  lastCheckedAt: null,
+  healthCheckPaused: false,
+  healthCheckPausedAt: null,
+  healthCheckPausedBy: null,
+  createdBy: null,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+}
+const serviceEndpoints = [
+  {
+    id: 'e1',
+    name: 'API health',
+    url: 'https://api.example.com/health',
+    status: 'healthy' as const,
+    lastCheckedAt: null,
+    healthCheckPaused: false,
+    healthCheckPausedAt: null,
+    healthCheckPausedBy: null,
+  },
+]
+const listProps = { project, orgRole, endpoints: [endpoint] }
+const statusPageProps = { project, capabilities: {}, serviceEndpoints }
+const FAKE_PUBLIC_URL = 'https://vault.example.com/status/fixed-fake-token'
 
 interface Case {
   /** The region's own point. */
@@ -139,6 +209,187 @@ const CASES: Case[] = [
     props: {},
     receives: [],
   },
+  // Story 69.3: the monitoring regions.
+  {
+    point: 'project.service-endpoints.header',
+    load: () => import('$lib/components/monitoring/ServiceEndpointsHeader.svelte'),
+    props: { ...listProps, projectId: 'p1', canManage: true },
+    receives: ['endpoints', 'orgRole', 'project'],
+  },
+  {
+    point: 'project.service-endpoints.alerts',
+    load: () => import('$lib/components/monitoring/ServiceEndpointsAlerts.svelte'),
+    props: { ...listProps, alerts: [], endpointNames: [], projectId: 'p1' },
+    receives: ['endpoints', 'orgRole', 'project'],
+  },
+  {
+    point: 'project.service-endpoints.table',
+    load: () => import('$lib/components/monitoring/ServiceEndpointsTable.svelte'),
+    props: {
+      ...listProps,
+      projectId: 'p1',
+      canManage: true,
+      deleteError: null,
+      pauseSubmittingId: null,
+      pauseErrors: {},
+      onDelete: noop,
+      onPauseToggle: () => true,
+    },
+    receives: ['endpoints', 'orgRole', 'project'],
+  },
+  {
+    point: 'project.service-endpoints.row',
+    load: () => import('$lib/components/monitoring/ServiceEndpointRow.svelte'),
+    props: {
+      project,
+      endpoint,
+      orgRole,
+      projectId: 'p1',
+      canManage: true,
+      pauseSubmitting: false,
+      pauseError: null,
+      onPauseToggle: () => true,
+      onDelete: noop,
+    },
+    receives: ['endpoint', 'orgRole', 'project'],
+  },
+  {
+    point: 'project.service-endpoints.empty',
+    load: () => import('$lib/components/monitoring/ServiceEndpointsEmpty.svelte'),
+    props: listProps,
+    receives: ['endpoints', 'orgRole', 'project'],
+  },
+  {
+    point: 'project.service-endpoints.not-found',
+    load: () => import('$lib/components/monitoring/ServiceEndpointsNotFound.svelte'),
+    props: { ...listProps, project: null },
+    receives: ['endpoints', 'orgRole', 'project'],
+  },
+  {
+    point: 'project.service-endpoints-new.header',
+    load: () => import('$lib/components/monitoring/ServiceEndpointNewHeader.svelte'),
+    props: { project, orgRole },
+    receives: ['orgRole', 'project'],
+  },
+  {
+    point: 'project.service-endpoints-new.form',
+    load: () => import('$lib/components/monitoring/ServiceEndpointCreateForm.svelte'),
+    props: { project, orgRole, projectId: 'p1' },
+    receives: ['orgRole', 'project'],
+  },
+  {
+    point: 'project.service-endpoints-detail.title',
+    load: () => import('$lib/components/monitoring/ServiceEndpointTitle.svelte'),
+    props: { project, endpoint, orgRole },
+    receives: ['endpoint', 'orgRole', 'project'],
+  },
+  {
+    point: 'project.service-endpoints-detail.pause',
+    load: () => import('$lib/components/monitoring/ServiceEndpointPause.svelte'),
+    props: {
+      project,
+      endpoint,
+      orgRole,
+      paused: false,
+      canManage: true,
+      submitting: false,
+      errorMessage: null,
+      onToggle: () => true,
+    },
+    receives: ['endpoint', 'orgRole', 'project'],
+  },
+  {
+    point: 'project.service-endpoints-detail.settings',
+    load: () => import('$lib/components/monitoring/ServiceEndpointSettings.svelte'),
+    props: { project, endpoint, orgRole, projectId: 'p1', onUpdated: noop },
+    receives: ['endpoint', 'orgRole', 'project'],
+  },
+  {
+    point: 'project.service-endpoints-detail.history',
+    load: () => import('$lib/components/monitoring/ServiceEndpointHistory.svelte'),
+    props: { project, endpoint, orgRole, projectId: 'p1' },
+    receives: ['endpoint', 'orgRole', 'project'],
+  },
+  {
+    point: 'project.service-endpoints-detail.delete',
+    load: () => import('$lib/components/monitoring/ServiceEndpointDelete.svelte'),
+    props: { project, endpoint, orgRole, deleteError: null, onDelete: noop },
+    receives: ['endpoint', 'orgRole', 'project'],
+  },
+  {
+    point: 'project.service-endpoints-detail.not-found',
+    load: () => import('$lib/components/monitoring/ServiceEndpointDetailNotFound.svelte'),
+    props: { project, projectId: 'p1' },
+    receives: ['endpoint', 'project'],
+  },
+  {
+    point: 'project.status-page.header',
+    load: () => import('$lib/components/status-page/StatusPageHeader.svelte'),
+    props: statusPageProps,
+    receives: ['capabilities', 'project', 'serviceEndpoints'],
+  },
+  {
+    point: 'project.status-page.read-only',
+    load: () => import('$lib/components/status-page/StatusPageReadOnly.svelte'),
+    props: statusPageProps,
+    receives: ['capabilities', 'project', 'serviceEndpoints'],
+  },
+  {
+    point: 'project.status-page.disabled',
+    load: () => import('$lib/components/status-page/StatusPageDisabled.svelte'),
+    props: { ...statusPageProps, capabilityDenied: false, isBusy: false, onEnable: noop },
+    receives: ['capabilities', 'project', 'serviceEndpoints'],
+  },
+  {
+    point: 'project.status-page.link',
+    load: () => import('$lib/components/status-page/StatusPageLink.svelte'),
+    props: {
+      project,
+      publicUrl: FAKE_PUBLIC_URL,
+      legacyToken: false,
+      copied: false,
+      isBusy: false,
+      onRegenerate: noop,
+      onDisable: noop,
+      onCopy: noop,
+    },
+    receives: ['hasPublicUrl', 'isLegacy', 'project'],
+  },
+  {
+    point: 'project.status-page.services',
+    load: () => import('$lib/components/status-page/StatusPageServices.svelte'),
+    props: {
+      ...statusPageProps,
+      projectId: 'p1',
+      rows: [],
+      selectedCount: 0,
+      capabilityDenied: false,
+      isBusy: false,
+      onToggle: noop,
+      onSetDisplayName: noop,
+      onMove: noop,
+      onSave: noop,
+    },
+    receives: ['capabilities', 'project', 'serviceEndpoints'],
+  },
+  {
+    point: 'status.detail.header',
+    load: () => import('$lib/components/public-status/PublicStatusHeader.svelte'),
+    props: {},
+    receives: [],
+  },
+  {
+    point: 'status.detail.services',
+    load: () => import('$lib/components/public-status/PublicStatusServices.svelte'),
+    props: { statusPage: { services: [] } },
+    receives: ['statusPage'],
+  },
+  {
+    point: 'status.detail.unavailable',
+    load: () => import('$lib/components/public-status/PublicStatusUnavailable.svelte'),
+    props: {},
+    receives: [],
+  },
 ]
 
 const loaded = new Map<string, Component<never>>()
@@ -179,8 +430,14 @@ describe.each(CASES)('region component for $point (Story 69.1)', (entry) => {
       .getAllByTestId('probe')
       .map((el) => el.getAttribute('data-keys')?.split(',') ?? [])
     expect(keys.length).toBeGreaterThan(0)
-    // the empty region also renders the monitoring region, whose point carries `project`
-    const allowed = entry.point === 'dashboard.home.empty' ? [[], ['project']] : [entry.receives]
+    // the empty region also renders the monitoring region, whose point carries `project`; the
+    // endpoints table also renders one row region per endpoint
+    const allowed =
+      entry.point === 'dashboard.home.empty'
+        ? [[], ['project']]
+        : entry.point === 'project.service-endpoints.table'
+          ? [entry.receives, ['endpoint', 'orgRole', 'project']]
+          : [entry.receives]
     for (const list of keys) {
       const extras = list.filter((key) => !['data', 'params', 'routeId'].includes(key)).sort()
       expect(allowed).toContainEqual(extras)
@@ -204,5 +461,57 @@ describe.each(CASES)('region component for $point (Story 69.1)', (entry) => {
     cleanup()
     const other = mount(entry, { 'unrelated.point.x': [{ n: 1 }] })
     expect(serializeWithoutNoise(other.container)).toBe(without)
+  })
+})
+
+// Story 69.3 AC-5.6: the "Shareable link" card hands a contribution flags, never the bearer token or
+// the URL built from it. The component renders the URL for the manager (as before), the point does not.
+describe('project.status-page.link keeps the token out of the point (Story 69.3 AC-5.6)', () => {
+  it('passes hasPublicUrl/isLegacy and no prop that holds the token or the URL', () => {
+    const entry = CASES.find((candidate) => candidate.point === 'project.status-page.link') as Case
+    mount(entry, undefined)
+    const probe = probeAt()
+    expect(probe.textContent).toContain('"hasPublicUrl":true')
+    expect(probe.textContent).not.toContain('fixed-fake-token')
+    expect(probe.textContent).not.toContain('/status/')
+    // the page itself still shows the link to the manager, exactly as before
+    expect(document.body.textContent).toContain(FAKE_PUBLIC_URL)
+  })
+
+  it.each([
+    [null, true, false],
+    [null, false, false],
+  ])('flags for publicUrl %s legacy %s', (publicUrl, legacyToken, hasPublicUrl) => {
+    const entry = CASES.find((candidate) => candidate.point === 'project.status-page.link') as Case
+    mount({ ...entry, props: { ...entry.props, publicUrl, legacyToken } }, undefined)
+    expect(probeAt().textContent).toContain(`"hasPublicUrl":${hasPublicUrl}`)
+    expect(probeAt().textContent).toContain(`"isLegacy":${legacyToken}`)
+  })
+})
+
+describe('the row region renders inside a table cell (Story 69.3 AC-7)', () => {
+  it('puts the point in the Monitoring cell, never between rows', () => {
+    const entry = CASES.find(
+      (candidate) => candidate.point === 'project.service-endpoints.row'
+    ) as Case
+    const view = mount(entry, undefined)
+    const row = view.container.querySelector('tr')
+    expect(row).not.toBeNull()
+    expect(row?.querySelector('td [data-testid="probe"]')).not.toBeNull()
+    expect(view.container.querySelectorAll('tr > [data-testid="probe"]')).toHaveLength(0)
+  })
+
+  it('renders one independent fill per row inside the table, none outside a cell (3 rows)', () => {
+    const entry = CASES.find(
+      (candidate) => candidate.point === 'project.service-endpoints.table'
+    ) as Case
+    const rows = ['e1', 'e2', 'e3'].map((id) => ({ ...endpoint, id }))
+    const view = mount({ ...entry, props: { ...entry.props, endpoints: rows } }, undefined)
+    expect(view.container.querySelectorAll('tbody tr')).toHaveLength(3)
+    expect(view.container.querySelectorAll('tbody tr td [data-testid="probe"]')).toHaveLength(3)
+    // the table-level fill sits after the table card, never inside `<table>`
+    expect(view.container.querySelectorAll('table [data-testid="probe"]')).toHaveLength(3)
+    const probes = screen.getAllByTestId('probe')
+    expect(probes.filter((probe) => probe.closest('table') === null)).toHaveLength(1)
   })
 })
