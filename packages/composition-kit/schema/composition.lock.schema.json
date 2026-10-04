@@ -197,7 +197,12 @@
           "load": { "$ref": "#/definitions/nullableString" },
           "actions": { "$ref": "#/definitions/nullableString" },
           "routeId": { "$ref": "#/definitions/nullableString" },
-          "scope": { "$ref": "#/definitions/nullableString" }
+          "scope": { "$ref": "#/definitions/nullableString" },
+          "hostRoutes": {
+            "description": "Story 69.1: the host routes (`<routeId>#<scope>`) a component-scoped region contribution opted in to. Absent when it did not opt in, and in locks written before 69.1.",
+            "type": "array",
+            "items": { "type": "string" }
+          }
         }
       }
     },

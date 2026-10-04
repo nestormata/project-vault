@@ -138,9 +138,9 @@ describe('route ids and scopes for behavior injection (Story 68.4 AC-17)', () =>
       { name: OLD_POINT, file: A_PAGE },
     ])
     expect(registries.pointRoutes).toEqual([
-      { name: 'a.b.after', routeId: '/(app)/a', scope: 'page' },
-      { name: SHELL_HEAD, routeId: '/', scope: 'layout' },
-      { name: OLD_POINT, routeId: null, scope: null },
+      { name: 'a.b.after', routeId: '/(app)/a', scope: 'page', hostRoutes: null },
+      { name: SHELL_HEAD, routeId: '/', scope: 'layout', hostRoutes: null },
+      { name: OLD_POINT, routeId: null, scope: null, hostRoutes: null },
     ])
   })
 
@@ -166,5 +166,50 @@ describe('route ids and scopes for behavior injection (Story 68.4 AC-17)', () =>
     expect(result.problems).toEqual([
       'Injection point "nope" does not exist in web-host\'s injection-points.json. If this point is missing, override the page (M1) or replace the component (M4); a missing point never blocks you. Ask for the point in PV.',
     ])
+  })
+})
+
+describe('readRegistries: hostRoutes (Story 69.1)', () => {
+  it('reads the additive hostRoutes of a component-scoped point, null when the host predates it', () => {
+    const registries = readRegistries(
+      hostWith({
+        'injection-points.json': {
+          schemaVersion: 1,
+          points: [
+            {
+              name: 'dashboard.home.activity',
+              file: 'src/lib/c.svelte',
+              scope: 'component',
+              hostRoutes: ['/(app)/dashboard#page'],
+              unknownFutureField: { nested: true },
+            },
+            { name: OLD_POINT, file: 'src/lib/o.svelte', scope: 'component' },
+          ],
+        },
+      })
+    )
+    expect(registries.problems).toEqual([])
+    expect(registries.pointRoutes).toEqual([
+      {
+        name: 'dashboard.home.activity',
+        routeId: null,
+        scope: 'component',
+        hostRoutes: ['/(app)/dashboard#page'],
+      },
+      { name: OLD_POINT, routeId: null, scope: 'component', hostRoutes: null },
+    ])
+  })
+
+  it('ignores a malformed hostRoutes value instead of failing (an additive field)', () => {
+    const registries = readRegistries(
+      hostWith({
+        'injection-points.json': {
+          schemaVersion: 1,
+          points: [{ name: 'a.b.c', file: 'x', scope: 'component', hostRoutes: 'nope' }],
+        },
+      })
+    )
+    expect(registries.problems).toEqual([])
+    expect(registries.pointRoutes?.[0]?.hostRoutes).toBeNull()
   })
 })

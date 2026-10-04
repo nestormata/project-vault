@@ -23,6 +23,8 @@ export interface LockInjection {
   actions: string | null
   routeId: string | null
   scope: string | null
+  /** Story 69.1: the host routes a component-scoped contribution opted in to (absent otherwise). */
+  hostRoutes?: string[]
 }
 
 export interface InjectionFindings {
@@ -206,6 +208,8 @@ interface Context {
   routes: ReadonlyMap<string, PointRoute>
   registryFiles: ReadonlyMap<string, string | null>
   registryPresent: boolean
+  /** Host files this pack overrides (CM's own code, which PV's guards cannot check). */
+  overridden: ReadonlySet<string>
   out: { problems: string[]; notes: string[] }
 }
 
@@ -250,7 +254,10 @@ function checkActionNames(ctx: Context, point: string, declared: readonly Declar
 /** Reads the host page server file beside the point's page and reports a `default` action. */
 function defaultActionProblem(ctx: Context, point: string, file: string | null): string | null {
   if (file === null) return null
-  const hostRel = posix.join(posix.dirname(file), '+page.server.ts')
+  return defaultActionAt(ctx, point, posix.join(posix.dirname(file), '+page.server.ts'))
+}
+
+function defaultActionAt(ctx: Context, point: string, hostRel: string): string | null {
   const abs = ctx.host.files.get(hostRel)
   if (abs === undefined) return null
   const info = analyze(ctx.ts, readFileSync(abs, 'utf8'), hostRel)
@@ -275,12 +282,6 @@ function declaresActions(declared: readonly Declared[]): boolean {
 }
 
 function routeFinding(ctx: Context, point: string, route: PointRoute | undefined): boolean {
-  if (route?.scope === 'component') {
-    ctx.out.notes.push(
-      `component-scoped point "${point}": behavior injection arrives with Epic 69; its load and actions are recorded in the lock and are inert`
-    )
-    return true
-  }
   if (!behaviorNeedsRoute(route)) return false
   ctx.out.problems.push(
     `injections.${point}: behavior injection (load/actions) needs a newer web-host that records a route id and scope for this point; ` +
@@ -313,10 +314,129 @@ function unrunnableBehavior(
   return false
 }
 
+const HOST_ROUTE_PATTERN = /^(.+)#(page|layout)$/
+
+function hasBehavior(entry: InjectionContribution): boolean {
+  return entry.load !== undefined || entry.actions !== undefined
+}
+
+function hostServerFile(hostRoute: string): string | null {
+  const parts = HOST_ROUTE_PATTERN.exec(hostRoute)
+  if (parts === null) return null
+  const routeId = parts[1] as string
+  const dir = routeId === '/' ? 'src/routes' : `src/routes${routeId}`
+  return `${dir}/+${parts[2]}.server.ts`
+}
+
+/** One opted-in contribution's `hostRoutes`: integrity only (the names must be routes that render
+ * the point, from the host's registry), never a limit on what the contribution does. */
+function checkHostRoutes(
+  ctx: Context,
+  point: string,
+  entry: InjectionContribution,
+  valid: readonly string[]
+): void {
+  const field = `injections.${point}.hostRoutes`
+  const list = entry.hostRoutes ?? []
+  const choices = `valid host routes: ${valid.join(', ')}`
+  if (list.length === 0) {
+    ctx.out.problems.push(
+      `${field}: opted in to nothing (an empty list); name the routes that render this point (${choices}) or omit hostRoutes`
+    )
+    return
+  }
+  const accepted = new Set(valid)
+  const known = [...new Set(list)].filter((host) => {
+    const isKnown = accepted.has(host)
+    if (!isKnown) {
+      ctx.out.problems.push(
+        `${field}: "${host}" is not a route that renders "${point}" (${choices})`
+      )
+    }
+    return isKnown
+  })
+  if (entry.actions !== undefined) checkOptedInActions(ctx, point, known)
+  for (const host of known) {
+    const server = hostServerFile(host)
+    if (server !== null && ctx.overridden.has(server)) {
+      ctx.out.notes.push(
+        `injections.${point}: this pack overrides ${server}; its contribution load and actions run only if the override calls withInjectedLoad / injectActions (the pack's responsibility, PV's guards cannot check it)`
+      )
+    }
+  }
+}
+
+function checkOptedInActions(ctx: Context, point: string, hosts: readonly string[]): void {
+  if (hosts.some((host) => host.endsWith('#layout'))) {
+    ctx.out.problems.push(
+      `injections.${point}: a layout-scoped point has no form actions (Kit has no actions on a layout); override the page (M1)`
+    )
+    return
+  }
+  for (const host of hosts) {
+    const server = hostServerFile(host)
+    const problem = server === null ? null : defaultActionAt(ctx, point, server)
+    if (problem !== null) ctx.out.problems.push(problem)
+  }
+}
+
+/** Q12 option B: a component-scoped region point runs behavior only through the host routes a
+ * contribution opted in to; without `hostRoutes` its component renders with `data = null` and its
+ * load and actions are recorded in the lock, inert (an informational note, never a refusal). */
+function checkComponentPoint(
+  ctx: Context,
+  point: string,
+  route: PointRoute,
+  declared: readonly Declared[]
+): void {
+  const optedIn = declared.filter(
+    ({ entry }) => hasBehavior(entry) && entry.hostRoutes !== undefined
+  )
+  const hosts = route.hostRoutes
+  if (optedIn.length > 0 && hosts === null) {
+    ctx.out.problems.push(
+      `injections.${point}: behavior injection (load/actions) at a component-scoped point needs a newer web-host that records hostRoutes for this point; ` +
+        'components-only injection still works, or override the page (M1)'
+    )
+    return
+  }
+  if (optedIn.length < declared.filter(({ entry }) => hasBehavior(entry)).length) {
+    const where =
+      hosts === null
+        ? 'this web-host predates hostRoutes, so it cannot run it'
+        : `routes that render it: ${hosts.join(', ')}`
+    ctx.out.notes.push(
+      `component-scoped point "${point}": a load or actions without hostRoutes are recorded in the lock and are inert; opt in with hostRoutes (${where})`
+    )
+  }
+  for (const { entry } of optedIn) checkHostRoutes(ctx, point, entry, hosts ?? [])
+}
+
+function noteIgnoredHostRoutes(ctx: Context, point: string, declared: readonly Declared[]): void {
+  if (!declared.some(({ entry }) => hasBehavior(entry) && entry.hostRoutes !== undefined)) return
+  ctx.out.notes.push(
+    `injections.${point}: hostRoutes is ignored here, the point is rendered by a route file and its behavior already runs there`
+  )
+}
+
 function checkBehavior(ctx: Context, point: string, declared: readonly Declared[]): void {
   // No behavior, or an unknown point (reported by the registry check): nothing to route.
   if (!declaresBehavior(declared) || !ctx.registryFiles.has(point)) return
   const route = ctx.routes.get(point)
+  if (route?.scope === 'component') {
+    checkComponentPoint(ctx, point, route, declared)
+    return
+  }
+  noteIgnoredHostRoutes(ctx, point, declared)
+  checkRoutedPoint(ctx, point, route, declared)
+}
+
+function checkRoutedPoint(
+  ctx: Context,
+  point: string,
+  route: PointRoute | undefined,
+  declared: readonly Declared[]
+): void {
   if (routeFinding(ctx, point, route)) return
   if (unrunnableBehavior(ctx, point, route, declared)) return
   if (declaresActions(declared) && route?.scope === 'page') {
@@ -330,7 +450,7 @@ function lockEntries(
   composedPath: (reference: string | undefined) => string | null,
   routes: ReadonlyMap<string, PointRoute>
 ): LockInjection[] {
-  const entries = declaredContributions(manifest).map(({ point, entry }) => ({
+  const entries: LockInjection[] = declaredContributions(manifest).map(({ point, entry }) => ({
     point,
     component: composedPath(entry.component) ?? entry.component,
     order: entry.order ?? 0,
@@ -338,6 +458,7 @@ function lockEntries(
     actions: composedPath(entry.actions),
     routeId: routes.get(point)?.routeId ?? null,
     scope: routes.get(point)?.scope ?? null,
+    ...(entry.hostRoutes === undefined ? {} : { hostRoutes: [...new Set(entry.hostRoutes)] }),
   }))
   // Array.prototype.sort is stable: contributions with the same order keep the manifest's order.
   return entries.sort((a, b) => compareCodeUnits(a.point, b.point) || a.order - b.order)
@@ -370,6 +491,12 @@ export function checkInjections(input: InjectionInput): InjectionFindings {
     routes,
     registryFiles,
     registryPresent: input.registries.injectionPoints !== undefined,
+    overridden: new Set(
+      (input.manifest.routes?.overrides ?? []).flatMap((override) => {
+        const path = packPath(override.path)
+        return path === null ? [] : [path]
+      })
+    ),
     out,
   }
   const declared = declaredContributions(input.manifest)

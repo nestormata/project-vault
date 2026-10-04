@@ -214,3 +214,88 @@ describe('generateBehaviorModule', () => {
     expect(source).toContain(JSON.stringify(`${nasty}#page`))
   })
 })
+
+// Story 69.1 AC-4: a component-scoped region point is added to the behavior table of each host route
+// the contribution opted in to (`hostRoutes`), under the same `<routeId>#<scope>` key shape.
+describe('generateBehaviorModule: component-scoped opt-in (Story 69.1)', () => {
+  const REGION = 'dashboard.home.activity'
+  const DASHBOARD_PAGE = '/(app)/dashboard#page'
+  /** The row of a generated table at an own key (a Map read, never a computed property access). */
+  const rowOf = (table: unknown, key: string): unknown =>
+    new Map(Object.entries(table as object)).get(key)
+  const contributionsAt = (table: unknown, key: string): unknown =>
+    (rowOf(table, key) as { contributions: unknown }[] | undefined)?.[0]?.contributions
+  const region = (over: Partial<CodegenInjection> = {}): CodegenInjection =>
+    entry({
+      point: REGION,
+      routeId: null,
+      scope: 'component',
+      hostRoutes: [DASHBOARD_PAGE],
+      actions: null,
+      ...over,
+    })
+
+  it('lists the point under the opted-in host route key, aligned with ALL its contributions', async () => {
+    const source = generateBehaviorModule([
+      region({ order: 1, load: null, component: B_SVELTE }),
+      region({ order: 2 }),
+    ])
+    expect(syntaxErrors(source)).toEqual([])
+    const load = () => 'loaded'
+    const exports = await evaluate(source, { m0: { load } })
+    expect(rowOf(exports.loads, DASHBOARD_PAGE)).toEqual([
+      {
+        point: REGION,
+        contributions: [
+          { order: 1, load: null },
+          { order: 2, load },
+        ],
+      },
+    ])
+  })
+
+  it('keeps a non-opted-in contribution in the table without its load, so data stays aligned', async () => {
+    const source = generateBehaviorModule([
+      region({ order: 1, hostRoutes: ['/other#page'] }),
+      region({ order: 2 }),
+    ])
+    const load = () => 'loaded'
+    const exports = await evaluate(source, { m0: { load } })
+    expect(contributionsAt(exports.loads, DASHBOARD_PAGE)).toEqual([
+      { order: 1, load: null },
+      { order: 2, load },
+    ])
+    expect(contributionsAt(exports.loads, '/other#page')).toEqual([
+      { order: 1, load },
+      { order: 2, load: null },
+    ])
+  })
+
+  it('exposes opted-in actions on page hosts, keyed <point>.<name>', async () => {
+    const source = generateBehaviorModule([region({ load: null, actions: ACTIONS })])
+    const run = () => 'ran'
+    const exports = await evaluate(source, { m0: { actions: { share: run } } })
+    expect(rowOf(exports.actions, DASHBOARD_PAGE)).toEqual({
+      [`${REGION}.share`]: { point: REGION, name: 'share', run },
+    })
+  })
+
+  it('records a component-scoped point without hostRoutes as inert (no table row)', async () => {
+    const source = generateBehaviorModule([region({ hostRoutes: null })])
+    const exports = await evaluate(source, {})
+    expect(exports.loads).toEqual({})
+  })
+
+  it('a layout host routes the load to the layout table', async () => {
+    const layoutHost = '/(app)/projects/[projectId]#layout'
+    const source = generateBehaviorModule([region({ hostRoutes: [layoutHost] })])
+    const exports = await evaluate(source, { m0: { load: () => 1 } })
+    expect(Object.keys(exports.loads as object)).toEqual([layoutHost])
+  })
+
+  it('splices host route keys only through JSON.stringify', () => {
+    const nasty = 'a"b`${x}\\#page'
+    const source = generateBehaviorModule([region({ hostRoutes: [nasty] })])
+    expect(syntaxErrors(source)).toEqual([])
+  })
+})

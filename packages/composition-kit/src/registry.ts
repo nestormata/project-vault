@@ -19,6 +19,9 @@ export interface PointRoute {
   name: string
   routeId: string | null
   scope: string | null
+  /** Story 69.1: for a component-scoped region point, the `<routeId>#<scope>` host routes that render
+   * it. Null when the host's registry predates the field (or the point is not component-scoped). */
+  hostRoutes: string[] | null
 }
 
 /** Story 68.7: one PV nav id with the additive fields web-host's `nav-ids.json` carries. */
@@ -83,6 +86,13 @@ function readList(
   }
 }
 
+/** An additive field: anything but an array of strings reads as absent rather than failing. */
+function stringList(value: unknown): string[] | null {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+    ? (value as string[])
+    : null
+}
+
 function duplicateName(names: readonly string[]): string | undefined {
   const seen = new Set<string>()
   return names.find((name) => seen.size === seen.add(name).size)
@@ -95,6 +105,7 @@ export function readRegistries(host: string): Registries {
     file: typeof entry.file === 'string' ? entry.file : null,
     routeId: typeof entry.routeId === 'string' ? entry.routeId : null,
     scope: typeof entry.scope === 'string' ? entry.scope : null,
+    hostRoutes: stringList(entry.hostRoutes),
   })) as (InjectionPointRecord & Omit<PointRoute, 'name'>)[] | undefined
   const ids = readList(host, 'nav-ids.json', 'ids', problems, (entry) => ({
     id: String(entry.id),
@@ -111,7 +122,12 @@ export function readRegistries(host: string): Registries {
       )
     } else {
       registries.injectionPoints = points.map(({ name, file }) => ({ name, file }))
-      registries.pointRoutes = points.map(({ name, routeId, scope }) => ({ name, routeId, scope }))
+      registries.pointRoutes = points.map(({ name, routeId, scope, hostRoutes }) => ({
+        name,
+        routeId,
+        scope,
+        hostRoutes,
+      }))
     }
   }
   if (ids !== undefined) Object.assign(registries, navRegistry(host, ids))

@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+## 0.9.0
+
+- **Behavior injection for component-scoped region points: the per-route opt-in `hostRoutes`** (Story 69-1,
+  Nestor's Q12 option B). A contribution at a region point rendered inside a shared component (for
+  example `project.detail.tiles`) may declare `hostRoutes: ['<routeId>#<scope>']` next to its `load` and
+  `actions`. The kit then adds the point to each named host route's behavior table (the same
+  `<routeId>#<scope>` keys as a standard point), so the load runs with the member's own `RequestEvent` and
+  its result reaches the component as `data.__inject['<point>'][i]`. A contribution that does not opt in
+  still renders with `data = null`; its load and actions stay recorded in the lock and inert, now with a
+  note that names `hostRoutes` and the routes that render the point (never a refusal).
+- Integrity only: a host route that does not render the point, a malformed key, a `#layout` host for a
+  region only a page renders, or an empty list fails the composition naming the point, the entry and the
+  valid routes; a duplicate is dropped silently; opted-in `actions` are refused on a layout host (a layout
+  has no form actions) and checked against a default action on the host page server file. When the pack
+  overrides a host route's server file, a note says its contribution load runs only if the override calls
+  `withInjectedLoad` / `injectActions`.
+- Additive: `manifests/injection-points.json` stays `schemaVersion: 1` and gains `hostRoutes` on region
+  points. A web-host that predates it keeps components-only injection working and answers an opt-in with
+  the "needs a newer web-host" finding; an older kit reads only `name`, `file`, `routeId` and `scope` and
+  ignores the field. The lock gains an optional `hostRoutes` per injection (absent when not opted in).
+
 ## 0.8.0
 
 - **`pv-verify --only tests` (and the tests step of a full run) now runs with the app's own Vitest
