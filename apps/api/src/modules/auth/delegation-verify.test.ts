@@ -30,6 +30,8 @@ vi.mock('../../config/env.js', () => ({
 }))
 
 import {
+  DELEGATION_HOST_OUTCOMES,
+  DELEGATION_OUTCOMES,
   DELEGATION_REASON_TO_OUTCOME,
   DELEGATION_REJECT_REASONS,
   createDelegationVerifier,
@@ -509,6 +511,31 @@ describe('AC-3 classification and outcome map', () => {
     expect(DELEGATION_REASON_TO_OUTCOME.delegation_missing_claim).toBe('malformed_claim')
     expect(DELEGATION_REASON_TO_OUTCOME.delegation_malformed_claim).toBe('malformed_claim')
     expect(Object.isFrozen(DELEGATION_REASON_TO_OUTCOME)).toBe(true)
+  })
+})
+
+describe('Story 71.3 AC-8 closed counter outcome set', () => {
+  it('adds the host-decided outcomes next to the verifier mapping with no duplicates', () => {
+    const verifierOutcomes = new Set(Object.values(DELEGATION_REASON_TO_OUTCOME))
+    for (const outcome of DELEGATION_HOST_OUTCOMES)
+      expect(verifierOutcomes.has(outcome)).toBe(false)
+    expect(new Set(DELEGATION_OUTCOMES).size).toBe(DELEGATION_OUTCOMES.length)
+    expect(DELEGATION_OUTCOMES).toEqual(
+      expect.arrayContaining([
+        'missing',
+        'rate_limited_pre',
+        'operation_mismatch',
+        'body_mismatch',
+        'subject_mismatch',
+        'org_not_served',
+        'replayed',
+        'store_unavailable',
+        'actor_not_member',
+        'actor_unlinked',
+        'actor_attested_nonmember',
+      ])
+    )
+    expect(Object.isFrozen(DELEGATION_OUTCOMES)).toBe(true)
   })
 })
 

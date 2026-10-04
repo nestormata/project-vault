@@ -121,12 +121,15 @@ export function enforceUserRateLimit({
   max,
   timeWindowMs = 60_000,
   reply,
+  retryAfterHeader = false,
 }: {
   userId: string
   key: string
   max: number
   timeWindowMs?: number
   reply: FastifyReply
+  /** Story 71.3: also set the `Retry-After` response header (default: body field only). */
+  retryAfterHeader?: boolean
 }): boolean {
   if (!isRateLimitEnforced()) return true
   const now = Date.now()
@@ -137,10 +140,12 @@ export function enforceUserRateLimit({
   bucket.count += 1
   userRateLimitWindows.set(bucketKey, bucket)
   if (bucket.count <= max) return true
+  const retryAfter = Math.ceil((bucket.resetAt - now) / 1000)
+  if (retryAfterHeader) reply.header('Retry-After', String(retryAfter))
   reply.status(429).send({
     code: 'rate_limit_exceeded',
     message: 'Too many authenticated requests',
-    retryAfter: Math.ceil((bucket.resetAt - now) / 1000),
+    retryAfter,
   })
   return false
 }

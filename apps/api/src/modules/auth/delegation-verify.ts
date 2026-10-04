@@ -116,6 +116,36 @@ export const DELEGATION_REASON_TO_OUTCOME: Readonly<Record<DelegationRejectReaso
     delegation_audience_mismatch: 'audience_mismatch',
   })
 
+/**
+ * Story 71.3 AC-8: the counter outcomes that do not come from a verifier reason, decided by the
+ * host pipeline after (or instead of) verification. Kept next to `DELEGATION_REASON_TO_OUTCOME` so
+ * the closed `pv_delegation_assertions_total{outcome}` set lives in exactly one place.
+ * `unsupported_encoding` is the one outcome beyond the 71-2 design table (the 71-3 `Content-Encoding`
+ * rejection, AC-4); `actor_unlinked` and `actor_attested_nonmember` count admitted requests.
+ */
+export const DELEGATION_HOST_OUTCOMES = [
+  'missing',
+  'rate_limited_pre',
+  'operation_mismatch',
+  'unsupported_encoding',
+  'body_mismatch',
+  'subject_mismatch',
+  'org_not_served',
+  'replayed',
+  'store_unavailable',
+  'actor_not_member',
+  'actor_unlinked',
+  'actor_attested_nonmember',
+] as const
+
+export type DelegationHostOutcome = (typeof DELEGATION_HOST_OUTCOMES)[number]
+
+/** Every value of the `outcome` label, verifier-derived and host-derived. */
+export const DELEGATION_OUTCOMES: readonly string[] = Object.freeze([
+  ...new Set(Object.values(DELEGATION_REASON_TO_OUTCOME)),
+  ...DELEGATION_HOST_OUTCOMES,
+])
+
 const CORE_REASON: Record<JwsCoreReason, DelegationRejectReason> = {
   oversized: 'delegation_oversized',
   malformed: 'delegation_malformed',
