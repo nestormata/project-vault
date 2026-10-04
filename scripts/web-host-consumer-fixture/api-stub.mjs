@@ -84,7 +84,7 @@ function projectRoute(res, path, session) {
   if (id === 'p-boom') return send(res, 500, { error: { code: 'boom', message: STUB_MESSAGE } })
   const project = PROJECTS.get(id)
   // The same answer for an unknown id and another org's project: no existence leak.
-  return project && project.orgId === SESSION_USERS.get(session).orgId
+  return project?.orgId === SESSION_USERS.get(session).orgId
     ? send(res, 200, { data: project })
     : send(res, 404, NOT_FOUND)
 }

@@ -25,6 +25,7 @@
 
 # curl's write-out format for printing only the HTTP status code.
 readonly CURL_STATUS_FORMAT='%{http_code}'
+readonly SELFTEST_LABEL='self-test'
 
 compose_pack_name() {
   case "$VARIANT" in
@@ -804,11 +805,11 @@ compose_isolation_checks() {
   # The assertion can fail: a leaked marker, and a missing one, are both reported with a message.
   cp -r "$dir/html" "$dir/leaked"
   sed -i 's/iso:u1/iso:u2/' "$dir/leaked/u1-3.body"
-  compose_expect_failure_message 'request 3 as u1 lacks its own marker iso:u1' compose_assert_isolation "$dir/leaked" 'self-test'
+  compose_expect_failure_message 'request 3 as u1 lacks its own marker iso:u1' compose_assert_isolation "$dir/leaked" "$SELFTEST_LABEL"
   cp "$dir/html/u2-5.body" "$dir/html/u1-4.body"
-  compose_expect_failure_message "request 4 as u1 lacks its own marker iso:u1" compose_assert_isolation "$dir/html" 'self-test'
+  compose_expect_failure_message "request 4 as u1 lacks its own marker iso:u1" compose_assert_isolation "$dir/html" "$SELFTEST_LABEL"
   printf 'iso:u1 iso:u2' > "$dir/html/u1-4.body"
-  compose_expect_failure_message "request 4 as u1 contains the OTHER caller's marker iso:u2" compose_assert_isolation "$dir/html" 'self-test'
+  compose_expect_failure_message "request 4 as u1 contains the OTHER caller's marker iso:u2" compose_assert_isolation "$dir/html" "$SELFTEST_LABEL"
   log "OK: ${ISOLATION_ROUNDS} interleaved requests per user each saw only their own injected data (SSR HTML and __data.json); the assertion fails on a leak"
   return 0
 }
@@ -922,8 +923,9 @@ compose_browser_checks() {
 
 # Story 68-15 AC-10: the failure path of the helpers prints its message (never a silent exit).
 compose_silent_failure_selftest() {
-  compose_expect_failure_message 'answered HTTP' compose_expect_redirect "$1" GET "$SETTINGS_PATH" "$CM_U1" 303 /nowhere
-  compose_expect_failure_message 'lacks nope-marker' compose_body_has 'nope-marker' 'self-test'
+  local port="$1"
+  compose_expect_failure_message 'answered HTTP' compose_expect_redirect "$port" GET "$SETTINGS_PATH" "$CM_U1" 303 /nowhere
+  compose_expect_failure_message 'lacks nope-marker' compose_body_has 'nope-marker' "$SELFTEST_LABEL"
   compose_expect_failure_message 'handler counter inject-load is' fixture_expect_count inject-load 9999
   log 'OK: a deliberately broken assertion prints its message and fails the variant (no silent exit)'
   return 0
