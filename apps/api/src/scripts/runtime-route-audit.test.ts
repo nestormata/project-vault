@@ -28,6 +28,7 @@ const {
   runCli,
   runRouteAudit,
   AuditUsageError,
+  prepareAuditEnv,
 } = await import('./runtime-route-audit.js')
 const fixture = await importApiRoutesFixture()
 
@@ -39,6 +40,7 @@ const CLASSIFICATIONS_FLAG = '--classifications'
 const MISSING_PACKAGE = '@nope/missing-68-14'
 const CLI_FILE = 'src/scripts/runtime-route-audit.ts'
 const STALE_ROUTE = 'GET /cm/not-there'
+const PASS_LINE = 'route audit: PASS'
 const fixturePath = (name: string): string =>
   fileURLToPath(
     new URL(`../extensions/api-routes/__fixtures__/classifications/${name}`, import.meta.url)
@@ -193,7 +195,7 @@ describe('runCli exit codes', () => {
   it('0 with a summary for a passing run', async () => {
     const { out, err, io } = capture()
     expect(await runCli([], deps().deps, io)).toBe(0)
-    expect(out.join('')).toContain('route audit: PASS')
+    expect(out.join('')).toContain(PASS_LINE)
     expect(err).toEqual([])
   })
 
@@ -226,6 +228,35 @@ describe('runCli exit codes', () => {
   })
 })
 
+describe('prepareAuditEnv (Story 68.23)', () => {
+  it('fills two distinct non-superuser database roles and forces API docs on, with no password', () => {
+    const settings: NodeJS.ProcessEnv = {
+      RELEASE_VERSION: '9.9.9',
+      VAULT_EXTENSIONS_PACKAGE: 'x',
+      VAULT_EXTENSIONS_REQUIRED: 'true',
+    }
+    prepareAuditEnv(settings)
+    const app = new URL(settings['DATABASE_URL'] ?? '')
+    const admin = new URL(settings['ADMIN_DATABASE_URL'] ?? '')
+    expect(app.username).not.toBe(admin.username)
+    expect([app.username, admin.username]).not.toContain('postgres')
+    expect([app.password, admin.password]).toEqual(['', ''])
+    expect(settings['ENABLE_API_DOCS']).toBe('true')
+    expect(settings['RELEASE_VERSION']).toBeUndefined()
+    expect(settings['VAULT_EXTENSIONS_PACKAGE']).toBeUndefined()
+  })
+
+  it('keeps the database settings a caller provided', () => {
+    const settings: NodeJS.ProcessEnv = {
+      DATABASE_URL: 'postgresql://a@h:1/d',
+      ADMIN_DATABASE_URL: 'postgresql://b@h:1/d',
+    }
+    prepareAuditEnv(settings)
+    expect(settings['DATABASE_URL']).toBe('postgresql://a@h:1/d')
+    expect(settings['ADMIN_DATABASE_URL']).toBe('postgresql://b@h:1/d')
+  })
+})
+
 describe('the CLI process', () => {
   it('exits 2 on a usage error before booting anything', () => {
     const result = spawnSync('pnpm', ['exec', 'tsx', CLI_FILE, '--bogus'], {
@@ -236,6 +267,22 @@ describe('the CLI process', () => {
     expect(result.stderr).toContain('unknown argument "--bogus"')
     expect(result.stdout).toBe('')
   })
+
+  it('exits 0 with no database settings at all (Story 68.23: the image has none, the audit needs none)', () => {
+    const bare = Object.fromEntries(
+      Object.entries(process.env).filter(
+        ([name]) => !['DATABASE_URL', 'ADMIN_DATABASE_URL', 'SUPERUSER_DATABASE_URL'].includes(name)
+      )
+    )
+    const result = spawnSync('pnpm', ['exec', 'tsx', CLI_FILE], {
+      cwd: apiDir,
+      encoding: 'utf8',
+      env: bare,
+    })
+    expect(result.stderr).not.toContain('Missing or invalid environment variables')
+    expect(result.stdout).toContain(PASS_LINE)
+    expect(result.status).toBe(0)
+  }, 120_000)
 
   it('exits 0 with a deterministic summary and no absolute path or env value', () => {
     const run = () =>
@@ -249,7 +296,7 @@ describe('the CLI process', () => {
         },
       })
     const first = run()
-    expect(first).toContain('route audit: PASS')
+    expect(first).toContain(PASS_LINE)
     expect(first).not.toContain(process.cwd())
     expect(first).not.toContain(API_ROUTES_FIXTURE_PACKAGE)
     expect(run()).toBe(first)
