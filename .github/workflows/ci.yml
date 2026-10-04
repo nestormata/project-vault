@@ -1083,8 +1083,10 @@ jobs:
     name: Composition kit integration
     runs-on: ubuntu-latest
     # Measured 2026-10-02 on a warm laptop: about 6 minutes for all five variants (npm install
-    # about 2 minutes each, cold in CI). 30 minutes leaves more than 3x headroom.
-    timeout-minutes: 30
+    # about 2 minutes each, cold in CI). Story 68-15 adds a Chromium download and the session
+    # injection cases (about 1 minute more in the compose variant). 45 minutes keeps the headroom
+    # the original 30 gave (cold npm adds about 9 minutes).
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
@@ -1100,6 +1102,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # Story 68-15: the injection cases that need a browser (hydration, the theme rune, client
+      # navigation) run in a real Chromium against the composed host the job builds.
+      - name: Install Chromium for the injection browser cases (Story 68-15)
+        run: pnpm --filter @project-vault/web-host exec playwright install --with-deps chromium
 
       - name: Composition kit composes a UI pack onto the packed web-host (AC-12, AC-13)
         env:

@@ -145,6 +145,21 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
         'OK: nav delta applied on /settings and a project (every operation, nested, CM when and icon), Spanish tabs and the CM relabel under es, the hidden route still served, CM nav in the client bundle'
       )
       expect(output).toContain("OK: composed-nav.test.ts validated the pack's nav delta")
+      // Story 68-15 (M3 on protected pages): sessions, tenants, isolation, chunks and a real browser.
+      for (const line of [
+        'OK: the API stub serves per-session identities (u1, u2, ok unchanged, 401 otherwise) and org-owned projects without an existence leak',
+        'OK: 10 interleaved requests per user each saw only their own injected data (SSR HTML and __data.json); the assertion fails on a leak',
+        'OK: an anonymous request (page, __data.json, trailing slash, percent-encoded) never ran the injected load (counter 0), nor did a failing PV load; an authenticated request ran it once',
+        "OK: a contribution load running as u1 got the API's 404 for u2's project (the page stays 200), and no tenant data reached the HTML or __data.json",
+        'OK: each injected component lives in the client chunk of the one page that renders its point, in no entry chunk and no other page',
+        'OK: a deliberately broken assertion prints its message and fails the variant (no silent exit)',
+        'OK: the page with the injected component hydrated with no mismatch and no page error (real Chromium)',
+        'OK: the hydration check fails on deliberately diverging server HTML (the oracle can fail)',
+        'OK: an in-app link changed the URL and content without a full document load',
+        "OK: a theme change through PV's own UI re-rendered the injected component (light to dark) without a reload",
+      ]) {
+        expect(output).toContain(line)
+      }
       expect(status, output).toBe(0)
     },
     VARIANT_TIMEOUT_MS
@@ -368,7 +383,21 @@ describe('composition kit integration: wiring (Story 68.3 AC-12)', () => {
     expect(step?.env?.COMPOSITION_KIT_INTEGRATION ?? job?.env?.COMPOSITION_KIT_INTEGRATION).toBe(
       '1'
     )
-    expect(job?.['timeout-minutes']).toBeGreaterThanOrEqual(30)
+    expect(job?.['timeout-minutes']).toBeGreaterThanOrEqual(45)
+  })
+
+  it('the CI Composition kit integration job installs Chromium before the integration step (Story 68-15)', () => {
+    const ci = parseYaml(
+      readFileSync(join(repositoryRoot, '.github', 'workflows', 'ci.yml'), 'utf8')
+    ) as { jobs: Record<string, { name?: string; steps: { run?: string }[] }> }
+    const job = Object.values(ci.jobs).find(
+      (candidate) => candidate.name === 'Composition kit integration'
+    )
+    const steps = job?.steps ?? []
+    const install = steps.findIndex((step) => step.run?.includes('playwright install'))
+    const run = steps.findIndex((step) => step.run?.includes(command))
+    expect(install, 'a Chromium install step exists in the job').toBeGreaterThanOrEqual(0)
+    expect(install, 'Chromium is installed before the integration test runs').toBeLessThan(run)
   })
 
   it('make composition-kit-integration runs it with COMPOSITION_KIT_INTEGRATION=1', () => {

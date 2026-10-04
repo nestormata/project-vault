@@ -58,6 +58,24 @@ export default defineUiPack({
     'auth.layout.before': [{ component: './injections/LayoutNote.svelte' }],
     'shell.head': [{ component: './injections/HeadMeta.svelte' }],
     'dashboard.home.after': [{ component: './injections/HealthTile.svelte', order: 10 }],
+    // Story 68-15: contributions on protected pages. The who tile runs its load as the caller, the
+    // theme probe reads the shared theme rune, and the project note's load must never run when PV's
+    // own load fails.
+    'settings.home.after': [
+      {
+        component: './injections/WhoTile.svelte',
+        order: 10,
+        load: './injections/who.server.ts',
+      },
+    ],
+    'settings.themes.after': [{ component: './injections/ThemeProbe.svelte', order: 10 }],
+    'project.detail.after': [
+      {
+        component: './injections/ProjectNote.svelte',
+        order: 10,
+        load: './injections/guarded.server.ts',
+      },
+    ],
   },
   replacements: {
     '$lib/components/shell/Footer.svelte': {
