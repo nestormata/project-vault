@@ -7,6 +7,7 @@ import { useFixtureRoots, writeFixture } from './lib/fixture-test-helpers.js'
 import { checkInjectionPointCoverage, readRegistryFields } from './lib/injection-point-coverage.js'
 import { parseMarkup } from './lib/route-files.js'
 import { walkFiles } from './lib/scan-utils.js'
+import { sysReadFile } from './lib/web-host/import-graph.js'
 import { INJECTION_POINTS } from '../apps/web/src/lib/components/composition/injection-points.js'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -419,7 +420,7 @@ describe('check-injection-point-coverage: the real tree holds its regions (Story
     expect(regions.length).toBeGreaterThanOrEqual(REGIONS_ADDED_BY_69_1)
     const marked = new Map<string, string[]>()
     for (const file of walkFiles(resolve(WEB, 'src'), (path) => path.endsWith('.svelte'))) {
-      const parsed = parseMarkup(readFileSync(file, 'utf8'), file)
+      const parsed = parseMarkup(sysReadFile(file) ?? '', file)
       for (const region of parsed.regions) {
         const holders = parsed.points.filter((point) => point.name === region.name)
         if (holders.length > 0) marked.set(region.name, [...(marked.get(region.name) ?? []), file])

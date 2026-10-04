@@ -5,7 +5,6 @@
 // type-only imports ignored) so the declaration is checked, never trusted. A region component that is
 // only reached through a `.ts` module is not seen: that would also be invisible to the monolithic
 // guard, and the mismatch is reported as a problem rather than guessed at.
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   moduleSpecifiers,
@@ -41,7 +40,7 @@ class ComponentEdges {
   of(file: string): string[] {
     const known = this.cache.get(file)
     if (known !== undefined) return known
-    const edges = moduleSpecifiers(readFileSync(file, 'utf8'), file)
+    const edges = moduleSpecifiers(sysReadFile(file) ?? '', file)
       .filter(({ typeOnly, specifier }) => !typeOnly && specifier.endsWith('.svelte'))
       .flatMap(({ specifier }) => {
         const target = resolveSpecifier(specifier, file, this.resolver)
