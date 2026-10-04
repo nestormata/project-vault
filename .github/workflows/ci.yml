@@ -1214,7 +1214,14 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Story 68-15: the injection cases that need a browser (hydration, the theme rune, client
-      # navigation) run in a real Chromium against the composed host the job builds.
+      # navigation) run in a real Chromium against the composed host the job builds. Story 68-25
+      # caches the browser download (DW-509 item 5); the install below still runs for the OS deps.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-composition-kit-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Install Chromium for the injection browser cases (Story 68-15)
         run: pnpm --filter @project-vault/web-host exec playwright install --with-deps chromium
 
