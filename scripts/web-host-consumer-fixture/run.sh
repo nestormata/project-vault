@@ -208,7 +208,7 @@ fi
 # Story 68.22: the shipped tests type-import @testing-library/dom, so the manifest must declare it
 # as an exact peer and the fixture install must have resolved exactly that version.
 DOM_PEER="$(clean_env "$NODE_BIN" -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).peerDependencies["@testing-library/dom"] ?? ""' "$WORK/web-host-package.json")"
-DOM_INSTALLED="$(clean_env "$NODE_BIN" -p 'require(process.argv[1] + "/node_modules/@testing-library/dom/package.json").version' "$APP")"
+DOM_INSTALLED="$(clean_env "$NODE_BIN" -p 'require(process.argv[1] + "/node_modules/@testing-library/dom/package.json").version' "$APP" 2>/dev/null)" || DOM_INSTALLED='missing'
 if [[ -z "$DOM_PEER" || "$DOM_INSTALLED" != "$DOM_PEER" ]]; then
   echo "fixture: @testing-library/dom installed $DOM_INSTALLED, manifest peer '$DOM_PEER'" >&2
   exit 1

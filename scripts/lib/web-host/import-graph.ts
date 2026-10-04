@@ -6,7 +6,8 @@
 //   3. whether shipped source imports a test file (a packaging error).
 // Type-only imports (`import type`, `export type`) never add files to the graph and never count as
 // runtime dependencies (they vanish at compile time), but their bare packages are reported
-// separately (`typeBareImports`): a shipped test still needs them at type-check time (Story 68.22). File text is read through `ts.sys`, the compiler's own host.
+// separately (`typeBareImports`): a shipped test still needs them at type-check time (Story 68.22).
+// File text is read through `ts.sys`, the compiler's own host.
 import { builtinModules, createRequire } from 'node:module'
 import { dirname, extname, join, relative, sep } from 'node:path'
 import ts from 'typescript'
