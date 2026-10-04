@@ -54,9 +54,24 @@ const SESSION_USERS = new Map(
   ])
 )
 SESSION_USERS.set('ok', USER)
+// Story 69.1: a full project overview (PV's project page renders every field of a found project).
+const projectOf = (id, name, orgId) => ({
+  id,
+  orgId,
+  name,
+  slug: id,
+  description: null,
+  role: 'owner',
+  tags: [],
+  memberCount: 1,
+  createdBy: null,
+  createdAt: '2026-07-01T12:00:00.000Z',
+  updatedAt: '2026-07-01T12:00:00.000Z',
+  archivedAt: null,
+})
 const PROJECTS = new Map([
-  ['p-u1', { id: 'p-u1', name: 'U1 Secret', orgId: 'o-u1' }],
-  ['p-u2', { id: 'p-u2', name: 'U2 Secret', orgId: 'o-u2' }],
+  ['p-u1', projectOf('p-u1', 'U1 Secret', 'o-u1')],
+  ['p-u2', projectOf('p-u2', 'U2 Secret', 'o-u2')],
 ])
 const THEMES = [
   { name: 'base', label: 'Base', css: null },
@@ -78,15 +93,28 @@ function readBody(req) {
   })
 }
 
+// Story 69.1: PV's project page reads `/projects/:id/dashboard` after the project itself; without this
+// answer its own load would end in `notFound` and (by design) skip every contribution load.
+const EMPTY_DASHBOARD = {
+  credentialStats: { active: 0, expiringSoon: 0, expired: 0 },
+  upcomingRotations: [],
+  monitoredServiceHealth: { healthy: 0, degraded: 0, down: 0 },
+  recentAccessEvents: [],
+  unresolvedAlertCount: 0,
+  isEmpty: false,
+  suggestedActions: [],
+}
+
 function projectRoute(res, path, session) {
   if (session === null) return send(res, 401, UNAUTHORIZED)
-  const id = decodeURIComponent(path.slice('/api/v1/projects/'.length))
+  const rest = decodeURIComponent(path.slice('/api/v1/projects/'.length))
+  const wantsDashboard = rest.endsWith('/dashboard')
+  const id = wantsDashboard ? rest.slice(0, -'/dashboard'.length) : rest
   if (id === 'p-boom') return send(res, 500, { error: { code: 'boom', message: STUB_MESSAGE } })
   const project = PROJECTS.get(id)
   // The same answer for an unknown id and another org's project: no existence leak.
-  return project?.orgId === SESSION_USERS.get(session).orgId
-    ? send(res, 200, { data: project })
-    : send(res, 404, NOT_FOUND)
+  if (project?.orgId !== SESSION_USERS.get(session).orgId) return send(res, 404, NOT_FOUND)
+  return send(res, 200, { data: wantsDashboard ? EMPTY_DASHBOARD : project })
 }
 
 async function themeSelection(req, res) {

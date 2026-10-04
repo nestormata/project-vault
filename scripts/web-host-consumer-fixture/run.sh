@@ -220,6 +220,7 @@ if [[ "$COMPOSE_MODE" == 1 ]]; then
   compose_run
   if [[ "$VARIANT" == compose ]]; then
     compose_unknown_point
+    compose_bad_host_routes
   fi
   compose_pipeline_to_sync
 else

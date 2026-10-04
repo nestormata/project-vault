@@ -362,6 +362,132 @@ describe("withInjectedLoad: PV's own load first, then the injected data", () => 
     expect(ran).toBe(0)
   })
 
+  // Story 69.1 Q2 (DW-490 item 1): PV's own 404 result must not be turned into a 500 (or an existence
+  // oracle) by a contribution load, so none runs for a `notFound: true` own result, and every point
+  // of the slice still gets one null entry per contribution (alignment, no throw).
+  describe('a notFound own result (Story 69.1)', () => {
+    const counter = { ran: 0 }
+    const sliceTables = (): BehaviorTables => ({
+      loads: {
+        '/r#page': [
+          {
+            point: 'a.b.tiles',
+            contributions: [
+              { order: 0, load: () => (counter.ran += 1) },
+              { order: 1, load: null },
+            ],
+          },
+          { point: 'a.b.after', contributions: [{ order: 0, load: () => (counter.ran += 1) }] },
+        ],
+      },
+      actions: {},
+    })
+
+    it('runs no contribution load and returns a null entry per contribution, own data intact', async () => {
+      counter.ran = 0
+      const { withInjectedLoad: wrap } = createInjectBehavior(sliceTables())
+      const own = { project: null, notFound: true as const }
+      const result = await wrap(async () => own, '/r', 'page')(event)
+      expect(counter.ran).toBe(0)
+      expect(result).toEqual({
+        project: null,
+        notFound: true,
+        __inject: { 'a.b.tiles': [null, null], 'a.b.after': [null] },
+      })
+    })
+
+    it.each([[{ notFound: false }], [{ notFound: 'true' }], [{ project: null }]])(
+      'only a literal true skips: %j still runs the loads',
+      async (own) => {
+        const { withInjectedLoad: wrap } = createInjectBehavior(sliceTables())
+        counter.ran = 0
+        await wrap(async () => own, '/r', 'page')(event)
+        expect(counter.ran).toBe(2)
+      }
+    )
+
+    it('skips for a layout slice too (the layout 404 result carries notFound: true)', async () => {
+      counter.ran = 0
+      const { withInjectedLoad: wrap } = createInjectBehavior({
+        loads: {
+          '/r#layout': [
+            {
+              point: 'a.layout.nav',
+              contributions: [{ order: 0, load: () => (counter.ran += 1) }],
+            },
+          ],
+        },
+        actions: {},
+      })
+      const result = await wrap(
+        async () => ({ project: null, notFound: true }),
+        '/r',
+        'layout'
+      )(event)
+      expect(counter.ran).toBe(0)
+      expect(result).toMatchObject({ __inject: { 'a.layout.nav': [null] } })
+    })
+
+    it('adds nothing when the slice has no contributions (PV build shape is unchanged)', async () => {
+      const { withInjectedLoad: wrap } = createInjectBehavior({ loads: {}, actions: {} })
+      expect(await wrap(async () => ({ notFound: true }), '/r', 'page')(event)).toEqual({
+        notFound: true,
+      })
+    })
+  })
+
+  // Story 69.1 Q5 default: PV changes nothing for a sealed vault. A contribution that calls the API
+  // gets the same 503 and, rethrown, turns the dashboard banner into an error: pinned as a visible
+  // contract (documented in docs/composition-kit.md), not left implicit.
+  it('a vaultSealed own result still runs the contribution loads, and a throwing one fails the load', async () => {
+    const { withInjectedLoad: wrap } = createInjectBehavior({
+      loads: {
+        '/r#page': [
+          {
+            point: 'dashboard.home.activity',
+            contributions: [
+              {
+                order: 0,
+                load: () => {
+                  throw new Error('Service Unavailable')
+                },
+              },
+            ],
+          },
+        ],
+      },
+      actions: {},
+    })
+    const wrapped = wrap(async () => ({ vaultSealed: true as const }), '/r', 'page')
+    await expect(wrapped(event)).rejects.toMatchObject({
+      message: 'injection "dashboard.home.activity" load failed: Error',
+    })
+  })
+
+  it('keeps a standard point and a region point on one page aligned, each to its own contributions', async () => {
+    const { withInjectedLoad: wrap } = createInjectBehavior({
+      loads: {
+        '/r#page': [
+          {
+            point: 'project.detail.after',
+            contributions: [{ order: 0, load: () => 'after' }],
+          },
+          {
+            point: 'project.detail.tiles',
+            contributions: [
+              { order: 0, load: null },
+              { order: 1, load: () => 'tile' },
+            ],
+          },
+        ],
+      },
+      actions: {},
+    })
+    expect(await wrap(() => ({}), '/r', 'page')(event)).toEqual({
+      __inject: { 'project.detail.after': ['after'], 'project.detail.tiles': [null, 'tile'] },
+    })
+  })
+
   it('tolerates a PV load that returns nothing', async () => {
     const { withInjectedLoad: wrap } = createInjectBehavior({
       loads: {

@@ -199,7 +199,7 @@ describe('behavior injection needs the registry route and scope (AC-17)', () => 
     })
     const result = await run(world, pack)
     expect(result.plan.notes.join('\n')).toContain(
-      'component-scoped point "region.thing.tiles": behavior injection arrives with Epic 69'
+      'component-scoped point "region.thing.tiles": a load or actions without hostRoutes are recorded in the lock and are inert'
     )
     expect(result.ok).toBe(true)
   })

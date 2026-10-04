@@ -119,7 +119,7 @@ and ask for the point in PV (a repeated need is a PV story).
   `manifests/injection-points.json` (`schemaVersion` 1: `name`, `file`, plus `kind`, `propsType`, `routeId`
   and `scope`, which the kit uses to route behavior). The composer fails on a name the registry does not
   have, and only notes it when the pack itself overrode the page that held the point.
-- **Contributions** are `{ component, order?, load?, actions? }`, with `order` ascending (default 0, ties keep
+- **Contributions** are `{ component, order?, load?, actions?, hostRoutes? }`, with `order` ascending (default 0, ties keep
   manifest order). `component` is any Svelte component; it runs in PV's own document, router, stores and
   session, with no sanitizer, wrapper or boundary, and receives `routeId`, `params`, the page's primary
   entity where it has one (`project`, `credential`) and `data`.
@@ -143,8 +143,45 @@ and ask for the point in PV (a repeated need is a PV story).
   keeps its 405 for a stray POST). `+error.svelte` has no load; its points get `data` only from an ancestor
   layout load that ran.
 - **Dispatch is keyed by (route id, scope)** (`/(app)/projects/[projectId]#page` and `#layout`), because a
-  layout and its page share a route id. Behavior for a point inside a shared `$lib` component (scope `component`)
-  is recorded in the lock and inert until Epic 69 decides how it runs.
+  layout and its page share a route id.
+- **Region points and the per-route opt-in `hostRoutes`** (Story 69-1, Nestor's Q12 option B). A point inside a
+  shared `$lib` component has scope `component` and no route of its own, so its `load` and `actions` run only
+  where the contribution says: `hostRoutes: ['<routeId>#<scope>']`, the same key shape as above
+  (`'/(app)/projects/[projectId]#page'`). The kit then adds the point to that host route's behavior table:
+  the load runs with the member's own `RequestEvent` and its result reaches the component as
+  `data.__inject['<point>'][i]`, exactly as for a standard point. The registry lists the routes that render each
+  region (`hostRoutes` in `injection-points.json`, derived from the import graph and checked against the
+  declaration in `injection-points.ts`), and a `hostRoutes` entry that is not one of them fails the composition
+  naming the point, the entry and the valid routes (integrity only: the name does not exist). Never an
+  allowlist: a pack that does not opt in still gets its component, props and `data = null` (the lock records
+  the load and actions, inert, with a note), and naming a route is free. A duplicate entry is dropped, an empty
+  list ("opted in to nothing") and a `#layout` host for a region only a page renders fail, `actions` are
+  refused on a layout host, and when the pack overrides the host route's server file the kit notes that the
+  override must call `withInjectedLoad` / `injectActions` (CM's own code; PV's guards cannot check it). A
+  web-host that predates `hostRoutes` keeps components-only injection working and answers an opt-in with
+  "needs a newer web-host"; an older kit ignores the additive field.
+- **A `notFound` result skips contribution loads** (DW-490 item 1). When PV's own load answers `notFound: true`
+  (a 404 or another org's id, for the project page and the project layout alike), `withInjectedLoad` runs no
+  contribution load and gives every contribution a `null` entry, so a contribution that calls the API for the
+  same id can neither turn PV's 404 into a 500 nor tell a foreign id from a missing one. A form action is not
+  covered: SvelteKit runs actions without running the page `load`, so an injected action on a `[projectId]`
+  page authorizes itself through the API (RLS is the enforcement, and a foreign id answers like a missing one).
+- **Failure modes you own.** A contribution `load` that throws takes the whole page to the error page (all
+  loads settle first, the failing one with the lowest `order` is reported by point name and error name only).
+  A hung load hangs the page: PV sets no timeout, because a PV timeout would be a limit on CM; use your own
+  `AbortSignal` on `event.fetch`. On the dashboard with a sealed vault (the API answers 503) PV renders its
+  banner and still runs contribution loads, so a load that calls the API must tolerate the 503 or the banner
+  becomes an error page. A region that renders on a route whose server file dropped `withInjectedLoad` (a CM
+  override) gets `data = null` and never throws.
+- **Region points** (Story 69-1) sit INSIDE the marked element (the guards require the point in the subtree of
+  the node `<!-- @region name -->` marks), adjacent to a sibling so PV's own markup gains no whitespace node:
+  `project.detail.tiles` and `dashboard.home.project-summary` render at the end of their stat `<dl>`, so their
+  fills should be `<div><dt/><dd/></div>` shaped; `dashboard.home.suggested-actions` at the end of its `<ul>`
+  (fills are `<li>`); `dashboard.home.monitoring` at the start of the grid; the others after their content.
+  A region point renders only when its region renders. `project.detail.export` receives `{ project }` only:
+  the one-time export key never reaches a contribution. The regions are `project.detail.{summary,export,tiles,
+not-found}`, `project.layout.nav` and `dashboard.home.{vault-sealed,org-summary,project-summary,rotations,
+activity,monitoring,suggested-actions,summary-unavailable,empty}`, each a component you can replace (M4).
 
 The kit's `pvInject()` Vite plugin (`@project-vault/composition-kit/vite`, `enforce: 'pre'`) serves
 `virtual:pv-inject/<point>` (the point's components, statically imported, in order) and
@@ -169,8 +206,13 @@ member) whose binding is imported from a `.svelte` file in the same file's scrip
 monolithic. The check is about replaceability, not size: a region wrapped in a trivial component passes (whether
 the extraction is meaningful is the componentization audit of story 69.5). An unparseable `.svelte` file is a
 finding, never a silent skip. Files the lock records as CM's are exempt by provenance (the guard has
-`@pv-scope pv-originated-only`); there is no suppression syntax, baseline or allow-list. PV's own tree has no
-`@region` marker yet, so today it scans N files and zero regions.
+`@pv-scope pv-originated-only`); there is no suppression syntax, baseline or allow-list. PV's own tree has 14
+`@region` markers since Story 69-1 (the project page, the project nav and the dashboard); the guard prints the
+count (`scanned N files, 14 regions`) and a test pins it from below.
+
+**Hash drift (Story 69-1):** the dashboard page, the project page, the project layout, `ProjectNav`,
+`PageAlertBanner` and `DashboardPlaceholderGrid` changed, so a pack that overrides one of them sees its
+`hostSha256` drift with the next web-host release; reconcile it with `pv-compose --accept-host`.
 
 **Hash drift:** this change adds injection points and server calls to about 70 PV route files, so the hash of
 every file a pack overrides there changes with the next web-host release. That is the intended signal;
@@ -596,7 +638,7 @@ rest of your compatibility tuple.
    image does not contain your pack: build your composed API image `FROM` the Project Vault image at the
    tuple's tag and install the pack into it (or use the pack's own image, which already is that).
 2. Extract the classifications of the composed pack: `pv-verify --app <dir> --only classifications --out
-   classifications.json` (written by the kit, never by hand).
+classifications.json` (written by the kit, never by hand).
 3. Run the audit, mounting the directory that holds the file read-only:
 
 ```bash
@@ -609,11 +651,11 @@ docker run --rm --network none -v "$PWD/audit:/audit:ro" <your-composed-api-imag
 the entrypoint to drop to the `node` user, so the mounted directory and file must be readable by uid 1000
 (mode `755` / `644`).
 
-| Exit | Meaning |
-|---|---|
-| `0` | Every route is `secureRoute`-built or classified. Stdout holds the report (`route audit: PASS`). |
-| `1` | The audit failed (an unclassified route, a duplicate, a stale classification) or the extension did not load (`extension <pkg> did not load: <reason>`). Stdout holds `route audit: FAIL` and one `  - <failure>` line per finding, each naming `METHOD /url`. |
-| `2` | A usage or input error (unknown flag, `--extension` that is not a bare package, an unreadable or malformed classification file). Nothing is booted; stderr holds the message and the usage line. |
+| Exit | Meaning                                                                                                                                                                                                                                                       |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | Every route is `secureRoute`-built or classified. Stdout holds the report (`route audit: PASS`).                                                                                                                                                              |
+| `1`  | The audit failed (an unclassified route, a duplicate, a stale classification) or the extension did not load (`extension <pkg> did not load: <reason>`). Stdout holds `route audit: FAIL` and one `  - <failure>` line per finding, each naming `METHOD /url`. |
+| `2`  | A usage or input error (unknown flag, `--extension` that is not a bare package, an unreadable or malformed classification file). Nothing is booted; stderr holds the message and the usage line.                                                              |
 
 The report is sorted and holds no absolute path and no env value, so it is stable in CI logs. The audit
 checks classification integrity only; it never decides which routes may be public. The checkout form

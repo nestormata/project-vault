@@ -16,6 +16,12 @@ export interface InjectionContribution {
   load?: string
   /** Optional form actions for the point (Story 68-4 applies it). */
   actions?: string
+  /** Story 69.1 (Q12 option B): for a COMPONENT-scoped region point, the host routes
+   * (`<routeId>#<scope>`, the keys of web-host's `injection-points.json` `hostRoutes`) whose
+   * behavior table carries this contribution's `load` and `actions`. Naming a route is free and
+   * integrity-checked (it must be a route that renders the point); it never limits what the
+   * contribution may do, and a contribution that does not opt in still renders. */
+  hostRoutes?: string[]
 }
 
 export interface Replacement {

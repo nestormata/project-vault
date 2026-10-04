@@ -13,7 +13,7 @@ describe('package.json (Story 68.3 AC-1)', () => {
   it('is MIT, ESM, public and provenance-published', () => {
     expect(manifest).toMatchObject({
       name: '@project-vault/composition-kit',
-      version: '0.8.0',
+      version: '0.9.0',
       license: 'MIT',
       type: 'module',
       publishConfig: {

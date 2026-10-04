@@ -11,6 +11,8 @@
     projectId={data.projectId}
     orgRole={data.orgRole}
     isArchived={data.project?.archivedAt != null}
+    project={data.project}
+    data={data.__inject}
   />
   <InjectionPoint
     name="project.layout.before"

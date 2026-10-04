@@ -58,6 +58,17 @@ export default defineUiPack({
     'auth.layout.before': [{ component: './injections/LayoutNote.svelte' }],
     'shell.head': [{ component: './injections/HeadMeta.svelte' }],
     'dashboard.home.after': [{ component: './injections/HealthTile.svelte', order: 10 }],
+    // Story 69.1: a fill at a REGION point (inside PV's ProjectStatTiles) opting in to behavior
+    // with `hostRoutes`; the integration job proves the composition and the chunk placement, and the
+    // negative case below it corrupts this entry on a copy.
+    'project.detail.tiles': [
+      {
+        component: './injections/RegionTile.svelte',
+        order: 10,
+        load: './injections/region.server.ts',
+        hostRoutes: ['/(app)/projects/[projectId]#page'],
+      },
+    ],
     // Story 68-15: contributions on protected pages. The who tile runs its load as the caller, the
     // theme probe reads the shared theme rune, and the project note's load must never run when PV's
     // own load fails.

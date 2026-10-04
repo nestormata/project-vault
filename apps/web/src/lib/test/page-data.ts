@@ -9,8 +9,13 @@
 //   `expectLoaded()` asserts data came back (a real check, not a cast) before a test reads it.
 import type { AuthUser } from '$lib/api/auth.js'
 import type { LayoutData as AppLayoutData } from '../../routes/(app)/$types.js'
-import type { LayoutData as ProjectLayoutData } from '../../routes/(app)/projects/[projectId]/$types.js'
+import type { LayoutData as RawProjectLayoutData } from '../../routes/(app)/projects/[projectId]/$types.js'
 import { SAMPLE_PROJECT_ID, sampleProject } from './fixtures.js'
+
+/** The project layout's data as a page under it sees it. `notFound` (set only on the layout's 404,
+ * Story 69.1) is left out: child pages declare their own `notFound`, and a fixture never carries the
+ * layout's. */
+type ProjectLayoutData = Omit<RawProjectLayoutData, 'notFound'>
 
 export type { AppLayoutData, ProjectLayoutData }
 

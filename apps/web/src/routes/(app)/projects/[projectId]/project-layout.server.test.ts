@@ -40,7 +40,9 @@ describe('project [projectId] +layout.server.ts (AC-5/AC-8/AC-10 sub-nav data)',
 
     const result = await load(makeEvent())
 
-    expect(result).toEqual({ projectId, orgRole: 'member', project: null })
+    // Story 69.1 (Q2): the 404 shape gains `notFound: true` (additive, deliberate) so
+    // `withInjectedLoad` skips layout contributions with one predicate, like the page's 404.
+    expect(result).toEqual({ projectId, orgRole: 'member', project: null, notFound: true })
   })
 
   it('re-throws non-404 errors (e.g. malformed ID) unmodified', async () => {

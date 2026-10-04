@@ -187,6 +187,17 @@ compose_run() {
   fi
 }
 
+# Dry-run the real composition kit CLI over the pack at $1; sets DRY_RUN_OUT (stdout + stderr) and
+# DRY_RUN_STATUS (the exit code). A dry run writes nothing.
+compose_dry_run() {
+  local pack_dir="$1"
+  DRY_RUN_STATUS=0
+  DRY_RUN_OUT="$(cd "$APP" && clean_env PV_FIXTURE_HOST="$INSTALLED" "$NODE_BIN" \
+    node_modules/@project-vault/composition-kit/dist/cli.js \
+    --pack "$pack_dir" --module-pack "$APP" --dry-run 2>&1)" || DRY_RUN_STATUS=$?
+  return 0
+}
+
 # Story 68.4 AC-2: an unknown injection point fails the composition against the REAL generated
 # registry, and the message says the way out. A dry run writes nothing.
 compose_unknown_point() {
@@ -195,15 +206,34 @@ compose_unknown_point() {
   ln -s "$APP/node_modules" "$bad/node_modules"
   sed -i "s/'auth.register.after'/'project.detail.nope'/" "$bad/pv-ui.manifest.ts"
   local out status=0
-  out="$(cd "$APP" && clean_env PV_FIXTURE_HOST="$INSTALLED" "$NODE_BIN" \
-    node_modules/@project-vault/composition-kit/dist/cli.js \
-    --pack "$bad" --module-pack "$APP" --dry-run 2>&1)" || status=$?
+  compose_dry_run "$bad"
+  out="$DRY_RUN_OUT" status="$DRY_RUN_STATUS"
   if [[ "$status" == '0' ]] || ! grep -q 'Injection point "project.detail.nope" does not exist' <<< "$out" ||
     ! grep -q 'a missing point never blocks you' <<< "$out"; then
     echo "fixture: an unknown injection point was not rejected as expected (exit $status): $out" >&2
     exit 1
   fi
   log 'OK: an unknown injection point fails with the way out'
+  return 0
+}
+
+# Story 69.1 AC-4 / AC-9: a `hostRoutes` entry that is not a route rendering the region point fails
+# the composition against the REAL generated registry, naming the point, the bad entry and the valid
+# routes. A dry run writes nothing.
+compose_bad_host_routes() {
+  local bad="$WORK/pack-bad-host-routes"
+  cp -r "$COMPOSITION_KIT_FIXTURES/mini-pack" "$bad"
+  ln -s "$APP/node_modules" "$bad/node_modules"
+  sed -i "s|'/(app)/projects/\[projectId\]#page'|'/(app)/projects/[projectId]#nope'|" "$bad/pv-ui.manifest.ts"
+  local out status=0
+  compose_dry_run "$bad"
+  out="$DRY_RUN_OUT" status="$DRY_RUN_STATUS"
+  if [[ "$status" == '0' ]] || ! grep -qF 'injections.project.detail.tiles.hostRoutes' <<< "$out" ||
+    ! grep -qF '/(app)/projects/[projectId]#nope' <<< "$out" ||
+    ! grep -qF '/(app)/projects/[projectId]#page' <<< "$out"; then
+    compose_fail "a bad hostRoutes entry was not rejected as expected (exit ${status}): ${out}"
+  fi
+  log 'OK: a hostRoutes entry that does not render the region point fails naming the point, the entry and the valid routes'
   return 0
 }
 
@@ -749,6 +779,7 @@ readonly SETTINGS_DATA_PATH='/settings/__data.json'
 readonly WHO_MARKER='PV_INJECT_WHO_MARKER_71c2e4'
 readonly THEME_MARKER='PV_INJECT_THEME_MARKER_5a90d3'
 readonly PROJECT_MARKER='PV_INJECT_PROJECT_MARKER_c4417b'
+readonly REGION_MARKER='PV_INJECT_REGION_MARKER_8e21f4'
 
 # The body of the last compose_request must (not) contain a needle, with a message on failure.
 compose_body_has() { # needle context
@@ -788,8 +819,8 @@ compose_fire_isolation() { # port path dir
 
 # Case 1, the judging half: every body holds ONLY its own caller's marker. A body without its own
 # marker fails too (two empty bodies would otherwise "pass" a no-leak check).
-compose_assert_isolation() { # dir context
-  local dir="$1" context="$2" user other round file
+compose_assert_isolation() { # dir context [marker-prefix]
+  local dir="$1" context="$2" prefix="${3:-iso}" user other round file
   for user in u1 u2; do
     other=u2
     if [[ "$user" == 'u2' ]]; then
@@ -797,11 +828,11 @@ compose_assert_isolation() { # dir context
     fi
     for round in $(seq 1 "$ISOLATION_ROUNDS"); do
       file="${dir}/${user}-${round}.body"
-      if ! grep -qF -- "iso:${user}" "$file"; then
-        compose_fail "${context}: request ${round} as ${user} lacks its own marker iso:${user}"
+      if ! grep -qF -- "${prefix}:${user}" "$file"; then
+        compose_fail "${context}: request ${round} as ${user} lacks its own marker ${prefix}:${user} (body starts: $(head -c 400 "$file" | tr '\n' ' '))"
       fi
-      if grep -qF -- "iso:${other}" "$file"; then
-        compose_fail "${context}: request ${round} as ${user} contains the OTHER caller's marker iso:${other}"
+      if grep -qF -- "${prefix}:${other}" "$file"; then
+        compose_fail "${context}: request ${round} as ${user} contains the OTHER caller's marker ${prefix}:${other}"
       fi
     done
   done
@@ -960,12 +991,20 @@ compose_chunk_checks() {
     fi
     seen="${seen} ${files}"
   done
+  # Story 69.1: the region fill renders inside the project page, so its marker lives in that page's one
+  # node chunk (the one holding the project note), in no other file and in no entry chunk.
+  local region_files project_files
+  region_files="$(compose_chunk_files "$REGION_MARKER")"
+  project_files="$(compose_chunk_files "$PROJECT_MARKER")"
+  if [[ -z "$region_files" || "$region_files" != "$project_files" ]]; then
+    compose_fail "chunk placement: ${REGION_MARKER} must be in exactly the project page chunk (got: ${region_files}; project: ${project_files})"
+  fi
   local entry_dir="$APP/build/client/_app/immutable/entry" entry_status=0
   # An absent entry directory would make the grep below fail the same way as "no match": require it.
   if [[ ! -d "$entry_dir" ]]; then
     compose_fail "chunk placement: ${entry_dir} does not exist, so the entry chunks were not checked"
   fi
-  grep -rlF -e "$WHO_MARKER" -e "$THEME_MARKER" -e "$PROJECT_MARKER" "$entry_dir" > /dev/null || entry_status=$?
+  grep -rlF -e "$WHO_MARKER" -e "$THEME_MARKER" -e "$PROJECT_MARKER" -e "$REGION_MARKER" "$entry_dir" > /dev/null || entry_status=$?
   if [[ "$entry_status" == '0' ]]; then
     compose_fail 'chunk placement: an injected component marker reached an entry chunk'
   fi
@@ -1068,10 +1107,59 @@ compose_stub_checks() {
   return 0
 }
 
+# Story 69.1: a contribution at a REGION point, opted in with `hostRoutes`, behaves like a standard
+# point's: it runs as the caller (SSR HTML and __data.json carry only the caller's own marker over
+# interleaved requests), never runs for an anonymous request, for a foreign project id (PV's own
+# notFound skips contribution loads) or for PV's own failure, and runs once for an own project.
+compose_fire_region_isolation() { # port suffix dir
+  local port="$1" suffix="$2" dir="$3" round pid user
+  local pids=()
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  for round in $(seq 1 "$ISOLATION_ROUNDS"); do
+    for user in u1 u2; do
+      curl -s -o "${dir}/${user}-${round}.body" -H "cookie: session=${user}" "http://127.0.0.1:${port}/projects/p-${user}${suffix}" &
+      pids+=($!)
+    done
+  done
+  for pid in "${pids[@]}"; do
+    wait "$pid" || compose_fail "a region isolation request (GET /projects/p-<user>${suffix}) did not complete"
+  done
+  return 0
+}
+
+compose_region_checks() {
+  local port="$1" dir="$WORK/region" status
+  fixture_stub reset > /dev/null
+  compose_fire_region_isolation "$port" '' "$dir/html"
+  compose_assert_isolation "$dir/html" 'region isolation (SSR HTML)' region
+  compose_fire_region_isolation "$port" /__data.json "$dir/data"
+  compose_assert_isolation "$dir/data" 'region isolation (__data.json)' region
+  fixture_expect_count inject-load-region $((ISOLATION_ROUNDS * 4))
+  fixture_stub reset > /dev/null
+  compose_expect_redirect "$port" GET /projects/p-u1 "$CM_ANON" 303 /login
+  compose_expect_data_redirect "$port" /projects/p-u1/__data.json "$CM_ANON" /login
+  status="$(compose_request "$port" GET /projects/p-u2 "$CM_U1")"
+  if [[ "$status" -ge 500 ]]; then
+    compose_fail "GET /projects/p-u2 as u1 (another org) answered HTTP ${status}, expected PV's not-found page"
+  fi
+  compose_body_lacks 'region:u1' 'foreign project id'
+  status="$(compose_request "$port" GET /projects/p-boom "$CM_U1")"
+  if [[ "$status" != '500' ]]; then
+    compose_fail "GET /projects/p-boom answered HTTP ${status}, expected 500 from PV's own load"
+  fi
+  fixture_expect_count inject-load-region 0
+  compose_expect_ok "$port" GET /projects/p-u1 "$CM_U1" 'region:u1'
+  fixture_expect_count inject-load-region 1
+  log 'OK: a region point fill ran as the caller (SSR HTML and __data.json, interleaved), never for an anonymous request, a foreign id or a failing PV load (counter 0), and once for an own project'
+  return 0
+}
+
 compose_session_injection_checks() {
   local port="$1"
   compose_stub_checks
   compose_isolation_checks "$port"
+  compose_region_checks "$port"
   compose_anonymous_counter_checks "$port"
   compose_cross_tenant_checks "$port"
   compose_chunk_checks

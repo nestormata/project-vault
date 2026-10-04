@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte'
   import { m } from '$lib/paraglide/messages.js'
   import { getDashboardEmptyStateCopy } from './dashboard-copy.js'
 
@@ -13,11 +14,16 @@
     hasServices = false,
     certificates = initialCard,
     domains = initialCard,
+    children,
   }: {
     hasCredentials?: boolean
     hasServices?: boolean
     certificates?: MonitoringCardInput
     domains?: MonitoringCardInput
+    /** Story 69.1: rendered as the first child of the grid (the `dashboard.home.monitoring` region
+     * point lives in `DashboardMonitoringSection`, which passes it here). It goes first, adjacent to
+     * the first block, so PV's own markup gains no whitespace text node. */
+    children?: Snippet
   } = $props()
 
   // Story 28.4 pluralization approach: no ICU/CLDR plural-selector machinery exists
@@ -33,7 +39,7 @@
 </script>
 
 <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Project coverage gaps">
-  {#if !hasCredentials}
+  {@render children?.()}{#if !hasCredentials}
     <article class="rounded-2xl border border-slate-200 bg-white p-4">
       <h2 class="font-semibold">{m.dashboard_secrets_label()}</h2>
       <p class="mt-2 text-sm text-slate-600">{getDashboardEmptyStateCopy().noCredentials}</p>

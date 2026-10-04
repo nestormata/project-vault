@@ -15,6 +15,8 @@ export interface CodegenInjection {
   actions: string | null
   routeId: string | null
   scope: string | null
+  /** Story 69.1: host routes (`<routeId>#<scope>`) a component-scoped contribution opted in to. */
+  hostRoutes?: readonly string[] | null
 }
 
 const LIB_PREFIX = 'src/lib/'
@@ -125,13 +127,47 @@ const HELPERS = [
   '  Object.entries(source).map(([name, run]) => [`${point}.${name}`, Object.freeze({ point, name, run })])',
 ].join('\n')
 
+function splitHostRoute(key: string): { routeId: string; scope: string } | null {
+  const hash = key.lastIndexOf('#')
+  return hash <= 0 ? null : { routeId: key.slice(0, hash), scope: key.slice(hash + 1) }
+}
+
+/** Story 69.1 (Q12 option B): a component-scoped region point has no route of its own; each host
+ * route a contribution opted in to gets the point in its `<routeId>#<scope>` table. Within one host
+ * table the point lists ALL its contributions (the point's `data` entries align with them), but only
+ * the ones that opted in to that host carry their load and actions. */
+function rowsForHost(list: readonly CodegenInjection[], host: string): CodegenInjection[] {
+  const target = splitHostRoute(host)
+  if (target === null) return []
+  return list.map((entry) => {
+    const optedIn = entry.hostRoutes?.includes(host) === true
+    return {
+      ...entry,
+      routeId: target.routeId,
+      scope: target.scope,
+      load: optedIn ? entry.load : null,
+      actions: optedIn ? entry.actions : null,
+    }
+  })
+}
+
+function withOptedInHosts(injections: readonly CodegenInjection[]): CodegenInjection[] {
+  return [...groupBy(injections, (entry) => entry.point).values()].flatMap((list) => {
+    if (list[0]?.scope !== 'component') return list
+    const hosts = [...new Set(list.flatMap((entry) => entry.hostRoutes ?? []))].sort((a, b) =>
+      a.localeCompare(b, 'en')
+    )
+    return hosts.flatMap((host) => rowsForHost(list, host))
+  })
+}
+
 /** `virtual:pv-inject-behavior`: the `loads` and `actions` tables PV's `injectLoad` and
  * `injectActions` read, keyed `<routeId>#<scope>`. Dispatch is by exact key on a null-prototype
  * object, so `__proto__` and `constructor` can never resolve to an inherited member. */
 export function generateBehaviorModule(injections: readonly CodegenInjection[]): string {
   // Every contribution at a routed point is listed (a point's `data` entries align with them), but
   // only files that carry behavior are imported.
-  const routable = injections.filter((entry) => behaviorKey(entry) !== null)
+  const routable = withOptedInHosts(injections).filter((entry) => behaviorKey(entry) !== null)
   const routed = groupBy(routable, (entry) => behaviorKey(entry) as string)
   const imports = new Imports()
   // Resolve the tables first so only files that are actually routed get imported.

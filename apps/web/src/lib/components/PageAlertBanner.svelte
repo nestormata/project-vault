@@ -5,19 +5,24 @@
   sensible to go back to (e.g. the dashboard's own sealed-vault state).
 -->
 <script lang="ts">
+  import type { Snippet } from 'svelte'
   import { resolve } from '$app/paths'
   import type { ProjectPath } from '$lib/app-paths.js'
 
+  // `children` (Story 69.1) is rendered last inside the banner: the dashboard's sealed-vault region
+  // puts its injection point there. A caller that passes none renders exactly what it did before.
   let {
     title,
     message,
     backHref,
     backLabel,
+    children,
   }: {
     title: string
     message: string
     backHref?: ProjectPath
     backLabel?: string
+    children?: Snippet
   } = $props()
 </script>
 
@@ -28,5 +33,5 @@
     <a class="mt-4 inline-block font-medium text-slate-950 underline" href={resolve(backHref)}>
       {backLabel}
     </a>
-  {/if}
+  {/if}{@render children?.()}
 </div>

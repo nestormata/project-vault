@@ -2,12 +2,14 @@
 // (`injection-points.ts`) is the single source of point names; this joins it with the files that
 // render each point (found with the Svelte parser, through the one shared route library) and writes
 // the file the composition kit already understands (`{ schemaVersion: 1, points: [{ name, file }] }`).
-// `kind`, `propsType`, `routeId` and `scope` are additive fields the kit ignores. Output is
+// `kind`, `propsType`, `routeId` and `scope` are additive fields the kit ignores, and so is `hostRoutes`
+// (Story 69.1, region points only) for a kit that predates the per-route opt-in. Output is
 // byte-deterministic: sorted by name in code-unit order, no timestamps, posix paths relative to the
 // package root.
 import { sortKeys } from '../../../packages/composition-kit/src/sort-keys.ts'
 import {
   readRegistryFields,
+  regionHostProblems,
   registryProblems,
   scanMarkup,
   type PointFile,
@@ -23,6 +25,9 @@ export interface InjectionPointEntry {
   propsType: string
   routeId?: string
   scope: PointScope
+  /** Story 69.1: for a region point (scope `component`), the page/layout routes that render it, as
+   * `<routeId>#<scope>`, derived from the import graph. The kit reads it for the per-route opt-in. */
+  hostRoutes?: string[]
 }
 
 export interface InjectionPointsManifest {
@@ -74,6 +79,8 @@ export function buildInjectionPointsManifest(webRoot: string): InjectionPointsMa
     [...registry].map(([name, fields]) => [name, fields.get('kind') ?? 'standard'])
   )
   problems.push(...registryProblems(markup, kinds, true))
+  const regionHosts = regionHostProblems(webRoot, registry, markup)
+  problems.push(...regionHosts.problems)
   const routeByFile = new Map(listRouteFiles(webRoot).routes.map((route) => [route.rel, route]))
   const points: InjectionPointEntry[] = []
   for (const [name, fields] of registry) {
@@ -85,6 +92,7 @@ export function buildInjectionPointsManifest(webRoot: string): InjectionPointsMa
       kind: fields.get('kind') ?? 'standard',
       propsType: fields.get('propsType') ?? '',
       ...scopeOf(file, fields, routeByFile),
+      ...(regionHosts.derived.has(name) ? { hostRoutes: regionHosts.derived.get(name) } : {}),
     })
   }
   points.sort((a, b) => compareCodeUnits(a.name, b.name))
