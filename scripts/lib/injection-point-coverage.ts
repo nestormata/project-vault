@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import ts from 'typescript'
-import { deriveRegionHosts } from './region-hosts.js'
+import { dataForwardingProblems, deriveRegionHosts } from './region-hosts.js'
 import {
   listRouteFiles,
   parseMarkup,
@@ -278,6 +278,7 @@ export function regionHostProblems(
   )
   const hostsByFile = deriveRegionHosts(webRoot, [...new Set(fileOf.values())])
   const result: RegionHosts = { problems: [], derived: new Map() }
+  result.problems.push(...dataForwardingProblems(webRoot, hostsByFile))
   for (const [name, fields] of regions) {
     const file = fileOf.get(name)
     if (file === undefined) continue

@@ -307,7 +307,9 @@ describe('check-injection-point-coverage: mutation self-tests (Story 68.4 AC-10)
 describe('check-injection-point-coverage: region points (Story 69.1)', () => {
   const REGION = 'foo.page.tiles'
   const REGION_FILE = 'src/lib/components/Tiles.svelte'
-  const REGION_IMPORT = "<script>import Tiles from '$lib/components/Tiles.svelte'</script>"
+  const REGION_IMPORT =
+    "<script>import Tiles from '$lib/components/Tiles.svelte'\n  let { data } = $props()</script>"
+  const FORWARDS = '<Tiles data={data.__inject} />'
   const HOST = '/(app)/foo#page'
 
   function regionTree(hosts = `'${HOST}'`): string {
@@ -319,7 +321,7 @@ describe('check-injection-point-coverage: region points (Story 69.1)', () => {
       REGISTRY,
       `export const INJECTION_POINTS = [\n${rows.join('\n')}\n  ...regionPoints('X', [${hosts}], ['${REGION}']),\n]\n`
     )
-    writeFixture(root, PAGE, `${REGION_IMPORT}\n${points('foo.page')}\n<Tiles />`)
+    writeFixture(root, PAGE, `${REGION_IMPORT}\n${points('foo.page')}\n${FORWARDS}`)
     writeFixture(root, PAGE_SERVER, PAGE_SERVER_OK)
     writeFixture(
       root,
@@ -399,6 +401,55 @@ describe('check-injection-point-coverage: region points (Story 69.1)', () => {
     expect(problemsOf(root).problems.join('\n')).toContain(
       `"${REGION}" is rendered by "${HOST}" (it imports ${REGION_FILE}) but the registry does not declare it`
     )
+  })
+
+  // Q1: every host route reaching a region component must hand it the page's `__inject` map, through
+  // every component in between (a region that is not given `data` would silently render data = null).
+  it('fails a host route that does not pass data to the region component', () => {
+    const root = regionTree()
+    writeFixture(root, PAGE, `${REGION_IMPORT}\n${points('foo.page')}\n<Tiles />`)
+    expect(problemsOf(root).problems.join('\n')).toContain(
+      `${PAGE} renders <Tiles> (${REGION_FILE}) without data={data.__inject}`
+    )
+  })
+
+  it('fails a host route that passes the whole page data instead of its __inject map', () => {
+    const root = regionTree()
+    writeFixture(root, PAGE, `${REGION_IMPORT}\n${points('foo.page')}\n<Tiles {data} />`)
+    expect(problemsOf(root).problems.join('\n')).toContain('without data={data.__inject}')
+  })
+
+  it('fails a component between the route and the region that does not forward data', () => {
+    const root = regionTree()
+    writeFixture(
+      root,
+      PAGE,
+      `<script>import Wrap from '$lib/components/Wrap.svelte'\n  let { data } = $props()</script>\n${points('foo.page')}\n<Wrap data={data.__inject} />`
+    )
+    writeFixture(
+      root,
+      'src/lib/components/Wrap.svelte',
+      "<script>import Tiles from './Tiles.svelte'</script><Tiles />"
+    )
+    const text = problemsOf(root).problems.join('\n')
+    expect(text).toContain('src/lib/components/Wrap.svelte renders <Tiles>')
+    expect(text).toContain('without passing data')
+    writeFixture(
+      root,
+      'src/lib/components/Wrap.svelte',
+      "<script>import Tiles from './Tiles.svelte'\n  let { data } = $props()</script><Tiles {data} />"
+    )
+    expect(problemsOf(root).problems).toEqual([])
+  })
+
+  it('accepts data={data?.__inject}', () => {
+    const root = regionTree()
+    writeFixture(
+      root,
+      PAGE,
+      `${REGION_IMPORT}\n${points('foo.page')}\n<Tiles data={data?.__inject} />`
+    )
+    expect(problemsOf(root).problems).toEqual([])
   })
 
   it('--lock: a composed tree skips the host route check (a CM override may drop the import)', () => {
