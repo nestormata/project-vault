@@ -144,7 +144,8 @@ test.describe('M3 region points on the credential detail page (Story 69.2)', () 
         maxRedirects: 0,
       })
     // the pack route allows three calls a minute: use them up, then the fill's own click is the 4th
-    for (let call = 0; call < 3; call += 1) expect((await probe()).status()).toBeLessThan(400)
+    const used = await Promise.all([probe(), probe(), probe()])
+    for (const response of used) expect(response.status()).toBeLessThan(400)
     await open(page, pathOf(projectId, credentialId), NOTE(page))
     const firstNonce = await NONCE(page).textContent()
     await page.getByRole('button', { name: 'Probe pack route' }).click()

@@ -104,10 +104,10 @@ describe('region point behavior on the credential detail page', () => {
         },
       })
     )
-    for (const sub of [`${ROUTE}/rotate`, `${ROUTE}/rotations/[rotationId]`]) {
-      expect(await injectLoad(event, sub, 'page')).toEqual({})
-      expect(injectActions(sub)).toBeUndefined()
-    }
+    const subRoutes = [`${ROUTE}/rotate`, `${ROUTE}/rotations/[rotationId]`]
+    const loaded = await Promise.all(subRoutes.map((sub) => injectLoad(event, sub, 'page')))
+    expect(loaded).toEqual([{}, {}])
+    expect(subRoutes.map((sub) => injectActions(sub))).toEqual([undefined, undefined])
   })
 
   it('a denied action result (fail 403) is the action result, unchanged', async () => {
@@ -229,11 +229,14 @@ describe('region point behavior on the credential detail page', () => {
         },
       })
     )
-    for (const own of [
+    const owns = [
       { credential: null, notFound: true },
       { credential: null, notFound: false, vaultSealed: true },
-    ]) {
-      const result = await withInjectedLoad(async () => own, ROUTE, 'page')(event)
+    ]
+    const results = await Promise.all(
+      owns.map((own) => withInjectedLoad(async () => own, ROUTE, 'page')(event))
+    )
+    for (const result of results) {
       expect(result.__inject).toEqual({ 'credential.detail.shares': [null] })
     }
     expect(runs).toBe(0)

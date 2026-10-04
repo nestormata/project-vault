@@ -492,8 +492,12 @@ describe("withInjectedLoad: PV's own load first, then the injected data", () => 
     it('a notFound and a vaultSealed result share one skip predicate', async () => {
       counter.ran = 0
       const { withInjectedLoad: wrap } = createInjectBehavior(sealedTables())
-      for (const own of [{ notFound: true }, { vaultSealed: true }]) {
-        const result = await wrap(async () => own, '/r', 'page')(event)
+      const results = await Promise.all(
+        [{ notFound: true }, { vaultSealed: true }].map((own) =>
+          wrap(async () => own, '/r', 'page')(event)
+        )
+      )
+      for (const result of results) {
         expect(result).toMatchObject({ __inject: { 'credential.detail.after': [null] } })
       }
       expect(counter.ran).toBe(0)
