@@ -704,12 +704,27 @@ describe('Story 68.10: the mock-ui-pack flavour of the e2e stack', () => {
   it('gates the fault service behind a profile so `up` never starts it and rebinds ports to loopback', () => {
     const text = repoText(MOCK_PACK_COMPOSE)
     expect(text).toMatch(/api-faulty:\n\s+profiles: \['fault'\]/)
-    expect(text).toContain('MOCK_UI_PACK_BOOT_FAULT: missing-target')
+    // the mode and the required flag are variables the script exports for ONE run (validated there)
+    expect(text).toContain('MOCK_UI_PACK_BOOT_FAULT: ${E2E_FAULT_MODE:-missing-target}')
+    expect(text).toContain('VAULT_EXTENSIONS_REQUIRED: ${E2E_FAULT_REQUIRED:-true}')
     for (const name of ['API_HOST_PORT', 'WEB_HOST_PORT', 'DB_HOST_PORT']) {
       expect(text).toContain(`'127.0.0.1:\${${name}:?`)
     }
     // only the one-shot services are exempt from the failed-container check
     expect(repoText(SCRIPT)).toContain('ONE_SHOT_SERVICES=" migrate admin-provision "')
+  })
+
+  it('fault validates its mode and its required flag against fixed lists before anything else', () => {
+    const badMode = runScript(['fault', 'open-everything'], { [FLAVOR_ENV]: MOCK_PACK_FLAVOR })
+    expect(badMode.status).toBe(1)
+    expect(badMode.stderr).toContain('unknown fault mode: open-everything')
+    const badRequired = runScript(['fault', 'above-host', 'maybe'], {
+      [FLAVOR_ENV]: MOCK_PACK_FLAVOR,
+    })
+    expect(badRequired.status).toBe(1)
+    expect(badRequired.stderr).toContain('required must be true or false')
+    // the script itself never names the fault knob: only the compose override does
+    expect(repoText(SCRIPT)).not.toContain('MOCK_UI_PACK_BOOT_FAULT')
   })
 
   it('plan prints per-run distinct ports, a localhost origin and a unique project name, no secrets', () => {

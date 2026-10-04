@@ -9,7 +9,6 @@
 // Option chosen for (b): `node build/index.js` from the freshly built `apps/web/build` with the
 // fixture API stub, the cheapest of the two options of the story (no second Docker image).
 import { type ChildProcess, spawn } from 'node:child_process'
-import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -22,15 +21,21 @@ import {
   emptyVirtualModuleProblems,
   recordedResponseOf,
   virtualRegions,
+  type RecordedResponse,
   type ResponseSnapshot,
 } from './lib/pv-cm-free-build.js'
+import { readOverlayFile, walkFiles } from './lib/scan-utils.js'
 import { resolveBin } from './lib/trusted-executable.js'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const WEB = join(repositoryRoot, 'apps/web')
 const BUILD = join(WEB, 'build')
 const STUB = join(repositoryRoot, 'scripts/web-host-consumer-fixture/api-stub.mjs')
-const EXPECTED = join(repositoryRoot, 'scripts/web-host-consumer-fixture/pv-responses.main.json')
+// The committed `main` snapshot, read through Vite (no dynamic fs path in the test).
+const EXPECTED_SNAPSHOT: Record<string, string> = import.meta.glob(
+  './web-host-consumer-fixture/pv-responses.main.json',
+  { query: '?raw', import: 'default', eager: true }
+)
 const BUILD_TIMEOUT_MS = 10 * 60_000
 const SHELL_HEAD = 'virtual:pv-inject/shell.head'
 const SERVER_HOOKS = 'virtual:pv-hooks/server'
@@ -123,7 +128,7 @@ describe('control group self-tests: a deliberate change turns the check red (AC-
   })
 
   it('covers the same 13 requests as the packed-consumer recording', () => {
-    const snapshot = JSON.parse(readFileSync(EXPECTED, 'utf8')) as ResponseSnapshot
+    const snapshot = JSON.parse(Object.values(EXPECTED_SNAPSHOT)[0] ?? '') as ResponseSnapshot
     expect(PV_RESPONSE_CASES.map((entry) => entry.split(' ')[0]).toSorted()).toEqual(
       Object.keys(snapshot.responses).toSorted()
     )
@@ -161,15 +166,18 @@ function run(command: string, args: string[], cwd: string): Promise<void> {
   })
 }
 
+/** Every file of the built output with `suffix`, path relative to the build directory -> text. The
+ * walk and the read go through the repository's shared scan helpers (the one place that touches
+ * the filesystem), and an unreadable file fails the test instead of reading as empty. */
 function readTree(dir: string, suffix: string): Record<string, string> {
-  const files: Record<string, string> = {}
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry)
-    if (statSync(full).isDirectory()) Object.assign(files, readTree(full, suffix))
-    else if (entry.endsWith(suffix))
-      files[full.slice(BUILD.length + 1)] = readFileSync(full, 'utf8')
-  }
-  return files
+  const files = walkFiles(dir, (file) => file.endsWith(suffix))
+  return Object.fromEntries(
+    files.map((file) => {
+      const text = readOverlayFile(dir, file)
+      if (text === undefined) throw new Error(`cannot read the built file ${file}`)
+      return [file.slice(BUILD.length + 1), text]
+    })
+  )
 }
 
 const children: ChildProcess[] = []
@@ -234,8 +242,8 @@ describe("PV's own CM-free build is the control group (Story 68.10 AC-9)", () =>
   })
 
   it("(b) the responses of PV's own built server equal the main snapshot", async () => {
-    const expected = JSON.parse(readFileSync(EXPECTED, 'utf8')) as ResponseSnapshot
-    const responses: ResponseSnapshot['responses'] = {}
+    const expected = JSON.parse(Object.values(EXPECTED_SNAPSHOT)[0] ?? '') as ResponseSnapshot
+    const recorded: [string, RecordedResponse][] = []
     for (const entry of PV_RESPONSE_CASES) {
       const [name = '', method = 'GET', path = '/', cookie = '-', vault = 'ready'] =
         entry.split(' ')
@@ -251,16 +259,15 @@ describe("PV's own CM-free build is the control group (Story 68.10 AC-9)", () =>
         redirect: 'manual',
       })
       await response.arrayBuffer()
-      responses[name] = recordedResponseOf(
-        response.status,
-        response.headers,
-        response.headers.getSetCookie()
-      )
+      recorded.push([
+        name,
+        recordedResponseOf(response.status, response.headers, response.headers.getSetCookie()),
+      ])
     }
     await fetch(`http://127.0.0.1:${apiPort}/__fixture/vault/ready`)
     await new Promise((r) => setTimeout(r, 500))
     const actual: ResponseSnapshot = {
-      responses,
+      responses: Object.fromEntries(recorded),
       kitDefaultErrorLogged: serverOutput.includes('[404] GET /nonexistent'),
     }
     expect(diffResponseSnapshots(expected, actual)).toEqual([])

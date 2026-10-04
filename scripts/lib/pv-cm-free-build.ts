@@ -14,12 +14,15 @@ const EMPTY_POINT = /^var [\w$]+ = \[\];/
 const EMPTY_BEHAVIOR =
   /^var loads[\w$]* = Object\.freeze\(Object\.create\(null\)\); var actions[\w$]* = Object\.freeze\(Object\.create\(null\)\);/
 const EMPTY_HOOKS = /^var hooks[\w$]* = Object\.freeze\(\{\}\);/
+// Story 68.7: PV's own nav delta is the empty object (identity: PV's nav renders unchanged).
+const EMPTY_NAV = /^var _virtual_pv_nav_default = \{\};$/
 const EMPTY_SERVER_HOOKS =
   /^var hooks[\w$]* = Object\.freeze\(\{\}\); var protectedPaths[\w$]* = Object\.freeze\(\{ routeIds: \[\], add: \[\], remove: \[\] \}\);/
 
 const POINT_PREFIX = 'virtual:pv-inject/'
 const BEHAVIOR_ID = 'virtual:pv-inject-behavior'
 const HOOKS_PREFIX = 'virtual:pv-hooks/'
+const NAV_ID = 'virtual:pv-nav'
 
 export interface VirtualRegion {
   id: string
@@ -32,14 +35,13 @@ export function virtualRegions(files: Readonly<Record<string, string>>): Virtual
   const found: VirtualRegion[] = []
   for (const [file, text] of Object.entries(files)) {
     const lines = text.split('\n')
-    for (let index = 0; index < lines.length; index += 1) {
-      const id = REGION_OPEN.exec(lines[index] ?? '')?.[1]
+    for (const [index, line] of lines.entries()) {
+      const id = REGION_OPEN.exec(line)?.[1]
       if (id === undefined) continue
-      const body: string[] = []
-      for (let at = index + 1; at < lines.length && lines[at] !== REGION_CLOSE; at += 1) {
-        const line = (lines[at] ?? '').trim()
-        if (line !== '') body.push(line)
-      }
+      const rest = lines.slice(index + 1)
+      const close = rest.indexOf(REGION_CLOSE)
+      const inner = close === -1 ? rest : rest.slice(0, close)
+      const body = inner.map((text) => text.trim()).filter((text) => text !== '')
       found.push({ id, file, body: body.join(' ') })
     }
   }
@@ -48,6 +50,7 @@ export function virtualRegions(files: Readonly<Record<string, string>>): Virtual
 
 function expectedShape(id: string): RegExp | null {
   if (id === BEHAVIOR_ID) return EMPTY_BEHAVIOR
+  if (id === NAV_ID) return EMPTY_NAV
   if (id.startsWith(POINT_PREFIX)) return EMPTY_POINT
   if (id === `${HOOKS_PREFIX}server`) return EMPTY_SERVER_HOOKS
   if (id === `${HOOKS_PREFIX}universal` || id === `${HOOKS_PREFIX}client`) return EMPTY_HOOKS
@@ -133,11 +136,12 @@ export function recordedResponseOf(
   headers: Headers,
   setCookie: string[]
 ): RecordedResponse {
-  const kept: Record<string, string> = {}
-  for (const name of KEPT_HEADERS) {
-    const value = headers.get(name)
-    if (value !== null) kept[name] = value
-  }
+  const kept = Object.fromEntries(
+    KEPT_HEADERS.flatMap((name) => {
+      const value = headers.get(name)
+      return value === null ? [] : [[name, value] as const]
+    })
+  )
   return { status, headers: kept, setCookie }
 }
 
@@ -145,11 +149,13 @@ function diffResponse(name: string, want: RecordedResponse, got: RecordedRespons
   const lines: string[] = []
   if (want.status !== got.status)
     lines.push(`${name}: status ${got.status}, expected ${want.status}`)
-  const keys = new Set([...Object.keys(want.headers), ...Object.keys(got.headers)])
+  const wantHeaders = new Map(Object.entries(want.headers))
+  const gotHeaders = new Map(Object.entries(got.headers))
+  const keys = new Set([...wantHeaders.keys(), ...gotHeaders.keys()])
   for (const key of [...keys].toSorted()) {
-    if (want.headers[key] !== got.headers[key]) {
+    if (wantHeaders.get(key) !== gotHeaders.get(key)) {
       lines.push(
-        `${name}: header ${key} is ${JSON.stringify(got.headers[key] ?? null)}, expected ${JSON.stringify(want.headers[key] ?? null)}`
+        `${name}: header ${key} is ${JSON.stringify(gotHeaders.get(key) ?? null)}, expected ${JSON.stringify(wantHeaders.get(key) ?? null)}`
       )
     }
   }
@@ -166,10 +172,12 @@ export function diffResponseSnapshots(
   actual: ResponseSnapshot
 ): string[] {
   const lines: string[] = []
-  const names = new Set([...Object.keys(expected.responses), ...Object.keys(actual.responses)])
+  const wanted = new Map(Object.entries(expected.responses))
+  const recorded = new Map(Object.entries(actual.responses))
+  const names = new Set([...wanted.keys(), ...recorded.keys()])
   for (const name of [...names].toSorted()) {
-    const want = expected.responses[name]
-    const got = actual.responses[name]
+    const want = wanted.get(name)
+    const got = recorded.get(name)
     if (want === undefined || got === undefined) {
       lines.push(`${name}: ${want === undefined ? 'not in the snapshot' : 'not recorded'}`)
     } else {

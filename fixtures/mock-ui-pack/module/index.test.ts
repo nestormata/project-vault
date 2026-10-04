@@ -11,6 +11,7 @@ const PROJECT_ROUTE = `GET ${PROJECT_URL}`
 const CREATE_DOCUMENT = 'POST /api/v1/cm/documents'
 const REPLACED_ROUTE = 'GET /api/v1/users/me'
 const HEAD_ROUTE = `HEAD ${PROJECT_URL}`
+const MAINTENANCE_ROUTE = 'GET /api/v1/platform/maintenance-mode'
 const MISSING_ROUTE = 'GET /api/v1/mock-ui-pack-no-such-route'
 
 type Handler = (...args: unknown[]) => Promise<unknown>
@@ -54,6 +55,10 @@ describe('mock-ui-pack module pack (Story 68.10 AC-1 M7, AC-7)', () => {
     expect(byKey.get(HEAD_ROUTE)).toMatchObject({ mode: 'replace' })
     expect(byKey.get(REPLACED_ROUTE)).toMatchObject({ mode: 'replace' })
     expect(byKey.get(REPLACED_ROUTE)?.replaceSecurity).toBeUndefined()
+    // a PV route with its own limiter is replaced without declaring security: PV's limiter stays
+    expect(byKey.get(MAINTENANCE_ROUTE)).toMatchObject({ mode: 'replace' })
+    expect(byKey.get(MAINTENANCE_ROUTE)?.replaceSecurity).toBeUndefined()
+    expect(byKey.get(MAINTENANCE_ROUTE)?.security).toBeUndefined()
     // exactly two security declarations, one loosening and one tightening (never silent)
     const replaced = override.filter((entry) => entry.replaceSecurity === true)
     expect(replaced.map((entry) => `${entry.method} ${entry.url}`).sort()).toEqual([
@@ -132,6 +137,7 @@ describe('mock-ui-pack module pack (Story 68.10 AC-1 M7, AC-7)', () => {
       ['GET /api/v1/cm/own-capability', { data: 'mock-ui-pack:m7-capability-ok' }],
       ['GET /api/v1/cm/limited', { data: 'mock-ui-pack:m7-limited-ok' }],
       [REPLACED_ROUTE, { data: { cm: 'mock-ui-pack:m7-replaced' } }],
+      [MAINTENANCE_ROUTE, { data: { cm: 'mock-ui-pack:m7-maintenance-replaced' } }],
       ['POST /api/v1/auth/cli-login', { cm: 'mock-ui-pack:m7-loosened' }],
       ['GET /api/v1/capabilities', { data: { capabilities: {} } }],
     ]
@@ -157,6 +163,15 @@ describe('mock-ui-pack module pack (Story 68.10 AC-1 M7, AC-7)', () => {
     // the hooks implement the faulty route too, so the failure is the missing PV target
     const routes = extension.hooksFactory().apiRoutes?.routes ?? {}
     expect(Object.keys(routes)).toContain(MISSING_ROUTE)
+  })
+
+  it('the above-host fault only raises the manifest version (a negotiation failure, no route change)', () => {
+    const before = extension.manifest
+    vi.stubEnv(BOOT_FAULT_ENV, 'above-host')
+    const faulty = extension.manifest
+    expect(faulty.apiVersion).toBe('3.99.0')
+    expect(before.apiVersion).not.toBe(faulty.apiVersion)
+    expect(faulty.apiRoutes).toEqual(before.apiRoutes)
   })
 
   it('an unknown fault value is ignored (the switch can only make boot fail, never open anything)', () => {

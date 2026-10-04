@@ -1,0 +1,546 @@
+{
+  "delta": 1,
+  "ids": [
+    {
+      "conditional": false,
+      "id": "account.sign-out",
+      "parent": null,
+      "surface": "account"
+    },
+    {
+      "conditional": false,
+      "id": "auth.links.login.recovery",
+      "parent": null,
+      "surface": "auth.links"
+    },
+    {
+      "conditional": false,
+      "id": "auth.links.login.register",
+      "parent": null,
+      "surface": "auth.links"
+    },
+    {
+      "conditional": false,
+      "id": "auth.links.recovery.login",
+      "parent": null,
+      "surface": "auth.links"
+    },
+    {
+      "conditional": false,
+      "id": "auth.links.register.login",
+      "parent": null,
+      "surface": "auth.links"
+    },
+    {
+      "conditional": false,
+      "id": "back.project.certificate",
+      "parent": null,
+      "surface": "back"
+    },
+    {
+      "conditional": false,
+      "id": "back.project.credential",
+      "parent": null,
+      "surface": "back"
+    },
+    {
+      "conditional": false,
+      "id": "back.project.credentials.import",
+      "parent": null,
+      "surface": "back"
+    },
+    {
+      "conditional": false,
+      "id": "back.project.domain",
+      "parent": null,
+      "surface": "back"
+    },
+    {
+      "conditional": false,
+      "id": "back.project.machine-user",
+      "parent": null,
+      "surface": "back"
+    },
+    {
+      "conditional": false,
+      "id": "back.project.machine-users",
+      "parent": null,
+      "surface": "back"
+    },
+    {
+      "conditional": false,
+      "id": "back.project.rotation",
+      "parent": null,
+      "surface": "back"
+    },
+    {
+      "conditional": false,
+      "id": "back.project.service",
+      "parent": null,
+      "surface": "back"
+    },
+    {
+      "conditional": false,
+      "id": "back.project.service-endpoint",
+      "parent": null,
+      "surface": "back"
+    },
+    {
+      "conditional": false,
+      "id": "back.settings.audit.access-report",
+      "parent": null,
+      "surface": "back"
+    },
+    {
+      "conditional": false,
+      "id": "back.settings.audit.forwarding",
+      "parent": null,
+      "surface": "back"
+    },
+    {
+      "conditional": false,
+      "id": "back.settings.language",
+      "parent": null,
+      "surface": "back"
+    },
+    {
+      "conditional": false,
+      "id": "back.settings.notifications",
+      "parent": null,
+      "surface": "back"
+    },
+    {
+      "conditional": false,
+      "id": "back.settings.security",
+      "parent": null,
+      "surface": "back"
+    },
+    {
+      "conditional": false,
+      "id": "back.settings.themes",
+      "parent": null,
+      "surface": "back"
+    },
+    {
+      "conditional": false,
+      "id": "back.settings.users.erasure",
+      "parent": null,
+      "surface": "back"
+    },
+    {
+      "conditional": false,
+      "id": "breadcrumbs.platform",
+      "parent": null,
+      "surface": "breadcrumbs"
+    },
+    {
+      "conditional": false,
+      "id": "breadcrumbs.platform.audit",
+      "parent": "breadcrumbs.platform",
+      "surface": "breadcrumbs"
+    },
+    {
+      "conditional": false,
+      "id": "breadcrumbs.platform.backups",
+      "parent": "breadcrumbs.platform",
+      "surface": "breadcrumbs"
+    },
+    {
+      "conditional": false,
+      "id": "breadcrumbs.platform.settings",
+      "parent": "breadcrumbs.platform",
+      "surface": "breadcrumbs"
+    },
+    {
+      "conditional": false,
+      "id": "breadcrumbs.platform.settings.orgs",
+      "parent": "breadcrumbs.platform.settings",
+      "surface": "breadcrumbs"
+    },
+    {
+      "conditional": false,
+      "id": "breadcrumbs.platform.settings.resource-usage",
+      "parent": "breadcrumbs.platform.settings",
+      "surface": "breadcrumbs"
+    },
+    {
+      "conditional": false,
+      "id": "breadcrumbs.platform.upgrade",
+      "parent": "breadcrumbs.platform",
+      "surface": "breadcrumbs"
+    },
+    {
+      "conditional": false,
+      "id": "error.nav.back",
+      "parent": null,
+      "surface": "error.nav"
+    },
+    {
+      "conditional": false,
+      "id": "footer.github",
+      "parent": null,
+      "surface": "footer"
+    },
+    {
+      "conditional": false,
+      "id": "footer.license",
+      "parent": null,
+      "surface": "footer"
+    },
+    {
+      "conditional": false,
+      "id": "notifications.tabs.all",
+      "parent": null,
+      "surface": "notifications.tabs"
+    },
+    {
+      "conditional": false,
+      "id": "notifications.tabs.read",
+      "parent": null,
+      "surface": "notifications.tabs"
+    },
+    {
+      "conditional": false,
+      "id": "notifications.tabs.unread",
+      "parent": null,
+      "surface": "notifications.tabs"
+    },
+    {
+      "conditional": false,
+      "id": "platform.index.audit",
+      "parent": null,
+      "surface": "platform.index"
+    },
+    {
+      "conditional": false,
+      "id": "platform.index.backups",
+      "parent": null,
+      "surface": "platform.index"
+    },
+    {
+      "conditional": false,
+      "id": "platform.index.settings",
+      "parent": null,
+      "surface": "platform.index"
+    },
+    {
+      "conditional": false,
+      "id": "platform.index.upgrade",
+      "parent": null,
+      "surface": "platform.index"
+    },
+    {
+      "conditional": false,
+      "id": "platform.settings.links.orgs",
+      "parent": null,
+      "surface": "platform.settings.links"
+    },
+    {
+      "conditional": false,
+      "id": "platform.settings.links.resource-usage",
+      "parent": null,
+      "surface": "platform.settings.links"
+    },
+    {
+      "conditional": false,
+      "id": "primary.dashboard",
+      "parent": null,
+      "surface": "primary"
+    },
+    {
+      "conditional": true,
+      "id": "primary.extension-panel",
+      "parent": null,
+      "surface": "primary"
+    },
+    {
+      "conditional": false,
+      "id": "primary.health",
+      "parent": null,
+      "surface": "primary"
+    },
+    {
+      "conditional": false,
+      "id": "primary.notifications",
+      "parent": null,
+      "surface": "primary"
+    },
+    {
+      "conditional": true,
+      "id": "primary.platform",
+      "parent": null,
+      "surface": "primary"
+    },
+    {
+      "conditional": false,
+      "id": "primary.projects",
+      "parent": null,
+      "surface": "primary"
+    },
+    {
+      "conditional": false,
+      "id": "primary.search",
+      "parent": null,
+      "surface": "primary"
+    },
+    {
+      "conditional": false,
+      "id": "primary.secrets",
+      "parent": null,
+      "surface": "primary"
+    },
+    {
+      "conditional": false,
+      "id": "primary.settings",
+      "parent": null,
+      "surface": "primary"
+    },
+    {
+      "conditional": false,
+      "id": "project.certificates",
+      "parent": null,
+      "surface": "project"
+    },
+    {
+      "conditional": false,
+      "id": "project.domains",
+      "parent": null,
+      "surface": "project"
+    },
+    {
+      "conditional": true,
+      "id": "project.endpoints",
+      "parent": null,
+      "surface": "project"
+    },
+    {
+      "conditional": false,
+      "id": "project.machine-users",
+      "parent": null,
+      "surface": "project"
+    },
+    {
+      "conditional": false,
+      "id": "project.members",
+      "parent": null,
+      "surface": "project"
+    },
+    {
+      "conditional": false,
+      "id": "project.overview",
+      "parent": null,
+      "surface": "project"
+    },
+    {
+      "conditional": false,
+      "id": "project.secrets",
+      "parent": null,
+      "surface": "project"
+    },
+    {
+      "conditional": false,
+      "id": "project.services",
+      "parent": null,
+      "surface": "project"
+    },
+    {
+      "conditional": false,
+      "id": "project.status-page",
+      "parent": null,
+      "surface": "project"
+    },
+    {
+      "conditional": false,
+      "id": "settings.audit.links.access-report",
+      "parent": null,
+      "surface": "settings.audit.links"
+    },
+    {
+      "conditional": false,
+      "id": "settings.audit.links.forwarding",
+      "parent": null,
+      "surface": "settings.audit.links"
+    },
+    {
+      "conditional": false,
+      "id": "settings.index.audit",
+      "parent": null,
+      "surface": "settings.index"
+    },
+    {
+      "conditional": false,
+      "id": "settings.index.extensions",
+      "parent": null,
+      "surface": "settings.index"
+    },
+    {
+      "conditional": false,
+      "id": "settings.index.external-identities",
+      "parent": null,
+      "surface": "settings.index"
+    },
+    {
+      "conditional": false,
+      "id": "settings.index.language",
+      "parent": null,
+      "surface": "settings.index"
+    },
+    {
+      "conditional": false,
+      "id": "settings.index.notifications",
+      "parent": null,
+      "surface": "settings.index"
+    },
+    {
+      "conditional": false,
+      "id": "settings.index.security",
+      "parent": null,
+      "surface": "settings.index"
+    },
+    {
+      "conditional": false,
+      "id": "settings.index.sso-domains",
+      "parent": null,
+      "surface": "settings.index"
+    },
+    {
+      "conditional": false,
+      "id": "settings.index.themes",
+      "parent": null,
+      "surface": "settings.index"
+    },
+    {
+      "conditional": false,
+      "id": "settings.index.users",
+      "parent": null,
+      "surface": "settings.index"
+    },
+    {
+      "conditional": false,
+      "id": "shell.brand.home",
+      "parent": null,
+      "surface": "shell.brand"
+    },
+    {
+      "conditional": false,
+      "id": "shell.mfa-banner.security",
+      "parent": null,
+      "surface": "shell.mfa-banner"
+    },
+    {
+      "conditional": false,
+      "id": "shell.utility.notifications",
+      "parent": null,
+      "surface": "shell.utility"
+    }
+  ],
+  "schemaVersion": 1,
+  "surfaces": [
+    {
+      "contextKeys": [
+        "user"
+      ],
+      "file": "src/lib/components/shell/ShellAccount.svelte",
+      "id": "account"
+    },
+    {
+      "contextKeys": [],
+      "file": "src/lib/navigation/NavLink.svelte",
+      "id": "auth.links"
+    },
+    {
+      "contextKeys": [
+        "projectId",
+        "credentialId"
+      ],
+      "file": "src/lib/navigation/NavLink.svelte",
+      "id": "back"
+    },
+    {
+      "contextKeys": [
+        "node"
+      ],
+      "file": "src/lib/navigation/Breadcrumbs.svelte",
+      "id": "breadcrumbs"
+    },
+    {
+      "contextKeys": [
+        "authenticated"
+      ],
+      "file": "src/routes/+error.svelte",
+      "id": "error.nav"
+    },
+    {
+      "contextKeys": [],
+      "file": "src/lib/components/shell/Footer.svelte",
+      "id": "footer"
+    },
+    {
+      "contextKeys": [
+        "status"
+      ],
+      "file": "src/lib/navigation/NavTabs.svelte",
+      "id": "notifications.tabs"
+    },
+    {
+      "contextKeys": [],
+      "file": "src/lib/navigation/NavCards.svelte",
+      "id": "platform.index"
+    },
+    {
+      "contextKeys": [],
+      "file": "src/lib/navigation/NavLinkRow.svelte",
+      "id": "platform.settings.links"
+    },
+    {
+      "contextKeys": [
+        "user",
+        "hasUiPanelExtension",
+        "pathname"
+      ],
+      "file": "src/lib/components/shell/PrimaryNav.svelte",
+      "id": "primary"
+    },
+    {
+      "contextKeys": [
+        "projectId",
+        "orgRole",
+        "pathname"
+      ],
+      "file": "src/lib/components/shell/ProjectNav.svelte",
+      "id": "project"
+    },
+    {
+      "contextKeys": [],
+      "file": "src/lib/navigation/NavLinkRow.svelte",
+      "id": "settings.audit.links"
+    },
+    {
+      "contextKeys": [],
+      "file": "src/lib/navigation/NavCards.svelte",
+      "id": "settings.index"
+    },
+    {
+      "contextKeys": [
+        "hidePrimaryNav"
+      ],
+      "file": "src/lib/components/shell/ShellBrand.svelte",
+      "id": "shell.brand"
+    },
+    {
+      "contextKeys": [
+        "bannerMessage"
+      ],
+      "file": "src/lib/components/shell/AppShell.svelte",
+      "id": "shell.mfa-banner"
+    },
+    {
+      "contextKeys": [
+        "unreadCount",
+        "pathname"
+      ],
+      "file": "src/lib/components/shell/NotificationsLink.svelte",
+      "id": "shell.utility"
+    }
+  ]
+}

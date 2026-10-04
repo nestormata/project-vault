@@ -49,6 +49,8 @@ services:
     build: !reset null
     environment:
       VAULT_EXTENSIONS_PACKAGE: '@project-vault/mock-ui-pack'
-      VAULT_EXTENSIONS_REQUIRED: 'true'
-      MOCK_UI_PACK_BOOT_FAULT: missing-target
+      # scripts/e2e-stack.sh `fault` / `fault-optional` export these two for ONE run (validated against
+      # fixed lists there); the defaults are the fail-closed boot proof.
+      VAULT_EXTENSIONS_REQUIRED: ${E2E_FAULT_REQUIRED:-true}
+      MOCK_UI_PACK_BOOT_FAULT: ${E2E_FAULT_MODE:-missing-target}
     ports: !reset []

@@ -6,7 +6,7 @@ import type {
   PlaywrightWorkerArgs,
 } from '@playwright/test'
 import { expect } from '@playwright/test'
-import { registerAndLoginViaApi } from '../fixtures/auth.js'
+import { seedRegisterAndLogin } from './seed-guard.js'
 import postgres from 'postgres'
 import { superuserDatabaseUrl } from '../fixtures/db.js'
 import { gotoHydrated } from '../fixtures/hydration.js'
@@ -36,11 +36,10 @@ export type SeededUser = { userId: string; orgId: string; email: string }
  * the session cookie) and completes onboarding. */
 export async function seedOrgOwner(context: BrowserContext, label: string): Promise<SeededUser> {
   const email = uniqueEmail(`mock-${label}`)
-  const { userId, orgId } = await registerAndLoginViaApi(context, {
-    email,
-    password: testPassword,
-    orgName: uniqueOrgName(`Mock ${label}`),
-  })
+  const { userId, orgId } = await seedRegisterAndLogin(
+    (route, data) => context.request.post(route, { data }),
+    { email, password: testPassword, orgName: uniqueOrgName(`Mock ${label}`) }
+  )
   return { userId, orgId, email }
 }
 
@@ -91,6 +90,22 @@ export async function countAuditEvents(orgId: string, eventType: string): Promis
       where org_id = ${orgId} and event_type = ${eventType}
     `
     return row?.count ?? 0
+  } finally {
+    await sql.end({ timeout: 5 })
+  }
+}
+
+/** Ends the MFA enrollment grace period of one membership (setup-only SQL on the disposable e2e
+ * database, like the platform-operator promotion): a fresh owner is inside the grace period, so PV's
+ * `requireMfa` lets them through until it ends. Nothing about PV's own check is bypassed. */
+export async function endMfaGracePeriod(orgId: string, userId: string): Promise<void> {
+  const sql = postgres(superuserDatabaseUrl(), { max: 1 })
+  try {
+    const updated = await sql`
+      update org_memberships set grace_period_expires_at = now() - interval '1 day'
+      where org_id = ${orgId} and user_id = ${userId}
+    `
+    if (updated.count !== 1) throw new Error('endMfaGracePeriod: expected exactly one membership')
   } finally {
     await sql.end({ timeout: 5 })
   }

@@ -25,6 +25,7 @@
 #   scripts/e2e-stack.sh plan       print WEB/API/DB_HOST_PORT, PUBLIC_WEB_ORIGIN, COMPOSE_PROJECT_NAME
 #   scripts/e2e-stack.sh down       `docker compose down -v --remove-orphans` for that project
 #   scripts/e2e-stack.sh fault      run the profile-gated api-faulty once (fail-closed boot proof)
+#   scripts/e2e-stack.sh fault-optional   the contained-fault edge (REQUIRED=false keeps the API up)
 #
 # Gotcha (D-2): never run `docker compose … up` for this stack outside this script. Without the
 # secrets exported, compose falls back to the dev literals and the recreated api dies at boot.
@@ -248,19 +249,60 @@ remove_fault_capture() {
   compose --profile fault rm -f -s api-faulty >/dev/null 2>&1 || true
 }
 
+# `fault [mode] [required]`: mode is `missing-target` (a wrap of a PV route that does not exist: a drift,
+# which fails the boot whatever VAULT_EXTENSIONS_REQUIRED says) or `above-host` (a manifest version above
+# the host's: a load failure that VAULT_EXTENSIONS_REQUIRED=false contains); required is `true` or
+# `false`. Both are validated against fixed lists, never passed through unchecked.
+fault_args() {
+  FAULT_MODE="${1:-missing-target}"
+  FAULT_REQUIRED="${2:-true}"
+  case "$FAULT_MODE" in missing-target | above-host) ;; *) die "unknown fault mode: $FAULT_MODE" ;; esac
+  case "$FAULT_REQUIRED" in true | false) ;; *) die "required must be true or false" ;; esac
+}
+
 cmd_fault() {
   local seconds status=0
+  fault_args "$@"
   require_flavor_inputs
   [[ "$FLAVOR" == "mock-ui-pack" ]] || die "fault needs E2E_STACK_FLAVOR=mock-ui-pack"
   seconds="$(positive_int E2E_FAULT_TIMEOUT_SECONDS "${E2E_FAULT_TIMEOUT_SECONDS:-60}")"
   prepare_secrets
   FAULT_OUT="$(mktemp)"
   trap remove_fault_capture EXIT
+  export E2E_FAULT_MODE="$FAULT_MODE" E2E_FAULT_REQUIRED="$FAULT_REQUIRED"
   timeout "$seconds" docker compose "${COMPOSE_FILES[@]}" --profile fault run --rm --no-deps api-faulty \
     >"$FAULT_OUT" 2>&1 || status=$?
   redact <"$FAULT_OUT"
-  say "fault exit=$status"
+  say "fault mode=$FAULT_MODE required=$FAULT_REQUIRED exit=$status"
   [[ "$status" -ne 0 ]]
+}
+
+# The contained-fault edge: the same image with VAULT_EXTENSIONS_REQUIRED=false and a load failure
+# (`above-host`) must STAY UP (the bounded run ends by the timeout, status 124) and log that the API
+# continues without the extension. Exit 0 when both hold. The container has a fixed name so the run
+# can be removed after the timeout killed the client.
+FAULT_OPTIONAL_NAME=""
+remove_fault_optional() {
+  if [[ -n "$FAULT_OUT" ]]; then rm -f "$FAULT_OUT"; fi
+  if [[ -n "$FAULT_OPTIONAL_NAME" ]]; then docker rm -f "$FAULT_OPTIONAL_NAME" >/dev/null 2>&1 || true; fi
+}
+
+cmd_fault_optional() {
+  local seconds status=0
+  require_flavor_inputs
+  [[ "$FLAVOR" == "mock-ui-pack" ]] || die "fault-optional needs E2E_STACK_FLAVOR=mock-ui-pack"
+  seconds="$(positive_int E2E_FAULT_OPTIONAL_SECONDS "${E2E_FAULT_OPTIONAL_SECONDS:-30}")"
+  prepare_secrets
+  FAULT_OUT="$(mktemp)"
+  FAULT_OPTIONAL_NAME="${COMPOSE_PROJECT_NAME}-api-fault-optional"
+  trap remove_fault_optional EXIT
+  export E2E_FAULT_MODE=above-host E2E_FAULT_REQUIRED=false
+  timeout "$seconds" docker compose "${COMPOSE_FILES[@]}" --profile fault run --rm --no-deps \
+    --name "$FAULT_OPTIONAL_NAME" api-faulty >"$FAULT_OUT" 2>&1 || status=$?
+  redact <"$FAULT_OUT"
+  say "fault-optional exit=$status"
+  [[ "$status" -eq 124 ]] || die "the contained fault did not keep the API running (exit $status)"
+  grep -q 'API continuing without it' "$FAULT_OUT" || die "the contained load failure was not logged"
 }
 
 UP_CAPTURE=""
@@ -368,7 +410,7 @@ cmd_self_test() {
 }
 
 usage() {
-  warn "usage: scripts/e2e-stack.sh {up|wait|start|self-test|plan|down|fault}"
+  warn "usage: scripts/e2e-stack.sh {up|wait|start|self-test|plan|down|fault [mode] [required]|fault-optional}"
   exit 2
 }
 
@@ -382,6 +424,10 @@ case "${1:-}" in
   self-test) cmd_self_test ;;
   plan) cmd_plan ;;
   down) cmd_down ;;
-  fault) cmd_fault ;;
+  fault)
+    shift
+    cmd_fault "$@"
+    ;;
+  fault-optional) cmd_fault_optional ;;
   *) usage ;;
 esac

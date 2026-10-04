@@ -71,4 +71,53 @@ test.describe('M2 new pages at any path', () => {
     await page.goto('/protected-cm')
     await expect(page.getByTestId('mock-protected-cm')).toBeVisible()
   })
+  test('fails (denied): an expired session on a composed route lands on the session-expired login and logout ends access', async ({
+    page,
+    context,
+  }) => {
+    await seedOrgOwner(context, 'm2-expired')
+    await page.goto('/cm-area')
+    await expect(page.getByTestId('mock-cm-area')).toBeVisible()
+    // revoke the session server-side while the browser still holds its (now stale) cookies
+    const stale = await context.cookies()
+    const logout = await context.request.post('/api/v1/auth/logout')
+    expect(logout.status(), await logout.text()).toBe(204)
+    await context.addCookies(stale)
+    await page.goto('/cm-area')
+    await expect(page).toHaveURL(/\/login\?reason=session-expired/)
+    // logout cleared the cookies: a fresh visit is a plain anonymous redirect, not a protected page
+    await context.clearCookies()
+    const anonymous = await context.request.get('/cm-area', { maxRedirects: 0 })
+    expect(anonymous.status()).toBe(303)
+    expect(anonymous.headers()['location']).toBe('/login')
+  })
+
+  test('works: twenty parallel page loads with two sessions never mix users', async ({
+    context,
+    browser,
+  }) => {
+    const userA = await seedOrgOwner(context, 'm2-par-a')
+    const contextB = await browser.newContext({ baseURL: process.env['E2E_BASE_URL'] })
+    try {
+      const userB = await seedOrgOwner(contextB, 'm2-par-b')
+      expect(userA.orgId).not.toBe(userB.orgId)
+      const load = async (from: typeof context) => {
+        const response = await from.request.get('/m4')
+        expect(response.status()).toBe(200)
+        return response.text()
+      }
+      const pages = await Promise.all([
+        ...Array.from({ length: 10 }, async () => ({ own: 'a', body: await load(context) })),
+        ...Array.from({ length: 10 }, async () => ({ own: 'b', body: await load(contextB) })),
+      ])
+      const orgOf = (body: string) => /Org: ([^<]*)</.exec(body)?.[1] ?? ''
+      const orgA = orgOf(pages[0]?.body ?? '')
+      const orgB = orgOf(pages[10]?.body ?? '')
+      expect(orgA).toContain('Mock m2-par-a')
+      expect(orgB).toContain('Mock m2-par-b')
+      for (const { own, body } of pages) expect(orgOf(body)).toBe(own === 'a' ? orgA : orgB)
+    } finally {
+      await contextB.close()
+    }
+  })
 })

@@ -29,12 +29,18 @@ import {
 export const MOCK_UI_PACK_EXTENSION_NAME = 'test.mock-ui-pack'
 /** The only environment key the module reads; set only in docker-compose.mock-ui-pack.yml. */
 export const BOOT_FAULT_ENV = 'MOCK_UI_PACK_BOOT_FAULT'
+/** The fault mode, read by its literal key (the one environment key this module reads). */
+const bootFault = (): string | undefined => process.env['MOCK_UI_PACK_BOOT_FAULT']
 /** The pack's own low explicit limit on `GET /api/v1/cm/limited`: N+1 calls give a 429 quickly. */
 export const MOCK_UI_PACK_LOW_LIMIT = 3
 export const MOCK_UI_PACK_LIMIT_WINDOW_MS = 60_000
 const MISSING_TARGET_URL = '/api/v1/mock-ui-pack-no-such-route'
 const MISSING_TARGET_KEY = `GET ${MISSING_TARGET_URL}`
 const PROJECT_URL = '/api/v1/projects/:projectId'
+/** A PV route with its own low limit (20 per minute): the pack REPLACES its handler, PV's limiter stays. */
+const MAINTENANCE_URL = '/api/v1/platform/maintenance-mode'
+/** A manifest version above the host's: the host rejects it at negotiation (a load failure). */
+const ABOVE_HOST_API_VERSION = '3.99.0'
 const PROJECT_KEY = `GET ${PROJECT_URL}`
 const DOCUMENTS_URL = '/api/v1/cm/documents'
 const OWN_READ_CAPABILITY = 'cm.documents.read'
@@ -54,6 +60,8 @@ function declaration(): ApiRoutesDeclaration {
   const overrides: NonNullable<ApiRoutesDeclaration['override']> = [
     { method: 'GET', url: PROJECT_URL, mode: 'wrap', schema: 'extend' },
     { method: 'HEAD', url: PROJECT_URL, mode: 'replace' },
+    // replace a PV route that has its own limiter: the pack declares none, so PV's number applies
+    { method: 'GET', url: MAINTENANCE_URL, mode: 'replace', schema: 'replace' },
     // replace behind PV's own session/MFA/capability pipeline (no replaceSecurity)
     { method: 'GET', url: '/api/v1/users/me', mode: 'replace', schema: 'replace' },
     // loosen: reachable anonymously on purpose (recorded in the lock, never refused)
@@ -79,7 +87,7 @@ function declaration(): ApiRoutesDeclaration {
       },
     },
   ]
-  if (process.env[BOOT_FAULT_ENV] === 'missing-target') {
+  if (bootFault() === 'missing-target') {
     // wraps a PV route that does not exist: the loader must reject it and, with
     // VAULT_EXTENSIONS_REQUIRED=true, the API must exit non-zero
     overrides.push({ method: 'GET', url: MISSING_TARGET_URL, mode: 'wrap', schema: 'extend' })
@@ -184,26 +192,32 @@ function routes(): ApiRoutesHooks['routes'] {
       handler: async () => ({ data: { cm: 'mock-ui-pack:m7-replaced' } }),
       schema: { response: { 200: ReplacedSchema } },
     },
+    [`GET ${MAINTENANCE_URL}`]: {
+      handler: async () => ({ data: { cm: 'mock-ui-pack:m7-maintenance-replaced' } }),
+      schema: { response: { 200: ReplacedSchema } },
+    },
     'POST /api/v1/auth/cli-login': {
       handler: async () => ({ cm: 'mock-ui-pack:m7-loosened' }),
       schema: { response: { 200: CliLoginSchema } },
     },
     'GET /api/v1/capabilities': { handler: async () => ({ data: { capabilities: {} } }) },
   }
-  if (process.env[BOOT_FAULT_ENV] === 'missing-target') {
-    table[MISSING_TARGET_KEY] = {
-      handler: async () => ({ cm: 'never reached' }),
-      schema: { response: { 200: MissingSchema } },
-    }
-  }
-  return table
+  return bootFault() === 'missing-target'
+    ? {
+        ...table,
+        [MISSING_TARGET_KEY]: {
+          handler: async () => ({ cm: 'never reached' }),
+          schema: { response: { 200: MissingSchema } },
+        },
+      }
+    : table
 }
 
 const extension = {
   get manifest(): ExtensionManifest {
     return {
       name: MOCK_UI_PACK_EXTENSION_NAME,
-      apiVersion: EXTENSION_API_VERSION,
+      apiVersion: bootFault() === 'above-host' ? ABOVE_HOST_API_VERSION : EXTENSION_API_VERSION,
       capabilities: ['capability-gate'],
       apiRoutes: declaration(),
     }

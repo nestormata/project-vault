@@ -2,11 +2,14 @@ import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
+import { enrollMfaViaApi } from '../fixtures/auth.js'
+import { setPlatformOperatorViaDb } from '../fixtures/db.js'
 import {
   anonymousApi,
   apiContextFor,
   countAuditEvents,
   createProject,
+  endMfaGracePeriod,
   seedOrgOwner,
 } from './fixtures.js'
 
@@ -17,8 +20,26 @@ import {
 // reachable only on the API port, so the checks use it directly (same run, same report).
 const DOCUMENTS = '/api/v1/cm/documents'
 const DOCUMENT_EVENT = 'cm.document.created'
+const MFA_ROUTE = '/api/v1/cm/mfa'
 const FAULT_TIMEOUT_SECONDS = '60'
+const MAINTENANCE_ROUTE = '/api/v1/platform/maintenance-mode'
+/** PV's own limit on the maintenance-mode read (platform-audit/routes.ts READ_RATE_LIMIT.max). */
+const PV_MAINTENANCE_LIMIT = 20
 const REPO_ROOT = join(import.meta.dirname, '..', '..', '..', '..')
+
+type StackRun = { status: number | null; output: string }
+
+/** Runs `scripts/e2e-stack.sh <args>` (the ports, project name and flavour come from the runner's
+ * process env); its output is already redacted by the script. */
+function runStack(args: string[], extraEnv: Record<string, string>): StackRun {
+  const run = spawnSync('/usr/bin/bash', [join(REPO_ROOT, 'scripts/e2e-stack.sh'), ...args], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, ...extraEnv },
+    timeout: 180_000,
+  })
+  return { status: run.status, output: `${run.stdout}\n${run.stderr}` }
+}
 
 test.describe('M7 API routes', () => {
   test('works: add reads only the caller org rows, wrap extends the PV project, HEAD and replace answer behind the session', async ({
@@ -134,6 +155,29 @@ test.describe('M7 API routes', () => {
     await anonymous.dispose()
   })
 
+  test('fails (denied): an MFA-required pack route denies a session without MFA like PV own and serves an enrolled one', async ({
+    context,
+    playwright,
+  }) => {
+    const owner = await seedOrgOwner(context, 'm7-mfa')
+    // PV enforces MFA for an owner once the enrollment grace period is over
+    await endMfaGracePeriod(owner.orgId, owner.userId)
+    const api = await apiContextFor(playwright, context)
+    const anonymous = await anonymousApi(playwright)
+    expect((await anonymous.get(MFA_ROUTE)).status()).toBe(401)
+    const denied = await api.get(MFA_ROUTE)
+    expect(denied.status(), await denied.text()).toBe(403)
+    expect(await denied.text()).not.toContain('mock-ui-pack:m7-mfa-ok')
+    await enrollMfaViaApi(context)
+    const enrolled = await apiContextFor(playwright, context)
+    const served = await enrolled.get(MFA_ROUTE)
+    expect(served.status(), await served.text()).toBe(200)
+    expect((await served.json()) as unknown).toEqual({ data: 'mock-ui-pack:m7-mfa-ok' })
+    await api.dispose()
+    await anonymous.dispose()
+    await enrolled.dispose()
+  })
+
   test('fails (rejected): the pack low bucket answers 429 on the 4th call while another route in the window is unaffected', async ({
     context,
     playwright,
@@ -147,6 +191,30 @@ test.describe('M7 API routes', () => {
     expect(statuses).toEqual([200, 200, 200, 429])
     expect((await api.get(DOCUMENTS)).status()).toBe(200)
     await api.dispose()
+  })
+
+  test('fails (rejected): a replaced PV route keeps PV own limiter, the pack answers 20 calls and PV answers the 21st with 429', async ({
+    context,
+    playwright,
+  }) => {
+    const owner = await seedOrgOwner(context, 'm7-pv-limit')
+    const displaced = await setPlatformOperatorViaDb(owner.email, true)
+    try {
+      const api = await apiContextFor(playwright, context)
+      const statuses: number[] = []
+      let first: unknown
+      for (let call = 0; call <= PV_MAINTENANCE_LIMIT; call += 1) {
+        const response = await api.get(MAINTENANCE_ROUTE)
+        statuses.push(response.status())
+        if (call === 0) first = await response.json()
+      }
+      // the pack's handler answered (replace), under PV's number, which the pack never declared
+      expect(first).toEqual({ data: { cm: 'mock-ui-pack:m7-maintenance-replaced' } })
+      expect(statuses).toEqual([...Array<number>(PV_MAINTENANCE_LIMIT).fill(200), 429])
+      await api.dispose()
+    } finally {
+      await setPlatformOperatorViaDb(displaced ?? owner.email, displaced !== null)
+    }
   })
 
   test('works: ten concurrent calls from two orgs each see only their own rows and the audit count equals the mutations', async ({
@@ -189,22 +257,39 @@ test.describe('M7 API routes', () => {
   })
 
   test('fails (rejected): the fail-closed boot makes a REQUIRED pack with a missing wrap target exit non-zero with a bounded startup.failed line', async () => {
-    const run = spawnSync('/usr/bin/bash', [join(REPO_ROOT, 'scripts/e2e-stack.sh'), 'fault'], {
-      cwd: REPO_ROOT,
-      encoding: 'utf8',
-      env: { ...process.env, E2E_FAULT_TIMEOUT_SECONDS: FAULT_TIMEOUT_SECONDS },
-      timeout: 180_000,
+    const { status, output } = runStack(['fault'], {
+      E2E_FAULT_TIMEOUT_SECONDS: FAULT_TIMEOUT_SECONDS,
     })
-    const output = `${run.stdout}\n${run.stderr}`
     // the script exits 0 exactly when the api-faulty container EXITED NON-ZERO (the proof holds) and 1
     // when it unexpectedly stayed up or exited 0
-    expect(run.status, output.slice(-3000)).toBe(0)
-    expect(output).toContain('fault exit=')
-    expect(output).not.toContain('fault exit=0')
+    expect(status, output.slice(-3000)).toBe(0)
+    expect(output).toContain('fault mode=missing-target required=true exit=')
+    expect(output).not.toMatch(/fault mode=\S+ required=\S+ exit=0\b/)
     expect(output).toContain('startup.failed')
     expect(output).toContain('extension_api_route_drift')
     // never a connection string or credentials, and it never reported healthy
     expect(output).not.toMatch(/postgres(ql)?:\/\//)
     expect(output).not.toContain('"status":"ok"')
+  })
+
+  test('fails (rejected): a drift is never fail-open, VAULT_EXTENSIONS_REQUIRED=false still stops the boot', async () => {
+    const { status, output } = runStack(['fault', 'missing-target', 'false'], {
+      E2E_FAULT_TIMEOUT_SECONDS: FAULT_TIMEOUT_SECONDS,
+    })
+    expect(status, output.slice(-3000)).toBe(0)
+    expect(output).toContain('fault mode=missing-target required=false exit=')
+    expect(output).toContain('extension_api_route_drift')
+    expect(output).not.toContain('"status":"ok"')
+  })
+
+  test('works: with VAULT_EXTENSIONS_REQUIRED=false a load failure is contained, the API keeps running without the pack and says so', async () => {
+    const { status, output } = runStack(['fault-optional'], { E2E_FAULT_OPTIONAL_SECONDS: '40' })
+    // exit 0 means: the bounded run ended by its timeout (the API stayed up) AND the contained load
+    // failure was logged
+    expect(status, output.slice(-3000)).toBe(0)
+    expect(output).toContain('API continuing without it')
+    expect(output).toContain('capability_mismatch')
+    expect(output).not.toContain('startup.failed')
+    expect(output).not.toMatch(/postgres(ql)?:\/\//)
   })
 })
