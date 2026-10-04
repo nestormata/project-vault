@@ -1,8 +1,26 @@
 <script lang="ts">
   import { enhance } from '$app/forms'
+  import RecentActivitySection from '$lib/components/dashboard/RecentActivitySection.svelte'
   import type { PageProps } from './$types.js'
 
   let { data, form }: PageProps = $props()
+
+  // Story 69.1: the override builds on one of PV's dashboard region components (the way CM's own
+  // dashboard override does), so a region point renders inside a page the pack replaced.
+  const mockProject = {
+    id: 'mock-project',
+    name: 'mock-ui-pack project',
+    slug: 'mock-ui-pack-project',
+    description: null,
+    role: 'owner' as const,
+    credentialCount: 0,
+    expiringCount: 0,
+    alertCount: 0,
+    tags: [],
+    createdAt: '2026-01-01T00:00:00.000Z',
+    archivedAt: null,
+    isArchived: false,
+  }
 </script>
 
 <svelte:head>
@@ -27,4 +45,5 @@
   {#if form && 'mockNoteError' in form}
     <p data-testid="mock-dashboard-note-error">{form.mockNoteError}</p>
   {/if}
+  <RecentActivitySection project={mockProject} events={[]} data={data.__inject} />
 </section>

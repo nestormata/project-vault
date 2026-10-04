@@ -206,6 +206,26 @@ compose_unknown_point() {
   return 0
 }
 
+# Story 69.1 AC-4 / AC-9: a `hostRoutes` entry that is not a route rendering the region point fails
+# the composition against the REAL generated registry, naming the point, the bad entry and the valid
+# routes. A dry run writes nothing.
+compose_bad_host_routes() {
+  local bad="$WORK/pack-bad-host-routes"
+  cp -r "$COMPOSITION_KIT_FIXTURES/mini-pack" "$bad"
+  ln -s "$APP/node_modules" "$bad/node_modules"
+  sed -i "s|'/(app)/dashboard#page'|'/(app)/dashboard#nope'|" "$bad/pv-ui.manifest.ts"
+  local out status=0
+  out="$(cd "$APP" && clean_env PV_FIXTURE_HOST="$INSTALLED" "$NODE_BIN" \
+    node_modules/@project-vault/composition-kit/dist/cli.js \
+    --pack "$bad" --module-pack "$APP" --dry-run 2>&1)" || status=$?
+  if [[ "$status" == '0' ]] || ! grep -q 'injections.dashboard.home.activity.hostRoutes' <<< "$out" ||
+    ! grep -q '/(app)/dashboard#nope' <<< "$out" || ! grep -q '/(app)/dashboard#page' <<< "$out"; then
+    compose_fail "a bad hostRoutes entry was not rejected as expected (exit ${status}): ${out}"
+  fi
+  log 'OK: a hostRoutes entry that does not render the region point fails naming the point, the entry and the valid routes'
+  return 0
+}
+
 compose_pipeline_to_sync() {
   log 'paraglide compile (composed messages), svelte-kit sync'
   (
@@ -748,6 +768,7 @@ readonly SETTINGS_DATA_PATH='/settings/__data.json'
 readonly WHO_MARKER='PV_INJECT_WHO_MARKER_71c2e4'
 readonly THEME_MARKER='PV_INJECT_THEME_MARKER_5a90d3'
 readonly PROJECT_MARKER='PV_INJECT_PROJECT_MARKER_c4417b'
+readonly REGION_MARKER='PV_INJECT_REGION_MARKER_8e21f4'
 
 # The body of the last compose_request must (not) contain a needle, with a message on failure.
 compose_body_has() { # needle context
@@ -906,7 +927,7 @@ compose_chunk_files() { # marker -> the files under build/client containing it
 compose_chunk_checks() {
   local marker files count
   local seen=''
-  for marker in "$WHO_MARKER" "$THEME_MARKER" "$PROJECT_MARKER"; do
+  for marker in "$WHO_MARKER" "$THEME_MARKER" "$PROJECT_MARKER" "$REGION_MARKER"; do
     files="$(compose_chunk_files "$marker")"
     count="$(printf '%s\n' "$files" | grep -c . || true)"
     if [[ "$count" != '1' ]]; then
@@ -926,7 +947,7 @@ compose_chunk_checks() {
   if [[ ! -d "$entry_dir" ]]; then
     compose_fail "chunk placement: ${entry_dir} does not exist, so the entry chunks were not checked"
   fi
-  grep -rlF -e "$WHO_MARKER" -e "$THEME_MARKER" -e "$PROJECT_MARKER" "$entry_dir" > /dev/null || entry_status=$?
+  grep -rlF -e "$WHO_MARKER" -e "$THEME_MARKER" -e "$PROJECT_MARKER" -e "$REGION_MARKER" "$entry_dir" > /dev/null || entry_status=$?
   if [[ "$entry_status" == '0' ]]; then
     compose_fail 'chunk placement: an injected component marker reached an entry chunk'
   fi

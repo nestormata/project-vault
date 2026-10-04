@@ -12,6 +12,19 @@ to anything but the stack under test.
 | Module pack | `module/`                                       | The M7 half: an extension package (`manifest.apiRoutes` plus `hooksFactory`), built with `tsc` to `dist/` and loaded by the REAL API through `VAULT_EXTENSIONS_PACKAGE=@project-vault/mock-ui-pack`. Uses the shipped `@project-vault/extension-api` contract only.                                                                                                                                                                                                                        |
 | Image       | `docker/web.Dockerfile`, `docker/.dockerignore` | The composed web image. The build context is the composed app directory exported from the isolated consumer (packed tarballs under `./tarballs`, never `apps/web`, never a monorepo path). This is the pattern CentralizeMe copies.                                                                                                                                                                                                                                                        |
 
+## Region points (Story 69.1)
+
+Two M3 fills target **region points** (points inside a shared PV component) and opt in to behavior with
+`hostRoutes` (Q12 option B):
+
+- `project.detail.tiles` on PV's NATIVE project page (`injections/ProjectTile.svelte`, a load and an action,
+  `hostRoutes: ['/(app)/projects/[projectId]#page']`). The load returns ids and a status only; the action reads
+  the project with the member's own session first (RLS), so a foreign or missing id writes nothing.
+- `dashboard.home.activity` inside the pack's own dashboard OVERRIDE: the override imports PV's
+  `RecentActivitySection`, the way CentralizeMe's override builds on PV's region components, and keeps its
+  `withInjectedLoad` call, which is what makes the opted-in load run. The one-project 303 auto-skip is CM's
+  rule on its override and is not implemented in PV.
+
 ## No back doors
 
 The pack never bypasses authentication or tenancy to make a case pass: it reads data through the

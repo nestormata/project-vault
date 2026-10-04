@@ -67,6 +67,27 @@ export default defineUiPack({
     'auth.login.after': [
       { component: './injections/LoginTile.svelte', load: './injections/login-tile.server.ts' },
     ],
+    // M3 at REGION points (Story 69.1). `project.detail.tiles` is rendered by PV's own
+    // `ProjectStatTiles` on the native project page; its load and action run through the host route
+    // because the contribution opts in with `hostRoutes` (Q12 option B).
+    'project.detail.tiles': [
+      {
+        component: './injections/ProjectTile.svelte',
+        order: 10,
+        load: './injections/project-tile.server.ts',
+        actions: './injections/project-tile.actions.ts',
+        hostRoutes: ['/(app)/projects/[projectId]#page'],
+      },
+    ],
+    // `dashboard.home.activity` renders inside the pack's OWN dashboard override, which imports PV's
+    // `RecentActivitySection` (override plus PV region components, the shape CM builds).
+    'dashboard.home.activity': [
+      {
+        component: './injections/ActivityTile.svelte',
+        load: './injections/activity-tile.server.ts',
+        hostRoutes: ['/(app)/dashboard#page'],
+      },
+    ],
     'app.layout.before': [{ component: './injections/LayoutBanner.svelte' }],
     'shell.head': [{ component: './injections/HeadMarker.svelte' }],
   },
