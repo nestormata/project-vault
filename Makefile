@@ -246,6 +246,7 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm vitest run scripts/check-no-sonar-suppressions.test.ts scripts/lib/trusted-executable.test.ts
 	pnpm vitest run scripts/check-stryker-config.test.ts # Story 66-7: Stryker shard/threshold/vitest-5 patch invariants
 	pnpm vitest run scripts/check-nightly-workflow.test.ts # Story 66-11: nightly quiet-day gate + 5-leg flaky repeat matrix
+	pnpm vitest run scripts/pr-e2e-smoke-gate.test.ts # Story 66-20: PR-time e2e smoke gate + ci.yml job wiring
 	# Story 43.16 AC-3/AC-5: Fly demo internal TLS — PKI script, fly-setup wiring, pinned-CA call sites.
 	# Story 43.28: + Fly workflow contract (bootstrap order, concurrency, release pnpm) and fly-ensure-started.sh.
 	pnpm vitest run scripts/fly-setup.test.ts scripts/fly-internal-tls.test.ts scripts/check-pg-tls-call-sites.test.ts scripts/check-fly-deploy-workflow.test.ts scripts/fly-ensure-started.test.ts
