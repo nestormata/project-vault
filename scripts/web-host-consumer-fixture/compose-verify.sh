@@ -15,7 +15,6 @@
 # (which still passes its tree-pinned exclusions explicitly): a pack that contributes hooks changes what
 # a handful of PV tests pin about PV's own build.
 
-readonly VERIFY_BIN='node_modules/@project-vault/composition-kit/dist/verify-cli.js'
 readonly COMPOSE_BIN='node_modules/@project-vault/composition-kit/dist/cli.js'
 
 # A fresh copy of the mini pack for one mutation.
@@ -36,10 +35,10 @@ verify_compose() { # pack
   return "$status"
 }
 
-# pv-verify over the app. Output in $WORK/verify.out; the exit status is returned.
+# pv-verify over the app, through the node_modules/.bin symlink (Story 68-20). Output in $WORK/verify.out; the exit status is returned.
 verify_run() { # args...
   local status=0
-  (cd "$APP" && clean_env "$NODE_BIN" "$VERIFY_BIN" --app "$APP" --host "$INSTALLED" "$@") \
+  (cd "$APP" && clean_env "$VERIFY_LINK" --app "$APP" --host "$INSTALLED" "$@") \
     > "$WORK/verify.out" 2>&1 || status=$?
   return "$status"
 }

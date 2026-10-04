@@ -30,6 +30,24 @@
 readonly CURL_STATUS_FORMAT='%{http_code}'
 readonly SELFTEST_LABEL='self-test'
 
+# Story 68-20: the kit's bins as a consumer runs them, through the symlinks npm creates in
+# node_modules/.bin (a `#!/usr/bin/env node` script, so PATH under clean_env must hold node).
+readonly KIT_BIN_DIR='node_modules/.bin'
+readonly COMPOSE_LINK="$KIT_BIN_DIR/pv-compose"
+readonly VERIFY_LINK="$KIT_BIN_DIR/pv-verify"
+
+# A bin entry that is missing or a regular file cannot prove the symlink launch, so it fails.
+compose_assert_bin_symlinks() {
+  local bin
+  for bin in "$COMPOSE_LINK" "$VERIFY_LINK"; do
+    if [[ ! -L "$APP/$bin" || ! -x "$APP/$bin" ]]; then
+      echo "fixture: $bin is not an executable symlink" >&2
+      exit 1
+    fi
+  done
+  return 0
+}
+
 compose_pack_name() {
   case "$VARIANT" in
     compose-server-leak | compose-server-twin | compose-replace-leak | compose-replace-first-leak) echo negative-pack ;;
@@ -147,10 +165,15 @@ compose_run() {
     compose_nav_drift
     exit 0
   fi
-  log "pv-compose --pack $(basename "$PACK")"
-  (cd "$APP" && clean_env PV_FIXTURE_HOST="$INSTALLED" "$NODE_BIN" \
-    node_modules/@project-vault/composition-kit/dist/cli.js \
+  compose_assert_bin_symlinks
+  log "pv-compose (via $COMPOSE_LINK) --pack $(basename "$PACK")"
+  (cd "$APP" && clean_env PV_FIXTURE_HOST="$INSTALLED" "$COMPOSE_LINK" \
     --pack "$PACK" --module-pack "$APP")
+  # A silent no-op exits 0 too (the 0.7.0 symlink bug): the lock must exist.
+  if [[ ! -s "$APP/composition.lock.json" ]]; then
+    echo "fixture: $COMPOSE_LINK exited 0 but wrote no composition.lock.json" >&2
+    exit 1
+  fi
   for dir in src static messages project.inlang inlang-plugins vendor; do
     if [[ ! -f "$APP/$dir/.pv-compose-generated" ]]; then
       echo "fixture: $dir has no do-not-edit header" >&2
