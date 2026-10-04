@@ -152,6 +152,8 @@ describe.runIf(ENABLED)('composition kit integration (Story 68.3 AC-12, AC-13)',
         'OK: mutation 7: src/lib/utils/format-bytes.test.ts is excluded by the lock'
       )
       expect(output).toContain('OK: mutation 9: the pristine static-hardening guard ran')
+      expect(output).toContain("OK: pv-verify tests ran the app's own vitest.config.ts")
+      expect(output).toContain('OK: mutation 10 is red')
       expect(status, output).toBe(0)
     },
     VARIANT_TIMEOUT_MS

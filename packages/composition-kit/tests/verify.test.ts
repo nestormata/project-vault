@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest'
 import { compose } from '../src/compose.js'
 import { sha256Hex } from '../src/hash.js'
 import { runVerifyCli } from '../src/verify-cli.js'
-import { acquireRunLock, extractClassifications, verify } from '../src/verify.js'
+import { acquireRunLock, extractClassifications, findVitestConfig, verify } from '../src/verify.js'
 import {
   makeWorld,
   manifest,
@@ -30,6 +30,11 @@ useWorlds()
 const GUARD_FILE = 'src/lib/security/mini.test.ts'
 const HELPER_FILE = 'src/lib/test/mini-helper.ts'
 const SCRIPT_FILE = 'guards/mini.js'
+const MJS_CONFIG = 'vitest.config.mjs'
+const TS_CONFIG = 'vitest.config.ts'
+const CALLER_VALUE = '/caller-value'
+const GENERATED_CONFIG = 'verify.vitest.config.mjs'
+const EMPTY_CONFIG = 'export default {}\n'
 const BAD_TOKEN = 'FORBIDDEN_TOKEN'
 const LICENSE = 'AGPL-3.0-or-later'
 const LOCK_FILE = 'composition.lock.json'
@@ -106,7 +111,15 @@ interface Setup {
   appTests?: Record<string, string>
   subjects?: Record<string, string[]>
   manifest?: (world: World) => Partial<UiPackManifest>
+  /** The app's own Vitest/Vite config files (name -> body). Default: one `vitest.config.mjs`; `{}` = none. */
+  appConfig?: Record<string, string>
 }
+
+// The app's own config, as a CM-style app writes it: the web-host factory plus the composed root.
+const appConfigBody = (appRoot: string): string =>
+  `import { vitestConfig } from '@project-vault/web-host/vitest.config'
+export default vitestConfig({}, { composedRoot: ${JSON.stringify(appRoot)} })
+`
 
 async function composedWorld(setup: Setup = {}): Promise<World> {
   const world = makeWorld({
@@ -143,6 +156,7 @@ async function composedWorld(setup: Setup = {}): Promise<World> {
       exports: { './vitest.config': './vitest.config.js' },
     }),
     'node_modules/@project-vault/web-host/vitest.config.js': FAKE_FACTORY,
+    ...(setup.appConfig ?? { [MJS_CONFIG]: appConfigBody(world.app) }),
     ...setup.appTests,
   })
   return world
@@ -454,15 +468,147 @@ it('the subject answers pv', () => expect(value).toBe('pv'))
           "import { it, expect } from 'vitest'\nit('guard root is not visible to CM tests', () => {\n  expect(process.env.PV_GUARD_APP_ROOT).toBeUndefined()\n})\n",
       },
     })
-    process.env.PV_GUARD_APP_ROOT = '/caller-value'
+    process.env.PV_GUARD_APP_ROOT = CALLER_VALUE
     try {
       const report = await verify(options(world))
       expect(report.tests?.failures).toEqual([])
       expect(report.tests?.ok).toBe(true)
-      expect(process.env.PV_GUARD_APP_ROOT).toBe('/caller-value')
+      expect(process.env.PV_GUARD_APP_ROOT).toBe(CALLER_VALUE)
     } finally {
       delete process.env.PV_GUARD_APP_ROOT
     }
+  })
+
+  describe("the app's own Vitest config (Story 68-21)", () => {
+    const PLUGIN_TEST =
+      "import { it, expect } from 'vitest'\nimport { v } from 'virtual:app-only'\nit('sees the plugin', () => expect(v).toBe(42))\n"
+    // A module only a plugin registered by the app's own config can resolve (stands in for pvHooks()).
+    const pluginConfig = (
+      appRoot: string
+    ): string => `import { vitestConfig } from '@project-vault/web-host/vitest.config'
+const appOnly = {
+  name: 'app-only',
+  resolveId: (id) => (id === 'virtual:app-only' ? '\\0virtual:app-only' : null),
+  load: (id) => (id === '\\0virtual:app-only' ? 'export const v = 42' : null),
+}
+export default { ...vitestConfig({}, { composedRoot: ${JSON.stringify(appRoot)} }), plugins: [appOnly] }
+`
+    const overriddenUtil = (): Setup => ({
+      subjects: { [UTIL_TEST]: [UTIL] },
+      packFiles: { [UTIL]: OVERRIDE_BODY },
+      manifest: (made) => ({
+        routes: { overrides: [{ path: UTIL, hostSha256: sha(made, UTIL) }] },
+      }),
+    })
+
+    it("runs tests that need a plugin only the app's config registers, and writes no scratch config", async () => {
+      const world = await composedWorld({
+        appTests: { 'src/lib/plugin.test.ts': PLUGIN_TEST },
+        appConfig: {},
+      })
+      writeFileSync(join(world.app, MJS_CONFIG), pluginConfig(world.app))
+      const report = await verify({ ...options(world), only: 'tests' })
+      expect(report.tests?.failures).toEqual([])
+      expect(report.tests?.ok).toBe(true)
+      expect(report.tests?.config).toBe(MJS_CONFIG)
+      expect(existsSync(join(world.app, SCRATCH_DIR, GENERATED_CONFIG))).toBe(false)
+    })
+
+    it('fails loudly, spawning nothing, when the app has no vitest or vite config; consistency problems still show', async () => {
+      const world = await composedWorld({
+        ...overriddenUtil(),
+        appConfig: { 'config/vitest.config.ts': EMPTY_CONFIG },
+      })
+      const lockPath = join(world.app, LOCK_FILE)
+      const lock = JSON.parse(readFileSync(lockPath, 'utf8')) as Record<string, unknown>
+      lock.excludedPvTests = []
+      writeFileSync(lockPath, JSON.stringify(lock))
+      const report = await verify({ ...options(world), only: 'tests' })
+      expect(report.ok).toBe(false)
+      expect(report.tests?.ok).toBe(false)
+      expect(report.tests?.problems).toEqual([
+        `no vitest.config.* or vite.config.* in ${world.app}; pv-verify runs your tests with your own config so they see the same kit plugins as the build`,
+      ])
+      expect(report.preflight.problems.join('\n')).toContain('excludedPvTests')
+      expect(existsSync(join(world.app, SCRATCH_DIR, 'verify-tests.json'))).toBe(false)
+      expect(existsSync(join(world.app, SCRATCH_DIR, GENERATED_CONFIG))).toBe(false)
+    })
+
+    it('picks vitest.config.* over vite.config.*, in the order ts, mts, cts, js, mjs, cjs', async () => {
+      const world = await composedWorld({ appConfig: {} })
+      const found = () => findVitestConfig(world.app)
+      expect(found()).toBeNull()
+      writeAll(world.app, { 'vite.config.ts': EMPTY_CONFIG })
+      expect(found()).toBe('vite.config.ts')
+      writeAll(world.app, { 'vitest.config.cjs': 'module.exports = {}\n' })
+      expect(found()).toBe('vitest.config.cjs')
+      writeAll(world.app, { [MJS_CONFIG]: EMPTY_CONFIG })
+      expect(found()).toBe(MJS_CONFIG)
+      writeAll(world.app, { 'vitest.config.js': EMPTY_CONFIG })
+      expect(found()).toBe('vitest.config.js')
+      writeAll(world.app, { [TS_CONFIG]: EMPTY_CONFIG })
+      expect(found()).toBe(TS_CONFIG)
+    })
+
+    it('runs the config the order picks when several exist, and names it', async () => {
+      const world = await composedWorld({
+        appConfig: { [MJS_CONFIG]: 'throw new Error("must not be loaded")\n' },
+      })
+      writeFileSync(join(world.app, TS_CONFIG), appConfigBody(world.app))
+      const report = await verify({ ...options(world), only: 'tests' })
+      expect(report.tests?.ok).toBe(true)
+      expect(report.tests?.config).toBe(TS_CONFIG)
+    })
+
+    it('hints when a failing test is listed in excludedPvTests (the config did not apply the lock)', async () => {
+      const failing =
+        "import { it, expect } from 'vitest'\nit('would fail', () => expect(1).toBe(2))\n"
+      const world = await composedWorld({
+        ...overriddenUtil(),
+        hostFiles: { [UTIL_TEST]: failing },
+        appConfig: {},
+      })
+      // a config that ignores the lock's exclusions
+      writeFileSync(
+        join(world.app, MJS_CONFIG),
+        "export default { test: { include: ['src/**/*.test.ts'] } }\n"
+      )
+      const report = await verify({ ...options(world), only: 'tests' })
+      expect(report.tests?.failures.join('\n')).toContain(UTIL_TEST)
+      expect(report.tests?.problems).toContain(
+        "failing test is listed in composition.lock.json excludedPvTests; the app's vitest config must apply the lock's exclusions (vitestConfig({}, { composedRoot }))"
+      )
+    })
+
+    it('adds no hint when the failing test is not excluded', async () => {
+      const world = await composedWorld({
+        appTests: {
+          'src/lib/fails.test.ts':
+            "import { it, expect } from 'vitest'\nit('fails', () => expect(1).toBe(2))\n",
+        },
+      })
+      const report = await verify({ ...options(world), only: 'tests' })
+      expect(report.tests?.problems).toEqual([])
+    })
+
+    it("still strips the guards-only variables when the app's own config runs", async () => {
+      const world = await composedWorld({
+        appTests: {
+          'src/lib/env2.test.ts':
+            "import { it, expect } from 'vitest'\nit('no guard vars', () => {\n  expect(process.env.PV_GUARD_APP_ROOT).toBeUndefined()\n  expect(process.env.PV_GUARD_EXEMPT_FILES).toBeUndefined()\n})\n",
+        },
+      })
+      process.env.PV_GUARD_APP_ROOT = CALLER_VALUE
+      process.env.PV_GUARD_EXEMPT_FILES = '["x"]'
+      try {
+        const report = await verify({ ...options(world), only: 'tests' })
+        expect(report.tests?.failures).toEqual([])
+        expect(report.tests?.ok).toBe(true)
+      } finally {
+        delete process.env.PV_GUARD_APP_ROOT
+        delete process.env.PV_GUARD_EXEMPT_FILES
+      }
+    })
   })
 
   it('runs one step with --only', async () => {
@@ -519,7 +665,7 @@ describe('pv-verify --only classifications (Story 68-16 AC-2)', () => {
     expect(readFileSync(out, 'utf8')).toBe(text)
     expect(readdirSync(world.root).filter((name) => name.includes('.tmp'))).toEqual([])
     // no guards or tests ran: nothing was written under the verify scratch dir
-    expect(existsSync(join(world.app, SCRATCH_DIR, 'verify.vitest.config.mjs'))).toBe(false)
+    expect(existsSync(join(world.app, SCRATCH_DIR, GENERATED_CONFIG))).toBe(false)
   })
 
   it('writes [] when the pack has no classifications', async () => {

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.8.0
+
+- **`pv-verify --only tests` (and the tests step of a full run) now runs with the app's own Vitest
+  config** (Story 68-21). It looks for `vitest.config.{ts,mts,cts,js,mjs,cjs}`, then
+  `vite.config.*`, at the app root and passes that file as `--config`, so tests over a composed tree see
+  the same plugins as the build (`pvHooks()`, `pvNav()`, `pvReplace()`, any plugin of your own). Before,
+  the kit generated `.pv-compose/verify.vitest.config.mjs` with no kit plugin, and tests that import
+  `virtual:pv-hooks/*`, `virtual:pv-nav` or a replaced module failed against web-host's empty providers.
+  The generated config is gone. The step output names the config it used.
+- **Breaking for an app without a Vitest or Vite config:** the tests step now fails (exit 1) with
+  `no vitest.config.* or vite.config.* in <app>` instead of generating one. Migration: add a
+  `vitest.config.ts` such as `export default vitestConfig({ plugins }, { composedRoot })` with the same
+  plugin list as `vite.config.ts`. The config must apply the lock's exclusions through
+  `vitestConfig({}, { composedRoot })`; when a failing suite is one of `excludedPvTests` the step adds a
+  hint saying so. The `excludedPvTests` consistency check is unchanged.
+
 ## 0.7.1
 
 - **Fix: `pv-compose` and `pv-verify` did nothing, silently, when launched through a symlink** (Story 68-20,

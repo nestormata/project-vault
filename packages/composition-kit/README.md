@@ -275,8 +275,11 @@ runs, in order, and reports everything in one run: (1) **preflight**: the commit
 the web-host, and its generated guard entries are untouched (`--pack` also regenerates the lock like
 `pv-compose --check`); (2) **guards**: every guard in web-host's `manifests/guards.json` over the
 composed `src/` (including `src/lib/_cm`) with PV's own rules; (3) **tests**: `vitest run` over the
-composed tree through web-host's `vitestConfig` factory, which excludes the lock's `excludedPvTests`,
-with no coverage gate (CM owns its coverage policy). Exit `0` ok, `1` a guard, test or integrity
+composed tree with **your app's own** `vitest.config.*` (then `vite.config.*`) at the app root, so tests see
+the same plugins as the build (`pvHooks()`, `pvNav()`, `pvReplace()`); the config should call
+`vitestConfig({ plugins }, { composedRoot })`, which excludes the lock's `excludedPvTests` (the step
+hints when a failing suite is one of them). An app with no such config fails the step; the kit no longer
+generates one. No coverage gate (CM owns its coverage policy). Exit `0` ok, `1` a guard, test or integrity
 failure, `2` usage. A web-host without a guard registry fails (never silently skips); upgrade it.
 `pv-verify` does not run `svelte-check` or lint (your pipeline's own steps).
 
