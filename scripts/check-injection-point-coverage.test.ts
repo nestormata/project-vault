@@ -126,7 +126,10 @@ describe('check-injection-point-coverage: mutation self-tests (Story 68.4 AC-10)
   it('reports a region point that is registered but not rendered, and a mistyped rendered name', () => {
     const root = cleanTree()
     const all = PREFIXES.flatMap((prefix) => SUFFIXES.map((s) => `${prefix}.${s}`))
-    const rows = registry(all).replace('\n]\n', `\n  ...regionPoints('X', [], ['${HEADER_REGION}']),\n]\n`)
+    const rows = registry(all).replace(
+      '\n]\n',
+      `\n  ...regionPoints('X', [], ['${HEADER_REGION}']),\n]\n`
+    )
     writeFixture(root, REGISTRY, rows)
     writeFixture(root, PAGE, `${points('foo.page')}\n<InjectionPoint name="foo.page.heder" />`)
     const text = problemsOf(root).problems.join('\n')
@@ -375,6 +378,16 @@ describe('check-injection-point-coverage: region points (Story 69.1)', () => {
     const fields = readRegistryFields(regionTree())
     expect(fields?.get(REGION)?.get('kind')).toBe('region')
     expect(fields?.get(REGION)?.get('hostRoutes')).toBe(HOST)
+  })
+
+  it('resolves a top-level string constant used as a regionPoints host route', () => {
+    const root = regionTree()
+    writeFixture(
+      root,
+      REGISTRY,
+      `const HOST_ROUTE = '${HOST}'\nexport const INJECTION_POINTS = [\n  ...regionPoints('X', [HOST_ROUTE, UNKNOWN], ['${REGION}']),\n]\n`
+    )
+    expect(readRegistryFields(root)?.get(REGION)?.get('hostRoutes')).toBe(HOST)
   })
 
   it('fails a point placed AFTER the marked element instead of inside it', () => {

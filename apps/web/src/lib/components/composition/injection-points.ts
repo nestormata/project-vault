@@ -376,7 +376,7 @@ function pagePoints(propsType: string, pages: readonly string[]): InjectionPoint
 
 /** Region points (Story 69.1): `<area>.<page>.<region>` points rendered inside a shared component,
  * all hosted by the same routes. `check-injection-point-coverage` reads these calls with the
- * TypeScript parser, so the arguments stay string literals. */
+ * TypeScript parser, so the arguments stay string literals (a host route may be a top-level string constant). */
 function regionPoints(
   propsType: string,
   hostRoutes: readonly string[],
@@ -389,6 +389,12 @@ function regionPoints(
     hostRoutes,
   }))
 }
+
+// The phase 5 pages' host routes, named once because three region rows share each of them (the
+// coverage guard resolves a top-level string constant used in a `regionPoints` host list).
+const AUDIT_PAGE_HOST = '/(app)/settings/audit#page'
+const NOTIFICATIONS_PAGE_HOST = '/(app)/settings/notifications#page'
+const MEMBERS_PAGE_HOST = '/(app)/projects/[projectId]/members#page'
 
 export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...pagePoints('StandardPointProps', ['app.layout']),
@@ -506,7 +512,7 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ]),
   ...regionPoints(
     'SettingsAuditPointProps',
-    [],
+    [AUDIT_PAGE_HOST],
     [
       'settings.audit.export',
       'settings.audit.header',
@@ -517,23 +523,35 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ),
   ...regionPoints(
     'SettingsAuditResultsPointProps',
-    [],
+    [AUDIT_PAGE_HOST],
     ['settings.audit.error', 'settings.audit.results', 'settings.audit.search']
   ),
   ...regionPoints(
     'NotificationSettingsPointProps',
-    [],
+    [NOTIFICATIONS_PAGE_HOST],
     ['settings.notifications.header', 'settings.notifications.test']
   ),
-  ...regionPoints('NotificationPreferencesPointProps', [], ['settings.notifications.channels']),
-  ...regionPoints('NotificationRoutingPointProps', [], ['settings.notifications.routing']),
+  ...regionPoints(
+    'NotificationPreferencesPointProps',
+    [NOTIFICATIONS_PAGE_HOST],
+    ['settings.notifications.channels']
+  ),
+  ...regionPoints(
+    'NotificationRoutingPointProps',
+    [NOTIFICATIONS_PAGE_HOST],
+    ['settings.notifications.routing']
+  ),
   ...regionPoints(
     'ProjectMembersBasePointProps',
-    [],
+    [MEMBERS_PAGE_HOST],
     ['project.members.header', 'project.members.invite', 'project.members.notice']
   ),
-  ...regionPoints('ProjectMembersPointProps', [], ['project.members.access']),
-  ...regionPoints('ProjectMembersInvitationsPointProps', [], ['project.members.invitations']),
+  ...regionPoints('ProjectMembersPointProps', [MEMBERS_PAGE_HOST], ['project.members.access']),
+  ...regionPoints(
+    'ProjectMembersInvitationsPointProps',
+    [MEMBERS_PAGE_HOST],
+    ['project.members.invitations']
+  ),
   { name: 'shell.body.end', kind: 'shell', propsType: 'StandardPointProps' },
   { name: 'shell.head', kind: 'shell', propsType: 'StandardPointProps' },
   {

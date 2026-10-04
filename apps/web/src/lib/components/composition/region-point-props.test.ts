@@ -8,9 +8,10 @@ import {
 // Story 69.4 AC-1.5: least-data props. An ungated region receives role and flag fields only; row
 // data (members, invitations, audit events) appears only on points PV renders inside its own gate.
 
-const REGION_NAMES = INJECTION_POINTS.filter((point) => point.kind === 'region').map(
-  (point) => point.name
-)
+const PHASE5_AREAS = ['settings.audit.', 'settings.notifications.', 'project.members.']
+const REGION_NAMES = INJECTION_POINTS.filter(
+  (point) => point.kind === 'region' && PHASE5_AREAS.some((area) => point.name.startsWith(area))
+).map((point) => point.name)
 
 describe('region point props (Story 69.4 AC-1)', () => {
   it('registers the 17 region points, all 3 segments, none duplicated', () => {

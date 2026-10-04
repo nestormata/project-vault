@@ -75,15 +75,43 @@ function isRegistryDeclaration(node: ts.Node): node is ts.VariableDeclaration {
   )
 }
 
-function stringList(expression: ts.Expression | undefined): string[] {
+/** Top-level `const NAME = '<literal>'` declarations of the registry file, so a repeated host route
+ * can be named once and used as an identifier in a `regionPoints` host list. */
+type StringConstants = ReadonlyMap<string, string>
+
+function stringConstants(source: ts.SourceFile): StringConstants {
+  const constants = new Map<string, string>()
+  for (const statement of source.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    for (const declaration of statement.declarationList.declarations) {
+      if (
+        ts.isIdentifier(declaration.name) &&
+        declaration.initializer !== undefined &&
+        ts.isStringLiteralLike(declaration.initializer)
+      ) {
+        constants.set(declaration.name.text, declaration.initializer.text)
+      }
+    }
+  }
+  return constants
+}
+
+function stringList(
+  expression: ts.Expression | undefined,
+  constants: StringConstants = new Map()
+): string[] {
   if (expression === undefined || !ts.isArrayLiteralExpression(expression)) return []
-  return expression.elements.filter(ts.isStringLiteralLike).map((entry) => entry.text)
+  return expression.elements.flatMap((entry) => {
+    if (ts.isStringLiteralLike(entry)) return [entry.text]
+    const named = ts.isIdentifier(entry) ? constants.get(entry.text) : undefined
+    return named === undefined ? [] : [named]
+  })
 }
 
 /** `...regionPoints('<propsType>', ['<routeId>#<scope>', ...], ['<region name>', ...])`: region
  * points all hosted by the same routes. The host routes are stored comma-joined in `hostRoutes`
  * (a route id never contains a comma). */
-function regionRows(call: ts.CallExpression): Map<string, string>[] {
+function regionRows(call: ts.CallExpression, constants: StringConstants): Map<string, string>[] {
   const [propsType, hosts, names] = call.arguments
   if (propsType === undefined || !ts.isStringLiteralLike(propsType)) return []
   return stringList(names).map(
@@ -92,7 +120,7 @@ function regionRows(call: ts.CallExpression): Map<string, string>[] {
         ['name', name],
         ['kind', 'region'],
         ['propsType', propsType.text],
-        ['hostRoutes', stringList(hosts).join(',')],
+        ['hostRoutes', stringList(hosts, constants).join(',')],
       ])
   )
 }
@@ -100,12 +128,12 @@ function regionRows(call: ts.CallExpression): Map<string, string>[] {
 /** The rows one `INJECTION_POINTS` element stands for: an object literal is one row, and a
  * `...pagePoints('<propsType>', ['<area>.<page>', ...])` spread is the three standard points of
  * each listed page (the registry module expands it the same way at runtime). */
-function registryRows(element: ts.Expression): Map<string, string>[] {
+function registryRows(element: ts.Expression, constants: StringConstants): Map<string, string>[] {
   if (ts.isObjectLiteralExpression(element)) return [stringFields(element)]
   if (!ts.isSpreadElement(element) || !ts.isCallExpression(element.expression)) return []
   const call = element.expression
   if (!ts.isIdentifier(call.expression)) return []
-  if (call.expression.text === 'regionPoints') return regionRows(call)
+  if (call.expression.text === 'regionPoints') return regionRows(call, constants)
   if (call.expression.text !== 'pagePoints') return []
   const [propsType, pages] = call.arguments
   if (propsType === undefined || !ts.isStringLiteralLike(propsType)) return []
@@ -131,12 +159,13 @@ export function readRegistryFields(webRoot: string): Map<string, Map<string, str
     return null
   }
   const source = ts.createSourceFile(REGISTRY_FILE, text, ts.ScriptTarget.Latest, true)
+  const constants = stringConstants(source)
   const registry = new Map<string, Map<string, string>>()
   const visit = (node: ts.Node): void => {
     if (isRegistryDeclaration(node) && node.initializer !== undefined) {
       const list = unwrap(node.initializer)
       const elements = ts.isArrayLiteralExpression(list) ? list.elements : []
-      for (const fields of elements.flatMap(registryRows)) {
+      for (const fields of elements.flatMap((element) => registryRows(element, constants))) {
         const name = fields.get('name')
         if (name !== undefined) registry.set(name, fields)
       }
