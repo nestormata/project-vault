@@ -186,6 +186,16 @@ compose_run() {
   fi
 }
 
+# Dry-run the real composition kit CLI over the pack at $1; sets DRY_RUN_OUT (stdout + stderr) and
+# DRY_RUN_STATUS (the exit code). A dry run writes nothing.
+compose_dry_run() {
+  DRY_RUN_STATUS=0
+  DRY_RUN_OUT="$(cd "$APP" && clean_env PV_FIXTURE_HOST="$INSTALLED" "$NODE_BIN" \
+    node_modules/@project-vault/composition-kit/dist/cli.js \
+    --pack "$1" --module-pack "$APP" --dry-run 2>&1)" || DRY_RUN_STATUS=$?
+  return 0
+}
+
 # Story 68.4 AC-2: an unknown injection point fails the composition against the REAL generated
 # registry, and the message says the way out. A dry run writes nothing.
 compose_unknown_point() {
@@ -194,9 +204,8 @@ compose_unknown_point() {
   ln -s "$APP/node_modules" "$bad/node_modules"
   sed -i "s/'auth.register.after'/'project.detail.nope'/" "$bad/pv-ui.manifest.ts"
   local out status=0
-  out="$(cd "$APP" && clean_env PV_FIXTURE_HOST="$INSTALLED" "$NODE_BIN" \
-    node_modules/@project-vault/composition-kit/dist/cli.js \
-    --pack "$bad" --module-pack "$APP" --dry-run 2>&1)" || status=$?
+  compose_dry_run "$bad"
+  out="$DRY_RUN_OUT" status="$DRY_RUN_STATUS"
   if [[ "$status" == '0' ]] || ! grep -q 'Injection point "project.detail.nope" does not exist' <<< "$out" ||
     ! grep -q 'a missing point never blocks you' <<< "$out"; then
     echo "fixture: an unknown injection point was not rejected as expected (exit $status): $out" >&2
@@ -215,9 +224,8 @@ compose_bad_host_routes() {
   ln -s "$APP/node_modules" "$bad/node_modules"
   sed -i "s|'/(app)/projects/\[projectId\]#page'|'/(app)/projects/[projectId]#nope'|" "$bad/pv-ui.manifest.ts"
   local out status=0
-  out="$(cd "$APP" && clean_env PV_FIXTURE_HOST="$INSTALLED" "$NODE_BIN" \
-    node_modules/@project-vault/composition-kit/dist/cli.js \
-    --pack "$bad" --module-pack "$APP" --dry-run 2>&1)" || status=$?
+  compose_dry_run "$bad"
+  out="$DRY_RUN_OUT" status="$DRY_RUN_STATUS"
   if [[ "$status" == '0' ]] || ! grep -qF 'injections.project.detail.tiles.hostRoutes' <<< "$out" ||
     ! grep -qF '/(app)/projects/[projectId]#nope' <<< "$out" ||
     ! grep -qF '/(app)/projects/[projectId]#page' <<< "$out"; then

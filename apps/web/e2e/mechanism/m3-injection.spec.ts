@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 import {
   apiContextFor,
   countAuditEvents,
@@ -16,6 +16,21 @@ const SETTINGS = '/settings'
 const TITLE_FIELD = (page: Page) => page.getByLabel('Document title')
 const PROBE = (page: Page) => page.getByTestId('mock-settings-tile-probe')
 const NOT_FOUND = 'status=404'
+
+/** An anonymous form POST to an injected action is redirected to /login before the action runs. */
+async function expectAnonymousLoginRedirect(
+  request: APIRequestContext,
+  path: string,
+  origin: string
+): Promise<void> {
+  const response = await request.post(path, {
+    form: { title: 'x' },
+    headers: { origin },
+    maxRedirects: 0,
+  })
+  expect(response.status()).toBe(303)
+  expect(response.headers()['location']).toBe('/login')
+}
 const DOCUMENT_EVENT = 'cm.document.created'
 
 test.describe('M3 injection into native PV pages', () => {
@@ -89,13 +104,7 @@ test.describe('M3 injection into native PV pages', () => {
     context,
   }) => {
     const base = process.env['E2E_BASE_URL'] ?? ''
-    const anonymous = await request.post('/settings?/settings.home.after.document', {
-      form: { title: 'x' },
-      headers: { origin: base },
-      maxRedirects: 0,
-    })
-    expect(anonymous.status()).toBe(303)
-    expect(anonymous.headers()['location']).toBe('/login')
+    await expectAnonymousLoginRedirect(request, '/settings?/settings.home.after.document', base)
     const user = await seedOrgOwner(context, 'm3-origin')
     const before = await countAuditEvents(user.orgId, DOCUMENT_EVENT)
     const foreign = await context.request.post('/settings?/settings.home.after.document', {
@@ -285,13 +294,11 @@ test.describe('M3 region points (Story 69.1)', () => {
       const crossOrigin = await post(own, 'http://evil.example')
       expect(crossOrigin.status()).toBe(403)
       // anonymous: PV's protected paths redirect before any action runs
-      const anonymous = await request.post(`/projects/${own}?/project.detail.tiles.ping`, {
-        form: { title: 'x' },
-        headers: { origin: base },
-        maxRedirects: 0,
-      })
-      expect(anonymous.status()).toBe(303)
-      expect(anonymous.headers()['location']).toBe('/login')
+      await expectAnonymousLoginRedirect(
+        request,
+        `/projects/${own}?/project.detail.tiles.ping`,
+        base
+      )
       expect(await countAuditEvents(user.orgId, TILE_EVENT)).toBe(before)
     } finally {
       await otherContext.close()
