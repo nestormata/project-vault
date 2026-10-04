@@ -29,6 +29,7 @@
 # curl's write-out format for printing only the HTTP status code.
 readonly CURL_STATUS_FORMAT='%{http_code}'
 readonly SELFTEST_LABEL='self-test'
+readonly WRONG_STATUS_MESSAGE='expected exactly 404'
 
 # Story 68-20: the kit's bins as a consumer runs them, through the symlinks npm creates in
 # node_modules/.bin (a `#!/usr/bin/env node` script, so PATH under clean_env must hold node).
@@ -994,13 +995,13 @@ compose_data_json_selftest() {
   printf '%s' '{"type":"data","nodes":[null,{"type":"data","data":[{"inject":1},{"who":2,"project":3},"iso:u1",404],"uses":{}}]}' > "$WORK/body.txt"
   compose_data_json_project_status "$SELFTEST_LABEL"
   printf '%s' '{"type":"data","nodes":[{"type":"data","data":[{"project":1},200],"uses":{}}]}' > "$WORK/body.txt"
-  compose_expect_failure_message 'expected exactly 404' compose_data_json_project_status "$SELFTEST_LABEL"
+  compose_expect_failure_message "$WRONG_STATUS_MESSAGE" compose_data_json_project_status "$SELFTEST_LABEL"
   printf '%s' '{"type":"data","nodes":[{"type":"data","data":[{"project":1},"404"],"uses":{}}]}' > "$WORK/body.txt"
-  compose_expect_failure_message 'expected exactly 404' compose_data_json_project_status "$SELFTEST_LABEL"
+  compose_expect_failure_message "$WRONG_STATUS_MESSAGE" compose_data_json_project_status "$SELFTEST_LABEL"
   printf '%s' '{"type":"data","nodes":[{"type":"data","data":[{"project":1,"other":2},200,404],"uses":{}}]}' > "$WORK/body.txt"
-  compose_expect_failure_message 'expected exactly 404' compose_data_json_project_status "$SELFTEST_LABEL"
+  compose_expect_failure_message "$WRONG_STATUS_MESSAGE" compose_data_json_project_status "$SELFTEST_LABEL"
   printf '%s' '{"type":"data","nodes":[{"type":"data","data":[{"project":1},4040],"uses":{}}]}' > "$WORK/body.txt"
-  compose_expect_failure_message 'expected exactly 404' compose_data_json_project_status "$SELFTEST_LABEL"
+  compose_expect_failure_message "$WRONG_STATUS_MESSAGE" compose_data_json_project_status "$SELFTEST_LABEL"
   printf '%s' '{"type":"data","nodes":[{"type":"data","data":[{"who":1},"iso:u1"],"uses":{}}]}' > "$WORK/body.txt"
   compose_expect_failure_message 'carries a project value' compose_data_json_project_status "$SELFTEST_LABEL"
   printf '%s' 'not json ,404 "project"' > "$WORK/body.txt"
