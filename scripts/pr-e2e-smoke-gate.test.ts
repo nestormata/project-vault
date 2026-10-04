@@ -196,6 +196,11 @@ describe('gate script: path matching', () => {
     expect(into.output).toBe('run=true')
   })
 
+  it('gates a non-ASCII path (git would quote it in text diff output)', () => {
+    const result = run({ changes: [{ path: 'apps/web/messages/español.json' }] })
+    expect(result.output).toBe('run=true')
+  })
+
   it('gates every first-level web subtree, so a new directory cannot dodge the list', () => {
     expect(webSubtrees.length).toBeGreaterThan(0)
     for (const subtree of webSubtrees) {
@@ -252,7 +257,7 @@ describe('gate script source', () => {
     expect(gateScript).toContain('set -euo pipefail')
     expect(gateScript).toContain(WARNING)
     expect(gateScript).toMatch(/failing open/)
-    expect(gateScript).toContain('--name-status')
+    expect(gateScript).toContain('--name-only -z --no-renames')
     expect(gateScript.match(/GATED_PREFIXES=\(/g)).toHaveLength(1)
   })
 })

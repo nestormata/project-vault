@@ -79,8 +79,13 @@ if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]]; then
   fail_open "no usable base SHA (${base_sha:-empty})"
 fi
 
-if ! diff_output="$(git diff --name-status -M "${base_sha}...${head_sha}" 2>&1)"; then
-  fail_open "changed-file lookup failed (${diff_output//$'\n'/ })"
+# -z keeps paths verbatim (git quotes non-ASCII or special names otherwise, which would dodge the
+# prefix match); --no-renames lists a rename as delete (old path) + add (new path), so both count.
+# pipefail (set above) makes a failing git fail the pipeline.
+diff_err="$(mktemp)"
+trap 'rm -f "$diff_err"' EXIT
+if ! diff_output="$(git diff --name-only -z --no-renames "${base_sha}...${head_sha}" 2>"$diff_err" | tr '\0' '\n')"; then
+  fail_open "changed-file lookup failed ($(tr '\n' ' ' < "$diff_err"))"
 fi
 
 if [[ -z "$diff_output" ]]; then
@@ -88,15 +93,12 @@ if [[ -z "$diff_output" ]]; then
   exit 0
 fi
 
-# Each line is "<status>\t<path>" or, for a rename/copy, "<status>\t<old>\t<new>": check every path.
-while IFS=$'\t' read -r -a fields; do
-  for path in "${fields[@]:1}"; do
-    for prefix in "${GATED_PREFIXES[@]}"; do
-      if [[ "$path" == "$prefix"* ]]; then
-        emit true "Running: ${path} is an e2e-relevant path"
-        exit 0
-      fi
-    done
+while IFS= read -r path; do
+  for prefix in "${GATED_PREFIXES[@]}"; do
+    if [[ "$path" == "$prefix"* ]]; then
+      emit true "Running: ${path} is an e2e-relevant path"
+      exit 0
+    fi
   done
 done <<< "$diff_output"
 
