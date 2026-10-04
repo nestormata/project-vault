@@ -142,6 +142,22 @@ export async function runCli(
   }
 }
 
+/**
+ * The settings the audit boots `createApp()` with. Must run before app.js (and config/env.ts) is
+ * imported. The audit is DB-free and sends no request, but the settings schema still requires two
+ * distinct non-superuser database roles, and the published API image (the form a consumer runs,
+ * Story 68.23) carries no database settings at all: placeholders fill whatever the caller did not
+ * set (no password; nothing ever connects). The no-extension run must not see a developer shell's
+ * extension settings (the same function generate-spec uses). Swagger UI is switched on so its
+ * routes are always audited, whatever the shell's NODE_ENV.
+ */
+export function prepareAuditEnv(settings: NodeJS.ProcessEnv): void {
+  settings['DATABASE_URL'] ??= 'postgresql://vault_app@localhost/project_vault'
+  settings['ADMIN_DATABASE_URL'] ??= 'postgresql://vault_admin@localhost/project_vault'
+  settings['ENABLE_API_DOCS'] = 'true'
+  prepareSpecGenerationEnv(settings)
+}
+
 async function main(): Promise<void> {
   // Usage errors are answered before anything is imported or booted.
   try {
@@ -150,12 +166,7 @@ async function main(): Promise<void> {
     process.stderr.write(`${(error as Error).message}\n${USAGE}\n`)
     process.exit(2)
   }
-  // Must run before app.js (and config/env.ts) is imported: the no-extension run must not see a
-  // developer shell's extension settings (the same function generate-spec uses). Swagger UI is
-  // switched on so its routes are always audited, whatever the shell's NODE_ENV.
-  process.env.DATABASE_URL ??= 'postgresql://vault_app@localhost:5432/project_vault'
-  process.env.ENABLE_API_DOCS = 'true'
-  prepareSpecGenerationEnv(process.env)
+  prepareAuditEnv(process.env)
   const { createApp } = await import('../app.js')
   const { getExtensionStatus } = await import('../extensions/loader.js')
   const code = await runCli(process.argv.slice(2), { createApp, getExtensionStatus })

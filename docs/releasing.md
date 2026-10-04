@@ -150,6 +150,19 @@ docker buildx imagetools inspect ghcr.io/nestormata/project-vault/api:X.Y.Z
 curl -sf https://<demo-api>/health   # expect version X.Y.Z, versionSource "release"
 ```
 
+The `api` image is also a published carrier of the **runtime route audit** (Story 68.23): the compiled
+entry `dist/scripts/runtime-route-audit.js` is a supported interface that consumers (CentralizeMe's
+pipeline) run with `docker run ... node dist/scripts/runtime-route-audit.js`. Smoke the released image
+without a pack (it must boot without a database, print `route audit: PASS` and exit 0):
+
+```bash
+docker run --rm --network none ghcr.io/nestormata/project-vault/api:X.Y.Z \
+  node dist/scripts/runtime-route-audit.js
+```
+
+(A stock image holds no module pack; the full pack-plus-classifications run is proven by the
+`Mock UI pack mechanism e2e` job on every relevant PR.)
+
 ## 5. Extension API (only when `packages/extension-api` changed)
 
 The npm package is released independently, on `extension-api-vX.Y.Z` tags. First confirm the

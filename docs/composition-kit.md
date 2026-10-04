@@ -584,6 +584,43 @@ required check, the first real publish, and promotion to `latest`.
   CI step in that job) checks hydration (with an oracle that fails on diverging server HTML), a client
   navigation without a document load, and the theme rune re-rendering an injected component.
 
+## Runtime route audit from the API image (no PV checkout)
+
+Design 12 step 3a: prove that every route on your composed API is `secureRoute`-built or classified, with
+Project Vault's own audit and without cloning Project Vault. The audit ships **compiled in the API image**
+(`dist/scripts/runtime-route-audit.js`, started with plain `node`: no `tsx`, no dev dependency, no database,
+no network, no secret). It is a supported, versioned interface of the image, pinned by the same tag as the
+rest of your compatibility tuple.
+
+1. Make your module pack resolvable from the image's `node_modules`. The stock `ghcr.io/nestormata/project-vault/api`
+   image does not contain your pack: build your composed API image `FROM` the Project Vault image at the
+   tuple's tag and install the pack into it (or use the pack's own image, which already is that).
+2. Extract the classifications of the composed pack: `pv-verify --app <dir> --only classifications --out
+   classifications.json` (written by the kit, never by hand).
+3. Run the audit, mounting the directory that holds the file read-only:
+
+```bash
+docker run --rm --network none -v "$PWD/audit:/audit:ro" <your-composed-api-image> \
+  node dist/scripts/runtime-route-audit.js --extension <package> --classifications /audit/classifications.json
+```
+
+`--extension` is a bare package specifier resolvable from the image (a path or URL is a usage error);
+`--classifications` is a file path inside the container. The container starts as root only long enough for
+the entrypoint to drop to the `node` user, so the mounted directory and file must be readable by uid 1000
+(mode `755` / `644`).
+
+| Exit | Meaning |
+|---|---|
+| `0` | Every route is `secureRoute`-built or classified. Stdout holds the report (`route audit: PASS`). |
+| `1` | The audit failed (an unclassified route, a duplicate, a stale classification) or the extension did not load (`extension <pkg> did not load: <reason>`). Stdout holds `route audit: FAIL` and one `  - <failure>` line per finding, each naming `METHOD /url`. |
+| `2` | A usage or input error (unknown flag, `--extension` that is not a bare package, an unreadable or malformed classification file). Nothing is booted; stderr holds the message and the usage line. |
+
+The report is sorted and holds no absolute path and no env value, so it is stable in CI logs. The audit
+checks classification integrity only; it never decides which routes may be public. The checkout form
+(`pnpm --filter @project-vault/api route-audit:runtime ...`) runs the same code through `tsx` and stays the
+in-repository and development form. Project Vault's CI runs the shipped form against the mock UI pack on
+every relevant PR (inside the required `Mock UI pack mechanism e2e` job), so it cannot rot.
+
 ## Mechanism e2e (mock UI pack)
 
 Story 68.10 proves M1-M7 together against PV's own build with a mock UI pack

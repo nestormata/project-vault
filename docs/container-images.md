@@ -29,6 +29,22 @@ workflow promotes the `1.2`, `1`, and `latest` aliases.
 Use an exact version or digest for production and Portainer deployments. `latest` is a convenience
 alias and moves when a newer release is published.
 
+## The runtime route audit is part of the `api` image
+
+The `api` image carries the compiled runtime route audit at `dist/scripts/runtime-route-audit.js`, a
+supported, versioned interface of the image (Story 68.23). A consumer proves its composed API's routes
+without a Project Vault checkout:
+
+```bash
+docker run --rm --network none -v "$PWD/audit:/audit:ro" <your-composed-api-image> \
+  node dist/scripts/runtime-route-audit.js --extension <package> --classifications /audit/classifications.json
+```
+
+Exit `0` pass, `1` an audit failure or an extension that did not load, `2` a usage or input error. It needs
+no database, no network and no secret. The recipe (how the pack gets into the image, the classification
+file, the report shape) is in [composition-kit.md](composition-kit.md#runtime-route-audit-from-the-api-image-no-pv-checkout).
+`scripts/check-runtime-route-audit-shipped.test.ts` fails if the entry is pruned from the image path.
+
 ## Test-only api build arg for the mock module pack
 
 `apps/api/Dockerfile` has an opt-in build arg `INCLUDE_MOCK_UI_PACK_MODULE` (default `false` in every stage that

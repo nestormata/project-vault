@@ -655,7 +655,14 @@ stubbed; the admin database URL variable still has to be set to any well-formed 
 ```bash
 # Prove every route on the composed API is secureRoute-built or classified. Exit 0 pass, 1 an audit failure
 # or an extension that did not load, 2 a usage or classification-file error.
+# (checkout / development form: needs a Project Vault checkout and runs through tsx)
 pnpm --filter @project-vault/api route-audit:runtime --extension <package> [--classifications <file>]
+
+# Shipped form: the same audit, compiled in the API image, no checkout. The package must resolve from the
+# image's node_modules (your composed image is FROM the Project Vault image); mount the classifications
+# directory read-only (readable by uid 1000).
+docker run --rm --network none -v "$PWD/audit:/audit:ro" <api-image> \
+  node dist/scripts/runtime-route-audit.js --extension <package> --classifications /audit/classifications.json
 
 # Write your composed OpenAPI document. Both flags together; --out must not resolve to PV's own spec.
 pnpm --filter @project-vault/api generate-spec --extension <package> --out <path>

@@ -286,6 +286,24 @@ mock_pack_export_context() {
   return 0
 }
 
+# Story 68.23 AC-2: when MOCK_UI_PACK_CLASSIFICATIONS_OUT names a file, extract the composed pack's
+# route classifications there with pv-verify (never hand-written), so the shipped route audit
+# (`node dist/scripts/runtime-route-audit.js --classifications <file>`, run in the API image by the
+# orchestrator) reads exactly what a consumer's pipeline would: 68-16's extraction chained to 68-14's
+# parser.
+mock_pack_export_classifications() {
+  local out="${MOCK_UI_PACK_CLASSIFICATIONS_OUT:-}"
+  [[ -n "$out" ]] || return 0
+  log "extracting the route classifications: $out"
+  mock_verify --only classifications --out "$out" || {
+    cat "$WORK/mock-verify.out" >&2
+    mock_fail 'pv-verify --only classifications failed over the mock pack'
+  }
+  [[ -s "$out" ]] || mock_fail 'pv-verify --only classifications wrote no file'
+  log 'OK: route classifications extracted'
+  return 0
+}
+
 # M5 failure row: an id web-host does not have is RECORDED and REPORTED, never refused: the lock lists
 # every id the pack's nav delta declares and references, and the compose output notes the vanished one.
 mock_check_m5() {
@@ -331,5 +349,6 @@ compose_mock_pack_checks() {
   mock_check_m4_m6 "$port"
   mock_check_m5
   mock_pack_export_context
+  mock_pack_export_classifications
   return 0
 }
