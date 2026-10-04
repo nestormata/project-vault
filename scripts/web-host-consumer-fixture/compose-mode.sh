@@ -189,10 +189,11 @@ compose_run() {
 # Dry-run the real composition kit CLI over the pack at $1; sets DRY_RUN_OUT (stdout + stderr) and
 # DRY_RUN_STATUS (the exit code). A dry run writes nothing.
 compose_dry_run() {
+  local pack_dir="$1"
   DRY_RUN_STATUS=0
   DRY_RUN_OUT="$(cd "$APP" && clean_env PV_FIXTURE_HOST="$INSTALLED" "$NODE_BIN" \
     node_modules/@project-vault/composition-kit/dist/cli.js \
-    --pack "$1" --module-pack "$APP" --dry-run 2>&1)" || DRY_RUN_STATUS=$?
+    --pack "$pack_dir" --module-pack "$APP" --dry-run 2>&1)" || DRY_RUN_STATUS=$?
   return 0
 }
 

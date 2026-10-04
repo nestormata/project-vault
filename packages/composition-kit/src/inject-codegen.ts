@@ -154,7 +154,9 @@ function rowsForHost(list: readonly CodegenInjection[], host: string): CodegenIn
 function withOptedInHosts(injections: readonly CodegenInjection[]): CodegenInjection[] {
   return [...groupBy(injections, (entry) => entry.point).values()].flatMap((list) => {
     if (list[0]?.scope !== 'component') return list
-    const hosts = [...new Set(list.flatMap((entry) => entry.hostRoutes ?? []))].sort()
+    const hosts = [...new Set(list.flatMap((entry) => entry.hostRoutes ?? []))].sort((a, b) =>
+      a.localeCompare(b, 'en')
+    )
     return hosts.flatMap((host) => rowsForHost(list, host))
   })
 }
