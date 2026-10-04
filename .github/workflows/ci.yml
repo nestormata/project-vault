@@ -259,6 +259,9 @@ jobs:
       - name: Check nightly workflow gate and flaky-repeat matrix (Story 66-11)
         run: pnpm vitest run scripts/check-nightly-workflow.test.ts
 
+      - name: Check PR e2e smoke gate and job wiring (Story 66-20)
+        run: pnpm vitest run scripts/pr-e2e-smoke-gate.test.ts
+
       - name: Check Fly scripts, workflows and pinned-CA call sites (Story 43.16 AC-3/AC-5, 43.28)
         run: pnpm vitest run scripts/fly-setup.test.ts scripts/fly-internal-tls.test.ts scripts/check-pg-tls-call-sites.test.ts scripts/check-fly-deploy-workflow.test.ts scripts/fly-ensure-started.test.ts
 
@@ -1105,3 +1108,89 @@ jobs:
         env:
           COMPOSITION_KIT_INTEGRATION: '1'
         run: pnpm vitest run scripts/check-composition-kit-integration.test.ts
+
+  # Story 66.20 (DW-406): a PR-time e2e signal. Epic 66 found 14 journeys broken by five product
+  # changes that no PR run exercised, because e2e only ran in nightly.yml. These two jobs run the
+  # FULL Playwright suite on a PR only when it touches a surface journeys assert on. The gate is a
+  # job, not a workflow-level `paths:` filter (that would stop the required checks too). A job
+  # skipped by `if:` reports as skipped, which counts as passing. The gate fails OPEN.
+  #
+  # ADVISORY: "PR e2e smoke" is deliberately NOT in branch protection's required list. Promoting it
+  # is Nestor's decision (Story 66.20 Q1), made with the settings-preserving recipe in
+  # ~/specs/gooverseas-lighthouse-merge-gate.md. A second push to the PR cancels a running smoke
+  # job (this workflow's concurrency group); the trace upload below still runs on cancel.
+  e2e-smoke-gate:
+    name: PR e2e smoke gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      # Full history: the gate diffs the PR base against the merge commit.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether the e2e smoke job runs
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: ./scripts/pr-e2e-smoke-gate.sh
+
+  # Same boot as nightly.yml's `e2e` job (scripts/e2e-stack.sh: 12 per-run throwaway secrets, so no
+  # repo secret is needed and fork PRs run it too). Measured on the green nightly 37059015596
+  # (cold ubuntu-latest): 9 min total, 4.4 min of it the 92 tests, so the full suite fits the 12 min
+  # budget and there is no journey subset to drift. timeout-minutes is 3x measured, rounded.
+  e2e-smoke:
+    name: PR e2e smoke
+    needs: e2e-smoke-gate
+    if: needs.e2e-smoke-gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 11.28.3
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Playwright's global-setup.ts runs on the host and imports @project-vault/shared (needs dist/).
+      - name: Build workspace packages
+        run: pnpm turbo build
+
+      # GOTCHA: never run the compose up command for this stack directly; without the script's
+      # throwaway secrets compose falls back to dev literals and the api dies under NODE_ENV=production.
+      - name: Start the full stack (db, migrate, api, web)
+        timeout-minutes: 15
+        run: ./scripts/e2e-stack.sh up
+
+      - name: Wait for API readiness
+        run: ./scripts/e2e-stack.sh wait
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @project-vault/web-host exec playwright install --with-deps chromium
+
+      - name: Run Playwright E2E suite
+        timeout-minutes: 15
+        run: E2E_CONFIRM_DB_RESET=true pnpm --filter @project-vault/web-host test:e2e
+
+      # Also on cancel (a newer push or a timeout), so traces survive; run_attempt keeps a re-run
+      # from colliding on the artifact name.
+      - name: Upload Playwright report + traces (on failure)
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-smoke-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: apps/web/e2e/test-results/
+          retention-days: 14
