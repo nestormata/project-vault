@@ -8,14 +8,22 @@ import type { PageServerLoad } from './$types.js'
 // rather than throwing an unhandled error — this also covers the vault-sealed edge case (Dev
 // Notes): if the vault is sealed, the backend call simply fails and the page shows the same
 // generic "not available" state used for an invalid/disabled token.
-const ownLoad = (async ({ params, fetch }) => {
-  let statusPage: PublicStatusPage | null = null
+//
+// Story 69.3 (AC-5.4): the "not available" answer carries `skipInjectedLoads: true`, which
+// `withInjectedLoad` consumes (and strips): no contribution load runs for an invalid, disabled or
+// sealed token, so a pack cannot use its own load as a token-validity oracle. Contribution loads on
+// this anonymous page run without `locals.user` and must return public-safe data only.
+interface OwnData {
+  statusPage: PublicStatusPage | null
+  skipInjectedLoads?: true
+}
+
+const ownLoad = (async ({ params, fetch }): Promise<OwnData> => {
   try {
-    statusPage = await getPublicStatusPage(fetch, params.token)
+    return { statusPage: await getPublicStatusPage(fetch, params.token) }
   } catch {
-    statusPage = null
+    return { statusPage: null, skipInjectedLoads: true }
   }
-  return { statusPage }
 }) satisfies PageServerLoad
 
 export const load: PageServerLoad = withInjectedLoad(ownLoad, '/status/[token]', 'page')
