@@ -207,9 +207,13 @@ describe('checkRlsCoverage', () => {
     // threw — this hook only still matters if the process were killed before that `finally`
     // ran (e.g. OOM/SIGKILL mid-test), which inline `finally` blocks cannot protect against.
     // DROP/CREATE POLICY require table ownership — vault_app isn't the owner.
-    for (const policyName of Object.keys(POLICY_DEFS)) {
-      await restorePolicy(policyName)
-    }
+    // Restores stay strictly sequential (a promise chain, not Promise.all): concurrent statements
+    // would open extra adminSql pool connections, and the session-level advisory lock taken by
+    // withRlsPolicyMutationLock must keep being acquired and released on one connection.
+    await Object.keys(POLICY_DEFS).reduce<Promise<void>>(
+      (previous, policyName) => previous.then(() => restorePolicy(policyName)),
+      Promise.resolve()
+    )
   })
 
   it('resolves when every org_id table has an RLS policy', async () => {
