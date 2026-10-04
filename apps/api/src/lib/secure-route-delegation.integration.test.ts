@@ -837,6 +837,26 @@ describe('Story 71.3 AC-4 — a streamed body is bounded by bodyLimit while hash
   })
 })
 
+describe('Story 71.3 review — an oversized declared body can never skip the body binding', () => {
+  it('answers 413 for a GET whose declared Content-Length exceeds bodyLimit instead of skipping the hash', async () => {
+    const { app, seen } = await boot({
+      method: 'GET',
+      url: '/cm/read',
+      security: { delegation: true },
+      bodyLimit: 64,
+    })
+    const res = await call(app, {
+      method: 'GET',
+      url: '/cm/read',
+      org: org.cmOrgId,
+      body: 'z'.repeat(300),
+      assertion: { claims: { bsh: bodyHashOf('') } },
+    })
+    expect(res.statusCode).toBe(413)
+    expect(seen).toHaveLength(0)
+  })
+})
+
 describe('Story 71.3 AC-4 — subject binding (check 10)', () => {
   const SUBJECTS = {
     delegation: {
@@ -1358,6 +1378,20 @@ describe('Story 71.3 AC-2b/AC-3/AC-7 — rate limiting', () => {
     })
     expect(codes.slice(0, 3)).toEqual([401, 401, 401])
     expect(codes.slice(3)).toEqual([429, 429])
+  })
+
+  it('spends the per-kid limiter before the operation check: an exhausted kid gets 429 and no security event for a wrong-op assertion', async () => {
+    const { app, seen } = await boot()
+    const bucket = stages.delegationKidBucket(DELEGATION_TEST_KID)
+    const sink = { status: () => sink, header: () => sink, send: () => sink }
+    for (let used = 0; used < stages.DELEGATION_PRE_BURN_LIMIT.max; used += 1) {
+      enforceUserRateLimit({ ...bucket, ...stages.DELEGATION_PRE_BURN_LIMIT, reply: sink as never })
+    }
+    const since = new Date()
+    const res = await call(app, { org: org.cmOrgId, op: 'POST /cm/other-operation' })
+    expect(res.statusCode).toBe(429)
+    expect(seen).toHaveLength(0)
+    expect(await securityEvents('operation_mismatch', since)).toHaveLength(0)
   })
 
   it('applies the per-kid limiter before any database access: over-limit -> 429 + Retry-After, no burn, no org lookup', async () => {

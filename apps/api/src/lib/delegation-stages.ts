@@ -241,6 +241,13 @@ async function afterVerification(
   claims: DelegationVerifiedClaims
 ): Promise<FastifyReply | undefined> {
   const known = { kid: claims.kid, jti: claims.jti }
+  // The per-kid limiter comes first: every rejection below writes a security event (a database
+  // write), so a replayed signature-valid assertion must not be able to drive those writes unbounded.
+  if (!enforceKidLimit(reply, claims.kid)) {
+    answered.add(request)
+    recordDelegationOutcome('rate_limited_pre', claims.kid)
+    return reply
+  }
   if (claims.operation !== routeKey) {
     return reject(request, reply, routeKey, {
       status: 403,
@@ -250,11 +257,6 @@ async function afterVerification(
       event: true,
       ...known,
     })
-  }
-  if (!enforceKidLimit(reply, claims.kid)) {
-    answered.add(request)
-    recordDelegationOutcome('rate_limited_pre', claims.kid)
-    return reply
   }
   if (hasUnsupportedEncoding(request)) {
     return reject(request, reply, routeKey, {
@@ -333,8 +335,12 @@ export function delegationBodyStage(routeKey: string) {
     }
     const limit = request.routeOptions.bodyLimit
     const declared = Number(request.headers['content-length'])
-    // Fastify's own parser answers 413 for a declared oversize body; do not read it here.
-    if (Number.isFinite(declared) && declared > limit) return payload
+    // A declared oversize body is refused here, never passed through unhashed: a method or content
+    // type that Fastify does not buffer (GET, a stream parser) would otherwise skip the binding.
+    if (Number.isFinite(declared) && declared > limit) {
+      ;(payload as Readable).destroy?.()
+      throw new errorCodes.FST_ERR_CTP_BODY_TOO_LARGE()
+    }
     const body = await readBounded(payload, limit)
     // Exact string equality on the canonical 43-character base64url form (DW-513 item 4).
     if (bodyHashOf(body) !== state.claims.bodyHash) {
