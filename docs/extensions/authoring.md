@@ -667,12 +667,44 @@ session. The declaration is plain data and is validated at registration:
   `isApiRouteDelegatedContext(ctx)` to narrow, or annotate the handler as `ApiRouteDelegatedHandler`.
 - The existing handler types are unchanged: `ApiRouteHandler` and `ApiRouteWrapHandler` gained a third
   type parameter that defaults to the previous context union.
-- **Inert until the host verifies assertions.** Until a Project Vault release that verifies service
-  assertions (Story 71-3), the host treats the declaration as a plain session route and rejects an
-  unauthenticated request with 401. Do not rely on `delegation` before that host version; see the
-  package CHANGELOG.
-- **Hooks.** Use `append` hooks on a delegated route. Hooks declared with `prepend` run before Project
-  Vault's verification stages, so they see the request before the assertion is checked.
+- **Host version.** A Project Vault host that includes Story 71-3 verifies the assertion before your handler
+  runs. A host older than that treats the declaration as a plain session route and rejects an
+  unauthenticated request with 401 `access_token_missing`; do not rely on `delegation` before that host
+  version (see the package CHANGELOG).
+- **What the host does, in order**, all before your handler: parse `Authorization: PV-Delegation <jws>`;
+  verify the signature and claims; check that the signed `op` equals this route's key
+  (`"<METHOD> <full url>"` as Fastify serves it, trailing slash removed); apply a per-key limiter;
+  reject any `Content-Encoding` other than `identity` (415 `delegation_unsupported_encoding`); hash the exact
+  raw request body bytes and compare to the signed `bsh` (400 `delegation_body_mismatch`); apply
+  `subjectFields` (400 `delegation_subject_mismatch`, values never echoed); resolve the org from the signed
+  `org` through `organizations.centralizeme_organization_id` (421 `delegation_org_not_served`); burn the
+  assertion's `jti` once per org (409 `delegation_replayed`, 503 `delegation_replay_store_unavailable` with
+  `Retry-After`); resolve the actor in that org. Every failure before the signature is checked is one
+  identical `401 delegation_invalid`. A signature-valid failure has its own code (401
+  `delegation_invalid_claims`, `delegation_expired`, `delegation_not_yet_valid`; 421
+  `delegation_wrong_instance`; 403 `delegation_operation_mismatch`, `delegation_actor_not_member`).
+- **Actors.** A linked actor (an `external_identities` row in the org) that is an active member is
+  `actorAttestation: 'pv_verified'` with the membership role in `ctx.auth.orgRole`. An actor with no link in
+  that org is admitted as `issuer_attested` with `actorUserId: null`, `ctx.auth.orgRole` absent and
+  `ctx.auth.userId` set to the nil UUID (it matches no user). A route that declares `minimumRole` or
+  `allowedRoles` rejects such an actor with 403 `insufficient_role`; a linked actor who is not an active
+  member is always rejected in this release. The host never creates a user, role, session or link.
+- **Retries.** The burn commits before your handler runs, so a handler failure (5xx) or a 503 after the burn
+  consumes the assertion. The sender must mint a new assertion for every attempt and rely on the
+  `idempotencyKey` of `writeAuditEvent` for write de-duplication. A rejected assertion is never retried.
+- **Audit.** A delegated route must set `writeAuditEvent: false`, otherwise the API refuses to boot, naming the
+  route: PV's default audit write would attribute the row to a session user that does not exist. Record the
+  event from your handler with the `writeAuditEvent` host service; typed actor attribution from `ctx.delegation` arrives with the next Epic 71 story.
+  A `capability` on a delegated route still runs against the resolved org (the per-org kill switch).
+- **Rate limit.** The route limiter's principal is `delegation:<resolved org id>`, never the actor: actors of
+  one org share a bucket, two orgs do not.
+- **Hooks.** Signature, claims, `op`, the limiter and the body hash are checked in the route's `preParsing`
+  stage, which runs after every `onRequest` hook (including the app-level per-IP limiter) and before the body
+  is read. `onRequest` hooks you declare (`prepend` or `append`) therefore run before the assertion is
+  checked and must not trust the request. The subject check, org resolution, burn and actor resolution run
+  in the first `preHandler` stages: `prepend` hooks of `preValidation` and `preHandler` run before them, so
+  `ctx.delegation` and the delegated `request.authContext` do not exist yet. Use `append` hooks for anything
+  that relies on them. No hook can make a rejected request reach your handler.
 
 ```ts
 import type { ApiRoutesDeclaration, ApiRoutesHooks } from '@project-vault/extension-api'
