@@ -1,6 +1,6 @@
 {
   "name": "@project-vault/composition-kit",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "license": "MIT",
   "type": "module",
   "description": "Build-time composer for Project Vault's web-host: overlays a UI pack onto the web source, locks drift and checks version compatibility.",

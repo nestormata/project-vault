@@ -362,6 +362,26 @@ describe('composition kit integration: wiring (Story 68.3 AC-12)', () => {
     expect(install, 'Chromium is installed before the integration test runs').toBeLessThan(run)
   })
 
+  it('the fixture runs pv-compose and pv-verify through the node_modules/.bin symlink and asserts it (Story 68-20)', () => {
+    const mode = readFileSync(
+      join(repositoryRoot, 'scripts/web-host-consumer-fixture/compose-mode.sh'),
+      'utf8'
+    )
+    const verify = readFileSync(
+      join(repositoryRoot, 'scripts/web-host-consumer-fixture/compose-verify.sh'),
+      'utf8'
+    )
+    expect(mode).toContain('readonly COMPOSE_LINK="$KIT_BIN_DIR/pv-compose"')
+    expect(mode).toContain('readonly VERIFY_LINK="$KIT_BIN_DIR/pv-verify"')
+    // The symlink guard, the compose invocation through the link and its non-empty (lock) assertion.
+    expect(mode).toContain('[[ ! -L "$APP/$bin"')
+    expect(mode).toContain('"$COMPOSE_LINK" \\\n    --pack "$PACK"')
+    expect(mode).toContain('composition.lock.json')
+    // pv-verify runs through the link, and the summary line proves it did work.
+    expect(verify).toContain('clean_env "$VERIFY_LINK"')
+    expect(verify).toContain('pv-verify: guards: .* passed, 0 failed')
+  })
+
   it('make composition-kit-integration runs it with COMPOSITION_KIT_INTEGRATION=1', () => {
     const makefile = readFileSync(join(repositoryRoot, 'Makefile'), 'utf8')
     expect(makeRecipe(makefile, 'composition-kit-integration')).toContain(

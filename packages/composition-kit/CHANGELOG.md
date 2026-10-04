@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.7.1
+
+- **Fix: `pv-compose` and `pv-verify` did nothing, silently, when launched through a symlink** (Story 68-20,
+  CentralizeMe DW-330 finding 1). The `node_modules/.bin/pv-compose` and `node_modules/.bin/pv-verify`
+  entries that npm and pnpm create (and a symlinked package directory, as pnpm uses) made the bins
+  compare a real-path module URL with the link-path `argv[1]`, so `main` never ran and the exit code was 0. The entry check now compares real filesystem paths, so the bins behave the same through a symlink
+  as by their real path (and a path that cannot be resolved is still never mistaken for the entry).
+  Consumers no longer need `node --preserve-symlinks-main <kit>/dist/cli.js`; remove that workaround.
+  No contract, flag, lock or output change.
+
 ## 0.7.0
 
 - **Breaking: the `routeClassifications` authoring shape** (Story 68-16). An entry is now the runtime
