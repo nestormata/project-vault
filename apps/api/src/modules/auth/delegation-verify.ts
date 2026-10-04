@@ -69,7 +69,7 @@ export type DelegationVerifyResult =
 export type DelegationVerifierDeps = {
   now?: () => number
   keys?: readonly DelegationVerifyKey[]
-  instanceId?: string | undefined
+  instanceId?: string
   issuer?: string
   verifyFn?: VerifyFn
 }
