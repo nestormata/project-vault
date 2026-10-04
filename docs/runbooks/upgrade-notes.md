@@ -332,3 +332,20 @@ only the 1.4.0 operator actions are repeated here. There is no required pre-step
   overrides a route PV does not have, or adds a route that collides with an existing one, now stops
   the boot with a `startup.failed` line naming the extension. Extensions that declare no `apiRoutes`
   are unaffected.
+
+## Next release (unreleased)
+
+There is no required pre-step.
+
+- **Migration `0103`** (`0103_delegation_assertion_jti.sql`) adds one table,
+  `delegation_assertion_jti`, the burn ledger for service-delegated actor assertions. Row-level
+  security is enabled and forced and the table is owned by `vault_owner`. `vault_app` can only
+  `SELECT` and `INSERT` on it (a burned assertion cannot be un-burned by application code);
+  `vault_admin` gets `SELECT (org_id, jti, expires_at)` and `DELETE` for the prune job only. It alters
+  no existing table and backfills nothing, so it is instant on any instance size. The `migrate`
+  service applies it on the next pull.
+- **New background job `delegation/prune-assertion-jti`** runs every minute. A row lives about
+  90 seconds (assertion expiry plus 30 seconds of clock skew) plus a 300-second prune grace, so the
+  table stays small. Each run deletes at most 5000 rows, oldest first; a `job.backlog` log line means
+  a run hit that limit and the rest drains on the following runs. The job needs
+  `ADMIN_DATABASE_URL`, which the API already requires.

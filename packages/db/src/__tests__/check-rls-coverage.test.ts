@@ -256,7 +256,12 @@ describe('checkRlsCoverage', () => {
         JOIN LATERAL aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) acl ON true
         JOIN pg_catalog.pg_roles grantee ON grantee.oid = acl.grantee
        WHERE n.nspname = 'public'
-         AND c.relname IN ('audit_log_entries', 'platform_audit_events', 'extension_audit_idempotency_keys')
+         AND c.relname IN (
+           'audit_log_entries',
+           'platform_audit_events',
+           'extension_audit_idempotency_keys',
+           'delegation_assertion_jti'
+         )
          AND grantee.rolname = 'vault_app'
     `
     const byTable = new Map<string, Set<string>>()
@@ -270,9 +275,34 @@ describe('checkRlsCoverage', () => {
       'platform_audit_events',
       // Story 71.1: the idempotency dedupe table is registered as append-only too.
       'extension_audit_idempotency_keys',
+      // Story 71.7: a burned delegation assertion can never be un-burned by application code.
+      'delegation_assertion_jti',
     ]) {
       expect(byTable.get(table)).toEqual(new Set(['SELECT', 'INSERT']))
     }
+  })
+
+  // Story 71.7 AC-2: the delegation burn ledger is org-scoped (never exempt), forced and
+  // append-only, and the guard reports drift on either dimension by table name.
+  it('fails when delegation_assertion_jti loses FORCE ROW LEVEL SECURITY', async () => {
+    await withForceDropped('delegation_assertion_jti', async () => {
+      await expect(checkRlsCoverage(sql)).rejects.toThrow(
+        /ENABLE\/FORCE set equality drift detected: .*delegation_assertion_jti/
+      )
+    })
+  })
+
+  it('fails when vault_app is granted DELETE on delegation_assertion_jti', async () => {
+    await withRlsPolicyMutationLock(async () => {
+      await adminSql`GRANT DELETE ON TABLE delegation_assertion_jti TO vault_app`
+      try {
+        await expect(checkRlsCoverage(sql)).rejects.toThrow(
+          /vault_app table grants drift detected: .*delegation_assertion_jti \(role=vault_app; forbidden=DELETE\)/
+        )
+      } finally {
+        await adminSql`REVOKE DELETE ON TABLE delegation_assertion_jti FROM vault_app`
+      }
+    })
   })
 
   it('fails when an append-only audit table grants TRUNCATE', async () => {

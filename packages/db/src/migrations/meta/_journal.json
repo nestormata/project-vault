@@ -722,6 +722,13 @@
       "when": 1790976876882,
       "tag": "0102_extension_audit_idempotency_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1791081375923,
+      "tag": "0103_delegation_assertion_jti",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,23 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+### Upgrade notes (read before `docker compose pull`)
+
+- **Migration 0103 runs automatically** via the `migrate` service. It is additive and instant: one
+  new table, `delegation_assertion_jti` (row-level security forced, owned by `vault_owner`),
+  with no change to any existing table and no backfill. `vault_app` can only `SELECT` and `INSERT`
+  on it; `vault_admin` gets `SELECT` on `org_id`, `jti` and `expires_at` plus `DELETE`, for the
+  prune job only. No new environment variables.
+
+### Added
+
+- **Delegation assertion replay store** (Story 71.7, Epic 71). The burn ledger that makes a
+  service-delegated actor assertion single-use: each assertion's `jti` is recorded once per org in
+  `delegation_assertion_jti` (primary key `(org_id, jti)`, insert-first, fail closed when the store
+  is unreachable). Rows live about 90 seconds after the assertion expires plus a 5-minute prune
+  grace; the new `delegation/prune-assertion-jti` job deletes expired rows every minute in one
+  bounded batch. Nothing calls the store yet: the delegated route integration lands with Story 71.3.
+
 ## [1.4.0] - 2026-10-03
 
 Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.4.0`

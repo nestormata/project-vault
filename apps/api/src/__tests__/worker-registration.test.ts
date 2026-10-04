@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import journal from '../../../../packages/db/src/migrations/meta/_journal.json' with { type: 'json' }
 import { JOB_NAME as SCHEDULED_TASK_JOB_NAME } from '../workers/extension-scheduled-tasks.js'
 import { SCHEDULED_TASK_WATCHDOG_JOB_NAME } from '../workers/extension-scheduled-tasks-watchdog.js'
+import { DELEGATION_JTI_PRUNE_JOB } from '../workers/prune-delegation-assertion-jti.js'
 
 const SRC_DIR = resolve(import.meta.dirname, '..')
 const MAIN_TS_MODULE_PATH = resolve(import.meta.dirname, '../main.ts')
@@ -64,6 +65,23 @@ describe('extension scheduled-task jobs registration (Story 56.2 AC7)', () => {
     expect(SCHEDULED_TASK_JOB_NAME).toMatch(PG_BOSS_NAME_PATTERN)
     expect(SCHEDULED_TASK_WATCHDOG_JOB_NAME).toMatch(PG_BOSS_NAME_PATTERN)
     expect(SCHEDULED_TASK_WATCHDOG_JOB_NAME).not.toBe(SCHEDULED_TASK_JOB_NAME)
+  })
+})
+
+describe('delegation/prune-assertion-jti registration (Story 71.7 AC-7.1)', () => {
+  it('is registered every minute in the schedules map and in the workers map in main.ts', () => {
+    // This test intentionally inspects the static source file so worker registration cannot drift.
+    // Module-relative (static) path, so no lint suppression is needed for the read.
+    const mainSource = readFileSync(MAIN_TS_MODULE_PATH, 'utf-8')
+    const schedulesBlock = extractBalancedBlock(mainSource, REGISTER_SCHEDULES)
+    const workersBlock = extractBalancedBlock(mainSource, REGISTER_WORKERS)
+
+    expect(DELEGATION_JTI_PRUNE_JOB).toBe('delegation/prune-assertion-jti')
+    expect(DELEGATION_JTI_PRUNE_JOB).toMatch(PG_BOSS_NAME_PATTERN)
+    expect(schedulesBlock).toContain("'delegation/prune-assertion-jti': { cron: '* * * * *' }")
+    expect(workersBlock).toContain(
+      "'delegation/prune-assertion-jti': () => pruneDelegationAssertionJti()"
+    )
   })
 })
 
