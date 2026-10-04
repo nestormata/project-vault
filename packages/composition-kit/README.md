@@ -290,8 +290,14 @@ public. Then, as the input of your CI's route audit step:
 
 ```bash
 pv-verify --app <dir> --only classifications --out classifications.json
-pnpm --filter @project-vault/api route-audit:runtime --extension <package> --classifications classifications.json
+# the shipped form, from the API image (no Project Vault checkout; the package must resolve from the image):
+docker run --rm --network none -v "$PWD:/audit:ro" <your-composed-api-image> \
+  node dist/scripts/runtime-route-audit.js --extension <package> --classifications /audit/classifications.json
 ```
+
+The checkout form (`pnpm --filter @project-vault/api route-audit:runtime ...`) runs the same code through `tsx`.
+Exit `0` pass, `1` an audit failure or an extension that did not load, `2` a usage or input error; see
+[docs/composition-kit.md](../../docs/composition-kit.md#runtime-route-audit-from-the-api-image-no-pv-checkout).
 
 `--only classifications --out <file>` runs the preflight (lock current, generated entries untouched), then
 writes the locked entries as a JSON array sorted by `route` (`[]` when there are none), atomically, and

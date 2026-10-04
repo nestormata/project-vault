@@ -19,6 +19,14 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **The runtime route audit is runnable from the API image** (Story 68.23, Epic 68). A consumer proves its
+  composed API's routes with Project Vault's own audit and without cloning Project Vault:
+  `docker run --rm -v <dir>:/audit:ro <api-image> node dist/scripts/runtime-route-audit.js --extension <pkg>
+  --classifications /audit/classifications.json` (exit `0` pass, `1` audit failure or extension did not load,
+  `2` usage or input error; no database, network or secret needed). The compiled entry is a supported,
+  versioned interface of the `api` image. The `Mock UI pack mechanism e2e` job now runs this shipped form
+  against the mock UI pack, with classifications extracted by `pv-verify --only classifications`.
+  See [docs/composition-kit.md](docs/composition-kit.md#runtime-route-audit-from-the-api-image-no-pv-checkout).
 - **Delegation assertion replay store** (Story 71.7, Epic 71). The burn ledger that makes a
   service-delegated actor assertion single-use: each assertion's `jti` is recorded once per org in
   `delegation_assertion_jti` (primary key `(org_id, jti)`, insert-first, fail closed when the store
