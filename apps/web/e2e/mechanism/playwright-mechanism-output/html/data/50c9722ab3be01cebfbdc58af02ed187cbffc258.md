@@ -1,0 +1,99 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: m3-monitoring-injection.spec.ts >> M3 monitoring region points: endpoint detail (Story 69.3) >> fails (rejected): the opted-in action answers a foreign endpoint like a nonexistent one, writes nothing, and rejects anonymous and cross-origin posts
+- Location: e2e/mechanism/m3-monitoring-injection.spec.ts:170:3
+
+# Error details
+
+```
+Error: {"code":"url_not_allowed","message":"Unable to resolve hostname"}
+
+expect(received).toBeTruthy()
+
+Received: false
+```
+
+# Test source
+
+```ts
+  1  | import type { BrowserContext } from '@playwright/test'
+  2  | import { expect } from '@playwright/test'
+  3  | 
+  4  | // AC-I4/AC-J4-1's "UI is for validation only" principle: J2/J4's own subject under test is
+  5  | // role-gating / the rotation flow, not project/credential/dependency creation (J1 already covers
+  6  | // creation via the real UI) — so these journeys reach their starting state via direct API calls
+  7  | // through the browser context's own authenticated cookie jar (context.request), matching
+  8  | // registerAndLoginViaApi's same convention.
+  9  | 
+  10 | // Shared by every direct-API mutation below: POST, assert 2xx, unwrap the `{ data }` envelope
+  11 | // (matching apps/web's own apiFetch/parseApiEnvelope convention).
+  12 | async function postAndUnwrap<T>(context: BrowserContext, url: string, data: unknown): Promise<T> {
+  13 |   const response = await context.request.post(url, { data })
+  14 |   expect(response.ok(), await response.text()).toBeTruthy()
+  15 |   const body = (await response.json()) as { data: T }
+  16 |   return body.data
+  17 | }
+  18 | 
+  19 | export async function createProjectViaApi(
+  20 |   context: BrowserContext,
+  21 |   opts: { name: string; slug: string }
+  22 | ): Promise<{ id: string; name: string }> {
+  23 |   return postAndUnwrap(context, '/api/v1/projects', { name: opts.name, slug: opts.slug })
+  24 | }
+  25 | 
+  26 | export async function createCredentialViaApi(
+  27 |   context: BrowserContext,
+  28 |   projectId: string,
+  29 |   opts: { name: string; value: string }
+  30 | ): Promise<{ id: string; name: string }> {
+  31 |   return postAndUnwrap(context, `/api/v1/projects/${projectId}/credentials`, {
+  32 |     name: opts.name,
+  33 |     value: opts.value,
+  34 |   })
+  35 | }
+  36 | 
+  37 | export async function createServiceEndpointViaApi(
+  38 |   context: BrowserContext,
+  39 |   projectId: string,
+  40 |   opts: { name: string; url: string }
+  41 | ): Promise<{ id: string; name: string }> {
+  42 |   const response = await context.request.post(`/api/v1/projects/${projectId}/service-endpoints`, {
+  43 |     data: opts,
+  44 |   })
+> 45 |   expect(response.ok(), await response.text()).toBeTruthy()
+     |                                                ^ Error: {"code":"url_not_allowed","message":"Unable to resolve hostname"}
+  46 |   const body = (await response.json()) as { data: { id: string; name: string } }
+  47 |   return body.data
+  48 | }
+  49 | 
+  50 | export async function addCredentialDependencyViaApi(
+  51 |   context: BrowserContext,
+  52 |   projectId: string,
+  53 |   credentialId: string,
+  54 |   opts: { systemName: string; systemType?: string }
+  55 | ): Promise<{ id: string }> {
+  56 |   return postAndUnwrap(
+  57 |     context,
+  58 |     `/api/v1/projects/${projectId}/credentials/${credentialId}/dependencies`,
+  59 |     { systemName: opts.systemName, systemType: opts.systemType ?? 'other' }
+  60 |   )
+  61 | }
+  62 | 
+  63 | export async function createInvitationViaApi(
+  64 |   context: BrowserContext,
+  65 |   projectId: string,
+  66 |   opts: { email: string; role: 'admin' | 'member' | 'viewer' }
+  67 | ): Promise<void> {
+  68 |   await postAndUnwrap(context, `/api/v1/projects/${projectId}/invitations`, {
+  69 |     email: opts.email,
+  70 |     role: opts.role,
+  71 |   })
+  72 | }
+  73 | 
+```

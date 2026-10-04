@@ -23,7 +23,7 @@ const STATUS_TILE = 'mock-status-services'
 const ENDPOINT_EVENT = 'cm.document.created'
 const NOT_FOUND = 'Endpoint not found'
 const ACTION = 'project.service-endpoints-detail.history.ping'
-const ENDPOINT_URL = 'https://api.example.com/health'
+const ENDPOINT_URL = 'https://example.com/health'
 
 const unique = (label: string) => `${label}-${randomUUID().slice(0, 8)}`
 const detailPath = (projectId: string, endpointId: string) =>
