@@ -137,6 +137,8 @@ const GATED_PATHS = [
   'apps/web/playwright.config.ts',
   'packages/extension-api/src/manifest.ts',
   'packages/extension-api/src/index.ts',
+  'apps/api/src/extensions/status-routes.ts',
+  'apps/api/src/auth/service.ts',
   'fixtures/extensions/envelope/manifest.json',
   'docker-compose.yml',
   'docker-compose.e2e.yml',

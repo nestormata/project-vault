@@ -25,13 +25,18 @@ head_sha="${HEAD_SHA:-HEAD}"
 
 # The single list of gated path prefixes (whole subtrees, never file-by-file). It covers the
 # surfaces journeys assert on: UI copy, routes, components, the e2e suite itself, the extension
-# manifest/API fixtures, the compose stack and its boot script, and this workflow.
+# manifest/API fixtures, the compose stack and its boot script, and this workflow. Two API trees
+# are included beyond the story's list because historical breaks came from them: the extension
+# status envelope J24 pins exactly (30.1 clockSkew, 68-8 apiRoutes) and the register/login
+# anti-enumeration responses (1.20). Other API-only contract changes are a known residual gap.
 GATED_PREFIXES=(
   "apps/web/messages/"
   "apps/web/src/"
   "apps/web/e2e/"
   "apps/web/playwright.config.ts"
   "packages/extension-api/src/"
+  "apps/api/src/extensions/"
+  "apps/api/src/auth/"
   "fixtures/"
   "docker-compose"
   "scripts/e2e-stack.sh"
