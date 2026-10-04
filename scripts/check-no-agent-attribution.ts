@@ -22,8 +22,10 @@ export type CheckResult = { code: number; lines: string[] }
 
 const AGENT_NAMES = /claude|anthropic|copilot|codex|openai|gemini|chatgpt|gpt-/i
 const FOOTER_TOOLS = /claude|codex|copilot|chatgpt|gemini/i
-const CO_AUTHOR_KEY = /^\s*co-?authored-?by\s*:/i
-const SESSION_KEY = /^\s*[\w-]*session\s*:/i
+// Optional bullet/quote markers before the key: a PR body may render a trailer inside markdown.
+const CO_AUTHOR_KEY = /^[\s>*_-]*co-?authored-?by\s*:/i
+const SESSION_KEY = /^[\s>*_-]*[\w-]*session\s*:/i
+const LINE_BREAK = /\r\n|[\n\r\v\f\u0085\u2028\u2029]/
 const SESSION_URL = /claude\.ai\/code\/session/i
 const GENERATED_WITH = /\bgenerated with\b/i
 // Zero-width, soft-hyphen and bidi format characters an author could hide inside a keyword,
@@ -59,21 +61,23 @@ function classify(line: string): string[] {
 /** Pure scan of one message: every offending line with the rule it broke. */
 export function findAttribution(text: string): AttributionFinding[] {
   const findings: AttributionFinding[] = []
-  for (const line of normalise(text).split(/\r?\n/)) {
+  for (const line of normalise(text).split(LINE_BREAK)) {
     for (const rule of classify(line)) findings.push({ rule, line: line.trim() })
   }
   return findings
 }
 
 function readCommits(cwd: string, base: string): { sha: string; message: string }[] {
-  const out = trustedGit(cwd, ['log', '--no-merges', '--format=%H%x00%B%x1e', `${base}..HEAD`])
+  if (base.startsWith('-')) throw new Error(`base ref must not start with '-': ${base}`)
+  // -z separates commits with NUL, which a commit message can never contain, so no message text
+  // can forge a record boundary and hide a trailer from the scan.
+  const out = trustedGit(cwd, ['log', '--no-merges', '-z', '--format=%H%n%B', `${base}..HEAD`])
   return out
-    .split('\x1e')
-    .map((record) => record.replace(/^\n+/, ''))
-    .filter((record) => record.length > 0)
+    .split('\x00')
+    .filter((record) => record.trim().length > 0)
     .map((record) => {
-      const [sha = '', ...rest] = record.split('\x00')
-      return { sha, message: rest.join('\x00') }
+      const newline = record.indexOf('\n')
+      return { sha: record.slice(0, newline).trim(), message: record.slice(newline + 1) }
     })
 }
 

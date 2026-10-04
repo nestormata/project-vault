@@ -51,6 +51,12 @@ describe('findAttribution', () => {
     )
   })
 
+  it('flags trailers after a bare carriage return, in a bullet, or in a quote', () => {
+    expect(findAttribution(`text\r${agentCoAuthor}`)).toHaveLength(1)
+    expect(findAttribution(`- ${agentCoAuthor}`)).toHaveLength(1)
+    expect(findAttribution(`> ${agentCoAuthor}`)).toHaveLength(1)
+  })
+
   it('passes a human co-author', () => {
     expect(findAttribution(`${COAUTHOR_KEY}: Ada Lovelace <ada@example.com>`)).toEqual([])
   })
@@ -160,6 +166,19 @@ describe('runCheck', () => {
     expect(result.code).toBe(1)
     expect(result.lines.every((l) => l.includes('PR body'))).toBe(true)
     expect(result.lines.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('rejects a base that looks like a git option (exit 2, no option injection)', () => {
+    const result = runCheck({ cwd: dir, base: '--output=injected.txt', env: {} })
+    expect(result.code).toBe(2)
+    expect(result.lines.join('\n')).toMatch(/must not start with/)
+  })
+
+  it('still scans a trailer hidden after a record-separator control character', () => {
+    git('checkout', '-q', '-b', BRANCH)
+    commit(`feat: sneaky\n\nprose\u001e\n${agentCoAuthor}`)
+    const result = runCheck({ cwd: dir, base: 'main', env: {} })
+    expect(result.code).toBe(1)
   })
 
   it('fails on an offending PR title', () => {
