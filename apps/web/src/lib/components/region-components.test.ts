@@ -401,12 +401,14 @@ beforeAll(async () => {
       default: [{ id: `${point}#0`, order: 0, component: probe }],
     }))
   }
-  await Promise.all(
-    CASES.map(async (entry) => {
-      loaded.set(entry.point, (await entry.load()).default)
-    })
-  )
-})
+  // One import at a time: `vi.doMock` queues its registrations, and the first import after them is the
+  // one that waits for the queue to settle. Concurrent imports would let the later ones start before
+  // the mocks resolve (cold transform cache, as in a freshly composed tree) and load the empty point.
+  await CASES.reduce(async (previous, entry) => {
+    await previous
+    loaded.set(entry.point, (await entry.load()).default)
+  }, Promise.resolve())
+}, 120_000)
 afterEach(cleanup)
 
 function mount(entry: Case, data: Record<string, readonly unknown[]> | undefined) {
