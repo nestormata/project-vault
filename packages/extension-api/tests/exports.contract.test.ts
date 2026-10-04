@@ -46,6 +46,7 @@ describe('@project-vault/extension-api public value exports', () => {
       'SCHEDULED_TASK_NAME_PATTERN',
       'UI_PANEL_SLOT_NAME_PATTERN',
       'defineExtension',
+      'isApiRouteDelegatedContext',
       'isExtensionApiVersionSupported',
       'registerExtension',
     ])

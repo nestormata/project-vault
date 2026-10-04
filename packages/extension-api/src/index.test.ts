@@ -10,6 +10,7 @@ describe('index.ts — root-only export surface (AC1, AC2)', () => {
     expect(new Set(Object.keys(ExtensionApi))).toEqual(
       new Set([
         'defineExtension',
+        'isApiRouteDelegatedContext',
         'ANONYMOUS_ROUTE_PATH_PATTERN',
         'API_ROUTE_HOOK_PHASES',
         'API_ROUTE_METHODS',

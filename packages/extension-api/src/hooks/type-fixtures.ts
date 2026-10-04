@@ -1,6 +1,18 @@
 import type { AuthResult, AuthStrategy } from './auth-strategy.js'
 import type { CapabilityDecision, CapabilityGate } from './capability-gate.js'
 import type { AuditEventSourceWriteInput } from './audit-event-source.js'
+import { isApiRouteDelegatedContext } from './api-routes.js'
+import type {
+  ApiRouteContext,
+  ApiRouteDelegatedHandler,
+  ApiRouteDelegatedWrapHandler,
+  ApiRouteHandler,
+  ApiRouteOrgRole,
+  ApiRoutePublicContext,
+  ApiRouteReply,
+  ApiRouteRequest,
+  ApiRouteWrapHandler,
+} from './api-routes.js'
 
 /**
  * Compile-only fixture (AC3): proves `onAuthenticate` must return `Promise<AuthResult>`, not a
@@ -51,4 +63,50 @@ export const hmacCarryingWriteInputFixture: AuditEventSourceWriteInput = {
   // @ts-expect-error — AuditEventSourceWriteInput must never accept a keyVersion/hmac field
   keyVersion: 1,
   hmac: 'deadbeef',
+}
+
+/**
+ * Story 71.8 AC-3/AC-4 — a handler annotated with the pre-71.8 context union must still be an
+ * `ApiRouteHandler` / `ApiRouteWrapHandler` (the new `Ctx` type parameter defaults to that union),
+ * so the minor release breaks no existing author. No `@ts-expect-error` here: it must compile.
+ */
+export const legacyApiRouteHandlerFixture: ApiRouteHandler = (
+  ctx: ApiRouteContext | ApiRoutePublicContext,
+  _req: ApiRouteRequest,
+  _reply: ApiRouteReply
+): unknown => ctx
+export const legacyApiRouteWrapHandlerFixture: ApiRouteWrapHandler = (
+  ctx: ApiRouteContext | ApiRoutePublicContext,
+  _req: ApiRouteRequest,
+  _reply: ApiRouteReply,
+  next: () => Promise<unknown>
+): unknown => [ctx, next]
+
+/** A handler narrowing with the guard reads the delegated fields; `orgRole` may be absent. */
+export const delegatedHandlerFixture: ApiRouteHandler = (ctx) => {
+  if (!isApiRouteDelegatedContext(ctx)) return undefined
+  const attestation: 'pv_verified' | 'issuer_attested' = ctx.delegation.actorAttestation
+  const role: ApiRouteOrgRole | undefined = ctx.auth.orgRole
+  const actorUserId: string | null = ctx.delegation.actorUserId
+  const operator: false = ctx.auth.isPlatformOperator
+  return [attestation, role, actorUserId, operator]
+}
+
+/** The delegated handler aliases receive the delegated context without narrowing. */
+export const delegatedAliasFixture: ApiRouteDelegatedHandler = (ctx) => ctx.delegation.orgId
+export const delegatedWrapAliasFixture: ApiRouteDelegatedWrapHandler = (
+  ctx,
+  _req,
+  _reply,
+  next
+) => [ctx.auth.sessionId, next]
+
+/** `ctx.delegation` is not readable on a non-narrowed context, and `actorUserId` can be null. */
+export const nonNarrowedDelegationFixture: ApiRouteHandler = (ctx) =>
+  // @ts-expect-error — `delegation` does not exist on ApiRouteContext | ApiRoutePublicContext
+  ctx.delegation
+export const nullableActorUserIdFixture: ApiRouteDelegatedHandler = (ctx) => {
+  // @ts-expect-error — `actorUserId` is `string | null`, not assignable to `string`
+  const userId: string = ctx.delegation.actorUserId
+  return userId
 }
