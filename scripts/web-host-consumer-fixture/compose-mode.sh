@@ -25,6 +25,7 @@
 
 # curl's write-out format for printing only the HTTP status code.
 readonly CURL_STATUS_FORMAT='%{http_code}'
+readonly SELFTEST_LABEL='self-test'
 
 compose_pack_name() {
   case "$VARIANT" in
@@ -707,6 +708,288 @@ compose_nav_checks() {
   return 0
 }
 
+# ---------------------------------------------------------------------------------------------
+# Story 68-15 (M3 on protected pages): the injection cases Story 68-4 could not run. Every helper
+# below ends a failing command with an explicit message (compose_fail); a bare grep or pipeline that
+# returned 1 under `set -e` once exited the whole variant silently (68-4's two reverted attempts).
+# ---------------------------------------------------------------------------------------------
+readonly CM_U1='session=u1'
+readonly CM_U2='session=u2'
+readonly ISOLATION_ROUNDS=10
+readonly SETTINGS_PATH='/settings'
+readonly SETTINGS_DATA_PATH='/settings/__data.json'
+readonly WHO_MARKER='PV_INJECT_WHO_MARKER_71c2e4'
+readonly THEME_MARKER='PV_INJECT_THEME_MARKER_5a90d3'
+readonly PROJECT_MARKER='PV_INJECT_PROJECT_MARKER_c4417b'
+
+# The body of the last compose_request must (not) contain a needle, with a message on failure.
+compose_body_has() { # needle context
+  local needle="$1" context="$2"
+  if ! grep -qF -- "$needle" "$WORK/body.txt"; then
+    compose_fail "${context}: the response lacks ${needle}"
+  fi
+  return 0
+}
+
+compose_body_lacks() { # needle context
+  local needle="$1" context="$2"
+  if grep -qF -- "$needle" "$WORK/body.txt"; then
+    compose_fail "${context}: the response contains ${needle}"
+  fi
+  return 0
+}
+
+# Case 1, the firing half: ISOLATION_ROUNDS requests as u1 and as u2 at once (so their loads
+# interleave in the one server process); each body goes to <dir>/<user>-<n>.body.
+compose_fire_isolation() { # port path dir
+  local port="$1" path="$2" dir="$3" round pid user
+  local pids=()
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  for round in $(seq 1 "$ISOLATION_ROUNDS"); do
+    for user in u1 u2; do
+      curl -s -o "${dir}/${user}-${round}.body" -H "cookie: session=${user}" "http://127.0.0.1:${port}${path}" &
+      pids+=($!)
+    done
+  done
+  for pid in "${pids[@]}"; do
+    wait "$pid" || compose_fail "an isolation request (GET ${path}) did not complete"
+  done
+  return 0
+}
+
+# Case 1, the judging half: every body holds ONLY its own caller's marker. A body without its own
+# marker fails too (two empty bodies would otherwise "pass" a no-leak check).
+compose_assert_isolation() { # dir context
+  local dir="$1" context="$2" user other round file
+  for user in u1 u2; do
+    other=u2
+    if [[ "$user" == 'u2' ]]; then
+      other=u1
+    fi
+    for round in $(seq 1 "$ISOLATION_ROUNDS"); do
+      file="${dir}/${user}-${round}.body"
+      if ! grep -qF -- "iso:${user}" "$file"; then
+        compose_fail "${context}: request ${round} as ${user} lacks its own marker iso:${user}"
+      fi
+      if grep -qF -- "iso:${other}" "$file"; then
+        compose_fail "${context}: request ${round} as ${user} contains the OTHER caller's marker iso:${other}"
+      fi
+    done
+  done
+  return 0
+}
+
+# A self-test: the command must fail AND say why (so a helper that goes silent is caught).
+compose_expect_failure_message() { # needle command...
+  local needle="$1" out status=0
+  shift
+  out="$("$@" 2>&1)" || status=$?
+  if [[ "$status" == '0' ]]; then
+    compose_fail "self-test: ${*} passed on deliberately broken input"
+  fi
+  if ! grep -qF -- "$needle" <<< "$out"; then
+    compose_fail "self-test: ${*} failed without printing: ${needle} (got: ${out})"
+  fi
+  return 0
+}
+
+compose_isolation_checks() {
+  local port="$1" dir="$WORK/isolation"
+  fixture_stub reset > /dev/null
+  compose_fire_isolation "$port" "$SETTINGS_PATH" "$dir/html"
+  compose_assert_isolation "$dir/html" 'isolation (SSR HTML)'
+  compose_fire_isolation "$port" "$SETTINGS_DATA_PATH" "$dir/data"
+  compose_assert_isolation "$dir/data" 'isolation (__data.json)'
+  fixture_expect_count inject-load $((ISOLATION_ROUNDS * 4))
+  # The assertion can fail: a leaked marker, and a missing one, are both reported with a message.
+  cp -r "$dir/html" "$dir/leaked"
+  sed -i 's/iso:u1/iso:u2/' "$dir/leaked/u1-3.body"
+  compose_expect_failure_message 'request 3 as u1 lacks its own marker iso:u1' compose_assert_isolation "$dir/leaked" "$SELFTEST_LABEL"
+  cp "$dir/html/u2-5.body" "$dir/html/u1-4.body"
+  compose_expect_failure_message "request 4 as u1 lacks its own marker iso:u1" compose_assert_isolation "$dir/html" "$SELFTEST_LABEL"
+  printf 'iso:u1 iso:u2' > "$dir/html/u1-4.body"
+  compose_expect_failure_message "request 4 as u1 contains the OTHER caller's marker iso:u2" compose_assert_isolation "$dir/html" "$SELFTEST_LABEL"
+  log "OK: ${ISOLATION_ROUNDS} interleaved requests per user each saw only their own injected data (SSR HTML and __data.json); the assertion fails on a leak"
+  return 0
+}
+
+# Case 2: an anonymous request is answered by the hook, so no contribution load runs; PV's own
+# failing load short-circuits the contribution load too; an authenticated request runs it once.
+compose_anonymous_counter_checks() {
+  local port="$1" status
+  fixture_stub reset > /dev/null
+  compose_expect_redirect "$port" GET "$SETTINGS_PATH" "$CM_ANON" 303 /login
+  compose_expect_redirect "$port" GET /settings/ "$CM_ANON" 308 /settings
+  compose_expect_redirect "$port" GET /%73ettings "$CM_ANON" 303 /login
+  compose_expect_data_redirect "$port" "$SETTINGS_DATA_PATH" "$CM_ANON" /login
+  compose_expect_redirect "$port" GET "$SETTINGS_PATH" "$CM_EXPIRED" 303 '/login?reason=session-expired'
+  fixture_expect_count inject-load 0
+  # PV's own load fails (the stub answers 500 for this project): the contribution load never runs.
+  status="$(compose_request "$port" GET /projects/p-boom "$CM_U1")"
+  if [[ "$status" != '500' ]]; then
+    compose_fail "GET /projects/p-boom answered HTTP ${status}, expected 500 from PV's own load"
+  fi
+  fixture_expect_count inject-load-guarded 0
+  # The positive twins: the counters do move when the loads do run.
+  compose_expect_ok "$port" GET "$SETTINGS_PATH" "$CM_U1" 'iso:u1'
+  fixture_expect_count inject-load 1
+  compose_expect_ok "$port" GET /projects/p-u1 "$CM_U1" "$PROJECT_MARKER"
+  fixture_expect_count inject-load-guarded 1
+  log 'OK: an anonymous request (page, __data.json, trailing slash, percent-encoded) never ran the injected load (counter 0), nor did a failing PV load; an authenticated request ran it once'
+  return 0
+}
+
+# Case 3: the contribution load, running as u1 through the request's own fetch, asks for u2's
+# project; the API's denial is rendered as a status and nothing of the other tenant is present.
+compose_cross_tenant_checks() {
+  local port="$1" path leaked
+  fixture_stub reset > /dev/null
+  for path in "$SETTINGS_PATH" "$SETTINGS_DATA_PATH"; do
+    if [[ "$path" == "$SETTINGS_PATH" ]]; then
+      compose_expect_ok "$port" GET "$path" "$CM_U1" 'project-status:404'
+    else
+      # devalue: the injected load returned {"who": ..., "project": 404}.
+      compose_expect_ok "$port" GET "$path" "$CM_U1" '"project"'
+      compose_body_has ',404' 'cross-tenant denial in the load data'
+    fi
+    for leaked in 'U2 Secret' 'p-u2' 'o-u2' 'u2@fixture'; do
+      compose_body_lacks "$leaked" "cross-tenant (${path}, as u1)"
+    done
+  done
+  if ! fixture_stub state | grep -qF 'GET /api/v1/projects/p-u2 as u1'; then
+    compose_fail 'the stub did not see the projects request made with the caller (u1) cookie'
+  fi
+  if fixture_stub state | grep -qF 'as u2'; then
+    compose_fail "the stub saw a request made with another caller's cookie"
+  fi
+  compose_expect_ok "$port" GET "$SETTINGS_PATH" "$CM_U2" 'project-status:200'
+  log "OK: a contribution load running as u1 got the API's 404 for u2's project (the page stays 200), and no tenant data reached the HTML or __data.json"
+  return 0
+}
+
+# Case 7: after the build, each injected component's marker is in the client chunk of the ONE page
+# that renders its point, never in an entry chunk and never in another page's chunk.
+compose_chunk_files() { # marker -> the files under build/client containing it
+  local marker="$1"
+  grep -rlF -- "$marker" "$APP/build/client/_app/immutable" || true
+  return 0
+}
+
+compose_chunk_checks() {
+  local marker files count
+  local seen=''
+  for marker in "$WHO_MARKER" "$THEME_MARKER" "$PROJECT_MARKER"; do
+    files="$(compose_chunk_files "$marker")"
+    count="$(printf '%s\n' "$files" | grep -c . || true)"
+    if [[ "$count" != '1' ]]; then
+      compose_fail "chunk placement: ${marker} is in ${count} client files, expected exactly the one page chunk: ${files}"
+    fi
+    case "$files" in
+      */immutable/nodes/*) ;;
+      *) compose_fail "chunk placement: ${marker} is not in a page node chunk: ${files}" ;;
+    esac
+    if [[ "$seen" == *"$files"* ]]; then
+      compose_fail "chunk placement: ${marker} shares a page chunk with another point's component: ${files}"
+    fi
+    seen="${seen} ${files}"
+  done
+  local entry_dir="$APP/build/client/_app/immutable/entry" entry_status=0
+  # An absent entry directory would make the grep below fail the same way as "no match": require it.
+  if [[ ! -d "$entry_dir" ]]; then
+    compose_fail "chunk placement: ${entry_dir} does not exist, so the entry chunks were not checked"
+  fi
+  grep -rlF -e "$WHO_MARKER" -e "$THEME_MARKER" -e "$PROJECT_MARKER" "$entry_dir" > /dev/null || entry_status=$?
+  if [[ "$entry_status" == '0' ]]; then
+    compose_fail 'chunk placement: an injected component marker reached an entry chunk'
+  fi
+  if [[ "$entry_status" != '1' ]]; then
+    compose_fail "chunk placement: grep over the entry chunks failed (exit ${entry_status})"
+  fi
+  log 'OK: each injected component lives in the client chunk of the one page that renders its point, in no entry chunk and no other page'
+  return 0
+}
+
+# Cases 4, 5, 6: hydration, the theme rune and client navigation need a browser (browser-cases.mjs).
+compose_browser_checks() {
+  local port="$1" out status=0
+  out="$("$NODE_BIN" "$FIXTURE_DIR/browser-cases.mjs" "$REPO_ROOT" "http://127.0.0.1:${port}" 2>&1)" || status=$?
+  printf '%s\n' "$out"
+  if [[ "$status" != '0' ]]; then
+    compose_fail "the browser cases failed (exit ${status}); is Chromium installed (playwright install chromium)?"
+  fi
+  return 0
+}
+
+# Story 68-15 AC-10: the failure path of the helpers prints its message (never a silent exit).
+compose_silent_failure_selftest() {
+  local port="$1"
+  compose_expect_failure_message 'answered HTTP' compose_expect_redirect "$port" GET "$SETTINGS_PATH" "$CM_U1" 303 /nowhere
+  compose_expect_failure_message 'lacks nope-marker' compose_body_has 'nope-marker' "$SELFTEST_LABEL"
+  compose_expect_failure_message 'handler counter inject-load is' fixture_expect_count inject-load 9999
+  log 'OK: a deliberately broken assertion prints its message and fails the variant (no silent exit)'
+  return 0
+}
+
+# AC-1/AC-2: the API stub's per-session identities and its org-owned projects, asked directly.
+compose_stub_get() { # path cookie|- -> status; body in $WORK/body.txt
+  local path="$1" cookie="${2:--}"
+  local args=(-s -o "$WORK/body.txt" -w "$CURL_STATUS_FORMAT")
+  if [[ "$cookie" != '-' ]]; then
+    args+=(-H "cookie: ${cookie}")
+  fi
+  curl "${args[@]}" "http://127.0.0.1:${API_PORT}${path}" || true
+  return 0
+}
+
+compose_stub_expect() { # path cookie status needle
+  local path="$1" cookie="$2" expected="$3" needle="${4:-}" status
+  status="$(compose_stub_get "$path" "$cookie")"
+  if [[ "$status" != "$expected" ]]; then
+    compose_fail "stub GET ${path} (${cookie}) answered HTTP ${status}, expected ${expected}"
+  fi
+  if [[ -n "$needle" ]]; then
+    compose_body_has "$needle" "stub GET ${path} (${cookie})"
+  fi
+  return 0
+}
+
+compose_stub_checks() {
+  local not_found_body
+  compose_stub_expect /api/v1/auth/me "$CM_U1" 200 '"userId":"u1"'
+  compose_body_has '"email":"u1@fixture.test"' 'stub identity u1'
+  compose_body_has '"orgId":"o-u1"' 'stub identity u1'
+  compose_stub_expect /api/v1/auth/me "$CM_U2" 200 '"userId":"u2"'
+  compose_body_has '"orgId":"o-u2"' 'stub identity u2'
+  compose_stub_expect /api/v1/auth/me "$CM_AUTHED" 200 '"userId":"u-fixture"'
+  compose_body_has '"orgId":"o-fixture"' 'stub identity ok (unchanged)'
+  compose_stub_expect /api/v1/auth/me session=u3 401
+  compose_stub_expect /api/v1/auth/me - 401
+  compose_stub_expect /api/v1/projects/p-u1 "$CM_U1" 200 '"name":"U1 Secret"'
+  compose_stub_expect /api/v1/projects/p-missing "$CM_U1" 404
+  not_found_body="$(cat "$WORK/body.txt")"
+  compose_stub_expect /api/v1/projects/p-u2 "$CM_U1" 404
+  if [[ "$(cat "$WORK/body.txt")" != "$not_found_body" ]]; then
+    compose_fail "the stub's denial for another org's project differs from its answer for an unknown id (existence leak)"
+  fi
+  compose_stub_expect /api/v1/projects/p-u2 - 401
+  fixture_stub reset > /dev/null
+  log 'OK: the API stub serves per-session identities (u1, u2, ok unchanged, 401 otherwise) and org-owned projects without an existence leak'
+  return 0
+}
+
+compose_session_injection_checks() {
+  local port="$1"
+  compose_stub_checks
+  compose_isolation_checks "$port"
+  compose_anonymous_counter_checks "$port"
+  compose_cross_tenant_checks "$port"
+  compose_chunk_checks
+  compose_silent_failure_selftest "$port"
+  compose_browser_checks "$port"
+  return 0
+}
+
 compose_http_checks() {
   local port="$1"
   if [[ "$VARIANT" == 'compose-full-override' ]]; then
@@ -715,6 +998,7 @@ compose_http_checks() {
   fi
   compose_hooks_checks "$port"
   compose_injection_checks "$port"
+  compose_session_injection_checks "$port"
   compose_nav_checks "$port"
   compose_expect "$port" /login 200 'Use your Acme account to continue.'
   compose_expect "$port" /billing 200 'Acme plan: pro'

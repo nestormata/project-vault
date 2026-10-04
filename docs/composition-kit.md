@@ -111,7 +111,9 @@ and ask for the point in PV (a repeated need is a PV story).
   layout and error file renders `<prefix>.before`, `<prefix>.after` and `<prefix>.header.actions`; a layout
   and its page cannot share a prefix, so layouts use `<area>.layout` (`project.layout`) and the root error
   file is `root.error`. The shell exposes `shell.head` (inside `<svelte:head>`, after PV's own head content),
-  `shell.header.end` (authenticated pages) and `shell.body.end`.
+  `shell.header.end` (authenticated pages) and `shell.body.end`. A `shell.head` component renders plain head
+  markup (`<meta>`, `<link>`): it is already inside PV's `<svelte:head>`, and a nested `<svelte:head>` makes
+  Svelte 5 log `hydration_mismatch` on every page.
 - **The registry** is `apps/web/src/lib/components/composition/injection-points.ts` (names, kinds and the
   props each point passes). `pnpm pack:web-host` joins it with the files that render each point and ships
   `manifests/injection-points.json` (`schemaVersion` 1: `name`, `file`, plus `kind`, `propsType`, `routeId`
@@ -518,3 +520,10 @@ required check, the first real publish, and promotion to `latest`.
   route and a deleted override. The main variant also serves the M3 mechanism from the packed `web-host` (an
   injected component with server data and a form action, a layout point and a `shell.head` meta) and proves an
   unknown injection point fails with the way out.
+  Story 68-15 runs the M3 cases that need sessions, tenants and a browser in the same variant: the API stub
+  serves `session=u1` and `session=u2` identities and org-owned projects; 20 interleaved requests assert
+  per-caller isolation (SSR HTML and `__data.json`); an anonymous or failing-PV request leaves the injected
+  load counter at 0; a contribution load running as one tenant gets the API's 404 for another tenant's
+  project; each injected component sits only in its page's client chunk; and a real Chromium (installed by a
+  CI step in that job) checks hydration (with an oracle that fails on diverging server HTML), a client
+  navigation without a document load, and the theme rune re-rendering an injected component.
