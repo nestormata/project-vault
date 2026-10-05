@@ -107,6 +107,17 @@ describe("monolithic-region on PV's own tree (AC-4.6)", () => {
   })
 })
 
+describe("monolithic-region R3 on PV's own tree (Story 69.6)", () => {
+  // R3: every top-level component use of a route file is a marked region or a use of a component
+  // that hosts its own region. A count of zero uses would pass vacuously, so it is pinned from below.
+  it('finds every top-level use of every route file inside a region', () => {
+    const own = scanMonolithicRegionsTree(WEB)
+    expect(own.topLevelUses).toBeGreaterThan(150)
+    expect(own.topLevelUsesInRegion).toBe(own.topLevelUses)
+    expect(own.findings).toEqual([])
+  })
+})
+
 describe('check-monolithic-regions CLI (AC-4.5)', () => {
   const capture = (args: string[]) => {
     let out = ''

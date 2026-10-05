@@ -776,6 +776,16 @@ describe('check-injection-point-coverage: the real tree and its wiring', () => {
     expect(Date.now() - started).toBeLessThan(30_000)
   })
 
+  it('measures 100 % on apps/web with no region, use or page left out (Story 69.6)', () => {
+    const figure = coverageFigure({ webRoot: WEB })
+    expect(figure.percent).toBe(100)
+    expect(figure.regions.total).toBeGreaterThan(180)
+    expect(figure.regions.covered).toBe(figure.regions.total)
+    expect(figure.uses.covered).toBe(figure.uses.total)
+    expect(figure.pages).toEqual({ covered: 70, total: 70 })
+    expect(figure.exempt).toBe(0)
+  })
+
   it('has no baseline, ignore list or skip switch in its source', () => {
     const sources = [
       'scripts/lib/injection-point-coverage.ts',

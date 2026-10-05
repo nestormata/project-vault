@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { readRegistries } from '../../../packages/composition-kit/src/registry.ts'
 import { useFixtureRoots, writeFixture } from '../fixture-test-helpers.js'
+import { readRegistryFields } from '../injection-point-coverage.js'
 import { buildInjectionPointsManifest } from './injection-points-manifest.js'
 
 const WEB = resolve(dirname(fileURLToPath(import.meta.url)), '../../../apps/web')
@@ -311,5 +312,52 @@ describe('the real registry: monitoring region host routes (Story 69.3)', () => 
     const point = points.find((candidate) => candidate.name === name)
     expect(point?.kind).toBe('region')
     expect(point?.hostRoutes).toEqual([host])
+  })
+})
+
+// Story 69.6 (AC-6): the manifest lists EVERY registered point with its props type and a deterministic
+// shape, and the G1 region points list the route that renders each one.
+describe('the real registry: every point is listed with its props type (Story 69.6)', () => {
+  const PLATFORM_HOME = '/(app)/platform#page'
+  const G1_HOSTS: Record<string, string> = {
+    'app.layout.search': '/(app)#layout',
+    'project.layout.content': '/(app)/projects/[projectId]#layout',
+    'root.layout.progress': '/#layout',
+    'auth.layout.brand': '/(auth)#layout',
+    'auth.register.form': '/(auth)/register#page',
+    'vault.home.gate': '/(vault)/vault#page',
+    'platform.home.operator-notice': PLATFORM_HOME,
+    'platform.home.warnings': PLATFORM_HOME,
+    'platform.home.nav-cards': PLATFORM_HOME,
+    'settings.home.nav-cards': '/(app)/settings#page',
+    'settings.security.enrollment': '/(app)/settings/security#page',
+    'project.certificates.list-header': '/(app)/projects/[projectId]/certificates#page',
+    'project.domains.list-header': '/(app)/projects/[projectId]/domains#page',
+    'project.services.list-header': '/(app)/projects/[projectId]/services#page',
+    'project.status-page.error': '/(app)/projects/[projectId]/status-page#page',
+  }
+
+  it('has one entry per registry row, none without a props type, a file or a scope', () => {
+    const { points, problems } = buildInjectionPointsManifest(WEB)
+    expect(problems).toEqual([])
+    expect(points).toHaveLength(readRegistryFields(WEB)?.size ?? -1)
+    for (const point of points) {
+      expect(point.propsType, point.name).not.toBe('')
+      expect(point.file, point.name).toMatch(/\.svelte$/)
+      expect(point.scope, point.name).toBeTruthy()
+    }
+  })
+
+  it.each(Object.entries(G1_HOSTS))('%s is a region hosted by exactly its route', (name, host) => {
+    const point = buildInjectionPointsManifest(WEB).points.find((entry) => entry.name === name)
+    expect(point?.kind).toBe('region')
+    expect(point?.hostRoutes).toEqual([host])
+  })
+
+  it('is byte-deterministic and sorted by name in code-unit order', () => {
+    const first = buildInjectionPointsManifest(WEB)
+    expect(first.text).toBe(buildInjectionPointsManifest(WEB).text)
+    const names = first.points.map((point) => point.name)
+    expect(names).toEqual([...names].sort((a, b) => (a === b ? 0 : a < b ? -1 : 1)))
   })
 })
