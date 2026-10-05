@@ -77,12 +77,20 @@ describe('route rules: R1 unmarked top-level content', () => {
     expect(messages('<Tile />\n{@render children()}')).toEqual([])
   })
 
-  it('ignores head, window, comments, snippets, const tags and blank text', () => {
+  it('ignores head, window, comments, const tags and blank text', () => {
     expect(
       messages(
-        `<svelte:head><title>x</title></svelte:head>\n<svelte:window onkeydown={f} />\n<!-- a note -->\n{#snippet row(x)}<li>{x}</li>{/snippet}\n{@const y = 1}\n<Tile />`
+        `<svelte:head><title>x</title></svelte:head>\n<svelte:window onkeydown={f} />\n<!-- a note -->\n{@const y = 1}\n<Tile />`
       )
     ).toEqual([])
+  })
+
+  it('checks a top-level {#snippet} body like a branch, so a snippet cannot hide page markup', () => {
+    expect(
+      messages(
+        '{#snippet row(x)}<li>{x}</li>{/snippet}\n<!-- @region a.b.c -->\n<section><Tile /></section>'
+      )
+    ).toEqual(['unmarked top-level content: <li> (put it in a region component)'])
   })
 
   it('lets a layout wrapper through when every child is covered, fails it with a bare <p>', () => {
@@ -170,6 +178,15 @@ describe('route rules: R2 thin region shell', () => {
       messages(
         '<!-- @region a.b.c -->\n<section>{#if data.a}<Tile />{:else}<Tile />{/if}{#each data.rows as row (row.id)}<Tile {row} />{/each}{#key data.id}{@render children()}{/key}<InjectionPoint name="a.b.c" /></section>'
       )
+    ).toEqual([])
+  })
+
+  it('fails inline markup passed as children of a component inside a shell, passes a point child', () => {
+    expect(messages('<!-- @region a.b.c -->\n<Tile><h1>Big</h1><p>text</p></Tile>')[0]).toMatch(
+      /is not a thin shell: <h1>/
+    )
+    expect(
+      messages('<!-- @region a.b.c -->\n<Tile><InjectionPoint name="a.b.c" /></Tile>')
     ).toEqual([])
   })
 

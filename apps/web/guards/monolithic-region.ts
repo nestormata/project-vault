@@ -15,7 +15,7 @@
 //     `{#await}`/`{#key}`/`<svelte:boundary>` branches, and through LAYOUT WRAPPERS: an element with
 //     no direct text, no attribute other than class/id/style/role/data-*/aria-*, and at least one
 //     child, whose children are themselves covered. Ignored: `<svelte:head|window|document|body>`,
-//     comments, blank text, `{#snippet}`, `{@const}`, `<InjectionPoint>`. A route file that holds
+//     comments, blank text, `{@const}`, `<InjectionPoint>`; `{#snippet}` bodies are checked like a branch. A route file that holds
 //     nothing but points has no regions and fails too (points are not content).
 //  R2 (thin region shell): inside a marked region of a route file only elements that hold something
 //     (no text, no form controls, no handlers/binds/actions), `<InjectionPoint>`, components,
@@ -79,7 +79,6 @@ const IGNORED_TOP_LEVEL = new Set([
   'SvelteDocument',
   'SvelteBody',
   'ConstTag',
-  'SnippetBlock',
   'DebugTag',
 ])
 const FORM_TAGS = new Set(['input', 'select', 'textarea', 'button', 'form', 'label', 'a', 'img'])
@@ -126,6 +125,8 @@ function branchesOf(node: Node): Node[][] | null {
       return [nodesOf(node.body), nodesOf(node.fallback)]
     case 'AwaitBlock':
       return [nodesOf(node.pending), nodesOf(node.then), nodesOf(node.catch)]
+    case 'SnippetBlock':
+      return [nodesOf(node.body)]
     case 'KeyBlock':
     case 'SvelteBoundary':
     case 'SvelteFragment':
@@ -238,7 +239,8 @@ function isInlineElement(node: Node, children: Node[]): boolean {
   )
 }
 
-const SHELL_PARTS = new Set(['ConstTag', 'RenderTag', 'Component', 'SvelteComponent'])
+const SHELL_PARTS = new Set(['ConstTag', 'RenderTag'])
+const COMPONENT_NODES = new Set(['Component', 'SvelteComponent'])
 
 function shellChildren(node: Node, branches: Node[][] | null): Node[] {
   return branches?.flat() ?? nodesOf(node.fragment).filter((child) => !isBlankOrComment(child))
@@ -248,11 +250,16 @@ function shellChildren(node: Node, branches: Node[][] | null): Node[] {
  * render or a block around those (R2). */
 function shellOffender(node: Node): Node | null {
   if (isBlankOrComment(node) || SHELL_PARTS.has(node.type)) return null
+  if (COMPONENT_NODES.has(node.type)) return firstOffender(nodesOf(node.fragment))
   const branches = branchesOf(node)
   if (branches === null && !isElement(node)) return node
   const children = shellChildren(node, branches)
   if (branches === null && isInlineElement(node, children)) return node
-  for (const child of children) {
+  return firstOffender(children)
+}
+
+function firstOffender(nodes: Node[]): Node | null {
+  for (const child of nodes) {
     const offender = shellOffender(child)
     if (offender !== null) return offender
   }
