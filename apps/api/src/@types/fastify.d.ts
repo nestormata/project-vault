@@ -30,6 +30,9 @@ declare module 'fastify' {
     assertionId: string
     issuedAt: number
     operation: string
+    // Story 71.4: the issuer-signed occurrence time (seconds) and why the actor is issuer-attested.
+    occurredAt?: number
+    actorAttestationReason?: 'unlinked' | 'not_current_member'
   }
 
   interface FastifyRequest {
