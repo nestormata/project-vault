@@ -8,17 +8,25 @@
 // coverage guard uses). There is no skip list and no owner exemption: a route file with no region is
 // MISSING whoever owns it.
 import { dirname, join, posix } from 'node:path'
+import {
+  newScanContext,
+  scanMonolithicRegions,
+  type ScanContext,
+  type TopLevelUse,
+} from '../../apps/web/guards/monolithic-region.js'
 import { childrenOf, lineAt, parseRegions, type Node } from '../../apps/web/guards/region-markup.js'
 import { readRegistry } from './injection-point-coverage.js'
-import { listRouteFiles, ROUTES_DIR, type RouteKind } from './route-files.js'
+import { censusProblem, listRouteFiles, ROUTES_DIR, type RouteKind } from './route-files.js'
 import { readOverlayFile, toRepoPath, walkFiles } from './scan-utils.js'
 
 const COMPONENT_DIR = 'src/lib/components/'
-const ORACLE_FILE = 'src/routes/route-render-snapshot.test.ts'
 const RESET_NAME = /^\+(page|layout|error)@.*\.svelte$/
 const STABLE_MARKER = '@pv-stable'
+/** Story 69.6 Q1/AC-4: a region component longer than this holds more than one section, and a CM
+ * author cannot inject between its sections until each becomes a sub-region component. */
+export const MAX_REGION_COMPONENT_LINES = 60
 
-export type AuditStatus = 'done' | 'MISSING' | 'UNPARSEABLE'
+export type AuditStatus = 'done' | 'MISSING' | 'UNPARSEABLE' | 'OVERSIZE'
 
 export interface AuditRow {
   file: string
@@ -35,8 +43,16 @@ export interface AuditRow {
   status: AuditStatus
 }
 
+/** One top-level component use of a route file (a marked region, a use of a component that hosts
+ * its own region, or an UNCOVERED use). */
+export interface UseRow extends TopLevelUse {
+  file: string
+}
+
 export interface AuditResult {
   rows: AuditRow[]
+  /** Every top-level use of every route file; the listing AC-1 asks for. */
+  uses: UseRow[]
   problems: string[]
   routeFiles: number
 }
@@ -133,17 +149,29 @@ function reachRegions(webRoot: string, entry: string): Reach {
   return reach
 }
 
-function censusProblem(webRoot: string, routeFiles: number): string | null {
-  const oracle = readCode(webRoot, ORACLE_FILE)
-  const declared = oracle === null ? null : /covers every one of the (\d+) route files/.exec(oracle)
-  if (declared?.[1] === undefined || Number(declared[1]) === routeFiles) return null
-  return `route-render oracle (${ORACLE_FILE}) expects ${declared[1]} route files but the tree has ${routeFiles}`
+function useProblems(route: { rel: string }, use: UseRow): string[] {
+  if (use.status === 'covered') return []
+  const where = `${route.rel}:${use.line}`
+  const hint = 'wrap it in a region component with a registered point'
+  return [
+    use.kind === 'render'
+      ? `${where}: render-only top-level ${use.use} is UNCOVERED (${hint})`
+      : `${where}: top-level use ${use.use} is UNCOVERED (${hint})`,
+  ]
+}
+
+function usesOf(webRoot: string, route: { rel: string }, ctx: ScanContext): UseRow[] {
+  const code = readCode(webRoot, route.rel)
+  if (code === null) return []
+  const scan = scanMonolithicRegions(code, join(webRoot, route.rel), ctx)
+  return (scan.useList ?? []).map((use) => ({ file: route.rel, ...use }))
 }
 
 export function auditRouteRegions(webRoot: string): AuditResult {
   const { routes } = listRouteFiles(webRoot)
   const registry = readRegistry(webRoot)
-  const result: AuditResult = { rows: [], problems: [], routeFiles: routes.length }
+  const result: AuditResult = { rows: [], uses: [], problems: [], routeFiles: routes.length }
+  const ctx = newScanContext(webRoot, (path) => readOverlayFile(webRoot, path))
   const resets = walkFiles(join(webRoot, ROUTES_DIR), (file) =>
     RESET_NAME.test(posix.basename(file))
   )
@@ -165,6 +193,10 @@ export function auditRouteRegions(webRoot: string): AuditResult {
     }
     for (const region of reach.regions) {
       result.rows.push(rowFor(webRoot, route, region, registry, result.problems))
+    }
+    for (const use of usesOf(webRoot, route, ctx)) {
+      result.uses.push(use)
+      result.problems.push(...useProblems(route, use))
     }
   }
   const census = censusProblem(webRoot, routes.length)
@@ -217,6 +249,12 @@ function rowFor(
   const point = firstMatch(region.node, pointNameOf)
   problems.push(...regionProblems(region, component, point, registry))
   const componentCode = component === '' ? null : readCode(webRoot, component)
+  const componentLines = componentCode === null ? 0 : templateLines(componentCode)
+  if (componentLines > MAX_REGION_COMPONENT_LINES) {
+    problems.push(
+      `${region.host}:${region.line}: region "${region.name}" is OVERSIZE (${component} holds ${componentLines} template lines, the limit is ${MAX_REGION_COMPONENT_LINES}): split its sections into sub-region components`
+    )
+  }
   const span = lineAt(region.code, region.node.end) - lineAt(region.code, region.node.start) + 1
   return {
     file: route.rel,
@@ -225,9 +263,9 @@ function rowFor(
     component,
     point,
     inlineLines: inRoute ? span : 0,
-    componentLines: componentCode === null ? 0 : templateLines(componentCode),
+    componentLines,
     stableCandidate: componentCode?.includes(STABLE_MARKER) === true ? 'marked' : 'no',
-    status: 'done',
+    status: componentLines > MAX_REGION_COMPONENT_LINES ? 'OVERSIZE' : 'done',
   }
 }
 
@@ -260,6 +298,17 @@ export function formatTable(rows: readonly AuditRow[]): string {
         row.status,
       ].join(' | ')} |`
     )
+  }
+  return lines.join('\n')
+}
+
+const USE_COLUMNS = ['route file', 'line', 'top-level use', 'kind', 'status'] as const
+
+/** The markdown table of every top-level use (AC-1's `top-level uses` listing). */
+export function formatUsesTable(uses: readonly UseRow[]): string {
+  const lines = [`| ${USE_COLUMNS.join(' | ')} |`, `|${' --- |'.repeat(USE_COLUMNS.length)}`]
+  for (const use of uses) {
+    lines.push(`| ${[use.file, use.line, use.use, use.kind, use.status].join(' | ')} |`)
   }
   return lines.join('\n')
 }

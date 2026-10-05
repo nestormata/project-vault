@@ -3,9 +3,11 @@
 // `$lib` components, and fails closed on a route file with no region, an unparseable file, a region
 // whose point is not registered, a region component outside `src/lib/components`, and an oracle
 // census mismatch. Fixtures are temp trees, never committed under `src/`.
+import { rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { run } from './check-route-regions.js'
-import { auditRouteRegions, formatTable } from './lib/route-regions.js'
+import { auditRouteRegions, formatTable, formatUsesTable } from './lib/route-regions.js'
 import { useFixtureRoots, writeFixture } from './lib/fixture-test-helpers.js'
 
 const TABLE_POINT = 'things.list.table'
@@ -18,6 +20,8 @@ const REGISTRY = `export const INJECTION_POINTS = [
 ]\n`
 const ROUTE_SCRIPT = `<script>\n  import ThingsTable from '$lib/components/things/ThingsTable.svelte'\n  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'\n</script>\n`
 const SHELL = `<!-- @region things.list.table -->\n<section><InjectionPoint name="things.list.table" /><ThingsTable /></section>\n`
+const ORACLE = 'src/routes/route-render-snapshot.test.ts'
+const ORACLE_OK = `it('covers every one of the 1 route files', () => {})\n`
 const COMPONENT = `<div>\n  <p>a</p>\n\n  <p>b</p>\n</div>\n`
 
 function webTree(overrides: Record<string, string> = {}): string {
@@ -26,6 +30,7 @@ function webTree(overrides: Record<string, string> = {}): string {
     'src/lib/components/composition/injection-points.ts': REGISTRY,
     'src/lib/components/things/ThingsTable.svelte': COMPONENT,
     [THINGS_PAGE]: `${ROUTE_SCRIPT}${SHELL}`,
+    [ORACLE]: ORACLE_OK,
     ...overrides,
   }
   for (const [path, content] of Object.entries(files)) writeFixture(root, path, content)
@@ -109,11 +114,94 @@ describe('route-regions audit: failures (fail closed)', () => {
     expect(auditRouteRegions(root).problems.join('\n')).toContain('+page@.svelte')
   })
 
+  it('fails closed when the oracle census sentence is gone or the oracle file is missing (DW-549)', () => {
+    const renamed = webTree({ [ORACLE]: `it('covers all the route files', () => {})\n` })
+    expect(auditRouteRegions(renamed).problems.join('\n')).toContain('census')
+    const root = webTree()
+    rmSync(join(root, ORACLE))
+    expect(auditRouteRegions(root).problems.join('\n')).toContain('census')
+  })
+
   it('reports an oracle census that disagrees with the tree', () => {
     const root = webTree({
       'src/routes/route-render-snapshot.test.ts': `it('covers every one of the 70 route files', () => {})\n`,
     })
     expect(auditRouteRegions(root).problems.join('\n')).toContain('route-render oracle')
+  })
+})
+
+describe('route-regions audit: top-level uses and oversize components (69.6 AC-1)', () => {
+  const marked = `${ROUTE_SCRIPT}${SHELL}`
+
+  it('lists a marked region as covered with its line', () => {
+    expect(auditRouteRegions(webTree()).uses).toEqual([
+      {
+        file: THINGS_PAGE,
+        line: 6,
+        use: `@region ${TABLE_POINT}`,
+        kind: 'component',
+        status: 'covered',
+      },
+    ])
+  })
+
+  it('lists a bare top-level use as UNCOVERED and reports it as a problem', () => {
+    const root = webTree({ [THINGS_PAGE]: `${marked}<ThingsTable />\n` })
+    const result = auditRouteRegions(root)
+    expect(result.uses.map((use) => [use.use, use.status])).toEqual([
+      [`@region ${TABLE_POINT}`, 'covered'],
+      ['<ThingsTable />', 'UNCOVERED'],
+    ])
+    expect(result.problems.join('\n')).toContain('UNCOVERED')
+  })
+
+  it('lists a use of a component that hosts its own region as covered', () => {
+    const root = webTree({
+      [THINGS_PAGE]: `${ROUTE_SCRIPT}<ThingsTable />\n`,
+      'src/lib/components/things/ThingsTable.svelte': `<script>\n  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'\n</script>\n<!-- @region things.list.table -->\n<div><InjectionPoint name="things.list.table" /></div>\n`,
+    })
+    const result = auditRouteRegions(root)
+    expect(result.uses.map((use) => use.status)).toEqual(['covered'])
+    expect(result.problems).toEqual([])
+  })
+
+  it('lists a route file that only renders children as render-only and never skips it', () => {
+    const root = webTree({
+      [THINGS_PAGE]: `<script>\n  let { children } = $props()\n</script>\n{@render children()}\n`,
+    })
+    const result = auditRouteRegions(root)
+    expect(result.uses).toEqual([
+      {
+        file: THINGS_PAGE,
+        line: 4,
+        use: '{@render children()}',
+        kind: 'render',
+        status: 'UNCOVERED',
+      },
+    ])
+    expect(result.problems.join('\n')).toContain('render-only')
+  })
+
+  it('flags a region component over 60 template lines as OVERSIZE', () => {
+    const long = `<div>\n${'  <p>line</p>\n'.repeat(60)}</div>\n`
+    const result = auditRouteRegions(
+      webTree({ 'src/lib/components/things/ThingsTable.svelte': long })
+    )
+    expect(result.rows[0]).toMatchObject({ componentLines: 62, status: 'OVERSIZE' })
+    expect(result.problems.join('\n')).toContain('OVERSIZE')
+    const exactly = `<div>\n${'  <p>line</p>\n'.repeat(58)}</div>\n`
+    const ok = auditRouteRegions(
+      webTree({ 'src/lib/components/things/ThingsTable.svelte': exactly })
+    )
+    expect(ok.rows[0]).toMatchObject({ componentLines: 60, status: 'done' })
+  })
+
+  it('prints a uses table with the fixed columns', () => {
+    const table = formatUsesTable(auditRouteRegions(webTree()).uses)
+    const [header, rule, first] = table.split('\n')
+    expect(header).toBe('| route file | line | top-level use | kind | status |')
+    expect(rule).toMatch(/^\|( --- \|){5}$/)
+    expect(first).toContain('covered')
   })
 })
 

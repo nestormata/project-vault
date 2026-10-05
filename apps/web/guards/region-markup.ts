@@ -22,6 +22,12 @@ export interface PointUse {
   line: number
 }
 
+/** A point the template can never render: inside a `{#snippet}` the file never `{@render}`s, or in
+ * markup behind a literal-false `{#if}`. It does not count as rendering its name. */
+export interface DeadPoint extends PointUse {
+  reason: string
+}
+
 export interface RegionProblem {
   line: number
   message: string
@@ -36,6 +42,10 @@ export interface Region {
 
 export interface ParsedMarkup {
   points: PointUse[]
+  /** Points that sit where the template never renders them (not part of `points`). */
+  deadPoints: DeadPoint[]
+  /** Points inside a `{#snippet}` of this file, until `settleSnippetPoints` places them. */
+  snippetPoints: DeadPoint[]
   regionProblems: RegionProblem[]
   regions: Region[]
   /** Local names bound by an `import` of a `.svelte` file (instance and module script). */
@@ -117,21 +127,128 @@ function regionsIn(
   return { problems, regions, pointless }
 }
 
-function walk(node: unknown, code: string, out: ParsedMarkup, rules: RegionRules): void {
-  if (Array.isArray(node)) {
-    if (node.some((child) => (child as Node | null)?.type === 'Comment')) {
-      const found = regionsIn(node as Node[], code)
-      out.regions.push(...found.regions)
-      out.regionProblems.push(...found.problems, ...(rules.requirePoint ? found.pointless : []))
-    }
-    for (const child of node) walk(child, code, out, rules)
-    return
+/** Where a walk currently is, for the points it meets. */
+interface Site {
+  /** Inside markup that can never render (a literal-false `{#if}` branch). */
+  dead: string | null
+  /** The `{#snippet}` the node sits in, unless a component receives it as a prop. */
+  snippet: string | null
+  /** Directly inside a component's body, where a `{#snippet}` is a prop the component renders. */
+  inComponent: boolean
+}
+
+const LIVE: Site = { dead: null, snippet: null, inComponent: false }
+
+/** `{#if false}` / `{#if 0}` (and a literal-true test's `{:else}`): a branch no render reaches. */
+function deadBranch(node: Node): 'consequent' | 'alternate' | null {
+  const test = node.test as { type?: string; value?: unknown } | undefined
+  if (test?.type !== 'Literal') return null
+  return test.value ? 'alternate' : 'consequent'
+}
+
+function nextSite(record: Node, site: Site): Site {
+  if (record.type === 'Component' || record.type === 'SvelteComponent') {
+    return { ...site, inComponent: true }
   }
+  if (record.type !== 'SnippetBlock') return site
+  const name = (record.expression as { name?: string } | undefined)?.name ?? '?'
+  // A snippet written in a component's body is a prop that component renders: it is not dead.
+  const snippet = site.inComponent || site.snippet !== null ? site.snippet : name
+  return { ...site, snippet, inComponent: false }
+}
+
+function recordPoint(record: Node, code: string, out: ParsedMarkup, site: Site): void {
+  const use: PointUse = { name: literalName(record), line: lineAt(code, record.start) }
+  if (site.dead !== null) out.deadPoints.push({ ...use, reason: site.dead })
+  else if (site.snippet !== null) out.snippetPoints.push({ ...use, reason: site.snippet })
+  else out.points.push(use)
+}
+
+function walkList(
+  siblings: unknown[],
+  code: string,
+  out: ParsedMarkup,
+  rules: RegionRules,
+  site: Site
+): void {
+  if (siblings.some((child) => (child as Node | null)?.type === 'Comment')) {
+    const found = regionsIn(siblings as Node[], code)
+    out.regions.push(...found.regions)
+    out.regionProblems.push(...found.problems, ...(rules.requirePoint ? found.pointless : []))
+  }
+  for (const child of siblings) walk(child, code, out, rules, site)
+}
+
+const NEVER_RENDERED = 'inside markup behind a literal {#if} that never renders it'
+
+function walkChildren(
+  record: Node,
+  here: Site,
+  code: string,
+  out: ParsedMarkup,
+  rules: RegionRules
+): void {
+  const never = record.type === 'IfBlock' ? deadBranch(record) : null
+  for (const [key, child] of Object.entries(record)) {
+    if (key === 'metadata' || typeof child !== 'object' || child === null) continue
+    walk(child, code, out, rules, key === never ? { ...here, dead: NEVER_RENDERED } : here)
+  }
+}
+
+function walk(
+  node: unknown,
+  code: string,
+  out: ParsedMarkup,
+  rules: RegionRules,
+  site = LIVE
+): void {
+  if (Array.isArray(node)) return walkList(node, code, out, rules, site)
   if (node === null || typeof node !== 'object') return
   const record = node as Node
-  if (isPoint(record))
-    out.points.push({ name: literalName(record), line: lineAt(code, record.start) })
-  for (const child of childrenOf(record)) walk(child, code, out, rules)
+  if (isPoint(record)) recordPoint(record, code, out, site)
+  walkChildren(record, nextSite(record, site), code, out, rules)
+}
+
+interface CallLike {
+  type?: string
+  callee?: { name?: string }
+  expression?: CallLike
+}
+
+/** The name a `{@render name(...)}` / `{@render name?.(...)}` tag calls, if it is a plain name. */
+function renderedName(tag: Node): string | undefined {
+  const call = tag.expression as CallLike | undefined
+  const inner = call?.type === 'ChainExpression' ? call.expression : call
+  return inner?.callee?.name
+}
+
+/** The callee names of every `{@render name(...)}` in the file. */
+function renderedNames(node: unknown, names: Set<string>): void {
+  const record = node as Node | null
+  if (record === null || typeof record !== 'object') return
+  if (Array.isArray(node)) {
+    for (const child of node) renderedNames(child, names)
+    return
+  }
+  const name = record.type === 'RenderTag' ? renderedName(record) : undefined
+  if (name !== undefined) names.add(name)
+  for (const child of childrenOf(record)) renderedNames(child, names)
+}
+
+/** A point in a `{#snippet}` counts only when the same file renders that snippet. */
+function settleSnippetPoints(root: SvelteRoot, out: ParsedMarkup): void {
+  if (out.snippetPoints.length === 0) return
+  const rendered = new Set<string>()
+  renderedNames(root.fragment, rendered)
+  for (const { reason: snippet, ...use } of out.snippetPoints) {
+    if (rendered.has(snippet)) out.points.push(use)
+    else
+      out.deadPoints.push({
+        ...use,
+        reason: `inside {#snippet ${snippet}}, which is never rendered`,
+      })
+  }
+  out.points.sort((a, b) => a.line - b.line)
 }
 
 interface RegionRules {
@@ -181,12 +298,15 @@ export function parseRegions(code: string, file: string, rules: RegionRules): Pa
   const root = parse(code, { modern: true, filename: file }) as unknown as SvelteRoot
   const out: ParsedMarkup = {
     points: [],
+    deadPoints: [],
+    snippetPoints: [],
     regionProblems: [],
     regions: [],
     svelteImports: importedSvelteNames(root),
     topLevel: ((root.fragment as { nodes?: Node[] }).nodes ?? []) as Node[],
   }
   walk(root.fragment, code, out, rules)
+  settleSnippetPoints(root, out)
   return out
 }
 

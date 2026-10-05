@@ -8,6 +8,8 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import ts from 'typescript'
+import { scanMonolithicRegionsTree } from '../../apps/web/guards/monolithic-region.js'
+import { containsPoint } from '../../apps/web/guards/region-markup.js'
 import { dataForwardingProblems, deriveRegionHosts } from './region-hosts.js'
 import {
   listRouteFiles,
@@ -208,6 +210,9 @@ function registryNameProblems(registry: Registry): string[] {
 export interface PointFile {
   rel: string
   names: { name: string | null; line: number }[]
+  /** `@region` blocks in the file, and how many of them hold an `<InjectionPoint>`. */
+  regions: number
+  regionsWithPoint: number
 }
 
 /** The files a composition lock records as CM's (provenance, never a path list). */
@@ -229,7 +234,17 @@ export function scanMarkup(
     const parsed = parseMarkup(readFileSync(file, 'utf8'), file)
     for (const issue of parsed.regionProblems)
       problems.push(`${rel}:${issue.line}: ${issue.message}`)
-    scanned.push({ rel, names: parsed.points })
+    for (const dead of parsed.deadPoints) {
+      problems.push(
+        `${rel}:${dead.line}: injection point ${JSON.stringify(dead.name)} is never rendered (${dead.reason})`
+      )
+    }
+    scanned.push({
+      rel,
+      names: parsed.points,
+      regions: parsed.regions.length,
+      regionsWithPoint: parsed.regions.filter((region) => containsPoint(region.node)).length,
+    })
   }
   return scanned
 }
@@ -514,4 +529,67 @@ export function checkInjectionPointCoverage(options: CoverageOptions): CoverageR
     problems: [...new Set(problems)].sort(compareCodeUnits),
     scannedRouteFiles: routes.length,
   }
+}
+
+// --- the coverage figure ----------------------------------------------------------------------
+
+export interface Ratio {
+  covered: number
+  total: number
+}
+
+/** The measurable form of "100 %" (Story 69.6 Q3): derived from the same parses as the checks, never
+ * typed and never read back from a stored file. */
+export interface CoverageFigure {
+  regions: Ratio
+  uses: Ratio
+  pages: Ratio
+  routeFiles: number
+  /** Files a composition lock records as CM's, left out of every count above. */
+  exempt: number
+  percent: number
+}
+
+function percentOf(ratios: readonly Ratio[]): number {
+  const total = ratios.reduce((sum, ratio) => sum + ratio.total, 0)
+  const covered = ratios.reduce((sum, ratio) => sum + ratio.covered, 0)
+  return total === 0 ? 0 : Math.round((covered / total) * 1000) / 10
+}
+
+export function coverageFigure(options: CoverageOptions): CoverageFigure {
+  const skip = cmFiles(options.lock)
+  const { routes } = listRouteFiles(options.webRoot)
+  const markup = scanMarkup(options.webRoot, skip, [])
+  const pvRoutes = routes.filter((route) => !skip.has(route.rel))
+  const namesOf = new Map(markup.map((file) => [file.rel, file.names.map((use) => use.name)]))
+  const tree = scanMonolithicRegionsTree(options.webRoot, [...skip])
+  const regions = {
+    covered: markup.reduce((sum, file) => sum + file.regionsWithPoint, 0),
+    total: markup.reduce((sum, file) => sum + file.regions, 0),
+  }
+  const uses = { covered: tree.topLevelUsesInRegion, total: tree.topLevelUses }
+  const pages = {
+    covered: pvRoutes.filter(
+      (route) => standardPointProblems(route, namesOf.get(route.rel) ?? []).length === 0
+    ).length,
+    total: pvRoutes.length,
+  }
+  return {
+    regions,
+    uses,
+    pages,
+    routeFiles: routes.length,
+    exempt: routes.length - pvRoutes.length,
+    percent: percentOf([regions, uses, pages]),
+  }
+}
+
+export function formatFigure(figure: CoverageFigure): string {
+  const { regions, uses, pages } = figure
+  return (
+    `coverage: ${regions.covered}/${regions.total} regions with a point, ` +
+    `${uses.covered}/${uses.total} top-level uses in a region, ` +
+    `${pages.covered}/${pages.total} pages with the 3 standard points = ${figure.percent}% ` +
+    `(${figure.routeFiles} route files, ${figure.exempt} composition-lock exempt)`
+  )
 }

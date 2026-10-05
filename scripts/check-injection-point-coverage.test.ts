@@ -4,7 +4,13 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { makeRecipe, recipeRunsCommand, workflowRunCommands } from './lib/ci-wiring.js'
 import { useFixtureRoots, writeFixture } from './lib/fixture-test-helpers.js'
-import { checkInjectionPointCoverage, readRegistryFields } from './lib/injection-point-coverage.js'
+import { run } from './check-injection-point-coverage.js'
+import {
+  checkInjectionPointCoverage,
+  coverageFigure,
+  formatFigure,
+  readRegistryFields,
+} from './lib/injection-point-coverage.js'
 import { parseMarkup } from './lib/route-files.js'
 import { walkFiles } from './lib/scan-utils.js'
 import { sysReadFile } from './lib/web-host/import-graph.js'
@@ -589,6 +595,174 @@ describe('check-injection-point-coverage: the monitoring regions, per file (Stor
     for (const name of Object.values(MONITORING_REGIONS).flat()) {
       expect(registry.get(name)?.get('kind'), name).toBe('region')
     }
+  })
+})
+
+const NEVER_RENDERED = 'never rendered'
+
+describe('check-injection-point-coverage: dead points (Story 69.6 AC-3 g)', () => {
+  const dead = (markup: string): string => {
+    const root = cleanTree()
+    writeFixture(root, PAGE, `${points('foo.page')}\n${markup}`)
+    return problemsOf(root).problems.join('\n')
+  }
+
+  it('flags a point that sits only in a {#snippet} nobody renders', () => {
+    const found = dead('{#snippet row()}<InjectionPoint name="foo.page.row" />{/snippet}')
+    expect(found).toContain('"foo.page.row"')
+    expect(found).toContain('{#snippet row}')
+    expect(found).toContain(NEVER_RENDERED)
+  })
+
+  it('counts a point in a snippet that the same file renders', () => {
+    expect(
+      dead('{#snippet row()}<InjectionPoint name="foo.page.before" />{/snippet}\n{@render row()}')
+    ).not.toContain(NEVER_RENDERED)
+  })
+
+  it('counts a snippet passed to a component as that component renders it', () => {
+    const found = dead(
+      '<Panel>{#snippet row()}<InjectionPoint name="foo.page.row" />{/snippet}</Panel>'
+    )
+    expect(found).not.toContain(NEVER_RENDERED)
+  })
+
+  it('flags a point inside {#if false} markup', () => {
+    expect(dead('{#if false}<InjectionPoint name="foo.page.row" />{/if}')).toContain(
+      'never renders'
+    )
+    expect(dead('{#if true}<p>x</p>{:else}<InjectionPoint name="foo.page.row" />{/if}')).toContain(
+      'never renders'
+    )
+  })
+
+  it('does not count a dead point as rendering its registered name', () => {
+    const root = cleanTree()
+    writeFixture(
+      root,
+      REGISTRY,
+      registry([...PREFIXES.flatMap((p) => SUFFIXES.map((s) => `${p}.${s}`)), 'foo.page.row'])
+    )
+    writeFixture(
+      root,
+      PAGE,
+      `${points('foo.page')}\n{#snippet row()}<InjectionPoint name="foo.page.row" />{/snippet}`
+    )
+    expect(problemsOf(root).problems.join('\n')).toContain(
+      '"foo.page.row" is registered but no file renders it'
+    )
+  })
+})
+
+describe('check-injection-point-coverage: the coverage figure (Story 69.6 AC-3, Q3)', () => {
+  const figureOf = (root: string, lock?: Parameters<typeof coverageFigure>[0]['lock']) =>
+    coverageFigure({ webRoot: root, ...(lock === undefined ? {} : { lock }) })
+
+  it('counts regions with a point, top-level uses in a region and pages with the three points', () => {
+    const figure = figureOf(cleanTree())
+    expect(figure).toMatchObject({
+      regions: { covered: 0, total: 0 },
+      uses: { covered: 0, total: 0 },
+      pages: { covered: 2, total: 2 },
+      routeFiles: 2,
+      exempt: 0,
+      percent: 100,
+    })
+    expect(formatFigure(figure)).toBe(
+      'coverage: 0/0 regions with a point, 0/0 top-level uses in a region, 2/2 pages with the 3 standard points = 100% (2 route files, 0 composition-lock exempt)'
+    )
+  })
+
+  it('counts a marked region and a use of a component that hosts one', () => {
+    const root = cleanTree()
+    writeFixture(
+      root,
+      PAGE,
+      `<script>import Tiles from '$lib/components/Tiles.svelte'</script>\n${points('foo.page')}\n<Tiles />`
+    )
+    writeFixture(
+      root,
+      'src/lib/components/Tiles.svelte',
+      `<!-- @region foo.page.tiles -->\n<dl><InjectionPoint name="foo.page.tiles" /></dl>`
+    )
+    expect(figureOf(root)).toMatchObject({
+      regions: { covered: 1, total: 1 },
+      uses: { covered: 1, total: 1 },
+    })
+  })
+
+  it('drops below 100 % for a bare top-level use, a region with no point and a missing standard point', () => {
+    const root = cleanTree()
+    writeFixture(
+      root,
+      PAGE,
+      `<script>import Tile from '$lib/components/Tile.svelte'</script>\n<InjectionPoint name="foo.page.before" />\n<!-- @region foo.page.x -->\n<div>none</div>\n<Tile />`
+    )
+    const figure = figureOf(root)
+    expect(figure.uses).toEqual({ covered: 1, total: 2 })
+    expect(figure.regions).toEqual({ covered: 0, total: 1 })
+    expect(figure.pages).toEqual({ covered: 1, total: 2 })
+    expect(figure.percent).toBeLessThan(100)
+    expect(formatFigure(figure)).toContain('1/2 pages with the 3 standard points = 40%')
+  })
+
+  it('prints how many files a lock exempts, so an inflated exemption is visible (k)', () => {
+    const root = cleanTree()
+    const figure = figureOf(root, { overrides: [{ path: PAGE }] })
+    expect(figure.exempt).toBe(1)
+    expect(figure.routeFiles).toBe(2)
+    expect(formatFigure(figure)).toContain('1 composition-lock exempt')
+  })
+
+  it('a figure of 0 files is not 100 % (a guard that matches nothing is not a pass)', () => {
+    const root = makeRoot()
+    writeFixture(root, REGISTRY, registry(['a.b.before']))
+    expect(figureOf(root).percent).toBe(0)
+  })
+
+  const io = () => {
+    const out: string[] = []
+    const err: string[] = []
+    return { out, err, io: { out: (t: string) => out.push(t), err: (t: string) => err.push(t) } }
+  }
+
+  const censusOracle = (root: string, count: number): string => {
+    writeFixture(
+      root,
+      'src/routes/route-render-snapshot.test.ts',
+      `it('covers every one of the ${count} route files', () => {})`
+    )
+    return root
+  }
+
+  it('the CLI prints the figure on success and exits 0 at 100 %', () => {
+    const sink = io()
+    expect(run(['--web', censusOracle(cleanTree(), 2)], sink.io)).toBe(0)
+    const text = sink.out.join('')
+    expect(text).toContain('scanned 2 route files')
+    expect(text).toContain('coverage: 0/0 regions with a point')
+    expect(text).toContain('= 100%')
+  })
+
+  it('the CLI exits 1 below 100 % even when no other problem is listed, and still prints the figure', () => {
+    const root = censusOracle(cleanTree(), 2)
+    writeFixture(
+      root,
+      PAGE,
+      `<script>import Tile from '$lib/components/Tile.svelte'</script>\n${points('foo.page')}\n<Tile />`
+    )
+    const sink = io()
+    expect(run(['--web', root], sink.io)).toBe(1)
+    expect(sink.err.join('')).toContain('coverage: 0/0 regions with a point, 0/1 top-level uses')
+  })
+
+  it('the CLI fails when the route-render oracle census disagrees with the tree (k)', () => {
+    const sink = io()
+    expect(run(['--web', censusOracle(cleanTree(), 9)], sink.io)).toBe(1)
+    expect(sink.err.join('')).toContain('expects 9 route files')
+    const none = io()
+    expect(run(['--web', cleanTree()], none.io)).toBe(1)
+    expect(none.err.join('')).toContain('route census')
   })
 })
 

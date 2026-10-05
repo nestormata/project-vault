@@ -219,6 +219,8 @@ describe('monolithic-region: tree scan, provenance exemption and the shipped con
       exempted: 0,
       regions: 0,
       routeRegions: 0,
+      topLevelUses: 0,
+      topLevelUsesInRegion: 0,
       findings: [],
     })
   })
