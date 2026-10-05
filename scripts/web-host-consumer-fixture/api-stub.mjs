@@ -8,6 +8,12 @@
 //                                 the same 404 an unknown id gets for another org's project (no
 //                                 existence leak); 401 without a session; 500 for `p-boom`, so PV's
 //                                 own load can be made to fail
+//   /api/v1/projects/:p/credentials/:c[/versions|dependencies|rotations|shares|nudge]
+//                                 Story 69.2: the credential read and its sections for a credential of
+//                                 the caller's org (`c-u1`, `c-u2`); the same 404 for an unknown id and
+//                                 another org's; 503 for `c-sealed` (a sealed vault: PV renders its
+//                                 banner); 500 for `c-boom` (PV's own load fails)
+//   /api/v1/org/users             Story 69.2: an empty member list
 //   /api/v1/themes                Story 68-15: two themes (`base`, `dark`), none selected
 //   /api/v1/themes/selection      PATCH: echoes the chosen theme name
 //   /api/v1/auth/refresh          200 with `Set-Cookie: session=ok` for `cookie: refresh-token=good`
@@ -54,6 +60,7 @@ const SESSION_USERS = new Map(
   ])
 )
 SESSION_USERS.set('ok', USER)
+const FIXTURE_TIME = '2026-07-01T12:00:00.000Z'
 // Story 69.1: a full project overview (PV's project page renders every field of a found project).
 const projectOf = (id, name, orgId) => ({
   id,
@@ -65,13 +72,46 @@ const projectOf = (id, name, orgId) => ({
   tags: [],
   memberCount: 1,
   createdBy: null,
-  createdAt: '2026-07-01T12:00:00.000Z',
-  updatedAt: '2026-07-01T12:00:00.000Z',
+  createdAt: FIXTURE_TIME,
+  updatedAt: FIXTURE_TIME,
   archivedAt: null,
 })
 const PROJECTS = new Map([
   ['p-u1', projectOf('p-u1', 'U1 Secret', 'o-u1')],
   ['p-u2', projectOf('p-u2', 'U2 Secret', 'o-u2')],
+])
+// Story 69.2: a full credential detail (PV's credential page renders every field of a found one).
+const credentialOf = (id, projectId, orgId) => ({
+  id,
+  projectId,
+  orgId,
+  name: `Credential ${id}`,
+  description: null,
+  tags: [],
+  expiresAt: null,
+  rotationSchedule: null,
+  cacheable: true,
+  retentionCount: 10,
+  currentVersionNumber: 1,
+  schemaVersion: 2,
+  fields: [{ key: 'value', sensitive: true }],
+  visibleFieldValues: {},
+  createdBy: null,
+  createdAt: FIXTURE_TIME,
+  updatedAt: FIXTURE_TIME,
+  archivedAt: null,
+})
+const CREDENTIALS = new Map([
+  ['c-u1', credentialOf('c-u1', 'p-u1', 'o-u1')],
+  ['c-u2', credentialOf('c-u2', 'p-u2', 'o-u2')],
+])
+// The section of a credential PV's load reads next to the credential itself (its own `Promise.all`).
+const CREDENTIAL_SECTIONS = new Map([
+  ['versions', { items: [] }],
+  ['dependencies', { items: [], hasDependencies: false, hasStagedRotation: false }],
+  ['rotations', { items: [], page: 1, limit: 10, total: 0, hasMore: false }],
+  ['shares', { items: [], total: 0 }],
+  ['nudge', { items: [] }],
 ])
 const THEMES = [
   { name: 'base', label: 'Base', css: null },
@@ -115,6 +155,31 @@ function projectRoute(res, path, session) {
   // The same answer for an unknown id and another org's project: no existence leak.
   if (project?.orgId !== SESSION_USERS.get(session).orgId) return send(res, 404, NOT_FOUND)
   return send(res, 200, { data: wantsDashboard ? EMPTY_DASHBOARD : project })
+}
+
+function credentialRoute(res, path, session) {
+  if (session === null) return send(res, 401, UNAUTHORIZED)
+  const [projectId, , credentialId, section = ''] = decodeURIComponent(
+    path.slice('/api/v1/projects/'.length)
+  ).split('/')
+  if (credentialId === 'c-boom') {
+    return send(res, 500, { error: { code: 'boom', message: STUB_MESSAGE } })
+  }
+  if (credentialId === 'c-sealed') {
+    return send(res, 503, { error: { code: 'vault_sealed', message: STUB_MESSAGE } })
+  }
+  const credential = CREDENTIALS.get(credentialId)
+  // The same answer for an unknown id and another org's credential: no existence leak.
+  if (
+    credential?.projectId !== projectId ||
+    credential.orgId !== SESSION_USERS.get(session).orgId
+  ) {
+    return send(res, 404, NOT_FOUND)
+  }
+  if (section === '') return send(res, 200, { data: credential })
+  return CREDENTIAL_SECTIONS.has(section)
+    ? send(res, 200, { data: CREDENTIAL_SECTIONS.get(section) })
+    : send(res, 404, NOT_FOUND)
 }
 
 async function themeSelection(req, res) {
@@ -164,20 +229,50 @@ function themeRoute(req, res, path, session) {
   return req.method === 'PATCH' ? themeSelection(req, res) : send(res, 404, NOT_FOUND)
 }
 
-function apiRoute(req, res, path, cookie, session) {
-  if (['/ready', '/health', '/api/health'].includes(path)) {
-    return state.sealed
-      ? send(res, 503, { status: 'unavailable', reason: 'sealed', message: 'sealed' })
-      : send(res, 200, { status: 'ready', nativeLoginEnabled: true })
+// `/api/v1/projects/:p/credentials/:c` and one section below it (`/versions`, ...): a path-shape check
+// by segments, not a regular expression.
+function isCredentialPath(path) {
+  const parts = path.split('/')
+  const shaped = parts.length === 7 || parts.length === 8
+  return (
+    shaped &&
+    parts[3] === 'projects' &&
+    parts[5] === 'credentials' &&
+    parts[4] !== '' &&
+    parts[6] !== ''
+  )
+}
+
+function isReadRoute(req, path) {
+  return (
+    req.method === 'GET' && (path === '/api/v1/org/users' || path.startsWith('/api/v1/projects/'))
+  )
+}
+
+function readRoute(res, path, session) {
+  if (isCredentialPath(path)) return credentialRoute(res, path, session)
+  if (path === '/api/v1/org/users') {
+    return session === null ? send(res, 401, UNAUTHORIZED) : send(res, 200, { data: [] })
   }
+  return projectRoute(res, path, session)
+}
+
+function statusRoute(res, path, session) {
   if (path === '/api/v1/auth/me') {
     return session === null
       ? send(res, 401, UNAUTHORIZED)
       : send(res, 200, { data: SESSION_USERS.get(session) })
   }
-  if (path.startsWith('/api/v1/projects/') && req.method === 'GET') {
-    return projectRoute(res, path, session)
+  return state.sealed
+    ? send(res, 503, { status: 'unavailable', reason: 'sealed', message: 'sealed' })
+    : send(res, 200, { status: 'ready', nativeLoginEnabled: true })
+}
+
+function apiRoute(req, res, path, cookie, session) {
+  if (['/ready', '/health', '/api/health', '/api/v1/auth/me'].includes(path)) {
+    return statusRoute(res, path, session)
   }
+  if (isReadRoute(req, path)) return readRoute(res, path, session)
   if (path === '/api/v1/themes' || path === '/api/v1/themes/selection') {
     return themeRoute(req, res, path, session)
   }

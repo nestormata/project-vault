@@ -509,14 +509,16 @@ describe('check-injection-point-coverage: region points (Story 69.1)', () => {
   })
 })
 
-describe('check-injection-point-coverage: the real tree holds its regions (Story 69.1)', () => {
+describe('check-injection-point-coverage: the real tree holds its regions (Story 69.1, 69.2)', () => {
   const REGIONS_ADDED_BY_69_1 = 14
+  // Story 69.2: the credential detail page's regions.
+  const REGIONS_ADDED_BY_69_2 = 13
 
   it('pairs every registered region point with a marker, inside the file that renders it', () => {
     const regions = [...(readRegistryFields(WEB) ?? [])].filter(
       ([, fields]) => fields.get('kind') === 'region'
     )
-    expect(regions.length).toBeGreaterThanOrEqual(REGIONS_ADDED_BY_69_1)
+    expect(regions.length).toBeGreaterThanOrEqual(REGIONS_ADDED_BY_69_1 + REGIONS_ADDED_BY_69_2)
     const marked = new Map<string, string[]>()
     for (const file of walkFiles(resolve(WEB, 'src'), (path) => path.endsWith('.svelte'))) {
       const parsed = parseMarkup(sysReadFile(file) ?? '', file)

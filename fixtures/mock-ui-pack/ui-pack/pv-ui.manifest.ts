@@ -22,6 +22,8 @@ const sha = (rel: string): string =>
   createHash('sha256')
     .update(readFileSync(join(host, rel)))
     .digest('hex')
+/** The host route of the credential detail page's region points (`<routeId>#<scope>`). */
+const CREDENTIAL_PAGE = '/(app)/projects/[projectId]/credentials/[credentialId]#page'
 const release = (
   JSON.parse(readFileSync(join(host, 'manifests', 'compatibility.json'), 'utf8')) as {
     pvRelease: string
@@ -88,6 +90,30 @@ export default defineUiPack({
         hostRoutes: ['/(app)/dashboard#page'],
       },
     ],
+    // M3 at REGION points of PV's NATIVE credential detail page (Story 69.2), which the pack does not
+    // override: the actions cluster (a component and a form action), the Shares section (a load and
+    // two actions) and the metadata `<dl>` (a tile). Every behavior contribution opts in with
+    // `hostRoutes`. The pack replaces no credential region component: PV's own page tests run over
+    // the composed tree and a replaced region would break them (test subjects are not walked through
+    // a route), so M4 on these regions is proven by the component index test instead.
+    'credential.detail.actions': [
+      {
+        component: './injections/CredentialActionsFill.svelte',
+        order: 10,
+        actions: './injections/credential-actions.actions.ts',
+        hostRoutes: [CREDENTIAL_PAGE],
+      },
+    ],
+    'credential.detail.shares': [
+      {
+        component: './injections/CredentialSharesFill.svelte',
+        order: 10,
+        load: './injections/credential-shares.server.ts',
+        actions: './injections/credential-shares.actions.ts',
+        hostRoutes: [CREDENTIAL_PAGE],
+      },
+    ],
+    'credential.detail.metadata': [{ component: './injections/CredentialMetadataFill.svelte' }],
     'app.layout.before': [{ component: './injections/LayoutBanner.svelte' }],
     // M3 region points (Story 69.4, Epic 69 phase 5): fills on the settings audit, settings
     // notifications and project members pages. Loads and actions work because a region point lives
