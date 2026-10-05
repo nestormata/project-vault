@@ -1679,6 +1679,73 @@ describe('rotation checklist confirm/fail/retry/complete + upcoming rotations', 
     expect(payload?.singleActorAttested).toBe(false)
   })
 
+  // Story 43-17 AC-6/KD-8: transferring ownership never rewrites `initiated_by`, and the
+  // four-eyes flag keeps comparing the sole confirmer against the INITIATOR, not the new owner.
+  it('AC-6 (43-17): a transferred rotation whose new owner is the sole confirmer is NOT single-actor', async () => {
+    const fixture = await createRotationWithDependenciesFixture(
+      app,
+      owner.cookies,
+      'single-actor-transferred-owner',
+      2
+    )
+    await forceRotationToInProgress(owner.orgId, fixture.rotationId)
+    const newOwner = await createDirectAuthenticatedUser(app, 'transferred-owner', 'admin')
+    const newOwnerCookies = await loginExistingUserInOrg(app, {
+      userId: newOwner.userId,
+      orgId: owner.orgId,
+      role: 'admin',
+    })
+    await withOrg(owner.orgId, (tx) =>
+      tx
+        .update(rotations)
+        .set({ ownerUserId: newOwner.userId })
+        .where(eq(rotations.id, fixture.rotationId))
+    )
+    for (const item of fixture.items) {
+      const res = await confirmChecklistItemViaApi(app, newOwnerCookies, {
+        ...fixture,
+        itemId: item.id,
+      })
+      expect(res.statusCode).toBe(200)
+    }
+
+    const completeRes = await completeRotationViaApi(app, owner.cookies, fixture)
+    expect(completeRes.statusCode).toBe(200)
+
+    const payload = await findRotationCompletedAuditPayload(owner.orgId, fixture.rotationId)
+    expect(payload?.singleActorAttested).toBe(false)
+  })
+
+  it('AC-6 (43-17): the initiator confirming a rotation owned by someone else is still single-actor', async () => {
+    const fixture = await createRotationWithDependenciesFixture(
+      app,
+      owner.cookies,
+      'single-actor-initiator-after-transfer',
+      2
+    )
+    await forceRotationToInProgress(owner.orgId, fixture.rotationId)
+    const newOwner = await createDirectAuthenticatedUser(app, 'transferred-owner-2', 'admin')
+    await withOrg(owner.orgId, (tx) =>
+      tx
+        .update(rotations)
+        .set({ ownerUserId: newOwner.userId })
+        .where(eq(rotations.id, fixture.rotationId))
+    )
+    for (const item of fixture.items) {
+      const res = await confirmChecklistItemViaApi(app, owner.cookies, {
+        ...fixture,
+        itemId: item.id,
+      })
+      expect(res.statusCode).toBe(200)
+    }
+
+    const completeRes = await completeRotationViaApi(app, owner.cookies, fixture)
+    expect(completeRes.statusCode).toBe(200)
+
+    const payload = await findRotationCompletedAuditPayload(owner.orgId, fixture.rotationId)
+    expect(payload?.singleActorAttested).toBe(true)
+  })
+
   // Code-review fix: singleActorAttested must not false-positive when the rotation's
   // initiator AND every checklist confirmer are different since-deleted users — `initiatedBy`
   // and `confirmedBy` are both nullable (`onDelete: 'set null'`), so a naive

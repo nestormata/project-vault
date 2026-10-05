@@ -45,7 +45,12 @@ export async function startRotationViaApi(
 export async function updateRotation(
   orgId: string,
   rotationId: string,
-  fields: { status?: RotationStatus; initiatedAt?: Date; initiatedBy?: string | null }
+  fields: {
+    status?: RotationStatus
+    initiatedAt?: Date
+    initiatedBy?: string | null
+    ownerUserId?: string | null
+  }
 ): Promise<void> {
   await withOrg(orgId, (tx) => tx.update(rotations).set(fields).where(eq(rotations.id, rotationId)))
 }
@@ -151,4 +156,23 @@ export function removeViaApi(
     headers: { cookie: cookieHeader(cookies) },
     ...(body === undefined ? {} : { payload: body }),
   })
+}
+
+/** The (owner_user_id, initiated_by, status) triple Story 43-17's transfer changes or preserves. */
+export async function rotationOwnership(
+  orgId: string,
+  rotationId: string
+): Promise<{ ownerUserId: string | null; initiatedBy: string | null; status: string }> {
+  const [row] = await withOrg(orgId, (tx) =>
+    tx
+      .select({
+        ownerUserId: rotations.ownerUserId,
+        initiatedBy: rotations.initiatedBy,
+        status: rotations.status,
+      })
+      .from(rotations)
+      .where(eq(rotations.id, rotationId))
+  )
+  if (!row) throw new Error(`rotation ${rotationId} not found`)
+  return row
 }

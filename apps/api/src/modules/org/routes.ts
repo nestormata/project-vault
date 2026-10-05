@@ -19,7 +19,13 @@ import type { OrgRole } from '../../plugins/require-org-role.js'
 import { revokeAllUserSessionsInOrg } from '../auth/session-revoke.js'
 import { sendAdminRecoveryLink } from '../auth/recovery.js'
 import { isNativeLoginEnabled } from '../auth/native-login-policy.js'
-import { enforceRotationHandling, revokePendingInvitationsSentBy } from './deactivation.js'
+import {
+  enforceRotationHandling,
+  revokePendingInvitationsSentBy,
+  validateTransferTarget,
+} from './deactivation.js'
+import { dispatchPendingJobs, type NotificationQueueJob } from '../../notifications/dispatcher.js'
+import type { BossService } from '../../lib/boss.js'
 import { autoRevokeSharesForDeactivatedUser } from '../credential-shares/service.js'
 import { dismissSecurityAlert, listSecurityAlerts } from './security-alerts.js'
 import {
@@ -48,6 +54,8 @@ import {
   SoleOwnerConflictResponseSchema,
 } from './schema.js'
 import { orgRoleOrDeny } from '../../lib/auth-role.js'
+
+type BossFastify = FastifyApp & { boss?: BossService }
 
 const USER_NOT_FOUND = { code: 'user_not_found', message: 'User not found' } as const
 
@@ -94,16 +102,47 @@ function isUsableTarget<T extends { orgRole: string }>(
   return !blockPeerOrHigherRole(target, secureCtx, reply, hierarchyMessage)
 }
 
-/** Story 43-15 AC-8/AC-9: the additive 200-body counts for a cleared rotation guard. */
-function rotationHandlingCounts(rotations: {
+/** What a cleared rotation guard reports: abandon/hold ids always, transfer ids only for `transfer`. */
+type ClearedRotationHandling = {
   abandonedRotationIds: string[]
   heldRotationIds: string[]
-}): { abandonedRotationCount: number; heldRotationCount: number } {
+  transferredRotationIds?: string[]
+  transferredToUserId?: string
+}
+
+/** Story 43-15 AC-8/AC-9 + 43-17 AC-4: the additive 200-body counts for a cleared rotation guard. */
+function rotationHandlingCounts(rotations: ClearedRotationHandling): {
+  abandonedRotationCount: number
+  heldRotationCount: number
+  transferredRotationCount?: number
+  transferredToUserId?: string
+} {
   return {
     abandonedRotationCount: rotations.abandonedRotationIds.length,
     heldRotationCount: rotations.heldRotationIds.length,
+    ...(rotations.transferredRotationIds && rotations.transferredToUserId
+      ? {
+          transferredRotationCount: rotations.transferredRotationIds.length,
+          transferredToUserId: rotations.transferredToUserId,
+        }
+      : {}),
   }
 }
+
+/** Story 43-17 AC-7: the audit-payload count that sits next to `transferredToUserId`. */
+function transferredCountPayload(rotations: ClearedRotationHandling): {
+  transferredRotationCount?: number
+} {
+  return rotations.transferredRotationIds
+    ? { transferredRotationCount: rotations.transferredRotationIds.length }
+    : {}
+}
+
+/** Story 43-17 AC-5: ONE generic message for every ineligible target (no existence oracle). */
+const INVALID_TRANSFER_TARGET = {
+  code: 'invalid_transfer_target',
+  message: 'The selected user cannot receive rotation ownership',
+} as const
 
 /** Story 43-15 AC-8/AC-9: the optional `{ rotationHandling }` body; absent means `{}` (block). */
 function parseRotationHandlingBody(
@@ -163,22 +202,59 @@ async function guardTargetRotations(
   reply: FastifyReply,
   input: {
     targetUserId: string
-    handling: RotationHandlingBody['rotationHandling']
+    body: RotationHandlingBody
     deniedEventType: string
     abandonAuditPayload: Record<string, unknown>
+    transferReason: 'owner_deactivated' | 'owner_removed'
   }
-): Promise<{ abandonedRotationIds: string[]; heldRotationIds: string[] } | null> {
+): Promise<{ rotations: ClearedRotationHandling; jobs: NotificationQueueJob[] } | null> {
+  const { body } = input
+  const transfer =
+    body.rotationHandling === 'transfer'
+      ? { toUserId: body.transferToUserId, reason: input.transferReason }
+      : undefined
+  // Story 43-17 AC-5: the target is validated (and locked FOR SHARE) after the caller's
+  // self/hierarchy/idempotency checks and before the rotation guard — even with nothing to
+  // transfer, so a typo is not silently accepted. A refusal changed nothing: no audit row.
+  if (
+    transfer &&
+    !(await validateTransferTarget(secureCtx.tx, secureCtx.auth.orgId, {
+      transferToUserId: transfer.toUserId,
+      deactivatedUserId: input.targetUserId,
+    }))
+  ) {
+    req.log.warn(
+      {
+        eventType: input.deniedEventType,
+        targetUserId: input.targetUserId,
+        reason: 'invalid_transfer_target',
+      },
+      'Org user request denied — rotation transfer target is not eligible'
+    )
+    reply.status(422).send(INVALID_TRANSFER_TARGET)
+    return null
+  }
   const guard = await enforceRotationHandling(secureCtx.tx, {
     auth: secureCtx.auth,
     targetUserId: input.targetUserId,
-    handling: input.handling,
+    handling: body.rotationHandling,
     request: req,
     abandonAuditPayload: input.abandonAuditPayload,
+    transfer,
   })
   if (guard.outcome === 'clear') {
     return {
-      abandonedRotationIds: guard.abandonedRotationIds,
-      heldRotationIds: guard.heldRotationIds,
+      rotations: {
+        abandonedRotationIds: guard.abandonedRotationIds,
+        heldRotationIds: guard.heldRotationIds,
+        ...(guard.transfer
+          ? {
+              transferredRotationIds: guard.transfer.rotationIds,
+              transferredToUserId: guard.transfer.toUserId,
+            }
+          : {}),
+      },
+      jobs: guard.transfer?.notificationJobs ?? [],
     }
   }
   const logInput = {
@@ -392,13 +468,15 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       // and BEFORE any mutation: secureRoute commits on return, so a 409 sent after the UPDATE
       // below would still commit the deactivation and its session revocations. The target's row
       // stays locked FOR UPDATE until commit, so a rotation they start meanwhile is refused (AC-4).
-      const rotations = await guardTargetRotations(secureCtx, req, reply, {
+      const guarded = await guardTargetRotations(secureCtx, req, reply, {
         targetUserId: params.userId,
-        handling: body.rotationHandling,
+        body,
         deniedEventType: OperationalEvent.ORG_USER_DEACTIVATE_DENIED,
         abandonAuditPayload: { reason: 'initiator_deactivated', deactivatedUserId: params.userId },
+        transferReason: 'owner_deactivated',
       })
-      if (!rotations) return reply
+      if (!guarded) return reply
+      const { rotations, jobs } = guarded
 
       await secureCtx.tx
         .update(orgMemberships)
@@ -460,9 +538,18 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
           revokedInvitationCount,
           revokedShareCount: revokedShares.length,
           ...rotations,
+          ...transferredCountPayload(rotations),
         },
         request: req,
       })
+      // Story 43-17 KD-7: best-effort post-audit send of the new-owner notice (the queue row is
+      // already durable; a missed boss.send() is picked up by the notification catch-up cron).
+      await dispatchPendingJobs(
+        (fastify as BossFastify).boss,
+        req,
+        jobs,
+        'rotation ownership transfer'
+      )
 
       return {
         data: {
@@ -689,13 +776,15 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
 
       // Story 43-15 AC-9: the same FR102 guard as deactivation — after the structural
       // last-owner/sole-owner 409s above, before any mutation.
-      const rotations = await guardTargetRotations(secureCtx, req, reply, {
+      const guarded = await guardTargetRotations(secureCtx, req, reply, {
         targetUserId: params.userId,
-        handling: body.rotationHandling,
+        body,
         deniedEventType: OperationalEvent.ORG_USER_REMOVE_DENIED,
         abandonAuditPayload: { reason: 'initiator_removed', removedUserId: params.userId },
+        transferReason: 'owner_removed',
       })
-      if (!rotations) return reply
+      if (!guarded) return reply
+      const { rotations, jobs } = guarded
 
       const { removedProjectCount } = await removeUserFromOrgMemberships(
         secureCtx.tx,
@@ -718,9 +807,15 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
         actorUserId: secureCtx.auth.userId,
         eventType: AuditEvent.ORG_USER_REMOVED,
         resourceId: params.userId,
-        payload: { removedProjectCount, ...rotations },
+        payload: { removedProjectCount, ...rotations, ...transferredCountPayload(rotations) },
         request: req,
       })
+      await dispatchPendingJobs(
+        (fastify as BossFastify).boss,
+        req,
+        jobs,
+        'rotation ownership transfer'
+      )
 
       return {
         data: {

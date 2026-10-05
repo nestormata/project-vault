@@ -1,4 +1,4 @@
-import { and, eq, lt, type SQL } from 'drizzle-orm'
+import { and, eq, lt, sql, type SQL } from 'drizzle-orm'
 import type { NotificationSeverity } from '@project-vault/shared'
 import { OperationalEvent } from '@project-vault/shared'
 import type { Tx } from '@project-vault/db'
@@ -34,11 +34,14 @@ export async function withRotationScopedLock<T>(
 export type RotationAlertCandidate = {
   id: string
   credentialId: string
+  /** Provenance only (audit payloads): never rewritten by an ownership transfer. */
   initiatedBy: string | null
+  /** Story 43-17 KD-7: who is alerted — COALESCE(owner_user_id, initiated_by). */
+  notifyUserId: string | null
 }
 
 /** Shared by rotation-recover.ts's stale-detection scan and rotation-stale-staged-alert.ts's
- *  stale-staged scan: both select the same `{id, credentialId, initiatedBy}` candidate shape,
+ *  stale-staged scan: both select the same `{id, credentialId, initiatedBy, notifyUserId}` shape,
  *  filtered to a specific `status` and `initiated_at` older than a threshold — differing only in
  *  the status value/threshold scale and (for the stale-staged job) one extra guard condition. */
 export async function findRotationCandidates(
@@ -53,6 +56,9 @@ export async function findRotationCandidates(
       id: rotations.id,
       credentialId: rotations.credentialId,
       initiatedBy: rotations.initiatedBy,
+      notifyUserId: sql<
+        string | null
+      >`COALESCE(${rotations.ownerUserId}, ${rotations.initiatedBy})`,
     })
     .from(rotations)
     .where(
@@ -67,8 +73,9 @@ export async function findRotationCandidates(
 
 /** Shared by rotation-recover.ts's stale-detection job and rotation-stale-staged-alert.ts's
  *  stale-staged job: both dispatch an identical shape of notification — a direct-user alert to
- *  the rotation's initiator (skipped, never thrown, if that user's account has since been
- *  deleted — `initiatedBy` is nullable, `onDelete: 'set null'`) plus an FR100-routed org-wide
+ *  the rotation's effective owner (Story 43-17: `COALESCE(owner_user_id, initiated_by)`, so a
+ *  transferred rotation alerts its new owner; skipped, never thrown, if that user's account has
+ *  since been deleted — both columns are nullable, `onDelete: 'set null'`) plus an FR100-routed org-wide
  *  security alert. Split out so the two wholly-separate workers (ADR-5.6-04) don't duplicate this
  *  dispatch logic verbatim. */
 export async function dispatchRotationAlertNotifications(params: {
@@ -81,10 +88,10 @@ export async function dispatchRotationAlertNotifications(params: {
   logger?: WorkerLogger
 }): Promise<NotificationQueueJob[]> {
   const jobs: NotificationQueueJob[] = []
-  if (params.candidate.initiatedBy) {
+  if (params.candidate.notifyUserId) {
     const directJobs = await dispatchDirectUserNotification({
       orgId: params.orgId,
-      userId: params.candidate.initiatedBy,
+      userId: params.candidate.notifyUserId,
       template: {
         templateId: params.templateId,
         payload: params.payload,
@@ -98,7 +105,7 @@ export async function dispatchRotationAlertNotifications(params: {
       params.logger,
       'info',
       OperationalEvent.ROTATION_STALE_DETECTED,
-      'Skipping direct-user rotation notification — initiating user no longer exists',
+      'Skipping direct-user rotation notification — owning user no longer exists',
       { orgId: params.orgId, rotationId: params.candidate.id }
     )
   }
