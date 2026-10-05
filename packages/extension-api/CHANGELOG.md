@@ -24,6 +24,30 @@ against 3.31.0 that ignores every new field behaves exactly as before.
   10 000, `windowSeconds` an integer 1 to 3600 (default 60). Absent keeps 60 per 60 seconds. An
   out-of-range value fails extension registration; it is never clamped.
 
+### Deprecated
+
+Carried forward unchanged from 3.31.0 and 3.30.0 (Story 68.11). This release deprecates nothing new. The
+marker lint requires the newest entry to announce every deprecated export, so the still-running
+notice is restated here; the clock, the dates and the replacements are those of 3.30.0, and every
+symbol below keeps working identically for the whole notice window.
+
+- Panel area: the exports `UIPanel`, `UIPanelContext`, `UIPanelResult`, `ModuleAction`,
+  `ModuleActionRequest`, `ModuleActionContext` and `ActionResult`; the manifest fields
+  `uiPanelSlots` and `moduleActions`; the hooks `uiPanel` and `moduleAction`; and the capability
+  member `'ui-panel'`.
+- Navigation area: the export `ExtensionNavItem` and the manifest field `navItems`.
+- Data-route area: the exports `ModuleDataRequestContext`, `ModuleDataResult`,
+  `ModuleDataRouteHandler` and `ModuleDataRouteDeclaration`; the manifest field `moduleDataRoutes`
+  and the hook `moduleData`.
+- `panelDataPaths` keeps its own earlier notice (window ending 2026-11-29).
+- Replacements: composed UI (ADR 0007) for `uiPanelSlots`, `moduleActions`, `uiPanel` and
+  `moduleAction`; the M5 nav delta (`nav`) for `navItems`; M7 `apiRoutes` for `moduleDataRoutes`
+  and `moduleData`; `ExtensionRequestContext` and `ExtensionActionResult` for the two context and
+  result types.
+  - Notified: 2026-10-06, carried forward from the 3.30.0 notification (CHANGELOG entry 3.30.0, GitHub Release `extension-api-v3.30.0`, issue on `centralizeme-sass`); recipient CentralizeMe maintainer. This entry makes no new notification; the date moves with 3.30.0's real publication date.
+  - earliest-removal: 4.0.0 (the next major at time of writing)
+  - notice-window-ends: 2027-01-14
+
 ## 3.31.0 — 2026-10-06
 
 contract-hash: sha256:03995fc4ace3ebda7d9749f526d0c466be17aa2fdb5ec5f2688fb9be24d1e202
@@ -38,7 +62,7 @@ follow the unpublished 3.30.0 convention; the release itself is Story 71-5.
   `false` or omitted is a plain session route. Validated like every other `security` key: a closed
   shape, and a failure is `invalid-manifest-field`.
 - `ApiRouteDelegationDeclaration` (`subjectFields?`) and `ApiRouteSubjectField` (`{ in: 'body' |
-  'params'; name }`): where the route carries a copy of the org or the actor. `name` is a plain
+'params'; name }`): where the route carries a copy of the org or the actor. `name` is a plain
   identifier of at most 128 characters (`__proto__`, `constructor` and `prototype` are rejected);
   `org` and `actor` must not name the same field.
 - Registration integrity: a delegated route that also sets `requireAuth: false`, `requireMfa: true`
