@@ -9,6 +9,7 @@
   import TypedConfirmInput from '$lib/components/forms/TypedConfirmInput.svelte'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import ProjectsListCell from '$lib/components/tables/ProjectsListCell.svelte'
+  import RotationTransferPanel from '$lib/components/members/RotationTransferPanel.svelte'
   import {
     changeProjectRole,
     deactivateOrgUser,
@@ -16,6 +17,7 @@
     sendRecoveryLink,
     type OrgUser,
     type OrgUserProject,
+    type RotationHandlingOptions,
     type SettableProjectRole,
   } from '$lib/api/org-users.js'
   import {
@@ -271,7 +273,7 @@
     return null
   }
 
-  async function runRemoval(user: OrgUser, options?: { rotationHandling: 'abandon' }) {
+  async function runRemoval(user: OrgUser, options?: RotationHandlingOptions) {
     busyKey = user.userId
     errorMessage = null
     delete blockedRemoval[user.userId]
@@ -326,7 +328,7 @@
     return error.message ?? 'Failed to deactivate account.'
   }
 
-  async function runDeactivation(user: OrgUser, options?: { rotationHandling: 'abandon' }) {
+  async function runDeactivation(user: OrgUser, options?: RotationHandlingOptions) {
     busyKey = user.userId
     errorMessage = null
     try {
@@ -357,6 +359,68 @@
     )
     if (!confirmed) return
     await runDeactivation(user, { rotationHandling: 'abandon' })
+  }
+
+  // Story 43-17 AC-10 (FR102 third outcome): after an active_rotations 409 the row also offers
+  // "Transfer unfinished rotations and ...", opening one small panel (one at a time) with a select
+  // of the org's other active admins. Failures keep the panel open; success reports the count.
+  let transferOpen = $state<{ userId: string; action: 'deactivate' | 'remove' } | null>(null)
+  let transferSaving = $state(false)
+  let transferError = $state<string | null>(null)
+  let transferNotice = $state<string | null>(null)
+
+  function transferTargetsFor(user: OrgUser) {
+    return data.users.filter(
+      (candidate) =>
+        candidate.userId !== user.userId &&
+        candidate.status === 'active' &&
+        (candidate.orgRole === 'admin' || candidate.orgRole === 'owner')
+    )
+  }
+
+  function openTransfer(user: OrgUser, action: 'deactivate' | 'remove') {
+    transferError = null
+    transferNotice = null
+    transferOpen = { userId: user.userId, action }
+  }
+
+  function transferFailureMessage(error: unknown): string {
+    if (error instanceof ApiClientError) {
+      if (error.code === 'invalid_transfer_target') {
+        return 'That user can no longer receive rotations. Choose another active admin.'
+      }
+      if (error.code === 'rotation_busy') {
+        return 'A rotation for this user is being modified right now. Try again in a moment.'
+      }
+      return error.message ?? 'Failed to transfer rotations.'
+    }
+    return 'Failed to transfer rotations.'
+  }
+
+  async function onConfirmTransfer(user: OrgUser, transferToUserId: string) {
+    if (transferSaving || !transferOpen) return
+    const action = transferOpen.action
+    transferSaving = true
+    transferError = null
+    const options = { rotationHandling: 'transfer', transferToUserId } as const
+    try {
+      const result =
+        action === 'deactivate'
+          ? await deactivateOrgUser(fetch, user.userId, options)
+          : await removeOrgUser(fetch, user.userId, options)
+      const toEmail =
+        data.users.find((u) => u.userId === transferToUserId)?.email ?? 'the new owner'
+      transferNotice = `Transferred ${result.transferredRotationCount ?? 0} unfinished rotation(s) from ${user.email} to ${toEmail}.`
+      transferOpen = null
+      errorMessage = null
+      rotationBlockedUserId = null
+      rotationBlockedRemovalUserId = null
+      await invalidateAll()
+    } catch (error) {
+      transferError = transferFailureMessage(error)
+    } finally {
+      transferSaving = false
+    }
   }
 
   let recoveryLinkSentFor = $state<string | null>(null)
@@ -530,6 +594,15 @@
       {/if}
     </div>
 
+    {#if transferNotice}
+      <p
+        class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"
+        role="status"
+      >
+        {transferNotice}
+      </p>
+    {/if}
+
     {#if errorMessage}
       <p
         class="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
@@ -655,6 +728,15 @@
                           {@render WarningIcon()}
                           Abandon unfinished rotations and deactivate
                         </button>
+                        <button
+                          class="inline-flex items-center gap-1 text-sm font-medium text-amber-700 underline disabled:cursor-not-allowed disabled:opacity-60"
+                          type="button"
+                          disabled={busyKey === user.userId}
+                          onclick={() => openTransfer(user, 'deactivate')}
+                        >
+                          {@render WarningIcon()}
+                          Transfer unfinished rotations and deactivate
+                        </button>
                       {/if}
                     {/if}
                     <button
@@ -676,6 +758,26 @@
                         {@render WarningIcon()}
                         Abandon unfinished rotations and remove
                       </button>
+                      <button
+                        class="inline-flex items-center gap-1 text-sm font-medium text-red-700 underline disabled:cursor-not-allowed disabled:opacity-60"
+                        type="button"
+                        disabled={busyKey === user.userId}
+                        onclick={() => openTransfer(user, 'remove')}
+                      >
+                        {@render WarningIcon()}
+                        Transfer unfinished rotations and remove
+                      </button>
+                    {/if}
+                    {#if transferOpen?.userId === user.userId}
+                      <RotationTransferPanel
+                        subjectEmail={user.email}
+                        actionLabel={transferOpen.action}
+                        targets={transferTargetsFor(user)}
+                        saving={transferSaving}
+                        error={transferError}
+                        onconfirm={(toUserId) => onConfirmTransfer(user, toUserId)}
+                        oncancel={() => (transferOpen = null)}
+                      />
                     {/if}
                     {#if blockedRemoval[user.userId]}
                       <p class="text-xs text-amber-800" role="alert">
