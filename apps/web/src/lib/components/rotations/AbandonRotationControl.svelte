@@ -100,7 +100,11 @@
       </button>
     </div>
   {:else}
-    <div class="space-y-3 rounded-xl border border-amber-400 bg-amber-100 p-4">
+    <div
+      class="space-y-3 rounded-xl border border-amber-400 bg-amber-100 p-4"
+      role="group"
+      aria-label="Confirm abandon rotation"
+    >
       <p class="text-sm text-amber-900">{confirmCopy}</p>
       <div class="flex gap-3">
         <button

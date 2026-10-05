@@ -36,6 +36,7 @@ describe('AbandonRotationControl', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Abandon rotation' }))
 
     expect(screen.getByText('Custom confirm copy.')).toBeTruthy()
+    expect(screen.getByRole('group', { name: /confirm abandon rotation/i })).toBeTruthy()
     expect(abandonRotationMock).not.toHaveBeenCalled()
   })
 

@@ -281,7 +281,9 @@
     stagedValueError = null
     try {
       const result = await getStagedValue(fetch, data.projectId, data.credentialId, data.rotationId)
-      stagedValue = result.value
+      // A reveal that resolves after the rotation left `staged` (abandoned/promoted meanwhile)
+      // must not put the discarded value back into component state.
+      if (rotation?.status === 'staged') stagedValue = result.value
     } catch (error) {
       stagedValueError =
         error instanceof ApiClientError
