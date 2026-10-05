@@ -51,12 +51,12 @@ export default defineUiPack({
       hostSha256: sha(path),
       story: 'MOCK-UI-PACK',
     })),
-    // M1 route removal: PV's erasure request detail route (nothing links to it, no spec uses it) is
-    // removed in this product; PV redirects an anonymous request there to /login, so the 404 proves
-    // the removal. `/status` stays so the public status region can be filled, `/external-shares`
-    // because PV's header-policy test needs two `setHeaders` routes, `/invitations/accept` because
-    // the member specs use it.
-    remove: ['/(app)/settings/users/[userId]/erasure/[requestId]'],
+    // M1 route removal: PV's recovery link route (a static answer: PV always serves its page there, no
+    // page links to it with a typed href and no spec uses it, so the 404 proves the removal) is removed in
+    // this product. `/status` stays so the public status region can be filled, `/external-shares`
+    // because PV's header-policy test needs two `setHeaders` routes, `/invitations/accept` because the
+    // member specs use it.
+    remove: ['/(auth)/recovery/[token]'],
   },
   injections: {
     // M3: injected into NATIVE PV pages the pack did not override: a component with a server load
