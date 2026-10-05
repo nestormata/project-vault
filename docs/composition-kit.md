@@ -173,6 +173,14 @@ and ask for the point in PV (a repeated need is a PV story).
   authorization input: a composed action decides from server state, never from a posted role field. The
   endpoint list and detail routes return `notFound: true` too, so a foreign or nonexistent endpoint id runs no
   contribution load either.
+- **A PV denial skips contribution loads too** (Story 69-7, DW-531). `withInjectedLoad` skips every contribution
+  load, with one `null` entry per contribution, when PV's own result is `notFound: true`, `vaultSealed: true`,
+  the typed `skipInjectedLoads: true` marker, or a literal `allowed: false` (PV's own denial vocabulary on the
+  settings and platform pages: audit, access report, forwarding, SSO domains, extensions, external identities and
+  the platform pages). Only the literal `true` / `false` counts. The members page marks a 403 or 404 from the
+  member list with `SKIP_INJECTED_LOADS` (exported from `inject-behavior.ts`, stripped from the page data); a
+  5xx or network failure is not a denial and keeps today's degrade-to-empty behavior with contributions running.
+  This does not narrow M1-M7, and a fill must still authorize itself.
 - **A typed `skipInjectedLoads: true` marker does the same where PV's "nothing here" answer has another shape**
   (Story 69-3). The public status page (`/status/<token>`) answers an invalid, disabled or sealed-vault token
   with `statusPage: null`; its own load marks that result `skipInjectedLoads: true`, so no contribution load
@@ -330,10 +338,11 @@ region component's props are an M4 contract and are not `@pv-stable` yet (Story 
 
 **Props are least-data.** A point receives what PV already loaded and renders for that role. An ungated region
 (members `header`, `notice`, `invite`; audit `header`, `notice`, `navigation`; notifications `header`) gets role and
-flag fields only; a gated region gets its rows only inside PV's own gate. A contribution `load` still runs for every
-request to the page, including one PV rendered as "not allowed" (and a foreign project id on the members page, which
-PV degrades to empty lists), so a fill MUST authorize on its own: read through `event.fetch` and return nothing on
-401/403/404.
+flag fields only; a gated region gets its rows only inside PV's own gate. A contribution `load` does NOT run for a caller
+PV's own load denied (Story 69-7, below), but a fill MUST still authorize on its own (defense in depth): read through
+`event.fetch` and return nothing on 401/403/404. Layout-scope loads are not covered by a denied PAGE (SvelteKit runs
+layout and page loads concurrently), and injected form actions never see the load result and still run for a denied
+caller.
 
 | Page                            | Points                                                                                                   |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------- |

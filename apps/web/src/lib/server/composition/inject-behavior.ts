@@ -114,18 +114,29 @@ function runAction(entry: ActionEntry): Action {
   }
 }
 
+/** The typed marker a PV load spreads into its result when it denied the caller (or the entity is
+ * unknown to the caller) and its answer has no `notFound`/`allowed: false` shape. The wrapper strips
+ * it from the page data. Spread this constant instead of repeating the literal: a typo in the key
+ * would silently disable the guard. */
+export const SKIP_INJECTED_LOADS = { skipInjectedLoads: true } as const
+
 /** One predicate for the own-result flags that mean "there is nothing a contribution load could
- * read": PV's 404 answer (`notFound: true`, no such entity for you), its sealed-vault answer
- * (`vaultSealed: true`, every PV API call 503s) and the typed `skipInjectedLoads: true` marker a
- * load sets when its "nothing here" answer has another shape (Story 69.3: the public status page's
- * `statusPage: null`). Only the literal `true` counts. */
+ * read, or PV refused this caller": PV's 404 answer (`notFound: true`, no such entity for you), its
+ * sealed-vault answer (`vaultSealed: true`, every PV API call 503s), the typed `skipInjectedLoads:
+ * true` marker (Story 69.3: the public status page's `statusPage: null`; Story 69.7: a members page
+ * for a project PV denied) and PV's own denial vocabulary `allowed: false` (Story 69.7, DW-531: the
+ * settings and platform pages). Only the literal `true` / `false` counts. The wrapper reads facts
+ * PV's load already computed; it never re-derives authorization. */
 function isLoadSkipped(data: object | undefined): boolean {
-  const { notFound, vaultSealed, skipInjectedLoads } = (data ?? {}) as {
+  const { notFound, vaultSealed, skipInjectedLoads, allowed } = (data ?? {}) as {
     notFound?: unknown
     vaultSealed?: unknown
     skipInjectedLoads?: unknown
+    allowed?: unknown
   }
-  return notFound === true || vaultSealed === true || skipInjectedLoads === true
+  return (
+    notFound === true || vaultSealed === true || skipInjectedLoads === true || allowed === false
+  )
 }
 
 /** The `skipInjectedLoads` marker is a message to this wrapper, never part of PV's page data. */

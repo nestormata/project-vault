@@ -1,6 +1,10 @@
 import { error, fail, redirect, type RequestEvent } from '@sveltejs/kit'
 import { describe, expect, it, vi } from 'vitest'
-import { createInjectBehavior, type BehaviorTables } from './inject-behavior.js'
+import {
+  createInjectBehavior,
+  SKIP_INJECTED_LOADS,
+  type BehaviorTables,
+} from './inject-behavior.js'
 
 // Story 68.4 AC-5 / AC-6 / AC-14: server load and action injection. The generated tables come from
 // the kit; here they are handed in directly.
@@ -607,6 +611,120 @@ describe("withInjectedLoad: PV's own load first, then the injected data", () => 
         expect(result).toMatchObject({ __inject: { 'credential.detail.after': [null] } })
       }
       expect(counter.ran).toBe(0)
+    })
+  })
+
+  // Story 69.7 (DW-531): PV's own denial. A literal `allowed: false` is PV's own vocabulary on its
+  // settings pages; the typed SKIP_INJECTED_LOADS marker covers denials with another shape.
+  describe('a denied own result (Story 69.7)', () => {
+    const counter = { ran: 0 }
+    const deniedTables = (): BehaviorTables => ({
+      loads: {
+        '/d#page': [
+          {
+            point: 'settings.audit.results',
+            contributions: [
+              { order: 0, load: () => (counter.ran += 1) },
+              { order: 1, load: null },
+            ],
+          },
+        ],
+        '/d#layout': [
+          { point: 'layout.point', contributions: [{ order: 0, load: () => (counter.ran += 1) }] },
+        ],
+      },
+      actions: {},
+    })
+
+    it('allowed:false runs no load, keeps null alignment and keeps allowed in the data', async () => {
+      counter.ran = 0
+      const { withInjectedLoad: wrap } = createInjectBehavior(deniedTables())
+      const result = await wrap(
+        async () => ({ orgRole: 'member', allowed: false }),
+        '/d',
+        'page'
+      )(event)
+      expect(counter.ran).toBe(0)
+      expect(result).toEqual({
+        orgRole: 'member',
+        allowed: false,
+        __inject: { 'settings.audit.results': [null, null] },
+      })
+    })
+
+    it('behaves the same for the layout scope', async () => {
+      counter.ran = 0
+      const { withInjectedLoad: wrap } = createInjectBehavior(deniedTables())
+      const result = await wrap(async () => ({ allowed: false }), '/d', 'layout')(event)
+      expect(counter.ran).toBe(0)
+      expect(result).toEqual({ allowed: false, __inject: { 'layout.point': [null] } })
+    })
+
+    it.each([[{ allowed: true }], [{ allowed: 'false' }], [{ allowed: 0 }], [{}], [undefined]])(
+      'runs the loads for %j (only the literal false is a denial)',
+      async (own) => {
+        counter.ran = 0
+        const { withInjectedLoad: wrap } = createInjectBehavior(deniedTables())
+        await wrap(async () => own, '/d', 'page')(event)
+        expect(counter.ran).toBe(1)
+      }
+    )
+
+    it('SKIP_INJECTED_LOADS skips the loads and is stripped from the data', async () => {
+      counter.ran = 0
+      const { withInjectedLoad: wrap } = createInjectBehavior(deniedTables())
+      const result = await wrap(
+        async () => ({ members: [], ...SKIP_INJECTED_LOADS }),
+        '/d',
+        'page'
+      )(event)
+      expect(counter.ran).toBe(0)
+      expect('skipInjectedLoads' in result).toBe(false)
+      expect(SKIP_INJECTED_LOADS).toEqual({ skipInjectedLoads: true })
+    })
+
+    it('a redirect still short-circuits before the denial check', async () => {
+      counter.ran = 0
+      const { withInjectedLoad: wrap } = createInjectBehavior(deniedTables())
+      await expect(
+        wrap(
+          async () => {
+            redirect(303, '/login')
+          },
+          '/d',
+          'page'
+        )(event)
+      ).rejects.toMatchObject({ status: 303 })
+      expect(counter.ran).toBe(0)
+    })
+
+    it('two parallel requests, one denied and one allowed: only the allowed one calls the load', async () => {
+      counter.ran = 0
+      const { withInjectedLoad: wrap } = createInjectBehavior(deniedTables())
+      await Promise.all([
+        wrap(async () => ({ allowed: false }), '/d', 'page')(event),
+        wrap(async () => ({ allowed: true }), '/d', 'page')(event),
+      ])
+      expect(counter.ran).toBe(1)
+    })
+
+    it('AC-11 gap pinned: an injected action still runs for a caller whose load PV denied (actions never see the load result)', async () => {
+      const run = vi.fn(() => ({ ok: true }))
+      const { injectActions: actionsOf } = createInjectBehavior({
+        loads: {},
+        actions: { '/d#page': { 'p.save': { point: 'p', name: 'save', run } } },
+      })
+      await actionsOf('/d')?.['p.save']?.(event)
+      expect(run).toHaveBeenCalledOnce()
+    })
+
+    it("PV's own build (empty tables) returns the own data unchanged", async () => {
+      const result = await emptyBehavior.withInjectedLoad(
+        async () => ({ orgRole: 'member', allowed: false }),
+        '/d',
+        'page'
+      )(event)
+      expect(result).toEqual({ orgRole: 'member', allowed: false })
     })
   })
 
