@@ -56,6 +56,9 @@ function resolveWebhookRateLimit(
   declared: DeliveryProvider['webhookRateLimit']
 ): DeliveryWebhookRateLimit | undefined {
   if (declared === undefined) return undefined
+  if (typeof declared !== 'object' || declared === null) {
+    throw new DeliveryProviderWebhookRateLimitError(channel, 'must be an object')
+  }
   if (!isIntegerInRange(declared.max, 1, WEBHOOK_RATE_LIMIT_MAX_BOUND)) {
     throw new DeliveryProviderWebhookRateLimitError(
       channel,

@@ -194,6 +194,9 @@ describe('wireExtensionDeliveryProvider - Story 70.3 AC5 webhookRateLimit valida
   })
 
   it.each([
+    ['null', null as never],
+    ['a number', 5 as never],
+    ['a string', 'fast' as never],
     ['max 0', { max: 0 }],
     ['max 10001', { max: 10_001 }],
     ['max non-integer', { max: 1.5 }],

@@ -169,10 +169,18 @@ describe('POST /api/v1/notifications/delivery-webhook/:providerId - Story 70.3 A
     })
   }
 
-  async function statuses(providerId: string, ip: string, count: number): Promise<number[]> {
-    const out: number[] = []
-    for (let i = 0; i < count; i += 1) out.push((await post(providerId, ip)).statusCode)
-    return out
+  /** Sequential on purpose (the limiter counts in arrival order); a promise chain, not a loop. */
+  async function statuses(
+    providerId: string | ((index: number) => string),
+    ip: string,
+    count: number
+  ): Promise<number[]> {
+    return Array.from({ length: count }).reduce<Promise<number[]>>(async (previous, _unused, i) => {
+      const out = await previous
+      const id = typeof providerId === 'string' ? providerId : providerId(i)
+      out.push((await post(id, ip)).statusCode)
+      return out
+    }, Promise.resolve([]))
   }
 
   it('a provider declaring max 500 accepts 500 calls and answers 429 on the 501st', async () => {
@@ -204,8 +212,9 @@ describe('POST /api/v1/notifications/delivery-webhook/:providerId - Story 70.3 A
   it('unknown provider ids share one bucket and keep the identical 404 body', async () => {
     wireExtensionDeliveryProvider(loadedStateWith({ email: provider() }))
     const ip = '198.51.100.13'
-    const codes: number[] = []
-    for (let i = 0; i < 70; i += 1) codes.push((await post(`unknown-${i}`, ip)).statusCode)
+    // 1000 distinct unknown ids from one IP: a single shared bucket (60 x 404, then 429), so a
+    // caller choosing path segments cannot mint buckets.
+    const codes = await statuses((i) => `unknown-${i}`, ip, 1000)
     expect(codes.slice(0, 60).every((code) => code === 404)).toBe(true)
     expect(codes.slice(60).every((code) => code === 429)).toBe(true)
     const first = await post('unknown-first', '198.51.100.14')
