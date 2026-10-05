@@ -90,10 +90,7 @@ describe("monolithic-region on PV's own tree (AC-4.6)", () => {
   it('counts the regions of Stories 69.1 to 69.4 together, all replaceable components', () => {
     const own = scanMonolithicRegionsTree(WEB)
     expect(own.regions).toBeGreaterThanOrEqual(
-      REGIONS_ADDED_BY_69_1 +
-        REGIONS_ADDED_BY_69_2 +
-        REGIONS_ADDED_BY_69_3 +
-        REGIONS_ADDED_BY_69_4
+      REGIONS_ADDED_BY_69_1 + REGIONS_ADDED_BY_69_2 + REGIONS_ADDED_BY_69_3 + REGIONS_ADDED_BY_69_4
     )
     expect(own.findings).toEqual([])
   })
