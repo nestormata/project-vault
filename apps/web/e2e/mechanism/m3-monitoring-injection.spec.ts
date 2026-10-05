@@ -315,3 +315,71 @@ test.describe('M3 monitoring region points: status page admin (Story 69.3)', () 
     await expect(page.getByTestId(STATUS_TILE)).toHaveCount(0)
   })
 })
+
+test.describe('M3 monitoring region points: public status page (Story 69.3)', () => {
+  const PUBLIC_TILE = /mock-ui-pack:m3-public-load runs=(\d+) user=(\w+) services=(\d+)/
+  const UNAVAILABLE = 'Status page not available'
+
+  test('works: a valid token runs the load (anonymous, no session), an invalid token runs none and keeps PV not-available state, and no token is in the fill props or __data.json', async ({
+    page,
+    context,
+    request,
+  }) => {
+    await seedOrgOwner(context, 'm3m-public')
+    const projectId = await createProject(context, unique('m3m-public'))
+    await createServiceEndpointViaApi(context, projectId, {
+      name: unique('ep'),
+      url: ENDPOINT_URL,
+    })
+    const publicUrl = await enablePublicStatusPageViaUi(page, projectId)
+    const token = publicUrl.split('/').at(-1) ?? ''
+    expect(token.length).toBeGreaterThan(10)
+    const tileRuns = async (path: string): Promise<number> => {
+      const html = await (await request.get(path)).text()
+      const match = PUBLIC_TILE.exec(html)
+      expect(match, path).not.toBeNull()
+      expect(match?.[2]).toBe('none')
+      return Number(match?.[1])
+    }
+    // valid token: the load ran once, anonymously (the anonymous `request` carries no cookies)
+    const first = await tileRuns(`/status/${token}`)
+    expect(first).toBeGreaterThan(0)
+    // invalid token: PV's own state, no tile, and no contribution load ran
+    const invalid = await request.get(`/status/${randomUUID()}-not-a-token`)
+    expect(invalid.status()).toBeLessThan(500)
+    const invalidHtml = await invalid.text()
+    expect(invalidHtml).toContain(UNAVAILABLE)
+    expect(invalidHtml).not.toContain('mock-public-status')
+    const invalidData = await request.get(`/status/${randomUUID()}-not-a-token/__data.json`)
+    expect(await invalidData.text()).not.toContain('runs')
+    // the next valid visit counts exactly one more run: the invalid visit added none
+    expect(await tileRuns(`/status/${token}`)).toBe(first + 1)
+    // no token in what the fill received, nor in the page data
+    const html = await (await request.get(`/status/${token}`)).text()
+    const received = /data-received="([^"]*)"/.exec(html)?.[1] ?? ''
+    expect(received).not.toBe('')
+    expect(received).not.toContain(token)
+    expect(await (await request.get(`/status/${token}/__data.json`)).text()).not.toContain(token)
+  })
+
+  test('works: the public tile hydrates cleanly in a browser without a session', async ({
+    page,
+    context,
+    browser,
+  }) => {
+    await seedOrgOwner(context, 'm3m-public-hydrate')
+    const projectId = await createProject(context, unique('m3m-ph'))
+    const publicUrl = await enablePublicStatusPageViaUi(page, projectId)
+    const anonymous = await browser.newContext({ baseURL: process.env['E2E_BASE_URL'] })
+    try {
+      const view = await anonymous.newPage()
+      const mismatches = trackHydrationMismatch(view)
+      await view.goto(`/status/${publicUrl.split('/').at(-1)}`)
+      await expect(view.getByRole('heading', { name: 'Service status' })).toBeVisible()
+      await expect(view.getByTestId('mock-public-status')).toContainText('user=none')
+      expect(mismatches()).toEqual([])
+    } finally {
+      await anonymous.close()
+    }
+  })
+})

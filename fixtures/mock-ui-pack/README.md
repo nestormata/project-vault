@@ -53,7 +53,7 @@ kit integration job against the API stub (`c-sealed`).
 
 ## Monitoring region points (Story 69.3)
 
-Three M3 fills target region points of the endpoint and status page admin routes (PV's own pages, not
+Four M3 fills target region points of the endpoint, status page admin and public status routes (PV's own pages, not
 overridden by the pack):
 
 - `project.service-endpoints-detail.history` (`injections/EndpointHealthTile.svelte`, a load and an action,
@@ -67,10 +67,13 @@ overridden by the pack):
   can manage the page; the load reads the status page configuration (which holds the public token) and returns
   the project id and an API status ONLY.
 
-The public status page (`status.detail.*`) has no fill here: this pack removes the `/status` route group (the M1
-removal case, asserted by `compose-mode.sh`), so a fill there could never render. Its mechanism is proven by unit
-tests of `withInjectedLoad` and of the region components. Region data on a public page must be public-safe: the
-load runs without `locals.user`, only for a valid token, and its result is serialized into public HTML.
+- `status.detail.services` on the ANONYMOUS public status page (`injections/StatusPublicTile.svelte` and a load,
+  `hostRoutes: ['/status/[token]#page']`). The load runs only for a valid token (an invalid, disabled or sealed
+  token skips every contribution load), without `locals.user`, and returns a run counter and a literal only. Region
+  data on a public page must be public-safe: its result is serialized into public HTML and `__data.json`.
+
+The M1 removal case now removes `/external-shares` (PV answers `/external-shares/<token>` with a 200 "not found"
+page, so the 404 still proves the removal) so that `/status/<token>` keeps serving.
 
 ## No back doors
 
@@ -111,6 +114,6 @@ loosen or allowlist anything:
 3. If the PV change makes a mechanism impossible, that is a design question for Nestor, not a pack edit.
 4. Candidate PV targets were chosen for stability (files a PV PR rarely touches): the dashboard page and
    its load, the recovery page and its load, the `(auth)` layout, `+error.svelte`, `src/hooks.server.ts`,
-   `src/app.html`, `static/favicon.png`, the `/status` route group, `shell/Footer.svelte`,
+   `src/app.html`, `static/favicon.png`, the `/external-shares` route group, `shell/Footer.svelte`,
    `shell/ShellAccount.svelte`, `$lib/api/audit.ts` and `$lib/server/require-user.ts`. Swapping one for
    another is a one-line change in `ui-pack/pv-ui.manifest.ts`.

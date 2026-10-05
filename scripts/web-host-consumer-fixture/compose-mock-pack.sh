@@ -184,8 +184,9 @@ mock_check_m1() {
     mock_fail '/favicon.png is still PV favicon'
   fi
   compose_expect "$port" /mock-ui-pack.txt 200 'mock-ui-pack:m1-static-file'
-  # Removal is exactly what was declared: /status/<token> is gone, other PV routes are not.
-  compose_expect "$port" /status/abc 404 ''
+  # Removal is exactly what was declared: /external-shares/<token> is gone, other PV routes are not.
+  compose_expect "$port" /external-shares/abc 404 ''
+  compose_expect "$port" /status/abc 200 ''
   compose_expect "$port" /register 200 ''
   log 'OK: M1 overrides (load, actions, 303, layout, error, hooks, app.html, static, removal)'
   return 0

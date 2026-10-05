@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
-import { trackHydrationMismatch } from './fixtures.js'
+import { createServiceEndpointViaApi } from '../fixtures/api.js'
+import { createProject, seedOrgOwner, trackHydrationMismatch } from './fixtures.js'
 
 // Story 68.10 AC-1 / AC-5, M6 (theme): PV's token contract is the shared surface, CM's own styles are
 // not limited by it. Computed styles in a real browser, never source greps. Custom properties are
@@ -37,6 +38,28 @@ test.describe('M6 theme', () => {
     // the client did not rebuild the head: the stylesheet is still there after hydration
     expect(await page.evaluate(() => document.styleSheets.length)).toBeGreaterThan(0)
     expect(mismatches()).toEqual([])
+  })
+
+  // Story 69.3 AC-7: PV has no dark scheme, its theme flip is the token contract (PV default -> pack
+  // theme). A fill inside an extracted region reads a token through var() and follows the flip,.
+  test('works: the pack theme tokens reach an extracted endpoint region ', async ({
+    page,
+    context,
+  }) => {
+    await seedOrgOwner(context, 'm6-regions')
+    const projectId = await createProject(context, `m6-regions-${Date.now()}`)
+    const endpoint = await createServiceEndpointViaApi(context, projectId, {
+      name: 'm6-endpoint',
+      url: 'https://example.com/health',
+    })
+    await page.goto(`/projects/${projectId}/service-endpoints/${endpoint.id}`)
+    await expect
+      .poll(async () => (await token(page, '--color-primary-600')).toLowerCase())
+      .toBe('#0f766e')
+    await expect(page.getByTestId('mock-endpoint-health-load')).toHaveCSS(
+      'color',
+      'rgb(15, 118, 110)'
+    )
   })
 
   test('fails: a token PV does not define is carried through without an error', async ({

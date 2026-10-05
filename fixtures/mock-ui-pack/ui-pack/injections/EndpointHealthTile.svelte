@@ -22,7 +22,9 @@
 </script>
 
 <div data-testid="mock-endpoint-health" data-route={routeId} data-endpoint={endpoint?.id ?? ''}>
-  <p data-testid="mock-endpoint-health-load">
+  <!-- M6 (Story 69.3 AC-7): reads a PV theme token through var(), so the pack theme reaches a fill
+       rendered inside an extracted region. -->
+  <p data-testid="mock-endpoint-health-load" style="color: var(--color-primary-600)">
     mock-ui-pack:m3-endpoint-load endpoint={data?.serviceEndpointId ?? 'none'} status={data?.apiStatus ??
       'none'}
   </p>

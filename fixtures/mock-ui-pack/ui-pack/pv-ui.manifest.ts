@@ -51,8 +51,9 @@ export default defineUiPack({
       hostSha256: sha(path),
       story: 'MOCK-UI-PACK',
     })),
-    // M1 route removal: PV's public status page route group is removed in this product.
-    remove: ['/status'],
+    // M1 route removal: PV's external share route group is removed in this product (PV answers
+    // `/external-shares/<token>` with a 200 "not found" page, so the 404 proves the removal).
+    remove: ['/external-shares'],
   },
   injections: {
     // M3: injected into NATIVE PV pages the pack did not override: a component with a server load
@@ -118,8 +119,8 @@ export default defineUiPack({
     // gets a component, a load and an action (opted in with `hostRoutes`); the per-row region gets a
     // component only (the "no opt-in" shape); the status page admin services region gets a component
     // and a load whose result never holds the public token. The public status page (`/status/<token>`)
-    // is removed by this pack (the M1 removal case below), so `status.detail.*` fills are proven at
-    // the unit and kit-integration levels, not here.
+    // keeps its route, so `status.detail.services` is filled below too, with a load that runs only for
+    // a valid token and without a session.
     'project.service-endpoints-detail.history': [
       {
         component: './injections/EndpointHealthTile.svelte',
@@ -127,6 +128,13 @@ export default defineUiPack({
         load: './injections/endpoint-health.server.ts',
         actions: './injections/endpoint-health.actions.ts',
         hostRoutes: ['/(app)/projects/[projectId]/service-endpoints/[serviceEndpointId]#page'],
+      },
+    ],
+    'status.detail.services': [
+      {
+        component: './injections/StatusPublicTile.svelte',
+        load: './injections/status-public.server.ts',
+        hostRoutes: ['/status/[token]#page'],
       },
     ],
     'project.service-endpoints.row': [{ component: './injections/EndpointRowPill.svelte' }],
