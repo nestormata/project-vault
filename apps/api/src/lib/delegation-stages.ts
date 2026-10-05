@@ -79,7 +79,12 @@ export function normalizeDelegation(raw: unknown): false | NormalizedDelegation 
   if (raw === undefined || raw === null || raw === false) return false
   if (typeof raw !== 'object' || Array.isArray(raw)) return { subjectFields: undefined }
   const fields: unknown = Reflect.get(raw, 'subjectFields')
-  const policy = readHistoricalPolicy(Reflect.get(raw, 'historicalActorPolicy'))
+  // Own property only (DW-528): an inherited `historicalActorPolicy` must never opt a route in.
+  const policy = readHistoricalPolicy(
+    Object.hasOwn(raw, 'historicalActorPolicy')
+      ? Reflect.get(raw, 'historicalActorPolicy')
+      : undefined
+  )
   return {
     subjectFields:
       typeof fields === 'object' && fields !== null
