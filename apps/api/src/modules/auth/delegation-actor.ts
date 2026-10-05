@@ -46,7 +46,7 @@ function linkedUserQuery(tx: Tx, lookup: DelegatedActorLookup) {
     .limit(1)
 }
 
-export async function resolveDelegatedActor(
+export function resolveDelegatedActor(
   lookup: DelegatedActorLookup
 ): Promise<DelegatedActorResolution> {
   return withOrg(lookup.orgId, async (tx) => {

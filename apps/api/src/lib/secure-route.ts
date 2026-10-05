@@ -166,7 +166,7 @@ export type SecureRouteRegistrationOptions = {
     capability?: CapabilityIdValue
     // Story 71.3 (design 71-2): this route accepts a service-delegated actor assertion INSTEAD of
     // a session. `true` / `{}` / `{subjectFields}`; see `delegation-stages.ts`.
-    delegation?: boolean | { subjectFields?: NormalizedDelegation['subjectFields'] }
+    delegation?: boolean | { subjectFields?: NonNullable<NormalizedDelegation['subjectFields']> }
   }
   db?: TransactionalDb
   auditWriter?: (input: {
