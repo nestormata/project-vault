@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PageData } from '../../../routes/(app)/projects/[projectId]/machine-users/$types.js'
   import type { Snippet } from 'svelte'
+  import ProjectNotFoundBanner from '$lib/components/monitoring/ProjectNotFoundBanner.svelte'
   import { resolve } from '$app/paths'
   import DataTable from '$lib/components/tables/DataTable.svelte'
 
@@ -18,9 +19,7 @@
 
 {@render children?.()}
 {#if data.notFound}
-  <div class="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
-    <p class="text-red-800">This project was not found or you do not have access.</p>
-  </div>
+  <ProjectNotFoundBanner />
 {:else if data.machineUsers.items.length === 0}
   <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6">
     <h2 class="text-xl font-semibold text-slate-950">No machine users yet</h2>

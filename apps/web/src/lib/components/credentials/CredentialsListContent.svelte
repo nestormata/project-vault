@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PageData } from '../../../routes/(app)/projects/[projectId]/credentials/$types.js'
   import type { Snippet } from 'svelte'
+  import ProjectNotFoundBanner from '$lib/components/monitoring/ProjectNotFoundBanner.svelte'
   import { resolve } from '$app/paths'
   import { goto } from '$app/navigation'
   import type { ProjectPath } from '$lib/app-paths.js'
@@ -79,9 +80,7 @@
 
 {@render children?.()}
 {#if data.notFound}
-  <div class="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
-    <p class="text-red-800">This project was not found or you do not have access.</p>
-  </div>
+  <ProjectNotFoundBanner />
 {:else}
   <form
     class="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-[1fr_auto_auto_auto_auto] sm:grid-rows-[auto_auto_auto] sm:items-start sm:gap-x-4 sm:gap-y-2"

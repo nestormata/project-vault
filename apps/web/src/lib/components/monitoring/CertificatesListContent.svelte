@@ -4,13 +4,8 @@
   import { ApiClientError } from '$lib/api/client.js'
   import { deleteCertificate } from '$lib/api/certificates.js'
   import type { CertificateRecord } from '$lib/api/certificates.js'
-  import {
-    AssetRowActions,
-    AssetTable,
-    EmptyAssetState,
-    FormErrorBanner,
-    ProjectNotFoundBanner,
-  } from '$lib/components/monitoring/index.js'
+  import AssetListBody from '$lib/components/monitoring/AssetListBody.svelte'
+  import { AssetRowActions } from '$lib/components/monitoring/index.js'
   import { formatAlertLeadDays, formatDate } from '$lib/monitoring/index.js'
 
   let { data, canManage, children }: { data: PageData; canManage: boolean; children?: Snippet } =
@@ -33,17 +28,16 @@
 </script>
 
 {@render children?.()}
-{#if data.notFound}
-  <ProjectNotFoundBanner />
-{:else if certificates.length === 0}
-  <EmptyAssetState message="No certificates registered yet." />
-{:else}
-  <FormErrorBanner message={deleteError} />
-  <AssetTable
-    caption="Certificates monitored in this project"
-    columns={['Domain', 'Expires on', 'Alert lead days']}
-    {canManage}
-  >
+<AssetListBody
+  notFound={data.notFound}
+  isEmpty={certificates.length === 0}
+  emptyMessage="No certificates registered yet."
+  {deleteError}
+  caption="Certificates monitored in this project"
+  columns={['Domain', 'Expires on', 'Alert lead days']}
+  {canManage}
+>
+  {#snippet rows()}
     {#each certificates as certificate (certificate.id)}
       <tr class="border-b border-slate-100 last:border-b-0">
         <td class="px-4 py-3 font-semibold text-slate-950">{certificate.domain}</td>
@@ -61,5 +55,5 @@
         {/if}
       </tr>
     {/each}
-  </AssetTable>
-{/if}
+  {/snippet}
+</AssetListBody>

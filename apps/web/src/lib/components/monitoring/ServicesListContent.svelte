@@ -4,13 +4,8 @@
   import { ApiClientError } from '$lib/api/client.js'
   import { deleteService } from '$lib/api/services.js'
   import type { PaymentRecord } from '$lib/api/services.js'
-  import {
-    AssetRowActions,
-    AssetTable,
-    EmptyAssetState,
-    FormErrorBanner,
-    ProjectNotFoundBanner,
-  } from '$lib/components/monitoring/index.js'
+  import AssetListBody from '$lib/components/monitoring/AssetListBody.svelte'
+  import { AssetRowActions } from '$lib/components/monitoring/index.js'
   import { formatAlertLeadDays, formatDate } from '$lib/monitoring/index.js'
 
   let { data, canManage, children }: { data: PageData; canManage: boolean; children?: Snippet } =
@@ -39,17 +34,16 @@
 </script>
 
 {@render children?.()}
-{#if data.notFound}
-  <ProjectNotFoundBanner />
-{:else if services.length === 0}
-  <EmptyAssetState message="No services registered yet." />
-{:else}
-  <FormErrorBanner message={deleteError} />
-  <AssetTable
-    caption="Services monitored in this project"
-    columns={['Name', 'URL', 'Renewal date', 'Alert lead days']}
-    {canManage}
-  >
+<AssetListBody
+  notFound={data.notFound}
+  isEmpty={services.length === 0}
+  emptyMessage="No services registered yet."
+  {deleteError}
+  caption="Services monitored in this project"
+  columns={['Name', 'URL', 'Renewal date', 'Alert lead days']}
+  {canManage}
+>
+  {#snippet rows()}
     {#each services as service (service.id)}
       <tr class="border-b border-slate-100 last:border-b-0">
         <td class="px-4 py-3 font-semibold text-slate-950">{service.name}</td>
@@ -66,5 +60,5 @@
         {/if}
       </tr>
     {/each}
-  </AssetTable>
-{/if}
+  {/snippet}
+</AssetListBody>
