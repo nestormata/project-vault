@@ -150,9 +150,9 @@ describe('AC-2 happy paths', () => {
     expect(verifier()(sign({}, { iat: NOW_S - 75, exp: NOW_S - 30 })).ok).toBe(true)
   })
 
-  it('H4: unknown claims, nbf, occ, amr and capabilities are ignored and never returned', () => {
+  it('H4: unknown claims, nbf, amr and capabilities are ignored and never returned', () => {
     const result = verifier()(
-      sign({}, { foo: 1, nbf: NOW_S + 1000, occ: { x: 1 }, amr: ['mfa'], capabilities: ['all'] })
+      sign({}, { foo: 1, nbf: NOW_S + 1000, amr: ['mfa'], capabilities: ['all'] })
     )
     expect(result.ok).toBe(true)
     if (!result.ok) return
@@ -194,6 +194,62 @@ describe('AC-2 happy paths', () => {
     const token = sign()
     expect(v(token).ok).toBe(true)
     expect(v(token).ok).toBe(true)
+  })
+})
+
+describe('Story 71.4 AC-2 signed occ claim', () => {
+  it('a valid integer occ is returned as claims.occurredAt (seconds), frozen with the claims', () => {
+    const result = verifier()(sign({}, { occ: NOW_S - 600 }))
+    expect(result.ok && result.claims.occurredAt).toBe(NOW_S - 600)
+  })
+
+  it('occ at iat + 30 is the inclusive upper bound', () => {
+    const result = verifier()(sign({}, { occ: NOW_S + 30 }))
+    expect(result.ok && result.claims.occurredAt).toBe(NOW_S + 30)
+  })
+
+  it('an absent occ leaves occurredAt out of the claims entirely', () => {
+    const result = verifier()(sign())
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(Object.hasOwn(result.claims, 'occurredAt')).toBe(false)
+  })
+
+  it.each([
+    ['string', '1790000000'],
+    ['float', NOW_S - 0.5],
+    ['zero', 0],
+    ['negative', -5],
+    ['iat + 31', NOW_S + 31],
+    ['unsafe integer', 2 ** 60],
+    ['boolean', true],
+    ['object', { x: 1 }],
+    ['array', [NOW_S]],
+  ])('a %s occ is delegation_malformed_claim (post-signature)', (_name, occ) => {
+    const result = verifier()(sign({}, { occ }))
+    expect(result).toEqual({ ok: false, reason: 'delegation_malformed_claim' })
+    expect(isPreSignatureRejection('delegation_malformed_claim')).toBe(false)
+    expect(DELEGATION_REASON_TO_OUTCOME.delegation_malformed_claim).toBe('malformed_claim')
+  })
+
+  it('an explicit null occ is treated as absent', () => {
+    const result = verifier()(sign({}, { occ: null }))
+    expect(result.ok).toBe(true)
+  })
+
+  it('an inherited occ (Object.prototype) is never read', () => {
+    Object.defineProperty(Object.prototype, 'occ', { value: 'evil', configurable: true })
+    try {
+      const result = verifier()(sign())
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(Object.hasOwn(result.claims, 'occurredAt')).toBe(false)
+    } finally {
+      Reflect.deleteProperty(Object.prototype, 'occ')
+    }
+  })
+
+  it('a token with occ but the wrong typ still fails at the header stage', () => {
+    expectReject(sign({ typ: 'handoff+jwt' }, { occ: NOW_S - 5 }), 'delegation_malformed')
   })
 })
 
@@ -527,6 +583,7 @@ describe('Story 71.3 AC-8 closed counter outcome set', () => {
         'operation_mismatch',
         'body_mismatch',
         'subject_mismatch',
+        'occurrence_outside_window',
         'org_not_served',
         'replayed',
         'store_unavailable',
