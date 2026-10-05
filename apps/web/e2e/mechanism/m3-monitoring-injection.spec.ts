@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type BrowserContext, type Page } from '@playwright/test'
 import { createServiceEndpointViaApi } from '../fixtures/api.js'
 import { enablePublicStatusPageViaUi } from '../fixtures/status-page-ui.js'
 import {
@@ -27,6 +27,17 @@ const ACTION = 'project.service-endpoints-detail.history.ping'
 const ENDPOINT_URL = 'https://example.com/health'
 
 const unique = (label: string) => `${label}-${randomUUID().slice(0, 8)}`
+/** One endpoint, then the public status page enabled through the UI: returns the public token. */
+async function enableWithEndpoint(
+  page: Page,
+  context: BrowserContext,
+  projectId: string
+): Promise<string> {
+  await createServiceEndpointViaApi(context, projectId, { name: unique('ep'), url: ENDPOINT_URL })
+  const token = (await enablePublicStatusPageViaUi(page, projectId)).split('/').at(-1) ?? ''
+  expect(token.length).toBeGreaterThan(10)
+  return token
+}
 const detailPath = (projectId: string, endpointId: string) =>
   `/projects/${projectId}/service-endpoints/${endpointId}`
 
@@ -282,13 +293,7 @@ test.describe('M3 monitoring region points: status page admin (Story 69.3)', () 
     const mismatches = trackHydrationMismatch(page)
     await seedOrgOwner(context, 'm3m-status')
     const projectId = await createProject(context, unique('m3m-status'))
-    await createServiceEndpointViaApi(context, projectId, {
-      name: unique('ep'),
-      url: ENDPOINT_URL,
-    })
-    const publicUrl = await enablePublicStatusPageViaUi(page, projectId)
-    const token = publicUrl.split('/').at(-1) ?? ''
-    expect(token.length).toBeGreaterThan(10)
+    const token = await enableWithEndpoint(page, context, projectId)
     await open(
       page,
       `/projects/${projectId}/status-page`,
@@ -327,13 +332,7 @@ test.describe('M3 monitoring region points: public status page (Story 69.3)', ()
   }) => {
     await seedOrgOwner(context, 'm3m-public')
     const projectId = await createProject(context, unique('m3m-public'))
-    await createServiceEndpointViaApi(context, projectId, {
-      name: unique('ep'),
-      url: ENDPOINT_URL,
-    })
-    const publicUrl = await enablePublicStatusPageViaUi(page, projectId)
-    const token = publicUrl.split('/').at(-1) ?? ''
-    expect(token.length).toBeGreaterThan(10)
+    const token = await enableWithEndpoint(page, context, projectId)
     const tileRuns = async (path: string): Promise<number> => {
       const html = await (await request.get(path)).text()
       const match = PUBLIC_TILE.exec(html)
