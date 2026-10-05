@@ -59,7 +59,7 @@ Project Vault makes _project_ a real object instead: its own roles and permissio
 | Localization and theming | English and Spanish UI with per-user and organization-default locale; custom theme packs (`VAULT_THEMES_DIR`) with organization default, per-user selection, pre-auth branding, and a contrast-validated token contract |
 | Project export/import | Encrypted, portable project export (reveal-once key); import re-encrypts every secret under the destination vault's own master key |
 | Vault unsealing | Master passphrase, split-key envelope (default), key file, or an external key management service |
-| REST API | Versioned API behind every UI operation; generated OpenAPI spec, live Swagger UI (`ENABLE_API_DOCS`), independent contract-test suite; machine-to-machine service-provisioning API for hosted integrations |
+| REST API | Versioned API behind every UI operation; generated OpenAPI spec, live Swagger UI (`ENABLE_API_DOCS`), independent contract-test suite; machine-to-machine service provisioning and signed service-delegated actor assertions for hosted integrations |
 | Self-hosted Docker | `docker compose` dev, production, and NFS overlays; multi-arch GHCR images; health, ready, status, and metrics endpoints |
 | Backup | Scheduled encrypted snapshots to the filesystem or S3, retention, restore validation, admin UI, missed-backup alerts |
 | Platform administration | First-user platform operator: system settings (SMTP, backup, policy), multi-organization provisioning, per-organization audit quotas, resource usage, token-protected `/status` endpoint, maintenance mode, version and migration-state information |
