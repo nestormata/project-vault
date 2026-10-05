@@ -1,53 +1,22 @@
 <script lang="ts">
   import NavLinkRow from '$lib/navigation/NavLinkRow.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
-  import { resolve } from '$app/paths'
-  import DataTable from '$lib/components/tables/DataTable.svelte'
   import AuditExportPanel from '$lib/components/audit/AuditExportPanel.svelte'
   import AuditVerifyPanel from '$lib/components/audit/AuditVerifyPanel.svelte'
-  import AuditDateRangeInputs from '$lib/components/audit/AuditDateRangeInputs.svelte'
-  import AuditPaginationControls from '$lib/components/audit/AuditPaginationControls.svelte'
-  import { buildSearchSubmitHandler } from '$lib/audit/search-form.js'
-  import { buildPageHref } from '$lib/audit/page-href.js'
-  import { buildDateRangePart } from '$lib/audit/date-range.js'
-  import { getEventTypeLabel } from '$lib/utils/event-type-labels.js'
-  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+  import AuditPageHeader from '$lib/components/audit/AuditPageHeader.svelte'
+  import AuditRoleNotice from '$lib/components/audit/AuditRoleNotice.svelte'
+  import AuditErrorBanner from '$lib/components/audit/AuditErrorBanner.svelte'
+  import AuditSearchForm from '$lib/components/audit/AuditSearchForm.svelte'
+  import AuditResultsTable from '$lib/components/audit/AuditResultsTable.svelte'
 
   let { data } = $props()
-
-  let dateRangeError = $state<string | null>(null)
-
-  // AC-B2 — blocks submission client-side ("End date must be after start date") before any
-  // network call when `to` is before `from`, mirroring the existing credentials/new-style
-  // pre-check pattern (Story 6.4's convention).
-  const handleSearchSubmit = buildSearchSubmitHandler((err) => {
-    dateRangeError = err
-  })
 
   const hasFilters = $derived(
     data.allowed && data.filters && Object.values(data.filters).some((value) => Boolean(value))
   )
 
-  let expandedRowId = $state<string | null>(null)
-
-  function toggleRow(id: string) {
-    expandedRowId = expandedRowId === id ? null : id
-  }
-
-  function filterSummary(filters: Record<string, string | undefined>): string {
-    const parts: string[] = []
-    if (filters.eventType) parts.push(`event type = ${filters.eventType}`)
-    if (filters.actorId) parts.push(`actor = ${filters.actorId}`)
-    if (filters.resourceId) parts.push(`resource = ${filters.resourceId}`)
-    if (filters.projectId) parts.push(`project = ${filters.projectId}`)
-    const rangePart = buildDateRangePart(filters)
-    if (rangePart) parts.push(rangePart)
-    return parts.join(', ')
-  }
-
-  // AC-B1 — pagination controls reflecting total/page/hasNext, preserving whatever filters are
-  // already active so paging never silently drops the current search.
-  const pageHref = $derived(buildPageHref(data.filters))
+  // Story 69.4: the ungated regions get the viewer's role and whether PV let them in, nothing else.
+  const roleProps = $derived({ orgRole: data.orgRole, allowed: data.allowed })
 </script>
 
 <svelte:head>
@@ -57,165 +26,70 @@
 <InjectionPoint name="settings.audit.before" data={data?.__inject} />
 <InjectionPoint name="settings.audit.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-5xl px-4 py-8">
-  <h1 class="text-2xl font-bold text-gray-900">Audit &amp; Compliance</h1>
-  <p class="mt-2 text-gray-500">Search, export, and verify your organization's audit log.</p>
-
-  {#if !data.allowed}
-    <div class="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-6">
-      <p class="text-slate-600">This page requires the owner role.</p>
-      <a href={resolve('/settings')} class="mt-2 inline-block text-sm text-indigo-600 underline">
-        ← Back to Settings
-      </a>
-      {#if data.orgRole === 'admin'}
-        <p class="mt-4 text-sm text-slate-600">
-          You can still access
-          <a
-            href={resolve('/settings/audit/forwarding')}
-            class="font-medium text-indigo-600 underline"
-          >
-            Forwarding & Retention →
-          </a>
-        </p>
-      {/if}
-    </div>
+  <!-- @region settings.audit.header -->
+  <AuditPageHeader>
+    <InjectionPoint name="settings.audit.header" props={roleProps} data={data?.__inject} />
+  </AuditPageHeader>{#if !data.allowed}
+    <!-- @region settings.audit.notice -->
+    <AuditRoleNotice orgRole={data.orgRole}>
+      <InjectionPoint name="settings.audit.notice" props={roleProps} data={data?.__inject} />
+    </AuditRoleNotice>
   {:else}
+    {@const resultsProps = {
+      orgRole: data.orgRole,
+      allowed: data.allowed,
+      filters: data.filters,
+      events: data.events,
+      page: data.page,
+      total: data.total,
+      hasNext: data.hasNext,
+      errorMessage: data.errorMessage,
+    }}
+    <!-- @region settings.audit.navigation -->
     <div class="mt-6 flex flex-wrap gap-4 text-sm">
-      <NavLinkRow surface="settings.audit.links" />
+      <NavLinkRow surface="settings.audit.links" /><InjectionPoint
+        name="settings.audit.navigation"
+        props={roleProps}
+        data={data?.__inject}
+      />
     </div>
 
-    {#if data.errorMessage}
-      <p
-        class="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-        role="alert"
-      >
-        {data.errorMessage}
-      </p>
-    {/if}
+    <!-- @region settings.audit.error -->
+    <AuditErrorBanner message={data.errorMessage}>
+      <InjectionPoint name="settings.audit.error" props={resultsProps} data={data?.__inject} />
+    </AuditErrorBanner>
 
     <div class="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 class="text-lg font-semibold text-slate-950">Search</h2>
-      <form method="GET" class="mt-4 flex flex-wrap items-end gap-3" onsubmit={handleSearchSubmit}>
-        <label class="flex flex-col text-sm text-slate-700" for="filter-eventType">
-          Event type
-          <input
-            id="filter-eventType"
-            name="eventType"
-            type="text"
-            class="rounded-lg border border-slate-300 px-2 py-1"
-            value={data.filters?.eventType ?? ''}
-            aria-describedby="audit-event-type-help"
-          />
-          <FormHelpText id="audit-event-type-help" kind="text" />
-        </label>
-        <label class="flex flex-col text-sm text-slate-700" for="filter-actorId">
-          Actor ID
-          <input
-            id="filter-actorId"
-            name="actorId"
-            type="text"
-            class="rounded-lg border border-slate-300 px-2 py-1"
-            value={data.filters?.actorId ?? ''}
-            aria-describedby="audit-actor-help"
-          />
-          <FormHelpText id="audit-actor-help" kind="text" />
-        </label>
-        <label class="flex flex-col text-sm text-slate-700" for="filter-resourceId">
-          Resource ID
-          <input
-            id="filter-resourceId"
-            name="resourceId"
-            type="text"
-            class="rounded-lg border border-slate-300 px-2 py-1"
-            value={data.filters?.resourceId ?? ''}
-            aria-describedby="audit-resource-help"
-          />
-          <FormHelpText id="audit-resource-help" kind="text" />
-        </label>
-        <label class="flex flex-col text-sm text-slate-700" for="filter-projectId">
-          Project ID
-          <input
-            id="filter-projectId"
-            name="projectId"
-            type="text"
-            class="rounded-lg border border-slate-300 px-2 py-1"
-            value={data.filters?.projectId ?? ''}
-            aria-describedby="audit-project-help"
-          />
-          <FormHelpText id="audit-project-help" kind="text" />
-        </label>
-        <AuditDateRangeInputs
-          clearHref={resolve('/settings/audit')}
-          fromValue={data.filters?.from ?? ''}
-          toValue={data.filters?.to ?? ''}
-          {dateRangeError}
-          hasFilters={Boolean(hasFilters)}
-          filterSummaryText={filterSummary(data.filters ?? {})}
-        />
-      </form>
-
-      <div class="mt-4">
-        {#if data.events.length === 0}
-          <p class="py-6 text-center text-slate-600">
-            {hasFilters ? 'No audit events match these filters.' : 'No audit events yet.'}
-          </p>
-        {:else}
-          <DataTable
-            columns={['Event type', 'Actor', 'Resource', 'Project', 'IP address', 'Created at']}
-          >
-            {#each data.events as event (event.id)}
-              <tr
-                class="cursor-pointer border-b border-slate-100 last:border-b-0 hover:bg-slate-50"
-                onclick={() => toggleRow(event.id)}
-              >
-                <td class="px-4 py-3 font-medium text-slate-900"
-                  >{getEventTypeLabel(event.eventType)}</td
-                >
-                <td class="px-4 py-3 text-slate-600">{event.actorDisplayName}</td>
-                <td class="px-4 py-3 text-slate-600">{event.resourceType ?? '—'}</td>
-                <td class="px-4 py-3 text-slate-600">{event.projectId ?? '—'}</td>
-                <td class="px-4 py-3 text-slate-600">{event.ipAddress ?? '—'}</td>
-                <td class="px-4 py-3 text-slate-600"
-                  >{new Date(event.createdAt).toLocaleString()}</td
-                >
-              </tr>
-              {#if expandedRowId === event.id}
-                <tr class="border-b border-slate-100 bg-slate-50 last:border-b-0">
-                  <td colspan="6" class="px-4 py-3 text-sm text-slate-700">
-                    <dl class="grid grid-cols-2 gap-2">
-                      <dt class="font-medium">Resource ID</dt>
-                      <dd>{event.resourceId ?? '—'}</dd>
-                      <dt class="font-medium">Resource type</dt>
-                      <dd>{event.resourceType ?? '—'}</dd>
-                      <dt class="font-medium">Project</dt>
-                      <dd>{event.projectId ?? '—'}</dd>
-                      <dt class="font-medium">IP address</dt>
-                      <dd>{event.ipAddress ?? '—'}</dd>
-                      <dt class="font-medium">Actor</dt>
-                      <dd>{event.actorDisplayName}</dd>
-                      <dt class="font-medium">Created at</dt>
-                      <dd>{event.createdAt}</dd>
-                    </dl>
-                  </td>
-                </tr>
-              {/if}
-            {/each}
-          </DataTable>
-
-          <AuditPaginationControls
-            page={data.page}
-            total={data.total}
-            hasNext={data.hasNext}
-            {pageHref}
-          />
-        {/if}
-      </div>
+      <!-- @region settings.audit.search -->
+      <AuditSearchForm filters={data.filters} hasFilters={Boolean(hasFilters)}>
+        <InjectionPoint name="settings.audit.search" props={resultsProps} data={data?.__inject} />
+      </AuditSearchForm><!-- @region settings.audit.results --><AuditResultsTable
+        events={data.events}
+        filters={data.filters}
+        hasFilters={Boolean(hasFilters)}
+        page={data.page}
+        total={data.total}
+        hasNext={data.hasNext}
+      >
+        <InjectionPoint name="settings.audit.results" props={resultsProps} data={data?.__inject} />
+      </AuditResultsTable>
     </div>
 
+    <!-- @region settings.audit.export -->
     <div class="mt-6">
-      <AuditExportPanel />
+      <AuditExportPanel /><InjectionPoint
+        name="settings.audit.export"
+        props={roleProps}
+        data={data?.__inject}
+      />
     </div>
+    <!-- @region settings.audit.verify -->
     <div class="mt-6">
-      <AuditVerifyPanel />
+      <AuditVerifyPanel /><InjectionPoint
+        name="settings.audit.verify"
+        props={roleProps}
+        data={data?.__inject}
+      />
     </div>
   {/if}
 </div>

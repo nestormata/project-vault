@@ -232,13 +232,45 @@ member) whose binding is imported from a `.svelte` file in the same file's scrip
 monolithic. The check is about replaceability, not size: a region wrapped in a trivial component passes (whether
 the extraction is meaningful is the componentization audit of story 69.5). An unparseable `.svelte` file is a
 finding, never a silent skip. Files the lock records as CM's are exempt by provenance (the guard has
-`@pv-scope pv-originated-only`); there is no suppression syntax, baseline or allow-list. PV's own tree has 14
-`@region` markers since Story 69-1 (the project page, the project nav and the dashboard); the guard prints the
-count (`scanned N files, 14 regions`) and a test pins it from below.
+`@pv-scope pv-originated-only`); there is no suppression syntax, baseline or allow-list. PV's own tree has 44
+`@region` markers since Story 69-4 (14 from story 69-1: the project page, the project nav and the dashboard; 13 from
+story 69-2: the credential detail page; 17 from story 69-4: the settings audit, settings notifications and project members pages; see "Region points" below); the guard prints the
+count (`scanned N files, 44 regions`) and a test pins it from below.
 
 **Hash drift (Story 69-1):** the dashboard page, the project page, the project layout, `ProjectNav`,
 `PageAlertBanner` and `DashboardPlaceholderGrid` changed, so a pack that overrides one of them sees its
 `hostSha256` drift with the next web-host release; reconcile it with `pv-compose --accept-host`.
+
+### Region points (Epic 69, Story 69-4)
+
+Beyond the three standard points of a page, a region point (`kind: 'region'`, named
+`<area>.<page>.<region>`) sits inside one region of a page. Phase 5 adds 17 of them on three pages. All have
+`scope: 'page'` (their `load` and `actions` work with no opt-in), because each `<InjectionPoint>` is rendered in the
+route's `+page.svelte`, never inside a `$lib` component (a point in a component is `scope: 'component'` and its
+behavior is inert).
+
+**Pattern.** `<!-- @region <name> -->` precedes either (a) the region's container element in the page, holding the
+extracted PV component and the point as siblings (`<div class="card"><XPanel /><InjectionPoint .../></div>`), or
+(b) an extracted component that renders an optional `children` snippet last, with the point as its child. The
+component is replaceable through M4 and the point survives that replacement, because it is page code. Points are
+additive: PV's default always renders and there is no `fallback` mode. The page keeps its data and callbacks; a
+region component's props are an M4 contract and are not `@pv-stable` yet (Story 69.5 decides).
+
+**Props are least-data.** A point receives what PV already loaded and renders for that role. An ungated region
+(members `header`, `notice`, `invite`; audit `header`, `notice`, `navigation`; notifications `header`) gets role and
+flag fields only; a gated region gets its rows only inside PV's own gate. A contribution `load` still runs for every
+request to the page, including one PV rendered as "not allowed" (and a foreign project id on the members page, which
+PV degrades to empty lists), so a fill MUST authorize on its own: read through `event.fetch` and return nothing on
+401/403/404.
+
+| Page                            | Points                                                                                                   |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `/settings/audit`               | `settings.audit.header`, `.notice`, `.navigation`, `.error`, `.search`, `.results`, `.export`, `.verify` |
+| `/settings/notifications`       | `settings.notifications.header`, `.channels`, `.routing`, `.test`                                        |
+| `/projects/[projectId]/members` | `project.members.header`, `.access`, `.notice`, `.invite`, `.invitations`                                |
+
+The registry builds them with `regionPoints('<propsType>', [], [...names])`, which the coverage guard reads like
+`pagePoints`. The mock UI pack fills six of them (`m3-phase5-region-points.spec.ts`).
 
 **Hash drift:** this change adds injection points and server calls to about 70 PV route files, so the hash of
 every file a pack overrides there changes with the next web-host release. That is the intended signal;

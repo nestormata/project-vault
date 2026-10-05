@@ -115,6 +115,35 @@ export default defineUiPack({
     ],
     'credential.detail.metadata': [{ component: './injections/CredentialMetadataFill.svelte' }],
     'app.layout.before': [{ component: './injections/LayoutBanner.svelte' }],
+    // M3 region points (Story 69.4, Epic 69 phase 5): fills on the settings audit, settings
+    // notifications and project members pages. Loads and actions work because a region point lives
+    // in the page file (scope page). The fills authorize on their own (they read through the
+    // caller's session); PV mounts the gated ones only inside its own gates.
+    'settings.audit.header': [{ component: './injections/AuditHeaderFill.svelte' }],
+    'settings.audit.results': [
+      {
+        component: './injections/AuditResultsFill.svelte',
+        load: './injections/audit-results.server.ts',
+      },
+    ],
+    'settings.notifications.channels': [
+      {
+        component: './injections/NotificationChannelsFill.svelte',
+        load: './injections/notification-channels.server.ts',
+        actions: './injections/notification-channels.actions.ts',
+      },
+    ],
+    'settings.notifications.routing': [
+      { component: './injections/NotificationRoutingFill.svelte' },
+    ],
+    'project.members.access': [
+      {
+        component: './injections/MembersAccessFill.svelte',
+        load: './injections/members-access.server.ts',
+        actions: './injections/members-access.actions.ts',
+      },
+    ],
+    'project.members.invitations': [{ component: './injections/MembersInvitationsFill.svelte' }],
     'shell.head': [{ component: './injections/HeadMarker.svelte' }],
   },
   replacements: {

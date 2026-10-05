@@ -1,18 +1,23 @@
 import { randomBytes, randomUUID } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 import type {
   APIRequestContext,
+  Browser,
   BrowserContext,
   Page,
   PlaywrightWorkerArgs,
 } from '@playwright/test'
 import { expect } from '@playwright/test'
 import { seedRegisterAndLogin } from './seed-guard.js'
-import { createInvitationViaApi } from '../fixtures/api.js'
-import { enrollMfaViaApi } from '../fixtures/auth.js'
-import { extractTokenFromAcceptUrl, readLatestInvitationAcceptUrl } from '../fixtures/db.js'
 import postgres from 'postgres'
-import { superuserDatabaseUrl } from '../fixtures/db.js'
 import { gotoHydrated } from '../fixtures/hydration.js'
+import { enrollMfaViaApi, registerViaInvitation } from '../fixtures/auth.js'
+import { createInvitationViaApi } from '../fixtures/api.js'
+import {
+  extractTokenFromAcceptUrl,
+  readLatestInvitationAcceptUrl,
+  superuserDatabaseUrl,
+} from '../fixtures/db.js'
 import { uniqueEmail, uniqueOrgName } from '../fixtures/ids.js'
 
 // Story 68.10 AC-5: the shared helpers of the mechanism specs, built on the existing e2e fixtures
@@ -198,4 +203,70 @@ export function trackHydrationMismatch(page: Page): () => string[] {
     if (message.text().includes('hydration_mismatch')) seen.push(message.text())
   })
   return () => seen
+}
+
+export type SeededMember = { context: BrowserContext; user: SeededUser }
+
+/** A plain org member of the owner's org (Story 69.4), seeded through the REAL invitation flow: the
+ * owner (MFA enrolled, as PV requires to invite) invites a new email to one of their projects, the
+ * invitee registers through the accept link and logs in. No product back door and no SQL role edit.
+ * The returned context holds the member's session and has finished onboarding. */
+export async function seedOrgMember(
+  browser: Browser,
+  owner: { context: BrowserContext; projectId: string },
+  label: string
+): Promise<SeededMember> {
+  await enrollMfaViaApi(owner.context)
+  const email = uniqueEmail(`mock-${label}`)
+  await createInvitationViaApi(owner.context, owner.projectId, { email, role: 'member' })
+  const token = extractTokenFromAcceptUrl(await readLatestInvitationAcceptUrl(email))
+  const context = await browser.newContext({ baseURL: process.env['E2E_BASE_URL'] })
+  const page = await context.newPage()
+  await registerViaInvitation(page, token, testPassword)
+  await page.close()
+  const body = (await postOk(context, '/api/v1/auth/login', { email, password: testPassword })) as {
+    data: { userId: string; orgId: string }
+  }
+  await postOk(context, '/api/v1/users/me/onboarding', { completed: true })
+  return { context, user: { userId: body.data.userId, orgId: body.data.orgId, email } }
+}
+
+/** The recent output of the composed web container of this run (read-only). The project name comes
+ * from the runner's environment; callers assert on error names, never on a secret. */
+export function readWebLog(): string {
+  const project = process.env['COMPOSE_PROJECT_NAME'] ?? ''
+  if (project === '') throw new Error('COMPOSE_PROJECT_NAME is required: run through the runner')
+  // docker is resolved from fixed system directories, never from `$PATH` (Sonar S4036).
+  for (const docker of ['/usr/bin/docker', '/usr/local/bin/docker', '/bin/docker']) {
+    const run = spawnSync(docker, ['logs', '--tail', '500', `${project}-web-1`], {
+      encoding: 'utf8',
+    })
+    if (run.error === undefined) return `${run.stdout}${run.stderr}`
+  }
+  throw new Error('docker was not found in /usr/bin, /usr/local/bin or /bin')
+}
+
+/** POSTs JSON through the context's session and returns the parsed body, failing on a non-2xx. */
+async function postOk(context: BrowserContext, route: string, data: unknown): Promise<unknown> {
+  const response = await context.request.post(route, { data })
+  expect(response.ok(), await response.text()).toBeTruthy()
+  return response.status() === 204 ? null : response.json()
+}
+
+/** A form POST from a foreign `origin` header, never following redirects: PV's CSRF check answers it. */
+export function postFromForeignOrigin(context: BrowserContext, path: string) {
+  return context.request.post(path, {
+    form: { title: 'x' },
+    headers: { origin: 'http://evil.example' },
+    maxRedirects: 0,
+  })
+}
+
+/** Revokes the session server-side while the browser keeps its (now stale) cookies, so the next
+ * navigation is an expired-session request rather than an anonymous one. */
+export async function revokeSessionKeepingCookies(context: BrowserContext): Promise<void> {
+  const stale = await context.cookies()
+  const logout = await context.request.post('/api/v1/auth/logout')
+  expect(logout.status(), await logout.text()).toBe(204)
+  await context.addCookies(stale)
 }

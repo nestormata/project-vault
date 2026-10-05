@@ -10,6 +10,11 @@ import type { getCredential } from '$lib/api/credentials.js'
 import type { getProject } from '$lib/api/projects.js'
 import type { ProjectSummary } from '@project-vault/shared'
 import type { OrgRole } from '$lib/credentials/permissions.js'
+import type { AuthUser } from '$lib/api/auth.js'
+import type { AuditEventItem } from '$lib/api/audit.js'
+import type { PreferenceItem, RoutingItem } from '$lib/api/notifications.js'
+import type { ProjectInvitation } from '$lib/api/invitations.js'
+import type { ProjectMember } from '$lib/api/org-users.js'
 
 /** One contribution at a point, as the point's virtual module lists it (already in `order`). */
 export interface InjectionEntry {
@@ -51,6 +56,55 @@ export interface CredentialPointProps extends StandardPointProps {
   credentialId: string
   orgRole: OrgRole
   projectRole: Awaited<ReturnType<typeof getProject>>['role'] | null
+}
+
+/** Story 69.4: the settings audit page. The ungated regions (header, notice, navigation) carry only
+ * the viewer's role and whether PV let them in; the owner-only regions carry the loaded results. */
+export interface SettingsAuditPointProps extends StandardPointProps {
+  orgRole: AuthUser['orgRole']
+  allowed: boolean
+}
+
+export interface SettingsAuditResultsPointProps extends SettingsAuditPointProps {
+  filters: Partial<
+    Record<'actorId' | 'eventType' | 'resourceId' | 'projectId' | 'from' | 'to', string>
+  >
+  events: readonly AuditEventItem[]
+  page: number
+  total: number
+  hasNext: boolean
+  errorMessage: string | null
+}
+
+/** Story 69.4: the settings notifications page. */
+export interface NotificationSettingsPointProps extends StandardPointProps {
+  isAdmin: boolean
+  canSendTest: boolean
+}
+
+export interface NotificationPreferencesPointProps extends NotificationSettingsPointProps {
+  preferences: readonly PreferenceItem[]
+}
+
+export interface NotificationRoutingPointProps extends NotificationSettingsPointProps {
+  routing: readonly RoutingItem[]
+}
+
+/** Story 69.4: the project members page. The ungated regions get no member or invitation data. */
+export interface ProjectMembersBasePointProps extends StandardPointProps {
+  projectId: string
+  userId: string
+  canManage: boolean
+  canManageMembers: boolean
+  canTransferOwnership: boolean
+}
+
+export interface ProjectMembersPointProps extends ProjectMembersBasePointProps {
+  members: readonly ProjectMember[]
+}
+
+export interface ProjectMembersInvitationsPointProps extends ProjectMembersBasePointProps {
+  invitations: readonly ProjectInvitation[]
 }
 
 export interface InjectionPointProps {
@@ -291,6 +345,23 @@ export interface InjectionPointProps {
   'status.detail.after': StandardPointProps
   'status.detail.before': StandardPointProps
   'status.detail.header.actions': StandardPointProps
+  'settings.audit.error': SettingsAuditResultsPointProps
+  'settings.audit.export': SettingsAuditPointProps
+  'settings.audit.header': SettingsAuditPointProps
+  'settings.audit.navigation': SettingsAuditPointProps
+  'settings.audit.notice': SettingsAuditPointProps
+  'settings.audit.results': SettingsAuditResultsPointProps
+  'settings.audit.search': SettingsAuditResultsPointProps
+  'settings.audit.verify': SettingsAuditPointProps
+  'settings.notifications.channels': NotificationPreferencesPointProps
+  'settings.notifications.header': NotificationSettingsPointProps
+  'settings.notifications.routing': NotificationRoutingPointProps
+  'settings.notifications.test': NotificationSettingsPointProps
+  'project.members.access': ProjectMembersPointProps
+  'project.members.header': ProjectMembersBasePointProps
+  'project.members.invitations': ProjectMembersInvitationsPointProps
+  'project.members.invite': ProjectMembersBasePointProps
+  'project.members.notice': ProjectMembersBasePointProps
   'vault.home.after': StandardPointProps
   'vault.home.before': StandardPointProps
   'vault.home.header.actions': StandardPointProps
@@ -335,7 +406,7 @@ function pagePoints(propsType: string, pages: readonly string[]): InjectionPoint
 
 /** Region points (Story 69.1): `<area>.<page>.<region>` points rendered inside a shared component,
  * all hosted by the same routes. `check-injection-point-coverage` reads these calls with the
- * TypeScript parser, so the arguments stay string literals. */
+ * TypeScript parser, so the arguments stay string literals (a host route may be a top-level string constant). */
 function regionPoints(
   propsType: string,
   hostRoutes: readonly string[],
@@ -348,6 +419,12 @@ function regionPoints(
     hostRoutes,
   }))
 }
+
+// The phase 5 pages' host routes, named once because three region rows share each of them (the
+// coverage guard resolves a top-level string constant used in a `regionPoints` host list).
+const AUDIT_PAGE_HOST = '/(app)/settings/audit#page'
+const NOTIFICATIONS_PAGE_HOST = '/(app)/settings/notifications#page'
+const MEMBERS_PAGE_HOST = '/(app)/projects/[projectId]/members#page'
 
 export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...pagePoints('StandardPointProps', ['app.layout']),
@@ -482,6 +559,48 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     'status.detail',
     'vault.home',
   ]),
+  ...regionPoints(
+    'SettingsAuditPointProps',
+    [AUDIT_PAGE_HOST],
+    [
+      'settings.audit.export',
+      'settings.audit.header',
+      'settings.audit.navigation',
+      'settings.audit.notice',
+      'settings.audit.verify',
+    ]
+  ),
+  ...regionPoints(
+    'SettingsAuditResultsPointProps',
+    [AUDIT_PAGE_HOST],
+    ['settings.audit.error', 'settings.audit.results', 'settings.audit.search']
+  ),
+  ...regionPoints(
+    'NotificationSettingsPointProps',
+    [NOTIFICATIONS_PAGE_HOST],
+    ['settings.notifications.header', 'settings.notifications.test']
+  ),
+  ...regionPoints(
+    'NotificationPreferencesPointProps',
+    [NOTIFICATIONS_PAGE_HOST],
+    ['settings.notifications.channels']
+  ),
+  ...regionPoints(
+    'NotificationRoutingPointProps',
+    [NOTIFICATIONS_PAGE_HOST],
+    ['settings.notifications.routing']
+  ),
+  ...regionPoints(
+    'ProjectMembersBasePointProps',
+    [MEMBERS_PAGE_HOST],
+    ['project.members.header', 'project.members.invite', 'project.members.notice']
+  ),
+  ...regionPoints('ProjectMembersPointProps', [MEMBERS_PAGE_HOST], ['project.members.access']),
+  ...regionPoints(
+    'ProjectMembersInvitationsPointProps',
+    [MEMBERS_PAGE_HOST],
+    ['project.members.invitations']
+  ),
   { name: 'shell.body.end', kind: 'shell', propsType: 'StandardPointProps' },
   { name: 'shell.head', kind: 'shell', propsType: 'StandardPointProps' },
   {

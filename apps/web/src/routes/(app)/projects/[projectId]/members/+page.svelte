@@ -2,9 +2,11 @@
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { invalidateAll } from '$app/navigation'
   import { ApiClientError } from '$lib/api/client.js'
-  import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
-  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
-  import RoleSelectOptions from '$lib/components/RoleSelectOptions.svelte'
+  import ProjectMembersHeader from '$lib/components/members/ProjectMembersHeader.svelte'
+  import ProjectTeamPanel from '$lib/components/members/ProjectTeamPanel.svelte'
+  import ProjectMembersNotice from '$lib/components/members/ProjectMembersNotice.svelte'
+  import ProjectInviteForm from '$lib/components/members/ProjectInviteForm.svelte'
+  import ProjectInvitationsTable from '$lib/components/members/ProjectInvitationsTable.svelte'
   import {
     createInvitation,
     revokeInvitation,
@@ -30,7 +32,15 @@
   let memberError = $state<string | null>(null)
   let transferTarget = $state<string>('')
 
-  const nonOwnerMembers = $derived(data.members.filter((m) => m.role !== 'owner'))
+  // Story 69.4: the ungated region points get role/flag fields only (never member or invitation
+  // rows); the gated ones add their own rows next to these.
+  const baseProps = $derived({
+    projectId: data.projectId,
+    userId: data.userId,
+    canManage: data.canManage,
+    canManageMembers: data.canManageMembers,
+    canTransferOwnership: data.canTransferOwnership,
+  })
 
   async function onChangeMemberRole(member: ProjectMember, newRole: SettableProjectRole) {
     if (memberBusyId) return
@@ -79,14 +89,6 @@
     }
   }
 
-  function relativeExpiry(expiresAt: string): string {
-    const ms = new Date(expiresAt).getTime() - Date.now()
-    if (ms <= 0) return 'expired'
-    const hours = Math.round(ms / (60 * 60 * 1000))
-    if (hours < 24) return `expires in ${hours}h`
-    return `expires in ${Math.round(hours / 24)}d`
-  }
-
   async function submitInvite() {
     if (isSubmitting) return
     isSubmitting = true
@@ -129,127 +131,49 @@
 <InjectionPoint name="project.members.before" data={data?.__inject} />
 <InjectionPoint name="project.members.header.actions" data={data?.__inject} />
 <section class="space-y-6">
+  <!-- @region project.members.header -->
   <div
     class="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between"
   >
-    <div>
-      <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Members</p>
-      <h1 class="mt-2 text-3xl font-bold text-slate-950">Project members</h1>
-      <p class="mt-2 text-slate-600">Invite teammates and manage pending invitations.</p>
-    </div>
-    {#if data.canManage}
-      <button
-        class="rounded-xl bg-slate-950 px-4 py-3 text-center font-semibold text-white"
-        type="button"
-        onclick={() => (showInviteForm = !showInviteForm)}
-      >
-        {showInviteForm ? 'Cancel' : 'Invite member'}
-      </button>
-    {/if}
+    <ProjectMembersHeader
+      canManage={data.canManage}
+      {showInviteForm}
+      onToggleInvite={() => (showInviteForm = !showInviteForm)}
+    /><InjectionPoint name="project.members.header" props={baseProps} data={data?.__inject} />
   </div>
 
   {#if data.canManageMembers}
+    <!-- @region project.members.access -->
     <div class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div class="flex items-center justify-between">
-        <h2 class="text-xl font-semibold text-slate-950">Team members</h2>
-      </div>
-      {#if memberError}
-        <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-          {memberError}
-        </p>
-      {/if}
-      <div class="overflow-hidden rounded-2xl border border-slate-200">
-        <table class="min-w-full text-left text-sm">
-          <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
-            <tr>
-              <th class="px-4 py-3 font-semibold">Email</th>
-              <th class="px-4 py-3 font-semibold">Role</th>
-              <th class="px-4 py-3 font-semibold"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each data.members as member (member.userId)}
-              <tr class="border-b border-slate-100 last:border-b-0">
-                <td class="px-4 py-3">{member.displayName}</td>
-                <td class="px-4 py-3">
-                  {#if member.role === 'owner'}
-                    <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800"
-                      >owner</span
-                    >
-                  {:else}
-                    <select
-                      class="rounded-lg border border-slate-300 px-2 py-1 text-xs"
-                      aria-label={`Role for ${member.email}`}
-                      aria-describedby={`member-role-help-${member.userId}`}
-                      value={member.role}
-                      disabled={memberBusyId === member.userId}
-                      onchange={(event) =>
-                        onChangeMemberRole(
-                          member,
-                          (event.currentTarget as HTMLSelectElement).value as SettableProjectRole
-                        )}
-                    >
-                      <RoleSelectOptions />
-                    </select>
-                    <FormHelpText id={`member-role-help-${member.userId}`} kind="select" />
-                  {/if}
-                </td>
-                <td class="px-4 py-3 text-right">
-                  {#if member.role !== 'owner'}
-                    <button
-                      class="text-sm font-medium text-red-700 underline disabled:cursor-not-allowed disabled:opacity-60"
-                      type="button"
-                      disabled={memberBusyId === member.userId}
-                      onclick={() => onRemoveMember(member)}
-                    >
-                      Remove
-                    </button>
-                  {/if}
-                </td>
-              </tr>
-            {:else}
-              <tr>
-                <td class="px-4 py-6 text-center text-slate-600" colspan="3">No members yet.</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-
-      {#if data.canTransferOwnership && nonOwnerMembers.length > 0}
-        <div class="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
-          <label class="font-medium text-slate-900" for="transfer-owner">Transfer ownership</label>
-          <select
-            id="transfer-owner"
-            class="rounded-lg border border-slate-300 px-2 py-1 text-sm"
-            bind:value={transferTarget}
-            aria-describedby="transfer-owner-help"
-          >
-            <option value="">Select a member…</option>
-            {#each nonOwnerMembers as member (member.userId)}
-              <option value={member.userId}>{member.email}</option>
-            {/each}
-          </select>
-          <FormHelpText id="transfer-owner-help" kind="select" />
-          <button
-            class="rounded-xl bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-            type="button"
-            disabled={!transferTarget || memberBusyId !== null}
-            onclick={() => onTransferOwnership()}
-          >
-            Transfer
-          </button>
-        </div>
-      {/if}
+      <ProjectTeamPanel
+        members={data.members}
+        {memberError}
+        {memberBusyId}
+        canTransferOwnership={data.canTransferOwnership}
+        bind:transferTarget
+        onChangeRole={onChangeMemberRole}
+        onRemove={onRemoveMember}
+        onTransfer={onTransferOwnership}
+      /><InjectionPoint
+        name="project.members.access"
+        props={{ ...baseProps, members: data.members }}
+        data={data?.__inject}
+      />
     </div>
   {/if}
 
   {#if !data.canManage}
+    <!-- @region project.members.notice -->
     <div class="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-      <p class="text-slate-600">Only project owners and admins can manage invitations.</p>
+      <ProjectMembersNotice /><InjectionPoint
+        name="project.members.notice"
+        props={baseProps}
+        data={data?.__inject}
+      />
     </div>
   {:else}
     {#if showInviteForm}
+      <!-- @region project.members.invite -->
       <form
         class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
         onsubmit={(event) => {
@@ -257,84 +181,25 @@
           void submitInvite()
         }}
       >
-        <div class="grid gap-4 sm:grid-cols-[2fr_1fr]">
-          <div class="space-y-2">
-            <label class="block font-medium text-slate-900" for="invite-email">Email</label>
-            <input
-              id="invite-email"
-              class="w-full rounded-xl border border-slate-300 px-3 py-2"
-              type="email"
-              bind:value={email}
-              required
-              aria-describedby="invite-email-help"
-            />
-            <FormHelpText id="invite-email-help" kind="text" />
-          </div>
-          <div class="space-y-2">
-            <label class="block font-medium text-slate-900" for="invite-role">Role</label>
-            <select
-              id="invite-role"
-              class="w-full rounded-xl border border-slate-300 px-3 py-2"
-              bind:value={role}
-              aria-describedby="invite-role-help"
-            >
-              <option value="admin">Admin</option>
-              <option value="member">Member</option>
-              <option value="viewer">Viewer</option>
-            </select>
-            <FormHelpText id="invite-role-help" kind="select" />
-          </div>
-        </div>
-        <MfaAwareErrorAlert
-          message={errorMessage}
-          class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+        <ProjectInviteForm bind:email bind:role {errorMessage} {isSubmitting} /><InjectionPoint
+          name="project.members.invite"
+          props={baseProps}
+          data={data?.__inject}
         />
-        <button
-          class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-          type="submit"
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? 'Sending...' : 'Send invite'}
-        </button>
       </form>
     {/if}
 
+    <!-- @region project.members.invitations -->
     <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <table class="min-w-full text-left text-sm">
-        <thead class="border-b border-slate-200 bg-slate-50 text-slate-600">
-          <tr>
-            <th class="px-4 py-3 font-semibold">Email</th>
-            <th class="px-4 py-3 font-semibold">Role</th>
-            <th class="px-4 py-3 font-semibold">Expiry</th>
-            <th class="px-4 py-3 font-semibold"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each data.invitations as invitation (invitation.id)}
-            <tr class="border-b border-slate-100 last:border-b-0">
-              <td class="px-4 py-3">{invitation.email}</td>
-              <td class="px-4 py-3 text-slate-600">{invitation.roleToAssign}</td>
-              <td class="px-4 py-3 text-slate-600">{relativeExpiry(invitation.expiresAt)}</td>
-              <td class="px-4 py-3 text-right">
-                <button
-                  class="text-sm font-medium text-red-700 underline disabled:cursor-not-allowed disabled:opacity-60"
-                  type="button"
-                  disabled={revokingId === invitation.id}
-                  onclick={() => onRevoke(invitation)}
-                >
-                  Revoke
-                </button>
-              </td>
-            </tr>
-          {:else}
-            <tr>
-              <td class="px-4 py-6 text-center text-slate-600" colspan="4">
-                No pending invitations.
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+      <ProjectInvitationsTable
+        invitations={data.invitations}
+        {revokingId}
+        {onRevoke}
+      /><InjectionPoint
+        name="project.members.invitations"
+        props={{ ...baseProps, invitations: data.invitations }}
+        data={data?.__inject}
+      />
     </div>
   {/if}
 </section>

@@ -25,6 +25,8 @@ const WEB = join(repositoryRoot, 'apps/web')
 const REGIONS_ADDED_BY_69_1 = 14
 // Story 69.2: the credential detail page's regions (13).
 const REGIONS_ADDED_BY_69_2 = 13
+// Story 69.4: the settings audit, settings notifications and project members pages (17).
+const REGIONS_ADDED_BY_69_4 = 17
 const makeRoot = useFixtureRoots('monolithic-region-', ['src'])
 
 const PV_FILE = 'src/a.svelte'
@@ -83,9 +85,11 @@ describe("monolithic-region on PV's own tree (AC-4.6)", () => {
   })
 
   // Story 69.2 AC-1/AC-8: the credential page adds 13 regions on top of 69.1's 14.
-  it('counts the regions of Story 69.1 and Story 69.2 together, all replaceable components', () => {
+  it('counts the regions of Stories 69.1, 69.2 and 69.4 together, all replaceable components', () => {
     const own = scanMonolithicRegionsTree(WEB)
-    expect(own.regions).toBeGreaterThanOrEqual(REGIONS_ADDED_BY_69_1 + REGIONS_ADDED_BY_69_2)
+    expect(own.regions).toBeGreaterThanOrEqual(
+      REGIONS_ADDED_BY_69_1 + REGIONS_ADDED_BY_69_2 + REGIONS_ADDED_BY_69_4
+    )
     expect(own.findings).toEqual([])
   })
 })
