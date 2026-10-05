@@ -271,3 +271,45 @@ describe('the real registry and the kit (compatibility contract)', () => {
     }
   })
 })
+
+// Story 69.3 (AC-1, AC-4): every monitoring region point lists exactly the host route that renders its
+// component, derived from the import graph, so a contribution's `hostRoutes` opt-in can name it.
+describe('the real registry: monitoring region host routes (Story 69.3)', () => {
+  const LIST = '/(app)/projects/[projectId]/service-endpoints#page'
+  const NEW = '/(app)/projects/[projectId]/service-endpoints/new#page'
+  const DETAIL = '/(app)/projects/[projectId]/service-endpoints/[serviceEndpointId]#page'
+  const STATUS_ADMIN = '/(app)/projects/[projectId]/status-page#page'
+  const PUBLIC = '/status/[token]#page'
+  const EXPECTED: Record<string, string> = {
+    'project.service-endpoints.header': LIST,
+    'project.service-endpoints.alerts': LIST,
+    'project.service-endpoints.table': LIST,
+    'project.service-endpoints.row': LIST,
+    'project.service-endpoints.empty': LIST,
+    'project.service-endpoints.not-found': LIST,
+    'project.service-endpoints-new.header': NEW,
+    'project.service-endpoints-new.form': NEW,
+    'project.service-endpoints-detail.title': DETAIL,
+    'project.service-endpoints-detail.pause': DETAIL,
+    'project.service-endpoints-detail.settings': DETAIL,
+    'project.service-endpoints-detail.history': DETAIL,
+    'project.service-endpoints-detail.delete': DETAIL,
+    'project.service-endpoints-detail.not-found': DETAIL,
+    'project.status-page.header': STATUS_ADMIN,
+    'project.status-page.read-only': STATUS_ADMIN,
+    'project.status-page.disabled': STATUS_ADMIN,
+    'project.status-page.link': STATUS_ADMIN,
+    'project.status-page.services': STATUS_ADMIN,
+    'status.detail.header': PUBLIC,
+    'status.detail.services': PUBLIC,
+    'status.detail.unavailable': PUBLIC,
+  }
+
+  it.each(Object.entries(EXPECTED))('%s is a region hosted by exactly its route', (name, host) => {
+    const { points, problems } = buildInjectionPointsManifest(WEB)
+    expect(problems).toEqual([])
+    const point = points.find((candidate) => candidate.name === name)
+    expect(point?.kind).toBe('region')
+    expect(point?.hostRoutes).toEqual([host])
+  })
+})

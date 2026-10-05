@@ -3,17 +3,11 @@
   import { ApiClientError } from '$lib/api/client.js'
   import { deleteServiceEndpoint, updateServiceEndpoint } from '$lib/api/service-endpoints.js'
   import type { ServiceEndpointDetail } from '$lib/api/service-endpoints.js'
-  import { formatCheckedAt, statusClass } from '$lib/components/dashboard/service-status.js'
-  import {
-    ActiveAlertsPanel,
-    AssetListHeader,
-    AssetRowActions,
-    AssetTable,
-    EmptyAssetState,
-    FormErrorBanner,
-    MonitoringPauseControl,
-    ProjectNotFoundBanner,
-  } from '$lib/components/monitoring/index.js'
+  import ServiceEndpointsAlerts from '$lib/components/monitoring/ServiceEndpointsAlerts.svelte'
+  import ServiceEndpointsEmpty from '$lib/components/monitoring/ServiceEndpointsEmpty.svelte'
+  import ServiceEndpointsHeader from '$lib/components/monitoring/ServiceEndpointsHeader.svelte'
+  import ServiceEndpointsNotFound from '$lib/components/monitoring/ServiceEndpointsNotFound.svelte'
+  import ServiceEndpointsTable from '$lib/components/monitoring/ServiceEndpointsTable.svelte'
   import { canManageMonitoredAssets, mapMonitoringSubmitError } from '$lib/monitoring/index.js'
 
   let { data } = $props()
@@ -73,95 +67,54 @@
 <InjectionPoint name="project.service-endpoints.before" data={data?.__inject} />
 <InjectionPoint name="project.service-endpoints.header.actions" data={data?.__inject} />
 <section class="space-y-6">
-  <AssetListHeader
-    eyebrow="Endpoints"
-    title="HTTP endpoint monitors"
-    addHref={`/projects/${data.projectId}/service-endpoints/new`}
-    addLabel="Add endpoint"
+  <ServiceEndpointsHeader
+    project={data.project}
+    orgRole={data.orgRole}
+    {endpoints}
+    projectId={data.projectId}
     {canManage}
-  >
-    Endpoints checked on a schedule; status feeds the org-wide health dashboard and public status
-    page.
-  </AssetListHeader>
+    data={data.__inject}
+  />
 
   {#if data.notFound}
-    <ProjectNotFoundBanner />
-  {:else}
-    <ActiveAlertsPanel
-      alerts={data.alerts}
-      endpoints={endpointNames}
+    <ServiceEndpointsNotFound
+      project={data.project}
       orgRole={data.orgRole}
+      {endpoints}
+      data={data.__inject}
+    />
+  {:else}
+    <ServiceEndpointsAlerts
+      project={data.project}
+      orgRole={data.orgRole}
+      {endpoints}
+      alerts={data.alerts}
+      {endpointNames}
       projectId={data.projectId}
+      data={data.__inject}
     />
 
     {#if endpoints.length === 0}
-      <EmptyAssetState message="No service endpoints registered yet." />
+      <ServiceEndpointsEmpty
+        project={data.project}
+        orgRole={data.orgRole}
+        {endpoints}
+        data={data.__inject}
+      />
     {:else}
-      <FormErrorBanner message={deleteError} />
-      <AssetTable
-        caption="Service endpoints monitored in this project"
-        columns={[{ label: 'Endpoint', headerClass: 'w-1/3' }, 'Status', 'Schedule', 'Monitoring']}
+      <ServiceEndpointsTable
+        project={data.project}
+        {endpoints}
+        orgRole={data.orgRole}
+        projectId={data.projectId}
         {canManage}
-      >
-        {#each endpoints as endpoint (endpoint.id)}
-          <!-- The amber tint restores the at-a-glance paused signal the old per-row card carried;
-               the "Monitoring paused" text in the cell is what actually conveys it. -->
-          <tr
-            class={`border-b border-slate-100 last:border-b-0 ${endpoint.healthCheckPaused ? 'bg-amber-50' : ''}`.trim()}
-          >
-            <td class="px-4 py-3 font-semibold text-slate-950">
-              <!-- `truncate` needs a bounded box; an auto-width <td> would just grow instead. -->
-              <div class="max-w-[14rem] sm:max-w-[20rem]">
-                <p class="truncate" title={endpoint.name}>{endpoint.name}</p>
-                <p class="truncate text-xs font-normal text-slate-500" title={endpoint.url}>
-                  {endpoint.url}
-                </p>
-                <p class="text-xs font-normal text-slate-500">
-                  {formatCheckedAt(endpoint.lastCheckedAt)}
-                </p>
-              </div>
-            </td>
-            <td class="px-4 py-3 text-slate-600">
-              <span
-                class={`inline-block rounded-full px-2 py-1 text-xs font-semibold ${statusClass(endpoint.status)}`}
-              >
-                {endpoint.status}
-              </span>
-            </td>
-            <td class="px-4 py-3 text-slate-600">
-              <p>Checked every {endpoint.checkFrequencyMinutes} min</p>
-              <p>Down after {endpoint.downThresholdFailures} consecutive failures</p>
-            </td>
-            <!-- Bounded like the Endpoint cell: a per-row pause error is a full sentence, and in an
-                 auto-layout table an unbounded cell would widen the Monitoring column for every
-                 row — re-introducing the content-driven misalignment this story removed. -->
-            <td class="w-[15rem] max-w-[15rem] px-4 py-3 text-slate-600">
-              {#if endpoint.healthCheckPaused === true || endpoint.healthCheckPaused === false}
-                <MonitoringPauseControl
-                  paused={endpoint.healthCheckPaused}
-                  pausedAt={endpoint.healthCheckPausedAt ?? null}
-                  lastKnownStatus={endpoint.status}
-                  {canManage}
-                  idSuffix={endpoint.id}
-                  variant="row"
-                  submitting={pauseSubmittingId === endpoint.id}
-                  errorMessage={pauseErrors[endpoint.id] || null}
-                  onToggle={(paused) => handlePauseToggle(endpoint.id, paused)}
-                />
-              {/if}
-            </td>
-            {#if canManage}
-              <td class="px-4 py-3">
-                <AssetRowActions
-                  editHref={`/projects/${data.projectId}/service-endpoints/${endpoint.id}`}
-                  confirmLabel="Confirm delete? This will also resolve any active alerts for it."
-                  onDelete={() => handleDelete(endpoint.id)}
-                />
-              </td>
-            {/if}
-          </tr>
-        {/each}
-      </AssetTable>
+        {deleteError}
+        {pauseSubmittingId}
+        {pauseErrors}
+        onDelete={handleDelete}
+        onPauseToggle={handlePauseToggle}
+        data={data.__inject}
+      />
     {/if}
   {/if}
 </section>

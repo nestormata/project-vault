@@ -51,8 +51,12 @@ export default defineUiPack({
       hostSha256: sha(path),
       story: 'MOCK-UI-PACK',
     })),
-    // M1 route removal: PV's public status page route group is removed in this product.
-    remove: ['/status'],
+    // M1 route removal: PV's recovery link route (a static answer: PV always serves its page there, no
+    // page links to it with a typed href and no spec uses it, so the 404 proves the removal) is removed in
+    // this product. `/status` stays so the public status region can be filled, `/external-shares`
+    // because PV's header-policy test needs two `setHeaders` routes, `/invitations/accept` because the
+    // member specs use it.
+    remove: ['/(auth)/recovery/[token]'],
   },
   injections: {
     // M3: injected into NATIVE PV pages the pack did not override: a component with a server load
@@ -114,6 +118,36 @@ export default defineUiPack({
       },
     ],
     'credential.detail.metadata': [{ component: './injections/CredentialMetadataFill.svelte' }],
+    // M3 at REGION points of the monitoring pages (Story 69.3). The endpoint detail history region
+    // gets a component, a load and an action (opted in with `hostRoutes`); the per-row region gets a
+    // component only (the "no opt-in" shape); the status page admin services region gets a component
+    // and a load whose result never holds the public token. The public status page (`/status/<token>`)
+    // keeps its route, so `status.detail.services` is filled below too, with a load that runs only for
+    // a valid token and without a session.
+    'project.service-endpoints-detail.history': [
+      {
+        component: './injections/EndpointHealthTile.svelte',
+        order: 10,
+        load: './injections/endpoint-health.server.ts',
+        actions: './injections/endpoint-health.actions.ts',
+        hostRoutes: ['/(app)/projects/[projectId]/service-endpoints/[serviceEndpointId]#page'],
+      },
+    ],
+    'status.detail.services': [
+      {
+        component: './injections/StatusPublicTile.svelte',
+        load: './injections/status-public.server.ts',
+        hostRoutes: ['/status/[token]#page'],
+      },
+    ],
+    'project.service-endpoints.row': [{ component: './injections/EndpointRowPill.svelte' }],
+    'project.status-page.services': [
+      {
+        component: './injections/StatusServicesTile.svelte',
+        load: './injections/status-services.server.ts',
+        hostRoutes: ['/(app)/projects/[projectId]/status-page#page'],
+      },
+    ],
     'app.layout.before': [{ component: './injections/LayoutBanner.svelte' }],
     // M3 region points (Story 69.4, Epic 69 phase 5): fills on the settings audit, settings
     // notifications and project members pages. Loads and actions work because a region point lives

@@ -115,11 +115,23 @@ function runAction(entry: ActionEntry): Action {
 }
 
 /** One predicate for the own-result flags that mean "there is nothing a contribution load could
- * read": PV's 404 answer (`notFound: true`, no such entity for you) and its sealed-vault answer
- * (`vaultSealed: true`, every PV API call 503s). Only the literal `true` counts. */
+ * read": PV's 404 answer (`notFound: true`, no such entity for you), its sealed-vault answer
+ * (`vaultSealed: true`, every PV API call 503s) and the typed `skipInjectedLoads: true` marker a
+ * load sets when its "nothing here" answer has another shape (Story 69.3: the public status page's
+ * `statusPage: null`). Only the literal `true` counts. */
 function isLoadSkipped(data: object | undefined): boolean {
-  const { notFound, vaultSealed } = (data ?? {}) as { notFound?: unknown; vaultSealed?: unknown }
-  return notFound === true || vaultSealed === true
+  const { notFound, vaultSealed, skipInjectedLoads } = (data ?? {}) as {
+    notFound?: unknown
+    vaultSealed?: unknown
+    skipInjectedLoads?: unknown
+  }
+  return notFound === true || vaultSealed === true || skipInjectedLoads === true
+}
+
+/** The `skipInjectedLoads` marker is a message to this wrapper, never part of PV's page data. */
+function withoutMarker(data: object | undefined): object | undefined {
+  if (data === undefined || !('skipInjectedLoads' in data)) return data
+  return Object.fromEntries(Object.entries(data).filter(([key]) => key !== 'skipInjectedLoads'))
 }
 
 /** No load ran: one null entry per contribution of every point of the slice, or nothing at all when
@@ -164,14 +176,15 @@ export function createInjectBehavior(tables: BehaviorTables) {
         // entity a contribution could load for, and a contribution that calls the API for the same id
         // would turn PV's 404 into a 500 or an existence oracle. Story 69.2 (Q3): the same holds for
         // `vaultSealed: true`, where a contribution calling the API would turn PV's sealed banner
-        // into a 500. No contribution load runs; every contribution still gets a null entry so the
-        // point's `data` stays aligned.
+        // into a 500. Story 69.3: and for the `skipInjectedLoads` marker of the public status page.
+        // No contribution load runs; every contribution still gets a null entry so the point's
+        // `data` stays aligned.
         const injected = isLoadSkipped(ownData)
           ? skippedLoads(loads.get(`${routeId}#${scope}`))
           : // Kit hands the same event to PV's load and to this wrapper; PV's own load only needs the
             // slice of it (params, locals, ...) it declares, so `Event` is not tied to Kit's event types.
             await injectLoad(event as BehaviorEvent, routeId, scope)
-        return { ...ownData, ...injected } as Awaited<Data> & InjectedData
+        return { ...withoutMarker(ownData), ...injected } as Awaited<Data> & InjectedData
       }
     },
 

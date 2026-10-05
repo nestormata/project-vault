@@ -7,14 +7,16 @@
 // segments). Adding a point is a PV change: add it here and render it with a literal name.
 import type { Component } from 'svelte'
 import type { getCredential } from '$lib/api/credentials.js'
+import type { CapabilityMap } from '$lib/api/capabilities.js'
 import type { getProject } from '$lib/api/projects.js'
-import type { ProjectSummary } from '@project-vault/shared'
+import type { ProjectSummary, PublicStatusPage } from '@project-vault/shared'
 import type { OrgRole } from '$lib/credentials/permissions.js'
 import type { AuthUser } from '$lib/api/auth.js'
 import type { AuditEventItem } from '$lib/api/audit.js'
 import type { PreferenceItem, RoutingItem } from '$lib/api/notifications.js'
 import type { ProjectInvitation } from '$lib/api/invitations.js'
 import type { ProjectMember } from '$lib/api/org-users.js'
+import type { ServiceEndpoint, ServiceEndpointDetail } from '$lib/api/service-endpoints.js'
 
 /** One contribution at a point, as the point's virtual module lists it (already in `order`). */
 export interface InjectionEntry {
@@ -105,6 +107,46 @@ export interface ProjectMembersPointProps extends ProjectMembersBasePointProps {
 
 export interface ProjectMembersInvitationsPointProps extends ProjectMembersBasePointProps {
   invitations: readonly ProjectInvitation[]
+}
+
+/** The service-endpoint pages (Story 69.3): the project (the layout's, null when it was not found)
+ * plus the caller's org role, which gates the management controls. */
+export interface EndpointRolePointProps extends ProjectPointProps {
+  orgRole: OrgRole
+}
+
+/** The endpoint list page's context, handed to each of its regions: the endpoints are the page's own
+ * (optimistic) list. */
+export interface EndpointListPointProps extends EndpointRolePointProps {
+  endpoints: ServiceEndpointDetail[]
+}
+
+/** One endpoint: a list row, or any region of the endpoint detail page that has an endpoint. */
+export interface EndpointRowPointProps extends EndpointRolePointProps {
+  endpoint: ServiceEndpointDetail
+}
+
+/** The endpoint detail page's not-found state: there is no endpoint (the project may exist). */
+export interface EndpointNotFoundPointProps extends ProjectPointProps {
+  endpoint: null
+}
+
+/** The status page admin screen's context, handed to each region that is not the link card. */
+export interface StatusPageAdminPointProps extends ProjectPointProps {
+  capabilities: CapabilityMap
+  serviceEndpoints: ServiceEndpoint[]
+}
+
+/** The "Shareable link" card. NEVER the token or the URL built from it (Story 69.3 AC-6.6): a
+ * contribution gets flags, the component keeps the secret. */
+export interface StatusPageLinkPointProps extends ProjectPointProps {
+  hasPublicUrl: boolean
+  isLegacy: boolean
+}
+
+/** The public status list. `PublicStatusPage` is public-safe by construction (no token). */
+export interface PublicStatusPointProps extends StandardPointProps {
+  statusPage: PublicStatusPage
 }
 
 export interface InjectionPointProps {
@@ -269,13 +311,27 @@ export interface InjectionPointProps {
   'project.preview.header.actions': StandardPointProps
   'project.service-endpoints-detail.after': StandardPointProps
   'project.service-endpoints-detail.before': StandardPointProps
+  'project.service-endpoints-detail.delete': EndpointRowPointProps
   'project.service-endpoints-detail.header.actions': StandardPointProps
+  'project.service-endpoints-detail.history': EndpointRowPointProps
+  'project.service-endpoints-detail.not-found': EndpointNotFoundPointProps
+  'project.service-endpoints-detail.pause': EndpointRowPointProps
+  'project.service-endpoints-detail.settings': EndpointRowPointProps
+  'project.service-endpoints-detail.title': EndpointRowPointProps
   'project.service-endpoints-new.after': StandardPointProps
   'project.service-endpoints-new.before': StandardPointProps
+  'project.service-endpoints-new.form': EndpointRolePointProps
+  'project.service-endpoints-new.header': EndpointRolePointProps
   'project.service-endpoints-new.header.actions': StandardPointProps
   'project.service-endpoints.after': StandardPointProps
+  'project.service-endpoints.alerts': EndpointListPointProps
   'project.service-endpoints.before': StandardPointProps
+  'project.service-endpoints.empty': EndpointListPointProps
+  'project.service-endpoints.header': EndpointListPointProps
   'project.service-endpoints.header.actions': StandardPointProps
+  'project.service-endpoints.not-found': EndpointListPointProps
+  'project.service-endpoints.row': EndpointRowPointProps
+  'project.service-endpoints.table': EndpointListPointProps
   'project.services-detail.after': StandardPointProps
   'project.services-detail.before': StandardPointProps
   'project.services-detail.header.actions': StandardPointProps
@@ -287,7 +343,12 @@ export interface InjectionPointProps {
   'project.services.header.actions': StandardPointProps
   'project.status-page.after': StandardPointProps
   'project.status-page.before': StandardPointProps
+  'project.status-page.disabled': StatusPageAdminPointProps
+  'project.status-page.header': StatusPageAdminPointProps
   'project.status-page.header.actions': StandardPointProps
+  'project.status-page.link': StatusPageLinkPointProps
+  'project.status-page.read-only': StatusPageAdminPointProps
+  'project.status-page.services': StatusPageAdminPointProps
   'root.error.after': StandardPointProps
   'root.error.before': StandardPointProps
   'root.error.header.actions': StandardPointProps
@@ -344,6 +405,7 @@ export interface InjectionPointProps {
   'shell.header.end': StandardPointProps
   'status.detail.after': StandardPointProps
   'status.detail.before': StandardPointProps
+  'status.detail.header': StandardPointProps
   'status.detail.header.actions': StandardPointProps
   'settings.audit.error': SettingsAuditResultsPointProps
   'settings.audit.export': SettingsAuditPointProps
@@ -362,6 +424,8 @@ export interface InjectionPointProps {
   'project.members.invitations': ProjectMembersInvitationsPointProps
   'project.members.invite': ProjectMembersBasePointProps
   'project.members.notice': ProjectMembersBasePointProps
+  'status.detail.services': PublicStatusPointProps
+  'status.detail.unavailable': StandardPointProps
   'vault.home.after': StandardPointProps
   'vault.home.before': StandardPointProps
   'vault.home.header.actions': StandardPointProps
@@ -536,6 +600,64 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     ['/(app)/dashboard#page'],
     ['dashboard.home.empty', 'dashboard.home.org-summary', 'dashboard.home.vault-sealed']
   ),
+  ...regionPoints(
+    'EndpointListPointProps',
+    ['/(app)/projects/[projectId]/service-endpoints#page'],
+    [
+      'project.service-endpoints.alerts',
+      'project.service-endpoints.empty',
+      'project.service-endpoints.header',
+      'project.service-endpoints.not-found',
+      'project.service-endpoints.table',
+    ]
+  ),
+  ...regionPoints(
+    'EndpointRowPointProps',
+    ['/(app)/projects/[projectId]/service-endpoints#page'],
+    ['project.service-endpoints.row']
+  ),
+  ...regionPoints(
+    'EndpointRolePointProps',
+    ['/(app)/projects/[projectId]/service-endpoints/new#page'],
+    ['project.service-endpoints-new.form', 'project.service-endpoints-new.header']
+  ),
+  ...regionPoints(
+    'EndpointRowPointProps',
+    ['/(app)/projects/[projectId]/service-endpoints/[serviceEndpointId]#page'],
+    [
+      'project.service-endpoints-detail.delete',
+      'project.service-endpoints-detail.history',
+      'project.service-endpoints-detail.pause',
+      'project.service-endpoints-detail.settings',
+      'project.service-endpoints-detail.title',
+    ]
+  ),
+  ...regionPoints(
+    'EndpointNotFoundPointProps',
+    ['/(app)/projects/[projectId]/service-endpoints/[serviceEndpointId]#page'],
+    ['project.service-endpoints-detail.not-found']
+  ),
+  ...regionPoints(
+    'StatusPageAdminPointProps',
+    ['/(app)/projects/[projectId]/status-page#page'],
+    [
+      'project.status-page.disabled',
+      'project.status-page.header',
+      'project.status-page.read-only',
+      'project.status-page.services',
+    ]
+  ),
+  ...regionPoints(
+    'StatusPageLinkPointProps',
+    ['/(app)/projects/[projectId]/status-page#page'],
+    ['project.status-page.link']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/status/[token]#page'],
+    ['status.detail.header', 'status.detail.unavailable']
+  ),
+  ...regionPoints('PublicStatusPointProps', ['/status/[token]#page'], ['status.detail.services']),
   ...pagePoints('StandardPointProps', [
     'settings.audit-access-report',
     'settings.audit-forwarding',

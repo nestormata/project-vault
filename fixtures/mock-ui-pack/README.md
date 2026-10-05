@@ -51,6 +51,31 @@ by `scripts/lib/web-host/credential-regions-index.test.ts`. The spec is
 cannot be produced in the shared stack without breaking other specs, so that case is proven at unit level and in the
 kit integration job against the API stub (`c-sealed`).
 
+## Monitoring region points (Story 69.3)
+
+Four M3 fills target region points of the endpoint, status page admin and public status routes (PV's own pages, not
+overridden by the pack):
+
+- `project.service-endpoints-detail.history` (`injections/EndpointHealthTile.svelte`, a load and an action,
+  `hostRoutes: ['/(app)/projects/[projectId]/service-endpoints/[serviceEndpointId]#page']`). The load returns ids
+  and a status only; the action reads the endpoint with the member's own session first (RLS), so a foreign or
+  missing id writes nothing, and then writes one audit row through the pack's module route.
+- `project.service-endpoints.row` (`injections/EndpointRowPill.svelte`, component only: the "no opt-in" shape).
+  The point renders once per row INSIDE the Monitoring cell, with `props.endpoint` as the only per-row input.
+- `project.status-page.services` (`injections/StatusServicesTile.svelte` and a load,
+  `hostRoutes: ['/(app)/projects/[projectId]/status-page#page']`). The region renders only for a caller who
+  can manage the page; the load reads the status page configuration (which holds the public token) and returns
+  the project id and an API status ONLY.
+
+- `status.detail.services` on the ANONYMOUS public status page (`injections/StatusPublicTile.svelte` and a load,
+  `hostRoutes: ['/status/[token]#page']`). The load runs only for a valid token (an invalid, disabled or sealed
+  token skips every contribution load), without `locals.user`, and returns a run counter and a literal only. Region
+  data on a public page must be public-safe: its result is serialized into public HTML and `__data.json`.
+
+The M1 removal case now removes the route `/(auth)/recovery/[token]` (PV always serves its page there, so the 404 proves the
+removal) so that `/status/<token>` keeps serving; `/external-shares` stays because PV's header-policy test needs a
+second `setHeaders` route.
+
 ## No back doors
 
 The pack never bypasses authentication or tenancy to make a case pass: it reads data through the
@@ -90,6 +115,6 @@ loosen or allowlist anything:
 3. If the PV change makes a mechanism impossible, that is a design question for Nestor, not a pack edit.
 4. Candidate PV targets were chosen for stability (files a PV PR rarely touches): the dashboard page and
    its load, the recovery page and its load, the `(auth)` layout, `+error.svelte`, `src/hooks.server.ts`,
-   `src/app.html`, `static/favicon.png`, the `/status` route group, `shell/Footer.svelte`,
+   `src/app.html`, `static/favicon.png`, the `/settings/users/[userId]/erasure/[requestId]` route, `shell/Footer.svelte`,
    `shell/ShellAccount.svelte`, `$lib/api/audit.ts` and `$lib/server/require-user.ts`. Swapping one for
    another is a one-line change in `ui-pack/pv-ui.manifest.ts`.
