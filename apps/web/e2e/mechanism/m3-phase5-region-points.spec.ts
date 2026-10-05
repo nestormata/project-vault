@@ -63,7 +63,7 @@ test.describe('M3 region points on settings audit, notifications and project mem
     expect(mismatches()).toEqual([])
   })
 
-  test('fails (denied): another org owner on a foreign project members page sees 404 and no org A data', async ({
+  test('fails (denied): another org owner on a foreign project members page gets no contribution load and no org A data', async ({
     context,
     browser,
   }) => {
@@ -74,13 +74,14 @@ test.describe('M3 region points on settings audit, notifications and project mem
       await seedOrgOwner(contextB, 'p5-iso-b')
       const pageB = await contextB.newPage()
       const response = await pageB.goto(membersPath(projectA))
-      // PV's own load degrades a foreign id to empty lists; the fill's load reads the real API
+      // PV's own load flags a foreign id as denied (Story 69.7), so the fill's load never runs:
+      // its point still renders with a null entry ('status=none'), not a 404 read from the API
       expect(response?.status()).toBe(200)
-      await expect(pageB.getByTestId(ID.accessText)).toContainText('status=404')
+      await expect(pageB.getByTestId(ID.accessText)).toContainText('status=none')
       await expect(pageB.getByTestId(ID.accessText)).toContainText('members=0')
       const missing = await pageB.goto(membersPath(randomUUID()))
       expect(missing?.status()).toBe(200)
-      await expect(pageB.getByTestId(ID.accessText)).toContainText('status=404')
+      await expect(pageB.getByTestId(ID.accessText)).toContainText('status=none')
       const html = await contextB.request.get(membersPath(projectA))
       const data = await contextB.request.get(`${membersPath(projectA)}/__data.json`)
       for (const body of [await html.text(), await data.text()]) {

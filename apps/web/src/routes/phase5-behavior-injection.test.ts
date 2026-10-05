@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { error } from '@sveltejs/kit'
+import { ApiClientError } from '$lib/api/client.js'
 import { INJECTION_POINTS } from '$lib/components/composition/injection-points.js'
 
 // Story 69.4 AC-5: behavior injection works on the three pages, with kit-shaped tables standing in
@@ -134,12 +135,15 @@ describe('phase 5 behavior injection (Story 69.4 AC-5)', () => {
     expect(spies.membersAction).toHaveBeenCalledWith(event)
   })
 
-  it('AC-5.3: a denied caller still runs the contribution load (documented), PV says allowed:false', async () => {
+  it('AC-5.3 (Story 69.7): a denied caller runs no contribution load; an allowed one runs it once', async () => {
     const data = await run(auditLoad, eventFor('member'))
     expect(data['allowed']).toBe(false)
     expect(spies.listAuditEvents).not.toHaveBeenCalled()
+    expect(spies.auditLoad).not.toHaveBeenCalled()
+    expect(data['__inject']).toEqual({ 'settings.audit.results': [null] })
+    const allowed = await run(auditLoad, eventFor('owner'))
+    expect(allowed['allowed']).toBe(true)
     expect(spies.auditLoad).toHaveBeenCalledOnce()
-    expect(data['__inject']).toEqual({ 'settings.audit.results': [{ marker: 'audit' }] })
   })
 
   it('AC-5.4: an error thrown by PV load short-circuits, no contribution load runs', async () => {
@@ -150,17 +154,45 @@ describe('phase 5 behavior injection (Story 69.4 AC-5)', () => {
     expect(spies.notificationsLoad).not.toHaveBeenCalled()
   })
 
-  it('AC-5.4: a foreign project id degrades to empty lists and the contribution load still runs', async () => {
-    spies.listProjectMembers.mockRejectedValue(new Error('404'))
-    spies.listInvitations.mockRejectedValue(new Error('404'))
+  it.each([403, 404])(
+    'AC-5.4 (Story 69.7): a %i from the member list is a PV denial: no contribution load, marker stripped',
+    async (status) => {
+      spies.listProjectMembers.mockRejectedValue(new ApiClientError(status, null, 'denied'))
+      spies.listInvitations.mockRejectedValue(new ApiClientError(status, null, 'denied'))
+      const data = await run(membersLoad, eventFor('owner'))
+      expect(data['members']).toEqual([])
+      expect(data['invitations']).toEqual([])
+      expect('skipInjectedLoads' in data).toBe(false)
+      expect(spies.membersLoad).not.toHaveBeenCalled()
+      expect(data['__inject']).toEqual({ 'project.members.access': [null] })
+    }
+  )
+
+  it('AC-5.4: a 5xx or network failure is not a denial: degrade to [] and the load still runs', async () => {
+    spies.listProjectMembers.mockRejectedValue(new ApiClientError(500, null, 'boom'))
     const data = await run(membersLoad, eventFor('owner'))
     expect(data['members']).toEqual([])
-    expect(data['invitations']).toEqual([])
+    expect(spies.membersLoad).toHaveBeenCalledOnce()
+    spies.listProjectMembers.mockRejectedValue(new Error('network'))
+    await run(membersLoad, eventFor('owner'))
+    expect(spies.membersLoad).toHaveBeenCalledTimes(2)
+  })
+
+  it('AC-5.4: a project admin who is only an org member loads the list and contributions run', async () => {
+    spies.listProjectMembers.mockResolvedValue([{ userId: 'u-1', role: 'admin' }])
+    const data = await run(membersLoad, eventFor('member'))
+    expect(data['canManageMembers']).toBe(true)
     expect(spies.membersLoad).toHaveBeenCalledOnce()
   })
 
+  it('AC-6 cross-tenant: org B user asking for org A projectId gets 0 contribution loads', async () => {
+    spies.listProjectMembers.mockRejectedValue(new ApiClientError(404, null, 'not found'))
+    await run(membersLoad, eventFor('member', { params: { projectId: 'org-a-project' } }))
+    expect(spies.membersLoad).not.toHaveBeenCalled()
+  })
+
   it.each([
-    ['settings.audit.results', auditLoad, spies.auditLoad, 'member'],
+    ['settings.audit.results', auditLoad, spies.auditLoad, 'owner'],
     ['settings.notifications.channels', notificationsLoad, spies.notificationsLoad, 'member'],
     ['project.members.access', membersLoad, spies.membersLoad, 'owner'],
   ])(
