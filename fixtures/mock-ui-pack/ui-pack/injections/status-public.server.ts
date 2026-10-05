@@ -8,5 +8,5 @@ let runs = 0
 
 export const load = ({ locals }: { locals: { user?: unknown } }) => {
   runs += 1
-  return { runs, user: locals.user === undefined ? 'none' : 'present' }
+  return { runs, user: locals.user ? 'present' : 'none' }
 }

@@ -358,7 +358,16 @@ test.describe('M3 monitoring region points: public status page (Story 69.3)', ()
     const html = await (await request.get(`/status/${token}`)).text()
     const received = /data-received="([^"]*)"/.exec(html)?.[1] ?? ''
     expect(received).not.toBe('')
-    expect(received).not.toContain(token)
+    // The route's STANDARD props (`params`, the same for every point on this URL) name the token, as the
+    // URL itself does; the load result and the point's own props (`statusPage`) never hold it.
+    const parsed = JSON.parse(received.replaceAll('&quot;', '"')) as {
+      data: unknown
+      statusPage: unknown
+      rest: { params?: { token?: string } }
+    }
+    expect(JSON.stringify(parsed.data)).not.toContain(token)
+    expect(JSON.stringify(parsed.statusPage)).not.toContain(token)
+    expect(parsed.rest.params?.token).toBe(token)
     expect(await (await request.get(`/status/${token}/__data.json`)).text()).not.toContain(token)
   })
 
