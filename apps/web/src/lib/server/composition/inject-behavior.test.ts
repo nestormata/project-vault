@@ -1,17 +1,13 @@
 import { error, fail, redirect, type RequestEvent } from '@sveltejs/kit'
 import { describe, expect, it, vi } from 'vitest'
-import {
-  createInjectBehavior,
-  injectActions,
-  injectLoad,
-  withInjectedLoad,
-  type BehaviorTables,
-} from './inject-behavior.js'
+import { createInjectBehavior, withInjectedLoad, type BehaviorTables } from './inject-behavior.js'
 
 // Story 68.4 AC-5 / AC-6 / AC-14: server load and action injection. The generated tables come from
 // the kit; here they are handed in directly.
 
 const event = { params: { projectId: 'p1' }, locals: { user: { userId: 'u1' } } } as never
+
+const emptyBehavior = createInjectBehavior({ loads: {}, actions: {} })
 
 function delay<T>(ms: number, value: T): Promise<T> {
   return new Promise((done) => setTimeout(() => done(value), ms))
@@ -21,16 +17,16 @@ function tables(partial: Partial<BehaviorTables>): BehaviorTables {
   return { loads: {}, actions: {}, ...partial }
 }
 
-describe('PV build (empty virtual module): everything is a no-op', () => {
+describe('empty BehaviorTables fixture: injection is a no-op', () => {
   it('injectLoad resolves to an empty object with no __inject key', async () => {
-    const result = await injectLoad(event, '/(app)/projects/[projectId]', 'page')
+    const result = await emptyBehavior.injectLoad(event, '/(app)/projects/[projectId]', 'page')
     expect(result).toEqual({})
     expect('__inject' in result).toBe(false)
   })
 
   it('injectActions returns undefined, not {}, so Kit keeps its "no actions" 405 branch', () => {
-    expect(injectActions('/(app)/projects/[projectId]')).toBeUndefined()
-    expect({ ...{ own: 1 }, ...injectActions('/x') }).toEqual({ own: 1 })
+    expect(emptyBehavior.injectActions('/(app)/projects/[projectId]')).toBeUndefined()
+    expect({ ...{ own: 1 }, ...emptyBehavior.injectActions('/x') }).toEqual({ own: 1 })
   })
 })
 
@@ -250,7 +246,7 @@ describe('injectLoad', () => {
 
   it('makes no network call and logs nothing', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
-    await injectLoad(event, '/anything', 'layout')
+    await emptyBehavior.injectLoad(event, '/anything', 'layout')
     expect(fetchSpy).not.toHaveBeenCalled()
     fetchSpy.mockRestore()
   })
