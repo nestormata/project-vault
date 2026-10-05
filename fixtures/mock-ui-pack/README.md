@@ -72,7 +72,7 @@ overridden by the pack):
   token skips every contribution load), without `locals.user`, and returns a run counter and a literal only. Region
   data on a public page must be public-safe: its result is serialized into public HTML and `__data.json`.
 
-The M1 removal case now removes the route `/(auth)/invitations/accept` (PV serves a page there, so the 404 proves the
+The M1 removal case now removes the route `/(app)/settings/external-identities` (PV answers an anonymous request there with a redirect to /login, so the 404 proves the
 removal) so that `/status/<token>` keeps serving; `/external-shares` stays because PV's header-policy test needs a
 second `setHeaders` route.
 
@@ -115,6 +115,6 @@ loosen or allowlist anything:
 3. If the PV change makes a mechanism impossible, that is a design question for Nestor, not a pack edit.
 4. Candidate PV targets were chosen for stability (files a PV PR rarely touches): the dashboard page and
    its load, the recovery page and its load, the `(auth)` layout, `+error.svelte`, `src/hooks.server.ts`,
-   `src/app.html`, `static/favicon.png`, the `/invitations/accept` route group, `shell/Footer.svelte`,
+   `src/app.html`, `static/favicon.png`, the `/settings/external-identities` route, `shell/Footer.svelte`,
    `shell/ShellAccount.svelte`, `$lib/api/audit.ts` and `$lib/server/require-user.ts`. Swapping one for
    another is a one-line change in `ui-pack/pv-ui.manifest.ts`.
