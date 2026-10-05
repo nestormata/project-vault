@@ -762,7 +762,7 @@ describe('/rotations/[rotationId] +page.svelte', () => {
       getRotationMock.mockResolvedValue(makeRotation({ status: 'promoted' }))
       renderStaged()
       await openConfirm()
-      expect(screen.queryByRole('button', { name: /abandon anyway/i })).not.toBeNull()
+      expect(screen.getByRole('button', { name: /abandon anyway/i })).toBeTruthy()
 
       await vi.advanceTimersByTimeAsync(15000)
 
