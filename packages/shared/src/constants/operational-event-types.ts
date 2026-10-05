@@ -180,6 +180,11 @@ export const OperationalEvent = {
   // `failed` instead of being re-sent (at-most-once). Recipient-free fields only.
   NOTIFICATION_DELIVERY_OUTCOME_UNKNOWN: 'notification.delivery_outcome_unknown',
 
+  // Story 70.3 — a DeliveryProvider rejected a send with DeliveryProviderPermanentError; the row
+  // was moved to `failed` and is not retried. Recipient-free fields only (notificationQueueId,
+  // orgId, channel, attemptNumber, an optional validated `reason` slug).
+  NOTIFICATION_DELIVERY_PERMANENT_FAILURE: 'notification.delivery_permanent_failure',
+
   // Exclusive notification_queue claim (Story 70.1 AC9) — the fenced release after a failed
   // attempt itself failed; the row is reclaimable once its lease expires.
   NOTIFICATION_CLAIM_RELEASE_FAILED: 'notification.claim_release_failed',

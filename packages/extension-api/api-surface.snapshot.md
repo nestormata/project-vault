@@ -1080,6 +1080,33 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.11.0
   - type: `(input: { rawBody: string; headers: Record<string, string | string[] | undefined>; }) => boolean`
   - call-signature: `(input: { rawBody: string; headers: Record<string, string | string[] | undefined>; }): boolean`
+- member: `webhookRateLimit?`
+  - since: 3.32.0
+  - type: `{ max: number; windowSeconds?: number; } | undefined`
+  - union-members: `undefined`, `{ max: number; windowSeconds?: number; }`
+
+## export `DeliveryProviderPermanentError`
+
+- since: 3.32.0
+- kind: type
+- type: `DeliveryProviderPermanentError`
+- member: `cause?`
+  - since: 3.32.0
+  - type: `unknown`
+- member: `message`
+  - since: 3.32.0
+  - type: `string`
+- member: `name`
+  - since: 3.32.0
+  - type: `string`
+- member: `readonly reason`
+  - since: 3.32.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+- member: `stack?`
+  - since: 3.32.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
 
 ## export `DeliveryProviderSendPayload`
 
@@ -1092,6 +1119,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - member: `body`
   - since: 3.11.0
   - type: `string`
+- member: `html?`
+  - since: 3.32.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
 - member: `queueRowId`
   - since: 3.11.0
   - type: `string`
@@ -1164,7 +1195,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.31.0"`
+- type: `"3.32.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 

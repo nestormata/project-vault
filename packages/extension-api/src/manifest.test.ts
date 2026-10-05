@@ -73,8 +73,9 @@ describe('EXTENSION_API_VERSION', () => {
     // (additive-minor, policy row 1): 3.27.0 -> 3.28.0. Story 68.14 — optional
     // apiRoutes.app declaration + hooks (additive-minor, rows 1 and 11): 3.28.0 -> 3.29.0. Story 68.11 — deprecation markers and the
     // neutral `ExtensionRequestContext`/`ExtensionActionResult` types (additive-minor): 3.29.0 -> 3.30.0. Story 71.8 — optional `security.delegation` + delegated context types
-    // (additive-minor, rows 1 and 2): 3.30.0 -> 3.31.0.
-    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.31.0')
+    // (additive-minor, rows 1 and 2): 3.30.0 -> 3.31.0. Story 70.3 — optional `html`, `webhookRateLimit` and
+    // `DeliveryProviderPermanentError` (additive-minor, rows 1 and 2): 3.31.0 -> 3.32.0.
+    expect(HOST_SUPPORTED_EXTENSION_API_RANGE).toBe('>=3.0.0 <=3.32.0')
   })
 
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {

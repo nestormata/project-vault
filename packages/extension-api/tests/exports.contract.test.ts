@@ -11,6 +11,7 @@ describe('@project-vault/extension-api public value exports', () => {
       'CredentialSharingNoMachineUserError',
       'CredentialSharingOrgRateLimitedError',
       'CredentialSharingRateLimitedError',
+      'DeliveryProviderPermanentError',
       'EXTENSION_API_VERSION',
       'EXTENSION_THEME_CSS_VARS',
       'ExtensionRegistrationError',

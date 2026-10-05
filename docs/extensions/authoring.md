@@ -456,6 +456,20 @@ reject after the message was actually accepted (a timeout, for example), dedupli
 `queueRowId` is what keeps the retry from sending twice. `attemptNumber` is for logs and metrics
 only; never put it in the idempotency key.
 
+Since 3.32.0 the contract has three more optional pieces:
+
+- `html`: the payload carries the HTML part of the message next to `body` (`body` is unchanged:
+  the text part, or the html part when there is no text part). A provider that takes over email
+  should forward both, otherwise every Project Vault email goes out as plain text.
+- `DeliveryProviderPermanentError`: throw it from `send()` when retrying cannot succeed (an invalid
+  recipient, a hard rejection). The notification is recorded as `failed` and is not retried. Do not
+  throw it for a timeout or a 5xx. Its optional `reason` is a short slug (`invalid_recipient`);
+  Project Vault logs only that slug, never the message or the cause.
+- `webhookRateLimit` (`{ max, windowSeconds? }`): a per-provider, per-IP limit for the inbound
+  delivery-status webhook, for providers that send bursts. `max` is 1 to 10 000 and `windowSeconds`
+  1 to 3600 (default 60). The default is 60 requests per 60 seconds; an out-of-range value fails
+  registration.
+
 ### API routes (`apiRoutes`)
 
 `apiRoutes` (since `@project-vault/extension-api` 3.27.0) lets an extension register real API

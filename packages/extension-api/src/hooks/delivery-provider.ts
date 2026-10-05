@@ -11,6 +11,16 @@ export type DeliveryProviderSendPayload = {
   recipientAddress: string
   subject: string
   body: string
+  /**
+   * Story 70.3 — the HTML rendering of the same message, when it has one. Optional and additive:
+   * `body` keeps its exact earlier value (the text part, or the html part when the template has
+   * no text part), so a provider that reads only `body` behaves as before. Every PV-native
+   * template and every extension-originated notification renders an HTML part, so a provider that
+   * takes over PV email should forward `html` (for example as Resend's `html` field next to
+   * `text`) instead of sending plain text only. The key is absent, never `''`, when the message
+   * has no HTML part. When there is no text part, `html` equals `body`.
+   */
+  html?: string
   templateId: string
   /**
    * The idempotency key for this notification. Stable for the life of the `notification_queue`
@@ -41,6 +51,44 @@ export type DeliveryProviderSendPayload = {
   attemptNumber: number
 }
 
+const PERMANENT_ERROR_REASON_PATTERN = /^[a-z][a-z0-9_]*$/
+const PERMANENT_ERROR_REASON_MAX_LENGTH = 64
+
+/**
+ * Story 70.3 — throw this from `DeliveryProvider.send()` when the provider knows retrying cannot
+ * succeed (an invalid or suppressed recipient, a hard rejection). PV then records the
+ * `notification_queue` row as `failed` and does NOT retry it. Throw it only for a definite,
+ * permanent rejection: never for a timeout, a 5xx or a rate limit (throw an ordinary `Error` for
+ * those and PV retries up to its maximum attempts).
+ *
+ * `reason` is an optional short slug (`^[a-z][a-z0-9_]*$`, at most 64 characters, for example
+ * `invalid_recipient`) that PV logs and may use in diagnostics. The constructor throws a
+ * `TypeError` for anything else, so a recipient address or free text cannot reach a log field.
+ * PV never logs or stores `message` or `cause`. PV recognises the class by identity or by
+ * `name === 'DeliveryProviderPermanentError'`, so an extension that bundles its own copy of this
+ * package is still classified correctly.
+ */
+export class DeliveryProviderPermanentError extends Error {
+  readonly reason: string | undefined
+
+  constructor(message: string, options?: { reason?: string; cause?: unknown }) {
+    super(message, options?.cause === undefined ? undefined : { cause: options.cause })
+    this.name = 'DeliveryProviderPermanentError'
+    const reason = options?.reason
+    if (
+      reason !== undefined &&
+      (reason.length > PERMANENT_ERROR_REASON_MAX_LENGTH ||
+        !PERMANENT_ERROR_REASON_PATTERN.test(reason))
+    ) {
+      throw new TypeError(
+        `DeliveryProviderPermanentError reason must match ${PERMANENT_ERROR_REASON_PATTERN} and be at most ${PERMANENT_ERROR_REASON_MAX_LENGTH} characters`
+      )
+    }
+    this.reason = reason
+    Object.setPrototypeOf(this, DeliveryProviderPermanentError.prototype)
+  }
+}
+
 export type DeliveryProviderSendResult = {
   /** Provider-assigned message identifier, recorded on the `notification_queue` row at send time
    * and used later to resolve an inbound delivery-status webhook event back to that row (AC3, AC9). */
@@ -63,7 +111,8 @@ export type DeliveryProvider = {
    * `sendMail()` failure — the existing dispatcher retry/backoff applies unchanged (AC1), with the
    * same `queueRowId` and a higher `attemptNumber`. A resolved call is never repeated for the same
    * row; see `DeliveryProviderSendPayload.queueRowId` for the full delivery semantics and why a
-   * provider should deduplicate on it. */
+   * provider should deduplicate on it. Throw `DeliveryProviderPermanentError` (and only then) when
+   * the rejection is permanent: the row is recorded as `failed` and never retried. */
   send(payload: DeliveryProviderSendPayload): Promise<DeliveryProviderSendResult>
   /**
    * AC3/AC6 — verifies an inbound webhook request's signature using a secret scoped to this
@@ -82,4 +131,14 @@ export type DeliveryProvider = {
    * ping/health-check callback) rather than throwing.
    */
   parseWebhookEvents(rawBody: string): DeliveryStatusEvent[]
+  /**
+   * Story 70.3 — optional per-provider rate limit for the unauthenticated inbound webhook route
+   * (`POST /api/v1/notifications/delivery-webhook/:providerId`), per caller IP. Absent means the
+   * default of 60 requests per 60 seconds. `max` is an integer from 1 to 10 000 and
+   * `windowSeconds` an integer from 1 to 3600 (default 60). PV bounds the declaration: a value
+   * outside these ranges fails extension registration loudly (it is never clamped), so a provider
+   * cannot switch the limit off. Use it for a provider whose service legitimately sends bursts
+   * (retries, bulk bounce waves).
+   */
+  webhookRateLimit?: { max: number; windowSeconds?: number }
 }
