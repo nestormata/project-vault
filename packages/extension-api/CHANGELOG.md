@@ -32,15 +32,17 @@ values with a closed `code`. A host older than 3.33.0 ignores `actorId` and `occ
 
 ### Deprecated
 
-Unchanged from 3.32.0, restated for the marker lint.
+No new deprecation. The 3.30.0 notice for the legacy panel surface still stands, named here only
+because the marker lint reads the newest entry:
 
-- Exports: `UIPanel`, `UIPanelContext`, `UIPanelResult`, `ModuleAction`, `ModuleActionRequest`,
+- Deprecated exports: `UIPanel`, `UIPanelContext`, `UIPanelResult`, `ModuleAction`, `ModuleActionRequest`,
   `ModuleActionContext`, `ActionResult`, `ExtensionNavItem`, `ModuleDataRequestContext`,
-  `ModuleDataResult`, `ModuleDataRouteHandler` and `ModuleDataRouteDeclaration`.
-- Fields: `uiPanelSlots`, `moduleActions`, `navItems`, `moduleDataRoutes`; `panelDataPaths` keeps
-  its own notice, ending 2026-11-29.
-- Hooks: `uiPanel`, `moduleAction`, `moduleData`; capability `'ui-panel'`.
-- Move to composed UI (ADR 0007), M5 `nav`, M7 `apiRoutes`, `ExtensionRequestContext` and `ExtensionActionResult`.
+  `ModuleDataResult`, `ModuleDataRouteHandler`, `ModuleDataRouteDeclaration`.
+- Deprecated manifest fields: `uiPanelSlots`, `moduleActions`, `navItems`, `moduleDataRoutes`
+  (`panelDataPaths` has its own notice, ending 2026-11-29); deprecated hooks `uiPanel`,
+  `moduleAction`, `moduleData` and the `'ui-panel'` capability.
+- Replacement path: composed UI (ADR 0007), the M5 `nav` delta, M7 `apiRoutes`, and the neutral
+  `ExtensionRequestContext` and `ExtensionActionResult` types.
 - Notified: 2026-10-06, carried forward from the 3.30.0 notification (CHANGELOG entry 3.30.0); recipient CentralizeMe maintainer. No new notification here.
 - earliest-removal: 4.0.0
 - notice-window-ends: 2027-01-14

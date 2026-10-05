@@ -702,13 +702,15 @@ session. The declaration is plain data and is validated at registration:
   that org is admitted as `issuer_attested` with `actorUserId: null`, `ctx.auth.orgRole` absent and
   `ctx.auth.userId` set to the nil UUID (it matches no user). A route that declares `minimumRole` or
   `allowedRoles` rejects such an actor with 403 `insufficient_role`; a linked actor who is not an active
-  member is always rejected in this release. The host never creates a user, role, session or link.
+  member is rejected (403 `delegation_actor_not_member`) unless the route declares a
+  `historicalActorPolicy` (below). The host never creates a user, role, session or link.
 - **Retries.** The burn commits before your handler runs, so a handler failure (5xx) or a 503 after the burn
   consumes the assertion. The sender must mint a new assertion for every attempt and rely on the
   `idempotencyKey` of `writeAuditEvent` for write de-duplication. A rejected assertion is never retried.
 - **Audit.** A delegated route must set `writeAuditEvent: false`, otherwise the API refuses to boot, naming the
   route: PV's default audit write would attribute the row to a session user that does not exist. Record the
-  event from your handler with the `writeAuditEvent` host service; typed actor attribution from `ctx.delegation` arrives with the next Epic 71 story.
+  event from your handler with the `writeAuditEvent` host service; the host attributes it to the verified actor
+  (see "Audit attribution and historical actors" below).
   A `capability` on a delegated route still runs against the resolved org (the per-org kill switch).
 - **Rate limit.** The route limiter's principal is `delegation:<resolved org id>`, never the actor: actors of
   one org share a bucket, two orgs do not.
@@ -719,6 +721,39 @@ session. The declaration is plain data and is validated at registration:
   in the first `preHandler` stages: `prepend` hooks of `preValidation` and `preHandler` run before them, so
   `ctx.delegation` and the delegated `request.authContext` do not exist yet. Use `append` hooks for anything
   that relies on them. No hook can make a rejected request reach your handler.
+
+#### Audit attribution and historical actors (since extension-api 3.33.0)
+
+- **The actor is never yours to name.** Inside a delegated request, every `writeAuditEvent` call is attributed
+  to that request's verified actor: the host stores `pvAttribution` (actor provider, subject, PV user id or
+  `null`, `pv_verified` or `issuer_attested` with a reason, plus the issuer, key id and assertion id) in the row's
+  payload, under the audit HMAC. `actorId` is optional and only a cross-check: a value that differs from
+  `ctx.delegation.actorId` rejects with `actor_mismatch`, and a value passed with no delegated request in
+  progress rejects with `actor_requires_delegation`. A write for another org than the delegated one rejects
+  with `delegation_org_mismatch`. A payload that already has a top-level `pvAttribution` key rejects with
+  `reserved_payload_key` (it is never overwritten silently).
+- **`occurredAt`** (ISO-8601 with an offset, for example `2026-10-05T12:00:00Z`) records when the event
+  happened, apart from `createdAt` (when PV persisted it). When the assertion carries a signed occurrence time
+  it is `ctx.delegation.occurredAt` (epoch seconds); `occurredAt` then defaults to it and, if you pass it, must
+  equal it to the second (`occurred_at_mismatch`). Without a signed time a delegated `occurredAt` may be at most
+  90 seconds old (`occurred_at_unattested`). Everywhere it may be at most 30 seconds in the future
+  (`occurred_at_in_future`) and at most 30 days old (`occurred_at_too_old`); a malformed value rejects with
+  `occurred_at_invalid`. `occurredAt` never affects ordering, the audit chain or retention.
+- **Typed failures.** Every rejection above is an `ExtensionAuditAttributionRejectedError` with a closed `code`
+  and `retryable: false`; it is thrown before any write and never carries the actor, the assertion or a time.
+  A sender should quarantine such an event, not retry it.
+- **Idempotency.** With an `idempotencyKey`, the fingerprint covers the effective time and the effective actor
+  (provider, subject and attestation), not the assertion id, key id or issuer. A retry that arrives with a
+  fresh assertion still replays the first row; the same key with a different time or actor is the usual typed
+  conflict.
+- **Historical actors.** A route may declare `delegation: { historicalActorPolicy: { maxAgeSeconds } }`
+  (integer 1 to 2 592 000). The host then accepts an assertion whose signed occurrence time is up to
+  `maxAgeSeconds` old (without a policy, 90 seconds) and admits a linked actor who is no longer a current member
+  on the issuer's attestation: `issuer_attested`, reason `not_current_member`, `ctx.auth.orgRole` absent
+  (a role-gated route still rejects them). An occurrence time outside the window is 400
+  `delegation_occurrence_outside_window`, answered before the assertion is burned. The policy applies to that
+  route only.
+- A host older than 3.33.0 ignores `actorId` and `occurredAt`; do not rely on them there.
 
 ```ts
 import type { ApiRoutesDeclaration, ApiRoutesHooks } from '@project-vault/extension-api'
