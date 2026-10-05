@@ -162,6 +162,34 @@ export async function validateTransferTarget(
   )
 }
 
+/**
+ * Story 43-17 review (deadlock): takes the two membership row locks a transfer needs in ONE global
+ * order (ascending user id) instead of "deactivated user, then transfer target". Two concurrent
+ * requests that each deactivate one admin while naming the other as target would otherwise each
+ * hold their own target FOR UPDATE and wait for the other's row FOR SHARE (a deadlock Postgres
+ * resolves by aborting one with a 500). The deactivated user's row is locked FOR UPDATE and the
+ * transfer target's FOR SHARE, exactly as before; the route's later lock/validate calls on the same
+ * rows are re-entrant. Call this BEFORE `lockOrgMembershipForUpdate` on the deactivated user.
+ */
+export async function lockTransferMembershipsInOrder(
+  tx: Tx,
+  orgId: string,
+  input: { deactivatedUserId: string; transferToUserId: string }
+): Promise<void> {
+  if (input.deactivatedUserId === input.transferToUserId) return
+  const lockRow = async (userId: string): Promise<void> => {
+    const query = tx
+      .select({ status: orgMemberships.status })
+      .from(orgMemberships)
+      .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.userId, userId)))
+    await query.for(userId === input.deactivatedUserId ? 'update' : 'share').limit(1)
+  }
+  const [first, second] = [input.deactivatedUserId, input.transferToUserId].sort()
+  if (first === undefined || second === undefined) return
+  await lockRow(first)
+  await lockRow(second)
+}
+
 /** Story 43-15 AC-8: an abandon in Phase 2 did not end `abandoned` — rolls the savepoint back. */
 class RotationHandlingConflictError extends Error {
   constructor(rotationId: string, outcome: string) {

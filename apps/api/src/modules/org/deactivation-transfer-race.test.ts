@@ -197,4 +197,61 @@ describe('Story 43-17 AC-8: transfer vs. deactivation of the transfer target', (
       [422, 200],
     ]).toContainEqual([transfer.statusCode, deactivation.statusCode])
   })
+  it('locks both memberships in user-id order: the deactivated user is not locked while waiting on a lower-id target (no deadlock)', async () => {
+    const label = 'lock-order'
+    const owner = await registerOwner(app, `${label}-owner`)
+    const a = await addUserToOrg(app, owner.orgId, `${label}-a`, { orgRole: 'admin' })
+    const b = await addUserToOrg(app, owner.orgId, `${label}-b`, { orgRole: 'admin' })
+    // The transfer target has the LOWER id: the request must lock it first, before the
+    // deactivated (higher-id) user, so it can never hold the higher row while waiting on the lower.
+    const [target, deactivated] = [a, b].sort((l, r) => (l.userId < r.userId ? -1 : 1)) as [
+      typeof a,
+      typeof a,
+    ]
+    const projectId = await createProject(app, owner.cookies, `${label}-project`)
+    await startRotationViaApi(app, deactivated.cookies, projectId)
+
+    const commitHold = gate()
+    const held = gate()
+    const hold = withOrg(owner.orgId, async (tx) => {
+      await tx
+        .select({ status: orgMemberships.status })
+        .from(orgMemberships)
+        .where(and(eq(orgMemberships.orgId, owner.orgId), eq(orgMemberships.userId, target.userId)))
+        .for('update')
+      held.open()
+      await commitHold.wait
+    })
+    await held.wait
+
+    const request = deactivateViaApi(app, owner.cookies, deactivated.userId, {
+      rotationHandling: 'transfer',
+      transferToUserId: target.userId,
+    })
+    const waiting = await waitForMembershipLockWait('for share', request)
+    let deactivatedRowFree = false
+    if (waiting) {
+      // NOWAIT throws (55P03) if the blocked request already holds the higher-id row.
+      await withOrg(owner.orgId, async (tx) => {
+        await tx
+          .select({ status: orgMemberships.status })
+          .from(orgMemberships)
+          .where(
+            and(
+              eq(orgMemberships.orgId, owner.orgId),
+              eq(orgMemberships.userId, deactivated.userId)
+            )
+          )
+          .for('update', { noWait: true })
+        deactivatedRowFree = true
+      })
+    }
+    commitHold.open()
+    await hold
+    const res = await request
+
+    expect(waiting).toBe(true)
+    expect(deactivatedRowFree).toBe(true)
+    expect(res.statusCode).toBe(200)
+  })
 })

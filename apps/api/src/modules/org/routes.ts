@@ -21,6 +21,7 @@ import { sendAdminRecoveryLink } from '../auth/recovery.js'
 import { isNativeLoginEnabled } from '../auth/native-login-policy.js'
 import {
   enforceRotationHandling,
+  lockTransferMembershipsInOrder,
   revokePendingInvitationsSentBy,
   validateTransferTarget,
 } from './deactivation.js'
@@ -439,6 +440,15 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       if (!request) return reply
       const { params, body } = request
 
+      // Story 43-17 review: with a transfer, lock both membership rows in one global (user id)
+      // order before the target lock below, so two requests naming each other cannot deadlock.
+      if (body.rotationHandling === 'transfer') {
+        await lockTransferMembershipsInOrder(secureCtx.tx, secureCtx.auth.orgId, {
+          deactivatedUserId: params.userId,
+          transferToUserId: body.transferToUserId,
+        })
+      }
+
       // AC-3 edge case: lock the target row before evaluating hierarchy/idempotency so a
       // concurrent role change or a racing deactivation call (AC-19) is re-checked, not raced.
       const target = await lockOrgMembershipForUpdate(
@@ -704,6 +714,15 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       })
       if (!request) return reply
       const { params, body } = request
+
+      // Story 43-17 review: with a transfer, lock both membership rows in one global (user id)
+      // order before the target lock below, so two requests naming each other cannot deadlock.
+      if (body.rotationHandling === 'transfer') {
+        await lockTransferMembershipsInOrder(secureCtx.tx, secureCtx.auth.orgId, {
+          deactivatedUserId: params.userId,
+          transferToUserId: body.transferToUserId,
+        })
+      }
 
       // Story 43-15 AC-9: locked FOR UPDATE (as deactivation does) so the rotation guard below
       // and a concurrent rotation initiation by the target serialize on this row (AC-4).

@@ -28,11 +28,15 @@
   } = $props()
 
   let chosen = $state('')
+  // A target removed from the list (reported ineligible by the API) must not stay selected.
+  $effect(() => {
+    if (chosen !== '' && !targets.some((target) => target.userId === chosen)) chosen = ''
+  })
   const selectId = $derived(`rotation-transfer-target-${subjectEmail}`)
 </script>
 
 <div
-  class="mt-2 w-72 rounded-lg border border-amber-200 bg-amber-50 p-3 text-left text-xs"
+  class="mt-2 w-full max-w-60 rounded-lg border border-amber-200 bg-amber-50 p-3 text-left text-xs"
   role="dialog"
   aria-label={`Transfer ${subjectEmail}'s unfinished rotations`}
   data-testid="rotation-transfer-panel"
@@ -54,7 +58,7 @@
       New owner
       <select
         id={selectId}
-        class="rounded border border-slate-300 bg-white px-2 py-1"
+        class="w-full min-w-0 rounded border border-slate-300 bg-white px-2 py-1"
         bind:value={chosen}
         disabled={saving}
       >
@@ -68,7 +72,7 @@
   <div class="mt-2 flex gap-2">
     <button
       type="button"
-      class="rounded-lg border border-amber-500 px-2 py-1 text-xs font-semibold text-amber-900 disabled:cursor-not-allowed disabled:opacity-60"
+      class="rounded-lg border border-amber-500 px-2 py-1 text-xs font-semibold text-amber-900 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-600"
       disabled={chosen === '' || saving}
       onclick={() => onconfirm(chosen)}
     >

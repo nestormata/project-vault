@@ -276,6 +276,7 @@
   async function runRemoval(user: OrgUser, options?: RotationHandlingOptions) {
     busyKey = user.userId
     errorMessage = null
+    transferNotice = null
     delete blockedRemoval[user.userId]
     try {
       await removeOrgUser(fetch, user.userId, options)
@@ -331,6 +332,7 @@
   async function runDeactivation(user: OrgUser, options?: RotationHandlingOptions) {
     busyKey = user.userId
     errorMessage = null
+    transferNotice = null
     try {
       await deactivateOrgUser(fetch, user.userId, options)
       rotationBlockedUserId = null
@@ -368,11 +370,15 @@
   let transferSaving = $state(false)
   let transferError = $state<string | null>(null)
   let transferNotice = $state<string | null>(null)
+  // Targets the API refused with invalid_transfer_target: dropped from the select so the admin
+  // cannot re-submit the same ineligible user (reset whenever the panel is reopened).
+  let transferIneligible = $state<string[]>([])
 
   function transferTargetsFor(user: OrgUser) {
     return data.users.filter(
       (candidate) =>
         candidate.userId !== user.userId &&
+        !transferIneligible.includes(candidate.userId) &&
         candidate.status === 'active' &&
         (candidate.orgRole === 'admin' || candidate.orgRole === 'owner')
     )
@@ -381,6 +387,9 @@
   function openTransfer(user: OrgUser, action: 'deactivate' | 'remove') {
     transferError = null
     transferNotice = null
+    transferIneligible = []
+    // The earlier 409 message is superseded by the panel: do not leave it next to new messages.
+    errorMessage = null
     transferOpen = { userId: user.userId, action }
   }
 
@@ -402,6 +411,7 @@
     const action = transferOpen.action
     transferSaving = true
     transferError = null
+    transferNotice = null
     const options = { rotationHandling: 'transfer', transferToUserId } as const
     try {
       const result =
@@ -417,6 +427,9 @@
       rotationBlockedRemovalUserId = null
       await invalidateAll()
     } catch (error) {
+      if (error instanceof ApiClientError && error.code === 'invalid_transfer_target') {
+        transferIneligible = [...transferIneligible, transferToUserId]
+      }
       transferError = transferFailureMessage(error)
     } finally {
       transferSaving = false
