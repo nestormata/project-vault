@@ -11,6 +11,7 @@ import {
 } from './security-mfa-recovery.js'
 import { renderProjectInvitationCreated } from './project-invitation-created.js'
 import { renderCredentialShareCreated } from './credential-share-created.js'
+import { renderRotationOwnershipTransferred } from './rotation-ownership-transferred.js'
 import {
   renderAccountRecoveryLinkCreated,
   renderAccountRecoveryLinkSent,
@@ -88,6 +89,16 @@ const EMAIL_RENDERERS: Record<string, (payload: Record<string, unknown>) => Emai
   },
   'credential.share_created': (payload) => {
     const { subject, text, html } = renderCredentialShareCreated(payload)
+    return {
+      subject,
+      text,
+      html,
+      inboxTitle: subject.replace(/^\[Project Vault\]\s*/, ''),
+      inboxBody: text.slice(0, 500),
+    }
+  },
+  'rotation.ownership_transferred': (payload) => {
+    const { subject, text, html } = renderRotationOwnershipTransferred(payload)
     return {
       subject,
       text,
