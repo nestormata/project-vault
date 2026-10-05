@@ -1,8 +1,10 @@
 <script lang="ts">
+  import LanguageHeader from '$lib/components/settings/LanguageHeader.svelte'
+  import LanguageErrors from '$lib/components/settings/LanguageErrors.svelte'
+  import LanguageOptions from '$lib/components/settings/LanguageOptions.svelte'
   import NavLink from '$lib/navigation/NavLink.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
-  import { enhance } from '$app/forms'
-  import { resolve } from '$app/paths'
+
   import type { SubmitFunction } from '@sveltejs/kit'
   import { setLocale } from '$lib/paraglide/runtime.js'
   import { m } from '$lib/paraglide/messages.js'
@@ -47,38 +49,19 @@
     node="back.settings.language"
     class="text-sm text-indigo-600 hover:text-indigo-800"
   />
-  <h1 class="mt-2 text-2xl font-bold text-gray-900">{m.settings_language_page_heading()}</h1>
-  <p class="text-gray-500">{m.settings_language_page_description()}</p>
-  <p class="mt-2 text-sm text-gray-400">{m.settings_language_coverage_note()}</p>
+  <!-- @region settings.language.header -->
+  <LanguageHeader>
+    <InjectionPoint name="settings.language.header" data={data?.__inject} />
+  </LanguageHeader>
 
-  {#if errorMessage}
-    <p class="mt-4 text-sm text-red-600" role="alert">{errorMessage}</p>
-  {/if}
-  {#if form && 'error' in form && form.error}
-    <p class="mt-4 text-sm text-red-600" role="alert">{form.error}</p>
-  {/if}
+  <!-- @region settings.language.errors -->
+  <LanguageErrors {errorMessage} {form}>
+    <InjectionPoint name="settings.language.errors" data={data?.__inject} />
+  </LanguageErrors>
 
-  <ul class="mt-6 divide-y divide-gray-200 rounded-lg border border-gray-200 bg-white">
-    {#each data.options as option (option.locale)}
-      <li class="flex items-center justify-between px-6 py-4">
-        <div>
-          <p class="font-medium text-gray-900">{option.label}</p>
-          {#if option.isCurrent}
-            <p class="text-sm text-gray-500">{m.settings_language_current_label()}</p>
-          {/if}
-        </div>
-        <form method="POST" action="?/updateLocale" use:enhance={handleSubmit}>
-          <input type="hidden" name="locale" value={option.locale} />
-          <button
-            type="submit"
-            class="rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-            disabled={option.isCurrent || saving}
-          >
-            {option.isCurrent ? 'Selected' : 'Select'}
-          </button>
-        </form>
-      </li>
-    {/each}
-  </ul>
+  <!-- @region settings.language.options -->
+  <LanguageOptions options={data.options} {saving} {handleSubmit}>
+    <InjectionPoint name="settings.language.options" data={data?.__inject} />
+  </LanguageOptions>
 </div>
 <InjectionPoint name="settings.language.after" data={data?.__inject} />

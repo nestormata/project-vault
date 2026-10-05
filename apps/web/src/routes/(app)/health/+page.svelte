@@ -1,7 +1,7 @@
 <script lang="ts">
+  import HealthHeader from '$lib/components/monitoring/HealthHeader.svelte'
+  import HealthProjects from '$lib/components/monitoring/HealthProjects.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
-  import { resolve } from '$app/paths'
-  import ServiceStatusItem from '$lib/components/dashboard/ServiceStatusItem.svelte'
 
   let { data } = $props()
 
@@ -15,81 +15,18 @@
 <InjectionPoint name="health.home.before" data={data?.__inject} />
 <InjectionPoint name="health.home.header.actions" data={data?.__inject} />
 <section class="space-y-6">
-  <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-    <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Health</p>
-    <h1 class="mt-2 text-3xl font-bold text-slate-950">Cross-project health</h1>
-    <p class="mt-2 text-slate-600">
-      Live status for every monitored service across your organization's projects.
-    </p>
+  <!-- @region health.home.header -->
+  <HealthHeader {hasAnyServices} summary={data.dashboard.summary}>
+    <InjectionPoint name="health.home.header" data={data?.__inject} />
+  </HealthHeader>
 
-    {#if hasAnyServices}
-      <dl class="mt-5 grid gap-3 sm:grid-cols-3">
-        <div class="rounded-2xl bg-emerald-50 p-4">
-          <dt class="text-sm text-emerald-700">Healthy</dt>
-          <dd class="text-2xl font-bold text-emerald-900">{data.dashboard.summary.healthy}</dd>
-        </div>
-        <div class="rounded-2xl bg-amber-50 p-4">
-          <dt class="text-sm text-amber-700">Degraded</dt>
-          <dd class="text-2xl font-bold text-amber-900">{data.dashboard.summary.degraded}</dd>
-        </div>
-        <div class="rounded-2xl bg-red-50 p-4">
-          <dt class="text-sm text-red-700">Down</dt>
-          <dd class="text-2xl font-bold text-red-900">{data.dashboard.summary.down}</dd>
-        </div>
-      </dl>
-    {/if}
-  </div>
-
-  {#if hasAnyServices}
-    <div class="grid gap-4 sm:grid-cols-2">
-      {#each data.dashboard.projects as project (project.projectId)}
-        <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div class="flex items-center justify-between gap-2">
-            <a
-              class="font-semibold text-slate-950 underline"
-              href={resolve(`/projects/${project.projectId}/credentials`)}
-            >
-              {project.projectName}
-            </a>
-            <a
-              class="text-sm font-medium text-slate-700 underline"
-              href={resolve(`/projects/${project.projectId}/service-endpoints`)}
-            >
-              Manage endpoints
-            </a>
-          </div>
-          <ul class="mt-3 space-y-2">
-            {#each project.services as service (service.id)}
-              <li
-                class="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-3 py-2"
-              >
-                <ServiceStatusItem
-                  name={service.name}
-                  status={service.status}
-                  lastCheckedAt={service.lastCheckedAt}
-                />
-              </li>
-            {/each}
-          </ul>
-        </div>
-      {/each}
-    </div>
-  {:else}
-    <div class="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-      <p class="text-slate-600">No services monitored yet.</p>
-      <p class="mt-1 text-sm text-slate-500">
-        <a
-          class="font-medium text-slate-700 underline"
-          href={resolve(
-            data.singleProjectId
-              ? `/projects/${data.singleProjectId}/service-endpoints`
-              : '/projects'
-          )}
-        >
-          Register a service endpoint on a project to see its live status here.
-        </a>
-      </p>
-    </div>
-  {/if}
+  <!-- @region health.home.projects -->
+  <HealthProjects
+    {hasAnyServices}
+    projects={data.dashboard.projects}
+    singleProjectId={data.singleProjectId}
+  >
+    <InjectionPoint name="health.home.projects" data={data?.__inject} />
+  </HealthProjects>
 </section>
 <InjectionPoint name="health.home.after" data={data?.__inject} />

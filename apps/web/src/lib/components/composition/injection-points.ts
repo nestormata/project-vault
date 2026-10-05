@@ -366,7 +366,43 @@ export interface InjectionPointProps {
   'root.error.content': StandardPointProps
   'root.layout.body': StandardPointProps
   'root.home.content': StandardPointProps
+  'app.layout.theme': StandardPointProps
+  'app.layout.shell': StandardPointProps
+  'credentials.home.header': StandardPointProps
+  'credentials.home.projects': StandardPointProps
+  'credentials.import.header': StandardPointProps
+  'credentials.import.projects': StandardPointProps
+  'extensions.panels-detail.content': StandardPointProps
+  'health.home.header': StandardPointProps
+  'health.home.projects': StandardPointProps
+  'notifications.home.header': StandardPointProps
+  'notifications.home.machine-dormancy': StandardPointProps
+  'notifications.home.user-dormancy': StandardPointProps
+  'notifications.home.tabs': StandardPointProps
+  'notifications.home.list': StandardPointProps
   'settings.home.header': StandardPointProps
+  'settings.audit-access-report.header': StandardPointProps
+  'settings.audit-access-report.report': StandardPointProps
+  'settings.audit-forwarding.header': StandardPointProps
+  'settings.audit-forwarding.config': StandardPointProps
+  'settings.extensions.header': StandardPointProps
+  'settings.extensions.status': StandardPointProps
+  'settings.external-identities.header': StandardPointProps
+  'settings.external-identities.panel': StandardPointProps
+  'settings.language.header': StandardPointProps
+  'settings.language.errors': StandardPointProps
+  'settings.language.options': StandardPointProps
+  'settings.security.header': StandardPointProps
+  'settings.sso-domains.header': StandardPointProps
+  'settings.sso-domains.panel': StandardPointProps
+  'settings.themes.header': StandardPointProps
+  'settings.themes.selection-error': StandardPointProps
+  'settings.themes.list': StandardPointProps
+  'settings.themes.admin': StandardPointProps
+  'settings.users.header': StandardPointProps
+  'settings.users.management': StandardPointProps
+  'settings.users-erasure-detail.header': StandardPointProps
+  'settings.users-erasure-detail.request': StandardPointProps
   'shares.detail.heading': StandardPointProps
   'shares.detail.body': StandardPointProps
   'auth.layout.theme': StandardPointProps
@@ -629,7 +665,98 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ),
   ...regionPoints('StandardPointProps', ['/#layout'], ['root.layout.body']),
   ...regionPoints('StandardPointProps', ['/#page'], ['root.home.content']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)#layout'],
+    ['app.layout.theme', 'app.layout.shell']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/credentials#page'],
+    ['credentials.home.header', 'credentials.home.projects']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/credentials/import#page'],
+    ['credentials.import.header', 'credentials.import.projects']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/extensions/panels/[slot]/[...subpath]#page'],
+    ['extensions.panels-detail.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/health#page'],
+    ['health.home.header', 'health.home.projects']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/notifications#page'],
+    [
+      'notifications.home.header',
+      'notifications.home.machine-dormancy',
+      'notifications.home.user-dormancy',
+      'notifications.home.tabs',
+      'notifications.home.list',
+    ]
+  ),
   ...regionPoints('StandardPointProps', ['/(app)/settings#page'], ['settings.home.header']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/audit/access-report#page'],
+    ['settings.audit-access-report.header', 'settings.audit-access-report.report']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/audit/forwarding#page'],
+    ['settings.audit-forwarding.header', 'settings.audit-forwarding.config']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/extensions#page'],
+    ['settings.extensions.header', 'settings.extensions.status']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/external-identities#page'],
+    ['settings.external-identities.header', 'settings.external-identities.panel']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/language#page'],
+    ['settings.language.header', 'settings.language.errors', 'settings.language.options']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/security#page'],
+    ['settings.security.header']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/sso-domains#page'],
+    ['settings.sso-domains.header', 'settings.sso-domains.panel']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/themes#page'],
+    [
+      'settings.themes.header',
+      'settings.themes.selection-error',
+      'settings.themes.list',
+      'settings.themes.admin',
+    ]
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/users#page'],
+    ['settings.users.header', 'settings.users.management']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/users/[userId]/erasure/[requestId]#page'],
+    ['settings.users-erasure-detail.header', 'settings.users-erasure-detail.request']
+  ),
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/shares/[token]#page'],

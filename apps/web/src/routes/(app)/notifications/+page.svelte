@@ -1,11 +1,12 @@
 <script lang="ts">
-  import NavTabs from '$lib/navigation/NavTabs.svelte'
+  import NotificationsHeader from '$lib/components/notifications/NotificationsHeader.svelte'
+  import MachineDormancyAlerts from '$lib/components/notifications/MachineDormancyAlerts.svelte'
+  import UserDormancyAlerts from '$lib/components/notifications/UserDormancyAlerts.svelte'
+  import NotificationsTabsRow from '$lib/components/notifications/NotificationsTabsRow.svelte'
+  import NotificationsList from '$lib/components/notifications/NotificationsList.svelte'
+
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
-  import { enhance } from '$app/forms'
-  import { resolve } from '$app/paths'
-  import DismissDormancyAlertForm from '$lib/components/notifications/DismissDormancyAlertForm.svelte'
-  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
-  import { markAllReadLocally, decrementUnread } from '$lib/state/notifications.svelte.js'
+
   import type { PageData } from './$types'
 
   const { data }: { data: PageData } = $props()
@@ -33,28 +34,6 @@
     notifications = notifications.filter((n) => n.id !== id)
   }
 
-  const SEVERITY_COLORS: Record<string, string> = {
-    info: 'bg-blue-50 border-blue-200',
-    warning: 'bg-yellow-50 border-yellow-200',
-    critical: 'bg-red-50 border-red-200',
-  }
-
-  const SEVERITY_DOT: Record<string, string> = {
-    info: 'bg-blue-400',
-    warning: 'bg-yellow-400',
-    critical: 'bg-red-500',
-  }
-
-  const ALERT_TYPE_LABELS: Record<string, string> = {
-    'security.failed_auth_threshold': 'Failed Login Threshold',
-    'credential.expiry': 'Secret Expiry',
-    'service.down': 'Service Down',
-    'rotation.stale': 'Stale Rotation',
-    'backup.failure': 'Backup Failure',
-    'machine_key.expiry': 'Machine Key Expiry',
-    'security.anomalous_access': 'Anomalous Access',
-  }
-
   // Story 8.7 AC-H3 — reuses the same DORMANCY_MANAGE_ROLES gate as the existing machine-key
   // section (server-side load already returns [] for a non-admin/owner, but the empty-state note
   // (AC-H2) must not render at all for a role that isn't supposed to see this section in the
@@ -69,307 +48,36 @@
 <InjectionPoint name="notifications.home.before" data={data?.__inject} />
 <InjectionPoint name="notifications.home.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-3xl px-4 py-8">
-  <div class="mb-6 flex items-center justify-between">
-    <h1 class="text-2xl font-bold text-gray-900">Notifications</h1>
-    {#if notifications.some((n) => !n.readAt)}
-      <form
-        method="POST"
-        action="?/markAllRead"
-        use:enhance={() =>
-          // Story 68.1 (C4): SvelteKit calls the value returned here as the post-response
-          // callback. It used to be an `{ update }` object, which SvelteKit tried to call and
-          // threw `callback is not a function`, so the list never updated until a reload.
-          async ({ result, update }) => {
-            // Only apply the optimistic mutation once the server actually confirms success —
-            // otherwise a failed action (e.g. a downstream error) would leave the UI showing a
-            // false success state with no way back short of a manual reload.
-            if (result.type === 'success') {
-              markAllReadLocallyInList()
-              markAllReadLocally()
-            }
-            void update()
-          }}
-      >
-        <button
-          type="submit"
-          class="cursor-pointer text-sm font-medium text-indigo-600 hover:text-indigo-800"
-        >
-          Mark all as read
-        </button>
-      </form>
-    {/if}
-  </div>
+  <!-- @region notifications.home.header -->
+  <NotificationsHeader {notifications} {markAllReadLocallyInList}>
+    <InjectionPoint name="notifications.home.header" data={data?.__inject} />
+  </NotificationsHeader>
 
-  {#if data.dormancyAlerts.length > 0}
-    <div class="mb-6 space-y-3">
-      <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">
-        Machine key dormancy alerts
-      </h2>
-      {#each data.dormancyAlerts as alert (alert.id)}
-        <div class="rounded-lg border border-yellow-200 bg-yellow-50 p-4 shadow-sm">
-          <p class="text-sm font-semibold text-gray-900">
-            {alert.machineUserName} — key "{alert.keyName}"
-          </p>
-          <p class="mt-1 text-sm text-gray-600">
-            Last used: {alert.lastUsedAt
-              ? new Date(alert.lastUsedAt).toLocaleDateString()
-              : 'never'}
-          </p>
+  <!-- @region notifications.home.machine-dormancy -->
+  <MachineDormancyAlerts dormancyAlerts={data.dormancyAlerts}>
+    <InjectionPoint name="notifications.home.machine-dormancy" data={data?.__inject} />
+  </MachineDormancyAlerts>
 
-          <div class="mt-3 flex flex-wrap items-center gap-4">
-            <DismissDormancyAlertForm alertId={alert.id} />
+  <!-- @region notifications.home.user-dormancy -->
+  <UserDormancyAlerts {canManageDormancy} userDormancyAlerts={data.userDormancyAlerts}>
+    <InjectionPoint name="notifications.home.user-dormancy" data={data?.__inject} />
+  </UserDormancyAlerts>
 
-            <form
-              method="POST"
-              action="?/extendDormancy"
-              use:enhance
-              class="flex items-center gap-2"
-            >
-              <input type="hidden" name="machineUserId" value={alert.machineUserId} />
-              <input type="hidden" name="keyId" value={alert.keyId} />
-              <input
-                type="number"
-                name="days"
-                value="30"
-                min="1"
-                max="365"
-                class="w-16 rounded border border-gray-300 px-2 py-1 text-xs"
-                aria-describedby="notification-dormancy-days-help"
-              />
-              <FormHelpText id="notification-dormancy-days-help" kind="date" />
-              <button
-                type="submit"
-                class="cursor-pointer text-xs font-medium text-indigo-600 hover:text-indigo-800"
-              >
-                Extend (days)
-              </button>
-            </form>
+  <!-- @region notifications.home.tabs -->
+  <NotificationsTabsRow status={data.status}>
+    <InjectionPoint name="notifications.home.tabs" data={data?.__inject} />
+  </NotificationsTabsRow>
 
-            <form
-              method="POST"
-              action="?/revokeDormantKey"
-              use:enhance={({ cancel }) => {
-                // AC-2's confirmation-before-destructive-action requirement applies to this DELETE
-                // .../api-keys/:keyId call wherever it's triggered from — this inbox surface reuses
-                // the same irreversible revoke endpoint the machine-user detail view gates behind
-                // ConfirmDeleteButton, so it needs the same protection against an accidental click.
-                if (
-                  !confirm(
-                    `Revoke the key "${alert.keyName}" for ${alert.machineUserName}? This cannot be undone.`
-                  )
-                ) {
-                  cancel()
-                }
-              }}
-            >
-              <input type="hidden" name="machineUserId" value={alert.machineUserId} />
-              <input type="hidden" name="keyId" value={alert.keyId} />
-              <button
-                type="submit"
-                class="cursor-pointer text-xs font-medium text-red-600 hover:text-red-800"
-              >
-                Revoke key
-              </button>
-            </form>
-
-            <a
-              href={resolve(`/projects/${alert.projectId}/machine-users/${alert.machineUserId}`)}
-              class="text-xs text-indigo-600 hover:underline"
-            >
-              View machine user →
-            </a>
-          </div>
-        </div>
-      {/each}
-    </div>
-  {/if}
-
-  {#if canManageDormancy}
-    <div class="mb-6 space-y-3">
-      <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500">
-        Dormant user alerts
-      </h2>
-      {#if data.userDormancyAlerts.length === 0}
-        <p class="text-sm text-gray-500">No dormant user alerts.</p>
-      {:else}
-        {#each data.userDormancyAlerts as alert (alert.id)}
-          <div class="rounded-lg border border-yellow-200 bg-yellow-50 p-4 shadow-sm">
-            <p class="text-sm font-semibold text-gray-900">
-              {alert.displayName} — {alert.orgRole}
-            </p>
-            <p class="mt-1 text-sm text-gray-600">
-              Last active: {alert.lastActiveAt
-                ? new Date(alert.lastActiveAt).toLocaleDateString()
-                : 'Never active'}
-            </p>
-
-            <div class="mt-3 flex flex-wrap items-center gap-4">
-              <DismissDormancyAlertForm alertId={alert.id} />
-
-              <form
-                method="POST"
-                action="?/deactivateDormantUser"
-                use:enhance={({ cancel }) => {
-                  if (!confirm(`Deactivate ${alert.displayName}? This cannot be undone.`)) {
-                    cancel()
-                  }
-                }}
-              >
-                <input type="hidden" name="userId" value={alert.userId} />
-                <button
-                  type="submit"
-                  class="cursor-pointer text-xs font-medium text-amber-700 hover:text-amber-900"
-                >
-                  Deactivate account
-                </button>
-              </form>
-
-              <a href={resolve('/settings/users')} class="text-xs text-indigo-600 hover:underline">
-                Pseudonymize identity →
-              </a>
-            </div>
-          </div>
-        {/each}
-      {/if}
-    </div>
-  {/if}
-
-  <div class="mb-6 flex gap-1 border-b border-gray-200">
-    <NavTabs status={data.status} />
-  </div>
-
-  {#if notifications.length === 0}
-    <div class="py-16 text-center">
-      <svg
-        class="mx-auto mb-4 h-12 w-12 text-gray-300"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="1.5"
-          d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-        />
-      </svg>
-      <p class="text-lg text-gray-500">No notifications</p>
-      <p class="mt-1 text-sm text-gray-400">
-        {data.status === 'unread'
-          ? "You're all caught up!"
-          : 'Notifications will appear here when alerts fire.'}
-      </p>
-    </div>
-  {:else}
-    <div class="space-y-3">
-      {#each notifications as notification (notification.id)}
-        <div
-          class="rounded-lg border p-4 {SEVERITY_COLORS[notification.severity] ??
-            'border-gray-200 bg-gray-50'} {!notification.readAt ? 'shadow-sm' : 'opacity-75'}"
-        >
-          <div class="flex items-start gap-3">
-            <div
-              class="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full {SEVERITY_DOT[
-                notification.severity
-              ] ?? 'bg-gray-400'}"
-            ></div>
-
-            <div class="min-w-0 flex-1">
-              <div class="flex items-start justify-between gap-2">
-                <div>
-                  <span class="text-xs font-medium uppercase tracking-wide text-gray-500">
-                    {ALERT_TYPE_LABELS[notification.alertType] ?? notification.alertType}
-                  </span>
-                  <h3 class="mt-0.5 text-sm font-semibold text-gray-900">{notification.title}</h3>
-                </div>
-                <div class="flex flex-shrink-0 items-center gap-2">
-                  <time class="text-xs text-gray-400" datetime={notification.createdAt}>
-                    {new Date(notification.createdAt).toLocaleDateString()}
-                  </time>
-                  {#if !notification.readAt}
-                    <span class="h-2 w-2 rounded-full bg-indigo-500" title="Unread"></span>
-                  {/if}
-                </div>
-              </div>
-
-              <p class="mt-1 line-clamp-3 text-sm text-gray-600">{notification.body}</p>
-
-              <div class="mt-3 flex items-center gap-4">
-                {#if notification.projectId}
-                  <a
-                    href={resolve(`/projects/${notification.projectId}`)}
-                    class="text-xs text-indigo-600 hover:underline"
-                  >
-                    View project →
-                  </a>
-                {/if}
-                {#if !notification.readAt}
-                  <form
-                    method="POST"
-                    action="?/markRead"
-                    use:enhance={() =>
-                      async ({ result, update }) => {
-                        if (result.type === 'success') {
-                          markReadLocally(notification.id)
-                          decrementUnread(1)
-                        }
-                        void update()
-                      }}
-                  >
-                    <input type="hidden" name="id" value={notification.id} />
-                    <button
-                      type="submit"
-                      class="cursor-pointer text-xs text-gray-500 hover:text-gray-700"
-                    >
-                      Mark as read
-                    </button>
-                  </form>
-                {/if}
-                <form
-                  method="POST"
-                  action="?/dismiss"
-                  use:enhance={() =>
-                    async ({ result, update }) => {
-                      if (result.type === 'success') {
-                        if (!notification.readAt) decrementUnread(1)
-                        dismissLocally(notification.id)
-                      }
-                      void update()
-                    }}
-                >
-                  <input type="hidden" name="id" value={notification.id} />
-                  <button
-                    type="submit"
-                    class="cursor-pointer text-xs text-red-500 hover:text-red-700"
-                  >
-                    Dismiss
-                  </button>
-                </form>
-              </div>
-            </div>
-          </div>
-        </div>
-      {/each}
-    </div>
-
-    <div class="mt-8 flex justify-center gap-2">
-      {#if data.page > 1}
-        <a
-          href="{resolve('/notifications')}?page={data.page - 1}&status={data.status}"
-          class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
-        >
-          Previous
-        </a>
-      {/if}
-      {#if data.hasNext}
-        <a
-          href="{resolve('/notifications')}?page={data.page + 1}&status={data.status}"
-          class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
-        >
-          Next
-        </a>
-      {/if}
-    </div>
-  {/if}
+  <!-- @region notifications.home.list -->
+  <NotificationsList
+    {notifications}
+    status={data.status}
+    page={data.page}
+    hasNext={data.hasNext}
+    {markReadLocally}
+    {dismissLocally}
+  >
+    <InjectionPoint name="notifications.home.list" data={data?.__inject} />
+  </NotificationsList>
 </div>
 <InjectionPoint name="notifications.home.after" data={data?.__inject} />
