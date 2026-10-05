@@ -304,7 +304,7 @@ describe('credential detail points (Story 69.2 AC-1, AC-3)', () => {
       versionNumber: 1,
     })
     createExternalCredentialShareMock.mockResolvedValue({
-      ...sampleShare({ id: 'new', recipientType: 'external', recipientEmail: 'v@example.com' }),
+      ...sampleShare({ id: 'new', recipientType: 'external', recipientEmail: 'v@invalid' }),
       token: 'SHARE-TOKEN-FIXTURE',
     })
     render(Page, { props: { data: { ...baseData(), __inject: allMarkers() } } })
@@ -312,7 +312,7 @@ describe('credential detail points (Story 69.2 AC-1, AC-3)', () => {
     await waitFor(() => expect(screen.getByText('REVEALED-VALUE-FIXTURE')).toBeTruthy())
     await fireEvent.click(screen.getByRole('button', { name: 'External (email)' }))
     await fireEvent.input(screen.getByLabelText(/Recipient email/), {
-      target: { value: 'v@example.com' },
+      target: { value: 'v@invalid' },
     })
     await fireEvent.input(screen.getByLabelText(/Confirm your password/), {
       target: { value: 'STEP-UP-PASSWORD-FIXTURE' },

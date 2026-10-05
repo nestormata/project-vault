@@ -141,8 +141,8 @@ function baseData(overrides: Partial<LoadedData> = {}): LoadedData {
     sharesStatus: null,
     rotationRecommendedNudges: [],
     orgMembers: [
-      sampleOrgUser({ userId: 'recipient-1', email: 'riley@example.com', displayName: 'Riley' }),
-      sampleOrgUser({ userId: 'recipient-2', email: 'sam@example.com', displayName: '' }),
+      sampleOrgUser({ userId: 'recipient-1', email: 'riley@invalid', displayName: 'Riley' }),
+      sampleOrgUser({ userId: 'recipient-2', email: 'sam@invalid', displayName: '' }),
     ],
     ...overrides,
   }
@@ -255,7 +255,7 @@ const shares = [
     id: 's2',
     recipientType: 'external',
     recipientUserId: null,
-    recipientEmail: 'vendor@example.com',
+    recipientEmail: 'vendor-contact@invalid',
     status: 'viewed',
     firstViewedAt: LATER,
     fieldKey: 'password',
@@ -541,14 +541,14 @@ async function interactionStates(): Promise<Record<string, string>> {
       id: 'new-ext',
       recipientType: 'external',
       recipientUserId: null,
-      recipientEmail: 'vendor@example.com',
+      recipientEmail: 'vendor-contact@invalid',
     }),
     token: 'EXTERNALTOKENFIXTURE',
   })
   mounted = render(CredentialDetailPage, { props: { data: baseData() } })
   await click('External (email)')
   await fireEvent.input(screen.getByLabelText(/Recipient email/), {
-    target: { value: 'vendor@example.com' },
+    target: { value: 'vendor-contact@invalid' },
   })
   await fireEvent.click(screen.getByRole('checkbox', { name: /^value/ }))
   await click('Create share link')
