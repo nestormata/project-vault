@@ -169,7 +169,8 @@ export type DelegationReplayStore = {
 export function createDelegationReplayStore(
   deps: DelegationReplayStoreDeps = {}
 ): DelegationReplayStore {
-  const runInOrg = deps.runInOrg ?? withOrg
+  // Resolved per call, not at module load: importing this module must not touch `withOrg`.
+  const runInOrg: OrgTransactionRunner = deps.runInOrg ?? ((orgId, fn) => withOrg(orgId, fn))
   const now = deps.now ?? Date.now
   const timeout = String(deps.statementTimeoutMs ?? DELEGATION_BURN_STATEMENT_TIMEOUT_MS)
 

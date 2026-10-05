@@ -59,6 +59,7 @@ import {
 } from './external-service.js'
 import { computeRotationRecommendedNudges, dismissRotationRecommendedNudge } from './nudge.js'
 import { verifyStepUp } from './step-up.js'
+import { orgRoleOrDeny } from '../../lib/auth-role.js'
 
 const CREDENTIAL_NOT_FOUND = {
   code: 'credential_not_found',
@@ -708,7 +709,7 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
       // every share on it (not just their own) — otherwise there is no way to discover a
       // shareId to exercise that right. AC-1/AC-2: status filter + pagination are additive on
       // top of this existing member-vs-admin scoping.
-      const isAdmin = roleRank(secureCtx.auth.orgRole) >= roleRank('admin')
+      const isAdmin = roleRank(orgRoleOrDeny(secureCtx.auth)) >= roleRank('admin')
       // AC-2 edge case: an over-large `limit` is clamped to MAX_SHARE_LIST_LIMIT server-side,
       // never rejected — same convention as `parsePagination`'s own Math.min clamp.
       const limit = Math.min(query.limit ?? DEFAULT_SHARE_LIST_LIMIT, MAX_SHARE_LIST_LIMIT)
@@ -773,7 +774,7 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
 
       if (
         target.sharedBy !== secureCtx.auth.userId &&
-        roleRank(secureCtx.auth.orgRole) < roleRank('admin')
+        roleRank(orgRoleOrDeny(secureCtx.auth)) < roleRank('admin')
       ) {
         return reply.status(403).send({
           code: 'insufficient_role',
@@ -831,7 +832,7 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
         orgId: secureCtx.auth.orgId,
         credentialId: params.credentialId,
         viewerUserId: secureCtx.auth.userId,
-        viewerIsAdmin: roleRank(secureCtx.auth.orgRole) >= roleRank('admin'),
+        viewerIsAdmin: roleRank(orgRoleOrDeny(secureCtx.auth)) >= roleRank('admin'),
       })
       return { data: { items } }
     }),

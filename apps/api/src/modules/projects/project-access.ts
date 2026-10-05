@@ -1,6 +1,7 @@
 import type { SecureRouteContext } from '../../lib/secure-route.js'
 import type { OrgRole } from '../../plugins/require-org-role.js'
 import { getProjectMembershipRole } from './member-management.js'
+import { orgRoleOrDeny } from '../../lib/auth-role.js'
 
 function isOrgAdminOrOwner(orgRole: OrgRole): boolean {
   return orgRole === 'owner' || orgRole === 'admin'
@@ -14,7 +15,7 @@ export async function callerCanSeeProject(
   secureCtx: SecureRouteContext,
   projectId: string
 ): Promise<boolean> {
-  if (isOrgAdminOrOwner(secureCtx.auth.orgRole)) return true
+  if (isOrgAdminOrOwner(orgRoleOrDeny(secureCtx.auth))) return true
   const role = await getProjectMembershipRole(secureCtx.tx, {
     orgId: secureCtx.auth.orgId,
     projectId,
@@ -57,14 +58,14 @@ export async function effectiveProjectRole(
   // Short-circuit: org owner/admin never needs the `project_memberships` row at all — skip the
   // query entirely rather than fetching a row `resolveEffectiveProjectRoleForOrgRole()` would
   // discard anyway.
-  if (isOrgAdminOrOwner(secureCtx.auth.orgRole)) return secureCtx.auth.orgRole
+  if (isOrgAdminOrOwner(orgRoleOrDeny(secureCtx.auth))) return orgRoleOrDeny(secureCtx.auth)
   const projectRole = await getProjectMembershipRole(secureCtx.tx, {
     orgId: secureCtx.auth.orgId,
     projectId,
     userId: secureCtx.auth.userId,
   })
   return resolveEffectiveProjectRoleForOrgRole({
-    orgRole: secureCtx.auth.orgRole,
+    orgRole: orgRoleOrDeny(secureCtx.auth),
     membershipRole: projectRole as OrgRole | undefined,
   })
 }
@@ -99,7 +100,7 @@ export async function requireProjectVisible(
   logVisibilityDenied(req, {
     projectId,
     callerId: secureCtx.auth.userId,
-    orgRole: secureCtx.auth.orgRole,
+    orgRole: orgRoleOrDeny(secureCtx.auth),
   })
   return false
 }

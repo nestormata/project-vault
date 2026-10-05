@@ -3,6 +3,7 @@ import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { getOrgDashboardData } from '../projects/dashboard-stats.js'
 import { OrgDashboardResponseSchema } from './schema.js'
+import { orgRoleOrDeny } from '../../lib/auth-role.js'
 
 export async function dashboardRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
@@ -17,7 +18,7 @@ export async function dashboardRoutes(fastify: FastifyApp): Promise<void> {
       return {
         data: await getOrgDashboardData(secureCtx.tx, {
           userId: secureCtx.auth.userId,
-          orgRole: secureCtx.auth.orgRole,
+          orgRole: orgRoleOrDeny(secureCtx.auth),
         }),
       }
     },

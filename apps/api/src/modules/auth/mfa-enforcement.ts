@@ -83,7 +83,10 @@ export async function loadMfaEnforcementStatus(
   authContext: {
     userId: string
     orgId: string
-    orgRole: OrgRole
+    // Story 71.3: absent for a delegated actor without a PV role. MFA enforcement applies to
+    // owner/admin only, so a roleless context is simply not enforced (and a delegated route
+    // cannot declare requireMfa anyway).
+    orgRole?: OrgRole
   },
   tx?: Tx
 ): Promise<ComputedMfaStatus> {
@@ -111,7 +114,7 @@ export async function loadMfaEnforcementStatus(
     : await withOrg(authContext.orgId, loadMembership)
 
   return computeMfaStatus({
-    orgRole: authContext.orgRole,
+    orgRole: authContext.orgRole ?? 'viewer',
     mfaEnrolledAt: user?.mfaEnrolledAt ?? null,
     gracePeriodExpiresAt: membership?.gracePeriodExpiresAt ?? null,
   })

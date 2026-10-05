@@ -86,3 +86,24 @@ describe('requireOrgRole', () => {
     expect(reply.status).not.toHaveBeenCalled()
   })
 })
+
+describe('requireOrgRole — Story 71.3 roleless delegated actor', () => {
+  it('denies a context with no orgRole (an unlinked delegated actor has no PV role)', async () => {
+    const { orgRole: _orgRole, ...roleless } = authContext
+    const request = { authContext: { ...roleless, delegation: true } } as unknown as FastifyRequest
+    const reply = mockReply()
+
+    await requireOrgRole(
+      'viewer',
+      'member',
+      'admin',
+      'owner'
+    )(request, reply as unknown as FastifyReply)
+
+    expect(reply.status).toHaveBeenCalledWith(403)
+    expect(reply.send).toHaveBeenCalledWith({
+      code: 'insufficient_role',
+      message: 'Insufficient permissions',
+    })
+  })
+})

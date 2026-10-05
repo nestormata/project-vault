@@ -10,6 +10,7 @@ import { secureRoute, type SecureRouteContext } from '../lib/secure-route.js'
 import { operationalLog } from '../lib/logger.js'
 import { raceWithTimeout } from '../lib/race-with-timeout.js'
 import { getExtensionStatus } from './loader.js'
+import { orgRoleOrDeny } from '../lib/auth-role.js'
 
 /**
  * Story 29.4 AC5 — the exact same interim numeric default `extension-panel.ts`'s
@@ -108,7 +109,7 @@ function buildModuleDataRequestContext(
   req: FastifyRequest
 ): ModuleDataRequestContext {
   return {
-    identity: { userId: secureCtx.auth.userId, orgRole: secureCtx.auth.orgRole },
+    identity: { userId: secureCtx.auth.userId, orgRole: orgRoleOrDeny(secureCtx.auth) },
     orgId: secureCtx.auth.orgId,
     params: req.params as Record<string, string>,
     query: req.query as Record<string, string>,

@@ -32,7 +32,20 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   `delegation_assertion_jti` (primary key `(org_id, jti)`, insert-first, fail closed when the store
   is unreachable). Rows live about 90 seconds after the assertion expires plus a 5-minute prune
   grace; the new `delegation/prune-assertion-jti` job deletes expired rows every minute in one
-  bounded batch. Nothing calls the store yet: the delegated route integration lands with Story 71.3.
+  bounded batch.
+- **Delegated actor assertions are verified on M7 routes** (Story 71.3, Epic 71). An extension route that
+  declares `security.delegation` is now authenticated by a signed `Authorization: PV-Delegation <jws>`
+  assertion instead of a session, before its handler runs: signature and claims (separate key set
+  `VAULT_DELEGATION_VERIFY_KEYS`), the signed operation must equal the route, the exact raw body must hash
+  to the signed `bsh`, the org is resolved from `organizations.centralizeme_organization_id`, the `jti`
+  is burned once per org, and the actor is resolved through `external_identities` and the org membership
+  (an unlinked actor is admitted as `issuer_attested`, with no PV role). Failures answer a stable set of
+  `delegation_*` codes; signature-valid rejections are recorded as `platform_security_events` rows and
+  counted in `pv_delegation_assertions_total{outcome,kid}`. A delegated route must set
+  `writeAuditEvent: false` and cannot combine `delegation` with `requireMfa`, `requirePlatformOperator`
+  or `requireAuth: false` (the API refuses to boot). With no delegated route declared, and no
+  `VAULT_DELEGATION_VERIFY_KEYS`, nothing changes. See
+  [docs/extensions/authoring.md](docs/extensions/authoring.md#delegated-routes-securitydelegation).
 - **Neutral request types** (extension-api 3.30.0): `ExtensionRequestContext` and
   `ExtensionActionResult`, for `oauthHandoff` and `publicRoute` code that should not depend on the
   panel vocabulary. `ModuleActionContext` and `ActionResult` remain as deprecated names.

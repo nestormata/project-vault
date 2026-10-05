@@ -34,6 +34,7 @@ import {
   ProjectInvitationParamsSchema,
   RevokeInvitationParamsSchema,
 } from './schema.js'
+import { orgRoleOrDeny } from '../../lib/auth-role.js'
 
 const INVITATION_EXPIRY_MS = 72 * 60 * 60 * 1000
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
@@ -172,7 +173,7 @@ export async function projectInvitationRoutes(fastify: FastifyApp): Promise<void
       await requireMfaEnrollmentStrict()(req, reply)
       if (reply.sent) return reply
 
-      if (roleRank(parsed.data.role) > roleRank(secureCtx.auth.orgRole)) {
+      if (roleRank(parsed.data.role) > roleRank(orgRoleOrDeny(secureCtx.auth))) {
         return reply.status(403).send({
           code: 'insufficient_role',
           message: 'Cannot invite to a role higher than your own',

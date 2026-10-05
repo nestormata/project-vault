@@ -34,6 +34,11 @@ import { requireOrgRole, type OrgRole } from '../plugins/require-org-role.js'
 import { enforceUserRateLimit } from './route-helpers.js'
 import { setRlsOrgContext } from '../middleware/rls.js'
 import {
+  installDelegationStages,
+  normalizeDelegation,
+  type NormalizedDelegation,
+} from './delegation-stages.js'
+import {
   applyHookPlan,
   hookPlanForAdd,
   hookPlanForOverride,
@@ -81,6 +86,8 @@ export type SecureRouteRegistration = {
   rateLimitKey: string | null
   rateLimitKeyIsDefault: boolean
   defaultAuditEventType: string | null
+  // Story 71.3 AC-1: true only for a route whose resolved `security` declares `delegation`.
+  delegation: boolean
 }
 
 type RouteFastify = {
@@ -113,6 +120,8 @@ export type AuditConfig = {
 
 export type SecureRouteContext = {
   auth: AuthContext
+  // Story 71.3: present only on a delegated route (the extension-api `ApiRouteDelegation`).
+  delegation?: NonNullable<FastifyRequest['delegationContext']>
   tx: Tx
   onPostCommit: (callback: PostCommitCallback) => void
   audit: {
@@ -155,6 +164,9 @@ export type SecureRouteRegistrationOptions = {
     // story; growing the gated surface additionally requires editing the golden route inventory
     // (apps/api/src/__tests__/gated-route-inventory.test.ts).
     capability?: CapabilityIdValue
+    // Story 71.3 (design 71-2): this route accepts a service-delegated actor assertion INSTEAD of
+    // a session. `true` / `{}` / `{subjectFields}`; see `delegation-stages.ts`.
+    delegation?: boolean | { subjectFields?: NonNullable<NormalizedDelegation['subjectFields']> }
   }
   db?: TransactionalDb
   auditWriter?: (input: {
@@ -360,11 +372,19 @@ export function roleRank(role: OrgRole): number {
   }
 }
 
+// Story 71.3 (Q6): an unlinked or non-member delegated actor has no PV role. A delegated route
+// that declares no role requirement admits it; one that declares any rejects it (no role, no
+// access). A session route always has a role, so its default (`viewer`) is unchanged.
+function declaresNoRoleRequirement(options: SecureRouteRegistrationOptions): boolean {
+  return !options.security?.allowedRoles?.length && options.security?.minimumRole === undefined
+}
+
 function hasSufficientRole(auth: AuthContext, options: SecureRouteRegistrationOptions): boolean {
+  if (auth.delegation === true && declaresNoRoleRequirement(options)) return true
+  if (auth.orgRole === undefined) return false
   const allowedRoles = options.security?.allowedRoles
   if (allowedRoles?.length) return allowedRoles.includes(auth.orgRole)
-  const minimumRole = options.security?.minimumRole ?? 'viewer'
-  return roleRank(auth.orgRole) >= roleRank(minimumRole)
+  return roleRank(auth.orgRole) >= roleRank(options.security?.minimumRole ?? 'viewer')
 }
 
 async function defaultAuditWriter({
@@ -441,6 +461,8 @@ type ResolvedSecurity = {
   // Story 68.8 Q14: true when `security` is an apiRoutes entry's own (an added route, or an
   // override with `replaceSecurity`); its capability id then goes to the extension gate as is.
   extensionSecurity: boolean
+  // Story 71.3: the normalized `security.delegation`, or false for a session route.
+  delegation: false | NormalizedDelegation
 }
 
 type RequestPhase = 'rls' | 'handler' | 'audit'
@@ -477,6 +499,7 @@ function resolveSecurity(
       rateLimit === false ? false : { ...rateLimit, key: rateLimit.key ?? defaultRateLimitKey },
     rateLimitKeyIsDefault: rateLimit !== false && rateLimit.key === undefined,
     extensionSecurity,
+    delegation: normalizeDelegation(security.delegation),
   }
 }
 
@@ -519,7 +542,9 @@ function enforceRouteRateLimit(
 ): boolean {
   if (!rateLimit) return true
   return enforceUserRateLimit({
-    userId: auth.userId,
+    // Story 71.3 AC-7: the principal of a delegated request is its resolved org, never the actor,
+    // so many actors under one key cannot multiply buckets and two orgs never share one.
+    userId: auth.delegation === true ? `delegation:${auth.orgId}` : auth.userId,
     key: rateLimit.key,
     max: rateLimit.max,
     timeWindowMs: rateLimit.timeWindowMs,
@@ -578,6 +603,12 @@ async function auditCapabilityDenialBestEffort(
   capability: string,
   reasonCode: string
 ): Promise<void> {
+  // Story 71.3: the denial audit row is attributed to a human user id; a delegated request has no
+  // session and an unlinked actor has no user, so it is not written (the 403 and the log remain).
+  if (auth.delegation === true) {
+    logRouteError(request, { eventType: 'secure_route.capability_denied_delegated', capability })
+    return
+  }
   try {
     await recordCapabilityDeniedAudit({
       orgId: auth.orgId,
@@ -620,7 +651,7 @@ async function decideCapability(
     capability,
     orgId: auth.orgId,
     userId: auth.userId,
-    orgRole: auth.orgRole,
+    orgRole: auth.orgRole ?? null,
     surface: 'org',
     requestId: request.id,
     logger: request.log,
@@ -650,6 +681,17 @@ async function enforceCapabilityIfRequired(
   return false
 }
 
+// Story 71.3 AC-6: `ctx.delegation` exists only for a request the delegation stages admitted (the
+// auth context carries the `delegation` marker); a session request never gets one.
+function delegationContextFor(
+  auth: AuthContext,
+  request: FastifyRequest
+): { delegation: NonNullable<FastifyRequest['delegationContext']> } | Record<string, never> {
+  return auth.delegation === true && request.delegationContext
+    ? { delegation: request.delegationContext }
+    : {}
+}
+
 async function runProtectedHandler({
   auth,
   options,
@@ -668,10 +710,11 @@ async function runProtectedHandler({
   state: { phase: RequestPhase }
 }): Promise<unknown> {
   const auditConfig = auditConfigFor(options)
+  const delegation = delegationContextFor(auth, request)
   if (!requireOrgScope) {
     return {
       result: await options.handler(
-        { auth, onPostCommit: () => undefined } as unknown as SecureRouteContext,
+        { auth, ...delegation, onPostCommit: () => undefined } as unknown as SecureRouteContext,
         request,
         reply
       ),
@@ -692,6 +735,7 @@ async function runProtectedHandler({
       handlerResult = await options.handler(
         {
           auth,
+          ...delegation,
           tx: typedTx,
           onPostCommit: (callback) => {
             postCommitCallbacks.push(callback)
@@ -931,12 +975,44 @@ function assertCapabilityConfig(
   }
 }
 
+// Story 71.3 AC-1/AC-6 (design 4.1, defence in depth over the extension-api registration
+// validator, which first-party host code can bypass): a delegated route is authenticated by the
+// assertion alone, so MFA, platform-operator and public access make no sense on it, and the
+// default audit write would attribute the row to a `human` session user that does not exist.
+// Integrity checks naming the route, never a policy.
+function assertDelegationConfig(
+  options: SecureRouteRegistrationOptions,
+  resolvedSecurity: ResolvedSecurity,
+  key: string
+): void {
+  if (!resolvedSecurity.delegation) return
+  const security = options.security
+  const conflicts: Array<[boolean | undefined, string]> = [
+    [security?.requireMfa, 'requireMfa'],
+    [security?.requirePlatformOperator, 'requirePlatformOperator'],
+    [security?.requireAuth === false, 'requireAuth: false'],
+  ]
+  const conflict = conflicts.find(([set]) => set === true)
+  if (conflict) {
+    throw new Error(`SecureRoute ${key}: delegation cannot be combined with ${conflict[1]}`)
+  }
+  if (auditConfigFor(options) && !options.auditWriter) {
+    throw new Error(
+      `SecureRoute ${key}: a delegated route must set writeAuditEvent: false (the default audit write would attribute the row to a session user; the delegated actor is recorded by the handler through the audit port)`
+    )
+  }
+}
+
 function assertSecureRouteConfig(
   fastify: RouteFastify,
   options: SecureRouteRegistrationOptions,
   resolvedSecurity: ResolvedSecurity
 ): void {
-  if (resolvedSecurity.requireAuth && typeof fastify.authenticate !== 'function') {
+  if (
+    resolvedSecurity.requireAuth &&
+    !resolvedSecurity.delegation &&
+    typeof fastify.authenticate !== 'function'
+  ) {
     throw new Error('SecureRoute: requireAuth is true but fastify.authenticate is not registered')
   }
   if (options.security?.allowedRoles?.length === 0) {
@@ -957,6 +1033,7 @@ function assertEffectiveConfig(
   key: string
 ): void {
   try {
+    assertDelegationConfig(options, resolvedSecurity, key)
     assertSecureRouteConfig(fastify, options, resolvedSecurity)
   } catch (error) {
     if (!apiRoute || !(error instanceof Error)) throw error
@@ -1019,6 +1096,7 @@ function recordRegistration(
     rateLimitKey: rateLimit ? rateLimit.key : null,
     rateLimitKeyIsDefault: resolvedSecurity.rateLimitKeyIsDefault,
     defaultAuditEventType: defaultAudit?.eventType ?? null,
+    delegation: resolvedSecurity.delegation !== false,
   })
 }
 
@@ -1029,7 +1107,11 @@ function buildRouteOptions(
   resolvedSecurity: ResolvedSecurity
 ): Record<string, unknown> {
   const preHandler: preHandlerHookHandler[] = []
-  if (resolvedSecurity.requireAuth) preHandler.push(fastify.authenticate as preHandlerHookHandler)
+  // Story 71.3: a delegated route is authenticated by the assertion stages (installed below) and
+  // never by `authenticate`: there is no plain-session fallback (Q8).
+  if (resolvedSecurity.requireAuth && !resolvedSecurity.delegation) {
+    preHandler.push(fastify.authenticate as preHandlerHookHandler)
+  }
   const routeOptions: Record<string, unknown> = {
     method: options.method,
     url: options.url,
@@ -1041,6 +1123,13 @@ function buildRouteOptions(
     handler: (request: FastifyRequest, reply: FastifyReply) =>
       handleSecureRouteRequest({ options, resolvedSecurity, request, reply }),
     ...plan.extraRouteOptions,
+  }
+  // From the RESOLVED security, so wrap/replace/schema merge/hook plans cannot remove the stages.
+  if (resolvedSecurity.delegation) {
+    installDelegationStages(routeOptions, {
+      routeKey: plan.key,
+      delegation: resolvedSecurity.delegation,
+    })
   }
   if (plan.hookPlan) applyHookPlan(routeOptions, plan.hookPlan)
   if (plan.logBinding) withLogBinding(routeOptions, plan.logBinding)

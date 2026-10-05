@@ -5,6 +5,7 @@ import { secureRoute, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { SearchQuerySchema, SearchResponseSchema } from './schema.js'
 import { executeSearch } from './service.js'
+import { orgRoleOrDeny } from '../../lib/auth-role.js'
 
 function invalidSearchTypeResponse() {
   return {
@@ -53,7 +54,7 @@ export async function searchRoutes(fastify: FastifyApp): Promise<void> {
         limit,
         offset,
         userId: secureCtx.auth.userId,
-        orgRole: secureCtx.auth.orgRole,
+        orgRole: orgRoleOrDeny(secureCtx.auth),
       })
 
       if (results.some((result) => result.type === 'credential')) {

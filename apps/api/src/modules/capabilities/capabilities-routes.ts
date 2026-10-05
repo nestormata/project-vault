@@ -46,7 +46,7 @@ export async function capabilitiesRoutes(fastify: FastifyApp): Promise<void> {
             capability,
             orgId,
             userId,
-            orgRole,
+            orgRole: orgRole ?? null,
             surface: 'org',
           })
           return [capability, decision.permitted] as const

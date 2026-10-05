@@ -34,6 +34,7 @@ import {
 } from '../../lib/extension-pending-state.js'
 import { mintRequestStateAndCookie } from '../../lib/extension-request-state.js'
 import { isValidActionResult, mapActionResultToResponse } from '../../lib/action-result-response.js'
+import { orgRoleOrDeny } from '../../lib/auth-role.js'
 
 /**
  * Story 39.1 — PV's own route layer for the `oauthHandoff` extension-api mechanism (Recommended
@@ -74,7 +75,9 @@ function sendNotFound(reply: FastifyReply): unknown {
 
 function readPendingCookie(request: FastifyRequest): string | undefined {
   const cookies = (request as unknown as { cookies?: Record<string, string> }).cookies
-  return cookies?.[OAUTH_HANDOFF_COOKIE_NAME]
+  if (cookies === undefined) return undefined
+  const found = Object.entries(cookies).find(([name]) => name === OAUTH_HANDOFF_COOKIE_NAME)
+  return found?.[1]
 }
 
 /**
@@ -258,9 +261,10 @@ function rejectedStartSecurityGuardReason(
 ): 'denied' | 'csrf_rejected' | undefined {
   if (isRejectedBySecFetchSite(request.headers['sec-fetch-site'])) return 'denied'
 
-  if (
-    isRejectedByCsrfToken(request.cookies, request.headers[CSRF_HEADER_NAME], env.COOKIE_SECURE)
-  ) {
+  const csrfHeader = Object.entries(request.headers).find(
+    ([name]) => name === CSRF_HEADER_NAME
+  )?.[1]
+  if (isRejectedByCsrfToken(request.cookies, csrfHeader, env.COOKIE_SECURE)) {
     return 'csrf_rejected'
   }
   return undefined
@@ -378,7 +382,7 @@ async function handleStart(
   const identity: PanelIdentity = {
     userId: ctx.auth.userId,
     orgId: ctx.auth.orgId,
-    orgRole: ctx.auth.orgRole,
+    orgRole: orgRoleOrDeny(ctx.auth),
   }
   const base = await resolveBaseModuleActionContext(
     'oauth-handoff',

@@ -72,6 +72,7 @@ import { getExtensionStatus } from '../../extensions/loader.js'
 import { operationalLog } from '../../lib/logger.js'
 import { raceWithTimeout } from '../../lib/race-with-timeout.js'
 import { EXTENSION_CALLOUT_TIMEOUT_MS } from '../../lib/extension-callout-timeout.js'
+import { orgRoleOrDeny } from '../../lib/auth-role.js'
 
 const PROJECT_NOT_FOUND = { code: 'project_not_found', message: 'Project not found' } as const
 const CREATION_REQUEST_CONFLICT = {
@@ -125,7 +126,8 @@ export async function callerCanManageMembers(
 ): Promise<boolean> {
   const callerRole = await callerProjectRole(secureCtx, projectId)
   const isProjectAdminOrOwner = callerRole === 'admin' || callerRole === 'owner'
-  const isOrgAdminOrOwner = secureCtx.auth.orgRole === 'admin' || secureCtx.auth.orgRole === 'owner'
+  const orgRole = orgRoleOrDeny(secureCtx.auth)
+  const isOrgAdminOrOwner = orgRole === 'admin' || orgRole === 'owner'
   return isProjectAdminOrOwner || isOrgAdminOrOwner
 }
 
@@ -153,7 +155,7 @@ async function callerArchiveAuthorization(
   projectId: string
 ): Promise<'project_owner' | 'org_owner' | null> {
   const callerRole = await callerProjectRole(secureCtx, projectId)
-  return resolveArchiveAuthorization(callerRole, secureCtx.auth.orgRole)
+  return resolveArchiveAuthorization(callerRole, orgRoleOrDeny(secureCtx.auth))
 }
 
 // 4.4 AC-12 "Audit gap (denied/blocked attempts)": SecureRoute's same-tx audit writer only fires
@@ -646,7 +648,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       const listWhere = includeArchived ? undefined : isNull(projects.archivedAt)
       // Story 4.5 AC-V2/D1: org owner/admin keep leftJoin (see all projects); member/viewer
       // require an explicit project_memberships row via innerJoin.
-      const seesAllProjects = roleRank(secureCtx.auth.orgRole) >= roleRank('admin')
+      const seesAllProjects = roleRank(orgRoleOrDeny(secureCtx.auth)) >= roleRank('admin')
       const membershipJoin = and(
         eq(projectMemberships.projectId, projects.id),
         eq(projectMemberships.userId, secureCtx.auth.userId)
@@ -691,7 +693,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
           name: row.name,
           slug: row.slug,
           description: row.description,
-          role: (row.role ?? secureCtx.auth.orgRole) as ProjectRole,
+          role: (row.role ?? orgRoleOrDeny(secureCtx.auth)) as ProjectRole,
           credentialCount: stats.credentialCount,
           expiringCount: stats.expiringCount,
           tags: row.tags,
@@ -781,7 +783,10 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
 
       return {
         data: {
-          ...serializeProjectDetail(project, (role ?? secureCtx.auth.orgRole) as ProjectRole),
+          ...serializeProjectDetail(
+            project,
+            (role ?? orgRoleOrDeny(secureCtx.auth)) as ProjectRole
+          ),
           tags: project.tags,
           memberCount,
         },
@@ -1119,7 +1124,7 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
 
       const callerRole = await callerProjectRole(secureCtx, params.projectId)
       const isProjectOwner = callerRole === 'owner'
-      const isOrgOwner = secureCtx.auth.orgRole === 'owner'
+      const isOrgOwner = orgRoleOrDeny(secureCtx.auth) === 'owner'
       if (!isProjectOwner && !isOrgOwner) {
         return reply.status(403).send({
           code: 'insufficient_role',

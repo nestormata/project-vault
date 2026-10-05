@@ -280,3 +280,16 @@ export const HandoffEvent = {
 } as const
 
 export type HandoffEventType = (typeof HandoffEvent)[keyof typeof HandoffEvent]
+
+/**
+ * Story 71.3 AC-8: the single `platform_security_events` event type for a service-delegated actor
+ * assertion rejected AFTER its signature verified. Same convention as `SSO_LOGIN_REJECTED`: one
+ * event type, the closed rejection reason in `payload.reason`. Rejections are never written to an
+ * org's `audit_log_entries` (a key holder could otherwise fill an org's audit storage); the
+ * `delegation` rows live in the no-RLS platform table, with the resolved org id in the payload.
+ */
+export const DelegationEvent = {
+  DELEGATION_ASSERTION_REJECTED: 'delegation_assertion_rejected',
+} as const
+
+export type DelegationEventType = (typeof DelegationEvent)[keyof typeof DelegationEvent]

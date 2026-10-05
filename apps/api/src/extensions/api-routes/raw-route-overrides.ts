@@ -88,6 +88,10 @@ function applyReplaceSecurity(
   options.handler = built.get('handler') as RawFn
   options['preHandler'] = built.get('preHandler')
   options['onRequest'] = built.get('onRequest')
+  // Story 71.3 AC-1: a delegated replacement also brings its raw-body hashing stage. Only set when
+  // present, so a replacement without delegation leaves the raw route's own preParsing alone.
+  const preParsing = built.get('preParsing')
+  if (preParsing !== undefined) options['preParsing'] = preParsing
   options.config = {
     ...withoutRouteSecurity(options.config),
     pvRoute: { builtBy: 'onRoute', override: entry.declaration.mode, replaceSecurity: true },

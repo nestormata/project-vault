@@ -27,7 +27,8 @@ export function requireOrgRole(...roles: OrgRole[]) {
     if (!authContext) {
       return
     }
-    if (!roles.includes(authContext.orgRole)) {
+    // Story 71.3: a delegated actor without a PV role (orgRole absent) is denied.
+    if (authContext.orgRole === undefined || !roles.includes(authContext.orgRole)) {
       const error = new AppError('insufficient_role', 'Insufficient permissions', 403)
       return reply.status(error.statusCode).send({ code: error.code, message: error.message })
     }

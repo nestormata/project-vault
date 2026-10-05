@@ -396,12 +396,16 @@ describe('Story 68.8 AC-18 — shared_default_key warn against PV explicit keys'
   })
 })
 
-describe('Story 71.8 AC-5 — a declared security.delegation is inert on today’s host', () => {
+describe('Story 71.3 AC-1 — a declared security.delegation installs the delegated stages', () => {
   const AUDIT_URL = '/cm/audit-events'
   const AUDIT_KEY = `POST ${AUDIT_URL}`
 
   async function bootAudit(delegation: boolean | undefined, handlerSpy: () => unknown) {
-    const security = { capability: 'cm.audit', ...(delegation === undefined ? {} : { delegation }) }
+    const security = {
+      capability: 'cm.audit',
+      writeAuditEvent: false,
+      ...(delegation === undefined ? {} : { delegation }),
+    }
     const declaration = {
       add: [{ method: 'POST', url: AUDIT_URL, options: { security } }],
     }
@@ -414,24 +418,38 @@ describe('Story 71.8 AC-5 — a declared security.delegation is inert on today�
     })
   }
 
-  it('boots, answers 401 to a request without a session, never calls the handler, and leaves the status envelope unchanged', async () => {
+  it('answers a request without an assertion with the generic delegation 401 (no session fallback), never calls the handler, and leaves the status envelope unchanged', async () => {
     const delegatedSpy = vi.fn(async () => ({ marker: SECRET_SOURCE_MARKER }))
     const plainSpy = vi.fn(async () => ({ marker: SECRET_SOURCE_MARKER }))
     const withDelegation = await bootAudit(true, delegatedSpy)
     const plain = await bootAudit(undefined, plainSpy)
 
-    expect(withDelegation.runtime.registry.get(AUDIT_KEY)).toMatchObject({ origin: 'added' })
+    expect(withDelegation.runtime.registry.get(AUDIT_KEY)).toMatchObject({
+      origin: 'added',
+      delegation: true,
+    })
+    expect(plain.runtime.registry.get(AUDIT_KEY)).toMatchObject({ delegation: false })
     const res = await withDelegation.app.inject({ method: 'POST', url: AUDIT_URL })
     expect(res.statusCode).toBe(401)
-    expect(res.json()).toMatchObject({ code: 'access_token_missing' })
+    expect(res.json()).toMatchObject({ code: 'delegation_invalid' })
     const plainRes = await plain.app.inject({ method: 'POST', url: AUDIT_URL })
     expect(plainRes.statusCode).toBe(401)
-    expect(plainRes.body).toBe(res.body)
+    expect(plainRes.json()).toMatchObject({ code: 'access_token_missing' })
     expect(delegatedSpy).not.toHaveBeenCalled()
     const status = JSON.stringify(apiRoutesStatus(withDelegation.runtime.table))
     expect(status).toBe(JSON.stringify(apiRoutesStatus(plain.runtime.table)))
     expect(status).not.toContain('delegation')
     await withDelegation.app.close()
     await plain.app.close()
+  })
+
+  it('tripwire: delegation is recorded only on routes that declared it', async () => {
+    const { runtime, app } = await bootAudit(true, vi.fn())
+    const flagged = [...runtime.registry.values()].filter((route) => route.delegation)
+    expect(flagged.map((route) => route.key)).toEqual([AUDIT_KEY])
+    for (const route of runtime.registry.values()) {
+      expect(typeof route.delegation).toBe('boolean')
+    }
+    await app.close()
   })
 })
