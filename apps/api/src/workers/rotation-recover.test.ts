@@ -27,6 +27,7 @@ const { runStaleRotationRecoveryJob } = await import('./rotation-recover.js')
 
 const TEST_PASSPHRASE = 'rotation-recover-passphrase'
 const STALE_DETECTED = 'rotation.stale_detected'
+const STALE_ALERT_TEMPLATE = 'rotation.stale'
 
 function noopBoss(): BossService {
   // Real BossService, never started — sendNotificationJobs() checks isStarted() and no-ops
@@ -297,10 +298,52 @@ describe('runStaleRotationRecoveryJob', () => {
             recipientUserId: notificationQueue.recipientUserId,
           })
           .from(notificationQueue)
-          .where(eq(notificationQueue.templateId, 'rotation.stale'))
+          .where(eq(notificationQueue.templateId, STALE_ALERT_TEMPLATE))
       )
       expect(queueRows.length).toBeGreaterThanOrEqual(1)
       expect(queueRows.some((row) => row.recipientUserId === userId)).toBe(true)
+    })
+  }, 60_000)
+
+  // Story 43-17 AC-9/KD-7: alerts follow the effective owner (COALESCE(owner_user_id,
+  // initiated_by)); the audit payload keeps recording the initiator (provenance).
+  it('notifies the transferred owner, not the initiator, and keeps initiatedBy in the audit row', async () => {
+    await withTestOrg(async ({ orgId }) => {
+      const initiatorId = await seedUser('recover-initiator')
+      const newOwnerId = await seedUser('recover-new-owner')
+      // Only the new owner is an org owner (the FR100 fallback audience); the initiator holds no
+      // membership, so any queue row addressed to them could only come from the direct alert.
+      await seedOwnerMembership(orgId, newOwnerId)
+      const projectId = await seedProject(orgId)
+      const credentialId = await seedCredential(orgId, projectId)
+      const rotationId = await seedInProgressRotation(
+        orgId,
+        projectId,
+        credentialId,
+        initiatorId,
+        new Date(Date.now() - 90 * MINUTES)
+      )
+      await withOrg(orgId, (tx) =>
+        tx.update(rotations).set({ ownerUserId: newOwnerId }).where(eq(rotations.id, rotationId))
+      )
+
+      await runStaleRotationRecoveryJob(noopBoss())
+
+      const queueRows = await withOrg(orgId, (tx) =>
+        tx
+          .select({ recipientUserId: notificationQueue.recipientUserId })
+          .from(notificationQueue)
+          .where(eq(notificationQueue.templateId, STALE_ALERT_TEMPLATE))
+      )
+      expect(queueRows.some((row) => row.recipientUserId === newOwnerId)).toBe(true)
+      expect(queueRows.some((row) => row.recipientUserId === initiatorId)).toBe(false)
+      const [audit] = await withOrg(orgId, (tx) =>
+        tx
+          .select({ payload: auditLogEntries.payload })
+          .from(auditLogEntries)
+          .where(eq(auditLogEntries.eventType, STALE_DETECTED))
+      )
+      expect(audit?.payload).toMatchObject({ initiatedBy: initiatorId })
     })
   }, 60_000)
 
@@ -369,7 +412,7 @@ describe('runStaleRotationRecoveryJob', () => {
         tx
           .select({ recipientUserId: notificationQueue.recipientUserId })
           .from(notificationQueue)
-          .where(eq(notificationQueue.templateId, 'rotation.stale'))
+          .where(eq(notificationQueue.templateId, STALE_ALERT_TEMPLATE))
       )
       // No initiating user to notify directly, but the FR100-routed alert must still fire.
       expect(routedRows.length).toBeGreaterThanOrEqual(1)

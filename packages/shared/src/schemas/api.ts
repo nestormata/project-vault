@@ -54,11 +54,21 @@ export const ActiveRotationsErrorSchema = z
 // Story 43-15 AC-8/AC-9 (FR102 explicit orphan handling): the optional body of
 // POST /org/users/:userId/deactivate and DELETE /org/users/:userId. Absent (or `{}`) keeps the
 // default `active_rotations` block; `abandon` abandons the target's staged/stale_recovery
-// rotations and holds promoted/in_progress ones in the same transaction. `.strict()` + a literal:
-// an unknown key or any other value (e.g. a not-yet-built `transfer`) is rejected, never ignored.
-export const RotationHandlingBodySchema = z
+// rotations and holds promoted/in_progress ones in the same transaction.
+// Story 43-17 KD-3 (FR102 third outcome): `transfer` hands every blocking rotation the target owns
+// to `transferToUserId` (one target per request), which is REQUIRED with `transfer` and forbidden
+// otherwise. Both variants are `.strict()`: an unknown key, a target without `transfer`, or any
+// other handling value (e.g. `hold`) is rejected, never ignored.
+const AbandonOrBlockRotationHandlingSchema = z
   .object({ rotationHandling: z.literal('abandon').optional() })
   .strict()
+
+const TransferRotationHandlingSchema = z
+  .object({ rotationHandling: z.literal('transfer'), transferToUserId: z.uuid() })
+  .strict()
+
+export const RotationHandlingBodySchema = z
+  .union([AbandonOrBlockRotationHandlingSchema, TransferRotationHandlingSchema])
   .meta({ id: 'RotationHandlingBody' })
 
 export type RotationHandlingBody = z.infer<typeof RotationHandlingBodySchema>

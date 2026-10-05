@@ -23,13 +23,18 @@ export type OrgUser = {
 
 // Story 43-15 AC-8/AC-9: how many of the user's unfinished rotations `rotationHandling: "abandon"`
 // abandoned (staged/stale) and held (promoted, left for a later retire). Both 0 without it.
+// Story 43-17 AC-4/AC-10: with `transfer`, how many rotations moved and to whom (absent otherwise).
 export type RotationHandlingCounts = {
   abandonedRotationCount: number
   heldRotationCount: number
+  transferredRotationCount?: number
+  transferredToUserId?: string
 }
 
-/** Story 43-15 AC-8: absent keeps the default `409 active_rotations` block. */
-export type RotationHandlingOptions = { rotationHandling: 'abandon' }
+/** Story 43-15 AC-8: absent keeps the default `409 active_rotations` block. Story 43-17 KD-3:
+ *  `transfer` hands every unfinished rotation to one active admin (`transferToUserId` required). */
+export type RotationHandlingOptions =
+  { rotationHandling: 'abandon' } | { rotationHandling: 'transfer'; transferToUserId: string }
 
 export type DeactivateOrgUserResult = {
   userId: string

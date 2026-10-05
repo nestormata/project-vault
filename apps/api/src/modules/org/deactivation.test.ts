@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { orgMemberships, rotations } from '@project-vault/db/schema'
 import {
@@ -14,9 +15,12 @@ import { BLOCKING_ROTATION_STATUSES } from '../projects/archive-guards.js'
 import {
   ABANDONABLE_ROTATION_STATUSES,
   HELD_ROTATION_STATUSES,
+  TRANSFERRABLE_ROTATION_STATUSES,
   UnhandledBlockingRotationStatusError,
+  assertTransferableRotations,
   checkActiveRotationsForUser,
   partitionBlockingRotations,
+  validateTransferTarget,
 } from './deactivation.js'
 import { startRotationViaApi, updateRotation } from './rotation-guard-test-helpers.js'
 
@@ -137,14 +141,14 @@ describe('Story 43-15: checkActiveRotationsForUser', () => {
   })
 })
 
-describe('Story 43-15 AC-8: partitionBlockingRotations', () => {
-  const row = (status: string, id = status) => ({
-    id,
-    projectId: 'p',
-    credentialId: 'c',
-    status,
-  })
+const row = (status: string, id = status) => ({
+  id,
+  projectId: 'p',
+  credentialId: 'c',
+  status,
+})
 
+describe('Story 43-15 AC-8: partitionBlockingRotations', () => {
   it('drift guard: ABANDONABLE ∪ HELD is exactly BLOCKING_ROTATION_STATUSES, and they are disjoint', () => {
     const union = [...ABANDONABLE_ROTATION_STATUSES, ...HELD_ROTATION_STATUSES]
     expect(new Set(union).size).toBe(union.length)
@@ -166,5 +170,138 @@ describe('Story 43-15 AC-8: partitionBlockingRotations', () => {
     expect(() => partitionBlockingRotations([row('paused')])).toThrow(
       UnhandledBlockingRotationStatusError
     )
+  })
+})
+
+describe('Story 43-17 AC-2: the ownership predicate follows the effective owner', () => {
+  let app: TestApp
+
+  beforeAll(async () => {
+    app = await bootProjectRouteTestApp(createApp, initVault)
+  })
+
+  afterAll(async () => {
+    await app.close()
+    await resetVaultForTest()
+  })
+
+  async function fixture(label: string) {
+    const owner = await registerOwner(app, `${label}-owner`)
+    const x = await addUserToOrg(app, owner.orgId, `${label}-x`, { orgRole: 'admin' })
+    const y = await addUserToOrg(app, owner.orgId, `${label}-y`, { orgRole: 'admin' })
+    const projectId = await createProject(app, owner.cookies, `${label}-project`)
+    const rotation = await startRotationViaApi(app, x.cookies, projectId)
+    return { owner, x, y, projectId, ...rotation }
+  }
+
+  it('R initiated by X then transferred to Y blocks Y, no longer X', async () => {
+    const { owner, x, y, rotationId } = await fixture('transferred')
+    await updateRotation(owner.orgId, rotationId, { ownerUserId: y.userId })
+
+    expect(await check(owner.orgId, x.userId)).toEqual({ blocked: false, rotationIds: [] })
+    expect(await check(owner.orgId, y.userId)).toEqual({ blocked: true, rotationIds: [rotationId] })
+  })
+
+  it('R initiated by Y with owner_user_id = X blocks X, not Y', async () => {
+    const { owner, x, y, rotationId } = await fixture('swapped')
+    await updateRotation(owner.orgId, rotationId, {
+      initiatedBy: y.userId,
+      ownerUserId: x.userId,
+    })
+
+    expect(await check(owner.orgId, x.userId)).toEqual({ blocked: true, rotationIds: [rotationId] })
+    expect(await check(owner.orgId, y.userId)).toEqual({ blocked: false, rotationIds: [] })
+  })
+
+  it('a NULL initiator with a NULL owner matches nobody', async () => {
+    const { owner, x, y, rotationId } = await fixture('null-both')
+    await updateRotation(owner.orgId, rotationId, { initiatedBy: null, ownerUserId: null })
+
+    expect(await check(owner.orgId, x.userId)).toEqual({ blocked: false, rotationIds: [] })
+    expect(await check(owner.orgId, y.userId)).toEqual({ blocked: false, rotationIds: [] })
+  })
+
+  it('a NULL initiator with an owner still blocks the owner (SET NULL on the initiator)', async () => {
+    const { owner, y, rotationId } = await fixture('null-initiator')
+    await updateRotation(owner.orgId, rotationId, { initiatedBy: null, ownerUserId: y.userId })
+
+    expect(await check(owner.orgId, y.userId)).toEqual({ blocked: true, rotationIds: [rotationId] })
+  })
+
+  it('a non-blocking rotation never blocks its owner, even with owner_user_id set', async () => {
+    const { owner, y, rotationId } = await fixture('terminal')
+    for (const status of ['retired', 'completed', 'abandoned', 'break_glass_complete']) {
+      await updateRotation(owner.orgId, rotationId, { status, ownerUserId: y.userId })
+      expect(await check(owner.orgId, y.userId)).toEqual({ blocked: false, rotationIds: [] })
+    }
+  })
+})
+
+describe('Story 43-17 AC-8/failure-mode analysis: the transfer status table', () => {
+  it('drift guard: TRANSFERRABLE equals BLOCKING_ROTATION_STATUSES exactly', () => {
+    expect([...TRANSFERRABLE_ROTATION_STATUSES].sort()).toEqual(
+      [...BLOCKING_ROTATION_STATUSES].sort()
+    )
+  })
+
+  it('accepts all four blocking statuses and throws on one it does not know', () => {
+    const rows = ['staged', 'promoted', 'stale_recovery', 'in_progress'].map((s) => row(s))
+    expect(assertTransferableRotations(rows)).toEqual(rows)
+    expect(() => assertTransferableRotations([row('paused')])).toThrow(
+      UnhandledBlockingRotationStatusError
+    )
+  })
+})
+
+describe('Story 43-17 AC-5: validateTransferTarget', () => {
+  let app: TestApp
+
+  beforeAll(async () => {
+    app = await bootProjectRouteTestApp(createApp, initVault)
+  })
+
+  afterAll(async () => {
+    await app.close()
+    await resetVaultForTest()
+  })
+
+  const validate = (orgId: string, transferToUserId: string, deactivatedUserId: string) =>
+    withOrg(orgId, (tx) =>
+      validateTransferTarget(tx, orgId, { transferToUserId, deactivatedUserId })
+    )
+
+  it('accepts active admins and owners (the roles that may act on rotations), the caller included', async () => {
+    const owner = await registerOwner(app, 'target-ok-owner')
+    const x = await addUserToOrg(app, owner.orgId, 'target-ok-x', { orgRole: 'admin' })
+    const y = await addUserToOrg(app, owner.orgId, 'target-ok-y', { orgRole: 'admin' })
+
+    expect(await validate(owner.orgId, y.userId, x.userId)).toBe(true)
+    expect(await validate(owner.orgId, owner.userId, x.userId)).toBe(true)
+  })
+
+  it('refuses the deactivated user, inactive members, low roles, non-members and other-org ids', async () => {
+    const owner = await registerOwner(app, 'target-bad-owner')
+    const other = await registerOwner(app, 'target-bad-other-org')
+    const x = await addUserToOrg(app, owner.orgId, 'target-bad-x', { orgRole: 'admin' })
+    const gone = await addUserToOrg(app, owner.orgId, 'target-bad-gone', { orgRole: 'admin' })
+    const member = await addUserToOrg(app, owner.orgId, 'target-bad-member', { orgRole: 'member' })
+    const viewer = await addUserToOrg(app, owner.orgId, 'target-bad-viewer', { orgRole: 'viewer' })
+    await withOrg(owner.orgId, (tx) =>
+      tx
+        .update(orgMemberships)
+        .set({ status: 'deactivated' })
+        .where(and(eq(orgMemberships.orgId, owner.orgId), eq(orgMemberships.userId, gone.userId)))
+    )
+
+    for (const refused of [
+      x.userId,
+      gone.userId,
+      member.userId,
+      viewer.userId,
+      other.userId,
+      randomUUID(),
+    ]) {
+      expect(await validate(owner.orgId, refused, x.userId)).toBe(false)
+    }
   })
 })

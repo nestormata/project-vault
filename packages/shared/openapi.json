@@ -101,16 +101,41 @@
         ]
       },
       "RotationHandlingBodyInput": {
-        "type": "object",
-        "properties": {
-          "rotationHandling": {
-            "type": "string",
-            "enum": [
-              "abandon"
-            ]
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "rotationHandling": {
+                "type": "string",
+                "enum": [
+                  "abandon"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "rotationHandling": {
+                "type": "string",
+                "enum": [
+                  "transfer"
+                ]
+              },
+              "transferToUserId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "rotationHandling",
+              "transferToUserId"
+            ],
+            "additionalProperties": false
           }
-        },
-        "additionalProperties": false
+        ]
       },
       "ActiveMachineUserKeysErrorInput": {
         "type": "object",
@@ -5215,6 +5240,16 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "transferredRotationCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "transferredToUserId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
               }
             },
             "required": [
@@ -5379,6 +5414,16 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "transferredRotationCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "transferredToUserId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
               }
             },
             "required": [
@@ -10255,16 +10300,41 @@
         "additionalProperties": false
       },
       "RotationHandlingBody": {
-        "type": "object",
-        "properties": {
-          "rotationHandling": {
-            "type": "string",
-            "enum": [
-              "abandon"
-            ]
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "rotationHandling": {
+                "type": "string",
+                "enum": [
+                  "abandon"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "rotationHandling": {
+                "type": "string",
+                "enum": [
+                  "transfer"
+                ]
+              },
+              "transferToUserId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "rotationHandling",
+              "transferToUserId"
+            ],
+            "additionalProperties": false
           }
-        },
-        "additionalProperties": false
+        ]
       },
       "ActiveMachineUserKeysError": {
         "type": "object",
@@ -15449,6 +15519,16 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "transferredRotationCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "transferredToUserId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
               }
             },
             "required": [
@@ -15620,6 +15700,16 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "transferredRotationCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "transferredToUserId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
               }
             },
             "required": [

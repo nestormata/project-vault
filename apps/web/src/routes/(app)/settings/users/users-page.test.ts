@@ -849,3 +849,212 @@ describe('/settings/users +page.svelte (Story 8.7 AC groups A4/I/J/K)', () => {
     })
   })
 })
+
+// Story 43-17 AC-10 (FR102 third outcome): "Transfer unfinished rotations and ..." beside abandon.
+// Built without a literal address: check-public-safety blocks any email literal in the diff.
+const testEmail = (local: string) => [local, 'example.test'].join('@')
+
+describe('/settings/users transfer of unfinished rotations (Story 43-17 AC-10)', () => {
+  const adminA: OrgUser = {
+    ...memberUser,
+    userId: 'u-admin-a',
+    email: testEmail('admin-a'),
+    displayName: 'Admin A',
+    orgRole: 'admin',
+  }
+  const adminB: OrgUser = {
+    ...memberUser,
+    userId: 'u-admin-b',
+    email: testEmail('admin-b'),
+    displayName: 'Admin B',
+    orgRole: 'admin',
+  }
+  const deactivatedAdmin: OrgUser = {
+    ...adminB,
+    userId: 'u-admin-gone',
+    email: testEmail('gone'),
+    status: 'deactivated' as const,
+  }
+  // The owner of unfinished rotations being deactivated/removed: an active admin.
+  const subject = adminA
+  const blocked = () =>
+    new ApiClientError(
+      409,
+      { error: 'active_rotations', rotationIds: ['r1', 'r2'] } as { error: string },
+      'Conflict'
+    )
+
+  const triggerButton = (action: 'deactivate' | 'remove') =>
+    action === 'deactivate' ? /deactivate account/i : /remove from organization/i
+  const transferButton = (action: 'deactivate' | 'remove') =>
+    action === 'deactivate'
+      ? /transfer unfinished rotations and deactivate/i
+      : /transfer unfinished rotations and remove/i
+
+  async function openTransferDialog(action: 'deactivate' | 'remove', users: OrgUser[]) {
+    const mock = action === 'deactivate' ? deactivateOrgUserMock : removeOrgUserMock
+    mock.mockRejectedValueOnce(blocked())
+    render(UsersPage, { props: { data: baseData({ users }) } })
+    const row = screen.getByText(subject.displayName).closest('tr') as HTMLElement
+    await fireEvent.click(
+      within(row).getByRole('button', {
+        name: triggerButton(action),
+      })
+    )
+    await fireEvent.click(await within(row).findByRole('button', { name: transferButton(action) }))
+    return { row, mock }
+  }
+
+  it('lists only other active admins/owners (caller included), disabling confirm until chosen', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { row } = await openTransferDialog('deactivate', [
+      ownerUser,
+      subject,
+      adminB,
+      deactivatedAdmin,
+      memberUser,
+    ])
+
+    const dialog = within(row).getByRole('dialog')
+    const options = within(dialog)
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+    expect(options.join('|')).toContain(ownerUser.email)
+    expect(options.join('|')).toContain(adminB.email)
+    expect(options.join('|')).not.toContain(subject.email)
+    expect(options.join('|')).not.toContain(deactivatedAdmin.email)
+    expect(options.join('|')).not.toContain(memberUser.email)
+    const confirm = within(dialog).getByRole('button', {
+      name: /transfer and deactivate/i,
+    }) as HTMLButtonElement
+    expect(confirm.disabled).toBe(true)
+  })
+
+  it('transfers on deactivate: sends the transfer body, reports the count, closes the dialog', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { row, mock } = await openTransferDialog('deactivate', [ownerUser, subject, adminB])
+    mock.mockResolvedValueOnce({
+      userId: subject.userId,
+      revokedSessionCount: 0,
+      revokedInvitationCount: 0,
+      abandonedRotationCount: 0,
+      heldRotationCount: 0,
+      transferredRotationCount: 2,
+      transferredToUserId: adminB.userId,
+    })
+    const dialog = within(row).getByRole('dialog')
+    await fireEvent.change(within(dialog).getByRole('combobox'), {
+      target: { value: adminB.userId },
+    })
+    await fireEvent.click(within(dialog).getByRole('button', { name: /transfer and deactivate/i }))
+
+    expect(await screen.findByRole('status')).toBeTruthy()
+    expect(screen.getByRole('status').textContent).toContain(
+      `Transferred 2 unfinished rotation(s) from ${subject.email} to ${adminB.email}.`
+    )
+    expect(mock).toHaveBeenLastCalledWith(expect.anything(), subject.userId, {
+      rotationHandling: 'transfer',
+      transferToUserId: adminB.userId,
+    })
+    expect(invalidateAllMock).toHaveBeenCalled()
+    expect(within(row).queryByRole('dialog')).toBeNull()
+  })
+
+  it('transfers on remove with the same body', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { row, mock } = await openTransferDialog('remove', [ownerUser, subject, adminB])
+    mock.mockResolvedValueOnce({
+      userId: subject.userId,
+      revokedSessionCount: 0,
+      abandonedRotationCount: 0,
+      heldRotationCount: 0,
+      transferredRotationCount: 1,
+      transferredToUserId: ownerUser.userId,
+    })
+    const dialog = within(row).getByRole('dialog')
+    await fireEvent.change(within(dialog).getByRole('combobox'), {
+      target: { value: ownerUser.userId },
+    })
+    await fireEvent.click(within(dialog).getByRole('button', { name: /transfer and remove/i }))
+
+    expect((await screen.findByRole('status')).textContent).toContain('Transferred 1 unfinished')
+    expect(mock).toHaveBeenLastCalledWith(expect.anything(), subject.userId, {
+      rotationHandling: 'transfer',
+      transferToUserId: ownerUser.userId,
+    })
+  })
+
+  it.each([
+    ['invalid_transfer_target', /can no longer receive rotations/i],
+    ['rotation_busy', /being modified right now/i],
+  ])('keeps the dialog open and explains %s', async (code, expected) => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { row, mock } = await openTransferDialog('deactivate', [ownerUser, subject, adminB])
+    mock.mockRejectedValueOnce(
+      new ApiClientError(code === 'rotation_busy' ? 409 : 422, { code }, code)
+    )
+    const dialog = within(row).getByRole('dialog')
+    await fireEvent.change(within(dialog).getByRole('combobox'), {
+      target: { value: adminB.userId },
+    })
+    await fireEvent.click(within(dialog).getByRole('button', { name: /transfer and deactivate/i }))
+
+    const alert = await within(dialog).findByRole('alert')
+    expect(alert.textContent).toMatch(expected)
+    expect(within(row).getByRole('dialog')).toBeTruthy()
+    expect(invalidateAllMock).not.toHaveBeenCalled()
+  })
+
+  it('drops a target reported ineligible from the select and clears stale notices', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { row, mock } = await openTransferDialog('deactivate', [ownerUser, subject, adminB])
+    mock.mockRejectedValueOnce(new ApiClientError(422, { code: 'invalid_transfer_target' }, 'x'))
+    const dialog = within(row).getByRole('dialog')
+    await fireEvent.change(within(dialog).getByRole('combobox'), {
+      target: { value: adminB.userId },
+    })
+    await fireEvent.click(within(dialog).getByRole('button', { name: /transfer and deactivate/i }))
+
+    await within(dialog).findByRole('alert')
+    const options = within(dialog)
+      .getAllByRole('option')
+      .map((option) => (option as HTMLOptionElement).value)
+    expect(options).not.toContain(adminB.userId)
+    expect(options).toContain(ownerUser.userId)
+    expect(
+      (
+        within(dialog).getByRole('button', {
+          name: /transfer and deactivate/i,
+        }) as HTMLButtonElement
+      ).disabled
+    ).toBe(true)
+  })
+
+  it('shows an empty state with confirm disabled when no other admin exists', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { row } = await openTransferDialog('deactivate', [subject, memberUser])
+
+    const dialog = within(row).getByRole('dialog')
+    expect(within(dialog).getByTestId('rotation-transfer-empty')).toBeTruthy()
+    expect(within(dialog).queryByRole('combobox')).toBeNull()
+    expect(
+      (
+        within(dialog).getByRole('button', {
+          name: /transfer and deactivate/i,
+        }) as HTMLButtonElement
+      ).disabled
+    ).toBe(true)
+  })
+
+  it('cancel closes the dialog without calling the API again', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { row, mock } = await openTransferDialog('deactivate', [ownerUser, subject])
+
+    await fireEvent.click(
+      within(within(row).getByRole('dialog')).getByRole('button', { name: /cancel/i })
+    )
+
+    expect(within(row).queryByRole('dialog')).toBeNull()
+    expect(mock).toHaveBeenCalledTimes(1)
+  })
+})

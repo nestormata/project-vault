@@ -18,9 +18,13 @@ export type OrgUserProjectRoleParams = z.infer<typeof OrgUserProjectRoleParamsSc
 // actual work performed in the same transaction (AC-5/AC-7).
 // Story 43-15 AC-8/AC-9: how many of the target's blocking rotations `rotationHandling: "abandon"`
 // abandoned (staged/stale_recovery) and held (promoted/in_progress). Both 0 without the flag.
+// Story 43-17 AC-4: with `rotationHandling: "transfer"` the response also carries how many
+// rotations moved and to whom; both keys are absent for the default/abandon requests.
 const rotationHandlingCounts = {
   abandonedRotationCount: z.number().int().nonnegative(),
   heldRotationCount: z.number().int().nonnegative(),
+  transferredRotationCount: z.number().int().nonnegative().optional(),
+  transferredToUserId: z.uuid().optional(),
 }
 
 export const OrgUserDeactivatedResponseSchema = z

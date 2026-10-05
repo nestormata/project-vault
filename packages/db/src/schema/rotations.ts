@@ -55,6 +55,12 @@ export const rotations = pgTable(
     // only ever writes 1 (at creation); Story 5.2 increments it on confirm/fail/retry/complete.
     version: integer('version').notNull().default(1),
     initiatedBy: uuid('initiated_by').references(() => users.id, { onDelete: 'set null' }),
+    // Story 43-17 KD-1/KD-2: nullable ownership transfer target. NULL = "the owner is the
+    // initiator" (every row created before this story, no backfill). The effective owner is
+    // COALESCE(owner_user_id, initiated_by); `initiated_by` is NEVER rewritten, because it is also
+    // the provenance of the rotation and the four-eyes (single-actor) comparison anchor. SET NULL:
+    // a hard-deleted owner falls back to the initiator, then to the org-wide notification path.
+    ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'set null' }),
     initiatedAt: timestamp('initiated_at', { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
     // Story 5.6 AC-2.3: set when `staged -> promoted` (or migrated in-flight, AC-7). Distinct
@@ -99,6 +105,10 @@ export const rotations = pgTable(
     ),
     credentialStatusIdx: index('idx_rotations_credential_status').on(t.credentialId, t.status),
     orgIdx: index('idx_rotations_org').on(t.orgId),
+    // Story 43-17: supports the deactivation guard's owner predicate for transferred rotations.
+    ownerBlockingIdx: index('idx_rotations_owner_blocking')
+      .on(t.orgId, t.ownerUserId)
+      .where(sql`${t.ownerUserId} IS NOT NULL`),
     // Story 5.3 AC-1/AC-9, widened by Story 5.5 AC-8: supports the stale-detection job's
     // per-org `WHERE org_id = $orgId AND status = 'in_progress' AND initiated_at < $threshold`
     // scan (apps/api/src/workers/rotation-recover.ts's findStaleRotations, called once per org
