@@ -88,6 +88,7 @@ describe.runIf(ENABLED)('mock UI pack compose stage (Story 68.10 AC-2.1)', () =>
         'OK: M4 replacements and M6 tokens, own styles and @source utilities',
         'OK: M5 nav ids recorded in the lock; an unknown hidden id is noted, not refused',
         'OK: a stale replacement hash fails the composition (exit 1) and names Footer.svelte',
+        'OK: a stale replacement hash fails the composition (exit 1) and names SettingsHomeHeader.svelte',
       ]) {
         expect(output, line).toContain(line)
       }

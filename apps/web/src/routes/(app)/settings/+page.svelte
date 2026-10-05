@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsHomeHeader from '$lib/components/settings/SettingsHomeHeader.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   let { data } = $props()
   import NavCards from '$lib/navigation/NavCards.svelte'
@@ -11,8 +12,10 @@
 <InjectionPoint name="settings.home.before" data={data?.__inject} />
 <InjectionPoint name="settings.home.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-3xl px-4 py-8">
-  <h1 class="text-2xl font-bold text-gray-900">Settings</h1>
-  <p class="mt-2 text-gray-500">Manage your vault preferences.</p>
+  <!-- @region settings.home.header -->
+  <SettingsHomeHeader>
+    <InjectionPoint name="settings.home.header" data={data?.__inject} />
+  </SettingsHomeHeader>
 
   <NavCards surface="settings.index" />
 </div>

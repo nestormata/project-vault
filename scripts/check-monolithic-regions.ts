@@ -10,8 +10,8 @@
  * checked: provenance, never a path list. No other file is ever exempted.
  */
 import { resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { scanMonolithicRegionsTree } from '../apps/web/guards/monolithic-region.js'
+import { STD_IO, failWith, option, runAsMain, type Io } from './lib/cli-io.js'
 import { readOverlayFile } from './lib/scan-utils.js'
 
 interface LockProvenance {
@@ -20,20 +20,7 @@ interface LockProvenance {
   materialized?: { path: string }[]
 }
 
-export interface Io {
-  out: (text: string) => void
-  err: (text: string) => void
-}
-
-const STD: Io = {
-  out: (text) => process.stdout.write(text),
-  err: (text) => process.stderr.write(text),
-}
-
-function option(args: readonly string[], flag: string): string | undefined {
-  const index = args.indexOf(flag)
-  return index === -1 ? undefined : args[index + 1]
-}
+export type { Io }
 
 function cmFiles(lock: LockProvenance): string[] {
   return [lock.overrides, lock.additions, lock.materialized]
@@ -41,7 +28,7 @@ function cmFiles(lock: LockProvenance): string[] {
     .map((entry) => entry.path)
 }
 
-export function run(args: readonly string[], io: Io = STD): number {
+export function run(args: readonly string[], io: Io = STD_IO): number {
   const webRoot = resolve(option(args, '--web') ?? 'apps/web')
   const lockPath = option(args, '--lock')
   let exempt: string[] = []
@@ -68,11 +55,11 @@ export function run(args: readonly string[], io: Io = STD): number {
     )
     return 0
   }
-  io.err(`FATAL: monolithic regions (scanned ${result.files} files, ${result.regions} regions):\n`)
-  for (const problem of problems) io.err(`  ${problem}\n`)
-  return 1
+  return failWith(
+    io,
+    `monolithic regions (scanned ${result.files} files, ${result.regions} regions)`,
+    problems
+  )
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  process.exitCode = run(process.argv.slice(2))
-}
+runAsMain(import.meta.url, run)

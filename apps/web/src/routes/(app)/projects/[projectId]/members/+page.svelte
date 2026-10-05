@@ -5,7 +5,7 @@
   import ProjectMembersHeader from '$lib/components/members/ProjectMembersHeader.svelte'
   import ProjectTeamPanel from '$lib/components/members/ProjectTeamPanel.svelte'
   import ProjectMembersNotice from '$lib/components/members/ProjectMembersNotice.svelte'
-  import ProjectInviteForm from '$lib/components/members/ProjectInviteForm.svelte'
+  import ProjectInviteRegion from '$lib/components/members/ProjectInviteRegion.svelte'
   import ProjectInvitationsTable from '$lib/components/members/ProjectInvitationsTable.svelte'
   import {
     createInvitation,
@@ -174,19 +174,15 @@
   {:else}
     {#if showInviteForm}
       <!-- @region project.members.invite -->
-      <form
-        class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
-        onsubmit={(event) => {
-          event.preventDefault()
-          void submitInvite()
-        }}
+      <ProjectInviteRegion
+        bind:email
+        bind:role
+        {errorMessage}
+        {isSubmitting}
+        onsubmit={submitInvite}
       >
-        <ProjectInviteForm bind:email bind:role {errorMessage} {isSubmitting} /><InjectionPoint
-          name="project.members.invite"
-          props={baseProps}
-          data={data?.__inject}
-        />
-      </form>
+        <InjectionPoint name="project.members.invite" props={baseProps} data={data?.__inject} />
+      </ProjectInviteRegion>
     {/if}
 
     <!-- @region project.members.invitations -->

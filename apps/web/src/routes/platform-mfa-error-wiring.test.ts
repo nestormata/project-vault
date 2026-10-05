@@ -1,25 +1,27 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
+// Story 69.5: each platform page's markup lives in its region component under
+// `$lib/components/platform`, so the wiring is asserted on that file.
 const platformPages = [
   {
     ac: 'AC-M1',
-    path: './(app)/platform/settings/+page.svelte',
+    path: '../lib/components/platform/PlatformSettingsContent.svelte',
     error: 'data.errorMessage',
   },
   {
     ac: 'AC-M2',
-    path: './(app)/platform/settings/orgs/+page.svelte',
+    path: '../lib/components/platform/PlatformOrgsContent.svelte',
     error: 'pageError',
   },
   {
     ac: 'AC-M3',
-    path: './(app)/platform/settings/resource-usage/+page.svelte',
+    path: '../lib/components/platform/PlatformResourceUsageContent.svelte',
     error: 'data.errorMessage',
   },
   {
     ac: 'AC-M4/AC-M8',
-    path: './(app)/platform/audit/+page.svelte',
+    path: '../lib/components/platform/PlatformAuditContent.svelte',
     error: 'data.eventsErrorMessage',
   },
 ] as const

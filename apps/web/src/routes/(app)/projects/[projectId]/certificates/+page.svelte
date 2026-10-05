@@ -1,41 +1,13 @@
 <script lang="ts">
+  import CertificatesListContent from '$lib/components/monitoring/CertificatesListContent.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
-  import { ApiClientError } from '$lib/api/client.js'
-  import { deleteCertificate } from '$lib/api/certificates.js'
-  import type { CertificateRecord } from '$lib/api/certificates.js'
-  import {
-    AssetListHeader,
-    AssetRowActions,
-    AssetTable,
-    EmptyAssetState,
-    FormErrorBanner,
-    ProjectNotFoundBanner,
-  } from '$lib/components/monitoring/index.js'
-  import {
-    canManageMonitoredAssets,
-    formatAlertLeadDays,
-    formatDate,
-  } from '$lib/monitoring/index.js'
+
+  import AssetListHeader from '$lib/components/monitoring/AssetListHeader.svelte'
+  import { canManageMonitoredAssets } from '$lib/monitoring/index.js'
 
   let { data } = $props()
 
-  let certificates = $derived<CertificateRecord[]>(data.certificates)
-  let deleteError = $state<string | null>(null)
-
   const canManage = $derived(canManageMonitoredAssets(data.orgRole))
-
-  async function handleDelete(certificateId: string) {
-    deleteError = null
-    try {
-      await deleteCertificate(fetch, data.projectId, certificateId)
-      certificates = certificates.filter((c) => c.id !== certificateId)
-    } catch (error) {
-      if (error instanceof ApiClientError && error.status === 404) {
-        certificates = certificates.filter((c) => c.id !== certificateId)
-      }
-      deleteError = error instanceof Error ? error.message : 'Could not delete certificate.'
-    }
-  }
 </script>
 
 <svelte:head>
@@ -55,35 +27,9 @@
     Certificates tracked for expiry alerting.
   </AssetListHeader>
 
-  {#if data.notFound}
-    <ProjectNotFoundBanner />
-  {:else if certificates.length === 0}
-    <EmptyAssetState message="No certificates registered yet." />
-  {:else}
-    <FormErrorBanner message={deleteError} />
-    <AssetTable
-      caption="Certificates monitored in this project"
-      columns={['Domain', 'Expires on', 'Alert lead days']}
-      {canManage}
-    >
-      {#each certificates as certificate (certificate.id)}
-        <tr class="border-b border-slate-100 last:border-b-0">
-          <td class="px-4 py-3 font-semibold text-slate-950">{certificate.domain}</td>
-          <td class="px-4 py-3 text-slate-600">{formatDate(certificate.expiresAt)}</td>
-          <td class="px-4 py-3 text-slate-600">
-            {formatAlertLeadDays(certificate.alertLeadDays)}
-          </td>
-          {#if canManage}
-            <td class="px-4 py-3">
-              <AssetRowActions
-                editHref={`/projects/${data.projectId}/certificates/${certificate.id}`}
-                onDelete={() => handleDelete(certificate.id)}
-              />
-            </td>
-          {/if}
-        </tr>
-      {/each}
-    </AssetTable>
-  {/if}
+  <!-- @region project.certificates.list -->
+  <CertificatesListContent {data} {canManage}>
+    <InjectionPoint name="project.certificates.list" data={data?.__inject} />
+  </CertificatesListContent>
 </section>
 <InjectionPoint name="project.certificates.after" data={data?.__inject} />

@@ -3,6 +3,7 @@
   import NotificationSettingsHeader from '$lib/components/notifications/NotificationSettingsHeader.svelte'
   import NotificationPreferencesPanel from '$lib/components/notifications/NotificationPreferencesPanel.svelte'
   import NotificationRoutingPanel from '$lib/components/notifications/NotificationRoutingPanel.svelte'
+  import NotificationTestHeading from '$lib/components/notifications/NotificationTestHeading.svelte'
   import NotificationTestPanel from '$lib/components/notifications/NotificationTestPanel.svelte'
   import type { ActionData, PageData } from './$types.js'
 
@@ -52,13 +53,7 @@
   {#if data.isAdmin}
     <!-- @region settings.notifications.test -->
     <div class="mt-8 overflow-hidden rounded-lg bg-white shadow">
-      <div class="border-b border-gray-200 px-6 py-4">
-        <h2 class="text-lg font-semibold text-gray-800">Send Test Notification</h2>
-        <p class="mt-1 text-sm text-gray-500">
-          Verifies SMTP/Slack delivery. Test sent to configured From address — not your personal
-          inbox.
-        </p>
-      </div>
+      <NotificationTestHeading />
       <NotificationTestPanel
         canSendTest={data.canSendTest}
         testResult={form?.testResult}

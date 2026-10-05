@@ -246,6 +246,11 @@ jobs:
           pnpm check-monolithic-regions &&
           pnpm vitest run scripts/check-monolithic-regions.test.ts scripts/lib/route-files.test.ts
 
+      - name: Check route regions (Story 69.5)
+        run: |
+          pnpm check-route-regions &&
+          pnpm vitest run scripts/check-route-regions.test.ts
+
       - name: Check the mock UI pack mechanism wiring (Story 68.10)
         run: pnpm vitest run scripts/check-mock-ui-pack-e2e-wiring.test.ts scripts/lib/web-host/consumer-tarballs.test.ts scripts/mock-ui-pack-seed.test.ts scripts/check-pv-nav-snapshot.test.ts scripts/check-mock-ui-pack-not-in-production.test.ts scripts/check-runtime-route-audit-shipped.test.ts scripts/lib/shipped-route-audit.test.ts
 

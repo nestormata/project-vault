@@ -1,10 +1,7 @@
 <script lang="ts">
+  import ProjectPreviewContent from '$lib/components/projects/ProjectPreviewContent.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   let { data } = $props()
-  import ProjectDashboardEmptyState from '$lib/components/dashboard/ProjectDashboardEmptyState.svelte'
-  import { getPreviewProject } from '$lib/state/preview-project.svelte.js'
-
-  let project = $derived(getPreviewProject())
 </script>
 
 <svelte:head>
@@ -13,14 +10,8 @@
 
 <InjectionPoint name="project.preview.before" data={data?.__inject} />
 <InjectionPoint name="project.preview.header.actions" data={data?.__inject} />
-{#if project}
-  <ProjectDashboardEmptyState {project} />
-{:else}
-  <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-    <h1 class="text-3xl font-bold">Preview project</h1>
-    <p class="mt-2 text-slate-600">
-      Preview project state is created only in the browser and resets on reload.
-    </p>
-  </section>
-{/if}
+<!-- @region project.preview.content -->
+<ProjectPreviewContent>
+  <InjectionPoint name="project.preview.content" data={data?.__inject} />
+</ProjectPreviewContent>
 <InjectionPoint name="project.preview.after" data={data?.__inject} />

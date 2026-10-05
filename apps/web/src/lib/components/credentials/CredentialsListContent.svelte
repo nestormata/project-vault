@@ -1,0 +1,250 @@
+<script lang="ts">
+  import type { PageData } from '../../../routes/(app)/projects/[projectId]/credentials/$types.js'
+  import type { Snippet } from 'svelte'
+  import ProjectNotFoundBanner from '$lib/components/monitoring/ProjectNotFoundBanner.svelte'
+  import { resolve } from '$app/paths'
+  import { goto } from '$app/navigation'
+  import type { ProjectPath } from '$lib/app-paths.js'
+  import type { CredentialStatus } from '@project-vault/shared'
+  import RotationBadge from '$lib/components/rotations/RotationBadge.svelte'
+  import DataTable from '$lib/components/tables/DataTable.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+
+  let { data, canCreate, children }: { data: PageData; canCreate: boolean; children?: Snippet } =
+    $props()
+
+  function statusClass(status: CredentialStatus): string {
+    switch (status) {
+      case 'active':
+        return 'bg-emerald-100 text-emerald-800'
+      case 'expiring':
+        return 'bg-amber-100 text-amber-900'
+      case 'expired':
+        return 'bg-red-100 text-red-800'
+    }
+  }
+  function formatDate(value: string | null): string {
+    if (!value) return '—'
+    return new Date(value).toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    })
+  }
+  function filterHref(overrides: {
+    q?: string
+    status?: string
+    tags?: string
+    page?: number
+    includeArchived?: boolean
+  }): ProjectPath {
+    const params = new URLSearchParams()
+    const q = overrides.q ?? data.filters.q
+    const status = overrides.status ?? data.filters.status
+    const tags = overrides.tags ?? data.filters.tags
+    const page = overrides.page ?? data.filters.page
+    const includeArchived = overrides.includeArchived ?? data.filters.includeArchived
+    if (q) params.set('q', q)
+    if (status) params.set('status', status)
+    if (tags) params.set('tags', tags)
+    if (page > 1) params.set('page', String(page))
+    if (includeArchived) params.set('includeArchived', 'true')
+    const query = params.toString()
+    return `/projects/${data.projectId}/credentials${query ? `?${query}` : ''}`
+  }
+  // Story 28.5 AC6: mirrors the project list's togglingArchived re-entrancy guard exactly.
+  let togglingArchived = $state(false)
+  async function toggleShowArchived(): Promise<void> {
+    if (togglingArchived) return
+    togglingArchived = true
+    try {
+      await goto(resolve(filterHref({ includeArchived: !data.filters.includeArchived, page: 1 })))
+    } finally {
+      togglingArchived = false
+    }
+  }
+  // Story 28.1 AC1/AC2: the form's implicit method="GET" submission relies on SvelteKit's
+  // fire-and-forget client-side navigation, which can silently fail (see story Finding). Drive
+  // the navigation explicitly instead, reusing filterHref() as the single source of truth for
+  // query-string construction, and always reset to page 1 on a fresh filter submission.
+  function handleFilterSubmit(event: SubmitEvent): void {
+    event.preventDefault()
+    const form = event.currentTarget as HTMLFormElement
+    const formData = new FormData(form)
+    const q = String(formData.get('q') ?? '')
+    const status = String(formData.get('status') ?? '')
+    const tags = String(formData.get('tags') ?? '')
+    void goto(resolve(filterHref({ q, status, tags, page: 1 })))
+  }
+</script>
+
+{@render children?.()}
+{#if data.notFound}
+  <ProjectNotFoundBanner />
+{:else}
+  <form
+    class="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-[1fr_auto_auto_auto_auto] sm:grid-rows-[auto_auto_auto] sm:items-start sm:gap-x-4 sm:gap-y-2"
+    method="GET"
+    action={resolve(`/projects/${data.projectId}/credentials`)}
+    onsubmit={handleFilterSubmit}
+  >
+    <label
+      class="block text-sm font-medium text-slate-800 sm:col-start-1 sm:row-start-1"
+      for="credential-search">Search</label
+    >
+    <input
+      id="credential-search"
+      class="w-full rounded-xl border border-slate-300 px-3 py-2 sm:col-start-1 sm:row-start-2"
+      type="search"
+      name="q"
+      value={data.filters.q}
+      placeholder="Search by name"
+      aria-describedby="credential-search-help"
+    />
+    <div class="sm:col-start-1 sm:row-start-3">
+      <FormHelpText id="credential-search-help" kind="search" />
+    </div>
+
+    <label
+      class="block text-sm font-medium text-slate-800 sm:col-start-2 sm:row-start-1"
+      for="credential-status">Status</label
+    >
+    <select
+      id="credential-status"
+      class="rounded-xl border border-slate-300 px-3 py-2 sm:col-start-2 sm:row-start-2"
+      name="status"
+      value={data.filters.status}
+      aria-describedby="credential-status-help"
+    >
+      <option value="">All</option>
+      <option value="active">Active</option>
+      <option value="expiring">Expiring</option>
+      <option value="expired">Expired</option>
+    </select>
+    <div class="sm:col-start-2 sm:row-start-3">
+      <FormHelpText id="credential-status-help" kind="select" />
+    </div>
+
+    <label
+      class="block text-sm font-medium text-slate-800 sm:col-start-3 sm:row-start-1"
+      for="credential-tags">Tags</label
+    >
+    <input
+      id="credential-tags"
+      class="w-full rounded-xl border border-slate-300 px-3 py-2 sm:col-start-3 sm:row-start-2"
+      type="text"
+      name="tags"
+      value={data.filters.tags}
+      placeholder="db, prod"
+      aria-describedby="credential-tags-help"
+    />
+    <div class="space-y-1 sm:col-start-3 sm:row-start-3">
+      <FormHelpText id="credential-tags-help" kind="text" />
+      <p class="text-xs text-slate-500">Matches secrets with ALL of these tags.</p>
+    </div>
+
+    <button
+      class="rounded-xl bg-slate-950 px-4 py-2 font-semibold text-white sm:col-start-4 sm:row-start-2 sm:self-start"
+      type="submit"
+    >
+      Apply filters
+    </button>
+    {#if data.filters.q || data.filters.status || data.filters.tags}
+      <a
+        class="py-2 text-sm font-medium text-slate-700 underline sm:col-start-5 sm:row-start-2 sm:self-start"
+        href={resolve(`/projects/${data.projectId}/credentials`)}
+      >
+        Clear
+      </a>
+    {/if}
+  </form>
+
+  <!-- Story 28.5 AC5/AC6: mirrors the project list's "Show archived" toggle exactly. G5 requires
+       visible, localized guidance text wired through aria-describedby for this user-facing
+       control. -->
+  <div class="flex items-center gap-2">
+    <input
+      id="credentials-include-archived"
+      type="checkbox"
+      checked={data.filters.includeArchived}
+      disabled={togglingArchived}
+      aria-describedby="credentials-include-archived-help"
+      onchange={() => void toggleShowArchived()}
+    />
+    <label for="credentials-include-archived" class="text-sm font-medium text-slate-800">
+      Include archived secrets
+    </label>
+  </div>
+  <p id="credentials-include-archived-help" class="text-xs text-slate-500">
+    Archived secrets are hidden from this list by default. Their data, versions, and history remain
+    intact and can be viewed or unarchived from the secret's own page.
+  </p>
+
+  {#if data.credentials.items.length === 0}
+    <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6">
+      <h2 class="text-xl font-semibold text-slate-950">No secrets found</h2>
+      <p class="mt-2 text-slate-600">
+        {#if data.filters.q || data.filters.status || data.filters.tags}
+          Try adjusting your filters.
+        {:else if canCreate}
+          Add your first secret to get started.
+        {:else}
+          No secrets have been added to this project yet.
+        {/if}
+      </p>
+    </div>
+  {:else}
+    <DataTable columns={['Name', 'Status', 'Rotation', 'Tags', 'Expires', 'Deps']}>
+      {#each data.credentials.items as credential (credential.id)}
+        <tr class="border-b border-slate-100 last:border-b-0">
+          <td class="px-4 py-3">
+            <a
+              class="font-semibold text-slate-950 underline"
+              href={resolve(`/projects/${data.projectId}/credentials/${credential.id}`)}
+            >
+              {credential.name}
+            </a>
+            {#if credential.archivedAt}
+              <span
+                class="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-normal text-slate-700"
+              >
+                Archived
+              </span>
+            {/if}
+          </td>
+          <td class="px-4 py-3">
+            <span
+              class={`rounded-full px-2 py-1 text-xs font-semibold ${statusClass(credential.status)}`}
+            >
+              {credential.status}
+            </span>
+          </td>
+          <td class="px-4 py-3">
+            <!-- Story 18.5 AC-1/AC-6: badge for a credential whose current rotation is
+                 badge-worthy (non-terminal); links to the same rotation detail page pattern
+                 used by the credential detail page's "View active rotation" link. -->
+            {#if credential.activeRotation}
+              <RotationBadge
+                status={credential.activeRotation.status}
+                href={`/projects/${data.projectId}/credentials/${credential.id}/rotations/${credential.activeRotation.rotationId}`}
+              />
+            {:else}
+              —
+            {/if}
+          </td>
+          <td class="px-4 py-3 text-slate-600">
+            {credential.tags.length > 0 ? credential.tags.join(', ') : '—'}
+          </td>
+          <td class="px-4 py-3 text-slate-600">{formatDate(credential.expiresAt)}</td>
+          <td class="px-4 py-3 text-slate-600">
+            {credential.hasDependencies ? 'Yes' : '—'}
+          </td>
+        </tr>
+      {/each}
+    </DataTable>
+
+    <p class="text-sm text-slate-600">
+      Showing {data.credentials.items.length} of {data.credentials.total} secrets
+    </p>
+  {/if}
+{/if}

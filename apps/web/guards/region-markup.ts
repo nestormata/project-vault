@@ -40,12 +40,14 @@ export interface ParsedMarkup {
   regions: Region[]
   /** Local names bound by an `import` of a `.svelte` file (instance and module script). */
   svelteImports: Map<string, string>
+  /** The direct children of the template fragment (the root `<script>`/`<style>` are not in it). */
+  topLevel: Node[]
 }
 
 const REGION_COMMENT = /^\s*@region\s+(\S+)\s*$/
 const REGION_WORD = /^\s*@region\b/
 
-function lineAt(code: string, index: number): number {
+export function lineAt(code: string, index: number): number {
   return code.slice(0, index).split('\n').length
 }
 
@@ -182,6 +184,7 @@ export function parseRegions(code: string, file: string, rules: RegionRules): Pa
     regionProblems: [],
     regions: [],
     svelteImports: importedSvelteNames(root),
+    topLevel: ((root.fragment as { nodes?: Node[] }).nodes ?? []) as Node[],
   }
   walk(root.fragment, code, out, rules)
   return out

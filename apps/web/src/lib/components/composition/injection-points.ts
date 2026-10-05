@@ -424,6 +424,108 @@ export interface InjectionPointProps {
   'project.members.invitations': ProjectMembersInvitationsPointProps
   'project.members.invite': ProjectMembersBasePointProps
   'project.members.notice': ProjectMembersBasePointProps
+  'root.error.header': StandardPointProps
+  'root.error.content': StandardPointProps
+  'root.layout.body': StandardPointProps
+  'root.home.content': StandardPointProps
+  'app.layout.theme': StandardPointProps
+  'app.layout.shell': StandardPointProps
+  'credentials.home.header': StandardPointProps
+  'credentials.home.projects': StandardPointProps
+  'credentials.import.header': StandardPointProps
+  'credentials.import.projects': StandardPointProps
+  'extensions.panels-detail.content': StandardPointProps
+  'health.home.header': StandardPointProps
+  'health.home.projects': StandardPointProps
+  'notifications.home.header': StandardPointProps
+  'notifications.home.machine-dormancy': StandardPointProps
+  'notifications.home.user-dormancy': StandardPointProps
+  'notifications.home.tabs': StandardPointProps
+  'notifications.home.list': StandardPointProps
+  'platform.home.header': StandardPointProps
+  'platform.audit.content': StandardPointProps
+  'platform.backups.content': StandardPointProps
+  'platform.settings.content': StandardPointProps
+  'platform.settings-orgs.content': StandardPointProps
+  'platform.settings-resource-usage.content': StandardPointProps
+  'platform.upgrade.content': StandardPointProps
+  'project.home.header': StandardPointProps
+  'project.home.error': StandardPointProps
+  'project.home.list': StandardPointProps
+  'project.certificates.list': StandardPointProps
+  'project.certificates-detail.content': StandardPointProps
+  'project.certificates-new.header': StandardPointProps
+  'project.certificates-new.form': StandardPointProps
+  'project.credentials.header': StandardPointProps
+  'project.credentials.list': StandardPointProps
+  'project.credentials-rotate.header': StandardPointProps
+  'project.credentials-rotate.form': StandardPointProps
+  'project.credentials-rotations-detail.content': StandardPointProps
+  'project.credentials-import.header': StandardPointProps
+  'project.credentials-import.content': StandardPointProps
+  'project.credentials-new.header': StandardPointProps
+  'project.credentials-new.form': StandardPointProps
+  'project.domains.list': StandardPointProps
+  'project.domains-detail.content': StandardPointProps
+  'project.domains-new.header': StandardPointProps
+  'project.domains-new.form': StandardPointProps
+  'project.machine-users.header': StandardPointProps
+  'project.machine-users.list': StandardPointProps
+  'project.machine-users-detail.content': StandardPointProps
+  'project.machine-users-new.header': StandardPointProps
+  'project.machine-users-new.form': StandardPointProps
+  'project.services.list': StandardPointProps
+  'project.services-detail.content': StandardPointProps
+  'project.services-new.header': StandardPointProps
+  'project.services-new.form': StandardPointProps
+  'project.import.header': StandardPointProps
+  'project.import.content': StandardPointProps
+  'project.new.header': StandardPointProps
+  'project.new.form': StandardPointProps
+  'project.preview.content': StandardPointProps
+  'settings.home.header': StandardPointProps
+  'settings.audit-access-report.header': StandardPointProps
+  'settings.audit-access-report.report': StandardPointProps
+  'settings.audit-forwarding.header': StandardPointProps
+  'settings.audit-forwarding.config': StandardPointProps
+  'settings.extensions.header': StandardPointProps
+  'settings.extensions.status': StandardPointProps
+  'settings.external-identities.header': StandardPointProps
+  'settings.external-identities.panel': StandardPointProps
+  'settings.language.header': StandardPointProps
+  'settings.language.errors': StandardPointProps
+  'settings.language.options': StandardPointProps
+  'settings.security.header': StandardPointProps
+  'settings.sso-domains.header': StandardPointProps
+  'settings.sso-domains.panel': StandardPointProps
+  'settings.themes.header': StandardPointProps
+  'settings.themes.selection-error': StandardPointProps
+  'settings.themes.list': StandardPointProps
+  'settings.themes.admin': StandardPointProps
+  'settings.users.header': StandardPointProps
+  'settings.users.management': StandardPointProps
+  'settings.users-erasure-detail.header': StandardPointProps
+  'settings.users-erasure-detail.request': StandardPointProps
+  'shares.detail.heading': StandardPointProps
+  'shares.detail.body': StandardPointProps
+  'auth.layout.theme': StandardPointProps
+  'auth.layout.footer': StandardPointProps
+  'auth.layout.body': StandardPointProps
+  'auth.handoff.content': StandardPointProps
+  'auth.invitations-accept.content': StandardPointProps
+  'auth.login.heading': StandardPointProps
+  'auth.login.reason': StandardPointProps
+  'auth.login.links': StandardPointProps
+  'auth.login.form': StandardPointProps
+  'auth.recovery.heading': StandardPointProps
+  'auth.recovery.request': StandardPointProps
+  'auth.recovery.login-link': StandardPointProps
+  'auth.recovery-detail.content': StandardPointProps
+  'auth.register.heading': StandardPointProps
+  'auth.register.login-link': StandardPointProps
+  'vault.home.header': StandardPointProps
+  'external-shares.detail.heading': StandardPointProps
+  'external-shares.detail.body': StandardPointProps
   'status.detail.services': PublicStatusPointProps
   'status.detail.unavailable': StandardPointProps
   'vault.home.after': StandardPointProps
@@ -723,6 +825,276 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     [MEMBERS_PAGE_HOST],
     ['project.members.invitations']
   ),
+  ...regionPoints('StandardPointProps', ['/#layout'], ['root.layout.body']),
+  ...regionPoints('StandardPointProps', ['/#page'], ['root.home.content']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)#layout'],
+    ['app.layout.theme', 'app.layout.shell']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/credentials#page'],
+    ['credentials.home.header', 'credentials.home.projects']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/credentials/import#page'],
+    ['credentials.import.header', 'credentials.import.projects']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/extensions/panels/[slot]/[...subpath]#page'],
+    ['extensions.panels-detail.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/health#page'],
+    ['health.home.header', 'health.home.projects']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/notifications#page'],
+    [
+      'notifications.home.header',
+      'notifications.home.machine-dormancy',
+      'notifications.home.user-dormancy',
+      'notifications.home.tabs',
+      'notifications.home.list',
+    ]
+  ),
+  ...regionPoints('StandardPointProps', ['/(app)/platform#page'], ['platform.home.header']),
+  ...regionPoints('StandardPointProps', ['/(app)/platform/audit#page'], ['platform.audit.content']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/platform/backups#page'],
+    ['platform.backups.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/platform/settings#page'],
+    ['platform.settings.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/platform/settings/orgs#page'],
+    ['platform.settings-orgs.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/platform/settings/resource-usage#page'],
+    ['platform.settings-resource-usage.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/platform/upgrade#page'],
+    ['platform.upgrade.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects#page'],
+    ['project.home.header', 'project.home.error', 'project.home.list']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/certificates#page'],
+    ['project.certificates.list']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/certificates/[certificateId]#page'],
+    ['project.certificates-detail.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/certificates/new#page'],
+    ['project.certificates-new.header', 'project.certificates-new.form']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/credentials#page'],
+    ['project.credentials.header', 'project.credentials.list']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/credentials/[credentialId]/rotate#page'],
+    ['project.credentials-rotate.header', 'project.credentials-rotate.form']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]#page'],
+    ['project.credentials-rotations-detail.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/credentials/import#page'],
+    ['project.credentials-import.header', 'project.credentials-import.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/credentials/new#page'],
+    ['project.credentials-new.header', 'project.credentials-new.form']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/domains#page'],
+    ['project.domains.list']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/domains/[domainId]#page'],
+    ['project.domains-detail.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/domains/new#page'],
+    ['project.domains-new.header', 'project.domains-new.form']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/machine-users#page'],
+    ['project.machine-users.header', 'project.machine-users.list']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/machine-users/[machineUserId]#page'],
+    ['project.machine-users-detail.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/machine-users/new#page'],
+    ['project.machine-users-new.header', 'project.machine-users-new.form']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/services#page'],
+    ['project.services.list']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/services/[serviceId]#page'],
+    ['project.services-detail.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/services/new#page'],
+    ['project.services-new.header', 'project.services-new.form']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/import#page'],
+    ['project.import.header', 'project.import.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/new#page'],
+    ['project.new.header', 'project.new.form']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/preview#page'],
+    ['project.preview.content']
+  ),
+  ...regionPoints('StandardPointProps', ['/(app)/settings#page'], ['settings.home.header']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/audit/access-report#page'],
+    ['settings.audit-access-report.header', 'settings.audit-access-report.report']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/audit/forwarding#page'],
+    ['settings.audit-forwarding.header', 'settings.audit-forwarding.config']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/extensions#page'],
+    ['settings.extensions.header', 'settings.extensions.status']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/external-identities#page'],
+    ['settings.external-identities.header', 'settings.external-identities.panel']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/language#page'],
+    ['settings.language.header', 'settings.language.errors', 'settings.language.options']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/security#page'],
+    ['settings.security.header']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/sso-domains#page'],
+    ['settings.sso-domains.header', 'settings.sso-domains.panel']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/themes#page'],
+    [
+      'settings.themes.header',
+      'settings.themes.selection-error',
+      'settings.themes.list',
+      'settings.themes.admin',
+    ]
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/users#page'],
+    ['settings.users.header', 'settings.users.management']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/users/[userId]/erasure/[requestId]#page'],
+    ['settings.users-erasure-detail.header', 'settings.users-erasure-detail.request']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/shares/[token]#page'],
+    ['shares.detail.heading', 'shares.detail.body']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(auth)#layout'],
+    ['auth.layout.theme', 'auth.layout.footer', 'auth.layout.body']
+  ),
+  ...regionPoints('StandardPointProps', ['/(auth)/handoff#page'], ['auth.handoff.content']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(auth)/invitations/accept#page'],
+    ['auth.invitations-accept.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(auth)/login#page'],
+    ['auth.login.heading', 'auth.login.reason', 'auth.login.links', 'auth.login.form']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(auth)/recovery#page'],
+    ['auth.recovery.heading', 'auth.recovery.request', 'auth.recovery.login-link']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(auth)/recovery/[token]#page'],
+    ['auth.recovery-detail.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(auth)/register#page'],
+    ['auth.register.heading', 'auth.register.login-link']
+  ),
+  ...regionPoints('StandardPointProps', ['/(vault)/vault#page'], ['vault.home.header']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/external-shares/[token]#page'],
+    ['external-shares.detail.heading', 'external-shares.detail.body']
+  ),
+  { name: 'root.error.header', kind: 'standard', propsType: 'StandardPointProps' },
+  { name: 'root.error.content', kind: 'standard', propsType: 'StandardPointProps' },
   { name: 'shell.body.end', kind: 'shell', propsType: 'StandardPointProps' },
   { name: 'shell.head', kind: 'shell', propsType: 'StandardPointProps' },
   {

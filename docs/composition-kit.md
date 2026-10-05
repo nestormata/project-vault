@@ -259,12 +259,13 @@ member) whose binding is imported from a `.svelte` file in the same file's scrip
 monolithic. The check is about replaceability, not size: a region wrapped in a trivial component passes (whether
 the extraction is meaningful is the componentization audit of story 69.5). An unparseable `.svelte` file is a
 finding, never a silent skip. Files the lock records as CM's are exempt by provenance (the guard has
-`@pv-scope pv-originated-only`); there is no suppression syntax, baseline or allow-list. PV's own tree has 66
-`@region` markers since Story 69-3 (14 from story 69-1: the project page, the project nav and the dashboard; 13 from
+`@pv-scope pv-originated-only`); there is no suppression syntax, baseline or allow-list. PV's own tree has 168
+`@region` markers since Story 69-5 (66 after Story 69-3, made of 14 from story 69-1: the project page, the project nav and the dashboard; 13 from
 story 69-2: the credential detail page; 17 from story 69-4: the settings audit, settings notifications and project
 members pages; 22 from story 69-3: the endpoint list, add and detail pages, the status page admin screen and the
-public status page; see "Region points" below); the guard prints the count (`scanned N files, 66 regions`) and a test
-pins it from below, and a per-file test pins each monitoring region file.
+public status page; Story 69-5 added the rest, so every route file holds regions; see "Region points" below); the guard prints the count (`scanned N files, 168 regions`) and a test
+pins it from below, and a per-file test pins each monitoring region file. Since Story 69-5 the same guard also checks every
+route file (`+page`, `+layout`, `+error`): see "Replaceable regions" below.
 
 **Hash drift (Story 69-3):** the five monitoring `+page.svelte` files (endpoint list, add and detail, status
 page admin, public status page) and the public status `+page.server.ts` changed, and `inject-behavior.ts`
@@ -274,6 +275,43 @@ the next web-host release; reconcile it with `pv-compose --accept-host`.
 **Hash drift (Story 69-1):** the dashboard page, the project page, the project layout, `ProjectNav`,
 `PageAlertBanner` and `DashboardPlaceholderGrid` changed, so a pack that overrides one of them sees its
 `hostSha256` drift with the next web-host release; reconcile it with `pv-compose --accept-host`.
+
+### Replaceable regions (Epic 69, Story 69-5)
+
+M4 replaces a module by its resolved path, and a route file is overridden whole (M1), so a page region is only
+replaceable once its markup lives in its own `.svelte` file under `src/lib/components/<area>/`
+(`component-index.json` indexes that directory). Story 69-5 decomposed every PV route file that way. Two route-file
+rules of the shipped `monolithic-region` guard keep it true; neither has an allow-list, a baseline or a suppression
+syntax, and both skip files the lock records as CM's:
+
+- **R1, no unmarked top-level content.** Every top-level template node of a route file is inside an `@region` or is a
+  component use or a `{@render}`. "Top-level" descends through root `{#if}`, `{#each}`, `{#await}`, `{#key}` and
+  `<svelte:boundary>` branches and through layout wrappers (an element with no direct text, only
+  `class`/`id`/`style`/`role`/`data-*`/`aria-*` attributes and covered children). `<svelte:head>`, comments,
+  `{#snippet}`, `{@const}` and `<InjectionPoint>` are ignored. A route file holding nothing but points fails too.
+- **R2, thin region shell.** Inside a marked region of a route file only components, `<InjectionPoint>`, `{@render}`,
+  `{#if}`/`{#each}`/`{#key}`/`{#await}` blocks around those, and elements that hold them (no text, no form control, no
+  handler, bind or action) are allowed. The markup belongs in the component.
+
+**Shape.** The route file keeps the marker, the point and the data; the component keeps the markup and the logic only
+that region uses:
+
+```svelte
+<!-- @region settings.home.header -->
+<SettingsHomeHeader>
+  <InjectionPoint name="settings.home.header" data={data?.__inject} />
+</SettingsHomeHeader>
+```
+
+The component renders `{@render children?.()}` (after its markup, or before it when it is the last child of its parent,
+so whitespace at the edge of the parent is unchanged). Pages whose state is shared by several regions keep the state in
+the route file and pass it as props; a region that owns its state carries it. An error page has no behavior host, so its
+region points are registered as `standard` points.
+
+**Finding a region.** `pnpm check-route-regions --print` prints one row per region (route file, scope, region, region
+component, point, inline lines, component lines, `@pv-stable` mark, status) derived from the tree, and fails when a route
+file has no region, a region has no registered point, or its component is outside `src/lib/components`. Nothing is
+committed: the table is regenerated on demand. `@pv-stable` stays a signal only; no region component carries it yet.
 
 ### Region points (Epic 69, Story 69-4)
 
