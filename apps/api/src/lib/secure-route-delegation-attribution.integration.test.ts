@@ -568,17 +568,21 @@ describe('Story 71.4 AC-5 — idempotency interplay', () => {
     const { sub } = await memberSubject()
     const key = `k-${randomUUID()}`
     const eventType = nextEventType()
-    await write(app, { sub, assertion: occ(3600), input: { eventType, idempotencyKey: key } })
+    // One fixed occurrence second for every write: occ() reads the wall clock, and a second
+    // boundary between calls would turn the replay into a same-key/different-time conflict.
+    const claims = occ(3600).claims
+    const fresh = () => ({ claims: { ...claims, jti: `jti-${randomUUID()}` } })
+    await write(app, { sub, assertion: fresh(), input: { eventType, idempotencyKey: key } })
     const gate = vi.spyOn(quotaGate, 'assertOrgMayWriteAuditGates')
     const bad = await write(app, {
       sub,
-      assertion: occ(3600),
+      assertion: fresh(),
       input: { eventType, idempotencyKey: key, actorId: 'someone_else' },
     })
     expect(bad.error).toEqual({ name: REJECTED, code: 'actor_mismatch' })
     const replay = await write(app, {
       sub,
-      assertion: occ(3600),
+      assertion: fresh(),
       input: { eventType, idempotencyKey: key },
     })
     expect(replay.receipt).toBeDefined()

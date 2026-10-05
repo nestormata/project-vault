@@ -116,7 +116,7 @@ function readActorId(value: unknown): string | undefined {
 function readOccurredAtMs(value: unknown): number | undefined {
   if (value === undefined) return undefined
   const parsed = typeof value === 'string' ? parseInstantMs(value) : undefined
-  return parsed === undefined ? reject('occurred_at_invalid') : parsed
+  return parsed ?? reject('occurred_at_invalid')
 }
 
 function checkActor(actorId: string | undefined, ambient: DelegationSnapshot | undefined): void {
