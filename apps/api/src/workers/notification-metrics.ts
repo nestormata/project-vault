@@ -27,3 +27,15 @@ export const notificationDeliveryOutcomeUnknownTotal = getOrCreateCounter<'chann
   help: 'Total notification_queue rows failed because their send started but its outcome was never recorded (not re-sent), labeled by channel',
   labelNames: ['channel'],
 })
+
+// Story 70.3 AC4 — rows a DeliveryProvider ended with DeliveryProviderPermanentError (moved to
+// `failed`, not retried). Incremented once per row this call actually transitioned. Label:
+// channel only (never a recipient, subject or provider message).
+export const NOTIFICATION_DELIVERY_PERMANENT_FAILURE_TOTAL_METRIC_NAME =
+  'notification_delivery_permanent_failure_total'
+
+export const notificationDeliveryPermanentFailureTotal = getOrCreateCounter<'channel'>({
+  name: NOTIFICATION_DELIVERY_PERMANENT_FAILURE_TOTAL_METRIC_NAME,
+  help: 'Total notification_queue rows failed without retry because the delivery provider reported a permanent failure, labeled by channel',
+  labelNames: ['channel'],
+})

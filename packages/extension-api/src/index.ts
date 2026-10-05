@@ -153,6 +153,7 @@ export type {
   DeliveryStatusEvent,
   DeliveryStatusValue,
 } from './hooks/delivery-provider.js'
+export { DeliveryProviderPermanentError } from './hooks/delivery-provider.js'
 export type {
   NotificationOriginatorChannel,
   NotificationOriginatorEnqueueForOrgParams,

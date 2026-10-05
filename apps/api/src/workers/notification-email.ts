@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { users } from '@project-vault/db/schema'
+import { DeliveryProviderPermanentError } from '@project-vault/extension-api'
 import { renderEmailTemplate } from '../notifications/templates/index.js'
 import { escapeHtml } from '../notifications/templates/html-safety.js'
 import type { FastifyBaseLogger } from 'fastify'
@@ -8,13 +9,17 @@ import nodemailer from 'nodemailer'
 import { resolveSmtpTransportConfig } from '../modules/platform-admin/service.js'
 import { getDeliveryProviderForChannel } from '../lib/delivery-provider.js'
 import { applyDeliveryStatusUpdate } from '../notifications/delivery-status.js'
+import { OperationalEvent } from '@project-vault/shared'
+import { operationalLog } from '../lib/logger.js'
 import {
   markNotificationDelivered,
+  markNotificationFailed,
   markNotificationSuppressed,
   type NotificationQueueRow,
 } from './notification-queue-ops.js'
 import { withClaimedNotification, type NotificationClaimContext } from './notification-claim.js'
 import { createNotificationJobHandler } from './notification-worker-common.js'
+import { notificationDeliveryPermanentFailureTotal } from './notification-metrics.js'
 
 const EMAIL_CHANNEL = 'email'
 
@@ -75,21 +80,30 @@ async function sendViaDeliveryProvider(
   entry: NotificationQueueRow,
   orgId: string,
   claim: NotificationClaimContext,
-  message: { toAddress: string; subject: string; body: string }
+  message: DeliveryProviderMessage,
+  logger?: EmailLogger
 ): Promise<void> {
   const provider = getDeliveryProviderForChannel(EMAIL_CHANNEL)
   if (!provider) throw new Error('sendViaDeliveryProvider called with no registered provider')
 
-  const { providerMessageId } = await claim.externalSend(() =>
-    provider.send({
-      recipientAddress: message.toAddress,
-      subject: message.subject,
-      body: message.body,
-      templateId: entry.templateId,
-      queueRowId: entry.id,
-      attemptNumber: entry.attemptCount,
-    })
-  )
+  let providerMessageId: string
+  try {
+    ;({ providerMessageId } = await claim.externalSend(() =>
+      provider.send({
+        recipientAddress: message.toAddress,
+        subject: message.subject,
+        body: message.body,
+        ...(message.html === undefined ? {} : { html: message.html }),
+        templateId: entry.templateId,
+        queueRowId: entry.id,
+        attemptNumber: entry.attemptCount,
+      })
+    ))
+  } catch (error) {
+    if (!isDeliveryProviderPermanentError(error)) throw error
+    await recordPermanentDeliveryFailure(entry, orgId, error, logger)
+    return
+  }
 
   // AC2/AC4: even the initial send-time transition goes through the single rank-based guard —
   // pending (rank 0) -> sent (rank 1) is always forward progress, so this always applies.
@@ -100,6 +114,84 @@ async function sendViaDeliveryProvider(
     providerId: EMAIL_CHANNEL,
     providerMessageId,
   })
+}
+
+type DeliveryProviderMessage = { toAddress: string; subject: string; body: string; html?: string }
+
+/**
+ * Story 70.3 AC1 — the payload message for a provider. `body` keeps its pre-70.3 value
+ * (`text ?? html ?? ''`) so a provider that reads only `body` is unchanged; `html` is added only
+ * when the rendered content has an HTML part (the key is absent otherwise).
+ */
+export function buildDeliveryProviderMessage(
+  toAddress: string,
+  content: { subject: string; text: string | undefined; html: string | undefined }
+): DeliveryProviderMessage {
+  const message: DeliveryProviderMessage = {
+    toAddress,
+    subject: content.subject,
+    body: content.text ?? content.html ?? '',
+  }
+  if (content.html !== undefined) message.html = content.html
+  return message
+}
+
+const PERMANENT_ERROR_NAME = 'DeliveryProviderPermanentError'
+
+/**
+ * Story 70.3 AC3 — true for the contract's permanent-failure error, by class identity OR by
+ * `name`, so an extension that bundles its own copy of `@project-vault/extension-api` (where
+ * `instanceof` is false) is still classified correctly.
+ */
+function isDeliveryProviderPermanentError(error: unknown): error is { reason?: unknown } {
+  if (error instanceof DeliveryProviderPermanentError) return true
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { name?: unknown }).name === PERMANENT_ERROR_NAME
+  )
+}
+
+const REASON_SLUG_PATTERN = /^[a-z][a-z0-9_]{0,63}$/
+
+/** The error's `reason` only when it is a valid slug: a duplicate class carries no constructor
+ * validation, so it is re-checked here and never logged otherwise. */
+function permanentFailureReason(error: { reason?: unknown }): string | undefined {
+  const { reason } = error
+  return typeof reason === 'string' && REASON_SLUG_PATTERN.test(reason) ? reason : undefined
+}
+
+/**
+ * Story 70.3 AC3/AC4 — a permanent provider rejection ends the row as `failed` with no retry:
+ * recorded through the single rank-guarded `markNotificationFailed`, counted and logged once per
+ * row THIS call moved to `failed`, then the handler resolves. If marking throws, the error
+ * propagates and `withClaimedNotification` releases the claim, so the retry calls the provider
+ * again (it rejected the previous call, so this is never a double send). The error's `message` and
+ * `cause` are never logged or stored: only the validated `reason` slug.
+ */
+async function recordPermanentDeliveryFailure(
+  entry: NotificationQueueRow,
+  orgId: string,
+  error: { reason?: unknown },
+  logger?: EmailLogger
+): Promise<void> {
+  if (!(await markNotificationFailed(entry.id, orgId))) return
+  notificationDeliveryPermanentFailureTotal.inc({ channel: EMAIL_CHANNEL })
+  if (!logger) return
+  const reason = permanentFailureReason(error)
+  operationalLog(
+    logger,
+    'error',
+    OperationalEvent.NOTIFICATION_DELIVERY_PERMANENT_FAILURE,
+    'Delivery provider reported a permanent failure; notification marked failed, not retried',
+    {
+      notificationQueueId: entry.id,
+      orgId,
+      channel: EMAIL_CHANNEL,
+      attemptNumber: entry.attemptCount,
+      ...(reason === undefined ? {} : { reason }),
+    }
+  )
 }
 
 /** Story 36.1 Design Decision 2/AC2 — builds outbound email content directly from an
@@ -255,11 +347,13 @@ async function deliverClaimedEmail(
   const { subject, text, html } = renderOutboundEmailContent(entry, logger)
 
   if (route.hasProvider) {
-    await sendViaDeliveryProvider(entry, orgId, claim, {
-      toAddress,
-      subject,
-      body: text ?? html ?? '',
-    })
+    await sendViaDeliveryProvider(
+      entry,
+      orgId,
+      claim,
+      buildDeliveryProviderMessage(toAddress, { subject, text, html }),
+      logger
+    )
     return
   }
 

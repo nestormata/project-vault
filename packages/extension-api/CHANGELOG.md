@@ -2,6 +2,28 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.32.0 — 2026-10-06
+
+contract-hash: sha256:85ddb34b991de38ffeb0dac700ad2bf707bedbc196c43cc189dc06656d37d548
+
+Story 70.3 (Epic 70, CentralizeMe 14-34 findings G3, G4, G5). Additive: a `DeliveryProvider` written
+against 3.31.0 that ignores every new field behaves exactly as before.
+
+### Added
+
+- `DeliveryProviderSendPayload.html` (optional `string`): the HTML part of the message. `body` keeps
+  its earlier value (the text part, or the html part when there is no text part), so a provider that
+  reads only `body` is unchanged. The key is absent when the message has no HTML part.
+- `DeliveryProviderPermanentError` (class, `name === 'DeliveryProviderPermanentError'`, optional
+  `reason` slug matching `^[a-z][a-z0-9_]*$` of at most 64 characters, supports `cause`): throw it
+  from `send()` when retrying cannot succeed. PV records the row as `failed` and does not retry.
+  Never throw it for a timeout, a 5xx or a rate limit. PV recognises it by identity or by `name`, so
+  an extension that bundles its own copy still works. An invalid `reason` throws a `TypeError`.
+- `DeliveryProvider.webhookRateLimit` (optional `{ max: number; windowSeconds?: number }`): a
+  per-provider, per-IP limit for the inbound delivery-status webhook. `max` is an integer 1 to
+  10 000, `windowSeconds` an integer 1 to 3600 (default 60). Absent keeps 60 per 60 seconds. An
+  out-of-range value fails extension registration; it is never clamped.
+
 ## 3.31.0 — 2026-10-06
 
 contract-hash: sha256:03995fc4ace3ebda7d9749f526d0c466be17aa2fdb5ec5f2688fb9be24d1e202

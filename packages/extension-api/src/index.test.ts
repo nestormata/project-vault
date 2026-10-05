@@ -33,6 +33,8 @@ describe('index.ts — root-only export surface (AC1, AC2)', () => {
         'MODULE_DATA_ROUTE_PATH_PATTERN',
         'EXTENSION_THEME_CSS_VARS',
         'ExtensionRegistrationError',
+        // Story 70.3 — the permanent-failure error class a DeliveryProvider.send() throws.
+        'DeliveryProviderPermanentError',
         'isExtensionApiVersionSupported',
         'registerExtension',
         // Story 34.1 — new HostServices.monitoring hook-specific error classes (AC2/AC3/AC7).
