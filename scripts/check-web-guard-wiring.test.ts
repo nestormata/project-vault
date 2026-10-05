@@ -48,6 +48,9 @@ const MONOLITHIC_CHECK = 'pnpm check-monolithic-regions'
 const MONOLITHIC_TESTS =
   'pnpm vitest run scripts/check-monolithic-regions.test.ts scripts/lib/route-files.test.ts'
 
+const ROUTE_REGIONS_CHECK = 'pnpm check-route-regions'
+const ROUTE_REGIONS_TESTS = 'pnpm vitest run scripts/check-route-regions.test.ts'
+
 // Story 68.10 AC-9: the control-group test (PV's own CM-free build) runs in `make ci-inner` after a
 // forced build of the web app, and in the web-host-pack job, as live blocking lines.
 const CONTROL_BUILD = 'pnpm turbo build --force --filter=@project-vault/web-host'
@@ -86,5 +89,25 @@ describe('the monolithic-region guard is wired into CI (Story 68.10 AC-4.5)', ()
   it('ci.yml runs the guard and its tests in one step, guard first', () => {
     const commands = workflowRunCommands(Object.values(WORKFLOW)[0] ?? '')
     expect(commands).toContain(`${MONOLITHIC_CHECK} &&\n${MONOLITHIC_TESTS}`)
+  })
+})
+
+describe('the route-region audit is wired into CI (Story 69.5 AC-9)', () => {
+  it('has a package script that runs the thin CLI', () => {
+    const scripts = (
+      JSON.parse(Object.values(PACKAGE_JSON)[0] ?? '{}') as { scripts: Record<string, string> }
+    ).scripts
+    expect(scripts['check-route-regions']).toBe('tsx scripts/check-route-regions.ts')
+  })
+
+  it('make ci-inner runs the audit and its tests as live, blocking lines', () => {
+    const recipe = makeRecipe(Object.values(MAKEFILE)[0] ?? '', 'ci-inner')
+    expect(recipeRunsCommand(recipe, ROUTE_REGIONS_CHECK)).toBe(true)
+    expect(recipeRunsCommand(recipe, ROUTE_REGIONS_TESTS)).toBe(true)
+  })
+
+  it('ci.yml runs the audit and its tests in one step, audit first', () => {
+    const commands = workflowRunCommands(Object.values(WORKFLOW)[0] ?? '')
+    expect(commands).toContain(`${ROUTE_REGIONS_CHECK} &&\n${ROUTE_REGIONS_TESTS}`)
   })
 })

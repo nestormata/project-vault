@@ -11,25 +11,10 @@
  * is never a green light on its own. The table is regenerated from the tree, never committed.
  */
 import { resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { STD_IO, failWith, option, runAsMain, type Io } from './lib/cli-io.js'
 import { auditRouteRegions, formatTable } from './lib/route-regions.js'
 
-export interface Io {
-  out: (text: string) => void
-  err: (text: string) => void
-}
-
-const STD: Io = {
-  out: (text) => process.stdout.write(text),
-  err: (text) => process.stderr.write(text),
-}
-
-function option(args: readonly string[], flag: string): string | undefined {
-  const index = args.indexOf(flag)
-  return index === -1 ? undefined : args[index + 1]
-}
-
-export function run(args: readonly string[], io: Io = STD): number {
+export function run(args: readonly string[], io: Io = STD_IO): number {
   const webRoot = resolve(option(args, '--web') ?? 'apps/web')
   const result = auditRouteRegions(webRoot)
   const problems = [...result.problems]
@@ -43,13 +28,11 @@ export function run(args: readonly string[], io: Io = STD): number {
     )
     return 0
   }
-  io.err(
-    `FATAL: route regions (${result.routeFiles} route files, ${result.rows.length} regions):\n`
+  return failWith(
+    io,
+    `route regions (${result.routeFiles} route files, ${result.rows.length} regions)`,
+    problems
   )
-  for (const problem of problems) io.err(`  ${problem}\n`)
-  return 1
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  process.exitCode = run(process.argv.slice(2))
-}
+runAsMain(import.meta.url, run)
