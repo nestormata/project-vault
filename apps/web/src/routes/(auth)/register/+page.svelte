@@ -1,8 +1,10 @@
 <script lang="ts">
-  import NavLink from '$lib/navigation/NavLink.svelte'
+  import RegisterHeading from '$lib/components/auth/RegisterHeading.svelte'
+  import RegisterLoginLink from '$lib/components/auth/RegisterLoginLink.svelte'
+
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   let { data } = $props()
-  import { resolve } from '$app/paths'
+
   import { page } from '$app/state'
   import { m } from '$lib/paraglide/messages.js'
   import RegisterForm from '$lib/components/auth/RegisterForm.svelte'
@@ -23,23 +25,14 @@
 <InjectionPoint name="auth.register.header.actions" data={data?.__inject} />
 <div class="space-y-6">
   {#key localeRevision}
-    <div class="space-y-2">
-      <h1 class="text-3xl font-bold">{m.auth_register_page_heading()}</h1>
-      <p class="text-slate-600">
-        {invitationToken
-          ? m.auth_register_invitation_description()
-          : m.auth_register_organization_description()}
-      </p>
-    </div>
-    <p class="text-sm text-slate-600">
-      {m.auth_register_existing_account_prompt()}
-      <NavLink
-        surface="auth.links"
-        node="auth.links.register.login"
-        class="font-medium text-brand-600 underline"
-      />
-    </p>
-  {/key}
+    <!-- @region auth.register.heading -->
+    <RegisterHeading {invitationToken}>
+      <InjectionPoint name="auth.register.heading" data={data?.__inject} />
+    </RegisterHeading>
+    <!-- @region auth.register.login-link -->
+    <RegisterLoginLink>
+      <InjectionPoint name="auth.register.login-link" data={data?.__inject} />
+    </RegisterLoginLink>{/key}
   <RegisterForm {invitationToken} {prefillEmail} onLocaleChange={handleLocaleChange} />
 </div>
 <InjectionPoint name="auth.register.after" data={data?.__inject} />

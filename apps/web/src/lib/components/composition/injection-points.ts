@@ -362,6 +362,32 @@ export interface InjectionPointProps {
   'project.members.invitations': ProjectMembersInvitationsPointProps
   'project.members.invite': ProjectMembersBasePointProps
   'project.members.notice': ProjectMembersBasePointProps
+  'root.error.header': StandardPointProps
+  'root.error.content': StandardPointProps
+  'root.layout.body': StandardPointProps
+  'root.home.content': StandardPointProps
+  'settings.home.header': StandardPointProps
+  'shares.detail.heading': StandardPointProps
+  'shares.detail.body': StandardPointProps
+  'auth.layout.theme': StandardPointProps
+  'auth.layout.footer': StandardPointProps
+  'auth.layout.body': StandardPointProps
+  'auth.handoff.content': StandardPointProps
+  'auth.invitations-accept.content': StandardPointProps
+  'auth.login.heading': StandardPointProps
+  'auth.login.reason': StandardPointProps
+  'auth.login.links': StandardPointProps
+  'auth.login.form': StandardPointProps
+  'auth.recovery.heading': StandardPointProps
+  'auth.recovery.request': StandardPointProps
+  'auth.recovery.login-link': StandardPointProps
+  'auth.recovery-detail.content': StandardPointProps
+  'auth.register.heading': StandardPointProps
+  'auth.register.login-link': StandardPointProps
+  'vault.home.header': StandardPointProps
+  'external-shares.detail.heading': StandardPointProps
+  'external-shares.detail.body': StandardPointProps
+  'status.detail.content': StandardPointProps
   'vault.home.after': StandardPointProps
   'vault.home.before': StandardPointProps
   'vault.home.header.actions': StandardPointProps
@@ -601,6 +627,54 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     [MEMBERS_PAGE_HOST],
     ['project.members.invitations']
   ),
+  ...regionPoints('StandardPointProps', ['/#layout'], ['root.layout.body']),
+  ...regionPoints('StandardPointProps', ['/#page'], ['root.home.content']),
+  ...regionPoints('StandardPointProps', ['/(app)/settings#page'], ['settings.home.header']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/shares/[token]#page'],
+    ['shares.detail.heading', 'shares.detail.body']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(auth)#layout'],
+    ['auth.layout.theme', 'auth.layout.footer', 'auth.layout.body']
+  ),
+  ...regionPoints('StandardPointProps', ['/(auth)/handoff#page'], ['auth.handoff.content']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(auth)/invitations/accept#page'],
+    ['auth.invitations-accept.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(auth)/login#page'],
+    ['auth.login.heading', 'auth.login.reason', 'auth.login.links', 'auth.login.form']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(auth)/recovery#page'],
+    ['auth.recovery.heading', 'auth.recovery.request', 'auth.recovery.login-link']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(auth)/recovery/[token]#page'],
+    ['auth.recovery-detail.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(auth)/register#page'],
+    ['auth.register.heading', 'auth.register.login-link']
+  ),
+  ...regionPoints('StandardPointProps', ['/(vault)/vault#page'], ['vault.home.header']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/external-shares/[token]#page'],
+    ['external-shares.detail.heading', 'external-shares.detail.body']
+  ),
+  ...regionPoints('StandardPointProps', ['/status/[token]#page'], ['status.detail.content']),
+  { name: 'root.error.header', kind: 'standard', propsType: 'StandardPointProps' },
+  { name: 'root.error.content', kind: 'standard', propsType: 'StandardPointProps' },
   { name: 'shell.body.end', kind: 'shell', propsType: 'StandardPointProps' },
   { name: 'shell.head', kind: 'shell', propsType: 'StandardPointProps' },
   {

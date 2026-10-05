@@ -1,8 +1,11 @@
 <script lang="ts">
+  import AuthLayoutThemeStyle from '$lib/components/auth/AuthLayoutThemeStyle.svelte'
+  import AuthLayoutBody from '$lib/components/auth/AuthLayoutBody.svelte'
+  import AuthLayoutFooter from '$lib/components/auth/AuthLayoutFooter.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { onMount } from 'svelte'
   import AuthBrandHeader from '$lib/components/shell/AuthBrandHeader.svelte'
-  import Footer from '$lib/components/shell/Footer.svelte'
+
   import {
     getPreAuthThemeCss,
     getPreAuthThemeName,
@@ -25,14 +28,10 @@
   })
 </script>
 
-{#if preAuthThemeCss}
-  <!--
-    Story 16.4 AC-3: same delivery pattern `(app)/+layout.svelte` already uses for 16.2 —
-    `<svelte:element>` with a plain auto-escaped text-node child, NEVER the html-injection
-    directive (this repo's static-hardening gate forbids that directive entirely).
-  -->
-  <svelte:element this={"style"}>{preAuthThemeCss}</svelte:element>
-{/if}
+<!-- @region auth.layout.theme -->
+<AuthLayoutThemeStyle {preAuthThemeCss}>
+  <InjectionPoint name="auth.layout.theme" data={data?.__inject} />
+</AuthLayoutThemeStyle>
 
 <main
   class="min-h-screen bg-slate-50 px-4 py-10 text-slate-950"
@@ -42,9 +41,13 @@
     <AuthBrandHeader />
     <InjectionPoint name="auth.layout.before" data={data?.__inject} />
     <InjectionPoint name="auth.layout.header.actions" data={data?.__inject} />
-    {@render children()}<InjectionPoint name="auth.layout.after" data={data?.__inject} />
+    <!-- @region auth.layout.body -->
+    <AuthLayoutBody body={children}>
+      <InjectionPoint name="auth.layout.body" data={data?.__inject} />
+    </AuthLayoutBody><InjectionPoint name="auth.layout.after" data={data?.__inject} />
   </section>
-  <div class="mx-auto mt-6 max-w-xl">
-    <Footer />
-  </div>
+  <!-- @region auth.layout.footer -->
+  <AuthLayoutFooter>
+    <InjectionPoint name="auth.layout.footer" data={data?.__inject} />
+  </AuthLayoutFooter>
 </main>
