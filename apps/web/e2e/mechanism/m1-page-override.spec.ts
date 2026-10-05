@@ -88,7 +88,7 @@ test.describe('M1 page override', () => {
   test('fails: the removed route is 404 exactly as declared; PV public routes it did not remove still serve', async ({
     request,
   }) => {
-    expect((await request.get('/external-shares/abc')).status()).toBe(404)
+    expect((await request.get('/invitations/accept')).status()).toBe(404)
     expect((await request.get('/status/abc')).status()).toBe(200)
     expect((await request.get('/register')).status()).toBe(200)
   })

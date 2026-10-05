@@ -51,9 +51,10 @@ export default defineUiPack({
       hostSha256: sha(path),
       story: 'MOCK-UI-PACK',
     })),
-    // M1 route removal: PV's external share route group is removed in this product (PV answers
-    // `/external-shares/<token>` with a 200 "not found" page, so the 404 proves the removal).
-    remove: ['/external-shares'],
+    // M1 route removal: PV's invitation accept route is removed in this product (PV answers
+    // `/invitations/accept` with a page, so the 404 proves the removal). `/status` stays so the public
+    // status region can be filled; `/external-shares` stays because PV's header-policy test needs it.
+    remove: ['/invitations/accept'],
   },
   injections: {
     // M3: injected into NATIVE PV pages the pack did not override: a component with a server load
