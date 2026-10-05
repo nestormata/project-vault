@@ -190,11 +190,11 @@ describe('monolithic-region: evasion cases fail (AC-4.9)', () => {
 describe('monolithic-region: tree scan, provenance exemption and the shipped contract', () => {
   it('scans PV-originated files and reports file:line findings', () => {
     const root = makeRoot()
-    writeFixture(root, 'src/routes/+page.svelte', MONOLITHIC)
+    writeFixture(root, 'src/lib/a.svelte', MONOLITHIC)
     const result = scanMonolithicRegionsTree(root)
     expect(result.files).toBe(1)
     expect(result.regions).toBe(1)
-    expect(result.findings.map((f) => `${f.file}:${f.line}`)).toEqual(['src/routes/+page.svelte:1'])
+    expect(result.findings.map((f) => `${f.file}:${f.line}`)).toEqual(['src/lib/a.svelte:1'])
   })
 
   it('exempts files the lock records as CM-originated and only those', () => {
@@ -218,6 +218,7 @@ describe('monolithic-region: tree scan, provenance exemption and the shipped con
       files: 0,
       exempted: 0,
       regions: 0,
+      routeRegions: 0,
       findings: [],
     })
   })
