@@ -64,7 +64,7 @@ describe('/settings/sso-domains +page.svelte (Story 14.6)', () => {
     expect(domain.getAttribute('aria-describedby')).toBe('new-domain-help')
     expect(
       screen.getByText(
-        /enter the domain after the @ in your organization's email addresses.*alex@acme\.com.*enter acme\.com—not the @ or the full email address/i
+        /enter the domain after the @ in your organization's email addresses.*if your addresses end in acme\.com.*enter acme\.com—not the @ or the full email address/i
       )
     ).toBeTruthy()
 

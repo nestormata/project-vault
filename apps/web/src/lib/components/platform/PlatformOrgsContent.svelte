@@ -161,7 +161,7 @@
           required
           bind:value={newOrgOwnerEmail}
           class="mt-1 rounded border border-gray-300 px-2 py-1.5 text-sm"
-          placeholder="owner@example.com"
+          placeholder="Email of the first admin"
           aria-describedby="platform-org-owner-help"
         />
         <FormHelpText id="platform-org-owner-help" kind="text" />

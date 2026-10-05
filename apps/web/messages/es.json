@@ -112,7 +112,7 @@
   "form_help_dependency_system_type": "Elige el tipo de sistema externo que usa este secreto.",
   "form_help_dependency_scope": "Elige un campo específico del secreto cuando este sistema use solo ese campo; de lo contrario, se aplica a todo el secreto.",
   "form_help_dependency_link": "Agrega una URL no sensible que ayude al equipo a encontrar este sistema. No incluyas contraseñas, tokens ni URL firmadas.",
-  "form_help_sso_domain": "Ingresa el dominio que aparece después de @ en los correos de tu organización. Ejemplo: si una dirección es alex@acme.com, ingresa acme.com, no @ ni el correo completo.",
+  "form_help_sso_domain": "Ingresa el dominio que aparece después de @ en los correos de tu organización. Ejemplo: si tus direcciones terminan en acme.com, ingresa acme.com, no @ ni el correo completo.",
   "form_help_sso_provider_name": "Ingresa el nombre exacto de la extensión de proveedor registrada. Ejemplo para pruebas locales: test.mock-sso-extension. No es un nombre visible como Okta; la extensión debe estar instalada y habilitada en el servidor.",
   "form_help_machine_user_role": "Este rol controla lo que esta identidad de máquina puede hacer con los secretos del proyecto. Elige Lector para acceso de solo lectura o Miembro para acceso de lectura y escritura.",
   "form_help_dashboard_project": "Elige el proyecto cuyos datos de monitoreo quieres ver.",
