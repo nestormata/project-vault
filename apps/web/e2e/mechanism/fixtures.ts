@@ -194,21 +194,6 @@ export async function endMfaGracePeriod(orgId: string, userId: string): Promise<
   }
 }
 
-/** An anonymous form POST to an injected action is redirected to /login before the action runs. */
-export async function expectAnonymousLoginRedirect(
-  request: APIRequestContext,
-  path: string,
-  origin: string
-): Promise<void> {
-  const response = await request.post(path, {
-    form: { title: 'x' },
-    headers: { origin },
-    maxRedirects: 0,
-  })
-  expect(response.status()).toBe(303)
-  expect(response.headers()['location']).toBe('/login')
-}
-
 /** Collects Svelte hydration-mismatch warnings from the page console. A mismatch makes the client
  * rebuild part of the DOM (a mismatched head dropped the stylesheet once), so the mechanism specs
  * assert there were none for every page they render. */
