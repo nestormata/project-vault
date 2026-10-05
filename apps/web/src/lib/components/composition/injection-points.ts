@@ -380,6 +380,53 @@ export interface InjectionPointProps {
   'notifications.home.user-dormancy': StandardPointProps
   'notifications.home.tabs': StandardPointProps
   'notifications.home.list': StandardPointProps
+  'platform.home.header': StandardPointProps
+  'platform.audit.content': StandardPointProps
+  'platform.backups.content': StandardPointProps
+  'platform.settings.content': StandardPointProps
+  'platform.settings-orgs.content': StandardPointProps
+  'platform.settings-resource-usage.content': StandardPointProps
+  'platform.upgrade.content': StandardPointProps
+  'project.home.header': StandardPointProps
+  'project.home.error': StandardPointProps
+  'project.home.list': StandardPointProps
+  'project.certificates.list': StandardPointProps
+  'project.certificates-detail.content': StandardPointProps
+  'project.certificates-new.header': StandardPointProps
+  'project.certificates-new.form': StandardPointProps
+  'project.credentials.header': StandardPointProps
+  'project.credentials.list': StandardPointProps
+  'project.credentials-rotate.header': StandardPointProps
+  'project.credentials-rotate.form': StandardPointProps
+  'project.credentials-rotations-detail.content': StandardPointProps
+  'project.credentials-import.header': StandardPointProps
+  'project.credentials-import.content': StandardPointProps
+  'project.credentials-new.header': StandardPointProps
+  'project.credentials-new.form': StandardPointProps
+  'project.domains.list': StandardPointProps
+  'project.domains-detail.content': StandardPointProps
+  'project.domains-new.header': StandardPointProps
+  'project.domains-new.form': StandardPointProps
+  'project.machine-users.header': StandardPointProps
+  'project.machine-users.list': StandardPointProps
+  'project.machine-users-detail.content': StandardPointProps
+  'project.machine-users-new.header': StandardPointProps
+  'project.machine-users-new.form': StandardPointProps
+  'project.service-endpoints.list': StandardPointProps
+  'project.service-endpoints-detail.content': StandardPointProps
+  'project.service-endpoints-new.header': StandardPointProps
+  'project.service-endpoints-new.form': StandardPointProps
+  'project.services.list': StandardPointProps
+  'project.services-detail.content': StandardPointProps
+  'project.services-new.header': StandardPointProps
+  'project.services-new.form': StandardPointProps
+  'project.status-page.header': StandardPointProps
+  'project.status-page.settings': StandardPointProps
+  'project.import.header': StandardPointProps
+  'project.import.content': StandardPointProps
+  'project.new.header': StandardPointProps
+  'project.new.form': StandardPointProps
+  'project.preview.content': StandardPointProps
   'settings.home.header': StandardPointProps
   'settings.audit-access-report.header': StandardPointProps
   'settings.audit-access-report.report': StandardPointProps
@@ -700,6 +747,158 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
       'notifications.home.tabs',
       'notifications.home.list',
     ]
+  ),
+  ...regionPoints('StandardPointProps', ['/(app)/platform#page'], ['platform.home.header']),
+  ...regionPoints('StandardPointProps', ['/(app)/platform/audit#page'], ['platform.audit.content']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/platform/backups#page'],
+    ['platform.backups.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/platform/settings#page'],
+    ['platform.settings.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/platform/settings/orgs#page'],
+    ['platform.settings-orgs.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/platform/settings/resource-usage#page'],
+    ['platform.settings-resource-usage.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/platform/upgrade#page'],
+    ['platform.upgrade.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects#page'],
+    ['project.home.header', 'project.home.error', 'project.home.list']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/certificates#page'],
+    ['project.certificates.list']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/certificates/[certificateId]#page'],
+    ['project.certificates-detail.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/certificates/new#page'],
+    ['project.certificates-new.header', 'project.certificates-new.form']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/credentials#page'],
+    ['project.credentials.header', 'project.credentials.list']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/credentials/[credentialId]/rotate#page'],
+    ['project.credentials-rotate.header', 'project.credentials-rotate.form']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/credentials/[credentialId]/rotations/[rotationId]#page'],
+    ['project.credentials-rotations-detail.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/credentials/import#page'],
+    ['project.credentials-import.header', 'project.credentials-import.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/credentials/new#page'],
+    ['project.credentials-new.header', 'project.credentials-new.form']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/domains#page'],
+    ['project.domains.list']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/domains/[domainId]#page'],
+    ['project.domains-detail.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/domains/new#page'],
+    ['project.domains-new.header', 'project.domains-new.form']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/machine-users#page'],
+    ['project.machine-users.header', 'project.machine-users.list']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/machine-users/[machineUserId]#page'],
+    ['project.machine-users-detail.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/machine-users/new#page'],
+    ['project.machine-users-new.header', 'project.machine-users-new.form']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/service-endpoints#page'],
+    ['project.service-endpoints.list']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/service-endpoints/[serviceEndpointId]#page'],
+    ['project.service-endpoints-detail.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/service-endpoints/new#page'],
+    ['project.service-endpoints-new.header', 'project.service-endpoints-new.form']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/services#page'],
+    ['project.services.list']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/services/[serviceId]#page'],
+    ['project.services-detail.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/services/new#page'],
+    ['project.services-new.header', 'project.services-new.form']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/status-page#page'],
+    ['project.status-page.header', 'project.status-page.settings']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/import#page'],
+    ['project.import.header', 'project.import.content']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/new#page'],
+    ['project.new.header', 'project.new.form']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/preview#page'],
+    ['project.preview.content']
   ),
   ...regionPoints('StandardPointProps', ['/(app)/settings#page'], ['settings.home.header']),
   ...regionPoints(

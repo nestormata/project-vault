@@ -1,7 +1,8 @@
 <script lang="ts">
+  import PlatformHomeHeader from '$lib/components/platform/PlatformHomeHeader.svelte'
   import NavCards from '$lib/navigation/NavCards.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
-  import { resolve } from '$app/paths'
+
   import PlatformOperatorRequiredNotice from '$lib/components/PlatformOperatorRequiredNotice.svelte'
   import PlatformWarningsBanner from '$lib/components/platform/PlatformWarningsBanner.svelte'
   import type { PlatformPath } from '$lib/app-paths.js'
@@ -38,8 +39,10 @@
   <PlatformOperatorRequiredNotice />
 {:else}
   <div class="mx-auto max-w-3xl px-4 py-8">
-    <h1 class="text-2xl font-bold text-gray-900">Platform Admin</h1>
-    <p class="mt-2 text-gray-500">Instance-wide administration and operations.</p>
+    <!-- @region platform.home.header -->
+    <PlatformHomeHeader>
+      <InjectionPoint name="platform.home.header" data={data?.__inject} />
+    </PlatformHomeHeader>
 
     <PlatformWarningsBanner warnings={data.warnings} messages={WARNING_MESSAGES} />
 

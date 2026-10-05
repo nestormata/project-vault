@@ -1,5 +1,5 @@
 <script lang="ts">
-  import NavLinkRow from '$lib/navigation/NavLinkRow.svelte'
+  import AuditNavigationLinks from '$lib/components/audit/AuditNavigationLinks.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import AuditExportPanel from '$lib/components/audit/AuditExportPanel.svelte'
   import AuditVerifyPanel from '$lib/components/audit/AuditVerifyPanel.svelte'
@@ -47,7 +47,7 @@
     }}
     <!-- @region settings.audit.navigation -->
     <div class="mt-6 flex flex-wrap gap-4 text-sm">
-      <NavLinkRow surface="settings.audit.links" /><InjectionPoint
+      <AuditNavigationLinks /><InjectionPoint
         name="settings.audit.navigation"
         props={roleProps}
         data={data?.__inject}

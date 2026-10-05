@@ -1,0 +1,137 @@
+<script lang="ts">
+  import type { Snippet } from 'svelte'
+  import { ApiClientError } from '$lib/api/client.js'
+  import { resolve } from '$app/paths'
+  import { goto } from '$app/navigation'
+  import { createProject, suggestProjectSlug } from '$lib/api/projects.js'
+  import FormSubmitRow from '$lib/components/forms/FormSubmitRow.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+
+  let { children }: { children?: Snippet } = $props()
+
+  const SLUG_PATTERN = '^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$|^[a-z0-9]{3}$'
+  let name = $state('')
+  let slug = $state('')
+  let description = $state('')
+  let slugEdited = $state(false)
+  let errorMessage = $state<string | null>(null)
+  let slugError = $state<string | null>(null)
+  let fieldErrors = $state<Record<string, string[]>>({})
+  let submitting = $state(false)
+  function updateName(value: string) {
+    name = value
+    if (!slugEdited) slug = suggestProjectSlug(value)
+  }
+  function updateSlug(value: string) {
+    slugEdited = true
+    slug = value
+    slugError = null
+  }
+  function applyValidationDetails(details: unknown) {
+    fieldErrors =
+      details && typeof details === 'object' ? (details as Record<string, string[]>) : {}
+  }
+  async function submitForm() {
+    if (submitting) return
+    errorMessage = null
+    slugError = null
+    fieldErrors = {}
+    submitting = true
+    try {
+      await createProject(fetch, {
+        name,
+        slug,
+        description: description.trim() ? description.trim() : null,
+      })
+      await goto(resolve('/dashboard'))
+    } catch (error) {
+      if (error instanceof ApiClientError && error.code === 'slug_taken') {
+        slugError = 'A project with this slug already exists - try another.'
+      } else if (error instanceof ApiClientError && error.code === 'validation_error') {
+        applyValidationDetails(error.details)
+        errorMessage = error.message
+      } else {
+        errorMessage = error instanceof Error ? error.message : 'Project creation failed.'
+      }
+    } finally {
+      submitting = false
+    }
+  }
+</script>
+
+{@render children?.()}
+<form
+  class="space-y-5 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
+  onsubmit={(event) => {
+    event.preventDefault()
+    void submitForm()
+  }}
+>
+  <div class="space-y-2">
+    <label class="block font-medium text-slate-900" for="project-name">Name</label>
+    <input
+      class="w-full rounded-xl border border-slate-300 px-3 py-3"
+      id="project-name"
+      type="text"
+      value={name}
+      maxlength="128"
+      required
+      oninput={(event) => updateName(event.currentTarget.value)}
+      aria-describedby="project-name-help"
+    />
+    <FormHelpText id="project-name-help" kind="text" />
+    {#if fieldErrors.name}
+      <p class="text-sm text-red-700">{fieldErrors.name[0]}</p>
+    {/if}
+  </div>
+
+  <div class="space-y-2">
+    <label class="block font-medium text-slate-900" for="project-slug">Slug</label>
+    <input
+      class="w-full rounded-xl border border-slate-300 px-3 py-3"
+      id="project-slug"
+      type="text"
+      value={slug}
+      minlength="3"
+      maxlength="50"
+      pattern={SLUG_PATTERN}
+      required
+      oninput={(event) => updateSlug(event.currentTarget.value)}
+      aria-describedby="project-slug-help"
+    />
+    <FormHelpText id="project-slug-help" kind="text" />
+    <p class="text-sm text-slate-600">Use 3-50 lowercase letters, numbers, and hyphens.</p>
+    {#if slugError}
+      <p class="text-sm text-red-700" role="alert">{slugError}</p>
+    {:else if fieldErrors.slug}
+      <p class="text-sm text-red-700">{fieldErrors.slug[0]}</p>
+    {/if}
+  </div>
+
+  <div class="space-y-2">
+    <label class="block font-medium text-slate-900" for="project-description">Description</label>
+    <textarea
+      class="min-h-28 w-full rounded-xl border border-slate-300 px-3 py-3"
+      id="project-description"
+      bind:value={description}
+      maxlength="512"
+      aria-describedby="project-description-help"></textarea>
+    <FormHelpText id="project-description-help" kind="text" />
+    {#if fieldErrors.description}
+      <p class="text-sm text-red-700">{fieldErrors.description[0]}</p>
+    {/if}
+  </div>
+
+  {#if errorMessage}
+    <p class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
+      {errorMessage}
+    </p>
+  {/if}
+
+  <FormSubmitRow
+    submitLabel="Create project"
+    pendingLabel="Creating..."
+    cancelHref="/projects"
+    {submitting}
+  />
+</form>

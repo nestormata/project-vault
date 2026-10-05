@@ -338,5 +338,6 @@ describe('route render data-rich snapshot (Story 69.5 AC-5)', () => {
       0
     )
     expect(Object.keys(result)).toHaveLength(70 * 5 + 1 + branchCount)
-  })
+    // Measured: 1.7 s alone and 5.7 s in a full parallel run, so the default 5 s is not enough.
+  }, 60_000)
 })
