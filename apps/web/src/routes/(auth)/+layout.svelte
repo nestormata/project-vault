@@ -4,7 +4,7 @@
   import AuthLayoutFooter from '$lib/components/auth/AuthLayoutFooter.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { onMount } from 'svelte'
-  import AuthBrandHeader from '$lib/components/shell/AuthBrandHeader.svelte'
+  import AuthLayoutBrand from '$lib/components/shell/AuthLayoutBrand.svelte'
 
   import {
     getPreAuthThemeCss,
@@ -38,7 +38,10 @@
   data-theme={preAuthThemeName ?? undefined}
 >
   <section class="mx-auto max-w-xl rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-    <AuthBrandHeader />
+    <!-- @region auth.layout.brand -->
+    <AuthLayoutBrand>
+      <InjectionPoint name="auth.layout.brand" data={data?.__inject} />
+    </AuthLayoutBrand>
     <InjectionPoint name="auth.layout.before" data={data?.__inject} />
     <InjectionPoint name="auth.layout.header.actions" data={data?.__inject} />
     <!-- @region auth.layout.body -->

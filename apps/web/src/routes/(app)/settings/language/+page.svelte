@@ -2,7 +2,7 @@
   import LanguageHeader from '$lib/components/settings/LanguageHeader.svelte'
   import LanguageErrors from '$lib/components/settings/LanguageErrors.svelte'
   import LanguageOptions from '$lib/components/settings/LanguageOptions.svelte'
-  import NavLink from '$lib/navigation/NavLink.svelte'
+  import NavLinkRegion from '$lib/components/shell/NavLinkRegion.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
   import type { SubmitFunction } from '@sveltejs/kit'
@@ -44,11 +44,14 @@
 <InjectionPoint name="settings.language.before" data={data?.__inject} />
 <InjectionPoint name="settings.language.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-3xl px-4 py-8">
-  <NavLink
+  <!-- @region settings.language.back -->
+  <NavLinkRegion
     surface="back"
     node="back.settings.language"
     class="text-sm text-indigo-600 hover:text-indigo-800"
-  />
+  >
+    <InjectionPoint name="settings.language.back" data={data?.__inject} />
+  </NavLinkRegion>
   <!-- @region settings.language.header -->
   <LanguageHeader>
     <InjectionPoint name="settings.language.header" data={data?.__inject} />

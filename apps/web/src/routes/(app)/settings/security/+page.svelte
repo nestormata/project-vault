@@ -3,7 +3,7 @@
 
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
-  import MfaEnrollmentPanel from '$lib/components/settings/MfaEnrollmentPanel.svelte'
+  import SecurityEnrollmentRegion from '$lib/components/settings/SecurityEnrollmentRegion.svelte'
   import type { PageData } from './$types.js'
 
   const { data }: { data: PageData } = $props()
@@ -21,6 +21,9 @@
     <InjectionPoint name="settings.security.header" data={data?.__inject} />
   </SecurityHeader>
 
-  <MfaEnrollmentPanel initialUser={data.user} />
+  <!-- @region settings.security.enrollment -->
+  <SecurityEnrollmentRegion initialUser={data.user}>
+    <InjectionPoint name="settings.security.enrollment" data={data?.__inject} />
+  </SecurityEnrollmentRegion>
 </div>
 <InjectionPoint name="settings.security.after" data={data?.__inject} />

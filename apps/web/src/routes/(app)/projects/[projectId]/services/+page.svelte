@@ -2,7 +2,7 @@
   import ServicesListContent from '$lib/components/monitoring/ServicesListContent.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
-  import AssetListHeader from '$lib/components/monitoring/AssetListHeader.svelte'
+  import AssetListHeaderRegion from '$lib/components/monitoring/AssetListHeaderRegion.svelte'
   import { canManageMonitoredAssets } from '$lib/monitoring/index.js'
 
   let { data } = $props()
@@ -17,15 +17,17 @@
 <InjectionPoint name="project.services.before" data={data?.__inject} />
 <InjectionPoint name="project.services.header.actions" data={data?.__inject} />
 <section class="space-y-6">
-  <AssetListHeader
+  <!-- @region project.services.list-header -->
+  <AssetListHeaderRegion
     eyebrow="Services"
     title="Monitored services"
     addHref={`/projects/${data.projectId}/services/new`}
     addLabel="Add service"
     {canManage}
+    description="Billing/hosting services tracked for renewal alerting."
   >
-    Billing/hosting services tracked for renewal alerting.
-  </AssetListHeader>
+    <InjectionPoint name="project.services.list-header" data={data?.__inject} />
+  </AssetListHeaderRegion>
 
   <!-- @region project.services.list -->
   <ServicesListContent {data} {canManage}>

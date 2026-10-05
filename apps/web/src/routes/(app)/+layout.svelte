@@ -3,7 +3,7 @@
   import AppLayoutShell from '$lib/components/shell/AppLayoutShell.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
-  import GlobalSearch from '$lib/components/shell/GlobalSearch.svelte'
+  import AppLayoutSearch from '$lib/components/shell/AppLayoutSearch.svelte'
 
   import { invalidateAll } from '$app/navigation'
   import { onMount, onDestroy } from 'svelte'
@@ -95,7 +95,10 @@
 
 <InjectionPoint name="app.layout.before" data={data?.__inject} />
 <InjectionPoint name="app.layout.header.actions" data={data?.__inject} />
-<GlobalSearch bind:open={searchOpen} />
+<!-- @region app.layout.search -->
+<AppLayoutSearch bind:open={searchOpen}>
+  <InjectionPoint name="app.layout.search" data={data?.__inject} />
+</AppLayoutSearch>
 
 <!-- @region app.layout.theme -->
 <AppLayoutThemeStyle themeCss={data.themeCss}>

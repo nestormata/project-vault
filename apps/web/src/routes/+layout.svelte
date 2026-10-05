@@ -2,7 +2,7 @@
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import '../app.css'
   import RootLayoutBody from '$lib/components/shell/RootLayoutBody.svelte'
-  import NavigationProgressBar from '$lib/components/NavigationProgressBar.svelte'
+  import RootLayoutProgress from '$lib/components/shell/RootLayoutProgress.svelte'
   const { children, data }: { children: import('svelte').Snippet; data?: App.PageData } = $props()
 </script>
 
@@ -10,7 +10,10 @@
   <InjectionPoint name="shell.head" data={data?.__inject} />
 </svelte:head>
 
-<NavigationProgressBar />
+<!-- @region root.layout.progress -->
+<RootLayoutProgress>
+  <InjectionPoint name="root.layout.progress" data={data?.__inject} />
+</RootLayoutProgress>
 <InjectionPoint name="root.layout.before" data={data?.__inject} />
 <InjectionPoint name="root.layout.header.actions" data={data?.__inject} />
 <!-- @region root.layout.body -->

@@ -1,7 +1,7 @@
 <script lang="ts">
   import AuditForwardingHeader from '$lib/components/settings/AuditForwardingHeader.svelte'
   import AuditForwardingPanel from '$lib/components/settings/AuditForwardingPanel.svelte'
-  import NavLink from '$lib/navigation/NavLink.svelte'
+  import NavLinkRegion from '$lib/components/shell/NavLinkRegion.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
   let { data } = $props()
@@ -18,11 +18,14 @@
   <AuditForwardingHeader>
     <InjectionPoint name="settings.audit-forwarding.header" data={data?.__inject} />
   </AuditForwardingHeader>
-  <NavLink
+  <!-- @region settings.audit-forwarding.back -->
+  <NavLinkRegion
     surface="back"
     node="back.settings.audit.forwarding"
     class="mt-2 inline-block text-sm text-indigo-600 underline"
-  />
+  >
+    <InjectionPoint name="settings.audit-forwarding.back" data={data?.__inject} />
+  </NavLinkRegion>
 
   <!-- @region settings.audit-forwarding.config -->
   <AuditForwardingPanel {data}>

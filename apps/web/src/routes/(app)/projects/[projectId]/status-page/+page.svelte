@@ -2,7 +2,7 @@
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import { buildAbsoluteUrl, CapabilityId } from '@project-vault/shared'
   import { ApiClientError } from '$lib/api/client.js'
-  import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'
+  import StatusPageErrorRegion from '$lib/components/status-page/StatusPageErrorRegion.svelte'
   import StatusPageDisabled from '$lib/components/status-page/StatusPageDisabled.svelte'
   import StatusPageHeader from '$lib/components/status-page/StatusPageHeader.svelte'
   import StatusPageLink from '$lib/components/status-page/StatusPageLink.svelte'
@@ -257,10 +257,17 @@
       data={data.__inject}
     />
   {:else}
-    <MfaAwareErrorAlert
+    <!-- @region project.status-page.error -->
+    <StatusPageErrorRegion
       message={errorMessage}
       class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-    />
+    >
+      <InjectionPoint
+        name="project.status-page.error"
+        props={{ project: data.project }}
+        data={data.__inject}
+      />
+    </StatusPageErrorRegion>
 
     {#if !enabled}
       <StatusPageDisabled

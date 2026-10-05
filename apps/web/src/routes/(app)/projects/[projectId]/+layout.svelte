@@ -1,6 +1,7 @@
 <script lang="ts">
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import ProjectNav from '$lib/components/shell/ProjectNav.svelte'
+  import ProjectLayoutBody from '$lib/components/shell/ProjectLayoutBody.svelte'
   import type { LayoutData } from './$types.js'
 
   let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props()
@@ -24,7 +25,14 @@
     props={{ project: data.project }}
     data={data.__inject}
   />
-  {@render children()}<InjectionPoint
+  <!-- @region project.layout.content -->
+  <ProjectLayoutBody body={children}>
+    <InjectionPoint
+      name="project.layout.content"
+      props={{ project: data.project }}
+      data={data.__inject}
+    />
+  </ProjectLayoutBody><InjectionPoint
     name="project.layout.after"
     props={{ project: data.project }}
     data={data.__inject}
