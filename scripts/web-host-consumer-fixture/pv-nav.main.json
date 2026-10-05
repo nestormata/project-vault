@@ -467,7 +467,7 @@
       "contextKeys": [
         "authenticated"
       ],
-      "file": "src/routes/+error.svelte",
+      "file": "src/lib/components/public/RootErrorContent.svelte",
       "id": "error.nav"
     },
     {

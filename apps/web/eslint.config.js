@@ -15,7 +15,7 @@ export const NAV_RENDERER_FILES = [
   'src/lib/components/shell/ProjectNav.svelte',
   'src/lib/components/shell/ShellAccount.svelte',
   'src/lib/components/shell/ShellBrand.svelte',
-  'src/routes/+error.svelte',
+  'src/lib/components/public/RootErrorContent.svelte',
 ]
 
 export default [

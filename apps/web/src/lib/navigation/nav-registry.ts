@@ -213,7 +213,7 @@ const WAYFINDING = [
   },
   {
     id: 'error.nav',
-    file: 'src/routes/+error.svelte',
+    file: 'src/lib/components/public/RootErrorContent.svelte',
     contextKeys: ['authenticated'],
     items: [{ id: 'error.nav.back' }],
   },
