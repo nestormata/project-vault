@@ -26,6 +26,10 @@ Build-time composition packages publish from this tag to npm's `next` dist-tag:
   with no change to any existing table and no backfill. `vault_app` can only `SELECT` and `INSERT`
   on it; `vault_admin` gets `SELECT` on `org_id`, `jti` and `expires_at` plus `DELETE`, for the
   prune job only. No new environment variables.
+- **Service-delegated routes require optional key configuration.** Existing deployments are
+  unchanged; set `VAULT_DELEGATION_VERIFY_KEYS` only when an extension declares delegated routes.
+  The key set also requires `VAULT_HANDOFF_INSTANCE_ID` and must be disjoint from
+  `VAULT_HANDOFF_VERIFY_KEYS`. See [configuration](docs/configuration.md).
 
 ### Added
 
