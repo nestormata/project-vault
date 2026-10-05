@@ -4,5 +4,5 @@ import type { InjectionPointExtras } from '$lib/components/composition/injection
 // props beyond the route id and params) plus the page's `__inject` map, which a region forwards to its
 // point. The link region has its own props and never receives these (it must not see more than flags).
 export type StatusPageRegionProps = InjectionPointExtras<'project.status-page.header'> & {
-  data?: Record<string, readonly unknown[]> | undefined
+  data?: Record<string, readonly unknown[]>
 }
