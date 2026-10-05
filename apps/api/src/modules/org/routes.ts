@@ -177,6 +177,25 @@ function parseTargetUserRequest(
   return { params, body }
 }
 
+/**
+ * Story 43-17 review: with a transfer, lock both membership rows in one global (user id) order
+ * before the target lock, so two requests naming each other cannot deadlock; then lock the target
+ * row FOR UPDATE (re-entrant after the ordered pair).
+ */
+async function lockTargetMembership(
+  secureCtx: SecureRouteContext,
+  params: { userId: string },
+  body: RotationHandlingBody
+) {
+  if (body.rotationHandling === 'transfer') {
+    await lockTransferMembershipsInOrder(secureCtx.tx, secureCtx.auth.orgId, {
+      deactivatedUserId: params.userId,
+      transferToUserId: body.transferToUserId,
+    })
+  }
+  return lockOrgMembershipForUpdate(secureCtx.tx, secureCtx.auth.orgId, params.userId)
+}
+
 function logRotationGuardDenied(
   req: FastifyRequest,
   input: { eventType: string; targetUserId: string; callerId: string },
@@ -440,22 +459,9 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       if (!request) return reply
       const { params, body } = request
 
-      // Story 43-17 review: with a transfer, lock both membership rows in one global (user id)
-      // order before the target lock below, so two requests naming each other cannot deadlock.
-      if (body.rotationHandling === 'transfer') {
-        await lockTransferMembershipsInOrder(secureCtx.tx, secureCtx.auth.orgId, {
-          deactivatedUserId: params.userId,
-          transferToUserId: body.transferToUserId,
-        })
-      }
-
       // AC-3 edge case: lock the target row before evaluating hierarchy/idempotency so a
       // concurrent role change or a racing deactivation call (AC-19) is re-checked, not raced.
-      const target = await lockOrgMembershipForUpdate(
-        secureCtx.tx,
-        secureCtx.auth.orgId,
-        params.userId
-      )
+      const target = await lockTargetMembership(secureCtx, params, body)
       if (
         !isUsableTarget(
           target,
@@ -715,22 +721,9 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       if (!request) return reply
       const { params, body } = request
 
-      // Story 43-17 review: with a transfer, lock both membership rows in one global (user id)
-      // order before the target lock below, so two requests naming each other cannot deadlock.
-      if (body.rotationHandling === 'transfer') {
-        await lockTransferMembershipsInOrder(secureCtx.tx, secureCtx.auth.orgId, {
-          deactivatedUserId: params.userId,
-          transferToUserId: body.transferToUserId,
-        })
-      }
-
       // Story 43-15 AC-9: locked FOR UPDATE (as deactivation does) so the rotation guard below
       // and a concurrent rotation initiation by the target serialize on this row (AC-4).
-      const target = await lockOrgMembershipForUpdate(
-        secureCtx.tx,
-        secureCtx.auth.orgId,
-        params.userId
-      )
+      const target = await lockTargetMembership(secureCtx, params, body)
       // D9: cannot act on a peer/superior org role.
       if (
         !isUsableTarget(

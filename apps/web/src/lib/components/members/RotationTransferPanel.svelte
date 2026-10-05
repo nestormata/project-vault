@@ -33,6 +33,7 @@
     if (chosen !== '' && !targets.some((target) => target.userId === chosen)) chosen = ''
   })
   const selectId = $derived(`rotation-transfer-target-${subjectEmail}`)
+  const helpId = $derived(`rotation-transfer-help-${subjectEmail}`)
 </script>
 
 <div
@@ -45,7 +46,7 @@
     Transfer {subjectEmail}'s unfinished rotations, then {actionLabel}
     {subjectEmail}
   </p>
-  <p class="mt-1 text-slate-700">
+  <p class="mt-1 text-slate-700" id={helpId}>
     Every unfinished rotation keeps its status and history; only the owner changes. The new owner is
     notified.
   </p>
@@ -58,6 +59,7 @@
       New owner
       <select
         id={selectId}
+        aria-describedby={helpId}
         class="w-full min-w-0 rounded border border-slate-300 bg-white px-2 py-1"
         bind:value={chosen}
         disabled={saving}
