@@ -27,7 +27,7 @@ describe('migration 0104 (rotations.owner_user_id)', () => {
   it('is idempotent: re-running every statement on a migrated database does not fail', async () => {
     for (const statement of sqlText.split('--> statement-breakpoint')) {
       if (statement.replaceAll(/^\s*--.*$/gm, '').trim() === '') continue
-      await superSql.unsafe(statement)
+      await expect(superSql.unsafe(statement)).resolves.toBeDefined()
     }
   })
 

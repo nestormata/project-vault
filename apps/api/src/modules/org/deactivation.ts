@@ -184,8 +184,11 @@ export async function lockTransferMembershipsInOrder(
       .where(and(eq(orgMemberships.orgId, orgId), eq(orgMemberships.userId, userId)))
     await query.for(userId === input.deactivatedUserId ? 'update' : 'share').limit(1)
   }
-  const [first, second] = [input.deactivatedUserId, input.transferToUserId].sort()
-  if (first === undefined || second === undefined) return
+  // Any total order works as long as every request uses the same one: plain code-unit order.
+  const [first, second] =
+    input.deactivatedUserId < input.transferToUserId
+      ? [input.deactivatedUserId, input.transferToUserId]
+      : [input.transferToUserId, input.deactivatedUserId]
   await lockRow(first)
   await lockRow(second)
 }
