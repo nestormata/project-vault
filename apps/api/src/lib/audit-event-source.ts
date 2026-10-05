@@ -6,6 +6,12 @@ import type {
   AuditEventSourceWriteResult,
   ExtensionManifest,
 } from '@project-vault/extension-api'
+import {
+  ExtensionAuditAttributionRejectedError,
+  resolveAttribution,
+  type AttributionRejectCode,
+  type PvAttribution,
+} from '../modules/audit/extension-attribution.js'
 import { writeExtensionAuditEntry } from '../modules/audit/extension-entry.js'
 import {
   ExtensionAuditIdempotencyConflictError,
@@ -17,10 +23,12 @@ import {
 } from '../modules/audit/extension-idempotency.js'
 import { SameTransactionAuditWriteError } from './secure-route.js'
 import { operationalLog } from './logger.js'
+import { getRequestContext } from './request-context.js'
 
 // Story 71.1: the idempotency errors live with the dedupe helper; re-exported here so every
 // writeAuditEvent error type is importable from one place.
 export {
+  ExtensionAuditAttributionRejectedError,
   ExtensionAuditIdempotencyConflictError,
   ExtensionAuditIdempotencyKeyInvalidError,
   ExtensionAuditIdempotencyPayloadTooLargeError,
@@ -137,6 +145,7 @@ export type ExtensionAuditRejectReason =
   | 'idempotency_key_invalid'
   | 'idempotency_conflict'
   | 'payload_too_large'
+  | AttributionRejectCode
 
 const RATE_LIMIT_WINDOW_MS = 1000
 const rateLimitState = new Map<string, { lastEmittedAt: number; suppressedCount: number }>()
@@ -206,6 +215,7 @@ function logRejected(
 }
 
 function preGateRejectReason(error: unknown): ExtensionAuditRejectReason {
+  if (error instanceof ExtensionAuditAttributionRejectedError) return error.code
   if (error instanceof ExtensionAuditCapabilityNotDeclaredError) return 'capability_not_declared'
   if (error instanceof ExtensionAuditIdempotencyKeyInvalidError) return 'idempotency_key_invalid'
   return 'event_type_namespace_violation'
@@ -229,7 +239,8 @@ type WriteOutcome = { row: { id: string; createdAt: Date }; deduped: boolean }
 async function writeKeyedOnce(
   manifest: ExtensionManifest,
   input: AuditEventSourceWriteInput,
-  idempotencyKey: string
+  idempotencyKey: string,
+  attribution: PvAttribution | undefined
 ): Promise<WriteOutcome> {
   const run = (): Promise<WriteOutcome> =>
     withOrg(input.orgId, async (tx) => {
@@ -242,6 +253,7 @@ async function writeKeyedOnce(
         payload: input.payload,
         extensionName: manifest.name,
         idempotencyKey,
+        attribution,
       })
       return { row: receipt, deduped: receipt.deduped }
     })
@@ -255,10 +267,11 @@ async function writeKeyedOnce(
 
 async function writeOnce(
   manifest: ExtensionManifest,
-  input: AuditEventSourceWriteInput
+  input: AuditEventSourceWriteInput,
+  attribution: PvAttribution | undefined
 ): Promise<WriteOutcome> {
   if (input.idempotencyKey !== undefined) {
-    return writeKeyedOnce(manifest, input, input.idempotencyKey)
+    return writeKeyedOnce(manifest, input, input.idempotencyKey, attribution)
   }
   const row = await withOrg(input.orgId, (tx) =>
     writeExtensionAuditEntry(tx, {
@@ -268,6 +281,7 @@ async function writeOnce(
       resourceType: input.resourceType,
       payload: input.payload,
       extensionName: manifest.name,
+      attribution,
     })
   )
   return { row, deduped: false }
@@ -298,8 +312,19 @@ export async function writeExtensionAuditEventForManifest(
     throw error
   }
 
+  let attribution: PvAttribution | undefined
   try {
-    const { row, deduped } = await writeOnce(manifest, input)
+    // Story 71.4: the actor comes only from the host-bound delegation of the CURRENT request, never
+    // from the input; every check runs before any transaction opens (and before a replay lookup).
+    attribution = resolveAttribution(input, getRequestContext()?.delegation, Date.now())
+  } catch (error) {
+    counters.rejected += 1
+    logRejected(logger, input.eventType, preGateRejectReason(error))
+    throw error
+  }
+
+  try {
+    const { row, deduped } = await writeOnce(manifest, input, attribution)
     if (deduped) {
       counters.deduped += 1
       logDeduped(logger, input.eventType)

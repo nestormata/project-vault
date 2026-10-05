@@ -640,6 +640,61 @@ async function admitActor(
   }
 }
 
+type AdmittedActor = Exclude<Admission, { reply: FastifyReply }>
+
+/** Step 14: the delegated auth context, `request.delegationContext` and the ambient request context. */
+function bindDelegatedRequest(
+  request: FastifyRequest,
+  input: {
+    routeKey: string
+    claims: DelegationVerifiedClaims
+    orgId: string
+    admission: AdmittedActor
+  }
+): void {
+  const { routeKey, claims, orgId, admission } = input
+  request.authContext = {
+    userId: admission.userId ?? DELEGATION_NIL_USER_ID,
+    orgId,
+    sessionId: 'delegation',
+    jti: claims.jti,
+    sessionVersion: 0,
+    ...(admission.orgRole === undefined ? {} : { orgRole: admission.orgRole }),
+    isPlatformOperator: false,
+    delegation: true,
+  }
+  request.delegationContext = {
+    orgId,
+    actorId: claims.actor.subject,
+    actorProvider: claims.actor.provider,
+    actorUserId: admission.userId,
+    actorAttestation: admission.attestation,
+    delegatedBy: { kid: claims.kid, issuer: claims.issuer },
+    assertionId: claims.jti,
+    issuedAt: claims.issuedAt,
+    operation: routeKey,
+    ...(claims.occurredAt === undefined ? {} : { occurredAt: claims.occurredAt }),
+    ...(admission.reason === undefined ? {} : { actorAttestationReason: admission.reason }),
+  }
+  // The ambient org is the RESOLVED one; a user is bound only when the actor is a real user.
+  bindRequestContext({
+    orgId,
+    userId: admission.userId ?? undefined,
+    delegation: {
+      orgId,
+      actor: {
+        provider: claims.actor.provider,
+        subject: claims.actor.subject,
+        userId: admission.userId,
+        attestation: admission.attestation,
+        reason: admission.reason ?? null,
+      },
+      delegatedBy: { kid: claims.kid, issuer: claims.issuer, assertionId: claims.jti },
+      ...(claims.occurredAt === undefined ? {} : { occurredAtSeconds: claims.occurredAt }),
+    },
+  })
+}
+
 /** S4: org (11), burn (12), actor (13), then the delegated auth context (14). */
 export function delegationResolveStage(routeKey: string, delegation: NormalizedDelegation) {
   return afterVerificationStage(routeKey, async (request, reply, { claims }) => {
@@ -649,31 +704,7 @@ export function delegationResolveStage(routeKey: string, delegation: NormalizedD
     if (burned) return burned
     const admission = await admitActor(request, reply, routeKey, claims, orgId, delegation)
     if ('reply' in admission) return admission.reply
-    request.authContext = {
-      userId: admission.userId ?? DELEGATION_NIL_USER_ID,
-      orgId,
-      sessionId: 'delegation',
-      jti: claims.jti,
-      sessionVersion: 0,
-      ...(admission.orgRole === undefined ? {} : { orgRole: admission.orgRole }),
-      isPlatformOperator: false,
-      delegation: true,
-    }
-    request.delegationContext = {
-      orgId,
-      actorId: claims.actor.subject,
-      actorProvider: claims.actor.provider,
-      actorUserId: admission.userId,
-      actorAttestation: admission.attestation,
-      delegatedBy: { kid: claims.kid, issuer: claims.issuer },
-      assertionId: claims.jti,
-      issuedAt: claims.issuedAt,
-      operation: routeKey,
-      ...(claims.occurredAt === undefined ? {} : { occurredAt: claims.occurredAt }),
-      ...(admission.reason === undefined ? {} : { actorAttestationReason: admission.reason }),
-    }
-    // The ambient org is the RESOLVED one; a user is bound only when the actor is a real user.
-    bindRequestContext({ orgId, userId: admission.userId ?? undefined })
+    bindDelegatedRequest(request, { routeKey, claims, orgId, admission })
     return undefined
   })
 }

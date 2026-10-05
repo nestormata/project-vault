@@ -3,6 +3,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { auditLogEntries, extensionAuditIdempotencyKeys } from '@project-vault/db/schema'
 import { writeExtensionAuditEntry, type ExtensionAuditFields } from './extension-entry.js'
+import { attributionFingerprintPart, type PvAttribution } from './extension-attribution.js'
 import { estimateAuditEntrySizeBytes } from './quota-gate.js'
 
 /**
@@ -100,6 +101,13 @@ export type IdempotentAuditContent = {
   projectId?: string
   /** The caller payload, BEFORE the host folds `extensionName` into it. */
   payload: Record<string, unknown>
+  /**
+   * Story 71.4 — the resolved attribution; only its effective time and actor (provider, subject,
+   * attestation) enter the fingerprint, never `delegatedBy`, the assertion id, the kid, the reason
+   * or the user id, so a retry with a fresh assertion still replays. Absent attribution leaves the
+   * fingerprint exactly as it was before 71.4.
+   */
+  attribution?: PvAttribution
 }
 
 /** Story 71.1 AC-3 — sha256 over the canonical JSON of the caller-supplied content. */
@@ -112,6 +120,7 @@ export function computeContentFingerprint(content: IdempotentAuditContent): stri
         resourceId: content.resourceId,
         projectId: content.projectId,
         payload: content.payload,
+        attribution: attributionFingerprintPart(content.attribution),
       })
     )
     .digest('hex')
@@ -157,6 +166,7 @@ export async function writeIdempotentExtensionAuditEntry(
     resourceId: fields.resourceId,
     projectId,
     payload: fields.payload,
+    attribution: fields.attribution,
   })
 
   const lockInput = JSON.stringify([fields.orgId, fields.extensionName, idempotencyKey])

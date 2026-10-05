@@ -3,6 +3,7 @@ import type { Tx } from '@project-vault/db'
 import { auditLogEntries } from '@project-vault/db/schema'
 import { getAuditKey } from '../vault/key-service.js'
 import { computeAuditHmac, readAuditChainHead, GENESIS_SENTINEL } from './write-entry.js'
+import { PV_ATTRIBUTION_KEY, type PvAttribution } from './extension-attribution.js'
 import { assertOrgMayWriteAuditGates, estimateAuditEntrySizeBytes } from './quota-gate.js'
 
 export type ExtensionAuditFields = {
@@ -14,6 +15,9 @@ export type ExtensionAuditFields = {
   /** Story 23.8 AC-11 — the loaded extension's own `manifest.name`, folded into `payload` before
    * the insert (never a new column) — same precedent as `machine-entry.ts`'s `machineUserId`. */
   extensionName: string
+  /** Story 71.4 D1 — the host-resolved attribution, folded into `payload` under the reserved
+   * `pvAttribution` key before the HMAC (so the chain covers it). Absent = byte-identical payload. */
+  attribution?: PvAttribution
 }
 
 /**
@@ -35,6 +39,7 @@ export async function writeExtensionAuditEntry(
   // payload.extensionName — spread order, host key last.
   const payload = {
     ...fields.payload,
+    ...(fields.attribution ? { [PV_ATTRIBUTION_KEY]: fields.attribution } : {}),
     extensionName: fields.extensionName,
   }
 
