@@ -26,7 +26,10 @@ const SECURITY_KEYS = [
 const BOOLEAN_KEYS = ['requireAuth', 'requireOrgScope', 'requireMfa', 'requirePlatformOperator']
 const RATE_LIMIT_KEYS = ['max', 'timeWindowMs', 'key']
 const AUDIT_KEYS = ['eventType', 'resourceType', 'resourceIdFromParams']
-const DELEGATION_KEYS = ['subjectFields']
+const DELEGATION_KEYS = ['subjectFields', 'historicalActorPolicy']
+const HISTORICAL_POLICY_KEYS = ['maxAgeSeconds']
+/** Story 71.4 D4: the hard cap (30 days) on a route's declared historical window. */
+const HISTORICAL_MAX_AGE_CAP_SECONDS = 2_592_000
 const SUBJECT_KEYS = ['org', 'actor']
 const SUBJECT_FIELD_KEYS = ['in', 'name']
 const SUBJECT_FIELD_LOCATIONS = ['body', 'params']
@@ -124,12 +127,40 @@ function validateSubjectField(value: unknown, path: string): string {
   return `${location}:${name}`
 }
 
-/** Story 71.8 AC-1: `security.delegation` is a boolean or a closed `{ subjectFields }` object. */
-function validateDelegation(value: unknown, path: string): void {
+/** Story 71.4 AC-1: `{ maxAgeSeconds }`, an integer 1..30 days; never clamped, always named. */
+function validateHistoricalPolicy(policy: unknown, path: string, routeKey: string): void {
+  if (!isRecord(policy)) fail(`${path} must be an object (${routeKey})`)
+  assertOnlyKeys(policy, HISTORICAL_POLICY_KEYS, path)
+  const maxAge = fieldsOf(policy).get('maxAgeSeconds')
+  if (
+    typeof maxAge !== 'number' ||
+    !Number.isInteger(maxAge) ||
+    maxAge < 1 ||
+    maxAge > HISTORICAL_MAX_AGE_CAP_SECONDS
+  ) {
+    fail(
+      `${path}.maxAgeSeconds must be an integer from 1 to ${HISTORICAL_MAX_AGE_CAP_SECONDS} (${routeKey})`
+    )
+  }
+}
+
+/**
+ * Story 71.8 AC-1: `security.delegation` is a boolean or a closed `{ subjectFields }` object;
+ * Story 71.4 adds the optional `historicalActorPolicy`.
+ */
+function validateDelegation(value: unknown, path: string, routeKey: string): void {
   if (value === undefined || typeof value === 'boolean') return
   if (!isRecord(value)) fail(`${path} must be a boolean or an object`)
   assertOnlyKeys(value, DELEGATION_KEYS, path)
-  const subjectFields = fieldsOf(value).get('subjectFields')
+  const declared = fieldsOf(value)
+  if (declared.has('historicalActorPolicy')) {
+    validateHistoricalPolicy(
+      declared.get('historicalActorPolicy'),
+      `${path}.historicalActorPolicy`,
+      routeKey
+    )
+  }
+  const subjectFields = declared.get('subjectFields')
   if (subjectFields === undefined) return
   const subjectPath = `${path}.subjectFields`
   if (!isRecord(subjectFields)) fail(`${subjectPath} must be an object`)
@@ -177,6 +208,6 @@ export function validateApiRouteSecurity(value: unknown, path: string, routeKey 
   validateAudit(fields.get('writeAuditEvent'), `${path}.writeAuditEvent`)
   validateRateLimit(fields.get('rateLimit'), `${path}.rateLimit`)
   assertOptionalText(fields.get('capability'), `${path}.capability`)
-  validateDelegation(fields.get('delegation'), `${path}.delegation`)
+  validateDelegation(fields.get('delegation'), `${path}.delegation`, routeKey)
   assertDelegationConsistent(fields, path, routeKey)
 }

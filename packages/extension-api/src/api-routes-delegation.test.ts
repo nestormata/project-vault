@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 import { ExtensionRegistrationError } from './errors.js'
 import { EXTENSION_API_VERSION } from './manifest.js'
 import type { ExtensionManifest } from './manifest.js'
 import { registerExtension } from './register-extension.js'
 import type { ApiRoutesDeclaration } from './hooks/api-routes.js'
 import { isApiRouteDelegatedContext } from './hooks/api-routes.js'
+import type { ApiRouteDelegation } from './hooks/api-routes.js'
 
 /**
  * Story 71.8 — `security.delegation`: the declaration shape (AC-1), the three self-contradiction
@@ -14,6 +15,7 @@ import { isApiRouteDelegatedContext } from './hooks/api-routes.js'
 const AUDIT_URL = '/cm/audit-events'
 const ROUTE = `POST ${AUDIT_URL}` as const
 const MUST_BE_BOOL_OR_OBJECT = 'delegation must be a boolean or an object'
+const POLICY_MUST_BE_OBJECT = 'delegation.historicalActorPolicy must be an object'
 const ORG_NAME_MUST_BE = 'delegation.subjectFields.org.name must be'
 const handler = () => ({ ok: true })
 
@@ -105,6 +107,56 @@ describe.each(shapes)('Story 71.8 AC-1 — security.delegation on an %s', (_name
     const same = { org: { in: 'body', name: 'id' }, actor: { in: 'body', name: 'id' } }
     expect(messageOf(wrap({ delegation: { subjectFields: same } }))).toContain(
       `${path}.delegation.subjectFields org and actor must not name the same field`
+    )
+  })
+})
+
+describe.each(shapes)('Story 71.4 AC-1 — historicalActorPolicy on an %s', (_name, wrap, path) => {
+  it.each([[1], [3600], [2_592_000]])('accepts maxAgeSeconds %j', (maxAgeSeconds) => {
+    expect(() =>
+      register(wrap({ delegation: { historicalActorPolicy: { maxAgeSeconds } } }))
+    ).not.toThrow()
+  })
+
+  it('passes the policy through to the registered manifest unchanged', () => {
+    const security = { delegation: { historicalActorPolicy: { maxAgeSeconds: 600 } } }
+    const manifest = register(wrap(security))
+    expect(JSON.stringify(manifest.apiRoutes)).toContain(
+      '"historicalActorPolicy":{"maxAgeSeconds":600}'
+    )
+  })
+
+  it.each([
+    [0],
+    [-1],
+    [1.5],
+    [2_592_001],
+    [Number.NaN],
+    [Number.POSITIVE_INFINITY],
+    ['600'],
+    [null],
+    [undefined],
+  ])('rejects maxAgeSeconds %j, naming the route', (maxAgeSeconds) => {
+    const message = messageOf(wrap({ delegation: { historicalActorPolicy: { maxAgeSeconds } } }))
+    expect(message).toContain(`${path}.delegation.historicalActorPolicy.maxAgeSeconds must be`)
+    expect(message).toContain(ROUTE)
+  })
+
+  it.each([
+    ['yes', POLICY_MUST_BE_OBJECT],
+    [[], POLICY_MUST_BE_OBJECT],
+    [null, POLICY_MUST_BE_OBJECT],
+    [{ maxAgeSeconds: 60, extra: 1 }, 'delegation.historicalActorPolicy has unknown key "extra"'],
+  ])('rejects the policy %j', (policy, part) => {
+    expect(messageOf(wrap({ delegation: { historicalActorPolicy: policy } }))).toContain(
+      `${path}.${part}`
+    )
+  })
+
+  it('does not read an inherited maxAgeSeconds', () => {
+    const inherited = Object.create({ maxAgeSeconds: 60 }) as Record<string, unknown>
+    expect(messageOf(wrap({ delegation: { historicalActorPolicy: inherited } }))).toContain(
+      'historicalActorPolicy.maxAgeSeconds must be'
     )
   })
 })
@@ -228,5 +280,26 @@ describe('Story 71.8 AC-3 — isApiRouteDelegatedContext', () => {
     [{ delegation, auth: null }],
   ])('is false for %j without throwing', (ctx) => {
     expect(isApiRouteDelegatedContext(ctx as never)).toBe(false)
+  })
+})
+
+describe('Story 71.4 AC-1 — ApiRouteDelegation additive fields', () => {
+  it('occurredAt and actorAttestationReason are optional; a 3.32.0 value still compiles', () => {
+    const legacy: ApiRouteDelegation = {
+      orgId: 'o',
+      actorId: 'a',
+      actorProvider: 'p',
+      actorUserId: null,
+      actorAttestation: 'issuer_attested',
+      delegatedBy: { kid: 'k', issuer: 'i' },
+      assertionId: 'j',
+      issuedAt: 1,
+      operation: ROUTE,
+    }
+    expect(legacy.occurredAt).toBeUndefined()
+    expectTypeOf<ApiRouteDelegation['occurredAt']>().toEqualTypeOf<number | undefined>()
+    expectTypeOf<ApiRouteDelegation['actorAttestationReason']>().toEqualTypeOf<
+      'unlinked' | 'not_current_member' | undefined
+    >()
   })
 })

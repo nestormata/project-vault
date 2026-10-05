@@ -2,6 +2,49 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.33.0 — 2026-10-05
+
+contract-hash: sha256:15820f74b42304f335e3e7d186024791555caba9c3012dee9f8d08b2efd6ddfc
+
+Story 71.4 (Epic 71, CentralizeMe 14-17 AC-R2/R3). Additive only: a pack written against 3.32.0 that
+omits every new field behaves exactly as before, and its audit rows are byte-identical.
+
+### Added
+
+- `AuditEventSourceWriteInput.actorId` (optional `string`, at most 256 bytes): a cross-check only.
+  On a request authenticated by a service-delegated assertion, PV attributes every audit write to
+  that request's verified actor; a given `actorId` that differs rejects with `actor_mismatch`, and
+  one given with no delegated request rejects with `actor_requires_delegation`.
+- `AuditEventSourceWriteInput.occurredAt` (optional ISO-8601 `string`): when the event happened,
+  stored apart from `createdAt`. At most 30 s in the future and 30 days old; on a delegated request
+  it defaults to, and must equal, the assertion's signed `occ`, and without one it may be at most
+  90 s old.
+- `ApiRouteDelegation.occurredAt` (optional `number`, seconds) and
+  `ApiRouteDelegation.actorAttestationReason` (optional `'unlinked' | 'not_current_member'`).
+- `security.delegation.historicalActorPolicy` (optional `{ maxAgeSeconds }`, integer 1 to 2 592 000):
+  opts one route in to delayed delivery for an actor who has since left the org. Out-of-range values
+  fail registration; nothing is clamped.
+
+The host stores attribution in a reserved `pvAttribution` key of the audit payload (tamper-evident:
+the audit HMAC covers it). A caller payload that already has that key is rejected
+(`reserved_payload_key`). Rejections are non-retryable `ExtensionAuditAttributionRejectedError`
+values with a closed `code`. A host older than 3.33.0 ignores `actorId` and `occurredAt`.
+
+### Deprecated
+
+Unchanged from 3.32.0, restated for the marker lint.
+
+- Exports: `UIPanel`, `UIPanelContext`, `UIPanelResult`, `ModuleAction`, `ModuleActionRequest`,
+  `ModuleActionContext`, `ActionResult`, `ExtensionNavItem`, `ModuleDataRequestContext`,
+  `ModuleDataResult`, `ModuleDataRouteHandler` and `ModuleDataRouteDeclaration`.
+- Fields: `uiPanelSlots`, `moduleActions`, `navItems`, `moduleDataRoutes`; `panelDataPaths` keeps
+  its own notice, ending 2026-11-29.
+- Hooks: `uiPanel`, `moduleAction`, `moduleData`; capability `'ui-panel'`.
+- Move to composed UI (ADR 0007), M5 `nav`, M7 `apiRoutes`, `ExtensionRequestContext` and `ExtensionActionResult`.
+- Notified: 2026-10-06, carried forward from the 3.30.0 notification (CHANGELOG entry 3.30.0); recipient CentralizeMe maintainer. No new notification here.
+- earliest-removal: 4.0.0
+- notice-window-ends: 2027-01-14
+
 ## 3.32.0 — 2026-10-06
 
 contract-hash: sha256:85ddb34b991de38ffeb0dac700ad2bf707bedbc196c43cc189dc06656d37d548

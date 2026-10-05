@@ -48,6 +48,24 @@ export type AuditEventSourceWriteInput = {
    * Omit it to keep the original behaviour unchanged: two calls write two rows.
    */
   idempotencyKey?: string
+  /**
+   * Optional cross-check of the actor (since 3.33.0), at most 256 bytes. PV never takes the actor
+   * from you: on a request authenticated by a service-delegated assertion, every audit write is
+   * attributed to that request's verified actor, and a given `actorId` must equal that actor's
+   * subject (`ctx.delegation.actorId`) or the write rejects with `actor_mismatch`. With no
+   * delegated request in progress, `actorId` rejects with `actor_requires_delegation`: PV records
+   * only an actor it received through a verified assertion.
+   */
+  actorId?: string
+  /**
+   * When the event happened, an ISO-8601 instant (since 3.33.0). Stored apart from `createdAt`,
+   * which stays the time PV persisted the row. Must not be later than now plus 30 seconds and not
+   * older than 30 days. On a delegated request whose assertion carries a signed `occ`, it defaults
+   * to `occ` and, if given, must equal it to the second; without a signed `occ` it may be at most
+   * 90 seconds old. Outside a delegated request it is your own declaration. A rejection is one of
+   * the closed `ExtensionAuditAttributionRejectedError` codes and is never retryable.
+   */
+  occurredAt?: string
 }
 
 export type AuditEventSourceWriteResult = { id: string; createdAt: string }

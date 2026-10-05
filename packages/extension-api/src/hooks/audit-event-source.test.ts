@@ -46,6 +46,30 @@ describe('AuditEventSourceWriteInput / AuditEventSourceWriteResult — exact-sha
     expectTypeOf<AuditEventSourceWriteInput['idempotencyKey']>().toEqualTypeOf<string | undefined>()
   })
 
+  it('actorId and occurredAt are optional strings (Story 71.4 AC-1, additive minor)', () => {
+    const attributed: AuditEventSourceWriteInput = {
+      eventType: FIXTURE_EVENT_TYPE,
+      orgId: 'org_1',
+      payload: {},
+      actorId: 'user_01EXAMPLE',
+      occurredAt: '2026-10-05T12:00:00.000Z',
+    }
+    expect(attributed.actorId).toBe('user_01EXAMPLE')
+    expectTypeOf<AuditEventSourceWriteInput['actorId']>().toEqualTypeOf<string | undefined>()
+    expectTypeOf<AuditEventSourceWriteInput['occurredAt']>().toEqualTypeOf<string | undefined>()
+  })
+
+  it('a 3.32.0-shaped input without the new fields still compiles (consumers unaffected)', () => {
+    const legacy: AuditEventSourceWriteInput = {
+      eventType: FIXTURE_EVENT_TYPE,
+      orgId: 'org_1',
+      payload: { a: 1 },
+      idempotencyKey: 'k',
+    }
+    expect(legacy.actorId).toBeUndefined()
+    expect(legacy.occurredAt).toBeUndefined()
+  })
+
   it('AuditEventSourceWriteInput accepts the minimal required shape', () => {
     const fixture: AuditEventSourceWriteInput = {
       eventType: FIXTURE_EVENT_TYPE,
