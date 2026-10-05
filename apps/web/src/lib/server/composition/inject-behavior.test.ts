@@ -1,6 +1,6 @@
 import { error, fail, redirect, type RequestEvent } from '@sveltejs/kit'
 import { describe, expect, it, vi } from 'vitest'
-import { createInjectBehavior, withInjectedLoad, type BehaviorTables } from './inject-behavior.js'
+import { createInjectBehavior, type BehaviorTables } from './inject-behavior.js'
 
 // Story 68.4 AC-5 / AC-6 / AC-14: server load and action injection. The generated tables come from
 // the kit; here they are handed in directly.
@@ -315,7 +315,7 @@ describe('injectActions', () => {
 
 describe("withInjectedLoad: PV's own load first, then the injected data", () => {
   it("is a no-op in PV's build: the own data comes back unchanged, with no __inject key", async () => {
-    const wrapped = withInjectedLoad(async () => ({ user: 'u1' }), '/r', 'page')
+    const wrapped = emptyBehavior.withInjectedLoad(async () => ({ user: 'u1' }), '/r', 'page')
     const result = await wrapped(event)
     expect(result).toEqual({ user: 'u1' })
     expect('__inject' in result).toBe(false)
