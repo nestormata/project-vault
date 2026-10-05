@@ -2,6 +2,7 @@ import { z } from 'zod/v4'
 import type { FastifyApp } from '../../lib/fastify-app.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseParams } from '../../lib/route-helpers.js'
+import { enforceDeliveryWebhookRateLimit } from '../../lib/delivery-webhook-rate-limit.js'
 import { secureRoute } from '../../lib/secure-route.js'
 import { handleDeliveryWebhook } from './delivery-webhook-service.js'
 
@@ -62,18 +63,17 @@ export async function deliveryWebhookRoutes(fastify: FastifyApp): Promise<void> 
     security: {
       requireAuth: false,
       writeAuditEvent: false,
-      // Story 20.11 AC6: the same IP-scoped rate-limit backstop precedent as
-      // external-access-routes.ts's anonymous share-reveal route — a coarser defense-in-depth
-      // layer behind this route's own primary defense (per-provider signature verification).
-      rateLimit: {
-        max: 60,
-        timeWindowMs: 60_000,
-        key: 'POST /api/v1/notifications/delivery-webhook/:providerId',
-      },
+      // Story 20.11 AC6 / 70.3 AC5: the IP-scoped rate-limit backstop (a coarser layer behind the
+      // per-provider signature check) depends on the `:providerId` param, which `secureRoute`'s
+      // static limit cannot see. So it is enforced in the handler by
+      // `enforceDeliveryWebhookRateLimit` (per registered provider, one shared bucket for
+      // unknown ids), which route-audit recognises as a named manual IP limiter.
+      rateLimit: false,
     },
     handler: async (_ctx, req, reply) => {
       const params = parseParams(DeliveryWebhookParamsSchema, req, reply)
       if (!params) return reply
+      if (!enforceDeliveryWebhookRateLimit(req, reply, params.providerId)) return reply
 
       const rawBody = typeof req.body === 'string' ? req.body : ''
       const result = await handleDeliveryWebhook({

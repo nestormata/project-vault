@@ -623,7 +623,11 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // declaration and the delegated context types (`ctx.delegation`). New optional field and new
 // exported types only (policy rows 1 and 2); the handler types gain a defaulted `Ctx` type
 // parameter, so every existing handler annotation compiles unchanged.
-export const EXTENSION_API_VERSION = '3.31.0'
+// Story 70.3 — bumped as a minor (3.31.0 -> 3.32.0): optional `DeliveryProviderSendPayload.html`,
+// optional `DeliveryProvider.webhookRateLimit`, and the new exported
+// `DeliveryProviderPermanentError` class (policy rows 1 and 2). A provider written against 3.31.0
+// that ignores all three behaves exactly as before.
+export const EXTENSION_API_VERSION = '3.32.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

@@ -513,12 +513,15 @@ describe('check-injection-point-coverage: the real tree holds its regions (Story
   const REGIONS_ADDED_BY_69_1 = 14
   // Story 69.2: the credential detail page's regions.
   const REGIONS_ADDED_BY_69_2 = 13
+  const REGIONS_ADDED_BY_69_3 = 22
 
   it('pairs every registered region point with a marker, inside the file that renders it', () => {
     const regions = [...(readRegistryFields(WEB) ?? [])].filter(
       ([, fields]) => fields.get('kind') === 'region'
     )
-    expect(regions.length).toBeGreaterThanOrEqual(REGIONS_ADDED_BY_69_1 + REGIONS_ADDED_BY_69_2)
+    expect(regions.length).toBeGreaterThanOrEqual(
+      REGIONS_ADDED_BY_69_1 + REGIONS_ADDED_BY_69_2 + REGIONS_ADDED_BY_69_3
+    )
     const marked = new Map<string, string[]>()
     for (const file of walkFiles(resolve(WEB, 'src'), (path) => path.endsWith('.svelte'))) {
       const parsed = parseMarkup(sysReadFile(file) ?? '', file)
@@ -532,6 +535,59 @@ describe('check-injection-point-coverage: the real tree holds its regions (Story
         marked.get(name),
         `${name} needs exactly one @region marker holding its point`
       ).toHaveLength(1)
+    }
+  })
+})
+
+// Story 69.3 AC-3: a count alone stays green when one file loses all its regions, so the five monitoring
+// routes are pinned per file: each region component below must keep its `@region` marker holding its
+// own point, and each host route must still reach it (the registry's `hostRoutes` is checked against
+// the import graph by the guard itself).
+describe('check-injection-point-coverage: the monitoring regions, per file (Story 69.3)', () => {
+  const MONITORING_REGIONS: Record<string, string[]> = {
+    'monitoring/ServiceEndpointsHeader.svelte': ['project.service-endpoints.header'],
+    'monitoring/ServiceEndpointsAlerts.svelte': ['project.service-endpoints.alerts'],
+    'monitoring/ServiceEndpointsTable.svelte': ['project.service-endpoints.table'],
+    'monitoring/ServiceEndpointRow.svelte': ['project.service-endpoints.row'],
+    'monitoring/ServiceEndpointsEmpty.svelte': ['project.service-endpoints.empty'],
+    'monitoring/ServiceEndpointsNotFound.svelte': ['project.service-endpoints.not-found'],
+    'monitoring/ServiceEndpointNewHeader.svelte': ['project.service-endpoints-new.header'],
+    'monitoring/ServiceEndpointCreateForm.svelte': ['project.service-endpoints-new.form'],
+    'monitoring/ServiceEndpointTitle.svelte': ['project.service-endpoints-detail.title'],
+    'monitoring/ServiceEndpointPause.svelte': ['project.service-endpoints-detail.pause'],
+    'monitoring/ServiceEndpointSettings.svelte': ['project.service-endpoints-detail.settings'],
+    'monitoring/ServiceEndpointHistory.svelte': ['project.service-endpoints-detail.history'],
+    'monitoring/ServiceEndpointDelete.svelte': ['project.service-endpoints-detail.delete'],
+    'monitoring/ServiceEndpointDetailNotFound.svelte': [
+      'project.service-endpoints-detail.not-found',
+    ],
+    'status-page/StatusPageHeader.svelte': ['project.status-page.header'],
+    'status-page/StatusPageReadOnly.svelte': ['project.status-page.read-only'],
+    'status-page/StatusPageDisabled.svelte': ['project.status-page.disabled'],
+    'status-page/StatusPageLink.svelte': ['project.status-page.link'],
+    'status-page/StatusPageServices.svelte': ['project.status-page.services'],
+    'public-status/PublicStatusHeader.svelte': ['status.detail.header'],
+    'public-status/PublicStatusServices.svelte': ['status.detail.services'],
+    'public-status/PublicStatusUnavailable.svelte': ['status.detail.unavailable'],
+  }
+
+  it.each(Object.entries(MONITORING_REGIONS))(
+    '%s holds its marked region(s), each with its own point',
+    (file, names) => {
+      const path = resolve(WEB, 'src/lib/components', file)
+      const parsed = parseMarkup(sysReadFile(path) ?? '', path)
+      expect(parsed.regionProblems).toEqual([])
+      expect(parsed.regions.map((region) => region.name)).toEqual(names)
+      for (const name of names) {
+        expect(parsed.points.map((point) => point.name)).toContain(name)
+      }
+    }
+  )
+
+  it('registers every one of them as a region point with its host routes', () => {
+    const registry = readRegistryFields(WEB) ?? new Map()
+    for (const name of Object.values(MONITORING_REGIONS).flat()) {
+      expect(registry.get(name)?.get('kind'), name).toBe('region')
     }
   })
 })

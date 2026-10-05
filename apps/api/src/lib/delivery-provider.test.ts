@@ -14,6 +14,9 @@ import {
 import { resetVaultForTest } from '../__tests__/helpers/vault-test-cleanup.js'
 import {
   DeliveryProviderConflictError,
+  DeliveryProviderWebhookRateLimitError,
+  DEFAULT_DELIVERY_WEBHOOK_RATE_LIMIT,
+  getDeliveryWebhookRateLimit,
   DeliveryProviderRegistrationAuditError,
   auditDeliveryProviderRegistrationOrFailClosed,
   getDeliveryProviderForChannel,
@@ -160,5 +163,55 @@ describe('auditDeliveryProviderRegistrationOrFailClosed', () => {
         () => Promise.reject(new Error('must not be called'))
       )
     ).resolves.toBeUndefined()
+  })
+})
+
+describe('wireExtensionDeliveryProvider - Story 70.3 AC5 webhookRateLimit validation', () => {
+  beforeEach(() => {
+    __resetDeliveryProvidersForTests()
+  })
+
+  it('accepts a bounded declaration and resolves it per channel, defaulting windowSeconds to 60', () => {
+    wireExtensionDeliveryProvider(
+      loadedState({
+        email: { ...makeProvider(), webhookRateLimit: { max: 500 } },
+        sms: makeProvider(),
+      })
+    )
+    expect(getDeliveryWebhookRateLimit('email')).toEqual({ max: 500, timeWindowMs: 60_000 })
+    expect(getDeliveryWebhookRateLimit('sms')).toEqual(DEFAULT_DELIVERY_WEBHOOK_RATE_LIMIT)
+    expect(getDeliveryWebhookRateLimit('unregistered')).toEqual(DEFAULT_DELIVERY_WEBHOOK_RATE_LIMIT)
+    expect(DEFAULT_DELIVERY_WEBHOOK_RATE_LIMIT).toEqual({ max: 60, timeWindowMs: 60_000 })
+  })
+
+  it('accepts the inclusive bounds', () => {
+    wireExtensionDeliveryProvider(
+      loadedState({
+        email: { ...makeProvider(), webhookRateLimit: { max: 10_000, windowSeconds: 3600 } },
+      })
+    )
+    expect(getDeliveryWebhookRateLimit('email')).toEqual({ max: 10_000, timeWindowMs: 3_600_000 })
+  })
+
+  it.each([
+    ['null', null as never],
+    ['a number', 5 as never],
+    ['a string', 'fast' as never],
+    ['max 0', { max: 0 }],
+    ['max 10001', { max: 10_001 }],
+    ['max non-integer', { max: 1.5 }],
+    ['max NaN', { max: Number.NaN }],
+    ['windowSeconds 0', { max: 5, windowSeconds: 0 }],
+    ['windowSeconds 3601', { max: 5, windowSeconds: 3601 }],
+    ['windowSeconds non-integer', { max: 5, windowSeconds: 2.5 }],
+    ['windowSeconds NaN', { max: 5, windowSeconds: Number.NaN }],
+  ])('rejects %s with a named error and leaves the registry untouched', (_label, limit) => {
+    expect(() =>
+      wireExtensionDeliveryProvider(
+        loadedState({ ok: makeProvider(), email: { ...makeProvider(), webhookRateLimit: limit } })
+      )
+    ).toThrow(DeliveryProviderWebhookRateLimitError)
+    expect(getRegisteredDeliveryProviderChannels()).toEqual([])
+    expect(getDeliveryProviderForChannel('ok')).toBeUndefined()
   })
 })

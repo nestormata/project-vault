@@ -1,4 +1,5 @@
 import { expect, type Page } from '@playwright/test'
+import { gotoHydrated } from './hydration.js'
 
 /**
  * Shared by every journey that navigates to a project's public-status-page settings and clicks
@@ -10,9 +11,11 @@ import { expect, type Page } from '@playwright/test'
  * POST /enable|/regenerate request/DOM update.
  */
 export async function enablePublicStatusPageViaUi(page: Page, projectId: string): Promise<string> {
-  await page.goto(`/projects/${projectId}/status-page`)
+  const enableButton = page.getByRole('button', { name: 'Enable public status page' })
+  // A click before hydration falls through to a native submission and never reveals the link.
+  await gotoHydrated(page, `/projects/${projectId}/status-page`, enableButton)
   await expect(page.getByRole('heading', { name: 'Public status page' })).toBeVisible()
-  await page.getByRole('button', { name: 'Enable public status page' }).click()
+  await enableButton.click()
 
   const urlLocator = page.locator('code')
   await expect(urlLocator).toHaveText(/^https?:\/\/.+\/status\/.{10,}$/)

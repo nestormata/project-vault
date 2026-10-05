@@ -378,6 +378,9 @@ jobs:
         with:
           webhook: ${{ env.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
+          # Fail the job when the post is rejected; the v4 default (false) left it green (DW-448).
+          # The step `if:` above still skips the whole step, action included, when the secret is unset.
+          errors: true
           payload: |
             {
               "text": "Nightly CI failed for ${{ github.repository }} on ${{ github.ref_name }}",

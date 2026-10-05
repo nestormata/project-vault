@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-// @ts-expect-error -- plain .mjs config, no type declarations
 import config, { SHARDS } from '../stryker.config.mjs'
 
 // Story 66-7 guard: the invariants the Stryker/vitest-5 fix depends on. Each assertion fails if

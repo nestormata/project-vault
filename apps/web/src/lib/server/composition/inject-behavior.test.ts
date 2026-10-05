@@ -436,6 +436,116 @@ describe("withInjectedLoad: PV's own load first, then the injected data", () => 
     })
   })
 
+  // Story 69.3 AC-5.4 (Open Q2): the public status page answers an invalid, disabled or sealed token
+  // with `statusPage: null` (no `notFound` shape). Its own load marks that result with the typed
+  // `skipInjectedLoads: true`; the wrapper then runs no contribution load (a pack can build no
+  // token-validity oracle) and strips the marker, so PV's own data shape is unchanged.
+  describe('the skipInjectedLoads marker (Story 69.3)', () => {
+    const counter = { ran: 0 }
+    const sliceTables = (): BehaviorTables => ({
+      loads: {
+        '/s#page': [
+          {
+            point: 'status.detail.services',
+            contributions: [
+              { order: 0, load: () => (counter.ran += 1) },
+              { order: 1, load: null },
+            ],
+          },
+        ],
+      },
+      actions: {},
+    })
+
+    it('runs no load, aligns null entries and strips the marker from the returned data', async () => {
+      counter.ran = 0
+      const { withInjectedLoad: wrap } = createInjectBehavior(sliceTables())
+      const result = await wrap(
+        async () => ({ statusPage: null, skipInjectedLoads: true as const }),
+        '/s',
+        'page'
+      )(event)
+      expect(counter.ran).toBe(0)
+      expect(result).toEqual({
+        statusPage: null,
+        __inject: { 'status.detail.services': [null, null] },
+      })
+      expect('skipInjectedLoads' in result).toBe(false)
+    })
+
+    it('a valid result (no marker) still runs the loads', async () => {
+      counter.ran = 0
+      const { withInjectedLoad: wrap } = createInjectBehavior(sliceTables())
+      const result = await wrap(async () => ({ statusPage: { services: [] } }), '/s', 'page')(event)
+      expect(counter.ran).toBe(1)
+      expect(result).toEqual({
+        statusPage: { services: [] },
+        __inject: { 'status.detail.services': [1, null] },
+      })
+    })
+
+    it.each([[{ skipInjectedLoads: false }], [{ skipInjectedLoads: 'true' }]])(
+      'only a literal true skips: %j still runs the loads',
+      async (own) => {
+        counter.ran = 0
+        const { withInjectedLoad: wrap } = createInjectBehavior(sliceTables())
+        await wrap(async () => own, '/s', 'page')(event)
+        expect(counter.ran).toBe(1)
+      }
+    )
+
+    it('adds nothing but the strip when the slice has no contributions (PV build shape)', async () => {
+      const { withInjectedLoad: wrap } = createInjectBehavior({ loads: {}, actions: {} })
+      expect(
+        await wrap(async () => ({ statusPage: null, skipInjectedLoads: true }), '/s', 'page')(event)
+      ).toEqual({ statusPage: null })
+    })
+
+    it('a redirect or HttpError from the own load still passes through, no load runs', async () => {
+      counter.ran = 0
+      const { withInjectedLoad: wrap } = createInjectBehavior(sliceTables())
+      await expect(
+        wrap(
+          async () => {
+            throw redirect(303, '/login')
+          },
+          '/s',
+          'page'
+        )(event)
+      ).rejects.toMatchObject({ status: 303 })
+      expect(counter.ran).toBe(0)
+    })
+
+    it('a failing contribution wraps the error NAME only, never the token or params', async () => {
+      const { withInjectedLoad: wrap } = createInjectBehavior({
+        loads: {
+          '/s#page': [
+            {
+              point: 'status.detail.services',
+              contributions: [
+                {
+                  order: 0,
+                  load: () => {
+                    throw new TypeError('secret-token-value in message')
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        actions: {},
+      })
+      const publicEvent = { params: { token: 'secret-token-value' }, locals: {} } as never
+      const failure = (await wrap(
+        async () => ({ statusPage: { services: [] } }),
+        '/s',
+        'page'
+      )(publicEvent).catch((reason: unknown) => reason)) as Error
+      expect(failure.message).toBe('injection "status.detail.services" load failed: TypeError')
+      expect(failure.message).not.toContain('secret-token-value')
+    })
+  })
+
   // Story 69.2 Q3 (widens 69.1's Q5 default): with the vault sealed every PV API call answers 503,
   // so a contribution that calls the API would turn PV's friendly sealed banner into a 500. A
   // `vaultSealed: true` own result therefore skips the contribution loads exactly like `notFound`,

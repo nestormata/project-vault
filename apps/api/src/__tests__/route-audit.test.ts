@@ -392,7 +392,10 @@ function helperRegistrars(source: string): string[] {
 // count) so it can be proven against fixtures that reproduce each way a lenient check would pass.
 
 /** Explicit allowlist of named, IP-keyed manual limiters (M-manual). Extend only with such helpers. */
-const MANUAL_IP_RATE_LIMITERS: readonly string[] = ['enforceIpRateLimitAndNormalizeEmailBody']
+const MANUAL_IP_RATE_LIMITERS: readonly string[] = [
+  'enforceIpRateLimitAndNormalizeEmailBody',
+  'enforceDeliveryWebhookRateLimit',
+]
 const RATE_LIMIT_ENFORCED_GUARD = 'isRateLimitEnforced'
 
 type FunctionLike =

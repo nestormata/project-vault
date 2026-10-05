@@ -3,6 +3,7 @@
 // dry run). The dry run executes only the tests *related* (import graph) to the shard's mutated
 // files, so a smaller shard means a smaller dry run: "add shards, not minutes". Set STRYKER_SHARD
 // to `api` or `db` to run one shard; unset runs every shard's globs in one run (slow).
+/** @type {{ api: string[], db: string[] }} */
 export const SHARDS = {
   api: [
     'apps/api/src/lib/pagination.ts',
