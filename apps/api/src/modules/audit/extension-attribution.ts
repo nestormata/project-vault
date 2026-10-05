@@ -199,9 +199,10 @@ export function resolveAttribution(
 
 /**
  * The part of the idempotency content fingerprint that attribution contributes: the effective time
- * and the effective actor (provider, subject, attestation). Deliberately NOT `delegatedBy`, the
- * assertion id, the kid, the reason or the user id: a retry arrives with a fresh assertion and must
- * still replay (AC-5). `undefined` when there is no attribution, so pre-71.4 fingerprints hold.
+ * and the effective actor (provider, subject). Deliberately NOT `delegatedBy`, the assertion id, the
+ * kid, the reason, the user id or the attestation (a retry after the actor stopped being a member
+ * resolves a different attestation and must still replay the first row): a retry arrives with a
+ * fresh assertion and must still replay (AC-5). `undefined` when there is no attribution, so pre-71.4 fingerprints hold.
  */
 export function attributionFingerprintPart(
   attribution: PvAttribution | undefined
@@ -215,7 +216,6 @@ export function attributionFingerprintPart(
           actor: {
             provider: attribution.actor.provider,
             subject: attribution.actor.subject,
-            attestation: attribution.actor.attestation,
           },
         }),
   }

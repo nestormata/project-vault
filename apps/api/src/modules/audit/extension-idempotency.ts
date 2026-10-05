@@ -102,9 +102,9 @@ export type IdempotentAuditContent = {
   /** The caller payload, BEFORE the host folds `extensionName` into it. */
   payload: Record<string, unknown>
   /**
-   * Story 71.4 — the resolved attribution; only its effective time and actor (provider, subject,
-   * attestation) enter the fingerprint, never `delegatedBy`, the assertion id, the kid, the reason
-   * or the user id, so a retry with a fresh assertion still replays. Absent attribution leaves the
+   * Story 71.4 — the resolved attribution; only its effective time and actor (provider,
+   * subject) enter the fingerprint, never `delegatedBy`, the assertion id, the kid, the reason, the
+   * user id or the attestation, so a retry with a fresh assertion still replays. Absent attribution leaves the
    * fingerprint exactly as it was before 71.4.
    */
   attribution?: PvAttribution

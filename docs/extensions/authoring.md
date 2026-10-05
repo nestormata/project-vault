@@ -743,8 +743,8 @@ session. The declaration is plain data and is validated at registration:
   and `retryable: false`; it is thrown before any write and never carries the actor, the assertion or a time.
   A sender should quarantine such an event, not retry it.
 - **Idempotency.** With an `idempotencyKey`, the fingerprint covers the effective time and the effective actor
-  (provider, subject and attestation), not the assertion id, key id or issuer. A retry that arrives with a
-  fresh assertion still replays the first row; the same key with a different time or actor is the usual typed
+  (provider and subject), not the assertion id, key id, issuer or attestation. A retry that arrives with a
+  fresh assertion, or after the actor stopped being a member, still replays the first row; the same key with a different time or actor is the usual typed
   conflict.
 - **Historical actors.** A route may declare `delegation: { historicalActorPolicy: { maxAgeSeconds } }`
   (integer 1 to 2 592 000). The host then accepts an assertion whose signed occurrence time is up to

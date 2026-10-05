@@ -193,7 +193,7 @@ describe('attributionFingerprintPart', () => {
     expect(attributionFingerprintPart(undefined)).toBeUndefined()
   })
 
-  it('covers the effective time, provider, subject and attestation only', () => {
+  it('covers the effective time, provider and subject only', () => {
     const attribution = resolveAttribution(
       base(),
       snapshot({ occurredAtSeconds: OCC_SECONDS }),
@@ -201,11 +201,11 @@ describe('attributionFingerprintPart', () => {
     )
     expect(attributionFingerprintPart(attribution)).toEqual({
       occurredAt: OCC_ISO,
-      actor: { provider: 'workos', subject: 'user_01EXAMPLE', attestation: 'pv_verified' },
+      actor: { provider: 'workos', subject: 'user_01EXAMPLE' },
     })
   })
 
-  it('ignores delegatedBy, the assertion id, the kid, the reason and the user id', () => {
+  it('ignores delegatedBy, the assertion id, the kid, the reason, the user id and the attestation', () => {
     const first = resolveAttribution(base(), snapshot(), NOW)
     const retry = resolveAttribution(
       base(),

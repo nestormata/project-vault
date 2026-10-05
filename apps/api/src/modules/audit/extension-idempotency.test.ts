@@ -115,7 +115,7 @@ describe('computeContentFingerprint — Story 71.4 attribution (AC-5)', () => {
     )
   })
 
-  it('changes with the effective time, subject, provider or attestation', () => {
+  it('changes with the effective time, subject or provider', () => {
     const base = computeContentFingerprint({ ...content, attribution: attribution() })
     expect(base).not.toBe(computeContentFingerprint(content))
     const actor = attribution().actor
@@ -123,18 +123,22 @@ describe('computeContentFingerprint — Story 71.4 attribution (AC-5)', () => {
       attribution({ occurredAt: '2026-10-05T11:00:01.000Z' }),
       attribution({ actor: { ...actor, subject: 'other' } }),
       attribution({ actor: { ...actor, provider: 'other' } }),
-      attribution({ actor: { ...actor, attestation: 'issuer_attested' } }),
     ]) {
       expect(computeContentFingerprint({ ...content, attribution: changed })).not.toBe(base)
     }
   })
 
-  it('does not change with delegatedBy, the assertion id, the kid, the reason or the user id', () => {
+  it('does not change with delegatedBy, the assertion id, the kid, the reason, the user id or the attestation', () => {
     const base = computeContentFingerprint({ ...content, attribution: attribution() })
     const actor = attribution().actor
     const retry = attribution({
       delegatedBy: { kid: 'k2', issuer: 'other', assertionId: 'jti-2' },
-      actor: { ...actor, userId: 'u2', reason: 'unlinked' },
+      actor: {
+        ...actor,
+        userId: 'u2',
+        reason: 'not_current_member',
+        attestation: 'issuer_attested',
+      },
     })
     expect(computeContentFingerprint({ ...content, attribution: retry })).toBe(base)
   })

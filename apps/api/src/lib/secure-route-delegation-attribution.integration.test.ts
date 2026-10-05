@@ -8,6 +8,7 @@ import {
   auditLogEntries,
   externalIdentities,
   extensionAuditIdempotencyKeys,
+  orgMemberships,
 } from '@project-vault/db/schema'
 import type { ExtensionManifest } from '@project-vault/extension-api'
 import {
@@ -481,6 +482,32 @@ describe('Story 71.4 AC-5 — idempotency interplay', () => {
     expect(retry.receipt).toEqual(first.receipt)
     expect(await rowCount(eventType)).toBe(1)
     expect(sourceModule.getAuditEventSourceCounters()).toMatchObject({ succeeded: 1, deduped: 1 })
+  })
+
+  it('replays the original receipt when the actor stopped being a member between the write and its retry', async () => {
+    const app = await boot()
+    const { sub, userId } = await memberSubject()
+    const key = `k-${randomUUID()}`
+    const eventType = nextEventType()
+    const assertion = occ(3600)
+    const first = await write(app, { sub, assertion, input: { eventType, idempotencyKey: key } })
+    await withOrg(org.orgId, (tx) =>
+      (tx as Tx)
+        .update(orgMemberships)
+        .set({ status: 'deactivated' })
+        .where(and(eq(orgMemberships.orgId, org.orgId), eq(orgMemberships.userId, userId)))
+    )
+    const retry = await write(app, {
+      sub,
+      assertion: { claims: { ...assertion.claims, jti: `jti-retry-${randomUUID()}` } },
+      input: { eventType, idempotencyKey: key },
+    })
+    expect(retry.error).toBeUndefined()
+    expect(retry.receipt).toEqual(first.receipt)
+    expect(await rowCount(eventType)).toBe(1)
+    expect(attributionOf(await rowOf(receiptOf(first).id))?.['actor']).toMatchObject({
+      attestation: 'pv_verified',
+    })
   })
 
   it('conflicts when the same key arrives with a different time or a different actor; first row untouched', async () => {
