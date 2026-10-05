@@ -9,6 +9,16 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-05
+
+Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.5.0`
+(aliases `1.5`, `1`, `latest`). Extension API contract: the source is at
+`@project-vault/extension-api@3.32.0`, and this host loads extensions whose manifest `apiVersion`
+is in `>=3.0.0 <=3.32.0` (`HOST_SUPPORTED_EXTENSION_API_RANGE`). The package is published separately
+from the `extension-api-v3.32.0` tag. CLI: `pvault-1.5.0.mjs` on this release's assets.
+Build-time composition packages publish from this tag to npm's `next` dist-tag:
+`@project-vault/web-host@1.5.0` and `@project-vault/composition-kit@0.9.0`.
+
 ### Upgrade notes (read before `docker compose pull`)
 
 - **Migration 0103 runs automatically** via the `migrate` service. It is additive and instant: one
@@ -61,6 +71,12 @@ projectRole }` (additive). Credential and project context therefore reaches a co
 - **Neutral request types** (extension-api 3.30.0): `ExtensionRequestContext` and
   `ExtensionActionResult`, for `oauthHandoff` and `publicRoute` code that should not depend on the
   panel vocabulary. `ModuleActionContext` and `ActionResult` remain as deprecated names.
+- **Notification provider controls** (extension-api 3.32.0): providers can send an HTML message
+  part, classify permanent send failures so PV does not retry them, and set a per-provider rate
+  limit for delivery-status webhooks.
+- **Injection-load denial signaling** (Story 69.7): when a PV page load denies access with
+  `allowed: false`, injected loads are skipped, so an extension cannot make a denied page call its
+  API. The marker is removed from the page data returned to the browser.
 
 ### Deprecated
 
@@ -73,6 +89,11 @@ projectRole }` (additive). Credential and project context therefore reaches a co
   (projected; the 90-day window starts when 3.30.0 is published) and only after CentralizeMe stops
   using them. Replacements: composed UI (ADR 0007) for panels, the M5 nav delta for `navItems`, M7
   `apiRoutes` for `moduleDataRoutes`.
+
+### Fixed
+
+- The composed-tree no-op test for injection behavior now uses explicit empty injection tables,
+  avoiding interference from process-wide production registrations (Story 68.28, PR #566).
 
 ## [1.4.0] - 2026-10-03
 
@@ -642,7 +663,8 @@ Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.2.0`
 - The `fast-uri` transitive dependency is patched (CVE-2026-75899, CVE-2026-75931,
   CVE-2026-75975, CVE-2026-76172).
 
-[Unreleased]: https://github.com/nestormata/project-vault/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/nestormata/project-vault/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/nestormata/project-vault/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/nestormata/project-vault/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/nestormata/project-vault/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/nestormata/project-vault/compare/v1.1.0...v1.2.0
