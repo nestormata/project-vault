@@ -92,6 +92,17 @@ describe("monolithic-region on PV's own tree (AC-4.6)", () => {
     )
     expect(own.findings).toEqual([])
   })
+
+  // Story 69.5 AC-3: PV's route files carry markers of their own and pass R1/R2, so the guard is
+  // not vacuous on routes: every route file is clean and the markers in route files are counted
+  // apart from the `$lib` ones. (The audit table also counts regions that live in the components a
+  // route imports, so its row count is larger than this number by design.)
+  it('counts the regions marked in route files separately, with no unmarked or fat shell', () => {
+    const own = scanMonolithicRegionsTree(WEB)
+    expect(own.routeRegions).toBeGreaterThan(80)
+    expect(own.routeRegions).toBeLessThan(own.regions)
+    expect(own.findings).toEqual([])
+  })
 })
 
 describe('check-monolithic-regions CLI (AC-4.5)', () => {

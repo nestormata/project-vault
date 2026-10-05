@@ -56,11 +56,18 @@ mock_pack_compose_check() {
 # stale value exists only here, in a copy, on purpose). The composition itself catches it (drift against
 # the declared hash); the original composition is restored afterwards.
 mock_pack_stale_hash_negative() {
+  mock_pack_stale_hash_one 'src/lib/components/shell/Footer.svelte' 'Footer.svelte'
+  mock_pack_stale_hash_one 'src/lib/components/settings/SettingsHomeHeader.svelte' 'SettingsHomeHeader.svelte'
+  return 0
+}
+
+mock_pack_stale_hash_one() {
+  local host_path="$1" name="$2"
   local copy="$WORK/pack-stale" status=0
   rm -rf "$copy"
   cp -r "$PACK" "$copy"
   ln -sfn "$APP/node_modules" "$copy/node_modules"
-  sed -i "s#hostSha256: sha('src/lib/components/shell/Footer.svelte')#hostSha256: '0'.repeat(64)#" \
+  sed -i "s#hostSha256: sha('$host_path')#hostSha256: '0'.repeat(64)#" \
     "$copy/pv-ui.manifest.ts"
   if ! grep -q "'0'.repeat(64)" "$copy/pv-ui.manifest.ts"; then
     mock_fail 'the stale-hash mutation did not apply to the manifest copy'
@@ -70,11 +77,11 @@ mock_pack_stale_hash_negative() {
   rm -f "$APP/composition.lock.json"
   (cd "$APP" && clean_env PV_FIXTURE_HOST="$INSTALLED" "$NODE_BIN" "$MOCK_COMPOSE_BIN" \
     --pack "$copy" --module-pack "$APP") > "$WORK/mock-stale.out" 2>&1 || status=$?
-  if [[ "$status" != '1' ]] || ! grep -q 'Footer.svelte' "$WORK/mock-stale.out"; then
+  if [[ "$status" != '1' ]] || ! grep -q "$name" "$WORK/mock-stale.out"; then
     cat "$WORK/mock-stale.out" >&2
-    mock_fail "a stale replacement hash did not fail the composition naming the file (exit $status)"
+    mock_fail "a stale replacement hash did not fail the composition naming $name (exit $status)"
   fi
-  log 'OK: a stale replacement hash fails the composition (exit 1) and names Footer.svelte'
+  log "OK: a stale replacement hash fails the composition (exit 1) and names $name"
   mock_compose_pack "$PACK"
   return 0
 }
@@ -227,6 +234,8 @@ mock_check_m4_m6() {
   compose_expect "$port" /login 200 'mock-ui-pack:m4-footer'
   compose_expect_ok "$port" GET /cm-area "$MOCK_SESSION" 'mock-ui-pack:m4-account-wrap'
   compose_expect_ok "$port" GET /cm-area "$MOCK_SESSION" 'mock-ui-pack:m4-footer'
+  # Story 69.5: the extracted settings home header is replaced (wrapped) on /settings.
+  compose_expect_ok "$port" GET /settings "$MOCK_SESSION" 'mock-ui-pack:m4-settings-home'
   # M6: tokens, the pack's own style and a utility used only by the pack reach the built CSS.
   mock_expect_in_css '0f766e'
   mock_expect_in_css '6b4423'

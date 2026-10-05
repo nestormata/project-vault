@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { auditRouteRegions } from '../route-regions.js'
 import {
   buildComponentIndex,
   componentIndexText,
@@ -146,5 +147,33 @@ describe('readComponentIndex', () => {
   it('returns null for something that is not an index', () => {
     expect(readComponentIndex('{}')).toBeNull()
     expect(readComponentIndex('nope')).toBeNull()
+  })
+})
+
+// Story 69.5 AC-6: M4 replaces a module by its resolved path, and only indexed files can be named, so
+// the component of every route region has to be in `component-index.json`. A route-local `.svelte`
+// would not be (a `.svelte` is indexed only under `src/lib/components`), which is why the audit fails
+// a region component outside that directory.
+describe("PV's own region components are indexed (Story 69.5 AC-6)", () => {
+  const web = join(import.meta.dirname, '..', '..', '..', 'apps', 'web')
+
+  it('lists the component of every route region, unmarked unless it carries @pv-stable', () => {
+    const regions = auditRouteRegions(web).rows.filter((row) => row.component !== '')
+    expect(regions.length).toBeGreaterThan(100)
+    const indexed = new Map(
+      buildComponentIndex(web).components.map((entry) => [entry.path, entry.stability] as const)
+    )
+    for (const row of regions) {
+      expect(indexableFile(row.component), row.component).toBe(true)
+      const stability = indexed.get(row.component)
+      expect(stability, `${row.component} (region ${row.region}) is not in the index`).toBeDefined()
+      expect(stability, row.component).toBe(
+        row.stableCandidate === 'marked' ? 'stable' : 'unmarked'
+      )
+    }
+  })
+
+  it('does not index a route-local component, so a region outside src/lib/components fails the audit', () => {
+    expect(indexableFile('src/routes/(app)/things/_local/Local.svelte')).toBe(false)
   })
 })

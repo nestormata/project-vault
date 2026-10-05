@@ -157,6 +157,12 @@ export default defineUiPack({
       with: './replacements/ShellAccount.svelte',
       hostSha256: sha('src/lib/components/shell/ShellAccount.svelte'),
     },
+    // Story 69.5: a region component extracted from a previously monolithic page (the settings home
+    // header), replaced by its resolved path and wrapped through `pv-original:`.
+    '$lib/components/settings/SettingsHomeHeader.svelte': {
+      with: './replacements/SettingsHomeHeader.svelte',
+      hostSha256: sha('src/lib/components/settings/SettingsHomeHeader.svelte'),
+    },
     '$lib/api/audit.ts': {
       with: './replacements/audit.ts',
       hostSha256: sha('src/lib/api/audit.ts'),

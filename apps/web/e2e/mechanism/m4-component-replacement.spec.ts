@@ -28,6 +28,19 @@ test.describe('M4 component replacement', () => {
     await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible()
   })
 
+  test('works: a region component extracted from a monolithic page is replaced on that page only', async ({
+    page,
+    context,
+  }) => {
+    await seedOrgOwner(context, 'm4-settings-home')
+    await page.goto('/settings')
+    await expect(page.getByTestId('mock-settings-home')).toHaveText('mock-ui-pack:m4-settings-home')
+    // the wrapped variant still contains PV's own header output and the page's nav cards
+    await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
+    await page.goto('/settings/themes')
+    await expect(page.getByTestId('mock-settings-home')).toHaveCount(0)
+  })
+
   test('works: the wrapped server module and the wrapped api module apply to their callers', async ({
     page,
     context,
