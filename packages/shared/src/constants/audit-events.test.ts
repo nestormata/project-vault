@@ -64,6 +64,10 @@ describe('AuditEvent', () => {
     expect(AuditEvent.ROTATION_COMPLETED).toBe('rotation.completed')
   })
 
+  it('exposes the Story 43-17 rotation ownership-transfer audit event name', () => {
+    expect(AuditEvent.ROTATION_OWNERSHIP_TRANSFERRED).toBe('rotation.ownership_transferred')
+  })
+
   it('exposes Story 5.3 break-glass/stale-recovery rotation audit event names', () => {
     expect(AuditEvent.ROTATION_BREAK_GLASS_INITIATED).toBe('rotation.break_glass_initiated')
     expect(AuditEvent.ROTATION_SUPERSEDED_BY_BREAK_GLASS).toBe('rotation.superseded_by_break_glass')
