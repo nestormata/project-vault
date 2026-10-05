@@ -22,12 +22,13 @@ const event = { params: { token: 'fixed-fake-token' }, fetch: vi.fn() } as unkno
 describe('/status/[token] +page.server.ts skip marker (Story 69.3)', () => {
   beforeEach(() => getPublicStatusPageMock.mockReset())
 
-  it('marks the null answer, whatever the failure was', async () => {
-    for (const failure of [new Error('404'), new Error('503'), 'weird']) {
+  it.each([new Error('404'), new Error('503'), 'weird'])(
+    'marks the null answer, whatever the failure was (%s)',
+    async (failure) => {
       getPublicStatusPageMock.mockRejectedValueOnce(failure)
       expect(await load(event)).toEqual({ statusPage: null, skipInjectedLoads: true })
     }
-  })
+  )
 
   it('does not mark a valid status page', async () => {
     const statusPage = { services: [] }
