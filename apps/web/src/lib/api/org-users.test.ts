@@ -76,6 +76,37 @@ describe('org-users API helpers', () => {
     expect(result).toMatchObject(counts)
   })
 
+  it('deactivateOrgUser and removeOrgUser send the transfer body and return the transfer counts (43-17)', async () => {
+    const TARGET_ID = '3f2b8a52-6c1e-4f6e-9a7b-0d2c1b5e8f10'
+    const body = { rotationHandling: 'transfer', transferToUserId: TARGET_ID } as const
+    const data = {
+      userId: USER_ID,
+      revokedSessionCount: 0,
+      revokedInvitationCount: 0,
+      abandonedRotationCount: 0,
+      heldRotationCount: 0,
+      transferredRotationCount: 2,
+      transferredToUserId: TARGET_ID,
+    }
+    const fetchFn = vi.fn().mockImplementation(async () => jsonResponse({ data }))
+
+    const deactivated = await deactivateOrgUser(fetchFn, USER_ID, body)
+    const removed = await removeOrgUser(fetchFn, USER_ID, body)
+
+    expect(fetchFn).toHaveBeenNthCalledWith(
+      1,
+      `/api/v1/org/users/${USER_ID}/deactivate`,
+      expect.objectContaining({ method: 'POST', body: JSON.stringify(body) })
+    )
+    expect(fetchFn).toHaveBeenNthCalledWith(
+      2,
+      `/api/v1/org/users/${USER_ID}`,
+      expect.objectContaining({ method: 'DELETE', body: JSON.stringify(body) })
+    )
+    expect(deactivated.transferredRotationCount).toBe(2)
+    expect(removed.transferredToUserId).toBe(TARGET_ID)
+  })
+
   it('deactivateOrgUser surfaces already_deactivated as a catchable ApiClientError', async () => {
     const fetchFn = vi
       .fn()

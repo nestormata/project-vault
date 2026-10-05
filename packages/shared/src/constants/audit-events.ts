@@ -90,6 +90,8 @@ export const AuditEvent = {
   ROTATION_STALE_DETECTED: 'rotation.stale_detected',
   ROTATION_RESUMED: 'rotation.resumed',
   ROTATION_ABANDONED: 'rotation.abandoned',
+  // Story 43-17 (FR102 transfer): ownership moved to another admin on owner deactivation/removal.
+  ROTATION_OWNERSHIP_TRANSFERRED: 'rotation.ownership_transferred',
   // Story 5.6
   ROTATION_PROMOTED: 'rotation.promoted',
   ROTATION_OLD_RETIRED: 'rotation.old_retired',

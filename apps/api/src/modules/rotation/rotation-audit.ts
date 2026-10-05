@@ -84,3 +84,29 @@ export function writeRotationAbandonedAuditOrThrow(
     auditFailedMessage: 'Rotation abandon audit write failed — transaction will roll back',
   })
 }
+
+/** Story 43-17 KD-6: one ROTATION_OWNERSHIP_TRANSFERRED row per hand-over, fail-closed inside the
+ *  deactivate/remove transaction (an audit failure rolls the whole request back). */
+export function writeRotationOwnershipTransferredAuditOrThrow(
+  tx: SecureRouteContext['tx'],
+  auth: SecureRouteContext['auth'],
+  req: FastifyRequest,
+  params: { rotationId: string } & Record<string, unknown>,
+  payload: {
+    credentialId: string
+    fromUserId: string
+    toUserId: string
+    reason: 'owner_deactivated' | 'owner_removed'
+    previousStatus: string
+  }
+): Promise<void> {
+  return writeResolutionAuditOrThrow(tx, auth, req, params, {
+    eventType: AuditEvent.ROTATION_OWNERSHIP_TRANSFERRED,
+    resourceId: params.rotationId,
+    payload,
+    auditFailedMetricOutcome: 'ownership_transfer_audit_failed',
+    auditFailedEvent: OperationalEvent.ROTATION_OWNERSHIP_TRANSFER_AUDIT_FAILED,
+    auditFailedMessage:
+      'Rotation ownership transfer audit write failed — transaction will roll back',
+  })
+}

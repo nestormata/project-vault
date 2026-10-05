@@ -29,6 +29,9 @@ import { RotationPage } from '../pages/RotationPage.js'
 // Setup is API/DB only ("UI is for validation only"): X joins the owner's org through a real
 // project invitation, is raised to org admin (rotation initiation needs it), enrolls MFA and
 // starts a rotation. The subject under test is the owner's Settings → Users flow.
+//
+// Story 43-17 (FR102 third outcome) adds a transfer path to the same fixture: the owner hands X's
+// rotation to an active admin (the owner themselves, a valid target) while deactivating X.
 
 const OWNER_PASSWORD = ['e2e', 'J30', 'Owner', 'Password', '123'].join('-')
 const USERS_SETTINGS_URL = '/settings/users'
@@ -172,6 +175,74 @@ test.describe('J30 — deactivation blocked by an active rotation (FR102)', () =
 
       await expect(userRow(page, fixture.xDisplayName).getByText('Deactivated')).toBeVisible()
       await expectRotationResolved(fixture)
+    } finally {
+      await fixture.xContext.close()
+      await fixture.ownerContext.close()
+    }
+  })
+
+  test('transfer: the owner hands the rotation to an admin, X is deactivated, the new owner can finish it', async ({
+    browser,
+  }) => {
+    const fixture = await setup(browser, 'transfer')
+    const page = await fixture.ownerContext.newPage()
+    try {
+      await page.goto(USERS_SETTINGS_URL)
+      await deactivateFromUsersPage(page, fixture.xDisplayName)
+      await expectBlocked(page, fixture)
+
+      const row = userRow(page, fixture.xDisplayName)
+      await row
+        .getByRole('button', { name: /transfer unfinished rotations and deactivate/i })
+        .click()
+      const dialog = row.getByRole('dialog')
+      const confirm = dialog.getByRole('button', { name: /transfer and deactivate/i })
+      await expect(confirm).toBeDisabled()
+      await dialog.getByRole('combobox').selectOption({ index: 1 })
+      await confirm.click()
+
+      await expect(page.getByRole('status')).toContainText(
+        `Transferred 1 unfinished rotation(s) from ${fixture.xEmail}`
+      )
+      await expect(userRow(page, fixture.xDisplayName).getByText('Deactivated')).toBeVisible()
+
+      // Ownership moved, provenance did not: initiated_by is still X, the status is unchanged.
+      const [state] = await superuserSql(
+        (sql) => sql<{ status: string; owner_is_other: boolean; initiator_is_x: boolean }[]>`
+          select r.status,
+                 r.owner_user_id is not null and r.owner_user_id <> r.initiated_by as owner_is_other,
+                 r.initiated_by = (select id from users where email = ${fixture.xEmail}) as initiator_is_x
+          from rotations r where r.id = ${fixture.rotationId}`
+      )
+      expect(state).toEqual({ status: 'staged', owner_is_other: true, initiator_is_x: true })
+
+      // The hand-over is queryable in the audit log next to the deactivation itself.
+      for (const eventType of ['rotation.ownership_transferred', 'org.user_deactivated']) {
+        const events = await fixture.ownerContext.request.get(
+          `/api/v1/org/audit/events?eventType=${eventType}`
+        )
+        expect(events.status()).toBe(200)
+        expect(((await events.json()) as { total: number }).total).toBeGreaterThan(0)
+      }
+      const [notice] = await superuserSql(
+        (sql) => sql<{ count: string }[]>`
+          select count(*)::text as count from notification_queue
+          where template_id = 'rotation.ownership_transferred'
+            and (payload->>'rotationCount')::int = 1
+            and payload->>'fromUserId' = (select id::text from users where email = ${fixture.xEmail})`
+      )
+      expect(Number(notice?.count)).toBeGreaterThan(0)
+
+      // The new owner (an org admin) can drive the rotation to the end: promote, then retire.
+      const base = `/api/v1/projects/${fixture.projectId}/credentials/${fixture.credentialId}/rotations/${fixture.rotationId}`
+      const promote = await fixture.ownerContext.request.post(`${base}/promote`, {
+        data: { acknowledgedNoDependencies: true },
+      })
+      expect(promote.status(), await promote.text()).toBe(200)
+      const retire = await fixture.ownerContext.request.post(`${base}/retire`, {
+        data: { acknowledgedNoDependencies: true },
+      })
+      expect(retire.status(), await retire.text()).toBe(200)
     } finally {
       await fixture.xContext.close()
       await fixture.ownerContext.close()

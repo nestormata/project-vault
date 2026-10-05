@@ -149,6 +149,8 @@ export const OperationalEvent = {
   ROTATION_ABANDON_NOT_STALE: 'rotation.abandon.not_stale',
   ROTATION_ABANDON_CONCURRENT_MODIFICATION: 'rotation.abandon.concurrent_modification',
   ROTATION_ABANDON_AUDIT_FAILED: 'rotation.abandon.audit_failed',
+  // Story 43-17: the per-rotation ownership-transfer audit write failed (request rolls back).
+  ROTATION_OWNERSHIP_TRANSFER_AUDIT_FAILED: 'rotation.ownership_transfer.audit_failed',
 
   // Story 5.6
   ROTATION_PROMOTE_SUCCESS: 'rotation.promote.success',

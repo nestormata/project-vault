@@ -66,3 +66,9 @@ describe('Story 18.6 credential-share delivery', () => {
     expect(NOTIFICATION_ALERT_TYPES).toContain('credential.share_created')
   })
 })
+
+describe('Story 43-17 rotation ownership-transfer alert type', () => {
+  it('registers the direct-to-new-owner alert type ID', () => {
+    expect(NOTIFICATION_ALERT_TYPES).toContain('rotation.ownership_transferred')
+  })
+})

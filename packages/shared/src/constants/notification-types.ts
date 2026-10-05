@@ -6,6 +6,8 @@ export const NOTIFICATION_ALERT_TYPES = [
   'service.down',
   'service.recovery',
   'rotation.stale',
+  // Story 43-17 KD-7: direct-to-new-owner notice when rotations are transferred to them.
+  'rotation.ownership_transferred',
   'rotation.confirmation_failed',
   'rotation.max_retries_exceeded',
   'rotation.break_glass',

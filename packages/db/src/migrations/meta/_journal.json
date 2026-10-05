@@ -729,6 +729,13 @@
       "when": 1791081375923,
       "tag": "0103_delegation_assertion_jti",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1791167326226,
+      "tag": "0104_rotation_owner_user_id",
+      "breakpoints": true
     }
   ]
 }
