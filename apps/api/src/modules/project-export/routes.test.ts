@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { AuditEvent } from '@project-vault/shared'
 import { withOrg } from '@project-vault/db'
 import {
   auditLogEntries,
@@ -153,11 +154,10 @@ describe('project-export routes (Story 28.9)', () => {
     const response = await callExport(app, owner.cookies, projectId)
     const exportKey = response.headers['x-export-key'] as string
 
-    const audit = await withOrg(owner.orgId, (tx) =>
-      tx
-        .select()
-        .from(auditLogEntries)
-        .where(eq(auditLogEntries.eventType, 'project.export_created'))
+    const audit = await auditRows(
+      owner.orgId,
+      AuditEvent.PROJECT_EXPORT_CREATED,
+      (row) => row.resourceId === projectId
     )
     const entry = audit.find((row) => row.resourceId === projectId)
     expect(entry).toBeDefined()
@@ -165,6 +165,153 @@ describe('project-export routes (Story 28.9)', () => {
     expect(payloadJson).not.toContain(exportKey)
     expect(payloadJson).not.toContain(SENTINEL_VALUE)
     expect((entry?.payload as Record<string, unknown>)?.['credentials']).toBe(1)
+    // Story 62-1 AC-2: the row is scoped to the source project (filterable by project id).
+    expect(entry?.resourceType).toBe('project')
+    expect(entry?.projectId).toBe(projectId)
+  })
+
+  // These routes send their reply from inside the handler, so `inject()` can resolve before the
+  // SecureRoute transaction (which holds the audit row) commits: poll until a row is visible.
+  async function auditRows(
+    orgId: string,
+    eventType: string,
+    accept: (row: typeof auditLogEntries.$inferSelect) => boolean = () => true
+  ) {
+    const read = () =>
+      withOrg(orgId, (tx) =>
+        tx.select().from(auditLogEntries).where(eq(auditLogEntries.eventType, eventType))
+      )
+    try {
+      return await vi.waitFor(
+        async () => {
+          const rows = await read()
+          if (!rows.some(accept)) throw new Error('audit row not yet committed')
+          return rows
+        },
+        { timeout: 3000, interval: 50 }
+      )
+    } catch {
+      return read()
+    }
+  }
+
+  async function searchByProject(cookies: Record<string, string>, projectId: string) {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/org/audit/events?projectId=${projectId}`,
+      headers: { cookie: cookieHeader(cookies) },
+    })
+    expect(res.statusCode).toBe(200)
+    return res.json<{ data: { eventType: string; projectId: string | null }[] }>().data
+  }
+
+  async function encryptedFile(bundle: unknown) {
+    const { encryptBundleUnderExportKey, generateExportKey } = await import('./service.js')
+    const rawKey = generateExportKey()
+    const encrypted = await encryptBundleUnderExportKey(bundle as never, rawKey)
+    return { rawKey, fileBuffer: Buffer.from(JSON.stringify(encrypted), 'utf8') }
+  }
+
+  async function expectHonestImportFailure(orgId: string, reason: string) {
+    const hasReason = (row: { payload: unknown }) =>
+      (row.payload as { reason?: string }).reason === reason
+    const rows = (await auditRows(orgId, AuditEvent.PROJECT_IMPORT_FAILED, hasReason)).filter(
+      hasReason
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.resourceType).toBe('project_import')
+    expect(rows[0]?.resourceId).toBeNull()
+    expect(rows[0]?.projectId).toBeNull()
+    expect(rows[0]?.actorTokenId).not.toBeNull()
+  }
+
+  it('Story 62-1 AC-1: decrypt_failed import writes a project_import row with no resource id or project id', async () => {
+    const { owner, projectId } = await createFixture('62-1-decrypt')
+    const exportResponse = await callExport(app, owner.cookies, projectId)
+
+    const response = await callImport(
+      app,
+      owner.cookies,
+      rawBody(exportResponse),
+      'wrong-key-not-the-real-one-aaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    )
+
+    expect(response.statusCode).toBe(401)
+    await expectHonestImportFailure(owner.orgId, 'decrypt_failed')
+    const rows = await auditRows(owner.orgId, AuditEvent.PROJECT_IMPORT_FAILED)
+    expect(rows.some((row) => row.resourceType === 'project')).toBe(false)
+    expect(rows.some((row) => row.resourceId === owner.userId)).toBe(false)
+  })
+
+  it('Story 62-1 AC-1: 422 branches (unsupported format, invalid shape) each write one honest row', async () => {
+    const owner = await registerOwner(app, '62-1-422')
+    const foreignOwner = await registerOwner(app, '62-1-422-foreign')
+    const foreignProjectId = await createCredentialTestProject(
+      app,
+      foreignOwner.cookies,
+      '62-1-422-foreign'
+    )
+
+    const unsupported = await encryptedFile({ exportFormatVersion: 2 })
+    const unsupportedRes = await callImport(
+      app,
+      owner.cookies,
+      unsupported.fileBuffer,
+      unsupported.rawKey
+    )
+    expect(unsupportedRes.statusCode).toBe(422)
+
+    // Red team: a user-controlled payload naming a foreign-org project id never reaches the row.
+    const invalid = await encryptedFile({ exportFormatVersion: 1, projectId: foreignProjectId })
+    const invalidRes = await callImport(app, owner.cookies, invalid.fileBuffer, invalid.rawKey)
+    expect(invalidRes.statusCode).toBe(422)
+
+    await expectHonestImportFailure(owner.orgId, 'unsupported_export_format')
+    await expectHonestImportFailure(owner.orgId, 'invalid_export_payload')
+  })
+
+  it('Story 62-1 AC-2/AC-6: import_completed carries the new project id; search, CSV-visible column and chain agree', async () => {
+    const { owner, projectId } = await createFixture('62-1-roundtrip')
+    const exportResponse = await callExport(app, owner.cookies, projectId)
+    const exportKey = exportResponse.headers['x-export-key'] as string
+
+    const importResponse = await callImport(app, owner.cookies, rawBody(exportResponse), exportKey)
+    expect(importResponse.statusCode).toBe(201)
+    const newProjectId = importResponse.json<{ data: { projectId: string } }>().data.projectId
+    expect(newProjectId).not.toBe(projectId)
+
+    const isNew = (row: { resourceId: string | null }) => row.resourceId === newProjectId
+    const [completed] = (
+      await auditRows(owner.orgId, AuditEvent.PROJECT_IMPORT_COMPLETED, isNew)
+    ).filter(isNew)
+    expect(completed?.resourceType).toBe('project')
+    expect(completed?.projectId).toBe(newProjectId)
+
+    const sourceEvents = await searchByProject(owner.cookies, projectId)
+    expect(sourceEvents.some((e) => e.eventType === AuditEvent.PROJECT_EXPORT_CREATED)).toBe(true)
+    expect(sourceEvents.some((e) => e.eventType === AuditEvent.PROJECT_IMPORT_COMPLETED)).toBe(
+      false
+    )
+    const newEvents = await searchByProject(owner.cookies, newProjectId)
+    expect(newEvents.some((e) => e.eventType === AuditEvent.PROJECT_IMPORT_COMPLETED)).toBe(true)
+    expect(newEvents.some((e) => e.eventType === AuditEvent.PROJECT_EXPORT_CREATED)).toBe(false)
+
+    // AC-2 edge: another org filtering by this project id sees nothing (RLS).
+    const foreignOwner = await registerOwner(app, '62-1-foreign-search')
+    expect(await searchByProject(foreignOwner.cookies, newProjectId)).toHaveLength(0)
+
+    // AC-6: project_id is outside the HMAC digest, so the chain still verifies.
+    const verifyRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/org/audit/verify?from=${encodeURIComponent(
+        new Date(Date.now() - 3_600_000).toISOString()
+      )}&to=${encodeURIComponent(new Date(Date.now() + 3_600_000).toISOString())}`,
+      headers: { cookie: cookieHeader(owner.cookies) },
+    })
+    expect(verifyRes.statusCode).toBe(200)
+    const verified = verifyRes.json<{ data: { failedCount: number; rowsChecked: number } }>().data
+    expect(verified.failedCount).toBe(0)
+    expect(verified.rowsChecked).toBeGreaterThan(0)
   })
 
   it('AC-3/AC-4/AC-5: imports as a brand-new project (never a merge) and round-trips the decrypted secret value under a DIFFERENT live master key', async () => {
