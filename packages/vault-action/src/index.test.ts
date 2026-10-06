@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 const setFailedMock = vi.fn()
 
-vi.mock('@actions/core', () => ({
+vi.mock('./actions-commands.js', () => ({
   setFailed: setFailedMock,
 }))
 

@@ -873,9 +873,6 @@ importers:
 
   packages/vault-action:
     dependencies:
-      '@actions/core':
-        specifier: ^3.0.1
-        version: 3.0.1
       '@project-vault/agent':
         specifier: workspace:*
         version: link:../agent
@@ -909,18 +906,6 @@ importers:
         version: 2.9.1
 
 packages:
-
-  '@actions/core@3.0.1':
-    resolution: {integrity: sha512-a6d/Nwahm9fliVGRhdhofo40HjHQasUPusmc7vBfyky+7Z+P2A1J68zyFVaNcEclc/Se+eO595oAr5nwEIoIUA==}
-
-  '@actions/exec@3.0.0':
-    resolution: {integrity: sha512-6xH/puSoNBXb72VPlZVm7vQ+svQpFyA96qdDBvhB8eNZOE8LtPf9L4oAsfzK/crCL8YZ+19fKYVnM63Sl+Xzlw==}
-
-  '@actions/http-client@4.0.1':
-    resolution: {integrity: sha512-+Nvd1ImaOZBSoPbsUtEhv+1z99H12xzncCkz0a3RuehINE81FZSe2QTj3uvAPTcJX/SCzUQHQ0D1GrPMbrPitg==}
-
-  '@actions/io@3.0.2':
-    resolution: {integrity: sha512-nRBchcMM+QK1pdjO7/idu86rbJI5YHUKCvKs0KxnSYbVe3F51UfGxuZX4Qy/fWlp6l7gWFwIkrOzN+oUK03kfw==}
 
   '@asamuzakjp/css-color@7.0.0':
     resolution: {integrity: sha512-IxddtGnnoidVSO6O/aiTueptbTThHvi2qGHu9/AWuD1J7i86Ox+jl+Y5SXcDH1RixzQlP2cjH/PjnlImZiAurQ==}
@@ -5171,10 +5156,6 @@ packages:
   undici-types@8.9.0:
     resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
 
-  undici@6.29.0:
-    resolution: {integrity: sha512-R+RODBqp6i2pPflGdq+xIOUkl+RNfGgHwoinecKu/JCuf2uO06cOKoDbI2P7Dn6KcswdKwrczbU6IYJ6K8X+wg==}
-    engines: {node: '>=18.17'}
-
   undici@7.29.1:
     resolution: {integrity: sha512-RYONW2MeafgYlkVOKYKkA/Ag7BmXqgIWCa8t1m0JcxrQg9pI9lEqRhAOruOBCbAohOa/gkCF+iPi9hrgvTzu6Q==}
     engines: {node: '>=20.18.1'}
@@ -5431,22 +5412,6 @@ packages:
     resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
 
 snapshots:
-
-  '@actions/core@3.0.1':
-    dependencies:
-      '@actions/exec': 3.0.0
-      '@actions/http-client': 4.0.1
-
-  '@actions/exec@3.0.0':
-    dependencies:
-      '@actions/io': 3.0.2
-
-  '@actions/http-client@4.0.1':
-    dependencies:
-      tunnel: 0.0.6
-      undici: 6.29.0
-
-  '@actions/io@3.0.2': {}
 
   '@asamuzakjp/css-color@7.0.0':
     dependencies:
@@ -9403,8 +9368,6 @@ snapshots:
   underscore@1.13.8: {}
 
   undici-types@8.9.0: {}
-
-  undici@6.29.0: {}
 
   undici@7.29.1: {}
 

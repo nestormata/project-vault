@@ -32,7 +32,7 @@ function record(fn: string, ...args: unknown[]): void {
   calls.push({ fn, args })
 }
 
-vi.mock('@actions/core', () => {
+vi.mock('./actions-commands.js', () => {
   return {
     getInput: vi.fn((name: string, options?: { required?: boolean }) => {
       const value = state.inputs[name as keyof Inputs]
@@ -71,7 +71,7 @@ vi.mock('@project-vault/agent', async () => {
   }
 })
 
-const core = await import('@actions/core')
+const core = await import('./actions-commands.js')
 const { createVaultAgent, VaultAgentError } = await import(AGENT_MODULE)
 const { run } = await import('./run.js')
 
@@ -519,5 +519,27 @@ describe('run() — never logs the retrieved value via info/debug', () => {
       .filter((c) => c.fn === 'info' || c.fn === 'debug')
       .flatMap((c) => c.args)
     expect(infoAndDebugArgs.join(' ')).not.toContain('top-secret-value')
+  })
+})
+
+describe('run() — exportVariable throws (GITHUB_ENV unavailable)', () => {
+  it('reports one application-level failure for that credential and never leaks the value', async () => {
+    setInputs({ secrets: `${PROJECT_A}/DATABASE_URL as DB_URL` })
+    state.getSecretImpl = async () => 'leak-canary-value'
+    vi.mocked(core.exportVariable).mockImplementationOnce(() => {
+      throw new Error('GITHUB_ENV is not set; cannot export DB_URL')
+    })
+
+    await run()
+
+    expect(core.setSecret).toHaveBeenCalledWith('leak-canary-value')
+    const failedCalls = calls.filter((c) => c.fn === 'setFailed')
+    expect(failedCalls).toHaveLength(1)
+    expect(String(failedCalls.at(0)?.args.at(0))).toContain('DATABASE_URL')
+    const logged = calls
+      .filter((c) => ['info', 'debug', 'warning', 'setFailed'].includes(c.fn))
+      .flatMap((c) => c.args)
+      .join(' ')
+    expect(logged).not.toContain('leak-canary-value')
   })
 })
