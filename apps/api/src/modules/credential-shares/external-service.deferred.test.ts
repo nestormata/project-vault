@@ -99,6 +99,28 @@ describe('external share deferred losing-attempt write (Story 65.4 AC4)', () => 
     expect(unhandled).not.toHaveBeenCalled()
   })
 
+  it('a drizzle-shaped failure whose message embeds the bound ids never reaches the log', async () => {
+    const queryError = Object.assign(
+      new Error(
+        `Failed query: update "credential_shares" where id = $1\nparams: ${SHARE_ID},${ORG_ID}`
+      ),
+      { cause: Object.assign(new Error('boom'), { code: '57P01' }) }
+    )
+    withOrg
+      .mockImplementationOnce((_org: string, fn: (tx: unknown) => unknown) => fn(readTx()))
+      .mockRejectedValueOnce(queryError)
+
+    await service.revealExternalShare(TOKEN, logger)
+    await service.flushPendingLosingAttempts()
+
+    expect(logger.error).toHaveBeenCalledTimes(1)
+    const [payload] = logger.error.mock.calls[0] as [Record<string, unknown>]
+    const logged = JSON.stringify(payload)
+    expect(logged).not.toContain(ORG_ID)
+    expect(logged).not.toContain(SHARE_ID)
+    expect(payload['errorCode']).toBe('57P01')
+  })
+
   it('a failing write is dropped silently when no logger was supplied', async () => {
     withOrg
       .mockImplementationOnce((_org: string, fn: (tx: unknown) => unknown) => fn(readTx()))

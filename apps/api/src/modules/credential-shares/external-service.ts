@@ -4,7 +4,7 @@ import { credentialShares } from '@project-vault/db/schema'
 import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import type { CredentialShareCreationErrorStatus } from '@project-vault/extension-api'
 import { getAdminDb } from '../../lib/db.js'
-import { operationalLog, serializeLogError } from '../../lib/logger.js'
+import { operationalLog } from '../../lib/logger.js'
 import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { serializeBounded } from '../credentials/bounded-share-adapter.js'
 import { preflightCredentialForShareCreation } from './service.js'
@@ -333,6 +333,18 @@ async function applyDeferredLosingAttempt(deferred: DeferredLosingAttempt): Prom
   })
 }
 
+/** Only the error class name and a driver code: a drizzle query error's message and stack embed the
+ *  bound parameters of the failed statement (the share id and org id), which this log line must
+ *  never name, and `serializeLogError` redacts only connection strings and email addresses. */
+function safeDeferredFailureFields(error: unknown): Record<string, unknown> {
+  const name = error instanceof Error ? error.name : 'NonError'
+  const cause: unknown = error instanceof Error ? error.cause : undefined
+  const code = [error, cause]
+    .map((candidate) => (candidate as { code?: unknown } | null | undefined)?.code)
+    .find((value) => typeof value === 'string')
+  return { errorName: name, ...(code === undefined ? {} : { errorCode: code }) }
+}
+
 /** Never rejects: a failed post-response write is logged (redacted, no ids) and dropped, never
  *  reaching the reply and never an unhandled rejection for the fault-containment handler. */
 async function runDeferredLosingAttempt(
@@ -348,7 +360,7 @@ async function runDeferredLosingAttempt(
         'error',
         OperationalEvent.CREDENTIAL_SHARE_LOSING_ATTEMPT_WRITE_FAILED,
         'Deferred external share losing-attempt write failed',
-        { err: serializeLogError(error) }
+        safeDeferredFailureFields(error)
       )
     } catch {
       // Logging must never turn a dropped write into a crash.
