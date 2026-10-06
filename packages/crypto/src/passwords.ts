@@ -79,18 +79,16 @@ export function passwordHashConfigFromEnv(env: PasswordHashConfig): PasswordHash
  * The encoded hash embeds salt and Argon2 params; future upgrades can rehash after successful login.
  */
 export function hashUserPassword(password: string, config: PasswordHashConfig): Promise<string> {
-  return new Promise((resolve) =>
-    resolve(
-      argon2.hash(password, {
-        type: argon2.argon2id,
-        memoryCost: config.memoryCost,
-        timeCost: config.timeCost,
-        parallelism: config.parallelism,
-      })
-    )
+  return Promise.resolve().then(() =>
+    argon2.hash(password, {
+      type: argon2.argon2id,
+      memoryCost: config.memoryCost,
+      timeCost: config.timeCost,
+      parallelism: config.parallelism,
+    })
   )
 }
 
 export function verifyUserPassword(password: string, encodedHash: string): Promise<boolean> {
-  return new Promise((resolve) => resolve(argon2.verify(encodedHash, password)))
+  return Promise.resolve().then(() => argon2.verify(encodedHash, password))
 }

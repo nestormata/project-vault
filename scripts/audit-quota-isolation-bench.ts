@@ -674,7 +674,6 @@ async function runArm(arm: 'enabled' | 'disabled'): Promise<ArmResult> {
 
     const repStats = computePercentiles(discardWarmup(orgBLatenciesThisRep))
     orgBRepetitions.push(repStats)
-    orgBRepetitions.push(repStats)
     return runRepetition(rep + 1)
   }
   await runRepetition(0)

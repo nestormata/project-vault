@@ -18,7 +18,7 @@ const IV_BYTES = 12 // 96-bit IV — GCM recommended size
 const VERSION = 1 // ciphertext format version — increment on algorithm change
 
 export function encrypt(plaintext: Buffer, key: Buffer): Promise<EncryptedValue> {
-  return new Promise((resolve) => resolve(encryptSync(plaintext, key)))
+  return Promise.resolve().then(() => encryptSync(plaintext, key))
 }
 
 function encryptSync(plaintext: Buffer, key: Buffer): EncryptedValue {
@@ -37,7 +37,7 @@ function encryptSync(plaintext: Buffer, key: Buffer): EncryptedValue {
 
 // Internal only — callers outside packages/crypto must use withSecret()
 export function decrypt(encrypted: EncryptedValue, key: Buffer): Promise<Buffer> {
-  return new Promise((resolve) => resolve(decryptSync(encrypted, key)))
+  return Promise.resolve().then(() => decryptSync(encrypted, key))
 }
 
 function decryptSync(encrypted: EncryptedValue, key: Buffer): Buffer {

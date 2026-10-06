@@ -252,7 +252,7 @@ async function fetchAuthoritativeServiceEndpoint(
  * still surfaces as a rejected promise, the contract every host method had as an `async` method.
  */
 function rejectOnSyncThrow<T>(fn: () => Promise<T>): Promise<T> {
-  return new Promise<T>((resolve) => resolve(fn()))
+  return Promise.resolve().then(fn)
 }
 
 /**

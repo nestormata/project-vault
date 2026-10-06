@@ -15,7 +15,7 @@ export function forEachSequential<T>(
 ): Promise<void> {
   if (start >= items.length) return Promise.resolve()
   // A Promise executor turns a synchronous throw from `fn` into a rejection, like an async fn.
-  return new Promise<unknown>((resolve) => resolve(fn(items.at(start) as T, start))).then(() =>
-    forEachSequential(items, fn, start + 1)
-  )
+  return Promise.resolve()
+    .then(() => fn(items.at(start) as T, start))
+    .then(() => forEachSequential(items, fn, start + 1))
 }

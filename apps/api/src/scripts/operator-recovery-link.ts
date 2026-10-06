@@ -157,7 +157,7 @@ export type RunResult =
  * `getNativeLoginPolicyState()` by the caller's already-booted app.
  */
 export function runOperatorRecoveryLink(email: string): Promise<RunResult> {
-  return new Promise((resolve) => resolve(mintOrRefuseRecoveryLink(email)))
+  return Promise.resolve().then(() => mintOrRefuseRecoveryLink(email))
 }
 
 function mintOrRefuseRecoveryLink(email: string): Promise<RunResult> {

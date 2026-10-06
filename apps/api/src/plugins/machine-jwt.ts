@@ -51,17 +51,11 @@ export const machineJwtPlugin = fp(function machineJwtPlugin(
 
   // A sync throw from the signer/verifier (bad claims, tampered token) must still surface as a
   // rejection, so the executor wraps it instead of the arrow being `async`.
-  fastify.decorate(
-    'machineJwtSign',
-    (claims: MachineJwtClaims): Promise<string> =>
-      new Promise<string>((resolve) => resolve(sign(claims)))
+  fastify.decorate('machineJwtSign', (claims: MachineJwtClaims): Promise<string> =>
+    Promise.resolve().then(() => sign(claims))
   )
-  fastify.decorate(
-    'machineJwtVerify',
-    (token: string): Promise<MachineJwtVerifiedClaims> =>
-      new Promise<MachineJwtVerifiedClaims>((resolve) =>
-        resolve(verify(token) as unknown as MachineJwtVerifiedClaims)
-      )
+  fastify.decorate('machineJwtVerify', (token: string): Promise<MachineJwtVerifiedClaims> =>
+    Promise.resolve().then(() => verify(token) as unknown as MachineJwtVerifiedClaims)
   )
   return Promise.resolve()
 })

@@ -62,7 +62,7 @@ export function validateOrgSsoDomainInput(input: {
   providerName?: string
 }): Promise<OrgSsoDomainValidationResult> {
   // A synchronous throw must still surface as a rejection, as it did when this was `async`.
-  return new Promise((resolve) => resolve(checkOrgSsoDomainInput(input)))
+  return Promise.resolve().then(() => checkOrgSsoDomainInput(input))
 }
 
 function checkOrgSsoDomainInput(input: {

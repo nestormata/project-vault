@@ -50,7 +50,7 @@ export function getDb(): ReturnType<typeof drizzle> {
  * Caller MUST call `.release()` when done (in a `finally` block).
  */
 export function reserveConnection(): Promise<ReservedConnection> {
-  return new Promise((resolve) => resolve(getPgClient().reserve()))
+  return Promise.resolve().then(() => getPgClient().reserve())
 }
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -61,18 +61,16 @@ export function withOrg<T>(orgId: string, fn: (tx: Tx) => Promise<T>): Promise<T
   if (!UUID_REGEX.test(orgId)) {
     return Promise.reject(new Error(`withOrg: invalid orgId — expected UUID, received: "${orgId}"`))
   }
-  return new Promise((resolve) =>
-    resolve(
-      getDb().transaction(async (tx) => {
-        // set_config(..., true) is the SET LOCAL equivalent: scoped to this transaction,
-        // automatically cleared on commit/rollback so pooled connections never leak org context.
-        await tx.execute(
-          sql`SELECT set_config('app.current_org_id', ${orgId}, true),
+  return Promise.resolve().then(() =>
+    getDb().transaction(async (tx) => {
+      // set_config(..., true) is the SET LOCAL equivalent: scoped to this transaction,
+      // automatically cleared on commit/rollback so pooled connections never leak org context.
+      await tx.execute(
+        sql`SELECT set_config('app.current_org_id', ${orgId}, true),
                  set_config('app.current_user_id', '', true)`
-        )
-        return fn(tx as unknown as Tx)
-      })
-    )
+      )
+      return fn(tx as unknown as Tx)
+    })
   )
 }
 
@@ -91,16 +89,14 @@ export function withOrgAndUser<T>(
       new Error(`withOrgAndUser: invalid userId — expected UUID, received: "${userId}"`)
     )
   }
-  return new Promise((resolve) =>
-    resolve(
-      getDb().transaction(async (tx) => {
-        await tx.execute(
-          sql`SELECT set_config('app.current_org_id', ${orgId}, true),
+  return Promise.resolve().then(() =>
+    getDb().transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT set_config('app.current_org_id', ${orgId}, true),
                  set_config('app.current_user_id', ${userId}, true)`
-        )
-        return fn(tx as unknown as Tx)
-      })
-    )
+      )
+      return fn(tx as unknown as Tx)
+    })
   )
 }
 
@@ -118,13 +114,11 @@ export async function withOrgReadScope<T>(orgId: string, fn: (tx: Tx) => Promise
  * confirmed `requirePlatformOperator()` passed before calling this.
  */
 export function withPlatformOperatorContext<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
-  return new Promise((resolve) =>
-    resolve(
-      getDb().transaction(async (tx) => {
-        await tx.execute(sql`SELECT set_config('app.platform_operator_verified', 'true', true)`)
-        return fn(tx as unknown as Tx)
-      })
-    )
+  return Promise.resolve().then(() =>
+    getDb().transaction(async (tx) => {
+      await tx.execute(sql`SELECT set_config('app.platform_operator_verified', 'true', true)`)
+      return fn(tx as unknown as Tx)
+    })
   )
 }
 
@@ -140,7 +134,7 @@ export function withAdminAccess<T>(
   if (authCtx?.role !== 'admin') {
     return Promise.reject(new Error('withAdminAccess: caller is not an admin'))
   }
-  return new Promise((resolve) => resolve(getDb().transaction((tx) => fn(tx as unknown as Tx))))
+  return Promise.resolve().then(() => getDb().transaction((tx) => fn(tx as unknown as Tx)))
 }
 
 // Story 23.5: separate extension-role pool. This export does not share or alter the core pool

@@ -24,7 +24,9 @@ export function resolveHandoffAuthStrategy(
   logger: Partial<Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>>
 ): Promise<void> {
   // A synchronous throw (the refuse-to-boot case) must still surface as a rejection.
-  return new Promise<void>((resolve) => resolve(applyHandoffAuthStrategy(logger)))
+  return Promise.resolve().then(() => {
+    applyHandoffAuthStrategy(logger)
+  })
 }
 
 function applyHandoffAuthStrategy(

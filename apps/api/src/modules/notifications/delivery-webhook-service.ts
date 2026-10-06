@@ -55,25 +55,23 @@ function sleep(ms: number): Promise<void> {
  * digit milliseconds) while adding at most ~90ms to the rare case that's still genuinely unknown
  * (an actually-unknown identifier pays this same small cost — AC6 requires it not be
  * distinguishable from a found-but-slow-to-commit one). */
-function adminLookupByProviderMessageIdWithRetry(
+async function adminLookupByProviderMessageIdWithRetry(
   providerId: string,
   providerMessageId: string,
   { attempts = 4, delayMs = 30 }: { attempts?: number; delayMs?: number } = {},
   attempt = 1
 ): Promise<{ id: string; orgId: string } | null> {
-  if (attempt > attempts) return Promise.resolve(null)
-  return adminLookupByProviderMessageId(providerId, providerMessageId).then((row) => {
-    if (row) return row
-    if (attempt >= attempts) return null
-    return sleep(delayMs).then(() =>
-      adminLookupByProviderMessageIdWithRetry(
-        providerId,
-        providerMessageId,
-        { attempts, delayMs },
-        attempt + 1
-      )
-    )
-  })
+  if (attempt > attempts) return null
+  const row = await adminLookupByProviderMessageId(providerId, providerMessageId)
+  if (row) return row
+  if (attempt >= attempts) return null
+  await sleep(delayMs)
+  return adminLookupByProviderMessageIdWithRetry(
+    providerId,
+    providerMessageId,
+    { attempts, delayMs },
+    attempt + 1
+  )
 }
 
 /**

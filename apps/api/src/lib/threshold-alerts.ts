@@ -27,7 +27,7 @@ export type ThresholdAlertInput = {
  */
 export function upsertThresholdAlert(input: ThresholdAlertInput): Promise<{ id: string } | null> {
   const lockKey = `${input.alertType}:${input.scopeKey ?? 'instance'}`
-  return new Promise((resolve) => resolve(upsertThresholdAlertInTx(input, lockKey)))
+  return Promise.resolve().then(() => upsertThresholdAlertInTx(input, lockKey))
 }
 
 function upsertThresholdAlertInTx(
