@@ -174,7 +174,7 @@ describe('lint-changed-sonar CLI (real git repo, ESLint step skipped)', () => {
 
   it('exits 0 when the branch changes only clean files', () => {
     const root = repoWithBranch()
-    writeFixture(root, 'tool.sh', 'f() {\n  local a="$1"\n  echo "$a"\n}\n')
+    writeFixture(root, 'tool.sh', '#!/bin/bash\nf() {\n  local a="$1"\n  echo "$a"\n}\nf x\n')
     writeFixture(root, 'clean.ts', 'export const clean = 2\n')
     git(root, 'add', '.')
     git(root, 'commit', '-q', '-m', 'clean')
