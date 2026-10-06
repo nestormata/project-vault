@@ -24,7 +24,8 @@ import { RotationPage } from '../pages/RotationPage.js'
 // J30 (Story 43-15, FR102): deactivating a user who still owns an unfinished rotation is refused
 // with an actionable message until that rotation is resolved — by the SAME owner who got the
 // refusal (the story's Resolution Matrix), either in one step ("Abandon unfinished rotations and
-// deactivate", AC-8) or manually (abandon the rotation, then retry the plain deactivate).
+// deactivate", AC-8) or manually (abandon the still-staged rotation from its rotation page via the
+// UI, Story 43-18, then retry the plain deactivate).
 //
 // Setup is API/DB only ("UI is for validation only"): X joins the owner's org through a real
 // project invitation, is raised to org admin (rotation initiation needs it), enrolls MFA and
@@ -259,16 +260,10 @@ test.describe('J30 — deactivation blocked by an active rotation (FR102)', () =
       await deactivateFromUsersPage(page, fixture.xDisplayName)
       await expectBlocked(page, fixture)
 
-      // The rotation UI offers Abandon on a stale rotation (StaleRecoveryBanner); the stale-rotation
-      // worker's transition is simulated so the journey need not wait out its threshold.
-      await superuserSql(
-        (sql) =>
-          sql`update rotations set status = 'stale_recovery' where id = ${fixture.rotationId}`
-      )
+      // The rotation is still `staged`: the rotation page offers Abandon for it directly (43-18).
       const rotationPage = new RotationPage(page)
       await rotationPage.gotoDetail(fixture.projectId, fixture.credentialId, fixture.rotationId)
-      await page.getByRole('button', { name: /^abandon$/i }).click()
-      await page.getByRole('button', { name: /abandon anyway/i }).click()
+      await rotationPage.abandon()
       await expect(page.getByText('abandoned', { exact: true })).toBeVisible()
 
       await page.goto(USERS_SETTINGS_URL)

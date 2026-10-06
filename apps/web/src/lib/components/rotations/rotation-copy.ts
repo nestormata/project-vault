@@ -4,6 +4,10 @@ import type { RotationChecklistItemStatus, RotationStatus } from '@project-vault
 
 export { formatDateTime } from '$lib/datetime.js'
 
+/** 422 rotation_not_stale on resume/abandon: the rotation moved on before the click landed. */
+export const rotationNotStaleMessage =
+  'This rotation is no longer awaiting a decision — someone may have already resumed or abandoned it.'
+
 // AC-1/AC-18: a single source of truth for the "no rotations exist yet" empty state, shared by
 // the credential detail page's Rotation section (both the CTA area and the history section).
 export const rotationCopy = {

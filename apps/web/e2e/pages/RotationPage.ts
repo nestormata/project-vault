@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 
 export class RotationPage {
   constructor(private readonly page: Page) {}
@@ -58,6 +58,26 @@ export class RotationPage {
 
   retireRotationButton() {
     return this.page.getByRole('button', { name: /retire old value/i })
+  }
+
+  abandonRotationButton() {
+    return this.page.getByRole('button', { name: /^abandon rotation$/i })
+  }
+
+  abandonAnywayButton() {
+    return this.page.getByRole('button', { name: /^abandon anyway$/i })
+  }
+
+  /** Staged-rotation Abandon: open the inline confirm, then confirm. Retries a first click lost
+   *  to the pre-hydration race. */
+  async abandon(): Promise<void> {
+    await expect(async () => {
+      if (!(await this.abandonAnywayButton().isVisible())) {
+        await this.abandonRotationButton().click()
+      }
+      await expect(this.abandonAnywayButton()).toBeVisible({ timeout: 1000 })
+    }).toPass()
+    await this.abandonAnywayButton().click()
   }
 
   completeErrorBanner() {

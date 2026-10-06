@@ -28,6 +28,7 @@
   import NavLink from '$lib/navigation/NavLink.svelte'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import ChecklistItemRow from '$lib/components/rotations/ChecklistItemRow.svelte'
+  import AbandonRotationControl from '$lib/components/rotations/AbandonRotationControl.svelte'
   import StaleRecoveryBanner from '$lib/components/rotations/StaleRecoveryBanner.svelte'
   import { onboardingCopy } from '$lib/components/onboarding/onboarding-logic.js'
   import PageAlertBanner from '$lib/components/PageAlertBanner.svelte'
@@ -78,6 +79,7 @@
   let stagedValue = $state<string | null>(null)
   let stagedValueError = $state<string | null>(null)
   let revealingStagedValue = $state(false)
+  let abandoning = $state(false)
   async function refetch() {
     try {
       rotation = await getRotation(fetch, data.projectId, data.credentialId, data.rotationId)
@@ -113,7 +115,12 @@
   function handleResumed() {
     void refetch()
   }
-  function handleAbandoned() {
+  function handleAbandoned(updated?: RotationDetail) {
+    // The discarded staged value must not linger in component state or the DOM.
+    stagedValue = null
+    stagedValueError = null
+    // 43-18: the 200 response is authoritative; the follow-up refetch is best-effort only.
+    if (updated) rotation = updated
     void refetch()
   }
   async function submitComplete() {
@@ -274,7 +281,9 @@
     stagedValueError = null
     try {
       const result = await getStagedValue(fetch, data.projectId, data.credentialId, data.rotationId)
-      stagedValue = result.value
+      // A reveal that resolves after the rotation left `staged` (abandoned/promoted meanwhile)
+      // must not put the discarded value back into component state.
+      if (rotation?.status === 'staged') stagedValue = result.value
     } catch (error) {
       stagedValueError =
         error instanceof ApiClientError
@@ -528,6 +537,7 @@
           type="button"
           class="mt-4 rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
           disabled={promoting ||
+            abandoning ||
             (totalCount === 0
               ? !acknowledgedNoDependencies
               : !allConfirmed && !acknowledgeIncompleteChecklistForPromote)}
@@ -538,6 +548,29 @@
         {#if promoteError}
           {@render mutationErrorBanner(promoteError, promotePendingItemNames)}
         {/if}
+      </section>
+    {/if}
+
+    {#if rotation.status === 'staged' && canManage}
+      <section class="rounded-2xl border border-red-200 bg-white p-6 shadow-sm">
+        <h2 class="text-lg font-semibold text-slate-950">Abandon</h2>
+        <p class="mt-2 text-sm text-slate-600">
+          Discard this staged rotation and keep the secret's previous value.
+        </p>
+        <div class="mt-4">
+          <AbandonRotationControl
+            projectId={data.projectId}
+            credentialId={data.credentialId}
+            rotationId={data.rotationId}
+            triggerLabel="Abandon rotation"
+            confirmCopy="The staged (new) value is discarded and the secret keeps its previous value. This cannot be undone."
+            disabled={promoting}
+            bind:submitting={abandoning}
+            onAbandoned={handleAbandoned}
+            onConcurrentModification={handleConcurrentModification}
+            onAlreadyPromoted={refetch}
+          />
+        </div>
       </section>
     {/if}
 

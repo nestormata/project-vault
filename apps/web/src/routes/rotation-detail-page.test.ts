@@ -13,6 +13,8 @@ const failChecklistItemMock = vi.hoisted(() => vi.fn())
 const retryChecklistItemMock = vi.hoisted(() => vi.fn())
 const resumeRotationMock = vi.hoisted(() => vi.fn())
 const abandonRotationMock = vi.hoisted(() => vi.fn())
+const promoteRotationMock = vi.hoisted(() => vi.fn())
+const getStagedValueMock = vi.hoisted(() => vi.fn())
 
 vi.mock('$lib/api/rotations.js', () => ({
   getRotation: getRotationMock,
@@ -22,6 +24,8 @@ vi.mock('$lib/api/rotations.js', () => ({
   retryChecklistItem: retryChecklistItemMock,
   resumeRotation: resumeRotationMock,
   abandonRotation: abandonRotationMock,
+  promoteRotation: promoteRotationMock,
+  getStagedValue: getStagedValueMock,
 }))
 
 import type { ComponentProps } from 'svelte'
@@ -120,6 +124,8 @@ describe('/rotations/[rotationId] +page.svelte', () => {
     retryChecklistItemMock.mockReset()
     resumeRotationMock.mockReset()
     abandonRotationMock.mockReset()
+    promoteRotationMock.mockReset()
+    getStagedValueMock.mockReset()
     vi.useRealTimers()
   })
   afterEach(() => cleanup())
@@ -626,5 +632,222 @@ describe('/rotations/[rotationId] +page.svelte', () => {
     await fireEvent.click(screen.getByRole('button', { name: /complete rotation/i }))
 
     expect(await screen.findByText('socket hang up')).toBeTruthy()
+  })
+
+  describe('43-18: abandon a staged rotation', () => {
+    function renderStaged(orgRole: LoadedData['orgRole'] = 'admin', status = 'staged') {
+      return render(RotationDetailPage, {
+        props: {
+          data: baseData({
+            orgRole,
+            rotation: makeRotation({ status: status as RotationDetail['status'] }),
+          }),
+        },
+      })
+    }
+    const openConfirm = async () => {
+      await fireEvent.click(screen.getByRole('button', { name: /abandon rotation/i }))
+    }
+    const confirm = () => screen.getByRole('button', { name: /abandon anyway/i })
+    const apiError = (status: number, code: string) =>
+      new ApiClientError(status, { code, message: code }, code)
+    const submitAbandon = async () => {
+      renderStaged()
+      await openConfirm()
+      await fireEvent.click(confirm())
+    }
+
+    it('AC-1: admin sees Abandon next to Promote, without the stale-recovery banner', () => {
+      renderStaged()
+
+      expect(screen.getByRole('button', { name: /abandon rotation/i })).toBeTruthy()
+      expect(screen.getByRole('button', { name: /^promote$/i })).toBeTruthy()
+      expect(screen.queryByText(/inactive for too long/i)).toBeNull()
+      expect(screen.queryByRole('button', { name: /^resume$/i })).toBeNull()
+    })
+
+    it.each(['member', 'viewer'] as const)('AC-1/AC-9: %s has no Abandon in the DOM', (role) => {
+      renderStaged(role)
+
+      expect(screen.queryByRole('button', { name: /abandon/i })).toBeNull()
+      expect(screen.queryByRole('heading', { name: /abandon/i })).toBeNull()
+    })
+
+    it.each(['in_progress', 'promoted', 'completed', 'retired', 'abandoned'])(
+      'AC-2: %s offers no Abandon',
+      (status) => {
+        renderStaged('admin', status)
+
+        expect(screen.queryByRole('button', { name: /abandon/i })).toBeNull()
+      }
+    )
+
+    it('AC-3: Cancel closes the confirm panel with no API call; confirm copy is staged-specific', async () => {
+      renderStaged()
+      await openConfirm()
+
+      expect(screen.getByText(/staged \(new\) value is discarded/i)).toBeTruthy()
+      expect(screen.queryByText(/inactiv/i)).toBeNull()
+      expect(abandonRotationMock).not.toHaveBeenCalled()
+
+      await fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+
+      expect(abandonRotationMock).not.toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: /abandon rotation/i })).toBeTruthy()
+    })
+
+    it('AC-3: double-click on Abandon anyway posts once', async () => {
+      abandonRotationMock.mockReturnValue(new Promise(() => {}))
+      await submitAbandon()
+      await fireEvent.click(confirm())
+
+      expect(abandonRotationMock).toHaveBeenCalledTimes(1)
+      expect(abandonRotationMock).toHaveBeenCalledWith(
+        expect.anything(),
+        projectId,
+        credentialId,
+        rotationId
+      )
+    })
+
+    it('AC-4: success shows the abandoned message and removes Promote/Abandon', async () => {
+      abandonRotationMock.mockResolvedValue(makeRotation({ status: 'abandoned' }))
+      getRotationMock.mockResolvedValue(makeRotation({ status: 'abandoned' }))
+      await submitAbandon()
+
+      expect(await screen.findByText(/This rotation was abandoned/i)).toBeTruthy()
+      expect(screen.queryByRole('button', { name: /^promote$/i })).toBeNull()
+      expect(screen.queryByRole('button', { name: /abandon/i })).toBeNull()
+      await waitFor(() => expect(getRotationMock).toHaveBeenCalled())
+    })
+
+    it('AC-9: success does not depend on the follow-up refetch', async () => {
+      abandonRotationMock.mockResolvedValue(makeRotation({ status: 'abandoned' }))
+      getRotationMock.mockRejectedValue(apiError(503, 'vault_sealed'))
+      await submitAbandon()
+
+      expect(await screen.findByText(/This rotation was abandoned/i)).toBeTruthy()
+      expect(screen.queryByRole('button', { name: /^promote$/i })).toBeNull()
+    })
+
+    it('AC-9: a revealed staged value is cleared on abandon', async () => {
+      getStagedValueMock.mockResolvedValue({ value: 'super-secret-new-value' })
+      abandonRotationMock.mockResolvedValue(makeRotation({ status: 'abandoned' }))
+      getRotationMock.mockResolvedValue(makeRotation({ status: 'abandoned' }))
+      renderStaged()
+      await fireEvent.click(screen.getByRole('button', { name: /reveal staged value/i }))
+      expect(await screen.findByText('super-secret-new-value')).toBeTruthy()
+
+      await openConfirm()
+      await fireEvent.click(confirm())
+
+      expect(await screen.findByText(/This rotation was abandoned/i)).toBeTruthy()
+      expect(screen.queryByText('super-secret-new-value')).toBeNull()
+    })
+
+    it('AC-9: Promote is disabled while the abandon request is in flight', async () => {
+      abandonRotationMock.mockReturnValue(new Promise(() => {}))
+      await submitAbandon()
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /^promote$/i }).hasAttribute('disabled')).toBe(
+          true
+        )
+      )
+      expect(confirm().hasAttribute('disabled')).toBe(true)
+    })
+
+    it('AC-9: a poll that flips the status away from staged unmounts the open confirm panel', async () => {
+      vi.useFakeTimers()
+      getRotationMock.mockResolvedValue(makeRotation({ status: 'promoted' }))
+      renderStaged()
+      await openConfirm()
+      expect(screen.getByRole('button', { name: /abandon anyway/i })).toBeTruthy()
+
+      await vi.advanceTimersByTimeAsync(15000)
+
+      expect(screen.queryByRole('button', { name: /abandon anyway/i })).toBeNull()
+      expect(screen.getByRole('button', { name: /retire old value/i })).toBeTruthy()
+      expect(abandonRotationMock).not.toHaveBeenCalled()
+    })
+
+    it('AC-5: 409 concurrent_modification refetches without an inline error', async () => {
+      abandonRotationMock.mockRejectedValue(apiError(409, 'concurrent_modification'))
+      getRotationMock.mockResolvedValue(makeRotation({ status: 'staged' }))
+      await submitAbandon()
+
+      await waitFor(() => expect(getRotationMock).toHaveBeenCalledTimes(1))
+      expect(screen.queryByText(/could not abandon/i)).toBeNull()
+    })
+
+    it('AC-5: 422 rotation_not_stale shows a message and closes the panel', async () => {
+      abandonRotationMock.mockRejectedValue(apiError(422, 'rotation_not_stale'))
+      await submitAbandon()
+
+      expect(await screen.findByText(/no longer awaiting a decision/i)).toBeTruthy()
+      expect(screen.queryByRole('button', { name: /abandon anyway/i })).toBeNull()
+    })
+
+    it('AC-5: 409 rotation_not_abandonable_after_promotion closes the panel and refetches into Retire', async () => {
+      abandonRotationMock.mockRejectedValue(
+        apiError(409, 'rotation_not_abandonable_after_promotion')
+      )
+      getRotationMock.mockResolvedValue(makeRotation({ status: 'promoted' }))
+      await submitAbandon()
+
+      await waitFor(() => expect(getRotationMock).toHaveBeenCalledTimes(1))
+      expect(await screen.findByRole('button', { name: /retire old value/i })).toBeTruthy()
+      expect(screen.queryByRole('button', { name: /abandon anyway/i })).toBeNull()
+    })
+
+    it('AC-5: 409 rotation_not_abandonable_after_promotion tells the admin to Retire when the refetch fails', async () => {
+      abandonRotationMock.mockRejectedValue(
+        apiError(409, 'rotation_not_abandonable_after_promotion')
+      )
+      getRotationMock.mockRejectedValue(new Error('offline'))
+      await submitAbandon()
+
+      expect(await screen.findByText(/already promoted.*retire/i)).toBeTruthy()
+      expect(screen.queryByRole('button', { name: /abandon anyway/i })).toBeNull()
+    })
+
+    it('AC-5: 403 mfa_required keeps the confirm panel open', async () => {
+      abandonRotationMock.mockRejectedValue(apiError(403, 'mfa_required'))
+      await submitAbandon()
+
+      expect(await screen.findByText(/Enable MFA to abandon this rotation/i)).toBeTruthy()
+      expect(confirm()).toBeTruthy()
+    })
+
+    it('AC-5: 503 sealed keeps the confirm panel open', async () => {
+      abandonRotationMock.mockRejectedValue(apiError(503, 'vault_sealed'))
+      await submitAbandon()
+
+      await waitFor(() => expect(abandonRotationMock).toHaveBeenCalled())
+      expect(await screen.findByRole('alert')).toBeTruthy()
+      expect(confirm()).toBeTruthy()
+    })
+
+    it('AC-5: 429 shows the retry seconds and keeps the panel open', async () => {
+      abandonRotationMock.mockRejectedValue(
+        new ApiClientError(
+          429,
+          { code: 'rate_limit_exceeded', message: 'slow down', retryAfter: 17 },
+          'slow down'
+        )
+      )
+      await submitAbandon()
+
+      expect(await screen.findByText(/17 seconds/i)).toBeTruthy()
+      expect(confirm()).toBeTruthy()
+    })
+
+    it('AC-5: a non-Error rejection shows the generic message and keeps the panel open', async () => {
+      abandonRotationMock.mockRejectedValue('offline')
+      await submitAbandon()
+
+      expect(await screen.findByText('Could not abandon rotation.')).toBeTruthy()
+      expect(confirm()).toBeTruthy()
+    })
   })
 })
