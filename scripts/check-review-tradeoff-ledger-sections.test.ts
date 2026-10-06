@@ -67,6 +67,11 @@ describe('extractRiskScopeSections (AC-1)', () => {
     '### Known limits',
     '### Known limitations',
     '### Accepted residual risk / known limitations',
+    '### Residual windows (documented, not fixed)',
+    '## Residual exposure after this story',
+    '### Residual gaps',
+    '### What is documented, not fixed',
+    '### Not addressed here',
   ])('selects %s', (heading) => {
     expect(titles(`${heading}\n\n- x\n`)).toEqual([heading])
   })
@@ -81,6 +86,14 @@ describe('extractRiskScopeSections (AC-1)', () => {
     '### Residual-risks',
     '### Subresidual risks',
     '### Unknown limits',
+    '### AC-4: Residual windows are logged',
+    '### Residual-risk elicitation round',
+    '### Residuals',
+    '### Nonresidual state',
+    '### Residual',
+    '### Not fixed-width fonts',
+    '### D9 — Cross-org bleed: accepted, not fixed',
+    '### D8 — tracked, not fixed, by this story',
   ])('ignores %s', (heading) => {
     expect(titles(`${heading}\n\n- x\n`)).toEqual([])
   })
@@ -198,6 +211,38 @@ describe('disposition detection (AC-2)', () => {
   it('does not hit inside a fence and does scan an HTML comment', () => {
     expect(hitsOf(`${SCOPE_OUT}\n\n\`\`\`\n- deferred\n\`\`\`\n`)).toEqual([])
     expect(hitsOf(`${SCOPE_OUT}\n\n<!-- deferred -->\n`)).toHaveLength(1)
+  })
+})
+
+describe('residual-window headings (70-5 AC-1, AC-3)', () => {
+  const WINDOWS = '### Residual windows (documented, not fixed)'
+  const BULLET_ONE =
+    '- A provider `send()` hanging longer than the 15-minute lease: pg-boss expires the job at the same\n' +
+    '  15 minutes and retries; the retry can reclaim while the hung call is still running. Covered on the\n' +
+    '  provider path by `queueRowId` dedupe. A\n' +
+    "  per-send timeout below the lease is a candidate follow-up (not in 70.3's current scope)."
+
+  it('implies a disposition when the title says not fixed, but not for a bare Residual windows', () => {
+    expect(hitsOf(`${WINDOWS}\n\n- Rolling deploy overlap.\n`)).toHaveLength(1)
+    expect(hitsOf('### Residual windows\n\n- Rolling deploy overlap.\n')).toEqual([])
+    expect(hitsOf('### Residual windows\n\n- A candidate follow-up exists.\n')).toHaveLength(1)
+  })
+
+  it('pins the real 70-1 heading and first bullet as a scanned disposition hit', () => {
+    const content = `${WINDOWS}\n\n${BULLET_ONE}\n`
+    expect(titles(content)).toEqual([WINDOWS])
+    const hits = hitsOf(content)
+    expect(hits).toHaveLength(1)
+    expect(hits[0]?.text).toContain('candidate follow-up')
+  })
+
+  it('reports an uncited Residual windows section (the retro finding)', () => {
+    expect(kinds({ body: `${WINDOWS}\n\n${BULLET_ONE}\n` })).toEqual([SECTION_KIND])
+  })
+
+  it('is clean once the bullet cites a DW that names the story', () => {
+    const body = `${WINDOWS}\n\n${BULLET_ONE.replace('scope).', 'scope) (ledgered as DW-5).')}\n`
+    expect(messages({ body, ledger: entry(5, KEY) })).toEqual([])
   })
 })
 
