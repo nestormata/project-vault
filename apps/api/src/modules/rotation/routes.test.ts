@@ -2376,16 +2376,21 @@ describe('rotation checklist confirm/fail/retry/complete + upcoming rotations', 
       await tx.insert(credentials).values(rows)
     })
 
-    const start = Date.now()
-    const results = await withOrg(owner.orgId, (tx) =>
-      computeUpcomingRotations(tx, { horizonDays: 3650 })
-    )
-    const elapsedMs = Date.now() - start
+    // Story 66-17 (DW-434 family): bounded per-request cost is counted, not timed. The computation
+    // issues a fixed number of SELECTs (credentials with a schedule, then one batched rotation
+    // summary), never one per credential, so 120 credentials take exactly 2 queries.
+    const { results, selects } = await withOrg(owner.orgId, async (tx) => {
+      const selectSpy = vi.spyOn(tx, 'select')
+      try {
+        const computed = await computeUpcomingRotations(tx, { horizonDays: 3650 })
+        return { results: computed, selects: selectSpy.mock.calls.length }
+      } finally {
+        selectSpy.mockRestore()
+      }
+    })
 
     expect(results.length).toBeGreaterThanOrEqual(credentialCount)
-    // Not a strict perf assertion (CI-timing-sensitive) — just confirms this didn't hang/time
-    // out processing an unbounded per-credential result set.
-    expect(elapsedMs).toBeLessThan(15_000)
+    expect(selects).toBe(2)
   }, 20_000)
 })
 

@@ -25,6 +25,7 @@ import {
   type DelegationOrgFixture,
 } from '../__tests__/helpers/delegation-test-helpers.js'
 import { createLogCaptureStream, parseCapturedLogLines } from '../__tests__/helpers/capture-logs.js'
+import { expediteDeadlineTimer } from '../__tests__/helpers/expedite-deadline-timer.js'
 
 process.env['VAULT_DELEGATION_VERIFY_KEYS'] = delegationTestVerifyKeysJson()
 process.env['VAULT_HANDOFF_INSTANCE_ID'] = DELEGATION_TEST_INSTANCE_ID
@@ -1066,14 +1067,15 @@ describe('Story 71.3 AC-5/AC-6 — org resolution, burn, actor resolution and th
     vi.spyOn(replayStore, 'burnDelegationAssertion').mockImplementationOnce(
       () => new Promise(() => undefined)
     )
-    const started = Date.now()
+    // No elapsed-time bounds (Story 66-17): the deadline timer is armed with exactly the
+    // configured bound, and fires immediately here instead of being slept through.
+    const deadline = expediteDeadlineTimer(stages.DELEGATION_BURN_DEADLINE_MS)
     const res = await call(app, { org: org.cmOrgId })
     expect(res.statusCode).toBe(503)
     expect(JSON.parse(res.body)).toMatchObject({ code: 'delegation_replay_store_unavailable' })
-    expect(Date.now() - started).toBeGreaterThanOrEqual(stages.DELEGATION_BURN_DEADLINE_MS - 50)
-    expect(Date.now() - started).toBeLessThan(stages.DELEGATION_BURN_DEADLINE_MS + 2000)
+    expect(deadline.armedCount()).toBe(1)
     expect(seen).toHaveLength(0)
-  }, 15_000)
+  })
 
   it('admits a linked active member as pv_verified with the membership role and the exact ctx.delegation shape', async () => {
     const memberOrg = await createDelegationOrg('member')

@@ -10,6 +10,7 @@ import {
   initVaultForTest,
 } from '../__tests__/helpers/auth-test-helpers.js'
 import { createLogCaptureStream, parseCapturedLogLines } from '../__tests__/helpers/capture-logs.js'
+import { expediteDeadlineTimer } from '../__tests__/helpers/expedite-deadline-timer.js'
 import {
   counterDeltas,
   createDelegationOrg,
@@ -257,14 +258,14 @@ describe('Story 71.9 AC-2 — the event write has its own deadline and never cha
     vi.spyOn(securityEventsModule, 'writeDelegationSecurityEvent').mockImplementationOnce(
       () => new Promise(() => undefined)
     )
-    const started = Date.now()
+    // No elapsed-time bounds (Story 66-17): the deadline timer is armed with exactly the
+    // configured bound, and fires immediately here instead of being slept through.
+    const deadline = expediteDeadlineTimer(stages.DELEGATION_EVENT_WRITE_DEADLINE_MS)
     const { result, deltas } = await countersAround(() => send({ op: WRONG_OP }))
-    const elapsed = Date.now() - started
     expect(result.statusCode).toBe(403)
     expect(JSON.parse(result.body)).toMatchObject({ code: 'delegation_operation_mismatch' })
     expect(deltas).toEqual({ operation_mismatch: 1 })
-    expect(elapsed).toBeGreaterThanOrEqual(stages.DELEGATION_EVENT_WRITE_DEADLINE_MS - 50)
-    expect(elapsed).toBeLessThan(stages.DELEGATION_EVENT_WRITE_DEADLINE_MS + 2000)
+    expect(deadline.armedCount()).toBe(1)
     const timeouts = parseCapturedLogLines(logs.lines).filter(
       (line) => line['eventType'] === 'delegation.security_event_timeout'
     )

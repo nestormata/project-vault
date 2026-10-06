@@ -1,7 +1,7 @@
 // Story 68.7 AC-5/AC-6/AC-7 and design rule 7: the seven delta operations, applied in array order to
 // a fresh copy of PV's full tree, then PV's visibility conditions. Pure: nothing is mutated, nothing
 // throws, every invalid op becomes a problem and is skipped.
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { applyNavDelta, visibleItems, type TreeItem } from './apply-delta.js'
 import type { NavItem, NavOp } from './types.js'
 
@@ -440,17 +440,31 @@ describe('arbitrary nesting and scale', () => {
     expect(path).toEqual(['cm.l1', 'cm.l2', 'cm.l3', 'cm.l4', 'cm.l5', 'cm.l6'])
   })
 
-  it('applies 200 ops to a 1 000-item tree quickly (no cap on the delta)', () => {
+  it('applies 200 ops to a 1 000-item tree with constant relinking work per op (no cap on the delta)', () => {
     const items = Array.from({ length: 1000 }, (_, index) => cm(`pv.i${index}`))
     const ops: NavOp<Ctx>[] = Array.from({ length: 200 }, (_, index) =>
       index % 2 === 0
         ? { op: 'move', id: `pv.i${index}`, parent: `pv.i${index + 500}` }
         : { op: 'insert', after: `pv.i${index * 3}`, item: cm(`cm.n${index}`) }
     )
-    const started = performance.now()
-    const result = applyNavDelta('pv', items, ops)
-    expect(performance.now() - started).toBeLessThan(50)
+    // Story 66-17: bounded work is counted, not timed. Each op relinks a constant number of nodes
+    // (a move detaches then attaches: two splices; an insert attaches: one), so 100 moves and
+    // 100 inserts take exactly 300 splices however large the tree is.
+    const splice = vi.spyOn(Array.prototype, 'splice')
+    let result: ReturnType<typeof applyNavDelta<Ctx>>
+    let splices: number
+    try {
+      result = applyNavDelta('pv', items, ops)
+      splices = splice.mock.calls.length
+    } finally {
+      splice.mockRestore()
+    }
     expect(result.problems).toEqual([])
+    expect(splices).toBe(300)
+    // Every op applied: 1 000 original items, 100 inserted, the moved ones still present.
+    const count = (nodes: readonly NavItem<Ctx>[]): number =>
+      nodes.reduce((total, node) => total + 1 + count(node.children ?? []), 0)
+    expect(count(result.items)).toBe(1100)
   })
 })
 

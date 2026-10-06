@@ -377,20 +377,20 @@ describe('burnDelegationAssertion against real Postgres (Story 71.7 AC-3, AC-7.2
     await withTwoTestOrgs(async ({ orgAId }) => {
       const exp = nowSeconds() + 45
       let outcome: DelegationBurnOutcome | undefined
-      let elapsedMs = 0
       await holderSql
         .begin(async (tx) => {
           await tx`SELECT set_config('app.current_org_id', ${orgAId}, true)`
           await tx`INSERT INTO delegation_assertion_jti (org_id, jti, kid, expires_at)
                    VALUES (${orgAId}, 'j-lock', 'k1', now() + interval '1 minute')`
-          const started = Date.now()
+          // Story 66-17: no elapsed-time bounds. The holder only rolls back AFTER this burn has
+          // returned, so a burn without a lock/statement timeout would wait forever (this test
+          // would hit its own timeout); returning store_unavailable proves the DB-level bound fired.
           outcome = await burnDelegationAssertion({
             orgId: orgAId,
             jti: 'j-lock',
             kid: 'k1',
             assertionExpiresAtSeconds: exp,
           })
-          elapsedMs = Date.now() - started
           throw new Error('roll back the holder')
         })
         .catch((error: unknown) => {
@@ -400,8 +400,6 @@ describe('burnDelegationAssertion against real Postgres (Story 71.7 AC-3, AC-7.2
       expect(['55P03', '57014']).toContain(
         (outcome as { sqlState: string | null } | undefined)?.sqlState
       )
-      expect(elapsedMs).toBeGreaterThanOrEqual(1500)
-      expect(elapsedMs).toBeLessThan(5000)
       // The holder rolled back, so the key is free again.
       await expect(
         burnDelegationAssertion({

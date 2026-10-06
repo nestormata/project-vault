@@ -115,11 +115,26 @@ describe('checkCapability — fail-closed for a registered gate (AC11, AC12)', (
   })
 
   it('hang -> resolves within the timeout bound with gate_unavailable', async () => {
-    const gate = makeGate(() => new Promise<CapabilityDecision>(() => undefined))
-    const start = Date.now()
-    const result = await checkCapability(gate, { ...baseInput, timeoutMs: 20 })
-    expect(Date.now() - start).toBeLessThan(500)
-    expect(result).toMatchObject({ permitted: false, reasonCode: 'gate_unavailable' })
+    // Fake timers, no wall clock (Story 66-17, DW-434): pending one tick before the bound, settled
+    // with gate_unavailable exactly at it.
+    vi.useFakeTimers()
+    try {
+      const gate = makeGate(() => new Promise<CapabilityDecision>(() => undefined))
+      const timeoutMs = 20
+      let result: CapabilityDecision | undefined
+      const pending = checkCapability(gate, { ...baseInput, timeoutMs }).then((decision) => {
+        result = decision
+      })
+
+      await vi.advanceTimersByTimeAsync(timeoutMs - 1)
+      expect(result).toBeUndefined()
+
+      await vi.advanceTimersByTimeAsync(1)
+      expect(result).toMatchObject({ permitted: false, reasonCode: 'gate_unavailable' })
+      await pending
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('a subsequent request with a now-working gate succeeds after a prior throw (no sticky poisoning)', async () => {
@@ -555,54 +570,78 @@ describe('checkCapability — AC-20 the object handed to onCheckCapability has e
 })
 
 /**
- * Story 23.3 AC-17/AC-5 — relative-delta latency comparisons, never an absolute wall-clock bound
- * (Testing Standards; Story 1.15 flake history). Measured in the same process and the same run.
- *
- * Honesty note: at true in-process, sub-millisecond scale, a pure percentage ratio against a
- * near-zero baseline is itself a source of flakiness (dividing by noise). Both tests below express
- * their bound primarily as a relative multiplier over the measured baseline, generously slacked
- * for CI, with a small absolute floor added to the allowed budget specifically to absorb
- * measurement noise at this scale — the floor is not the assertion, the multiplier is.
+ * Story 23.3 AC-17/AC-5, converted from p95 wall-clock comparisons by Story 66-17 (DW-434). The
+ * claim a latency bound stood for is "a fast gate adds no overhead and the no-gate path pays
+ * nothing", which is structural: one gate invocation per check, no timer left armed once the gate
+ * answered, no in-flight slot held, and the no-gate path never enters the gate machinery at all.
  */
-function p95(samplesMs: number[]): number {
-  const sorted = [...samplesMs].sort((a, b) => a - b)
-  const index = Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)
-  return sorted[index] ?? 0
-}
+describe('checkCapability — AC-17 fast path: a fast gate adds no overhead (structural, no clock)', () => {
+  beforeEach(() => {
+    __resetCapabilityGateCountersForTests()
+    __resetCapabilityGateInFlightForTests()
+    vi.useFakeTimers()
+  })
+  afterEach(() => vi.useRealTimers())
 
-async function measureP95(fn: () => Promise<unknown>, iterations = 200): Promise<number> {
-  const samples: number[] = []
-  for (let i = 0; i < iterations; i += 1) {
-    const start = performance.now()
-    await fn()
-    samples.push(performance.now() - start)
-  }
-  return p95(samples)
-}
+  it('200 iterations: exactly one gate invocation per check, no timer left pending, no slot held', async () => {
+    const gate = vi.fn(async () => ({ permitted: true as const }))
+    const checkOnce = () => checkCapability(makeGate(gate), baseInput)
 
-describe('checkCapability — AC-17 latency: a fast gate adds no measurable relative overhead', () => {
-  it('200 iterations: p95 with a gate resolving an already-settled promise vs. p95 of an equivalent no-op — generous relative bound, never absolute', async () => {
-    const gate = makeGate(async () => ({ permitted: true }))
-    const noGateP95 = await measureP95(async () => undefined)
-    const withGateP95 = await measureP95(() => checkCapability(gate, baseInput))
-
-    // Generous CI slack: allow up to 5x the no-op baseline OR a small absolute floor (2ms),
-    // whichever is larger — the floor exists only to absorb near-zero-baseline measurement noise.
-    const allowedMs = Math.max(noGateP95 * 5, 2)
-    expect(withGateP95).toBeLessThanOrEqual(allowedMs)
+    for (let i = 1; i <= 200; i += 1) {
+      await expect(checkOnce()).resolves.toEqual({ permitted: true })
+      expect(gate).toHaveBeenCalledTimes(i)
+      expect(vi.getTimerCount()).toBe(0)
+    }
+    expect(__getCapabilityGateInFlightCountForTests('org_1')).toBe(0)
+    expect(getCapabilityGateCounters()).toMatchObject({ checks: 200, permitted: 200, failed: 0 })
   })
 })
 
-describe('assertCapability — AC-5 latency: an unannotated/no-gate path pays nothing measurable', () => {
-  it('200 iterations: p95 of assertCapability with NO gate registered vs. p95 of an equivalent no-op — the fail-open short-circuit adds no measurable relative overhead', async () => {
-    __resetCapabilityGateForTests()
-    const noGateP95 = await measureP95(async () => undefined)
-    const assertNoGateP95 = await measureP95(() =>
-      assertCapability({ ...baseInput, surface: 'public' })
-    )
+describe('assertCapability — AC-5 no-gate path: pays nothing (structural, no clock)', () => {
+  const logger = { error: vi.fn(), warn: vi.fn() }
 
-    const allowedMs = Math.max(noGateP95 * 5, 2)
-    expect(assertNoGateP95).toBeLessThanOrEqual(allowedMs)
+  beforeEach(() => {
+    __resetCapabilityGateForTests()
+    __resetCapabilityGateCountersForTests()
+    __resetCapabilityGateInFlightForTests()
+    logger.error.mockClear()
+    logger.warn.mockClear()
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    __resetCapabilityGateForTests()
+  })
+
+  it('with NO gate registered: fail-open without entering checkCapability, arming a timer or logging', async () => {
+    for (let i = 0; i < 200; i += 1) {
+      await expect(assertCapability({ ...baseInput, surface: 'public', logger })).resolves.toEqual({
+        permitted: true,
+      })
+    }
+    expect(getCapabilityGateCounters()).toEqual({
+      checks: 0,
+      permitted: 0,
+      denied: 0,
+      failed: 0,
+      saturated: 0,
+    })
+    expect(vi.getTimerCount()).toBe(0)
+    expect(__getCapabilityGateInFlightCountForTests('__public__')).toBe(0)
+    expect(logger.error).not.toHaveBeenCalled()
+    expect(logger.warn).not.toHaveBeenCalled()
+  })
+
+  it('contrast: the same call WITH a registered gate does enter the gate machinery', async () => {
+    const onCheckCapability = vi.fn(async () => ({ permitted: true as const }))
+    wireExtensionCapabilityGate(loadedState(makeGate(onCheckCapability)))
+
+    await expect(assertCapability({ ...baseInput, surface: 'public', logger })).resolves.toEqual({
+      permitted: true,
+    })
+    expect(onCheckCapability).toHaveBeenCalledTimes(1)
+    expect(getCapabilityGateCounters().checks).toBe(1)
+    expect(vi.getTimerCount()).toBe(0)
   })
 })
 
