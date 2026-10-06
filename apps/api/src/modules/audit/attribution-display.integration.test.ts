@@ -55,7 +55,6 @@ const MANIFEST: ExtensionManifest = {
 const POLICY = { historicalActorPolicy: { maxAgeSeconds: 30 * DAY } }
 const PROVIDER = 'centralizeme-handoff'
 const U202E = String.fromCodePoint(0x202e)
-const PASSWORD = 'correct-horse-battery-staple'
 const EVENTS_URL = '/api/v1/org/audit/events'
 const EXPORT_URL = '/api/v1/org/audit/export'
 
@@ -224,7 +223,7 @@ beforeAll(async () => {
   })
   const owner = await registerAndLoginViaApi(reader, {
     email: `attrib-display-${randomUUID()}@example.com`,
-    password: PASSWORD,
+    password: randomUUID().replaceAll('-', 'x') + 'Aa1!',
     orgName: `attrib-display ${randomUUID()}`,
   })
   orgId = owner.orgId
@@ -298,19 +297,20 @@ describe('AC-1 search DTO', () => {
   it('renders a malformed stored attribution as a legacy row: 200, no key, no value in any log line', async () => {
     const secretSubject = `malformed-subject-${randomUUID()}`
     const rows = malformedAttributions(secretSubject)
-    const ids: string[] = []
-    for (const attribution of rows) {
-      const receipt = await withOrg(orgId, (tx) =>
-        writeExtensionAuditEntry(tx as Tx, {
-          orgId,
-          eventType: nextEventType(),
-          payload: {},
-          extensionName: MANIFEST_NAME,
-          attribution: attribution as never,
-        })
+    const receipts = await Promise.all(
+      rows.map((attribution) =>
+        withOrg(orgId, (tx) =>
+          writeExtensionAuditEntry(tx as Tx, {
+            orgId,
+            eventType: nextEventType(),
+            payload: {},
+            extensionName: MANIFEST_NAME,
+            attribution: attribution as never,
+          })
+        )
       )
-      ids.push(receipt.id)
-    }
+    )
+    const ids = receipts.map((receipt) => receipt.id)
     const res = await search('limit=100')
     expect(res.statusCode).toBe(200)
     const body = res.json<SearchBody>()
