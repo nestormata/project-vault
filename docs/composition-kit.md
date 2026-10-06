@@ -267,11 +267,11 @@ member) whose binding is imported from a `.svelte` file in the same file's scrip
 monolithic. The check is about replaceability, not size: a region wrapped in a trivial component passes (whether
 the extraction is meaningful is the componentization audit of story 69.5). An unparseable `.svelte` file is a
 finding, never a silent skip. Files the lock records as CM's are exempt by provenance (the guard has
-`@pv-scope pv-originated-only`); there is no suppression syntax, baseline or allow-list. PV's own tree has 168
-`@region` markers since Story 69-5 (66 after Story 69-3, made of 14 from story 69-1: the project page, the project nav and the dashboard; 13 from
+`@pv-scope pv-originated-only`); there is no suppression syntax, baseline or allow-list. PV's own tree has 189
+`@region` markers since Story 69-6 (168 after Story 69-5, which holds 66 after Story 69-3, made of 14 from story 69-1: the project page, the project nav and the dashboard; 13 from
 story 69-2: the credential detail page; 17 from story 69-4: the settings audit, settings notifications and project
 members pages; 22 from story 69-3: the endpoint list, add and detail pages, the status page admin screen and the
-public status page; Story 69-5 added the rest, so every route file holds regions; see "Region points" below); the guard prints the count (`scanned N files, 168 regions`) and a test
+public status page; Story 69-5 added the rest, so every route file holds regions; see "Region points" below); the guard prints the count (`scanned N files, 189 regions`) and a test
 pins it from below, and a per-file test pins each monitoring region file. Since Story 69-5 the same guard also checks every
 route file (`+page`, `+layout`, `+error`): see "Replaceable regions" below.
 
@@ -297,9 +297,26 @@ syntax, and both skip files the lock records as CM's:
   `<svelte:boundary>` branches and through layout wrappers (an element with no direct text, only
   `class`/`id`/`style`/`role`/`data-*`/`aria-*` attributes and covered children). `<svelte:head>`, comments,
   `{#snippet}`, `{@const}` and `<InjectionPoint>` are ignored. A route file holding nothing but points fails too.
+- **R3, no top-level component use outside a region (Story 69-6).** In a route file a top-level component use
+  (`<Foo />`, `<Foo.Bar />`, `<svelte:component>` or `{@render}`) is a finding unless it is itself the marked region
+  or the component it names hosts an `@region` of its own (the 69-1..69-4 pattern: a region component hosts its
+  regions). R1 let a bare use through because it can be replaced; R3 closes the gap that left it without an injection
+  point. A marked region that is only a `{@render}` is a finding too, since it holds no component of its own. R3
+  is a pure addition to the shipped guard: it can only fail more files, so a composed host that ran the guard before
+  can fail after a web-host upgrade for a file of its own that is not in the lock (provenance is the only exemption).
 - **R2, thin region shell.** Inside a marked region of a route file only components, `<InjectionPoint>`, `{@render}`,
   `{#if}`/`{#each}`/`{#key}`/`{#await}` blocks around those, and elements that hold them (no text, no form control, no
   handler, bind or action) are allowed. The markup belongs in the component.
+
+**The measurable 100 % (Story 69-6).** `pnpm check-injection-point-coverage` prints and enforces the figure
+`coverage: R/R regions with a point, U/U top-level uses in a region, P/P pages with the 3 standard points = 100%
+(N route files, E composition-lock exempt)`. It is computed from the same parses as the checks (the use count comes
+from the R3 scan of the shipped guard), has no stored baseline, and exits 1 below 100 %. The route-render oracle's
+census sentence ("covers every one of the N route files") must exist and agree with the tree, so deleting a route
+file together with its region cannot keep the figure at 100 %. A `<InjectionPoint>` inside a `{#snippet}` the file
+never renders, or behind a literal-false `{#if}`, does not count as rendering its point (it is reported as dead).
+`pnpm check-route-regions --print` also lists every top-level use (`covered` or `UNCOVERED`) and fails on a region
+component of more than 60 non-blank template lines (`OVERSIZE`): a section a CM author cannot inject between.
 
 **Shape.** The route file keeps the marker, the point and the data; the component keeps the markup and the logic only
 that region uses:
@@ -320,6 +337,42 @@ region points are registered as `standard` points.
 component, point, inline lines, component lines, `@pv-stable` mark, status) derived from the tree, and fails when a route
 file has no region, a region has no registered point, or its component is outside `src/lib/components`. Nothing is
 committed: the table is regenerated on demand. `@pv-stable` stays a signal only; no region component carries it yet.
+
+### Region points of the remaining top-level uses (Epic 69, Story 69-6)
+
+Every top-level component use of a route file is its own region with a registered point (R3). 21 wrapper components
+under `$lib/components` (the `shell`, `auth`, `vault`, `platform`, `settings`, `monitoring` and `status-page` folders)
+render the original UNCHANGED and host the page's point as their `children` snippet (no DOM node, so PV's output is
+byte-identical, pinned by the render oracles): `app.layout.search`, `project.layout.content`, `root.layout.progress`,
+`auth.layout.brand`, `auth.register.form`, `vault.home.gate`,
+`platform.home.{operator-notice,warnings,nav-cards}`, `settings.home.nav-cards`, `settings.security.enrollment`, the
+five back links `settings.{audit-access-report,audit-forwarding,language,themes,users-erasure-detail}.back`,
+`project.{certificates,domains,services}.list-header`, `project.status-page.error` and
+`project.service-endpoints-detail.back`. Their props are the original component's props passed through (an M4
+contract, not `@pv-stable` yet); `GlobalSearch` keeps its `@pv-stable` mark and its `open` binding goes through
+`AppLayoutSearch` unchanged. A region inside a branch (the platform operator notice, the status page error alert) has
+its point inside that branch, so it renders only for the caller who sees the region, and a contribution load obeys the
+Story 69-7 denial skip. The tables of every area's points are generated, never typed: `pnpm check-route-regions
+--print` (regions and top-level uses, from the tree) and `manifests/injection-points.json` (every point with its
+`propsType`, `scope` and `hostRoutes`).
+
+**Inner points under an M4 replacement.** A region point that PV renders as the `children` of a region component
+(or inside it) lives and dies with that component. A replacement that wraps the original through `pv-original:` and
+forwards `children` keeps every inner point; a full replacement that does not render the original or its `children`
+drops them, and a fill at such a point does not render. `injection-points.json` still lists the point with its host
+file (and `hostRoutes`), so the drift is explicit in the manifest rather than silent, and the kit never fails a
+compose for an inner point whose host was replaced (the page still builds). The mock UI pack proves both
+(`m3-phase6-region-points.spec.ts`).
+
+**Pre-auth pages.** A contribution whose `load` throws fails the whole page (`injection "<point>" load failed:
+<ErrorName>`, the 68-4 contract), and on `(auth)` and the vault page that includes sign-in. Keep fills on pre-auth
+points render-only (no `load`) unless the load can never throw.
+
+**Hash drift (Story 69-6):** the route files that gained a region (the pages and layouts above) changed, so a pack
+that overrides one of them sees its `hostSha256` drift with the next web-host release; reconcile it with
+`pv-compose --accept-host`. Version rule: R3 and the new points ship inside `@project-vault/web-host` (the guard, the
+route files, `injection-points.json`), a published guard that fails more files plus a larger manifest, so the next
+release of web-host is a MINOR bump; the kit's own contract and exports did not change.
 
 ### Region points (Epic 69, Story 69-4)
 
