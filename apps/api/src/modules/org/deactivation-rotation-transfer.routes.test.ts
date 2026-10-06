@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { notificationQueue, orgMemberships } from '@project-vault/db/schema'
-import { AuditEvent } from '@project-vault/shared'
+import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import {
   bootstrapRouteIntegrationTest,
   createProjectViaApi as createProject,
@@ -12,11 +12,12 @@ import {
 import { createMembershipTestHelpers } from '../../__tests__/helpers/membership-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
 import { mapWithConcurrency } from '../../lib/map-with-concurrency.js'
-import { tryAcquireRotationScopedLock } from '../../lib/rotation-locks.js'
-import { bootProjectRouteTestApp } from '../projects/project-route-test-bootstrap.js'
 import {
   auditPayloads,
+  bootLogCaptureRouteTestApp,
   deactivateViaApi,
+  deniedLogLines,
+  holdRotationLock,
   membershipRow,
   removeViaApi,
   rotationOwnership,
@@ -59,9 +60,10 @@ async function expectNothingTransferred(orgId: string, rotationIds: string[]): P
 
 describe('Story 43-17: rotationHandling "transfer" on deactivate and remove', () => {
   let app: TestApp
+  let logLines: string[]
 
   beforeAll(async () => {
-    app = await bootProjectRouteTestApp(createApp, initVault)
+    ;({ app, lines: logLines } = await bootLogCaptureRouteTestApp(createApp, initVault))
   })
 
   afterAll(async () => {
@@ -383,20 +385,7 @@ describe('Story 43-17: rotationHandling "transfer" on deactivate and remove', ()
     it('a busy rotation lock → 409 rotation_busy with nothing transferred', async () => {
       const { owner, x, y, rotationIds } = await fixture('busy', ['staged', 'staged'])
       const [first, second] = rotationIds as [string, string]
-      let releaseHeld!: () => void
-      const held = new Promise<void>((resolve) => {
-        releaseHeld = resolve
-      })
-      let lockTaken!: () => void
-      const locked = new Promise<void>((resolve) => {
-        lockTaken = resolve
-      })
-      const holder = withOrg(owner.orgId, async (tx) => {
-        expect(await tryAcquireRotationScopedLock(tx, owner.orgId, second)).toBe(true)
-        lockTaken()
-        await held
-      })
-      await locked
+      const holder = await holdRotationLock(owner.orgId, second)
 
       try {
         const res = await deactivateViaApi(app, owner.cookies, x.userId, transferTo(y.userId))
@@ -404,11 +393,27 @@ describe('Story 43-17: rotationHandling "transfer" on deactivate and remove', ()
         expect(res.statusCode).toBe(409)
         expect(res.json()).toMatchObject({ code: 'rotation_busy' })
       } finally {
-        releaseHeld()
-        await holder
+        await holder.release()
       }
       await expectNothingTransferred(owner.orgId, [first, second])
       expect((await membershipRow(owner.orgId, x.userId))?.status).toBe('active')
+
+      // Story 43-19: the refusal log carries the real count (both rotations, not `0`).
+      const denials = await deniedLogLines(
+        app,
+        logLines,
+        OperationalEvent.ORG_USER_DEACTIVATE_DENIED,
+        x.userId
+      )
+      expect(denials).toHaveLength(1)
+      expect(denials[0]).toEqual(
+        expect.objectContaining({
+          level: 'warn',
+          reason: 'rotation_busy',
+          rotationCount: rotationIds.length,
+          callerId: owner.userId,
+        })
+      )
     })
   })
 

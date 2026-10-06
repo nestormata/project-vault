@@ -211,8 +211,12 @@ export type RotationTransferResult = {
 export type RotationGuardOutcome =
   /** Default request and the target owns blocking rotations: the FR102 409. */
   | { outcome: 'blocked'; rotationIds: string[] }
-  /** `abandon`/`transfer` requested, but one of the rotations is being modified right now: nothing changed. */
-  | { outcome: 'busy' }
+  /**
+   * `abandon`/`transfer` requested, but one of the rotations is being modified right now: nothing
+   * changed. `rotationCount` is every blocking rotation the target owns (the same quantity
+   * `blocked` reports as `rotationIds.length`), read before any lock or savepoint (Story 43-19).
+   */
+  | { outcome: 'busy'; rotationCount: number }
   /** Safe to deactivate/remove: nothing blocking, or every blocking rotation now handled. */
   | {
       outcome: 'clear'
@@ -231,6 +235,11 @@ type RotationHandlingInput = {
   abandonAuditPayload: Record<string, unknown>
   /** Story 43-17: required when `handling === 'transfer'` (already validated by the caller). */
   transfer?: { toUserId: string; reason: 'owner_deactivated' | 'owner_removed' }
+}
+
+/** Story 43-19: the single constructor of the busy outcome, so no site can omit the count. */
+function busyOutcome(rows: readonly unknown[]): RotationGuardOutcome {
+  return { outcome: 'busy', rotationCount: rows.length }
 }
 
 /**
@@ -269,7 +278,7 @@ export async function enforceRotationHandling(
   }
 
   const { abandonable, held } = partitionBlockingRotations(rows)
-  if (!(await tryLockAll(tx, orgId, abandonable))) return { outcome: 'busy' }
+  if (!(await tryLockAll(tx, orgId, abandonable))) return busyOutcome(rows)
 
   const completed = await runInSavepoint(tx, async (savepoint) => {
     // Strictly sequential (limit 1): abandonRotation and its audit row are order-sensitive.
@@ -277,7 +286,7 @@ export async function enforceRotationHandling(
       abandonAndAudit(savepoint, rotation, input)
     )
   })
-  if (!completed) return { outcome: 'busy' }
+  if (!completed) return busyOutcome(rows)
   return {
     outcome: 'clear',
     abandonedRotationIds: abandonable.map((row) => row.id),
@@ -324,12 +333,12 @@ async function transferRotations(
   }
 
   const transferable = assertTransferableRotations(rows)
-  if (!(await tryLockAll(tx, input.auth.orgId, transferable))) return { outcome: 'busy' }
+  if (!(await tryLockAll(tx, input.auth.orgId, transferable))) return busyOutcome(rows)
 
   const completed = await runInSavepoint(tx, (savepoint) =>
     transferAndAudit(savepoint, transferable, input, transfer)
   )
-  if (!completed) return { outcome: 'busy' }
+  if (!completed) return busyOutcome(rows)
   return {
     ...none,
     transfer: {
