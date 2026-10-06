@@ -473,6 +473,7 @@ export function delegationIpLimitStage() {
     const decision = consumeUserRateLimit({
       ...delegationIpBucket(request.ip),
       ...DELEGATION_IP_RATE_LIMIT,
+      bounded: true,
     })
     if (decision.allowed) return undefined
     answered.add(request)

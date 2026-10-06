@@ -2,29 +2,39 @@ import type { FastifyReply } from 'fastify/types/reply.js'
 import type { FastifyRequest } from 'fastify/types/request.js'
 import type { FastifyApp } from './fastify-app.js'
 
-const userRateLimitWindows = new Map<string, { count: number; resetAt: number }>()
+type RateWindow = { count: number; resetAt: number }
+
+const userRateLimitWindows = new Map<string, RateWindow>()
 
 /**
- * Story 71.9: the window map is bounded, because a per-IP bucket key is chosen by the caller (an
- * IPv6 sprayer would otherwise grow it for ever). At the cap, expired windows go first, then the
- * oldest entry; an evicted key merely starts a fresh window (the same trade-off as the log deduper
- * in `ip-rate-limit.ts`).
+ * Story 71.9 (review fix): per-IP buckets live in their OWN bounded map. A per-IP key is chosen by
+ * the caller (an IPv6 sprayer would otherwise grow the map for ever), but the bound must never
+ * evict the per-user / per-kid windows of the other limiters, which share `userRateLimitWindows`:
+ * an unauthenticated flood from many /64 prefixes would otherwise reset them. At the cap, expired
+ * windows go first (swept at most once per second, so a flood cannot turn every request into a
+ * full scan), then the oldest entry; an evicted IP merely starts a fresh window.
  */
 export const USER_RATE_LIMIT_MAX_BUCKETS = 50_000
+const BOUNDED_SWEEP_INTERVAL_MS = 1_000
+const boundedRateLimitWindows = new Map<string, RateWindow>()
+let nextBoundedSweepAt = 0
 
-/** Test and diagnostics seam: how many windows are currently tracked. */
-export function userRateLimitBucketCount(): number {
-  return userRateLimitWindows.size
+/** Test and diagnostics seam: how many windows are currently tracked (bounded = per-IP map). */
+export function userRateLimitBucketCount(bounded = false): number {
+  return (bounded ? boundedRateLimitWindows : userRateLimitWindows).size
 }
 
-function makeRoomForBucket(now: number): void {
-  if (userRateLimitWindows.size < USER_RATE_LIMIT_MAX_BUCKETS) return
-  for (const [bucketKey, window] of userRateLimitWindows) {
-    if (window.resetAt <= now) userRateLimitWindows.delete(bucketKey)
+function makeRoomForBoundedBucket(now: number): void {
+  if (boundedRateLimitWindows.size < USER_RATE_LIMIT_MAX_BUCKETS) return
+  if (now >= nextBoundedSweepAt) {
+    nextBoundedSweepAt = now + BOUNDED_SWEEP_INTERVAL_MS
+    for (const [bucketKey, window] of boundedRateLimitWindows) {
+      if (window.resetAt <= now) boundedRateLimitWindows.delete(bucketKey)
+    }
   }
-  if (userRateLimitWindows.size < USER_RATE_LIMIT_MAX_BUCKETS) return
-  const oldest = userRateLimitWindows.keys().next().value
-  if (oldest !== undefined) userRateLimitWindows.delete(oldest)
+  if (boundedRateLimitWindows.size < USER_RATE_LIMIT_MAX_BUCKETS) return
+  const oldest = boundedRateLimitWindows.keys().next().value
+  if (oldest !== undefined) boundedRateLimitWindows.delete(oldest)
 }
 
 /**
@@ -143,6 +153,8 @@ export type UserRateLimitInput = {
   key: string
   max: number
   timeWindowMs?: number
+  /** Use the capped per-IP window map (attacker-chosen keys); never evicts the other limiters. */
+  bounded?: boolean
 }
 
 export type UserRateLimitDecision = { allowed: true } | { allowed: false; retryAfter: number }
@@ -157,16 +169,18 @@ export function consumeUserRateLimit({
   key,
   max,
   timeWindowMs = 60_000,
+  bounded = false,
 }: UserRateLimitInput): UserRateLimitDecision {
   if (!isRateLimitEnforced()) return { allowed: true }
   const now = Date.now()
   const bucketKey = `${userId}:${key}`
-  const current = userRateLimitWindows.get(bucketKey)
-  if (!current) makeRoomForBucket(now)
+  const windows = bounded ? boundedRateLimitWindows : userRateLimitWindows
+  const current = windows.get(bucketKey)
+  if (!current && bounded) makeRoomForBoundedBucket(now)
   const bucket =
     !current || current.resetAt <= now ? { count: 0, resetAt: now + timeWindowMs } : current
   bucket.count += 1
-  userRateLimitWindows.set(bucketKey, bucket)
+  windows.set(bucketKey, bucket)
   if (bucket.count <= max) return { allowed: true }
   return { allowed: false, retryAfter: Math.ceil((bucket.resetAt - now) / 1000) }
 }

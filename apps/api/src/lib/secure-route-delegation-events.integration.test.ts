@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
+import type { DelegationSecurityEventFields } from '../modules/auth/delegation-security-events.js'
 import { and, eq, sql } from 'drizzle-orm'
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
 import { delegationAssertionJti, platformSecurityEvents } from '@project-vault/db/schema'
 import {
@@ -173,17 +174,19 @@ describe('Story 71.9 AC-2 — the payload is closed and carries the request id',
   })
 
   it('structurally cannot hold the assertion, header, actor subject, body or a secret', () => {
-    const fields: Parameters<typeof securityEventsModule.writeDelegationSecurityEvent>[0] = {
-      reason: 'expired',
-      routeKey: 'POST /x',
-      requestId: 'req-1',
-      meta: { ipAddress: null, userAgent: null },
-    }
-    // The input type has no field for the raw assertion, header, `act.sub`, body or a key: adding
-    // one makes this excess-property check fail to compile (typecheck is part of the gate).
-    // @ts-expect-error — `assertion` is not a field of the event input
-    const withAssertion: typeof fields = { ...fields, assertion: 'x' }
-    expect(Object.keys(withAssertion)).toContain('assertion')
+    // The input type's key set is closed: a field that could hold the raw assertion, header,
+    // `act.sub`, body or a key makes this compile-time equality fail (typecheck is part of the gate).
+    expectTypeOf<keyof DelegationSecurityEventFields>().toEqualTypeOf<
+      | 'reason'
+      | 'routeKey'
+      | 'status'
+      | 'orgId'
+      | 'kid'
+      | 'jti'
+      | 'requestId'
+      | 'storeFailure'
+      | 'meta'
+    >()
   })
 })
 

@@ -53,9 +53,30 @@ describe('consumeUserRateLimit (Story 71.9)', () => {
 
   it('stays bounded when an attacker sprays distinct keys', () => {
     for (let index = 0; index <= USER_RATE_LIMIT_MAX_BUCKETS + 10; index += 1) {
-      consumeUserRateLimit({ userId: `spray-${index}`, key: 'k', max: 5, timeWindowMs: 60_000 })
+      consumeUserRateLimit({
+        userId: `spray-${index}`,
+        key: 'k',
+        max: 5,
+        timeWindowMs: 60_000,
+        bounded: true,
+      })
     }
-    expect(userRateLimitBucketCount()).toBeLessThanOrEqual(USER_RATE_LIMIT_MAX_BUCKETS)
+    expect(userRateLimitBucketCount(true)).toBeLessThanOrEqual(USER_RATE_LIMIT_MAX_BUCKETS)
+  })
+
+  it('a bounded spray never evicts the windows of the other limiters', () => {
+    const victim = { userId: 'victim-kid', key: 'k', max: 1, timeWindowMs: 60_000 }
+    expect(consumeUserRateLimit(victim).allowed).toBe(true)
+    for (let index = 0; index <= USER_RATE_LIMIT_MAX_BUCKETS + 10; index += 1) {
+      consumeUserRateLimit({
+        userId: `flood-${index}`,
+        key: 'k',
+        max: 5,
+        timeWindowMs: 60_000,
+        bounded: true,
+      })
+    }
+    expect(consumeUserRateLimit(victim).allowed).toBe(false)
   })
 })
 
