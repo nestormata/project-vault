@@ -379,7 +379,7 @@ function scheduleLosingAttempt(
 
 function drainPendingLosingAttempts(): Promise<void> {
   if (pendingLosingAttempts.size === 0) return Promise.resolve()
-  return Promise.all([...pendingLosingAttempts]).then(drainPendingLosingAttempts)
+  return Promise.all(pendingLosingAttempts).then(drainPendingLosingAttempts)
 }
 
 /**

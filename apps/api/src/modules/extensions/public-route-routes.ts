@@ -177,7 +177,7 @@ function loadPublicRouteHookFresh(
 function loadMinResponseMsFresh(pathTemplate: string): number | undefined {
   const declared = loadedExtensionDeclaring(pathTemplate)?.manifest.anonymousRouteMinResponseMs
   const minMs = Object.entries(declared ?? {}).find(([template]) => template === pathTemplate)?.[1]
-  if (typeof minMs !== 'number' || !(minMs > 0)) return undefined
+  if (typeof minMs !== 'number' || minMs <= 0) return undefined
   return Math.min(minMs, MAX_MIN_RESPONSE_MS)
 }
 
