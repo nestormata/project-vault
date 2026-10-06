@@ -237,6 +237,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.31.0
   - type: `"pv_verified" | "issuer_attested"`
   - union-members: `"pv_verified"`, `"issuer_attested"`
+- member: `actorAttestationReason?`
+  - since: 3.33.0
+  - type: `"unlinked" | "not_current_member" | undefined`
+  - union-members: `undefined`, `"unlinked"`, `"not_current_member"`
 - member: `actorId`
   - since: 3.31.0
   - type: `string`
@@ -262,6 +266,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - member: `issuedAt`
   - since: 3.31.0
   - type: `number`
+- member: `occurredAt?`
+  - since: 3.33.0
+  - type: `number | undefined`
+  - union-members: `undefined`, `number`
 - member: `operation`
   - since: 3.31.0
   - type: `string`
@@ -274,6 +282,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.31.0
 - kind: type
 - type: `ApiRouteDelegationDeclaration`
+- member: `historicalActorPolicy?`
+  - since: 3.33.0
+  - type: `{ maxAgeSeconds: number; } | undefined`
+  - union-members: `undefined`, `{ maxAgeSeconds: number; }`
 - member: `subjectFields?`
   - since: 3.31.0
   - type: `{ org?: ApiRouteSubjectField; actor?: ApiRouteSubjectField; } | undefined`
@@ -604,11 +616,19 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 1.0.0
 - kind: type
 - type: `AuditEventSourceWriteInput`
+- member: `actorId?`
+  - since: 3.33.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
 - member: `eventType`
   - since: 1.0.0
   - type: `string`
 - member: `idempotencyKey?`
   - since: 3.26.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+- member: `occurredAt?`
+  - since: 3.33.0
   - type: `string | undefined`
   - union-members: `undefined`, `string`
 - member: `orgId`
@@ -1195,7 +1215,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.32.0"`
+- type: `"3.33.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 

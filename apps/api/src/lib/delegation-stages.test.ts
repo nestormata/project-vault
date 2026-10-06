@@ -83,10 +83,28 @@ describe('constants and the 71-4 seam', () => {
     })
   })
 
-  it('admits nobody through resolveHistoricalAdmission in 71-3', () => {
-    expect(resolveHistoricalAdmission({ orgId: 'org', actorUserId: 'user' })).toEqual({
+  it('admits through resolveHistoricalAdmission only with a route policy AND a signed occ (71-4)', () => {
+    const policy = { maxAgeSeconds: 600 }
+    expect(resolveHistoricalAdmission({ policy, occurredAt: 5 })).toEqual({ admitted: true })
+    expect(resolveHistoricalAdmission({ policy, occurredAt: undefined })).toEqual({
       admitted: false,
     })
+    expect(resolveHistoricalAdmission({ policy: undefined, occurredAt: 5 })).toEqual({
+      admitted: false,
+    })
+  })
+
+  it('normalizeDelegation keeps a well-formed historical policy and drops anything else', () => {
+    expect(normalizeDelegation({ historicalActorPolicy: { maxAgeSeconds: 600 } })).toEqual({
+      subjectFields: undefined,
+      historicalActorPolicy: { maxAgeSeconds: 600 },
+    })
+    for (const bad of [{}, { maxAgeSeconds: 0 }, { maxAgeSeconds: '9' }, null, 'x']) {
+      expect(normalizeDelegation({ historicalActorPolicy: bad })).toEqual({
+        subjectFields: undefined,
+      })
+    }
+    expect(normalizeDelegation(true)).toEqual({ subjectFields: undefined })
   })
 })
 
@@ -107,7 +125,7 @@ describe('stages that run without a verified request fail closed with the generi
 
   it.each([
     ['S3', delegationSubjectStage('POST /x', { subjectFields: undefined })],
-    ['S4', delegationResolveStage('POST /x')],
+    ['S4', delegationResolveStage('POST /x', { subjectFields: undefined })],
   ])('%s answers 401 delegation_invalid without reaching the database', async (_name, stage) => {
     const reply = stubReply()
     await stage(fakeRequest(), reply as unknown as FastifyReply)

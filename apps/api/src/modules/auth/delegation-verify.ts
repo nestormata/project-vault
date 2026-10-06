@@ -60,6 +60,11 @@ export type DelegationVerifiedClaims = {
   readonly actor: { readonly provider: string; readonly subject: string }
   readonly operation: string
   readonly bodyHash: string
+  /**
+   * Story 71.4: the issuer-signed occurrence time (`occ`, epoch SECONDS), present only when the
+   * assertion carried one. It proves only that the issuer says so; PV cannot verify occurrence.
+   */
+  readonly occurredAt?: number
 }
 
 export type DelegationVerifyResult =
@@ -80,6 +85,8 @@ const MAX_STRING_CLAIM_BYTES = 256
 const MAX_ID_CLAIM_BYTES = 128
 const CLOCK_SKEW_TOLERANCE_SECONDS = 30
 const MAX_LIFETIME_SECONDS = 60
+/** Story 71.4: `occ` may not be later than `iat` plus this (the same bound as the clock skew). */
+const MAX_OCCURRENCE_AHEAD_OF_ISSUE_SECONDS = 30
 const BODY_HASH_PATTERN = /^[A-Za-z0-9_-]{43}$/
 
 const PRE_SIGNATURE: ReadonlySet<DelegationRejectReason> = new Set([
@@ -130,6 +137,7 @@ export const DELEGATION_HOST_OUTCOMES = [
   'unsupported_encoding',
   'body_mismatch',
   'subject_mismatch',
+  'occurrence_outside_window',
   'org_not_served',
   'replayed',
   'store_unavailable',
@@ -209,6 +217,21 @@ function checkTimes(payload: Record<string, unknown>): Check<{ iat: number; exp:
   return { ok: true, value: { iat, exp } }
 }
 
+/**
+ * Story 71.4 AC-2: an optional signed `occ`. Absent or `null` = not signed. Present = a positive
+ * safe integer not later than `iat + 30`; anything else is a malformed claim (post-signature).
+ * Own properties only (DW-513 item 3).
+ */
+function checkOccurrence(payload: Record<string, unknown>, iat: number): Check<number | undefined> {
+  const occ: unknown = Object.hasOwn(payload, 'occ') ? Reflect.get(payload, 'occ') : undefined
+  if (isAbsent(occ)) return { ok: true, value: undefined }
+  if (typeof occ !== 'number' || !Number.isSafeInteger(occ) || occ <= 0) {
+    return fail('delegation_malformed_claim')
+  }
+  if (occ > iat + MAX_OCCURRENCE_AHEAD_OF_ISSUE_SECONDS) return fail('delegation_malformed_claim')
+  return { ok: true, value: occ }
+}
+
 function checkWindow(
   iat: number,
   exp: number,
@@ -248,6 +271,7 @@ type Shape = Scalars & {
   bodyHash: string
   iat: number
   exp: number
+  occ: number | undefined
 }
 
 /** Shape, bounds, `ver` and `iss` checks in design order; time and audience come after. */
@@ -264,6 +288,8 @@ function checkShape(payload: Record<string, unknown>, issuer: string): Check<Sha
   if (!bodyHash.ok) return bodyHash
   const times = checkTimes(payload)
   if (!times.ok) return times
+  const occurrence = checkOccurrence(payload, times.value.iat)
+  if (!occurrence.ok) return occurrence
   return {
     ok: true,
     value: {
@@ -273,6 +299,7 @@ function checkShape(payload: Record<string, unknown>, issuer: string): Check<Sha
       bodyHash: bodyHash.value,
       iat: times.value.iat,
       exp: times.value.exp,
+      occ: occurrence.value,
     },
   }
 }
@@ -290,6 +317,7 @@ function freezeClaims(kid: string, shape: Shape): DelegationVerifyResult {
     actor: Object.freeze({ provider: shape.actor.provider, subject: shape.actor.subject }),
     operation: shape.operation,
     bodyHash: shape.bodyHash,
+    ...(shape.occ === undefined ? {} : { occurredAt: shape.occ }),
   })
   return Object.freeze({ ok: true as const, claims })
 }

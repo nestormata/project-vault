@@ -19,6 +19,7 @@ import {
 import { writeDelegationSecurityEvent } from '../modules/auth/delegation-security-events.js'
 import { resolveOrgByCentralizemeId } from '../modules/service-provisioning/service.js'
 import { enforceUserRateLimit } from './route-helpers.js'
+import { OCCURRED_AT_UNATTESTED_MAX_PAST_SECONDS, classifyOccurrence } from './occurrence-window.js'
 import { bindRequestContext } from './request-context.js'
 
 /**
@@ -65,8 +66,12 @@ export function delegationKidBucket(kid: string): { userId: string; key: string 
 
 export type DelegationSubjectField = { in: 'body' | 'params'; name: string }
 
+/** Story 71.4 D5: a route's opt-in to historical actors (an integer 1..30 days, validated at registration). */
+export type HistoricalActorPolicy = { maxAgeSeconds: number }
+
 export type NormalizedDelegation = {
   subjectFields: { org?: DelegationSubjectField; actor?: DelegationSubjectField } | undefined
+  historicalActorPolicy?: HistoricalActorPolicy
 }
 
 /** `true` / `{}` / `{subjectFields}` -> the stage config; `false` / absent -> `false`. */
@@ -74,20 +79,43 @@ export function normalizeDelegation(raw: unknown): false | NormalizedDelegation 
   if (raw === undefined || raw === null || raw === false) return false
   if (typeof raw !== 'object' || Array.isArray(raw)) return { subjectFields: undefined }
   const fields: unknown = Reflect.get(raw, 'subjectFields')
-  if (typeof fields !== 'object' || fields === null) return { subjectFields: undefined }
-  return { subjectFields: fields as NormalizedDelegation['subjectFields'] }
+  // Own property only (DW-528): an inherited `historicalActorPolicy` must never opt a route in.
+  const policy = readHistoricalPolicy(
+    Object.hasOwn(raw, 'historicalActorPolicy')
+      ? Reflect.get(raw, 'historicalActorPolicy')
+      : undefined
+  )
+  return {
+    subjectFields:
+      typeof fields === 'object' && fields !== null
+        ? (fields as NormalizedDelegation['subjectFields'])
+        : undefined,
+    ...(policy ? { historicalActorPolicy: policy } : {}),
+  }
+}
+
+function readHistoricalPolicy(raw: unknown): HistoricalActorPolicy | undefined {
+  if (typeof raw !== 'object' || raw === null || !Object.hasOwn(raw, 'maxAgeSeconds')) {
+    return undefined
+  }
+  const maxAge: unknown = Reflect.get(raw, 'maxAgeSeconds')
+  return typeof maxAge === 'number' && Number.isInteger(maxAge) && maxAge > 0
+    ? { maxAgeSeconds: maxAge }
+    : undefined
 }
 
 /**
- * The 71-4 seam. A linked actor who is no longer a member may, on a route that declares a
- * historical policy and inside the occurrence-time window (`occ`), be admitted on the issuer's
- * attestation. 71-3 ships no historical policy, so nobody is admitted here and a linked
- * non-member is always rejected `delegation_actor_not_member`.
+ * Story 71.4 (design Q2): a linked actor who is no longer a current member is admitted on the
+ * ISSUER'S attestation, and only on a route that declares a historical policy AND for an assertion
+ * that carries a signed `occ`. The occurrence window itself was already enforced statelessly in S1
+ * (before the burn), so reaching here with an `occ` means it was inside the route's window. PV keeps
+ * no membership history, so this is not a claim that the actor WAS a member then.
  */
-export function resolveHistoricalAdmission(_input: { orgId: string; actorUserId: string }): {
-  admitted: false
-} {
-  return { admitted: false }
+export function resolveHistoricalAdmission(input: {
+  policy: HistoricalActorPolicy | undefined
+  occurredAt: number | undefined
+}): { admitted: boolean } {
+  return { admitted: input.policy !== undefined && input.occurredAt !== undefined }
 }
 
 type RequestState = {
@@ -234,11 +262,17 @@ function enforceKidLimit(reply: FastifyReply, kid: string): boolean {
   })
 }
 
+/** The window a route allows for a signed `occ`: its declared policy, else the unattested default. */
+function windowSecondsFor(delegation: NormalizedDelegation): number {
+  return delegation.historicalActorPolicy?.maxAgeSeconds ?? OCCURRED_AT_UNATTESTED_MAX_PAST_SECONDS
+}
+
 async function afterVerification(
   request: FastifyRequest,
   reply: FastifyReply,
   routeKey: string,
-  claims: DelegationVerifiedClaims
+  claims: DelegationVerifiedClaims,
+  delegation: NormalizedDelegation
 ): Promise<FastifyReply | undefined> {
   const known = { kid: claims.kid, jti: claims.jti }
   // The per-kid limiter comes first: every rejection below writes a security event (a database
@@ -268,11 +302,30 @@ async function afterVerification(
       ...known,
     })
   }
+  // Stateless and before the burn and any database access; the per-kid limiter above already bounds
+  // the security-event write this rejection makes.
+  if (
+    claims.occurredAt !== undefined &&
+    classifyOccurrence({
+      occurredAtMs: claims.occurredAt * 1000,
+      nowMs: Date.now(),
+      maxAgeSeconds: windowSecondsFor(delegation),
+    }) !== 'ok'
+  ) {
+    return reject(request, reply, routeKey, {
+      status: 400,
+      code: 'delegation_occurrence_outside_window',
+      message: 'The occurrence time of the assertion is outside the window this route accepts',
+      outcome: 'occurrence_outside_window',
+      event: true,
+      ...known,
+    })
+  }
   return undefined
 }
 
 /** S1: header parse + stateless verification (checks 1-7), per-kid limiter (8), encoding. */
-export function delegationVerifyStage(routeKey: string) {
+export function delegationVerifyStage(routeKey: string, delegation: NormalizedDelegation) {
   return async (
     request: FastifyRequest,
     reply: FastifyReply
@@ -281,7 +334,7 @@ export function delegationVerifyStage(routeKey: string) {
     if (jws === undefined) return rejectGeneric(request, reply, routeKey, 'missing')
     const result = verifyDelegationAssertion(jws)
     if (!result.ok) return rejectVerification(request, reply, routeKey, result.reason)
-    const rejected = await afterVerification(request, reply, routeKey, result.claims)
+    const rejected = await afterVerification(request, reply, routeKey, result.claims, delegation)
     if (rejected) return rejected
     states.set(request, { claims: result.claims, routeKey })
     return undefined
@@ -529,14 +582,18 @@ type Admission =
       userId: string | null
       orgRole: 'owner' | 'admin' | 'member' | 'viewer' | undefined
       attestation: 'pv_verified' | 'issuer_attested'
+      reason: AttestationReason | undefined
     }
+
+type AttestationReason = 'unlinked' | 'not_current_member'
 
 async function admitActor(
   request: FastifyRequest,
   reply: FastifyReply,
   routeKey: string,
   claims: DelegationVerifiedClaims,
-  orgId: string
+  orgId: string,
+  delegation: NormalizedDelegation
 ): Promise<Admission> {
   let actor: Awaited<ReturnType<typeof resolveDelegatedActor>>
   try {
@@ -550,15 +607,29 @@ async function admitActor(
     return { reply: serviceUnavailable(reply) }
   }
   if (actor.kind === 'member') {
-    return { userId: actor.userId, orgRole: actor.orgRole, attestation: 'pv_verified' }
+    return {
+      userId: actor.userId,
+      orgRole: actor.orgRole,
+      attestation: 'pv_verified',
+      reason: undefined,
+    }
   }
   if (actor.kind === 'unlinked') {
     recordDelegationOutcome('actor_unlinked', claims.kid)
-    return { userId: null, orgRole: undefined, attestation: 'issuer_attested' }
+    return { userId: null, orgRole: undefined, attestation: 'issuer_attested', reason: 'unlinked' }
   }
-  if (resolveHistoricalAdmission({ orgId, actorUserId: actor.userId }).admitted) {
+  const historical = resolveHistoricalAdmission({
+    policy: delegation.historicalActorPolicy,
+    occurredAt: claims.occurredAt,
+  })
+  if (historical.admitted) {
     recordDelegationOutcome('actor_attested_nonmember', claims.kid)
-    return { userId: actor.userId, orgRole: undefined, attestation: 'issuer_attested' }
+    return {
+      userId: actor.userId,
+      orgRole: undefined,
+      attestation: 'issuer_attested',
+      reason: 'not_current_member',
+    }
   }
   return {
     reply: await reject(request, reply, routeKey, {
@@ -574,38 +645,71 @@ async function admitActor(
   }
 }
 
+type AdmittedActor = Exclude<Admission, { reply: FastifyReply }>
+
+/** Step 14: the delegated auth context, `request.delegationContext` and the ambient request context. */
+function bindDelegatedRequest(
+  request: FastifyRequest,
+  input: {
+    routeKey: string
+    claims: DelegationVerifiedClaims
+    orgId: string
+    admission: AdmittedActor
+  }
+): void {
+  const { routeKey, claims, orgId, admission } = input
+  request.authContext = {
+    userId: admission.userId ?? DELEGATION_NIL_USER_ID,
+    orgId,
+    sessionId: 'delegation',
+    jti: claims.jti,
+    sessionVersion: 0,
+    ...(admission.orgRole === undefined ? {} : { orgRole: admission.orgRole }),
+    isPlatformOperator: false,
+    delegation: true,
+  }
+  request.delegationContext = {
+    orgId,
+    actorId: claims.actor.subject,
+    actorProvider: claims.actor.provider,
+    actorUserId: admission.userId,
+    actorAttestation: admission.attestation,
+    delegatedBy: { kid: claims.kid, issuer: claims.issuer },
+    assertionId: claims.jti,
+    issuedAt: claims.issuedAt,
+    operation: routeKey,
+    ...(claims.occurredAt === undefined ? {} : { occurredAt: claims.occurredAt }),
+    ...(admission.reason === undefined ? {} : { actorAttestationReason: admission.reason }),
+  }
+  // The ambient org is the RESOLVED one; a user is bound only when the actor is a real user.
+  bindRequestContext({
+    orgId,
+    userId: admission.userId ?? undefined,
+    delegation: {
+      orgId,
+      actor: {
+        provider: claims.actor.provider,
+        subject: claims.actor.subject,
+        userId: admission.userId,
+        attestation: admission.attestation,
+        reason: admission.reason ?? null,
+      },
+      delegatedBy: { kid: claims.kid, issuer: claims.issuer, assertionId: claims.jti },
+      ...(claims.occurredAt === undefined ? {} : { occurredAtSeconds: claims.occurredAt }),
+    },
+  })
+}
+
 /** S4: org (11), burn (12), actor (13), then the delegated auth context (14). */
-export function delegationResolveStage(routeKey: string) {
+export function delegationResolveStage(routeKey: string, delegation: NormalizedDelegation) {
   return afterVerificationStage(routeKey, async (request, reply, { claims }) => {
     const orgId = await resolveOrg(request, reply, routeKey, claims)
     if (typeof orgId !== 'string') return orgId
     const burned = await burn(request, reply, routeKey, claims, orgId)
     if (burned) return burned
-    const admission = await admitActor(request, reply, routeKey, claims, orgId)
+    const admission = await admitActor(request, reply, routeKey, claims, orgId, delegation)
     if ('reply' in admission) return admission.reply
-    request.authContext = {
-      userId: admission.userId ?? DELEGATION_NIL_USER_ID,
-      orgId,
-      sessionId: 'delegation',
-      jti: claims.jti,
-      sessionVersion: 0,
-      ...(admission.orgRole === undefined ? {} : { orgRole: admission.orgRole }),
-      isPlatformOperator: false,
-      delegation: true,
-    }
-    request.delegationContext = {
-      orgId,
-      actorId: claims.actor.subject,
-      actorProvider: claims.actor.provider,
-      actorUserId: admission.userId,
-      actorAttestation: admission.attestation,
-      delegatedBy: { kid: claims.kid, issuer: claims.issuer },
-      assertionId: claims.jti,
-      issuedAt: claims.issuedAt,
-      operation: routeKey,
-    }
-    // The ambient org is the RESOLVED one; a user is bound only when the actor is a real user.
-    bindRequestContext({ orgId, userId: admission.userId ?? undefined })
+    bindDelegatedRequest(request, { routeKey, claims, orgId, admission })
     return undefined
   })
 }
@@ -619,9 +723,12 @@ export function installDelegationStages(
   input: { routeKey: string; delegation: NormalizedDelegation }
 ): void {
   const { routeKey, delegation } = input
-  routeOptions['preParsing'] = [delegationVerifyStage(routeKey), delegationBodyStage(routeKey)]
+  routeOptions['preParsing'] = [
+    delegationVerifyStage(routeKey, delegation),
+    delegationBodyStage(routeKey),
+  ]
   routeOptions['preHandler'] = [
     delegationSubjectStage(routeKey, delegation),
-    delegationResolveStage(routeKey),
+    delegationResolveStage(routeKey, delegation),
   ]
 }

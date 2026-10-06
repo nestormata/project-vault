@@ -81,6 +81,17 @@ export type ApiRouteDelegationDeclaration = {
    * `org` and `actor` must not name the same field.
    */
   subjectFields?: { org?: ApiRouteSubjectField; actor?: ApiRouteSubjectField }
+  /**
+   * Story 71.4 (since 3.33.0) — opts this route in to HISTORICAL actors: a delayed delivery whose
+   * actor has since stopped being a member. Presence means the host accepts an assertion whose
+   * signed occurrence time (`occ`) is up to `maxAgeSeconds` old, and admits a linked actor who is
+   * no longer a current member on the issuer's attestation (recorded as `issuer_attested`, reason
+   * `not_current_member`, never as a member). `maxAgeSeconds` is an integer from 1 to 2_592_000
+   * (30 days); anything else fails registration, nothing is clamped. Absent: an `occ` older than
+   * 90 seconds is rejected and a linked non-member is always rejected. The policy applies to this
+   * route only; a sibling route without it rejects the same assertion.
+   */
+  historicalActorPolicy?: { maxAgeSeconds: number }
 }
 
 /** A new route at any URL. Registered through PV's security pipeline. */
@@ -186,6 +197,17 @@ export type ApiRouteDelegation = {
   assertionId: string
   /** The assertion's issue time, in seconds. */
   issuedAt: number
+  /**
+   * Story 71.4 (since 3.33.0) — the issuer-signed occurrence time (`occ`, epoch seconds), present
+   * only when the assertion carried one. It is the issuer's word, not something PV verified.
+   */
+  occurredAt?: number
+  /**
+   * Story 71.4 (since 3.33.0) — why the actor is `issuer_attested` rather than `pv_verified`:
+   * `unlinked` (no PV user) or `not_current_member` (linked, admitted by a historical policy).
+   * Absent for a `pv_verified` actor.
+   */
+  actorAttestationReason?: 'unlinked' | 'not_current_member'
   /** The matched `"<METHOD> <url>"`. */
   operation: string
 }

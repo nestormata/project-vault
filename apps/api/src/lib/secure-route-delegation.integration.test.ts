@@ -1231,10 +1231,10 @@ describe('Story 71.3 AC-5/AC-6 — org resolution, burn, actor resolution and th
     expect(seen).toHaveLength(1)
   })
 
-  it('offers one named seam for 71-4 historical admission that admits nobody in 71-3', async () => {
-    expect(
-      stages.resolveHistoricalAdmission({ orgId: org.orgId, actorUserId: randomUUID() })
-    ).toEqual({ admitted: false })
+  it('keeps the 71-4 historical-admission seam closed for a route with no historical policy', async () => {
+    expect(stages.resolveHistoricalAdmission({ policy: undefined, occurredAt: 1 })).toEqual({
+      admitted: false,
+    })
   })
 })
 

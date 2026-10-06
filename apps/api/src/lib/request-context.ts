@@ -6,6 +6,27 @@ import { AsyncLocalStorage } from 'node:async_hooks'
  * one binding point `checkOrgAuthorization()` (`org-authorization.ts`) trusts for `orgId`
  * instead of an extension-supplied field (AC3).
  */
+/**
+ * Story 71.4 — the host-owned snapshot of the VERIFIED service delegation of the current request,
+ * bound by the delegation stage (S4) and read by the audit write boundary. It never comes from a
+ * body or an extension: an extension can read it only through `writeAuditEvent`'s attribution.
+ */
+export type DelegationSnapshot = {
+  /** The resolved PV org id (never the identity-side org claim). */
+  orgId: string
+  actor: {
+    provider: string
+    subject: string
+    /** The linked PV user, or `null` for an unlinked actor. Never the nil sentinel. */
+    userId: string | null
+    attestation: 'pv_verified' | 'issuer_attested'
+    reason: 'unlinked' | 'not_current_member' | null
+  }
+  delegatedBy: { kid: string; issuer: string; assertionId: string }
+  /** The issuer-signed occurrence time (`occ`, epoch seconds), present only when signed. */
+  occurredAtSeconds?: number
+}
+
 export type RequestContext = {
   orgId: string
   /**
@@ -23,6 +44,11 @@ export type RequestContext = {
    * parameters, so the cookie must already be ambient by the time it's invoked.
    */
   extensionRequestStateCookie?: string
+  /**
+   * Story 71.4 — set only by the delegation stage of a service-delegated request. Readers that do
+   * not attribute audit events ignore it.
+   */
+  delegation?: DelegationSnapshot
 }
 
 /**

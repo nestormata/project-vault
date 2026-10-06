@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tx } from '@project-vault/db'
 
@@ -75,6 +76,71 @@ describe('assertValidIdempotencyKey — AC-1', () => {
     } catch (error) {
       expect((error as Error).message).not.toContain('secret value')
     }
+  })
+})
+
+describe('computeContentFingerprint — Story 71.4 attribution (AC-5)', () => {
+  const content = {
+    eventType: 'ext.x.y',
+    resourceType: 't',
+    resourceId: 'r',
+    projectId: 'p',
+    payload: { a: 1, b: [1, 2] },
+  }
+  const attribution = (over: Record<string, unknown> = {}) => ({
+    v: 1 as const,
+    occurredAt: '2026-10-05T11:00:00.000Z',
+    occurredAtSource: 'delegation_signed' as const,
+    actor: {
+      provider: 'workos',
+      subject: 's',
+      userId: 'u1',
+      attestation: 'pv_verified' as const,
+      reason: null,
+    },
+    delegatedBy: { kid: 'k1', issuer: 'i', assertionId: 'jti-1' },
+    ...over,
+  })
+
+  it('keeps the pre-71.4 fingerprint for content with no attribution (golden hash)', () => {
+    // sha256 of the literal canonical JSON the 71-1 fingerprint hashed; written independently of
+    // `canonicalJson` so a change to either the key set or the order is caught.
+    const literal =
+      '{"eventType":"ext.x.y","payload":{"a":1,"b":[1,2]},"projectId":"p","resourceId":"r","resourceType":"t"}'
+    expect(computeContentFingerprint(content)).toBe(
+      createHash('sha256').update(literal).digest('hex')
+    )
+    expect(computeContentFingerprint({ ...content, attribution: undefined })).toBe(
+      computeContentFingerprint(content)
+    )
+  })
+
+  it('changes with the effective time, subject or provider', () => {
+    const base = computeContentFingerprint({ ...content, attribution: attribution() })
+    expect(base).not.toBe(computeContentFingerprint(content))
+    const actor = attribution().actor
+    for (const changed of [
+      attribution({ occurredAt: '2026-10-05T11:00:01.000Z' }),
+      attribution({ actor: { ...actor, subject: 'other' } }),
+      attribution({ actor: { ...actor, provider: 'other' } }),
+    ]) {
+      expect(computeContentFingerprint({ ...content, attribution: changed })).not.toBe(base)
+    }
+  })
+
+  it('does not change with delegatedBy, the assertion id, the kid, the reason, the user id or the attestation', () => {
+    const base = computeContentFingerprint({ ...content, attribution: attribution() })
+    const actor = attribution().actor
+    const retry = attribution({
+      delegatedBy: { kid: 'k2', issuer: 'other', assertionId: 'jti-2' },
+      actor: {
+        ...actor,
+        userId: 'u2',
+        reason: 'not_current_member',
+        attestation: 'issuer_attested',
+      },
+    })
+    expect(computeContentFingerprint({ ...content, attribution: retry })).toBe(base)
   })
 })
 

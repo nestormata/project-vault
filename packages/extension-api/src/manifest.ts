@@ -627,7 +627,12 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // optional `DeliveryProvider.webhookRateLimit`, and the new exported
 // `DeliveryProviderPermanentError` class (policy rows 1 and 2). A provider written against 3.31.0
 // that ignores all three behaves exactly as before.
-export const EXTENSION_API_VERSION = '3.32.0'
+// Story 71.4 — bumped as a minor (3.32.0 -> 3.33.0): optional `AuditEventSourceWriteInput.actorId`
+// and `occurredAt`, optional `ApiRouteDelegation.occurredAt` / `actorAttestationReason`, and the
+// optional `security.delegation.historicalActorPolicy` route declaration (policy row 1). A pack
+// written against 3.32.0 that omits all of them behaves exactly as before. (3.30.0 to 3.32.0 are
+// unreleased at this point, so 71-1's released minor could not be reused.)
+export const EXTENSION_API_VERSION = '3.33.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built
