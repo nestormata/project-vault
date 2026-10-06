@@ -148,8 +148,8 @@ test.describe('M3 region points of phase 6 on native layouts, public, platform a
       const denied = await Promise.all(
         Array.from({ length: 3 }, () => contextB.request.get(PLATFORM))
       )
-      for (const response of denied) {
-        const body = plain(await response.text())
+      const bodies = await Promise.all(denied.map(async (response) => plain(await response.text())))
+      for (const body of bodies) {
         expect(body).toContain('Platform Operator Access Required')
         expect(body).not.toContain(PLATFORM_FILL)
       }
@@ -249,10 +249,12 @@ test.describe('M3 region points of phase 6 on native layouts, public, platform a
       expect(readWebLog()).not.toContain('mock-ui-pack-secret-message')
       // the failure is the page's own: sign-in and recovery answer, and the register page without the
       // fault flag renders both its render-only fill and its counted-load fill
-      for (const path of ['/login', '/recovery', REGISTER]) {
-        const ok = await anonymous.request.get(path)
-        expect(ok.status(), path).toBe(200)
-      }
+      const statuses = await Promise.all(
+        ['/login', '/recovery', REGISTER].map(
+          async (path) => [path, (await anonymous.request.get(path)).status()] as const
+        )
+      )
+      for (const [path, status] of statuses) expect(status, path).toBe(200)
       const register = plain(await (await anonymous.request.get(REGISTER)).text())
       expect(register).toContain(`${SENTINEL}-auth.register.heading`)
       expect(register).toContain(`${SENTINEL}-auth.register.form`)

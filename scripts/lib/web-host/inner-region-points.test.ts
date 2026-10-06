@@ -22,6 +22,12 @@ import { indexableFile } from './component-index.js'
 
 const WEB = resolve(dirname(fileURLToPath(import.meta.url)), '../../../apps/web')
 
+// Route files are loaded as raw text at transform time (the lint-clean loading pattern, no fs reads).
+const ROUTE_TEXT: Record<string, string> = import.meta.glob(
+  ['../../../apps/web/src/routes/**/+*.svelte'],
+  { query: '?raw', import: 'default', eager: true }
+)
+
 interface ReplacementEntry {
   /** The PV file that is shadowed, relative to the app root (`src/lib/...`), as the kit's map holds it. */
   host: string
@@ -61,11 +67,17 @@ function pointNames(node: unknown): string[] {
   return childrenOf(record).flatMap((child) => pointNames(child))
 }
 
+function routeSource(rel: string): string {
+  const source = Object.entries(ROUTE_TEXT).find(([key]) => key.endsWith(`/apps/web/${rel}`))?.[1]
+  if (source === undefined) throw new Error(`route file not loaded: ${rel}`)
+  return source
+}
+
 /** Every region of a route file whose marked node is a component use, with the relation of its point. */
 function innerTable(webRoot: string): InnerRow[] {
   const rows: InnerRow[] = []
   for (const route of listRouteFiles(webRoot).routes) {
-    const source = readFileSync(resolve(webRoot, route.rel), 'utf8')
+    const source = routeSource(route.rel)
     const parsed = parseRegions(source, route.rel, { requirePoint: false })
     for (const region of parsed.regions) {
       if (region.node.type !== 'Component' || !containsPoint(region.node)) continue

@@ -3,7 +3,7 @@
 // `$lib` components, and fails closed on a route file with no region, an unparseable file, a region
 // whose point is not registered, a region component outside `src/lib/components`, and an oracle
 // census mismatch. Fixtures are temp trees, never committed under `src/`.
-import { readFileSync, rmSync } from 'node:fs'
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { run } from './check-route-regions.js'
@@ -15,6 +15,11 @@ import {
   OVERSIZE_FOLLOW_UP_STORIES,
 } from './lib/route-regions.js'
 import { useFixtureRoots, writeFixture } from './lib/fixture-test-helpers.js'
+
+// The audit's own source, loaded as raw text at transform time (the lint-clean loading pattern).
+const ROUTE_REGIONS_SOURCE: string = Object.values(
+  import.meta.glob('./lib/route-region[s].ts', { query: '?raw', import: 'default', eager: true })
+).join('')
 
 const TABLE_POINT = 'things.list.table'
 const THINGS_PAGE = 'src/routes/(app)/things/+page.svelte'
@@ -217,7 +222,7 @@ describe('route-regions audit: top-level uses and oversize components (69.6 AC-1
   it('the oversize switch is exactly report-only, names its follow-up stories and lists no component', () => {
     expect(OVERSIZE_ENFORCEMENT).toBe(false)
     expect(OVERSIZE_FOLLOW_UP_STORIES).toEqual(['69-10', '69-11', '69-12'])
-    const source = readFileSync(new URL('./lib/route-regions.ts', import.meta.url), 'utf8')
+    const source = ROUTE_REGIONS_SOURCE
     expect(source).toContain('69-10, 69-11 and 69-12')
     expect(source).not.toMatch(/allowlist|allow-list|baseline|ignoreList|\.svelte'\s*,\s*'/i)
   })
