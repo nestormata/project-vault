@@ -102,6 +102,21 @@ function readVaultUrlAndSecrets(): { vaultUrl: string; secretsInput: string } | 
   }
 }
 
+type RetrieveResult = Awaited<ReturnType<typeof retrieveEntry>>
+
+function retrieveSequentially(
+  agent: { getSecret: (name: string) => Promise<string> },
+  entries: ParsedSecretEntry[],
+  vaultUrl: string,
+  done: RetrieveResult[] = []
+): Promise<RetrieveResult[]> {
+  const entry = entries.at(done.length)
+  if (entry === undefined) return Promise.resolve(done)
+  return retrieveEntry(agent, entry, vaultUrl).then((result) =>
+    retrieveSequentially(agent, entries, vaultUrl, [...done, result])
+  )
+}
+
 async function attemptAllEntries(
   agent: { getSecret: (name: string) => Promise<string> },
   entries: ParsedSecretEntry[],
@@ -110,8 +125,10 @@ async function attemptAllEntries(
   const vaultUnreachableFailures: Failure[] = []
   const applicationFailures: Failure[] = []
 
-  // AC-9/D4 — every entry is always attempted, regardless of any earlier entry's outcome.
-  const results = await Promise.all(entries.map((entry) => retrieveEntry(agent, entry, vaultUrl)))
+  // AC-9/D4 — every entry is always attempted, regardless of any earlier entry's outcome. Strictly
+  // sequential on purpose: the agent exchanges its token lazily on the first getSecret (one token
+  // exchange, not one per secret), and the exchange endpoint is rate-limited per IP.
+  const results = await retrieveSequentially(agent, entries, vaultUrl)
   for (const result of results) {
     if (result.ok) continue
     const bucket = result.vaultUnreachable ? vaultUnreachableFailures : applicationFailures
