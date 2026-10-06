@@ -19,6 +19,17 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   (routine rotation, emergency revoke with its limits, compromise triage, alert triage). A
   `delegation_assertion_rejected` security event now carries the request id and, for
   `store_unavailable`, a closed `storeFailure` (`sqlstate:<code>`, `driver_error`, `timeout`).
+- **Injection points on the remaining top-level component uses** (Story 69.6, Epic 69, web-host). Every top-level
+  component use of a PV route file is now its own region with a registered point: 21 new region points
+  (`app.layout.search`, `project.layout.content`, `root.layout.progress`, `auth.layout.brand`, `auth.register.form`,
+  `vault.home.gate`, `platform.home.{operator-notice,warnings,nav-cards}`, `settings.home.nav-cards`,
+  `settings.security.enrollment`, the five `*.back` links, `project.{certificates,domains,services}.list-header`,
+  `project.status-page.error`, `project.service-endpoints-detail.back`), hosted by thin wrapper components, so PV's own
+  output is unchanged. Rule R3 of the shipped `monolithic-region` guard (a top-level component use outside a region
+  is a finding) and the measurable coverage figure of `check-injection-point-coverage` make "an injection point in
+  every region" checkable; both ship in `@project-vault/web-host`. A pack that overrides one of the changed route
+  files sees its `hostSha256` drift (reconcile with `pv-compose --accept-host`). Published guard and manifest
+  behavior change: the next web-host release is a MINOR bump. See `docs/composition-kit.md`.
 
 ### Changed
 

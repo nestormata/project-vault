@@ -5,7 +5,7 @@
   import { ApiClientError } from '$lib/api/client.js'
   import { deleteServiceEndpoint, updateServiceEndpoint } from '$lib/api/service-endpoints.js'
   import type { ServiceEndpointDetail } from '$lib/api/service-endpoints.js'
-  import BackLink from '$lib/components/monitoring/BackLink.svelte'
+  import BackLinkRegion from '$lib/components/shell/BackLinkRegion.svelte'
   import ServiceEndpointDelete from '$lib/components/monitoring/ServiceEndpointDelete.svelte'
   import ServiceEndpointDetailNotFound from '$lib/components/monitoring/ServiceEndpointDetailNotFound.svelte'
   import ServiceEndpointHistory from '$lib/components/monitoring/ServiceEndpointHistory.svelte'
@@ -128,7 +128,14 @@
       data={data.__inject}
     />
 
-    <BackLink node="back.project.service-endpoint" projectId={data.projectId} />
+    <!-- @region project.service-endpoints-detail.back -->
+    <BackLinkRegion node="back.project.service-endpoint" projectId={data.projectId}>
+      <InjectionPoint
+        name="project.service-endpoints-detail.back"
+        props={{ project: data.project, endpoint, orgRole: data.orgRole }}
+        data={data.__inject}
+      />
+    </BackLinkRegion>
   {/if}
 </section>
 <InjectionPoint name="project.service-endpoints-detail.after" data={data?.__inject} />

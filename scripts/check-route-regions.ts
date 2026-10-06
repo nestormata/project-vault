@@ -12,7 +12,13 @@
  */
 import { resolve } from 'node:path'
 import { STD_IO, failWith, option, runAsMain, type Io } from './lib/cli-io.js'
-import { auditRouteRegions, formatTable } from './lib/route-regions.js'
+import {
+  auditRouteRegions,
+  formatTable,
+  formatUsesTable,
+  OVERSIZE_ENFORCEMENT,
+  OVERSIZE_FOLLOW_UP_STORIES,
+} from './lib/route-regions.js'
 
 export function run(args: readonly string[], io: Io = STD_IO): number {
   const webRoot = resolve(option(args, '--web') ?? 'apps/web')
@@ -21,7 +27,15 @@ export function run(args: readonly string[], io: Io = STD_IO): number {
   if (result.routeFiles === 0) {
     problems.push('no route files found (a guard that matches nothing is not a pass)')
   }
-  if (args.includes('--print')) io.out(`${formatTable(result.rows)}\n`)
+  if (args.includes('--print')) {
+    io.out(`${formatTable(result.rows)}\n\n${formatUsesTable(result.uses)}\n`)
+  }
+  if (result.oversize.length > 0 && !OVERSIZE_ENFORCEMENT) {
+    const oversizeLines = result.oversize.map((line) => '  ' + line).join('\n')
+    io.out(
+      `check-route-regions: ${result.oversize.length} OVERSIZE region components (report-only until stories ${OVERSIZE_FOLLOW_UP_STORIES.join(', ')} split them):\n${oversizeLines}\n`
+    )
+  }
   if (problems.length === 0) {
     io.out(
       `check-route-regions: ${result.routeFiles} route files, ${result.rows.length} regions — OK\n`

@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { and, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { orgMemberships } from '@project-vault/db/schema'
-import { AuditEvent } from '@project-vault/shared'
+import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
@@ -12,11 +12,12 @@ import {
 } from '../../__tests__/helpers/auth-test-helpers.js'
 import { createMembershipTestHelpers } from '../../__tests__/helpers/membership-test-helpers.js'
 import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
-import { tryAcquireRotationScopedLock } from '../../lib/rotation-locks.js'
-import { bootProjectRouteTestApp } from '../projects/project-route-test-bootstrap.js'
 import {
   auditPayloads,
+  bootLogCaptureRouteTestApp,
   deactivateViaApi,
+  deniedLogLines,
+  holdRotationLock,
   membershipRow,
   removeViaApi,
   rotationStatusOf,
@@ -59,9 +60,10 @@ const ABANDON = { rotationHandling: 'abandon' }
 
 describe('Story 43-15 AC-8/AC-9: rotationHandling "abandon" on deactivate and remove', () => {
   let app: TestApp
+  let logLines: string[]
 
   beforeAll(async () => {
-    app = await bootProjectRouteTestApp(createApp, initVault)
+    ;({ app, lines: logLines } = await bootLogCaptureRouteTestApp(createApp, initVault))
   })
 
   afterEach(() => {
@@ -174,20 +176,7 @@ describe('Story 43-15 AC-8/AC-9: rotationHandling "abandon" on deactivate and re
     it('a busy rotation lock → 409 rotation_busy with NOTHING abandoned (Phase 1 tries every lock first)', async () => {
       const { owner, x, rotationIds } = await fixture('busy', ['staged', 'staged'])
       const [first, second] = rotationIds as [string, string]
-      let releaseHeld!: () => void
-      const held = new Promise<void>((resolve) => {
-        releaseHeld = resolve
-      })
-      let lockTaken!: () => void
-      const locked = new Promise<void>((resolve) => {
-        lockTaken = resolve
-      })
-      const holder = withOrg(owner.orgId, async (tx) => {
-        expect(await tryAcquireRotationScopedLock(tx, owner.orgId, second)).toBe(true)
-        lockTaken()
-        await held
-      })
-      await locked
+      const holder = await holdRotationLock(owner.orgId, second)
 
       try {
         const res = await deactivateViaApi(app, owner.cookies, x.userId, ABANDON)
@@ -198,8 +187,7 @@ describe('Story 43-15 AC-8/AC-9: rotationHandling "abandon" on deactivate and re
           message: 'A rotation for this user is being modified; retry shortly.',
         })
       } finally {
-        releaseHeld()
-        await holder
+        await holder.release()
       }
       expect(await rotationStatusOf(owner.orgId, first)).toBe('staged')
       expect(await rotationStatusOf(owner.orgId, second)).toBe('staged')
@@ -221,6 +209,44 @@ describe('Story 43-15 AC-8/AC-9: rotationHandling "abandon" on deactivate and re
         )
       }
       expect((await membershipRow(owner.orgId, x.userId))?.status).toBe('active')
+    })
+
+    it('Story 43-19: the rotation_busy refusal logs the real rotation count (both busy sites)', async () => {
+      const lockBusy = await fixture('busy-log', ['staged', 'staged'])
+      const holder = await holdRotationLock(lockBusy.owner.orgId, lockBusy.rotationIds[1] as string)
+      try {
+        const res = await deactivateViaApi(app, lockBusy.owner.cookies, lockBusy.x.userId, ABANDON)
+        expect(res.statusCode).toBe(409)
+      } finally {
+        await holder.release()
+      }
+      // Phase-2 conflict (the second abandon returns a non-abandoned outcome): same count.
+      const midLoop = await fixture('busy-log-mid', ['staged', 'staged', 'promoted'])
+      abandonControl.failOnCall = 2
+      expect(
+        (await deactivateViaApi(app, midLoop.owner.cookies, midLoop.x.userId, ABANDON)).statusCode
+      ).toBe(409)
+
+      await Promise.all(
+        [lockBusy, midLoop].map(async ({ owner, x, rotationIds }) => {
+          const denials = await deniedLogLines(
+            app,
+            logLines,
+            OperationalEvent.ORG_USER_DEACTIVATE_DENIED,
+            x.userId
+          )
+          expect(denials).toHaveLength(1)
+          expect(denials[0]).toEqual(
+            expect.objectContaining({
+              level: 'warn',
+              reason: 'rotation_busy',
+              rotationCount: rotationIds.length,
+              callerId: owner.userId,
+            })
+          )
+          expect(JSON.stringify(denials[0])).not.toContain(rotationIds[0])
+        })
+      )
     })
 
     it('an abandon audit-write failure fails closed and rolls everything back (503)', async () => {
@@ -272,6 +298,34 @@ describe('Story 43-15 AC-8/AC-9: rotationHandling "abandon" on deactivate and re
   })
 
   describe('DELETE /api/v1/org/users/:userId (AC-9 parity)', () => {
+    it('Story 43-19: a busy rotation lock on remove logs org_user_remove_denied with the real count', async () => {
+      const { owner, x, rotationIds } = await fixture('remove-busy-log', ['staged', 'promoted'])
+      const holder = await holdRotationLock(owner.orgId, rotationIds[0] as string)
+      try {
+        const res = await removeViaApi(app, owner.cookies, x.userId, ABANDON)
+        expect(res.statusCode).toBe(409)
+        expect(res.json()).toMatchObject({ code: 'rotation_busy' })
+      } finally {
+        await holder.release()
+      }
+
+      const denials = await deniedLogLines(
+        app,
+        logLines,
+        OperationalEvent.ORG_USER_REMOVE_DENIED,
+        x.userId
+      )
+      expect(denials).toHaveLength(1)
+      expect(denials[0]).toEqual(
+        expect.objectContaining({
+          level: 'warn',
+          reason: 'rotation_busy',
+          rotationCount: rotationIds.length,
+          callerId: owner.userId,
+        })
+      )
+    })
+
     it('refuses removal with the identical 409 and mutates nothing (membership, sessions)', async () => {
       const { owner, x, rotationIds } = await fixture('remove-block', ['staged'])
 

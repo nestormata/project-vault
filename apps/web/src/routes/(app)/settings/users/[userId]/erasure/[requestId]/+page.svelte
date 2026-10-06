@@ -1,7 +1,7 @@
 <script lang="ts">
   import ErasureHeader from '$lib/components/settings/ErasureHeader.svelte'
   import ErasureRequestPanel from '$lib/components/settings/ErasureRequestPanel.svelte'
-  import NavLink from '$lib/navigation/NavLink.svelte'
+  import NavLinkRegion from '$lib/components/shell/NavLinkRegion.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
   let { data } = $props()
@@ -18,11 +18,14 @@
   <ErasureHeader>
     <InjectionPoint name="settings.users-erasure-detail.header" data={data?.__inject} />
   </ErasureHeader>
-  <NavLink
+  <!-- @region settings.users-erasure-detail.back -->
+  <NavLinkRegion
     surface="back"
     node="back.settings.users.erasure"
     class="mt-2 inline-block text-sm text-indigo-600 underline"
-  />
+  >
+    <InjectionPoint name="settings.users-erasure-detail.back" data={data?.__inject} />
+  </NavLinkRegion>
 
   <!-- @region settings.users-erasure-detail.request -->
   <ErasureRequestPanel {data}>

@@ -1,10 +1,10 @@
 <script lang="ts">
   import PlatformHomeHeader from '$lib/components/platform/PlatformHomeHeader.svelte'
-  import NavCards from '$lib/navigation/NavCards.svelte'
+  import NavCardsRegion from '$lib/components/shell/NavCardsRegion.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
-  import PlatformOperatorRequiredNotice from '$lib/components/PlatformOperatorRequiredNotice.svelte'
-  import PlatformWarningsBanner from '$lib/components/platform/PlatformWarningsBanner.svelte'
+  import PlatformOperatorNoticeRegion from '$lib/components/platform/PlatformOperatorNoticeRegion.svelte'
+  import PlatformWarningsRegion from '$lib/components/platform/PlatformWarningsRegion.svelte'
   import type { PlatformPath } from '$lib/app-paths.js'
   import type { PageData } from './$types.js'
 
@@ -36,7 +36,10 @@
 <InjectionPoint name="platform.home.before" data={data?.__inject} />
 <InjectionPoint name="platform.home.header.actions" data={data?.__inject} />
 {#if !data.allowed}
-  <PlatformOperatorRequiredNotice />
+  <!-- @region platform.home.operator-notice -->
+  <PlatformOperatorNoticeRegion>
+    <InjectionPoint name="platform.home.operator-notice" data={data?.__inject} />
+  </PlatformOperatorNoticeRegion>
 {:else}
   <div class="mx-auto max-w-3xl px-4 py-8">
     <!-- @region platform.home.header -->
@@ -44,9 +47,15 @@
       <InjectionPoint name="platform.home.header" data={data?.__inject} />
     </PlatformHomeHeader>
 
-    <PlatformWarningsBanner warnings={data.warnings} messages={WARNING_MESSAGES} />
+    <!-- @region platform.home.warnings -->
+    <PlatformWarningsRegion warnings={data.warnings} messages={WARNING_MESSAGES}>
+      <InjectionPoint name="platform.home.warnings" data={data?.__inject} />
+    </PlatformWarningsRegion>
 
-    <NavCards surface="platform.index" />
+    <!-- @region platform.home.nav-cards -->
+    <NavCardsRegion surface="platform.index">
+      <InjectionPoint name="platform.home.nav-cards" data={data?.__inject} />
+    </NavCardsRegion>
   </div>
 {/if}
 <InjectionPoint name="platform.home.after" data={data?.__inject} />

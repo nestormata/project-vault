@@ -65,6 +65,7 @@ describe('parseMarkup: points', () => {
         '  <InjectionPoint name={"a.b.if"} />',
         '{/if}',
         '{#snippet s()}<InjectionPoint name="a.b.snip" />{/snippet}',
+        '{@render s()}',
       ].join('\n'),
       'x.svelte'
     )
@@ -72,6 +73,24 @@ describe('parseMarkup: points', () => {
       { name: 'shell.head', line: 1 },
       { name: 'a.b.if', line: 3 },
       { name: 'a.b.snip', line: 5 },
+    ])
+  })
+
+  it('moves a point out of `points` when its snippet is never rendered or its branch never runs (69.6)', () => {
+    const parsed = parseMarkup(
+      [
+        '{#snippet s()}<InjectionPoint name="a.b.snip" />{/snippet}',
+        '{#if false}<InjectionPoint name="a.b.dead" />{/if}',
+        '<Panel>{#snippet row()}<InjectionPoint name="a.b.prop" />{/snippet}</Panel>',
+        '{#snippet outer()}<Panel><InjectionPoint name="a.b.nested" /></Panel>{/snippet}',
+      ].join('\n'),
+      'x.svelte'
+    )
+    expect(parsed.points.map((p) => p.name)).toEqual(['a.b.prop'])
+    expect(parsed.deadPoints.map((p) => [p.name, p.reason])).toEqual([
+      ['a.b.dead', 'inside markup behind a literal {#if} that never renders it'],
+      ['a.b.snip', 'inside {#snippet s}, which is never rendered'],
+      ['a.b.nested', 'inside {#snippet outer}, which is never rendered'],
     ])
   })
 

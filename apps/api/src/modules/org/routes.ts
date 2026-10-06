@@ -213,8 +213,8 @@ function logRotationGuardDenied(
  * remove request and, when it refuses, sends the 409 and returns null — before any mutation, as
  * secureRoute commits on return. `active_rotations` is ADR-4.4-04 byte-compatible with the project
  * and credential archive guards (`error`, not `code`, carrying `rotationIds`). Like those guards, a
- * refusal changed nothing, so it gets a structured warn log (the count, not the ids) and no audit
- * row (KD-4).
+ * refusal changed nothing, so it gets a structured warn log (the blocking-rotation count, not the
+ * ids, for `active_rotations` and `rotation_busy` alike) and no audit row (KD-4).
  */
 async function guardTargetRotations(
   secureCtx: SecureRouteContext,
@@ -283,7 +283,7 @@ async function guardTargetRotations(
     callerId: secureCtx.auth.userId,
   }
   if (guard.outcome === 'busy') {
-    logRotationGuardDenied(req, logInput, 'rotation_busy', 0)
+    logRotationGuardDenied(req, logInput, 'rotation_busy', guard.rotationCount)
     reply.status(409).send({
       code: 'rotation_busy',
       message: 'A rotation for this user is being modified; retry shortly.',

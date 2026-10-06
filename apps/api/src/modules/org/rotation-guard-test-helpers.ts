@@ -8,7 +8,21 @@ import {
   orgMemberships,
   rotations,
 } from '@project-vault/db/schema'
-import { cookieHeader, type CookieJar } from '../../__tests__/helpers/auth-test-helpers.js'
+import type { createApp } from '../../app.js'
+import {
+  cookieHeader,
+  initVaultForTest,
+  type CookieJar,
+} from '../../__tests__/helpers/auth-test-helpers.js'
+import {
+  createLogCaptureStream,
+  flushCapturedLogger,
+  parseCapturedLogLines,
+} from '../../__tests__/helpers/capture-logs.js'
+import { resetVaultForTest } from '../../__tests__/helpers/vault-test-cleanup.js'
+import { createLoggerConfig } from '../../lib/logger.js'
+import { tryAcquireRotationScopedLock } from '../../lib/rotation-locks.js'
+import { PROJECT_ROUTE_TEST_VAULT_SECRET } from '../projects/project-route-test-bootstrap.js'
 import {
   createCredentialViaApi,
   type CredentialRouteTestApp,
@@ -175,4 +189,65 @@ export async function rotationOwnership(
   )
   if (!row) throw new Error(`rotation ${rotationId} not found`)
   return row
+}
+
+/**
+ * Story 43-19: holds `rotationId`'s rotation-scoped advisory lock in another transaction (so the
+ * deactivate/remove guard sees it busy) until `release()` resolves.
+ */
+export async function holdRotationLock(
+  orgId: string,
+  rotationId: string
+): Promise<{ release: () => Promise<void> }> {
+  let releaseHeld!: () => void
+  const held = new Promise<void>((resolve) => {
+    releaseHeld = resolve
+  })
+  let lockTaken!: () => void
+  const locked = new Promise<void>((resolve) => {
+    lockTaken = resolve
+  })
+  const holder = withOrg(orgId, async (tx) => {
+    expect(await tryAcquireRotationScopedLock(tx, orgId, rotationId)).toBe(true)
+    lockTaken()
+    await held
+  })
+  await locked
+  return {
+    release: async () => {
+      releaseHeld()
+      await holder
+    },
+  }
+}
+
+/** Like `bootProjectRouteTestApp`, but the app logs to a capture stream (Story 43-19 log asserts). */
+export async function bootLogCaptureRouteTestApp(
+  createAppFn: typeof createApp,
+  initVault: Parameters<typeof initVaultForTest>[0]
+) {
+  await resetVaultForTest()
+  await initVaultForTest(initVault, PROJECT_ROUTE_TEST_VAULT_SECRET)
+  const { stream, lines } = createLogCaptureStream()
+  const app = await createAppFn({
+    logger: {
+      ...createLoggerConfig({ NODE_ENV: 'development', LOG_LEVEL: 'info', SERVICE_NAME: 'api' }),
+      stream,
+    },
+    vaultGuardEnabled: true,
+  })
+  return { app, lines }
+}
+
+/** The warn lines of `eventType` for `targetUserId` captured so far (flushes the logger first). */
+export async function deniedLogLines(
+  app: { log: unknown },
+  lines: string[],
+  eventType: string,
+  targetUserId: string
+): Promise<Array<Record<string, unknown>>> {
+  await flushCapturedLogger(app.log)
+  return parseCapturedLogLines(lines).filter(
+    (line) => line['eventType'] === eventType && line['targetUserId'] === targetUserId
+  )
 }

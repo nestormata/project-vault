@@ -14,6 +14,10 @@ const PLAIN_DIV = '<div>plain</div>'
 const TREE_ROUTE = 'src/routes/(app)/things/+page.svelte'
 const ROUTE = 'apps/web/src/routes/(app)/things/+page.svelte'
 const SCRIPT = `<script>\n  import Tile from '$lib/components/Tile.svelte'\n  import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'\n</script>\n`
+const LIB_FILE = 'apps/web/src/lib/components/A.svelte'
+const MARKED = '<!-- @region a.b.c -->\n<Tile><InjectionPoint name="a.b.c" /></Tile>'
+const CM_ROUTE = 'src/routes/cm/+page.svelte'
+const OK = '<!-- @region ok.row.shell -->\n<Tile><InjectionPoint name="ok.row.shell" /></Tile>'
 const scan = (markup: string, file = ROUTE) => scanMonolithicRegions(`${SCRIPT}${markup}`, file)
 const messages = (markup: string, file = ROUTE): string[] =>
   scan(markup, file).findings.map((finding) => finding.message)
@@ -47,10 +51,10 @@ describe('route rules: the canonical region shell', () => {
 
 describe('route rules: R1 unmarked top-level content', () => {
   it('fails a bare top-level div and names the node and line', () => {
-    const found = scan('<Tile />\n<div class="x">hello</div>').findings
+    const found = scan(`${OK}\n<div class="x">hello</div>`).findings
     expect(found).toHaveLength(1)
     expect(found[0]?.message).toBe(UNMARKED_DIV)
-    expect(found[0]?.line).toBe(SCRIPT.split('\n').length + 1)
+    expect(found[0]?.line).toBe(SCRIPT.split('\n').length + 2)
   })
 
   it('fails a route whose only content is injection points (no regions)', () => {
@@ -63,7 +67,7 @@ describe('route rules: R1 unmarked top-level content', () => {
   })
 
   it('fails a bare section inside a root {#if} branch; a marker before the node passes', () => {
-    expect(messages('{#if data.a}\n<section>x</section>\n{/if}\n<Tile />')).toEqual([
+    expect(messages(`{#if data.a}\n<section>x</section>\n{/if}\n${OK}`)).toEqual([
       'unmarked top-level content: <section> (put it in a region component)',
     ])
     expect(
@@ -73,14 +77,14 @@ describe('route rules: R1 unmarked top-level content', () => {
     ).toEqual([])
   })
 
-  it('treats a component use, a {@render} and a marked node as covered', () => {
-    expect(messages('<Tile />\n{@render children()}')).toEqual([])
+  it('treats a marked node as covered', () => {
+    expect(messages(OK)).toEqual([])
   })
 
   it('ignores head, window, comments, const tags and blank text', () => {
     expect(
       messages(
-        `<svelte:head><title>x</title></svelte:head>\n<svelte:window onkeydown={f} />\n<!-- a note -->\n{@const y = 1}\n<Tile />`
+        `<svelte:head><title>x</title></svelte:head>\n<svelte:window onkeydown={f} />\n<!-- a note -->\n{@const y = 1}\n${OK}`
       )
     ).toEqual([])
   })
@@ -96,10 +100,10 @@ describe('route rules: R1 unmarked top-level content', () => {
   it('lets a layout wrapper through when every child is covered, fails it with a bare <p>', () => {
     expect(
       messages(
-        '<div class="space-y-6">\n<!-- @region a.b.c -->\n<div><InjectionPoint name="a.b.c" /><Tile /></div>\n<Tile />\n</div>'
+        '<div class="space-y-6">\n<!-- @region a.b.c -->\n<div><InjectionPoint name="a.b.c" /><Tile /></div>\n<!-- @region a.b.d -->\n<Tile><InjectionPoint name="a.b.d" /></Tile>\n</div>'
       )
     ).toEqual([])
-    expect(messages('<div class="space-y-6">\n<Tile />\n<p>stray</p>\n</div>')).toEqual([
+    expect(messages(`<div class="space-y-6">\n${OK}\n<p>stray</p>\n</div>`)).toEqual([
       'unmarked top-level content: <p> (put it in a region component)',
     ])
   })
@@ -109,16 +113,16 @@ describe('route rules: R1 unmarked top-level content', () => {
   })
 
   it('fails top-level text and an expression tag', () => {
-    expect(messages('<Tile />\nhello')).toEqual([
+    expect(messages(`${OK}\nhello`)).toEqual([
       'unmarked top-level content: text (put it in a region component)',
     ])
-    expect(messages('<Tile />\n{data.title}')).toEqual([
+    expect(messages(`${OK}\n{data.title}`)).toEqual([
       'unmarked top-level content: {expression} (put it in a region component)',
     ])
   })
 
   it('does not run on a $lib component, a non-route name or a nested +page elsewhere', () => {
-    expect(messages(PLAIN_DIV, 'apps/web/src/lib/components/A.svelte')).toEqual([])
+    expect(messages(PLAIN_DIV, LIB_FILE)).toEqual([])
     expect(messages(PLAIN_DIV, 'x.svelte')).toEqual([])
     expect(messages(PLAIN_DIV, 'apps/web/src/lib/routes-helper/+page.svelte')).toEqual([])
   })
@@ -131,6 +135,92 @@ describe('route rules: R1 unmarked top-level content', () => {
     expect(messages('<!-- @region -->\n<Tile />')[0]).toMatch(/must be written/)
     expect(messages('<!-- @region a b -->\n<Tile />')[0]).toMatch(/must be written/)
     expect(messages('<!-- @Region a.b.c -->\n<div>stray</div>')).toEqual([UNMARKED_DIV])
+  })
+})
+
+describe('route rules: R3 top-level component use outside a region', () => {
+  const R3 = (what: string): string =>
+    `unmarked top-level component use: ${what} (wrap it in a region component with a registered point)`
+
+  it('fails a bare component use and names it', () => {
+    expect(messages('<Tile />')).toEqual([R3('<Tile />')])
+  })
+
+  it('counts a member component, <svelte:component> and a {@render} as uses', () => {
+    const script = `<script>\n  import Tile from '$lib/components/Tile.svelte'\n</script>\n`
+    const found = scanMonolithicRegions(
+      `${script}<Tile.Sub />\n<svelte:component this={Tile} />\n{@render children()}`,
+      ROUTE
+    ).findings.map((finding) => finding.message)
+    expect(found).toEqual([
+      R3('<Tile.Sub />'),
+      R3('<svelte:component>'),
+      R3('{@render children()}'),
+    ])
+  })
+
+  it('finds a use inside a layout wrapper, a root {#if} and a root {#snippet}', () => {
+    expect(messages('<div class="space-y-6"><Tile /></div>')).toEqual([R3('<Tile />')])
+    expect(messages('{#if data.a}<Tile />{/if}')).toEqual([R3('<Tile />')])
+    expect(messages('{#snippet row()}<Tile />{/snippet}')).toEqual([R3('<Tile />')])
+  })
+
+  it('passes a use that is the marked region, in a wrapper, an {#if} branch and a boundary', () => {
+    const marked = MARKED
+    expect(messages(marked)).toEqual([])
+    expect(messages(`<div class="x">${marked}</div>`)).toEqual([])
+    expect(messages(`{#if data.a}\n${marked}\n{/if}`)).toEqual([])
+    expect(messages(`<svelte:boundary>\n${marked}\n</svelte:boundary>`)).toEqual([])
+  })
+
+  it('does not count the standard points, head, window or a marked {@render} wrapper as uses', () => {
+    expect(
+      messages(
+        '<InjectionPoint name="a.b.before" />\n<svelte:head><title>x</title></svelte:head>\n<!-- @region a.b.c -->\n<Tile><InjectionPoint name="a.b.c" /></Tile>\n<InjectionPoint name="a.b.after" />'
+      )
+    ).toEqual([])
+  })
+
+  it('does not let an element with attributes or a handler hide a use (red-team j)', () => {
+    expect(messages('<div class="x" onclick={go}><Tile /></div>')).toEqual([UNMARKED_DIV])
+  })
+
+  it('fails when the marker drifts one node away from its component (red-team h)', () => {
+    const found = messages(
+      '<!-- @region a.b.c -->\n<div class="x"><InjectionPoint name="a.b.c" /></div>\n<Tile />'
+    )
+    expect(found).toEqual([
+      '@region "a.b.c" is a monolithic region (neither a component nor does it contain one)',
+      R3('<Tile />'),
+    ])
+  })
+
+  it('does not run on a $lib component (a component may hold plain uses)', () => {
+    expect(messages('<Tile />', LIB_FILE)).toEqual([])
+  })
+
+  it('flags a region that is only a {@render} (a render-only region has no component to replace)', () => {
+    const found = messages('<!-- @region a.b.c -->\n{@render children()}')
+    expect(found).toEqual(['@region "a.b.c" is only a {@render}: it holds no component of its own'])
+  })
+
+  it('reports how many top-level uses a route file has and how many sit in a region', () => {
+    const marked = MARKED
+    expect(scan(`${marked}\n<Tile />`)).toMatchObject({ uses: 2, usesInRegion: 1 })
+    expect(scan(marked)).toMatchObject({ uses: 1, usesInRegion: 1 })
+    expect(scan('<Tile />\n<Tile />')).toMatchObject({ uses: 2, usesInRegion: 0 })
+  })
+
+  it('totals the use counts over a tree and leaves a lock-exempt file out of them', () => {
+    const root = makeRoot()
+    writeFixture(
+      root,
+      TREE_ROUTE,
+      `${SCRIPT}<!-- @region a.b.c -->\n<Tile><InjectionPoint name="a.b.c" /></Tile>\n<Tile />\n`
+    )
+    writeFixture(root, CM_ROUTE, `${SCRIPT}<Tile />\n`)
+    const result = scanMonolithicRegionsTree(root, [CM_ROUTE])
+    expect(result).toMatchObject({ topLevelUses: 2, topLevelUsesInRegion: 1, exempted: 1 })
   })
 })
 
@@ -192,10 +282,7 @@ describe('route rules: R2 thin region shell', () => {
 
   it('does not run R2 on a $lib component', () => {
     expect(
-      messages(
-        '<!-- @region a.b.c -->\n<section><Tile /><p>inline</p></section>',
-        'apps/web/src/lib/components/A.svelte'
-      )
+      messages('<!-- @region a.b.c -->\n<section><Tile /><p>inline</p></section>', LIB_FILE)
     ).toEqual([])
   })
 })
@@ -218,9 +305,9 @@ describe('route rules: tree scan', () => {
 
   it('flags an unmarked route file in the tree and exempts a CM-originated one by provenance', () => {
     const root = makeRoot()
-    writeFixture(root, TREE_ROUTE, `${SCRIPT}<Tile />\n<div>x</div>\n`)
-    writeFixture(root, 'src/routes/cm/+page.svelte', `${SCRIPT}<Tile />\n<div>x</div>\n`)
-    const result = scanMonolithicRegionsTree(root, ['src/routes/cm/+page.svelte'])
+    writeFixture(root, TREE_ROUTE, `${SCRIPT}${OK}\n<div>x</div>\n`)
+    writeFixture(root, CM_ROUTE, `${SCRIPT}${OK}\n<div>x</div>\n`)
+    const result = scanMonolithicRegionsTree(root, [CM_ROUTE])
     expect(result.exempted).toBe(1)
     expect(result.findings.map((finding) => finding.file)).toEqual([TREE_ROUTE])
   })

@@ -6,13 +6,16 @@
 import { createRequire } from 'node:module'
 import { join, posix } from 'node:path'
 import ts from 'typescript'
-import { toRepoPath, walkFiles } from './scan-utils.js'
+import { readOverlayFile, toRepoPath, walkFiles } from './scan-utils.js'
 
 const requireFromWeb = createRequire(join(import.meta.dirname, '..', '..', 'apps/web/package.json'))
 /** apps/web's own `svelte/compiler` (the one PV's markup is compiled with). */
 export const svelteCompiler = requireFromWeb('svelte/compiler') as typeof import('svelte/compiler')
 
 export const ROUTES_DIR = 'src/routes'
+/** The route-render oracle states how many route files it covers (Story 68.4, 69.5). */
+export const ORACLE_FILE = 'src/routes/route-render-snapshot.test.ts'
+const CENSUS_SENTENCE = /covers every one of the (\d+) route files/
 export type RouteKind = 'page' | 'layout' | 'error'
 export type ServerKind = 'page' | 'layout'
 export type PointScope = 'page' | 'layout' | 'error' | 'shell' | 'component'
@@ -175,4 +178,19 @@ export function parseServerFile(code: string, file: string): ServerCalls {
     calls.hasDefaultAction = calls.actionKeys.includes('default')
   }
   return calls
+}
+
+/** The oracle's census must agree with the tree. A missing oracle or a missing sentence is a problem
+ * too (fail closed: a rename must not turn the check off). */
+export function censusProblem(webRoot: string, routeFiles: number): string | null {
+  const oracle = readOverlayFile(webRoot, ORACLE_FILE)
+  if (oracle === undefined) {
+    return `route-render oracle (${ORACLE_FILE}) is missing: the route census cannot be checked`
+  }
+  const declared = CENSUS_SENTENCE.exec(oracle)
+  if (declared?.[1] === undefined) {
+    return `route-render oracle (${ORACLE_FILE}) no longer holds the census sentence "covers every one of the N route files": the route census cannot be checked`
+  }
+  if (Number(declared[1]) === routeFiles) return null
+  return `route-render oracle (${ORACLE_FILE}) expects ${declared[1]} route files but the tree has ${routeFiles}`
 }

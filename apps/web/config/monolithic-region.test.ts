@@ -4,10 +4,12 @@
 // scripts/check-monolithic-regions.test.ts. Fixtures are written to temp trees, never under `src/`.
 import { describe, expect, it } from 'vitest'
 import {
+  newScanContext,
   runGuard,
   scanMonolithicRegions,
   scanMonolithicRegionsTree,
 } from '../guards/monolithic-region.ts'
+import { parseMarkup } from '../guards/region-markup.ts'
 // The repository's shared fixture helpers (this test is PV-repository-only, never shipped).
 import { useFixtureRoots, writeFixture } from '../../../scripts/lib/fixture-test-helpers.ts'
 
@@ -219,6 +221,8 @@ describe('monolithic-region: tree scan, provenance exemption and the shipped con
       exempted: 0,
       regions: 0,
       routeRegions: 0,
+      topLevelUses: 0,
+      topLevelUsesInRegion: 0,
       findings: [],
     })
   })
@@ -229,5 +233,67 @@ describe('monolithic-region: tree scan, provenance exemption and the shipped con
     expect(runGuard(root)).toHaveLength(1)
     expect(runGuard(root)[0]?.message).toContain('monolithic region')
     expect(runGuard(root, [CM_FILE])).toEqual([])
+  })
+})
+
+describe('monolithic-region: looking through a component use (R3)', () => {
+  const root = '/app'
+  const USE = `${IMPORT_TILE}<Tile />`
+  const scanWith = (read: (path: string) => string | undefined): string[] =>
+    scanMonolithicRegions(
+      USE,
+      '/app/src/routes/x/+page.svelte',
+      newScanContext(root, read)
+    ).findings.map((f) => f.message)
+
+  it('reads nothing by default, so a use is not looked through', () => {
+    expect(newScanContext(root).read('/app/src/lib/Tile.svelte')).toBeUndefined()
+  })
+
+  it('treats a component whose source cannot be read as holding no region', () => {
+    expect(scanWith(() => undefined)).toHaveLength(1)
+  })
+
+  it('treats a component whose source cannot be parsed as holding no region', () => {
+    expect(scanWith(() => '{#if broken}')).toHaveLength(1)
+  })
+
+  it('counts a use of a component that carries its own region', () => {
+    expect(scanWith(() => '<!-- @region t -->\n<p>x</p>')).toEqual([])
+  })
+})
+
+describe('region-markup: points the template never renders (69-6)', () => {
+  const point = '<InjectionPoint name="a.b.c" />'
+  const parse = (markup: string) => parseMarkup(markup, 'x.svelte')
+
+  it('puts a point in an unrendered snippet among the dead points', () => {
+    const parsed = parse(`{#snippet row()}${point}{/snippet}`)
+    expect(parsed.points).toEqual([])
+    expect(parsed.deadPoints.map((d) => d.reason)).toEqual([
+      'inside {#snippet row}, which is never rendered',
+    ])
+  })
+
+  it('keeps a point in a snippet the same file renders', () => {
+    const parsed = parse(`{#snippet row()}${point}{/snippet}\n{@render row()}`)
+    expect(parsed.points).toHaveLength(1)
+    expect(parsed.deadPoints).toEqual([])
+  })
+
+  it('keeps a point in a snippet rendered through an optional call', () => {
+    const parsed = parse(`{#snippet row()}${point}{/snippet}\n{@render row?.()}`)
+    expect(parsed.points).toHaveLength(1)
+  })
+
+  it('keeps a point in a snippet a component receives as a prop', () => {
+    const parsed = parse(`<Panel>{#snippet row()}${point}{/snippet}</Panel>`)
+    expect(parsed.points).toHaveLength(1)
+  })
+
+  it('flags a point in the branch of a literal {#if} that never renders', () => {
+    expect(parse(`{#if false}${point}{/if}`).deadPoints).toHaveLength(1)
+    expect(parse(`{#if true}<p>x</p>{:else}${point}{/if}`).deadPoints).toHaveLength(1)
+    expect(parse(`{#if true}${point}{/if}`).points).toHaveLength(1)
   })
 })

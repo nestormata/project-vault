@@ -1,7 +1,7 @@
 <script lang="ts">
   import AccessReportHeader from '$lib/components/settings/AccessReportHeader.svelte'
   import AccessReportPanel from '$lib/components/settings/AccessReportPanel.svelte'
-  import NavLink from '$lib/navigation/NavLink.svelte'
+  import NavLinkRegion from '$lib/components/shell/NavLinkRegion.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
   let { data } = $props()
@@ -18,11 +18,14 @@
   <AccessReportHeader>
     <InjectionPoint name="settings.audit-access-report.header" data={data?.__inject} />
   </AccessReportHeader>
-  <NavLink
+  <!-- @region settings.audit-access-report.back -->
+  <NavLinkRegion
     surface="back"
     node="back.settings.audit.access-report"
     class="mt-2 inline-block text-sm text-indigo-600 underline"
-  />
+  >
+    <InjectionPoint name="settings.audit-access-report.back" data={data?.__inject} />
+  </NavLinkRegion>
 
   <!-- @region settings.audit-access-report.report -->
   <AccessReportPanel {data}>

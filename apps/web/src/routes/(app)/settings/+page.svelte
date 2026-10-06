@@ -2,7 +2,7 @@
   import SettingsHomeHeader from '$lib/components/settings/SettingsHomeHeader.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   let { data } = $props()
-  import NavCards from '$lib/navigation/NavCards.svelte'
+  import NavCardsRegion from '$lib/components/shell/NavCardsRegion.svelte'
 </script>
 
 <svelte:head>
@@ -17,6 +17,9 @@
     <InjectionPoint name="settings.home.header" data={data?.__inject} />
   </SettingsHomeHeader>
 
-  <NavCards surface="settings.index" />
+  <!-- @region settings.home.nav-cards -->
+  <NavCardsRegion surface="settings.index">
+    <InjectionPoint name="settings.home.nav-cards" data={data?.__inject} />
+  </NavCardsRegion>
 </div>
 <InjectionPoint name="settings.home.after" data={data?.__inject} />

@@ -21,6 +21,13 @@
 //     (no text, no form controls, no handlers/binds/actions), `<InjectionPoint>`, components,
 //     `{@render}` and `{#if}`/`{#each}`/`{#key}`/`{#await}` blocks around those. The markup lives in
 //     the component, not in the shell.
+//  R3 (Story 69.6, top-level component use outside a region): in a route file a top-level component
+//     use (`<Foo />`, `<Foo.Bar />`, `<svelte:component>` or `{@render}`) that is not itself the marked
+//     region is a finding, unless the component it uses holds an `@region` of its own (the 69.1-69.4
+//     pattern: a region component hosts its regions). R1 let a bare use through because it can be
+//     replaced (M4); R3 closes the gap that left it without an injection point. A marked region that is only a `{@render}` is a finding
+//     too: it holds no component of its own. The scan also counts the top-level uses and how many sit
+//     in a region, the figure `check-injection-point-coverage` prints.
 // Neither rule has a suppression syntax, a baseline or a skip list; `$lib` components are not route
 // files and are checked by the replaceability rule only.
 //
@@ -32,7 +39,7 @@
 // Ships with web-host (`guards/monolithic-region.js`, registry kind "script"), so `pv-verify` runs
 // the same rule over a composed tree. Imports only `node:`, `svelte/compiler` and the shared walker.
 import { readFileSync } from 'node:fs'
-import { join, relative, resolve, sep } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import {
   childrenOf,
   isBlankText,
@@ -50,9 +57,25 @@ export interface MonolithicFinding {
 
 export interface FileScan {
   regions: number
+  /** Route files only: top-level component uses (marked regions plus unmarked uses). */
+  uses?: number
+  /** Route files only: how many of those uses are the marked region (the rest are R3 findings). */
+  usesInRegion?: number
+  /** Route files only: every top-level use in source order, for the audit listing. */
+  useList?: TopLevelUse[]
   /** True when the file is a route file (R1 and R2 applied). */
   route?: boolean
   findings: MonolithicFinding[]
+}
+
+/** One top-level use of a route file: a marked region, a use of a component that hosts its own
+ * region (`covered`), or a use no region holds (`UNCOVERED`, an R3 finding). */
+export interface TopLevelUse {
+  line: number
+  use: string
+  status: 'covered' | 'UNCOVERED'
+  /** `render` for a `{@render}` use (a render-only position), `component` otherwise. */
+  kind: 'component' | 'render'
 }
 
 export interface TreeFinding extends MonolithicFinding {
@@ -66,6 +89,9 @@ export interface TreeScan {
   /** Files left out because the lock records them as CM's (not part of `files`). */
   exempted: number
   regions: number
+  /** Route files only: top-level component uses, and how many of them sit in a region (R3). */
+  topLevelUses: number
+  topLevelUsesInRegion: number
   findings: TreeFinding[]
 }
 
@@ -152,6 +178,12 @@ function describe(node: Node): string {
   return `{${node.type}}`
 }
 
+function describeUse(node: Node, code: string): string {
+  if (node.type === 'RenderTag') return code.slice(node.start, node.end)
+  if (node.type === 'SvelteComponent') return '<svelte:component>'
+  return `<${node.name ?? 'component'} />`
+}
+
 function isPoint(node: Node, imports: ReadonlyMap<string, string>): boolean {
   if (node.type !== 'Component') return false
   return node.name === INJECTION_POINT || isPointImport(imports.get(node.name?.split('.')[0] ?? ''))
@@ -179,44 +211,109 @@ function isRouteFile(path: string): boolean {
   )
 }
 
-interface Coverage {
-  findings: MonolithicFinding[]
-  covered: number
+/** What R3 needs to look through a component use: the app root, a way to read a component file and
+ * a per-scan parse cache. */
+export interface ScanContext {
+  appRoot: string | null
+  /** The source of an absolute `.svelte` path, or undefined when it cannot be read. */
+  read: (absolutePath: string) => string | undefined
+  holdsRegion: Map<string, boolean>
 }
 
-type Cover = 'skip' | 'covered' | 'descend' | 'finding'
+/** `$lib/x.svelte` and `./x.svelte` to an absolute path; a package import resolves to nothing. */
+function resolveSvelteImport(ctx: ScanContext, fromFile: string, source: string): string | null {
+  if (source.startsWith('$lib/') && ctx.appRoot !== null) {
+    return join(ctx.appRoot, 'src', 'lib', source.slice('$lib/'.length))
+  }
+  if (source.startsWith('./') || source.startsWith('../')) return resolve(dirname(fromFile), source)
+  return null
+}
 
-function coverOf(
-  node: Node,
-  marked: ReadonlySet<Node>,
+function fileHoldsRegion(path: string, ctx: ScanContext): boolean {
+  const code = ctx.read(path)
+  if (code === undefined) return false
+  try {
+    return parseRegions(code, path, { requirePoint: false }).regions.length > 0
+  } catch {
+    return false
+  }
+}
+
+interface Site {
+  code: string
+  file: string
+  ctx: ScanContext
+  marked: ReadonlyMap<Node, string>
   imports: ReadonlyMap<string, string>
-): Cover {
+}
+
+/** True when the component this use names carries an `@region` in its own file, so the use already
+ * has an injection position (a region component hosting its own regions). */
+function usesRegionComponent(node: Node, site: Site): boolean {
+  if (node.type !== 'Component' || node.name === undefined) return false
+  const source = site.imports.get(node.name.split('.')[0] ?? '')
+  const path = source === undefined ? null : resolveSvelteImport(site.ctx, site.file, source)
+  if (path === null) return false
+  const known = site.ctx.holdsRegion.get(path)
+  if (known !== undefined) return known
+  const holds = fileHoldsRegion(path, site.ctx)
+  site.ctx.holdsRegion.set(path, holds)
+  return holds
+}
+
+interface Coverage {
+  findings: MonolithicFinding[]
+  /** Marked regions met at top level. */
+  covered: number
+  /** Unmarked top-level uses (R3 findings, also part of `findings`). */
+  unmarkedUses: number
+  /** Every top-level use met, in source order. */
+  uses: TopLevelUse[]
+}
+
+type Cover = 'skip' | 'covered' | 'use' | 'descend' | 'finding'
+
+function coverOf(node: Node, site: Site): Cover {
+  const { imports } = site
   if (isBlankOrComment(node) || IGNORED_TOP_LEVEL.has(node.type) || isPoint(node, imports)) {
     return 'skip'
   }
-  if (marked.has(node) || isComponentUse(node, imports) || node.type === 'RenderTag') {
-    return 'covered'
-  }
+  if (site.marked.has(node) || usesRegionComponent(node, site)) return 'covered'
+  if (isComponentUse(node, imports) || node.type === 'RenderTag') return 'use'
   return branchesOf(node) !== null || isLayoutWrapper(node) ? 'descend' : 'finding'
 }
 
-function unmarkedTopLevel(
-  nodes: Node[],
-  marked: ReadonlySet<Node>,
-  imports: ReadonlyMap<string, string>,
-  code: string,
-  out: Coverage
-): void {
+function recordUse(node: Node, status: TopLevelUse['status'], site: Site, out: Coverage): void {
+  const region = site.marked.get(node)
+  out.uses.push({
+    line: lineAt(site.code, node.start),
+    use: region === undefined ? describeUse(node, site.code) : `@region ${region}`,
+    status,
+    kind: node.type === 'RenderTag' ? 'render' : 'component',
+  })
+  if (status === 'covered') {
+    out.covered += 1
+    return
+  }
+  out.unmarkedUses += 1
+  out.findings.push({
+    line: lineAt(site.code, node.start),
+    message: `unmarked top-level component use: ${describeUse(node, site.code)} (wrap it in a region component with a registered point)`,
+  })
+}
+
+function unmarkedTopLevel(nodes: Node[], site: Site, out: Coverage): void {
   for (const node of nodes) {
-    const cover = coverOf(node, marked, imports)
-    if (cover === 'covered') out.covered += 1
+    const cover = coverOf(node, site)
+    if (cover === 'covered') recordUse(node, 'covered', site, out)
+    else if (cover === 'use') recordUse(node, 'UNCOVERED', site, out)
     else if (cover === 'descend') {
       for (const branch of branchesOf(node) ?? [nodesOf(node.fragment)]) {
-        unmarkedTopLevel(branch, marked, imports, code, out)
+        unmarkedTopLevel(branch, site, out)
       }
     } else if (cover === 'finding') {
       out.findings.push({
-        line: lineAt(code, node.start),
+        line: lineAt(site.code, node.start),
         message: `unmarked top-level content: ${describe(node)} (put it in a region component)`,
       })
     }
@@ -266,10 +363,14 @@ function firstOffender(nodes: Node[]): Node | null {
   return null
 }
 
-function routeFindings(parsed: ParsedMarkup, code: string): MonolithicFinding[] {
-  const marked = new Set(parsed.regions.map((region) => region.node))
-  const coverage: Coverage = { findings: [], covered: 0 }
-  unmarkedTopLevel(parsed.topLevel, marked, parsed.svelteImports, code, coverage)
+function routeCoverage(
+  parsed: ParsedMarkup,
+  where: { code: string; file: string; ctx: ScanContext }
+): Coverage {
+  const marked = new Map(parsed.regions.map((region) => [region.node, region.name]))
+  const site: Site = { ...where, marked, imports: parsed.svelteImports }
+  const coverage: Coverage = { findings: [], covered: 0, unmarkedUses: 0, uses: [] }
+  unmarkedTopLevel(parsed.topLevel, site, coverage)
   if (coverage.covered === 0 && coverage.findings.length === 0) {
     coverage.findings.push({
       line: 1,
@@ -278,6 +379,13 @@ function routeFindings(parsed: ParsedMarkup, code: string): MonolithicFinding[] 
     })
   }
   for (const region of parsed.regions) {
+    if (region.node.type === 'RenderTag') {
+      coverage.findings.push({
+        line: region.line,
+        message: `@region "${region.name}" is only a {@render}: it holds no component of its own`,
+      })
+      continue
+    }
     const offender = shellOffender(region.node)
     if (offender === null) continue
     coverage.findings.push({
@@ -285,12 +393,26 @@ function routeFindings(parsed: ParsedMarkup, code: string): MonolithicFinding[] 
       message: `@region "${region.name}" is not a thin shell: ${describe(offender)} holds markup that belongs in its component`,
     })
   }
-  return coverage.findings
+  return coverage
+}
+
+/** A fresh scan context for `appRoot` (null: component imports are not looked through). `read`
+ * supplies a component's source; the default reads nothing, so a use is looked through only when
+ * the caller says how to read files (the tree scan and the route audit do). */
+export function newScanContext(
+  appRoot: string | null,
+  read: ScanContext['read'] = () => undefined
+): ScanContext {
+  return { appRoot: appRoot === null ? null : resolve(appRoot), read, holdsRegion: new Map() }
 }
 
 /** Scans one `.svelte` source. A file the compiler cannot parse is a finding: an unparseable file
  * must never hide a region (fail closed). */
-export function scanMonolithicRegions(source: string, file = '<source>'): FileScan {
+export function scanMonolithicRegions(
+  source: string,
+  file = '<source>',
+  ctx: ScanContext = newScanContext(null)
+): FileScan {
   let parsed
   try {
     parsed = parseRegions(source, file, { requirePoint: false })
@@ -315,15 +437,31 @@ export function scanMonolithicRegions(source: string, file = '<source>'): FileSc
     })
   }
   const route = isRouteFile(toPosix(file))
-  if (route) findings.push(...routeFindings(parsed, source))
+  const coverage = route ? routeCoverage(parsed, { code: source, file, ctx }) : null
+  if (coverage !== null) findings.push(...coverage.findings)
   findings.sort((a, b) => a.line - b.line)
-  return route
-    ? { regions: parsed.regions.length, route, findings }
-    : { regions: parsed.regions.length, findings }
+  if (coverage === null) return { regions: parsed.regions.length, findings }
+  return {
+    regions: parsed.regions.length,
+    route,
+    uses: coverage.covered + coverage.unmarkedUses,
+    usesInRegion: coverage.covered,
+    useList: coverage.uses,
+    findings,
+  }
 }
 
 function toPosix(path: string): string {
   return path.split(sep).join('/')
+}
+
+function addScan(result: TreeScan, rel: string, scan: FileScan): void {
+  result.files += 1
+  result.regions += scan.regions
+  if (scan.route === true) result.routeRegions += scan.regions
+  result.topLevelUses += scan.uses ?? 0
+  result.topLevelUsesInRegion += scan.usesInRegion ?? 0
+  result.findings.push(...scan.findings.map((finding) => ({ ...finding, file: rel })))
 }
 
 /** Scans every `.svelte` file under `<appRoot>/src` (test support and test files excluded, like the
@@ -334,19 +472,24 @@ export function scanMonolithicRegionsTree(
 ): TreeScan {
   const exempt = new Set(exemptFiles)
   const root = resolve(appRoot)
-  const result: TreeScan = { files: 0, exempted: 0, regions: 0, routeRegions: 0, findings: [] }
-  for (const absolute of walkSvelte(join(root, 'src'))) {
+  const sources = new Map<string, string>()
+  const files = [...walkSvelte(join(root, 'src'))]
+  for (const absolute of files) sources.set(absolute, readFileSync(absolute, 'utf8'))
+  const ctx = newScanContext(root, (path) => sources.get(path))
+  const result: TreeScan = {
+    files: 0,
+    exempted: 0,
+    regions: 0,
+    routeRegions: 0,
+    topLevelUses: 0,
+    topLevelUsesInRegion: 0,
+    findings: [],
+  }
+  for (const absolute of files) {
     const rel = toPosix(relative(root, absolute))
     if (TEST_SUPPORT.test(rel) || TEST_FILE.test(rel)) continue
-    if (exempt.has(rel)) {
-      result.exempted += 1
-      continue
-    }
-    const scan = scanMonolithicRegions(readFileSync(absolute, 'utf8'), absolute)
-    result.files += 1
-    result.regions += scan.regions
-    if (scan.route === true) result.routeRegions += scan.regions
-    result.findings.push(...scan.findings.map((finding) => ({ ...finding, file: rel })))
+    if (exempt.has(rel)) result.exempted += 1
+    else addScan(result, rel, scanMonolithicRegions(sources.get(absolute) ?? '', absolute, ctx))
   }
   return result
 }
