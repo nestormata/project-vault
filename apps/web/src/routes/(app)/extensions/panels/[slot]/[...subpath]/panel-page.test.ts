@@ -1275,11 +1275,23 @@ describe('Story 61.1 AC4: module-data requests go through fetchWithSessionRefres
   const MODULE_DATA_PATTERN = /extensions\/data\b/
   const HELPER_CALL = /\bfetchWithSessionRefresh\s*\(/
 
+  /** Applies `pattern` until the text stops changing, so a removal cannot splice its neighbours
+   * into a new match (e.g. `<!<!---->--`). */
+  function removeAll(text: string, pattern: RegExp): string {
+    let previous: string
+    let current = text
+    do {
+      previous = current
+      current = previous.replaceAll(pattern, '')
+    } while (current !== previous)
+    return current
+  }
+
   function stripComments(source: string): string {
-    return source
-      .replaceAll(/\/\*[\s\S]*?\*\//g, '')
-      .replaceAll(/<!--[\s\S]*?-->/g, '')
-      .replaceAll(/(^|[^:\\])\/\/.*$/gm, '$1')
+    return removeAll(removeAll(source, /\/\*[\s\S]*?\*\//g), /<!--[\s\S]*?-->/g).replaceAll(
+      /(^|[^:\\])\/\/.*$/gm,
+      '$1'
+    )
   }
 
   /** Returns every file whose comment-stripped source names the module-data path in a statement

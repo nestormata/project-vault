@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { cpSync, mkdtempSync, rmSync } from 'node:fs'
+import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -52,9 +52,7 @@ function read(path: string): string {
 
 /** Reads a file from a throwaway fixture directory (outside the repo, so not globbable). */
 function readFixture(dir: string, file: string): string {
-  const result = spawnSync('cat', [join(dir, file)], { encoding: 'utf8' })
-  expect(result.status, result.stderr).toBe(0)
-  return result.stdout
+  return readFileSync(join(dir, file), 'utf8')
 }
 
 const workflowText = read(WORKFLOW_PATH)
