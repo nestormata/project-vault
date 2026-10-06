@@ -49,6 +49,10 @@ export type AuditVerifyResponse = z.infer<typeof AuditVerifyResponseSchema>
 export const AuditEventsQuerySchema = z
   .object({
     actorId: z.uuid().optional(),
+    // Story 71.10 D3: provider + subject are validated as a PAIR in the route (both-or-neither,
+    // exclusive with actorId, caps) so every misuse answers `invalid_actor_filter`.
+    actorProvider: z.string().optional(),
+    actorSubject: z.string().optional(),
     eventType: z.string().min(1).optional(),
     resourceId: z.uuid().optional(),
     projectId: z.uuid().optional(),
@@ -59,6 +63,23 @@ export const AuditEventsQuerySchema = z
   .meta({ id: 'AuditEventsQuery' })
 
 export type AuditEventsQuery = z.infer<typeof AuditEventsQuerySchema>
+
+/** Story 71.10 D2: the public, projected attribution of an extension-written row. Never carries the
+ * stored `userId` or `delegatedBy`. */
+export const AuditEventAttributionSchema = z
+  .object({
+    actor: z
+      .object({
+        kind: z.enum(['pv_verified', 'issuer_attested']),
+        provider: z.string(),
+        subject: z.string(),
+        reason: z.enum(['unlinked', 'not_current_member']).nullable(),
+      })
+      .optional(),
+    occurredAt: z.string().optional(),
+    occurredAtSource: z.enum(['delegation_signed', 'extension']).optional(),
+  })
+  .meta({ id: 'AuditEventAttribution' })
 
 export const AuditEventsResponseSchema = z
   .object({
@@ -72,6 +93,7 @@ export const AuditEventsResponseSchema = z
         projectId: z.uuid().nullable(),
         ipAddress: z.string().nullable(),
         createdAt: z.iso.datetime(),
+        attribution: AuditEventAttributionSchema.optional(),
       })
     ),
     page: z.number().int().min(1),

@@ -12,7 +12,7 @@ function neutralizeFormulaPrefix(value: string): string {
 
 /**
  * RFC 4180 field quoting (D9) — hand-rolled deliberately; no CSV library dependency for this
- * story's small, fixed 8-column export shape (AC-E8c).
+ * story's small, fixed 13-column export shape (AC-E8c).
  */
 function quoteField(value: string): string {
   const neutralized = neutralizeFormulaPrefix(value)
@@ -35,4 +35,11 @@ export const AUDIT_EXPORT_CSV_HEADER = [
   'org_id',
   'project_id',
   'ip_address',
+  // Export format version 2 (Story 71.10): columns APPENDED, never reordered. Consumers parse by
+  // header name. Empty for any row without a stored attribution.
+  'actor_attestation',
+  'actor_attestation_reason',
+  'actor_provider',
+  'actor_subject',
+  'occurred_at',
 ].join(',')

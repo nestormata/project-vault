@@ -65,9 +65,10 @@ describe('toCsvRow (D9, AC-12)', () => {
     expect(toCsvRow(['=1,2'])).toBe('"\'=1,2"')
   })
 
-  it('exports the fixed 8-column header in the AC-E8c order', () => {
+  it('exports the AC-E8c header with the 71-10 columns appended (format version 2)', () => {
     expect(AUDIT_EXPORT_CSV_HEADER).toBe(
-      'timestamp,actor_display_name,event_type,resource_id,resource_type,org_id,project_id,ip_address'
+      'timestamp,actor_display_name,event_type,resource_id,resource_type,org_id,project_id,ip_address,' +
+        'actor_attestation,actor_attestation_reason,actor_provider,actor_subject,occurred_at'
     )
   })
 })

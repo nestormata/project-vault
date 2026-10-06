@@ -1,10 +1,19 @@
-import { and, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, lte, sql, type SQL } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { auditLogEntries, userIdentityTokens } from '@project-vault/db/schema'
+import {
+  actorAttributionCondition,
+  parsePvAttribution,
+  pvAttributionProjection,
+  type PublicAttribution,
+} from './attribution-display.js'
 import { actorDisplayNameFor, batchResolveActorDisplayNames } from './actor-display-name.js'
 
 export type SearchAuditEventsInput = {
   actorId?: string
+  /** Story 71.10 D3: always supplied together (the route enforces both-or-neither). */
+  actorProvider?: string
+  actorSubject?: string
   eventType?: string
   resourceId?: string
   projectId?: string
@@ -23,6 +32,8 @@ export type AuditEventSearchRow = {
   projectId: string | null
   ipAddress: string | null
   createdAt: string
+  /** Story 71.10 D2: present only when a valid `pvAttribution` is stored (key absent otherwise). */
+  attribution?: PublicAttribution
 }
 
 export type SearchAuditEventsResult = {
@@ -41,7 +52,7 @@ export async function resolveActorTokenIds(tx: Tx, actorId: string): Promise<str
   return rows.map((row) => row.id)
 }
 
-type SearchConditions = ReturnType<typeof eq>[]
+type SearchConditions = SQL[]
 
 /** Extracted purely to keep searchAuditEvents()'s own cyclomatic complexity down — each filter
  * dimension is independent and optional (AC-4). */
@@ -54,6 +65,9 @@ function buildNonActorConditions(
   if (input.projectId) conditions.push(eq(auditLogEntries.projectId, input.projectId))
   if (input.from) conditions.push(gte(auditLogEntries.createdAt, new Date(input.from)))
   if (input.to) conditions.push(lte(auditLogEntries.createdAt, new Date(input.to)))
+  if (input.actorProvider !== undefined && input.actorSubject !== undefined) {
+    conditions.push(actorAttributionCondition(input.actorProvider, input.actorSubject))
+  }
   return conditions
 }
 
@@ -90,6 +104,7 @@ export async function searchAuditEvents(
       projectId: auditLogEntries.projectId,
       ipAddress: auditLogEntries.ipAddress,
       createdAt: auditLogEntries.createdAt,
+      pvAttribution: pvAttributionProjection,
     })
     .from(auditLogEntries)
     .where(whereClause)
@@ -102,16 +117,20 @@ export async function searchAuditEvents(
     rows.map((row) => row.actorTokenId)
   )
 
-  const data = rows.map((row) => ({
-    id: row.id,
-    eventType: row.eventType,
-    actorDisplayName: actorDisplayNameFor(row.actorType, row.actorTokenId, displayNameByTokenId),
-    resourceId: row.resourceId,
-    resourceType: row.resourceType,
-    projectId: row.projectId,
-    ipAddress: row.ipAddress,
-    createdAt: row.createdAt.toISOString(),
-  }))
+  const data = rows.map((row): AuditEventSearchRow => {
+    const attribution = parsePvAttribution(row.pvAttribution)
+    return {
+      id: row.id,
+      eventType: row.eventType,
+      actorDisplayName: actorDisplayNameFor(row.actorType, row.actorTokenId, displayNameByTokenId),
+      resourceId: row.resourceId,
+      resourceType: row.resourceType,
+      projectId: row.projectId,
+      ipAddress: row.ipAddress,
+      createdAt: row.createdAt.toISOString(),
+      ...(attribution ? { attribution } : {}),
+    }
+  })
 
   return { data, total }
 }

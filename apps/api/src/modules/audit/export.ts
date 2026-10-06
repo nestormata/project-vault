@@ -6,6 +6,11 @@ import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { runOrgScopedJob } from '../../middleware/rls.js'
 import { AUDIT_VERIFY_MAX_RANGE_DAYS, verifyAuditRange, type VerifyFailedEntry } from './verify.js'
 import { toCsvRow, AUDIT_EXPORT_CSV_HEADER } from './csv.js'
+import {
+  parsePvAttribution,
+  pvAttributionProjection,
+  type PublicAttribution,
+} from './attribution-display.js'
 import { actorDisplayNameFor, batchResolveActorDisplayNames } from './actor-display-name.js'
 
 /** AC-10 — bounds total job runtime, distinct from the per-chunk verify cap. Enforced at the
@@ -49,6 +54,16 @@ export type ExportCsvRow = {
   orgId: string
   projectId: string | null
   ipAddress: string | null
+  /** Story 71.10: the jsonb sub-path projection only, never the whole payload. */
+  pvAttribution: unknown
+}
+
+/** The five appended columns (format version 2), empty when the row has no attribution. */
+function attributionFields(attribution: PublicAttribution | undefined): (string | null)[] {
+  const occurredAt = attribution?.occurredAt ?? null
+  const actor = attribution?.actor
+  if (!actor) return [null, null, null, null, occurredAt]
+  return [actor.kind, actor.reason, actor.provider, actor.subject, occurredAt]
 }
 
 /** AC-12 — pure CSV-building function, independently unit-testable from the DB/verify wiring. */
@@ -62,6 +77,7 @@ export function buildExportCsv(
     orgId: string
     projectId: string | null
     ipAddress: string | null
+    attribution?: PublicAttribution
   }[],
   summary: { rowsChecked: number; passed: number; failedCount: number; verifiedAt: string } | null
 ): string {
@@ -77,6 +93,7 @@ export function buildExportCsv(
         row.orgId,
         row.projectId,
         row.ipAddress,
+        ...attributionFields(row.attribution),
       ])
     )
   }
@@ -106,6 +123,7 @@ async function fetchExportRows(
       orgId: auditLogEntries.orgId,
       projectId: auditLogEntries.projectId,
       ipAddress: auditLogEntries.ipAddress,
+      pvAttribution: pvAttributionProjection,
     })
     .from(auditLogEntries)
     .where(and(gte(auditLogEntries.createdAt, from), lte(auditLogEntries.createdAt, to)))
@@ -197,6 +215,7 @@ export async function runAuditExport(input: { exportId: string; orgId: string })
         orgId: r.orgId,
         projectId: r.projectId,
         ipAddress: r.ipAddress,
+        attribution: parsePvAttribution(r.pvAttribution),
       })),
       row.includeIntegrityReport ? { rowsChecked, passed, failedCount, verifiedAt } : null
     )
