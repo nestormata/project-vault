@@ -4,6 +4,8 @@ import { AUDIT_VERIFY_MAX_RANGE_DAYS } from './verify.js'
 
 const RANGE_START = '2026-01-01T00:00:00.000Z'
 const SAMPLE_IP = '203.0.113.10'
+const OLD_HEADER =
+  'timestamp,actor_display_name,event_type,resource_id,resource_type,org_id,project_id,ip_address'
 
 describe('chunkExportRange (AC-10)', () => {
   it('produces a single chunk for a range within the per-chunk cap', () => {
@@ -26,9 +28,9 @@ describe('chunkExportRange (AC-10)', () => {
       expect(days).toBeLessThanOrEqual(AUDIT_VERIFY_MAX_RANGE_DAYS)
     }
     // No gaps: each chunk's end matches the next chunk's start.
-    for (let i = 1; i < chunks.length; i += 1) {
-      expect(chunks[i]?.[0]).toEqual(chunks[i - 1]?.[1])
-    }
+    expect(chunks.slice(1).map(([chunkFrom]) => chunkFrom)).toEqual(
+      chunks.slice(0, -1).map(([, chunkTo]) => chunkTo)
+    )
   })
 
   it('handles a zero-width range as a single (degenerate) chunk', () => {
@@ -57,10 +59,12 @@ describe('buildExportCsv (AC-12)', () => {
 
     const lines = csv.trimEnd().split('\n')
     expect(lines[0]).toBe(
-      'timestamp,actor_display_name,event_type,resource_id,resource_type,org_id,project_id,ip_address'
+      OLD_HEADER +
+        ',actor_attestation,actor_attestation_reason,actor_provider,actor_subject,occurred_at'
     )
+    // Golden: a non-attributed row keeps its first eight fields byte-identical, then five empty ones.
     expect(lines[1]).toBe(
-      '2026-07-03T14:22:01.000Z,Alice Chen,credential.value_revealed,c3d4,credential,e5f6,proj1,203.0.113.10'
+      '2026-07-03T14:22:01.000Z,Alice Chen,credential.value_revealed,c3d4,credential,e5f6,proj1,203.0.113.10,,,,,'
     )
     expect(lines[2]).toBe('--- Integrity Verification Summary ---')
     expect(lines[3]).toBe('rows_checked,1,passed,1,failed,0,verified_at,2026-07-04T18:32:10.104Z')
@@ -103,8 +107,120 @@ describe('buildExportCsv (AC-12)', () => {
     )
     const lines = csv.trimEnd().split('\n')
     expect(lines[1]).toBe(
-      '2026-07-03T16:40:44.000Z,"Chen, Alice ""AC""",project.archived,,,e5f6,proj1,203.0.113.10'
+      '2026-07-03T16:40:44.000Z,"Chen, Alice ""AC""",project.archived,,,e5f6,proj1,203.0.113.10,,,,,'
     )
+  })
+})
+
+/** Minimal RFC 4180 reader so the tests can prove a file parses back to the same column count. */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = []
+  let field = ''
+  let quoted = false
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text.charAt(i)
+    if (quoted) {
+      if (ch === '"' && text.charAt(i + 1) === '"') {
+        field += '"'
+        i += 1
+      } else if (ch === '"') quoted = false
+      else field += ch
+    } else if (ch === '"') quoted = true
+    else if (ch === ',') {
+      row.push(field)
+      field = ''
+    } else if (ch === '\n') {
+      row.push(field)
+      rows.push(row)
+      row = []
+      field = ''
+    } else field += ch
+  }
+  return rows
+}
+
+const BASE_ROW = {
+  createdAt: '2026-07-03T15:00:00.000Z',
+  actorDisplayName: 'extension',
+  eventType: 'ext.cm.thing',
+  resourceId: null,
+  resourceType: null,
+  orgId: 'e5f6',
+  projectId: null,
+  ipAddress: null,
+}
+
+describe('buildExportCsv attribution columns (71-10 AC-3)', () => {
+  it('writes the three attestation classes into the five trailing columns', () => {
+    const csv = buildExportCsv(
+      [
+        {
+          ...BASE_ROW,
+          attribution: {
+            actor: {
+              kind: 'issuer_attested',
+              provider: 'workos',
+              subject: 'user_1',
+              reason: 'unlinked',
+            },
+            occurredAt: '2026-07-03T13:00:00.000Z',
+            occurredAtSource: 'delegation_signed',
+          },
+        },
+        {
+          ...BASE_ROW,
+          attribution: {
+            actor: {
+              kind: 'issuer_attested',
+              provider: 'workos',
+              subject: 'user_2',
+              reason: 'not_current_member',
+            },
+          },
+        },
+        {
+          ...BASE_ROW,
+          attribution: {
+            actor: { kind: 'pv_verified', provider: 'workos', subject: 'user_3', reason: null },
+            occurredAt: '2026-07-03T12:00:00.000Z',
+            occurredAtSource: 'extension',
+          },
+        },
+      ],
+      null
+    )
+    const [, ...rows] = parseCsv(csv)
+    expect(rows.map((r) => r.slice(8))).toEqual([
+      ['issuer_attested', 'unlinked', 'workos', 'user_1', '2026-07-03T13:00:00.000Z'],
+      ['issuer_attested', 'not_current_member', 'workos', 'user_2', ''],
+      ['pv_verified', '', 'workos', 'user_3', '2026-07-03T12:00:00.000Z'],
+    ])
+    for (const r of rows) expect(r).toHaveLength(13)
+  })
+
+  it('neutralises formula prefixes and quotes commas, quotes and CR/LF in provider and subject', () => {
+    const subjects = ['=HYPERLINK("http://x","y")', '+1', '-1', '@SUM(1)', 'a,b "c"\r\nd']
+    const csv = buildExportCsv(
+      subjects.map((subject) => ({
+        ...BASE_ROW,
+        attribution: {
+          actor: {
+            kind: 'issuer_attested' as const,
+            provider: subject,
+            subject,
+            reason: 'unlinked' as const,
+          },
+        },
+      })),
+      null
+    )
+    const [, ...rows] = parseCsv(csv)
+    expect(rows).toHaveLength(subjects.length)
+    const neutralised = (subject: string) => (/^[=+\-@]/.test(subject) ? `'${subject}` : subject)
+    for (const r of rows) expect(r).toHaveLength(13)
+    expect(rows.map((r) => r[10])).toEqual(subjects.map(neutralised))
+    expect(rows.map((r) => r[11])).toEqual(subjects.map(neutralised))
   })
 })
 

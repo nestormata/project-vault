@@ -30,6 +30,7 @@ import {
 } from './schema.js'
 import { verifyAuditRange, verifyRouteErrorResponse } from './verify.js'
 import { searchAuditEvents } from './search.js'
+import { isValidActorFilter } from './attribution-display.js'
 import { AUDIT_EXPORT_MAX_RANGE_DAYS } from './export.js'
 import { configureForwarding } from './forwarding.js'
 import { configureRetention } from './retention.js'
@@ -192,7 +193,26 @@ export function auditRoutes(fastify: FastifyApp): Promise<void> {
       const secureCtx = ctx as SecureRouteContext
       const parsed = AuditEventsQuerySchema.safeParse(req.query)
       if (!parsed.success) return reply.status(422).send(validationError(parsed.error, 'query'))
-      const { actorId, eventType, resourceId, projectId, from, to, page, limit } = parsed.data
+      const {
+        actorId,
+        actorProvider,
+        actorSubject,
+        eventType,
+        resourceId,
+        projectId,
+        from,
+        to,
+        page,
+        limit,
+      } = parsed.data
+
+      if (!isValidActorFilter({ actorId, actorProvider, actorSubject })) {
+        return reply.status(422).send({
+          code: 'invalid_actor_filter',
+          message:
+            'actorProvider and actorSubject must be given together, within length limits, and not combined with actorId',
+        })
+      }
 
       if (from && to && new Date(from).getTime() > new Date(to).getTime()) {
         return reply
@@ -205,6 +225,8 @@ export function auditRoutes(fastify: FastifyApp): Promise<void> {
 
       const result = await searchAuditEvents(secureCtx.tx, {
         actorId,
+        actorProvider,
+        actorSubject,
         eventType,
         resourceId,
         projectId,
@@ -221,6 +243,8 @@ export function auditRoutes(fastify: FastifyApp): Promise<void> {
         resourceType: 'audit_log_entries',
         payload: {
           actorId,
+          actorProvider,
+          actorSubject,
           eventType,
           resourceId,
           projectId,

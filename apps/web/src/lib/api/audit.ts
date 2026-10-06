@@ -2,6 +2,19 @@ import { apiFetch, ApiClientError } from './client.js'
 
 // --- Search (AC group B) --------------------------------------------------------------------
 
+/** Story 71.10: the public projection of an extension-written row's `pvAttribution` (the API omits
+ * the key entirely for rows without one). Never carries a PV user id or delegation internals. */
+export type AuditEventAttribution = {
+  actor?: {
+    kind: 'pv_verified' | 'issuer_attested'
+    provider: string
+    subject: string
+    reason: 'unlinked' | 'not_current_member' | null
+  }
+  occurredAt?: string
+  occurredAtSource?: 'delegation_signed' | 'extension'
+}
+
 export type AuditEventItem = {
   id: string
   eventType: string
@@ -11,10 +24,13 @@ export type AuditEventItem = {
   projectId: string | null
   ipAddress: string | null
   createdAt: string
+  attribution?: AuditEventAttribution
 }
 
 export type ListAuditEventsQuery = {
   actorId?: string
+  actorProvider?: string
+  actorSubject?: string
   eventType?: string
   resourceId?: string
   projectId?: string
@@ -48,12 +64,19 @@ async function fetchJsonEnvelope<T>(fetchFn: typeof fetch, path: string): Promis
 
 export function listAuditEvents(fetchFn: typeof fetch, query: ListAuditEventsQuery = {}) {
   const params = new URLSearchParams()
-  if (query.actorId) params.set('actorId', query.actorId)
-  if (query.eventType) params.set('eventType', query.eventType)
-  if (query.resourceId) params.set('resourceId', query.resourceId)
-  if (query.projectId) params.set('projectId', query.projectId)
-  if (query.from) params.set('from', query.from)
-  if (query.to) params.set('to', query.to)
+  const filters: Record<string, string | undefined> = {
+    actorId: query.actorId,
+    actorProvider: query.actorProvider,
+    actorSubject: query.actorSubject,
+    eventType: query.eventType,
+    resourceId: query.resourceId,
+    projectId: query.projectId,
+    from: query.from,
+    to: query.to,
+  }
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) params.set(key, value)
+  }
   params.set('page', String(query.page ?? 1))
   params.set('limit', String(query.limit ?? 20))
   return fetchJsonEnvelope<ListAuditEventsResult>(

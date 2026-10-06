@@ -199,7 +199,8 @@ describe('audit export routes', () => {
     expect(downloadRes.headers['content-disposition']).toContain(`audit-export-${jobId}.csv`)
     const csv = (downloadRes as unknown as { payload: string }).payload
     expect(csv.split('\n')[0]).toBe(
-      'timestamp,actor_display_name,event_type,resource_id,resource_type,org_id,project_id,ip_address'
+      'timestamp,actor_display_name,event_type,resource_id,resource_type,org_id,project_id,ip_address,' +
+        'actor_attestation,actor_attestation_reason,actor_provider,actor_subject,occurred_at'
     )
     expect(csv).toContain('--- Integrity Verification Summary ---')
   }, 20_000)

@@ -5,6 +5,7 @@
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { buildSearchSubmitHandler } from '$lib/audit/search-form.js'
   import { buildDateRangePart } from '$lib/audit/date-range.js'
+  import { m } from '$lib/paraglide/messages.js'
   import type { SettingsAuditResultsPointProps } from '$lib/components/composition/injection-points.js'
 
   // Story 69.4: the Search heading and filter form of the settings audit page. `children` is the
@@ -32,6 +33,14 @@
     const parts: string[] = []
     if (active.eventType) parts.push(`event type = ${active.eventType}`)
     if (active.actorId) parts.push(`actor = ${active.actorId}`)
+    if (active.actorProvider && active.actorSubject) {
+      parts.push(
+        m.audit_filter_summary_attributed({
+          provider: active.actorProvider,
+          subject: active.actorSubject,
+        })
+      )
+    }
     if (active.resourceId) parts.push(`resource = ${active.resourceId}`)
     if (active.projectId) parts.push(`project = ${active.projectId}`)
     const rangePart = buildDateRangePart(active)
@@ -65,6 +74,30 @@
       aria-describedby="audit-actor-help"
     />
     <FormHelpText id="audit-actor-help" kind="text" />
+  </label>
+  <label class="flex flex-col text-sm text-slate-700" for="filter-actorProvider">
+    {m.audit_filter_actor_provider_label()}
+    <input
+      id="filter-actorProvider"
+      name="actorProvider"
+      type="text"
+      class="rounded-lg border border-slate-300 px-2 py-1"
+      value={filters?.actorProvider ?? ''}
+      aria-describedby="audit-actor-provider-help"
+    />
+    <FormHelpText id="audit-actor-provider-help" text={m.audit_filter_actor_provider_help()} />
+  </label>
+  <label class="flex flex-col text-sm text-slate-700" for="filter-actorSubject">
+    {m.audit_filter_actor_subject_label()}
+    <input
+      id="filter-actorSubject"
+      name="actorSubject"
+      type="text"
+      class="rounded-lg border border-slate-300 px-2 py-1"
+      value={filters?.actorSubject ?? ''}
+      aria-describedby="audit-actor-subject-help"
+    />
+    <FormHelpText id="audit-actor-subject-help" text={m.audit_filter_actor_subject_help()} />
   </label>
   <label class="flex flex-col text-sm text-slate-700" for="filter-resourceId">
     Resource ID

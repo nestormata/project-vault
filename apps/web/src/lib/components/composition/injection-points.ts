@@ -69,7 +69,17 @@ export interface SettingsAuditPointProps extends StandardPointProps {
 
 export interface SettingsAuditResultsPointProps extends SettingsAuditPointProps {
   filters: Partial<
-    Record<'actorId' | 'eventType' | 'resourceId' | 'projectId' | 'from' | 'to', string>
+    Record<
+      | 'actorId'
+      | 'actorProvider'
+      | 'actorSubject'
+      | 'eventType'
+      | 'resourceId'
+      | 'projectId'
+      | 'from'
+      | 'to',
+      string
+    >
   >
   events: readonly AuditEventItem[]
   page: number

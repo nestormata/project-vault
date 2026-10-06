@@ -133,4 +133,38 @@ describe('/settings/audit +page.server.ts', () => {
       expect(result.errorMessage).toBeTruthy()
     }
   })
+
+  it('71-10 AC-4: round-trips actorProvider and actorSubject from the URL to the API query', async () => {
+    requireUserMock.mockReturnValue({ orgRole: 'owner' } as ReturnType<typeof requireUser>)
+    listAuditEventsMock.mockResolvedValue(SAMPLE_RESULT)
+
+    const result = expectLoaded(
+      await load(makeEvent({ actorProvider: 'workos', actorSubject: 'user_01X' }))
+    )
+
+    expect(listAuditEventsMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actorProvider: 'workos', actorSubject: 'user_01X' })
+    )
+    if (result.allowed) {
+      expect(result.filters).toMatchObject({ actorProvider: 'workos', actorSubject: 'user_01X' })
+    }
+  })
+
+  it('71-10 AC-4: a 422 invalid_actor_filter is surfaced through errorMessage (AuditErrorBanner)', async () => {
+    requireUserMock.mockReturnValue({ orgRole: 'owner' } as ReturnType<typeof requireUser>)
+    listAuditEventsMock.mockRejectedValue(
+      new ApiClientError(
+        422,
+        { code: 'invalid_actor_filter', message: 'Provide both actorProvider and actorSubject' },
+        'Provide both actorProvider and actorSubject'
+      )
+    )
+
+    const result = expectLoaded(await load(makeEvent({ actorProvider: 'workos' })))
+
+    if (result.allowed) {
+      expect(result.errorMessage).toBe('Provide both actorProvider and actorSubject')
+    }
+  })
 })

@@ -80,3 +80,115 @@ describe('AuditResultsTable resource rendering (Story 62-1 AC-3)', () => {
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(5)
   })
 })
+
+describe('AuditResultsTable issuer-attested actors (Story 71-10 AC-4)', () => {
+  const ATTESTED = {
+    actor: {
+      kind: 'issuer_attested' as const,
+      provider: 'workos',
+      subject: 'Nestor Mata',
+      reason: 'unlinked' as const,
+    },
+  }
+
+  function attributed(id: string, attribution: AuditEventItem['attribution']): AuditEventItem {
+    return event({
+      id,
+      eventType: 'ext.com.acme.thing',
+      actorDisplayName: 'extension',
+      attribution,
+    })
+  }
+
+  it('shows a text badge, provider, subject and the reason in words; the actor name stays "extension"', () => {
+    const { container } = renderTable([attributed('a1', ATTESTED)])
+    const marker = container.querySelector('[data-testid="actor-attestation"]') as HTMLElement
+    expect(marker).not.toBeNull()
+    expect(marker.textContent).toContain('Attested by issuer')
+    expect(marker.textContent).toContain('workos')
+    expect(marker.textContent).toContain('Nestor Mata')
+    expect(marker.textContent).toContain('no PV account')
+    const actorCell = screen.getByText('extension')
+    expect(actorCell.tagName).toBe('TD')
+    expect(actorCell.contains(marker)).toBe(true)
+    expect(container.querySelectorAll('a')).toHaveLength(0)
+  })
+
+  it('states "no longer a member" for not_current_member', () => {
+    renderTable([
+      attributed('a2', {
+        actor: { ...ATTESTED.actor, reason: 'not_current_member' },
+      }),
+    ])
+    expect(screen.getByText(/no longer a member/)).toBeTruthy()
+  })
+
+  it('shows the quieter delegated line, and no issuer badge, for a pv_verified delegated row', () => {
+    renderTable([
+      attributed('a3', {
+        actor: { kind: 'pv_verified', provider: 'workos', subject: 'user_9', reason: null },
+      }),
+    ])
+    expect(screen.getByText('Verified by PV, delegated by service')).toBeTruthy()
+    expect(screen.queryByText('Attested by issuer')).toBeNull()
+  })
+
+  it('renders a row without attribution with only the actor name in its actor cell', () => {
+    const { container } = renderTable([event({ id: 'p1' })])
+    expect(container.querySelector('[data-testid="actor-attestation"]')).toBeNull()
+    const cell = screen.getByText('Alice')
+    expect(cell.tagName).toBe('TD')
+    expect(cell.children).toHaveLength(0)
+    expect(container.textContent).not.toMatch(/Attested by issuer|Verified by PV/)
+  })
+
+  it.each([
+    ['an img tag', '<img src=x onerror=alert(1)>'],
+    ['a closing code tag and bold', '</code><b>x</b>'],
+  ])('renders hostile %s as inert text', (_n, subject) => {
+    const { container } = renderTable([
+      attributed('h1', { actor: { ...ATTESTED.actor, provider: 'p', subject } }),
+    ])
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('b')).toBeNull()
+    expect(container.textContent).toContain(subject)
+  })
+
+  it('wraps a 256-character unbroken subject instead of widening the page', () => {
+    const subject = 'x'.repeat(256)
+    const { container } = renderTable([attributed('h2', { actor: { ...ATTESTED.actor, subject } })])
+    const marker = container.querySelector('[data-testid="actor-attestation"]') as HTMLElement
+    expect(marker.textContent).toContain(subject)
+    expect(marker.className).toMatch(/break-all|\[overflow-wrap:anywhere\]/)
+  })
+
+  it('shows occurrence time only when it differs from createdAt by more than one second', () => {
+    const base = '2026-10-05T00:00:00.000Z'
+    const { container, unmount } = renderTable([
+      attributed('t1', {
+        ...ATTESTED,
+        occurredAt: '2026-10-04T23:00:00.000Z',
+        occurredAtSource: 'delegation_signed',
+      }),
+    ])
+    expect(container.textContent).toMatch(/Occurred .* \(issuer-attested\)/)
+    unmount()
+    const declared = renderTable([
+      attributed('t2', {
+        ...ATTESTED,
+        occurredAt: '2026-10-04T23:00:00.000Z',
+        occurredAtSource: 'extension',
+      }),
+    ])
+    expect(declared.container.textContent).toMatch(/Occurred .* \(declared by extension\)/)
+    declared.unmount()
+    const close = renderTable([
+      attributed('t3', {
+        ...ATTESTED,
+        occurredAt: new Date(Date.parse(base) - 500).toISOString(),
+        occurredAtSource: 'delegation_signed',
+      }),
+    ])
+    expect(close.container.textContent).not.toContain('Occurred')
+  })
+})

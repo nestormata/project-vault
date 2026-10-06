@@ -40,3 +40,18 @@ describe('user-generated content is never re-parsed as message syntax (AC 4 edge
     ).not.toThrow()
   })
 })
+
+/** Story 71.10 AC-4: an issuer-attested actor's provider and subject are external, attacker-influenced
+ * text; they only ever enter a message as interpolation arguments. */
+describe('issuer-attested actor text is never re-parsed as message syntax (71-10)', () => {
+  it.each(['en', 'es'] as const)(
+    'renders ICU-like provider and subject literally in %s',
+    (locale) => {
+      const result = m.audit_attr_identity(
+        { provider: '{count} workos', subject: "{{'x'}} <b>Nestor</b>" },
+        { locale }
+      )
+      expect(result).toBe("{count} workos: {{'x'}} <b>Nestor</b>")
+    }
+  )
+})

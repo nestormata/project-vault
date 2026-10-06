@@ -229,5 +229,18 @@
   "nav_project_domains": "Domains",
   "nav_project_endpoints": "Endpoints",
   "nav_project_status_page": "Status Page",
-  "shell_sign_out": "Sign out"
+  "shell_sign_out": "Sign out",
+  "audit_attr_badge_issuer": "Attested by issuer",
+  "audit_attr_reason_unlinked": "no PV account",
+  "audit_attr_reason_not_member": "no longer a member",
+  "audit_attr_verified_delegated": "Verified by PV, delegated by service",
+  "audit_attr_identity": "{provider}: {subject}",
+  "audit_attr_occurred_signed": "Occurred {time} (issuer-attested)",
+  "audit_attr_occurred_declared": "Occurred {time} (declared by extension)",
+  "audit_filter_actor_provider_label": "Actor provider",
+  "audit_filter_actor_subject_label": "Actor subject",
+  "audit_filter_actor_provider_help": "The identity provider name of an external actor, for example the provider shown next to an \"Attested by issuer\" event. Use together with the actor subject.",
+  "audit_filter_actor_subject_help": "The external actor's subject, matched exactly (case-sensitive). Use together with the actor provider; it cannot be combined with Actor ID.",
+  "audit_filter_actor_pair_required": "Enter both the actor provider and the actor subject, or leave both empty.",
+  "audit_filter_summary_attributed": "external actor = {provider}: {subject}"
 }

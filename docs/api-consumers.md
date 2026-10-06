@@ -241,6 +241,39 @@ These clients ship in this repository. The machine-user clients use the schemes 
     only the advisory notices, never the request or the withdrawn refusal. Details:
     [`packages/cli/README.md` "Version check"](../packages/cli/README.md#version-check-story-436).
 
+## Audit log: attributed actors and export format version 2
+
+Rows written by an extension on behalf of an external actor (a service-delegated request) carry a
+host-verified attribution. PV shows it as an _external_ actor; it never resolves it to a PV user's name.
+
+**`GET /api/v1/org/audit/events`** (owner only) adds an optional `attribution` object to a row, present only
+when a valid attribution is stored (the key is absent, not `null`, for every other row):
+
+| Field                                         | Values                                                                                                                                                                                              |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `attribution.actor.kind`                      | `pv_verified` (PV matched the actor to a current member) or `issuer_attested` (PV cannot verify the actor; the issuer vouches for it)                                                               |
+| `attribution.actor.reason`                    | `null` for `pv_verified`; `unlinked` (no PV account) or `not_current_member` for `issuer_attested`                                                                                                  |
+| `attribution.actor.provider`, `.subject`      | The external identity, as text (provider up to 64, subject up to 256 characters)                                                                                                                    |
+| `attribution.occurredAt`, `.occurredAtSource` | When the event happened, and whether that time was `delegation_signed` (issuer-attested) or `extension` (declared by the extension). Display only: ordering, paging and `from`/`to` use `createdAt` |
+
+`actorDisplayName` stays `extension` for these rows. The delegation internals (issuer, key id, assertion id) and
+the stored PV user id are never returned. A stored attribution that does not parse (unknown version, odd
+shape, control or bidi characters in provider or subject) is shown like a row without one.
+
+**Filter by external actor:** `?actorProvider=<provider>&actorSubject=<subject>` returns the rows attributed to
+exactly that external actor (exact, case-sensitive match, all three classes). Both parameters are required
+together, and they cannot be combined with `actorId` (the PV-user filter, which never returns delegated rows):
+any misuse answers `422` with `code: invalid_actor_filter`.
+
+**CSV export, format version 2.** `POST /api/v1/org/audit/export` produces the same file as before with five
+columns **appended** after `ip_address`: `actor_attestation` (`pv_verified`, `issuer_attested`, or empty),
+`actor_attestation_reason` (`unlinked`, `not_current_member`, or empty), `actor_provider`, `actor_subject`,
+`occurred_at` (ISO 8601 or empty). The first eight columns and their values are unchanged, and rows without an
+attribution have five empty trailing fields. **Parse by header name, not by position**: further columns may
+be appended in later versions. Provider and subject are neutralised against spreadsheet formulas (a leading
+`=`, `+`, `-` or `@` gets a `'` prefix) and RFC 4180 quoted. The integrity verification that precedes every
+export is unchanged.
+
 ## See also
 
 - [`machine-users.md`](machine-users.md) — machine users, API keys, and the CI/CD retrieval flow.
