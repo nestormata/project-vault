@@ -83,17 +83,17 @@ Every reference fixture in the Project Vault repository (`fixtures/mock-*`) does
 `manifest.capabilities` is a non-empty array of `ExtensionCapability` literals. Declaring a
 capability is what makes the matching hook legal in the object returned by `hooksFactory()`.
 
-| Capability | Declares that `hooksFactory()` may return |
-|---|---|
-| `auth-provider` | `authStrategy` — an external identity provider PV delegates login to. |
-| `notification-channel` | `notificationChannel` — an additional notification destination. |
-| `ui-panel` | `uiPanel` — server-rendered HTML panels composed into PV's shell. Also enables the optional `uiPanelSlots` and `moduleActions` manifest fields. This is the legacy runtime UI extension API (HTML panels), which is deprecated and frozen. The `moduleDataRoutes` manifest field (and its `moduleData` hook) is **not** gated on this capability: it is a separate surface, deprecated and frozen in its own right (see below). |
-| `capability-gate` | `capabilityGate` — an external entitlement decision for gated capabilities. |
-| `audit-event-source` | Permission to call `host.auditEventSource.writeAuditEvent()`. This is an inverted hook: PV implements it, the extension calls it, so nothing is returned from `hooksFactory()` for it. |
-| `project-lifecycle` | `projectLifecycle` — a `ProjectCreatePolicy` that may veto project creation. |
-| `delivery-provider` | `deliveryProvider` — per-channel delivery implementations replacing PV's built-in transport for those channels. |
-| `project-archive-notify` | `projectArchiveNotifier` — a non-vetoing notification of an already-committed project archive. Deliberately independent of `project-lifecycle`, so an extension that only wants archive notifications is not forced to implement `onBeforeCreateProject`. |
-| `scheduled-task` | `scheduledTask` — a dispatch target for manifest-declared periodic background work. Also enables the `scheduledTasks` manifest field (`name`/`intervalMinutes`/`handler`). PV's own job runner invokes `onScheduledTask` once per org that has the extension active, on each task's declared interval, tracked server-side (never application wall-clock time). |
+| Capability               | Declares that `hooksFactory()` may return                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth-provider`          | `authStrategy` — an external identity provider PV delegates login to.                                                                                                                                                                                                                                                                                                                                                           |
+| `notification-channel`   | `notificationChannel` — an additional notification destination.                                                                                                                                                                                                                                                                                                                                                                 |
+| `ui-panel`               | `uiPanel` — server-rendered HTML panels composed into PV's shell. Also enables the optional `uiPanelSlots` and `moduleActions` manifest fields. This is the legacy runtime UI extension API (HTML panels), which is deprecated and frozen. The `moduleDataRoutes` manifest field (and its `moduleData` hook) is **not** gated on this capability: it is a separate surface, deprecated and frozen in its own right (see below). |
+| `capability-gate`        | `capabilityGate` — an external entitlement decision for gated capabilities.                                                                                                                                                                                                                                                                                                                                                     |
+| `audit-event-source`     | Permission to call `host.auditEventSource.writeAuditEvent()`. This is an inverted hook: PV implements it, the extension calls it, so nothing is returned from `hooksFactory()` for it.                                                                                                                                                                                                                                          |
+| `project-lifecycle`      | `projectLifecycle` — a `ProjectCreatePolicy` that may veto project creation.                                                                                                                                                                                                                                                                                                                                                    |
+| `delivery-provider`      | `deliveryProvider` — per-channel delivery implementations replacing PV's built-in transport for those channels.                                                                                                                                                                                                                                                                                                                 |
+| `project-archive-notify` | `projectArchiveNotifier` — a non-vetoing notification of an already-committed project archive. Deliberately independent of `project-lifecycle`, so an extension that only wants archive notifications is not forced to implement `onBeforeCreateProject`.                                                                                                                                                                       |
+| `scheduled-task`         | `scheduledTask` — a dispatch target for manifest-declared periodic background work. Also enables the `scheduledTasks` manifest field (`name`/`intervalMinutes`/`handler`). PV's own job runner invokes `onScheduledTask` once per org that has the extension active, on each task's declared interval, tracked server-side (never application wall-clock time).                                                                 |
 
 **UI panels are the legacy runtime UI extension API: deprecated and frozen.** The `ui-panel`
 capability and everything it gates (`uiPanel`, `UIPanelResult` HTML strings, `uiPanelSlots`,
@@ -187,18 +187,18 @@ export const apiRoutesHooks: ApiRoutesHooks = {
 `ExtensionHooks` is a single bag of optional fields. Every one of them is optional; return only
 the hooks whose capability you declared.
 
-| Hook field | Type | Purpose |
-|---|---|---|
-| `authStrategy` | `AuthStrategy` | `onAuthenticate(credential)` → `AuthResult`. |
-| `notificationChannel` | `NotificationChannel` | Receives a `NotificationPayload` for a channel this extension owns. |
-| `uiPanel` | `UIPanel` | `onRenderPanel(context)` → `UIPanelResult` (HTML the host sanitizes and renders inline). |
-| `capabilityGate` | `CapabilityGate` | `onCheckCapability(context)` → `CapabilityDecision`. Fails closed on throw, timeout, or a malformed decision. |
-| `projectLifecycle` | `ProjectCreatePolicy` | `onBeforeCreateProject` — may veto creation. |
-| `projectArchiveNotifier` | `ProjectArchiveNotifier` | Dispatched by a background worker after a project archive commits; never in-request, never vetoing. |
-| `moduleAction` | `ModuleAction` | Dispatch target for panel actions. Legal only when the manifest declares `moduleActions`. |
-| `moduleData` | `Record<string, ModuleDataRouteHandler>` | Keyed by the exact `"GET <path>"` string of each `moduleDataRoutes` entry; every declared route must have exactly one handler. Deprecated and frozen with `moduleDataRoutes`. |
-| `deliveryProvider` | `Record<string, DeliveryProvider>` | Keyed by notification channel name. Registering the same channel key twice in one process is a loud conflict error, not last-one-wins. `send()` is retried only after it rejects, never after it resolves; `DeliveryProviderSendPayload.queueRowId` is the idempotency key to deduplicate on. Since 3.32.0: optional `html` on the payload, `DeliveryProviderPermanentError` (no retry, row `failed`) and `webhookRateLimit`. |
-| `scheduledTask` | `ScheduledTaskHooks` | `onScheduledTask(context)` — dispatch target for every due `(org, task)` tuple across this extension's declared `scheduledTasks`. `context` is `{ organizationId, taskName, hostServices }` only — no `Tx`, no raw DB handle; `hostServices` is the same instance bound at load time, safe to reuse with no live request in flight. |
+| Hook field               | Type                                     | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------ | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `authStrategy`           | `AuthStrategy`                           | `onAuthenticate(credential)` → `AuthResult`.                                                                                                                                                                                                                                                                                                                                                                                  |
+| `notificationChannel`    | `NotificationChannel`                    | Receives a `NotificationPayload` for a channel this extension owns.                                                                                                                                                                                                                                                                                                                                                           |
+| `uiPanel`                | `UIPanel`                                | `onRenderPanel(context)` → `UIPanelResult` (HTML the host sanitizes and renders inline).                                                                                                                                                                                                                                                                                                                                      |
+| `capabilityGate`         | `CapabilityGate`                         | `onCheckCapability(context)` → `CapabilityDecision`. Fails closed on throw, timeout, or a malformed decision.                                                                                                                                                                                                                                                                                                                 |
+| `projectLifecycle`       | `ProjectCreatePolicy`                    | `onBeforeCreateProject` — may veto creation.                                                                                                                                                                                                                                                                                                                                                                                  |
+| `projectArchiveNotifier` | `ProjectArchiveNotifier`                 | Dispatched by a background worker after a project archive commits; never in-request, never vetoing.                                                                                                                                                                                                                                                                                                                           |
+| `moduleAction`           | `ModuleAction`                           | Dispatch target for panel actions. Legal only when the manifest declares `moduleActions`.                                                                                                                                                                                                                                                                                                                                     |
+| `moduleData`             | `Record<string, ModuleDataRouteHandler>` | Keyed by the exact `"GET <path>"` string of each `moduleDataRoutes` entry; every declared route must have exactly one handler. Deprecated and frozen with `moduleDataRoutes`.                                                                                                                                                                                                                                                 |
+| `deliveryProvider`       | `Record<string, DeliveryProvider>`       | Keyed by notification channel name. Registering the same channel key twice in one process is a loud conflict error, not last-one-wins. `send()` is retried only after it rejects, never after it resolves; `DeliveryProviderSendPayload.queueRowId` is the idempotency key to deduplicate on. Since 3.32.0: optional `html` on the payload, `DeliveryProviderPermanentError` (no retry, row `failed`) and `webhookRateLimit`. |
+| `scheduledTask`          | `ScheduledTaskHooks`                     | `onScheduledTask(context)` — dispatch target for every due `(org, task)` tuple across this extension's declared `scheduledTasks`. `context` is `{ organizationId, taskName, hostServices }` only — no `Tx`, no raw DB handle; `hostServices` is the same instance bound at load time, safe to reuse with no live request in flight.                                                                                           |
 
 **Missed-tick alerting (operator-side, no opt-in):** PV raises a platform-operator alert (an
 `extension_scheduled_task.missed` admin alert, a `/ready` warning and the
@@ -207,20 +207,54 @@ attempt for `max(N × intervalMinutes, 10)` minutes (`N` = `SCHEDULED_TASK_MISSE
 default 3), and clears it once the task is invoked again. An attempt counts whether your handler
 succeeds or fails, so a failing handler never triggers this alert; nothing in this package changes.
 
+## Fault containment: emitters and background promises
+
+Your extension runs inside the PV API process. Node treats an `'error'` event on an emitter with no
+`'error'` listener, and a rejected promise nobody handles, as fatal for the whole process, so one
+extension fault would otherwise take every tenant down. The contract:
+
+- Every long-lived emitter you create (a `pg.Pool`, socket, stream or client) MUST have an `'error'`
+  listener attached when it is created.
+- Every background promise (fire-and-forget work, timers, queue consumers) MUST have a rejection
+  handler.
+
+As a last resort the host logs one `process.fatal_fault` line (no error message, only the error name)
+and exits non-zero so the supervisor restarts it; it can never keep serving after such a fault, so the
+contract is the real control. Prove it in your own CI:
+
+```ts
+import {
+  assertExtensionEmittersContained,
+  checkBackgroundPromisesHandled,
+} from '@project-vault/extension-api'
+
+it('contains every emitter fault', () => {
+  assertExtensionEmittersContained({ controlPlanePool: pool, redis: redisClient })
+})
+
+it('leaves no unhandled rejection after start-up', async () => {
+  const result = await checkBackgroundPromisesHandled(() => startBackgroundWork())
+  expect(result.ok).toBe(true)
+})
+```
+
+The helper forces a synthetic `'error'` event on each labelled emitter, so your listener runs once
+with a throwaway error. Results carry labels and counts only, never error text.
+
 ## Host services injected into `hooksFactory(host)`
 
 `hooksFactory` may declare a single parameter, `host: HostServices`. A factory that declares zero
 parameters stays compatible unmodified (TypeScript parameter-count contravariance), so adding a
 service is always an additive change.
 
-| Field | Type | What it does |
-|---|---|---|
-| `auditEventSource` | `AuditEventSourceHost` | `writeAuditEvent(input)` writes a tamper-evident, namespaced (`ext.<your-manifest-name>.*`) audit row. The host performs HMAC signing and key-versioning, so no key material or transaction handle ever crosses the extension boundary. An optional `idempotencyKey` (3.26.0+) makes retries safe: a replay with identical content returns the first call's receipt and writes no row. |
-| `orgAuthorization` | `OrgAuthorizationHost` | `checkMembership()` — is this identity a member of the current organization at this role or above. |
-| `projectAuthorization` | `ProjectAuthorizationHost` | `checkProjectMembership()` — the project-scoped sibling of the above, reusing PV's own effective-project-role semantics (org owner/admin bypass, explicit membership row fallback). |
-| `ephemeralState` | `EphemeralStateHost` | Short-lived, org-scoped key/value state. Resolves the current request's org at call time. |
-| `monitoring` | `PvMonitoringHost` | PV's monitoring surface. Six of its eight methods resolve the current request's org at call time; two take an explicit `organizationId` because they run outside any request lifecycle. |
-| `notificationOriginator` | `NotificationOriginatorHost` | `enqueueNotification()` — enqueue a notification through PV's own queue (in-request only). `enqueueNotificationForOrg()` — the out-of-request sibling, taking an explicit `organizationId` and rate-limited on its own independent budget. Not gated by the unrelated `notification-channel` capability. |
+| Field                    | Type                         | What it does                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------ | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auditEventSource`       | `AuditEventSourceHost`       | `writeAuditEvent(input)` writes a tamper-evident, namespaced (`ext.<your-manifest-name>.*`) audit row. The host performs HMAC signing and key-versioning, so no key material or transaction handle ever crosses the extension boundary. An optional `idempotencyKey` (3.26.0+) makes retries safe: a replay with identical content returns the first call's receipt and writes no row. |
+| `orgAuthorization`       | `OrgAuthorizationHost`       | `checkMembership()` — is this identity a member of the current organization at this role or above.                                                                                                                                                                                                                                                                                     |
+| `projectAuthorization`   | `ProjectAuthorizationHost`   | `checkProjectMembership()` — the project-scoped sibling of the above, reusing PV's own effective-project-role semantics (org owner/admin bypass, explicit membership row fallback).                                                                                                                                                                                                    |
+| `ephemeralState`         | `EphemeralStateHost`         | Short-lived, org-scoped key/value state. Resolves the current request's org at call time.                                                                                                                                                                                                                                                                                              |
+| `monitoring`             | `PvMonitoringHost`           | PV's monitoring surface. Six of its eight methods resolve the current request's org at call time; two take an explicit `organizationId` because they run outside any request lifecycle.                                                                                                                                                                                                |
+| `notificationOriginator` | `NotificationOriginatorHost` | `enqueueNotification()` — enqueue a notification through PV's own queue (in-request only). `enqueueNotificationForOrg()` — the out-of-request sibling, taking an explicit `organizationId` and rate-limited on its own independent budget. Not gated by the unrelated `notification-channel` capability.                                                                               |
 
 Host services are bound once at extension-load time. Do not cache the request-scoped values they
 return across requests.

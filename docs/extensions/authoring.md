@@ -103,17 +103,17 @@ export default { manifest, hooksFactory }
 
 ### Manifest field rules
 
-| Field | Rule |
-|---|---|
-| `name` | Reverse-DNS, matching `^[a-z0-9]+(\.[a-z0-9-]+)+$` — at least two dot-separated segments, lowercase, digits and `-` allowed after the first segment. `com.acme.sso` passes; `AcmeSSO` and `acme` do not. It also namespaces any audit rows you write (`ext.com.acme.sso.*`), so pick it once and keep it. |
-| `apiVersion` | Exactly one version, never a range. **Always write `EXTENSION_API_VERSION`, never a literal** — see below. |
-| `capabilities` | A non-empty array. Each declared capability unlocks its matching hook; returning a hook you did not declare is a manifest error. |
-| `replacesNativeLogin` | Optional. Only legal alongside `auth-provider` **and** an actual `authStrategy` hook. Declaring it alone disables nothing — the host also requires a proving latch before it will turn native login off. |
-| `uiPanelSlots`, `moduleActions` | Optional, and only legal alongside `ui-panel`. Part of the legacy runtime UI extension API (HTML panels; deprecated and frozen; see [Module actions and ActionResult](#module-actions-and-actionresult)). |
-| `moduleDataRoutes` | Optional, and not gated on any capability (`registerExtension()` deliberately does not require `ui-panel` for it). Mounts real `GET` routes on Project Vault's own API router under `/api/v1/extensions/data`. `GET`-only, under a fixed prefix, so it adds routes but cannot override or wrap existing ones. It does not belong to the panel API. It is deprecated and frozen (no new features or fixes; kept until removed; security issues resolved by replacement or removal) in its own right; first-party API route composition is the planned forward path. |
-| `navItems` | Optional, and not gated on any capability. Adds append-only navigation entries to Project Vault's shell. It does not belong to the panel API. It is deprecated and frozen (no new features or fixes; kept until removed; security issues resolved by replacement or removal) in its own right; build-time UI composition navigation is the planned forward path. |
-| `dbScope` | Optional and operator-approved: a request for a separate least-privilege database handle. |
-| `apiRoutes` | Optional (since 3.27.0), and not gated on any capability. Adds API routes at any URL and overrides (`replace`) or wraps (`wrap`) Project Vault's own API routes, all inside Project Vault's security pipeline. Declarations are data here; handlers, schemas and hook functions go in `hooks.apiRoutes.routes`. Validation is integrity only: no URL prefix, count cap, capability or allowlist. See [API routes (`apiRoutes`)](#api-routes-apiroutes) and, for the global hooks and error handlers (since 3.29.0), [App-level behaviour](#app-level-behaviour-apiroutesapp). |
+| Field                           | Rule                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                          | Reverse-DNS, matching `^[a-z0-9]+(\.[a-z0-9-]+)+$` — at least two dot-separated segments, lowercase, digits and `-` allowed after the first segment. `com.acme.sso` passes; `AcmeSSO` and `acme` do not. It also namespaces any audit rows you write (`ext.com.acme.sso.*`), so pick it once and keep it.                                                                                                                                                                                                                                                                     |
+| `apiVersion`                    | Exactly one version, never a range. **Always write `EXTENSION_API_VERSION`, never a literal** — see below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `capabilities`                  | A non-empty array. Each declared capability unlocks its matching hook; returning a hook you did not declare is a manifest error.                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `replacesNativeLogin`           | Optional. Only legal alongside `auth-provider` **and** an actual `authStrategy` hook. Declaring it alone disables nothing — the host also requires a proving latch before it will turn native login off.                                                                                                                                                                                                                                                                                                                                                                      |
+| `uiPanelSlots`, `moduleActions` | Optional, and only legal alongside `ui-panel`. Part of the legacy runtime UI extension API (HTML panels; deprecated and frozen; see [Module actions and ActionResult](#module-actions-and-actionresult)).                                                                                                                                                                                                                                                                                                                                                                     |
+| `moduleDataRoutes`              | Optional, and not gated on any capability (`registerExtension()` deliberately does not require `ui-panel` for it). Mounts real `GET` routes on Project Vault's own API router under `/api/v1/extensions/data`. `GET`-only, under a fixed prefix, so it adds routes but cannot override or wrap existing ones. It does not belong to the panel API. It is deprecated and frozen (no new features or fixes; kept until removed; security issues resolved by replacement or removal) in its own right; first-party API route composition is the planned forward path.            |
+| `navItems`                      | Optional, and not gated on any capability. Adds append-only navigation entries to Project Vault's shell. It does not belong to the panel API. It is deprecated and frozen (no new features or fixes; kept until removed; security issues resolved by replacement or removal) in its own right; build-time UI composition navigation is the planned forward path.                                                                                                                                                                                                              |
+| `dbScope`                       | Optional and operator-approved: a request for a separate least-privilege database handle.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `apiRoutes`                     | Optional (since 3.27.0), and not gated on any capability. Adds API routes at any URL and overrides (`replace`) or wraps (`wrap`) Project Vault's own API routes, all inside Project Vault's security pipeline. Declarations are data here; handlers, schemas and hook functions go in `hooks.apiRoutes.routes`. Validation is integrity only: no URL prefix, count cap, capability or allowlist. See [API routes (`apiRoutes`)](#api-routes-apiroutes) and, for the global hooks and error handlers (since 3.29.0), [App-level behaviour](#app-level-behaviour-apiroutesapp). |
 
 **Removal schedule (Story 68.11, `@project-vault/extension-api` 3.30.0).** These surfaces are now formally deprecated: `@deprecated` markers on every exported symbol and manifest field, and a `### Deprecated` entry in the package CHANGELOG. Nothing is removed and nothing changes at runtime. Removal happens no earlier than the next major (4.0.0 at time of writing) and only after the notice window ends on 2027-01-14 (projected: clock not started, the 90 days run from the day 3.30.0 is published). Replacements: composed UI (ADR 0007 build-time composition) for the panel API; the M5 nav delta of the UI pack for `navItems`; M7 `apiRoutes` for `moduleDataRoutes`/`moduleData`; `ExtensionRequestContext` and `ExtensionActionResult` for `ModuleActionContext` and `ActionResult`.
 
@@ -228,7 +228,7 @@ curl -s -H "Cookie: access-token=<session>" \
 ```
 
 > **Role gotcha.** This route is gated on the organization role **`admin` exactly** — `owner` is
-> deliberately *not* treated as admin-equivalent here. If you registered the instance yourself you
+> deliberately _not_ treated as admin-equivalent here. If you registered the instance yourself you
 > are the `owner` and this route will answer `403`, which looks exactly like a broken extension
 > but is not. Use an account with the `admin` role, or grant yourself that role, to check it. It
 > also requires an enrolled MFA factor.
@@ -243,11 +243,11 @@ exactly, not `owner` — so the same surprise applies.
 If the load failed, the reason is one of three host-level values, and they do not use the same
 words the SDK does:
 
-| Host reason | Means | SDK reason behind it |
-|---|---|---|
-| `capability_mismatch` | Your `apiVersion` is outside the host's accepted range. | `incompatible-version` |
-| `manifest_invalid` | A manifest field is wrong — bad `name`, an illegal optional field, a hook you did not declare. | `invalid-name`, `invalid-manifest-field`, `invalid-db-scope` |
-| `import_error` | The module could not be imported, threw at load, or `hooksFactory()` crashed or exceeded the 5-second timeout. | — |
+| Host reason           | Means                                                                                                          | SDK reason behind it                                         |
+| --------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `capability_mismatch` | Your `apiVersion` is outside the host's accepted range.                                                        | `incompatible-version`                                       |
+| `manifest_invalid`    | A manifest field is wrong — bad `name`, an illegal optional field, a hook you did not declare.                 | `invalid-name`, `invalid-manifest-field`, `invalid-db-scope` |
+| `import_error`        | The module could not be imported, threw at load, or `hooksFactory()` crashed or exceeded the 5-second timeout. | —                                                            |
 
 `capability_mismatch` is by far the most common, and it almost always means a hardcoded
 `apiVersion`.
@@ -318,7 +318,7 @@ needs read access.
 This is more fragile than Option A — nothing verifies the mounted tree, and a partially-copied
 directory surfaces as `import_error` at boot — but it needs no build step.
 
-### What does *not* work
+### What does _not_ work
 
 **`NODE_PATH` does not work.** It is tempting, and it half-works, which is worse than failing
 outright. Node's CommonJS resolver still honors `NODE_PATH`, so the loader's manifest read (which
@@ -345,7 +345,7 @@ If you are implementing `capabilityGate`, four things are not obvious from the t
   produces `403 capability_denied` with `reasonCode: 'gate_unavailable'` (collapsed into the
   route's own uniform failure response on unauthenticated surfaces). Registering a gate is an
   explicit operator declaration that an external policy layer governs the instance; once declared,
-  an unanswerable check is an *unknown*, never a permission.
+  an unanswerable check is an _unknown_, never a permission.
 - **`message` is not localized, and cannot be.** `CapabilityGateContext` carries no `locale`
   field, so a user reading Project Vault in another language still sees whatever single language
   you hardcoded. Do not claim otherwise in your own documentation. Project Vault's own fallback
@@ -490,21 +490,33 @@ const manifest: ExtensionManifest = {
   apiVersion: EXTENSION_API_VERSION,
   capabilities: [],
   apiRoutes: {
-    add: [{ method: 'GET', url: '/api/v1/acme/documents', options: { security: { minimumRole: 'member', writeAuditEvent: false } } }],
-    override: [{ method: 'GET', url: '/api/v1/projects/:projectId', mode: 'wrap', schema: 'extend' }],
+    add: [
+      {
+        method: 'GET',
+        url: '/api/v1/acme/documents',
+        options: { security: { minimumRole: 'member', writeAuditEvent: false } },
+      },
+    ],
+    override: [
+      { method: 'GET', url: '/api/v1/projects/:projectId', mode: 'wrap', schema: 'extend' },
+    ],
   },
 }
 
 const hooksFactory = () => ({
   apiRoutes: {
     routes: {
-      'GET /api/v1/acme/documents': { handler: async (ctx) => ({ data: { orgId: ctx.auth.orgId } }) },
+      'GET /api/v1/acme/documents': {
+        handler: async (ctx) => ({ data: { orgId: ctx.auth.orgId } }),
+      },
       'GET /api/v1/projects/:projectId': {
         handler: async (_ctx, _req, _reply, next) => {
           const pv = (await next()) as { data: object }
           return { data: { ...pv.data, acmeTiles: [] } }
         },
-        schema: { response: { 200: z.object({ data: z.looseObject({ acmeTiles: z.array(z.string()) }) }) } },
+        schema: {
+          response: { 200: z.object({ data: z.looseObject({ acmeTiles: z.array(z.string()) }) }) },
+        },
       },
     },
   },
@@ -843,6 +855,18 @@ with API docs enabled, which its CLI forces.
 does not load exits 1 and leaves the old `--out` untouched. The committed `packages/shared/openapi.json`
 stays Project Vault-only: `--out` spellings that resolve to it (relative, `..`, `//`, a symlink or a hard
 link) exit 2 without writing.
+
+### Fault containment: emitters and background promises
+
+An extension runs in the API process, and Node treats an `'error'` event on an emitter with no
+`'error'` listener (a `pg.Pool` whose database stopped is the classic case) or an unhandled promise
+rejection as fatal for the whole process. Attach an `'error'` listener to every long-lived emitter
+when you create it, and give every background promise a rejection handler. The host's last-resort
+handler only logs `process.fatal_fault` (origin and error name, never the message), zeroes keys and
+exits non-zero for a restart; it cannot keep serving after such a fault. Use
+`assertExtensionEmittersContained` and `checkBackgroundPromisesHandled` (see the package README) in
+your own CI. The decision and the fault classes are recorded in
+[`docs/design/extension-fault-containment.md`](../design/extension-fault-containment.md).
 
 ## Recovering from a broken extension
 

@@ -305,3 +305,15 @@ export { ExtensionRegistrationError } from './errors.js'
 
 export type { ExtensionHooks } from './register-extension.js'
 export { isExtensionApiVersionSupported, registerExtension } from './register-extension.js'
+
+// Story 67.1 — fault-containment conformance helpers an extension runs in its own CI.
+export type {
+  BackgroundPromiseConformanceResult,
+  ConformanceEmitter,
+  EmitterConformanceResult,
+} from './conformance.js'
+export {
+  assertExtensionEmittersContained,
+  checkBackgroundPromisesHandled,
+  checkExtensionEmitters,
+} from './conformance.js'

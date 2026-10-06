@@ -11,13 +11,13 @@ For terms used here, see the [glossary](glossary.md). For running an instance, s
 
 A deployment is four services plus a mail sink in development:
 
-| Service | What it is | Notes |
-|---|---|---|
-| `db` | PostgreSQL 16 | The only durable store. No Redis, no message broker, no object store except optional S3 backup targets. |
-| `migrate` | One-shot migration runner | Runs the guarded migration script and exits. Compose orders it before the API. |
-| `api` | Fastify 5 (TypeScript) | The whole backend: REST API, authentication, encryption, the extension host, and the background workers. |
-| `web` | SvelteKit 2 (Svelte 5, Tailwind v4) | Server-rendered UI. Talks to the API over HTTP; holds no secrets of its own. |
-| `mailpit` | Local SMTP sink | Development only. Production points the SMTP settings at a real provider. |
+| Service   | What it is                          | Notes                                                                                                    |
+| --------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `db`      | PostgreSQL 16                       | The only durable store. No Redis, no message broker, no object store except optional S3 backup targets.  |
+| `migrate` | One-shot migration runner           | Runs the guarded migration script and exits. Compose orders it before the API.                           |
+| `api`     | Fastify 5 (TypeScript)              | The whole backend: REST API, authentication, encryption, the extension host, and the background workers. |
+| `web`     | SvelteKit 2 (Svelte 5, Tailwind v4) | Server-rendered UI. Talks to the API over HTTP; holds no secrets of its own.                             |
+| `mailpit` | Local SMTP sink                     | Development only. Production points the SMTP settings at a real provider.                                |
 
 A short-lived `admin-provision` helper also runs in the development Compose stack; it sets the
 password on the administrative database role that the migration creates.
@@ -83,12 +83,12 @@ through a pooled connection. Platform-operator routes use a parallel
 
 Four database roles exist, and which one a connection uses is the whole security story:
 
-| Role | Connection string | Bypasses RLS? | Used for |
-|---|---|---|---|
-| `postgres` | superuser | Yes | Migrations only. Creates the other roles, the policies, and the triggers. |
-| `vault_app` | `DATABASE_URL` | **No** | The application itself, the test suite, and the RLS coverage check. |
-| `vault_admin` | `ADMIN_DATABASE_URL` | Yes | A deliberately tiny pool for the few operations that must see across organizations — for example checking a global erasure record during registration. Its default maximum connections is 3. |
-| `vault_extension` | `EXTENSION_DATABASE_URL` | **No** | A least-privilege role for extension database access, granted only the tables an extension is allowed to touch. |
+| Role              | Connection string        | Bypasses RLS? | Used for                                                                                                                                                                                     |
+| ----------------- | ------------------------ | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `postgres`        | superuser                | Yes           | Migrations only. Creates the other roles, the policies, and the triggers.                                                                                                                    |
+| `vault_app`       | `DATABASE_URL`           | **No**        | The application itself, the test suite, and the RLS coverage check.                                                                                                                          |
+| `vault_admin`     | `ADMIN_DATABASE_URL`     | Yes           | A deliberately tiny pool for the few operations that must see across organizations — for example checking a global erasure record during registration. Its default maximum connections is 3. |
+| `vault_extension` | `EXTENSION_DATABASE_URL` | **No**        | A least-privilege role for extension database access, granted only the tables an extension is allowed to touch.                                                                              |
 
 Running the application or the tests as the superuser silently disables every policy and produces
 false-green results, which is why `make bootstrap` wires the roles for you and `make check-rls`
@@ -103,12 +103,12 @@ key material on disk that would let the process unseal itself.
 
 Unsealing produces a single input key, from one of four custody modes:
 
-| Mode | Input | Notes |
-|---|---|---|
-| `passphrase` | An operator-typed master passphrase | Stretched with Argon2id using parameters stored at initialization. |
-| `envelope` | Two 16-byte halves combined | One half comes from `VAULT_ENVELOPE_KEY_HALF` in the environment, the other from a file on disk. Neither half alone is useful. This is the default for unattended deployments. |
-| `file` | A key file at a configured path | The whole input key sits in one file; protect it accordingly. |
-| `kms` | A data key unwrapped by an external key management service | The wrapped key is stored in the database; the service unwraps it at unseal time. |
+| Mode         | Input                                                      | Notes                                                                                                                                                                          |
+| ------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `passphrase` | An operator-typed master passphrase                        | Stretched with Argon2id using parameters stored at initialization.                                                                                                             |
+| `envelope`   | Two 16-byte halves combined                                | One half comes from `VAULT_ENVELOPE_KEY_HALF` in the environment, the other from a file on disk. Neither half alone is useful. This is the default for unattended deployments. |
+| `file`       | A key file at a configured path                            | The whole input key sits in one file; protect it accordingly.                                                                                                                  |
+| `kms`        | A data key unwrapped by an external key management service | The wrapped key is stored in the database; the service unwraps it at unseal time.                                                                                              |
 
 That input key is never used directly. Four independent keys are derived from it with HKDF, each
 with its own context label, and the input is zeroed immediately afterward:
@@ -193,8 +193,14 @@ When an extension does need its own tables, it connects through the least-privil
 > forward path is first-party API route composition (adding, overriding and wrapping API routes
 > inside the host's own security pipeline). Removal comes later, after the replacements ship.
 
->
 > **Removal schedule (Story 68.11, `@project-vault/extension-api` 3.30.0).** These surfaces are now formally deprecated: `@deprecated` markers on every exported symbol and manifest field, and a `### Deprecated` entry in the package CHANGELOG. Nothing is removed and nothing changes at runtime. Removal happens no earlier than the next major (4.0.0 at time of writing) and only after the notice window ends on 2027-01-14 (projected: clock not started, the 90 days run from the day 3.30.0 is published). Replacements: composed UI (ADR 0007 build-time composition) for the panel API; the M5 nav delta of the UI pack for `navItems`; M7 `apiRoutes` for `moduleDataRoutes`/`moduleData`; `ExtensionRequestContext` and `ExtensionActionResult` for `ModuleActionContext` and `ActionResult`.
+
+An extension shares the API process, so a fault that escapes its own async code (an `'error'`
+event on an emitter with no listener, an unhandled rejection) cannot be made safe to survive. The
+extension contract therefore requires listeners and handled promises, with conformance helpers for the
+extension's own CI, and the host keeps only a last-resort handler that zeroes keys, logs a redacted
+`process.fatal_fault` line and exits non-zero for a restart. See
+[extension fault containment](design/extension-fault-containment.md).
 
 Extension calls are bounded by timeouts and are not allowed to block the request path
 indefinitely. The compatibility contract, its versioning rules, and the deprecation notice window

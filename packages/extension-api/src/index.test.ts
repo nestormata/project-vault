@@ -35,6 +35,10 @@ describe('index.ts — root-only export surface (AC1, AC2)', () => {
         'ExtensionRegistrationError',
         // Story 70.3 — the permanent-failure error class a DeliveryProvider.send() throws.
         'DeliveryProviderPermanentError',
+        // Story 67.1 — fault-containment conformance helpers.
+        'assertExtensionEmittersContained',
+        'checkBackgroundPromisesHandled',
+        'checkExtensionEmitters',
         'isExtensionApiVersionSupported',
         'registerExtension',
         // Story 34.1 — new HostServices.monitoring hook-specific error classes (AC2/AC3/AC7).

@@ -601,6 +601,13 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `AppNotFoundWrapHandler<Req, Reply>`
 - call-signature: `(req: Req, reply: Reply, next: () => Promise<unknown>): unknown`
 
+## export `assertExtensionEmittersContained`
+
+- since: 3.34.0
+- kind: value
+- type: `(emitters: Readonly<Record<string, ConformanceEmitter>>) => void`
+- call-signature: `(emitters: Readonly<Record<string, ConformanceEmitter>>): void`
+
 ## export `AuditEventSourceHost`
 
 - since: 1.0.0
@@ -694,6 +701,19 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - type: `(credential: string) => Promise<AuthResult>`
   - call-signature: `(credential: string): Promise<AuthResult>`
 
+## export `BackgroundPromiseConformanceResult`
+
+- since: 3.34.0
+- kind: type
+- type: `BackgroundPromiseConformanceResult`
+- member: `readonly ok`
+  - since: 3.34.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `readonly unhandledCount`
+  - since: 3.34.0
+  - type: `number`
+
 ## export `CapabilityDecision`
 
 - since: 1.0.0
@@ -734,6 +754,34 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 1.0.0
   - type: `string | null`
   - union-members: `null`, `string`
+
+## export `checkBackgroundPromisesHandled`
+
+- since: 3.34.0
+- kind: value
+- type: `(run: () => void | Promise<void>) => Promise<BackgroundPromiseConformanceResult>`
+- call-signature: `(run: () => void | Promise<void>): Promise<BackgroundPromiseConformanceResult>`
+
+## export `checkExtensionEmitters`
+
+- since: 3.34.0
+- kind: value
+- type: `(emitters: Readonly<Record<string, ConformanceEmitter>>) => EmitterConformanceResult`
+- call-signature: `(emitters: Readonly<Record<string, ConformanceEmitter>>): EmitterConformanceResult`
+
+## export `ConformanceEmitter`
+
+- since: 3.34.0
+- kind: type
+- type: `ConformanceEmitter`
+- member: `emit`
+  - since: 3.34.0
+  - type: `(eventName: string, ...args: unknown[]) => boolean`
+  - call-signature: `(eventName: string, ...args: unknown[]): boolean`
+- member: `listenerCount`
+  - since: 3.34.0
+  - type: `(eventName: string) => number`
+  - call-signature: `(eventName: string): number`
 
 ## export `CredentialShareCreationErrorStatus`
 
@@ -1185,6 +1233,19 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `DeliveryStatusValue`
 - union-members: `"sent"`, `"delivered"`, `"bounced"`, `"suppressed"`, `"failed"`
 
+## export `EmitterConformanceResult`
+
+- since: 3.34.0
+- kind: type
+- type: `EmitterConformanceResult`
+- member: `readonly ok`
+  - since: 3.34.0
+  - type: `boolean`
+  - union-members: `false`, `true`
+- member: `readonly violations`
+  - since: 3.34.0
+  - type: `readonly string[]`
+
 ## export `EphemeralStateHost`
 
 - since: 3.7.0
@@ -1215,7 +1276,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.33.0"`
+- type: `"3.34.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 

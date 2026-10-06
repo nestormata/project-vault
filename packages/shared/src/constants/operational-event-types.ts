@@ -33,6 +33,10 @@ export const OperationalEvent = {
   SHUTDOWN_SIGNAL: 'shutdown.signal_received',
   SHUTDOWN_COMPLETE: 'shutdown.complete',
   SHUTDOWN_FAILED: 'shutdown.failed',
+  // Story 67.1: the last-resort uncaughtException/unhandledRejection handler. One fatal line
+  // (origin, error name, optional allow-listed code, advisory extension attribution; never the
+  // message or stack) before keys are zeroed and the process exits non-zero.
+  PROCESS_FATAL_FAULT: 'process.fatal_fault',
   HTTP_REQUEST_FAILED: 'http.request_failed',
 
   // Vault (migrated from `event: vault.*`)

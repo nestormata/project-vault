@@ -4,6 +4,9 @@ import { createApp } from './app.js'
 import { BossService } from './lib/boss.js'
 import { registerNotificationDispatchBoss } from './lib/notification-dispatch-boss.js'
 import { registerShutdown } from './lib/shutdown.js'
+import { registerFatalFaultHandler } from './lib/fatal-fault-handler.js'
+import { getExtensionStatus } from './extensions/loader.js'
+import type { FastifyApp } from './lib/fastify-app.js'
 import {
   loadInitialVaultState,
   setOnVaultUnsealed,
@@ -119,7 +122,31 @@ const ROTATION_STALE_STAGED_ALERT_JOB = 'rotation/stale-staged-alert'
 // (see credential-share-expire.ts's own doc comment for why a daily sweep is too coarse).
 const CREDENTIAL_SHARE_EXPIRE_JOB = 'credential-shares/expire'
 
+// Story 67.1: until createApp() returns there is no Fastify logger, but a fault can already come
+// from the extension (it loads inside createApp()). Safe fields only, one JSON line on stderr.
+const earlyFatalLogger = {
+  fatal: (fields: unknown, message?: string): void => {
+    process.stderr.write(
+      `${JSON.stringify({ level: 'fatal', msg: message, ...(fields as object) })}\n`
+    )
+  },
+}
+
 async function main(): Promise<void> {
+  // Story 67.1: the last-resort fault handler is installed FIRST, before createApp() runs
+  // loadExtension(), so a fault the extension leaks (e.g. a listener-less pool 'error') ends in
+  // an orderly, attributed, non-zero exit instead of a raw crash. It never resumes serving.
+  let app: FastifyApp | undefined
+  registerFatalFaultHandler({
+    getLogger: () => app?.log ?? earlyFatalLogger,
+    getExtensionPackage: () => env.VAULT_EXTENSIONS_PACKAGE,
+    getExtensionName: () => {
+      const state = getExtensionStatus()
+      return state.status === 'loaded' ? state.manifest.name : undefined
+    },
+    close: () => (app ? app.close() : Promise.resolve()),
+  })
+
   // Architecture mandates this exact startup ORDER:
   // 1. createEventEmitter()
   const emitter = createEventEmitter()
@@ -146,6 +173,7 @@ async function main(): Promise<void> {
     vaultGuardEnabled: true,
     logger: createEntrypointLoggerConfig(env),
   })
+  app = fastify
   fastify.decorate?.('emitter', emitter)
   operationalLog(
     fastify.log,
