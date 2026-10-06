@@ -69,20 +69,28 @@ export function policyEndpointUrl(baseUrl: string): string {
 
 async function readBodyCapped(response: Response, maxBytes: number): Promise<string | null> {
   if (!response.body) return ''
-  const reader = response.body.getReader()
   const chunks: Uint8Array[] = []
-  let total = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    total += value.byteLength
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => undefined)
-      return null
-    }
-    chunks.push(value)
+  const complete = await readChunksCapped(response.body.getReader(), maxBytes, chunks, 0)
+  return complete ? Buffer.concat(chunks).toString('utf8') : null
+}
+
+/** Reads chunk after chunk (each read waits on the previous one) into `chunks`. Resolves `false`,
+ * after cancelling the stream, as soon as the running total crosses `maxBytes`. */
+async function readChunksCapped(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  maxBytes: number,
+  chunks: Uint8Array[],
+  totalSoFar: number
+): Promise<boolean> {
+  const { done, value } = await reader.read()
+  if (done) return true
+  const total = totalSoFar + value.byteLength
+  if (total > maxBytes) {
+    await reader.cancel().catch(() => undefined)
+    return false
   }
-  return Buffer.concat(chunks).toString('utf8')
+  chunks.push(value)
+  return readChunksCapped(reader, maxBytes, chunks, total)
 }
 
 /** Resolves to the validated policy, or `null` for every unreachable/malformed outcome. */

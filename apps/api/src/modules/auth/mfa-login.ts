@@ -10,6 +10,7 @@ import { recordFailedAuthAttempt } from './failed-auth.js'
 import { verifyConfirmedLoginTotp } from './mfa.js'
 import { createLoginSessionInTx, type LoginResult, type RequestMeta } from './service.js'
 import { generatePendingMfaToken, hashPendingMfaToken } from './tokens.js'
+import { firstResultSequential } from '../../lib/first-result-sequential.js'
 
 export type MfaChallengeResult = { mfaRequired: true; mfaToken: string }
 type VerifyLoginOutcome =
@@ -18,6 +19,10 @@ type VerifyLoginOutcome =
   | { kind: 'mfa_token_expired' }
 
 const MAX_TOKEN_COLLISION_RETRIES = 2
+const TOKEN_ATTEMPTS = Array.from(
+  { length: MAX_TOKEN_COLLISION_RETRIES + 1 },
+  (_, attempt) => attempt
+)
 const TOTP_METHOD = 'totp'
 const MFA_LOGIN_CHALLENGED_EVENT = 'auth.mfa_login_challenged'
 const MFA_LOGIN_FAILED_EVENT = 'auth.mfa_login_failed'
@@ -169,14 +174,14 @@ export function createPendingMfaSession(
         and(eq(pendingMfaSessions.userId, input.userId), eq(pendingMfaSessions.orgId, input.orgId))
       )
 
-    for (let attempt = 0; attempt <= MAX_TOKEN_COLLISION_RETRIES; attempt += 1) {
-      const challenge = await insertPendingChallenge(db, input, meta)
-      if (challenge) {
-        process.stdout.write(
-          `${JSON.stringify({ eventType: MFA_LOGIN_CHALLENGED_EVENT, userId: input.userId, orgId: input.orgId, method: TOTP_METHOD })}\n`
-        )
-        return challenge
-      }
+    const challenge = await firstResultSequential(TOKEN_ATTEMPTS, () =>
+      insertPendingChallenge(db, input, meta)
+    )
+    if (challenge) {
+      process.stdout.write(
+        `${JSON.stringify({ eventType: MFA_LOGIN_CHALLENGED_EVENT, userId: input.userId, orgId: input.orgId, method: TOTP_METHOD })}\n`
+      )
+      return challenge
     }
     throw new AppError('service_unavailable', 'MFA login challenge could not be created', 503)
   })

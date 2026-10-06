@@ -16,7 +16,7 @@ type LoggerEnv = Pick<Env, 'NODE_ENV' | 'LOG_LEVEL' | 'SERVICE_NAME'>
 // without it every letter after a '.', '+' or '-' in a long `a.a.a.` run restarts a scan to the end
 // of the run (quadratic, ~10 s for 100k characters). Leading `[.+-]*` keeps `.postgres://u:p@h`
 // covered, because such a run cannot begin with a letter.
-const CONNECTION_STRING_RE = /(?<![a-z0-9+.-])([.+-]*[a-z][a-z0-9+.-]*:\/\/)[^\s/]+@/gi
+export const CONNECTION_STRING_RE = /(?<![a-z0-9+.-])([.+-]*[a-z][a-z0-9+.-]*:\/\/)[^\s/]+@/gi
 
 function redactConnectionStrings(value: string | undefined): string | undefined {
   return value?.replace(CONNECTION_STRING_RE, '$1[REDACTED]@')
@@ -32,7 +32,7 @@ export const EMAIL_REDACTION_PLACEHOLDER = '[REDACTED_EMAIL]'
 // (linear) instead of once per start position (quadratic). The domain is `label.` then a run whose last
 // label starts with a letter (so a trailing sentence period is left out, and a version-like
 // `pkg@3.6.1` in a pnpm stack path is not mistaken for an address), with no nested quantifier.
-const EMAIL_RE =
+export const EMAIL_RE =
   /(?<![\p{L}\p{N}._%+\-'!#$&*/=?^{|}~])[\p{L}\p{N}._%+\-'!#$&*/=?^{|}~]+@[\p{L}\p{N}-]+\.[\p{L}\p{N}.-]*\p{L}[\p{L}\p{N}]*/gu
 
 function redactEmailAddresses(value: string | undefined): string | undefined {

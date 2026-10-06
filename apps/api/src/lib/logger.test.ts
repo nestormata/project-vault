@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { SYSTEM_TRACE_ID } from '@project-vault/shared'
 import { createLogCaptureStream } from '../__tests__/helpers/capture-logs.js'
 import {
+  CONNECTION_STRING_RE,
   createEntrypointLoggerConfig,
   createLoggerConfig,
   EMAIL_REDACTION_PLACEHOLDER,
+  EMAIL_RE,
   operationalLog,
   serializeLogError,
 } from './logger.js'
@@ -20,6 +22,24 @@ function baseEnv(
     SERVICE_NAME: 'api',
     ...overrides,
   } as Pick<Env, 'NODE_ENV' | 'LOG_LEVEL' | 'SERVICE_NAME'>
+}
+
+// Linearity proof without a clock (Story 66-17, DW-434). Both redaction regexes are protected from
+// quadratic backtracking by a leading negative lookbehind: a match attempt may start only at the
+// beginning of a run of scheme/local-part characters. Without it every position inside a long run
+// restarts a scan to the end of the run (O(n^2)). The start restriction is observable and
+// deterministic: scanning from an interior position of a run whose tail WOULD match must not
+// produce a match starting there. Removing a lookbehind makes the interior match succeed.
+function matchesAt(re: RegExp, text: string, index: number): boolean {
+  re.lastIndex = index
+  const match = re.exec(text)
+  re.lastIndex = 0
+  return match?.index === index
+}
+
+function interiorIndexes(runStart: number, runEnd: number): number[] {
+  expect(runEnd).toBeGreaterThan(runStart + 1)
+  return Array.from({ length: runEnd - runStart - 1 }, (_unused, offset) => runStart + 1 + offset)
 }
 
 describe('createLoggerConfig', () => {
@@ -98,10 +118,19 @@ describe('serializeLogError', () => {
     )
   })
 
-  it('scans a long scheme-prefixed message without "@" in linear time (no ReDoS)', () => {
-    const started = performance.now()
+  it('starts a connection-string match only at the beginning of a scheme run (linear, no ReDoS)', () => {
+    // The tail `postgres://u@h` matches from index 2 on its own; every index inside the run
+    // `a.a.postgres` after the first must be blocked by the lookbehind.
+    const text = 'a.a.postgres://u@h'
+    expect(matchesAt(CONNECTION_STRING_RE, text, 0)).toBe(true)
+    const runEnd = text.indexOf('://')
+    for (const index of interiorIndexes(0, runEnd)) {
+      expect(matchesAt(CONNECTION_STRING_RE, text, index)).toBe(false)
+    }
+  })
+
+  it('scans a long scheme-prefixed message without "@" and returns it unchanged', () => {
     const serialized = serializeLogError(new Error(`postgresql://${'a'.repeat(100_000)}`))
-    expect(performance.now() - started).toBeLessThan(1000)
     expect(serialized.message).toHaveLength('postgresql://'.length + 100_000)
   })
 
@@ -165,16 +194,23 @@ describe('serializeLogError email redaction (70-4)', () => {
     expect(serializeLogError(thrown)).toEqual({ message: `bad ${P}` })
   })
 
+  it('starts an address match only at the beginning of a local-part run (linear, no ReDoS)', () => {
+    // `b.c@d.ef` is itself an address: it must NOT be matchable from inside the run `a.b.c`.
+    const text = 'a.b.c@d.ef'
+    expect(matchesAt(EMAIL_RE, text, 0)).toBe(true)
+    for (const index of interiorIndexes(0, text.indexOf('@'))) {
+      expect(matchesAt(EMAIL_RE, text, index)).toBe(false)
+    }
+  })
+
   it.each([
     ['no @ run', 'a'.repeat(100_000), 'a'.repeat(100_000)],
     ['repeated a@', 'a@'.repeat(50_000), 'a@'.repeat(50_000)],
     ['dotted run then @b', `${'a.'.repeat(50_000)}@b`, `${'a.'.repeat(50_000)}@b`],
     ['only @', '@'.repeat(100_000), '@'.repeat(100_000)],
     ['long local then address', `${'a'.repeat(100_000)}@b.c`, P],
-  ])('matches in linear time on adversarial input: %s', (_name, input, expected) => {
-    const started = performance.now()
+  ])('returns the expected result on adversarial input: %s', (_name, input, expected) => {
     const serialized = serializeLogError(new Error(input))
-    expect(performance.now() - started).toBeLessThan(1000)
     expect(serialized.message).toBe(expected)
     if (expected === P) expect(serialized.message).toHaveLength(P.length)
   })

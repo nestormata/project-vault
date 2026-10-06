@@ -118,34 +118,45 @@ function validatePageProgress(
   }
 }
 
-export async function listAllProjects(fetchFn: typeof fetch): Promise<ProjectListPage> {
-  const items: ProjectSummary[] = []
-  const seenProjectIds = new Set<string>()
-  let page = 1
-  let total: number | undefined
+export function listAllProjects(fetchFn: typeof fetch): Promise<ProjectListPage> {
+  return loadProjectPages(fetchFn, { items: [], seenProjectIds: new Set<string>(), total: null }, 1)
+}
 
-  while (page <= MAX_PROJECT_LIST_PAGES) {
-    const response = await listProjects(fetchFn, { page, limit: PROJECT_LIST_PAGE_SIZE })
-    validateProjectPageMetadata(response, page)
+type ProjectPagingState = {
+  items: ProjectSummary[]
+  seenProjectIds: Set<string>
+  total: number | null
+}
 
-    total ??= response.total
-    if (response.total !== total) {
-      throw invalidProjectPagination(`page ${page} changed total`)
-    }
+/** Loads page `page`, then (each page waiting on the previous one) the next, until the last. */
+async function loadProjectPages(
+  fetchFn: typeof fetch,
+  state: ProjectPagingState,
+  page: number
+): Promise<ProjectListPage> {
+  if (page > MAX_PROJECT_LIST_PAGES) {
+    throw invalidProjectPagination(`exceeded the ${MAX_PROJECT_LIST_PAGES}-page safety bound`)
+  }
+  const response = await listProjects(fetchFn, { page, limit: PROJECT_LIST_PAGE_SIZE })
+  validateProjectPageMetadata(response, page)
 
-    appendProjectItems(items, seenProjectIds, response.items, page)
-    validatePageProgress(response, items.length, total, page)
-    if (!response.hasNext) {
-      if (items.length !== total) {
-        throw invalidProjectPagination(`page ${page} ended before total items were loaded`)
-      }
-      return { items, total, page: 1, limit: PROJECT_LIST_PAGE_SIZE, hasNext: false }
-    }
-
-    page += 1
+  state.total ??= response.total
+  const total = state.total
+  if (response.total !== total) {
+    throw invalidProjectPagination(`page ${page} changed total`)
   }
 
-  throw invalidProjectPagination(`exceeded the ${MAX_PROJECT_LIST_PAGES}-page safety bound`)
+  const { items } = state
+  appendProjectItems(items, state.seenProjectIds, response.items, page)
+  validatePageProgress(response, items.length, total, page)
+  if (!response.hasNext) {
+    if (items.length !== total) {
+      throw invalidProjectPagination(`page ${page} ended before total items were loaded`)
+    }
+    return { items, total, page: 1, limit: PROJECT_LIST_PAGE_SIZE, hasNext: false }
+  }
+
+  return loadProjectPages(fetchFn, state, page + 1)
 }
 
 export function archiveProject(

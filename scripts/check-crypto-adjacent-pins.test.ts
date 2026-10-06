@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { useFixtureRoots, writeFixture } from './lib/fixture-test-helpers.js'
 import {
   findWorkspacePackageJsonPaths,
@@ -161,14 +161,35 @@ describe('parseWorkspaceOverrides', () => {
     expect(parseWorkspaceOverrides('overrides:\n  tsx  :   4.21.1   \n').get('tsx')).toBe('4.21.1')
   })
 
-  it('stays linear on a long whitespace run (Sonar S8786 regression)', () => {
-    // ~200k chars: the old `\s*(.+?)\s*$` tail takes seconds here, the linear parser well under 10ms,
-    // so the 1s ceiling leaves wide headroom for a loaded CI runner either way.
+  it('parses a long whitespace run to the trimmed value (Sonar S8786 regression)', () => {
     const line = `  "tsx":${' '.repeat(100_000)}x${' '.repeat(100_000)}!`
-    const started = performance.now()
     const map = parseWorkspaceOverrides(`overrides:\n${line}\n`)
-    expect(performance.now() - started).toBeLessThan(1000)
     expect(map.get('tsx')).toMatch(/^x +!$/)
+  })
+
+  // Linearity proof without a clock (Story 66-17, DW-434). The parser is single pass by
+  // construction: a regex whose `[^\n]*` tail captures the rest of the line (no adjacent
+  // whitespace quantifiers, which is what made the old `\s*(.+?)\s*$` tail super-linear) and one
+  // native `trim()` over it. So the work per override line is a fixed number of engine calls
+  // whatever its length: doubling the whitespace run must not change how often the line is
+  // matched or trimmed, and the value is trimmed exactly once.
+  it('matches and trims each override line a constant number of times regardless of its length', () => {
+    const work = (runLength: number) => {
+      const trim = vi.spyOn(String.prototype, 'trim')
+      const exec = vi.spyOn(RegExp.prototype, 'exec')
+      try {
+        const line = `  "tsx":${' '.repeat(runLength)}x${' '.repeat(runLength)}!`
+        const map = parseWorkspaceOverrides(`overrides:\n${line}\n`)
+        expect(map.get('tsx')).toMatch(/^x +!$/)
+        return { trims: trim.mock.calls.length, execs: exec.mock.calls.length }
+      } finally {
+        trim.mockRestore()
+        exec.mockRestore()
+      }
+    }
+    const small = work(1_000)
+    expect(work(100_000)).toEqual(small)
+    expect(small.trims).toBe(1)
   })
 })
 

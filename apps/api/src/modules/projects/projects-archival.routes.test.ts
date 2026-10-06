@@ -324,16 +324,13 @@ describe('project archival routes (4.4)', () => {
         const owner = await registerOwner(app, 'archive-hang-isolated')
         const projectId = await createProject(app, owner.cookies, 'archive-hang-isolated')
 
-        const start = Date.now()
+        // Story 66-17 (DW-434 family): no elapsed-time ceiling. The request never awaits the hook
+        // at all (it is never even called), so it answers 200 in ordinary request-handling time;
+        // had it awaited the never-resolving hook it would never answer and this test would hit
+        // its own timeout.
         const res = await archiveProject(app, owner.cookies, projectId)
-        const elapsedMs = Date.now() - start
 
         expect(res.statusCode).toBe(200)
-        // A generous ceiling well under the 10s extension-callout timeout the background worker
-        // (never invoked by this request) would apply — the request never awaits the hook at
-        // all, so it should return in ordinary request-handling time, not "eventually, after the
-        // hook degrades."
-        expect(elapsedMs).toBeLessThan(2_000)
         expect(onProjectArchived).not.toHaveBeenCalled()
 
         const events = await extensionLifecycleEventsFor(owner.orgId, projectId)

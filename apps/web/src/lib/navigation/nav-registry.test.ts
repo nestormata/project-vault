@@ -1,7 +1,7 @@
 // Story 68.7 AC-1: one registry of every nav surface and every PV item id; the builders and the
 // registry are tied both ways, so an id cannot be emitted without being registered, nor registered
 // without being emitted.
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { NAV_IDS, NAV_SURFACES, isNavId, navIdProblems, registryProblems } from './nav-registry.js'
 import { SURFACE_ITEMS, surfaceItems } from './surfaces/index.js'
 import type { NavItem } from './types.js'
@@ -148,12 +148,22 @@ describe('nav registry (Story 68.7 AC-1)', () => {
       expect(isNavId(42)).toBe(false)
       expect(navIdProblems(undefined)).toEqual(['nav id must be a string'])
     })
-    it('checks a very long id in linear time', () => {
+    it('examines each character of a very long id exactly once (linear, no clock)', () => {
+      // Story 66-17: one `codePointAt` per character means no rescan or backtracking, whatever the
+      // id's length; a regex (zero calls) or a rescanning loop (more than one per character) fails.
       const long = `${'a-'.repeat(50_000)}a`
-      const started = performance.now()
-      expect(isNavId(long)).toBe(true)
-      expect(isNavId(`${long}-`)).toBe(false)
-      expect(performance.now() - started).toBeLessThan(200)
+      const lookups = (id: string) => {
+        const spy = vi.spyOn(String.prototype, 'codePointAt')
+        try {
+          const valid = isNavId(id)
+          return { valid, calls: spy.mock.calls.length }
+        } finally {
+          spy.mockRestore()
+        }
+      }
+      expect(lookups(long)).toEqual({ valid: true, calls: long.length })
+      // A trailing hyphen is only detected after the whole segment was scanned, still once.
+      expect(lookups(`${long}-`)).toEqual({ valid: false, calls: long.length + 1 })
     })
   })
 })

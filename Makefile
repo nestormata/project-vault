@@ -252,6 +252,8 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-no-sonar-suppressions # Story 43.9 AC-9: no unsigned Sonar suppressions
 	pnpm vitest run scripts/check-no-sonar-suppressions.test.ts scripts/lib/trusted-executable.test.ts
 	pnpm vitest run scripts/check-no-agent-attribution.test.ts # Story 66.21: public-repo no-agent-attribution guard
+	@# Story 66-17: lint:changed (local Sonar reproduction), the S7679 shell guard and the lint-guard wiring
+	pnpm vitest run scripts/lint-changed-sonar.test.ts scripts/check-shell-positional-params.test.ts scripts/eslint-test-guards-wiring.test.ts
 	pnpm vitest run scripts/check-stryker-config.test.ts # Story 66-7: Stryker shard/threshold/vitest-5 patch invariants
 	pnpm vitest run scripts/check-nightly-workflow.test.ts # Story 66-11: nightly quiet-day gate + 5-leg flaky repeat matrix
 	pnpm vitest run scripts/pr-e2e-smoke-gate.test.ts # Story 66-20: PR-time e2e smoke gate + ci.yml job wiring

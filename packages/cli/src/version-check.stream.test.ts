@@ -46,19 +46,18 @@ async function endlessBodyServer(status: number): Promise<Streaming> {
   return { server, baseUrl: `http://127.0.0.1:${port}`, closed }
 }
 
-function settlesWithin(promise: Promise<void>, ms: number): Promise<boolean> {
-  return Promise.race([
-    promise.then(() => true),
-    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms)),
-  ])
-}
-
 describe('runVersionCheck — endless error body (AC-3)', () => {
+  afterEach(() => vi.useRealTimers())
+
   it.each([404, 500, 503])(
     '%i with a never-ending body → returns promptly and the connection is closed',
     async (status) => {
       const { baseUrl, closed } = await endlessBodyServer(status)
-      const started = Date.now()
+      // Story 66-17 (DW-434 family): no wall clock. With setTimeout frozen the check's own
+      // VERSION_CHECK_TIMEOUT_MS deadline can never fire, so the result can only come from the
+      // non-200 short-circuit that never reads the endless body. A check that read it would never
+      // settle and this test would hit its own timeout.
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
       const result = await runVersionCheck({
         baseUrl,
         cliVersion: '1.2.0',
@@ -69,8 +68,8 @@ describe('runVersionCheck — endless error body (AC-3)', () => {
         suppressNotices: false,
       })
       expect(result).toEqual({ refuse: false })
-      expect(Date.now() - started).toBeLessThan(1500)
-      expect(await settlesWithin(closed, 1000)).toBe(true)
+      // The connection is torn down on a later turn (setImmediate), not by a timer.
+      await closed
     }
   )
 })

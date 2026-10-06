@@ -74,12 +74,14 @@ describe('pollUntilOk', () => {
   it('stops mid-delay and resolves quietly when the signal aborts between polls', async () => {
     const controller = new AbortController()
     const fetchMock = vi.fn(async () => {
-      setTimeout(() => controller.abort(), 5)
+      // A macrotask: runs after the poll has entered its (60 s) delay, never before.
+      setImmediate(() => controller.abort())
       return new Response(null, { status: 503 })
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    const started = Date.now()
+    // No elapsed-time assertion (Story 66-17): if the abort did not interrupt the 60 s delay this
+    // promise would never settle and the test would hit its own timeout.
     await expect(
       pollUntilOk(URL_UNDER_TEST, {
         attempts: 3,
@@ -89,7 +91,6 @@ describe('pollUntilOk', () => {
       })
     ).resolves.toBeUndefined()
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(Date.now() - started).toBeLessThan(5_000)
   })
 
   it('handles a long retry budget without growing the stack', async () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   checkTriggerLabel,
   entryState,
@@ -74,12 +74,33 @@ describe('entryState (AC-5.2)', () => {
     expect(stateOf('status: ...')).toMatchObject({ kind: 'unknown', word: '' })
   })
 
-  it('handles long adversarial status tokens in linear time', () => {
-    const started = performance.now()
+  it('handles long adversarial status tokens', () => {
     expect(stateOf(`status: open${'.'.repeat(50_000)}x`)).toMatchObject({ kind: 'unknown' })
     expect(stateOf(`status: open${'-—'.repeat(25_000)}`)).toMatchObject({ kind: 'open' })
     expect(stateOf(`status:${' '.repeat(50_000)}open`)).toMatchObject({ kind: 'open' })
-    expect(performance.now() - started).toBeLessThan(500)
+  })
+
+  // Linearity proof without a clock (Story 66-17, DW-434). The trailing-punctuation drop is the one
+  // hand-written scan (an unanchored `/[...]+$/` regex was quadratic here). Every character of the
+  // trailing run must be examined exactly once, so doubling the run adds exactly that many
+  // lookups: a regex (no lookups) or a rescanning loop (more than one per character) both fail.
+  it.each([
+    ['dots', '.'],
+    ['mixed dashes', '-—'],
+  ])('examines each character of a trailing %s run exactly once', (_name, unit) => {
+    const lookups = (runLength: number) => {
+      const spy = vi.spyOn(Set.prototype, 'has')
+      try {
+        const state = stateOf(`status: open${unit.repeat(runLength)}`)
+        expect(state).toMatchObject({ kind: 'open' })
+        return spy.mock.calls.length
+      } finally {
+        spy.mockRestore()
+      }
+    }
+    const small = 1_000
+    const added = small * unit.length
+    expect(lookups(2 * small) - lookups(small)).toBe(added)
   })
 
   it('reports every status line when there is more than one', () => {

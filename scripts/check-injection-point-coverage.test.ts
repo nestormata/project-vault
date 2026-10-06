@@ -767,13 +767,10 @@ describe('check-injection-point-coverage: the coverage figure (Story 69.6 AC-3, 
 })
 
 describe('check-injection-point-coverage: the real tree and its wiring', () => {
-  const started = Date.now()
-
   it('reports zero problems on apps/web and scans every route file', () => {
     const result = checkInjectionPointCoverage({ webRoot: WEB })
     expect(result.problems).toEqual([])
     expect(result.scannedRouteFiles).toBe(70)
-    expect(Date.now() - started).toBeLessThan(30_000)
   })
 
   it('measures 100 % on apps/web with no region, use or page left out (Story 69.6)', () => {

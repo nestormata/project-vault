@@ -246,6 +246,22 @@ async function readOldestPendingAgeMs(tx: Tx): Promise<number | null> {
   return Date.now() - new Date(oldest).getTime()
 }
 
+/** Claims and dispatches pending rows one at a time (each in its own transaction, so strictly
+ * sequential) until the org is drained or `BATCH_SIZE_PER_ORG` rows were handled. `dispatchedIds`
+ * is shared and grows with each dispatched row so a row is never claimed twice in one batch. */
+async function dispatchBatch(
+  orgId: string,
+  notifier: ProjectArchiveNotifier | undefined,
+  logger: WorkerLogger,
+  dispatchedIds: string[]
+): Promise<void> {
+  if (dispatchedIds.length >= BATCH_SIZE_PER_ORG) return
+  const outcome = await claimAndDispatchOne(orgId, notifier, logger, dispatchedIds)
+  if (outcome.kind === 'empty') return
+  dispatchedIds.push(outcome.id)
+  return dispatchBatch(orgId, notifier, logger, dispatchedIds)
+}
+
 /** Dispatches up to `BATCH_SIZE_PER_ORG` pending rows for one org, then reports that org's own
  * oldest-remaining-pending-row age (or `null` if none remain). */
 async function dispatchPendingEventsForOrg(
@@ -253,12 +269,7 @@ async function dispatchPendingEventsForOrg(
   notifier: ProjectArchiveNotifier | undefined,
   logger: WorkerLogger
 ): Promise<number | null> {
-  const dispatchedIds: string[] = []
-  while (dispatchedIds.length < BATCH_SIZE_PER_ORG) {
-    const outcome = await claimAndDispatchOne(orgId, notifier, logger, dispatchedIds)
-    if (outcome.kind === 'empty') break
-    dispatchedIds.push(outcome.id)
-  }
+  await dispatchBatch(orgId, notifier, logger, [])
   return runOrgScopedJob(orgId, EXTENSION_LIFECYCLE_NOTIFY_JOB_NAME, ({ tx }) =>
     readOldestPendingAgeMs(tx)
   )

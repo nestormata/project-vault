@@ -82,6 +82,15 @@ describe('injectLoad', () => {
   })
 
   it('runs loads concurrently and keeps declaration order regardless of completion order', async () => {
+    // Deferreds instead of timers (Story 66-17): concurrency is "every load has STARTED before any
+    // has finished", and order independence is resolving them in the reverse of declaration order.
+    const started: string[] = []
+    const releases = new Map<string, () => void>()
+    const gated = (name: string) => () =>
+      new Promise<string>((done) => {
+        started.push(name)
+        releases.set(name, () => done(name))
+      })
     const { injectLoad: run } = createInjectBehavior(
       tables({
         loads: {
@@ -89,22 +98,22 @@ describe('injectLoad', () => {
             {
               point: 'a.b.c',
               contributions: [
-                { order: 1, load: () => delay(50, 'slow') },
-                { order: 2, load: () => delay(10, 'fast') },
+                { order: 1, load: gated('slow') },
+                { order: 2, load: gated('fast') },
               ],
             },
-            { point: 'a.b.d', contributions: [{ order: 1, load: () => delay(30, 'mid') }] },
+            { point: 'a.b.d', contributions: [{ order: 1, load: gated('mid') }] },
           ],
         },
       })
     )
-    const started = Date.now()
-    for (let i = 0; i < 3; i += 1) {
-      expect(await run(event, '/r', 'page')).toEqual({
-        __inject: { 'a.b.c': ['slow', 'fast'], 'a.b.d': ['mid'] },
-      })
-    }
-    expect(Date.now() - started).toBeLessThan(3 * 50 + 120)
+    const pending = run(event, '/r', 'page')
+    await Promise.resolve()
+    expect(started).toEqual(['slow', 'fast', 'mid'])
+    for (const name of ['mid', 'fast', 'slow']) releases.get(name)?.()
+    expect(await pending).toEqual({
+      __inject: { 'a.b.c': ['slow', 'fast'], 'a.b.d': ['mid'] },
+    })
   })
 
   it('passes redirect() and error() through untouched', async () => {

@@ -189,6 +189,11 @@ ARG INCLUDE_MOCK_AUDIT_EVENT_SOURCE_EXTENSION=false
 ARG INCLUDE_MOCK_UI_PANEL_EXTENSION=false
 ARG INCLUDE_MOCK_UI_PACK_MODULE=false
 RUN pnpm --filter @project-vault/api deploy --prod --legacy /app/deploy
+# `tsc` (rootDir src, include src/**/*.ts) also compiles every test and its .d.ts/.map into dist; none
+# of it is imported at runtime (nothing outside *.test.* / __tests__ imports them), so drop it like
+# the db package below. Keeps the image under the 300MB CI gate as the test suite grows.
+RUN find /app/deploy/dist \( -name '*.test.*' -o -name '__tests__' \) -prune -exec rm -rf {} + \
+ && test -f /app/deploy/dist/main.js
 # `pnpm deploy --legacy` leaves workspace links for injected packages on this pnpm version. Replace
 # the extension-api link with the exact npm pack boundary used for external consumers so the runner
 # cannot ship a broken link or build-only test output. The committed manifest is never edited.

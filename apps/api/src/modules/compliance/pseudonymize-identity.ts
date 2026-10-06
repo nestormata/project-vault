@@ -2,12 +2,14 @@ import { randomInt } from 'node:crypto'
 import { and, eq, ne } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { userIdentityTokens } from '@project-vault/db/schema'
+import { firstResultSequential } from '../../lib/first-result-sequential.js'
 import { forEachSequential } from '../../lib/for-each-sequential.js'
 
 // eslint-disable-next-line no-secrets/no-secrets -- Public alias alphabet, not a secret.
 const ALIAS_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
 const ALIAS_RANDOM_CHARS = 8
 const MAX_COLLISION_ATTEMPTS = 5
+const COLLISION_ATTEMPTS = Array.from({ length: MAX_COLLISION_ATTEMPTS }, (_, attempt) => attempt)
 
 /**
  * Story 8.4 D3: crypto-random (never Math.random()) 8-char lowercase-alphanumeric alias,
@@ -44,7 +46,7 @@ async function generateUniqueAlias(
   excludeTokenId: string,
   generateAlias: () => string
 ): Promise<string> {
-  for (let attempt = 0; attempt < MAX_COLLISION_ATTEMPTS; attempt += 1) {
+  const alias = await firstResultSequential(COLLISION_ATTEMPTS, async () => {
     const candidate = generateAlias()
     const [collision] = await tx
       .select({ id: userIdentityTokens.id })
@@ -56,9 +58,10 @@ async function generateUniqueAlias(
         )
       )
       .limit(1)
-    if (!collision) return candidate
-  }
-  throw new PseudonymAliasCollisionError(userId)
+    return collision ? undefined : candidate
+  })
+  if (alias === undefined) throw new PseudonymAliasCollisionError(userId)
+  return alias
 }
 
 /**

@@ -243,25 +243,34 @@ async function runTotpChallenge(
   const unsupported = checkTotpMethodSupported(challenge, streams)
   if (unsupported !== null) return unsupported
 
-  for (;;) {
-    const totp = await readNormalizedTotp(streams, deps)
-    if (totp === null) continue
-    if (typeof totp === 'number') return totp
+  return totpAttempt(challenge, config, streams, deps)
+}
 
-    let result: PostJsonResult
-    try {
-      result = await postJson(deps.fetchFn, config.baseUrl, '/api/v1/auth/cli/mfa/verify-login', {
-        mfaToken: challenge.mfaToken,
-        totp,
-      })
-    } catch (error) {
-      return unexpectedError(streams, error)
-    }
+/** One prompt-and-verify round; a blank code or an incorrect one re-prompts (the next round starts
+ * only after this one finished, so the rounds are strictly sequential). */
+async function totpAttempt(
+  challenge: MfaChallengeData,
+  config: LoginConfig,
+  streams: LoginStreams,
+  deps: LoginDeps
+): Promise<number | 'restart'> {
+  const totp = await readNormalizedTotp(streams, deps)
+  if (totp === null) return totpAttempt(challenge, config, streams, deps)
+  if (typeof totp === 'number') return totp
 
-    const outcome = classifyTotpResult(result, config, streams, deps)
-    if (outcome === 'retry') continue
-    return outcome
+  let result: PostJsonResult
+  try {
+    result = await postJson(deps.fetchFn, config.baseUrl, '/api/v1/auth/cli/mfa/verify-login', {
+      mfaToken: challenge.mfaToken,
+      totp,
+    })
+  } catch (error) {
+    return unexpectedError(streams, error)
   }
+
+  const outcome = classifyTotpResult(result, config, streams, deps)
+  if (outcome === 'retry') return totpAttempt(challenge, config, streams, deps)
+  return outcome
 }
 
 /** Classifies the cli-login server response into the caller's next step. May itself drive the
@@ -312,25 +321,37 @@ export async function runLogin(
   // bearer-token pair, over the wire unencrypted. Defensive, non-blocking warning only.
   warnIfInsecureBaseUrl(config.baseUrl, (chunk) => streams.stderr.write(chunk))
 
-  for (let attempt = 0; attempt < MAX_RESTARTS; attempt += 1) {
-    const credentials = await promptEmailPassword(streams, deps)
-    if (typeof credentials === 'number') return credentials
+  return loginAttempt(config, streams, deps, 0)
+}
 
-    let result: PostJsonResult
-    try {
-      result = await postJson(deps.fetchFn, config.baseUrl, '/api/v1/auth/cli-login', credentials)
-    } catch (error) {
-      return unexpectedError(streams, error)
-    }
-
-    const outcome = await handleLoginResult(result, config, streams, deps)
-    if (outcome === 'restart') continue
-    return outcome
+/** One full sign-in round (prompt, post, classify); a dead pending-MFA session restarts it, up to
+ * MAX_RESTARTS rounds in total. Rounds are strictly sequential. */
+async function loginAttempt(
+  config: LoginConfig,
+  streams: LoginStreams,
+  deps: LoginDeps,
+  attempt: number
+): Promise<number> {
+  if (attempt >= MAX_RESTARTS) {
+    // The pending-MFA token kept expiring/getting rejected across every restart attempt — this is
+    // the same "pending MFA session is dead" condition mfa_token_expired signals mid-flow, just
+    // repeated past MAX_RESTARTS, so it gets that condition's own distinguishable exit code rather
+    // than the generic `unexpected` one.
+    streams.stderr.write('Too many failed sign-in attempts. Please try `pvault login` again.\n')
+    return EXIT_CODES.mfaTokenExpired
   }
-  // The pending-MFA token kept expiring/getting rejected across every restart attempt — this is
-  // the same "pending MFA session is dead" condition mfa_token_expired signals mid-flow, just
-  // repeated past MAX_RESTARTS, so it gets that condition's own distinguishable exit code rather
-  // than the generic `unexpected` one.
-  streams.stderr.write('Too many failed sign-in attempts. Please try `pvault login` again.\n')
-  return EXIT_CODES.mfaTokenExpired
+
+  const credentials = await promptEmailPassword(streams, deps)
+  if (typeof credentials === 'number') return credentials
+
+  let result: PostJsonResult
+  try {
+    result = await postJson(deps.fetchFn, config.baseUrl, '/api/v1/auth/cli-login', credentials)
+  } catch (error) {
+    return unexpectedError(streams, error)
+  }
+
+  const outcome = await handleLoginResult(result, config, streams, deps)
+  if (outcome === 'restart') return loginAttempt(config, streams, deps, attempt + 1)
+  return outcome
 }

@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path'
 /** Root-owned system binary directories, searched in order. Never user-writable locations. */
 export const TRUSTED_EXECUTABLE_DIRS: readonly string[] = ['/usr/bin', '/usr/local/bin', '/bin']
 
-export type TrustedExecutable = 'git' | 'docker' | 'bash' | 'openssl' | 'find'
+export type TrustedExecutable = 'git' | 'docker' | 'bash' | 'openssl' | 'find' | 'shellcheck'
 
 function isExecutableFile(path: string): boolean {
   try {

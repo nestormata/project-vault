@@ -92,6 +92,7 @@ describe('Extension hook concurrency isolation (Story 25.7 AC3)', () => {
       // Fired but deliberately not awaited yet — this call is still in flight (racing against
       // the real RENDER_PANEL_TIMEOUT_MS = 10_000ms wrapper) while the concurrent request below
       // is dispatched and asserted on.
+      let hangSettled = false
       const hangingPanelPromise = renderExtensionPanel(
         'group',
         DEFAULT_UI_PANEL_SLOTS,
@@ -100,22 +101,24 @@ describe('Extension hook concurrency isolation (Story 25.7 AC3)', () => {
         FAKE_TX,
         {},
         fakeDeps()
-      )
+      ).then((outcome) => {
+        hangSettled = true
+        return outcome
+      })
 
-      const start = Date.now()
       const healthResponse = await app.inject({ method: 'GET', url: '/health' })
-      const elapsedMs = Date.now() - start
 
       expect(healthResponse.statusCode).toBe(200)
-      // Well under the 10_000ms RENDER_PANEL_TIMEOUT_MS the hanging call above is still waiting
-      // on at this point — proves PV's own event loop was never blocked by the in-flight hang,
-      // not merely that the hanging request itself eventually times out.
-      expect(elapsedMs).toBeLessThan(2_000)
+      // Story 66-17 (DW-434 family): no elapsed-time bound. The structural claim is that the
+      // unrelated request completed while the hang was still in flight (its real 10 s deadline has
+      // not fired), which proves PV's own event loop was never blocked by it, not merely that the
+      // hanging request itself eventually times out.
+      expect(hangSettled).toBe(false)
 
       // Let the still-in-flight hang resolve via its own real timeout before this test ends, so
       // no background timer outlives it.
-      const raced = await hangingPanelPromise
-      expect(raced).toEqual({ outcome: 'unavailable' })
+      expect(await hangingPanelPromise).toEqual({ outcome: 'unavailable' })
+      expect(hangSettled).toBe(true)
     } finally {
       await app.close()
     }

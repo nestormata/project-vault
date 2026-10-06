@@ -272,6 +272,9 @@ jobs:
           pnpm check-no-sonar-suppressions &&
           pnpm vitest run scripts/check-no-sonar-suppressions.test.ts scripts/lib/trusted-executable.test.ts
 
+      - name: Check lint guards and lint:changed wiring (Story 66-17)
+        run: pnpm vitest run scripts/lint-changed-sonar.test.ts scripts/check-shell-positional-params.test.ts scripts/eslint-test-guards-wiring.test.ts
+
       - name: Check Stryker config invariants (Story 66-7)
         run: pnpm vitest run scripts/check-stryker-config.test.ts
 
