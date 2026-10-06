@@ -54,6 +54,10 @@ function loggedText(log: { fatal: ReturnType<typeof vi.fn>; error: ReturnType<ty
 describe('registerFatalFaultHandler', () => {
   let uninstall: (() => void) | undefined
 
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   afterEach(() => {
     uninstall?.()
     uninstall = undefined
@@ -282,10 +286,6 @@ describe('registerFatalFaultHandler', () => {
     await (ours as unknown as FaultListener)(new Error('x'), 'uncaughtException')
     expect(exitSpy).toHaveBeenCalledWith(1)
     exitSpy.mockRestore()
-  })
-
-  beforeEach(() => {
-    vi.clearAllMocks()
   })
 })
 
