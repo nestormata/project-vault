@@ -713,10 +713,13 @@ session. The declaration is plain data and is validated at registration:
   (see "Audit attribution and historical actors" below).
   A `capability` on a delegated route still runs against the resolved org (the per-org kill switch).
 - **Rate limit.** The route limiter's principal is `delegation:<resolved org id>`, never the actor: actors of
-  one org share a bucket, two orgs do not.
+  one org share a bucket, two orgs do not. Every delegated route also has a default per-IP limiter (600
+  requests per minute per client IP) that runs in `onRequest`, before any signature check or database work:
+  over the limit the response is 429 with `Retry-After`. Operators alert on the delegation counters
+  (`docs/runbooks/delegation-key-rotation.md`).
 - **Hooks.** Signature, claims, `op`, the limiter and the body hash are checked in the route's `preParsing`
-  stage, which runs after every `onRequest` hook (including the app-level per-IP limiter) and before the body
-  is read. `onRequest` hooks you declare (`prepend` or `append`) therefore run before the assertion is
+  stage, which runs after every `onRequest` hook (including the delegated route's own per-IP limiter) and
+  before the body is read. `onRequest` hooks you declare (`prepend` or `append`) therefore run before the assertion is
   checked and must not trust the request. The subject check, org resolution, burn and actor resolution run
   in the first `preHandler` stages: `prepend` hooks of `preValidation` and `preHandler` run before them, so
   `ctx.delegation` and the delegated `request.authContext` do not exist yet. Use `append` hooks for anything

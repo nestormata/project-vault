@@ -29,6 +29,11 @@ table below.
 | `SERVICE_REVOCATION_TOKEN` leak, or `org.sessions_revoked_by_service` fired unexpectedly | [`service-revocation-token-rotation.md`](service-revocation-token-rotation.md) |
 | Rotating the CentralizeMe handoff signing key, or responding to its compromise | [`handoff-key-rotation.md`](handoff-key-rotation.md) |
 | Configuring handoff identity/keys, or a `clock_skew.measured` warning | [`handoff-instance-identity.md`](handoff-instance-identity.md) |
+| Rotating a service-delegation verification key (`VAULT_DELEGATION_VERIFY_KEYS`), or responding to its compromise | [`delegation-key-rotation.md`](delegation-key-rotation.md) |
+| `PvDelegationSignatureInvalidSpike`, `PvDelegationUnknownKidSpike`, `PvDelegationReplayed`, `PvDelegationClockSkew` or `PvDelegationRejectionRatioHigh` fired | [`delegation-key-rotation.md`](delegation-key-rotation.md) § Alert triage |
+| `PvDelegationStoreUnavailable` fired, or delegated writes answer `503 delegation_replay_store_unavailable` | [`delegation-key-rotation.md`](delegation-key-rotation.md) § PvDelegationStoreUnavailable |
+| `PvDelegationKeyConfigMissing` fired, or every delegated call answers `401 delegation_invalid` | [`delegation-key-rotation.md`](delegation-key-rotation.md) § PvDelegationKeyConfigMissing |
+| Delegated writes answer `421 delegation_org_not_served` | [`delegation-key-rotation.md`](delegation-key-rotation.md) § Prerequisites checklist |
 | Withdrawing a known-bad `pvault` CLI version, or users report CLI exit `29` | [`cli-version-policy.md`](cli-version-policy.md) |
 | No HTTP response at all from the API | [`incident-response.md`](incident-response.md) § Vault unreachable |
 | `audit_storage.critical` alert, or `/ready` warns `audit_storage_critical` | [`incident-response.md`](incident-response.md) § Audit-log storage at 95% |

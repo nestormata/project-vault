@@ -1,0 +1,104 @@
+# Prometheus alerting rules for service-delegated actor assertions (Story 71.9).
+#
+# Source: the counter `pv_delegation_assertions_total{outcome,kid}` that every API instance serves on
+# `GET /metrics` (loopback-only by default, per process). PV ships no Prometheus or Alertmanager
+# deployment: load this file into your own Prometheus (`rule_files:`) and route the `severity`
+# labels in your own Alertmanager. Alert delivery is operator-owned on purpose; see
+# docs/runbooks/delegation-key-rotation.md ("Alert triage") and docs/runbooks/monitoring.md.
+#
+# Every rule sums across scrape targets (`sum(...)`), because the counter is process-local: one
+# instance seeing a replay or a forged signature must page even when its siblings saw nothing.
+# No rule uses the `kid` label: it is a configured key id or `none`, never an attacker-chosen value,
+# but the first response does not depend on which key was involved.
+#
+# The thresholds are STARTING VALUES: tune per deployment (traffic, number of instances, tolerance
+# for a CentralizeMe clock drift). Change a threshold instead of disabling a rule.
+#
+# `accepted` means "admitted by the delegation stages" (burn and actor resolution succeeded), not
+# "the request succeeded". An unlinked or attested non-member actor adds `actor_unlinked` /
+# `actor_attested_nonmember` AND `accepted` for the same request, so the ratio rule excludes those
+# two outcomes. The ratio also excludes every outcome an attacker can produce without a key
+# (missing, rate_limited_pre, not_configured, oversized, malformed, unexpected_alg, unknown_kid,
+# signature_invalid): they must not trigger it and must not dilute it.
+#
+# `promtool check rules` is the authoritative syntax check; the structural guard
+# scripts/check-delegation-alert-rules.test.ts only proves the file's shape, the outcome names and
+# the runbook anchors.
+groups:
+  - name: pv-delegation-assertions
+    rules:
+      - alert: PvDelegationSignatureInvalidSpike
+        expr: |
+          sum(increase(pv_delegation_assertions_total{outcome="signature_invalid"}[5m])) > 5
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: Delegated assertions with an invalid signature for a configured key
+          runbook_url: https://github.com/nestormata/project-vault/blob/main/docs/runbooks/delegation-key-rotation.md#pvdelegationsignatureinvalidspike
+
+      - alert: PvDelegationUnknownKidSpike
+        expr: |
+          sum(increase(pv_delegation_assertions_total{outcome="unknown_kid"}[5m])) > 5
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: Delegated assertions naming a key id this instance does not trust
+          runbook_url: https://github.com/nestormata/project-vault/blob/main/docs/runbooks/delegation-key-rotation.md#pvdelegationunknownkidspike
+
+      - alert: PvDelegationReplayed
+        expr: |
+          sum(increase(pv_delegation_assertions_total{outcome="replayed"}[5m])) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: A delegated assertion was presented twice (the sender mints a new one per attempt)
+          runbook_url: https://github.com/nestormata/project-vault/blob/main/docs/runbooks/delegation-key-rotation.md#pvdelegationreplayed
+
+      - alert: PvDelegationStoreUnavailable
+        expr: |
+          sum(increase(pv_delegation_assertions_total{outcome="store_unavailable"}[5m])) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: The delegation replay store is unavailable, so delegated writes are paused (fail closed)
+          runbook_url: https://github.com/nestormata/project-vault/blob/main/docs/runbooks/delegation-key-rotation.md#pvdelegationstoreunavailable
+
+      - alert: PvDelegationClockSkew
+        expr: |
+          sum(increase(pv_delegation_assertions_total{outcome=~"clock_skew|not_yet_valid|expired"}[10m])) > 3
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: Delegated assertions rejected for time (the sender or an instance clock has drifted)
+          runbook_url: https://github.com/nestormata/project-vault/blob/main/docs/runbooks/delegation-key-rotation.md#pvdelegationclockskew
+
+      - alert: PvDelegationRejectionRatioHigh
+        expr: |
+          (
+            sum(increase(pv_delegation_assertions_total{outcome!~"accepted|missing|rate_limited_pre|not_configured|oversized|malformed|unexpected_alg|unknown_kid|signature_invalid|actor_unlinked|actor_attested_nonmember"}[10m]))
+            /
+            sum(increase(pv_delegation_assertions_total{outcome!~"missing|rate_limited_pre|not_configured|oversized|malformed|unexpected_alg|unknown_kid|signature_invalid|actor_unlinked|actor_attested_nonmember"}[10m]))
+          ) > 0.2
+          and
+          sum(increase(pv_delegation_assertions_total{outcome!~"missing|rate_limited_pre|not_configured|oversized|malformed|unexpected_alg|unknown_kid|signature_invalid|actor_unlinked|actor_attested_nonmember"}[10m])) >= 20
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than 20 percent of signature-valid delegated assertions are rejected
+          runbook_url: https://github.com/nestormata/project-vault/blob/main/docs/runbooks/delegation-key-rotation.md#pvdelegationrejectionratiohigh
+
+      - alert: PvDelegationKeyConfigMissing
+        expr: |
+          sum(increase(pv_delegation_assertions_total{outcome="not_configured"}[10m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: Delegated routes fail closed because no delegation verification key is configured
+          runbook_url: https://github.com/nestormata/project-vault/blob/main/docs/runbooks/delegation-key-rotation.md#pvdelegationkeyconfigmissing

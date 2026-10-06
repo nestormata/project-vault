@@ -1,6 +1,7 @@
 # Monitoring: metrics, alerts, audit-log integrity
 
 <!-- Verified against apps/api/src/routes/metrics.ts, apps/api/src/modules/rotation/metrics.ts,
+     apps/api/src/modules/auth/delegation-metrics.ts, docs/runbooks/alerts/delegation-alerts.rules.yml,
      apps/api/src/config/env.ts (METRICS_BIND_HOST), apps/api/src/workers/*.ts,
      apps/api/src/modules/audit/{routes,schema}.ts,
      apps/api/src/modules/platform-audit/{routes,schema}.ts -->
@@ -32,6 +33,7 @@ The variable is parsed at boot; changing it requires an API restart.
 | `process_uptime_seconds` | Process uptime |
 | `vault_sealed` | **1** if sealed or uninitialized, **0** if unsealed — the single most important dashboard tile for this application |
 | `db_pool_connections_active` | In-flight query count; sustained high values indicate connection-pool exhaustion |
+| `pv_delegation_assertions_total` | Service-delegated actor assertions by `outcome` and `kid` (a configured key id, or `none` when no key matched). Closed `outcome` set: `not_configured`, `missing`, `oversized`, `malformed`, `unexpected_alg`, `unknown_kid`, `signature_invalid`, `malformed_claim`, `expired`, `not_yet_valid`, `clock_skew`, `audience_mismatch`, `operation_mismatch`, `rate_limited_pre`, `unsupported_encoding`, `body_mismatch`, `subject_mismatch`, `occurrence_outside_window`, `org_not_served`, `replayed`, `store_unavailable`, `actor_not_member`, `actor_unlinked`, `actor_attested_nonmember`, `accepted`. `accepted` is "admitted by the delegation stages" (burn and actor resolution succeeded), **not** "the request succeeded": a handler 5xx after admission still counts `accepted`; an unlinked or attested non-member actor counts `actor_unlinked` / `actor_attested_nonmember` **and** `accepted`, so do not add them together. Every series exists at 0 from boot. Process-local: alert on `sum(increase(...))` across scrape targets |
 | `rotation_initiations_total`, `rotation_completions_total`, `rotation_checklist_items_pending_total`, `rotation_break_glass_total` (+ related stale/recovery counters and gauges) | Rotation-lifecycle metrics |
 | Node.js default process metrics | via `collectDefaultMetrics()` |
 
@@ -60,6 +62,17 @@ paging on), plus a sustained `db_pool_connections_active` threshold.
 | `security.failed_auth_threshold` | Organization admins, not the platform operator |
 | `user.dormant` | Organization admins, not the platform operator |
 | `clock_skew.measured` at `warn` level | [`handoff-instance-identity.md`](handoff-instance-identity.md) § Clock-skew signal |
+| `PvDelegationStoreUnavailable` (critical; delegated writes paused, fail closed) | [`delegation-key-rotation.md`](delegation-key-rotation.md) § PvDelegationStoreUnavailable; on-call operator |
+| `PvDelegationKeyConfigMissing` (critical; no delegation key configured) | [`delegation-key-rotation.md`](delegation-key-rotation.md) § PvDelegationKeyConfigMissing; on-call operator, restore the key set |
+| `PvDelegationSignatureInvalidSpike` | [`delegation-key-rotation.md`](delegation-key-rotation.md) § PvDelegationSignatureInvalidSpike; ticket, escalate to the maintainer if it coincides with a replay |
+| `PvDelegationUnknownKidSpike` | [`delegation-key-rotation.md`](delegation-key-rotation.md) § PvDelegationUnknownKidSpike; ticket (a rotation step missed on an instance, or a probe) |
+| `PvDelegationReplayed` | [`delegation-key-rotation.md`](delegation-key-rotation.md) § PvDelegationReplayed; ticket, escalate to the maintainer if unexplained |
+| `PvDelegationClockSkew` | [`delegation-key-rotation.md`](delegation-key-rotation.md) § PvDelegationClockSkew; ticket, check `clock_skew.measured` on every instance |
+| `PvDelegationRejectionRatioHigh` | [`delegation-key-rotation.md`](delegation-key-rotation.md) § PvDelegationRejectionRatioHigh; ticket |
+
+The `PvDelegation*` rows are **Prometheus rules**, not `admin_alerts` rows: they ship as
+[`alerts/delegation-alerts.rules.yml`](alerts/delegation-alerts.rules.yml) for you to load into your own
+Prometheus, and they never appear in `GET /ready`.
 
 Org-level alerts landing in a shared ops channel the platform operator also monitors are **not**
 automatically the platform operator's to act on — this table exists specifically to prevent
