@@ -8,6 +8,7 @@ import {
   sendNotificationJobs,
 } from '../notifications/dispatcher.js'
 import type { BossService } from '../lib/boss.js'
+import { serializeLogError } from '../lib/logger.js'
 
 type AlertRow = {
   id: string
@@ -64,7 +65,7 @@ export async function runNotificationBackfill(
             eventType: 'notification.backfill.error',
             alertId: alert.id,
             orgId,
-            err,
+            err: serializeLogError(err),
           },
           'Failed to backfill PENDING_DELIVERY alert'
         )
@@ -93,7 +94,7 @@ export async function notificationBackfillHandler(
     logger.error(
       {
         eventType: 'notification.backfill.failed',
-        err,
+        err: serializeLogError(err),
       },
       'Notification backfill job failed'
     )

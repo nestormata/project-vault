@@ -29,10 +29,11 @@ export const EMAIL_REDACTION_PLACEHOLDER = '[REDACTED_EMAIL]'
 // digits allowed); the domain needs at least two dot-separated labels so `postgres@localhost` and
 // `user@host` stay readable. The leading negative lookbehind on a local-part character means a
 // match attempt starts only at the beginning of a run, so a long run with no '@' is scanned once
-// (linear) instead of once per start position (quadratic). The domain is `label.` then a run ending in
-// a letter or digit (so a trailing sentence period is left out), with no nested quantifier.
+// (linear) instead of once per start position (quadratic). The domain is `label.` then a run whose last
+// label starts with a letter (so a trailing sentence period is left out, and a version-like
+// `pkg@3.6.1` in a pnpm stack path is not mistaken for an address), with no nested quantifier.
 const EMAIL_RE =
-  /(?<![\p{L}\p{N}._%+\-'!#$&*/=?^{|}~])[\p{L}\p{N}._%+\-'!#$&*/=?^{|}~]+@[\p{L}\p{N}-]+\.[\p{L}\p{N}.-]*[\p{L}\p{N}]/gu
+  /(?<![\p{L}\p{N}._%+\-'!#$&*/=?^{|}~])[\p{L}\p{N}._%+\-'!#$&*/=?^{|}~]+@[\p{L}\p{N}-]+\.[\p{L}\p{N}.-]*\p{L}[\p{L}\p{N}]*/gu
 
 function redactEmailAddresses(value: string | undefined): string | undefined {
   return value?.replace(EMAIL_RE, EMAIL_REDACTION_PLACEHOLDER)

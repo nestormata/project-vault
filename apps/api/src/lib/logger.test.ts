@@ -147,6 +147,8 @@ describe('serializeLogError email redaction (70-4)', () => {
     '@mention',
     'a @ b',
     '12:30@5',
+    'at /app/node_modules/.pnpm/pg-pool@3.6.1/node_modules/pg-pool/index.js:45',
+    'file:///app/node_modules/pkg@1.2.3-4/x.js',
   ])('leaves non-addresses untouched: %s', (input) => {
     expect(serializeLogError(new Error(input)).message).toBe(input)
   })
