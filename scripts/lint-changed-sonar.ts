@@ -162,9 +162,18 @@ function collectChanges(root: string, mergeBase: string): ChangeSet {
 /** The `include` entries of a tsconfig (comments tolerated), or `null` when it has none. */
 function tsconfigIncludes(tsconfigText: string): string[] | null {
   const withoutComments = tsconfigText.replaceAll(/^\s*\/\/.*$/gm, '')
-  const match = /"include"\s*:\s*\[([^\]]*)\]/.exec(withoutComments)
-  if (!match) return null
-  return [...(match[1] ?? '').matchAll(/"([^"]+)"/g)].map((entry) => entry[1] ?? '')
+  const keyAt = withoutComments.indexOf('"include"')
+  if (keyAt === -1) return null
+  let cursor = keyAt + '"include"'.length
+  while (/\s/.test(withoutComments.charAt(cursor))) cursor++
+  if (withoutComments.charAt(cursor) !== ':') return null
+  cursor++
+  while (/\s/.test(withoutComments.charAt(cursor))) cursor++
+  if (withoutComments.charAt(cursor) !== '[') return null
+  const close = withoutComments.indexOf(']', cursor)
+  if (close === -1) return null
+  const body = withoutComments.slice(cursor + 1, close)
+  return [...body.matchAll(/"([^"]+)"/g)].map((entry) => entry[1] ?? '')
 }
 
 function directoryOf(path: string): string {
