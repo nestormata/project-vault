@@ -26,6 +26,8 @@ ruleTester.run('prefer-to-have-length', preferToHaveLength, {
     // Different matcher chain.
     `expect(items.length).resolves.toBe(3)`,
     `expect(items.length).toBeDefined()`,
+    // Asymmetric matcher as the expected value: toHaveLength cannot take it.
+    `expect(items.length).toEqual(expect.any(Number))`,
     // expect() with no or several arguments is not the assertion shape.
     `expect().toBe(3)`,
     `expect(...args).toBe(3)`,
@@ -62,6 +64,12 @@ ruleTester.run('prefer-to-have-length', preferToHaveLength, {
       // A call result is moved, not duplicated.
       code: `expect(getRows().length).toBe(2)`,
       output: `expect(getRows()).toHaveLength(2)`,
+      errors: error,
+    },
+    {
+      // Paired with the asymmetric-matcher valid case: a plain variable is still rewritten.
+      code: `expect(items.length).toEqual(expected)`,
+      output: `expect(items).toHaveLength(expected)`,
       errors: error,
     },
     {

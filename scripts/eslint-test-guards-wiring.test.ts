@@ -60,7 +60,7 @@ describe('baseRules registration (AC-6)', () => {
     expect(config?.files).toEqual(expect.arrayContaining([TS_GLOB, '**/*.js']))
   })
 
-  it('pins the carve-out list: loader.ts is blocked by the extension-api version-bump guard (DW-578)', () => {
+  it('pins the carve-out list: loader.ts is blocked by the extension-api version-bump guard (DW-582)', () => {
     expect(NO_AWAIT_IN_LOOP_CARVE_OUTS).toEqual(['**/src/extensions/loader.ts'])
   })
 

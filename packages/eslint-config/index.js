@@ -24,7 +24,7 @@ export const TEST_FILE_GLOBS = [
   '**/__tests__/**',
 ]
 
-// Ledgered carve-out from `no-await-in-loop` (Story 66-17, deferred-work DW-578):
+// Ledgered carve-out from `no-await-in-loop` (Story 66-17, deferred-work DW-582):
 // apps/api/src/extensions/loader.ts cannot be changed without an extension-api version bump
 // (check-extension-api-version-skew lists it), so its one sequential audit-fanout loop stays until
 // that bump. Remove this entry when the loop is converted. A guard test pins this list.

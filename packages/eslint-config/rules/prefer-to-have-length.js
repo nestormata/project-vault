@@ -11,6 +11,8 @@
 //    while `toHaveLength` throws on `undefined`, so the rewrite would change semantics.
 //  - `expect(x.length).toBeGreaterThan(0)` and other non-equality matchers: no `toHaveLength` form.
 //  - `expect(map.size).toBe(2)`: `toHaveLength` reads `.length`, not `.size`.
+//  - `expect(x.length).toEqual(expect.any(Number))` (an asymmetric matcher as the expected value):
+//    `toHaveLength` takes a number, so the rewrite would break the assertion.
 //  - `.resolves` / `.rejects` chains and `expect.soft(...)`: out of scope (documented limit).
 import { expectCallBehindMatcher, isNonComputedMember } from './expect-chain.js'
 
@@ -18,6 +20,16 @@ const EQUALITY_MATCHERS = new Set(['toBe', 'toEqual', 'toStrictEqual'])
 
 function lengthOwner(argument) {
   return isNonComputedMember(argument, 'length') && !argument.optional ? argument.object : null
+}
+
+function isAsymmetricMatcher(node) {
+  return (
+    node !== undefined &&
+    node.type === 'CallExpression' &&
+    isNonComputedMember(node.callee) &&
+    node.callee.object.type === 'Identifier' &&
+    node.callee.object.name === 'expect'
+  )
 }
 
 export const preferToHaveLength = {
@@ -35,7 +47,7 @@ export const preferToHaveLength = {
     return {
       CallExpression(node) {
         const expectCall = expectCallBehindMatcher(node.callee, EQUALITY_MATCHERS)
-        if (!expectCall) return
+        if (!expectCall || isAsymmetricMatcher(node.arguments[0])) return
         const owner = lengthOwner(expectCall.arguments[0])
         if (!owner || owner.type === 'ChainExpression') return
         context.report({
