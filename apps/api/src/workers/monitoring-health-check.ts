@@ -101,6 +101,30 @@ async function fetchHop(
   }
 }
 
+/** One hop of the redirect chain, then (recursively, each hop waiting on the previous one) the
+ * next. A chain still redirecting past MAX_REDIRECT_HOPS is a `network_error`. */
+async function followHops(
+  currentUrl: string,
+  redirectCount: number,
+  controller: AbortController,
+  dispatcher: Dispatcher,
+  start: number
+): Promise<ProbeResult> {
+  if (redirectCount > MAX_REDIRECT_HOPS) return failureResult(start, 'network_error')
+  if (redirectCount > 0) {
+    try {
+      await assertUrlIsMonitorable(currentUrl)
+    } catch {
+      return failureResult(start, 'ssrf_blocked')
+    }
+  }
+
+  const outcome = await fetchHop(currentUrl, controller, dispatcher, start)
+  if (outcome.kind === 'final') return outcome.result
+  const nextUrl = resolveRedirectTarget(outcome.location, currentUrl)
+  return followHops(nextUrl, redirectCount + 1, controller, dispatcher, start)
+}
+
 /**
  * AC 4, ADR-6.2-08: performs the HTTP probe with a single 10-second budget covering the whole
  * request chain, following redirects manually (never `redirect: 'follow'`) with each hop
@@ -118,21 +142,7 @@ export async function probeServiceEndpoint(
   const timeoutHandle = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS)
 
   try {
-    let currentUrl = startUrl
-    for (let redirectCount = 0; redirectCount <= MAX_REDIRECT_HOPS; redirectCount++) {
-      if (redirectCount > 0) {
-        try {
-          await assertUrlIsMonitorable(currentUrl)
-        } catch {
-          return failureResult(start, 'ssrf_blocked')
-        }
-      }
-
-      const outcome = await fetchHop(currentUrl, controller, dispatcher, start)
-      if (outcome.kind === 'final') return outcome.result
-      currentUrl = resolveRedirectTarget(outcome.location, currentUrl)
-    }
-    return failureResult(start, 'network_error') // chain exceeded MAX_REDIRECT_HOPS
+    return await followHops(startUrl, 0, controller, dispatcher, start)
   } finally {
     clearTimeout(timeoutHandle)
   }

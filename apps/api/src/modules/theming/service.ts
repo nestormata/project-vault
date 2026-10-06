@@ -4,6 +4,7 @@ import type { FastifyBaseLogger } from 'fastify'
 import YAML from 'yaml'
 import { AuditEvent, OperationalEvent, THEME_TOKENS } from '@project-vault/shared'
 import type { ThemeTokenDefinition } from '@project-vault/shared'
+import { firstResultSequential } from '../../lib/first-result-sequential.js'
 import { mapWithConcurrency } from '../../lib/map-with-concurrency.js'
 import { operationalLog } from '../../lib/logger.js'
 import { writeSystemAuditRow } from '../../lib/system-audit-row.js'
@@ -55,6 +56,23 @@ const silentLogger: LoggerLike = {
 const defaultReaddir: ReaddirFn = (dir) => fsPromises.readdir(dir)
 const defaultStat: StatFn = (filePath) => fsPromises.stat(filePath)
 
+async function readChunks(
+  handle: fsPromises.FileHandle,
+  buffer: Buffer,
+  maxBytes: number,
+  chunks: Buffer[],
+  totalSoFar: number
+): Promise<void> {
+  const { bytesRead } = await handle.read(buffer, 0, buffer.length, null)
+  if (bytesRead === 0) return
+  const total = totalSoFar + bytesRead
+  if (total > maxBytes) {
+    throw new Error(`file exceeds maximum size cap of ${maxBytes} bytes`)
+  }
+  chunks.push(Buffer.from(buffer.subarray(0, bytesRead)))
+  return readChunks(handle, buffer, maxBytes, chunks, total)
+}
+
 /**
  * AC-10 TOCTOU note: `fs.stat()` alone cannot be trusted as the size guarantee (the file can grow
  * between stat and read). This reads in bounded chunks and aborts the moment the actual byte
@@ -64,17 +82,7 @@ const defaultReadFileBounded: ReadFileBoundedFn = async (filePath, maxBytes) => 
   const handle = await fsPromises.open(filePath, 'r')
   try {
     const chunks: Buffer[] = []
-    let total = 0
-    const buffer = Buffer.alloc(64 * 1024)
-    for (;;) {
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null)
-      if (bytesRead === 0) break
-      total += bytesRead
-      if (total > maxBytes) {
-        throw new Error(`file exceeds maximum size cap of ${maxBytes} bytes`)
-      }
-      chunks.push(Buffer.from(buffer.subarray(0, bytesRead)))
-    }
+    await readChunks(handle, Buffer.alloc(64 * 1024), maxBytes, chunks, 0)
     return Buffer.concat(chunks).toString('utf-8')
   } finally {
     await handle.close()
@@ -463,34 +471,49 @@ function validateAndCompileTokens(
   return { declarations }
 }
 
+/** One asset entry's failure (`{ reason }`), or `null` when it is acceptable. */
+async function assetFailure(
+  key: string,
+  rawValue: unknown,
+  dnsLookup: DnsLookupFn | undefined
+): Promise<{ reason: string } | null> {
+  if (typeof rawValue !== 'string') return { reason: `asset '${key}': must be a URL string` }
+  // AC-5 judgment call: HTTPS-only, for defense-in-depth consistency with the rest of
+  // this codebase's outbound-URL conventions, even though the server never fetches it.
+  if (!rawValue.startsWith('https://')) return { reason: `asset '${key}': must use https://` }
+  if (ASSET_URL_UNSAFE_CHARS.test(rawValue)) {
+    return { reason: `asset '${key}': URL contains unsafe characters` }
+  }
+  // Validated for well-formedness only — the raw string (not this parsed object) is what gets
+  // interpolated into the compiled CSS below.
+  try {
+    new URL(rawValue)
+  } catch {
+    return { reason: `asset '${key}': not a valid URL` }
+  }
+  try {
+    await resolveAndValidatePublicAddresses(rawValue, dnsLookup)
+  } catch {
+    return { reason: `asset '${key}': URL resolves to a private/reserved address` }
+  }
+  return null
+}
+
 async function validateAssets(
   assets: Record<string, unknown>,
   dnsLookup: DnsLookupFn | undefined
 ): Promise<{ declarations: string[] } | { reason: string }> {
-  const declarations: string[] = []
-  for (const [key, rawValue] of Object.entries(assets)) {
-    if (typeof rawValue !== 'string') return { reason: `asset '${key}': must be a URL string` }
-    // AC-5 judgment call: HTTPS-only, for defense-in-depth consistency with the rest of
-    // this codebase's outbound-URL conventions, even though the server never fetches it.
-    if (!rawValue.startsWith('https://')) return { reason: `asset '${key}': must use https://` }
-    if (ASSET_URL_UNSAFE_CHARS.test(rawValue)) {
-      return { reason: `asset '${key}': URL contains unsafe characters` }
-    }
-    // Validated for well-formedness only — the raw string (not this parsed object) is what gets
-    // interpolated into the compiled CSS below.
-    try {
-      new URL(rawValue)
-    } catch {
-      return { reason: `asset '${key}': not a valid URL` }
-    }
-    try {
-      await resolveAndValidatePublicAddresses(rawValue, dnsLookup)
-    } catch {
-      return { reason: `asset '${key}': URL resolves to a private/reserved address` }
-    }
-    declarations.push(`  --asset-${kebabCase(key)}: url("${rawValue}");`)
+  const entries = Object.entries(assets)
+  // In entry order, stopping at the first failing entry (its DNS lookup included).
+  const failure = await firstResultSequential(entries, ([key, rawValue]) =>
+    assetFailure(key, rawValue, dnsLookup)
+  )
+  if (failure) return failure
+  return {
+    declarations: entries.map(
+      ([key, rawValue]) => `  --asset-${kebabCase(key)}: url("${String(rawValue)}");`
+    ),
   }
-  return { declarations }
 }
 
 function compileThemeCss(name: string, declarations: string[]): string {

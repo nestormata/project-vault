@@ -12,6 +12,7 @@ import {
 import { AuditEvent } from '@project-vault/shared'
 import type { EncryptedValue } from '@project-vault/crypto'
 import { AppError } from '../../lib/errors.js'
+import { firstResultSequential } from '../../lib/first-result-sequential.js'
 import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { env } from '../../config/env.js'
 import {
@@ -489,16 +490,17 @@ export async function activeOrgForUser(tx: Tx, userId: string): Promise<string |
     .select({ orgId: organizations.id })
     .from(organizations)
     .orderBy(asc(organizations.createdAt), asc(organizations.id))
-  for (const { orgId } of orgRows) {
+  // Sequential by necessity: each probe re-scopes the same `tx` with set_config.
+  const found = await firstResultSequential(orgRows, async ({ orgId }) => {
     await tx.execute(sql`SELECT set_config('app.current_org_id', ${orgId}, true)`)
     const memberships = await tx
       .select({ orgId: orgMemberships.orgId })
       .from(orgMemberships)
       .where(and(eq(orgMemberships.userId, userId), eq(orgMemberships.status, 'active')))
       .limit(1)
-    if (memberships[0]) return orgId
-  }
-  return null
+    return memberships[0] ? orgId : null
+  })
+  return found ?? null
 }
 
 async function passwordMatches(password: string, hash: string | null): Promise<boolean> {

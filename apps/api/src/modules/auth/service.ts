@@ -18,6 +18,7 @@ import {
 } from '@project-vault/db/schema'
 import { AuditEvent, OperationalEvent, trimHyphens } from '@project-vault/shared'
 import { AppError } from '../../lib/errors.js'
+import { firstResultSequential } from '../../lib/first-result-sequential.js'
 import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { mapWithConcurrency } from '../../lib/map-with-concurrency.js'
 import { operationalLog } from '../../lib/logger.js'
@@ -49,6 +50,7 @@ import {
 } from './session-revoke.js'
 
 const MAX_SLUG_ATTEMPTS = 5
+const SLUG_ATTEMPTS = Array.from({ length: MAX_SLUG_ATTEMPTS }, (_, attempt) => attempt)
 const REFRESH_TOKEN_REVOKED = 'refresh_token_revoked'
 const REFRESH_TOKEN_REVOKED_MESSAGE = 'Refresh token has been revoked'
 
@@ -246,31 +248,41 @@ export async function allocateOrganizationSlug(
   tx: Tx,
   baseSlug: string
 ): Promise<{ id: string; slug: string }> {
-  for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt += 1) {
-    const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt + 1}`
-    try {
-      // Story 9.2 AC-8 (duplicate-org-name-different-slug, "reuse allocateOrganizationSlug's
-      // existing collision-retry loop verbatim"): each attempt runs in its own SAVEPOINT
-      // (tx.transaction() nested inside an existing transaction becomes a real SAVEPOINT, same
-      // pattern already used a few lines below for the platform-operator bootstrap race). Without
-      // this, a unique-violation on attempt N aborts the *entire* outer transaction (Postgres
-      // 25P02 "current transaction is aborted"), so attempt N+1's otherwise-valid insert would
-      // always fail too — a latent bug this story's AC-8 edge case is the first thing to actually
-      // exercise (self-registration slug collisions are rare enough in practice that no prior
-      // story's test forced two attempts within the same transaction).
-      const inserted = await tx.transaction((savepointTx) =>
-        (savepointTx as Tx)
-          .insert(organizations)
-          .values({ name: '', slug })
-          .returning({ id: organizations.id, slug: organizations.slug })
-      )
-      const org = inserted[0]
-      if (org) return org
-    } catch (error) {
-      if (!isUniqueViolation(error, 'organizations_slug_unique')) throw error
-    }
-  }
+  const allocated = await firstResultSequential(SLUG_ATTEMPTS, (attempt) =>
+    tryAllocateOrganizationSlug(tx, baseSlug, attempt)
+  )
+  if (allocated) return allocated
   throw new AppError('org_name_unavailable', 'Organization name could not be allocated', 409)
+}
+
+/** One slug attempt: the allocated org, or `undefined` when the slug is already taken. */
+async function tryAllocateOrganizationSlug(
+  tx: Tx,
+  baseSlug: string,
+  attempt: number
+): Promise<{ id: string; slug: string } | undefined> {
+  const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt + 1}`
+  try {
+    // Story 9.2 AC-8 (duplicate-org-name-different-slug, "reuse allocateOrganizationSlug's
+    // existing collision-retry loop verbatim"): each attempt runs in its own SAVEPOINT
+    // (tx.transaction() nested inside an existing transaction becomes a real SAVEPOINT, same
+    // pattern already used a few lines below for the platform-operator bootstrap race). Without
+    // this, a unique-violation on attempt N aborts the *entire* outer transaction (Postgres
+    // 25P02 "current transaction is aborted"), so attempt N+1's otherwise-valid insert would
+    // always fail too — a latent bug this story's AC-8 edge case is the first thing to actually
+    // exercise (self-registration slug collisions are rare enough in practice that no prior
+    // story's test forced two attempts within the same transaction).
+    const inserted = await tx.transaction((savepointTx) =>
+      (savepointTx as Tx)
+        .insert(organizations)
+        .values({ name: '', slug })
+        .returning({ id: organizations.id, slug: organizations.slug })
+    )
+    return inserted[0]
+  } catch (error) {
+    if (!isUniqueViolation(error, 'organizations_slug_unique')) throw error
+    return undefined
+  }
 }
 
 async function resolveRegistrationInvitation(

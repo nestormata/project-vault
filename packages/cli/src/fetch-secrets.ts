@@ -91,7 +91,6 @@ export async function fetchAllOrNothing(
   context: SecretRequestContext,
   deps: FetchSecretsDeps
 ): Promise<FetchAllResult> {
-  const writeStderr = deps.writeStderr ?? noop
   // Object.create(null) rather than `{}` — a target env var name of `__proto__` (a syntactically
   // valid, non-reserved identifier) would otherwise hit `Object.prototype`'s `__proto__` accessor
   // on plain-object bracket assignment, which silently no-ops for a non-object value instead of
@@ -99,44 +98,61 @@ export async function fetchAllOrNothing(
   // fail-open gap in code whose whole purpose is guaranteed delivery. A null-prototype object has
   // no such accessor, so the assignment below always sets a real own property, and a later
   // `{ ...injected }` spread (CopyDataProperties semantics, not [[Set]]) carries it through.
-  const injected: Record<string, string> = Object.create(null) as Record<string, string>
-  let servedFromCacheCount = 0
+  const state: FetchState = {
+    injected: Object.create(null) as Record<string, string>,
+    servedFromCacheCount: 0,
+  }
+  const failure = await fetchEntryAt(entries, 0, context, deps, state)
+  if (failure) return failure
+  return { ok: true, injected: state.injected, servedFromCacheCount: state.servedFromCacheCount }
+}
 
-  for (const entry of entries) {
-    const safeName = sanitizeForTerminal(entry.credentialName)
-    try {
-      // Story 43.3 decision #7 — participates in the same offline-cache fallback `get`
-      // does, with a mandatory per-secret provenance warning (never a silent, possibly-stale value).
-      // Story 43.4 decision #6 — a cache-served value makes no HTTP request, so the server writes no
-      // audit entry for it: say so rather than refuse (accepted residual risk, see the README).
-      const { result: value, servedAfterNetworkFailure } = await withFetchProvenanceTracking(() =>
-        deps.getSecret(entry.credentialName, context)
+type FetchState = { injected: Record<string, string>; servedFromCacheCount: number }
+
+/** Fetches `entries[index]`, then (strictly one after another, each waiting on the previous one)
+ * the rest. Resolves the first failure, or `null` once every entry was fetched. */
+async function fetchEntryAt(
+  entries: InjectEntry[],
+  index: number,
+  context: SecretRequestContext,
+  deps: FetchSecretsDeps,
+  state: FetchState
+): Promise<EntryFailure | null> {
+  const entry = entries[index]
+  if (entry === undefined) return null
+  const writeStderr = deps.writeStderr ?? noop
+  const safeName = sanitizeForTerminal(entry.credentialName)
+  try {
+    // Story 43.3 decision #7 — participates in the same offline-cache fallback `get`
+    // does, with a mandatory per-secret provenance warning (never a silent, possibly-stale value).
+    // Story 43.4 decision #6 — a cache-served value makes no HTTP request, so the server writes no
+    // audit entry for it: say so rather than refuse (accepted residual risk, see the README).
+    const { result: value, servedAfterNetworkFailure } = await withFetchProvenanceTracking(() =>
+      deps.getSecret(entry.credentialName, context)
+    )
+    if (servedAfterNetworkFailure) {
+      state.servedFromCacheCount += 1
+      writeStderr(
+        `warning: '${safeName}' served from offline cache (vault unreachable), value may be stale and this fetch is not recorded in the vault audit log\n`
       )
-      if (servedAfterNetworkFailure) {
-        servedFromCacheCount += 1
-        writeStderr(
-          `warning: '${safeName}' served from offline cache (vault unreachable), value may be stale and this fetch is not recorded in the vault audit log\n`
-        )
-      }
-      injected[entry.envVarName] = value
-    } catch (error) {
-      // Only this entry's own failure is ever used to build the abort message — `injected` (which
-      // may hold earlier, already-fetched values) is never serialized into it.
-      if (error instanceof VaultAgentError) {
-        return {
-          ok: false,
-          exitCode: exitCodeForAgentErrorCode(error.code),
-          error: messageForAgentError(error, safeName),
-        }
-      }
-      const message = error instanceof Error ? error.message : String(error)
+    }
+    state.injected[entry.envVarName] = value
+  } catch (error) {
+    // Only this entry's own failure is ever used to build the abort message — `state.injected`
+    // (which may hold earlier, already-fetched values) is never serialized into it.
+    if (error instanceof VaultAgentError) {
       return {
         ok: false,
-        exitCode: EXIT_CODES.unexpected,
-        error: `Unexpected error fetching '${safeName}': ${sanitizeServerText(message, ERROR_TEXT_MAX_CODE_POINTS)}`,
+        exitCode: exitCodeForAgentErrorCode(error.code),
+        error: messageForAgentError(error, safeName),
       }
     }
+    const message = error instanceof Error ? error.message : String(error)
+    return {
+      ok: false,
+      exitCode: EXIT_CODES.unexpected,
+      error: `Unexpected error fetching '${safeName}': ${sanitizeServerText(message, ERROR_TEXT_MAX_CODE_POINTS)}`,
+    }
   }
-
-  return { ok: true, injected, servedFromCacheCount }
+  return fetchEntryAt(entries, index + 1, context, deps, state)
 }

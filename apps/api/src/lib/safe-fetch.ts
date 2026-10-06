@@ -268,17 +268,23 @@ export type SafeFetchDeps = {
  * keep safeFetchExternal()'s own complexity down. */
 async function drainBoundedResponseBody(body: ReadableStream<Uint8Array> | null): Promise<void> {
   if (!body) return
-  const reader = body.getReader()
-  let bytesRead = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) return
-    bytesRead += value?.byteLength ?? 0
-    if (bytesRead > MAX_RESPONSE_BODY_BYTES) {
-      await reader.cancel()
-      return
-    }
+  await drainReader(body.getReader(), 0)
+}
+
+/** Reads chunk after chunk (each read waits on the previous one) until the stream ends or the
+ * running total crosses the cap, in which case the stream is cancelled. */
+async function drainReader(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  bytesReadSoFar: number
+): Promise<void> {
+  const { done, value } = await reader.read()
+  if (done) return
+  const bytesRead = bytesReadSoFar + (value?.byteLength ?? 0)
+  if (bytesRead > MAX_RESPONSE_BODY_BYTES) {
+    await reader.cancel()
+    return
   }
+  return drainReader(reader, bytesRead)
 }
 
 export async function safeFetchExternal(
