@@ -118,7 +118,7 @@ async function fetchEntryAt(
   deps: FetchSecretsDeps,
   state: FetchState
 ): Promise<EntryFailure | null> {
-  const entry = entries[index]
+  const entry = entries.at(index)
   if (entry === undefined) return null
   const writeStderr = deps.writeStderr ?? noop
   const safeName = sanitizeForTerminal(entry.credentialName)
