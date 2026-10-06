@@ -3,11 +3,17 @@
 // `$lib` components, and fails closed on a route file with no region, an unparseable file, a region
 // whose point is not registered, a region component outside `src/lib/components`, and an oracle
 // census mismatch. Fixtures are temp trees, never committed under `src/`.
-import { rmSync } from 'node:fs'
+import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { run } from './check-route-regions.js'
-import { auditRouteRegions, formatTable, formatUsesTable } from './lib/route-regions.js'
+import {
+  auditRouteRegions,
+  formatTable,
+  formatUsesTable,
+  OVERSIZE_ENFORCEMENT,
+  OVERSIZE_FOLLOW_UP_STORIES,
+} from './lib/route-regions.js'
 import { useFixtureRoots, writeFixture } from './lib/fixture-test-helpers.js'
 
 const TABLE_POINT = 'things.list.table'
@@ -35,6 +41,12 @@ function webTree(overrides: Record<string, string> = {}): string {
   }
   for (const [path, content] of Object.entries(files)) writeFixture(root, path, content)
   return root
+}
+
+const io = () => {
+  const out: string[] = []
+  const err: string[] = []
+  return { out, err, io: { out: (t: string) => out.push(t), err: (t: string) => err.push(t) } }
 }
 
 describe('route-regions audit: the table', () => {
@@ -182,18 +194,40 @@ describe('route-regions audit: top-level uses and oversize components (69.6 AC-1
     expect(result.problems.join('\n')).toContain('render-only')
   })
 
-  it('flags a region component over 60 template lines as OVERSIZE', () => {
+  it('reports a region component over 60 template lines as OVERSIZE, a problem only when enforced', () => {
     const long = `<div>\n${'  <p>line</p>\n'.repeat(60)}</div>\n`
-    const result = auditRouteRegions(
-      webTree({ 'src/lib/components/things/ThingsTable.svelte': long })
-    )
-    expect(result.rows[0]).toMatchObject({ componentLines: 62, status: 'OVERSIZE' })
-    expect(result.problems.join('\n')).toContain('OVERSIZE')
+    const root = webTree({ 'src/lib/components/things/ThingsTable.svelte': long })
+    const reported = auditRouteRegions(root)
+    expect(reported.rows[0]).toMatchObject({ componentLines: 62, status: 'OVERSIZE' })
+    expect(reported.oversize).toHaveLength(1)
+    expect(reported.problems).toEqual([])
+    const enforced = auditRouteRegions(root, { enforceOversize: true })
+    expect(enforced.problems.join('\n')).toContain('OVERSIZE')
     const exactly = `<div>\n${'  <p>line</p>\n'.repeat(58)}</div>\n`
     const ok = auditRouteRegions(
-      webTree({ 'src/lib/components/things/ThingsTable.svelte': exactly })
+      webTree({ 'src/lib/components/things/ThingsTable.svelte': exactly }),
+      {
+        enforceOversize: true,
+      }
     )
     expect(ok.rows[0]).toMatchObject({ componentLines: 60, status: 'done' })
+    expect(ok.oversize).toEqual([])
+  })
+
+  it('the oversize switch is exactly report-only, names its follow-up stories and lists no component', () => {
+    expect(OVERSIZE_ENFORCEMENT).toBe(false)
+    expect(OVERSIZE_FOLLOW_UP_STORIES).toEqual(['69-10', '69-11', '69-12'])
+    const source = readFileSync(new URL('./lib/route-regions.ts', import.meta.url), 'utf8')
+    expect(source).toContain('69-10, 69-11 and 69-12')
+    expect(source).not.toMatch(/allowlist|allow-list|baseline|ignoreList|\.svelte'\s*,\s*'/i)
+  })
+
+  it('the CLI prints the report-only OVERSIZE summary and still exits 0', () => {
+    const sink = io()
+    const long = `<div>\n${'  <p>line</p>\n'.repeat(60)}</div>\n`
+    const root = webTree({ 'src/lib/components/things/ThingsTable.svelte': long })
+    expect(run(['--web', root], sink.io)).toBe(0)
+    expect(sink.out.join('')).toContain('report-only until stories 69-10, 69-11, 69-12')
   })
 
   it('prints a uses table with the fixed columns', () => {
@@ -206,12 +240,6 @@ describe('route-regions audit: top-level uses and oversize components (69.6 AC-1
 })
 
 describe('check-route-regions: the CLI', () => {
-  const io = () => {
-    const out: string[] = []
-    const err: string[] = []
-    return { out, err, io: { out: (t: string) => out.push(t), err: (t: string) => err.push(t) } }
-  }
-
   it('exits 0 and prints the row count on a clean tree', () => {
     const sink = io()
     expect(run(['--web', webTree()], sink.io)).toBe(0)

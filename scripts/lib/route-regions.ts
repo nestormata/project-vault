@@ -25,6 +25,15 @@ const STABLE_MARKER = '@pv-stable'
 /** Story 69.6 Q1/AC-4: a region component longer than this holds more than one section, and a CM
  * author cannot inject between its sections until each becomes a sub-region component. */
 export const MAX_REGION_COMPONENT_LINES = 60
+/**
+ * The single, explicit sequencing switch for the OVERSIZE finding (Nestor's Story 69.6 Q1 decision,
+ * 2026-10-05: the decomposition of the 38 region components is split into follow-up stories). While it
+ * is `false` an OVERSIZE region is printed and counted but is not a problem. Follow-up stories
+ * 69-10, 69-11 and 69-12 split the components in batches; the last one flips this to `true`. It is a
+ * switch for the whole rule, never a list of component names: no component is exempt by name.
+ */
+export const OVERSIZE_ENFORCEMENT = false
+export const OVERSIZE_FOLLOW_UP_STORIES = ['69-10', '69-11', '69-12'] as const
 
 export type AuditStatus = 'done' | 'MISSING' | 'UNPARSEABLE' | 'OVERSIZE'
 
@@ -49,8 +58,15 @@ export interface UseRow extends TopLevelUse {
   file: string
 }
 
+export interface AuditOptions {
+  /** Defaults to `OVERSIZE_ENFORCEMENT`; tests set it to prove both modes. */
+  enforceOversize?: boolean
+}
+
 export interface AuditResult {
   rows: AuditRow[]
+  /** One message per OVERSIZE region (a problem only when enforcement is on). */
+  oversize: string[]
   /** Every top-level use of every route file; the listing AC-1 asks for. */
   uses: UseRow[]
   problems: string[]
@@ -167,10 +183,50 @@ function usesOf(webRoot: string, route: { rel: string }, ctx: ScanContext): UseR
   return (scan.useList ?? []).map((use) => ({ file: route.rel, ...use }))
 }
 
-export function auditRouteRegions(webRoot: string): AuditResult {
+function oversizeMessages(rows: readonly AuditRow[]): string[] {
+  return rows
+    .filter((row) => row.status === 'OVERSIZE')
+    .map(
+      (row) =>
+        `${row.file}: region "${row.region}" is OVERSIZE (${row.component} holds ${row.componentLines} template lines, the limit is ${MAX_REGION_COMPONENT_LINES}): split its sections into sub-region components`
+    )
+}
+
+function auditRoute(
+  webRoot: string,
+  route: { rel: string; kind: RouteKind },
+  registry: ReadonlyMap<string, string> | null,
+  ctx: ScanContext,
+  result: AuditResult
+): void {
+  const reach = reachRegions(webRoot, route.rel)
+  for (const failed of reach.unparseable) {
+    result.rows.push(emptyRow(route.rel, route.kind, 'UNPARSEABLE'))
+    result.problems.push(`${failed.file}: UNPARSEABLE (${failed.reason})`)
+  }
+  if (reach.regions.length === 0 && reach.unparseable.length === 0) {
+    result.rows.push(emptyRow(route.rel, route.kind, 'MISSING'))
+    result.problems.push(`${route.rel}: MISSING (no @region reachable from this route file)`)
+  }
+  for (const region of reach.regions) {
+    result.rows.push(rowFor(webRoot, route, region, registry, result.problems))
+  }
+  for (const use of usesOf(webRoot, route, ctx)) {
+    result.uses.push(use)
+    result.problems.push(...useProblems(route, use))
+  }
+}
+
+export function auditRouteRegions(webRoot: string, options: AuditOptions = {}): AuditResult {
   const { routes } = listRouteFiles(webRoot)
   const registry = readRegistry(webRoot)
-  const result: AuditResult = { rows: [], uses: [], problems: [], routeFiles: routes.length }
+  const result: AuditResult = {
+    rows: [],
+    oversize: [],
+    uses: [],
+    problems: [],
+    routeFiles: routes.length,
+  }
   const ctx = newScanContext(webRoot, (path) => readOverlayFile(webRoot, path))
   const resets = walkFiles(join(webRoot, ROUTES_DIR), (file) =>
     RESET_NAME.test(posix.basename(file))
@@ -181,24 +237,9 @@ export function auditRouteRegions(webRoot: string): AuditResult {
     )
   }
   if (registry === null) result.problems.push('the injection-point registry file is missing')
-  for (const route of routes) {
-    const reach = reachRegions(webRoot, route.rel)
-    for (const failed of reach.unparseable) {
-      result.rows.push(emptyRow(route.rel, route.kind, 'UNPARSEABLE'))
-      result.problems.push(`${failed.file}: UNPARSEABLE (${failed.reason})`)
-    }
-    if (reach.regions.length === 0 && reach.unparseable.length === 0) {
-      result.rows.push(emptyRow(route.rel, route.kind, 'MISSING'))
-      result.problems.push(`${route.rel}: MISSING (no @region reachable from this route file)`)
-    }
-    for (const region of reach.regions) {
-      result.rows.push(rowFor(webRoot, route, region, registry, result.problems))
-    }
-    for (const use of usesOf(webRoot, route, ctx)) {
-      result.uses.push(use)
-      result.problems.push(...useProblems(route, use))
-    }
-  }
+  for (const route of routes) auditRoute(webRoot, route, registry, ctx, result)
+  result.oversize = oversizeMessages(result.rows)
+  if (options.enforceOversize ?? OVERSIZE_ENFORCEMENT) result.problems.push(...result.oversize)
   const census = censusProblem(webRoot, routes.length)
   if (census !== null) result.problems.push(census)
   return result
@@ -250,11 +291,6 @@ function rowFor(
   problems.push(...regionProblems(region, component, point, registry))
   const componentCode = component === '' ? null : readCode(webRoot, component)
   const componentLines = componentCode === null ? 0 : templateLines(componentCode)
-  if (componentLines > MAX_REGION_COMPONENT_LINES) {
-    problems.push(
-      `${region.host}:${region.line}: region "${region.name}" is OVERSIZE (${component} holds ${componentLines} template lines, the limit is ${MAX_REGION_COMPONENT_LINES}): split its sections into sub-region components`
-    )
-  }
   const span = lineAt(region.code, region.node.end) - lineAt(region.code, region.node.start) + 1
   return {
     file: route.rel,

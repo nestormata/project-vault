@@ -315,8 +315,10 @@ from the R3 scan of the shipped guard), has no stored baseline, and exits 1 belo
 census sentence ("covers every one of the N route files") must exist and agree with the tree, so deleting a route
 file together with its region cannot keep the figure at 100 %. A `<InjectionPoint>` inside a `{#snippet}` the file
 never renders, or behind a literal-false `{#if}`, does not count as rendering its point (it is reported as dead).
-`pnpm check-route-regions --print` also lists every top-level use (`covered` or `UNCOVERED`) and fails on a region
-component of more than 60 non-blank template lines (`OVERSIZE`): a section a CM author cannot inject between.
+`pnpm check-route-regions --print` also lists every top-level use (`covered` or `UNCOVERED`) and reports every region
+component of more than 60 non-blank template lines (`OVERSIZE`): a section a CM author cannot inject between. The
+report is advisory while `OVERSIZE_ENFORCEMENT` (one constant in `scripts/lib/route-regions.ts`, no component list) is
+`false`; the batch stories 69-10..69-12 split the 38 components and the last one turns it on.
 
 **Shape.** The route file keeps the marker, the point and the data; the component keeps the markup and the logic only
 that region uses:
