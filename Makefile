@@ -303,7 +303,8 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	# schema-correct, high-or-above-only audit-ci invocation; see audit-ci.jsonc and
 	# scripts/check-audit-baseline.ts for the config shape and hygiene checks). The
 	# undici advisory formerly accepted here via packages/vault-action's @actions/core
-	# dependency is resolved (undici@7.29.0, no advisory as of Story 42.1, 2026-09-19); run
+	# dependency is resolved, and that dependency is now gone entirely (story 43-25 replaced
+	# it with an in-repo module; no advisory as of Story 42.1, 2026-09-19); run
 	# `pnpm exec audit-ci --config audit-ci.jsonc` for the current high-or-above inventory.
 	pnpm exec audit-ci --config audit-ci.jsonc
 	DATABASE_URL=$(DB_URL_APP) ADMIN_DATABASE_URL=$(DB_URL_ADMIN) pnpm generate-spec

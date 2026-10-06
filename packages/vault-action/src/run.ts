@@ -1,4 +1,4 @@
-import * as core from '@actions/core'
+import * as core from './actions-commands.js'
 import { createVaultAgent } from '@project-vault/agent'
 import { parseSecrets, type ParsedSecretEntry } from './parse-secrets.js'
 // Story 8-6 AC-10 — `createVaultAgent` pulls in `@project-vault/agent/cache-crypto`, which this

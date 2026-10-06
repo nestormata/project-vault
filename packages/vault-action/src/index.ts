@@ -1,4 +1,4 @@
-import * as core from '@actions/core'
+import * as core from './actions-commands.js'
 import { run } from './run.js'
 
 try {
