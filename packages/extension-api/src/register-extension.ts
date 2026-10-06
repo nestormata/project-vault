@@ -422,7 +422,7 @@ const INVALID_MANIFEST_FIELD = 'invalid-manifest-field'
 
 const DEFAULT_RUNTIME_HOST: ExtensionRuntimeContext & HostServices = {
   ...DEFAULT_HOST_SERVICES,
-  getDbHandle: () => Promise.resolve({ unavailable: 'not-configured' }),
+  getDbHandle: async () => ({ unavailable: 'not-configured' }),
 }
 
 /**
