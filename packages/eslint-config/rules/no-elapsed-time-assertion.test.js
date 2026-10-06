@@ -1,18 +1,5 @@
-import { RuleTester } from 'eslint'
-import tsParser from '@typescript-eslint/parser'
-import { describe, it } from 'vitest'
 import { noElapsedTimeAssertion } from './no-elapsed-time-assertion.js'
-
-RuleTester.describe = describe
-RuleTester.it = it
-
-const ruleTester = new RuleTester({
-  languageOptions: { ecmaVersion: 'latest', sourceType: 'module' },
-})
-
-const tsTester = new RuleTester({
-  languageOptions: { parser: tsParser, ecmaVersion: 'latest', sourceType: 'module' },
-})
+import { ruleTester, tsTester } from './rule-testers.js'
 
 const error = [{ messageId: 'elapsedTime' }]
 
