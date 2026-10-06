@@ -38,6 +38,19 @@ const UNIQUE_VIOLATION = '23505'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const SQLSTATE_PATTERN = /^[0-9A-Z]{5}$/
+// Node driver/socket errnos that happen to be exactly five upper-case characters (`EPIPE`) and so
+// match the SQLSTATE shape. The longer ones never match; they are listed so the intent is explicit.
+const DRIVER_ERRNO_CODES: ReadonlySet<string> = new Set([
+  'EPIPE',
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ECONNABORTED',
+  'ETIMEDOUT',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+])
 // C0 controls (includes NUL), DEL and C1 controls.
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/
 // A lone UTF-16 surrogate is not encodable: the driver writes it as U+FFFD, so two distinct
@@ -60,8 +73,14 @@ export type DelegationBurnInput = {
 export type DelegationBurnReplayed = { readonly outcome: 'replayed' }
 export type DelegationBurnStoreUnavailable = {
   readonly outcome: 'store_unavailable'
+  /** A real SQLSTATE only (see `isRealSqlState`); `null` for a driver error or a timeout. */
   readonly sqlState: string | null
+  /** Story 71.9: set by the host when its request deadline fired before the burn settled. */
+  readonly timedOut?: boolean
 }
+
+/** Story 71.9 AC-5: the closed `storeFailure` value of a `store_unavailable` security event. */
+export type DelegationStoreFailure = 'driver_error' | 'timeout' | `sqlstate:${string}`
 export type DelegationBurnOutcome =
   { readonly outcome: 'burned' } | DelegationBurnReplayed | DelegationBurnStoreUnavailable
 
@@ -78,6 +97,28 @@ const REPLAYED: DelegationBurnReplayed = Object.freeze({ outcome: 'replayed' })
 
 function storeUnavailable(sqlState: string | null): DelegationBurnStoreUnavailable {
   return Object.freeze({ outcome: 'store_unavailable', sqlState })
+}
+
+/**
+ * A real Postgres SQLSTATE: five `[0-9A-Z]` characters, at least one digit, and not a Node errno.
+ * Every Postgres SQLSTATE carries a digit (`23505`, `57P03`, `XX000`); the digit rule also rejects
+ * five-letter errnos that are not in the list (`EBUSY`, `EPERM`).
+ */
+export function isRealSqlState(code: unknown): code is string {
+  return (
+    typeof code === 'string' &&
+    SQLSTATE_PATTERN.test(code) &&
+    /\d/.test(code) &&
+    !DRIVER_ERRNO_CODES.has(code)
+  )
+}
+
+/** The closed value recorded for a `store_unavailable` outcome (never the raw error). */
+export function describeStoreFailure(
+  outcome: DelegationBurnStoreUnavailable
+): DelegationStoreFailure {
+  if (outcome.timedOut) return 'timeout'
+  return outcome.sqlState === null ? 'driver_error' : `sqlstate:${outcome.sqlState}`
 }
 
 type PgErrorFields = { code: unknown; constraintName: unknown }
@@ -107,7 +148,7 @@ export function classifyDelegationBurnError(
   error: unknown
 ): DelegationBurnReplayed | DelegationBurnStoreUnavailable {
   const { code, constraintName } = pgErrorFields(error)
-  const sqlState = typeof code === 'string' && SQLSTATE_PATTERN.test(code) ? code : null
+  const sqlState = isRealSqlState(code) ? code : null
   if (
     sqlState === UNIQUE_VIOLATION &&
     (constraintName === undefined || constraintName === BURN_PRIMARY_KEY)

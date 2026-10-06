@@ -51,6 +51,7 @@ The full trigger table is in [`docs/runbooks/README.md`](runbooks/README.md).
   [native-login exclusion](runbooks/native-login-exclusion.md) ·
   [handoff identity](runbooks/handoff-instance-identity.md) ·
   [handoff key rotation](runbooks/handoff-key-rotation.md) ·
+  [delegation key rotation and alerts](runbooks/delegation-key-rotation.md) ·
   [service revocation token](runbooks/service-revocation-token-rotation.md)
 
 ## Upgrades

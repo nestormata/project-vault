@@ -11,6 +11,14 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **Delegation observability and key runbook.** `pv_delegation_assertions_total` now counts `accepted`
+  (admitted by the delegation stages) and every `outcome` x `kid` series exists at 0 from boot, so
+  Prometheus `increase()` sees the first incident. Shipped alert rules for Prometheus:
+  [`docs/runbooks/alerts/delegation-alerts.rules.yml`](docs/runbooks/alerts/delegation-alerts.rules.yml),
+  and a new runbook, [`docs/runbooks/delegation-key-rotation.md`](docs/runbooks/delegation-key-rotation.md)
+  (routine rotation, emergency revoke with its limits, compromise triage, alert triage). A
+  `delegation_assertion_rejected` security event now carries the request id and, for
+  `store_unavailable`, a closed `storeFailure` (`sqlstate:<code>`, `driver_error`, `timeout`).
 - **Injection points on the remaining top-level component uses** (Story 69.6, Epic 69, web-host). Every top-level
   component use of a PV route file is now its own region with a registered point: 21 new region points
   (`app.layout.search`, `project.layout.content`, `root.layout.progress`, `auth.layout.brand`, `auth.register.form`,
@@ -22,6 +30,21 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   every region" checkable; both ship in `@project-vault/web-host`. A pack that overrides one of the changed route
   files sees its `hostSha256` drift (reconcile with `pv-compose --accept-host`). Published guard and manifest
   behavior change: the next web-host release is a MINOR bump. See `docs/composition-kit.md`.
+
+### Changed
+
+- **Delegated routes get a default per-IP limiter** (600 requests per minute per client IP, spent in
+  `onRequest` before any signature check; over the limit: 429 with `Retry-After`, counted as
+  `rate_limited_pre`). A signature-valid rejection is written as a security event only while its key is
+  inside the per-`kid` limiter budget, and the event write has a 2 s deadline. No new environment
+  variable and no migration.
+
+### Fixed
+
+- A delegated request answered 409 `delegation_replayed` or 503 `delegation_replay_store_unavailable` no
+  longer continues into actor resolution after the response was sent (it counted a stray
+  `actor_unlinked`).
+- `store_unavailable` no longer reports a Node socket errno such as `EPIPE` as a Postgres SQLSTATE.
 
 ## [1.5.0] - 2026-10-05
 

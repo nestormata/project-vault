@@ -103,7 +103,7 @@ never the handoff set: its `kid` values and its public keys must both differ fro
 `VAULT_HANDOFF_VERIFY_KEYS`, and boot fails if they overlap. It holds Ed25519 public keys only, needs
 `VAULT_HANDOFF_INSTANCE_ID` when non-empty, and does not depend on `VAULT_HANDOFF_ENABLED`. Like the
 handoff set it is parsed once at boot, so every instance restarts after a change. Rotation and
-emergency revoke procedure: Story 71-9.
+emergency revoke procedure: [`delegation-key-rotation.md`](delegation-key-rotation.md).
 
 ---
 

@@ -25,8 +25,13 @@ import {
  *   generic 401 (no oracle for unauthenticated probes); the rest are typed responses;
  * - `claims.org` is the identity-side (CentralizeMe) org id, NOT a PV org id: resolve it through
  *   `organizations.centralizeme_organization_id` before any DB use;
- * - `claims.kid` is returned only on success (a key that matched AND verified), so it is the
- *   only trustworthy rate-limit / `delegatedBy` key; failures carry no kid.
+ * - `claims.kid` is returned on success (a key that matched AND verified), so it is the only
+ *   trustworthy rate-limit / `delegatedBy` key. Story 71.9: a failure carries `kid` too, but ONLY
+ *   when it happens after the signature verified against that configured key (claim shape, time,
+ *   audience: `malformed_claim`, `missing_claim`, `expired`, `clock_skew`, `not_yet_valid`,
+ *   `audience_mismatch`). Every pre-signature failure, and a validly signed payload that is not a
+ *   JSON object (`delegation_malformed`), carries none, so an unauthenticated caller can never
+ *   select a limiter bucket or a `kid` metric label with a value of its choosing.
  */
 
 export const DELEGATION_REJECT_REASONS = [
@@ -69,7 +74,12 @@ export type DelegationVerifiedClaims = {
 
 export type DelegationVerifyResult =
   | { readonly ok: true; readonly claims: DelegationVerifiedClaims }
-  | { readonly ok: false; readonly reason: DelegationRejectReason }
+  | {
+      readonly ok: false
+      readonly reason: DelegationRejectReason
+      /** A configured key id; present only on a failure after the signature verified (71-9). */
+      readonly kid?: string
+    }
 
 export type DelegationVerifierDeps = {
   now?: () => number
@@ -129,6 +139,12 @@ export const DELEGATION_REASON_TO_OUTCOME: Readonly<Record<DelegationRejectReaso
  * the closed `pv_delegation_assertions_total{outcome}` set lives in exactly one place.
  * `unsupported_encoding` is the one outcome beyond the 71-2 design table (the 71-3 `Content-Encoding`
  * rejection, AC-4); `actor_unlinked` and `actor_attested_nonmember` count admitted requests.
+ *
+ * Story 71.9: `accepted` is counted once per request that S4 ADMITTED (burn and actor resolution
+ * succeeded, before the handler runs), under the configured `kid`. It is not "the request
+ * succeeded": a handler 5xx after admission is still `accepted`. An unlinked or attested non-member
+ * actor adds `actor_unlinked` / `actor_attested_nonmember` AND `accepted` for the same request, so a
+ * dashboard must not sum those outcomes with `accepted`.
  */
 export const DELEGATION_HOST_OUTCOMES = [
   'missing',
@@ -144,6 +160,7 @@ export const DELEGATION_HOST_OUTCOMES = [
   'actor_not_member',
   'actor_unlinked',
   'actor_attested_nonmember',
+  'accepted',
 ] as const
 
 export type DelegationHostOutcome = (typeof DELEGATION_HOST_OUTCOMES)[number]
@@ -164,8 +181,15 @@ const CORE_REASON: Record<JwsCoreReason, DelegationRejectReason> = {
 
 type Check<T> = { ok: true; value: T } | { ok: false; reason: DelegationRejectReason }
 
-function fail(reason: DelegationRejectReason): { ok: false; reason: DelegationRejectReason } {
+type Failure = Extract<DelegationVerifyResult, { ok: false }>
+
+function fail(reason: DelegationRejectReason): Failure {
   return Object.freeze({ ok: false as const, reason })
+}
+
+/** A failure after the signature verified against the configured key `kid` (Story 71.9). */
+function failAfterSignature(reason: DelegationRejectReason, kid: string): Failure {
+  return Object.freeze({ ok: false as const, reason, kid })
 }
 
 function str(payload: Record<string, unknown>, key: string, maxBytes: number): Check<string> {
@@ -349,10 +373,12 @@ export function createDelegationVerifier(
     if (!isPlainObject(jws.payload)) return fail('delegation_malformed')
 
     const shape = checkShape(jws.payload, issuer)
-    if (!shape.ok) return fail(shape.reason)
+    if (!shape.ok) return failAfterSignature(shape.reason, jws.kid)
     const windowIssue = checkWindow(shape.value.iat, shape.value.exp, now() / 1000)
-    if (windowIssue) return fail(windowIssue)
-    if (shape.value.audience !== `pvd:${instanceId}`) return fail('delegation_audience_mismatch')
+    if (windowIssue) return failAfterSignature(windowIssue, jws.kid)
+    if (shape.value.audience !== `pvd:${instanceId}`) {
+      return failAfterSignature('delegation_audience_mismatch', jws.kid)
+    }
     return freezeClaims(jws.kid, shape.value)
   }
 }

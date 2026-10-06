@@ -1,3 +1,4 @@
+import { delegationVerifyKeys } from '../../config/env.js'
 import { getOrCreateCounter } from '../../lib/prom-client-registry.js'
 import { DELEGATION_OUTCOMES } from './delegation-verify.js'
 
@@ -5,7 +6,8 @@ import { DELEGATION_OUTCOMES } from './delegation-verify.js'
  * Story 71.3 AC-8: `pv_delegation_assertions_total{outcome,kid}`. The `outcome` set is closed
  * (`DELEGATION_OUTCOMES`, defined next to the verifier's reason mapping) and the `kid` label is
  * only ever a CONFIGURED key id: a failure that happens before a key matched records `none`, so
- * an unauthenticated caller cannot mint label values. 71-9 owns alert rules and the runbook.
+ * an unauthenticated caller cannot mint label values. Alert rules and the runbook are Story 71.9
+ * (`docs/runbooks/alerts/delegation-alerts.rules.yml`, `docs/runbooks/delegation-key-rotation.md`).
  */
 export const DELEGATION_ASSERTIONS_METRIC_NAME = 'pv_delegation_assertions_total'
 export const NO_KID_LABEL = 'none'
@@ -22,4 +24,24 @@ const KNOWN_OUTCOMES: ReadonlySet<string> = new Set(DELEGATION_OUTCOMES)
 export function recordDelegationOutcome(outcome: string, kid?: string): void {
   if (!KNOWN_OUTCOMES.has(outcome)) return
   delegationAssertionsTotal.labels(outcome, kid ?? NO_KID_LABEL).inc()
+}
+
+/**
+ * Story 71.9 AC-1: creates every `outcome` x (`none` + each configured kid) series at 0, so
+ * Prometheus `increase()` / `rate()` see the FIRST real event: a series that first appears at 1
+ * has no earlier sample to subtract, so the first-ever `replayed` or `store_unavailable` would
+ * read as an increase of 0 and not alert. Bounded: outcomes x (configured kids + 1).
+ *
+ * Called when the first delegated route is installed (boot, after the key set was parsed), not at
+ * module load, so importing this module never reads the key set. Idempotent: `inc(0)` on an
+ * existing series changes nothing.
+ */
+export function preinitializeDelegationSeries(
+  configuredKids: readonly string[] = delegationVerifyKeys.map((key) => key.kid)
+): void {
+  for (const outcome of DELEGATION_OUTCOMES) {
+    for (const kid of [NO_KID_LABEL, ...configuredKids]) {
+      delegationAssertionsTotal.labels(outcome, kid).inc(0)
+    }
+  }
 }

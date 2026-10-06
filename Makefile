@@ -247,6 +247,7 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-nav-surfaces
 	pnpm vitest run scripts/check-nav-surfaces.test.ts
 	pnpm vitest run scripts/extension-authoring-docs.test.ts # Story 59.2 AC-3 authoring-doc drift guard
+	pnpm vitest run scripts/check-delegation-alert-rules.test.ts # Story 71.9: delegation alert rules, runbook and monitoring docs
 	pnpm check-native-credential-surface
 	pnpm check-no-sonar-suppressions # Story 43.9 AC-9: no unsigned Sonar suppressions
 	pnpm vitest run scripts/check-no-sonar-suppressions.test.ts scripts/lib/trusted-executable.test.ts
