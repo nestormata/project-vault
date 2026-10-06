@@ -754,6 +754,7 @@ session. The declaration is plain data and is validated at registration:
   90 seconds old (`occurred_at_unattested`). Everywhere it may be at most 30 seconds in the future
   (`occurred_at_in_future`) and at most 30 days old (`occurred_at_too_old`); a malformed value rejects with
   `occurred_at_invalid`. `occurredAt` never affects ordering, the audit chain or retention.
+- **How PV shows it.** The owner's audit viewer and the audit export show an actor PV cannot verify as "Attested by issuer" (provider and subject as text, never as a PV user name), with a provider+subject filter and five appended export columns; see [Audit log: attributed actors and export format version 2](../api-consumers.md#audit-log-attributed-actors-and-export-format-version-2).
 - **Typed failures.** Every rejection above is an `ExtensionAuditAttributionRejectedError` with a closed `code`
   and `retryable: false`; it is thrown before any write and never carries the actor, the assertion or a time.
   A sender should quarantine such an event, not retry it.

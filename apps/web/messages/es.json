@@ -228,5 +228,18 @@
   "nav_project_domains": "Dominios",
   "nav_project_endpoints": "Endpoints",
   "nav_project_status_page": "Página de estado",
-  "shell_sign_out": "Cerrar sesión"
+  "shell_sign_out": "Cerrar sesión",
+  "audit_attr_badge_issuer": "Atestiguado por el emisor",
+  "audit_attr_reason_unlinked": "sin cuenta en PV",
+  "audit_attr_reason_not_member": "ya no es miembro",
+  "audit_attr_verified_delegated": "Verificado por PV, delegado por el servicio",
+  "audit_attr_identity": "{provider}: {subject}",
+  "audit_attr_occurred_signed": "Ocurrió {time} (atestiguado por el emisor)",
+  "audit_attr_occurred_declared": "Ocurrió {time} (declarado por la extensión)",
+  "audit_filter_actor_provider_label": "Proveedor del actor",
+  "audit_filter_actor_subject_label": "Sujeto del actor",
+  "audit_filter_actor_provider_help": "El nombre del proveedor de identidad de un actor externo, por ejemplo el que aparece junto a un evento \"Atestiguado por el emisor\". Úsalo junto con el sujeto del actor.",
+  "audit_filter_actor_subject_help": "El sujeto del actor externo, con coincidencia exacta (distingue mayúsculas). Úsalo junto con el proveedor del actor; no se puede combinar con el ID de actor.",
+  "audit_filter_actor_pair_required": "Indica el proveedor y el sujeto del actor, o deja ambos vacíos.",
+  "audit_filter_summary_attributed": "actor externo = {provider}: {subject}"
 }

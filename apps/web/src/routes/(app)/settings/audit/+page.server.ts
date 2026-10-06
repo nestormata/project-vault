@@ -10,6 +10,8 @@ const AUDIT_LOG_ROLE = 'owner'
 
 export type AuditFilters = {
   actorId?: string
+  actorProvider?: string
+  actorSubject?: string
   eventType?: string
   resourceId?: string
   projectId?: string
@@ -17,7 +19,16 @@ export type AuditFilters = {
   to?: string
 }
 
-const FILTER_KEYS = ['actorId', 'eventType', 'resourceId', 'projectId', 'from', 'to'] as const
+const FILTER_KEYS = [
+  'actorId',
+  'actorProvider',
+  'actorSubject',
+  'eventType',
+  'resourceId',
+  'projectId',
+  'from',
+  'to',
+] as const
 
 function readFilters(url: URL): AuditFilters {
   const present = FILTER_KEYS.flatMap((key) => {
