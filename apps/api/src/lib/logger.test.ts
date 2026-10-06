@@ -4,6 +4,7 @@ import { createLogCaptureStream } from '../__tests__/helpers/capture-logs.js'
 import {
   createEntrypointLoggerConfig,
   createLoggerConfig,
+  EMAIL_REDACTION_PLACEHOLDER,
   operationalLog,
   serializeLogError,
 } from './logger.js'
@@ -102,6 +103,78 @@ describe('serializeLogError', () => {
     const serialized = serializeLogError(new Error(`postgresql://${'a'.repeat(100_000)}`))
     expect(performance.now() - started).toBeLessThan(1000)
     expect(serialized.message).toHaveLength('postgresql://'.length + 100_000)
+  })
+
+  it('redacts connection-string userinfo that is itself an email address', () => {
+    const serialized = serializeLogError(
+      new Error('smtp://jordan@example.com:s3cret@mail.example.com failed')
+    )
+    expect(serialized.message).toBe('smtp://[REDACTED]@mail.example.com failed')
+  })
+})
+
+describe('serializeLogError email redaction (70-4)', () => {
+  const P = EMAIL_REDACTION_PLACEHOLDER
+
+  it('uses the fixed placeholder', () => {
+    expect(P).toBe('[REDACTED_EMAIL]')
+  })
+
+  it.each([
+    ['Recipient address rejected: <jordan@example.com>', `Recipient address rejected: <${P}>`],
+    ["jordan@example.com and sam.o'neil+tag@mail.example.co.uk", `${P} and ${P}`],
+    ['a@b.com a@b.com a@b.com', `${P} ${P} ${P}`],
+    ['用户@例子.com and jörg@exämple.de', `${P} and ${P}`],
+    ['sent to jordan@example.com.', `sent to ${P}.`],
+    ['Jordan@Example.COM', P],
+    [
+      'smtp://u:p@mail.example.com failed for a@b.com',
+      `smtp://[REDACTED]@mail.example.com failed for ${P}`,
+    ],
+  ])('masks addresses in message and stack: %s', (input, expected) => {
+    const error = new Error(input)
+    error.stack = `Error: ${input}\n    at frame (${input})`
+    const serialized = serializeLogError(error)
+    expect(serialized.message).toBe(expected)
+    expect(serialized.stack).toBe(`Error: ${expected}\n    at frame (${expected})`)
+  })
+
+  it.each([
+    'Connection refused',
+    'ECONNRESET 10.0.0.5:5432',
+    'postgres@localhost',
+    'user@host',
+    '@mention',
+    'a @ b',
+    '12:30@5',
+  ])('leaves non-addresses untouched: %s', (input) => {
+    expect(serializeLogError(new Error(input)).message).toBe(input)
+  })
+
+  it('still yields an empty message for new Error()', () => {
+    expect(serializeLogError(new Error()).message).toBe('')
+  })
+
+  it('masks addresses in non-Error thrown values', () => {
+    expect(serializeLogError('550 jordan@example.com unknown')).toEqual({
+      message: `550 ${P} unknown`,
+    })
+    const thrown = { toString: () => 'bad jordan@example.com' }
+    expect(serializeLogError(thrown)).toEqual({ message: `bad ${P}` })
+  })
+
+  it.each([
+    ['no @ run', 'a'.repeat(100_000), 'a'.repeat(100_000)],
+    ['repeated a@', 'a@'.repeat(50_000), 'a@'.repeat(50_000)],
+    ['dotted run then @b', `${'a.'.repeat(50_000)}@b`, `${'a.'.repeat(50_000)}@b`],
+    ['only @', '@'.repeat(100_000), '@'.repeat(100_000)],
+    ['long local then address', `${'a'.repeat(100_000)}@b.c`, P],
+  ])('matches in linear time on adversarial input: %s', (_name, input, expected) => {
+    const started = performance.now()
+    const serialized = serializeLogError(new Error(input))
+    expect(performance.now() - started).toBeLessThan(1000)
+    expect(serialized.message).toBe(expected)
+    if (expected === P) expect(serialized.message).toHaveLength(P.length)
   })
 })
 

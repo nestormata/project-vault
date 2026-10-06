@@ -9,6 +9,7 @@ import {
 import { resolveRoutingRecipients } from '../modules/notifications/routing.js'
 import type { BossService } from '../lib/boss.js'
 import { forEachSequential } from '../lib/for-each-sequential.js'
+import { serializeLogError } from '../lib/logger.js'
 import { env } from '../config/env.js'
 
 export type NotificationTemplate = {
@@ -30,10 +31,15 @@ const NOTIFICATION_JOB_OPTIONS = {
 } as const
 const DISPATCH_UNAVAILABLE_EVENT = 'notification.dispatch.unavailable'
 
-const SEVERITY_LEVEL: Record<NotificationSeverity, number> = {
-  info: 0,
-  warning: 1,
-  critical: 2,
+function severityLevel(severity: NotificationSeverity): number {
+  switch (severity) {
+    case 'info':
+      return 0
+    case 'warning':
+      return 1
+    case 'critical':
+      return 2
+  }
 }
 
 type CreateEntriesOptions = {
@@ -60,7 +66,7 @@ function passesSeverityFilter(
   alertSeverity: NotificationSeverity,
   pref: PreferenceOutput
 ): boolean {
-  return SEVERITY_LEVEL[alertSeverity] >= SEVERITY_LEVEL[pref.minSeverity]
+  return severityLevel(alertSeverity) >= severityLevel(pref.minSeverity)
 }
 
 async function enqueueUserChannel(options: {
@@ -241,7 +247,7 @@ export async function dispatchPendingJobs(
         label,
         jobCount: jobs.length,
         jobs: jobContext,
-        err: error,
+        err: serializeLogError(error),
       },
       `${label} notification dispatch unavailable`
     )
@@ -269,7 +275,7 @@ export async function dispatchPendingJobs(
         label,
         jobCount: jobs.length,
         jobs: jobContext,
-        err: error,
+        err: serializeLogError(error),
       },
       `${label} notification dispatch failed`
     )

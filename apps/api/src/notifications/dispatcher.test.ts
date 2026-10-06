@@ -9,6 +9,7 @@ import {
   type NotificationSeverity,
 } from '@project-vault/shared'
 import { withTestOrg, createTestUser, deleteTestUser } from '@project-vault/db/test-helpers'
+import { EMAIL_REDACTION_PLACEHOLDER } from '../lib/logger.js'
 import { createMockBoss } from '../__tests__/helpers/notification-test-helpers.js'
 import {
   createOrgAdminNotificationEntries,
@@ -32,6 +33,8 @@ async function seedOwner(orgId: string, userId: string) {
     tx.insert(orgMemberships).values({ orgId, userId, role: 'owner', status: 'active' })
   )
 }
+
+const BROKER_UNAVAILABLE = 'broker unavailable'
 
 describe('notification dispatcher', () => {
   it('creates immediate email and inbox entries for a share recipient with default preferences', async () => {
@@ -197,7 +200,7 @@ describe('notification dispatcher', () => {
         eventType: DISPATCH_UNAVAILABLE_EVENT,
         label: INVITATION_DISPATCH_LABEL,
         jobs: [{ id: job.id, orgId: job.orgId }],
-        err: expect.any(Error),
+        err: expect.objectContaining({ name: 'Error', message: 'Boss state unavailable' }),
       }),
       expect.any(String)
     )
@@ -225,7 +228,7 @@ describe('notification dispatcher', () => {
   it('warns with queue context when Boss send rejects', async () => {
     const { boss, send } = createMockBoss()
     await boss.start()
-    send.mockRejectedValueOnce(new Error('broker unavailable'))
+    send.mockRejectedValueOnce(new Error(BROKER_UNAVAILABLE))
     const warn = vi.fn()
     const job = { id: 'queue-3', orgId: 'org-3', deliverAt: null }
 
@@ -236,10 +239,46 @@ describe('notification dispatcher', () => {
         eventType: 'notification.dispatch.failed',
         label: INVITATION_DISPATCH_LABEL,
         jobs: [{ id: 'queue-3', orgId: 'org-3' }],
-        err: expect.any(Error),
+        err: expect.objectContaining({ name: 'Error', message: BROKER_UNAVAILABLE }),
       }),
       expect.any(String)
     )
+  })
+
+  it('masks recipient addresses in the err logged when Boss send rejects (70-4 AC5)', async () => {
+    const { boss, send } = createMockBoss()
+    await boss.start()
+    send.mockRejectedValueOnce(
+      Object.assign(new Error('send failed: recipient jordan@example.com rejected'), {
+        rejected: ['jordan@example.com'],
+      })
+    )
+    const warn = vi.fn()
+    const job = { id: 'queue-pii-1', orgId: 'org-pii-1', deliverAt: null }
+
+    await dispatchPendingJobs(boss, { log: { warn } }, [job], INVITATION_DISPATCH_LABEL)
+
+    expect(warn).toHaveBeenCalledTimes(1)
+    const [payload] = warn.mock.calls[0] as unknown as [{ err: { message: string } }]
+    expect(payload.err.message).toBe(
+      `send failed: recipient ${EMAIL_REDACTION_PLACEHOLDER} rejected`
+    )
+    expect(JSON.stringify(payload)).not.toContain('jordan')
+  })
+
+  it('masks recipient addresses in the err logged when the Boss probe throws (70-4 AC5)', async () => {
+    const { boss } = createMockBoss()
+    vi.spyOn(boss, 'isStarted').mockImplementation(() => {
+      throw new Error('probe failed for jordan@example.com')
+    })
+    const warn = vi.fn()
+    const job = { id: 'queue-pii-2', orgId: 'org-pii-2', deliverAt: null }
+
+    await dispatchPendingJobs(boss, { log: { warn } }, [job], INVITATION_DISPATCH_LABEL)
+
+    const [payload] = warn.mock.calls[0] as unknown as [{ err: { message: string } }]
+    expect(payload.err.message).toBe(`probe failed for ${EMAIL_REDACTION_PLACEHOLDER}`)
+    expect(JSON.stringify(payload)).not.toContain('jordan')
   })
 
   it('keeps dispatch best-effort when the warning logger itself fails', async () => {
@@ -254,7 +293,7 @@ describe('notification dispatcher', () => {
 
     const { boss, send } = createMockBoss()
     await boss.start()
-    send.mockRejectedValueOnce(new Error('broker unavailable'))
+    send.mockRejectedValueOnce(new Error(BROKER_UNAVAILABLE))
     await expect(
       dispatchPendingJobs(boss, { log: { warn } }, [unavailableJob], INVITATION_DISPATCH_LABEL)
     ).resolves.toBeUndefined()
