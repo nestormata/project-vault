@@ -10,6 +10,7 @@ import {
   DELEGATION_TEST_INSTANCE_ID,
   delegationCounterSamples,
   totalsByOutcome,
+  type DelegationCounterSample,
   type DelegationOrgFixture,
 } from '../__tests__/helpers/delegation-test-helpers.js'
 import {
@@ -38,7 +39,7 @@ const actorModule = await import('../modules/auth/delegation-actor.js')
 const verify = await import('../modules/auth/delegation-verify.js')
 const { resetVaultForTest } = await import('../__tests__/helpers/vault-test-cleanup.js')
 
-const bootSamples = await delegationCounterSamples()
+let bootSamples: DelegationCounterSample[] = []
 
 let org: DelegationOrgFixture
 let app: FastifyInstance
@@ -48,6 +49,7 @@ beforeAll(async () => {
   await initVaultForTest(initVault, 'delegation-unconfigured-test-passphrase')
   org = await createDelegationOrg('unconfigured')
   app = (await bootDelegatedApp()).app
+  bootSamples = await delegationCounterSamples()
 })
 
 afterEach(() => {

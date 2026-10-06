@@ -53,8 +53,8 @@ const stages = await import('./delegation-stages.js')
 const { enforceUserRateLimit } = await import('./route-helpers.js')
 const { resetVaultForTest } = await import('../__tests__/helpers/vault-test-cleanup.js')
 
-// Series as they stood right after the app modules loaded, before any request of this file.
-const bootSamples = await delegationCounterSamples()
+// Series as they stood right after the app booted, before any request of this file.
+let bootSamples: DelegationCounterSample[] = []
 
 const SUBJECT_URL = '/cm/subject-events'
 const HISTORICAL_URL = '/cm/historical-events'
@@ -88,6 +88,7 @@ beforeAll(async () => {
   })
   app = booted.app
   activeApp = app
+  bootSamples = await delegationCounterSamples()
 })
 
 afterAll(async () => {

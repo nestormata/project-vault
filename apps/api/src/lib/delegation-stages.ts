@@ -11,7 +11,10 @@ import {
   type DelegationVerifiedClaims,
 } from '../modules/auth/delegation-verify.js'
 import { resolveDelegatedActor } from '../modules/auth/delegation-actor.js'
-import { recordDelegationOutcome } from '../modules/auth/delegation-metrics.js'
+import {
+  preinitializeDelegationSeries,
+  recordDelegationOutcome,
+} from '../modules/auth/delegation-metrics.js'
 import {
   burnDelegationAssertion,
   DelegationBurnInputError,
@@ -913,6 +916,8 @@ export function installDelegationStages(
   input: { routeKey: string; delegation: NormalizedDelegation }
 ): void {
   const { routeKey, delegation } = input
+  // Boot: the key set is parsed and a delegated route exists, so every series starts at 0.
+  preinitializeDelegationSeries()
   const existingOnRequest = new Map(Object.entries(routeOptions)).get('onRequest')
   routeOptions['onRequest'] = [
     delegationIpLimitStage(),

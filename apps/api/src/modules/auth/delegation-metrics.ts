@@ -31,14 +31,17 @@ export function recordDelegationOutcome(outcome: string, kid?: string): void {
  * Prometheus `increase()` / `rate()` see the FIRST real event: a series that first appears at 1
  * has no earlier sample to subtract, so the first-ever `replayed` or `store_unavailable` would
  * read as an increase of 0 and not alert. Bounded: outcomes x (configured kids + 1).
+ *
+ * Called when the first delegated route is installed (boot, after the key set was parsed), not at
+ * module load, so importing this module never reads the key set. Idempotent: `inc(0)` on an
+ * existing series changes nothing.
  */
-export function preinitializeDelegationSeries(configuredKids: readonly string[]): void {
+export function preinitializeDelegationSeries(
+  configuredKids: readonly string[] = delegationVerifyKeys.map((key) => key.kid)
+): void {
   for (const outcome of DELEGATION_OUTCOMES) {
     for (const kid of [NO_KID_LABEL, ...configuredKids]) {
       delegationAssertionsTotal.labels(outcome, kid).inc(0)
     }
   }
 }
-
-// At module load, after the key set was parsed (the config module parses it once at boot).
-preinitializeDelegationSeries(delegationVerifyKeys.map((key) => key.kid))
