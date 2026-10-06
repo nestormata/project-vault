@@ -8,13 +8,40 @@ export type LoggerConfig = ReturnType<typeof buildPinoOptions>
 export type SerializedLogError = { message: string; name?: string; stack?: string }
 type LoggerEnv = Pick<Env, 'NODE_ENV' | 'LOG_LEVEL' | 'SERVICE_NAME'>
 
-// `user@` or `user:secret@`. The two userinfo branches are disjoint (the user part cannot contain
-// ':'), so a scheme-prefixed string with no '@' is rejected in linear time (no ReDoS), and no
-// quantified group nests another quantifier (security/detect-unsafe-regex).
-const CONNECTION_STRING_RE = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+(?:@|:[^\s/@]*@)/gi
+// Userinfo (`user@`, `user:secret@`, or an email address used as the user) runs to the last '@'
+// before whitespace or '/', so a scheme-prefixed string with no '@' is rejected in linear time (no
+// ReDoS: the scan stops at the next '/', and no quantified group nests another quantifier, per
+// security/detect-unsafe-regex). The leading negative
+// lookbehind makes a match attempt start only at the beginning of a run of scheme characters;
+// without it every letter after a '.', '+' or '-' in a long `a.a.a.` run restarts a scan to the end
+// of the run (quadratic, ~10 s for 100k characters). Leading `[.+-]*` keeps `.postgres://u:p@h`
+// covered, because such a run cannot begin with a letter.
+const CONNECTION_STRING_RE = /(?<![a-z0-9+.-])([.+-]*[a-z][a-z0-9+.-]*:\/\/)[^\s/]+@/gi
 
 function redactConnectionStrings(value: string | undefined): string | undefined {
   return value?.replace(CONNECTION_STRING_RE, '$1[REDACTED]@')
+}
+
+/** Fixed mask for a recipient address in a log line. A partial mask would leak the domain. */
+export const EMAIL_REDACTION_PLACEHOLDER = '[REDACTED_EMAIL]'
+
+// `local@label.label[.label...]`. The local part is an RFC 5322 atext subset (Unicode letters and
+// digits allowed); the domain needs at least two dot-separated labels so `postgres@localhost` and
+// `user@host` stay readable. The leading negative lookbehind on a local-part character means a
+// match attempt starts only at the beginning of a run, so a long run with no '@' is scanned once
+// (linear) instead of once per start position (quadratic). The domain is `label.` then a run whose last
+// label starts with a letter (so a trailing sentence period is left out, and a version-like
+// `pkg@3.6.1` in a pnpm stack path is not mistaken for an address), with no nested quantifier.
+const EMAIL_RE =
+  /(?<![\p{L}\p{N}._%+\-'!#$&*/=?^{|}~])[\p{L}\p{N}._%+\-'!#$&*/=?^{|}~]+@[\p{L}\p{N}-]+\.[\p{L}\p{N}.-]*\p{L}[\p{L}\p{N}]*/gu
+
+function redactEmailAddresses(value: string | undefined): string | undefined {
+  return value?.replace(EMAIL_RE, EMAIL_REDACTION_PLACEHOLDER)
+}
+
+// Connection strings first (their userinfo can itself be an address), then bare addresses.
+function redactLogText(value: string | undefined): string | undefined {
+  return redactEmailAddresses(redactConnectionStrings(value))
 }
 
 function buildPinoOptions(env: LoggerEnv, level: string) {
@@ -124,12 +151,12 @@ export function serializeLogError(err: unknown): SerializedLogError {
   if (err instanceof Error) {
     return {
       name: err.name,
-      message: redactConnectionStrings(err.message) ?? '',
-      stack: redactConnectionStrings(err.stack),
+      message: redactLogText(err.message) ?? '',
+      stack: redactLogText(err.stack),
     }
   }
   try {
-    return { message: redactConnectionStrings(String(err)) ?? '' }
+    return { message: redactLogText(String(err)) ?? '' }
   } catch {
     return { message: 'Unable to serialize thrown value' }
   }
