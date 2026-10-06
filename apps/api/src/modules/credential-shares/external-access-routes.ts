@@ -15,7 +15,10 @@ import {
   ExternalShareMetadataResponseSchema,
   ExternalShareRevealResponseSchema,
 } from './schema.js'
-import { findExternalShareByTokenHash, revealExternalShare } from './external-service.js'
+import {
+  findExternalShareWithMissFloor,
+  revealExternalShareWithMissFloor,
+} from './external-service.js'
 
 // AC-17: every not-found/expired/revoked/malformed case collapses to this identical shape — no
 // distinguishing "the hash matched a row that turned out to be expired" from "the hash matched
@@ -79,7 +82,7 @@ export function externalCredentialShareAccessRoutes(fastify: FastifyApp): Promis
       // findExternalShareByTokenHash the same way it always has been), no view_count increment,
       // no attempt-counter increment. A link-unfurling crawler fetching this repeatedly is
       // expected, harmless traffic.
-      const found = await findExternalShareByTokenHash(params.token)
+      const found = await findExternalShareWithMissFloor(params.token)
       if (found.status === 'not_found') return reply.status(404).send(SHARE_NOT_FOUND)
 
       const { share, credentialName, sharedByDisplayName } = found.metadata
@@ -126,7 +129,7 @@ export function externalCredentialShareAccessRoutes(fastify: FastifyApp): Promis
       noReferrerHeaders(reply)
       reply.header('Cache-Control', 'no-store')
 
-      const result = await revealExternalShare(params.token)
+      const result = await revealExternalShareWithMissFloor(params.token, req.log)
 
       if (result.status === 'not_found') return reply.status(404).send(SHARE_NOT_FOUND)
       if (

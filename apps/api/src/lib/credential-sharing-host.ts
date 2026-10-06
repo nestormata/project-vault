@@ -21,6 +21,7 @@ import {
 } from '../modules/credential-shares/service.js'
 import {
   DEFAULT_SHARE_LIST_LIMIT,
+  EXTERNAL_SHARE_MISS_FLOOR_MS,
   MAX_SHARE_LIST_LIMIT,
 } from '../modules/credential-shares/schema.js'
 import {
@@ -31,6 +32,7 @@ import {
 import { writeMachineAuditEntry } from '../modules/audit/machine-entry.js'
 import { isMachineKeyLive } from '../modules/machine-users/key-validity.js'
 import { operationalLog } from './logger.js'
+import { withMinResponseTime } from './min-response-time.js'
 import { forEachSequential } from './for-each-sequential.js'
 
 /**
@@ -267,6 +269,12 @@ function orgRateLimitMaxFor(
   return hostContext.orgRateLimits?.revealShare ?? CREDENTIAL_SHARING_REVEAL_SHARE_ORG_LIMIT
 }
 
+/** Story 65.4 AC1: a per-org 429 only ever happens for a RESOLVED org, so on its own it is a
+ *  class signal; the miss floor holds it like any other miss. */
+function isOrgRateLimitError(error: unknown): boolean {
+  return error instanceof CredentialSharingOrgRateLimitedError
+}
+
 function enforceOrgRateLimit(
   methodName: 'findShareByToken' | 'revealShare',
   organizationId: string,
@@ -495,55 +503,68 @@ export function buildCredentialSharingHost(
         'findShareByToken',
         'unresolved',
         hostContext,
-        async (setOrganizationId) => {
-          const result = await findExternalShareByTokenHash(rawToken)
-          if (result.status !== 'ok') return { status: 'not_found' as const }
+        // Story 65.4 AC1: the whole body (lookup, org limit, serialization) is held to the miss
+        // floor inside the in-flight slot, so a held call still counts once in the accounting.
+        (setOrganizationId) =>
+          withMinResponseTime(
+            EXTERNAL_SHARE_MISS_FLOOR_MS,
+            async () => {
+              const result = await findExternalShareByTokenHash(rawToken)
+              if (result.status !== 'ok') return { status: 'not_found' as const }
 
-          setOrganizationId(result.metadata.share.orgId)
-          enforceOrgRateLimit('findShareByToken', result.metadata.share.orgId, hostContext)
+              setOrganizationId(result.metadata.share.orgId)
+              enforceOrgRateLimit('findShareByToken', result.metadata.share.orgId, hostContext)
 
-          return {
-            status: 'ok' as const,
-            share: serializeShare(result.metadata.share),
-            credentialName: result.metadata.credentialName,
-            credentialProjectId: result.metadata.credentialProjectId,
-            sharedByDisplayName: result.metadata.sharedByDisplayName,
-          }
-        }
+              return {
+                status: 'ok' as const,
+                share: serializeShare(result.metadata.share),
+                credentialName: result.metadata.credentialName,
+                credentialProjectId: result.metadata.credentialProjectId,
+                sharedByDisplayName: result.metadata.sharedByDisplayName,
+              }
+            },
+            {
+              isMiss: (result) => result.status !== 'ok' || result.share.status !== 'active',
+              isMissError: isOrgRateLimitError,
+            }
+          )
       )
     },
 
     async revealShare(rawToken) {
-      return callOutOfRequestMethod(
-        'revealShare',
-        'unresolved',
-        hostContext,
-        async (setOrganizationId) => {
-          // AC3's timing-safe lookup happens inside revealExternalShare itself; this facade
-          // cannot resolve the org (to apply the AC5b org rate limit) without first doing the
-          // same admin-connection lookup revealExternalShare performs internally. Reusing
-          // findExternalShareByTokenHash here (read-only for the org-resolution purpose; note it
-          // may still perform its own lazy active->expired transition internally, same as the
-          // subsequent revealExternalShare call would) purely to resolve the org for
-          // rate-limiting BEFORE calling the real reveal step — mirrors AC3's own "hash + query
-          // unconditionally" timing-safety discipline (never an early return before this lookup
-          // runs).
-          const lookup = await findExternalShareByTokenHash(rawToken)
-          if (lookup.status === 'ok') {
-            setOrganizationId(lookup.metadata.share.orgId)
-            enforceOrgRateLimit('revealShare', lookup.metadata.share.orgId, hostContext)
-          }
+      return callOutOfRequestMethod('revealShare', 'unresolved', hostContext, (setOrganizationId) =>
+        withMinResponseTime(
+          EXTERNAL_SHARE_MISS_FLOOR_MS,
+          async () => {
+            // AC3's timing-safe lookup happens inside revealExternalShare itself; this facade
+            // cannot resolve the org (to apply the AC5b org rate limit) without first doing the
+            // same admin-connection lookup revealExternalShare performs internally. Reusing
+            // findExternalShareByTokenHash here (read-only for the org-resolution purpose; note
+            // it may still perform its own lazy active->expired transition internally, same as
+            // the subsequent revealExternalShare call would) purely to resolve the org for
+            // rate-limiting BEFORE calling the real reveal step — mirrors AC3's own "hash +
+            // query unconditionally" timing-safety discipline (never an early return before
+            // this lookup runs).
+            const lookup = await findExternalShareByTokenHash(rawToken)
+            if (lookup.status === 'ok') {
+              setOrganizationId(lookup.metadata.share.orgId)
+              enforceOrgRateLimit('revealShare', lookup.metadata.share.orgId, hostContext)
+            }
 
-          const result = await revealExternalShare(rawToken)
-          if (result.status !== 'ok') return result
-          return {
-            status: 'ok' as const,
-            share: serializeShare(result.share),
-            value: result.value,
-            valueFormat: result.valueFormat,
-            fieldKey: result.fieldKey,
-          }
-        }
+            const result = await revealExternalShare(rawToken, hostContext.logger)
+            if (result.status !== 'ok') return result
+            return {
+              status: 'ok' as const,
+              share: serializeShare(result.share),
+              value: result.value,
+              valueFormat: result.valueFormat,
+              fieldKey: result.fieldKey,
+            }
+          },
+          // Story 65.4 AC1: both lookups (a miss pays two) and the per-org 429 sit inside the
+          // hold, which wraps the whole method from the outside.
+          { isMiss: (result) => result.status !== 'ok', isMissError: isOrgRateLimitError }
+        )
       )
     },
 

@@ -11,6 +11,7 @@ import { secureRoute } from '../../lib/secure-route.js'
 import { normalizeQueryParams } from '../../lib/route-helpers.js'
 import { raceWithTimeout } from '../../lib/race-with-timeout.js'
 import { operationalLog } from '../../lib/logger.js'
+import { holdUntilMinResponse, monotonicNowMs } from '../../lib/min-response-time.js'
 import { isValidActionResult, mapActionResultToResponse } from '../../lib/action-result-response.js'
 import { getExtensionStatus } from '../../extensions/loader.js'
 
@@ -33,6 +34,16 @@ import { getExtensionStatus } from '../../extensions/loader.js'
 const HOOK_TIMEOUT_MS = 10_000
 
 type PublicRouteOutcome = PublicRouteResult | ActionResult
+
+type LoadedExtension = Extract<ReturnType<typeof getExtensionStatus>, { status: 'loaded' }>
+
+/** Story 65.4: every outcome is first PLANNED as data and only then sent, so a non-2xx answer can
+ *  be held to the extension's declared minimum response time before any byte is written. */
+type PlannedResponse = { status: number; body: unknown; headers?: Record<string, string> }
+
+// Story 65.4 AC2: the registration-time ceiling for `anonymousRouteMinResponseMs` values, repeated
+// here so a hold can never be unbounded even if a manifest ever bypassed that validation.
+const MAX_MIN_RESPONSE_MS = 2000
 
 // Code review fix (Medium finding #1) — a valid-shaped-but-out-of-range `status`, or a header
 // value smuggling a CRLF/control character, would previously reach `reply.status(...).send(...)`/
@@ -99,16 +110,19 @@ function isValidPublicRouteOutcome(value: unknown): value is PublicRouteOutcome 
  * even though both cases already shared the same 404 status code. AC5's "non-enumerating"
  * guarantee applies to the body, not just the status code — this closes that gap.
  */
-function sendNotFound(reply: FastifyReply, request: FastifyRequest): unknown {
-  return reply.status(404).send({
-    message: `Route ${request.method}:${request.url} not found`,
-    error: 'Not Found',
-    statusCode: 404,
-  })
+function notFoundResponse(request: FastifyRequest): PlannedResponse {
+  return {
+    status: 404,
+    body: {
+      message: `Route ${request.method}:${request.url} not found`,
+      error: 'Not Found',
+      statusCode: 404,
+    },
+  }
 }
 
-function sendInternalError(reply: FastifyReply): unknown {
-  return reply.status(500).send({ code: 'internal_error', message: 'Request failed' })
+function internalErrorResponse(): PlannedResponse {
+  return { status: 500, body: { code: 'internal_error', message: 'Request failed' } }
 }
 
 /**
@@ -137,16 +151,34 @@ function isRejectedByFetchMode(request: FastifyRequest): boolean {
  * reads `getExtensionStatus()` once to decide which URLs exist at all; this function re-derives
  * the actual authorization decision fresh on every single request).
  */
-function loadPublicRouteHookFresh(
-  pathTemplate: string
-): PublicRouteHooks['onPublicRouteRequest'] | undefined {
+function loadedExtensionDeclaring(pathTemplate: string): LoadedExtension | undefined {
   const status = getExtensionStatus()
   if (status.status !== 'loaded') return undefined
   if (!status.manifest.capabilities.includes('public-route')) return undefined
   if (!status.manifest.anonymousRoutePaths?.includes(pathTemplate)) return undefined
+  return status
+}
+
+function loadPublicRouteHookFresh(
+  pathTemplate: string
+): PublicRouteHooks['onPublicRouteRequest'] | undefined {
+  const status = loadedExtensionDeclaring(pathTemplate)
+  if (!status) return undefined
   const hook = status.hooks.publicRoute
   if (!hook || typeof hook.onPublicRouteRequest !== 'function') return undefined
   return hook.onPublicRouteRequest
+}
+
+/**
+ * Story 65.4 AC2 — the declared minimum response time for `pathTemplate`, read from the CURRENTLY
+ * loaded manifest on every request (never a registration-time copy), with the same checks as
+ * `loadPublicRouteHookFresh`. Returns `undefined` (no hold) when nothing is loaded or declared.
+ */
+function loadMinResponseMsFresh(pathTemplate: string): number | undefined {
+  const declared = loadedExtensionDeclaring(pathTemplate)?.manifest.anonymousRouteMinResponseMs
+  const minMs = Object.entries(declared ?? {}).find(([template]) => template === pathTemplate)?.[1]
+  if (typeof minMs !== 'number' || !(minMs > 0)) return undefined
+  return Math.min(minMs, MAX_MIN_RESPONSE_MS)
 }
 
 function logPublicRouteFailed(
@@ -182,6 +214,48 @@ function applyPublicRouteHeaders(
 }
 
 /**
+ * Story 20.13 AC2/AC4/AC5 (planning half, Story 65.4): everything the route does up to, but not
+ * including, writing the response. Same checks, same order and same bodies as before the split.
+ */
+async function planPublicRouteResponse(
+  request: FastifyRequest,
+  pathTemplate: string
+): Promise<PlannedResponse> {
+  // AC5: defense-in-depth only — never the primary boundary for this stateless mechanism.
+  if (isRejectedByFetchMode(request)) return notFoundResponse(request)
+
+  // AC2: re-checked fresh on every request, never cached from route-registration time.
+  const onPublicRouteRequest = loadPublicRouteHookFresh(pathTemplate)
+  if (!onPublicRouteRequest) return notFoundResponse(request)
+
+  const publicRequest: PublicRouteRequest = {
+    method: 'GET',
+    pathTemplate,
+    params: request.params as Record<string, string>,
+    query: normalizeQueryParams(request),
+  }
+
+  const raced = await raceWithTimeout(() => onPublicRouteRequest(publicRequest), HOOK_TIMEOUT_MS)
+
+  if (raced.status === 'timed_out') {
+    logPublicRouteFailed(request.log, pathTemplate, 'timed_out')
+    return internalErrorResponse()
+  }
+  if (raced.status === 'rejected') {
+    logPublicRouteFailed(request.log, pathTemplate, 'threw')
+    return internalErrorResponse()
+  }
+  if (!isValidPublicRouteOutcome(raced.value)) {
+    logPublicRouteFailed(request.log, pathTemplate, 'malformed')
+    return internalErrorResponse()
+  }
+
+  const outcome = raced.value
+  if (outcome.outcome !== 'response') return mapActionResultToResponse(outcome)
+  return { status: outcome.status, body: outcome.body, headers: outcome.headers }
+}
+
+/**
  * Story 20.13 AC1/AC3/AC4/AC5/AC5b — a Fastify plugin mounting one real GET route per
  * `anonymousRoutePaths` entry declared by the currently loaded extension, reading
  * `getExtensionStatus()` ONCE at registration time (not per-request, mirroring
@@ -213,46 +287,16 @@ export function publicRouteRoutes(fastify: FastifyApp): Promise<void> {
         rateLimit: { max: 60, timeWindowMs: 60_000, key: `GET ${pathTemplate}` },
       },
       handler: async (_ctx, request: FastifyRequest, reply: FastifyReply) => {
-        // AC5: defense-in-depth only — never the primary boundary for this stateless mechanism.
-        if (isRejectedByFetchMode(request)) return sendNotFound(reply, request)
-
-        // AC2: re-checked fresh on every request, never cached from route-registration time.
-        const onPublicRouteRequest = loadPublicRouteHookFresh(pathTemplate)
-        if (!onPublicRouteRequest) return sendNotFound(reply, request)
-
-        const publicRequest: PublicRouteRequest = {
-          method: 'GET',
-          pathTemplate,
-          params: request.params as Record<string, string>,
-          query: normalizeQueryParams(request),
+        const startedAt = monotonicNowMs()
+        const planned = await planPublicRouteResponse(request, pathTemplate)
+        if (planned.status >= 400) {
+          // Story 65.4 AC2: every non-2xx answer (hook responses, mapped ActionResults, PV's own
+          // 404s and the generic 500) is held to the declared minimum, read fresh per request.
+          const minMs = loadMinResponseMsFresh(pathTemplate)
+          if (minMs !== undefined) await holdUntilMinResponse(startedAt, minMs)
         }
-
-        const raced = await raceWithTimeout(
-          () => onPublicRouteRequest(publicRequest),
-          HOOK_TIMEOUT_MS
-        )
-
-        if (raced.status === 'timed_out') {
-          logPublicRouteFailed(request.log, pathTemplate, 'timed_out')
-          return sendInternalError(reply)
-        }
-        if (raced.status === 'rejected') {
-          logPublicRouteFailed(request.log, pathTemplate, 'threw')
-          return sendInternalError(reply)
-        }
-        if (!isValidPublicRouteOutcome(raced.value)) {
-          logPublicRouteFailed(request.log, pathTemplate, 'malformed')
-          return sendInternalError(reply)
-        }
-
-        const outcome = raced.value
-        if (outcome.outcome !== 'response') {
-          const mapped = mapActionResultToResponse(outcome)
-          return reply.status(mapped.status).send(mapped.body)
-        }
-
-        applyPublicRouteHeaders(reply, outcome.headers)
-        return reply.status(outcome.status).send(outcome.body)
+        applyPublicRouteHeaders(reply, planned.headers)
+        return reply.status(planned.status).send(planned.body)
       },
     })
   }

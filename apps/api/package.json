@@ -25,6 +25,7 @@
     "dev": "tsx watch src/main.ts",
     "lint": "eslint .",
     "test": "vitest run --coverage",
+    "test:timing": "RUN_TIMING_TESTS=1 vitest run src/modules/credential-shares/external-timing.integration.test.ts",
     "typecheck": "tsc --noEmit",
     "generate-spec": "tsx src/scripts/generate-spec.ts",
     "route-audit:runtime": "tsx src/scripts/runtime-route-audit.ts",

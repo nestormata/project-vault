@@ -1,4 +1,4 @@
-import { coverageConfigDefaults, mergeConfig } from 'vitest/config'
+import { configDefaults, coverageConfigDefaults, mergeConfig } from 'vitest/config'
 import { baseVitestConfig } from '@project-vault/tsconfig/vitest.base'
 
 // Story 10.4: replaces the Story-1.1-era 21-file allowlist with a truthful, maintainable
@@ -9,6 +9,13 @@ import { baseVitestConfig } from '@project-vault/tsconfig/vitest.base'
 export default mergeConfig(baseVitestConfig, {
   test: {
     include: ['src/**/*.test.ts'],
+    // Story 65.4 AC3: the statistical timing run takes about 90 s (every miss is held to the
+    // floor), so it only runs when asked for: the nightly workflow sets RUN_TIMING_TESTS=1 and
+    // calls `pnpm --filter @project-vault/api test:timing`.
+    exclude:
+      process.env.RUN_TIMING_TESTS === '1'
+        ? configDefaults.exclude
+        : [...configDefaults.exclude, 'src/**/external-timing.integration.test.ts'],
     setupFiles: ['src/__tests__/setup-env.ts'],
     fileParallelism: false,
     // Story 10.4: raised from 45s. Confirmed via 4 consecutive full-suite verification runs

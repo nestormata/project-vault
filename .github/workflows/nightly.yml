@@ -210,6 +210,16 @@ jobs:
           DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
           ADMIN_DATABASE_URL: postgresql://vault_admin:password@localhost:5432/project_vault
 
+      # Story 65.4 AC3: the statistical external-share miss timing run (about 90 s; excluded from the
+      # default vitest run). Once per night is enough evidence, so only the first leg runs it. It
+      # fails (never passes vacuously) on an invalid, leaking or inconclusive run.
+      - name: External share miss timing (Story 65.4)
+        if: matrix.repeat == 1
+        run: pnpm --filter @project-vault/api test:timing
+        env:
+          DATABASE_URL: ${{ env.VAULT_APP_DATABASE_URL }}
+          ADMIN_DATABASE_URL: postgresql://vault_admin:password@localhost:5432/project_vault
+
   trivy-image:
     name: Trivy Docker Image Scan (${{ matrix.name }})
     needs: changes

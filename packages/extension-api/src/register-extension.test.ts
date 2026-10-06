@@ -417,7 +417,7 @@ describe('registerExtension — concrete canonical version gate', () => {
     }
   )
 
-  it.each(['3.35.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
+  it.each(['3.36.0', '0.9.0', '4.0.0', '4.0.0-beta.1', '1.1.0-beta.1', '1.3.0-beta.1', '4.3.1'])(
     'rejects canonical version outside %s',
     (apiVersion) => {
       const hooksFactory = makeHooksFactory()
@@ -455,19 +455,19 @@ describe('registerExtension — concrete canonical version gate', () => {
     // Story 20.11 AC1, Story 34.1 AC1/AC9, Story 35.1 AC1, Story 36.1 AC1/AC6, Story 37.1 AC1.3,
     // Story 39.1 AC8, Story 41.1, Story 56.1 AC1/AC4, Story 40.1 AC1/AC2/AC3/AC10, Story 57.1,
     // Story 58.1, Story 20.12, Story 20.13, Story 59.1, Story 70.1, Story 68.8, Story 68.14, Story 68.11 Story 70.3 and Story 71.4 — host
-    // EXTENSION_API_VERSION is now 3.34.0 (see manifest.ts's EXTENSION_API_VERSION doc comment for why this merge moves past
+    // EXTENSION_API_VERSION is now 3.35.0 (see manifest.ts's EXTENSION_API_VERSION doc comment for why this merge moves past
     // 3.2.0/3.3.0/3.4.0/3.6.0/3.7.0/3.8.0/3.9.0/3.10.0/3.11.0/3.12.0/3.13.0/3.14.0/3.15.0/3.16.0/
     // 3.17.0/3.18.0/3.19.0/3.20.0/3.21.0/3.22.0/3.22.1/3.23.0/3.24.0, which Story
     // 25.3/25.4/25.5/25.9/20.8/25.12/29.3/29.4/20.11/34.1/35.1/36.1/37.1/39.1/41.1/56.1/40.1/57.1/
-    // 58.1/20.12/20.13/59.1 respectively already claimed on main for different additive changes); '3.35.0' is
+    // 58.1/20.12/20.13/59.1 respectively already claimed on main for different additive changes); '3.36.0' is
     // the above-host, same-major escape-eligible version, and '4.0.0' is a different major (never
     // escape-eligible). Kept one minor version above whatever EXTENSION_API_VERSION currently is
     // — see loader.test.ts's identical comment.
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.35.0' }), makeHooksFactory())
+      registerExtension(manifest({ apiVersion: '3.36.0' }), makeHooksFactory())
     ).toThrow()
     expect(() =>
-      registerExtension(manifest({ apiVersion: '3.35.0' }), makeHooksFactory(), {
+      registerExtension(manifest({ apiVersion: '3.36.0' }), makeHooksFactory(), {
         allowApiVersionAboveHost: true,
       })
     ).not.toThrow()
@@ -1554,6 +1554,75 @@ describe('registerExtension — Story 20.13 AC1-AC3 (publicRoute / anonymousRout
       },
       INVALID_MANIFEST_FIELD
     )
+  })
+
+  describe('Story 65.4 anonymousRouteMinResponseMs', () => {
+    const base = {
+      capabilities: [PUBLIC_ROUTE_CAPABILITY],
+      anonymousRoutePaths: [REDEEM_TOKEN_TEMPLATE, '/status'],
+    }
+
+    it('accepts a record keyed by declared templates and passes it through', () => {
+      const result = registerExtension(
+        manifest({ ...base, anonymousRouteMinResponseMs: { [REDEEM_TOKEN_TEMPLATE]: 250 } }),
+        publicRouteHooksFactory()
+      )
+      expect(result.manifest.anonymousRouteMinResponseMs).toEqual({ [REDEEM_TOKEN_TEMPLATE]: 250 })
+    })
+
+    it('omitted: nothing on the returned manifest', () => {
+      const result = registerExtension(manifest(base), publicRouteHooksFactory())
+      expect(result.manifest.anonymousRouteMinResponseMs).toBeUndefined()
+    })
+
+    it.each([0, -5, 1.5, 2001, Number.NaN, '250', null])('rejects the value %j', (value) => {
+      expectRejection(
+        {
+          ...base,
+          anonymousRouteMinResponseMs: { [REDEEM_TOKEN_TEMPLATE]: value as unknown as number },
+        },
+        INVALID_MANIFEST_FIELD
+      )
+    })
+
+    it('accepts the inclusive bounds 1 and 2000', () => {
+      expect(() =>
+        registerExtension(
+          manifest({
+            ...base,
+            anonymousRouteMinResponseMs: { [REDEEM_TOKEN_TEMPLATE]: 1, '/status': 2000 },
+          }),
+          publicRouteHooksFactory()
+        )
+      ).not.toThrow()
+    })
+
+    it('rejects a key that is not a declared template', () => {
+      expectRejection(
+        { ...base, anonymousRouteMinResponseMs: { '/undeclared': 100 } },
+        INVALID_MANIFEST_FIELD
+      )
+    })
+
+    it.each([[[]], ['x'], [7]])('rejects a non-record container %j', (container) => {
+      expectRejection(
+        {
+          ...base,
+          anonymousRouteMinResponseMs: container as unknown as Record<string, number>,
+        },
+        INVALID_MANIFEST_FIELD
+      )
+    })
+
+    it('rejects the field without the "public-route" capability', () => {
+      expectRejection(
+        {
+          capabilities: [AUDIT_EVENT_SOURCE_CAPABILITY],
+          anonymousRouteMinResponseMs: { [REDEEM_TOKEN_TEMPLATE]: 100 },
+        },
+        INVALID_MANIFEST_FIELD
+      )
+    })
   })
 
   it('rejects an empty anonymousRoutePaths array (distinct from omitted)', () => {
