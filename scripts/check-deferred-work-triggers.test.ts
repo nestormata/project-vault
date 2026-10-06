@@ -234,6 +234,117 @@ describe('findTriggerViolations (AC-5)', () => {
   })
 })
 
+const DEAD = 'Trigger to revisit: story 71-7 being picked.'
+const DONE = 'done'
+const DEAD_KEY = '71-7-replay-store'
+const BACKLOG = 'backlog'
+const SPRINT_PATH = `${ARTIFACTS_DIR}/sprint-status.yaml`
+
+const STATUSES = new Map([
+  ['70-3-delivery-provider-contract', DONE],
+  ['70-4-later-work', BACKLOG],
+  [DEAD_KEY, DONE],
+  ['170-3-other-story', BACKLOG],
+])
+
+describe('stale-trigger rule (70.5 AC-4)', () => {
+  const stale = (...body: string[]) =>
+    findTriggerViolations(entry('1', ...body), STATUSES).map((v) => v.message)
+
+  it.each([
+    `status: open — ${DEAD}`,
+    'status: open — Trigger to revisit: epic-70 stories 70-3 or 71-7 landing, story 70-3 first.',
+    'status: open — Trigger to revisit: `70-3` being picked.',
+    'status: open — Trigger to revisit: 70-3-delivery-provider-contract being picked.',
+    'status: open — Trigger to revisit: Story 70.3 being picked.',
+    'status: open — Trigger to revisit: (1) story 71-7 landing; (2) story 70-3 landing.',
+    `status: in-progress — ${DEAD}`,
+    `status: blocked — ${DEAD}`,
+    'status: open — Trigger to revisit: story 71-7 being picked, OR story 70-3 being picked.',
+  ])('fails %s', (line) => {
+    const found = stale(line)
+    expect(found).toHaveLength(1)
+    expect(found[0]).toContain('DW-1')
+    expect(found[0]).toContain('re-point the trigger at a live event, or close the entry')
+  })
+
+  it('names the dead story keys', () => {
+    expect(stale(`status: open — ${DEAD}`)[0]).toContain(DEAD_KEY)
+  })
+
+  it.each([
+    'status: open — Trigger to revisit: the next change to `apps/api/src/main.ts`, OR story 70-3 being picked.',
+    'status: open — Trigger to revisit: story 70-4 being picked.',
+    'status: open — Trigger to revisit: story 99-1 being picked.',
+    'status: open — Trigger to revisit: the next release (version 3.32.0).',
+    'status: open — Trigger to revisit: story 3.32 becoming relevant for us.',
+    'status: open — Trigger to revisit: story 71-7 being picked, OR any observed send over five minutes.',
+    'status: open — Trigger to revisit: story 71-7 shipping in the next release.',
+    'status: open — Trigger to revisit: story 71-7 and a change to scripts/lib/scan-utils.ts.',
+    'status: open — Trigger to revisit: story 70-3 or story 70-4 being picked.',
+    'status: open — Trigger to revisit: story 170-3 being picked.',
+    'status: open — Trigger to revisit: story 70-3-unknown-slug being picked.',
+    'status: open — Trigger to revisit: PR #493 merging into main.',
+    'status: open — Trigger to revisit: CM replaces a PV region component or story 71-7 being picked.',
+  ])('passes %s', (line) => {
+    expect(stale(line)).toEqual([])
+  })
+
+  it('never checks a closed entry', () => {
+    expect(stale(`status: done — ${DEAD}`)).toEqual([])
+  })
+
+  it('does not judge when no sprint-status statuses are given', () => {
+    const content = entry('1', `status: open — ${DEAD}`)
+    expect(findTriggerViolations(content)).toEqual([])
+  })
+
+  it('judges every labelled line: one live clause on another line keeps the entry valid', () => {
+    expect(
+      stale(
+        `status: open — ${DEAD}`,
+        'note: Trigger: the next change to `scan-utils.ts` in scripts/lib.'
+      )
+    ).toEqual([])
+  })
+
+  it.each(['a ', '1-', 'or', '(', '`', 'story ', '9'])(
+    'finishes on a long adversarial trigger value (%j repeated)',
+    (filler) => {
+      // A quadratic regex would blow the test timeout here; no wall-clock assertion.
+      expect(stale(`status: open — Trigger to revisit: ${filler.repeat(20_000)}x`)).toEqual([])
+    }
+  )
+
+  it('reports at the status line of the entry', () => {
+    const [violation] = findTriggerViolations(entry('1', `status: open — ${DEAD}`), STATUSES)
+    expect(violation?.line).toBe(3)
+  })
+})
+
+describe('stale-trigger rule through the CLI (70.5 AC-4)', () => {
+  const dead = entry('1', `status: open — ${DEAD}`)
+  const sprint = `development_status:\n  ${DEAD_KEY}: done\n`
+
+  it('is FATAL on a dead trigger and names the dead key', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, LEDGER_PATH, dead)
+    writeFixture(root, SPRINT_PATH, sprint)
+    const run = runScriptCli(SCRIPT, root)
+    expect(run.status).toBe(1)
+    expect(run.stderr).toContain(DEAD_KEY)
+  })
+
+  it('skips the rule with one warning when sprint-status.yaml is unreadable', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, LEDGER_PATH, dead)
+    const run = runScriptCli(SCRIPT, root)
+    expect(run.status).toBe(0)
+    expect(run.stderr.match(/stale-trigger rule skipped/g)).toHaveLength(1)
+    expect(run.stderr).not.toContain(root)
+  })
+})
+
 describe('scanDeferredWorkTriggers', () => {
   it('counts entries and open entries', () => {
     const root = makeFixtureRoot()

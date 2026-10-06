@@ -19,12 +19,18 @@
  * status word or no `status:` line (so a typo cannot hide an open entry). Closed entries need no
  * trigger.
  *
+ * Story 70.5 (epic-70 retro Finding 3): also FATAL when an open entry's every trigger clause names
+ * only `done` stories (see `lib/trigger-liveness.ts`): a trigger that can no longer fire is rot.
+ * That rule needs `sprint-status.yaml`; when it is unreadable the rule is skipped with one warning.
+ *
  * Pure, DB-free: a static scan of the private overlay's deferred-work.md using the shared parser in
  * `lib/deferred-work-ledger.ts`.
  */
 import { pathToFileURL } from 'node:url'
+import { parseDevelopmentStatusComments, SPRINT_STATUS_PATH } from './check-story-status-sync.js'
 import { type DwEntry, parseDwEntries } from './lib/deferred-work-ledger.js'
 import { formatLineRefs, readOverlayFile, runOverlayGuard } from './lib/scan-utils.js'
+import { deadTriggerKeys, type StatusByKey } from './lib/trigger-liveness.js'
 
 export const DEFERRED_WORK_PATH = '_bmad-output/implementation-artifacts/deferred-work.md'
 
@@ -93,6 +99,8 @@ export type TriggerFindings = {
   entryCount: number
   openCount: number
   violations: TriggerViolation[]
+  /** True when the stale-trigger rule was skipped because sprint-status.yaml was unreadable. */
+  staleRuleSkipped: boolean
 }
 
 /** Characters dropped from the end of a status word. */
@@ -190,9 +198,33 @@ function triggerMessage(id: string, check: TriggerCheck): string | undefined {
   }
 }
 
+/** Every trigger value (text after a `Trigger[s] ...:` label) in the entry's body lines. */
+function entryTriggerValues(entry: DwEntry): string[] {
+  return entry.lines.flatMap((l) => triggerValue(l.text) ?? [])
+}
+
+function staleViolation(
+  entry: DwEntry,
+  line: number,
+  statuses: StatusByKey | undefined
+): TriggerViolation[] {
+  if (statuses === undefined) return []
+  const dead = deadTriggerKeys(entryTriggerValues(entry), statuses)
+  if (dead === undefined) return []
+  return [
+    {
+      line,
+      message:
+        `${entry.id}: every revisit trigger clause names only finished stories (${dead.join(', ')}) ` +
+        'so it can never fire; re-point the trigger at a live event, or close the entry',
+    },
+  ]
+}
+
 function openEntryViolations(
   entry: DwEntry,
-  state: { line: number; token: string }
+  state: { line: number; token: string },
+  statuses: StatusByKey | undefined
 ): TriggerViolation[] {
   const violations: TriggerViolation[] = []
   if (statusWord(state.token) === 'open' && state.token !== 'open') {
@@ -205,15 +237,20 @@ function openEntryViolations(
   }
   const message = triggerMessage(entry.id, entryTrigger(entry))
   if (message) violations.push({ line: state.line, message })
+  else violations.push(...staleViolation(entry, state.line, statuses))
   return violations
 }
 
-function entryViolations(entry: DwEntry, state: EntryState): TriggerViolation[] {
+function entryViolations(
+  entry: DwEntry,
+  state: EntryState,
+  statuses: StatusByKey | undefined
+): TriggerViolation[] {
   switch (state.kind) {
     case 'closed':
       return []
     case 'open':
-      return openEntryViolations(entry, state)
+      return openEntryViolations(entry, state, statuses)
     case 'missing':
       return [{ line: entry.line, message: `${entry.id}: no status: line` }]
     case 'unknown':
@@ -228,33 +265,49 @@ function entryViolations(entry: DwEntry, state: EntryState): TriggerViolation[] 
   }
 }
 
-function analyze(content: string): TriggerFindings {
+function analyze(content: string, statuses?: StatusByKey): TriggerFindings {
   const entries = parseDwEntries(content)
   let openCount = 0
   const violations: TriggerViolation[] = []
   for (const entry of entries) {
     const state = entryState(entry)
     if (state.kind === 'open') openCount++
-    violations.push(...entryViolations(entry, state))
+    violations.push(...entryViolations(entry, state, statuses))
   }
   violations.sort((a, b) => a.line - b.line)
-  return { entryCount: entries.length, openCount, violations }
+  return { entryCount: entries.length, openCount, violations, staleRuleSkipped: false }
 }
 
-/** AC-5: every violation in a ledger's content, sorted by line. */
-export function findTriggerViolations(content: string): TriggerViolation[] {
-  return analyze(content).violations
+/** AC-5: every violation in a ledger's content, sorted by line. `statuses` (story key to
+ * `development_status` value) switches on the stale-trigger rule; without it the rule is off. */
+export function findTriggerViolations(content: string, statuses?: StatusByKey): TriggerViolation[] {
+  return analyze(content, statuses).violations
+}
+
+function readStatuses(rootDir: string): StatusByKey | undefined {
+  const content = readOverlayFile(rootDir, SPRINT_STATUS_PATH)
+  if (content === undefined) return undefined
+  return new Map(parseDevelopmentStatusComments(content).map((row) => [row.key, row.value]))
 }
 
 /** Scans `deferred-work.md` under `rootDir` (the CLI reports an unreadable ledger before calling
  * this; here it yields no findings). */
 export function scanDeferredWorkTriggers(rootDir = process.cwd()): TriggerFindings {
   const content = readOverlayFile(rootDir, DEFERRED_WORK_PATH)
-  if (content === undefined) return { entryCount: 0, openCount: 0, violations: [] }
-  return analyze(content)
+  if (content === undefined) {
+    return { entryCount: 0, openCount: 0, violations: [], staleRuleSkipped: false }
+  }
+  const statuses = readStatuses(rootDir)
+  return { ...analyze(content, statuses), staleRuleSkipped: statuses === undefined }
 }
 
 function report(findings: TriggerFindings): void {
+  if (findings.staleRuleSkipped) {
+    process.stderr.write(
+      `check-deferred-work-triggers: WARNING — ${SPRINT_STATUS_PATH} is not readable; ` +
+        'stale-trigger rule skipped\n'
+    )
+  }
   if (findings.violations.length === 0) {
     process.stdout.write(
       `check-deferred-work-triggers: ${findings.entryCount} DW entries, ${findings.openCount} ` +
@@ -263,8 +316,8 @@ function report(findings: TriggerFindings): void {
     return
   }
   process.stderr.write(
-    'FATAL: open deferred-work.md entries must name a concrete revisit trigger ' +
-      '(epic-59 retro Finding 4, epic-43 retro Finding 13):\n'
+    'FATAL: open deferred-work.md entries must name a concrete revisit trigger that can still ' +
+      'fire (epic-59 retro Finding 4, epic-43 retro Finding 13, epic-70 retro Finding 3):\n'
   )
   for (const v of findings.violations) {
     process.stderr.write(`  - ${DEFERRED_WORK_PATH}:${v.line}: ${v.message}\n`)

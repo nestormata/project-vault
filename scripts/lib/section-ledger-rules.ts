@@ -81,23 +81,54 @@ export function isNegated(sentence: string, index: number): boolean {
 const RESIDUAL_RISK = /(?<![\p{L}\p{N}_-])residual risks?(?![\p{L}\p{N}_-])/iu
 const SCOPE_BOUNDARY = /(?<![\p{L}\p{N}_-])scope boundar(?:y|ies)(?![\p{L}\p{N}_-])/iu
 const KNOWN_LIMIT = /(?<![\p{L}\p{N}_-])known limit(?:s|ation|ations)?(?![\p{L}\p{N}_-])/iu
+// Story 70.5 (epic-70 retro Finding 1, 6th occurrence): `### Residual windows (documented, not
+// fixed)` was never scanned. `residual` followed by any word is a section; `residuals` and
+// `non-residual` are not (the lookbehind and the required whitespace keep them out).
+const RESIDUAL_NOUN = /(?<![\p{L}\p{N}_-])residual[ \t]+\p{L}+(?![\p{L}\p{N}_-])/iu
+/**
+ * The closed list of "not fixed" title phrases that open a section and imply a disposition
+ * (retro Finding 1). A bare `not fixed` is deliberately absent: the 70.5 measurement showed it
+ * matching decision-record headings ("D9 — ...: accepted, not fixed", "D8 — ... tracked, not
+ * fixed, by this story") whose bullets are safeguards, not deferrals. Adding one means editing this constant plus a test and re-measuring the live
+ * overlay (60.8 AC-2 rule).
+ */
+export const UNFIXED_TITLE_PHRASES: readonly RegExp[] = [
+  /(?<![\p{L}\p{N}_-])documented,? not fixed(?![\p{L}\p{N}_-])/iu,
+  /(?<![\p{L}\p{N}_-])not addressed here(?![\p{L}\p{N}_-])/iu,
+]
 const ACCEPTED_WORD = /(?<![\p{L}\p{N}_-])accepted(?![\p{L}\p{N}_-])/iu
 const EXCLUDED_TITLE = /elicitation|pre-?mortem|red team/i
 const AC_TITLE = /^AC-\d+/i
 
 /**
- * Whether a heading opens a Residual risks / Scope Boundaries / Known limits section. An
- * acceptance-criterion title (`AC-14: ... Scope Boundary`) is not a section, and elicitation /
- * pre-mortem / red team sections are excluded like in the review-section extractor.
+ * Whether a heading opens a Residual risks / Residual <noun> / Scope Boundaries / Known limits /
+ * "not fixed" section. An acceptance-criterion title (`AC-14: ... Scope Boundary`) is not a
+ * section, and elicitation / pre-mortem / red team sections are excluded like in the
+ * review-section extractor.
  */
 export function isRiskScopeTitle(title: string): boolean {
   if (AC_TITLE.test(title) || EXCLUDED_TITLE.test(title)) return false
-  return RESIDUAL_RISK.test(title) || SCOPE_BOUNDARY.test(title) || KNOWN_LIMIT.test(title)
+  return (
+    RESIDUAL_RISK.test(title) ||
+    RESIDUAL_NOUN.test(title) ||
+    SCOPE_BOUNDARY.test(title) ||
+    KNOWN_LIMIT.test(title) ||
+    isUnfixedTitle(title)
+  )
+}
+
+function isUnfixedTitle(title: string): boolean {
+  return UNFIXED_TITLE_PHRASES.some((phrase) => phrase.test(title))
 }
 
 /** Whether the title itself records the disposition (a residual risk is accepted by definition). */
 export function impliesDisposition(title: string): boolean {
-  return ACCEPTED_WORD.test(title) || RESIDUAL_RISK.test(title) || KNOWN_LIMIT.test(title)
+  return (
+    ACCEPTED_WORD.test(title) ||
+    RESIDUAL_RISK.test(title) ||
+    KNOWN_LIMIT.test(title) ||
+    isUnfixedTitle(title)
+  )
 }
 
 export type RiskScopeSection = TitledSection & { impliesDisposition: boolean }
