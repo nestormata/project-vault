@@ -23,6 +23,7 @@ describe('OperationalEvent', () => {
     expect(OperationalEvent.STARTUP_COMPLETE).toBe('startup.complete')
     expect(OperationalEvent.STARTUP_FAILED).toBe('startup.failed')
     expect(OperationalEvent.SHUTDOWN_FAILED).toBe('shutdown.failed')
+    expect(OperationalEvent.PROCESS_FATAL_FAULT).toBe('process.fatal_fault')
     expect(OperationalEvent.JOB_STARTED).toBe('job.started')
     expect(OperationalEvent.JOB_COMPLETED).toBe('job.completed')
     expect(OperationalEvent.JOB_FAILED).toBe('job.failed')

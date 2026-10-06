@@ -632,7 +632,11 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // optional `security.delegation.historicalActorPolicy` route declaration (policy row 1). A pack
 // written against 3.32.0 that omits all of them behaves exactly as before. (3.30.0 to 3.32.0 are
 // unreleased at this point, so 71-1's released minor could not be reused.)
-export const EXTENSION_API_VERSION = '3.33.0'
+// Story 67.1 — bumped as a minor (3.33.0 -> 3.34.0): the new exported fault-containment
+// conformance helpers (`checkExtensionEmitters`, `assertExtensionEmittersContained`,
+// `checkBackgroundPromisesHandled`) and the documented emitter/background-promise contract
+// (policy row 2). No manifest or hook change; an extension that ignores them behaves as before.
+export const EXTENSION_API_VERSION = '3.34.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

@@ -2,6 +2,39 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.34.0 — 2026-10-05
+
+contract-hash: sha256:2ed66bc4a2247ba27840793c9dd5c312acfd30fd4a604f7715cdffe7be8559d5
+
+Story 67.1. Additive only: new helpers and a documented contract, no manifest or hook change.
+
+### Added
+
+- Contract: an extension runs in the PV API process, so every long-lived emitter it creates (a
+  `pg.Pool`, socket, stream or client) must carry an `'error'` listener and every background
+  promise must have a rejection handler. Node treats either omission as fatal for the whole host.
+  The host now logs and exits cleanly on such a fault instead of crashing with a raw stack, but it
+  cannot keep serving afterwards.
+- `checkExtensionEmitters(emitters)` and `assertExtensionEmittersContained(emitters)`: force an
+  `'error'` event on each labelled emitter and report (or throw naming) the ones that crash.
+- `checkBackgroundPromisesHandled(run)`: reports promise rejections left unhandled while `run`
+  executes. Both report labels and counts only, never error text.
+
+### Deprecated
+
+Nothing new is deprecated. The legacy runtime-UI surface keeps the notice first given in 3.30.0:
+
+- Type side: `UIPanel`, `UIPanelContext`, `UIPanelResult`; `ModuleAction`, `ModuleActionContext`,
+  `ModuleActionRequest`; `ModuleDataRequestContext`, `ModuleDataResult`, `ModuleDataRouteHandler`,
+  `ModuleDataRouteDeclaration`; `ExtensionNavItem`.
+- Manifest side: `uiPanelSlots`, `moduleActions`, `navItems` and `moduleDataRoutes`.
+- Hook side: `uiPanel`, `moduleAction`, `moduleData` and the `'ui-panel'` capability member.
+- Their replacements are the neutral `ExtensionRequestContext` and `ExtensionActionResult` types,
+  composed UI and M7 `apiRoutes`.
+- Notified: 2026-10-06, the 3.30.0 notification still applies; recipient CentralizeMe maintainer.
+- earliest-removal: 4.0.0
+- notice-window-ends: 2027-01-14
+
 ## 3.33.0 — 2026-10-05
 
 contract-hash: sha256:15820f74b42304f335e3e7d186024791555caba9c3012dee9f8d08b2efd6ddfc
