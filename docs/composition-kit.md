@@ -268,7 +268,7 @@ monolithic. The check is about replaceability, not size: a region wrapped in a t
 the extraction is meaningful is the componentization audit of story 69.5). An unparseable `.svelte` file is a
 finding, never a silent skip. Files the lock records as CM's are exempt by provenance (the guard has
 `@pv-scope pv-originated-only`); there is no suppression syntax, baseline or allow-list. PV's own tree has 189
-`@region` markers since Story 69-6 (168 after Story 69-5, which holds 66 after Story 69-3, made of 14 from story 69-1: the project page, the project nav and the dashboard; 13 from
+`@region` markers since Story 69-6 (21 added by 69-6 to the 168 that held after Story 69-5; before 69-5 there were 66 after Story 69-3, made of 14 from story 69-1: the project page, the project nav and the dashboard; 13 from
 story 69-2: the credential detail page; 17 from story 69-4: the settings audit, settings notifications and project
 members pages; 22 from story 69-3: the endpoint list, add and detail pages, the status page admin screen and the
 public status page; Story 69-5 added the rest, so every route file holds regions; see "Region points" below); the guard prints the count (`scanned N files, 189 regions`) and a test
