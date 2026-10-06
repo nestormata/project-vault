@@ -5,6 +5,29 @@ import type { FastifyApp } from './fastify-app.js'
 const userRateLimitWindows = new Map<string, { count: number; resetAt: number }>()
 
 /**
+ * Story 71.9: the window map is bounded, because a per-IP bucket key is chosen by the caller (an
+ * IPv6 sprayer would otherwise grow it for ever). At the cap, expired windows go first, then the
+ * oldest entry; an evicted key merely starts a fresh window (the same trade-off as the log deduper
+ * in `ip-rate-limit.ts`).
+ */
+export const USER_RATE_LIMIT_MAX_BUCKETS = 50_000
+
+/** Test and diagnostics seam: how many windows are currently tracked. */
+export function userRateLimitBucketCount(): number {
+  return userRateLimitWindows.size
+}
+
+function makeRoomForBucket(now: number): void {
+  if (userRateLimitWindows.size < USER_RATE_LIMIT_MAX_BUCKETS) return
+  for (const [bucketKey, window] of userRateLimitWindows) {
+    if (window.resetAt <= now) userRateLimitWindows.delete(bucketKey)
+  }
+  if (userRateLimitWindows.size < USER_RATE_LIMIT_MAX_BUCKETS) return
+  const oldest = userRateLimitWindows.keys().next().value
+  if (oldest !== undefined) userRateLimitWindows.delete(oldest)
+}
+
+/**
  * Rate limiters are real wall-clock-bucketed counters shared across every request an app
  * instance handles. Integration tests that register/log in many users as fixture setup
  * (not testing rate limiting itself) can incidentally trip these limits depending on how
@@ -115,37 +138,55 @@ export function authPreHandler(fastify: FastifyApp) {
   return (fastify as unknown as { authenticate: unknown }).authenticate
 }
 
-export function enforceUserRateLimit({
-  userId,
-  key,
-  max,
-  timeWindowMs = 60_000,
-  reply,
-  retryAfterHeader = false,
-}: {
+export type UserRateLimitInput = {
   userId: string
   key: string
   max: number
   timeWindowMs?: number
-  reply: FastifyReply
-  /** Story 71.3: also set the `Retry-After` response header (default: body field only). */
-  retryAfterHeader?: boolean
-}): boolean {
-  if (!isRateLimitEnforced()) return true
+}
+
+export type UserRateLimitDecision = { allowed: true } | { allowed: false; retryAfter: number }
+
+/**
+ * The reply-free core of `enforceUserRateLimit` (Story 71.9): spends one unit of the bucket and
+ * says whether the call is within budget, without sending anything. Same bypass rule as every
+ * other limiter (`isRateLimitEnforced`).
+ */
+export function consumeUserRateLimit({
+  userId,
+  key,
+  max,
+  timeWindowMs = 60_000,
+}: UserRateLimitInput): UserRateLimitDecision {
+  if (!isRateLimitEnforced()) return { allowed: true }
   const now = Date.now()
   const bucketKey = `${userId}:${key}`
   const current = userRateLimitWindows.get(bucketKey)
+  if (!current) makeRoomForBucket(now)
   const bucket =
     !current || current.resetAt <= now ? { count: 0, resetAt: now + timeWindowMs } : current
   bucket.count += 1
   userRateLimitWindows.set(bucketKey, bucket)
-  if (bucket.count <= max) return true
-  const retryAfter = Math.ceil((bucket.resetAt - now) / 1000)
-  if (retryAfterHeader) reply.header('Retry-After', String(retryAfter))
+  if (bucket.count <= max) return { allowed: true }
+  return { allowed: false, retryAfter: Math.ceil((bucket.resetAt - now) / 1000) }
+}
+
+export function enforceUserRateLimit({
+  reply,
+  retryAfterHeader = false,
+  ...input
+}: UserRateLimitInput & {
+  reply: FastifyReply
+  /** Story 71.3: also set the `Retry-After` response header (default: body field only). */
+  retryAfterHeader?: boolean
+}): boolean {
+  const decision = consumeUserRateLimit(input)
+  if (decision.allowed) return true
+  if (retryAfterHeader) reply.header('Retry-After', String(decision.retryAfter))
   reply.status(429).send({
     code: 'rate_limit_exceeded',
     message: 'Too many authenticated requests',
-    retryAfter,
+    retryAfter: decision.retryAfter,
   })
   return false
 }

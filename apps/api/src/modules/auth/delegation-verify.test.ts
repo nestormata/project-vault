@@ -116,7 +116,12 @@ function verifier(over: Parameters<typeof createDelegationVerifier>[0] = {}) {
 }
 
 function expectReject(token: unknown, reason: DelegationRejectReason, v = verifier()): void {
-  expect(v(token)).toEqual({ ok: false, reason })
+  const result = v(token)
+  // The matched `kid` of a post-signature failure (Story 71.9) is pinned by its own describe.
+  expect({ ok: result.ok, reason: result.ok ? undefined : result.reason }).toEqual({
+    ok: false,
+    reason,
+  })
 }
 
 describe('AC-2 happy paths', () => {
@@ -227,7 +232,7 @@ describe('Story 71.4 AC-2 signed occ claim', () => {
     ['array', [NOW_S]],
   ])('a %s occ is delegation_malformed_claim (post-signature)', (_name, occ) => {
     const result = verifier()(sign({}, { occ }))
-    expect(result).toEqual({ ok: false, reason: 'delegation_malformed_claim' })
+    expect(result).toEqual({ ok: false, reason: 'delegation_malformed_claim', kid: KID })
     expect(isPreSignatureRejection('delegation_malformed_claim')).toBe(false)
     expect(DELEGATION_REASON_TO_OUTCOME.delegation_malformed_claim).toBe('malformed_claim')
   })
@@ -678,12 +683,14 @@ describe('AC-6/7/8 and cross-cutting properties', () => {
       sign({}, { act: { prv: 'p', sub: sentinel }, ver: 2 }),
       sign({}, { act: { prv: 'p', sub: sentinel } }, deleg2.privatePem),
     ]
-    for (const t of tokens) {
+    for (const [index, t] of tokens.entries()) {
       const r = verifier()(t)
       expect(r.ok).toBe(false)
       expect(JSON.stringify(r)).not.toContain(sentinel)
-      expect(JSON.stringify(r)).not.toContain(KID)
-      expect(Object.keys(r)).toEqual(['ok', 'reason'])
+      // Story 71.9: only the CONFIGURED kid, and only after the signature verified (first two).
+      const afterSignature = index < 2
+      expect(JSON.stringify(r).includes(KID)).toBe(afterSignature)
+      expect(Object.keys(r)).toEqual(afterSignature ? ['ok', 'reason', 'kid'] : ['ok', 'reason'])
     }
   })
 
@@ -727,5 +734,72 @@ describe('AC-6/7/8 and cross-cutting properties', () => {
         .join('\n')
       expect(imports).not.toMatch(forbidden)
     }
+  })
+})
+
+describe('Story 71.9 AC-2 — the matched kid on post-signature failures only', () => {
+  const expired = { iat: NOW_S - 200, exp: NOW_S - 150 }
+  const rows: Array<{ name: string; reason: DelegationRejectReason; token: () => unknown }> = [
+    { name: 'oversized', reason: 'delegation_oversized', token: () => 'a'.repeat(9 * 1024) },
+    { name: 'malformed', reason: 'delegation_malformed', token: () => 'only.two' },
+    {
+      name: 'a signed payload that is not an object',
+      reason: 'delegation_malformed',
+      token: () => sign({}, {}, deleg.privatePem, '[1,2]'),
+    },
+    {
+      name: 'unexpected_alg',
+      reason: 'delegation_unexpected_alg',
+      token: () => sign({ alg: 'none' }),
+    },
+    { name: 'unknown_kid', reason: 'delegation_unknown_kid', token: () => sign({ kid: KID2 }) },
+    {
+      name: 'signature_invalid',
+      reason: 'delegation_signature_invalid',
+      token: () => sign({}, {}, deleg2.privatePem),
+    },
+    {
+      name: 'malformed_claim',
+      reason: 'delegation_malformed_claim',
+      token: () => sign({}, { ver: 2 }),
+    },
+    {
+      name: 'missing_claim',
+      reason: 'delegation_missing_claim',
+      token: () => sign({}, { org: undefined }),
+    },
+    { name: 'expired', reason: 'delegation_expired', token: () => sign({}, expired) },
+    {
+      name: 'clock_skew',
+      reason: 'delegation_clock_skew',
+      token: () => sign({}, { iat: NOW_S + 300, exp: NOW_S + 330 }),
+    },
+    {
+      name: 'audience_mismatch',
+      reason: 'delegation_audience_mismatch',
+      token: () => sign({}, { aud: 'pvd:another' }),
+    },
+  ]
+
+  it.each(rows)('$name -> $reason carries a kid only after the signature verified', (row) => {
+    const result = verifier()(row.token())
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toBe(row.reason)
+    const afterSignature = !isPreSignatureRejection(row.reason)
+    expect('kid' in result ? result.kid : undefined).toBe(afterSignature ? KID : undefined)
+  })
+
+  it('not_configured never carries a kid, and a kid is only ever a configured one', () => {
+    const result = verifier({ keys: [] })(sign())
+    expect(result).toEqual({ ok: false, reason: 'delegation_not_configured' })
+    const attacker = verifier()(sign({ kid: 'attacker-chosen-kid' }, expired))
+    expect(Object.keys(attacker)).toEqual(['ok', 'reason'])
+  })
+
+  it('classifies a post-signature malformed payload by its reason, not by isPreSignatureRejection (DW-513 item 5)', () => {
+    const result = verifier()(sign({}, {}, deleg.privatePem, '[1,2]'))
+    expect(result).toEqual({ ok: false, reason: 'delegation_malformed' })
+    expect(DELEGATION_REASON_TO_OUTCOME.delegation_malformed).toBe('malformed')
   })
 })

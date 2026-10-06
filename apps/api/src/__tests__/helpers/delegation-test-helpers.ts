@@ -36,6 +36,15 @@ export function delegationTestVerifyKeysJson(): string {
   ])
 }
 
+/**
+ * Several configured key ids that all verify against the SAME test key (the header `kid` picks the
+ * id): lets one test file spend a limiter bucket per kid without sharing process-wide state.
+ */
+export function delegationTestVerifyKeysJsonFor(kids: readonly string[]): string {
+  const publicKeyPem = primary.publicKey.export({ format: 'pem', type: 'spki' }).toString()
+  return JSON.stringify(kids.map((kid) => ({ kid, publicKeyPem })))
+}
+
 export function b64url(input: Buffer | string): string {
   return Buffer.from(input).toString('base64url')
 }
@@ -52,6 +61,8 @@ export type AssertionOptions = {
   wrongKey?: boolean
   /** Claim names to delete before signing. */
   omit?: string[]
+  /** Sign this exact payload text instead of the claims (a validly signed but malformed payload). */
+  rawPayload?: string
 }
 
 /** Signs a delegation assertion whose defaults describe a valid request for `op` / `body`. */
@@ -81,7 +92,8 @@ export function signDelegationAssertion(
     kid: DELEGATION_TEST_KID,
     ...options.header,
   }
-  const signingInput = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}`
+  const payloadText = options.rawPayload ?? JSON.stringify(payload)
+  const signingInput = `${b64url(JSON.stringify(header))}.${b64url(payloadText)}`
   const key = createPrivateKey({ key: options.wrongKey ? otherPem : primaryPem, format: 'pem' })
   return `${signingInput}.${b64url(sign(null, Buffer.from(signingInput), key))}`
 }
@@ -167,4 +179,41 @@ export async function countBurnedAssertions(orgId: string, jti?: string): Promis
       )
     return rows.length
   })
+}
+
+export type DelegationCounterSample = { outcome: string; kid: string; value: number }
+
+/** Every `pv_delegation_assertions_total` series currently in the registry (Story 71.9). */
+export async function delegationCounterSamples(): Promise<DelegationCounterSample[]> {
+  const { register } = await import('prom-client')
+  const snapshot = await register.getSingleMetric('pv_delegation_assertions_total')?.get()
+  return (snapshot?.values ?? []).map((sample) => ({
+    outcome: String(sample.labels['outcome']),
+    kid: String(sample.labels['kid']),
+    value: sample.value,
+  }))
+}
+
+/** The counter summed across `kid`, one number per outcome. */
+export function totalsByOutcome(samples: DelegationCounterSample[]): Record<string, number> {
+  const totals = new Map<string, number>()
+  for (const sample of samples) {
+    totals.set(sample.outcome, (totals.get(sample.outcome) ?? 0) + sample.value)
+  }
+  return Object.fromEntries(totals)
+}
+
+/** How much each outcome total grew between two snapshots (only the outcomes that moved). */
+export function counterDeltas(
+  before: Record<string, number>,
+  after: Record<string, number>
+): Record<string, number> {
+  const earlier = new Map(Object.entries(before))
+  const later = new Map(Object.entries(after))
+  const deltas = new Map<string, number>()
+  for (const outcome of new Set([...earlier.keys(), ...later.keys()])) {
+    const grew = (later.get(outcome) ?? 0) - (earlier.get(outcome) ?? 0)
+    if (grew !== 0) deltas.set(outcome, grew)
+  }
+  return Object.fromEntries(deltas)
 }

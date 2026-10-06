@@ -5,6 +5,7 @@ import { DelegationEvent } from '@project-vault/shared'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac } from '../audit/write-entry.js'
 import { getAuditKey } from '../vault/key-service.js'
+import type { DelegationStoreFailure } from './delegation-replay-store.js'
 import type { RequestMeta } from './service.js'
 
 /**
@@ -15,7 +16,8 @@ import type { RequestMeta } from './service.js'
  *
  * The input type structurally excludes the assertion, the header, the actor subject and the
  * body: only a closed reason, the route key, the resolved org id, a configured `kid`, the
- * response status and a hashed `jti` prefix can be recorded. Only a SIGNATURE-VALID assertion
+ * response status, a hashed `jti` prefix, the Fastify request id (to join the row to the log line)
+ * and, for `store_unavailable`, a closed `storeFailure` can be recorded. Only a SIGNATURE-VALID assertion
  * reaches this writer (pre-signature failures are counted but write nothing, AC-2b), so an
  * unauthenticated caller cannot grow the table.
  *
@@ -31,6 +33,10 @@ export type DelegationSecurityEventFields = {
   /** A configured key id; never an unknown `kid` from the request. */
   kid?: string
   jti?: string
+  /** Fastify `request.id`: the value the structured log line of the same request carries. */
+  requestId: string
+  /** Story 71.9 AC-5: closed value for a `store_unavailable` row (never a raw error). */
+  storeFailure?: DelegationStoreFailure
   meta: RequestMeta
 }
 
@@ -49,6 +55,8 @@ function payloadOf(fields: DelegationSecurityEventFields): Record<string, unknow
     ...(fields.orgId === undefined ? {} : { orgId: fields.orgId }),
     ...(fields.kid === undefined ? {} : { kid: fields.kid }),
     ...(fields.jti === undefined ? {} : { jtiHash: hashedJtiPrefix(fields.jti) }),
+    requestId: fields.requestId,
+    ...(fields.storeFailure === undefined ? {} : { storeFailure: fields.storeFailure }),
   }
 }
 

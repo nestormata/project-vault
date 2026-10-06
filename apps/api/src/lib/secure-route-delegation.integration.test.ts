@@ -46,7 +46,6 @@ const sessionActivity = await import('../modules/auth/session-activity.js')
 const stages = await import('./delegation-stages.js')
 const { getRequestContext, bindRequestContextLifecycle } = await import('./request-context.js')
 const { enforceUserRateLimit } = await import('./route-helpers.js')
-const { registerIpRateLimit } = await import('./ip-rate-limit.js')
 const { resetVaultForTest } = await import('../__tests__/helpers/vault-test-cleanup.js')
 
 const URL_PATH = '/cm/audit-events'
@@ -495,8 +494,9 @@ describe('Story 71.3 AC-1 — delegation is a host security field that installs 
       handler: async () => ({}),
     })
     const options = stub.route.mock.calls[0]?.[0] as Record<string, unknown>
-    // S1 + S2 run in preParsing, after every onRequest hook (including the app-level IP limiter).
-    expect(options['onRequest']).toBeUndefined()
+    // S1 + S2 run in preParsing, after every onRequest hook. Story 71.9: the onRequest array holds
+    // exactly the delegation's own per-IP limiter stage (nothing else on a bare delegated route).
+    expect(options['onRequest']).toHaveLength(1)
     expect(options['preParsing']).toHaveLength(2)
     expect(options['preHandler']).not.toContain(stub.authenticate)
     expect((options['preHandler'] as unknown[]).length).toBeGreaterThan(0)
@@ -1362,23 +1362,25 @@ describe('Story 71.3 AC-2b/AC-3/AC-7 — rate limiting', () => {
     process.env['RATE_LIMIT_TEST_BYPASS'] = 'true'
   })
 
-  it('keeps the app-level IP limiter on a delegated route: unauthenticated floods hit 429 before any delegation work', async () => {
-    const { app } = await boot({
-      before: async (instance) => {
-        await registerIpRateLimit(instance as never, {
-          max: 3,
-          message: 'Too many requests',
-          logEventType: 'test.ip_rate_limit',
+  it('applies the built-in per-IP limiter to a delegated route: unauthenticated floods hit 429 before any delegation work (71-9)', async () => {
+    // Story 71.9 AC-4: the limiter is installed by the delegation stages themselves, so no
+    // app-level limiter is registered here. A dedicated remote address keeps its bucket private.
+    const { app } = await boot()
+    const budget = stages.DELEGATION_IP_RATE_LIMIT.max
+    const codes = await inSequence(
+      Array.from({ length: budget + 2 }, (_, index) => index),
+      async () => {
+        const res = await app.inject({
+          method: 'POST',
+          url: URL_PATH,
+          remoteAddress: '10.20.30.40',
         })
-      },
-    })
-    const codes = await inSequence([1, 2, 3, 4, 5], async () => {
-      const res = await app.inject({ method: 'POST', url: URL_PATH })
-      return res.statusCode
-    })
-    expect(codes.slice(0, 3)).toEqual([401, 401, 401])
-    expect(codes.slice(3)).toEqual([429, 429])
-  })
+        return res.statusCode
+      }
+    )
+    expect(codes.slice(0, budget).every((code) => code === 401)).toBe(true)
+    expect(codes.slice(budget)).toEqual([429, 429])
+  }, 60_000)
 
   it('spends the per-kid limiter before the operation check: an exhausted kid gets 429 and no security event for a wrong-op assertion', async () => {
     const { app, seen } = await boot()

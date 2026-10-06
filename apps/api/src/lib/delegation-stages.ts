@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { Readable } from 'node:stream'
+import { normalizeIP } from '@fastify/rate-limit'
 import { errorCodes } from 'fastify'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import {
@@ -14,11 +15,13 @@ import { recordDelegationOutcome } from '../modules/auth/delegation-metrics.js'
 import {
   burnDelegationAssertion,
   DelegationBurnInputError,
+  describeStoreFailure,
   type DelegationBurnOutcome,
+  type DelegationStoreFailure,
 } from '../modules/auth/delegation-replay-store.js'
 import { writeDelegationSecurityEvent } from '../modules/auth/delegation-security-events.js'
 import { resolveOrgByCentralizemeId } from '../modules/service-provisioning/service.js'
-import { enforceUserRateLimit } from './route-helpers.js'
+import { consumeUserRateLimit, enforceUserRateLimit } from './route-helpers.js'
 import { OCCURRED_AT_UNATTESTED_MAX_PAST_SECONDS, classifyOccurrence } from './occurrence-window.js'
 import { bindRequestContext } from './request-context.js'
 
@@ -52,6 +55,32 @@ export const DELEGATION_NIL_USER_ID = ['00000000', '0000', '0000', '0000', '0000
 
 /** DW-519 item 1: a request-level bound on the burn (pool saturation must not wait). */
 export const DELEGATION_BURN_DEADLINE_MS = 3000
+
+/**
+ * Story 71.9 (DW-540 item 2): a request-level bound on the security-event write, the same race
+ * pattern as the burn deadline. On timeout the typed 4xx is sent without the row; a late insert is
+ * harmless (an extra row for a signature-valid rejection, bounded by the per-kid limiter).
+ */
+export const DELEGATION_EVENT_WRITE_DEADLINE_MS = 2000
+
+/**
+ * Story 71.9 AC-4 (DW-539 item 1): the default per-IP budget of a delegated route, spent in the
+ * `onRequest` stage before any verification or database work. A constant (no env override): sized
+ * high for CentralizeMe's drain, which has to be confirmed with CM 14-17 before release (ledgered
+ * in the 71-5 hand-off). Behind a reverse proxy the key is `request.ip`, i.e. the client address
+ * Fastify derived from `TRUST_PROXY` / `TRUST_PROXY_HOPS`, never a raw `X-Forwarded-For` header.
+ */
+export const DELEGATION_IP_RATE_LIMIT = { max: 600, timeWindowMs: 60_000 } as const
+
+/** IPv6 clients share a bucket per /64, IPv4-mapped IPv6 collapses to IPv4 (as `registerIpRateLimit`). */
+const IPV6_BUCKET_PREFIX_BITS = 64
+
+export function delegationIpBucket(ip: string): { userId: string; key: string } {
+  return {
+    userId: `delegation-ip:${normalizeIP(ip, IPV6_BUCKET_PREFIX_BITS)}`,
+    key: 'delegation-ip',
+  }
+}
 
 /** Design check 8: per-`kid` budget, spent after a signature verified and before any DB access. */
 export const DELEGATION_PRE_BURN_LIMIT = { max: 1200, timeWindowMs: 60_000 } as const
@@ -139,6 +168,43 @@ type Rejection = {
   kid?: string
   orgId?: string
   jti?: string
+  /** Closed value for a `store_unavailable` rejection (event payload and log line). */
+  storeFailure?: DelegationStoreFailure
+}
+
+/** The closed values every `delegation.*` log line may carry besides `requestId`. */
+type LogContext = {
+  routeKey: string
+  outcome: string
+  kid?: string
+  orgId?: string
+  storeFailure?: DelegationStoreFailure
+}
+
+/**
+ * One structured line per delegation incident: `requestId` (joins the security-event row),
+ * `routeKey`, `outcome`, and when known the resolved `orgId` and a CONFIGURED `kid`. Never the
+ * header, assertion, actor subject, body or raw `jti`; an error contributes its class name only.
+ */
+function logDelegation(
+  request: FastifyRequest,
+  level: 'warn' | 'error',
+  eventType: string,
+  context: LogContext,
+  err?: unknown
+): void {
+  const fields = {
+    eventType,
+    requestId: request.id,
+    routeKey: context.routeKey,
+    outcome: context.outcome,
+    ...(context.kid === undefined ? {} : { kid: context.kid }),
+    ...(context.orgId === undefined ? {} : { orgId: context.orgId }),
+    ...(context.storeFailure === undefined ? {} : { storeFailure: context.storeFailure }),
+    ...(err === undefined ? {} : { err: err instanceof Error ? err.name : 'unknown' }),
+  }
+  if (level === 'warn') request.log.warn(fields, eventType)
+  else request.log.error(fields, eventType)
 }
 
 function requestMeta(request: FastifyRequest) {
@@ -146,24 +212,76 @@ function requestMeta(request: FastifyRequest) {
   return { ipAddress: request.ip, userAgent: typeof agent === 'string' ? agent : null }
 }
 
+/**
+ * Writes the security event of a signature-valid rejection, best effort and deadline-bound. A
+ * suppressed event (the kid is over its limiter budget) writes nothing and logs one line.
+ */
+async function recordRejectionEvent(
+  request: FastifyRequest,
+  routeKey: string,
+  rejection: Rejection,
+  suppressed: boolean
+): Promise<void> {
+  const context: LogContext = {
+    routeKey,
+    outcome: rejection.outcome,
+    kid: rejection.kid,
+    orgId: rejection.orgId,
+    storeFailure: rejection.storeFailure,
+  }
+  if (suppressed) {
+    logDelegation(request, 'warn', 'delegation.event_suppressed', context)
+    return
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), DELEGATION_EVENT_WRITE_DEADLINE_MS)
+  })
+  try {
+    const settled = await Promise.race([
+      writeDelegationSecurityEvent({
+        reason: rejection.outcome,
+        routeKey,
+        status: rejection.status,
+        orgId: rejection.orgId,
+        kid: rejection.kid,
+        jti: rejection.jti,
+        requestId: request.id,
+        storeFailure: rejection.storeFailure,
+        meta: requestMeta(request),
+      }).then(() => 'written' as const),
+      deadline,
+    ])
+    if (settled === 'timeout') {
+      logDelegation(request, 'warn', 'delegation.security_event_timeout', context)
+    }
+  } catch (err) {
+    logDelegation(request, 'error', 'delegation.security_event_write_error', context, err)
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
 async function reject(
   request: FastifyRequest,
   reply: FastifyReply,
   routeKey: string,
-  rejection: Rejection
+  rejection: Rejection,
+  options: { suppressEvent?: boolean } = {}
 ): Promise<FastifyReply> {
   answered.add(request)
   recordDelegationOutcome(rejection.outcome, rejection.kid)
-  if (rejection.event) {
-    await writeDelegationSecurityEvent({
-      reason: rejection.outcome,
+  if (rejection.storeFailure !== undefined) {
+    logDelegation(request, 'warn', 'delegation.store_unavailable', {
       routeKey,
-      status: rejection.status,
-      orgId: rejection.orgId,
+      outcome: rejection.outcome,
       kid: rejection.kid,
-      jti: rejection.jti,
-      meta: requestMeta(request),
+      orgId: rejection.orgId,
+      storeFailure: rejection.storeFailure,
     })
+  }
+  if (rejection.event) {
+    await recordRejectionEvent(request, routeKey, rejection, options.suppressEvent === true)
   }
   for (const [name, value] of Object.entries(rejection.headers ?? {})) reply.header(name, value)
   reply.status(rejection.status).send({ code: rejection.code, message: rejection.message })
@@ -235,16 +353,31 @@ export function parseDelegationHeader(value: unknown): string | undefined {
   return token.length > 0 && !/\s/.test(token) ? token : undefined
 }
 
+/**
+ * A failed verification. Pre-signature reasons collapse into the generic 401 (counter only, no
+ * row, no kid). A post-signature reason is typed and writes a security event, but the verifier
+ * returned the matched, configured `kid` only because the signature verified, so the per-kid
+ * limiter is spent BEFORE the row (DW-540 item 1): over budget the request still gets its typed
+ * code and the counter moves, but no row is written.
+ */
 async function rejectVerification(
   request: FastifyRequest,
   reply: FastifyReply,
   routeKey: string,
-  reason: DelegationRejectReason
+  failure: { reason: DelegationRejectReason; kid?: string }
 ): Promise<FastifyReply> {
+  const { reason, kid } = failure
   const outcome = OUTCOME_BY_REASON.get(reason) ?? 'malformed'
   const typed = isPreSignatureRejection(reason) ? undefined : POST_SIGNATURE_RESPONSES.get(reason)
   if (!typed) return rejectGeneric(request, reply, routeKey, outcome)
-  return reject(request, reply, routeKey, { ...typed, outcome, event: true })
+  const withinBudget = kid !== undefined && consumeUserRateLimit(kidLimit(kid)).allowed
+  return reject(
+    request,
+    reply,
+    routeKey,
+    { ...typed, outcome, event: true, kid },
+    { suppressEvent: !withinBudget }
+  )
 }
 
 function hasUnsupportedEncoding(request: FastifyRequest): boolean {
@@ -253,13 +386,12 @@ function hasUnsupportedEncoding(request: FastifyRequest): boolean {
   return encoding.trim().toLowerCase() !== 'identity'
 }
 
+function kidLimit(kid: string) {
+  return { ...delegationKidBucket(kid), ...DELEGATION_PRE_BURN_LIMIT }
+}
+
 function enforceKidLimit(reply: FastifyReply, kid: string): boolean {
-  return enforceUserRateLimit({
-    ...delegationKidBucket(kid),
-    ...DELEGATION_PRE_BURN_LIMIT,
-    reply,
-    retryAfterHeader: true,
-  })
+  return enforceUserRateLimit({ ...kidLimit(kid), reply, retryAfterHeader: true })
 }
 
 /** The window a route allows for a signed `occ`: its declared policy, else the unattested default. */
@@ -324,6 +456,33 @@ async function afterVerification(
   return undefined
 }
 
+/**
+ * S0 `onRequest` (Story 71.9): the per-IP budget. `@fastify/rate-limit` appends its own hook AFTER
+ * a route's `onRequest` array and `createApp` registers no app-wide IP limiter, so the delegation
+ * stages spend the budget themselves. Over budget: 429 + `Retry-After`, counted as `rate_limited_pre`
+ * with no kid, and neither the verifier nor the database is reached.
+ */
+export function delegationIpLimitStage() {
+  return async (
+    request: FastifyRequest,
+    reply: FastifyReply
+  ): Promise<FastifyReply | undefined> => {
+    const decision = consumeUserRateLimit({
+      ...delegationIpBucket(request.ip),
+      ...DELEGATION_IP_RATE_LIMIT,
+    })
+    if (decision.allowed) return undefined
+    answered.add(request)
+    recordDelegationOutcome('rate_limited_pre')
+    reply.header('retry-after', String(decision.retryAfter)).status(429).send({
+      code: 'rate_limit_exceeded',
+      message: 'Too many requests',
+      retryAfter: decision.retryAfter,
+    })
+    return reply
+  }
+}
+
 /** S1: header parse + stateless verification (checks 1-7), per-kid limiter (8), encoding. */
 export function delegationVerifyStage(routeKey: string, delegation: NormalizedDelegation) {
   return async (
@@ -333,7 +492,7 @@ export function delegationVerifyStage(routeKey: string, delegation: NormalizedDe
     const jws = parseDelegationHeader(request.headers.authorization)
     if (jws === undefined) return rejectGeneric(request, reply, routeKey, 'missing')
     const result = verifyDelegationAssertion(jws)
-    if (!result.ok) return rejectVerification(request, reply, routeKey, result.reason)
+    if (!result.ok) return rejectVerification(request, reply, routeKey, result)
     const rejected = await afterVerification(request, reply, routeKey, result.claims, delegation)
     if (rejected) return rejected
     states.set(request, { claims: result.claims, routeKey })
@@ -482,7 +641,7 @@ async function burnWithDeadline(
   let timer: ReturnType<typeof setTimeout> | undefined
   const deadline = new Promise<DelegationBurnOutcome>((resolve) => {
     timer = setTimeout(
-      () => resolve({ outcome: 'store_unavailable', sqlState: null }),
+      () => resolve({ outcome: 'store_unavailable', sqlState: null, timedOut: true }),
       DELEGATION_BURN_DEADLINE_MS
     )
   })
@@ -500,25 +659,30 @@ function serviceUnavailable(reply: FastifyReply): FastifyReply {
   return reply
 }
 
-function logDelegationError(request: FastifyRequest, eventType: string, err: unknown): void {
-  request.log.error({ eventType, err: err instanceof Error ? err.name : 'unknown' })
-}
+const SERVICE_UNAVAILABLE_OUTCOME = 'service_unavailable'
 
 async function resolveOrg(
   request: FastifyRequest,
   reply: FastifyReply,
   routeKey: string,
   claims: DelegationVerifiedClaims
-): Promise<string | FastifyReply> {
+): Promise<string | undefined> {
   let orgId: string | null
   try {
     orgId = await resolveOrgByCentralizemeId(claims.org)
   } catch (err) {
-    logDelegationError(request, 'delegation.org_lookup_failed', err)
-    return serviceUnavailable(reply)
+    logDelegation(
+      request,
+      'error',
+      'delegation.org_lookup_failed',
+      { routeKey, outcome: SERVICE_UNAVAILABLE_OUTCOME, kid: claims.kid },
+      err
+    )
+    serviceUnavailable(reply)
+    return undefined
   }
   if (orgId !== null) return orgId
-  return reject(request, reply, routeKey, {
+  await reject(request, reply, routeKey, {
     status: 421,
     code: 'delegation_org_not_served',
     message: 'This instance does not serve the organization of the assertion',
@@ -527,15 +691,23 @@ async function resolveOrg(
     kid: claims.kid,
     jti: claims.jti,
   })
+  return undefined
 }
 
+/**
+ * Burns the assertion. Resolves `true` when the request was ANSWERED (a rejection) and the pipeline
+ * must stop; `false` when the assertion is burned and the request continues. It never returns the
+ * reply itself: `FastifyReply` is a thenable, so an `async` function that returns one resolves to
+ * `undefined` once the response is sent, which made the old caller read "answered" as "continue"
+ * and run actor resolution (and count `actor_unlinked`) for an already-answered request.
+ */
 async function burn(
   request: FastifyRequest,
   reply: FastifyReply,
   routeKey: string,
   claims: DelegationVerifiedClaims,
   orgId: string
-): Promise<FastifyReply | undefined> {
+): Promise<boolean> {
   let outcome: DelegationBurnOutcome
   try {
     outcome = await burnWithDeadline(
@@ -549,31 +721,43 @@ async function burn(
   } catch (err) {
     if (err instanceof DelegationBurnInputError) {
       // A contract violation by PV itself, not a client error.
-      logDelegationError(request, 'delegation.burn_input_error', err)
+      logDelegation(
+        request,
+        'error',
+        'delegation.burn_input_error',
+        { routeKey, outcome: SERVICE_UNAVAILABLE_OUTCOME, kid: claims.kid, orgId },
+        err
+      )
       reply.status(500).send({ code: 'internal_error', message: 'Internal server error' })
-      return reply
+      return true
     }
     outcome = { outcome: 'store_unavailable', sqlState: null }
   }
-  if (outcome.outcome === 'burned') return undefined
+  if (outcome.outcome === 'burned') return false
   const known = { kid: claims.kid, jti: claims.jti, orgId, event: true }
-  if (outcome.outcome === 'replayed') {
-    return reject(request, reply, routeKey, {
-      status: 409,
-      code: 'delegation_replayed',
-      message: 'Delegation assertion was already used',
-      outcome: 'replayed',
-      ...known,
-    })
-  }
-  return reject(request, reply, routeKey, {
-    status: 503,
-    code: 'delegation_replay_store_unavailable',
-    message: 'Delegation replay store is unavailable',
-    outcome: 'store_unavailable',
-    headers: { 'retry-after': String(RETRY_AFTER_SECONDS) },
-    ...known,
-  })
+  await reject(
+    request,
+    reply,
+    routeKey,
+    outcome.outcome === 'replayed'
+      ? {
+          status: 409,
+          code: 'delegation_replayed',
+          message: 'Delegation assertion was already used',
+          outcome: 'replayed',
+          ...known,
+        }
+      : {
+          status: 503,
+          code: 'delegation_replay_store_unavailable',
+          message: 'Delegation replay store is unavailable',
+          outcome: 'store_unavailable',
+          headers: { 'retry-after': String(RETRY_AFTER_SECONDS) },
+          storeFailure: describeStoreFailure(outcome),
+          ...known,
+        }
+  )
+  return true
 }
 
 type Admission =
@@ -603,7 +787,13 @@ async function admitActor(
       subject: claims.actor.subject,
     })
   } catch (err) {
-    logDelegationError(request, 'delegation.actor_lookup_failed', err)
+    logDelegation(
+      request,
+      'error',
+      'delegation.actor_lookup_failed',
+      { routeKey, outcome: SERVICE_UNAVAILABLE_OUTCOME, kid: claims.kid, orgId },
+      err
+    )
     return { reply: serviceUnavailable(reply) }
   }
   if (actor.kind === 'member') {
@@ -631,18 +821,17 @@ async function admitActor(
       reason: 'not_current_member',
     }
   }
-  return {
-    reply: await reject(request, reply, routeKey, {
-      status: 403,
-      code: 'delegation_actor_not_member',
-      message: 'The actor is not a current member of the organization',
-      outcome: 'actor_not_member',
-      event: true,
-      kid: claims.kid,
-      jti: claims.jti,
-      orgId,
-    }),
-  }
+  await reject(request, reply, routeKey, {
+    status: 403,
+    code: 'delegation_actor_not_member',
+    message: 'The actor is not a current member of the organization',
+    outcome: 'actor_not_member',
+    event: true,
+    kid: claims.kid,
+    jti: claims.jti,
+    orgId,
+  })
+  return { reply }
 }
 
 type AdmittedActor = Exclude<Admission, { reply: FastifyReply }>
@@ -704,12 +893,13 @@ function bindDelegatedRequest(
 export function delegationResolveStage(routeKey: string, delegation: NormalizedDelegation) {
   return afterVerificationStage(routeKey, async (request, reply, { claims }) => {
     const orgId = await resolveOrg(request, reply, routeKey, claims)
-    if (typeof orgId !== 'string') return orgId
-    const burned = await burn(request, reply, routeKey, claims, orgId)
-    if (burned) return burned
+    if (orgId === undefined) return reply
+    if (await burn(request, reply, routeKey, claims, orgId)) return reply
     const admission = await admitActor(request, reply, routeKey, claims, orgId, delegation)
     if ('reply' in admission) return admission.reply
     bindDelegatedRequest(request, { routeKey, claims, orgId, admission })
+    // Admitted by S4 (burn and actor resolution succeeded); NOT "the request succeeded" (71-9 D-e).
+    recordDelegationOutcome('accepted', claims.kid)
     return undefined
   })
 }
@@ -723,6 +913,11 @@ export function installDelegationStages(
   input: { routeKey: string; delegation: NormalizedDelegation }
 ): void {
   const { routeKey, delegation } = input
+  const existingOnRequest = new Map(Object.entries(routeOptions)).get('onRequest')
+  routeOptions['onRequest'] = [
+    delegationIpLimitStage(),
+    ...(existingOnRequest === undefined ? [] : [existingOnRequest].flat()),
+  ]
   routeOptions['preParsing'] = [
     delegationVerifyStage(routeKey, delegation),
     delegationBodyStage(routeKey),

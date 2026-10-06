@@ -15,7 +15,9 @@ type Sample = { value: number; labels: Record<string, string> }
 async function samples(): Promise<Sample[]> {
   const metric = register.getSingleMetric(DELEGATION_ASSERTIONS_METRIC_NAME)
   const snapshot = await metric?.get()
-  return (snapshot?.values ?? []) as Sample[]
+  // A copy: prom-client hands out its live series objects, and a series that exists at 0 since
+  // boot (Story 71.9 pre-initialisation) would otherwise grow inside the "before" snapshot too.
+  return ((snapshot?.values ?? []) as Sample[]).map((sample) => ({ ...sample }))
 }
 
 function valueOf(all: Sample[], outcome: string, kid: string): number {
