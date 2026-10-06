@@ -5,6 +5,7 @@ import type { DeliveryProvider } from '@project-vault/extension-api'
 import type { ExtensionState } from '../extensions/loader.js'
 import { writeSystemAuditRow } from './system-audit-row.js'
 import { operationalLog } from './logger.js'
+import { forEachSequential } from './for-each-sequential.js'
 import { fetchAllOrgIds } from '../middleware/rls.js'
 
 /**
@@ -208,8 +209,8 @@ export async function auditDeliveryProviderRegistrationOrFailClosed(
     )
   }
 
-  for (const orgId of orgIds) {
-    for (const channel of channels) {
+  await forEachSequential(orgIds, (orgId) =>
+    forEachSequential(channels, async (channel) => {
       try {
         await withOrg(orgId, (tx) =>
           writeSystemAuditRow(tx, {
@@ -233,6 +234,6 @@ export async function auditDeliveryProviderRegistrationOrFailClosed(
           }`
         )
       }
-    }
-  }
+    })
+  )
 }

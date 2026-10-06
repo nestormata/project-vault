@@ -2,6 +2,7 @@ import { gzipSync } from 'node:zlib'
 import { and, asc, eq, gte, lte } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { auditExports, auditLogEntries } from '@project-vault/db/schema'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { runOrgScopedJob } from '../../middleware/rls.js'
 import { AUDIT_VERIFY_MAX_RANGE_DAYS, verifyAuditRange, type VerifyFailedEntry } from './verify.js'
 import { toCsvRow, AUDIT_EXPORT_CSV_HEADER } from './csv.js'
@@ -154,7 +155,7 @@ export async function runAuditExport(input: { exportId: string; orgId: string })
     let failedCount = 0
     const failed: VerifyFailedEntry[] = []
 
-    for (const [chunkFrom, chunkTo] of chunks) {
+    await forEachSequential(chunks, async ([chunkFrom, chunkTo]) => {
       const result = await verifyAuditRange(tx, {
         orgId: input.orgId,
         from: chunkFrom.toISOString(),
@@ -164,7 +165,7 @@ export async function runAuditExport(input: { exportId: string; orgId: string })
       passed += result.passed
       failedCount += result.failedCount
       failed.push(...result.failed)
-    }
+    })
 
     if (failedCount > 0) {
       await tx

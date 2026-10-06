@@ -7,6 +7,7 @@ import { backupRuns, vaultState } from '@project-vault/db/schema'
 import { runBackupCrypto, BackupDecryptError } from '@project-vault/crypto'
 import { getBackupKey, zeroKeys } from '../vault/key-service.js'
 import { env } from '../../config/env.js'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { resolveBackupDestination, requireBackupDatabaseUrl } from './config.js'
 import {
   buildBackupFilenames,
@@ -115,7 +116,7 @@ export async function releaseBackupSlotOnAuditFailure(runId: string): Promise<vo
  * finishes — the row's `status = 'running'` existence (not the lock) is what a later concurrent
  * trigger attempt sees and rejects on.
  */
-export async function acquireBackupSlot(trigger: {
+export function acquireBackupSlot(trigger: {
   triggeredBy: BackupTrigger
   triggeredByUserId?: string | null
 }): Promise<AcquireBackupSlotResult> {
@@ -603,12 +604,12 @@ export async function pruneOldBackups(
 
   const toPrune = succeeded.slice(retentionCount)
   const prunedFilenames: string[] = []
-  for (const row of toPrune) {
+  await forEachSequential(toPrune, async (row) => {
     const metaFilename = metaFilenameFor(row.filename)
     await storage.delete(row.filename)
     await storage.delete(metaFilename)
     prunedFilenames.push(row.filename)
-  }
+  })
   return { prunedFilenames }
 }
 

@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { and, desc, eq, isNull } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import {
@@ -193,7 +194,7 @@ async function pruneOrgCredentialVersions(
 
   // Short-transaction batching (F7): one credential per transaction, so purge UPDATEs
   // and audit inserts never hold row locks long enough to block concurrent reveals/add-version.
-  for (const credential of orgCredentials) {
+  await forEachSequential(orgCredentials, async (credential) => {
     await runOrgScopedJob(orgId, 'credentials/prune-versions', async ({ tx }) => {
       const candidates = await purgeCandidatesForCredential(
         tx,
@@ -222,12 +223,12 @@ async function pruneOrgCredentialVersions(
         return
       }
 
-      for (const candidate of candidates) {
+      await forEachSequential(candidates, async (candidate) => {
         const purged = await purgeVersion(tx, orgId, candidate)
         if (purged) versionsPurged += 1
-      }
+      })
     })
-  }
+  })
 
   return { credentialsScanned: orgCredentials.length, versionsPurged, versionsWouldPurge }
 }
@@ -305,9 +306,9 @@ export async function pruneCredentialVersions(logger?: WorkerLogger): Promise<vo
   const dryRun = env.CREDENTIAL_RETENTION_DRY_RUN
   const orgIds = await fetchAllOrgIds()
 
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     const result = await pruneOrgCredentialVersionsIsolated(orgId, dryRun, logger)
-    if (!result || result.credentialsScanned === 0) continue
+    if (!result || result.credentialsScanned === 0) return
     logPruneOrgResult(orgId, dryRun, result, logger)
-  }
+  })
 }

@@ -150,6 +150,29 @@ describe('run() — scenario 2: successful multi-secret retrieval (AC-3)', () =>
     const exportCalls = calls.filter((c) => c.fn === 'exportVariable')
     expect(exportCalls.map((c) => c.args[0])).toEqual(['DB_URL', 'STRIPE_KEY', 'REDIS_URL'])
   })
+
+  it('fetches the secrets one at a time (the agent exchanges its token lazily on the first fetch)', async () => {
+    setInputs({
+      secrets: [
+        `${PROJECT_A}/DATABASE_URL as DB_URL`,
+        `${PROJECT_A}/STRIPE_SECRET_KEY as STRIPE_KEY`,
+        `${PROJECT_A}/REDIS_URL as REDIS_URL`,
+      ].join('\n'),
+    })
+    let active = 0
+    let maxActive = 0
+    state.getSecretImpl = async (name) => {
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      await Promise.resolve()
+      active -= 1
+      return `value-for-${name}`
+    }
+
+    await run()
+
+    expect(maxActive).toBe(1)
+  })
 })
 
 describe('run() — scenario 3: vault unreachable, continue-on-error false (default, AC-7)', () => {

@@ -28,11 +28,11 @@ export function isNormalizedRecoveryCode(code: string): boolean {
   return NORMALIZED_RECOVERY_CODE.test(code)
 }
 
-export async function hashRecoveryCode(code: string, cost: number): Promise<string> {
+export function hashRecoveryCode(code: string, cost: number): Promise<string> {
   return bcrypt.hash(normalizeRecoveryCode(code), cost)
 }
 
-export async function recoveryCodeMatches(code: string, hash: string): Promise<boolean> {
+export function recoveryCodeMatches(code: string, hash: string): Promise<boolean> {
   return bcrypt.compare(normalizeRecoveryCode(code), hash)
 }
 

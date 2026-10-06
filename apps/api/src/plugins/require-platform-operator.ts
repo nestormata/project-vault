@@ -8,16 +8,19 @@ import { requireAuthContext } from './require-org-role.js'
  * shape of preHandler, just checking a different axis of authorization.
  */
 export function requirePlatformOperator() {
-  return async (request: FastifyRequest, reply: FastifyReply) => {
+  return (request: FastifyRequest, reply: FastifyReply) => {
     const authContext = requireAuthContext(request, reply)
     if (!authContext) {
-      return
+      return Promise.resolve()
     }
     if (!authContext.isPlatformOperator) {
-      return reply.status(403).send({
-        code: 'platform_operator_required',
-        message: 'This endpoint requires platform operator privileges.',
-      })
+      return Promise.resolve(
+        reply.status(403).send({
+          code: 'platform_operator_required',
+          message: 'This endpoint requires platform operator privileges.',
+        })
+      )
     }
+    return Promise.resolve()
   }
 }

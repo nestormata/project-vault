@@ -203,7 +203,7 @@ async function handleRestoreOutcome(input: {
  * sealed-vault guard (Story 1.5, AC-16) applies automatically to every one of these routes with
  * zero additional code — they are deliberately NOT added to any allow-list.
  */
-export async function backupRoutes(fastify: FastifyApp): Promise<void> {
+export function backupRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/backup/trigger',
@@ -537,6 +537,7 @@ export async function backupRoutes(fastify: FastifyApp): Promise<void> {
       }
     },
   })
+  return Promise.resolve()
 }
 
 /** D6/AC-13: called by the backup/snapshot worker on failure — kept here (not in service.ts,

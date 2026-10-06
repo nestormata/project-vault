@@ -3,6 +3,7 @@ import { getDb, withOrg } from '@project-vault/db'
 import { adminAlerts, orgMemberships, users } from '@project-vault/db/schema'
 import type { NotificationSeverity } from '@project-vault/shared'
 import type { BossService } from '../../lib/boss.js'
+import { mapWithConcurrency } from '../../lib/map-with-concurrency.js'
 import { fetchAllOrgIds } from '../../middleware/rls.js'
 import { getAdminDb } from '../../lib/db.js'
 import {
@@ -17,7 +18,7 @@ import {
  * createMonitoringAlertIfNotDeduped's per-episode dedup (Story 6.2). Returns null (no insert) if
  * an alert of this type is already active — the caller must not deliver a duplicate notification.
  */
-export async function createAdminAlertIfNotActive(input: {
+export function createAdminAlertIfNotActive(input: {
   alertType: string
   severity: 'info' | 'warning' | 'critical'
   payload: Record<string, unknown>
@@ -72,18 +73,16 @@ export async function deliverAdminAlertAcrossOrgs(
   severity: NotificationSeverity = 'critical'
 ): Promise<void> {
   const orgIds = await fetchAllOrgIds()
-  const allJobs = []
-  for (const orgId of orgIds) {
-    const jobs = await withOrg(orgId, (tx) =>
+  const jobsPerOrg = await mapWithConcurrency(orgIds, 2, (orgId) =>
+    withOrg(orgId, (tx) =>
       createOrgAdminNotificationEntries({
         orgId,
         tx,
         template: { templateId: alertType, severity, payload },
       })
     )
-    allJobs.push(...jobs)
-  }
-  await sendNotificationJobs(boss, allJobs)
+  )
+  await sendNotificationJobs(boss, jobsPerOrg.flat())
 }
 
 /**

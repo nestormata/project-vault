@@ -6,6 +6,7 @@ import { auditForwardingConfig, auditLogEntries } from '@project-vault/db/schema
 import { OperationalEvent } from '@project-vault/shared'
 import type { FastifyBaseLogger } from 'fastify'
 import { encryptValue } from '../../lib/encrypt-value.js'
+import { mapWithConcurrency } from '../../lib/map-with-concurrency.js'
 import { operationalLog } from '../../lib/logger.js'
 import {
   assertPublicHostname,
@@ -145,7 +146,7 @@ function buildWebhookCursorCondition(config: WebhookConfigRow) {
   )
 }
 
-async function fetchPendingWebhookRows(tx: Tx, config: WebhookConfigRow): Promise<AuditRow[]> {
+function fetchPendingWebhookRows(tx: Tx, config: WebhookConfigRow): Promise<AuditRow[]> {
   return tx
     .select()
     .from(auditLogEntries)
@@ -243,7 +244,11 @@ async function processOrgWebhookTick(
 
   let consecutiveFailureCount = config.consecutiveFailureCount
 
-  for (const row of rows) {
+  // Strictly sequential — never skip ahead past a failed row — so recurse on the next index
+  // only after the current row was delivered and recorded.
+  const deliverFrom = async (index: number): Promise<void> => {
+    const row = rows.at(index)
+    if (!row) return
     const secretHeader = await withSecret(
       config.webhookSecretEncrypted as unknown as EncryptedValue,
       (plaintext) => Promise.resolve(plaintext.toString('utf8'))
@@ -253,12 +258,14 @@ async function processOrgWebhookTick(
     if (!delivered) {
       consecutiveFailureCount += 1
       await recordWebhookFailure(tx, config, consecutiveFailureCount, row.id, logger)
-      return // strictly sequential — never skip ahead past a failed row
+      return
     }
 
     consecutiveFailureCount = 0
     await recordWebhookSuccess(tx, config, row)
+    return deliverFrom(index + 1)
   }
+  await deliverFrom(0)
 }
 
 /** D3 — the `audit/webhook-forward-catchup` cron handler: iterates every org, processing only
@@ -269,7 +276,7 @@ export async function runWebhookForwardCatchup(
   deliver: WebhookDeliverFn = safeFetchExternal
 ): Promise<void> {
   const orgIds = await fetchAllOrgIds()
-  for (const orgId of orgIds) {
+  await mapWithConcurrency(orgIds, 2, async (orgId) => {
     try {
       await runOrgScopedJob(orgId, 'audit/webhook-forward-catchup', async ({ tx }) => {
         const [config] = await tx
@@ -295,5 +302,5 @@ export async function runWebhookForwardCatchup(
         )
       }
     }
-  }
+  })
 }

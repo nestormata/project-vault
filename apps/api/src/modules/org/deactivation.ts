@@ -59,7 +59,7 @@ export class UnhandledBlockingRotationStatusError extends Error {
  * BLOCKING_ROTATION_STATUSES, sorted by initiated_at then id so 409 bodies and tests are stable.
  * The explicit `org_id` predicate is defence in depth on top of the caller's RLS context.
  */
-async function findBlockingRotationsForUser(
+function findBlockingRotationsForUser(
   tx: Tx,
   userId: string,
   orgId: string

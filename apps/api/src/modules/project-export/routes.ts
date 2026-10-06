@@ -155,7 +155,7 @@ async function readImportUpload(
   return { fileBuffer, exportKey, ...(projectName ? { projectName } : {}) }
 }
 
-export async function projectExportRoutes(fastify: FastifyApp): Promise<void> {
+export function projectExportRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/:projectId/export',
@@ -339,4 +339,5 @@ export async function projectExportRoutes(fastify: FastifyApp): Promise<void> {
       }
     },
   })
+  return Promise.resolve()
 }

@@ -114,7 +114,9 @@ async function decryptStatusPageToken(
 ): Promise<string | null> {
   if (!encryptedToken) return null
   try {
-    return await withSecret(encryptedToken, async (plaintext) => plaintext.toString('utf8'))
+    return await withSecret(encryptedToken, (plaintext) =>
+      Promise.resolve(plaintext.toString('utf8'))
+    )
   } catch {
     return null
   }
@@ -277,7 +279,7 @@ export async function findStatusPageByTokenHash(tokenHash: string) {
  *    cross-project health dashboard, `health-dashboard-service.ts`); a public, unauthenticated link
  *    must not keep serving a decommissioned project's live status indefinitely.
  */
-export async function getPublicStatusPageServices(
+export function getPublicStatusPageServices(
   orgId: string,
   statusPageId: string
 ): Promise<PublicStatusPageService[] | null> {

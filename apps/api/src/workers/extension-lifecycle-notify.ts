@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import type { FastifyBaseLogger } from 'fastify'
@@ -276,12 +277,12 @@ export async function runExtensionLifecycleNotify(logger: WorkerLogger): Promise
   const orgIds = await fetchAllOrgIds()
 
   let oldestPendingAgeMs: number | null = null
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     const orgOldestMs = await dispatchPendingEventsForOrg(orgId, notifier, logger)
     if (orgOldestMs !== null && (oldestPendingAgeMs === null || orgOldestMs > oldestPendingAgeMs)) {
       oldestPendingAgeMs = orgOldestMs
     }
-  }
+  })
 
   operationalLog(
     logger,
@@ -308,7 +309,7 @@ export async function extensionLifecycleNotifyJobHandler(logger: WorkerLogger): 
 export async function runExtensionLifecycleEventsPurge(logger: WorkerLogger): Promise<void> {
   const orgIds = await fetchAllOrgIds()
   let totalPurged = 0
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     const purged = await runOrgScopedJob(
       orgId,
       EXTENSION_LIFECYCLE_PURGE_JOB_NAME,
@@ -323,7 +324,7 @@ export async function runExtensionLifecycleEventsPurge(logger: WorkerLogger): Pr
       }
     )
     totalPurged += purged
-  }
+  })
   if (totalPurged > 0) {
     operationalLog(
       logger,

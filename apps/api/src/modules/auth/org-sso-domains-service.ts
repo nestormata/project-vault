@@ -57,10 +57,18 @@ export type OrgSsoDomainWriteResult =
  * (packages/shared/src/schemas/auth.ts) before this is ever called — this function only performs
  * the checks that need runtime/business state (the blocklist set, the live authStrategies list).
  */
-export async function validateOrgSsoDomainInput(input: {
+export function validateOrgSsoDomainInput(input: {
   domain?: string
   providerName?: string
 }): Promise<OrgSsoDomainValidationResult> {
+  // A synchronous throw must still surface as a rejection, as it did when this was `async`.
+  return Promise.resolve().then(() => checkOrgSsoDomainInput(input))
+}
+
+function checkOrgSsoDomainInput(input: {
+  domain?: string
+  providerName?: string
+}): OrgSsoDomainValidationResult {
   if (input.domain !== undefined) {
     // Already normalized by the request schema, but re-normalize defensively — this function may
     // be called with a caller-supplied value that bypassed the schema in a future refactor.
@@ -120,7 +128,7 @@ export async function runDomainWrite(
   }
 }
 
-export async function listOrgSsoDomains(tx: Tx, orgId: string): Promise<OrgSsoDomainRow[]> {
+export function listOrgSsoDomains(tx: Tx, orgId: string): Promise<OrgSsoDomainRow[]> {
   return tx.select(ORG_SSO_DOMAIN_COLUMNS).from(orgSsoDomains).where(eq(orgSsoDomains.orgId, orgId))
 }
 

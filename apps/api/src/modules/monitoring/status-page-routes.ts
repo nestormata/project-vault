@@ -124,7 +124,7 @@ function sendKnownError(
   return false
 }
 
-export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
+export function statusPageRoutes(fastify: FastifyApp): Promise<void> {
   // --- GET /:projectId/status-page (AC 21) ---
   secureRoute(fastify, {
     method: 'GET',
@@ -360,4 +360,5 @@ export async function statusPageRoutes(fastify: FastifyApp): Promise<void> {
       return undefined
     }),
   })
+  return Promise.resolve()
 }

@@ -194,7 +194,7 @@ async function updateOrgDefaultThemeColumn(
  * caller's own org) is treated as 404 — same non-leaking pattern every other org/project-scoped
  * route in this codebase uses.
  */
-export async function organizationSettingsRoutes(fastify: FastifyApp): Promise<void> {
+export function organizationSettingsRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'PATCH',
     url: '/:orgId/machine-key-settings',
@@ -432,4 +432,5 @@ export async function organizationSettingsRoutes(fastify: FastifyApp): Promise<v
       }
     },
   })
+  return Promise.resolve()
 }

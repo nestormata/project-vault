@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { and, eq, gte, sql } from 'drizzle-orm'
 import { auditLogEntries, auditRetentionConfig } from '@project-vault/db/schema'
 import { AuditEvent, OperationalEvent } from '@project-vault/shared'
@@ -20,7 +21,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000
  */
 export async function pruneExpiredAuditLogEntries(logger?: WorkerLogger): Promise<void> {
   const orgIds = await fetchAllOrgIds()
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     try {
       await runOrgScopedJob(orgId, 'audit/retention-prune', async ({ tx }) => {
         const [config] = await tx
@@ -94,5 +95,5 @@ export async function pruneExpiredAuditLogEntries(logger?: WorkerLogger): Promis
         )
       }
     }
-  }
+  })
 }

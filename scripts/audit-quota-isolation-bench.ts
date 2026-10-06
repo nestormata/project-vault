@@ -449,18 +449,21 @@ async function sweepStaleBenchOrgs(db: ReturnType<typeof getDb>): Promise<number
   const staleRows = await db.execute<{ id: string }>(
     sql`SELECT id FROM organizations WHERE name LIKE ${BENCH_ORG_PREFIX + '%'} AND created_at < ${cutoff}`
   )
-  let swept = 0
-  for (const row of staleRows) {
+  const sweepFrom = async (index: number, swept: number): Promise<number> => {
+    const row = staleRows.at(index)
+    if (row === undefined) return swept
     const orgId = (row as { id: string }).id
+    let deleted = 0
     try {
       await db.execute(sql`DELETE FROM organizations WHERE id = ${orgId}`)
-      swept++
+      deleted = 1
     } catch {
       // Expected for orgs that wrote committed audit_log_entries rows — tolerate and move on,
       // matching @project-vault/db/test-helpers' cleanupTestOrg() precedent.
     }
+    return sweepFrom(index + 1, swept + deleted)
   }
-  return swept
+  return sweepFrom(0, 0)
 }
 
 async function cleanupBenchOrg(db: ReturnType<typeof getDb>, orgId: string): Promise<void> {
@@ -522,13 +525,12 @@ async function runConcurrent<T>(
   const results: T[] = []
   let next = 0
   async function runner(): Promise<void> {
-    for (;;) {
-      const i = next++
-      if (i >= count) return
-      const result = await worker(i)
-      results.push(result)
-      onEach?.(result)
-    }
+    const i = next++
+    if (i >= count) return
+    const result = await worker(i)
+    results.push(result)
+    onEach?.(result)
+    return runner()
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, count) }, () => runner()))
   return results
@@ -638,7 +640,8 @@ async function runArm(arm: 'enabled' | 'disabled'): Promise<ArmResult> {
 
   const before = await readPgStatSnapshot(db)
 
-  for (let rep = 0; rep < REPETITIONS; rep++) {
+  const runRepetition = async (rep: number): Promise<void> => {
+    if (rep >= REPETITIONS) return
     process.stderr.write(`[bench:${arm}] repetition ${rep + 1}/${REPETITIONS}...\n`)
     let active = true
     const orgBLatenciesThisRep: number[] = []
@@ -654,25 +657,26 @@ async function runArm(arm: 'enabled' | 'disabled'): Promise<ArmResult> {
       active = false
     })
 
-    const orgBPromise = (async () => {
-      let i = 0
-      while (active && i < ORG_B_WRITES_TARGET_PER_REP) {
-        orgBAttempted++
-        const spec = payloads[i % payloads.length] as RepresentativePayload
-        const outcome = await trackPool(() => timedAuditedWrite(orgBId, spec))
-        orgBCompleted++
-        orgBLatenciesThisRep.push(outcome.totalMs)
-        allOrgBLatencies.push(outcome.totalMs)
-        i++
-        await sleep(ORG_B_PACE_MS)
-      }
-    })()
+    const orgBWrites = async (i: number): Promise<void> => {
+      if (!active || i >= ORG_B_WRITES_TARGET_PER_REP) return
+      orgBAttempted++
+      const spec = payloads[i % payloads.length] as RepresentativePayload
+      const outcome = await trackPool(() => timedAuditedWrite(orgBId, spec))
+      orgBCompleted++
+      orgBLatenciesThisRep.push(outcome.totalMs)
+      allOrgBLatencies.push(outcome.totalMs)
+      await sleep(ORG_B_PACE_MS)
+      return orgBWrites(i + 1)
+    }
+    const orgBPromise = orgBWrites(0)
 
     await Promise.all([orgAPromise, orgBPromise])
 
     const repStats = computePercentiles(discardWarmup(orgBLatenciesThisRep))
     orgBRepetitions.push(repStats)
+    return runRepetition(rep + 1)
   }
+  await runRepetition(0)
 
   const after = await readPgStatSnapshot(db)
   const pgStat = computePgStatDelta(before, after)
@@ -771,7 +775,7 @@ function spawnArm(arm: 'enabled' | 'disabled', databaseUrl: string, adminUrl: st
   return JSON.parse(lastLine) as ArmResult
 }
 
-async function orchestratorMain(): Promise<void> {
+function orchestratorMain(): void {
   const databaseUrl = process.env['DATABASE_URL']
   const adminUrl = process.env['ADMIN_DATABASE_URL']
   if (!databaseUrl) {
@@ -853,9 +857,11 @@ if (isDirectRun) {
       process.exit(1)
     })
   } else {
-    orchestratorMain().catch((error) => {
+    try {
+      orchestratorMain()
+    } catch (error) {
       process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`)
       process.exit(1)
-    })
+    }
   }
 }

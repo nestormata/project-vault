@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { eq, sql } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { securityAlerts } from '@project-vault/db/schema'
@@ -22,21 +23,23 @@ export async function runNotificationBackfill(
   const orgIds = await fetchAllOrgIds()
   let totalProcessed = 0
 
-  for (const orgId of orgIds) {
-    const pendingAlerts = await withOrg(orgId, async (tx) =>
-      tx.execute<AlertRow>(sql`
-        SELECT id::text AS id,
-               org_id::text AS org_id,
-               alert_type,
-               payload
-        FROM security_alerts
-        WHERE org_id = ${orgId}::uuid
-          AND status = 'PENDING_DELIVERY'
-        ORDER BY created_at ASC
-      `)
+  await forEachSequential(orgIds, async (orgId) => {
+    const pendingAlerts = await withOrg(orgId, (tx) =>
+      Promise.resolve(
+        tx.execute<AlertRow>(sql`
+          SELECT id::text AS id,
+                 org_id::text AS org_id,
+                 alert_type,
+                 payload
+          FROM security_alerts
+          WHERE org_id = ${orgId}::uuid
+            AND status = 'PENDING_DELIVERY'
+          ORDER BY created_at ASC
+        `)
+      )
     )
 
-    for (const alert of pendingAlerts) {
+    await forEachSequential(pendingAlerts, async (alert) => {
       try {
         const queueIds = await withOrg(orgId, async (tx) => {
           const ids = await createOrgAdminNotificationEntries({
@@ -66,8 +69,8 @@ export async function runNotificationBackfill(
           'Failed to backfill PENDING_DELIVERY alert'
         )
       }
-    }
-  }
+    })
+  })
 
   if (totalProcessed > 0) {
     logger.info(

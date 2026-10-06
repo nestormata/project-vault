@@ -4,6 +4,7 @@ import {
   platformAuditMaintenanceState,
   platformAuditPendingEntries,
 } from '@project-vault/db/schema'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { writePlatformAuditEntry, type PlatformAuditFields } from './write-entry.js'
 
 type Db = ReturnType<typeof getDb>
@@ -173,7 +174,7 @@ export async function drainPendingEntries(
     .orderBy(asc(platformAuditPendingEntries.sequenceNum))
 
   let drained = 0
-  for (const entry of pending) {
+  await forEachSequential(pending, async (entry) => {
     const fields = entry.intendedFields as PlatformAuditFields
     try {
       await tx.transaction(async (savepointTx) => {
@@ -194,7 +195,7 @@ export async function drainPendingEntries(
           `(sequence ${entry.sequenceNum}): ${error instanceof Error ? error.message : String(error)}\n`
       )
     }
-  }
+  })
 
   const remaining = pending.length - drained
   if (drained > 0 && remaining === 0) {

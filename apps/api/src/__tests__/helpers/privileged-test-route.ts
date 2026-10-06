@@ -9,6 +9,6 @@ export function registerPrivilegedTestRoute(fastify: FastifyApp): void {
       requireMfa: true,
       requireOrgRole: ['owner', 'admin'],
     }),
-    handler: async () => ({ ok: true, action: 'privileged_mock' }),
+    handler: () => ({ ok: true, action: 'privileged_mock' }),
   })
 }

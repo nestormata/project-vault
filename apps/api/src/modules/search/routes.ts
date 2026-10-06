@@ -14,7 +14,7 @@ function invalidSearchTypeResponse() {
   }
 }
 
-export async function searchRoutes(fastify: FastifyApp): Promise<void> {
+export function searchRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/search',
@@ -85,4 +85,5 @@ export async function searchRoutes(fastify: FastifyApp): Promise<void> {
       }
     },
   })
+  return Promise.resolve()
 }

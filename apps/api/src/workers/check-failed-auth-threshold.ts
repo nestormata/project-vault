@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { and, eq, sql } from 'drizzle-orm'
 import { getDb, withOrg, type Tx } from '@project-vault/db'
 import { orgMemberships, securityAlerts } from '@project-vault/db/schema'
@@ -30,7 +31,7 @@ type UserRow = { user_id: string }
 // the user, not just the first match, so a multi-org user's breach alerts every org.
 async function activeOrgsForUser(orgIds: string[], userId: string): Promise<string[]> {
   const matches: string[] = []
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     const memberships = await withOrg(orgId, (tx) =>
       tx
         .select({ orgId: orgMemberships.orgId })
@@ -39,7 +40,7 @@ async function activeOrgsForUser(orgIds: string[], userId: string): Promise<stri
         .limit(1)
     )
     if (memberships[0]) matches.push(orgId)
-  }
+  })
   return matches
 }
 
@@ -66,7 +67,7 @@ async function findIpBreaches(orgIds: string[], windowStart: Date): Promise<Brea
     HAVING COUNT(*) >= ${env.FAILED_AUTH_THRESHOLD_COUNT}
   `)
   const breaches: Breach[] = []
-  for (const row of rows) {
+  await forEachSequential(rows, async (row) => {
     const userRows = await getDb().execute<UserRow>(sql`
       SELECT DISTINCT user_id::text AS user_id
       FROM failed_auth_attempts faa
@@ -75,11 +76,11 @@ async function findIpBreaches(orgIds: string[], windowStart: Date): Promise<Brea
         AND faa.user_id IS NOT NULL
     `)
     const orgIdsForIp = new Set<string>()
-    for (const userRow of userRows) {
+    await forEachSequential(userRows, async (userRow) => {
       for (const orgId of await activeOrgsForUser(orgIds, userRow.user_id)) {
         orgIdsForIp.add(orgId)
       }
-    }
+    })
     if (orgIdsForIp.size === 0) {
       process.stdout.write(
         `${JSON.stringify({ eventType: 'security.failed_auth_threshold_no_org', thresholdType: 'ip', ipAddress: row.key })}\n`
@@ -93,7 +94,7 @@ async function findIpBreaches(orgIds: string[], windowStart: Date): Promise<Brea
         attemptCount: Number(row.attempt_count),
       })
     }
-  }
+  })
   return breaches
 }
 
@@ -108,17 +109,17 @@ async function findAccountBreaches(orgIds: string[], windowStart: Date): Promise
     HAVING COUNT(*) >= ${env.FAILED_AUTH_THRESHOLD_COUNT}
   `)
   const breaches: Breach[] = []
-  for (const row of rows) {
+  await forEachSequential(rows, async (row) => {
     // v1 single-org assumption (spec AC-9): primary org is the first active membership.
     const [orgId] = await activeOrgsForUser(orgIds, row.key)
-    if (!orgId) continue
+    if (!orgId) return
     breaches.push({
       orgId,
       thresholdType: 'account',
       userId: row.key,
       attemptCount: Number(row.attempt_count),
     })
-  }
+  })
   return breaches
 }
 
@@ -245,9 +246,9 @@ export async function runFailedAuthThresholdCheck(boss: BossService): Promise<vo
     ...(await findAccountBreaches(orgIds, windowStart)),
   ]
   await logUnknownEmailAccountBreaches(windowStart)
-  for (const breach of breaches) {
+  await forEachSequential(breaches, async (breach) => {
     await createAlertIfNeeded(breach, windowStart, windowEnd, boss)
-  }
+  })
 }
 
 export async function checkFailedAuthThresholdHandler(boss: BossService): Promise<void> {

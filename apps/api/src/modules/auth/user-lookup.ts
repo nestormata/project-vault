@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import { getDb } from '@project-vault/db'
 import { userIdentityTokens, users } from '@project-vault/db/schema'
 
-export async function findUserWithIdentityByEmail(email: string) {
+export function findUserWithIdentityByEmail(email: string) {
   return getDb()
     .select({
       id: users.id,

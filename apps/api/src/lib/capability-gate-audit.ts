@@ -12,6 +12,7 @@ import {
   estimateAuditEntrySizeBytes,
 } from '../modules/audit/quota-gate.js'
 import { getAuditKey } from '../modules/vault/key-service.js'
+import { forEachSequential } from './for-each-sequential.js'
 
 /**
  * Story 23.3 AC-25 — audits denials on authenticated, org-scoped enforcement only
@@ -166,7 +167,7 @@ async function sweepExpired(
     if (key === skipKey) continue
     if (now - entry.windowStart >= AUDIT_DAMPEN_WINDOW_MS) expired.push(key)
   }
-  for (const key of expired) await flushEntry(key, writer)
+  await forEachSequential(expired, (key) => flushEntry(key, writer))
 }
 
 /**
@@ -209,7 +210,7 @@ export async function __flushCapabilityAuditDampenerForTests(
   writer: CapabilityAuditWriter = defaultAuditWriter
 ): Promise<void> {
   const keys = [...dampener.keys()]
-  for (const key of keys) await flushEntry(key, writer)
+  await forEachSequential(keys, (key) => flushEntry(key, writer))
 }
 
 /** Test-only reset — never called from production code. */

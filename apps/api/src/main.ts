@@ -129,7 +129,7 @@ async function main(): Promise<void> {
 
   const sql = postgres(env.DATABASE_URL, pgTlsOptions())
   const dbPool = instrumentDbPool({
-    query: async (statement: string) => sql.unsafe(statement),
+    query: (statement: string) => Promise.resolve(sql.unsafe(statement)),
   })
 
   // Check vault state from DB before starting server — throws if DB unreachable (AC-27)

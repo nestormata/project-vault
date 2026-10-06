@@ -191,11 +191,11 @@ function applyPublicRouteHeaders(
  * request to a would-be path 404s exactly like any other nonexistent route, never a distinguishable
  * error revealing *why* (AC5's non-enumerating collapse).
  */
-export async function publicRouteRoutes(fastify: FastifyApp): Promise<void> {
+export function publicRouteRoutes(fastify: FastifyApp): Promise<void> {
   const status = getExtensionStatus()
-  if (status.status !== 'loaded') return
-  if (!status.manifest.capabilities.includes('public-route')) return
-  if (typeof status.hooks.publicRoute?.onPublicRouteRequest !== 'function') return
+  if (status.status !== 'loaded') return Promise.resolve()
+  if (!status.manifest.capabilities.includes('public-route')) return Promise.resolve()
+  if (typeof status.hooks.publicRoute?.onPublicRouteRequest !== 'function') return Promise.resolve()
   const pathTemplates = status.manifest.anonymousRoutePaths ?? []
 
   for (const pathTemplate of pathTemplates) {
@@ -256,4 +256,5 @@ export async function publicRouteRoutes(fastify: FastifyApp): Promise<void> {
       },
     })
   }
+  return Promise.resolve()
 }

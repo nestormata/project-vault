@@ -62,7 +62,7 @@ async function handleCreateOrg(
  * multi-organization provisioning. `requireOrgScope: false` + `requirePlatformOperator: true` +
  * `requireMfa: true` — never `allowedRoles`/`requireOrgRole`.
  */
-export async function orgsRoutes(fastify: FastifyApp): Promise<void> {
+export function orgsRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/orgs',
@@ -103,4 +103,5 @@ export async function orgsRoutes(fastify: FastifyApp): Promise<void> {
     },
     handler: async () => listOrgs(),
   })
+  return Promise.resolve()
 }

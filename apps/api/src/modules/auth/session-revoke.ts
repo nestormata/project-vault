@@ -10,6 +10,7 @@ import {
 import { AuditEvent } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { AppError } from '../../lib/errors.js'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { firstActorTokenIdForUser } from '../audit/actor-token.js'
 import { currentAuditKeyVersion } from '../audit/key-version.js'
 import { computeAuditHmac, getPreviousEntryHmac, GENESIS_SENTINEL } from '../audit/write-entry.js'
@@ -149,7 +150,7 @@ async function runInTx<T>(tx: Tx | undefined, fn: (tx: Tx) => Promise<T>): Promi
   return getDb().transaction((innerTx) => fn(innerTx as Tx))
 }
 
-async function selectRevocableSessionRows(tx: Tx, predicate: SQL | undefined) {
+function selectRevocableSessionRows(tx: Tx, predicate: SQL | undefined) {
   return tx.select({ id: sessions.id, orgId: sessions.orgId }).from(sessions).where(predicate)
 }
 
@@ -159,10 +160,10 @@ async function revokeTargetSessions(
   optionsForTarget: (sessionId: string) => RevokeSessionOptions
 ): Promise<{ revokedCount: number }> {
   let revokedCount = 0
-  for (const target of targetSessions) {
+  await forEachSequential(targetSessions, async (target) => {
     const result = await revokeSessionById(target.id, optionsForTarget(target.id))
     if (result.revoked) revokedCount += 1
-  }
+  })
   return { revokedCount }
 }
 
@@ -464,9 +465,9 @@ export async function revokeAllSessionsForOrg({
       // distinct user_id from the returned rows (its own idempotency makes calling it twice for
       // the same user across two sessions a safe no-op).
       const distinctUserIds = [...new Set(revokedSessionRows.map((row) => row.userId))]
-      for (const userId of distinctUserIds) {
-        await deletePendingEnrollmentForUser(userId, innerTx)
-      }
+      await forEachSequential(distinctUserIds, (userId) =>
+        deletePendingEnrollmentForUser(userId, innerTx)
+      )
     }
 
     // Decision 6/AC12: bulk-revoke every active machine-user API key for the org, in the SAME

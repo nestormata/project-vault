@@ -1,6 +1,7 @@
 import { and, asc, desc, gte, lt, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { platformAuditEvents } from '@project-vault/db/schema'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { PlatformAuditAction } from '@project-vault/shared'
 import { getPlatformAuditKey } from '../vault/key-service.js'
 import { currentPlatformAuditKeyVersion } from './key-version.js'
@@ -202,7 +203,7 @@ export async function verifyPlatformAuditRange(
   let passed = 0
   let failedCount = 0
 
-  for (const row of rows) {
+  await forEachSequential(rows, async (row) => {
     const { reason } = await evaluatePlatformAuditRow(
       tx,
       row,
@@ -226,7 +227,7 @@ export async function verifyPlatformAuditRange(
     }
 
     expectedPreviousHmac = row.hmac
-  }
+  })
 
   return finalizeVerifyResult({ rowsChecked: rows.length, passed, failed, failedCount })
 }

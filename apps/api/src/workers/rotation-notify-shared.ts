@@ -44,31 +44,33 @@ export type RotationAlertCandidate = {
  *  stale-staged scan: both select the same `{id, credentialId, initiatedBy, notifyUserId}` shape,
  *  filtered to a specific `status` and `initiated_at` older than a threshold — differing only in
  *  the status value/threshold scale and (for the stale-staged job) one extra guard condition. */
-export async function findRotationCandidates(
+export function findRotationCandidates(
   tx: Tx,
   orgId: string,
   status: string,
   threshold: Date,
   extraCondition?: SQL
 ): Promise<RotationAlertCandidate[]> {
-  return tx
-    .select({
-      id: rotations.id,
-      credentialId: rotations.credentialId,
-      initiatedBy: rotations.initiatedBy,
-      notifyUserId: sql<
-        string | null
-      >`COALESCE(${rotations.ownerUserId}, ${rotations.initiatedBy})`,
-    })
-    .from(rotations)
-    .where(
-      and(
-        eq(rotations.orgId, orgId),
-        eq(rotations.status, status),
-        lt(rotations.initiatedAt, threshold),
-        ...(extraCondition ? [extraCondition] : [])
+  return Promise.resolve(
+    tx
+      .select({
+        id: rotations.id,
+        credentialId: rotations.credentialId,
+        initiatedBy: rotations.initiatedBy,
+        notifyUserId: sql<
+          string | null
+        >`COALESCE(${rotations.ownerUserId}, ${rotations.initiatedBy})`,
+      })
+      .from(rotations)
+      .where(
+        and(
+          eq(rotations.orgId, orgId),
+          eq(rotations.status, status),
+          lt(rotations.initiatedAt, threshold),
+          ...(extraCondition ? [extraCondition] : [])
+        )
       )
-    )
+  )
 }
 
 /** Shared by rotation-recover.ts's stale-detection job and rotation-stale-staged-alert.ts's

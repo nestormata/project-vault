@@ -156,7 +156,11 @@ export type RunResult =
  * tested directly. `email` is the operator-supplied target; policy is read via
  * `getNativeLoginPolicyState()` by the caller's already-booted app.
  */
-export async function runOperatorRecoveryLink(email: string): Promise<RunResult> {
+export function runOperatorRecoveryLink(email: string): Promise<RunResult> {
+  return Promise.resolve().then(() => mintOrRefuseRecoveryLink(email))
+}
+
+function mintOrRefuseRecoveryLink(email: string): Promise<RunResult> {
   const policy = getNativeLoginPolicyState()
   const gate = evaluateBreakGlassGate(policy)
 

@@ -203,7 +203,7 @@ const MAX_PROJECT_CREDENTIALS_FOR_ROTATION_BADGE = 1000
  *  rotationSchedule (unlike fetchCredentialsWithSchedule in rotation/service.ts), since a
  *  credential can have an in-flight active rotation whether or not it has a configured schedule,
  *  and the dashboard's "Upcoming rotations" section must surface it either way (AC-2). */
-async function fetchProjectCredentialIdentifiers(
+function fetchProjectCredentialIdentifiers(
   tx: Tx,
   projectId: string
 ): Promise<{ id: string; name: string }[]> {
@@ -318,13 +318,13 @@ async function getScopedCredentialCounts(
   return { totalCredentials: Number(totalCredentials), expiringCount: Number(expiringCount) }
 }
 
-async function getExpiringCredentialRows(
+function getExpiringCredentialRows(
   tx: Tx,
   scopeToMembership: boolean,
   membershipJoin: MembershipJoin,
   expiringCount: number
 ) {
-  if (expiringCount === 0) return []
+  if (expiringCount === 0) return Promise.resolve([])
 
   const expiringSelect = tx
     .select({

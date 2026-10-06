@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { sql } from 'drizzle-orm'
 import { OperationalEvent } from '@project-vault/shared'
 import { env } from '../config/env.js'
@@ -177,7 +178,7 @@ async function aggregateLatestAttempts(
 ): Promise<AttemptAggregate> {
   const latestByTask = new Map<string, Date>()
   let failedOrgCount = 0
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     try {
       const orgLatest = await readOrg(orgId, extensionId)
       for (const [taskName, at] of orgLatest) {
@@ -188,7 +189,7 @@ async function aggregateLatestAttempts(
       failedOrgCount += 1
       logInconclusive(logger, { reason: 'org_read_failed', orgId, err: serializeLogError(error) })
     }
-  }
+  })
   return { latestByTask, failedOrgCount }
 }
 
@@ -353,8 +354,8 @@ function logEvaluationFailed(
 /** AC4b — active episodes whose pair is no longer declared (task removed, extension replaced or
  * unloaded) are resolved and their gauge series removed so no stale `1` lingers. */
 async function resolveUndeclared(ctx: TickContext, declaredScopeKeys: Set<string>): Promise<void> {
-  for (const scopeKey of ctx.activeScopeKeys) {
-    if (declaredScopeKeys.has(scopeKey)) continue
+  await forEachSequential([...ctx.activeScopeKeys], async (scopeKey) => {
+    if (declaredScopeKeys.has(scopeKey)) return
     const separator = scopeKey.indexOf('/')
     const extensionId = scopeKey.slice(0, separator)
     const taskName = scopeKey.slice(separator + 1)
@@ -364,7 +365,7 @@ async function resolveUndeclared(ctx: TickContext, declaredScopeKeys: Set<string
     } catch (error) {
       logEvaluationFailed(ctx.logger, extensionId, taskName, error)
     }
-  }
+  })
 }
 
 async function readTickInputs(
@@ -419,13 +420,13 @@ async function evaluateDeclaredPairs(
   ctx: TickContext,
   declared: Array<[string, number]>
 ): Promise<void> {
-  for (const [taskName, intervalMinutes] of declared) {
+  await forEachSequential(declared, async ([taskName, intervalMinutes]) => {
     try {
       await evaluateDeclaredPair(ctx, taskName, intervalMinutes)
     } catch (error) {
       logEvaluationFailed(ctx.logger, ctx.extensionId, taskName, error)
     }
-  }
+  })
 }
 
 async function runWatchdogBody(

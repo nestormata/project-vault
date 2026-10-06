@@ -77,7 +77,7 @@ export async function rotationStatusOf(orgId: string, rotationId: string): Promi
 }
 
 /** The AC-8 side effects `abandonRotation` owns: previous version unlocked, new one abandoned. */
-export async function rotationVersionState(
+export function rotationVersionState(
   orgId: string,
   rotationId: string
 ): Promise<{ previousLocked: boolean; newAbandoned: boolean }> {

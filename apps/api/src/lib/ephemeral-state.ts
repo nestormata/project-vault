@@ -115,8 +115,8 @@ function deserializeEncryptedValue(buffer: Buffer): EncryptedValue {
 }
 
 async function decryptStoredValue(ciphertext: Buffer): Promise<string> {
-  const plaintext = await withSecret(deserializeEncryptedValue(ciphertext), async (buf) =>
-    buf.toString('utf8')
+  const plaintext = await withSecret(deserializeEncryptedValue(ciphertext), (buf) =>
+    Promise.resolve(buf.toString('utf8'))
   )
   return plaintext
 }
@@ -202,7 +202,7 @@ async function ensureCapacityForCountIncreasingWrite(
  * semantics `compareAndSwap`'s null-`expectedValue` branch needs); omitted, the upsert always
  * applies (`set()`'s unconditional-overwrite semantics). Returns the ids actually
  * inserted/updated — empty when a `setWhere` guard skipped the conflict branch. */
-async function upsertEphemeralStateRow(
+function upsertEphemeralStateRow(
   tx: Tx,
   params: {
     orgId: string
@@ -222,24 +222,26 @@ async function upsertEphemeralStateRow(
     encryptionKeyVersion: params.keyVersion,
     expiresAt: params.expiresAt,
   }
-  return tx
-    .insert(extensionEphemeralState)
-    .values(values)
-    .onConflictDoUpdate({
-      target: [
-        extensionEphemeralState.orgId,
-        extensionEphemeralState.extensionNamespace,
-        extensionEphemeralState.key,
-      ],
-      set: {
-        valueCiphertext: params.ciphertext,
-        encryptionKeyVersion: params.keyVersion,
-        expiresAt: params.expiresAt,
-        updatedAt: sql`now()`,
-      },
-      ...(params.setWhere ? { setWhere: params.setWhere } : {}),
-    })
-    .returning({ id: extensionEphemeralState.id })
+  return Promise.resolve(
+    tx
+      .insert(extensionEphemeralState)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [
+          extensionEphemeralState.orgId,
+          extensionEphemeralState.extensionNamespace,
+          extensionEphemeralState.key,
+        ],
+        set: {
+          valueCiphertext: params.ciphertext,
+          encryptionKeyVersion: params.keyVersion,
+          expiresAt: params.expiresAt,
+          updatedAt: sql`now()`,
+        },
+        ...(params.setWhere ? { setWhere: params.setWhere } : {}),
+      })
+      .returning({ id: extensionEphemeralState.id })
+  )
 }
 
 /** Shared by `compareAndSwap(key, expectedValue, ...)`'s non-null branch and
@@ -347,7 +349,7 @@ export function createEphemeralStateHost(
 
     async get(key) {
       const orgId = requireOrgId()
-      return withFailClosedLogging(logger, namespace, orgId, async () =>
+      return withFailClosedLogging(logger, namespace, orgId, () =>
         withOrg(orgId, async (tx) => {
           const rows = await tx
             .select({ valueCiphertext: extensionEphemeralState.valueCiphertext })
@@ -363,7 +365,7 @@ export function createEphemeralStateHost(
 
     async delete(key) {
       const orgId = requireOrgId()
-      await withFailClosedLogging(logger, namespace, orgId, async () =>
+      await withFailClosedLogging(logger, namespace, orgId, () =>
         withOrg(orgId, async (tx) => {
           await tx.delete(extensionEphemeralState).where(rowMatch(namespace, key))
         })
@@ -423,7 +425,7 @@ export function createEphemeralStateHost(
 
     async compareAndDelete(key, expectedValue) {
       const orgId = requireOrgId()
-      return withFailClosedLogging(logger, namespace, orgId, async () =>
+      return withFailClosedLogging(logger, namespace, orgId, () =>
         withOrg(orgId, async (tx) => {
           const matchedId = await loadMatchingLiveRowForUpdate(tx, namespace, key, expectedValue)
           if (!matchedId) return false

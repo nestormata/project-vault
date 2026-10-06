@@ -30,7 +30,7 @@ async function findOnboardingRow(secureCtx: SecureRouteContext) {
   return rows[0] ?? null
 }
 
-export async function onboardingRoutes(fastify: FastifyApp): Promise<void> {
+export function onboardingRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/me/onboarding',
@@ -107,4 +107,5 @@ export async function onboardingRoutes(fastify: FastifyApp): Promise<void> {
       }
     },
   })
+  return Promise.resolve()
 }

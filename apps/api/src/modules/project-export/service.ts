@@ -152,9 +152,11 @@ function buildExportRotation(
   ]
 }
 
-async function decryptVersionValue(version: CredentialVersionRow): Promise<string | null> {
-  if (!version.encryptedValue) return null // purged (retention job) — nothing to carry across
-  return withSecret(version.encryptedValue as EncryptedValue, async (buf) => buf.toString('utf8'))
+function decryptVersionValue(version: CredentialVersionRow): Promise<string | null> {
+  if (!version.encryptedValue) return Promise.resolve(null) // purged (retention job) — nothing to carry across
+  return withSecret(version.encryptedValue as EncryptedValue, (buf) =>
+    Promise.resolve(buf.toString('utf8'))
+  )
 }
 
 async function buildExportCredential(tx: Tx, credential: CredentialRow): Promise<ExportCredential> {

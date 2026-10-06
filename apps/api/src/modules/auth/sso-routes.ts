@@ -345,7 +345,7 @@ export async function findLinkedIdentity(
   return { kind: 'found', orgId: row.orgId, userId: row.userId }
 }
 
-async function findCandidateInvitations(email: string): Promise<ProjectInvitation[]> {
+function findCandidateInvitations(email: string): Promise<ProjectInvitation[]> {
   return getAdminDb()
     .select()
     .from(projectInvitations)
@@ -688,7 +688,7 @@ async function handleCallback(
   return resolveSessionForAuthResult(fastify, reply, authResult, meta)
 }
 
-export async function ssoRoutes(fastify: FastifyApp): Promise<void> {
+export function ssoRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/start/:providerName',
@@ -714,4 +714,5 @@ export async function ssoRoutes(fastify: FastifyApp): Promise<void> {
     },
     handler: async (_ctx, request, reply) => handleCallback(fastify, request, reply),
   })
+  return Promise.resolve()
 }

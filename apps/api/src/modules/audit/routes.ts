@@ -86,7 +86,7 @@ async function loadExportJobOrNotFound(
   return row
 }
 
-export async function auditRoutes(fastify: FastifyApp): Promise<void> {
+export function auditRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/audit/verify',
@@ -596,4 +596,5 @@ export async function auditRoutes(fastify: FastifyApp): Promise<void> {
       return { data: result }
     },
   })
+  return Promise.resolve()
 }

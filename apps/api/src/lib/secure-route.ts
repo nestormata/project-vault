@@ -33,6 +33,7 @@ import { env } from '../config/env.js'
 import { requireOrgRole, type OrgRole } from '../plugins/require-org-role.js'
 import { enforceUserRateLimit } from './route-helpers.js'
 import { setRlsOrgContext } from '../middleware/rls.js'
+import { forEachSequential } from './for-each-sequential.js'
 import {
   installDelegationStages,
   normalizeDelegation,
@@ -307,17 +308,15 @@ async function runPostCommitCallback(callback: PostCommitCallback): Promise<void
   }
 }
 
-async function runPostCommitCallbacks(
+function runPostCommitCallbacks(
   request: FastifyRequest,
   callbacks: PostCommitCallback[]
 ): Promise<void> {
-  for (const callback of callbacks.splice(0)) {
-    try {
-      await runPostCommitCallback(callback)
-    } catch (error) {
+  return forEachSequential(callbacks.splice(0), (callback) =>
+    runPostCommitCallback(callback).catch((error: unknown) => {
       logPostCommitCallbackFailure(request, error)
-    }
-  }
+    })
+  )
 }
 
 function normalizeRecord(value: unknown): Record<string, unknown> {

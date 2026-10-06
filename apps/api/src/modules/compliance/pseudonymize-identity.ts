@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto'
 import { and, eq, ne } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { userIdentityTokens } from '@project-vault/db/schema'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 
 // eslint-disable-next-line no-secrets/no-secrets -- Public alias alphabet, not a secret.
 const ALIAS_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -97,12 +98,12 @@ export async function pseudonymizeUserIdentityToken(
     .where(eq(userIdentityTokens.userId, userId))
 
   const results: { tokenId: string; alias: string }[] = []
-  for (const row of rows) {
+  await forEachSequential(rows, async (row) => {
     if (row.pseudonymizedAt) {
       // Already pseudonymized: the DB trigger blocks changing display_name again — return the
       // existing alias unchanged rather than attempting a write guaranteed to be rejected.
       results.push({ tokenId: row.id, alias: row.displayName })
-      continue
+      return
     }
     const alias = await generateUniqueAlias(tx, userId, row.id, generateAlias)
     const pseudonymizedAt = new Date()
@@ -111,6 +112,6 @@ export async function pseudonymizeUserIdentityToken(
       .set({ displayName: alias, pseudonymizedAt, updatedAt: pseudonymizedAt })
       .where(eq(userIdentityTokens.id, row.id))
     results.push({ tokenId: row.id, alias })
-  }
+  })
   return results
 }

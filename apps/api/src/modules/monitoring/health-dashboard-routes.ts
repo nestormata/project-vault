@@ -11,7 +11,7 @@ import { LIST_RATE_LIMIT } from './routes.js'
  * (`minimumRole: 'viewer'`), and it reuses the same LIST_RATE_LIMIT constant already defined for
  * this module's other list reads (AC 6, do not redefine a diverging value).
  */
-export async function healthDashboardRoutes(fastify: FastifyApp): Promise<void> {
+export function healthDashboardRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '',
@@ -28,4 +28,5 @@ export async function healthDashboardRoutes(fastify: FastifyApp): Promise<void> 
       return { data: await getHealthDashboardData(secureCtx.tx) }
     },
   })
+  return Promise.resolve()
 }

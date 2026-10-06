@@ -20,7 +20,7 @@ const ALERT_ALREADY_DISMISSED = {
 
 // Story 7.2 D9/AC-22 — generic dismiss endpoint, not machine-key-specific at the route level so
 // any future security_alerts alertType can reuse it without a new endpoint.
-export async function securityAlertActionsRoutes(fastify: FastifyApp): Promise<void> {
+export function securityAlertActionsRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/:alertId/dismiss',
@@ -80,4 +80,5 @@ export async function securityAlertActionsRoutes(fastify: FastifyApp): Promise<v
       return { data: { id: result.id, status: 'dismissed' as const } }
     },
   })
+  return Promise.resolve()
 }

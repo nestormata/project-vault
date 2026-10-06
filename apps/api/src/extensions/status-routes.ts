@@ -128,7 +128,14 @@ const ExtensionStatusEnvelopeSchema = z.object({
   apiRoutes: ApiRoutesStatusSchema,
 })
 
-export async function extensionStatusRoutes(fastify: FastifyApp): Promise<void> {
+export function extensionStatusRoutes(fastify: FastifyApp): Promise<void> {
+  return new Promise((resolve) => {
+    registerExtensionStatusRoutes(fastify)
+    resolve()
+  })
+}
+
+function registerExtensionStatusRoutes(fastify: FastifyApp): void {
   secureRoute(fastify, {
     method: 'GET',
     url: '/extensions/status',

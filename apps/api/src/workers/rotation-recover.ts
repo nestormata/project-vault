@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { OperationalEvent } from '@project-vault/shared'
 import type { Tx } from '@project-vault/db'
@@ -101,7 +102,7 @@ async function recoverStaleRotationsForOrg(
   const candidates = await runOrgScopedJob(orgId, JOB_NAME, ({ tx }) =>
     findStaleRotations(tx, orgId)
   )
-  for (const candidate of candidates) {
+  await forEachSequential(candidates, async (candidate) => {
     // Story 5.5 AC-9: recoverOneRotation() already runs each candidate in its OWN transaction
     // (via runOrgScopedJob), so an audit-write (or any other) failure inside it already rolls
     // back only that one row's state transition — but without this try/catch, the thrown error
@@ -124,7 +125,7 @@ async function recoverStaleRotationsForOrg(
         )
       }
     }
-  }
+  })
 }
 
 /** `rotation/recover` (AC-9/AC-10) — pg-boss job, registered both as a 15-minute recurring cron
@@ -138,7 +139,7 @@ export async function runStaleRotationRecoveryJob(
   logger?: WorkerLogger
 ): Promise<void> {
   const orgIds = await fetchAllOrgIds()
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     // Story 5.5 AC-9: same rationale as the per-candidate try/catch above, one level up — an
     // unexpected failure scanning/processing one org (not just a single candidate row within it)
     // must not prevent every other org from being processed in the same run.
@@ -155,5 +156,5 @@ export async function runStaleRotationRecoveryJob(
         )
       }
     }
-  }
+  })
 }

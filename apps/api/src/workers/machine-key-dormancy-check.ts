@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { and, eq, isNull, or, sql } from 'drizzle-orm'
 import { apiKeys, machineUsers, organizations } from '@project-vault/db/schema'
 import { OperationalEvent } from '@project-vault/shared'
@@ -38,7 +39,7 @@ export async function runMachineKeyDormancyCheckJob(
   const orgIds = await fetchAllOrgIds()
   const allJobs: NotificationQueueJob[] = []
 
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     try {
       const jobs = await runOrgScopedJob(orgId, JOB_NAME, (ctx) => processOrg(ctx.tx, orgId))
       allJobs.push(...jobs)
@@ -53,7 +54,7 @@ export async function runMachineKeyDormancyCheckJob(
         )
       }
     }
-  }
+  })
 
   await sendNotificationJobs(boss, allJobs)
 }
@@ -71,46 +72,48 @@ async function processOrg(
 
   const rows = await fetchDormantKeys(tx, orgId, org.thresholdDays)
   const jobs: NotificationQueueJob[] = []
-  for (const row of rows) {
+  await forEachSequential(rows, async (row) => {
     const entries = await createDormancyAlertIfNew(tx, orgId, row)
     jobs.push(...entries)
-  }
+  })
   return jobs
 }
 
-async function fetchDormantKeys(
+function fetchDormantKeys(
   tx: Parameters<Parameters<typeof runOrgScopedJob>[2]>[0]['tx'],
   orgId: string,
   thresholdDays: number
 ): Promise<DormantKeyRow[]> {
-  return tx
-    .select({
-      id: apiKeys.id,
-      machineUserId: apiKeys.machineUserId,
-      name: apiKeys.name,
-      lastUsedAt: apiKeys.lastUsedAt,
-      projectId: machineUsers.projectId,
-      machineUserName: machineUsers.name,
-    })
-    .from(apiKeys)
-    .innerJoin(machineUsers, eq(machineUsers.id, apiKeys.machineUserId))
-    .where(
-      and(
-        eq(apiKeys.orgId, orgId),
-        isNull(apiKeys.revokedAt),
-        or(
-          and(
-            sql`${apiKeys.lastUsedAt} IS NOT NULL`,
-            sql`${apiKeys.lastUsedAt} < now() - (${thresholdDays} || ' days')::interval`
+  return Promise.resolve(
+    tx
+      .select({
+        id: apiKeys.id,
+        machineUserId: apiKeys.machineUserId,
+        name: apiKeys.name,
+        lastUsedAt: apiKeys.lastUsedAt,
+        projectId: machineUsers.projectId,
+        machineUserName: machineUsers.name,
+      })
+      .from(apiKeys)
+      .innerJoin(machineUsers, eq(machineUsers.id, apiKeys.machineUserId))
+      .where(
+        and(
+          eq(apiKeys.orgId, orgId),
+          isNull(apiKeys.revokedAt),
+          or(
+            and(
+              sql`${apiKeys.lastUsedAt} IS NOT NULL`,
+              sql`${apiKeys.lastUsedAt} < now() - (${thresholdDays} || ' days')::interval`
+            ),
+            and(
+              isNull(apiKeys.lastUsedAt),
+              sql`${apiKeys.createdAt} < now() - (${thresholdDays} || ' days')::interval`
+            )
           ),
-          and(
-            isNull(apiKeys.lastUsedAt),
-            sql`${apiKeys.createdAt} < now() - (${thresholdDays} || ' days')::interval`
-          )
-        ),
-        or(isNull(apiKeys.dormancySnoozedUntil), sql`${apiKeys.dormancySnoozedUntil} < now()`)
+          or(isNull(apiKeys.dormancySnoozedUntil), sql`${apiKeys.dormancySnoozedUntil} < now()`)
+        )
       )
-    )
+  )
 }
 
 /**

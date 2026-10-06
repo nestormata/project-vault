@@ -21,7 +21,7 @@ const PUBLIC_GET_RATE_LIMIT = { max: 60, timeWindowMs: 60_000 }
  * `/api/v1/invitations/:token`'s own standalone-prefix precedent. Never audited (Known Scope
  * Boundaries) — high-frequency, unauthenticated, non-actor traffic.
  */
-export async function publicStatusPageRoutes(fastify: FastifyApp): Promise<void> {
+export function publicStatusPageRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/:token',
@@ -90,4 +90,5 @@ export async function publicStatusPageRoutes(fastify: FastifyApp): Promise<void>
       return { data: { services } }
     },
   })
+  return Promise.resolve()
 }

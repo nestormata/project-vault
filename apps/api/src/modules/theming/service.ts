@@ -4,6 +4,7 @@ import type { FastifyBaseLogger } from 'fastify'
 import YAML from 'yaml'
 import { AuditEvent, OperationalEvent, THEME_TOKENS } from '@project-vault/shared'
 import type { ThemeTokenDefinition } from '@project-vault/shared'
+import { mapWithConcurrency } from '../../lib/map-with-concurrency.js'
 import { operationalLog } from '../../lib/logger.js'
 import { writeSystemAuditRow } from '../../lib/system-audit-row.js'
 import { withOrg } from '@project-vault/db'
@@ -500,7 +501,7 @@ function isAliasLimitError(error: unknown): boolean {
   return error instanceof Error && /alias count/i.test(error.message)
 }
 
-async function parseThemeContent(
+function parseThemeContent(
   content: string,
   ext: string
 ): Promise<{ value: unknown } | { reason: string }> {
@@ -509,10 +510,12 @@ async function parseThemeContent(
       ext === '.json'
         ? JSON.parse(content)
         : YAML.parse(content, { maxAliasCount: MAX_YAML_ALIAS_COUNT })
-    return { value }
+    return Promise.resolve({ value })
   } catch (error) {
-    if (isAliasLimitError(error)) return { reason: 'YAML alias expansion exceeds safe limit' }
-    return { reason: 'not valid JSON/YAML' }
+    if (isAliasLimitError(error)) {
+      return Promise.resolve({ reason: 'YAML alias expansion exceeds safe limit' })
+    }
+    return Promise.resolve({ reason: 'not valid JSON/YAML' })
   }
 }
 
@@ -620,8 +623,14 @@ async function processThemeFiles(
   const compiled: CompiledTheme[] = []
   const nameToFile = new Map<string, string>()
 
-  for (const file of themeFiles) {
-    const outcome = await processThemeFile(join(themesDir, file), deps)
+  // Reading/validating each file is independent; only the duplicate-name check below is
+  // order-dependent, so it runs synchronously over the ordered results.
+  const outcomes = await mapWithConcurrency(themeFiles, 2, async (file) => ({
+    file,
+    outcome: await processThemeFile(join(themesDir, file), deps),
+  }))
+
+  for (const { file, outcome } of outcomes) {
     if (isReasonResult(outcome)) {
       failed.push({ file, reason: outcome.reason })
       continue
@@ -719,7 +728,7 @@ async function runThemeAuditFanout(
     return
   }
 
-  for (const orgId of orgIds) {
+  await mapWithConcurrency(orgIds, 2, async (orgId) => {
     try {
       await auditWriter(orgId, AuditEvent.THEME_RELOADED, payload)
     } catch {
@@ -731,7 +740,7 @@ async function runThemeAuditFanout(
         { orgId, subReason: 'audit_write_failed' }
       )
     }
-  }
+  })
 }
 
 /**

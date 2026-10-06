@@ -35,7 +35,7 @@ const RATE_LIMIT_WINDOW_MS = 60_000
  * agent (packages/agent) silently drops any beacon failure per AC-15, so this endpoint failing
  * has no functional impact on the caller beyond a missed notification.
  */
-export async function cacheActivatedRoutes(fastify: FastifyApp): Promise<void> {
+export function cacheActivatedRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/cache-activated',
@@ -105,4 +105,5 @@ export async function cacheActivatedRoutes(fastify: FastifyApp): Promise<void> {
       return { data: { recorded: true as const } }
     },
   })
+  return Promise.resolve()
 }

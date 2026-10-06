@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { and, eq, isNotNull, lte } from 'drizzle-orm'
 import { OperationalEvent } from '@project-vault/shared'
 import type { Tx } from '@project-vault/db'
@@ -15,17 +16,19 @@ const JOB_NAME = 'rotation/break-glass-expire'
 type ExpiredVersionRow = { id: string; credentialId: string }
 
 /** AC-8 step 1: org-scoped scan for versions whose break-glass overlap window has passed. */
-async function findExpiredOverlapVersions(tx: Tx, orgId: string): Promise<ExpiredVersionRow[]> {
-  return tx
-    .select({ id: credentialVersions.id, credentialId: credentialVersions.credentialId })
-    .from(credentialVersions)
-    .where(
-      and(
-        eq(credentialVersions.orgId, orgId),
-        isNotNull(credentialVersions.breakGlassOverlapExpiresAt),
-        lte(credentialVersions.breakGlassOverlapExpiresAt, new Date())
+function findExpiredOverlapVersions(tx: Tx, orgId: string): Promise<ExpiredVersionRow[]> {
+  return Promise.resolve(
+    tx
+      .select({ id: credentialVersions.id, credentialId: credentialVersions.credentialId })
+      .from(credentialVersions)
+      .where(
+        and(
+          eq(credentialVersions.orgId, orgId),
+          isNotNull(credentialVersions.breakGlassOverlapExpiresAt),
+          lte(credentialVersions.breakGlassOverlapExpiresAt, new Date())
+        )
       )
-    )
+  )
 }
 
 /** AC-8 steps 2-3, one short transaction per candidate row (same batching rationale as
@@ -78,7 +81,7 @@ async function expireOverlapForOrg(orgId: string, logger?: WorkerLogger): Promis
   const candidates = await runOrgScopedJob(orgId, JOB_NAME, ({ tx }) =>
     findExpiredOverlapVersions(tx, orgId)
   )
-  for (const candidate of candidates) {
+  await forEachSequential(candidates, async (candidate) => {
     // Story 5.5 AC-9: same rationale as rotation-recover.ts's identical try/catch — each
     // candidate already runs in its own transaction (runOrgScopedJob), so a thrown error here
     // already rolls back only that one row; without this catch, though, the throw would still
@@ -96,7 +99,7 @@ async function expireOverlapForOrg(orgId: string, logger?: WorkerLogger): Promis
         )
       }
     }
-  }
+  })
 }
 
 /** `rotation/break-glass-expire` (AC-8) — pg-boss job, cron `* * * * *` (every minute, matching
@@ -104,7 +107,7 @@ async function expireOverlapForOrg(orgId: string, logger?: WorkerLogger): Promis
  *  bookkeeping (rotationLockedAt/breakGlassOverlapExpiresAt), no plaintext is touched. */
 export async function runBreakGlassOverlapExpiryJob(logger?: WorkerLogger): Promise<void> {
   const orgIds = await fetchAllOrgIds()
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     // Story 5.5 AC-9: org-level equivalent of the per-candidate catch above.
     try {
       await expireOverlapForOrg(orgId, logger)
@@ -119,5 +122,5 @@ export async function runBreakGlassOverlapExpiryJob(logger?: WorkerLogger): Prom
         )
       }
     }
-  }
+  })
 }

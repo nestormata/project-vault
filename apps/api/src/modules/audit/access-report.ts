@@ -194,7 +194,7 @@ function resolveInvitationRole(
   return resolveInvitationRoleByProjectEmail(row, projectId, email, invitationsByProjectEmail)
 }
 
-async function fetchProjectInvitations(tx: Tx, orgId: string): Promise<InvitationRow[]> {
+function fetchProjectInvitations(tx: Tx, orgId: string): Promise<InvitationRow[]> {
   return tx
     .select({
       id: projectInvitations.id,

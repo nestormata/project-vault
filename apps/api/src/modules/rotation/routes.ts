@@ -4,6 +4,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { projects, securityAlerts } from '@project-vault/db/schema'
 import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import type { FastifyApp } from '../../lib/fastify-app.js'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseBody, parseParams, validationError } from '../../lib/route-helpers.js'
 import { buildPaginationMeta, paginationOffset, parsePagination } from '../../lib/pagination.js'
@@ -383,8 +384,8 @@ async function supersedeOutstandingSharesAndAudit(
     targetFields: rotation.targetFields,
     rotationId: rotation.id,
   })
-  for (const share of superseded) {
-    await writeShareAuditEntry(secureCtx.tx, secureCtx.auth, req, {
+  await forEachSequential(superseded, (share) =>
+    writeShareAuditEntry(secureCtx.tx, secureCtx.auth, req, {
       eventType: AuditEvent.CREDENTIAL_SHARE_SUPERSEDED,
       resourceId: share.id,
       payload: {
@@ -395,7 +396,7 @@ async function supersedeOutstandingSharesAndAudit(
         attributeKeys: share.attributeKeys,
       },
     })
-  }
+  )
 }
 
 /** Shared by resume and abandon: identical params schema and empty-body validation. */
@@ -911,7 +912,7 @@ function buildRotationInitiatedAuditPayload(
   }
 }
 
-export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
+export function rotationRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/:projectId/credentials/:credentialId/rotations',
@@ -2184,4 +2185,5 @@ export async function rotationRoutes(fastify: FastifyApp): Promise<void> {
       return { data: { items } }
     },
   })
+  return Promise.resolve()
 }

@@ -130,7 +130,14 @@ function buildModuleDataRequestContext(
  * mounts zero routes — `GET /api/v1/extensions/data/anything` 404s exactly like any other
  * nonexistent route, not a `503`/degraded-panel-style response (AC4's Edge/failure).
  */
-export async function moduleDataRoutes(fastify: FastifyApp): Promise<void> {
+export function moduleDataRoutes(fastify: FastifyApp): Promise<void> {
+  return new Promise((resolve) => {
+    registerModuleDataRoutes(fastify)
+    resolve()
+  })
+}
+
+function registerModuleDataRoutes(fastify: FastifyApp): void {
   const status = getExtensionStatus()
   if (status.status !== 'loaded' || !status.manifest.moduleDataRoutes) return
 

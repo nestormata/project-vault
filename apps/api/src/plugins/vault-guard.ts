@@ -48,18 +48,22 @@ function isSealedVaultExemptDocsRoute(method: string, path: string): boolean {
   )
 }
 
-async function vaultGuard(fastify: FastifyInstance): Promise<void> {
-  fastify.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
+function vaultGuard(fastify: FastifyInstance): Promise<void> {
+  fastify.addHook('onRequest', (req: FastifyRequest, reply: FastifyReply) => {
     const path = normalizePath(req.url)
     const routeKey = `${req.method} ${path}`
-    if (VAULT_GUARD_ALLOWLIST.has(routeKey)) return
-    if (isSealedVaultExemptDocsRoute(req.method, path)) return
+    if (VAULT_GUARD_ALLOWLIST.has(routeKey)) return Promise.resolve()
+    if (isSealedVaultExemptDocsRoute(req.method, path)) return Promise.resolve()
 
     const vaultStatus = getVaultStatus()
     if (vaultStatus !== 'unsealed') {
-      return reply.status(503).send({ status: 'sealed', message: 'Vault not initialized' })
+      return Promise.resolve(
+        reply.status(503).send({ status: 'sealed', message: 'Vault not initialized' })
+      )
     }
+    return Promise.resolve()
   })
+  return Promise.resolve()
 }
 
 // fastify-plugin breaks encapsulation: this onRequest hook must apply to every route

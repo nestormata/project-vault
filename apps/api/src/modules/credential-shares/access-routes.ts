@@ -23,7 +23,7 @@ const SHARE_TOKEN_NOT_FOUND = { code: 'share_not_found', message: 'Share not fou
  * `app.ts` registration prefix — this module needs two distinct prefixes
  * (/api/v1/projects/... for the sharer-facing routes, /api/v1/shares/... for these).
  */
-export async function credentialShareAccessRoutes(fastify: FastifyApp): Promise<void> {
+export function credentialShareAccessRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/access/:token',
@@ -166,4 +166,5 @@ export async function credentialShareAccessRoutes(fastify: FastifyApp): Promise<
       }
     },
   })
+  return Promise.resolve()
 }

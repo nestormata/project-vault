@@ -44,7 +44,7 @@ if (databaseTuple && adminTuple.every((part, index) => part === databaseTuple.at
 async function main(): Promise<void> {
   const client = postgres(adminUrl, { ...pgTlsOptions(), max: 1 })
   try {
-    const result = await inspectAdminPoolIdentity(async () =>
+    const result = await inspectAdminPoolIdentity(() =>
       client.unsafe(
         'SELECT current_user, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user'
       )

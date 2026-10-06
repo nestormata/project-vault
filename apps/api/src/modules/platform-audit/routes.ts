@@ -67,7 +67,7 @@ function buildEventsWhere(query: PlatformAuditEventsQuery) {
 
 /** AC-9: search + offset pagination over `platform_audit_events`, gated on the caller having
  * already established `app.platform_operator_verified` (D4) via `withPlatformOperatorContext`. */
-async function listPlatformAuditEvents(query: PlatformAuditEventsQuery) {
+function listPlatformAuditEvents(query: PlatformAuditEventsQuery) {
   const where = buildEventsWhere(query)
   const offset = (query.page - 1) * query.limit
 
@@ -244,7 +244,7 @@ async function handlePostMaintenanceMode(
  * stamps `X-Log-Scope: platform` on every response from this plugin instance (success or error,
  * AC-12) — Fastify's per-register encapsulation scopes it to only these three routes.
  */
-export async function platformAuditRoutes(fastify: FastifyApp): Promise<void> {
+export function platformAuditRoutes(fastify: FastifyApp): Promise<void> {
   fastify.addHook(
     'onSend',
     (
@@ -349,4 +349,5 @@ export async function platformAuditRoutes(fastify: FastifyApp): Promise<void> {
     },
     handler: handleGetMaintenanceModeStatus,
   })
+  return Promise.resolve()
 }

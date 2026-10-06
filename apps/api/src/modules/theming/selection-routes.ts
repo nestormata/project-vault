@@ -41,7 +41,7 @@ function unknownThemeResponse(themeName: string) {
  * route-audit.test.ts's `assertAuditedActionOptOutsAreJustified` static check, which requires this
  * call to stay textually inline in the route registration.
  */
-export async function themeSelectionRoutes(fastify: FastifyApp): Promise<void> {
+export function themeSelectionRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/themes',
@@ -162,4 +162,5 @@ export async function themeSelectionRoutes(fastify: FastifyApp): Promise<void> {
       return { themeName: updated.selectedThemeName }
     },
   })
+  return Promise.resolve()
 }

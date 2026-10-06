@@ -25,10 +25,15 @@ export type ThresholdAlertInput = {
  *   at this level or higher, must not re-fire on every check tick.
  * Advisory-locked per (alertType, scopeKey) so concurrent check-job ticks can't race each other.
  */
-export async function upsertThresholdAlert(
-  input: ThresholdAlertInput
-): Promise<{ id: string } | null> {
+export function upsertThresholdAlert(input: ThresholdAlertInput): Promise<{ id: string } | null> {
   const lockKey = `${input.alertType}:${input.scopeKey ?? 'instance'}`
+  return Promise.resolve().then(() => upsertThresholdAlertInTx(input, lockKey))
+}
+
+function upsertThresholdAlertInTx(
+  input: ThresholdAlertInput,
+  lockKey: string
+): Promise<{ id: string } | null> {
   return getDb().transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`)
 

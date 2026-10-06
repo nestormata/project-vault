@@ -263,7 +263,7 @@ export async function authenticateRequest(
   }
 }
 
-export default fp(async (fastify) => {
+export default fp((fastify) => {
   // Story 23.11 AC2/AC9 — opens the ambient request-context box for every request, before any
   // preHandler (including `authenticate` itself) ever runs. See request-context.ts's module
   // docstring for why this two-phase (open-early, mutate-later) shape is required rather than a
@@ -272,4 +272,5 @@ export default fp(async (fastify) => {
   fastify.decorate('authenticate', (request: FastifyRequest, reply: FastifyReply) =>
     authenticateRequest(fastify as unknown as JwtVerifier, request, reply)
   )
+  return Promise.resolve()
 })

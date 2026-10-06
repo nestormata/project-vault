@@ -17,7 +17,11 @@ import type { EncryptedValue } from './types.js'
 const IV_BYTES = 12 // 96-bit IV — GCM recommended size
 const VERSION = 1 // ciphertext format version — increment on algorithm change
 
-export async function encrypt(plaintext: Buffer, key: Buffer): Promise<EncryptedValue> {
+export function encrypt(plaintext: Buffer, key: Buffer): Promise<EncryptedValue> {
+  return Promise.resolve().then(() => encryptSync(plaintext, key))
+}
+
+function encryptSync(plaintext: Buffer, key: Buffer): EncryptedValue {
   if (key.length !== 32) throw new Error(`aes.encrypt: key must be 32 bytes, got ${key.length}`)
   const iv = randomBytes(IV_BYTES)
   const cipher = createCipheriv('aes-256-gcm', key, iv)
@@ -32,7 +36,11 @@ export async function encrypt(plaintext: Buffer, key: Buffer): Promise<Encrypted
 }
 
 // Internal only — callers outside packages/crypto must use withSecret()
-export async function decrypt(encrypted: EncryptedValue, key: Buffer): Promise<Buffer> {
+export function decrypt(encrypted: EncryptedValue, key: Buffer): Promise<Buffer> {
+  return Promise.resolve().then(() => decryptSync(encrypted, key))
+}
+
+function decryptSync(encrypted: EncryptedValue, key: Buffer): Buffer {
   if (encrypted.version !== VERSION) {
     throw new Error(
       `aes.decrypt: unsupported version ${encrypted.version}; only version ${VERSION} supported`

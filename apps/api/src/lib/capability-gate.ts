@@ -285,7 +285,10 @@ async function invokeGateWithTimeout(
   context: CapabilityGateContext,
   timeoutMs: number
 ): Promise<{ decision: CapabilityDecision } | { timedOut: true } | { error: unknown }> {
-  const raced = await raceWithTimeout(async () => gate.onCheckCapability(context), timeoutMs)
+  const raced = await raceWithTimeout(
+    () => Promise.resolve().then(() => gate.onCheckCapability(context)),
+    timeoutMs
+  )
   if (raced.status === 'resolved') return { decision: raced.value }
   if (raced.status === 'timed_out') return { timedOut: true }
   return { error: raced.error }

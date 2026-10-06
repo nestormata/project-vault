@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PutObjectCommand, type S3Client } from '@aws-sdk/client-s3'
 import { env } from '../../config/env.js'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { atomicFileWrite } from './atomic-write.js'
 
 const DEFAULT_STAGING_DIRNAME = 'vault-backup-staging'
@@ -117,23 +118,26 @@ export async function stageAndUploadToS3(params: {
 
   let lastError: unknown
   let attempts = 0
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+  // Sequential retry: each attempt only starts after the previous one failed (and backed off).
+  const uploadAttempt = async (attempt: number): Promise<void> => {
     attempts = attempt
     try {
       await params.client.send(
         new PutObjectCommand({ Bucket: params.bucket, Key: params.filename, Body: params.data })
       )
       lastError = undefined
-      break
+      return
     } catch (error) {
       lastError = error
-      if (attempt === MAX_ATTEMPTS || !isRetryableS3Error(error)) break
+      if (attempt === MAX_ATTEMPTS || !isRetryableS3Error(error)) return
       const backoff = BACKOFF_MS[attempt - 1]
       if (backoff !== undefined) {
         await sleep(backoff)
       }
     }
+    return uploadAttempt(attempt + 1)
   }
+  await uploadAttempt(1)
 
   if (lastError) {
     // AC-15: retries exhausted or a non-retryable error hit immediately — leave the staged file
@@ -191,13 +195,13 @@ export async function cleanupOrphanedStagedFiles(
 
   let deleted = 0
   const now = Date.now()
-  for (const entry of entries) {
-    if (!entry.endsWith(STAGED_SUFFIX)) continue
+  await forEachSequential(entries, async (entry) => {
+    if (!entry.endsWith(STAGED_SUFFIX)) return
     const entryPath = join(stagingPath, entry)
     try {
       // eslint-disable-next-line security/detect-non-literal-fs-filename -- entryPath is derived from a readdir() listing of the operator-configured staging path, never user input.
       const stats = await stat(entryPath)
-      if (now - stats.mtimeMs <= ORPHAN_MAX_AGE_MS) continue
+      if (now - stats.mtimeMs <= ORPHAN_MAX_AGE_MS) return
       // eslint-disable-next-line security/detect-non-literal-fs-filename -- see comment above.
       await unlink(entryPath)
       deleted += 1
@@ -205,10 +209,10 @@ export async function cleanupOrphanedStagedFiles(
       // D3.10 (adversarial review, medium): two overlapping hourly ticks racing to delete the
       // same aged file — the second unlink's ENOENT is expected, not an error; any other error
       // (permission, I/O) is still surfaced.
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
       throw error
     }
-  }
+  })
   return { deleted }
 }
 
@@ -231,17 +235,17 @@ export async function stagingDirectoryUsage(
 
   let totalBytes = 0
   let fileCount = 0
-  for (const entry of entries) {
-    if (!entry.endsWith(STAGED_SUFFIX)) continue
+  await forEachSequential(entries, async (entry) => {
+    if (!entry.endsWith(STAGED_SUFFIX)) return
     try {
       // eslint-disable-next-line security/detect-non-literal-fs-filename -- see cleanupOrphanedStagedFiles() comment above.
       const stats = await stat(join(stagingPath, entry))
       totalBytes += stats.size
       fileCount += 1
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
       throw error
     }
-  }
+  })
   return { totalBytes, fileCount }
 }

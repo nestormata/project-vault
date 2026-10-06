@@ -99,7 +99,7 @@ async function handleDomainLookup(request: FastifyRequest, reply: FastifyReply):
   }
 }
 
-export async function domainLookupRoutes(fastify: FastifyApp): Promise<void> {
+export function domainLookupRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/domain-lookup',
@@ -124,4 +124,5 @@ export async function domainLookupRoutes(fastify: FastifyApp): Promise<void> {
     },
     handler: async (_ctx, request, reply) => handleDomainLookup(request, reply),
   })
+  return Promise.resolve()
 }

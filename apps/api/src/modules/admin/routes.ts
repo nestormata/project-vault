@@ -18,7 +18,7 @@ const TEST_PAYLOAD = {
   ipAddress: '203.0.113.1',
 }
 
-export async function adminRoutes(fastify: FastifyApp): Promise<void> {
+export function adminRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/notifications/test',
@@ -39,6 +39,7 @@ export async function adminRoutes(fastify: FastifyApp): Promise<void> {
       return { email, slack }
     },
   })
+  return Promise.resolve()
 }
 
 async function testEmailDelivery(): Promise<'delivered' | 'failed' | 'not_configured'> {

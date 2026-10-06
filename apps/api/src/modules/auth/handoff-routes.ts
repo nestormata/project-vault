@@ -579,7 +579,7 @@ async function handleConfirm(
   }
 }
 
-export async function handoffRoutes(fastify: FastifyApp): Promise<void> {
+export function handoffRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/prepare',
@@ -618,4 +618,5 @@ export async function handoffRoutes(fastify: FastifyApp): Promise<void> {
     },
     handler: async (_ctx, request, reply) => handleExchangeClaim(request, reply),
   })
+  return Promise.resolve()
 }

@@ -19,7 +19,7 @@ const usersMeResponseSchema = z.object({
   }),
 })
 
-export async function usersRoutes(fastify: FastifyApp): Promise<void> {
+export function usersRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/me',
@@ -120,4 +120,5 @@ export async function usersRoutes(fastify: FastifyApp): Promise<void> {
       return { data: { locale: updated.locale as 'en' | 'es' } }
     },
   })
+  return Promise.resolve()
 }

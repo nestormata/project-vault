@@ -1,6 +1,7 @@
 import { PgBoss } from 'pg-boss'
 import type { WorkConcurrencyOptions } from 'pg-boss'
 import { pgBossConnectionOptions } from '@project-vault/db/pg-tls'
+import { forEachSequential } from './for-each-sequential.js'
 
 type BossSendOptions = {
   retryLimit?: number
@@ -86,10 +87,11 @@ export class BossService {
   async registerSchedules(schedules: Record<string, { cron: string }>): Promise<void> {
     if (!this.#boss) throw new Error(BOSS_NOT_STARTED_ERROR)
     if (!this.#boss.schedule) throw new Error('BossService schedule API unavailable')
-    for (const [name, { cron }] of Object.entries(schedules)) {
+    const boss = this.#boss
+    await forEachSequential(Object.entries(schedules), async ([name, { cron }]) => {
       await this.ensureQueue(name)
-      await this.#boss.schedule(name, cron, null, { tz: 'UTC' })
-    }
+      await boss.schedule?.(name, cron, null, { tz: 'UTC' })
+    })
   }
 
   /**
@@ -130,13 +132,11 @@ export class BossService {
   }
 
   async registerWorkers(handlers: Record<string, WorkerRegistration>): Promise<void> {
-    for (const [name, registration] of Object.entries(handlers)) {
-      if (typeof registration === 'function') {
-        await this.registerWorker(name, registration)
-        continue
-      }
-      await this.registerWorker(name, registration.handler, registration.options)
-    }
+    await forEachSequential(Object.entries(handlers), ([name, registration]) =>
+      typeof registration === 'function'
+        ? this.registerWorker(name, registration)
+        : this.registerWorker(name, registration.handler, registration.options)
+    )
   }
 }
 

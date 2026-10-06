@@ -60,7 +60,7 @@ export function observeHttpMetrics(req: FastifyRequest, reply: FastifyReply): vo
   )
 }
 
-export async function metricsRoutes(
+export function metricsRoutes(
   fastify: FastifyApp,
   options: { metricsBindHost: string }
 ): Promise<void> {
@@ -75,4 +75,5 @@ export async function metricsRoutes(
     const metrics = await register.metrics()
     return reply.header('Content-Type', register.contentType).send(metrics)
   })
+  return Promise.resolve()
 }

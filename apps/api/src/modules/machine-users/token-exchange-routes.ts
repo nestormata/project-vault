@@ -40,7 +40,7 @@ type MachineJwtSignFastify = {
 // per-IP budget, distinct from the per-key-hash budget enforced manually inside the handler.
 const IP_RATE_LIMIT = { max: 20, timeWindowMs: 60_000, key: 'POST /api/v1/auth/machine-token' }
 
-export async function machineTokenExchangeRoutes(fastify: FastifyApp): Promise<void> {
+export function machineTokenExchangeRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/machine-token',
@@ -114,4 +114,5 @@ export async function machineTokenExchangeRoutes(fastify: FastifyApp): Promise<v
       }
     },
   })
+  return Promise.resolve()
 }

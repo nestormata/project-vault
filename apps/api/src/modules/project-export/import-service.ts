@@ -16,6 +16,7 @@ import {
   HKDF_INFO,
   type EncryptedValue,
 } from '@project-vault/crypto'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { encryptValue } from '../../lib/encrypt-value.js'
 import type { SecureRouteContext } from '../../lib/secure-route.js'
 import { currentKeyVersion } from '../credentials/db-helpers.js'
@@ -130,7 +131,7 @@ async function insertCredentialVersions(
 ): Promise<string | null> {
   const { tx, auth } = target
   let currentVersionId: string | null = null
-  for (const version of credential.versions) {
+  await forEachSequential(credential.versions, async (version) => {
     const encryptedValue = version.value !== null ? await encryptValue(version.value) : null
     const [versionRow] = await tx
       .insert(credentialVersions)
@@ -149,7 +150,7 @@ async function insertCredentialVersions(
     if (!versionRow) throw new Error('importProjectBundle: version insert returned no row')
     newVersionIdByKey.set(`${credentialIndex}:${version.versionNumber}`, versionRow.id)
     if (credential.currentVersionNumber === version.versionNumber) currentVersionId = versionRow.id
-  }
+  })
   return currentVersionId
 }
 
@@ -167,7 +168,7 @@ async function insertCredentialsAndVersions(
   const newCredentialIds: string[] = []
   const newVersionIdByKey = new Map<string, string>()
 
-  for (const credential of bundle.credentials) {
+  await forEachSequential(bundle.credentials, async (credential) => {
     const [row] = await tx
       .insert(credentials)
       .values({
@@ -199,7 +200,7 @@ async function insertCredentialsAndVersions(
     if (currentVersionId) {
       await tx.update(credentials).set({ currentVersionId }).where(eq(credentials.id, row.id))
     }
-  }
+  })
 
   return { newCredentialIds, newVersionIdByKey }
 }
@@ -296,15 +297,15 @@ async function insertOneRotation(
   )
 }
 
-async function insertRotations(
+function insertRotations(
   target: ImportTarget,
   bundle: ExportBundle,
   newCredentialIds: string[],
   newVersionIdByKey: Map<string, string>
 ): Promise<void> {
-  for (const rotation of bundle.rotations) {
-    await insertOneRotation(target, rotation, newCredentialIds, newVersionIdByKey)
-  }
+  return forEachSequential(bundle.rotations, (rotation) =>
+    insertOneRotation(target, rotation, newCredentialIds, newVersionIdByKey)
+  )
 }
 
 async function insertCertAndDomainRecords(
@@ -350,7 +351,7 @@ async function insertServiceEndpointsAndStatusPage(
 ): Promise<void> {
   const { tx, auth, projectId } = target
   const newServiceIds: string[] = []
-  for (const s of bundle.serviceEndpoints) {
+  await forEachSequential(bundle.serviceEndpoints, async (s) => {
     const [row] = await tx
       .insert(serviceEndpoints)
       .values({
@@ -365,7 +366,7 @@ async function insertServiceEndpointsAndStatusPage(
       .returning()
     if (!row) throw new Error('importProjectBundle: service endpoint insert returned no row')
     newServiceIds.push(row.id)
-  }
+  })
 
   const statusPage = bundle.statusPages[0]
   if (!statusPage || newServiceIds.length === 0) return

@@ -15,6 +15,7 @@ import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseBody, parseParams, validationError } from '../../lib/route-helpers.js'
 import { secureRoute, roleRank, type SecureRouteContext } from '../../lib/secure-route.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 import type { OrgRole } from '../../plugins/require-org-role.js'
 import { revokeAllUserSessionsInOrg } from '../auth/session-revoke.js'
 import { sendAdminRecoveryLink } from '../auth/recovery.js'
@@ -295,7 +296,7 @@ async function guardTargetRotations(
   return null
 }
 
-export async function orgRoutes(fastify: FastifyApp): Promise<void> {
+export function orgRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/security-alerts',
@@ -527,8 +528,8 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
         orgId: secureCtx.auth.orgId,
         userId: params.userId,
       })
-      for (const share of revokedShares) {
-        await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
+      await forEachSequential(revokedShares, (share) =>
+        writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
           resourceType: 'credential_share',
           orgId: secureCtx.auth.orgId,
           actorUserId: secureCtx.auth.userId,
@@ -541,7 +542,7 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
           },
           request: req,
         })
-      }
+      )
 
       await writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
         resourceType: 'org_membership',
@@ -1052,4 +1053,5 @@ export async function orgRoutes(fastify: FastifyApp): Promise<void> {
       }
     },
   })
+  return Promise.resolve()
 }
