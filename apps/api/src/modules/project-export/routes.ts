@@ -214,6 +214,7 @@ export function projectExportRoutes(fastify: FastifyApp): Promise<void> {
         actorUserId: secureCtx.auth.userId,
         eventType: AuditEvent.PROJECT_EXPORT_CREATED,
         resourceId: project.id,
+        projectId: project.id,
         payload: counts,
         request: req,
       })
@@ -263,11 +264,12 @@ export function projectExportRoutes(fastify: FastifyApp): Promise<void> {
       // with no audit entry at all.
       const auditImportFailed = (reason: string): Promise<void> =>
         writeHumanAuditEntryOrFailClosed(secureCtx.tx, {
-          resourceType: 'project',
+          // Story 62-1 (F8): no project exists for a failed import; the acting user is already
+          // recorded as the actor, so no resourceId/projectId (never the user id as a resource).
+          resourceType: 'project_import',
           orgId: secureCtx.auth.orgId,
           actorUserId: secureCtx.auth.userId,
           eventType: AuditEvent.PROJECT_IMPORT_FAILED,
-          resourceId: secureCtx.auth.userId,
           payload: { reason },
           request: req,
         })
@@ -329,6 +331,7 @@ export function projectExportRoutes(fastify: FastifyApp): Promise<void> {
         actorUserId: secureCtx.auth.userId,
         eventType: AuditEvent.PROJECT_IMPORT_COMPLETED,
         resourceId: result.projectId,
+        projectId: result.projectId,
         payload: result.counts,
         request: req,
       })

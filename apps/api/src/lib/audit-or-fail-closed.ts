@@ -84,6 +84,8 @@ export type SameTransactionAuditInput = {
   eventType: string
   resourceId?: string
   resourceType: string
+  // Story 62-1 — see HumanAuditFields.projectId.
+  projectId?: string
   payload: Record<string, unknown>
   // Story 13.3 — see HumanAuditFields.revealedFields.
   revealedFields?: string[]
@@ -107,6 +109,7 @@ export async function writeHumanAuditEntryOrFailClosed(
       eventType: input.eventType,
       resourceId: input.resourceId,
       resourceType: input.resourceType,
+      projectId: input.projectId,
       payload: input.payload,
       revealedFields: input.revealedFields,
       meta: {

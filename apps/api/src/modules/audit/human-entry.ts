@@ -16,6 +16,9 @@ export type HumanAuditFields = {
   eventType: string
   resourceId?: string
   resourceType?: string
+  // Story 62-1: optional `audit_log_entries.project_id` scope. Stays OUTSIDE the HMAC digest (D1).
+  // Callers that omit it keep writing NULL.
+  projectId?: string
   payload: Record<string, unknown>
   // Story 13.3 — which field key(s) a CREDENTIAL_VALUE_REVEALED event actually revealed, as a
   // first-class `audit_log_entries.revealed_fields` column, separate from `payload`'s per-event
@@ -61,6 +64,7 @@ export async function writeHumanAuditEntry(tx: Tx, fields: HumanAuditFields): Pr
     eventType: fields.eventType,
     resourceId: fields.resourceId,
     resourceType: fields.resourceType,
+    projectId: fields.projectId,
     payload: fields.payload,
     keyVersion,
     hmac,
