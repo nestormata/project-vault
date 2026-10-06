@@ -20,7 +20,5 @@ export function firstResultSequential<T, R>(
   if (start >= items.length) return Promise.resolve(undefined)
   return Promise.resolve()
     .then(() => fn(items.at(start) as T, start))
-    .then((result) =>
-      result === null || result === undefined ? firstResultSequential(items, fn, start + 1) : result
-    )
+    .then((result) => result ?? firstResultSequential(items, fn, start + 1))
 }
