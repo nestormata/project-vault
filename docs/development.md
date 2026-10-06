@@ -100,6 +100,13 @@ before failing, so the cause is in the output.
 - The filter is a regex over the file path: `SPEC=j1` also runs `j10-…` through `j19-…`. Use the
   full path, or at least the prefix with its dash (`SPEC=j1-`).
 - A `SPEC` that matches nothing fails with Playwright's `No tests found`.
+- Isolated-stack journeys (j19-j27, for example j26) boot the API on the host with `tsx`, so the
+  workspace packages it imports need a built `dist/`, which `make e2e` does not build (the docker
+  stack builds its own). In a fresh checkout or worktree run `pnpm turbo build` first, or at least
+  `shared`, `extension-api`, `crypto`, then `db` (`db` needs `crypto` built); j25 and j27 also need
+  `fixtures/mock-ui-panel-extension` built. Without it the child dies before `/health` with
+  `ERR_MODULE_NOT_FOUND ... @project-vault/db/dist/index.js` and no `startup.failed` line (a missing
+  fixture build instead gives `extensions_status: "load_failed"` on `/health`).
 - Stack already up and you only want to re-run a spec, without a rebuild: from the repo root, with
   the worktree's `DB_HOST_PORT` / `API_HOST_PORT` / `WEB_HOST_PORT` set in your shell and
   `E2E_CONFIRM_DB_RESET=true`:
