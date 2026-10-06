@@ -31,8 +31,9 @@ export function run(args: readonly string[], io: Io = STD_IO): number {
     io.out(`${formatTable(result.rows)}\n\n${formatUsesTable(result.uses)}\n`)
   }
   if (result.oversize.length > 0 && !OVERSIZE_ENFORCEMENT) {
+    const oversizeLines = result.oversize.map((line) => '  ' + line).join('\n')
     io.out(
-      `check-route-regions: ${result.oversize.length} OVERSIZE region components (report-only until stories ${OVERSIZE_FOLLOW_UP_STORIES.join(', ')} split them):\n${result.oversize.map((line) => `  ${line}`).join('\n')}\n`
+      `check-route-regions: ${result.oversize.length} OVERSIZE region components (report-only until stories ${OVERSIZE_FOLLOW_UP_STORIES.join(', ')} split them):\n${oversizeLines}\n`
     )
   }
   if (problems.length === 0) {
