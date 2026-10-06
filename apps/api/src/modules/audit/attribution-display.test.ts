@@ -201,6 +201,9 @@ describe('isValidActorFilter', () => {
     [{ actorProvider: 'p', actorSubject: 's'.repeat(257) }, false],
     [{ actorProvider: 'p'.repeat(65), actorSubject: 's' }, false],
     [{ actorId: 'u', actorProvider: 'p', actorSubject: 's' }, false],
+    [{ actorProvider: 'p', actorSubject: 'a\u0000b' }, false],
+    [{ actorProvider: 'p', actorSubject: 'a\ud800b' }, false],
+    [{ actorProvider: 'p\u202e', actorSubject: 's' }, false],
   ])('%j -> %s', (input, expected) => {
     expect(isValidActorFilter(input)).toBe(expected)
   })

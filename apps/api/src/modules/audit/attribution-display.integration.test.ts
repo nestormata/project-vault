@@ -350,6 +350,10 @@ describe('AC-2 provider + subject filter', () => {
     ['empty subject', { actorProvider: PROVIDER, actorSubject: '' }],
     ['subject over 256', { actorProvider: PROVIDER, actorSubject: 'a'.repeat(257) }],
     [
+      'subject with NUL (jsonb cannot hold it)',
+      { actorProvider: PROVIDER, actorSubject: 'a\u0000b' },
+    ],
+    [
       'actorId with provider and subject',
       { actorId: randomUUID(), actorProvider: PROVIDER, actorSubject: 'x' },
     ],

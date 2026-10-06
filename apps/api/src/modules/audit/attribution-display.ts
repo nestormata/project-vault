@@ -32,6 +32,13 @@ const UNSAFE_RANGES: readonly (readonly [number, number])[] = [
   [0x200b, 0x200f],
   [0x202a, 0x202e],
   [0x2066, 0x2069],
+  // Other invisible or line-breaking marks that can hide or spoof text, plus lone surrogates (never
+  // valid in jsonb, so a filter value holding one would otherwise fail the query with a 500).
+  [0x061c, 0x061c],
+  [0x2028, 0x2029],
+  [0x2060, 0x2064],
+  [0xd800, 0xdfff],
+  [0xfeff, 0xfeff],
 ]
 
 function hasUnsafeCodePoint(value: string): boolean {
@@ -129,10 +136,10 @@ export function isValidActorFilter(input: {
   if (actorProvider === undefined && actorSubject === undefined) return true
   if (actorProvider === undefined || actorSubject === undefined) return false
   if (actorId !== undefined) return false
+  // The same safety rule as the reader: a value the parser would reject can never match a row, and
+  // NUL or a lone surrogate would make the jsonb cast fail (500), so both answer 422 instead.
   return (
-    actorProvider.length > 0 &&
-    actorProvider.length <= ATTRIBUTION_PROVIDER_MAX_CHARS &&
-    actorSubject.length > 0 &&
-    actorSubject.length <= ATTRIBUTION_SUBJECT_MAX_CHARS
+    isSafeExternalText(actorProvider, ATTRIBUTION_PROVIDER_MAX_CHARS) &&
+    isSafeExternalText(actorSubject, ATTRIBUTION_SUBJECT_MAX_CHARS)
   )
 }
