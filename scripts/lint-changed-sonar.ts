@@ -161,7 +161,10 @@ function collectChanges(root: string, mergeBase: string): ChangeSet {
 
 /** The `include` entries of a tsconfig (comments tolerated), or `null` when it has none. */
 function tsconfigIncludes(tsconfigText: string): string[] | null {
-  const withoutComments = tsconfigText.replaceAll(/^\s*\/\/.*$/gm, '')
+  const withoutComments = tsconfigText
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('//'))
+    .join('\n')
   const keyAt = withoutComments.indexOf('"include"')
   if (keyAt === -1) return null
   let cursor = keyAt + '"include"'.length
