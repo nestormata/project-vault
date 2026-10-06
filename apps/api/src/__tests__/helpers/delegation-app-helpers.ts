@@ -43,9 +43,9 @@ export async function bootDelegatedApp(options: DelegatedBootOptions = {}) {
   const { loadedApiRoutesState } = await import('./secure-route-stubs.js')
   const routes = options.routes ?? [{ url: DELEGATED_URL }]
   const seen: Array<Record<string, unknown>> = []
-  const handler = async (ctx: Record<string, unknown>) => {
+  const handler = (ctx: Record<string, unknown>) => {
     seen.push(ctx)
-    return { ok: true }
+    return Promise.resolve({ ok: true })
   }
   const app = Fastify({
     logger: options.logStream ? { level: 'debug', stream: options.logStream } : false,
@@ -126,7 +126,7 @@ function authorizationFor(call: DelegatedCall, raw: string | undefined): string 
   return `PV-Delegation ${token}`
 }
 
-export async function callDelegated(app: FastifyInstance, call: DelegatedCall) {
+export function callDelegated(app: FastifyInstance, call: DelegatedCall) {
   const raw = rawBodyOf(call.body)
   const authorization = authorizationFor(call, raw)
   return app.inject({

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { normalizeIP } from '@fastify/rate-limit'
 import { errorCodes } from 'fastify'
-import type { FastifyReply, FastifyRequest } from 'fastify'
+import type { FastifyReply, FastifyRequest, HookHandlerDoneFunction } from 'fastify'
 import {
   DELEGATION_REASON_TO_OUTCOME,
   isPreSignatureRejection,
@@ -466,24 +466,24 @@ async function afterVerification(
  * with no kid, and neither the verifier nor the database is reached.
  */
 export function delegationIpLimitStage() {
-  return async (
-    request: FastifyRequest,
-    reply: FastifyReply
-  ): Promise<FastifyReply | undefined> => {
+  // Callback style on purpose: a `FastifyReply` is a thenable, so returning it through a promise
+  // would unwrap it. A sent reply stops the chain; `done()` after `send` is a no-op for Fastify.
+  return (request: FastifyRequest, reply: FastifyReply, done: HookHandlerDoneFunction): void => {
     const decision = consumeUserRateLimit({
       ...delegationIpBucket(request.ip),
       ...DELEGATION_IP_RATE_LIMIT,
       bounded: true,
     })
-    if (decision.allowed) return undefined
-    answered.add(request)
-    recordDelegationOutcome('rate_limited_pre')
-    reply.header('retry-after', String(decision.retryAfter)).status(429).send({
-      code: 'rate_limit_exceeded',
-      message: 'Too many requests',
-      retryAfter: decision.retryAfter,
-    })
-    return reply
+    if (!decision.allowed) {
+      answered.add(request)
+      recordDelegationOutcome('rate_limited_pre')
+      reply.header('retry-after', String(decision.retryAfter)).status(429).send({
+        code: 'rate_limit_exceeded',
+        message: 'Too many requests',
+        retryAfter: decision.retryAfter,
+      })
+    }
+    done()
   }
 }
 
