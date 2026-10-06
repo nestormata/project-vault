@@ -273,4 +273,48 @@ describe('GlobalSearch', () => {
     await fireEvent.input(screen.getByLabelText('Search'), { target: { value: 'stripe' } })
     await vi.waitFor(() => expect(screen.getByText(/No results for "stripe"/i)).toBeTruthy())
   })
+
+  // Story 61.3 — the search wrapper used to inject the superseded request's signal into the
+  // shared session refresh, so typing again while it was pending cancelled it and logged out a
+  // still-valid session.
+  it('typing again while a 401 refresh is pending does not abort the refresh or sign the user out', async () => {
+    vi.useFakeTimers()
+    const refreshInits: Array<RequestInit | undefined> = []
+    let finishRefresh: (response: Response) => void = () => {}
+    let searchCalls = 0
+    installSearchFetchMock((url, init) => {
+      if (String(url) === '/api/v1/auth/refresh') {
+        refreshInits.push(init)
+        return new Promise<Response>((resolve) => {
+          finishRefresh = resolve
+        })
+      }
+      searchCalls += 1
+      if (searchCalls === 1) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ code: 'access_token_missing', message: 'missing' }), {
+            status: 401,
+          })
+        )
+      }
+      return Promise.resolve(searchResponse([credentialResult]))
+    })
+    render(GlobalSearch, { props: { open: true } })
+    const input = screen.getByLabelText('Search')
+    await fireEvent.input(input, { target: { value: 'first' } })
+    await vi.advanceTimersByTimeAsync(200)
+    expect(refreshInits).toHaveLength(1)
+    await fireEvent.input(input, { target: { value: 'second' } })
+    await vi.advanceTimersByTimeAsync(200)
+    finishRefresh(
+      new Response(JSON.stringify({ data: { expiresAt: '2026-10-06T02:00:00.000Z' } }), {
+        status: 200,
+      })
+    )
+    vi.useRealTimers()
+
+    await vi.waitFor(() => expect(screen.getByText('Payments')).toBeTruthy())
+    expect(refreshInits[0]).not.toHaveProperty('signal')
+    expect(gotoMock).not.toHaveBeenCalled()
+  })
 })

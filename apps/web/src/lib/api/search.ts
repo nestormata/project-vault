@@ -34,10 +34,12 @@ export type SearchResponse = {
 
 export function globalSearch(
   fetchFn: typeof fetch,
-  params: { q: string; limit?: number; types?: string }
+  params: { q: string; limit?: number; types?: string; signal?: AbortSignal }
 ) {
   const search = new URLSearchParams({ q: params.q })
   if (params.limit !== undefined) search.set('limit', String(params.limit))
   if (params.types) search.set('types', params.types)
-  return apiFetch<SearchResponse>(fetchFn, `/api/v1/search?${search.toString()}`)
+  return apiFetch<SearchResponse>(fetchFn, `/api/v1/search?${search.toString()}`, {
+    signal: params.signal,
+  })
 }

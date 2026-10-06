@@ -66,7 +66,7 @@ function canReplayRequestBody(body: RequestInit['body']): boolean {
   return body === undefined || body === null || typeof body === 'string'
 }
 
-let refreshInFlight: Promise<boolean> | null = null
+let refreshInFlight: Promise<RefreshOutcome> | null = null
 // Guards against every concurrent apiFetch call independently redirecting when a shared refresh
 // fails — SvelteKit fires several requests per navigation (see isRefreshableAccessError), so
 // without this a single dead session can trigger the same goto() many times over.
@@ -89,25 +89,33 @@ function redirectToSessionExpired(): void {
   void goto(`${resolve('/login')}?reason=session-expired`).then(reset, reset)
 }
 
-function performRefreshRequest(fetchFn: typeof fetch, signal?: AbortSignal): Promise<boolean> {
-  return (async () => {
+// Story 61.3 — the refresh answers one of three things. Only a server rejection means the session
+// is dead; a network error, an abort or any other answer leaves its state unknown, so callers must
+// not redirect to login on `unavailable`.
+type RefreshOutcome = 'refreshed' | 'rejected' | 'unavailable'
+
+// Never rejects: every failure is classified. No caller signal is accepted on purpose — the
+// refresh is shared by every concurrent caller and must run to completion whatever any single
+// caller (a superseded search, an unmounted page) does; an aborting caller simply stops waiting.
+function performRefreshRequest(fetchFn: typeof fetch): Promise<RefreshOutcome> {
+  return (async (): Promise<RefreshOutcome> => {
     try {
       const response = await fetchFn('/api/v1/auth/refresh', {
         method: 'POST',
         credentials: 'include',
         headers: {},
-        ...(signal ? { signal } : {}),
       })
-      if (!response.ok) return false
-      await parseApiEnvelope<{ expiresAt: string }>(response)
-      return true
+      if (response.status === 401 || response.status === 403) return 'rejected'
+      if (!response.ok) return 'unavailable'
+      await response.json()
+      return 'refreshed'
     } catch {
-      return false
+      return 'unavailable'
     }
   })()
 }
 
-function refreshAccessSession(fetchFn: typeof fetch, signal?: AbortSignal): Promise<boolean> {
+function refreshAccessSession(fetchFn: typeof fetch): Promise<RefreshOutcome> {
   // `refreshInFlight`'s single-flight de-dup is deliberately browser-only. In a browser tab the
   // module instance is scoped to that one session, so sharing it across concurrent apiFetch calls
   // is safe. During SSR, one Node process module instance serves many different users' concurrent
@@ -117,21 +125,19 @@ function refreshAccessSession(fetchFn: typeof fetch, signal?: AbortSignal): Prom
   // `/api/v1/auth/refresh` calls this can cause within a single request are safe, thanks to the
   // server's 30-second rotation grace window — a second refresh call just
   // re-issues the same already-rotated tokens idempotently.
-  if (!browser) return performRefreshRequest(fetchFn, signal)
+  if (!browser) return performRefreshRequest(fetchFn)
 
   if (refreshInFlight) return refreshInFlight
 
-  const refreshPromise = performRefreshRequest(fetchFn, signal)
+  const refreshPromise = performRefreshRequest(fetchFn)
 
   refreshInFlight = refreshPromise
-  void refreshPromise.then(
-    () => {
-      if (refreshInFlight === refreshPromise) refreshInFlight = null
-    },
-    () => {
-      if (refreshInFlight === refreshPromise) refreshInFlight = null
-    }
-  )
+  // performRefreshRequest never rejects, but keep the cleanup rejection-safe so a future change
+  // cannot wedge the single-flight slot.
+  const clear = () => {
+    if (refreshInFlight === refreshPromise) refreshInFlight = null
+  }
+  void refreshPromise.then(clear, clear)
   return refreshPromise
 }
 
@@ -181,8 +187,15 @@ export async function apiFetch<T>(
       // session itself is still good — don't treat it as a session-expiry signal.
       throw error
     }
-    if (!(await refreshAccessSession(fetchFn, init.signal ?? undefined))) {
-      // The refresh token itself is gone/expired — this is a genuinely dead session, not a
+    const outcome = await refreshAccessSession(fetchFn)
+    if (outcome === 'unavailable') {
+      // A network error, abort or non-auth failure of the refresh endpoint says nothing about the
+      // refresh token: stay signed in, surface the original error, and let the next user action
+      // retry (the access token is still missing, so it refreshes again).
+      throw error
+    }
+    if (outcome === 'rejected') {
+      // The server rejected the refresh token (401/403) — a genuinely dead session, not a
       // rotation race (see isRefreshableAccessError). Nothing short of a fresh login can recover
       // it, so send the user there instead of leaving the page stuck on a swallowed/opaque error.
       if (browser) {
@@ -221,9 +234,11 @@ async function isRefreshableAccessResponse(response: Response): Promise<boolean>
  * it joins the shared single-flight refreshAccessSession() and, if that succeeds, retries exactly
  * once with a freshly built RequestInit. `buildInit` is a factory because the refresh rotates the
  * CSRF cookie: the retry must re-read it rather than replay the first attempt's header. If the
- * refresh fails it triggers the latched redirectToSessionExpired() and returns
- * `{ kind: 'session_expired' }`. Every other response, including a second 401 after a successful
- * refresh (never a loop), is returned untouched; a rejection of either request propagates.
+ * server rejects the refresh (401/403) it triggers the latched redirectToSessionExpired() and
+ * returns `{ kind: 'session_expired' }`; if the refresh is merely unavailable (network error,
+ * abort, 5xx, 429) it returns the original 401 response unchanged, with no redirect. Every other
+ * response, including a second 401 after a successful refresh (never a loop), is returned
+ * untouched; a rejection of either request propagates.
  *
  * The caller's init is passed through as-is (no added credentials/headers), the retry target is
  * always the caller's own `input` (nothing is derived from the response), and during SSR it never
@@ -238,10 +253,13 @@ export async function fetchWithSessionRefresh(
   if (!browser || !(await isRefreshableAccessResponse(response))) {
     return { kind: 'response', response }
   }
-  if (!(await refreshAccessSession(fetchFn))) {
+  const outcome = await refreshAccessSession(fetchFn)
+  if (outcome === 'rejected') {
     redirectToSessionExpired()
     return { kind: 'session_expired' }
   }
+  // `unavailable`: session state unknown, no redirect: hand back the original 401 (only cloned).
+  if (outcome === 'unavailable') return { kind: 'response', response }
   return { kind: 'response', response: await fetchFn(input, buildInit()) }
 }
 
