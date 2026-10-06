@@ -25,7 +25,7 @@ const SHARE_NOT_FOUND = { code: 'share_not_found', message: 'Share not found' } 
 type BossFastify = FastifyApp & { boss?: BossService }
 
 /** AC-12: admin notification on first successful view (never again — AC-5 hard-codes singleUse). */
-async function notifyAdminsOfView(
+function notifyAdminsOfView(
   orgId: string,
   payload: { shareId: string; credentialId: string }
 ): Promise<NotificationQueueJob[]> {
@@ -49,7 +49,7 @@ async function notifyAdminsOfView(
  * functions (Task 1), and every audit/notification write below opens its own short-lived
  * `withOrg` scope rather than sharing one with the read/mutation that produced its inputs.
  */
-export async function externalCredentialShareAccessRoutes(fastify: FastifyApp): Promise<void> {
+export function externalCredentialShareAccessRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/access/:token',
@@ -177,4 +177,5 @@ export async function externalCredentialShareAccessRoutes(fastify: FastifyApp): 
       }
     },
   })
+  return Promise.resolve()
 }

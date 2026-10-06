@@ -95,7 +95,7 @@ function newTokenHandler(
  * exact same `security: {...}` inline-literal shape as settings-routes.ts/orgs-routes.ts
  * (platform-admin-route-audit.test.ts asserts on the literal source text — see route-common.ts).
  */
-export async function statusTokenRoutes(
+export function statusTokenRoutes(
   fastify: FastifyApp,
   options: { dbPool?: DbPool }
 ): Promise<void> {
@@ -208,4 +208,5 @@ export async function statusTokenRoutes(
     handler: async (_ctx: SecureRouteContext | PublicRouteContext, req: FastifyRequest) =>
       runStatusTokenTest(options.dbPool, req.log),
   })
+  return Promise.resolve()
 }

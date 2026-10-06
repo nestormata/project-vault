@@ -11,6 +11,7 @@ import {
   type NotificationSeverity,
 } from '@project-vault/shared'
 import type { z } from 'zod/v4'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 import type { PreferenceItemSchema } from './schema.js'
 
 type PreferenceInput = z.infer<typeof PreferenceItemSchema>
@@ -189,7 +190,7 @@ export async function patchPreferences(
   tx: Tx
 ): Promise<PreferenceOutput[]> {
   await lockPreferenceWriteScope(orgId, userId, tx)
-  for (const item of items) {
+  await forEachSequential(items, async (item) => {
     if (item.channel === 'none') {
       await tx
         .delete(notificationPreferences)
@@ -202,7 +203,7 @@ export async function patchPreferences(
           )
         )
       await upsertPreference(orgId, userId, item, tx)
-      continue
+      return
     }
 
     await tx
@@ -216,7 +217,7 @@ export async function patchPreferences(
         )
       )
     await upsertPreference(orgId, userId, item, tx)
-  }
+  })
 
   return getPreferences(orgId, userId, tx)
 }

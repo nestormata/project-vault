@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { and, eq, lt } from 'drizzle-orm'
 import { OperationalEvent } from '@project-vault/shared'
 import type { Tx } from '@project-vault/db'
@@ -15,20 +16,19 @@ const JOB_NAME = 'credential-shares/expire'
  *  that are never re-accessed by anyone. Org-wide scan (RLS-scoped per org, same shape as
  *  rotation-recover.ts's `findStaleRotations`), `WHERE status = 'active' AND expires_at < now()`.
  */
-async function findDueCandidates(
-  tx: Tx,
-  orgId: string
-): Promise<{ id: string; expiresAt: Date }[]> {
-  return tx
-    .select({ id: credentialShares.id, expiresAt: credentialShares.expiresAt })
-    .from(credentialShares)
-    .where(
-      and(
-        eq(credentialShares.orgId, orgId),
-        eq(credentialShares.status, 'active'),
-        lt(credentialShares.expiresAt, new Date())
+function findDueCandidates(tx: Tx, orgId: string): Promise<{ id: string; expiresAt: Date }[]> {
+  return Promise.resolve(
+    tx
+      .select({ id: credentialShares.id, expiresAt: credentialShares.expiresAt })
+      .from(credentialShares)
+      .where(
+        and(
+          eq(credentialShares.orgId, orgId),
+          eq(credentialShares.status, 'active'),
+          lt(credentialShares.expiresAt, new Date())
+        )
       )
-    )
+  )
 }
 
 /** AC-7: per-candidate-transaction pattern (5.6's rotation-recover.ts/rotation-stale-staged-
@@ -79,10 +79,10 @@ async function sweepOrg(orgId: string, logger?: WorkerLogger): Promise<void> {
   const candidates = await runOrgScopedJob(orgId, JOB_NAME, ({ tx }) =>
     findDueCandidates(tx, orgId)
   )
-  for (const candidate of candidates) {
+  await forEachSequential(candidates, async (candidate) => {
     const expired = await expireOneShare(orgId, candidate.id, logger)
     if (expired) credentialShareExpirySweepTotal.inc()
-  }
+  })
 }
 
 /** `credential-shares/expire` (AC-7) — pg-boss job, registered on an hourly cron
@@ -93,7 +93,7 @@ async function sweepOrg(orgId: string, logger?: WorkerLogger): Promise<void> {
  */
 export async function runCredentialShareExpireJob(logger?: WorkerLogger): Promise<void> {
   const orgIds = await fetchAllOrgIds()
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     try {
       await sweepOrg(orgId, logger)
     } catch (error) {
@@ -107,5 +107,5 @@ export async function runCredentialShareExpireJob(logger?: WorkerLogger): Promis
         )
       }
     }
-  }
+  })
 }

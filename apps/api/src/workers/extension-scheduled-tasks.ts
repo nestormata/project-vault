@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { performance } from 'node:perf_hooks'
 import { sql } from 'drizzle-orm'
 import { extensionScheduledTaskRuns } from '@project-vault/db/schema'
@@ -116,7 +117,7 @@ async function collectDueTuples(
 ): Promise<DueTuple[]> {
   const orgIds = await fetchAllOrgIds()
   const dueTuples: DueTuple[] = []
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     try {
       const dueTaskNames = await fetchDueTaskNames(
         orgId,
@@ -135,7 +136,7 @@ async function collectDueTuples(
         )
       }
     }
-  }
+  })
   return dueTuples
 }
 

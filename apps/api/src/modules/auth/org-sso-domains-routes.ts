@@ -65,7 +65,7 @@ async function writeSsoDomainAuditEntry(
  * CRUD functions — mirrors organization-settings-routes.ts's and org/routes.ts's shape exactly
  * (route-audit.test.ts's thin-routes static scan, AC-12).
  */
-export async function orgSsoDomainsRoutes(fastify: FastifyApp): Promise<void> {
+export function orgSsoDomainsRoutes(fastify: FastifyApp): Promise<void> {
   // AC-1: list, org-scoped via secureCtx.tx's RLS-scoped transaction — never getAdminDb().
   // AC-6/AC-9: the list route is deliberately MFA-gated too (unlike /settings/extensions'
   // read-only status page) — even seeing the org's SSO domain configuration is sensitive enough
@@ -234,6 +234,7 @@ export async function orgSsoDomainsRoutes(fastify: FastifyApp): Promise<void> {
       return { id: row.id }
     },
   })
+  return Promise.resolve()
 }
 
 /** Shared by create/update's validation-failure branch — keeps the status/code/message reply shape in one place. */

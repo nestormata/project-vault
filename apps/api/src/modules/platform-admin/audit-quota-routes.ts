@@ -310,7 +310,7 @@ async function handleSetOrgAuditQuota(
  * `requirePlatformOperator: true` + `requireMfa: true` — never `allowedRoles`, matching every
  * other file in `modules/platform-admin/`.
  */
-export async function auditQuotaRoutes(fastify: FastifyApp): Promise<void> {
+export function auditQuotaRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'PUT',
     url: '/orgs/:orgId/audit-quota',
@@ -336,4 +336,5 @@ export async function auditQuotaRoutes(fastify: FastifyApp): Promise<void> {
     },
     handler: handleSetOrgAuditQuota,
   })
+  return Promise.resolve()
 }

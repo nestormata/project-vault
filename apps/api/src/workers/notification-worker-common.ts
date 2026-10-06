@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { sql } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { withJobLogging } from '../lib/job-logging.js'
@@ -53,7 +54,7 @@ export async function runNotificationCatchup(
   let total = 0
   const { jobName, logMessage } = options
 
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     const staleEntries = await withOrg(orgId, (tx) =>
       tx.execute<{ id: string }>(sql`
         SELECT id::text AS id
@@ -69,7 +70,7 @@ export async function runNotificationCatchup(
         LIMIT 100
       `)
     )
-    for (const entry of staleEntries) {
+    await forEachSequential(staleEntries, async (entry) => {
       await boss.send(
         jobName,
         { notificationQueueId: entry.id, orgId },
@@ -80,8 +81,8 @@ export async function runNotificationCatchup(
         }
       )
       total++
-    }
-  }
+    })
+  })
 
   if (total > 0) {
     logger.warn({ eventType: 'notification.catchup.entries_found', count: total }, logMessage)

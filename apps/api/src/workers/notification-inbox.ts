@@ -160,7 +160,7 @@ export async function listInboxEntryIds(orgId: string, userId: string): Promise<
   return rows.map((row) => row.id)
 }
 
-export async function listInboxEntriesForTest(orgId: string, userId: string) {
+export function listInboxEntriesForTest(orgId: string, userId: string) {
   return withOrgAndUser(orgId, userId, (tx) =>
     tx.select().from(notificationInbox).where(eq(notificationInbox.userId, userId))
   )

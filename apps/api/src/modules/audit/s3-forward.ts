@@ -7,6 +7,7 @@ import type { Tx } from '@project-vault/db'
 import { auditForwardingConfig, auditLogEntries } from '@project-vault/db/schema'
 import { OperationalEvent } from '@project-vault/shared'
 import type { FastifyBaseLogger } from 'fastify'
+import { mapWithConcurrency } from '../../lib/map-with-concurrency.js'
 import { operationalLog } from '../../lib/logger.js'
 import { fetchAllOrgIds, runOrgScopedJob } from '../../middleware/rls.js'
 import { applyForwardingConfigUpdate } from './forwarding-config-update.js'
@@ -67,7 +68,7 @@ export function nextDayToForward(s3LastForwardedDate: string | null): string {
 
 type S3ConfigRow = typeof auditForwardingConfig.$inferSelect
 
-async function fetchDayRows(tx: Tx, orgId: string, day: string) {
+function fetchDayRows(tx: Tx, orgId: string, day: string) {
   const dayStart = new Date(`${day}T00:00:00.000Z`)
   const dayEnd = new Date(`${addUtcDays(day, 1)}T00:00:00.000Z`)
   return tx
@@ -209,7 +210,7 @@ export async function runS3ForwardDaily(
   putObject: S3PutObjectFn = defaultS3PutObject
 ): Promise<void> {
   const orgIds = await fetchAllOrgIds()
-  for (const orgId of orgIds) {
+  await mapWithConcurrency(orgIds, 2, async (orgId) => {
     try {
       await runOrgScopedJob(orgId, 'audit/s3-forward-daily', async ({ tx }) => {
         const [config] = await tx
@@ -231,5 +232,5 @@ export async function runS3ForwardDaily(
         )
       }
     }
-  }
+  })
 }

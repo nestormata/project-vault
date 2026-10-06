@@ -65,7 +65,7 @@ async function handleUpdateSettings(
  * defaults, notification defaults, instance policy). `requireOrgScope: false` +
  * `requirePlatformOperator: true` + `requireMfa: true` — never `allowedRoles`/`requireOrgRole`.
  */
-export async function settingsRoutes(fastify: FastifyApp): Promise<void> {
+export function settingsRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/settings',
@@ -108,4 +108,5 @@ export async function settingsRoutes(fastify: FastifyApp): Promise<void> {
     },
     handler: handleUpdateSettings,
   })
+  return Promise.resolve()
 }

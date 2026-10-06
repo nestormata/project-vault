@@ -264,7 +264,14 @@ const ExtensionNavSchema = z.object({
  * `isUiPanelCapabilityDeclared()` capability-declaration check, at the exact same any-org-member
  * security profile as the panels route itself.
  */
-export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
+export function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
+  return new Promise((resolve) => {
+    registerExtensionPanelRoutes(fastify)
+    resolve()
+  })
+}
+
+function registerExtensionPanelRoutes(fastify: FastifyApp): void {
   secureRoute(fastify, {
     method: 'GET',
     url: '/extensions/panels/:slot',
@@ -449,7 +456,7 @@ export async function extensionPanelRoutes(fastify: FastifyApp): Promise<void> {
       requireAuth: true,
       writeAuditEvent: false,
     },
-    handler: async (_ctx, req: FastifyRequest) => {
+    handler: (_ctx, req: FastifyRequest) => {
       // Story 25.2 AC5: derives the single reported slot from the dynamic known-slots list's
       // first entry, instead of the old KNOWN_UI_PANEL_SLOTS[0] constant reference. Still
       // exactly one slot reported — no per-declared-slot nav enumeration (deferred to 25.8).

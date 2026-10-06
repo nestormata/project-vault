@@ -223,7 +223,7 @@ export async function cliLoginRoutes(fastify: FastifyApp): Promise<void> {
   registerMethodNotAllowed(fastify, '/cli/logout')
 }
 
-async function revokeCliSession(refreshToken: string): Promise<boolean> {
+function revokeCliSession(refreshToken: string): Promise<boolean> {
   const tokenHash = hashRefreshToken(refreshToken)
   return getDb().transaction(async (tx) => {
     // Mirrors service.ts's findRefreshRow() staging: refreshTokens itself carries `orgId` and is

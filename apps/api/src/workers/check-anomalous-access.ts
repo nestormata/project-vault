@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { and, eq, gte, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { securityAlerts } from '@project-vault/db/schema'
@@ -64,7 +65,7 @@ async function findAccessBreachesForOrg(orgId: string, windowStart: Date): Promi
     `)
 
     const breaches: Breach[] = []
-    for (const row of rows) {
+    await forEachSequential(rows, async (row) => {
       // Adversarial-review finding 9: the distinct credential ids revealed in-window, capped at
       // 50 — a best-effort investigative aid, not a complete audit trail.
       const credentialRows = await tx.execute<CredentialIdRow>(sql`
@@ -84,7 +85,7 @@ async function findAccessBreachesForOrg(orgId: string, windowStart: Date): Promi
           .map((r) => r.credential_id)
           .filter((id): id is string => id !== null),
       })
-    }
+    })
     return breaches
   })
 }
@@ -188,12 +189,12 @@ export async function runAnomalousAccessCheck(boss: BossService): Promise<void> 
   // org membership because failed_auth_attempts isn't itself org-scoped.
   const orgIds = await fetchAllOrgIds()
 
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     const breaches = await findAccessBreachesForOrg(orgId, windowStart)
-    for (const breach of breaches) {
+    await forEachSequential(breaches, async (breach) => {
       await createAlertIfNeeded(breach, windowStart, windowEnd, boss)
-    }
-  }
+    })
+  })
 }
 
 export async function checkAnomalousAccessHandler(boss: BossService): Promise<void> {

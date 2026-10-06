@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import type { FastifyBaseLogger } from 'fastify'
 import type { NotificationSeverity } from '@project-vault/shared'
 import { OperationalEvent } from '@project-vault/shared'
@@ -145,7 +146,7 @@ async function processExpiryAlertRow<Row extends ExpiryAlertRow>(
 
   return runOrgScopedJob(orgId, config.jobName, async ({ tx }) => {
     const jobs: NotificationQueueJob[] = []
-    for (const firing of firings) {
+    await forEachSequential(firings, async (firing) => {
       const entries = await createOrgAdminNotificationEntries({
         orgId,
         tx,
@@ -160,7 +161,7 @@ async function processExpiryAlertRow<Row extends ExpiryAlertRow>(
         },
       })
       jobs.push(...entries)
-    }
+    })
     await config.updateNotifiedLeadDays(tx, row.id, nextNotifiedLeadDays)
     return jobs
   })
@@ -181,7 +182,7 @@ export async function runExpiryAlertJob<Row extends ExpiryAlertRow>(
   const orgIds = await fetchAllOrgIds()
   const allJobs: NotificationQueueJob[] = []
 
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     // AC 5 failure isolation: a failure fetching one org's rows (transient DB error, RLS
     // context issue) must not abort the whole job and silently skip every subsequent org's
     // alerts for the day — so the fetch itself is inside the per-org try/catch, not just the
@@ -189,7 +190,7 @@ export async function runExpiryAlertJob<Row extends ExpiryAlertRow>(
     try {
       const rows = await config.fetchRows(orgId)
 
-      for (const row of rows) {
+      await forEachSequential(rows, async (row) => {
         try {
           const jobs = await processExpiryAlertRow(orgId, row, now, config)
           allJobs.push(...jobs)
@@ -209,7 +210,7 @@ export async function runExpiryAlertJob<Row extends ExpiryAlertRow>(
             )
           }
         }
-      }
+      })
     } catch (error) {
       if (logger) {
         operationalLog(
@@ -221,7 +222,7 @@ export async function runExpiryAlertJob<Row extends ExpiryAlertRow>(
         )
       }
     }
-  }
+  })
 
   await sendNotificationJobs(boss, allJobs)
 }

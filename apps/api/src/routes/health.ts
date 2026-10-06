@@ -89,10 +89,7 @@ async function resolveReadyWarnings(dbPool: DbPool): Promise<string[]> {
   }
 }
 
-export async function healthRoutes(
-  fastify: FastifyApp,
-  options: { dbPool?: DbPool }
-): Promise<void> {
+export function healthRoutes(fastify: FastifyApp, options: { dbPool?: DbPool }): Promise<void> {
   fastify.route({
     method: 'GET',
     url: '/health',
@@ -101,7 +98,7 @@ export async function healthRoutes(
         200: HealthResponseSchema,
       },
     },
-    handler: async (_req: FastifyRequest, reply: FastifyReply) => {
+    handler: (_req: FastifyRequest, reply: FastifyReply) => {
       const themesHealth = getThemesHealthField()
       // Story 9.10 AC-1/AC-4: resolved per-request (not cached at module load) so a
       // RELEASE_VERSION set only for tests, or a future hot-reload scenario, is always
@@ -169,4 +166,5 @@ export async function healthRoutes(
       }
     },
   })
+  return Promise.resolve()
 }

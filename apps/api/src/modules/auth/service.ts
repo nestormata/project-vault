@@ -18,6 +18,8 @@ import {
 } from '@project-vault/db/schema'
 import { AuditEvent, OperationalEvent, trimHyphens } from '@project-vault/shared'
 import { AppError } from '../../lib/errors.js'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
+import { mapWithConcurrency } from '../../lib/map-with-concurrency.js'
 import { operationalLog } from '../../lib/logger.js'
 import { isNativeLoginEnabled } from './native-login-policy.js'
 import { env } from '../../config/env.js'
@@ -670,9 +672,8 @@ async function findLoginUser(email: string) {
   if (!user) return []
 
   const orgRows = await getDb().select({ orgId: organizations.id }).from(organizations)
-  const membershipRows = []
-  for (const { orgId } of orgRows) {
-    const memberships = await withOrg(orgId, (tx) =>
+  const perOrgMemberships = await mapWithConcurrency(orgRows, 2, ({ orgId }) =>
+    withOrg(orgId, (tx) =>
       tx
         .select({
           orgId: orgMemberships.orgId,
@@ -682,11 +683,10 @@ async function findLoginUser(email: string) {
         .where(eq(orgMemberships.userId, user.id))
         .limit(1)
     )
-    const membership = memberships[0]
-    if (membership) {
-      membershipRows.push({ ...user, ...membership })
-    }
-  }
+  )
+  const membershipRows = perOrgMemberships.flatMap(([membership]) =>
+    membership ? [{ ...user, ...membership }] : []
+  )
 
   return membershipRows.length ? membershipRows : [{ ...user, orgId: null, membershipStatus: null }]
 }
@@ -796,14 +796,12 @@ export async function createLoginSessionInTx(
   }
 }
 
-async function createLoginSession(
+function createLoginSession(
   user: NonNullable<Awaited<ReturnType<typeof findLoginUser>>[number]>,
   orgId: string,
   meta: RequestMeta
 ): Promise<LoginResult> {
-  return withOrg(orgId, async (tx) => {
-    return createLoginSessionInTx(tx, user, orgId, meta)
-  })
+  return withOrg(orgId, (tx) => createLoginSessionInTx(tx, user, orgId, meta))
 }
 
 function activeSessionPredicate({
@@ -847,15 +845,15 @@ async function enforceMaxSessionsForUser(tx: Tx, userId: string, orgId: string):
   const revokeCount = activeSessionIds.length - env.MAX_SESSIONS_PER_USER + 1
   if (revokeCount <= 0) return
 
-  for (const sessionId of activeSessionIds.slice(0, revokeCount)) {
-    await revokeSessionById(sessionId, {
+  await forEachSequential(activeSessionIds.slice(0, revokeCount), (sessionId) =>
+    revokeSessionById(sessionId, {
       actorUserId: userId,
       scope: 'security',
       tx,
       expectedUserId: userId,
       expectedOrgId: orgId,
     })
-  }
+  )
 }
 
 function normalizeLoginEmail(rawEmail: string, meta: RequestMeta): string {

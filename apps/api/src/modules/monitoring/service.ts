@@ -10,6 +10,7 @@ import {
   monitoringAlerts,
 } from '@project-vault/db/schema'
 import { env } from '../../config/env.js'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { assertUrlIsMonitorable, redactUrlForDisplay } from './url-safety.js'
 import {
   computeStatusTransition,
@@ -755,12 +756,12 @@ export async function cleanupServiceEndpointsForProjectDeletion(
   if (endpoints.length === 0) return { resolvedAlertCount: 0 }
 
   let resolvedAlertCount = 0
-  for (const endpoint of endpoints) {
+  await forEachSequential(endpoints, async (endpoint) => {
     resolvedAlertCount += await resolveMonitoringAlertsForEndpointDeletion(tx, {
       serviceEndpointId: endpoint.id,
       orgId: params.orgId,
     })
-  }
+  })
 
   return { resolvedAlertCount }
 }

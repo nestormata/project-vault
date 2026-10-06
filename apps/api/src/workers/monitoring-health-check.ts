@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { performance } from 'node:perf_hooks'
 import { and, isNull, sql } from 'drizzle-orm'
 import { serviceEndpoints } from '@project-vault/db/schema'
@@ -145,11 +146,11 @@ export async function runWithConcurrencyLimit<T>(
 ): Promise<void> {
   let index = 0
   async function worker(): Promise<void> {
-    while (index < items.length) {
-      const current = items[index]
-      index += 1
-      if (current !== undefined) await fn(current)
-    }
+    if (index >= items.length) return
+    const current = items.at(index)
+    index += 1
+    if (current !== undefined) await fn(current)
+    return worker()
   }
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()))
 }
@@ -273,7 +274,7 @@ export async function runHealthCheckTick(boss: BossService, logger?: WorkerLogge
       const orgIds = await fetchAllOrgIds()
       const allJobs: NotificationQueueJob[] = []
 
-      for (const orgId of orgIds) {
+      await forEachSequential(orgIds, async (orgId) => {
         let dueEndpoints: ServiceEndpointRow[]
         try {
           dueEndpoints = await fetchDueServiceEndpoints(orgId)
@@ -287,7 +288,7 @@ export async function runHealthCheckTick(boss: BossService, logger?: WorkerLogge
               { orgId, err: serializeLogError(error) }
             )
           }
-          continue
+          return
         }
 
         const jobsForOrg: NotificationQueueJob[] = []
@@ -300,7 +301,7 @@ export async function runHealthCheckTick(boss: BossService, logger?: WorkerLogge
           }
         )
         allJobs.push(...jobsForOrg)
-      }
+      })
 
       await sendNotificationJobs(boss, allJobs)
     }

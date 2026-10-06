@@ -16,6 +16,7 @@ import {
   type ImportAction,
   type JsonParseResult,
 } from '@project-vault/shared'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { getPrimaryKey } from '../vault/key-service.js'
 import {
   currentKeyVersion,
@@ -144,7 +145,7 @@ async function encryptImportEntries(
   const items: PendingImportItemRecord[] = []
 
   try {
-    for (const entry of entries) {
+    await forEachSequential(entries, async (entry) => {
       // Story 13.2 AC-6 — encrypt the single-default-field JSON envelope (schema_version 2 shape),
       // not the bare string, so the reveal/detail read paths treat imported secrets identically to
       // untemplated creates.
@@ -165,7 +166,7 @@ async function encryptImportEntries(
         conflictsWith,
         suggestedAction: conflictsWith ? 'new_version' : 'create_new',
       })
-    }
+    })
   } finally {
     keyMaterial.fill(0)
   }
@@ -390,15 +391,13 @@ export async function confirmCredentialImport(
   const results: ConfirmImportResult['results'] = []
   const perCredentialAudits: PerCredentialImportAudit[] = []
 
-  for (let itemIndex = 0; itemIndex < importRecord.items.length; itemIndex++) {
-    const item = importRecord.items.at(itemIndex)
-    if (!item) continue
+  await forEachSequential(importRecord.items, async (item, itemIndex) => {
     const action = resolveImportAction(item, params.defaultAction, params.overrides)
 
     if (action === 'skip') {
       results.push({ name: item.name, action: 'skip', credentialId: null })
       skipped += 1
-      continue
+      return
     }
 
     if (action === 'new_version') {
@@ -424,7 +423,7 @@ export async function confirmCredentialImport(
       })
       newVersions += 1
       imported += 1
-      continue
+      return
     }
 
     const credentialName =
@@ -446,7 +445,7 @@ export async function confirmCredentialImport(
       payload: {},
     })
     imported += 1
-  }
+  })
 
   await tx.delete(pendingImports).where(eq(pendingImports.id, params.importId))
 

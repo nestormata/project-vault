@@ -38,6 +38,20 @@ function printPlan(grants: string[], revokes: string[]): void {
   for (const statement of [...grants, ...revokes]) process.stdout.write(`${statement};\n`)
 }
 
+/** Runs `fn` over `items` strictly one at a time, in order; the first rejection stops the chain. */
+function forEachSequential<T>(
+  items: readonly T[],
+  fn: (item: T) => Promise<unknown>
+): Promise<void> {
+  return items.reduce<Promise<void>>(
+    (chain, item) =>
+      chain.then(async () => {
+        await fn(item)
+      }),
+    Promise.resolve()
+  )
+}
+
 async function applyPlan(
   sql: postgres.Sql,
   extensionName: string,
@@ -46,10 +60,10 @@ async function applyPlan(
   revokes: string[]
 ): Promise<void> {
   await sql.begin(async (tx) => {
-    for (const statement of grants) await tx.unsafe(statement)
-    for (const statement of revokes) {
-      await tx.unsafe(statement.replace(/^GRANT /, 'REVOKE ').replace(/ TO /, ' FROM '))
-    }
+    const revokeStatements = revokes.map((statement) =>
+      statement.replace(/^GRANT /, 'REVOKE ').replace(/ TO /, ' FROM ')
+    )
+    await forEachSequential([...grants, ...revokeStatements], (statement) => tx.unsafe(statement))
     await tx`
       UPDATE extension_db_scope_approvals
          SET tool_owned_grants = ${JSON.stringify([...desired])}::jsonb
@@ -94,10 +108,13 @@ async function assertScopeCatalog(
   sql: postgres.Sql,
   scope: ExtensionDbScopeEntry[]
 ): Promise<void> {
-  for (const entry of canonicalizeDbScope(scope)) {
-    const [row] = await sql<
-      { exists: boolean; rls_enabled: boolean; org_policy: boolean; owner_safe: boolean }[]
-    >`
+  await forEachSequential(canonicalizeDbScope(scope), (entry) => assertScopeEntry(sql, entry))
+}
+
+async function assertScopeEntry(sql: postgres.Sql, entry: ExtensionDbScopeEntry): Promise<void> {
+  const [row] = await sql<
+    { exists: boolean; rls_enabled: boolean; org_policy: boolean; owner_safe: boolean }[]
+  >`
       SELECT EXISTS (
                SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
                WHERE n.nspname = 'public' AND c.relname = ${entry.table} AND c.relkind IN ('r', 'p')
@@ -112,13 +129,11 @@ async function assertScopeCatalog(
                           AND (r.rolname = 'vault_extension'
                                OR pg_has_role('vault_extension', r.oid, 'USAGE'))) AS owner_safe
     `
-    if (!row?.exists) throw new Error(`Approved extension table does not exist: ${entry.table}`)
-    if (!row.rls_enabled || !row.org_policy) {
-      throw new Error(`Extension table is not RLS/org-policy protected: ${entry.table}`)
-    }
-    if (!row.owner_safe)
-      throw new Error(`Extension table ownership invariant failed: ${entry.table}`)
+  if (!row?.exists) throw new Error(`Approved extension table does not exist: ${entry.table}`)
+  if (!row.rls_enabled || !row.org_policy) {
+    throw new Error(`Extension table is not RLS/org-policy protected: ${entry.table}`)
   }
+  if (!row.owner_safe) throw new Error(`Extension table ownership invariant failed: ${entry.table}`)
 }
 
 async function readApproval(

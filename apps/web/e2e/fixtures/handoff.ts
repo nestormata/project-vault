@@ -35,7 +35,7 @@ export type SeededHandoffUser = {
  * a unique `centralizeme_organization_id`, a user, its identity token, an ACTIVE membership and a
  * `centralizeme-handoff` external identity. Call it inside the spec, after global-setup's DB reset.
  */
-export async function seedLinkedHandoffUser(sql: Sql, label: string): Promise<SeededHandoffUser> {
+export function seedLinkedHandoffUser(sql: Sql, label: string): Promise<SeededHandoffUser> {
   const run = randomUUID()
   const organizationName = `j31-${label}-${run.slice(0, 8)}`
   const email = `j31-${label}-${run}@example.com`
@@ -284,7 +284,7 @@ export type SecurityEventRow = { eventType: string; payload: unknown }
  * scoped by time: rows written since `since` (a `dbNow()` taken right before the attempt). Safe
  * because the suite runs with `workers: 1`.
  */
-export async function securityEventsSince(sql: Sql, since: Date): Promise<SecurityEventRow[]> {
+export function securityEventsSince(sql: Sql, since: Date): Promise<SecurityEventRow[]> {
   return sql<SecurityEventRow[]>`
     select event_type as "eventType", payload
     from platform_security_events

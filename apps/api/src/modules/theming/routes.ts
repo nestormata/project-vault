@@ -23,7 +23,7 @@ import { ThemeReloadResponseSchema } from './schema.js'
  * generic path, per this codebase's established `sameTransactionAuditService` convention (see
  * route-exemptions.ts).
  */
-export async function themingRoutes(fastify: FastifyApp): Promise<void> {
+export function themingRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/themes/reload',
@@ -60,4 +60,5 @@ export async function themingRoutes(fastify: FastifyApp): Promise<void> {
       return result
     },
   })
+  return Promise.resolve()
 }

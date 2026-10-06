@@ -233,7 +233,7 @@ async function raceAndValidateOutcome(
   return raced.value
 }
 
-async function issueRedirect(
+function issueRedirect(
   reply: FastifyReply,
   extension: Pick<LoadedOAuthHandoffExtension, 'redirectOrigins'>,
   leg: 'start' | 'callback',
@@ -243,12 +243,12 @@ async function issueRedirect(
   const parsed = parseAllowedRedirectUrl(result.url, extension.redirectOrigins)
   if (!parsed) {
     logOAuthHandoffFailed(logger, leg, 'invalid_redirect_origin')
-    return sendGenericRejection(reply)
+    return Promise.resolve(sendGenericRejection(reply))
   }
   // Code-review fix (39.1) — use the parsed/canonicalized URL, never the raw extension-supplied
   // string, so a control character (e.g. CR/LF) that survives validation can never reach the
   // response header.
-  return reply.status(302).header('Location', parsed.href).send()
+  return Promise.resolve(reply.status(302).header('Location', parsed.href).send())
 }
 
 // Mirrors `apps/api/src/extensions/panel-routes.ts`'s POST actions route defense-in-depth exactly
@@ -537,7 +537,7 @@ async function handleCallback(request: FastifyRequest, reply: FastifyReply): Pro
   return issueRedirect(reply, extension, 'callback', request.log, result)
 }
 
-export async function oauthHandoffRoutes(fastify: FastifyApp): Promise<void> {
+export function oauthHandoffRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/start',
@@ -560,4 +560,5 @@ export async function oauthHandoffRoutes(fastify: FastifyApp): Promise<void> {
     },
     handler: (_ctx, request, reply) => handleCallback(request, reply),
   })
+  return Promise.resolve()
 }

@@ -248,6 +248,14 @@ async function fetchAuthoritativeServiceEndpoint(
 }
 
 /**
+ * Runs `fn` so a synchronous throw (identity/input validation that runs before the DB call)
+ * still surfaces as a rejected promise, the contract every host method had as an `async` method.
+ */
+function rejectOnSyncThrow<T>(fn: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve) => resolve(fn()))
+}
+
+/**
  * Story 34.1 — the real `HostServices.monitoring` implementation, bound to the loading
  * extension's own manifest by `loader.ts`'s `buildHostServices()`. Every method is a thin
  * closure over PV's real Epic 6 monitoring service-layer functions (AC4) — no parallel
@@ -267,92 +275,106 @@ export function buildMonitoringHost(
   }
 
   return {
-    async deleteServiceEndpoint(params) {
-      const orgId = requireAmbientOrgId('deleteServiceEndpoint')
-      validateIdentityUuids({
-        serviceEndpointId: params.serviceEndpointId,
-        projectId: params.projectId,
-      })
-      return withOrg(orgId, async (tx) => {
-        const deleted = await deleteServiceEndpointService(tx, {
+    deleteServiceEndpoint(params) {
+      return rejectOnSyncThrow(() => {
+        const orgId = requireAmbientOrgId('deleteServiceEndpoint')
+        validateIdentityUuids({
           serviceEndpointId: params.serviceEndpointId,
           projectId: params.projectId,
-          orgId,
         })
-        return deleted ? serializeServiceEndpoint(deleted) : null
+        return withOrg(orgId, async (tx) => {
+          const deleted = await deleteServiceEndpointService(tx, {
+            serviceEndpointId: params.serviceEndpointId,
+            projectId: params.projectId,
+            orgId,
+          })
+          return deleted ? serializeServiceEndpoint(deleted) : null
+        })
       })
     },
 
-    async updateServiceEndpointPauseState(params) {
-      const orgId = requireAmbientOrgId('updateServiceEndpointPauseState')
-      validateIdentityUuids({
-        serviceEndpointId: params.serviceEndpointId,
-        projectId: params.projectId,
-        userId: params.userId,
-      })
-      return withOrg(orgId, async (tx) => {
-        const result = await updateServiceEndpointService(tx, {
+    updateServiceEndpointPauseState(params) {
+      return rejectOnSyncThrow(() => {
+        const orgId = requireAmbientOrgId('updateServiceEndpointPauseState')
+        validateIdentityUuids({
           serviceEndpointId: params.serviceEndpointId,
           projectId: params.projectId,
           userId: params.userId,
-          body: { healthCheckPaused: params.paused },
-          rawBody: { healthCheckPaused: params.paused },
         })
-        if (!result) return null
-        return {
-          row: serializeServiceEndpoint(result.row),
-          pauseTransition: result.pauseTransition,
-        }
-      })
-    },
-
-    async getHealthDashboardData(params) {
-      const orgId = requireAmbientOrgId('getHealthDashboardData')
-      validateIdentityUuidArray('permittedProjectIds', params?.permittedProjectIds)
-      return withOrg(orgId, (tx) => getHealthDashboardDataService(tx, params?.permittedProjectIds))
-    },
-
-    async enableStatusPage(params) {
-      const orgId = requireAmbientOrgId('enableStatusPage')
-      validateIdentityUuids({ projectId: params.projectId, userId: params.userId })
-      return withOrg(orgId, async (tx) => {
-        // Story 34.1 AC2 tenant-isolation fix (found via real-Postgres integration testing):
-        // unlike regenerateStatusPageToken/disableStatusPage — which only ever touch a
-        // PRE-EXISTING status_pages row and are therefore already protected by that table's own
-        // RLS policy (`org_id = current_org_id`) — enableStatusPage performs a fresh INSERT.
-        // status_pages' RLS policy has no WITH CHECK tying project_id's own orgId to the new
-        // row's org_id, only a FK ensuring the project exists AT ALL (in any org). Without this
-        // explicit check, an ambient-org-A caller could enable a public status page (org_id: A)
-        // pointing at a real projectId belonging to org B — exposing org B's service statuses
-        // through a status page org A controls. Mirrors status-page-routes.ts's own
-        // `findProjectInOrg` preflight, which every native HTTP route already applies before
-        // calling this same service function.
-        if (!(await findProjectInOrg(tx, params.projectId))) {
-          throw new MonitoringResourceNotFoundError(
-            'enableStatusPage',
-            NO_SUCH_PROJECT_IN_ORG_MESSAGE
-          )
-        }
-        return enableStatusPageService(tx, {
-          orgId,
-          projectId: params.projectId,
-          userId: params.userId,
+        return withOrg(orgId, async (tx) => {
+          const result = await updateServiceEndpointService(tx, {
+            serviceEndpointId: params.serviceEndpointId,
+            projectId: params.projectId,
+            userId: params.userId,
+            body: { healthCheckPaused: params.paused },
+            rawBody: { healthCheckPaused: params.paused },
+          })
+          if (!result) return null
+          return {
+            row: serializeServiceEndpoint(result.row),
+            pauseTransition: result.pauseTransition,
+          }
         })
       })
     },
 
-    async regenerateStatusPageToken(params) {
-      const orgId = requireAmbientOrgId('regenerateStatusPageToken')
-      validateIdentityUuids({ projectId: params.projectId })
-      return withOrg(orgId, (tx) => regenerateStatusPageTokenService(tx, params.projectId))
+    getHealthDashboardData(params) {
+      return rejectOnSyncThrow(() => {
+        const orgId = requireAmbientOrgId('getHealthDashboardData')
+        validateIdentityUuidArray('permittedProjectIds', params?.permittedProjectIds)
+        return withOrg(orgId, (tx) =>
+          getHealthDashboardDataService(tx, params?.permittedProjectIds)
+        )
+      })
     },
 
-    async disableStatusPage(params) {
-      const orgId = requireAmbientOrgId('disableStatusPage')
-      validateIdentityUuids({ projectId: params.projectId })
-      return withOrg(orgId, async (tx) => {
-        const result = await disableStatusPageService(tx, params.projectId)
-        return result ? { statusPageId: result.statusPageId } : null
+    enableStatusPage(params) {
+      return rejectOnSyncThrow(() => {
+        const orgId = requireAmbientOrgId('enableStatusPage')
+        validateIdentityUuids({ projectId: params.projectId, userId: params.userId })
+        return withOrg(orgId, async (tx) => {
+          // Story 34.1 AC2 tenant-isolation fix (found via real-Postgres integration testing):
+          // unlike regenerateStatusPageToken/disableStatusPage — which only ever touch a
+          // PRE-EXISTING status_pages row and are therefore already protected by that table's own
+          // RLS policy (`org_id = current_org_id`) — enableStatusPage performs a fresh INSERT.
+          // status_pages' RLS policy has no WITH CHECK tying project_id's own orgId to the new
+          // row's org_id, only a FK ensuring the project exists AT ALL (in any org). Without this
+          // explicit check, an ambient-org-A caller could enable a public status page (org_id: A)
+          // pointing at a real projectId belonging to org B — exposing org B's service statuses
+          // through a status page org A controls. Mirrors status-page-routes.ts's own
+          // `findProjectInOrg` preflight, which every native HTTP route already applies before
+          // calling this same service function.
+          if (!(await findProjectInOrg(tx, params.projectId))) {
+            throw new MonitoringResourceNotFoundError(
+              'enableStatusPage',
+              NO_SUCH_PROJECT_IN_ORG_MESSAGE
+            )
+          }
+          return enableStatusPageService(tx, {
+            orgId,
+            projectId: params.projectId,
+            userId: params.userId,
+          })
+        })
+      })
+    },
+
+    regenerateStatusPageToken(params) {
+      return rejectOnSyncThrow(() => {
+        const orgId = requireAmbientOrgId('regenerateStatusPageToken')
+        validateIdentityUuids({ projectId: params.projectId })
+        return withOrg(orgId, (tx) => regenerateStatusPageTokenService(tx, params.projectId))
+      })
+    },
+
+    disableStatusPage(params) {
+      return rejectOnSyncThrow(() => {
+        const orgId = requireAmbientOrgId('disableStatusPage')
+        validateIdentityUuids({ projectId: params.projectId })
+        return withOrg(orgId, async (tx) => {
+          const result = await disableStatusPageService(tx, params.projectId)
+          return result ? { statusPageId: result.statusPageId } : null
+        })
       })
     },
 
@@ -453,72 +475,74 @@ export function buildMonitoringHost(
       )
     },
 
-    async createServiceEndpoint(params) {
-      const orgId = requireAmbientOrgId('createServiceEndpoint')
+    createServiceEndpoint(params) {
+      return rejectOnSyncThrow(() => {
+        const orgId = requireAmbientOrgId('createServiceEndpoint')
 
-      // Story 41.1 AC3 — reuses `CreateServiceEndpointBodySchema` (the same schema applied at
-      // the HTTP boundary) BEFORE any DB call, converting a validation failure into a
-      // distinguishable, hook-specific error class rather than letting a raw `ZodError` or an
-      // unclassified Postgres CHECK-constraint violation leak across the extension-api boundary.
-      // Catches `z.ZodError` specifically (never a blanket `catch`) so a genuine bug elsewhere in
-      // this block is never misreported as a user-input validation failure.
-      let body: ReturnType<typeof CreateServiceEndpointBodySchema.parse>
-      try {
-        body = CreateServiceEndpointBodySchema.parse({
-          name: params.name,
-          url: params.url,
-          checkFrequencyMinutes: params.checkFrequencyMinutes,
-          downThresholdFailures: params.downThresholdFailures,
-        })
-      } catch (error) {
-        if (error instanceof z.ZodError) {
-          throw new MonitoringInvalidServiceEndpointInputError(
-            error.issues.map((issue) => ({
-              path: issue.path.map((segment) =>
-                typeof segment === 'symbol' ? String(segment) : segment
-              ),
-              message: issue.message,
-            }))
-          )
-        }
-        throw error
-      }
-
-      // `userId`/`projectId` are identity/routing fields, not part of the service-endpoint body
-      // schema (AC3) — `projectId`'s ownership is checked below via `findProjectInOrg` (AC4), but
-      // BOTH must first be well-formed UUIDs, checked here, before any DB call. Without this, a
-      // malformed value (e.g. a non-UUID string) reaches `findProjectInOrg`'s/`createServiceEndpointService`'s
-      // raw SQL comparisons and surfaces as an unclassified Postgres error (a `TypeError`-shaped
-      // operational failure, not a typed Monitoring error) instead of the same
-      // `MonitoringInvalidServiceEndpointInputError` class AC3's own body-field validation already
-      // uses. Found in code review (2026-09-17): this same gap is pre-existing on every other
-      // in-request method in this file (`enableStatusPage`, `deleteServiceEndpoint`, etc., none of
-      // which UUID-validate their own `projectId`/identity params) — fixed here for
-      // `createServiceEndpoint` only, per this story's own scope; the identical fix across the
-      // other six in-request methods is a separate, cross-cutting follow-up, not bundled in here.
-      validateIdentityUuids({ userId: params.userId, projectId: params.projectId })
-
-      return withOrg(orgId, async (tx) => {
-        // Story 41.1 AC4 — mirrors `enableStatusPage`'s own tenant-isolation fix above:
-        // `service_endpoints`' RLS policy only ties the new row's own `org_id` column to the
-        // ambient org, never that the referenced `projectId` itself belongs to that org.
-        if (!(await findProjectInOrg(tx, params.projectId))) {
-          throw new MonitoringResourceNotFoundError(
-            'createServiceEndpoint',
-            NO_SUCH_PROJECT_IN_ORG_MESSAGE
-          )
+        // Story 41.1 AC3 — reuses `CreateServiceEndpointBodySchema` (the same schema applied at
+        // the HTTP boundary) BEFORE any DB call, converting a validation failure into a
+        // distinguishable, hook-specific error class rather than letting a raw `ZodError` or an
+        // unclassified Postgres CHECK-constraint violation leak across the extension-api boundary.
+        // Catches `z.ZodError` specifically (never a blanket `catch`) so a genuine bug elsewhere in
+        // this block is never misreported as a user-input validation failure.
+        let body: ReturnType<typeof CreateServiceEndpointBodySchema.parse>
+        try {
+          body = CreateServiceEndpointBodySchema.parse({
+            name: params.name,
+            url: params.url,
+            checkFrequencyMinutes: params.checkFrequencyMinutes,
+            downThresholdFailures: params.downThresholdFailures,
+          })
+        } catch (error) {
+          if (error instanceof z.ZodError) {
+            throw new MonitoringInvalidServiceEndpointInputError(
+              error.issues.map((issue) => ({
+                path: issue.path.map((segment) =>
+                  typeof segment === 'symbol' ? String(segment) : segment
+                ),
+                message: issue.message,
+              }))
+            )
+          }
+          throw error
         }
 
-        // Story 41.1 AC5/AC6 — thin pass-through: `ServiceEndpointLimitReachedError`/
-        // `UrlNotMonitorableError` (both already thrown inside `createServiceEndpointService`
-        // itself) propagate unmodified — never caught/rewrapped here.
-        const row = await createServiceEndpointService(tx, {
-          orgId,
-          projectId: params.projectId,
-          userId: params.userId,
-          body,
+        // `userId`/`projectId` are identity/routing fields, not part of the service-endpoint body
+        // schema (AC3) — `projectId`'s ownership is checked below via `findProjectInOrg` (AC4), but
+        // BOTH must first be well-formed UUIDs, checked here, before any DB call. Without this, a
+        // malformed value (e.g. a non-UUID string) reaches `findProjectInOrg`'s/`createServiceEndpointService`'s
+        // raw SQL comparisons and surfaces as an unclassified Postgres error (a `TypeError`-shaped
+        // operational failure, not a typed Monitoring error) instead of the same
+        // `MonitoringInvalidServiceEndpointInputError` class AC3's own body-field validation already
+        // uses. Found in code review (2026-09-17): this same gap is pre-existing on every other
+        // in-request method in this file (`enableStatusPage`, `deleteServiceEndpoint`, etc., none of
+        // which UUID-validate their own `projectId`/identity params) — fixed here for
+        // `createServiceEndpoint` only, per this story's own scope; the identical fix across the
+        // other six in-request methods is a separate, cross-cutting follow-up, not bundled in here.
+        validateIdentityUuids({ userId: params.userId, projectId: params.projectId })
+
+        return withOrg(orgId, async (tx) => {
+          // Story 41.1 AC4 — mirrors `enableStatusPage`'s own tenant-isolation fix above:
+          // `service_endpoints`' RLS policy only ties the new row's own `org_id` column to the
+          // ambient org, never that the referenced `projectId` itself belongs to that org.
+          if (!(await findProjectInOrg(tx, params.projectId))) {
+            throw new MonitoringResourceNotFoundError(
+              'createServiceEndpoint',
+              NO_SUCH_PROJECT_IN_ORG_MESSAGE
+            )
+          }
+
+          // Story 41.1 AC5/AC6 — thin pass-through: `ServiceEndpointLimitReachedError`/
+          // `UrlNotMonitorableError` (both already thrown inside `createServiceEndpointService`
+          // itself) propagate unmodified — never caught/rewrapped here.
+          const row = await createServiceEndpointService(tx, {
+            orgId,
+            projectId: params.projectId,
+            userId: params.userId,
+            body,
+          })
+          return serializeServiceEndpoint(row)
         })
-        return serializeServiceEndpoint(row)
       })
     },
 

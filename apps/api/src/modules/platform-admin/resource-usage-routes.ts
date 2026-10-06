@@ -11,7 +11,7 @@ import { PLATFORM_ADMIN_ERROR_RESPONSES } from './route-common.js'
  * visibility against operator-configured instance limits. `requireOrgScope: false` +
  * `requirePlatformOperator: true` + `requireMfa: true` — never `allowedRoles`/`requireOrgRole`.
  */
-export async function resourceUsageRoutes(fastify: FastifyApp): Promise<void> {
+export function resourceUsageRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/resource-usage',
@@ -32,4 +32,5 @@ export async function resourceUsageRoutes(fastify: FastifyApp): Promise<void> {
     // is false (the union also covers PublicRouteContext for routes with no auth at all).
     handler: async (ctx) => resolveResourceUsage((ctx as SecureRouteContext).auth.orgId),
   })
+  return Promise.resolve()
 }

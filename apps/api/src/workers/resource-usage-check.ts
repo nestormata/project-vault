@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import type { FastifyBaseLogger } from 'fastify'
 import { withOrg } from '@project-vault/db'
 import type { BossService } from '../lib/boss.js'
@@ -93,7 +94,7 @@ export async function runResourceUsageCheck(
 ): Promise<void> {
   const usage = await resolveResourceUsage()
   await checkOrgsNearLimit(usage.orgs.current, usage.orgs.limit)
-  for (const org of usage.usersPerOrg) {
+  await forEachSequential(usage.usersPerOrg, async (org) => {
     await checkUsersNearLimitForOrg(boss, org)
-  }
+  })
 }

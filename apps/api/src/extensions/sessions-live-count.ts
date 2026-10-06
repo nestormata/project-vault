@@ -2,6 +2,7 @@ import { and, isNull, gt, sql } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { sessions } from '@project-vault/db/schema'
 import { fetchAllOrgIds } from '../middleware/rls.js'
+import { mapWithConcurrency } from '../lib/map-with-concurrency.js'
 
 /**
  * Story 23.2 AC-12: `sessionsLive` — the ONE DB read the admin-only extensions/status envelope
@@ -15,16 +16,14 @@ import { fetchAllOrgIds } from '../middleware/rls.js'
  */
 export async function countLiveSessionsAcrossInstance(): Promise<number> {
   const orgIds = await fetchAllOrgIds()
-  let total = 0
-  for (const orgId of orgIds) {
-    const count = await withOrg(orgId, async (tx) => {
+  const counts = await mapWithConcurrency(orgIds, 2, (orgId) =>
+    withOrg(orgId, async (tx) => {
       const [row] = await tx
         .select({ count: sql<number>`count(*)::int` })
         .from(sessions)
         .where(and(isNull(sessions.revokedAt), gt(sessions.expiresAt, new Date())))
       return row?.count ?? 0
     })
-    total += count
-  }
-  return total
+  )
+  return counts.reduce((total, count) => total + count, 0)
 }

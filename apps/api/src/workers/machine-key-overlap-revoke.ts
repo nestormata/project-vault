@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { and, eq, gt, isNull, lte } from 'drizzle-orm'
 import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import { apiKeys, machineUsers } from '@project-vault/db/schema'
@@ -57,7 +58,7 @@ export async function runMachineKeyOverlapRevokeJob(logger?: WorkerLogger): Prom
   const now = new Date()
   const orgIds = await fetchAllOrgIds()
 
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     try {
       const rows = await runOrgScopedJob(orgId, REVOKE_JOB_NAME, ({ tx }) =>
         tx
@@ -66,7 +67,7 @@ export async function runMachineKeyOverlapRevokeJob(logger?: WorkerLogger): Prom
           .where(and(lte(apiKeys.overlapExpiresAt, now), isNull(apiKeys.revokedAt)))
       )
 
-      for (const row of rows) {
+      await forEachSequential(rows, async (row) => {
         try {
           await runOrgScopedJob(orgId, REVOKE_JOB_NAME, async ({ tx }) => {
             // AC-18: idempotent — mirrors 7.1's own revoke-endpoint pattern (conditional UPDATE
@@ -90,11 +91,11 @@ export async function runMachineKeyOverlapRevokeJob(logger?: WorkerLogger): Prom
         } catch (error) {
           logRowFailure(logger, orgId, row.id, error)
         }
-      }
+      })
     } catch (error) {
       logOrgFailure(logger, orgId, error)
     }
-  }
+  })
 }
 
 /**
@@ -118,7 +119,7 @@ export async function runMachineKeyOverlapAlertJob(
   const orgIds = await fetchAllOrgIds()
   const allJobs: NotificationQueueJob[] = []
 
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     try {
       const rows = await runOrgScopedJob(orgId, ALERT_JOB_NAME, ({ tx }) =>
         tx
@@ -141,7 +142,7 @@ export async function runMachineKeyOverlapAlertJob(
           )
       )
 
-      for (const row of rows) {
+      await forEachSequential(rows, async (row) => {
         try {
           const jobs = await runOrgScopedJob(orgId, ALERT_JOB_NAME, async ({ tx }) => {
             // Claim the row first: a concurrent/overlapping run of this same job racing on the
@@ -175,11 +176,11 @@ export async function runMachineKeyOverlapAlertJob(
         } catch (error) {
           logRowFailure(logger, orgId, row.id, error)
         }
-      }
+      })
     } catch (error) {
       logOrgFailure(logger, orgId, error)
     }
-  }
+  })
 
   await sendNotificationJobs(boss, allJobs)
 }

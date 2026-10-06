@@ -31,7 +31,7 @@ export type MachineJwtClaims = {
 
 export type MachineJwtVerifiedClaims = MachineJwtClaims & { iat: number; exp: number }
 
-export const machineJwtPlugin = fp(async function machineJwtPlugin(
+export const machineJwtPlugin = fp(function machineJwtPlugin(
   fastify: FastifyInstance
 ): Promise<void> {
   // env.ts rejects missing/placeholder/reused production secrets at import time (D3). This
@@ -49,12 +49,19 @@ export const machineJwtPlugin = fp(async function machineJwtPlugin(
   // with `alg: none` or `alg: RS256` reusing this HMAC secret as an RSA "public key").
   const verify = createVerifier({ key: secret, algorithms: [ALGORITHM] })
 
-  fastify.decorate('machineJwtSign', async (claims: MachineJwtClaims): Promise<string> =>
-    sign(claims)
+  // A sync throw from the signer/verifier (bad claims, tampered token) must still surface as a
+  // rejection, so the executor wraps it instead of the arrow being `async`.
+  fastify.decorate(
+    'machineJwtSign',
+    (claims: MachineJwtClaims): Promise<string> =>
+      new Promise<string>((resolve) => resolve(sign(claims)))
   )
   fastify.decorate(
     'machineJwtVerify',
-    async (token: string): Promise<MachineJwtVerifiedClaims> =>
-      verify(token) as unknown as MachineJwtVerifiedClaims
+    (token: string): Promise<MachineJwtVerifiedClaims> =>
+      new Promise<MachineJwtVerifiedClaims>((resolve) =>
+        resolve(verify(token) as unknown as MachineJwtVerifiedClaims)
+      )
   )
+  return Promise.resolve()
 })

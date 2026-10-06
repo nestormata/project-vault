@@ -67,7 +67,7 @@ export async function clientVersionPolicyRoutes(
     method: 'GET',
     url: CLIENT_VERSION_POLICY_PATH,
     schema: { response: { 200: ClientVersionPolicyResponseSchema } },
-    handler: async (_req: FastifyRequest, reply: FastifyReply) => {
+    handler: (_req: FastifyRequest, reply: FastifyReply) => {
       // Read per request, like /health, so the reported release always matches the process.
       const data = buildClientVersionPolicyData(options.policy, getReleaseVersion())
       return reply.header('cache-control', 'public, max-age=300').send({ data })

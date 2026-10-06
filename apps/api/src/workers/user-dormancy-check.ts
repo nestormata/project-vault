@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { and, eq, isNull, or, sql } from 'drizzle-orm'
 import { organizations, orgMemberships, userIdentityTokens } from '@project-vault/db/schema'
 import { OperationalEvent } from '@project-vault/shared'
@@ -43,7 +44,7 @@ export async function runUserDormancyCheckJob(
   const orgIds = await fetchAllOrgIds()
   const allJobs: NotificationQueueJob[] = []
 
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     try {
       const jobs = await runOrgScopedJob(orgId, JOB_NAME, (ctx) => processOrg(ctx.tx, orgId))
       allJobs.push(...jobs)
@@ -58,7 +59,7 @@ export async function runUserDormancyCheckJob(
         )
       }
     }
-  }
+  })
 
   await sendNotificationJobs(boss, allJobs)
 }
@@ -76,14 +77,14 @@ async function processOrg(
 
   const rows = await fetchDormantUsers(tx, orgId, org.thresholdDays)
   const jobs: NotificationQueueJob[] = []
-  for (const row of rows) {
+  await forEachSequential(rows, async (row) => {
     const entries = await createDormancyAlertIfNew(tx, orgId, row)
     jobs.push(...entries)
-  }
+  })
   return jobs
 }
 
-async function fetchDormantUsers(
+function fetchDormantUsers(
   tx: Parameters<Parameters<typeof runOrgScopedJob>[2]>[0]['tx'],
   orgId: string,
   thresholdDays: number
@@ -91,32 +92,34 @@ async function fetchDormantUsers(
   // D4 — displayName is resolved via user_identity_tokens (never users.email), same rule this
   // story applies to the access report: a dormant-user alert generated for an already-
   // pseudonymized user must show the alias, not leak a real email into security_alerts.payload.
-  return tx
-    .select({
-      userId: orgMemberships.userId,
-      role: orgMemberships.role,
-      lastActiveAt: orgMemberships.lastActiveAt,
-      createdAt: orgMemberships.createdAt,
-      displayName: userIdentityTokens.displayName,
-    })
-    .from(orgMemberships)
-    .innerJoin(userIdentityTokens, eq(userIdentityTokens.userId, orgMemberships.userId))
-    .where(
-      and(
-        eq(orgMemberships.orgId, orgId),
-        eq(orgMemberships.status, 'active'),
-        or(
-          and(
-            sql`${orgMemberships.lastActiveAt} IS NOT NULL`,
-            sql`${orgMemberships.lastActiveAt} < now() - (${thresholdDays} || ' days')::interval`
-          ),
-          and(
-            isNull(orgMemberships.lastActiveAt),
-            sql`${orgMemberships.createdAt} < now() - (${thresholdDays} || ' days')::interval`
+  return Promise.resolve(
+    tx
+      .select({
+        userId: orgMemberships.userId,
+        role: orgMemberships.role,
+        lastActiveAt: orgMemberships.lastActiveAt,
+        createdAt: orgMemberships.createdAt,
+        displayName: userIdentityTokens.displayName,
+      })
+      .from(orgMemberships)
+      .innerJoin(userIdentityTokens, eq(userIdentityTokens.userId, orgMemberships.userId))
+      .where(
+        and(
+          eq(orgMemberships.orgId, orgId),
+          eq(orgMemberships.status, 'active'),
+          or(
+            and(
+              sql`${orgMemberships.lastActiveAt} IS NOT NULL`,
+              sql`${orgMemberships.lastActiveAt} < now() - (${thresholdDays} || ' days')::interval`
+            ),
+            and(
+              isNull(orgMemberships.lastActiveAt),
+              sql`${orgMemberships.createdAt} < now() - (${thresholdDays} || ' days')::interval`
+            )
           )
         )
       )
-    )
+  )
 }
 
 /**

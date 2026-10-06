@@ -37,7 +37,7 @@ async function loadInvitationOrFail(token: string, reply: FastifyReply): Promise
 }
 
 /** Scoped to prefix '/api/v1/invitations' — public peek + authenticated accept. */
-export async function invitationTokenRoutes(fastify: FastifyApp): Promise<void> {
+export function invitationTokenRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/:token',
@@ -218,4 +218,5 @@ export async function invitationTokenRoutes(fastify: FastifyApp): Promise<void> 
       }
     },
   })
+  return Promise.resolve()
 }

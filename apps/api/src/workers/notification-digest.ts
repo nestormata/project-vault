@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { sql, eq } from 'drizzle-orm'
 import { withOrg } from '@project-vault/db'
 import { notificationQueue, users } from '@project-vault/db/schema'
@@ -81,7 +82,7 @@ export async function runDigestSend(
       AND recipient_user_id IS NOT NULL
   `)
 
-  for (const { orgId } of orgsWithDigestWork) {
+  await forEachSequential(orgsWithDigestWork, async ({ orgId }) => {
     const pendingEntries = await withOrg(orgId, (tx) =>
       tx.execute<DigestEntry>(sql`
         SELECT id::text AS id,
@@ -100,7 +101,7 @@ export async function runDigestSend(
       `)
     )
 
-    if (pendingEntries.length === 0) continue
+    if (pendingEntries.length === 0) return
 
     const byRecipient = new Map<string, DigestEntry[]>()
     for (const entry of pendingEntries) {
@@ -109,7 +110,7 @@ export async function runDigestSend(
       byRecipient.set(entry.recipientUserId, list)
     }
 
-    for (const [recipientUserId, entries] of byRecipient) {
+    await forEachSequential([...byRecipient], async ([recipientUserId, entries]) => {
       await withOrg(orgId, async (tx) => {
         const [user] = await tx
           .select({ email: users.email })
@@ -118,12 +119,12 @@ export async function runDigestSend(
           .limit(1)
 
         if (!user?.email) {
-          for (const entry of entries) {
+          await forEachSequential(entries, async (entry) => {
             await tx
               .update(notificationQueue)
               .set({ status: 'suppressed' })
               .where(eq(notificationQueue.id, entry.id))
-          }
+          })
           return
         }
 
@@ -139,12 +140,12 @@ export async function runDigestSend(
             html,
           })
 
-          for (const entry of entries) {
+          await forEachSequential(entries, async (entry) => {
             await tx
               .update(notificationQueue)
               .set({ status: 'delivered', deliveredAt: new Date() })
               .where(eq(notificationQueue.id, entry.id))
-          }
+          })
         } catch (err) {
           logger.error(
             { eventType: 'notification.digest.send_failed', recipientUserId, err },
@@ -152,8 +153,8 @@ export async function runDigestSend(
           )
         }
       })
-    }
-  }
+    })
+  })
 }
 
 export async function notificationDigestHandler(

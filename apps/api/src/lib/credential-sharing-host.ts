@@ -31,6 +31,7 @@ import {
 import { writeMachineAuditEntry } from '../modules/audit/machine-entry.js'
 import { isMachineKeyLive } from '../modules/machine-users/key-validity.js'
 import { operationalLog } from './logger.js'
+import { forEachSequential } from './for-each-sequential.js'
 
 /**
  * Story 20.12 AC5 — a per-extension in-flight cap for every `credentialSharing` method. Distinct
@@ -619,8 +620,8 @@ export function buildCredentialSharingHost(
             // One audit entry per superseded share, mirroring rotation/routes.ts's own AC-13
             // per-share write; these are sequential writes into the same transaction's audit
             // chain and cannot be parallelized without corrupting the HMAC chain ordering.
-            for (const share of superseded) {
-              await writeMachineAuditEntry(tx, {
+            await forEachSequential(superseded, (share) =>
+              writeMachineAuditEntry(tx, {
                 orgId: params.organizationId,
                 eventType: AuditEvent.CREDENTIAL_SHARE_SUPERSEDED,
                 resourceId: share.id,
@@ -632,7 +633,7 @@ export function buildCredentialSharingHost(
                   rotationId: params.rotationId,
                 },
               })
-            }
+            )
 
             return { supersededShares: superseded.map(serializeShare) }
           })

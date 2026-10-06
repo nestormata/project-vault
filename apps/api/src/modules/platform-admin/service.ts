@@ -158,13 +158,13 @@ export type EffectiveSmtpTransportConfig = {
 
 /** D4: decrypts the stored SMTP password (DB override) or falls back to env.SMTP_PASS — split
  * out purely to keep resolveSmtpTransportConfig()'s cyclomatic complexity within threshold. */
-async function resolveSmtpPassword(row: SystemSettings | undefined): Promise<string | null> {
+function resolveSmtpPassword(row: SystemSettings | undefined): Promise<string | null> {
   if (row?.smtpPassEncrypted) {
-    return withSecret(row.smtpPassEncrypted as EncryptedValue, async (plaintext) =>
-      plaintext.toString('utf8')
+    return withSecret(row.smtpPassEncrypted as EncryptedValue, (plaintext) =>
+      Promise.resolve(plaintext.toString('utf8'))
     )
   }
-  return env.SMTP_PASS ?? null
+  return Promise.resolve(env.SMTP_PASS ?? null)
 }
 
 function smtpTransportFieldsExceptPassword(
@@ -223,15 +223,17 @@ export type UpsertSettingsResult = {
 /** D4: encrypts a freshly-provided SMTP password, or retains the existing encrypted value
  * unchanged (omitted field or the "[configured]" sentinel, AC-3). Split out purely to keep
  * upsertSystemSettings()'s transaction callback within this repo's complexity threshold. */
-async function resolveUpsertSmtpPassEncrypted(
+function resolveUpsertSmtpPassEncrypted(
   update: SystemSettingsUpdate,
   existing: SystemSettings | undefined
 ): Promise<SystemSettings['smtpPassEncrypted']> {
-  if (update.smtp?.password === undefined || isSentinelPassword(update.smtp.password)) {
-    return existing?.smtpPassEncrypted ?? null
-  }
-  const key = getPrimaryKey()
-  return encrypt(Buffer.from(update.smtp.password, 'utf8'), key)
+  return Promise.resolve().then(() => {
+    if (update.smtp?.password === undefined || isSentinelPassword(update.smtp.password)) {
+      return existing?.smtpPassEncrypted ?? null
+    }
+    const key = getPrimaryKey()
+    return encrypt(Buffer.from(update.smtp.password, 'utf8'), key)
+  })
 }
 
 function mergedSmtpValues(
@@ -488,7 +490,7 @@ export type CreateOrgOptions = {
  * addition right before each of this function's three return points, not a separate follow-up
  * write.
  */
-export async function createOrg(
+export function createOrg(
   input: CreateOrgRequest,
   options: CreateOrgOptions
 ): Promise<CreateOrgResponse> {

@@ -78,18 +78,19 @@ export function passwordHashConfigFromEnv(env: PasswordHashConfig): PasswordHash
  * Hash a user password as PHC-encoded Argon2id.
  * The encoded hash embeds salt and Argon2 params; future upgrades can rehash after successful login.
  */
-export async function hashUserPassword(
-  password: string,
-  config: PasswordHashConfig
-): Promise<string> {
-  return argon2.hash(password, {
-    type: argon2.argon2id,
-    memoryCost: config.memoryCost,
-    timeCost: config.timeCost,
-    parallelism: config.parallelism,
-  })
+export function hashUserPassword(password: string, config: PasswordHashConfig): Promise<string> {
+  return new Promise((resolve) =>
+    resolve(
+      argon2.hash(password, {
+        type: argon2.argon2id,
+        memoryCost: config.memoryCost,
+        timeCost: config.timeCost,
+        parallelism: config.parallelism,
+      })
+    )
+  )
 }
 
-export async function verifyUserPassword(password: string, encodedHash: string): Promise<boolean> {
-  return argon2.verify(encodedHash, password)
+export function verifyUserPassword(password: string, encodedHash: string): Promise<boolean> {
+  return new Promise((resolve) => resolve(argon2.verify(encodedHash, password)))
 }

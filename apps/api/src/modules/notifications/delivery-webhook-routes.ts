@@ -32,7 +32,7 @@ const DeliveryWebhookAcceptedResponseSchema = z.object({
  * All real logic lives in `delivery-webhook-service.ts`'s `handleDeliveryWebhook()` — this handler
  * stays thin (parse params, forward, shape the response).
  */
-export async function deliveryWebhookRoutes(fastify: FastifyApp): Promise<void> {
+export function deliveryWebhookRoutes(fastify: FastifyApp): Promise<void> {
   fastify.addContentTypeParser(
     'application/json',
     { parseAs: 'string' },
@@ -89,4 +89,5 @@ export async function deliveryWebhookRoutes(fastify: FastifyApp): Promise<void> 
       return reply.status(202).send({ data: { accepted: true } })
     },
   })
+  return Promise.resolve()
 }

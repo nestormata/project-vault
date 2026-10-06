@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gte, lt, sql } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { auditLogEntries } from '@project-vault/db/schema'
 import { AuditEvent } from '@project-vault/shared'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { getAuditKey, VaultSealedError } from '../vault/key-service.js'
 import { currentAuditKeyVersion } from './key-version.js'
 import { computeAuditHmac, GENESIS_SENTINEL } from './write-entry.js'
@@ -322,7 +323,7 @@ export async function verifyAuditRange(
   let passed = 0
   let failedCount = 0
 
-  for (const row of rows) {
+  await forEachSequential(rows, async (row) => {
     const { reason } = await evaluateAuditRow(
       tx,
       row,
@@ -349,7 +350,7 @@ export async function verifyAuditRange(
     // whether this row itself passed or failed verification (a subsequent legitimate write
     // would have chained onto this row's real hmac either way).
     expectedPreviousHmac = row.hmac
-  }
+  })
 
   return finalizeVerifyResult({ rowsChecked: rows.length, passed, failed, failedCount })
 }

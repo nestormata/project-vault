@@ -20,9 +20,16 @@ import { isNativeLoginEnabled } from './native-login-policy.js'
  * accidentally wires a generic dispatch path to this provider name fails loudly instead of
  * silently doing the wrong thing.
  */
-export async function resolveHandoffAuthStrategy(
+export function resolveHandoffAuthStrategy(
   logger: Partial<Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>>
 ): Promise<void> {
+  // A synchronous throw (the refuse-to-boot case) must still surface as a rejection.
+  return new Promise<void>((resolve) => resolve(applyHandoffAuthStrategy(logger)))
+}
+
+function applyHandoffAuthStrategy(
+  logger: Partial<Pick<FastifyBaseLogger, 'info' | 'warn' | 'error' | 'fatal'>>
+): void {
   // AC2.5: "an operator has otherwise signaled intent to enable handoff auth" — the explicit
   // VAULT_HANDOFF_ENABLED toggle this story defines. Unset (default false): silently no-op,
   // even if VAULT_HANDOFF_INSTANCE_ID/VAULT_HANDOFF_VERIFY_KEYS happen to be configured (Story

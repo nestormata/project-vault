@@ -54,7 +54,7 @@ export async function bootContractTestApp(): Promise<TestApp> {
   // actual database health — same wiring `main.ts` uses, so this suite exercises /ready's real
   // documented 200 happy path instead of a false "database unreachable" state.
   const sql = postgres(process.env['DATABASE_URL'] as string)
-  const dbPool = { query: async (statement: string) => sql.unsafe(statement) }
+  const dbPool = { query: (statement: string) => sql.unsafe(statement) }
 
   await resetVaultState(sql)
 

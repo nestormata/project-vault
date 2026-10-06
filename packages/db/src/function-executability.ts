@@ -58,7 +58,7 @@ export class FunctionExecutabilityViolationError extends Error {
   }
 }
 
-export async function inspectFunctionExecutability(
+export function inspectFunctionExecutability(
   sql: postgres.Sql
 ): Promise<FunctionExecutabilityReport> {
   return sql.begin(async (transaction) => {

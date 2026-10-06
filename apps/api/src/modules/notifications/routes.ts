@@ -125,7 +125,7 @@ function inboxEntryRoute(
   })
 }
 
-export async function notificationRoutes(fastify: FastifyApp): Promise<void> {
+export function notificationRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: USER_NOTIFICATION_PREFERENCES_URL,
@@ -384,4 +384,5 @@ export async function notificationRoutes(fastify: FastifyApp): Promise<void> {
       return result.length === 0
     })
   )
+  return Promise.resolve()
 }

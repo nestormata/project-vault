@@ -74,7 +74,7 @@ function replyAsFailedLookup(
   return send()
 }
 
-export async function machineCredentialRoutes(fastify: FastifyApp): Promise<void> {
+export function machineCredentialRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/projects/:projectId/credentials/:name/value',
@@ -209,4 +209,5 @@ export async function machineCredentialRoutes(fastify: FastifyApp): Promise<void
       }
     },
   })
+  return Promise.resolve()
 }

@@ -204,7 +204,7 @@ const MACHINE_USER_MUTATION_RATE_LIMIT = 10
 const READ_ERROR_RESPONSES = { 401: ApiErrorSchema, 404: ApiErrorSchema, 422: ApiErrorSchema }
 const READ_SECURITY = { minimumRole: 'viewer', writeAuditEvent: false } as const
 
-export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
+export function machineUserRoutes(fastify: FastifyApp): Promise<void> {
   // AC-3/AC-4/AC-5/AC-6: create a machine user, project-nested.
   secureRoute(fastify, {
     method: 'POST',
@@ -777,4 +777,5 @@ export async function machineUserRoutes(fastify: FastifyApp): Promise<void> {
       }
     },
   })
+  return Promise.resolve()
 }

@@ -38,6 +38,7 @@ import { writePlatformAuditEntryOrFailClosed } from '../lib/audit-or-fail-closed
 import { fetchAllOrgIds } from '../middleware/rls.js'
 import { env } from '../config/env.js'
 import type { Tx } from '@project-vault/db'
+import { forEachSequential } from '../lib/for-each-sequential.js'
 
 /**
  * Story 14.2 AC-3: fixed, exhaustive failure-reason enum — never the raw exception
@@ -320,13 +321,13 @@ async function buildHostServices(
     // fields are not enumerated anywhere for that purpose — credentialSharing is wired as a whole
     // object, same as monitoring/notificationOriginator above). See lib/credential-sharing-host.ts.
     credentialSharing: buildCredentialSharingHost(manifest, logger),
-    getDbHandle: async () => {
+    getDbHandle: () => {
       if (!manifest.dbScope || manifest.dbScope.length === 0) {
-        return { unavailable: 'no-approved-scope' }
+        return Promise.resolve({ unavailable: 'no-approved-scope' })
       }
-      if (scopeStatus !== 'approved') return { unavailable: 'no-approved-scope' }
+      if (scopeStatus !== 'approved') return Promise.resolve({ unavailable: 'no-approved-scope' })
       const handle = getExtensionDbHandle()
-      return handle ?? { unavailable: 'not-configured' }
+      return Promise.resolve(handle ?? { unavailable: 'not-configured' })
     },
   }
 }
@@ -515,7 +516,7 @@ async function runAuditFanout(
     return
   }
 
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     try {
       await auditWriter(orgId, eventType, payload)
     } catch {
@@ -527,7 +528,7 @@ async function runAuditFanout(
         { orgId, subReason: 'audit_write_failed' }
       )
     }
-  }
+  })
 }
 
 type LoadOutcome = {

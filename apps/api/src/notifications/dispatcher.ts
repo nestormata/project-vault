@@ -8,6 +8,7 @@ import {
 } from '../modules/notifications/preferences.js'
 import { resolveRoutingRecipients } from '../modules/notifications/routing.js'
 import type { BossService } from '../lib/boss.js'
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { env } from '../config/env.js'
 
 export type NotificationTemplate = {
@@ -104,22 +105,22 @@ async function processRecipientPreferences(
   const jobs: NotificationQueueJob[] = []
   let slackEnabled = false
 
-  for (const pref of alertPrefs) {
-    if (pref.channel === 'none') continue
-    if (!passesSeverityFilter(alertSeverity, pref)) continue
+  await forEachSequential(alertPrefs, async (pref) => {
+    if (pref.channel === 'none') return
+    if (!passesSeverityFilter(alertSeverity, pref)) return
 
     const dedupKey = `${userId}:${pref.channel}`
-    if (seenUserChannels.has(dedupKey)) continue
+    if (seenUserChannels.has(dedupKey)) return
     seenUserChannels.add(dedupKey)
 
     if (pref.channel === 'slack') {
       slackEnabled = true
-      continue
+      return
     }
 
     const job = await enqueueUserChannel({ orgId, userId, template, pref, tx })
     if (job) jobs.push(job)
-  }
+  })
 
   return { jobs, slackEnabled }
 }
@@ -156,7 +157,7 @@ export async function createOrgAdminNotificationEntries(
   const seenUserChannels = new Set<string>()
   let slackEnabled = false
   const preferencesByUserId = await getPreferencesBatch(orgId, recipientUserIds, tx)
-  for (const userId of recipientUserIds) {
+  await forEachSequential(recipientUserIds, async (userId) => {
     const result = await processRecipientPreferences(
       userId,
       alertSeverity,
@@ -168,7 +169,7 @@ export async function createOrgAdminNotificationEntries(
     )
     queueJobs.push(...result.jobs)
     if (result.slackEnabled) slackEnabled = true
-  }
+  })
 
   if (slackEnabled) {
     const slackJob = await enqueueSlackEntry(orgId, template, tx)
@@ -196,14 +197,14 @@ export async function sendNotificationJobs(
   }
 
   const now = Date.now()
-  for (const job of jobs) {
-    if (job.deliverAt !== null && job.deliverAt.getTime() > now) continue
+  await forEachSequential(jobs, async (job) => {
+    if (job.deliverAt !== null && job.deliverAt.getTime() > now) return
     await boss.send(
       'notification/deliver',
       { notificationQueueId: job.id, orgId: job.orgId },
       NOTIFICATION_JOB_OPTIONS
     )
-  }
+  })
   return true
 }
 
@@ -317,15 +318,15 @@ export async function dispatchDirectUserNotification(opts: {
 
   const jobs: NotificationQueueJob[] = []
   const seenChannels = new Set<string>()
-  for (const pref of alertPrefs) {
-    if (pref.channel === 'none') continue
-    if (!passesSeverityFilter(alertSeverity, pref)) continue
-    if (seenChannels.has(pref.channel)) continue
+  await forEachSequential(alertPrefs, async (pref) => {
+    if (pref.channel === 'none') return
+    if (!passesSeverityFilter(alertSeverity, pref)) return
+    if (seenChannels.has(pref.channel)) return
     seenChannels.add(pref.channel)
 
     const job = await enqueueUserChannel({ orgId, userId, template, pref, tx })
     if (job) jobs.push(job)
-  }
+  })
 
   return jobs
 }

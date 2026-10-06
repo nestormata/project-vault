@@ -15,7 +15,7 @@ export function daysFromNow(days: number): Date {
   return new Date(Date.now() + days * 86_400_000)
 }
 
-export async function queueEntriesForTemplate(orgId: string, templateId: string) {
+export function queueEntriesForTemplate(orgId: string, templateId: string) {
   return withOrg(orgId, (tx) =>
     tx.select().from(notificationQueue).where(eq(notificationQueue.templateId, templateId))
   )

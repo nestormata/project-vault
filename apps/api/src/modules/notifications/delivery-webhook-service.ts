@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { notificationQueue } from '@project-vault/db/schema'
 import { getAdminDb } from '../../lib/db.js'
 import { getDeliveryProviderForChannel } from '../../lib/delivery-provider.js'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { applyDeliveryStatusUpdate } from '../../notifications/delivery-status.js'
 
 export type DeliveryWebhookHeaders = Record<string, string | string[] | undefined>
@@ -54,17 +55,25 @@ function sleep(ms: number): Promise<void> {
  * digit milliseconds) while adding at most ~90ms to the rare case that's still genuinely unknown
  * (an actually-unknown identifier pays this same small cost — AC6 requires it not be
  * distinguishable from a found-but-slow-to-commit one). */
-async function adminLookupByProviderMessageIdWithRetry(
+function adminLookupByProviderMessageIdWithRetry(
   providerId: string,
   providerMessageId: string,
-  { attempts = 4, delayMs = 30 }: { attempts?: number; delayMs?: number } = {}
+  { attempts = 4, delayMs = 30 }: { attempts?: number; delayMs?: number } = {},
+  attempt = 1
 ): Promise<{ id: string; orgId: string } | null> {
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    const row = await adminLookupByProviderMessageId(providerId, providerMessageId)
+  if (attempt > attempts) return Promise.resolve(null)
+  return adminLookupByProviderMessageId(providerId, providerMessageId).then((row) => {
     if (row) return row
-    if (attempt < attempts) await sleep(delayMs)
-  }
-  return null
+    if (attempt >= attempts) return null
+    return sleep(delayMs).then(() =>
+      adminLookupByProviderMessageIdWithRetry(
+        providerId,
+        providerMessageId,
+        { attempts, delayMs },
+        attempt + 1
+      )
+    )
+  })
 }
 
 /**
@@ -113,7 +122,7 @@ export async function handleDeliveryWebhook(
     return { outcome: 'rejected', status: 404 }
   }
 
-  for (const event of events) {
+  await forEachSequential(events, async (event) => {
     // Each event is applied independently: one bad/unresolvable event in a multi-event payload
     // must not silently drop every later event in the same delivery — the provider only knows
     // whether ITS request as a whole was accepted (202) or rejected (404/401), never per-event
@@ -124,7 +133,7 @@ export async function handleDeliveryWebhook(
         input.providerId,
         event.providerMessageId
       )
-      if (!row) continue // AC3 edge: non-enumerating no-op, folded into the overall 202 accepted.
+      if (!row) return // AC3 edge: non-enumerating no-op, folded into the overall 202 accepted.
 
       await applyDeliveryStatusUpdate({
         notificationQueueId: row.id,
@@ -133,9 +142,9 @@ export async function handleDeliveryWebhook(
         providerId: input.providerId,
       })
     } catch {
-      continue
+      // swallowed per event, see above
     }
-  }
+  })
 
   return { outcome: 'accepted' }
 }

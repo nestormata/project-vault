@@ -5,7 +5,7 @@ import { getOrgDashboardData } from '../projects/dashboard-stats.js'
 import { OrgDashboardResponseSchema } from './schema.js'
 import { orgRoleOrDeny } from '../../lib/auth-role.js'
 
-export async function dashboardRoutes(fastify: FastifyApp): Promise<void> {
+export function dashboardRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '',
@@ -23,4 +23,5 @@ export async function dashboardRoutes(fastify: FastifyApp): Promise<void> {
       }
     },
   })
+  return Promise.resolve()
 }

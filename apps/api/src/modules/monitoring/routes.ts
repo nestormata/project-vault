@@ -321,7 +321,7 @@ async function parseDeleteRequest<Params extends { projectId: string }>(
 // routes carry no audit event) would make that proof unverifiable by inspection. Only the
 // audit-free prelude (parseWriteRequest/parseDeleteRequest) is shared here.
 
-export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
+export function monitoringRoutes(fastify: FastifyApp): Promise<void> {
   // --- Services (payment_records) — FR24 ---
 
   secureRoute(fastify, {
@@ -1313,4 +1313,5 @@ export async function monitoringRoutes(fastify: FastifyApp): Promise<void> {
       return { data: serializeMonitoringAlert(updated) }
     },
   })
+  return Promise.resolve()
 }

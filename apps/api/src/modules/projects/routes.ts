@@ -582,7 +582,7 @@ export async function createProject(
   }
 }
 
-export async function projectRoutes(fastify: FastifyApp): Promise<void> {
+export function projectRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '',
@@ -1411,4 +1411,5 @@ export async function projectRoutes(fastify: FastifyApp): Promise<void> {
       }
     },
   })
+  return Promise.resolve()
 }

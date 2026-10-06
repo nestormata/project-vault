@@ -22,15 +22,18 @@ export function requireAuthContext(
 }
 
 export function requireOrgRole(...roles: OrgRole[]) {
-  return async (request: FastifyRequest, reply: FastifyReply) => {
+  return (request: FastifyRequest, reply: FastifyReply) => {
     const authContext = requireAuthContext(request, reply)
     if (!authContext) {
-      return
+      return Promise.resolve()
     }
     // Story 71.3: a delegated actor without a PV role (orgRole absent) is denied.
     if (authContext.orgRole === undefined || !roles.includes(authContext.orgRole)) {
       const error = new AppError('insufficient_role', 'Insufficient permissions', 403)
-      return reply.status(error.statusCode).send({ code: error.code, message: error.message })
+      return Promise.resolve(
+        reply.status(error.statusCode).send({ code: error.code, message: error.message })
+      )
     }
+    return Promise.resolve()
   }
 }

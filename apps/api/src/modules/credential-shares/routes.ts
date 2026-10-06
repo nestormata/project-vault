@@ -422,7 +422,7 @@ async function finalizeShareCreationResponse(
   return response
 }
 
-export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void> {
+export function credentialSharesRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/:projectId/credentials/:credentialId/shares',
@@ -909,4 +909,5 @@ export async function credentialSharesRoutes(fastify: FastifyApp): Promise<void>
       return { data: { fieldKey, dismissedAt: result.dismissedAt.toISOString() } }
     }),
   })
+  return Promise.resolve()
 }

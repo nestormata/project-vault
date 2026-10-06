@@ -439,7 +439,7 @@ export function registerMethodNotAllowed(fastify: FastifyApp, path: string): voi
       method,
       url: path,
       schema: { response: { 405: methodNotAllowedResponseSchema } },
-      handler: async (_req: FastifyRequest, reply: FastifyReply) =>
+      handler: (_req: FastifyRequest, reply: FastifyReply) =>
         reply.header('Allow', 'POST').status(405).send({
           code: 'method_not_allowed',
           message: 'Method Not Allowed',

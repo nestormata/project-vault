@@ -24,7 +24,7 @@ const NOT_FOUND = { code: 'not_found', message: 'External identity not found' } 
  * call) and `requireMfa: true`, matching the architecture's "OrgAdmin" → literal `'admin'` role
  * string convention.
  */
-export async function externalIdentityRoutes(fastify: FastifyApp): Promise<void> {
+export function externalIdentityRoutes(fastify: FastifyApp): Promise<void> {
   // Story 14.7 AC-1: list, org-scoped via secureCtx.tx's RLS-scoped transaction — never
   // getAdminDb(). AC-4: allowedRoles: ['admin'] (not minimumRole) — matches this file's existing
   // POST route (see AC-4's Judgment Call in the story: owner is deliberately excluded here,
@@ -175,4 +175,5 @@ export async function externalIdentityRoutes(fastify: FastifyApp): Promise<void>
       return { data: row }
     },
   })
+  return Promise.resolve()
 }

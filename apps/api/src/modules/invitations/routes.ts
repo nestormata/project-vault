@@ -137,7 +137,7 @@ async function enqueueInvitationEmail(
 }
 
 /** Scoped to prefix '/api/v1/projects' — create/list/revoke invitations for a project. */
-export async function projectInvitationRoutes(fastify: FastifyApp): Promise<void> {
+export function projectInvitationRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'POST',
     url: '/:projectId/invitations',
@@ -362,4 +362,5 @@ export async function projectInvitationRoutes(fastify: FastifyApp): Promise<void
       return undefined
     },
   })
+  return Promise.resolve()
 }

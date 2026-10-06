@@ -21,7 +21,7 @@ import { LIST_RATE_LIMIT } from '../monitoring/routes.js'
  * existing `capability.denied` predicate inside `assertCapability()`'s call chain (Story 23.3
  * AC-25), unmodified and un-duplicated by this route.
  */
-export async function capabilitiesRoutes(fastify: FastifyApp): Promise<void> {
+export function capabilitiesRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/capabilities',
@@ -57,4 +57,5 @@ export async function capabilitiesRoutes(fastify: FastifyApp): Promise<void> {
       return { data: { capabilities } }
     },
   })
+  return Promise.resolve()
 }

@@ -35,8 +35,8 @@ export async function encryptTotpSecret(secretBuffer: Buffer): Promise<Encrypted
   }
 }
 
-export async function decryptEnrollmentSecret(encrypted: EncryptedValue): Promise<Buffer> {
-  return withSecret(encrypted, async (plaintext) => Buffer.from(plaintext))
+export function decryptEnrollmentSecret(encrypted: EncryptedValue): Promise<Buffer> {
+  return withSecret(encrypted, (plaintext) => Promise.resolve(Buffer.from(plaintext)))
 }
 
 export function base32FromSecretBytes(secretBytes: Buffer): string {

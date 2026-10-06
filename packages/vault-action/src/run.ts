@@ -111,8 +111,8 @@ async function attemptAllEntries(
   const applicationFailures: Failure[] = []
 
   // AC-9/D4 — every entry is always attempted, regardless of any earlier entry's outcome.
-  for (const entry of entries) {
-    const result = await retrieveEntry(agent, entry, vaultUrl)
+  const results = await Promise.all(entries.map((entry) => retrieveEntry(agent, entry, vaultUrl)))
+  for (const result of results) {
     if (result.ok) continue
     const bucket = result.vaultUnreachable ? vaultUnreachableFailures : applicationFailures
     bucket.push(result.failure)

@@ -3,6 +3,7 @@ import { withOrg } from '@project-vault/db'
 import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { DEV_AUTH_DUMMY_PASSWORD_HASH } from '../../config/dev-dummy-hash.js'
+import { mapWithConcurrency } from '../../lib/map-with-concurrency.js'
 import { operationalLog } from '../../lib/logger.js'
 import { writeSystemAuditRow } from '../../lib/system-audit-row.js'
 import { fetchAllOrgIds } from '../../middleware/rls.js'
@@ -91,7 +92,7 @@ async function fanoutAudit(eventType: string, payload: Record<string, unknown>):
     )
     return
   }
-  for (const orgId of orgIds) {
+  await mapWithConcurrency(orgIds, 2, async (orgId) => {
     try {
       await withOrg(orgId, (tx) => writeSystemAuditRow(tx, { orgId, eventType, payload }))
     } catch {
@@ -101,7 +102,7 @@ async function fanoutAudit(eventType: string, payload: Record<string, unknown>):
         { orgId, eventType }
       )
     }
-  }
+  })
 }
 
 async function logBootWarnings(

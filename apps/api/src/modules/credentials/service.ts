@@ -361,7 +361,9 @@ async function eagerNonSensitiveFieldValues(params: {
   if (nonSensitiveKeys.size === 0 || !params.encryptedValue) return {}
 
   try {
-    const plaintext = await withSecret(params.encryptedValue, async (buf) => buf.toString('utf8'))
+    const plaintext = await withSecret(params.encryptedValue, (buf) =>
+      Promise.resolve(buf.toString('utf8'))
+    )
     const fields = parseFieldsFromPlaintext(params.schemaVersion, plaintext)
     const values: Record<string, string> = {}
     for (const field of fields) {
@@ -465,10 +467,7 @@ export async function unarchiveCredential(
  * ambiguity; the machine value-retrieval handler (AC-6/AC-7) is responsible for turning a
  * multi-row result into a 409 `ambiguous_credential_name` response.
  */
-export async function findCredentialByNameInProject(
-  tx: Tx,
-  params: { projectId: string; name: string }
-) {
+export function findCredentialByNameInProject(tx: Tx, params: { projectId: string; name: string }) {
   return tx
     .select()
     .from(credentials)
@@ -732,7 +731,9 @@ export async function revealCurrentValue(
   }
 
   // reveal path: Buffer->string permitted here (the one sanctioned conversion site)
-  const plaintext = await withSecret(version.encryptedValue, async (buf) => buf.toString('utf8'))
+  const plaintext = await withSecret(version.encryptedValue, (buf) =>
+    Promise.resolve(buf.toString('utf8'))
+  )
   // Story 13.2 AC-7 — legacy (schema_version = 1) rows decrypt to a bare string; a
   // single-default-field v2 row unwraps to its bare value (backward compatible); a genuine
   // multi-field v2 row returns the full JSON field envelope. The stored ciphertext is never

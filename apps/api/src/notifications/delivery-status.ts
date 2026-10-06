@@ -62,7 +62,7 @@ type Logger = Partial<Pick<FastifyBaseLogger, 'warn'>>
  * `lastEventAt` but never re-writes `status` or re-audits (AC2 edge case: must not double-count a
  * delivery metric on duplicate webhook redelivery).
  */
-export async function applyDeliveryStatusUpdate(
+export function applyDeliveryStatusUpdate(
   input: ApplyDeliveryStatusUpdateInput,
   logger: Logger = {}
 ): Promise<ApplyDeliveryStatusUpdateResult> {

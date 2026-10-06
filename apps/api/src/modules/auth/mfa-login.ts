@@ -152,7 +152,7 @@ async function insertPendingChallenge(
   return inserted[0] ? { mfaRequired: true, mfaToken } : null
 }
 
-export async function createPendingMfaSession(
+export function createPendingMfaSession(
   input: { userId: string; orgId: string },
   meta: RequestMeta = {}
 ): Promise<MfaChallengeResult> {

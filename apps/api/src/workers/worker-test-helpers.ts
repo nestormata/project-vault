@@ -7,12 +7,8 @@ import type { initVault as InitVaultFn } from '../modules/vault/key-service.js'
 
 /** Shared by every worker test's cross-org-attribution check: creates two orgs and hands both
  *  ids to the callback, so per-org assertions can be scoped correctly with `withOrg`. */
-export async function withTwoTestOrgs<T>(
-  fn: (orgAId: string, orgBId: string) => Promise<T>
-): Promise<T> {
-  return withTestOrg(async ({ orgId: orgAId }) =>
-    withTestOrg(async ({ orgId: orgBId }) => fn(orgAId, orgBId))
-  )
+export function withTwoTestOrgs<T>(fn: (orgAId: string, orgBId: string) => Promise<T>): Promise<T> {
+  return withTestOrg(({ orgId: orgAId }) => withTestOrg(({ orgId: orgBId }) => fn(orgAId, orgBId)))
 }
 
 /** Must run before any worker test file's own dynamic `await import('../modules/vault/key-service.js')`

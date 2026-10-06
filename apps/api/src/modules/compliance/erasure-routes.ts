@@ -36,7 +36,7 @@ const ERASURE_REQUEST_NOT_FOUND = {
 } as const
 
 /** Scoped to prefix '/api/v1/org' — governed GDPR/CCPA right-to-erasure workflow (Story 8.4). */
-export async function erasureRoutes(fastify: FastifyApp): Promise<void> {
+export function erasureRoutes(fastify: FastifyApp): Promise<void> {
   // AC-1/2/3/4, D7: admin+owner may create an erasure request and review the PII inventory
   // before ever calling execute.
   secureRoute(fastify, {
@@ -291,4 +291,5 @@ export async function erasureRoutes(fastify: FastifyApp): Promise<void> {
       }
     },
   })
+  return Promise.resolve()
 }

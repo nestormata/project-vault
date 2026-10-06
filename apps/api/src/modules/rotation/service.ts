@@ -1685,7 +1685,7 @@ function evaluateChecklistAcknowledgement(
   return { outcome: 'ok', checklistAcknowledged: false, pendingCount: 0 }
 }
 
-async function loadChecklistItems(tx: Tx, rotationId: string): Promise<ChecklistItemRow[]> {
+function loadChecklistItems(tx: Tx, rotationId: string): Promise<ChecklistItemRow[]> {
   return tx
     .select()
     .from(rotationChecklistItems)
@@ -1928,7 +1928,9 @@ export async function getStagedValue(
     .limit(1)
   if (!version?.encryptedValue) return { status: 'rotation_not_found' }
 
-  const plaintext = await withSecret(version.encryptedValue, async (buf) => buf.toString('utf8'))
+  const plaintext = await withSecret(version.encryptedValue, (buf) =>
+    Promise.resolve(buf.toString('utf8'))
+  )
   const value = unwrapRevealValue(version.schemaVersion, plaintext)
   return { status: 'found', value, versionNumber: version.versionNumber }
 }
@@ -1956,7 +1958,7 @@ type ScheduledCredentialRow = {
 const MAX_SCHEDULED_CREDENTIALS_PER_QUERY = 1000
 const MAX_ROTATION_HISTORY_ROWS_PER_QUERY = 5000
 
-async function fetchCredentialsWithSchedule(
+function fetchCredentialsWithSchedule(
   tx: Tx,
   projectId?: string
 ): Promise<ScheduledCredentialRow[]> {
@@ -2109,7 +2111,7 @@ export type BreakGlassResult =
       deduped: boolean
     }
 
-async function activeDependentSystems(tx: Tx, orgId: string, credentialId: string) {
+function activeDependentSystems(tx: Tx, orgId: string, credentialId: string) {
   return tx
     .select({ id: credentialDependencies.id, systemName: credentialDependencies.systemName })
     .from(credentialDependencies)

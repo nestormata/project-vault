@@ -10,6 +10,7 @@ import {
 import type { Tx } from '@project-vault/db'
 import { credentials } from '@project-vault/db/schema'
 import type { FastifyApp } from '../../lib/fastify-app.js'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { ApiErrorSchema } from '../../lib/api-contracts.js'
 import { parseBody, parseParams, parseQuery, validationError } from '../../lib/route-helpers.js'
 import {
@@ -654,7 +655,7 @@ const ALREADY_ARCHIVED_ERROR = {
 } as const
 const NOT_ARCHIVED_ERROR = { code: 'not_archived', message: 'Secret is not archived' } as const
 
-export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
+export function credentialRoutes(fastify: FastifyApp): Promise<void> {
   secureRoute(fastify, {
     method: 'GET',
     url: '/:projectId/credentials/:credentialId/operational-context',
@@ -1000,8 +1001,8 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
         })
       }
 
-      for (const audit of confirmed.perCredentialAudits) {
-        await writeCredentialAuditOrFailClosed(req, secureCtx.tx, {
+      await forEachSequential(confirmed.perCredentialAudits, (audit) =>
+        writeCredentialAuditOrFailClosed(req, secureCtx.tx, {
           orgId: secureCtx.auth.orgId,
           actorUserId: secureCtx.auth.userId,
           eventType: audit.eventType,
@@ -1009,7 +1010,7 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
           payload: audit.payload,
           request: req,
         })
-      }
+      )
 
       req.log.info(
         {
@@ -1987,4 +1988,5 @@ export async function credentialRoutes(fastify: FastifyApp): Promise<void> {
       }
     },
   })
+  return Promise.resolve()
 }

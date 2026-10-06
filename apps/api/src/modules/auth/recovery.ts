@@ -13,6 +13,7 @@ import {
 import { AuditEvent } from '@project-vault/shared'
 import { env } from '../../config/env.js'
 import { AppError } from '../../lib/errors.js'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { stripTrailingSlashes } from '../../lib/url.js'
 import { writeHumanAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { activeMembershipRoleQuery } from '../../plugins/authenticate.js'
@@ -53,10 +54,11 @@ async function activeOrgMembershipsForUser(
 ): Promise<{ orgId: string; hasReachableAdmin: boolean }[]> {
   const orgRows = await tx.select({ orgId: organizations.id }).from(organizations)
   const memberships: { orgId: string; hasReachableAdmin: boolean }[] = []
-  for (const { orgId } of orgRows) {
+  // Sequential on purpose: every step flips `app.current_org_id` on the one shared `tx` connection.
+  await forEachSequential(orgRows, async ({ orgId }) => {
     await tx.execute(sql`SELECT set_config('app.current_org_id', ${orgId}, true)`)
     const [membership] = await activeMembershipRoleQuery(tx, userId, orgId)
-    if (!membership) continue
+    if (!membership) return
     const [adminRow] = await tx
       .select({ userId: orgMemberships.userId })
       .from(orgMemberships)
@@ -69,7 +71,7 @@ async function activeOrgMembershipsForUser(
       )
       .limit(1)
     memberships.push({ orgId, hasReachableAdmin: Boolean(adminRow) })
-  }
+  })
   return memberships
 }
 
@@ -153,8 +155,8 @@ async function writeRecoveryAuditPerOrg(
     request: FastifyRequest
   }
 ): Promise<void> {
-  for (const orgId of input.orgIds) {
-    await writeHumanAuditEntryOrFailClosed(tx, {
+  await forEachSequential(input.orgIds, (orgId) =>
+    writeHumanAuditEntryOrFailClosed(tx, {
       resourceType: 'account_recovery',
       orgId,
       actorUserId: input.actorUserId,
@@ -162,7 +164,7 @@ async function writeRecoveryAuditPerOrg(
       payload: input.payload,
       request: input.request,
     })
-  }
+  )
 }
 
 export type RequestRecoveryResult = { blocked: boolean }
@@ -173,7 +175,7 @@ export type RequestRecoveryResult = { blocked: boolean }
  * early-return timing tell; the residual write-count timing gap on a real hit (N audit rows for
  * an N-org user) is a known, accepted limitation — see the adversarial review for this story.
  */
-export async function requestSelfRecovery(
+export function requestSelfRecovery(
   email: string,
   request: FastifyRequest
 ): Promise<RequestRecoveryResult> {
@@ -478,7 +480,7 @@ export async function completeAccountRecovery(
 
     const memberships = await activeOrgMembershipsForUser(secureCtx.tx, user.id)
     let sessionsRevoked = 0
-    for (const membership of memberships) {
+    await forEachSequential(memberships, async (membership) => {
       const result = await revokeAllUserSessionsInOrg({
         userId: user.id,
         orgId: membership.orgId,
@@ -487,7 +489,7 @@ export async function completeAccountRecovery(
         tx: secureCtx.tx,
       })
       sessionsRevoked += result.revokedCount
-    }
+    })
 
     await writeRecoveryAuditPerOrg(secureCtx.tx, {
       orgIds: memberships.map((m) => m.orgId),

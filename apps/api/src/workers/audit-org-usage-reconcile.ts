@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { eq, sql } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import { auditOrgStorageUsage } from '@project-vault/db/schema'
@@ -273,11 +274,11 @@ async function checkStaleOrgs(logger: WorkerLogger | undefined): Promise<void> {
   const orgIds = await fetchAllOrgIds()
 
   let staleCount = 0
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     if (await isOrgUsageStale(orgId, staleCutoff, logger)) {
       staleCount += 1
     }
-  }
+  })
   if (staleCount === 0) return
   if (logger) {
     operationalLog(
@@ -328,7 +329,7 @@ async function writeBackAllOrgs(
   boss: BossService | undefined
 ): Promise<number> {
   let orgsUpdated = 0
-  for (const row of rows) {
+  await forEachSequential(rows, async (row) => {
     try {
       await writeBackOneOrg(row, logger, boss)
       orgsUpdated += 1
@@ -343,7 +344,7 @@ async function writeBackAllOrgs(
         )
       }
     }
-  }
+  })
   return orgsUpdated
 }
 

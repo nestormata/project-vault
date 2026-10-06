@@ -1,3 +1,4 @@
+import { forEachSequential } from '../lib/for-each-sequential.js'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import type { BossService } from '../lib/boss.js'
@@ -97,7 +98,7 @@ async function alertStaleStagedForOrg(
   const candidates = await runOrgScopedJob(orgId, JOB_NAME, ({ tx }) =>
     findStaleStagedRotations(tx, orgId)
   )
-  for (const candidate of candidates) {
+  await forEachSequential(candidates, async (candidate) => {
     // Same isolation rationale as rotation-recover.ts: each candidate already runs in its own
     // transaction, so a thrown error here only rolls back that one row — this catch stops it
     // from also aborting every other candidate/org left in the same run.
@@ -117,7 +118,7 @@ async function alertStaleStagedForOrg(
         )
       }
     }
-  }
+  })
 }
 
 /** `rotation/stale-staged-alert` (AC-4) — pg-boss job, wholly separate worker/env-var/column/
@@ -129,7 +130,7 @@ export async function runStaleStagedAlertJob(
   logger?: WorkerLogger
 ): Promise<void> {
   const orgIds = await fetchAllOrgIds()
-  for (const orgId of orgIds) {
+  await forEachSequential(orgIds, async (orgId) => {
     try {
       await alertStaleStagedForOrg(orgId, boss, logger)
     } catch (error) {
@@ -143,5 +144,5 @@ export async function runStaleStagedAlertJob(
         )
       }
     }
-  }
+  })
 }

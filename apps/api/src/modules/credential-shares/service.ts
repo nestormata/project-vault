@@ -387,7 +387,7 @@ function sharesForCredentialWhereClause(params: ListSharesForCredentialParams) {
  *  caller); a non-admin caller must always pass their own id, scoping the list to shares they
  *  created. AC-1/AC-2: optional `status` filter and `limit`/`offset` pagination, both additive on
  *  top of the existing scoping. */
-export async function listSharesForCredential(
+export function listSharesForCredential(
   tx: Tx,
   params: ListSharesForCredentialParams
 ): Promise<CredentialShareRow[]> {
@@ -437,7 +437,7 @@ function sharesForOrganizationWhereClause(params: ListSharesForOrganizationParam
  *  existed anywhere in this file before this story). Same optional `status`/`limit`/`offset` shape,
  *  same `desc(credentialShares.createdAt)` ordering, and same `DEFAULT_SHARE_LIST_LIMIT` default as
  *  the credential-scoped pair above. */
-export async function listSharesForOrganization(
+export function listSharesForOrganization(
   tx: Tx,
   params: ListSharesForOrganizationParams
 ): Promise<CredentialShareRow[]> {
@@ -512,7 +512,7 @@ export async function revokeShare(
 /** Story 17.1 AC-15: revokes every `active` share created by a user being deactivated, in the
  *  same transaction as the deactivation itself. Returns the revoked rows so the caller can write
  *  one `CREDENTIAL_SHARE_REVOKED` audit entry per share with a distinguishing reason. */
-export async function autoRevokeSharesForDeactivatedUser(
+export function autoRevokeSharesForDeactivatedUser(
   tx: Tx,
   params: { orgId: string; userId: string }
 ): Promise<CredentialShareRow[]> {
@@ -815,7 +815,7 @@ async function recordMultiView(tx: Tx, shareId: string): Promise<CredentialShare
  * Returns the superseded rows so the caller (rotation/routes.ts) can write one
  * CREDENTIAL_SHARE_SUPERSEDED audit entry per share (AC-13), each carrying the same `rotationId`.
  */
-export async function supersedeOutstandingSharesForRotation(
+export function supersedeOutstandingSharesForRotation(
   tx: Tx,
   params: {
     orgId: string

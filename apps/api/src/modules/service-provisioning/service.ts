@@ -76,7 +76,7 @@ async function findExistingProvisioning(
  * resolves a lost race to the real winner) — a unique-violation here aborts the whole transaction,
  * by design, so the caller can cleanly retry a fresh read afterward.
  */
-async function insertNewProvisioning(
+function insertNewProvisioning(
   input: ProvisionServiceOrganizationRequest
 ): Promise<ProvisionServiceOrganizationResult> {
   return getDb().transaction(async (tx) => {
@@ -252,7 +252,7 @@ function validateRequestedRole(role: string | undefined): ServiceOrgMemberRole {
  * externalIdentities row already exists, via the unique-violation catch below) — an accepted
  * consequence of the same fail-closed decision, not a separate one.
  */
-async function insertNewOrgMember(
+function insertNewOrgMember(
   organizationId: string,
   input: ProvisionServiceOrgMemberRequest,
   role: ServiceOrgMemberRole
@@ -312,7 +312,7 @@ async function insertNewOrgMember(
  * provisioning call, reactivates it in the same transaction (AC8) rather than silently returning
  * success while the member stays locked out.
  */
-async function findExistingOrgMemberAndReactivate(
+function findExistingOrgMemberAndReactivate(
   organizationId: string,
   input: ProvisionServiceOrgMemberRequest
 ): Promise<ProvisionServiceOrgMemberResult> {
@@ -587,7 +587,7 @@ async function backfillCentralizemeOrgLinkDryRun(
  * function, in backfillCentralizemeOrgLink) is the race-safe backstop for the different-org case
  * the fast-path SELECT cannot fully close.
  */
-async function backfillCentralizemeOrgLinkReal(
+function backfillCentralizemeOrgLinkReal(
   organizationId: string,
   input: BackfillCentralizemeOrgLinkRequest
 ): Promise<BackfillCentralizemeOrgLinkResult> {

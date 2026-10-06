@@ -12,6 +12,7 @@ import {
 import { AuditEvent } from '@project-vault/shared'
 import type { EncryptedValue } from '@project-vault/crypto'
 import { AppError } from '../../lib/errors.js'
+import { forEachSequential } from '../../lib/for-each-sequential.js'
 import { env } from '../../config/env.js'
 import {
   dispatchDirectUserNotification,
@@ -168,11 +169,11 @@ async function writeMfaEnrollmentAudit(
 
 // Exported for reuse by account recovery's tokenless MFA re-enrollment (Story 4.3 D1), which
 // stages the same "pending secret + QR" shape as enrollMfa without a session-bound AuthContext.
-export async function buildQrCodeSvg(otpauthUrl: string): Promise<string> {
+export function buildQrCodeSvg(otpauthUrl: string): Promise<string> {
   return QRCode.toString(otpauthUrl, { type: 'svg', margin: 2, width: 256 })
 }
 
-export async function enrollMfa(authContext: AuthContext, meta: RequestMeta = {}, tx?: Tx) {
+export function enrollMfa(authContext: AuthContext, meta: RequestMeta = {}, tx?: Tx) {
   const run = async (tx: unknown) => {
     const db = tx as Tx
     const userRows = await db
@@ -317,7 +318,7 @@ export async function verifyConfirmedLoginTotp(
   return validateEnrollmentTotp(tx, userId, enrollment, totp, false)
 }
 
-async function handleInvalidEnrollmentTotp(
+function handleInvalidEnrollmentTotp(
   authContext: AuthContext,
   attemptedEmail: string | null,
   meta: RequestMeta,
@@ -331,7 +332,7 @@ async function handleInvalidEnrollmentTotp(
       reason: 'invalid_totp',
     })
   }
-  throw invalidTotp()
+  return Promise.reject(invalidTotp())
 }
 
 async function runEnrollmentTotpGuardedTransaction<T extends object>(
@@ -515,11 +516,11 @@ async function findMatchingRecoveryCode(tx: Tx, userId: string, recoveryCode: st
     .where(and(eq(mfaRecoveryCodes.userId, userId), isNull(mfaRecoveryCodes.usedAt)))
 
   let matchedId: string | null = null
-  for (const row of rows) {
+  await forEachSequential(rows, async (row) => {
     if (await recoveryCodeMatches(recoveryCode, row.codeHash)) {
       matchedId = row.id
     }
-  }
+  })
   if (rows.length === 0) await bcrypt.compare(recoveryCode, await getDummyRecoveryCodeHash())
   return matchedId
 }
@@ -627,7 +628,7 @@ export async function recoverWithCode(
   })
 }
 
-export async function getMfaStatus(
+export function getMfaStatus(
   userId: string,
   tx?: Tx
 ): Promise<{

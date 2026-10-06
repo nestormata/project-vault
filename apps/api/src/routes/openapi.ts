@@ -13,8 +13,9 @@ import type { FastifyApp } from '../lib/fastify-app.js'
  * instance's spec never lists this route either, per AC-6's "absence carries no information
  * leak" requirement.
  */
-export async function openapiRoutes(fastify: FastifyApp): Promise<void> {
-  fastify.get('/openapi.json', async (_req: FastifyRequest, reply: FastifyReply) => {
+export function openapiRoutes(fastify: FastifyApp): Promise<void> {
+  fastify.get('/openapi.json', (_req: FastifyRequest, reply: FastifyReply) => {
     return reply.send(fastify.swagger())
   })
+  return Promise.resolve()
 }

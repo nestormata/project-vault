@@ -19,7 +19,7 @@ export type NotificationQueueRow = typeof notificationQueue.$inferSelect
  * (Decisions 2026-09-30 — such a row is never re-sent; see markNotificationSendStarted).
  * A losing caller writes nothing.
  */
-export async function claimPendingNotificationEntry(
+export function claimPendingNotificationEntry(
   notificationQueueId: string,
   orgId: string
 ): Promise<NotificationQueueRow | null> {

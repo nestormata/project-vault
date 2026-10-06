@@ -206,12 +206,12 @@ async function readNormalizedTotp(
 }
 
 /** Classifies the verify-login server response into the caller's next step. */
-async function classifyTotpResult(
+function classifyTotpResult(
   result: PostJsonResult,
   config: LoginConfig,
   streams: LoginStreams,
   deps: LoginDeps
-): Promise<number | 'restart' | 'retry'> {
+): number | 'restart' | 'retry' {
   if (result.status === 200 && isBearerData(dataOf(result.json))) {
     return finishLogin(dataOf(result.json) as LoginBearerData, config, streams, deps)
   }
@@ -258,7 +258,7 @@ async function runTotpChallenge(
       return unexpectedError(streams, error)
     }
 
-    const outcome = await classifyTotpResult(result, config, streams, deps)
+    const outcome = classifyTotpResult(result, config, streams, deps)
     if (outcome === 'retry') continue
     return outcome
   }
