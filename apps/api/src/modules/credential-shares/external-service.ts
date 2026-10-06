@@ -1,9 +1,10 @@
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm'
 import { withOrg, type Tx } from '@project-vault/db'
 import { credentialShares } from '@project-vault/db/schema'
-import { AuditEvent } from '@project-vault/shared'
+import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import type { CredentialShareCreationErrorStatus } from '@project-vault/extension-api'
 import { getAdminDb } from '../../lib/db.js'
+import { operationalLog } from '../../lib/logger.js'
 import { writeSystemAuditEntryOrFailClosed } from '../../lib/audit-or-fail-closed.js'
 import { serializeBounded } from '../credentials/bounded-share-adapter.js'
 import { preflightCredentialForShareCreation } from './service.js'
@@ -19,9 +20,11 @@ import {
   validateShareFieldAndExpiry,
   type CredentialShareRow,
 } from './service.js'
+import { withMinResponseTime } from '../../lib/min-response-time.js'
 import {
   EXTERNAL_SHARE_MAX_REVEAL_ATTEMPTS,
   EXTERNAL_SHARE_MAX_TTL_MS,
+  EXTERNAL_SHARE_MISS_FLOOR_MS,
   MAX_PENDING_EXTERNAL_SHARES_PER_FIELD,
 } from './schema.js'
 
@@ -295,6 +298,109 @@ async function recordLosingAttempt(tx: Tx, share: CredentialShareRow): Promise<C
 }
 
 /**
+ * Story 65.4: the class-correlated writes of a MISS (the AC-22 attempt counter, its cap-revoke
+ * and, for an active share already past `expiresAt`, the lazy expiry with its
+ * `CREDENTIAL_SHARE_EXPIRED` audit row) no longer run inside the response-critical transaction:
+ * they would make a revoked/viewed/expired token slower than an unknown one and carry commit
+ * (WAL sync) latency tails the caller can observe. The miss response is computed from the read and
+ * this descriptor travels back to `revealExternalShare`, which schedules ONE post-response task.
+ * The descriptor holds ids only (the task re-reads the row under `withOrg(orgId)` of the resolved
+ * share).
+ */
+type DeferredLosingAttempt = { orgId: string; shareId: string; expireIfDue: boolean }
+
+type RevealOutcome = { result: RevealExternalShareResult; deferred?: DeferredLosingAttempt }
+
+type DeferredAttemptLogger = Parameters<typeof operationalLog>[0]
+
+/** In-process registry of scheduled post-response tasks, so tests can await them
+ *  (`flushPendingLosingAttempts`) and graceful shutdown can drain them with a bounded wait. */
+const pendingLosingAttempts = new Set<Promise<void>>()
+
+/** One `withOrg` transaction: lazy expiry (when due, guarded by `status = 'active'` so a parallel
+ *  burst writes the audit row exactly once) and then the atomic counter increment plus cap-revoke.
+ *  Expiry, audit and attempt stay atomic with each other. */
+async function applyDeferredLosingAttempt(deferred: DeferredLosingAttempt): Promise<void> {
+  await withOrg(deferred.orgId, async (tx) => {
+    const [fresh] = await tx
+      .select()
+      .from(credentialShares)
+      .where(eq(credentialShares.id, deferred.shareId))
+      .limit(1)
+    if (!fresh) return
+    const share = deferred.expireIfDue ? await lazilyExpireShareIfDue(tx, fresh) : fresh
+    await recordLosingAttempt(tx, share)
+  })
+}
+
+/** Only the error class name and a driver code: a drizzle query error's message and stack embed the
+ *  bound parameters of the failed statement (the share id and org id), which this log line must
+ *  never name, and `serializeLogError` redacts only connection strings and email addresses. */
+function safeDeferredFailureFields(error: unknown): Record<string, unknown> {
+  const name = error instanceof Error ? error.name : 'NonError'
+  const cause: unknown = error instanceof Error ? error.cause : undefined
+  const code = [error, cause]
+    .map((candidate) => (candidate as { code?: unknown } | null | undefined)?.code)
+    .find((value) => typeof value === 'string')
+  return { errorName: name, ...(code === undefined ? {} : { errorCode: code }) }
+}
+
+/** Never rejects: a failed post-response write is logged (redacted, no ids) and dropped, never
+ *  reaching the reply and never an unhandled rejection for the fault-containment handler. */
+async function runDeferredLosingAttempt(
+  deferred: DeferredLosingAttempt,
+  logger: DeferredAttemptLogger
+): Promise<void> {
+  try {
+    await applyDeferredLosingAttempt(deferred)
+  } catch (error) {
+    try {
+      operationalLog(
+        logger,
+        'error',
+        OperationalEvent.CREDENTIAL_SHARE_LOSING_ATTEMPT_WRITE_FAILED,
+        'Deferred external share losing-attempt write failed',
+        safeDeferredFailureFields(error)
+      )
+    } catch {
+      // Logging must never turn a dropped write into a crash.
+    }
+  }
+}
+
+function scheduleLosingAttempt(
+  deferred: DeferredLosingAttempt,
+  logger: DeferredAttemptLogger
+): void {
+  const task = runDeferredLosingAttempt(deferred, logger)
+  pendingLosingAttempts.add(task)
+  void task.then(() => pendingLosingAttempts.delete(task))
+}
+
+function drainPendingLosingAttempts(): Promise<void> {
+  if (pendingLosingAttempts.size === 0) return Promise.resolve()
+  return Promise.all(pendingLosingAttempts).then(drainPendingLosingAttempts)
+}
+
+/**
+ * Resolves once every scheduled post-response losing-attempt task (including ones scheduled while
+ * draining) has settled. With `timeoutMs` the wait is bounded: it resolves at the deadline even if
+ * work is still pending, so graceful shutdown can never hang on a stuck write.
+ */
+export async function flushPendingLosingAttempts(timeoutMs?: number): Promise<void> {
+  if (timeoutMs === undefined) return drainPendingLosingAttempts()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs)
+  })
+  try {
+    await Promise.race([drainPendingLosingAttempts(), deadline])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
  * AC-8/AC-13/AC-17/AC-22: the external reveal-step. Timing-safe lookup (AC-17), field-existence
  * check BEFORE the atomic claim (PR #251's fixed ordering — do not reintroduce the single-use-
  * burn-on-missing-field bug in this new code path), atomic `claimSingleUseView` reuse (AC-13,
@@ -304,10 +410,6 @@ async function recordLosingAttempt(tx: Tx, share: CredentialShareRow): Promise<C
  * reaches the atomic-claim step at all, consistent with PR #251's ordering fix — the recipient
  * isn't at fault for a field renamed out from under them).
  */
-/** Extracted from `revealExternalShare` to keep its own cyclomatic complexity under this repo's
- *  eslint threshold. Returns a terminal RevealExternalShareResult (recording the AC-22 losing
- *  attempt as it does) when the share isn't claimable, or `undefined`/the possibly-lazily-expired
- *  share when the caller should proceed to the field check + atomic claim. */
 /** Maps a share's terminal DB `status` to the terminal reveal-failure reason surfaced to the
  *  caller — shared by `precheckExternalShareClaimable` (checked up front) and
  *  `resolveLostExternalClaim` (re-checked after losing the atomic claim), so the two can never
@@ -323,63 +425,66 @@ export function terminalRevealStatusFor(
   return undefined
 }
 
-async function precheckExternalShareClaimable(
-  tx: Tx,
+/** Extracted from `revealExternalShare` to keep its own cyclomatic complexity under this repo's
+ *  eslint threshold. Pure decision over the row already read: returns the terminal outcome (with
+ *  the deferred AC-22 attempt, and the deferred lazy expiry for an active share already past
+ *  `expiresAt`) when the share isn't claimable, or the share when the caller should proceed to the
+ *  field check + atomic claim. Performs no write. */
+function precheckExternalShareClaimable(
   share: CredentialShareRow
-): Promise<{ result: RevealExternalShareResult } | { share: CredentialShareRow }> {
+): { outcome: RevealOutcome } | { share: CredentialShareRow } {
+  const losing = (
+    result: RevealExternalShareResult,
+    expireIfDue: boolean
+  ): { outcome: RevealOutcome } => ({
+    outcome: { result, deferred: { orgId: share.orgId, shareId: share.id, expireIfDue } },
+  })
   const terminal = terminalRevealStatusFor(share.status)
-  if (terminal) {
-    await recordLosingAttempt(tx, share)
-    return { result: { status: terminal } }
-  }
-  if (share.status === 'viewed') {
-    await recordLosingAttempt(tx, share)
-    return { result: { status: 'already_viewed' } }
-  }
+  if (terminal) return losing({ status: terminal }, false)
+  if (share.status === 'viewed') return losing({ status: 'already_viewed' }, false)
   if (share.expiresAt.getTime() <= Date.now()) {
-    // Story 17.3 AC-5/AC-6: reuse `lazilyExpireShareIfDue` (writes CREDENTIAL_SHARE_EXPIRED in
-    // the same transaction) rather than a second, parallel inline transition.
-    const lazilyExpired = await lazilyExpireShareIfDue(tx, share)
-    await recordLosingAttempt(tx, lazilyExpired)
-    return { result: { status: 'expired' } }
+    // Story 17.3 AC-5/AC-6: the deferred task reuses `lazilyExpireShareIfDue` (writes
+    // CREDENTIAL_SHARE_EXPIRED in the same transaction) rather than a second, parallel inline
+    // transition; the response is `expired` either way.
+    return losing({ status: 'expired' }, true)
   }
   return { share }
 }
 
 /** Extracted from `revealExternalShare` for the same complexity-ceiling reason as
  *  `precheckExternalShareClaimable` above: resolves a lost atomic claim (AC-22 losing attempt) to
- *  the correct terminal outcome by re-reading the share's current status. */
-async function resolveLostExternalClaim(
-  tx: Tx,
-  share: CredentialShareRow
-): Promise<RevealExternalShareResult> {
+ *  the correct terminal outcome by re-reading the share's current status. The attempt itself is
+ *  deferred like every other miss. */
+async function resolveLostExternalClaim(tx: Tx, share: CredentialShareRow): Promise<RevealOutcome> {
   const [reread] = await tx
     .select()
     .from(credentialShares)
     .where(eq(credentialShares.id, share.id))
     .limit(1)
   const lost = reread ?? share
-  await recordLosingAttempt(tx, lost)
+  const deferred = { orgId: lost.orgId, shareId: lost.id, expireIfDue: false }
   const terminal = terminalRevealStatusFor(lost.status)
-  if (terminal) return { status: terminal }
-  return { status: 'already_viewed' }
+  return { result: { status: terminal ?? 'already_viewed' }, deferred }
 }
 
-export async function revealExternalShare(rawToken: string): Promise<RevealExternalShareResult> {
+export async function revealExternalShare(
+  rawToken: string,
+  logger: DeferredAttemptLogger = {}
+): Promise<RevealExternalShareResult> {
   const tokenHash = hashShareToken(rawToken)
   const row = await adminLookupByTokenHash(tokenHash)
   if (row?.recipientType !== 'external') return { status: 'not_found' }
 
-  return withOrg(row.orgId, async (tx) => {
+  const outcome = await withOrg(row.orgId, async (tx): Promise<RevealOutcome> => {
     const [current] = await tx
       .select()
       .from(credentialShares)
       .where(eq(credentialShares.id, row.id))
       .limit(1)
-    if (!current) return { status: 'not_found' }
+    if (!current) return { result: { status: 'not_found' } }
 
-    const precheck = await precheckExternalShareClaimable(tx, current)
-    if ('result' in precheck) return precheck.result
+    const precheck = precheckExternalShareClaimable(current)
+    if ('outcome' in precheck) return precheck.outcome
     const { share } = precheck
 
     // Field-existence check BEFORE the atomic claim — the PR #251 ordering fix, applied here from
@@ -392,7 +497,7 @@ export async function revealExternalShare(rawToken: string): Promise<RevealExter
       effectiveAttributeKeysForShare(share),
       tx
     )
-    if (bounded.status !== 'ok') return { status: 'expired' }
+    if (bounded.status !== 'ok') return { result: { status: 'expired' } }
 
     const claimed = await claimSingleUseView(tx, share.id)
     if (!claimed) return resolveLostExternalClaim(tx, share)
@@ -424,6 +529,44 @@ export async function revealExternalShare(rawToken: string): Promise<RevealExter
       },
     })
 
-    return buildShareRevealResult(claimed, bounded, share.fieldKey)
+    return { result: buildShareRevealResult(claimed, bounded, share.fieldKey) }
   })
+
+  // Story 65.4: a miss answers from the read; its write happens after, off the response path.
+  if (outcome.deferred) scheduleLosingAttempt(outcome.deferred, logger)
+  return outcome.result
+}
+
+/** Story 65.4 AC1: a metadata lookup is a "miss" (held to the floor) when it found nothing or the
+ *  share is no longer active: expired, revoked, viewed and superseded all answer "this link does
+ *  not work" and must take as long as an unknown token. */
+export function isExternalMetadataMiss(result: FindExternalShareResult): boolean {
+  return result.status !== 'ok' || result.metadata.share.status !== 'active'
+}
+
+/** Story 65.4 AC1: every non-`ok` reveal outcome is a miss. */
+export function isExternalRevealMiss(result: RevealExternalShareResult): boolean {
+  return result.status !== 'ok'
+}
+
+/** The metadata lookup with its misses held until `EXTERNAL_SHARE_MISS_FLOOR_MS` after it started.
+ *  A hit is never delayed and an error propagates unheld. */
+export function findExternalShareWithMissFloor(rawToken: string): Promise<FindExternalShareResult> {
+  return withMinResponseTime(
+    EXTERNAL_SHARE_MISS_FLOOR_MS,
+    () => findExternalShareByTokenHash(rawToken),
+    { isMiss: isExternalMetadataMiss }
+  )
+}
+
+/** The reveal step with its misses held like `findExternalShareWithMissFloor`'s. */
+export function revealExternalShareWithMissFloor(
+  rawToken: string,
+  logger?: DeferredAttemptLogger
+): Promise<RevealExternalShareResult> {
+  return withMinResponseTime(
+    EXTERNAL_SHARE_MISS_FLOOR_MS,
+    () => revealExternalShare(rawToken, logger),
+    { isMiss: isExternalRevealMiss }
+  )
 }

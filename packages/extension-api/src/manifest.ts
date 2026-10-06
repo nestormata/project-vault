@@ -186,6 +186,17 @@ export type ExtensionManifest = {
    */
   anonymousRoutePaths?: string[]
   /**
+   * Story 65.4 — optional per-template minimum response time for the anonymous public routes
+   * declared in `anonymousRoutePaths`. Key: a declared path template; value: whole milliseconds,
+   * 1 to 2000. When set, PV holds every non-2xx answer for that template (hook responses of 400 or
+   * above, mapped `ActionResult`s, the generic 500 and PV's own 404s) until that long after the
+   * handler started, so an anonymous caller cannot tell "does not work" outcomes apart by latency.
+   * Never delays a 2xx and never adds a wait once the handler was already slower. Only legal with
+   * `'public-route'` in `capabilities[]`; every key must be a declared template. Validated by
+   * `registerExtension()`.
+   */
+  anonymousRouteMinResponseMs?: Record<string, number>
+  /**
    * Story 68.8 (M7) — optional declaration of API routes this extension adds at any URL
    * (`add`) and PV routes it overrides (`override`, `replace` or `wrap`), all running inside PV's
    * own security pipeline. Plain data only; the handlers, schema objects and hook functions live
@@ -636,7 +647,9 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // conformance helpers (`checkExtensionEmitters`, `assertExtensionEmittersContained`,
 // `checkBackgroundPromisesHandled`) and the documented emitter/background-promise contract
 // (policy row 2). No manifest or hook change; an extension that ignores them behaves as before.
-export const EXTENSION_API_VERSION = '3.34.0'
+// Story 65.4 — bumped as a minor (3.34.0 -> 3.35.0): the optional manifest field
+// `anonymousRouteMinResponseMs` (policy row 1). A manifest that omits it behaves exactly as before.
+export const EXTENSION_API_VERSION = '3.35.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

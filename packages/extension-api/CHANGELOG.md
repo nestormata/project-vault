@@ -2,6 +2,36 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.35.0 — 2026-10-06
+
+contract-hash: sha256:859571580a4231e155ba093d7f601c42195c5dbf749e613a76e96082b455fa75
+
+Story 65.4. Additive only: a manifest that omits the new field behaves exactly as before.
+
+### Added
+
+- `ExtensionManifest.anonymousRouteMinResponseMs` (optional `Record<string, number>`): a minimum
+  response time per declared `anonymousRoutePaths` template, whole milliseconds from 1 to 2000.
+  PV holds every non-2xx answer for that template (hook responses of 400 or above, mapped
+  `ActionResult`s, PV's own 404s and the generic 500) until that long after the handler started.
+  A 2xx is never delayed, and a handler already slower than the minimum gets no extra wait.
+  `registerExtension()` rejects a key that is not a declared template, a value outside 1 to 2000 or
+  not a whole number, and the field without `'public-route'` in `capabilities[]`.
+
+### Deprecated
+
+Still pending removal, nothing added in this release:
+
+- Exports: `UIPanel`, `UIPanelContext`, `UIPanelResult`, `ModuleAction`, `ModuleActionContext`,
+  `ModuleActionRequest`, `ActionResult`, `ModuleDataRequestContext`, `ModuleDataResult`,
+  `ModuleDataRouteHandler`, `ModuleDataRouteDeclaration`, `ExtensionNavItem`.
+- Manifest fields: `uiPanelSlots`, `moduleActions`, `navItems`, `moduleDataRoutes`.
+- Hooks: `uiPanel`, `moduleAction`, `moduleData`, plus the `'ui-panel'` capability member.
+- Use instead: `ExtensionRequestContext`, `ExtensionActionResult`, composed UI, M7 `apiRoutes`.
+- Notified: 2026-10-06, earlier 3.30.0 notice stands; recipient CentralizeMe maintainer.
+- earliest-removal: 4.0.0
+- notice-window-ends: 2027-01-14
+
 ## 3.34.0 — 2026-10-05
 
 contract-hash: sha256:2ed66bc4a2247ba27840793c9dd5c312acfd30fd4a604f7715cdffe7be8559d5

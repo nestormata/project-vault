@@ -1276,7 +1276,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.34.0"`
+- type: `"3.35.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 
@@ -1401,6 +1401,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 1.0.0
 - kind: type
 - type: `ExtensionManifest`
+- member: `anonymousRouteMinResponseMs?`
+  - since: 3.35.0
+  - type: `Record<string, number> | undefined`
+  - union-members: `undefined`, `Record<string, number>`
 - member: `anonymousRoutePaths?`
   - since: 3.23.0
   - type: `string[] | undefined`

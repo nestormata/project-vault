@@ -329,7 +329,11 @@ describe('buildCredentialSharingHost.findShareByToken / revealShare (AC3)', () =
     const host = buildCredentialSharingHost(MANIFEST)
     // @ts-expect-error — regression guard: revealShare must be callable with exactly one arg
     await host.revealShare('token', { organizationId: ORG_ID })
-    expect(revealExternalShare).toHaveBeenCalledWith('token')
+    // Story 65.4: the second argument is the host's own logger for the deferred write, never an
+    // organization id.
+    const [call] = vi.mocked(revealExternalShare).mock.calls
+    expect(call?.[0]).toBe('token')
+    expect(JSON.stringify(call)).not.toContain(ORG_ID)
   })
 
   it('findShareByToken: thin closure returning the resolved metadata on a valid token', async () => {
@@ -924,5 +928,119 @@ describe('buildCredentialSharingHost — AC5 per-extension in-flight rate limiti
 
     releaseCreate?.()
     await createCall
+  })
+})
+
+describe('buildCredentialSharingHost miss floor (Story 65.4 AC1)', () => {
+  const FLOOR = 100
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /** Settles `call` and reports how many fake ms it took (or that it never settled in `limit`). */
+  async function settleWithin(call: Promise<unknown>, limitMs: number) {
+    let settled = false
+    const tracked = call.then(
+      () => {
+        settled = true
+      },
+      () => {
+        settled = true
+      }
+    )
+    await vi.advanceTimersByTimeAsync(limitMs)
+    return { settled, tracked }
+  }
+
+  it('findShareByToken holds a not_found until the floor and returns the same value', async () => {
+    findExternalShareByTokenHash.mockResolvedValue({ status: 'not_found' })
+    const host = buildCredentialSharingHost(MANIFEST)
+    const call = host.findShareByToken('garbage')
+    expect((await settleWithin(call, FLOOR - 1)).settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(call).resolves.toEqual({ status: 'not_found' })
+  })
+
+  it.each(['expired', 'revoked', 'viewed', 'superseded'] as const)(
+    'findShareByToken holds a %s share like a miss (the dead-link class)',
+    async (status) => {
+      const found = await findExternalShareByTokenHash(VALID_TOKEN)
+      findExternalShareByTokenHash.mockResolvedValue({
+        ...found,
+        metadata: { ...found.metadata, share: { ...SHARE_ROW, status } },
+      })
+      const host = buildCredentialSharingHost(MANIFEST)
+      const call = host.findShareByToken(VALID_TOKEN)
+      expect((await settleWithin(call, FLOOR - 1)).settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      await expect(call).resolves.toMatchObject({ status: 'ok' })
+    }
+  )
+
+  it('findShareByToken never delays an active share (a hit)', async () => {
+    const host = buildCredentialSharingHost(MANIFEST)
+    const call = host.findShareByToken(VALID_TOKEN)
+    expect((await settleWithin(call, 0)).settled).toBe(true)
+    await expect(call).resolves.toMatchObject({ status: 'ok' })
+  })
+
+  it('revealShare holds every non-ok outcome and never delays a hit', async () => {
+    const revealed = await revealExternalShare(VALID_TOKEN)
+    revealExternalShare.mockResolvedValue({ status: 'revoked' })
+    const host = buildCredentialSharingHost(MANIFEST)
+    const miss = host.revealShare('token')
+    expect((await settleWithin(miss, FLOOR - 1)).settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(miss).resolves.toEqual({ status: 'revoked' })
+
+    revealExternalShare.mockResolvedValue(revealed)
+    const hit = host.revealShare('token')
+    expect((await settleWithin(hit, 0)).settled).toBe(true)
+  })
+
+  it('holds the per-org rate-limit rejection like any other miss, then rethrows it', async () => {
+    const host = buildCredentialSharingHost(MANIFEST, {}, { orgRateLimits: { revealShare: 1 } })
+    await host.revealShare('token-1')
+    await vi.advanceTimersByTimeAsync(0)
+
+    const limited = host.revealShare('token-2').then(
+      () => 'resolved',
+      (error: unknown) => error
+    )
+    await vi.advanceTimersByTimeAsync(FLOOR - 1)
+    let early = false
+    void limited.then(() => {
+      early = true
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(early).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await limited).toBeInstanceOf(CredentialSharingOrgRateLimitedError)
+  })
+
+  it('an unrelated thrown error is not held', async () => {
+    findExternalShareByTokenHash.mockRejectedValue(new Error('db down'))
+    const host = buildCredentialSharingHost(MANIFEST)
+    const call = host.findShareByToken('token').catch((error: unknown) => error)
+    expect((await settleWithin(call, 0)).settled).toBe(true)
+    expect(await call).toBeInstanceOf(Error)
+  })
+
+  it('a held call keeps counting once in the in-flight accounting until it is released', async () => {
+    findExternalShareByTokenHash.mockResolvedValue({ status: 'not_found' })
+    const host = buildCredentialSharingHost(MANIFEST, {}, { maxInFlight: 1 })
+    const first = host.findShareByToken('garbage-1')
+    await vi.advanceTimersByTimeAsync(10)
+    expect(__getCredentialSharingHostInFlightCountForTests(MANIFEST.name)).toBe(1)
+    await expect(host.findShareByToken('garbage-2')).rejects.toBeInstanceOf(
+      CredentialSharingRateLimitedError
+    )
+    await vi.advanceTimersByTimeAsync(FLOOR)
+    await first
+    expect(__getCredentialSharingHostInFlightCountForTests(MANIFEST.name)).toBe(0)
   })
 })

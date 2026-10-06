@@ -21,6 +21,14 @@ export const MAX_PENDING_EXTERNAL_SHARES_PER_FIELD = 5
 // Record; defense-in-depth on top of the token's own 256-bit entropy.
 export const EXTERNAL_SHARE_MAX_REVEAL_ATTEMPTS = 5
 
+// Story 65.4 AC1: every "this link does not work" outcome of the external share routes and host
+// methods is held until this many ms after the work started, so unknown, malformed, expired,
+// revoked, viewed and superseded tokens cannot be told apart by latency. Chosen from measurement
+// (Dev Notes, Story 65.4): with the class-correlated writes off the response path, the slowest
+// un-floored miss class had a p99 of about 15 ms on the dev host, so 100 ms is more than 6x
+// headroom while staying far below the 250 ms ceiling. A floor cannot hide a tail that exceeds it.
+export const EXTERNAL_SHARE_MISS_FLOOR_MS = 100
+
 // Story 17.3 AC-2: mirrors the limit/offset (not page-based) convention the AC explicitly asks
 // for — default 25, clamp (never reject) an over-large limit to 100, matching this codebase's
 // existing "clamp, don't 400, on an over-large but otherwise well-formed limit" convention

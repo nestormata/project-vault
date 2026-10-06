@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { OperationalEvent, SYSTEM_TRACE_ID } from '@project-vault/shared'
-import { registerShutdown } from './shutdown.js'
+import { LOSING_ATTEMPT_DRAIN_TIMEOUT_MS, registerShutdown } from './shutdown.js'
 
 vi.mock('../modules/vault/key-service.js', () => ({
   zeroKeys: vi.fn(),
+}))
+
+vi.mock('../modules/credential-shares/external-service.js', () => ({
+  flushPendingLosingAttempts: vi.fn(async () => undefined),
 }))
 
 function makeFastify(closeImpl: () => Promise<unknown>) {
@@ -61,6 +65,32 @@ describe('registerShutdown', () => {
       },
       'Shutdown complete'
     )
+    expect(exitSpy).toHaveBeenCalledWith(0)
+  })
+
+  it('Story 65.4: drains pending deferred share writes, bounded, before zeroing keys', async () => {
+    const exitSpy = vi.fn()
+    process.exit = exitSpy as never
+    const { zeroKeys } = await import('../modules/vault/key-service.js')
+    const { flushPendingLosingAttempts } =
+      await import('../modules/credential-shares/external-service.js')
+    const callOrder: string[] = []
+    vi.mocked(flushPendingLosingAttempts).mockImplementation(async () => {
+      callOrder.push('flush')
+    })
+    vi.mocked(zeroKeys).mockImplementation(() => {
+      callOrder.push('zeroKeys')
+    })
+    const fastify = makeFastify(async () => {
+      callOrder.push('close')
+    })
+
+    registerShutdown(fastify as never)
+    process.emit('SIGTERM')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(callOrder).toEqual(['flush', 'zeroKeys', 'close'])
+    expect(flushPendingLosingAttempts).toHaveBeenCalledWith(LOSING_ATTEMPT_DRAIN_TIMEOUT_MS)
     expect(exitSpy).toHaveBeenCalledWith(0)
   })
 

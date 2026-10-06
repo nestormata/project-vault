@@ -415,6 +415,7 @@ const KNOWN_MANIFEST_KEYS = [
   'redirectOrigins',
   'scheduledTasks',
   'anonymousRoutePaths',
+  'anonymousRouteMinResponseMs',
   'apiRoutes',
 ]
 
@@ -1018,6 +1019,63 @@ function validateAnonymousRoutePathsShape(manifest: ExtensionManifest): void {
   }
 }
 
+const MAX_ANONYMOUS_ROUTE_MIN_RESPONSE_MS = 2000
+
+/** One `anonymousRouteMinResponseMs` entry: the key must be a declared template and the value a
+ *  whole number of milliseconds from 1 to 2000. */
+function validateMinResponseMsEntry(
+  declaredTemplates: readonly string[],
+  template: string,
+  value: unknown
+): void {
+  if (!declaredTemplates.includes(template)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "anonymousRouteMinResponseMs" names "${template}", which is not declared in "anonymousRoutePaths"`
+    )
+  }
+  if (
+    typeof value !== 'number' ||
+    !Number.isInteger(value) ||
+    value < 1 ||
+    value > MAX_ANONYMOUS_ROUTE_MIN_RESPONSE_MS
+  ) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      `Extension manifest field "anonymousRouteMinResponseMs" entry "${template}" must be a whole number of milliseconds from 1 to ${MAX_ANONYMOUS_ROUTE_MIN_RESPONSE_MS}`
+    )
+  }
+}
+
+/**
+ * Story 65.4 — validates the optional `anonymousRouteMinResponseMs` record. It runs after
+ * `validateAnonymousRoutePathsShape()`, which already rejects `anonymousRoutePaths` without the
+ * `'public-route'` capability, so a record that has declared templates to refer to is by
+ * construction legal only alongside that capability; a record with NO declared templates is
+ * rejected here. Every key must be a declared template and every value an integer from 1 to 2000.
+ * Nothing is clamped; a bad value rejects.
+ */
+function validateAnonymousRouteMinResponseMsShape(manifest: ExtensionManifest): void {
+  const record: unknown = manifest.anonymousRouteMinResponseMs
+  if (record === undefined) return
+
+  if (manifest.anonymousRoutePaths === undefined) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest declares "anonymousRouteMinResponseMs" but does not declare "anonymousRoutePaths" (it requires the public-route capability)'
+    )
+  }
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    throw new ExtensionRegistrationError(
+      INVALID_MANIFEST_FIELD,
+      'Extension manifest field "anonymousRouteMinResponseMs" must be an object keyed by path template'
+    )
+  }
+  for (const [template, value] of Object.entries(record)) {
+    validateMinResponseMsEntry(manifest.anonymousRoutePaths, template, value)
+  }
+}
+
 const NAV_ITEM_ICON_TOKEN_SET = new Set<string>(NAV_ITEM_ICON_TOKENS)
 
 type NavItemCandidate = {
@@ -1515,6 +1573,7 @@ export function registerExtension(
   validateRedirectOriginsShape(manifest)
   validateScheduledTasksShape(manifest, options)
   validateAnonymousRoutePathsShape(manifest)
+  validateAnonymousRouteMinResponseMsShape(manifest)
   validateApiRoutesShape(manifest.apiRoutes)
 
   if (!REVERSE_DNS_NAME_PATTERN.test(manifest.name)) {
@@ -1551,6 +1610,7 @@ export function registerExtension(
       redirectOrigins: manifest.redirectOrigins,
       scheduledTasks: manifest.scheduledTasks,
       anonymousRoutePaths: manifest.anonymousRoutePaths,
+      anonymousRouteMinResponseMs: manifest.anonymousRouteMinResponseMs,
       apiRoutes: manifest.apiRoutes,
     },
     hooks,

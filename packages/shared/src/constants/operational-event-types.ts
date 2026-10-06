@@ -145,6 +145,10 @@ export const OperationalEvent = {
   // log, mirroring ROTATION_STALE_DETECTION_ROW_FAILED's "log and skip, never abort the rest of
   // the run" contract.
   CREDENTIAL_SHARE_EXPIRE_SWEEP_ROW_FAILED: 'credential_share.expire_sweep.row_failed',
+  // Story 65.4: the deferred (post-response) losing-attempt write of an external share miss threw.
+  // The response was already sent unchanged, so this is log-only; the fields carry the redacted
+  // error and nothing that names the token, share, org or miss class.
+  CREDENTIAL_SHARE_LOSING_ATTEMPT_WRITE_FAILED: 'credential_share.losing_attempt_write_failed',
   ROTATION_RESUME_SUCCESS: 'rotation.resume.success',
   ROTATION_RESUME_NOT_STALE: 'rotation.resume.not_stale',
   ROTATION_RESUME_CONCURRENT_MODIFICATION: 'rotation.resume.concurrent_modification',

@@ -46,6 +46,7 @@ type TestApp = Awaited<ReturnType<typeof import('../../app.js').createApp>>
 function loadedStateWithPublicRoute(overrides: {
   capabilities?: string[]
   anonymousRoutePaths?: string[]
+  anonymousRouteMinResponseMs?: Record<string, number>
   publicRoute?: PublicRouteHooks
   name?: string
 }): ExtensionState {
@@ -57,6 +58,9 @@ function loadedStateWithPublicRoute(overrides: {
       capabilities: (overrides.capabilities ?? ['public-route']) as never,
       ...(overrides.anonymousRoutePaths
         ? { anonymousRoutePaths: overrides.anonymousRoutePaths }
+        : {}),
+      ...(overrides.anonymousRouteMinResponseMs
+        ? { anonymousRouteMinResponseMs: overrides.anonymousRouteMinResponseMs }
         : {}),
     },
     loadedAt: new Date().toISOString(),
@@ -348,6 +352,137 @@ describe('GET <declared path template> — Story 20.13 AC2 (capability/hook re-c
     const after = await app.inject({ method: 'GET', url: FRESH_STATUS_PATH_TEMPLATE })
     expect(after.statusCode).toBe(404)
     expect(onPublicRouteRequest).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('GET <declared path template> — Story 65.4 AC2 (anonymousRouteMinResponseMs)', () => {
+  const MIN_MS = 400
+  // Timers can fire a hair early relative to `performance.now()`; never assert an exact edge.
+  const EARLY_TOLERANCE_MS = 15
+  const HIT = '/pv-min/hit'
+  const MISS_404 = '/pv-min/miss-404'
+  const DENIED = '/pv-min/denied'
+  const BOOM = '/pv-min/boom'
+  const SLOW_MISS = '/pv-min/slow-miss'
+  const UNDECLARED_MIN = '/pv-min/no-min'
+  const TEMPLATES = [HIT, MISS_404, DENIED, BOOM, SLOW_MISS, UNDECLARED_MIN]
+  const MINIMUMS = {
+    [HIT]: MIN_MS,
+    [MISS_404]: MIN_MS,
+    [DENIED]: MIN_MS,
+    [BOOM]: MIN_MS,
+    [SLOW_MISS]: 100,
+  }
+
+  let app: TestApp
+  let closeApp: () => Promise<void>
+  const onPublicRouteRequest = vi.fn(
+    async (request: { pathTemplate: string }): Promise<PublicRouteResult | ActionResult> => {
+      if (request.pathTemplate === BOOM) throw new Error('boom')
+      if (request.pathTemplate === DENIED) return { outcome: 'denied' }
+      if (request.pathTemplate === SLOW_MISS) {
+        await new Promise((resolve) => setTimeout(resolve, 150))
+        return { outcome: 'response', status: 404, body: {} }
+      }
+      if (request.pathTemplate === HIT) return { outcome: 'response', status: 200, body: {} }
+      return { outcome: 'response', status: 404, body: {} }
+    }
+  )
+
+  function stateWith(overrides: Parameters<typeof loadedStateWithPublicRoute>[0] = {}) {
+    return loadedStateWithPublicRoute({
+      anonymousRoutePaths: TEMPLATES,
+      anonymousRouteMinResponseMs: MINIMUMS,
+      publicRoute: { onPublicRouteRequest: onPublicRouteRequest as never },
+      ...overrides,
+    })
+  }
+
+  async function timedGet(url: string, headers: Record<string, string> = {}) {
+    const started = performance.now()
+    const response = await app.inject({ method: 'GET', url, headers })
+    return { response, elapsedMs: performance.now() - started }
+  }
+
+  beforeAll(async () => {
+    __setExtensionStateForTests(stateWith())
+    const suite = await bootUnsealedRouteApp(initVault, TEST_PASSPHRASE)
+    app = suite.app
+    closeApp = suite.close
+  })
+
+  afterAll(async () => {
+    await closeApp()
+    __resetExtensionStateForTests()
+  })
+
+  afterEach(() => {
+    __setExtensionStateForTests(stateWith())
+  })
+
+  it('holds a hook 404 until the declared minimum, with the same status', async () => {
+    const { response, elapsedMs } = await timedGet(MISS_404)
+    expect(response.statusCode).toBe(404)
+    expect(elapsedMs).toBeGreaterThanOrEqual(MIN_MS - EARLY_TOLERANCE_MS)
+  })
+
+  it('does not delay a 2xx', async () => {
+    const { response, elapsedMs } = await timedGet(HIT)
+    expect(response.statusCode).toBe(200)
+    expect(elapsedMs).toBeLessThan(MIN_MS / 2)
+  })
+
+  it('holds an ActionResult mapped to a 4xx', async () => {
+    const { response, elapsedMs } = await timedGet(DENIED)
+    expect(response.statusCode).toBeGreaterThanOrEqual(400)
+    expect(elapsedMs).toBeGreaterThanOrEqual(MIN_MS - EARLY_TOLERANCE_MS)
+  })
+
+  it('holds the generic 500 of a throwing hook', async () => {
+    const { response, elapsedMs } = await timedGet(BOOM)
+    expect(response.statusCode).toBe(500)
+    expect(elapsedMs).toBeGreaterThanOrEqual(MIN_MS - EARLY_TOLERANCE_MS)
+  })
+
+  it('holds PV own 404 for a rejected Sec-Fetch-Mode', async () => {
+    const { response, elapsedMs } = await timedGet(HIT, { 'sec-fetch-mode': 'cors' })
+    expect(response.statusCode).toBe(404)
+    expect(elapsedMs).toBeGreaterThanOrEqual(MIN_MS - EARLY_TOLERANCE_MS)
+  })
+
+  it('adds no extra hold when the hook was already slower than the minimum', async () => {
+    const { response, elapsedMs } = await timedGet(SLOW_MISS)
+    expect(response.statusCode).toBe(404)
+    expect(elapsedMs).toBeGreaterThanOrEqual(150 - EARLY_TOLERANCE_MS)
+    // Additive holding would take 150 + 100 ms.
+    expect(elapsedMs).toBeLessThan(150 + 100 - 20)
+  })
+
+  it('a template without a declared minimum is not held', async () => {
+    const { response, elapsedMs } = await timedGet(UNDECLARED_MIN)
+    expect(response.statusCode).toBe(404)
+    expect(elapsedMs).toBeLessThan(MIN_MS / 2)
+  })
+
+  it('reads the minimum fresh per request: removing it from the loaded manifest stops the hold', async () => {
+    __setExtensionStateForTests(stateWith({ anonymousRouteMinResponseMs: {} }))
+    const { response, elapsedMs } = await timedGet(MISS_404)
+    expect(response.statusCode).toBe(404)
+    expect(elapsedMs).toBeLessThan(MIN_MS / 2)
+  })
+
+  it('an extension that is no longer loaded answers the plain 404 unheld', async () => {
+    __resetExtensionStateForTests()
+    const { response, elapsedMs } = await timedGet(MISS_404)
+    expect(response.statusCode).toBe(404)
+    expect(elapsedMs).toBeLessThan(MIN_MS / 2)
+  })
+
+  it('a withdrawn capability answers 404 unheld (no manifest authority left to read)', async () => {
+    __setExtensionStateForTests(stateWith({ capabilities: [] }))
+    const { response, elapsedMs } = await timedGet(MISS_404)
+    expect(response.statusCode).toBe(404)
+    expect(elapsedMs).toBeLessThan(MIN_MS / 2)
   })
 })
 
