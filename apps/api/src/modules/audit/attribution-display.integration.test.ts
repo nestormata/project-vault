@@ -454,7 +454,7 @@ describe('AC-3 / AC-5 export and chain integrity', () => {
       .slice(1)
       .filter((l) => l !== '' && !l.startsWith('---') && !l.startsWith('rows_checked'))
     expect(dataLines.length).toBeGreaterThan(3)
-    for (const line of dataLines) expect(line.split(',').length).toBe(13)
+    for (const line of dataLines) expect(line.split(',')).toHaveLength(13)
     const plain = dataLines.find((l) => !l.includes(MANIFEST_NAME) && l.includes('auth.'))
     if (plain) expect(plain.endsWith(',,,,,')).toBe(true)
 
