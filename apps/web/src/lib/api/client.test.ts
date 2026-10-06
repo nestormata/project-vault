@@ -437,6 +437,22 @@ describe('refresh outcome classification (Story 61.3)', () => {
     gotoMock.mockClear()
   })
 
+  it('apiFetch: a caller aborted while the refresh was unavailable rejects with its own abort', async () => {
+    const controller = new AbortController()
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(missing401())
+      .mockImplementationOnce(() => {
+        controller.abort()
+        return Promise.reject(new TypeError('Failed to fetch'))
+      })
+
+    await expect(
+      apiFetch(fetchFn, PATH, { method: 'GET', signal: controller.signal })
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(gotoMock).not.toHaveBeenCalled()
+  })
+
   it.each(unavailableRefreshes)(
     'apiFetch: %s during refresh keeps the user signed in and throws the original 401',
     async (_label, refresh) => {

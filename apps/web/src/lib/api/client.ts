@@ -154,6 +154,32 @@ export async function parseApiEnvelope<T>(response: Response): Promise<T> {
   return body && 'data' in body ? body.data : (body as T)
 }
 
+function throwForFailedRefresh(
+  outcome: Exclude<RefreshOutcome, 'refreshed'>,
+  error: ApiClientError,
+  signal: AbortSignal | null | undefined
+): never {
+  if (outcome === 'unavailable') {
+    // A network error, abort or non-auth failure of the refresh endpoint says nothing about the
+    // refresh token: stay signed in, surface the original error, and let the next user action
+    // retry (the access token is still missing, so it refreshes again). A caller that has
+    // meanwhile aborted sees its own abort, not a 401 it no longer cares about.
+    if (signal?.aborted) throw signal.reason
+    throw error
+  }
+  // The server rejected the refresh token (401/403) — a genuinely dead session, not a rotation
+  // race (see isRefreshableAccessError). Nothing short of a fresh login can recover it, so send
+  // the user there instead of leaving the page stuck on a swallowed/opaque error.
+  if (browser) {
+    redirectToSessionExpired()
+    throw error
+  }
+  // `goto()` (used by redirectToSessionExpired above) is a client-side-only API and would throw
+  // if called here. SvelteKit's own `redirect()` is the SSR-safe equivalent — it throws a special
+  // value SvelteKit's routing understands and turns into a real 303 response.
+  redirect(303, `${resolve('/login')}?reason=session-expired`)
+}
+
 export async function apiFetch<T>(
   fetchFn: typeof fetch,
   path: string,
@@ -188,25 +214,7 @@ export async function apiFetch<T>(
       throw error
     }
     const outcome = await refreshAccessSession(fetchFn)
-    if (outcome === 'unavailable') {
-      // A network error, abort or non-auth failure of the refresh endpoint says nothing about the
-      // refresh token: stay signed in, surface the original error, and let the next user action
-      // retry (the access token is still missing, so it refreshes again).
-      throw error
-    }
-    if (outcome === 'rejected') {
-      // The server rejected the refresh token (401/403) — a genuinely dead session, not a
-      // rotation race (see isRefreshableAccessError). Nothing short of a fresh login can recover
-      // it, so send the user there instead of leaving the page stuck on a swallowed/opaque error.
-      if (browser) {
-        redirectToSessionExpired()
-        throw error
-      }
-      // `goto()` (used by redirectToSessionExpired above) is a client-side-only API and would
-      // throw if called here. SvelteKit's own `redirect()` is the SSR-safe equivalent — it throws
-      // a special value SvelteKit's routing understands and turns into a real 303 response.
-      redirect(303, `${resolve('/login')}?reason=session-expired`)
-    }
+    if (outcome !== 'refreshed') throwForFailedRefresh(outcome, error, init.signal)
     response = await fetchFn(path, requestInit)
     return parseApiEnvelope<T>(response)
   }
