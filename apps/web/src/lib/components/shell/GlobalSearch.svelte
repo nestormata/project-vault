@@ -67,10 +67,13 @@
     abortController = new AbortController()
     loading = true
     try {
-      const data = await globalSearch(
-        (input, init) => fetch(input, { ...init, signal: abortController?.signal }),
-        { q: term.trim(), limit: 10 }
-      )
+      // The signal scopes to the search request only; it must never reach the shared session
+      // refresh apiFetch may issue on a 401 (Story 61.3).
+      const data = await globalSearch(fetch, {
+        q: term.trim(),
+        limit: 10,
+        signal: abortController.signal,
+      })
       results = data.results
       selectedIndex = 0
     } catch (error) {

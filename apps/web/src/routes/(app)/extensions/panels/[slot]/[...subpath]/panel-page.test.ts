@@ -1113,10 +1113,9 @@ describe('/(app)/extensions/panels/[slot] +page.svelte (Story 25.1, rewired inli
         expect(button.disabled).toBe(false)
       })
 
-      it.each([
-        ['a non-2xx refresh', () => jsonResponse(401, { code: 'refresh_token_missing' })],
-        ['a rejected refresh fetch', () => Promise.reject(new TypeError('Failed to fetch'))],
-      ])(
+      // Story 61-3: a network-rejected refresh no longer redirects (shared client.ts now treats it
+      // as "unavailable"); only a server 401/403 is a dead session.
+      it.each([['a non-2xx refresh', () => jsonResponse(401, { code: 'refresh_token_missing' })]])(
         'AC2: %s redirects to /login?reason=session-expired, no retry, no generic error, element re-enabled',
         async (_label, refresh) => {
           const fetchMock = routedFetch([expired()], refresh)

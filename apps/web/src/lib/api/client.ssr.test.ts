@@ -145,3 +145,53 @@ describe('fetchWithSessionRefresh during SSR (browser: false)', () => {
     expect(gotoMock).not.toHaveBeenCalled()
   })
 })
+
+// Story 61.3 — during SSR only a server rejection (401/403) of the refresh redirects; a network
+// error or an unavailable refresh endpoint surfaces the original 401 instead of a login bounce.
+describe('apiFetch refresh outcome during SSR (Story 61.3)', () => {
+  const PATH = '/api/v1/projects/project-1/services'
+  const missing401 = () =>
+    jsonResponse(
+      { code: 'access_token_missing', message: 'Access token is missing' },
+      { status: 401 }
+    )
+
+  async function catchError(fetchFn: typeof fetch): Promise<unknown> {
+    try {
+      await apiFetch(fetchFn, PATH, { method: 'GET' })
+    } catch (error) {
+      return error
+    }
+    return undefined
+  }
+
+  it.each([
+    ['a network error', () => Promise.reject(new TypeError('Failed to fetch'))],
+    ['a 500', async () => jsonResponse({ code: 'internal_error' }, { status: 500 })],
+    ['a 503 vault sealed', async () => jsonResponse({ status: 'sealed' }, { status: 503 })],
+    ['a 429', async () => jsonResponse({ code: 'rate_limited' }, { status: 429 })],
+  ] as Array<[string, () => Promise<Response>]>)(
+    'throws the original ApiClientError, not a redirect, on %s',
+    async (_label, refresh) => {
+      const fetchFn = vi.fn().mockResolvedValueOnce(missing401()).mockImplementationOnce(refresh)
+
+      const caught = await catchError(fetchFn)
+
+      expect(isRedirect(caught)).toBe(false)
+      expect(caught).toMatchObject({ name: 'ApiClientError', status: 401 })
+      expect(fetchFn).toHaveBeenCalledTimes(2)
+    }
+  )
+
+  it.each([401, 403])('still redirects to login when the refresh answers %s', async (status) => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(missing401())
+      .mockResolvedValueOnce(jsonResponse({ code: 'refresh_token_invalid' }, { status }))
+
+    const caught = await catchError(fetchFn)
+
+    expect(isRedirect(caught)).toBe(true)
+    expect(caught).toMatchObject({ status: 303, location: '/login?reason=session-expired' })
+  })
+})

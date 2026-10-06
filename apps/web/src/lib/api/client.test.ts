@@ -364,29 +364,22 @@ describe('fetchWithSessionRefresh', () => {
     expect(gotoMock).not.toHaveBeenCalled()
   })
 
-  it.each([
-    [
-      'a non-2xx refresh',
-      () => Promise.resolve(jsonResponse({ code: 'refresh_token_missing' }, { status: 401 })),
-    ],
-    ['a rejected refresh fetch', () => Promise.reject(new TypeError('Failed to fetch'))],
-  ])(
-    'returns session_expired and redirects once on %s, without retrying',
-    async (_label, refresh) => {
-      const fetchFn = vi
-        .fn()
-        .mockResolvedValueOnce(jsonResponse({ code: 'access_token_invalid' }, { status: 401 }))
-        .mockImplementationOnce(refresh)
+  // A network-level refresh rejection no longer redirects (Story 61.3): see the
+  // 'refresh outcome classification' suite below.
+  it('returns session_expired and redirects once on a 401 refresh, without retrying', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ code: 'access_token_invalid' }, { status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({ code: 'refresh_token_missing' }, { status: 401 }))
 
-      const result = await fetchWithSessionRefresh(fetchFn, ACTION_URL, () => ({ method: 'POST' }))
+    const result = await fetchWithSessionRefresh(fetchFn, ACTION_URL, () => ({ method: 'POST' }))
 
-      expect(result).toEqual({ kind: 'session_expired' })
-      expect(fetchFn).toHaveBeenCalledTimes(2)
-      expect(gotoMock).toHaveBeenCalledTimes(1)
-      expect(gotoMock).toHaveBeenCalledWith('/login?reason=session-expired')
-      await settleRedirectLatch()
-    }
-  )
+    expect(result).toEqual({ kind: 'session_expired' })
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(gotoMock).toHaveBeenCalledTimes(1)
+    expect(gotoMock).toHaveBeenCalledWith('/login?reason=session-expired')
+    await settleRedirectLatch()
+  })
 
   it('does not swallow a rejection of the retried request (E9)', async () => {
     const fetchFn = vi
@@ -408,5 +401,167 @@ describe('fetchWithSessionRefresh', () => {
     expect(isRefreshableAccessCode(401, 'mfa_step_up_required')).toBe(false)
     expect(isRefreshableAccessCode(401, undefined)).toBe(false)
     expect(isRefreshableAccessCode(403, 'access_token_missing')).toBe(false)
+  })
+})
+
+// Story 61.3 — the refresh outcome is tri-state: only a server rejection (401/403) is a dead
+// session. A network error, an abort or any other answer leaves the session state unknown, so the
+// user stays signed in and the original error / response is surfaced instead of a redirect.
+describe('refresh outcome classification (Story 61.3)', () => {
+  const PATH = '/api/v1/projects/project-1/credentials'
+  const REFRESH_URL = '/api/v1/auth/refresh'
+  const REFRESH_OK = () => jsonResponse({ data: { expiresAt: '2026-10-06T02:00:00.000Z' } })
+  const missing401 = () =>
+    jsonResponse(
+      { code: 'access_token_missing', message: 'Access token is missing' },
+      { status: 401 }
+    )
+
+  const unavailableRefreshes: Array<[string, () => Promise<Response>]> = [
+    ['a network error', () => Promise.reject(new TypeError('Failed to fetch'))],
+    ['an abort', () => Promise.reject(new DOMException('aborted', 'AbortError'))],
+    ['a 500', async () => jsonResponse({ code: 'internal_error' }, { status: 500 })],
+    ['a 503 vault sealed', async () => jsonResponse({ status: 'sealed' }, { status: 503 })],
+    ['a 429', async () => jsonResponse({ code: 'rate_limited' }, { status: 429 })],
+    ['a 400', async () => jsonResponse({ code: 'bad_request' }, { status: 400 })],
+    ['a 200 with a non-JSON body', async () => new Response('<html>', { status: 200 })],
+  ]
+
+  // Waits for redirectToSessionExpired()'s `goto(...).then(reset, reset)` latch (module-level).
+  async function settleRedirectLatch() {
+    await vi.waitFor(() => expect(gotoMock).toHaveBeenCalled())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  beforeEach(() => {
+    gotoMock.mockClear()
+  })
+
+  it('apiFetch: a caller aborted while the refresh was unavailable rejects with its own abort', async () => {
+    const controller = new AbortController()
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(missing401())
+      .mockImplementationOnce(() => {
+        controller.abort()
+        return Promise.reject(new TypeError('Failed to fetch'))
+      })
+
+    await expect(
+      apiFetch(fetchFn, PATH, { method: 'GET', signal: controller.signal })
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(gotoMock).not.toHaveBeenCalled()
+  })
+
+  it.each(unavailableRefreshes)(
+    'apiFetch: %s during refresh keeps the user signed in and throws the original 401',
+    async (_label, refresh) => {
+      const fetchFn = vi.fn().mockResolvedValueOnce(missing401()).mockImplementationOnce(refresh)
+
+      await expect(apiFetch(fetchFn, PATH, { method: 'GET' })).rejects.toMatchObject({
+        name: 'ApiClientError',
+        status: 401,
+        code: 'access_token_missing',
+      })
+
+      expect(gotoMock).not.toHaveBeenCalled()
+      expect(fetchFn).toHaveBeenCalledTimes(2)
+    }
+  )
+
+  it.each(unavailableRefreshes)(
+    'fetchWithSessionRefresh: %s during refresh returns the original 401 with a readable body',
+    async (_label, refresh) => {
+      const fetchFn = vi.fn().mockResolvedValueOnce(missing401()).mockImplementationOnce(refresh)
+
+      const result = await fetchWithSessionRefresh(fetchFn, PATH, () => ({ method: 'POST' }))
+
+      expect(result.kind).toBe('response')
+      if (result.kind !== 'response') throw new Error('unreachable')
+      expect(result.response.status).toBe(401)
+      await expect(result.response.json()).resolves.toMatchObject({ code: 'access_token_missing' })
+      expect(gotoMock).not.toHaveBeenCalled()
+      expect(fetchFn).toHaveBeenCalledTimes(2)
+    }
+  )
+
+  it.each([401, 403])(
+    'apiFetch: a %s from the refresh endpoint redirects to login',
+    async (status) => {
+      const fetchFn = vi
+        .fn()
+        .mockResolvedValueOnce(missing401())
+        .mockResolvedValueOnce(jsonResponse({ code: 'refresh_token_invalid' }, { status }))
+
+      await expect(apiFetch(fetchFn, PATH, { method: 'GET' })).rejects.toThrow(
+        'Access token is missing'
+      )
+
+      await settleRedirectLatch()
+      expect(gotoMock).toHaveBeenCalledWith('/login?reason=session-expired')
+    }
+  )
+
+  it('fetchWithSessionRefresh: a 403 from the refresh endpoint redirects and reports session_expired', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(missing401())
+      .mockResolvedValueOnce(jsonResponse({ code: 'forbidden' }, { status: 403 }))
+
+    await expect(
+      fetchWithSessionRefresh(fetchFn, PATH, () => ({ method: 'POST' }))
+    ).resolves.toEqual({ kind: 'session_expired' })
+
+    await settleRedirectLatch()
+    expect(gotoMock).toHaveBeenCalledWith('/login?reason=session-expired')
+  })
+
+  it('never forwards the caller signal into the shared refresh request', async () => {
+    const controller = new AbortController()
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(missing401())
+      .mockResolvedValueOnce(REFRESH_OK())
+      .mockResolvedValueOnce(jsonResponse({ data: { ok: true } }))
+
+    await apiFetch(fetchFn, PATH, { method: 'GET', signal: controller.signal })
+
+    expect(fetchFn.mock.calls[0]?.[1]).toHaveProperty('signal', controller.signal)
+    expect(fetchFn.mock.calls[1]?.[0]).toBe(REFRESH_URL)
+    expect(fetchFn.mock.calls[1]?.[1]).not.toHaveProperty('signal')
+  })
+
+  it('a first caller aborting mid-refresh does not fail the joiner: one refresh, joiner succeeds, no redirect', async () => {
+    const controller = new AbortController()
+    let finishRefresh: (response: Response) => void = () => {}
+    const refreshPending = new Promise<Response>((resolve) => {
+      finishRefresh = resolve
+    })
+    let refreshCalls = 0
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const target = String(input)
+      if (target === REFRESH_URL) {
+        refreshCalls += 1
+        return refreshPending
+      }
+      if (init?.signal?.aborted) throw new DOMException('aborted', 'AbortError')
+      if (fetchFn.mock.calls.filter(([url]) => url !== REFRESH_URL).length <= 2) return missing401()
+      return jsonResponse({ data: { ok: true } })
+    })
+
+    const first = apiFetch(fetchFn, PATH, { method: 'GET', signal: controller.signal })
+    const second = apiFetch(fetchFn, `${PATH}?b=1`, { method: 'GET' })
+    const firstSettled = first.then(
+      () => 'resolved',
+      (error: unknown) => (error as Error).name
+    )
+    await vi.waitFor(() => expect(refreshCalls).toBe(1))
+    controller.abort()
+    finishRefresh(REFRESH_OK())
+
+    await expect(second).resolves.toEqual({ ok: true })
+    await expect(firstSettled).resolves.toBe('AbortError')
+    expect(refreshCalls).toBe(1)
+    expect(gotoMock).not.toHaveBeenCalled()
   })
 })
