@@ -531,6 +531,27 @@ export interface InjectionPointProps {
   'vault.home.after': StandardPointProps
   'vault.home.before': StandardPointProps
   'vault.home.header.actions': StandardPointProps
+  'app.layout.search': StandardPointProps
+  'project.layout.content': ProjectPointProps
+  'root.layout.progress': StandardPointProps
+  'auth.layout.brand': StandardPointProps
+  'auth.register.form': StandardPointProps
+  'vault.home.gate': StandardPointProps
+  'platform.home.operator-notice': StandardPointProps
+  'platform.home.warnings': StandardPointProps
+  'platform.home.nav-cards': StandardPointProps
+  'settings.home.nav-cards': StandardPointProps
+  'settings.audit-access-report.back': StandardPointProps
+  'settings.audit-forwarding.back': StandardPointProps
+  'settings.language.back': StandardPointProps
+  'settings.themes.back': StandardPointProps
+  'settings.users-erasure-detail.back': StandardPointProps
+  'settings.security.enrollment': StandardPointProps
+  'project.certificates.list-header': StandardPointProps
+  'project.domains.list-header': StandardPointProps
+  'project.services.list-header': StandardPointProps
+  'project.status-page.error': ProjectPointProps
+  'project.service-endpoints-detail.back': EndpointRowPointProps
 }
 
 export type InjectionPointName = keyof InjectionPointProps
@@ -591,6 +612,9 @@ function regionPoints(
 const AUDIT_PAGE_HOST = '/(app)/settings/audit#page'
 const NOTIFICATIONS_PAGE_HOST = '/(app)/settings/notifications#page'
 const MEMBERS_PAGE_HOST = '/(app)/projects/[projectId]/members#page'
+const STATUS_PAGE_HOST = '/(app)/projects/[projectId]/status-page#page'
+const ENDPOINT_DETAIL_PAGE_HOST =
+  '/(app)/projects/[projectId]/service-endpoints/[serviceEndpointId]#page'
 
 export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...pagePoints('StandardPointProps', ['app.layout']),
@@ -725,7 +749,7 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ),
   ...regionPoints(
     'EndpointRowPointProps',
-    ['/(app)/projects/[projectId]/service-endpoints/[serviceEndpointId]#page'],
+    [ENDPOINT_DETAIL_PAGE_HOST],
     [
       'project.service-endpoints-detail.delete',
       'project.service-endpoints-detail.history',
@@ -736,12 +760,12 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ),
   ...regionPoints(
     'EndpointNotFoundPointProps',
-    ['/(app)/projects/[projectId]/service-endpoints/[serviceEndpointId]#page'],
+    [ENDPOINT_DETAIL_PAGE_HOST],
     ['project.service-endpoints-detail.not-found']
   ),
   ...regionPoints(
     'StatusPageAdminPointProps',
-    ['/(app)/projects/[projectId]/status-page#page'],
+    [STATUS_PAGE_HOST],
     [
       'project.status-page.disabled',
       'project.status-page.header',
@@ -749,11 +773,7 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
       'project.status-page.services',
     ]
   ),
-  ...regionPoints(
-    'StatusPageLinkPointProps',
-    ['/(app)/projects/[projectId]/status-page#page'],
-    ['project.status-page.link']
-  ),
+  ...regionPoints('StatusPageLinkPointProps', [STATUS_PAGE_HOST], ['project.status-page.link']),
   ...regionPoints(
     'StandardPointProps',
     ['/status/[token]#page'],
@@ -1092,6 +1112,69 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     'StandardPointProps',
     ['/external-shares/[token]#page'],
     ['external-shares.detail.heading', 'external-shares.detail.body']
+  ),
+  ...regionPoints('StandardPointProps', ['/(app)#layout'], ['app.layout.search']),
+  ...regionPoints(
+    'ProjectPointProps',
+    ['/(app)/projects/[projectId]#layout'],
+    ['project.layout.content']
+  ),
+  ...regionPoints('StandardPointProps', ['/#layout'], ['root.layout.progress']),
+  ...regionPoints('StandardPointProps', ['/(auth)#layout'], ['auth.layout.brand']),
+  ...regionPoints('StandardPointProps', ['/(auth)/register#page'], ['auth.register.form']),
+  ...regionPoints('StandardPointProps', ['/(vault)/vault#page'], ['vault.home.gate']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/platform#page'],
+    ['platform.home.operator-notice', 'platform.home.warnings', 'platform.home.nav-cards']
+  ),
+  ...regionPoints('StandardPointProps', ['/(app)/settings#page'], ['settings.home.nav-cards']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/audit/access-report#page'],
+    ['settings.audit-access-report.back']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/audit/forwarding#page'],
+    ['settings.audit-forwarding.back']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/language#page'],
+    ['settings.language.back']
+  ),
+  ...regionPoints('StandardPointProps', ['/(app)/settings/themes#page'], ['settings.themes.back']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/users/[userId]/erasure/[requestId]#page'],
+    ['settings.users-erasure-detail.back']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/settings/security#page'],
+    ['settings.security.enrollment']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/certificates#page'],
+    ['project.certificates.list-header']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/domains#page'],
+    ['project.domains.list-header']
+  ),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/projects/[projectId]/services#page'],
+    ['project.services.list-header']
+  ),
+  ...regionPoints('ProjectPointProps', [STATUS_PAGE_HOST], ['project.status-page.error']),
+  ...regionPoints(
+    'EndpointRowPointProps',
+    [ENDPOINT_DETAIL_PAGE_HOST],
+    ['project.service-endpoints-detail.back']
   ),
   { name: 'root.error.header', kind: 'standard', propsType: 'StandardPointProps' },
   { name: 'root.error.content', kind: 'standard', propsType: 'StandardPointProps' },

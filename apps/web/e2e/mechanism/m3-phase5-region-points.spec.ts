@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test, type BrowserContext } from '@playwright/test'
+import { enrollMfaViaApi } from '../fixtures/auth.js'
 import {
   countAuditEvents,
   createProject,
   open,
-  postFromForeignOrigin,
+  countWebLogLines,
+  expectAnonymousLoginRedirect,
+  expectForeignOriginRejected,
+  getPlain,
   readWebLog,
   revokeSessionKeepingCookies,
   seedOrgMember,
@@ -136,15 +140,8 @@ test.describe('M3 region points on settings audit, notifications and project mem
     await expect.poll(() => countAuditEvents(user.orgId, DOCUMENT_EVENT)).toBe(before + 1)
 
     const action = `${NOTIFICATIONS}?/settings.notifications.channels.save`
-    const anonymous = await request.post(action, {
-      form: { title: 'x' },
-      headers: { origin: process.env['E2E_BASE_URL'] ?? '' },
-      maxRedirects: 0,
-    })
-    expect(anonymous.status()).toBe(303)
-    expect(anonymous.headers()['location']).toBe('/login')
-    const foreign = await postFromForeignOrigin(context, action)
-    expect(foreign.status()).toBe(403)
+    await expectAnonymousLoginRedirect(request, action, process.env['E2E_BASE_URL'] ?? '')
+    await expectForeignOriginRejected(context, action)
     expect(await countAuditEvents(user.orgId, DOCUMENT_EVENT)).toBe(before + 1)
   })
 
@@ -178,11 +175,7 @@ test.describe('M3 region points on settings audit, notifications and project mem
           createProject(contextB, `p5-par-b-${index}-${randomUUID().slice(0, 8)}`)
         )
       )
-      const load = async (from: BrowserContext) => {
-        const response = await from.request.get(NOTIFICATIONS)
-        expect(response.status()).toBe(200)
-        return plain(await response.text())
-      }
+      const load = (from: BrowserContext) => getPlain(from, NOTIFICATIONS)
       const bodies = await Promise.all([
         ...Array.from({ length: 10 }, async () => ({ own: 'a', body: await load(context) })),
         ...Array.from({ length: 10 }, async () => ({ own: 'b', body: await load(contextB) })),
@@ -216,10 +209,117 @@ test.describe('M3 region points on settings audit, notifications and project mem
     context,
   }) => {
     await seedOrgOwner(context, 'p5-boom')
+    // The line count moves by exactly this request, whatever else the log holds (DW-535 e).
+    const line = 'injection "settings.notifications.channels" load failed: TypeError'
+    const before = countWebLogLines(line)
     const response = await context.request.get(`${NOTIFICATIONS}?mock-p5-boom=1`)
     expect(response.status()).toBe(500)
-    const log = readWebLog()
-    expect(log).toContain('injection "settings.notifications.channels" load failed: TypeError')
-    expect(log).not.toContain('mock-ui-pack-secret-message')
+    await expect.poll(() => countWebLogLines(line)).toBe(before + 1)
+    expect(readWebLog()).not.toContain('mock-ui-pack-secret-message')
+  })
+})
+
+// Story 69.6 (DW-535): the hardening the phase 5 review asked for. A contribution load counter that
+// denied callers never move, an interleave over all three pages, and PV's own Send Test limiter.
+const RUNS = /runs=(\d+)/
+const runsIn = (html: string): number => Number(RUNS.exec(plain(html))?.[1] ?? Number.NaN)
+
+test.describe('DW-535 hardening of the phase 5 cases (Story 69.6)', () => {
+  test('fails (authorization): a caller PV denied never moves the contribution load counter (audit, members)', async ({
+    context,
+    browser,
+  }) => {
+    await seedOrgOwner(context, 'p5-count-owner')
+    const projectId = await createProject(context, `p5-count-${randomUUID().slice(0, 8)}`)
+    const member = await seedOrgMember(browser, { context, projectId }, 'p5-count-member')
+    const contextB = await browser.newContext({ baseURL: process.env['E2E_BASE_URL'] })
+    try {
+      await seedOrgOwner(contextB, 'p5-count-foreign')
+      const read = async (from: BrowserContext, path: string) =>
+        runsIn(await (await from.request.get(path)).text())
+      const auditBefore = await read(context, AUDIT)
+      const membersBefore = await read(context, membersPath(projectId))
+      expect(auditBefore).toBeGreaterThan(0)
+      expect(membersBefore).toBeGreaterThan(0)
+      // Three denied requests per page: a member on the owner-only audit page, another org's owner on
+      // a foreign project's members page. PV renders its own state and runs no contribution load.
+      const texts = async (from: BrowserContext, path: string): Promise<string[]> =>
+        Promise.all(
+          (await Promise.all(Array.from({ length: 3 }, () => from.request.get(path)))).map(
+            (response) => response.text()
+          )
+        )
+      for (const text of await texts(member.context, AUDIT)) {
+        expect(plain(text)).not.toContain('mock-ui-pack:m3-p5-settings.audit.results')
+      }
+      for (const text of await texts(contextB, membersPath(projectId))) {
+        expect(Number.isNaN(runsIn(text))).toBe(true)
+      }
+      expect(await read(context, AUDIT)).toBe(auditBefore + 1)
+      expect(await read(context, membersPath(projectId))).toBe(membersBefore + 1)
+    } finally {
+      await contextB.close()
+      await member.context.close()
+    }
+  })
+
+  test('works: interleaved loads from two orgs over the audit, notifications and members pages never mix', async ({
+    context,
+    browser,
+  }) => {
+    await seedOrgOwner(context, 'p5-all-a')
+    const projectA = await createProject(context, `p5-all-a-${randomUUID().slice(0, 8)}`)
+    const contextB = await browser.newContext({ baseURL: process.env['E2E_BASE_URL'] })
+    try {
+      await seedOrgOwner(contextB, 'p5-all-b')
+      const projectB = await createProject(contextB, `p5-all-b-${randomUUID().slice(0, 8)}`)
+      // two more projects, so org B's contribution row count (3) differs from org A's (1)
+      await Promise.all(
+        Array.from({ length: 2 }, (_, index) =>
+          createProject(contextB, `p5-all-b-${index}-${randomUUID().slice(0, 8)}`)
+        )
+      )
+      const paths = (project: string) => [AUDIT, NOTIFICATIONS, membersPath(project)]
+      const bodies = await Promise.all([
+        ...paths(projectA).flatMap((path) =>
+          Array.from({ length: 4 }, async () => ({
+            own: projectA,
+            body: await getPlain(context, path),
+          }))
+        ),
+        ...paths(projectB).flatMap((path) =>
+          Array.from({ length: 4 }, async () => ({
+            own: projectB,
+            body: await getPlain(contextB, path),
+          }))
+        ),
+      ])
+      for (const { own, body } of bodies) {
+        const other = own === projectA ? projectB : projectA
+        expect(body).not.toContain(other)
+        expect(body).not.toContain(own === projectA ? 'rows=3' : 'rows=1')
+      }
+      expect(bodies.some(({ own, body }) => own === projectA && body.includes(projectA))).toBe(true)
+    } finally {
+      await contextB.close()
+    }
+  })
+
+  test('works: PV own Send Test limiter still answers its own 429 message with the fills mounted', async ({
+    page,
+    context,
+  }) => {
+    await seedOrgOwner(context, 'p5-sendtest')
+    await enrollMfaViaApi(context)
+    // PV's limiter allows ten test sends a minute; use them up through its own API route.
+    const burst = await Promise.all(
+      Array.from({ length: 10 }, () => context.request.post('/api/v1/admin/notifications/test'))
+    )
+    for (const response of burst) expect(response.status()).toBe(200)
+    await open(page, NOTIFICATIONS, page.getByTestId(ID.channels))
+    await page.getByRole('button', { name: 'Send test notification' }).click()
+    await expect(
+      page.getByText('Test notification rate limit reached — try again in a few minutes')
+    ).toBeVisible()
   })
 })

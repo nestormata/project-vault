@@ -178,6 +178,39 @@ export default defineUiPack({
       },
     ],
     'project.members.invitations': [{ component: './injections/MembersInvitationsFill.svelte' }],
+    // M3 region points (Story 69.6, Epic 69 phase 6): fills on the remaining regions of PV's native
+    // pages. The layout search region renders on every signed-in page; the pre-auth register page gets
+    // a render-only fill and a load that can be told to throw; the platform home region carries a
+    // counted load PV must skip for a non-operator; the certificates list header gets a load and an
+    // action. Region points of a ROUTE FILE live in the page (scope page), so no `hostRoutes` opt-in.
+    // Inner points under M4 (Story 69.6 AC-5): `settings.home.header` survives the wrapped replacement of
+    // its region component; `settings.sso-domains.header` is dropped by a full replacement, while the
+    // sibling `settings.sso-domains.panel` (component not replaced) keeps rendering.
+    'settings.home.header': [{ component: './injections/SettingsHomeHeaderFill.svelte' }],
+    'settings.sso-domains.header': [{ component: './injections/SsoDomainsHeaderFill.svelte' }],
+    'settings.sso-domains.panel': [{ component: './injections/SsoDomainsPanelFill.svelte' }],
+    'app.layout.search': [{ component: './injections/LayoutSearchFill.svelte' }],
+    'auth.register.heading': [{ component: './injections/RegisterHeadingFill.svelte' }],
+    'auth.register.form': [
+      {
+        component: './injections/RegisterFormFill.svelte',
+        load: './injections/register-form.server.ts',
+      },
+    ],
+    'auth.login.links': [{ component: './injections/LoginLinksFill.svelte' }],
+    'platform.home.nav-cards': [
+      {
+        component: './injections/PlatformNavFill.svelte',
+        load: './injections/platform-nav.server.ts',
+      },
+    ],
+    'project.certificates.list-header': [
+      {
+        component: './injections/CertificatesHeaderFill.svelte',
+        load: './injections/certificates-header.server.ts',
+        actions: './injections/certificates-header.actions.ts',
+      },
+    ],
     'shell.head': [{ component: './injections/HeadMarker.svelte' }],
   },
   replacements: {
@@ -196,6 +229,11 @@ export default defineUiPack({
     '$lib/components/settings/SettingsHomeHeader.svelte': {
       with: './replacements/SettingsHomeHeader.svelte',
       hostSha256: sha('src/lib/components/settings/SettingsHomeHeader.svelte'),
+    },
+    // Story 69.6 AC-5: a FULL replacement of a region component (neither `pv-original:` nor `children`).
+    '$lib/components/settings/SsoDomainsHeader.svelte': {
+      with: './replacements/SsoDomainsHeader.svelte',
+      hostSha256: sha('src/lib/components/settings/SsoDomainsHeader.svelte'),
     },
     '$lib/api/audit.ts': {
       with: './replacements/audit.ts',

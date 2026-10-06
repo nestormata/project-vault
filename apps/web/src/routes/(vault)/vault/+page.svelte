@@ -4,7 +4,7 @@
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
 
-  import VaultGate from '$lib/components/vault/VaultGate.svelte'
+  import VaultGateRegion from '$lib/components/vault/VaultGateRegion.svelte'
   import {
     getVaultReadiness,
     initVault,
@@ -46,11 +46,14 @@
   <VaultHomeHeader>
     <InjectionPoint name="vault.home.header" data={data?.__inject} />
   </VaultHomeHeader>
-  <VaultGate
+  <!-- @region vault.home.gate -->
+  <VaultGateRegion
     readiness={readiness ?? data.readiness}
     onRetry={refreshReadiness}
     onInit={handleInit}
     onUnseal={handleUnseal}
-  />
+  >
+    <InjectionPoint name="vault.home.gate" data={data?.__inject} />
+  </VaultGateRegion>
 </main>
 <InjectionPoint name="vault.home.after" data={data?.__inject} />

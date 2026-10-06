@@ -4,7 +4,8 @@
 // answered exactly like a nonexistent one (404), and the tile renders the status without a 500.
 export const load = async ({ fetch, url }: { fetch: typeof globalThis.fetch; url: URL }) => {
   const me = await fetch('/api/v1/auth/me')
-  const body = (await me.json()) as { data?: { userId?: string } }
+  // A non-JSON answer must not turn the page into a 500 (DW-535 f).
+  const body = (await me.json().catch(() => ({}))) as { data?: { userId?: string } }
   const probe = url.searchParams.get('mock-probe')
   const probed =
     probe === null ? null : await fetch(`/api/v1/projects/${encodeURIComponent(probe)}`)

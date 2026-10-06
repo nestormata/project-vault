@@ -5,13 +5,13 @@
     data = null,
     orgRole = '',
   }: {
-    data?: { marker?: string; rows?: number; limitedStatus?: number } | null
+    data?: { marker?: string; rows?: number; limitedStatus?: number; runs?: number } | null
     orgRole?: string
   } = $props()
 </script>
 
 {#if data?.marker}
   <p data-testid="mock-p5-audit-results">
-    {data.marker} rows={data.rows} role={orgRole} limited={data.limitedStatus}
+    {data.marker} rows={data.rows} role={orgRole} limited={data.limitedStatus} runs={data.runs}
   </p>
 {/if}

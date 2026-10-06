@@ -133,6 +133,24 @@ export async function expectAnonymousLoginRedirect(
   expect(response.headers()['location']).toBe('/login')
 }
 
+/** A form POST from a foreign origin to an injected action is answered 403 by PV's CSRF check. */
+export async function expectForeignOriginRejected(
+  context: BrowserContext,
+  path: string
+): Promise<void> {
+  const response = await postFromForeignOrigin(context, path)
+  expect(response.status()).toBe(403)
+}
+
+/** GETs `path` through the session of `from`, expects 200 and returns the body without the empty
+ * `<!---->` anchors Svelte writes between adjacent text parts (Story 69.6, shared by the interleave
+ * cases of the phase 5 and phase 6 specs). */
+export async function getPlain(from: BrowserContext, path: string): Promise<string> {
+  const response = await from.request.get(path)
+  expect(response.status(), path).toBe(200)
+  return (await response.text()).replaceAll('<!---->', '')
+}
+
 /** A request context aimed at the API port with the session cookies of `context` (an API-level check
  * of a route the web origin does not proxy, in the same run and report). */
 export async function apiContextFor(
@@ -231,19 +249,33 @@ export async function seedOrgMember(
   return { context, user: { userId: body.data.userId, orgId: body.data.orgId, email } }
 }
 
-/** The recent output of the composed web container of this run (read-only). The project name comes
- * from the runner's environment; callers assert on error names, never on a secret. */
-export function readWebLog(): string {
+/** The output of the composed web container of this run (read-only): everything it has written, or
+ * only what it wrote since `since` (Story 69.6, DW-535 e: the old `--tail 500` let a noisy log push a
+ * line out of reach, so a "must contain" check could not tell a missing line from a hidden one). The
+ * project name comes from the runner's environment; callers assert on error names and on a count that
+ * moved by exactly their own request, never on a secret and never on a position in the stream. */
+export function readWebLog(since?: Date): string {
   const project = process.env['COMPOSE_PROJECT_NAME'] ?? ''
   if (project === '') throw new Error('COMPOSE_PROJECT_NAME is required: run through the runner')
+  const window = since === undefined ? [] : ['--since', since.toISOString()]
   // docker is resolved from fixed system directories, never from `$PATH` (Sonar S4036).
   for (const docker of ['/usr/bin/docker', '/usr/local/bin/docker', '/bin/docker']) {
-    const run = spawnSync(docker, ['logs', '--tail', '500', `${project}-web-1`], {
+    const run = spawnSync(docker, ['logs', ...window, `${project}-web-1`], {
       encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
     })
     if (run.error === undefined) return `${run.stdout}${run.stderr}`
   }
   throw new Error('docker was not found in /usr/bin, /usr/local/bin or /bin')
+}
+
+/** How many lines of the web log contain `needle`. A spec reads it before and after its own request
+ * and asserts the count moved by exactly one: the answer cannot come from another test's lines, and a
+ * noisy log cannot hide it. */
+export function countWebLogLines(needle: string, since?: Date): number {
+  return readWebLog(since)
+    .split('\n')
+    .filter((line) => line.includes(needle)).length
 }
 
 /** POSTs JSON through the context's session and returns the parsed body, failing on a non-2xx. */

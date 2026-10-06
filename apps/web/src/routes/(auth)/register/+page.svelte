@@ -7,7 +7,7 @@
 
   import { page } from '$app/state'
   import { m } from '$lib/paraglide/messages.js'
-  import RegisterForm from '$lib/components/auth/RegisterForm.svelte'
+  import RegisterFormRegion from '$lib/components/auth/RegisterFormRegion.svelte'
 
   let invitationToken = $derived(page.url.searchParams.get('invitationToken') ?? undefined)
   let prefillEmail = $derived(page.url.searchParams.get('email') ?? '')
@@ -33,7 +33,10 @@
     <RegisterLoginLink>
       <InjectionPoint name="auth.register.login-link" data={data?.__inject} />
     </RegisterLoginLink>{/key}
-  <RegisterForm {invitationToken} {prefillEmail} onLocaleChange={handleLocaleChange} />
+  <!-- @region auth.register.form -->
+  <RegisterFormRegion {invitationToken} {prefillEmail} onLocaleChange={handleLocaleChange}>
+    <InjectionPoint name="auth.register.form" data={data?.__inject} />
+  </RegisterFormRegion>
 </div>
 <InjectionPoint name="auth.register.after" data={data?.__inject} />
 

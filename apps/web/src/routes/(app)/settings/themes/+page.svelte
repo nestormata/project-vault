@@ -3,7 +3,7 @@
   import ThemesSelectionError from '$lib/components/settings/ThemesSelectionError.svelte'
   import ThemesList from '$lib/components/settings/ThemesList.svelte'
   import ThemesAdminSections from '$lib/components/settings/ThemesAdminSections.svelte'
-  import NavLink from '$lib/navigation/NavLink.svelte'
+  import NavLinkRegion from '$lib/components/shell/NavLinkRegion.svelte'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
 
   import { patchThemeSelection } from '$lib/api/themes.js'
@@ -55,11 +55,14 @@
 <InjectionPoint name="settings.themes.before" data={data?.__inject} />
 <InjectionPoint name="settings.themes.header.actions" data={data?.__inject} />
 <div class="mx-auto max-w-3xl px-4 py-8">
-  <NavLink
+  <!-- @region settings.themes.back -->
+  <NavLinkRegion
     surface="back"
     node="back.settings.themes"
     class="text-sm text-indigo-600 hover:text-indigo-800"
-  />
+  >
+    <InjectionPoint name="settings.themes.back" data={data?.__inject} />
+  </NavLinkRegion>
   <!-- @region settings.themes.header -->
   <ThemesHeader>
     <InjectionPoint name="settings.themes.header" data={data?.__inject} />
