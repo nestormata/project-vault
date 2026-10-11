@@ -56,8 +56,15 @@ export type CliRun = { status: number | null; stdout: string; stderr: string }
  * <tsx loader> <realpath(script)>` with `cwd` set to a fixture root, so exit code and the
  * stdout/stderr split are asserted for real (same invocation shape as
  * check-ci-story-integrity-wiring.test.ts). `scriptRelPath` is relative to the repository root.
+ * `envOverrides` is layered over the parent environment, so a test can pin a variable (for
+ * example `GITHUB_ACTIONS`) that differs between a developer shell and the CI runner.
  */
-export function runScriptCli(scriptRelPath: string, cwd: string, args: string[] = []): CliRun {
+export function runScriptCli(
+  scriptRelPath: string,
+  cwd: string,
+  args: string[] = [],
+  envOverrides: Record<string, string> = {}
+): CliRun {
   const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
   const tsxLoader = resolve(repositoryRoot, 'node_modules/tsx/dist/esm/index.mjs')
   const script = realpathSync(resolve(repositoryRoot, scriptRelPath))
@@ -65,6 +72,7 @@ export function runScriptCli(scriptRelPath: string, cwd: string, args: string[] 
     cwd,
     encoding: 'utf-8',
     stdio: 'pipe',
+    env: { ...process.env, ...envOverrides },
   })
   return { status: result.status, stdout: result.stdout, stderr: result.stderr }
 }
