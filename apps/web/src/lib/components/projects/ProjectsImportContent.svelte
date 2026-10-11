@@ -137,6 +137,7 @@
   </div>
 {:else}
   <form
+    method="post"
     class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
     onsubmit={(event) => {
       event.preventDefault()
