@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiClientError } from '$lib/api/client.js'
 import { importProject, type ImportProjectResult } from '$lib/api/project-export.js'
 import { goto } from '$app/navigation'
+import { setLocale } from '$lib/paraglide/runtime.js'
 import ProjectsImportContent from './ProjectsImportContent.svelte'
 
 // Story 62-2 AC-2/3/4/6: hardened export-key input, truthful file help, a count list for every
@@ -157,6 +158,130 @@ describe('ProjectsImportContent file help (AC-3)', () => {
       'The encrypted .pvexport file you downloaded when you exported the project. It is decrypted only with the key below and is not stored after import.'
     )
     expect(document.body.textContent).not.toContain('never uploaded anywhere else')
+  })
+})
+
+describe('file picker affordance (62-4)', () => {
+  const fileInput = () => document.getElementById('pvexport-file') as HTMLInputElement
+  const pickerLabel = () => document.querySelector('label[for="pvexport-file"][aria-hidden="true"]')
+  const liveRegion = () => screen.getByRole('status')
+  const choose = (f: File | null) =>
+    fireEvent.change(fileInput(), { target: { files: f ? [f] : [] } })
+
+  afterEach(async () => {
+    await setLocale('en', { reload: false })
+  })
+
+  it('renders a button-looking label bound to a real, non-hidden sr-only input', () => {
+    render(ProjectsImportContent)
+    const label = pickerLabel() as HTMLElement
+    expect(label).toBeTruthy()
+    expect(label.textContent).toContain('Choose file')
+    expect(label.className).toContain('min-h-11')
+    expect(label.contains(fileInput())).toBe(false)
+    expect(fileInput().className).toContain('sr-only')
+    expect(fileInput().className).toContain('peer')
+    expect(fileInput().hasAttribute('hidden')).toBe(false)
+    expect(fileInput().getAttribute('type')).toBe('file')
+    expect(fileInput().hasAttribute('name')).toBe(false)
+    expect(fileInput().required).toBe(true)
+    expect(fileInput().getAttribute('aria-describedby')).toBe('pvexport-file-help')
+    // the original label keeps the accessible name
+    expect(screen.getByLabelText('Export file (.pvexport)')).toBe(fileInput())
+    // the input comes before the visible button so `peer-*` classes apply
+    expect(
+      fileInput().compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
+  it('shows the empty state with an empty always-mounted live region', () => {
+    render(ProjectsImportContent)
+    expect(screen.getByText('No file chosen')).toBeTruthy()
+    expect(liveRegion().getAttribute('aria-live')).toBe('polite')
+    expect(liveRegion().textContent).toBe('')
+  })
+
+  it('shows name, size, check, live text and "Change file" after choosing', async () => {
+    render(ProjectsImportContent)
+    await choose(file)
+    expect(screen.getByText('p.pvexport (7 B)')).toBeTruthy()
+    expect(liveRegion().textContent).toBe('Selected file: p.pvexport (7 B)')
+    expect(pickerLabel()?.textContent).toContain('Change file')
+    expect(screen.queryByText('No file chosen')).toBeNull()
+    expect(document.querySelector('[data-file-status] [aria-hidden="true"]')).toBeTruthy()
+  })
+
+  it('resets to the empty state when the dialog is cancelled the second time', async () => {
+    render(ProjectsImportContent)
+    await choose(file)
+    await fireEvent.input(keyInput(), { target: { value: KEY } })
+    expect((submitButton() as HTMLButtonElement).disabled).toBe(false)
+    await choose(null)
+    expect(screen.getByText('No file chosen')).toBeTruthy()
+    expect(liveRegion().textContent).toBe('')
+    expect(pickerLabel()?.textContent).toContain('Choose file')
+    expect((submitButton() as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('flags a wrong extension as an advisory error without blocking submit', async () => {
+    render(ProjectsImportContent)
+    await choose(new File(['x'], 'notes.txt'))
+    expect(screen.getByRole('alert').textContent).toContain('Choose a .pvexport file.')
+    expect(fileInput().getAttribute('aria-invalid')).toBe('true')
+    expect(document.querySelector('.border-red-600')).toBeTruthy()
+    await fireEvent.input(keyInput(), { target: { value: KEY } })
+    expect((submitButton() as HTMLButtonElement).disabled).toBe(false)
+    await choose(new File(['x'], 'OK.PVEXPORT'))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(fileInput().hasAttribute('aria-invalid')).toBe(false)
+  })
+
+  it('disables the input and the visible button while importing', async () => {
+    let release: (value: ImportProjectResult) => void = () => {}
+    vi.mocked(importProject).mockImplementationOnce(
+      () => new Promise((resolve) => (release = resolve))
+    )
+    render(ProjectsImportContent)
+    await fill()
+    await submitForm()
+    await waitFor(() => expect(fileInput().disabled).toBe(true))
+    expect(pickerLabel()?.className).toContain('opacity-50')
+    expect(pickerLabel()?.className).toContain('cursor-not-allowed')
+    expect(pickerLabel()?.getAttribute('aria-disabled')).toBe('true')
+    release({ projectId: 'p', name: 'n', importedCounts: {} })
+    await waitFor(() => expect(screen.getByText('Import complete')).toBeTruthy())
+  })
+
+  it('keeps the chosen file name visible after a failed import', async () => {
+    vi.mocked(importProject).mockRejectedValueOnce(new Error('Failed to fetch'))
+    render(ProjectsImportContent)
+    await fill()
+    await submitForm()
+    await waitFor(() => expect(screen.getByText('Failed to fetch')).toBeTruthy())
+    expect(screen.getByText('p.pvexport (7 B)')).toBeTruthy()
+    expect(fileInput().disabled).toBe(false)
+  })
+
+  it('truncates a long name and exposes it via title, rendered as text', async () => {
+    render(ProjectsImportContent)
+    const name = `<b>${'a'.repeat(120)}</b>.pvexport`
+    await choose(new File([''], name))
+    const status = document.querySelector('[data-file-status] [title]') as HTMLElement
+    expect(status.getAttribute('title')).toBe(`${name} (0 B)`)
+    expect(status.className).toContain('truncate')
+    expect(document.querySelector('[data-file-status] b')).toBeNull()
+  })
+
+  it('renders the Spanish strings', async () => {
+    await setLocale('es', { reload: false })
+    render(ProjectsImportContent)
+    expect(pickerLabel()?.textContent).toContain('Elegir archivo')
+    expect(screen.getByText('Ningún archivo seleccionado')).toBeTruthy()
+    await choose(file)
+    expect(pickerLabel()?.textContent).toContain('Cambiar archivo')
+    expect(liveRegion().textContent).toBe('Archivo seleccionado: p.pvexport (7 B)')
+    await choose(new File(['x'], 'a.txt'))
+    expect(screen.getByRole('alert').textContent).toContain('Elige un archivo .pvexport.')
   })
 })
 

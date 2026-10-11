@@ -23,6 +23,11 @@ const REQUIRED_KEYS = [
   'project_import_count_status_pages',
   'project_import_count_machine_users',
   'project_import_no_items',
+  'project_import_file_choose',
+  'project_import_file_change',
+  'project_import_file_none',
+  'project_import_file_selected',
+  'project_import_file_bad_type',
 ] as const
 
 describe('project export/import catalogs (Story 62-2 AC-8)', () => {
