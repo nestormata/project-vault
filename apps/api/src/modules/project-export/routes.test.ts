@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { AuditEvent } from '@project-vault/shared'
@@ -493,6 +494,132 @@ describe('project-export routes (Story 28.9)', () => {
       if (original === undefined) delete process.env['RATE_LIMIT_TEST_BYPASS']
       else process.env['RATE_LIMIT_TEST_BYPASS'] = original
     }
+  })
+
+  describe('Story 62-2 AC-5: same-name import is distinguishable', () => {
+    const UNIQUE_NAME = 'Unique Name 62-2'
+    type Exported = { file: Buffer; exportKey: string }
+
+    async function createNamedProject(
+      cookies: Record<string, string>,
+      name: string
+    ): Promise<string> {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/projects',
+        headers: { cookie: cookieHeader(cookies) },
+        payload: { name, slug: `n-${randomUUID().slice(0, 12)}` },
+      })
+      expect(response.statusCode).toBe(201)
+      return response.json<{ data: { id: string } }>().data.id
+    }
+
+    async function exportOf(cookies: Record<string, string>, projectId: string): Promise<Exported> {
+      const response = await callExport(app, cookies, projectId)
+      expect(response.statusCode).toBe(200)
+      return { file: rawBody(response), exportKey: response.headers['x-export-key'] as string }
+    }
+
+    async function importName(
+      cookies: Record<string, string>,
+      exported: Exported,
+      override?: string
+    ): Promise<{ projectId: string; name: string }> {
+      const response = await callImport(app, cookies, exported.file, exported.exportKey, override)
+      expect(response.statusCode).toBe(201)
+      return response.json<{ data: { projectId: string; name: string } }>().data
+    }
+
+    async function storedName(orgId: string, projectId: string): Promise<string | undefined> {
+      const [row] = await withOrg(orgId, (tx) =>
+        tx.select({ name: projects.name }).from(projects).where(eq(projects.id, projectId))
+      )
+      return row?.name
+    }
+
+    async function archive(orgId: string, projectId: string): Promise<void> {
+      await withOrg(orgId, (tx) =>
+        tx.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, projectId))
+      )
+    }
+
+    it('suffixes (imported), then (imported 2), and stores the same name the response reports', async () => {
+      const owner = await registerOwner(app, '62-2-suffix')
+      const sourceId = await createNamedProject(owner.cookies, 'Payments API')
+      const exported = await exportOf(owner.cookies, sourceId)
+
+      const first = await importName(owner.cookies, exported)
+      expect(first.name).toBe('Payments API (imported)')
+      expect(await storedName(owner.orgId, first.projectId)).toBe('Payments API (imported)')
+
+      const second = await importName(owner.cookies, exported)
+      expect(second.name).toBe('Payments API (imported 2)')
+      expect(await storedName(owner.orgId, second.projectId)).toBe('Payments API (imported 2)')
+    })
+
+    it('honours an explicit override name verbatim even when it collides; omitting it suffixes', async () => {
+      const owner = await registerOwner(app, '62-2-override')
+      const sourceId = await createNamedProject(owner.cookies, 'Billing')
+      const exported = await exportOf(owner.cookies, sourceId)
+
+      const explicit = await importName(owner.cookies, exported, 'Billing')
+      expect(explicit.name).toBe('Billing')
+
+      const omitted = await importName(owner.cookies, exported)
+      expect(omitted.name).toBe('Billing (imported)')
+    })
+
+    it('does not suffix when only an archived project collides, or when another org holds the name', async () => {
+      const owner = await registerOwner(app, '62-2-nocollide')
+      const sourceId = await createNamedProject(owner.cookies, UNIQUE_NAME)
+      const exported = await exportOf(owner.cookies, sourceId)
+      await archive(owner.orgId, sourceId)
+      const archivedOnly = await importName(owner.cookies, exported)
+      expect(archivedOnly.name).toBe(UNIQUE_NAME)
+
+      // RLS hides the first org's identical name from a different org: no suffix there.
+      const otherOrg = await registerOwner(app, '62-2-other-org')
+      const crossOrg = await importName(otherOrg.cookies, exported)
+      expect(crossOrg.name).toBe(UNIQUE_NAME)
+    })
+
+    it('compares case-insensitively on trimmed names', async () => {
+      const owner = await registerOwner(app, '62-2-case')
+      const sourceId = await createNamedProject(owner.cookies, 'Case Test')
+      const exported = await exportOf(owner.cookies, sourceId)
+      await createNamedProject(owner.cookies, '  CASE TEST ')
+      await archive(owner.orgId, sourceId)
+      const imported = await importName(owner.cookies, exported)
+      expect(imported.name).toBe('Case Test (imported)')
+    })
+
+    it('truncates a 128-char colliding name so the suffixed name stays within 128 chars', async () => {
+      const owner = await registerOwner(app, '62-2-long')
+      const sourceId = await createNamedProject(owner.cookies, 'L'.repeat(128))
+      const exported = await exportOf(owner.cookies, sourceId)
+
+      const imported = await importName(owner.cookies, exported)
+      expect(imported.name).toBe(`${'L'.repeat(128 - ' (imported)'.length)} (imported)`)
+      expect(imported.name.length).toBeLessThanOrEqual(128)
+    })
+
+    it('treats LIKE metacharacters and quotes literally (no pattern matching, stored verbatim)', async () => {
+      const hostile = "100%_done'; --"
+      const owner = await registerOwner(app, '62-2-hostile')
+      const sourceId = await createNamedProject(owner.cookies, hostile)
+      const hostileExport = await exportOf(owner.cookies, sourceId)
+      const same = await importName(owner.cookies, hostileExport)
+      expect(same.name).toBe(`${hostile} (imported)`)
+      expect(await storedName(owner.orgId, same.projectId)).toBe(`${hostile} (imported)`)
+
+      // "50%" must not collide with "500": an org holding only "500" imports "50%" unchanged.
+      const pctSource = await createNamedProject(owner.cookies, '50%')
+      const pctExport = await exportOf(owner.cookies, pctSource)
+      const target = await registerOwner(app, '62-2-hostile-target')
+      await createNamedProject(target.cookies, '500')
+      const imported = await importName(target.cookies, pctExport)
+      expect(imported.name).toBe('50%')
+    })
   })
 
   it("AC-9: export/import are scoped to the caller's own org — a second org cannot export a project it does not own", async () => {
