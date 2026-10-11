@@ -2,7 +2,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { scanDeferredWorkIds } from './check-deferred-work-ids.js'
+import { scanDeferredWorkIds, scanDeferredWorkReservations } from './check-deferred-work-ids.js'
+import { formatReservationStub, RESERVATION_STALE_DAYS } from './lib/dw-reservation.js'
 import {
   runScriptCli,
   useFixtureRoots,
@@ -128,6 +129,34 @@ describe('check-deferred-work-ids CLI (Story 43.11 AC-4 report + AC-7 SKIPPED)',
     expect(run.stdout).toBe('check-deferred-work-ids: 2 DW entry headings, all IDs unique — OK\n')
   })
 
+  it('66-19 AC-4: a 0-byte or newline-only ledger is FATAL, never a clean pass over nothing', () => {
+    const empty = makeFixtureRoot()
+    writeFixture(empty, LEDGER_PATH, '')
+    const emptyRun = runScriptCli(SCRIPT, empty)
+    expect(emptyRun.status).toBe(1)
+    expect(emptyRun.stderr).toContain(`${LEDGER_PATH} is empty (0 bytes)`)
+    expect(emptyRun.stderr).toContain(`git show HEAD:${LEDGER_PATH}`)
+    expect(emptyRun.stdout).not.toContain('OK')
+
+    const blank = makeFixtureRoot()
+    writeFixture(blank, LEDGER_PATH, '\n')
+    const blankRun = runScriptCli(SCRIPT, blank)
+    expect(blankRun.status).toBe(1)
+    expect(blankRun.stderr).toContain('looks truncated')
+  })
+
+  it('66-19 AC-4: a ledger with bytes but no DW heading looks truncated; one heading passes', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, LEDGER_PATH, '# Deferred Work\n')
+    const run = runScriptCli(SCRIPT, root)
+    expect(run.status).toBe(1)
+    expect(run.stderr).toContain(`FATAL: check-deferred-work-ids: ${LEDGER_PATH} looks truncated`)
+
+    const ok = makeFixtureRoot()
+    writeFixture(ok, LEDGER_PATH, '### DW-1: a\n')
+    expect(runScriptCli(SCRIPT, ok).status).toBe(0)
+  })
+
   it('prints SKIPPED (never OK) when deferred-work.md is absent', () => {
     const root = makeFixtureRoot()
     const run = runScriptCli(SCRIPT, root)
@@ -204,5 +233,92 @@ describe('scanDeferredWorkIds against the real repository', () => {
     const { duplicates, nonStandardLevels } = scanDeferredWorkIds(process.cwd())
     expect(duplicates).toEqual([])
     expect(nonStandardLevels).toEqual([])
+  })
+})
+
+describe('reservation stubs (Story 66-19 AC-2)', () => {
+  const NOW = new Date('2026-10-11T12:00:00.000Z')
+  const daysAgo = (days: number) => new Date(NOW.getTime() - days * 86_400_000)
+  const scanReservations = (content: string) => {
+    const root = makeFixtureRoot()
+    writeFixture(root, LEDGER_PATH, content)
+    return scanDeferredWorkReservations(root, NOW)
+  }
+
+  it('passes a fresh stub (a session mid-story legitimately holds one)', () => {
+    const content = `### DW-1: a\n\n${formatReservationStub(2, '66-19', daysAgo(1))}`
+    expect(scanReservations(content)).toEqual({ stale: [], leftover: [], unparsable: [] })
+    expect(scanLedger(content).duplicates).toEqual([])
+  })
+
+  it('pins the threshold: 7 days passes, just over 7 days is stale', () => {
+    expect(RESERVATION_STALE_DAYS).toBe(7)
+    const exactly = scanReservations(formatReservationStub(2, '66-19', daysAgo(7)))
+    expect(exactly.stale).toEqual([])
+    const over = scanReservations(
+      formatReservationStub(2, '66-19', new Date(daysAgo(7).getTime() - 1000))
+    )
+    expect(over.stale).toEqual([{ id: 'DW-2', line: 1, story: '66-19', date: '2026-10-04' }])
+  })
+
+  it('an unparsable timestamp is reported (fail closed), never treated as fresh', () => {
+    const result = scanReservations('### DW-2: RESERVED 66-19 someday\nstatus: reserved\n')
+    expect(result.unparsable).toEqual([{ id: 'DW-2', line: 1, story: '66-19', text: 'someday' }])
+    expect(result.stale).toEqual([])
+  })
+
+  it('a stub whose ID also has a real entry is a leftover stub, not a true duplicate', () => {
+    const content = `### DW-2: real\nstatus: done\n\n${formatReservationStub(2, '66-19', daysAgo(1))}`
+    const result = scanReservations(content)
+    expect(result.leftover).toEqual([{ id: 'DW-2', stubLine: 4, entryLines: [1] }])
+    expect(scanLedger(content).duplicates).toEqual([])
+  })
+
+  it('two real entries, or two stubs, for one ID stay a true duplicate', () => {
+    expect(scanLedger('### DW-2: a\n### DW-2: b\n').duplicates).toHaveLength(1)
+    const twoStubs = `${formatReservationStub(2, '66-19', NOW)}\n${formatReservationStub(2, '66-20', NOW)}`
+    expect(scanLedger(twoStubs).duplicates).toHaveLength(1)
+  })
+
+  it('ignores a stale-looking stub inside a fenced code block', () => {
+    const fenced = `### DW-1: a\n\`\`\`markdown\n${formatReservationStub(2, '66-19', daysAgo(30))}\`\`\`\n`
+    expect(scanReservations(fenced)).toEqual({ stale: [], leftover: [], unparsable: [] })
+  })
+
+  describe('CLI', () => {
+    const run = (content: string) => {
+      const root = makeFixtureRoot()
+      writeFixture(root, LEDGER_PATH, content)
+      return runScriptCli(SCRIPT, root)
+    }
+    const oldStub = formatReservationStub(2, '66-19', new Date(Date.now() - 10 * 86_400_000))
+
+    it('exits 0 for a fresh stub', () => {
+      const result = run(`### DW-1: a\n\n${formatReservationStub(2, '66-19', new Date())}`)
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain('OK')
+    })
+
+    it('exits 1 for a stale stub, naming the story and the fix', () => {
+      const result = run(`### DW-1: a\n\n${oldStub}`)
+      expect(result.status).toBe(1)
+      expect(result.stderr).toMatch(/DW-2 reserved by 66-19 on \d{4}-\d{2}-\d{2}, never filled in/)
+      expect(result.stderr).toContain('write the entry or delete the stub')
+    })
+
+    it('exits 1 for a leftover stub, saying leftover (not duplicate)', () => {
+      const result = run(
+        `### DW-2: real\nstatus: done\n\n${formatReservationStub(2, '66-19', new Date())}`
+      )
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('leftover stub')
+      expect(result.stderr).not.toContain('declares the same DW ID more than once')
+    })
+
+    it('exits 1 for an unparsable stub timestamp', () => {
+      const result = run('### DW-1: a\n### DW-2: RESERVED 66-19 someday\nstatus: reserved\n')
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('unparsable timestamp')
+    })
   })
 })

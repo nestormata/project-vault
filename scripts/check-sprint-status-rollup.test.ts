@@ -428,11 +428,34 @@ describe('check-sprint-status-rollup CLI (Story 43.11 AC-1/AC-2/AC-7)', () => {
     expect(run.stdout).not.toContain('OK')
   })
 
-  it('AC-7.3: a present file without a development_status block is not a skip', () => {
+  it('AC-7.3 (66-19 AC-4): a present file without a development_status block is FATAL "looks truncated", never a skip or an OK', () => {
     const root = makeFixtureRoot()
     writeFixture(root, SPRINT_STATUS_PATH, 'generated: x\n')
     const run = runScriptCli(SCRIPT, root)
-    expect(run.status).toBe(0)
-    expect(run.stdout).toContain('— OK')
+    expect(run.status).toBe(1)
+    expect(run.stderr).toContain(
+      `FATAL: check-sprint-status-rollup: ${SPRINT_STATUS_PATH} looks truncated`
+    )
+    expect(run.stdout).not.toContain('OK')
+  })
+
+  it('66-19 AC-4: a 0-byte or newline-only sprint-status.yaml is FATAL, while one valid line still passes', () => {
+    const empty = makeFixtureRoot()
+    writeFixture(empty, SPRINT_STATUS_PATH, '')
+    const emptyRun = runScriptCli(SCRIPT, empty)
+    expect(emptyRun.status).toBe(1)
+    expect(emptyRun.stderr).toContain(`${SPRINT_STATUS_PATH} is empty (0 bytes)`)
+
+    const blank = makeFixtureRoot()
+    writeFixture(blank, SPRINT_STATUS_PATH, '\n')
+    const blankRun = runScriptCli(SCRIPT, blank)
+    expect(blankRun.status).toBe(1)
+    expect(blankRun.stderr).toContain('looks truncated')
+
+    const valid = makeFixtureRoot()
+    writeFixture(valid, SPRINT_STATUS_PATH, 'development_status:\n')
+    const validRun = runScriptCli(SCRIPT, valid)
+    expect(validRun.status).toBe(0)
+    expect(validRun.stdout).toContain('— OK')
   })
 })

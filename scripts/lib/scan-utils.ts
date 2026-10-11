@@ -192,6 +192,36 @@ export function overlaySkipMessage(
   return `${checkName}: SKIPPED — ${relPath} not found (${reason}); nothing checked\n`
 }
 
+/** Story 66-19 AC-4: a 0-byte shared ledger is a truncating write, never a clean pass over nothing. */
+function emptyFileFailure(checkName: string, relPath: string): string {
+  return (
+    `FATAL: ${checkName}: ${relPath} is empty (0 bytes); a truncating write most likely wiped it; ` +
+    `restore with \`git show HEAD:${relPath}\`, nothing was checked.\n`
+  )
+}
+
+/** A content-shape sentinel a shared ledger must contain (Story 66-19 AC-4). */
+export type OverlayShape = { pattern: RegExp; expected: string }
+
+/**
+ * Story 66-19 AC-4: the FATAL text when `relPath` is readable but lacks its `shape` sentinel (a
+ * partial wipe leaves bytes behind, so the 0-byte check alone misses it), or `undefined`. Used by
+ * the two shared-ledger guards' own entry points, not by the generic seam.
+ */
+export function overlayShapeFailure(
+  checkName: string,
+  rootDir: string,
+  relPath: string,
+  shape: OverlayShape
+): string | undefined {
+  const content = readOverlayFile(rootDir, relPath)
+  if (content === undefined || shape.pattern.test(content)) return undefined
+  return (
+    `FATAL: ${checkName}: ${relPath} looks truncated (no ${shape.expected} found); ` +
+    `restore with \`git show HEAD:${relPath}\`, nothing was checked.\n`
+  )
+}
+
 /**
  * The FATAL stderr text for an overlay input that is there (not absent, not dangling) but cannot
  * be read as a regular file (a directory, EACCES, ...), or `undefined` when it is readable. Without
@@ -205,8 +235,10 @@ export function overlayReadFailure(
 ): string | undefined {
   const path = resolve(rootDir, relPath)
   try {
-    if (!statSync(path).isFile()) throw new Error('not a regular file')
+    const stats = statSync(path)
+    if (!stats.isFile()) throw new Error('not a regular file')
     accessSync(path, constants.R_OK)
+    if (stats.size === 0) return emptyFileFailure(checkName, relPath)
     return undefined
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
@@ -226,14 +258,17 @@ export function runOverlayGuard(
   checkName: string,
   rootDir: string,
   relPath: string,
-  run: () => void
+  run: () => void,
+  shape?: OverlayShape
 ): void {
   const skipped = overlaySkipMessage(checkName, rootDir, relPath)
   if (skipped !== undefined) {
     process.stdout.write(skipped)
     return
   }
-  const failure = overlayReadFailure(checkName, rootDir, relPath)
+  const failure =
+    overlayReadFailure(checkName, rootDir, relPath) ??
+    (shape === undefined ? undefined : overlayShapeFailure(checkName, rootDir, relPath, shape))
   if (failure !== undefined) {
     process.stderr.write(failure)
     process.exitCode = 1

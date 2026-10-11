@@ -453,7 +453,7 @@ describe('real-shape regressions (AC-8): red before, green after', () => {
 })
 
 describe('check-review-tradeoff-ledger CLI with Rules S and D (AC-5)', () => {
-  function cliRoot(body: string, ledger = ''): string {
+  function cliRoot(body: string, ledger = '# Deferred Work\n'): string {
     const root = makeFixtureRoot()
     writeFixture(root, SPRINT_PATH, sprint([`${KEY}: done`]))
     writeFixture(root, LEDGER_PATH, ledger)
@@ -463,7 +463,7 @@ describe('check-review-tradeoff-ledger CLI with Rules S and D (AC-5)', () => {
 
   it('(i) prints SKIPPED when either input is absent', () => {
     const noSprint = makeFixtureRoot()
-    writeFixture(noSprint, LEDGER_PATH, '')
+    writeFixture(noSprint, LEDGER_PATH, '# Deferred Work\n')
     expect(runScriptCli(SCRIPT, noSprint).stdout).toContain('SKIPPED')
     const noLedger = makeFixtureRoot()
     writeFixture(noLedger, SPRINT_PATH, sprint([]))

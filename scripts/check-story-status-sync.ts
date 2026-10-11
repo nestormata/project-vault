@@ -16,6 +16,7 @@ import { basename, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   type DanglingSymlinkViolation,
+  type OverlayShape,
   readOverlayFile,
   reportDanglingSymlinks,
   runOverlayGuard,
@@ -56,6 +57,12 @@ export type StoryStatusSyncViolation =
   StatusMismatch | FrontmatterStatusMismatch | DanglingSymlinkViolation
 
 export const SPRINT_STATUS_PATH = '_bmad-output/implementation-artifacts/sprint-status.yaml'
+
+/** Story 66-19 AC-4: a sprint-status.yaml with bytes but no `development_status:` line was truncated. */
+export const SPRINT_STATUS_SHAPE: OverlayShape = {
+  pattern: /^development_status:/m,
+  expected: '`development_status:` line',
+}
 const STORIES_DIR = '_bmad-output/implementation-artifacts'
 
 /** One `development_status:` entry with its 1-based line number in the file (Story 43.11). */
@@ -341,7 +348,13 @@ function report(violations: StoryStatusSyncViolation[]): void {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  runOverlayGuard('check-story-status-sync', process.cwd(), SPRINT_STATUS_PATH, () => {
-    report(scanStoryStatusSync())
-  })
+  runOverlayGuard(
+    'check-story-status-sync',
+    process.cwd(),
+    SPRINT_STATUS_PATH,
+    () => {
+      report(scanStoryStatusSync())
+    },
+    SPRINT_STATUS_SHAPE
+  )
 }

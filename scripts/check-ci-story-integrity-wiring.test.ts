@@ -30,7 +30,18 @@ const STORY_INTEGRITY_TEST_COMMAND =
   'check-deferred-work-ids.test.ts next-dw-id.test.ts lib/deferred-work-ledger.test.ts ' +
   'check-ci-story-integrity-wiring.test.ts check-review-tradeoff-ledger.test.ts ' +
   'check-review-tradeoff-ledger-sections.test.ts ' +
-  'check-deferred-work-triggers.test.ts lib/dw-trigger-hits.test.ts warn-fired-dw-triggers.test.ts'
+  'check-deferred-work-triggers.test.ts lib/dw-trigger-hits.test.ts warn-fired-dw-triggers.test.ts ' +
+  'lib/safe-edit.test.ts lib/dw-reservation.test.ts lib/scan-utils.test.ts dw-reservation-guards.test.ts'
+
+// Story 66-19 AC-6: the shared-private-tree safety tests that must stay in the command above.
+const SHARED_TREE_SAFETY_TESTS = [
+  'lib/safe-edit.test.ts',
+  'lib/dw-reservation.test.ts',
+  'lib/scan-utils.test.ts',
+  'dw-reservation-guards.test.ts',
+  'next-dw-id.test.ts',
+  'check-deferred-work-ids.test.ts',
+] as const
 
 const GUARDS = {
   'check-story-status-sync': 'tsx scripts/check-story-status-sync.ts',
@@ -245,6 +256,19 @@ describe('story-integrity CI wiring', () => {
     expect(
       workflowLines.filter((line) => line.trim() === `run: ${STORY_INTEGRITY_TEST_COMMAND}`)
     ).toHaveLength(1)
+  })
+
+  it('keeps the shared-private-tree safety tests and the next-dw-id script wired (Story 66-19 AC-6)', () => {
+    for (const test of SHARED_TREE_SAFETY_TESTS) {
+      expect(existsSync(resolve(repositoryRoot, 'scripts', test)), `${test} exists`).toBe(true)
+      expect(STORY_INTEGRITY_TEST_COMMAND.split(' '), `${test} in the command`).toContain(test)
+      // Removing the file from the Makefile or ci.yml line breaks the exact-line match above.
+      const stripped = readFileSync(makefilePath, 'utf8').replace(` ${test}`, '')
+      expect(stripped.split('\n')).not.toContain(`\t${STORY_INTEGRITY_TEST_COMMAND}`)
+    }
+    const raw = readFileSync(packageJsonPath, 'utf8')
+    expect(packageScripts(raw)['next-dw-id']).toBe('tsx scripts/next-dw-id.ts')
+    expect(countJsonProperty(raw, 'next-dw-id')).toBe(1)
   })
 
   it('make ci mounts the private overlay read-only, only when it resolves (Story 43.11 AC-11)', () => {

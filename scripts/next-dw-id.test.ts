@@ -1,18 +1,22 @@
-import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { allocateNextDwId } from './next-dw-id.js'
+import { allocateNextDwId, reserveDwIds } from './next-dw-id.js'
 import {
   runScriptCli,
   useFixtureRoots,
   writeFixture,
   writeFixtureSymlink,
 } from './lib/fixture-test-helpers.js'
+import { formatReservationStub, parseReservations, RESERVED_SECTION } from './lib/dw-reservation.js'
+import { parseDwHeadings } from './lib/deferred-work-ledger.js'
 import { trustedGit } from './lib/trusted-executable.js'
 
 const ARTIFACTS_DIR = '_bmad-output/implementation-artifacts'
 const LEDGER_PATH = `${ARTIFACTS_DIR}/deferred-work.md`
 const SCRIPT = 'scripts/next-dw-id.ts'
+const PRIVATE_LEDGER_REL = 'ledger/deferred-work.md'
 const REMOTE_REF = 'refs/remotes/origin/feature/y'
 
 const makeFixtureRoot = useFixtureRoots('next-dw-id-', [ARTIFACTS_DIR])
@@ -106,8 +110,8 @@ describe('allocateNextDwId (Story 43.11 AC-5)', () => {
   it('follows the overlay symlink into the private repo that holds the ledger', () => {
     const privateRepo = makeFixtureRoot()
     const git = gitIn(privateRepo)
-    const privateLedger = join(privateRepo, 'ledger/deferred-work.md')
-    writeFixture(privateRepo, 'ledger/deferred-work.md', ledgerUpTo(10))
+    const privateLedger = join(privateRepo, PRIVATE_LEDGER_REL)
+    writeFixture(privateRepo, PRIVATE_LEDGER_REL, ledgerUpTo(10))
     git('init', '-q', '-b', 'main')
     git('add', '.')
     git('commit', '-q', '-m', 'base')
@@ -183,7 +187,10 @@ describe('next-dw-id CLI (Story 43.11 AC-5)', () => {
     commitOnBranch(git, ledger, 'feature/x', '### DW-342: on a branch')
     const run = runScriptCli(SCRIPT, root)
     expect(run.status).toBe(0)
-    expect(run.stdout).toBe('DW-343\nmax DW-342 seen on refs/heads/feature/x\n')
+    expect(run.stdout).toBe(
+      'DW-343\nmax DW-342 seen on refs/heads/feature/x\n' +
+        'hint: add --reserve to claim this ID in the ledger now (66-19)\n'
+    )
   })
 
   it('prints warnings to stderr only, keeping stdout machine-friendly', () => {
@@ -201,5 +208,193 @@ describe('next-dw-id CLI (Story 43.11 AC-5)', () => {
     expect(run.status).toBe(1)
     expect(run.stdout).toBe('')
     expect(run.stderr).toContain('deferred-work.md not found')
+  })
+})
+
+const NOW = new Date('2026-10-11T12:00:00.000Z')
+const STAMP = NOW.toISOString()
+
+function ledgerHeadings(root: string): string[] {
+  return parseDwHeadings(readFileSync(join(root, LEDGER_PATH), 'utf-8')).map((h) => h.id)
+}
+
+describe('reserveDwIds (Story 66-19 AC-1)', () => {
+  it('two back-to-back reservations return DW-N and DW-N+1 (the second sees the first stub)', () => {
+    const { root } = makeLedgerRepo()
+    const first = reserveDwIds(root, { story: '66-19', now: NOW })
+    const second = reserveDwIds(root, { story: '66-20', now: NOW })
+    expect(first.ids).toEqual(['DW-342'])
+    expect(second.ids).toEqual(['DW-343'])
+    expect(ledgerHeadings(root).slice(-2)).toEqual(['DW-342', 'DW-343'])
+  })
+
+  it('writes the stub under a Reserved section created once at the end of the file', () => {
+    const { root, ledger } = makeLedgerRepo()
+    reserveDwIds(root, { story: '66-19', now: NOW })
+    reserveDwIds(root, { story: '66-19', now: NOW })
+    const content = readFileSync(ledger, 'utf-8')
+    expect(content.split(RESERVED_SECTION)).toHaveLength(2)
+    expect(
+      content.endsWith(
+        `${formatReservationStub(342, '66-19', NOW)}\n${formatReservationStub(343, '66-19', NOW)}`
+      )
+    ).toBe(true)
+    expect(parseReservations(content).map((r) => [r.id, r.story, r.timestampText])).toEqual([
+      ['DW-342', '66-19', STAMP],
+      ['DW-343', '66-19', STAMP],
+    ])
+  })
+
+  it('--count 3 reserves three consecutive IDs in one append', () => {
+    const { root } = makeLedgerRepo()
+    expect(reserveDwIds(root, { story: '66-19', count: 3, now: NOW }).ids).toEqual([
+      'DW-342',
+      'DW-343',
+      'DW-344',
+    ])
+    expect(ledgerHeadings(root).slice(-3)).toEqual(['DW-342', 'DW-343', 'DW-344'])
+  })
+
+  it('adds the missing trailing newline before the stub', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, LEDGER_PATH, '# Deferred Work\n\n### DW-1: a\nstatus: done')
+    reserveDwIds(root, { story: '66-19', now: NOW })
+    const content = readFileSync(join(root, LEDGER_PATH), 'utf-8')
+    expect(content).toContain('status: done\n\n## Reserved (not yet written)')
+    expect(ledgerHeadings(root)).toEqual(['DW-1', 'DW-2'])
+  })
+
+  it('re-adds the section header when the last ## section is not the Reserved one', () => {
+    const { root, ledger } = makeLedgerRepo()
+    reserveDwIds(root, { story: '66-19', now: NOW })
+    writeFileSync(
+      ledger,
+      `${readFileSync(ledger, 'utf-8')}\n## Deferred from: later\n\n### DW-400: later\n`
+    )
+    reserveDwIds(root, { story: '66-19', now: NOW })
+    expect(readFileSync(ledger, 'utf-8').split(RESERVED_SECTION)).toHaveLength(3)
+  })
+
+  it('leaves no lock file behind', () => {
+    const { root } = makeLedgerRepo()
+    reserveDwIds(root, { story: '66-19', now: NOW })
+    expect(existsSync(join(root, `${LEDGER_PATH}.lock`))).toBe(false)
+  })
+
+  it.each([
+    ['an empty ledger', ''],
+    ['a whitespace-only ledger', '\n\n'],
+  ])('refuses %s instead of starting at DW-1, writing nothing', (_n, content) => {
+    const root = makeFixtureRoot()
+    writeFixture(root, LEDGER_PATH, content)
+    expect(() => reserveDwIds(root, { story: '66-19', now: NOW })).toThrow(/empty/)
+    expect(readFileSync(join(root, LEDGER_PATH), 'utf-8')).toBe(content)
+  })
+
+  it('fails closed (writes nothing) when the ledger is missing', () => {
+    const root = makeFixtureRoot()
+    expect(() => reserveDwIds(root, { story: '66-19', now: NOW })).toThrow(
+      /deferred-work\.md not found/
+    )
+    expect(existsSync(join(root, LEDGER_PATH))).toBe(false)
+  })
+
+  it.each(['abc', '66-19\n### DW-1: injected', '66-19 #x', ''])(
+    'rejects the invalid story key %j with nothing written',
+    (story) => {
+      const { root, ledger } = makeLedgerRepo()
+      const before = readFileSync(ledger, 'utf-8')
+      expect(() => reserveDwIds(root, { story, now: NOW })).toThrow(/story key/)
+      expect(readFileSync(ledger, 'utf-8')).toBe(before)
+    }
+  )
+
+  it.each([0, -1, 1.5, 101])('rejects the invalid count %j', (count) => {
+    const { root, ledger } = makeLedgerRepo()
+    const before = readFileSync(ledger, 'utf-8')
+    expect(() => reserveDwIds(root, { story: '66-19', count, now: NOW })).toThrow(/count/)
+    expect(readFileSync(ledger, 'utf-8')).toBe(before)
+  })
+
+  it('writes through the overlay symlink into the private ledger, keeping the link', () => {
+    const privateRepo = makeFixtureRoot()
+    const privateLedger = join(privateRepo, PRIVATE_LEDGER_REL)
+    writeFixture(privateRepo, PRIVATE_LEDGER_REL, ledgerUpTo(10))
+    const publicRoot = makeFixtureRoot()
+    writeFixtureSymlink(publicRoot, LEDGER_PATH, privateLedger)
+    expect(reserveDwIds(publicRoot, { story: '66-19', now: NOW }).ids).toEqual(['DW-11'])
+    expect(readFileSync(privateLedger, 'utf-8')).toContain('### DW-11: RESERVED 66-19')
+    expect(existsSync(join(privateRepo, `${PRIVATE_LEDGER_REL}.lock`))).toBe(false)
+  })
+})
+
+describe('next-dw-id --reserve CLI (Story 66-19 AC-1)', () => {
+  it('prints the reserved IDs one per line, then the max line, with the commit-now hint on stderr', () => {
+    const { root } = makeLedgerRepo()
+    const run = runScriptCli(SCRIPT, root, ['--reserve', '--count', '2', '--story', '66-19'])
+    expect(run.status).toBe(0)
+    expect(run.stdout).toBe('DW-342\nDW-343\nmax DW-341 seen on working tree\n')
+    expect(run.stderr).toContain('commit the stub hunk now (own hunk only)')
+    expect(ledgerHeadings(root).slice(-2)).toEqual(['DW-342', 'DW-343'])
+  })
+
+  it('keeps line 1 of stdout as the first ID for a single reservation', () => {
+    const { root } = makeLedgerRepo()
+    const run = runScriptCli(SCRIPT, root, ['--reserve'])
+    expect(run.stdout.split('\n')[0]).toBe('DW-342')
+  })
+
+  it('exits 1 and writes nothing for an invalid story key or an empty ledger', () => {
+    const { root, ledger } = makeLedgerRepo()
+    const before = readFileSync(ledger, 'utf-8')
+    const badStory = runScriptCli(SCRIPT, root, ['--reserve', '--story', 'nope'])
+    expect(badStory.status).toBe(1)
+    expect(badStory.stdout).toBe('')
+    expect(badStory.stderr).toContain('FATAL: next-dw-id:')
+    expect(readFileSync(ledger, 'utf-8')).toBe(before)
+
+    const emptyRoot = makeFixtureRoot()
+    writeFixture(emptyRoot, LEDGER_PATH, '')
+    const emptyRun = runScriptCli(SCRIPT, emptyRoot, ['--reserve', '--story', '66-19'])
+    expect(emptyRun.status).toBe(1)
+    expect(emptyRun.stdout).toBe('')
+    expect(readFileSync(join(emptyRoot, LEDGER_PATH), 'utf-8')).toBe('')
+  })
+
+  it('two concurrent --reserve processes get distinct IDs and no duplicate heading (structural)', async () => {
+    const { root } = makeLedgerRepo()
+    const repositoryRoot = join(import.meta.dirname, '..')
+    const loader = join(repositoryRoot, 'node_modules/tsx/dist/esm/index.mjs')
+    const script = join(repositoryRoot, SCRIPT)
+    const runOne = (story: string) =>
+      new Promise<{ code: number | null; stdout: string }>((resolveRun) => {
+        const child = spawn(
+          process.execPath,
+          ['--import', loader, script, '--reserve', '--story', story],
+          { cwd: root }
+        )
+        let stdout = ''
+        child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()))
+        child.on('close', (code) => resolveRun({ code, stdout }))
+      })
+    const runs = await Promise.all(Array.from({ length: 6 }, (_, i) => runOne(`66-${i + 1}`)))
+    expect(runs.map((r) => r.code)).toEqual([0, 0, 0, 0, 0, 0])
+    const ids = runs.map((r) => r.stdout.split('\n')[0])
+    expect(new Set(ids)).toEqual(
+      new Set(['DW-342', 'DW-343', 'DW-344', 'DW-345', 'DW-346', 'DW-347'])
+    )
+    const headings = ledgerHeadings(root)
+    expect(new Set(headings).size).toBe(headings.length)
+  })
+})
+
+describe('reserveDwIds --fetch (66-19 code review)', () => {
+  it('fetches outside the lock, reports a failed fetch once, and still reserves the next ID', () => {
+    const { root, git } = makeLedgerRepo()
+    git('remote', 'add', 'origin', join(root, 'does-not-exist.git'))
+    const result = reserveDwIds(root, { fetch: true, story: '66-19', now: NOW })
+    expect(result.ids).toEqual(['DW-342'])
+    expect(result.warnings).toHaveLength(1)
+    expect(result.warnings[0]).toMatch(/^git fetch --all --prune failed/)
   })
 })
