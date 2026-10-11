@@ -15,9 +15,7 @@ test.describe('J35 — project export and import', () => {
   test('exports with a copyable key, then imports the downloaded file as a distinguishable project', async ({
     page,
     context,
-    browserName,
   }, testInfo) => {
-    test.skip(browserName !== 'chromium', 'clipboard permissions are Chromium-only')
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
 
     await registerAndLoginViaApi(context, {
