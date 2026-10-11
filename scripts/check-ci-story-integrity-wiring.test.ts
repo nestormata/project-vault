@@ -30,7 +30,7 @@ const STORY_INTEGRITY_TEST_COMMAND =
   'check-deferred-work-ids.test.ts next-dw-id.test.ts lib/deferred-work-ledger.test.ts ' +
   'check-ci-story-integrity-wiring.test.ts check-review-tradeoff-ledger.test.ts ' +
   'check-review-tradeoff-ledger-sections.test.ts ' +
-  'check-deferred-work-triggers.test.ts'
+  'check-deferred-work-triggers.test.ts lib/dw-trigger-hits.test.ts warn-fired-dw-triggers.test.ts'
 
 const GUARDS = {
   'check-story-status-sync': 'tsx scripts/check-story-status-sync.ts',
@@ -207,6 +207,32 @@ describe('story-integrity CI wiring', () => {
 
       const swallowed = makefile.replace(commandLine, `\tpnpm ${guard} || true\n`)
       expect(() => assertCiInnerWiring(swallowed), `${guard} swallowed`).toThrow()
+    }
+  })
+
+  it('wires the advisory DW-trigger warning once, after the trigger guard, and it can never fail (Story 43.22 AC-6)', () => {
+    const raw = readFileSync(packageJsonPath, 'utf8')
+    expect(packageScripts(raw)['warn-fired-dw-triggers']).toBe(
+      'tsx scripts/warn-fired-dw-triggers.ts'
+    )
+    expect(countJsonProperty(raw, 'warn-fired-dw-triggers')).toBe(1)
+
+    const recipe = ciInnerRecipe(readFileSync(makefilePath, 'utf8'))
+    expect(recipe.match(/^\s*pnpm warn-fired-dw-triggers$/gm)).toHaveLength(1)
+    expect(recipe).not.toMatch(/pnpm warn-fired-dw-triggers.*(\|\||continue-on-error|[>]{1,2})/)
+    expect(recipe.indexOf('pnpm warn-fired-dw-triggers')).toBeGreaterThan(
+      recipe.indexOf('pnpm check-deferred-work-triggers')
+    )
+
+    const sources = import.meta.glob(['./warn-fired-dw-triggers.ts', './lib/dw-trigger-hits.ts'], {
+      query: '?raw',
+      import: 'default',
+      eager: true,
+    }) as Record<string, string>
+    expect(Object.keys(sources)).toHaveLength(2)
+    for (const source of Object.values(sources)) {
+      expect(source).not.toMatch(/process\.exit\b/)
+      expect(source).not.toMatch(/exitCode/)
     }
   })
 

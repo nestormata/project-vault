@@ -203,11 +203,13 @@ ci-inner: ## The actual CI steps — only meant to run inside the `ci` container
 	pnpm check-deferred-work-ids
 	# Story 43.12 AC-5/AC-7: every open DW entry names a revisit trigger (epic-59 retro Finding 4).
 	pnpm check-deferred-work-triggers
+	# Story 43.22: advisory only (always exits 0): open DW entries whose trigger names a file in this diff.
+	pnpm warn-fired-dw-triggers
 	# Story 43.12 AC-1..AC-4/AC-7: done stories' review trade-offs are ledgered (epic-43 retro Finding 1).
 	pnpm check-review-tradeoff-ledger
 	# Story 43.11 AC-6.4: the story-integrity guards' own tests; --dir scripts keeps vitest's
 	# substring filters from also matching stale copies in nested agent worktrees.
-	pnpm vitest run --dir scripts check-sprint-status-rollup.test.ts check-story-status-sync.test.ts check-deferred-work-ids.test.ts next-dw-id.test.ts lib/deferred-work-ledger.test.ts check-ci-story-integrity-wiring.test.ts check-review-tradeoff-ledger.test.ts check-review-tradeoff-ledger-sections.test.ts check-deferred-work-triggers.test.ts
+	pnpm vitest run --dir scripts check-sprint-status-rollup.test.ts check-story-status-sync.test.ts check-deferred-work-ids.test.ts next-dw-id.test.ts lib/deferred-work-ledger.test.ts check-ci-story-integrity-wiring.test.ts check-review-tradeoff-ledger.test.ts check-review-tradeoff-ledger-sections.test.ts check-deferred-work-triggers.test.ts lib/dw-trigger-hits.test.ts warn-fired-dw-triggers.test.ts
 	pnpm check-story-references
 	pnpm check-psc-tbd-tracking
 	pnpm check-story-review-deferrals

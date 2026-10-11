@@ -199,7 +199,7 @@ function triggerMessage(id: string, check: TriggerCheck): string | undefined {
 }
 
 /** Every trigger value (text after a `Trigger[s] ...:` label) in the entry's body lines. */
-function entryTriggerValues(entry: DwEntry): string[] {
+export function entryTriggerValues(entry: DwEntry): string[] {
   return entry.lines.flatMap((l) => triggerValue(l.text) ?? [])
 }
 
