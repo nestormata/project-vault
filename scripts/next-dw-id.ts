@@ -205,6 +205,9 @@ export function reserveDwIds(rootDir = process.cwd(), options: ReserveOptions = 
       `${DEFERRED_WORK_PATH} not found (private overlay not attached?); no DW ID allocated`
     )
   }
+  // `git fetch` can outlast the 30 s stale-lock window; holding the lock across it would let another
+  // process take a live lock over. Fetch first, then allocate + append under the lock without it.
+  const fetchWarnings = options.fetch ? allocateNextDwId(rootDir, { fetch: true }).warnings : []
   return withFileLock(ledgerLockPath(ledgerLink), () => {
     const current = readFileSync(ledgerLink, 'utf-8')
     if (current.trim() === '') {
@@ -213,7 +216,7 @@ export function reserveDwIds(rootDir = process.cwd(), options: ReserveOptions = 
           'wiped it; restore it with `git show HEAD:<path>`)'
       )
     }
-    const allocation = allocateNextDwId(rootDir, { fetch: options.fetch })
+    const allocation = allocateNextDwId(rootDir, { fetch: false })
     const first = allocation.max + 1
     const now = options.now ?? new Date()
     const stubs = Array.from({ length: count }, (_, i) =>
@@ -224,6 +227,10 @@ export function reserveDwIds(rootDir = process.cwd(), options: ReserveOptions = 
     appendToFile(ledgerLink, `${separator}${section}${stubs}`)
     return {
       ...allocation,
+      warnings: [
+        ...fetchWarnings,
+        ...allocation.warnings.filter((w) => !fetchWarnings.includes(w)),
+      ],
       ids: Array.from({ length: count }, (_, i) => `DW-${first + i}`),
     }
   })

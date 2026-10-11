@@ -387,3 +387,14 @@ describe('next-dw-id --reserve CLI (Story 66-19 AC-1)', () => {
     expect(new Set(headings).size).toBe(headings.length)
   })
 })
+
+describe('reserveDwIds --fetch (66-19 code review)', () => {
+  it('fetches outside the lock, reports a failed fetch once, and still reserves the next ID', () => {
+    const { root, git } = makeLedgerRepo()
+    git('remote', 'add', 'origin', join(root, 'does-not-exist.git'))
+    const result = reserveDwIds(root, { fetch: true, story: '66-19', now: NOW })
+    expect(result.ids).toEqual(['DW-342'])
+    expect(result.warnings).toHaveLength(1)
+    expect(result.warnings[0]).toMatch(/^git fetch --all --prune failed/)
+  })
+})

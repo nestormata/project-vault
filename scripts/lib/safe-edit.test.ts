@@ -12,7 +12,13 @@ import {
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { useFixtureRoots } from './fixture-test-helpers.js'
-import { appendToFile, computeEdit, safeEditFile, withFileLock } from './safe-edit.js'
+import {
+  appendToFile,
+  computeEdit,
+  safeEditFile,
+  takeOverStaleLock,
+  withFileLock,
+} from './safe-edit.js'
 
 const makeFixtureRoot = useFixtureRoots('safe-edit-', [])
 
@@ -260,5 +266,42 @@ describe('withFileLock', () => {
     expect(() =>
       withFileLock(lock, () => 'x', { now: () => NOW, timeoutMs: 0, pollMs: 1 })
     ).toThrow(/could not acquire/)
+  })
+
+  it('does not delete a lock it no longer owns when fn finishes (taken over meanwhile)', () => {
+    const dir = makeFixtureRoot()
+    const lock = lockIn(dir)
+    withFileLock(
+      lock,
+      () => {
+        writeFileSync(lock, `4242 ${NOW.toISOString()}\n`) // another process took the lock over
+      },
+      { now: () => NOW }
+    )
+    expect(readFileSync(lock, 'utf-8')).toBe(`4242 ${NOW.toISOString()}\n`)
+  })
+
+  it('takeOverStaleLock leaves a lock alone when it is no longer the stale one it judged', () => {
+    const dir = makeFixtureRoot()
+    const lock = lockIn(dir)
+    const fresh = `4242 ${NOW.toISOString()}\n`
+    writeFileSync(lock, fresh)
+    const warnings: string[] = []
+    const took = takeOverStaleLock(lock, `1 ${new Date(0).toISOString()}\n`, (m) =>
+      warnings.push(m)
+    )
+    expect(took).toBe(false)
+    expect(warnings).toEqual([])
+    expect(readFileSync(lock, 'utf-8')).toBe(fresh)
+    expect(readdirSync(dir)).toEqual(['ledger.md.lock'])
+  })
+
+  it('takeOverStaleLock removes the stale lock it judged', () => {
+    const dir = makeFixtureRoot()
+    const lock = lockIn(dir)
+    const stale = `1 ${new Date(0).toISOString()}\n`
+    writeFileSync(lock, stale)
+    expect(takeOverStaleLock(lock, stale, () => undefined)).toBe(true)
+    expect(readdirSync(dir)).toEqual([])
   })
 })

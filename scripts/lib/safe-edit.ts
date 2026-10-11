@@ -16,6 +16,7 @@ import {
   chmodSync,
   closeSync,
   constants,
+  linkSync,
   openSync,
   readFileSync,
   realpathSync,
@@ -139,47 +140,84 @@ function isExistsError(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | undefined)?.code === 'EEXIST'
 }
 
-/** The embedded time of an existing lock file, or undefined when it cannot be read/parsed. */
-function lockTimestamp(lockPath: string): number | undefined {
+/** The raw content of an existing lock file, or undefined when it cannot be read. */
+function readLock(lockPath: string): string | undefined {
   try {
-    const iso = readFileSync(lockPath, 'utf-8').trim().split(/\s+/)[1]
-    const parsed = iso === undefined ? Number.NaN : Date.parse(iso)
-    return Number.isNaN(parsed) ? undefined : parsed
+    return readFileSync(lockPath, 'utf-8')
   } catch {
     return undefined
   }
 }
 
-function tryCreateLock(lockPath: string, now: Date): boolean {
+/** The embedded time of a lock file's content, or undefined when it cannot be parsed. */
+function lockTimestamp(content: string): number | undefined {
+  const iso = content.trim().split(/\s+/)[1]
+  const parsed = iso === undefined ? Number.NaN : Date.parse(iso)
+  return Number.isNaN(parsed) ? undefined : parsed
+}
+
+/** Creates the lock; returns the content written (the owner token) or undefined when held. */
+function tryCreateLock(lockPath: string, now: Date): string | undefined {
+  const content = `${process.pid} ${now.toISOString()}\n`
   try {
-    writeFileSync(lockPath, `${process.pid} ${now.toISOString()}\n`, { flag: 'wx' })
-    return true
+    writeFileSync(lockPath, content, { flag: 'wx' })
+    return content
   } catch (error) {
-    if (isExistsError(error)) return false
+    if (isExistsError(error)) return undefined
     throw error
   }
 }
 
-/** Moves a stale lock aside atomically (only one racing process wins the rename). */
-function takeOverStale(lockPath: string, warn: (message: string) => void): void {
+/**
+ * Moves the stale lock aside atomically (only one racing process wins the rename). The rename acts
+ * on whatever file is at `lockPath` NOW, which may be a live lock a faster process created after
+ * this one judged `staleContent` stale; in that case the live lock is put back and `false` returned.
+ */
+export function takeOverStaleLock(
+  lockPath: string,
+  staleContent: string,
+  warn: (message: string) => void
+): boolean {
   const aside = `${lockPath}.stale.${process.pid}.${randomBytes(4).toString('hex')}`
   try {
     renameSync(lockPath, aside)
   } catch {
-    return // someone else already took it over
+    return false // someone else already took it over
   }
-  rmSync(aside, { force: true })
+  try {
+    if (readLock(aside) !== staleContent) {
+      try {
+        linkSync(aside, lockPath) // restore the live lock; fails closed if it was re-created meanwhile
+      } catch {
+        // lock re-created by a third process; nothing more to restore
+      }
+      return false
+    }
+  } finally {
+    rmSync(aside, { force: true })
+  }
   warn(`stale lock ${lockPath} taken over`)
+  return true
 }
 
-function acquire(lockPath: string, options: LockOptions, deadline: number): void {
+/** The held lock's content when it is older than the stale window (by embedded time), else undefined. */
+function staleLockContent(lockPath: string, options: LockOptions): string | undefined {
   const now = options.now ?? (() => new Date())
-  if (tryCreateLock(lockPath, now())) return
-  const stamp = lockTimestamp(lockPath)
+  const held = readLock(lockPath)
+  const stamp = held === undefined ? undefined : lockTimestamp(held)
   const staleMs = options.staleMs ?? DEFAULT_STALE_MS
-  if (stamp !== undefined && now().getTime() - stamp > staleMs) {
-    takeOverStale(
+  return stamp !== undefined && now().getTime() - stamp > staleMs ? held : undefined
+}
+
+function acquire(lockPath: string, options: LockOptions, deadline: number): string {
+  const now = options.now ?? (() => new Date())
+  const token = tryCreateLock(lockPath, now())
+  if (token !== undefined) return token
+  const stale = staleLockContent(lockPath, options)
+  if (stale !== undefined) {
+    takeOverStaleLock(
       lockPath,
+      stale,
       options.warn ?? ((message) => process.stderr.write(`WARN: ${message}\n`))
     )
     return acquire(lockPath, options, deadline)
@@ -199,10 +237,12 @@ function acquire(lockPath: string, options: LockOptions, deadline: number): void
  * `os.tmpdir()`: per-session sandboxes can have different temp dirs and would not exclude each other.
  */
 export function withFileLock<T>(lockPath: string, fn: () => T, options: LockOptions = {}): T {
-  acquire(lockPath, options, Date.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS))
+  const token = acquire(lockPath, options, Date.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS))
   try {
     return fn()
   } finally {
-    rmSync(lockPath, { force: true })
+    // Release only a lock that is still ours: a holder that overran the stale window may have been
+    // taken over, and deleting the new owner's lock would break mutual exclusion.
+    if (readLock(lockPath) === token) rmSync(lockPath, { force: true })
   }
 }
