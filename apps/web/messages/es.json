@@ -251,7 +251,7 @@
   "project_import_file_none": "Ningún archivo seleccionado",
   "project_import_file_selected": "Archivo seleccionado: {name} ({size})",
   "project_import_file_bad_type": "Elige un archivo .pvexport.",
-  "project_import_export_key_show":"Mostrar la clave de exportación",
+  "project_import_export_key_show": "Mostrar la clave de exportación",
   "project_import_export_key_hide": "Ocultar la clave de exportación",
   "project_import_back_to_projects": "Volver a proyectos",
   "project_import_success_intro": "Importado como un proyecto nuevo:",

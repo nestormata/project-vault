@@ -252,7 +252,7 @@
   "project_import_file_none": "No file chosen",
   "project_import_file_selected": "Selected file: {name} ({size})",
   "project_import_file_bad_type": "Choose a .pvexport file.",
-  "project_import_export_key_show":"Show export key",
+  "project_import_export_key_show": "Show export key",
   "project_import_export_key_hide": "Hide export key",
   "project_import_back_to_projects": "Back to projects",
   "project_import_success_intro": "Imported as a new project:",
