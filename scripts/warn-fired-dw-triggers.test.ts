@@ -20,6 +20,12 @@ function run(root: string, argv: string[], env: Record<string, string | undefine
   return lines
 }
 
+// The CLI inherits the parent environment; CI sets GITHUB_ACTIONS=true, which adds a ::warning::
+// line per hit. Pin it off so these assertions describe the plain output on every runner.
+function runCli(root: string, args: string[] = []) {
+  return runScriptCli(SCRIPT, root, args, { GITHUB_ACTIONS: 'false' })
+}
+
 function git(root: string, ...args: string[]): void {
   execFileSync('/usr/bin/git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], {
     cwd: root,
@@ -40,7 +46,7 @@ describe('warn-fired-dw-triggers --files (AC-4, AC-8)', () => {
   it('warns once for the DW-271-shaped case and keeps exit 0', () => {
     const root = makeFixtureRoot()
     writeFixture(root, LEDGER_PATH, openEntry(9001, `the next change to \`${EXAMPLE_GUARD}\`.`))
-    const cli = runScriptCli(SCRIPT, root, ['--files', EXAMPLE_GUARD, 'README.md'])
+    const cli = runCli(root, ['--files', EXAMPLE_GUARD, 'README.md'])
     expect(cli.status).toBe(0)
     const lines = cli.stdout.trimEnd().split('\n')
     expect(lines[0]).toBe('WARN: 1 open deferred-work entries name a file changed in this diff:')
@@ -114,7 +120,7 @@ describe('warn-fired-dw-triggers --files (AC-4, AC-8)', () => {
 describe('degraded paths always exit 0 and print skipped (AC-4)', () => {
   it('no overlay', () => {
     const root = makeFixtureRoot()
-    const cli = runScriptCli(SCRIPT, root, ['--files', 'a.ts'])
+    const cli = runCli(root, ['--files', 'a.ts'])
     expect(cli.status).toBe(0)
     expect(cli.stdout).toMatch(/^warn-fired-dw-triggers: skipped \(.+\)\n$/)
   })
@@ -122,7 +128,7 @@ describe('degraded paths always exit 0 and print skipped (AC-4)', () => {
   it('empty ledger file', () => {
     const root = makeFixtureRoot()
     writeFixture(root, LEDGER_PATH, '')
-    const cli = runScriptCli(SCRIPT, root, ['--files', 'a.ts'])
+    const cli = runCli(root, ['--files', 'a.ts'])
     expect(cli.status).toBe(0)
     expect(cli.stdout).toMatch(/skipped \(/)
   })
@@ -130,7 +136,7 @@ describe('degraded paths always exit 0 and print skipped (AC-4)', () => {
   it('--files with no arguments', () => {
     const root = makeFixtureRoot()
     writeFixture(root, LEDGER_PATH, openEntry(1, '`a/b.ts`'))
-    const cli = runScriptCli(SCRIPT, root, ['--files'])
+    const cli = runCli(root, ['--files'])
     expect(cli.status).toBe(0)
     expect(cli.stdout).toMatch(/skipped \(no files given\)/)
   })
@@ -138,7 +144,7 @@ describe('degraded paths always exit 0 and print skipped (AC-4)', () => {
   it('git failure outside a repository', () => {
     const root = makeFixtureRoot()
     writeFixture(root, LEDGER_PATH, openEntry(1, '`a/b.ts`'))
-    const cli = runScriptCli(SCRIPT, root)
+    const cli = runCli(root)
     expect(cli.status).toBe(0)
     expect(cli.stdout).toMatch(/skipped \(git/)
   })
