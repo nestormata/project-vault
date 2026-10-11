@@ -156,7 +156,7 @@ function lockTimestamp(content: string): number | undefined {
   return Number.isNaN(parsed) ? undefined : parsed
 }
 
-/** Creates the lock; returns the content written (the owner token) or undefined when held. */
+/** Creates the lock; returns the content written (the owner id) or undefined when held. */
 function tryCreateLock(lockPath: string, now: Date): string | undefined {
   const content = `${process.pid} ${now.toISOString()}\n`
   try {
@@ -211,8 +211,8 @@ function staleLockContent(lockPath: string, options: LockOptions): string | unde
 
 function acquire(lockPath: string, options: LockOptions, deadline: number): string {
   const now = options.now ?? (() => new Date())
-  const token = tryCreateLock(lockPath, now())
-  if (token !== undefined) return token
+  const lockOwner = tryCreateLock(lockPath, now())
+  if (lockOwner !== undefined) return lockOwner
   const stale = staleLockContent(lockPath, options)
   if (stale !== undefined) {
     takeOverStaleLock(
@@ -237,12 +237,16 @@ function acquire(lockPath: string, options: LockOptions, deadline: number): stri
  * `os.tmpdir()`: per-session sandboxes can have different temp dirs and would not exclude each other.
  */
 export function withFileLock<T>(lockPath: string, fn: () => T, options: LockOptions = {}): T {
-  const token = acquire(lockPath, options, Date.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS))
+  const lockOwner = acquire(
+    lockPath,
+    options,
+    Date.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+  )
   try {
     return fn()
   } finally {
     // Release only a lock that is still ours: a holder that overran the stale window may have been
     // taken over, and deleting the new owner's lock would break mutual exclusion.
-    if (readLock(lockPath) === token) rmSync(lockPath, { force: true })
+    if (readLock(lockPath) === lockOwner) rmSync(lockPath, { force: true })
   }
 }
