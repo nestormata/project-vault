@@ -410,7 +410,7 @@ describe('check-deferred-work-triggers CLI (AC-6)', () => {
     expect(run.stderr).toContain('FATAL')
   })
 
-  it('(iv) prints OK on a clean ledger, including an empty one', () => {
+  it('(iv) prints OK on a clean ledger; an empty one is FATAL (66-19 AC-4)', () => {
     const root = makeFixtureRoot()
     writeFixture(
       root,
@@ -425,7 +425,10 @@ describe('check-deferred-work-triggers CLI (AC-6)', () => {
 
     const empty = makeFixtureRoot()
     writeFixture(empty, LEDGER_PATH, '')
-    expect(runScriptCli(SCRIPT, empty).stdout).toContain('0 DW entries, 0 open')
+    const emptyRun = runScriptCli(SCRIPT, empty)
+    expect(emptyRun.status).toBe(1)
+    expect(emptyRun.stderr).toContain('is empty (0 bytes)')
+    expect(emptyRun.stdout).not.toContain('OK')
   })
 
   it('(v) is FATAL on stderr with repo-relative lines and a Fix paragraph', () => {

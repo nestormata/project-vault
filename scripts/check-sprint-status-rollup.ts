@@ -24,6 +24,7 @@ import {
   loadSprintStatusEntries,
   loadSprintStatuses,
   SPRINT_STATUS_PATH,
+  SPRINT_STATUS_SHAPE,
 } from './check-story-status-sync.js'
 import { formatLineRefs, runOverlayGuard } from './lib/scan-utils.js'
 
@@ -253,7 +254,13 @@ function report(drifts: RollupDrift[], retroKeys: RetroKeyFindings): void {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  runOverlayGuard('check-sprint-status-rollup', process.cwd(), SPRINT_STATUS_PATH, () => {
-    report(scanSprintStatusRollup(), scanSprintStatusRetroKeys())
-  })
+  runOverlayGuard(
+    'check-sprint-status-rollup',
+    process.cwd(),
+    SPRINT_STATUS_PATH,
+    () => {
+      report(scanSprintStatusRollup(), scanSprintStatusRetroKeys())
+    },
+    SPRINT_STATUS_SHAPE
+  )
 }

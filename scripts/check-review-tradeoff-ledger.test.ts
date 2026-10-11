@@ -510,7 +510,7 @@ describe('check-review-tradeoff-ledger CLI (AC-6)', () => {
   }
 
   it('(i) prints SKIPPED, not OK, when either input is absent', () => {
-    const noSprint = runScriptCli(SCRIPT, fixture({ ledger: '' }))
+    const noSprint = runScriptCli(SCRIPT, fixture({ ledger: '# Deferred Work\n' }))
     expect(noSprint.status).toBe(0)
     expect(noSprint.stdout).toContain(
       `check-review-tradeoff-ledger: SKIPPED — ${SPRINT_PATH} not found (private overlay not attached)`
@@ -547,7 +547,7 @@ describe('check-review-tradeoff-ledger CLI (AC-6)', () => {
   })
 
   it('(v) is FATAL on stderr with repo-relative lines and a Fix paragraph', () => {
-    const root = fixture({ ...clean, ledger: '' })
+    const root = fixture({ ...clean, ledger: '# Deferred Work\n' })
     const run = runScriptCli(SCRIPT, root)
     expect(run.status).toBe(1)
     expect(run.stdout).toBe('')

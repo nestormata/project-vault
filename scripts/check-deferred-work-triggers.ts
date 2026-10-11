@@ -43,6 +43,9 @@ const CLOSED_WORDS = new Set([
   'wontfix',
   'obsolete',
   'duplicate',
+  // Story 66-19: a `next-dw-id --reserve` stub is not an open entry (check-deferred-work-ids fails
+  // it when stale), so it needs no revisit trigger and is invisible to bmad-loop's open sweep.
+  'reserved',
 ])
 const OPEN_WORDS = new Set([
   'open',

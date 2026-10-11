@@ -7,10 +7,12 @@ import {
   formatLineRefs,
   inspectOverlayInput,
   overlayReadFailure,
+  overlayShapeFailure,
   overlaySkipMessage,
   walkFiles,
 } from './scan-utils.js'
 
+const SPRINT_STATUS_REL = '_bmad-output/implementation-artifacts/sprint-status.yaml'
 const ROOT_DIR = 'root'
 const SPRINT_STATUS_BODY = 'development_status:\n'
 
@@ -107,7 +109,7 @@ describe('walkFiles', () => {
 })
 
 describe('detectOverlayInput (Story 43.11 AC-7.4)', () => {
-  const REL = '_bmad-output/implementation-artifacts/sprint-status.yaml'
+  const REL = SPRINT_STATUS_REL
 
   it('is "present" for a readable regular file', () => {
     const root = makeFixtureRoot()
@@ -160,12 +162,21 @@ describe('detectOverlayInput (Story 43.11 AC-7.4)', () => {
 })
 
 describe('overlayReadFailure (code review: a present-but-unreadable input is FATAL, never a false OK)', () => {
-  const REL = '_bmad-output/implementation-artifacts/sprint-status.yaml'
+  const REL = SPRINT_STATUS_REL
 
   it('is undefined for a readable regular file', () => {
     const root = makeFixtureRoot()
     writeFixture(root, REL, SPRINT_STATUS_BODY)
     expect(overlayReadFailure('check-x', root, REL)).toBeUndefined()
+  })
+
+  it('is a FATAL line naming the restore command when the file is 0 bytes (66-19 AC-4)', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, REL, '')
+    const failure = overlayReadFailure('check-x', root, REL)
+    expect(failure).toContain(`FATAL: check-x: ${REL} is empty (0 bytes)`)
+    expect(failure).toContain(`git show HEAD:${REL}`)
+    expect(failure).toContain('nothing was checked')
   })
 
   it('is a FATAL line when the input is a directory', () => {
@@ -191,6 +202,29 @@ describe('overlayReadFailure (code review: a present-but-unreadable input is FAT
       }
     }
   )
+})
+
+describe('overlayShapeFailure (66-19 AC-4 content-shape sentinel)', () => {
+  const REL = SPRINT_STATUS_REL
+  const SENTINEL = { pattern: /^development_status:/m, expected: 'a `development_status:` line' }
+
+  it('is undefined when the sentinel is present', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, REL, 'last_updated: x\ndevelopment_status:\n  1-1-a: done\n')
+    expect(overlayShapeFailure('check-x', root, REL, SENTINEL)).toBeUndefined()
+  })
+
+  it.each([
+    ['whitespace only', '\n'],
+    ['partial wipe', 'last_updated: x\n'],
+  ])('is a FATAL "looks truncated" line for %s', (_name, content) => {
+    const root = makeFixtureRoot()
+    writeFixture(root, REL, content)
+    const failure = overlayShapeFailure('check-x', root, REL, SENTINEL)
+    expect(failure).toContain(`FATAL: check-x: ${REL} looks truncated`)
+    expect(failure).toContain('a `development_status:` line')
+    expect(failure).toContain(`git show HEAD:${REL}`)
+  })
 })
 
 describe('formatLineRefs (Story 43.11)', () => {

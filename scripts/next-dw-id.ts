@@ -9,14 +9,27 @@
  * next free plain numeric ID. It narrows the race window; it cannot close it alone. The
  * `check-deferred-work-ids` guard on every push is the backstop.
  *
- * Usage: `pnpm -s next-dw-id [--fetch]` (do not pipe it: a pipe masks the exit code). Line 1 of stdout is the ID, line 2 says
- * where the current max was seen; warnings go to stderr. Read-only apart from `--fetch`.
+ * Usage: `pnpm -s next-dw-id [--fetch] [--reserve [--count N] [--story <key>]]` (do not pipe it: a
+ * pipe masks the exit code). Line 1 of stdout is the ID, then the "max seen" line; warnings go to
+ * stderr. Read-only apart from `--fetch`.
+ *
+ * Story 66-19: with `--reserve` the ID(s) are also appended to the working-tree ledger as
+ * `### DW-<n>: RESERVED <story> <ISO time>` stubs, under one lock, so the next call (from any
+ * session sharing the private tree) cannot allocate the same number. Replace the stub with the real
+ * entry (`replaceReservation`), never add a second heading; commit the stub hunk right away.
  */
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { DEFERRED_WORK_PATH } from './check-deferred-work-ids.js'
 import { parseDwHeadings } from './lib/deferred-work-ledger.js'
+import {
+  formatReservationStub,
+  isValidStoryKey,
+  ledgerLockPath,
+  RESERVED_SECTION,
+} from './lib/dw-reservation.js'
+import { appendToFile, withFileLock } from './lib/safe-edit.js'
 import { trustedGit } from './lib/trusted-executable.js'
 
 export type NextDwIdResult = {
@@ -144,15 +157,128 @@ export function allocateNextDwId(
   return { next: `DW-${max + 1}`, max, source, warnings }
 }
 
+export type ReserveOptions = {
+  fetch?: boolean
+  /** Story key written into the stub heading (validated). */
+  story?: string
+  /** How many consecutive IDs to reserve (1..100, default 1). */
+  count?: number
+  now?: Date
+}
+
+export type ReserveResult = NextDwIdResult & { ids: string[] }
+
+const DEFAULT_STORY = 'unspecified'
+const MAX_RESERVE_COUNT = 100
+
+function validateReserveOptions(options: ReserveOptions): { story: string; count: number } {
+  const story = options.story ?? DEFAULT_STORY
+  if (options.story !== undefined && !isValidStoryKey(story)) {
+    throw new Error(`invalid --story key ${JSON.stringify(story)} (expected e.g. 66-19)`)
+  }
+  const count = options.count ?? 1
+  if (!Number.isInteger(count) || count < 1 || count > MAX_RESERVE_COUNT) {
+    throw new Error(
+      `invalid --count ${String(count)} (expected an integer 1..${MAX_RESERVE_COUNT})`
+    )
+  }
+  return { story, count }
+}
+
+/** Whether the ledger's last `## ` heading is already the Reserved section (fence-unaware is fine:
+ * the section line is only ever written by this function). */
+function endsInReservedSection(content: string): boolean {
+  const lastH2 = content.split('\n').findLast((line) => /^## /.test(line))
+  return lastH2?.trim() === RESERVED_SECTION
+}
+
+/**
+ * Allocates `count` consecutive IDs and appends their stubs, as one critical section under
+ * `deferred-work.md.lock` (next to the ledger's real file). Fails closed, writing nothing, when the
+ * ledger is missing or empty, or the story key / count is invalid.
+ */
+export function reserveDwIds(rootDir = process.cwd(), options: ReserveOptions = {}): ReserveResult {
+  const { story, count } = validateReserveOptions(options)
+  const ledgerLink = resolve(rootDir, DEFERRED_WORK_PATH)
+  if (!existsSync(ledgerLink)) {
+    throw new Error(
+      `${DEFERRED_WORK_PATH} not found (private overlay not attached?); no DW ID allocated`
+    )
+  }
+  return withFileLock(ledgerLockPath(ledgerLink), () => {
+    const current = readFileSync(ledgerLink, 'utf-8')
+    if (current.trim() === '') {
+      throw new Error(
+        `${DEFERRED_WORK_PATH} is empty; refusing to reserve (a truncating write most likely ` +
+          'wiped it; restore it with `git show HEAD:<path>`)'
+      )
+    }
+    const allocation = allocateNextDwId(rootDir, { fetch: options.fetch })
+    const first = allocation.max + 1
+    const now = options.now ?? new Date()
+    const stubs = Array.from({ length: count }, (_, i) =>
+      formatReservationStub(first + i, story, now)
+    ).join('\n')
+    const separator = current.endsWith('\n') ? '\n' : '\n\n'
+    const section = endsInReservedSection(current) ? '' : `${RESERVED_SECTION}\n\n`
+    appendToFile(ledgerLink, `${separator}${section}${stubs}`)
+    return {
+      ...allocation,
+      ids: Array.from({ length: count }, (_, i) => `DW-${first + i}`),
+    }
+  })
+}
+
+type CliArgs = { fetch: boolean; reserve: boolean; story?: string; count?: number }
+
+function flagValue(argv: string[], flag: string): string | undefined {
+  const index = argv.indexOf(flag)
+  return index === -1 ? undefined : argv[index + 1]
+}
+
+function parseCliArgs(argv: string[]): CliArgs {
+  const rawCount = flagValue(argv, '--count')
+  return {
+    fetch: argv.includes('--fetch'),
+    reserve: argv.includes('--reserve'),
+    story: flagValue(argv, '--story'),
+    count: rawCount === undefined ? undefined : Number(rawCount),
+  }
+}
+
+function maxLine(result: NextDwIdResult): string {
+  return result.source === undefined
+    ? 'no plain DW-<n> heading found; starting at DW-1'
+    : `max DW-${result.max} seen on ${result.source}`
+}
+
+function runCli(): void {
+  const args = parseCliArgs(process.argv.slice(2))
+  if (args.reserve) {
+    const result = reserveDwIds(process.cwd(), args)
+    for (const warning of result.warnings) process.stderr.write(`WARN: next-dw-id: ${warning}\n`)
+    process.stdout.write(`${result.ids.join('\n')}\n${maxLine(result)}\n`)
+    process.stderr.write(
+      'next-dw-id: commit the stub hunk now (own hunk only); until it is committed another ' +
+        'checkout cannot see the reservation. Replace the stub with the real entry, do not add ' +
+        'a second heading.\n'
+    )
+    return
+  }
+  if (args.story !== undefined || args.count !== undefined) {
+    throw new Error('--story and --count only apply together with --reserve')
+  }
+  const result = allocateNextDwId(process.cwd(), { fetch: args.fetch })
+  for (const warning of result.warnings) process.stderr.write(`WARN: next-dw-id: ${warning}\n`)
+  process.stdout.write(
+    `${result.next}\n${maxLine(result)}\n` +
+      'hint: add --reserve to claim this ID in the ledger now (66-19)\n'
+  )
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   try {
-    const result = allocateNextDwId(process.cwd(), { fetch: process.argv.includes('--fetch') })
-    for (const warning of result.warnings) process.stderr.write(`WARN: next-dw-id: ${warning}\n`)
-    const where =
-      result.source === undefined
-        ? 'no plain DW-<n> heading found; starting at DW-1'
-        : `max DW-${result.max} seen on ${result.source}`
-    process.stdout.write(`${result.next}\n${where}\n`)
+    runCli()
   } catch (error) {
     process.stderr.write(`FATAL: next-dw-id: ${firstLine(error)}\n`)
     process.exitCode = 1

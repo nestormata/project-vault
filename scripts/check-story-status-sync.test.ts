@@ -648,6 +648,15 @@ describe('scanStoryStatusSync — frontmatter status: (Story 43.11 AC-3)', () =>
 
 describe('check-story-status-sync CLI (Story 43.11 AC-3 report + AC-7 SKIPPED)', () => {
   const SCRIPT = 'scripts/check-story-status-sync.ts'
+
+  it('66-19 AC-4: a 0-byte sprint-status.yaml is FATAL (never a clean pass over nothing)', () => {
+    const root = makeFixtureRoot()
+    writeFixture(root, SPRINT_STATUS_PATH, '')
+    const run = runScriptCli(SCRIPT, root)
+    expect(run.status).toBe(1)
+    expect(run.stderr).toContain(`${SPRINT_STATUS_PATH} is empty (0 bytes)`)
+    expect(run.stdout).not.toContain('OK')
+  })
   const KEY = '43-2-log-in-to-the-cli-as-a-human-user'
 
   it('prints the frontmatter FATAL block with path:line and the raw quoted value, exit 1', () => {
