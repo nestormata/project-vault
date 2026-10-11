@@ -121,3 +121,128 @@ describe('ProjectExportPanel region point (export key confinement)', () => {
     expect(probe.textContent).not.toMatch(/exportKey|exporting|exportError/)
   })
 })
+
+describe('ProjectExportPanel copy button and live region (Story 62-2 AC-1)', () => {
+  const writeText = vi.fn<(text: string) => Promise<void>>()
+
+  function stubClipboard(clipboard: { writeText: typeof writeText } | undefined): void {
+    Object.defineProperty(navigator, 'clipboard', { value: clipboard, configurable: true })
+  }
+
+  beforeEach(() => {
+    writeText.mockReset()
+    writeText.mockResolvedValue(undefined)
+    stubClipboard({ writeText })
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    stubClipboard(undefined)
+  })
+
+  const copyButton = () => screen.getByRole('button', { name: 'Copy' })
+  const statusRegion = () => screen.getByRole('status')
+
+  it('renders an empty polite live region as soon as the reveal opens (pre-existing, so it is announced)', async () => {
+    await reveal()
+    const region = statusRegion()
+    expect(region.getAttribute('aria-live')).toBe('polite')
+    expect(region.textContent?.trim()).toBe('')
+  })
+
+  it('copies exactly the key, announces success, and clears after 3 s without touching the acknowledgement', async () => {
+    await reveal()
+    vi.useFakeTimers()
+    await fireEvent.click(copyButton())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(writeText).toHaveBeenCalledWith(KEY)
+    expect(statusRegion().textContent).toContain('Copied to clipboard')
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false)
+    expect((screen.getByRole('button', { name: 'Done' }) as HTMLButtonElement).disabled).toBe(true)
+    await vi.advanceTimersByTimeAsync(2999)
+    expect(statusRegion().textContent).toContain('Copied to clipboard')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(statusRegion().textContent?.trim()).toBe('')
+  })
+
+  it('announces a failure when writeText rejects; the key stays visible and is not in the message', async () => {
+    writeText.mockRejectedValueOnce(new Error(`denied ${KEY}`))
+    await reveal()
+    await fireEvent.click(copyButton())
+    await waitFor(() => expect(statusRegion().textContent).toContain("Couldn't copy"))
+    expect(statusRegion().textContent).not.toContain(KEY)
+    expect(screen.getByText(KEY)).toBeTruthy()
+  })
+
+  it('announces a failure when navigator.clipboard is unavailable (insecure context)', async () => {
+    stubClipboard(undefined)
+    await reveal()
+    await fireEvent.click(copyButton())
+    await waitFor(() => expect(statusRegion().textContent).toContain("Couldn't copy"))
+    expect(statusRegion().textContent).not.toContain(KEY)
+    expect(screen.getByText(KEY)).toBeTruthy()
+  })
+
+  it('replaces rather than stacks the message on a double click, writing twice', async () => {
+    await reveal()
+    vi.useFakeTimers()
+    await fireEvent.click(copyButton())
+    await fireEvent.click(copyButton())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(writeText).toHaveBeenCalledTimes(2)
+    expect(statusRegion().textContent?.match(/Copied to clipboard/g)).toHaveLength(1)
+    // The first click's timer must not clear the second message early.
+    await vi.advanceTimersByTimeAsync(2000)
+    await fireEvent.click(copyButton())
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(statusRegion().textContent).toContain('Copied to clipboard')
+  })
+
+  it('removes the live region, key and status after Done, and a re-export starts clean', async () => {
+    await reveal()
+    await fireEvent.click(copyButton())
+    await waitFor(() => expect(statusRegion().textContent).toContain('Copied to clipboard'))
+    await fireEvent.click(screen.getByRole('checkbox'))
+    await fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.queryByText(KEY)).toBeNull()
+    vi.mocked(exportProject).mockResolvedValueOnce({ ...exported, exportKey: 'SECOND-KEY' })
+    await fireEvent.click(exportButton())
+    await waitFor(() => expect(screen.getByText('SECOND-KEY')).toBeTruthy())
+    expect(statusRegion().textContent?.trim()).toBe('')
+  })
+
+  it('does not update state after unmount (pending timeout is cleared)', async () => {
+    await reveal()
+    vi.useFakeTimers()
+    await fireEvent.click(copyButton())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+    cleanup()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('keeps the key out of the injection point and out of the copy label and status', async () => {
+    await reveal()
+    await fireEvent.click(copyButton())
+    await waitFor(() => expect(statusRegion().textContent).toContain('Copied to clipboard'))
+    expect(statusRegion().textContent).not.toContain(KEY)
+    expect(screen.getByTestId('probe').textContent).not.toContain(KEY)
+  })
+})
+
+describe('ProjectExportPanel description (Story 62-2 AC-7)', () => {
+  const description = () => screen.queryByText(/shown to you exactly once/)
+
+  it('hides the long paragraph while the reveal is open and restores it after Done', async () => {
+    render(ProjectExportPanel, { props: { project } })
+    expect(description()).not.toBeNull()
+    cleanup()
+    await reveal()
+    expect(description()).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Export project' })).toBeTruthy()
+    await fireEvent.click(screen.getByRole('checkbox'))
+    await fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(description()).not.toBeNull()
+  })
+})

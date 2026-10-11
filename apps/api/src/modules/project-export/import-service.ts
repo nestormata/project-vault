@@ -22,6 +22,7 @@ import type { SecureRouteContext } from '../../lib/secure-route.js'
 import { currentKeyVersion } from '../credentials/db-helpers.js'
 import { enableStatusPage, updateStatusPageServices } from '../monitoring/status-page-service.js'
 import { createProject } from '../projects/routes.js'
+import { resolveImportProjectName } from './import-name.js'
 import { EXPORT_FORMAT_VERSION, ExportBundleSchema, type ExportBundle } from './schema.js'
 
 export type DecryptExportFileResult =
@@ -432,10 +433,14 @@ export async function importProjectBundle(
 
   // D4: always a NEW project, in the importing user's own org, with the importing user as sole
   // owner — reuses ordinary project creation verbatim (same slug/policy/membership rules).
+  // Story 62-2 D4: an explicit override is honoured verbatim; otherwise a name already used by a
+  // non-archived project in this org gets an "(imported)" suffix so the copy is distinguishable.
+  const overrideName = params.projectNameOverride?.trim()
+  const name = overrideName || (await resolveImportProjectName(secureCtx, bundle.project.name))
   const created = await createProject(
     secureCtx,
     {
-      name: params.projectNameOverride?.trim() || bundle.project.name,
+      name,
       description: bundle.project.description,
     },
     params.logger
