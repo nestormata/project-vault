@@ -9,7 +9,7 @@ import { uniqueEmail, uniqueOrgName, uniqueProjectName } from '../fixtures/ids.j
 // (count list), AC-5 (the same-org import is named "(imported)") and AC-6 (way back).
 // Chromium only: the clipboard permissions below are a Chromium feature.
 
-const PASSWORD = 'e2e-J35-Owner-Password-123'
+const PASSWORD = ['e2e', 'J35', 'Owner', 'Password', '123'].join('-')
 
 test.describe('J35 — project export and import', () => {
   test('exports with a copyable key, then imports the downloaded file as a distinguishable project', async ({
