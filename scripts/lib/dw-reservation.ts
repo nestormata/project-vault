@@ -102,7 +102,7 @@ export function replaceReservation(ledgerPath: string, id: string, entryText: st
       const block = stubBlock(content, wanted)
       if (!block) throw new Error(`replaceReservation: no reservation stub for ${id}`)
       const lines = content.split('\n')
-      lines.splice(block[0], block[1] - block[0], ...entryText.replace(/\n+$/, '').split('\n'))
+      lines.splice(block[0], block[1] - block[0], ...entryText.trimEnd().split('\n'))
       return lines.join('\n')
     })
   })

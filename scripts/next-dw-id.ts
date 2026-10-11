@@ -188,7 +188,7 @@ function validateReserveOptions(options: ReserveOptions): { story: string; count
 /** Whether the ledger's last `## ` heading is already the Reserved section (fence-unaware is fine:
  * the section line is only ever written by this function). */
 function endsInReservedSection(content: string): boolean {
-  const lastH2 = content.split('\n').findLast((line) => /^## /.test(line))
+  const lastH2 = content.split('\n').findLast((line) => line.startsWith('## '))
   return lastH2?.trim() === RESERVED_SECTION
 }
 
