@@ -162,7 +162,12 @@ function firedTrigger(entry: DwEntry, files: string[]): FiredTrigger | undefined
     for (const file of matches) matchedFiles.add(file)
   }
   if (matchedPaths.length === 0) return undefined
-  return { id: entry.id, line: entry.line, matchedPaths, matchedFiles: [...matchedFiles].sort() }
+  return {
+    id: entry.id,
+    line: entry.line,
+    matchedPaths,
+    matchedFiles: [...matchedFiles].sort((a, b) => a.localeCompare(b)),
+  }
 }
 
 /** AC-1: the open entries whose trigger names a changed file, ordered by heading line. */

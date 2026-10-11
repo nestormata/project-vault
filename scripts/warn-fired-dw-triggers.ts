@@ -12,20 +12,19 @@
  * only the DW id, the ledger line and the matched paths, never entry bodies (they may hold private
  * detail). Changed files come from `git` invoked with argument arrays, parsed NUL-separated.
  */
-import { execFileSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { DEFERRED_WORK_PATH } from './check-deferred-work-triggers.js'
 import { parseDwEntries } from './lib/deferred-work-ledger.js'
 import { type FiredTrigger, findFiredTriggers, normalizePath } from './lib/dw-trigger-hits.js'
 import { readOverlayFile } from './lib/scan-utils.js'
+import { trustedGit } from './lib/trusted-executable.js'
 
 const PREFIX = 'warn-fired-dw-triggers:'
 const DEFAULT_BASE = 'origin/main'
 const FALLBACK_BASE = 'main'
-const BASE_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9_./@^~-]*$/
+const BASE_PATTERN = /^\w[\w./@^~-]*$/
 const MAX_PRINTED_HITS = 25
 const MAX_FILES_PER_LINE = 3
-const GIT_MAX_BUFFER = 64 * 1024 * 1024
 const ANNOTATION_TITLE = 'Open DW trigger fired'
 const LEDGER_NAME = 'deferred-work.md'
 
@@ -57,15 +56,6 @@ function parseArgs(argv: string[]): ParsedArgs {
   return parsed
 }
 
-function git(rootDir: string, args: string[]): string {
-  return execFileSync('git', args, {
-    cwd: rootDir,
-    encoding: 'utf-8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    maxBuffer: GIT_MAX_BUFFER,
-  })
-}
-
 /** Paths from `git diff --name-status -z`: `<status> NUL <path> NUL` pairs. */
 function pathsFromNameStatus(output: string): string[] {
   return output.split('\0').filter((_, index) => index % 2 === 1)
@@ -86,7 +76,7 @@ function pathsFromPorcelain(output: string): string[] {
 }
 
 function diffAgainst(rootDir: string, base: string): string[] {
-  const output = git(rootDir, [
+  const output = trustedGit(rootDir, [
     'diff',
     '--name-status',
     '-z',
@@ -115,7 +105,7 @@ function changedFilesFromGit(rootDir: string, args: ParsedArgs): string[] {
   try {
     const committed = committedChanges(rootDir, args)
     const working = pathsFromPorcelain(
-      git(rootDir, ['status', '--porcelain', '-z', '--untracked-files=all'])
+      trustedGit(rootDir, ['status', '--porcelain', '-z', '--untracked-files=all'])
     )
     return [...committed, ...working]
   } catch {
