@@ -9,8 +9,64 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-14
+
+Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.6.0`
+(aliases `1.6`, `1`, `latest`). Extension API contract: the source is at
+`@project-vault/extension-api@3.36.0`, and this host loads extensions whose manifest `apiVersion`
+is in `>=3.0.0 <=3.36.0` (`HOST_SUPPORTED_EXTENSION_API_RANGE`). The package is published separately
+from the `extension-api-v3.36.0` tag. CLI: `pvault-1.6.0.mjs` on this release's assets.
+Build-time composition packages publish from this tag to npm's `next` dist-tag:
+`@project-vault/web-host@1.6.0`. `@project-vault/composition-kit` is unchanged at `0.9.0` (already
+on npm from `v1.5.0`, so it is not published again).
+
+### Upgrade notes (read before `docker compose pull`)
+
+- **Migration 0105 runs automatically** via the `migrate` service. It is additive and idempotent:
+  two columns on `credential_shares` (`acting_user_id`, nullable, and `host_created`, default
+  `false`), one foreign key to `users`, and an evidence-only backfill that sets `host_created = true`
+  only for shares whose `credential.share_created` audit entry was written by a machine user. It
+  never guesses an acting user. During a rolling deploy, shares an old API instance creates through
+  an extension land with `host_created = false`; deploy the API instances together, or re-run the
+  migration once the old version is gone. No new environment variables.
+- **Delegated routes get a default per-IP limiter** (see Changed). Only deployments whose extensions
+  declare delegated routes (`VAULT_DELEGATION_VERIFY_KEYS`) are affected.
+
 ### Added
 
+- **The acting user is recorded and exposed on host-created credential shares** (Story 65.6,
+  extension-api 3.36.0). `CredentialSharingShareRecord.sharedBy` now reports the human who created
+  the share, so a composed product no longer shows the machine user. `createExternalShare`
+  accepts a fallback `actingUserId`; `listSharesForCredential` / `listSharesForOrganization` accept a
+  `viewer` (an admin or owner sees every share, a member only their own); `revokeShare` accepts an
+  `actor` (only the sharer or an org admin or owner may revoke). Audit attribution stays the machine
+  user. See [packages/extension-api/CHANGELOG.md](packages/extension-api/CHANGELOG.md).
+- **Equalized external-share miss timing and a public-route minimum response time** (Story 65.4,
+  extension-api 3.35.0). The losing-attempt and lazy-expiry writes on the external share redemption
+  path now run after the response, so expired, revoked, viewed and unknown tokens answer in the same
+  time. An extension can declare `anonymousRouteMinResponseMs` per anonymous route so PV holds every
+  non-2xx answer for at least that long. A manifest that omits the field is unchanged.
+- **Extension fault containment** (Story 67.1, extension-api 3.34.0). An uncaught fault from an
+  extension-owned emitter or background promise now makes the host log one line (origin, error name,
+  allow-listed code, advisory extension attribution) and exit cleanly with a `process.fatal_fault`
+  operational event instead of crashing with a raw stack; it never resumes serving. The extension-api ships `checkExtensionEmitters`,
+  `assertExtensionEmittersContained` and `checkBackgroundPromisesHandled` so an extension can prove
+  it contains its own faults. See [docs/design/extension-fault-containment.md](docs/design/extension-fault-containment.md).
+- **Actor attribution for delegated audit writes** (Story 71.4, extension-api 3.33.0). On a request
+  authenticated by a delegated assertion, PV attributes every audit write to the verified actor,
+  with an occurrence time and an opt-in policy for an actor who has since left the org. Additive:
+  a pack that uses none of the new fields writes byte-identical rows.
+- **Issuer-attested actors in audit search, viewer and export** (Story 71.10). The audit search API
+  returns an optional `attribution` object (provider, subject, attestation, reason, occurredAt) and
+  accepts an exact `actorProvider` + `actorSubject` filter (422 `invalid_actor_filter` on misuse). The
+  CSV export is now format v2: five columns are appended and the first eight are unchanged. The
+  Settings > Audit viewer shows an "Attested by issuer" badge. Legacy rows serialize unchanged.
+- **Abandon for staged rotations on the rotation page** (Story 43.18).
+- **Project export and import usability** (Stories 62.2 and 62.4). The export key reveal has a Copy
+  button, the import key field is a password input with a Show/Hide toggle and password-manager
+  ignore hints, the import result names the new project, and the import file field is a large
+  "Choose file" control that shows the file name and size. An import with a name already in use
+  creates "{name} (imported)", "(imported 2)", and so on.
 - **Delegation observability and key runbook.** `pv_delegation_assertions_total` now counts `accepted`
   (admitted by the delegation stages) and every `outcome` x `kid` series exists at 0 from boot, so
   Prometheus `increase()` sees the first incident. Shipped alert rules for Prometheus:
@@ -41,10 +97,24 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Fixed
 
+- Project export and import audit events are attributed correctly (Story 62.1): a failed import is
+  recorded as resource type `project_import` with no resource id (it used to store the acting user's id
+  as a project id), and `project.export_created` and `project.import_completed` carry the project id,
+  so the audit Project ID filter finds them. Earlier rows are not backfilled.
+- A shared session refresh that is aborted or hits a network error, 429 or 5xx no longer signs the
+  user out (Story 61.3); only a 401 or 403 from `/auth/refresh` redirects to the login page. Typing in
+  global search during a token expiry can no longer cancel the refresh.
+- The `rotation_busy` refusal logs the real rotation count.
 - A delegated request answered 409 `delegation_replayed` or 503 `delegation_replay_store_unavailable` no
   longer continues into actor resolution after the response was sent (it counted a stray
   `actor_unlinked`).
 - `store_unavailable` no longer reports a Node socket errno such as `EPIPE` as a Postgres SQLSTATE.
+
+### Security
+
+- Email addresses are masked as `[REDACTED_EMAIL]` in job-failure log lines (Story 70.4), so a
+  provider "recipient rejected" error no longer writes the recipient to the log. The connection-string
+  masking regex was also made linear-time on long inputs.
 
 ## [1.5.0] - 2026-10-05
 
