@@ -772,6 +772,8 @@ session. The declaration is plain data and is validated at registration:
 - A host older than 3.33.0 ignores `actorId` and `occurredAt`; do not rely on them there.
 - A host older than 3.28.0 **silently ignores `idempotencyKey`**: the write succeeds and a retry after a lost
   response writes a second row. No error tells you. Confirm the host's version before you depend on idempotent delivery.
+- A write that carries an `idempotencyKey` is limited to a 1 MiB audit entry (the payload as stored); over it the write
+  fails with `payload_too_large`, even though the same payload without a key is accepted. Split or trim large payloads.
 
 ##### Host version compatibility of the audit-write contract (3.28.0 to 3.36.0)
 
