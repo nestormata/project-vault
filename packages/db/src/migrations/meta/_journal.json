@@ -736,6 +736,13 @@
       "when": 1791167326226,
       "tag": "0104_rotation_owner_user_id",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1791920009508,
+      "tag": "0105_credential_share_acting_user",
+      "breakpoints": true
     }
   ]
 }

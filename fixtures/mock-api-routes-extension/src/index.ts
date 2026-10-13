@@ -6,6 +6,7 @@ import {
   type ApiRoutesHooks,
   type ExtensionHooks,
   type ExtensionManifest,
+  type HostServices,
 } from '@project-vault/extension-api'
 
 /**
@@ -38,6 +39,7 @@ export type ApiRoutesScenario =
   | 'app-hooks-prepend'
   | 'app-hooks-append'
   | 'app-hooks-throw'
+  | 'credential-sharing'
 
 let scenario: ApiRoutesScenario = 'default'
 
@@ -317,7 +319,8 @@ function defaultRoutes(): ApiRoutesHooks['routes'] {
 
 type ScenarioDefinition = {
   manifest: ExtensionManifest
-  hooks: () => ExtensionHooks
+  /** `host` is passed by the real loader; the fixture's own unit tests call it without one. */
+  hooks: (host?: HostServices) => ExtensionHooks
 }
 
 function implementationsFor(declaration: ApiRoutesDeclaration): ApiRoutesHooks['routes'] {
@@ -496,8 +499,90 @@ function appScenarios(): Record<
   }
 }
 
+/**
+ * Story 65.6 — the way CentralizeMe's share UI calls `HostServices.credentialSharing` from an M7
+ * route: it passes the signed-in user only as `viewer` / `actor` (which must equal the ambient
+ * request user) and NO `actingUserId`, relying on the ambient request user for create.
+ */
+const SHARE_URL = '/api/v1/cm/shares'
+const sharingDeclaration: ApiRoutesDeclaration = {
+  add: [
+    { method: 'POST', url: SHARE_URL, options: { security: { writeAuditEvent: false } } },
+    { method: 'GET', url: SHARE_URL, options: { security: { writeAuditEvent: false } } },
+    {
+      method: 'POST',
+      url: `${SHARE_URL}/revoke`,
+      options: { security: { writeAuditEvent: false } },
+    },
+  ],
+}
+
+type ShareBody = { projectId: string; credentialId: string; shareId?: string; fieldKey?: string }
+type ShareQuery = { credentialId?: string }
+
+function sharingRoutes(host: HostServices | undefined): ApiRoutesHooks['routes'] {
+  if (!host) throw new Error('the credential-sharing scenario needs the real HostServices')
+  const sharing = host.credentialSharing
+  return {
+    [`POST ${SHARE_URL}`]: {
+      handler: async (ctx: ApiRouteContext, req: { body?: unknown }) => {
+        const body = req.body as ShareBody
+        return {
+          data: await sharing.createExternalShare({
+            organizationId: ctx.auth.orgId,
+            projectId: body.projectId,
+            credentialId: body.credentialId,
+            recipientEmail: 'recipient@invalid',
+            expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+            ...(body.fieldKey ? { fieldKey: body.fieldKey } : {}),
+          }),
+        }
+      },
+    },
+    [`GET ${SHARE_URL}`]: {
+      handler: async (ctx: ApiRouteContext, req: { query?: unknown }) => {
+        const query = req.query as ShareQuery
+        return {
+          data: await sharing.listSharesForCredential({
+            organizationId: ctx.auth.orgId,
+            credentialId: String(query.credentialId),
+            viewer: { userId: ctx.auth.userId },
+          }),
+        }
+      },
+    },
+    [`POST ${SHARE_URL}/revoke`]: {
+      handler: async (ctx: ApiRouteContext, req: { body?: unknown }) => {
+        const body = req.body as ShareBody
+        try {
+          return {
+            data: await sharing.revokeShare({
+              organizationId: ctx.auth.orgId,
+              projectId: body.projectId,
+              credentialId: body.credentialId,
+              shareId: String(body.shareId),
+              actor: { userId: ctx.auth.userId },
+            }),
+          }
+        } catch (error) {
+          return { data: { status: 'error', code: (error as { code?: string }).code ?? null } }
+        }
+      },
+    },
+  }
+}
+
 function scenarios(): Record<ApiRoutesScenario, ScenarioDefinition> {
   return {
+    'credential-sharing': {
+      manifest: {
+        name: NAME,
+        apiVersion: EXTENSION_API_VERSION,
+        capabilities: [],
+        apiRoutes: sharingDeclaration,
+      },
+      hooks: (host) => ({ apiRoutes: { routes: sharingRoutes(host) } }),
+    },
     default: {
       manifest: {
         name: NAME,
@@ -587,9 +672,9 @@ const extension = {
   get manifest(): ExtensionManifest {
     return current().manifest
   },
-  hooksFactory(): ExtensionHooks {
+  hooksFactory(host?: HostServices): ExtensionHooks {
     observed.hooksFactoryCalls += 1
-    return current().hooks()
+    return current().hooks(host)
   },
 }
 

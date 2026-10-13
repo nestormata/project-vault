@@ -48,7 +48,10 @@ describe('index.ts — root-only export surface (AC1, AC2)', () => {
         'MonitoringResourceNotFoundError',
         // Story 41.1 — new HostServices.monitoring.createServiceEndpoint hook-specific error class (AC3).
         'MonitoringInvalidServiceEndpointInputError',
+        'CredentialSharingActingUserInvalidError',
+        'CredentialSharingActingUserMismatchError',
         'CredentialSharingNoMachineUserError',
+        'CredentialSharingNotAuthorizedError',
         'CredentialSharingOrgRateLimitedError',
         'CredentialSharingRateLimitedError',
         // Story 36.1 — new HostServices.notificationOriginator hook-specific error classes

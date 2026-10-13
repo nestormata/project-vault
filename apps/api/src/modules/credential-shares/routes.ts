@@ -47,6 +47,7 @@ import {
 import {
   countSharesForCredential,
   createCredentialShare,
+  effectiveSharerOf,
   findShareInScope,
   listSharesForCredential,
   revokeShare,
@@ -133,7 +134,7 @@ export function serializeShare(share: CredentialShareRow) {
     // Story 20.5 AC-1: the persisted `BoundedShareScope` fields.
     attributeKeys: share.attributeKeys,
     action: share.action,
-    sharedBy: share.sharedBy,
+    sharedBy: effectiveSharerOf(share),
     ...shareRecipientAndTimingFields(share),
     revokedAt: share.revokedAt?.toISOString() ?? null,
     firstViewedAt: share.firstViewedAt?.toISOString() ?? null,
@@ -773,7 +774,7 @@ export function credentialSharesRoutes(fastify: FastifyApp): Promise<void> {
       if (!target) return reply.status(404).send(SHARE_NOT_FOUND)
 
       if (
-        target.sharedBy !== secureCtx.auth.userId &&
+        effectiveSharerOf(target) !== secureCtx.auth.userId &&
         roleRank(orgRoleOrDeny(secureCtx.auth)) < roleRank('admin')
       ) {
         return reply.status(403).send({

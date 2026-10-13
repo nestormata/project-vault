@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
-import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { credentials, credentialShares, orgMemberships, users } from '@project-vault/db/schema'
 import { AuditEvent, normalizeFieldKey } from '@project-vault/shared'
@@ -33,6 +33,49 @@ export function shareRecipientAndTimingFields(share: CredentialShareRow) {
 }
 
 /**
+ * Story 65.6 (D2) — the ONE place that says who a share's sharer is. A host-created share keeps
+ * `shared_by` = the machine user's provisioning human (audit and rollback compatibility) and
+ * records the human who acted in `acting_user_id`; every native rule (revoke authority, list
+ * scoping, nudge recipient visibility, deactivation auto-revoke, the consent-page sharer join)
+ * follows the EFFECTIVE sharer, `COALESCE(acting_user_id, shared_by)`. Native rows have a NULL
+ * `acting_user_id`, so they behave exactly as before; a legacy host row with an unknown acting
+ * user still resolves to the provisioner here (today's behaviour).
+ */
+export function effectiveSharerOf(share: Pick<CredentialShareRow, 'sharedBy' | 'actingUserId'>) {
+  return share.actingUserId ?? share.sharedBy
+}
+
+/** The same fact as `effectiveSharerOf`, as a SQL expression for predicates and joins. */
+export const effectiveSharerSql = sql<string>`COALESCE(${credentialShares.actingUserId}, ${credentialShares.sharedBy})`
+
+/**
+ * Story 65.6 — what an EXTENSION is told about the sharer (`CredentialSharingShareRecord.sharedBy`):
+ * a native row reports `shared_by`; a host row reports the acting user, or `null` when unknown.
+ * Unlike `effectiveSharerOf` it never hands a host row's provisioner out as if it were the sharer.
+ */
+export function extensionVisibleSharedBy(
+  share: Pick<CredentialShareRow, 'sharedBy' | 'actingUserId' | 'hostCreated'>
+): string | null {
+  return share.hostCreated ? (share.actingUserId ?? null) : share.sharedBy
+}
+
+/** SQL twin of `extensionVisibleSharedBy`. */
+const extensionVisibleSharedBySql = sql<
+  string | null
+>`COALESCE(${credentialShares.actingUserId}, CASE WHEN ${credentialShares.hostCreated} THEN NULL ELSE ${credentialShares.sharedBy} END)`
+
+/**
+ * The one "is this user the sharer" predicate. `native` (routes, auto-revoke) uses the effective
+ * sharer; `extension` (the host's `viewer` scoping) additionally refuses to match a legacy host
+ * row's provisioner, so a member viewer never sees a row that merely carries their id as
+ * `shared_by`.
+ */
+export function sharerPredicate(userId: string, mode: 'native' | 'extension' = 'native'): SQL {
+  const sharerSql = mode === 'native' ? effectiveSharerSql : extensionVisibleSharedBySql
+  return sql`${sharerSql} = ${userId}`
+}
+
+/**
  * Token generation/hashing mirrors `apps/api/src/modules/invitations/tokens.ts`'s bearer-token
  * pattern: only the HMAC digest is ever persisted, the raw token is returned to the caller once.
  * Reuses the existing `INVITATION_TOKEN_HMAC_SECRET` with a domain-separation prefix (rather than
@@ -62,7 +105,15 @@ export function generateAndHashShareToken(): { rawToken: string; tokenHash: stri
  *  directly (both `CreateShareInput` and `CreateExternalShareInput` share this field shape) rather
  *  than a re-keyed copy of it, so the call site has nothing left to duplicate. */
 export function baseShareInsertValues(
-  input: { orgId: string; credentialId: string; sharedByUserId: string; expiresAt: Date },
+  input: {
+    orgId: string
+    credentialId: string
+    sharedByUserId: string
+    expiresAt: Date
+    /** Story 65.6: set only by the host facade (`HostServices.credentialSharing`). */
+    hostCreated?: boolean
+    actingUserId?: string | null
+  },
   fieldKey: string | null,
   attributeKeys: string[] | null,
   tokenHash: string
@@ -78,6 +129,8 @@ export function baseShareInsertValues(
     // (never taken from caller input) since both creation paths only ever create read shares.
     action: 'read' as const,
     sharedBy: input.sharedByUserId,
+    // Story 65.6: a native row leaves both at their column defaults (false / NULL).
+    ...(input.hostCreated ? { hostCreated: true, actingUserId: input.actingUserId ?? null } : {}),
     tokenHash,
     expiresAt: input.expiresAt,
     status: 'active' as const,
@@ -363,6 +416,8 @@ export type ListSharesForCredentialParams = {
   orgId: string
   credentialId: string
   sharedByUserId?: string
+  /** Story 65.6: the host `viewer` scoping (a `member` viewer sees only shares they created). */
+  extensionViewerUserId?: string
   // Story 17.3 AC-1/AC-2: additive filtering/pagination on top of 17.1's existing scoping — the
   // admin-sees-everyone behavior (sharedByUserId omitted) is unchanged.
   status?: CredentialShareRow['status']
@@ -377,7 +432,10 @@ function sharesForCredentialWhereClause(params: ListSharesForCredentialParams) {
   return and(
     eq(credentialShares.orgId, params.orgId),
     eq(credentialShares.credentialId, params.credentialId),
-    params.sharedByUserId ? eq(credentialShares.sharedBy, params.sharedByUserId) : undefined,
+    params.sharedByUserId ? sharerPredicate(params.sharedByUserId) : undefined,
+    params.extensionViewerUserId
+      ? sharerPredicate(params.extensionViewerUserId, 'extension')
+      : undefined,
     params.status ? eq(credentialShares.status, params.status) : undefined
   )
 }
@@ -418,6 +476,8 @@ export async function countSharesForCredential(
  *  org has," not just one credential's. */
 export type ListSharesForOrganizationParams = {
   orgId: string
+  /** Story 65.6: see `ListSharesForCredentialParams.extensionViewerUserId`. */
+  extensionViewerUserId?: string
   status?: CredentialShareRow['status']
   limit?: number
   offset?: number
@@ -429,6 +489,9 @@ export type ListSharesForOrganizationParams = {
 function sharesForOrganizationWhereClause(params: ListSharesForOrganizationParams) {
   return and(
     eq(credentialShares.orgId, params.orgId),
+    params.extensionViewerUserId
+      ? sharerPredicate(params.extensionViewerUserId, 'extension')
+      : undefined,
     params.status ? eq(credentialShares.status, params.status) : undefined
   )
 }
@@ -522,7 +585,7 @@ export function autoRevokeSharesForDeactivatedUser(
     .where(
       and(
         eq(credentialShares.orgId, params.orgId),
-        eq(credentialShares.sharedBy, params.userId),
+        sharerPredicate(params.userId),
         eq(credentialShares.status, 'active')
       )
     )
@@ -545,16 +608,19 @@ export type FindShareByTokenResult =
  *  (17.1) and unauthenticated external (17.2) lookups share the exact same column set rather than
  *  each re-declaring it. Exported so `external-service.ts` can reuse it. */
 export function shareWithCredentialAndSharerQuery(tx: Tx) {
-  return tx
-    .select({
-      share: credentialShares,
-      credentialName: credentials.name,
-      credentialProjectId: credentials.projectId,
-      sharedByEmail: users.email,
-    })
-    .from(credentialShares)
-    .innerJoin(credentials, eq(credentialShares.credentialId, credentials.id))
-    .leftJoin(users, eq(credentialShares.sharedBy, users.id))
+  return (
+    tx
+      .select({
+        share: credentialShares,
+        credentialName: credentials.name,
+        credentialProjectId: credentials.projectId,
+        sharedByEmail: users.email,
+      })
+      .from(credentialShares)
+      .innerJoin(credentials, eq(credentialShares.credentialId, credentials.id))
+      // Story 65.6: the consent page names the EFFECTIVE sharer (the acting human for a host row).
+      .leftJoin(users, sql`${users.id} = ${effectiveSharerSql}`)
+  )
 }
 
 /** Same lazy active->expired transition both the session-bound and external metadata lookups

@@ -2,6 +2,45 @@
 
 The contract hash covers the checked-in public API surface and contract-behaviour snapshots.
 
+## 3.36.0 — 2026-10-13
+
+contract-hash: sha256:dbb4924dbeb83b62be7382187be25a4cd73f40c573391479d018e5ec304db479
+
+Story 65.6. Additive only: a call that passes none of the new arguments behaves exactly as before.
+
+### Added
+
+- `CredentialSharingShareRecord.sharedBy` (`string | null`, always present): the human who created
+  the share. A natively created share reports its sharer; a host-created share reports the acting
+  user PV recorded, or `null` when it is unknown (created with no request user and no
+  `actingUserId`, or created before this field existed).
+- `createExternalShare({ actingUserId? })`: fallback acting user. Inside an authenticated request of
+  the same org the request user is authoritative and a different id fails with
+  `CredentialSharingActingUserMismatchError`; outside a request the id must be an active member of
+  the org, else `CredentialSharingActingUserInvalidError`. Audit attribution stays the machine user.
+- `listSharesForCredential` / `listSharesForOrganization` accept `viewer?: { userId }` (type
+  `CredentialSharingViewer`): an admin or owner sees every share, a member sees only their own, a
+  non-member gets an empty list. `total` follows the same rule.
+- `revokeShare({ actor? })`: with an actor, only the share's sharer or an org admin or owner may
+  revoke (`CredentialSharingNotAuthorizedError`, thrown before any change). A host share whose
+  acting user is unknown can be revoked by an admin or owner only.
+- Three error classes: `CredentialSharingNotAuthorizedError`,
+  `CredentialSharingActingUserInvalidError`, `CredentialSharingActingUserMismatchError`.
+
+### Deprecated
+
+Nothing new in this release. The legacy panel surface is still pending removal:
+
+- Hooks `uiPanel`, `moduleAction` and `moduleData`, and the `'ui-panel'` capability member.
+- Manifest fields `uiPanelSlots`, `moduleActions`, `navItems` and `moduleDataRoutes`.
+- Exports `UIPanel`, `UIPanelContext`, `UIPanelResult`, `ModuleAction`, `ModuleActionContext`,
+  `ModuleActionRequest`, `ActionResult`, `ModuleDataRequestContext`, `ModuleDataResult`,
+  `ModuleDataRouteHandler`, `ModuleDataRouteDeclaration` and `ExtensionNavItem`.
+- Replace them with `ExtensionRequestContext`, `ExtensionActionResult`, composed UI or M7 `apiRoutes`.
+- notice-window-ends: 2027-01-14
+- earliest-removal: 4.0.0
+- Notified: 2026-10-06, the 3.30.0 notice stands; recipient CentralizeMe maintainer.
+
 ## 3.35.0 — 2026-10-06
 
 contract-hash: sha256:859571580a4231e155ba093d7f601c42195c5dbf749e613a76e96082b455fa75

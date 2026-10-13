@@ -182,11 +182,15 @@ export type {
   CredentialSharingRevokeShareResult,
   CredentialSharingShareRecord,
   CredentialSharingShareStatus,
+  CredentialSharingViewer,
   CredentialSharingSupersedeSharesForRotationParams,
   CredentialSharingSupersedeSharesForRotationResult,
 } from './hooks/credential-sharing.js'
 export {
+  CredentialSharingActingUserInvalidError,
+  CredentialSharingActingUserMismatchError,
   CredentialSharingNoMachineUserError,
+  CredentialSharingNotAuthorizedError,
   CredentialSharingOrgRateLimitedError,
   CredentialSharingRateLimitedError,
 } from './hooks/credential-sharing.js'

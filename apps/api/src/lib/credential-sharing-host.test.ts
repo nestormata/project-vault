@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ExtensionManifest } from '@project-vault/extension-api'
 import {
+  CredentialSharingActingUserInvalidError,
+  CredentialSharingActingUserMismatchError,
   CredentialSharingNoMachineUserError,
+  CredentialSharingNotAuthorizedError,
   CredentialSharingOrgRateLimitedError,
   CredentialSharingRateLimitedError,
 } from '@project-vault/extension-api'
+import { runWithRequestContext } from './request-context.js'
 
 /**
  * Story 20.12 — unit coverage for `buildCredentialSharingHost`, mirroring
@@ -21,7 +25,11 @@ vi.mock('@project-vault/db', async (importOriginal) => {
   return { ...actual, withOrg }
 })
 
+const { resolveActiveOrgRoleInTx } = vi.hoisted(() => ({ resolveActiveOrgRoleInTx: vi.fn() }))
+vi.mock('../plugins/authenticate.js', () => ({ resolveActiveOrgRoleInTx }))
+
 const {
+  findShareInScope,
   revokeShare,
   supersedeOutstandingSharesForRotation,
   listSharesForCredential,
@@ -29,6 +37,7 @@ const {
   listSharesForOrganization,
   countSharesForOrganization,
 } = vi.hoisted(() => ({
+  findShareInScope: vi.fn(),
   revokeShare: vi.fn(),
   supersedeOutstandingSharesForRotation: vi.fn(),
   listSharesForCredential: vi.fn(),
@@ -40,6 +49,7 @@ vi.mock('../modules/credential-shares/service.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../modules/credential-shares/service.js')>()
   return {
     ...actual,
+    findShareInScope,
     revokeShare,
     supersedeOutstandingSharesForRotation,
     listSharesForCredential,
@@ -86,11 +96,17 @@ const MACHINE_USER_ID = '55555555-5555-5555-5555-555555555555'
 const KEY_ID = '66666666-6666-6666-6666-666666666666'
 const OTHER_ORG_ID = '77777777-7777-7777-7777-777777777777'
 const CREATED_BY_USER_ID = '88888888-8888-8888-8888-888888888888'
+const USER_U = '99999999-9999-9999-9999-999999999991'
+const USER_V = '99999999-9999-9999-9999-999999999992'
+const USER_W = '99999999-9999-9999-9999-999999999993'
 /* eslint-enable no-secrets/no-secrets */
 const VALID_TOKEN = 'valid-token'
 const RECIPIENT_EMAIL = 'recipient@invalid'
 const EXPIRES_AT_ISO = '2026-01-02T00:00:00.000Z'
 const ROTATION_ID = 'rotation-1'
+const RAW_TOKEN = 'raw-token-value'
+const CREDENTIAL_NAME = 'My Credential'
+const DISPLAY_NAME = 'A teammate'
 
 const MANIFEST: ExtensionManifest = {
   name: 'com.acme.credential-sharing-fixture',
@@ -153,7 +169,7 @@ beforeEach(() => {
   createExternalCredentialShare.mockResolvedValue({
     status: 'ok',
     share: SHARE_ROW,
-    token: 'raw-token-value',
+    token: RAW_TOKEN,
   })
   revokeShare.mockResolvedValue({ status: 'ok', share: SHARE_ROW, alreadyTerminal: false })
   supersedeOutstandingSharesForRotation.mockResolvedValue([SHARE_ROW])
@@ -165,9 +181,9 @@ beforeEach(() => {
     status: 'ok',
     metadata: {
       share: SHARE_ROW,
-      credentialName: 'My Credential',
+      credentialName: CREDENTIAL_NAME,
       credentialProjectId: PROJECT_ID,
-      sharedByDisplayName: 'A teammate',
+      sharedByDisplayName: DISPLAY_NAME,
     },
   })
   revealExternalShare.mockResolvedValue({
@@ -178,6 +194,8 @@ beforeEach(() => {
     fieldKey: null,
   })
   writeMachineAuditEntry.mockResolvedValue(undefined)
+  findShareInScope.mockResolvedValue(SHARE_ROW)
+  resolveActiveOrgRoleInTx.mockResolvedValue('member')
 })
 
 afterEach(() => {
@@ -210,7 +228,7 @@ describe('buildCredentialSharingHost.createExternalShare (AC2)', () => {
     expect(result).toEqual({
       status: 'ok',
       share: expect.objectContaining({ id: SHARE_ID, status: 'active' }),
-      token: 'raw-token-value',
+      token: RAW_TOKEN,
     })
   })
 
@@ -342,9 +360,9 @@ describe('buildCredentialSharingHost.findShareByToken / revealShare (AC3)', () =
     expect(result).toEqual({
       status: 'ok',
       share: expect.objectContaining({ id: SHARE_ID }),
-      credentialName: 'My Credential',
+      credentialName: CREDENTIAL_NAME,
       credentialProjectId: PROJECT_ID,
-      sharedByDisplayName: 'A teammate',
+      sharedByDisplayName: DISPLAY_NAME,
     })
   })
 
@@ -1042,5 +1060,408 @@ describe('buildCredentialSharingHost miss floor (Story 65.4 AC1)', () => {
     await vi.advanceTimersByTimeAsync(FLOOR)
     await first
     expect(__getCredentialSharingHostInFlightCountForTests(MANIFEST.name)).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Story 65.6 — acting user (D1 resolution order), `sharedBy`, `viewer` and `actor`.
+// ---------------------------------------------------------------------------------------------
+
+const CREATE_PARAMS = {
+  organizationId: ORG_ID,
+  projectId: PROJECT_ID,
+  credentialId: CREDENTIAL_ID,
+  recipientEmail: RECIPIENT_EMAIL,
+  expiresAt: EXPIRES_AT_ISO,
+}
+const REVOKE_PARAMS = {
+  organizationId: ORG_ID,
+  projectId: PROJECT_ID,
+  credentialId: CREDENTIAL_ID,
+  shareId: SHARE_ID,
+}
+
+function hostRow(actingUserId: string | null) {
+  return { ...SHARE_ROW, hostCreated: true, actingUserId }
+}
+
+function insertedInput(): Record<string, unknown> {
+  return createExternalCredentialShare.mock.calls[0]?.[1] as Record<string, unknown>
+}
+
+describe('Story 65.6 AC1/D1: createExternalShare resolves the acting user', () => {
+  it('ambient request user wins: recorded as actingUserId, shared_by stays the provisioning human, audit stays the machine user', async () => {
+    createExternalCredentialShare.mockResolvedValue({
+      status: 'ok',
+      share: hostRow(USER_U),
+      token: RAW_TOKEN,
+    })
+    const host = buildCredentialSharingHost(MANIFEST)
+    const result = await runWithRequestContext({ orgId: ORG_ID, userId: USER_U }, () =>
+      host.createExternalShare(CREATE_PARAMS)
+    )
+
+    expect(insertedInput()).toMatchObject({
+      sharedByUserId: CREATED_BY_USER_ID,
+      hostCreated: true,
+      actingUserId: USER_U,
+    })
+    expect(writeMachineAuditEntry).toHaveBeenCalledWith(
+      FAKE_TX,
+      expect.objectContaining({ machineUserId: MACHINE_USER_ID, keyId: KEY_ID })
+    )
+    expect(result).toMatchObject({ status: 'ok', share: { sharedBy: USER_U } })
+    expect(resolveActiveOrgRoleInTx).not.toHaveBeenCalled()
+  })
+
+  it('ambient user and an equal actingUserId is fine', async () => {
+    const host = buildCredentialSharingHost(MANIFEST)
+    await runWithRequestContext({ orgId: ORG_ID, userId: USER_U }, () =>
+      host.createExternalShare({ ...CREATE_PARAMS, actingUserId: USER_U })
+    )
+    expect(insertedInput()).toMatchObject({ actingUserId: USER_U })
+  })
+
+  it('no ambient user: a supplied actingUserId that is an active member is recorded', async () => {
+    resolveActiveOrgRoleInTx.mockResolvedValue('member')
+    const host = buildCredentialSharingHost(MANIFEST)
+    await host.createExternalShare({ ...CREATE_PARAMS, actingUserId: USER_V })
+
+    expect(resolveActiveOrgRoleInTx).toHaveBeenCalledWith(FAKE_TX, USER_V, ORG_ID)
+    expect(insertedInput()).toMatchObject({ hostCreated: true, actingUserId: USER_V })
+  })
+
+  it('neither: created as today, host_created with an unknown acting user, sharedBy reads back null', async () => {
+    createExternalCredentialShare.mockResolvedValue({
+      status: 'ok',
+      share: hostRow(null),
+      token: RAW_TOKEN,
+    })
+    const host = buildCredentialSharingHost(MANIFEST)
+    const result = await host.createExternalShare(CREATE_PARAMS)
+
+    expect(insertedInput()).toMatchObject({
+      sharedByUserId: CREATED_BY_USER_ID,
+      hostCreated: true,
+      actingUserId: null,
+    })
+    expect(resolveActiveOrgRoleInTx).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ status: 'ok', share: { sharedBy: null } })
+  })
+
+  it.each([
+    ['not a member of the org', null],
+    ['only a viewer role', 'viewer'],
+  ])(
+    'no ambient user and an actingUserId that is %s: one generic invalid error, nothing written',
+    async (_label, role) => {
+      resolveActiveOrgRoleInTx.mockResolvedValue(role)
+      const host = buildCredentialSharingHost(MANIFEST)
+      const rejection = await host
+        .createExternalShare({ ...CREATE_PARAMS, actingUserId: USER_V })
+        .then(
+          () => undefined,
+          (error: unknown) => error
+        )
+
+      expect(rejection).toBeInstanceOf(CredentialSharingActingUserInvalidError)
+      expect((rejection as Error).message).not.toContain(USER_V)
+      expect((rejection as Error).message).not.toContain(ORG_ID)
+      expect(createExternalCredentialShare).not.toHaveBeenCalled()
+      expect(writeMachineAuditEntry).not.toHaveBeenCalled()
+    }
+  )
+
+  it('ambient user U and a different actingUserId V: mismatch error, nothing written', async () => {
+    const host = buildCredentialSharingHost(MANIFEST)
+    await expect(
+      runWithRequestContext({ orgId: ORG_ID, userId: USER_U }, () =>
+        host.createExternalShare({ ...CREATE_PARAMS, actingUserId: USER_V })
+      )
+    ).rejects.toBeInstanceOf(CredentialSharingActingUserMismatchError)
+    expect(createExternalCredentialShare).not.toHaveBeenCalled()
+    expect(writeMachineAuditEntry).not.toHaveBeenCalled()
+  })
+
+  it('an ambient context bound for a DIFFERENT org is never trusted: treated as absent', async () => {
+    const host = buildCredentialSharingHost(MANIFEST)
+    await runWithRequestContext({ orgId: OTHER_ORG_ID, userId: USER_U }, () =>
+      host.createExternalShare(CREATE_PARAMS)
+    )
+    expect(insertedInput()).toMatchObject({ hostCreated: true, actingUserId: null })
+
+    createExternalCredentialShare.mockClear()
+    await runWithRequestContext({ orgId: OTHER_ORG_ID, userId: USER_U }, () =>
+      host.createExternalShare({ ...CREATE_PARAMS, actingUserId: USER_V })
+    )
+    expect(resolveActiveOrgRoleInTx).toHaveBeenCalledWith(FAKE_TX, USER_V, ORG_ID)
+    expect(insertedInput()).toMatchObject({ actingUserId: USER_V })
+  })
+
+  it('an ambient context with no userId (unlinked delegated actor) is treated as absent', async () => {
+    const host = buildCredentialSharingHost(MANIFEST)
+    await runWithRequestContext({ orgId: ORG_ID }, () => host.createExternalShare(CREATE_PARAMS))
+    expect(insertedInput()).toMatchObject({ hostCreated: true, actingUserId: null })
+  })
+
+  it('the machine-user check still runs first and fails closed before the acting user is resolved', async () => {
+    FAKE_TX.select = vi.fn(() => makeMachineUserSelectChain([]))
+    const host = buildCredentialSharingHost(MANIFEST)
+    await expect(
+      host.createExternalShare({ ...CREATE_PARAMS, actingUserId: USER_V })
+    ).rejects.toBeInstanceOf(CredentialSharingNoMachineUserError)
+    expect(resolveActiveOrgRoleInTx).not.toHaveBeenCalled()
+  })
+})
+
+describe('Story 65.6 AC3/AC3b: sharedBy on every extension share record', () => {
+  it('a native row reports shared_by; a host row reports the acting user or null; the key is always present', async () => {
+    listSharesForOrganization.mockResolvedValue([
+      { ...SHARE_ROW, hostCreated: false, actingUserId: null, sharedBy: USER_W },
+      hostRow(USER_U),
+      hostRow(null),
+    ])
+    countSharesForOrganization.mockResolvedValue(3)
+    const host = buildCredentialSharingHost(MANIFEST)
+    const { items } = await host.listSharesForOrganization({ organizationId: ORG_ID })
+
+    expect(items.map((item) => item.sharedBy)).toEqual([USER_W, USER_U, null])
+    for (const item of items) expect(Object.keys(item)).toContain('sharedBy')
+    expect(JSON.parse(JSON.stringify(items[2]))).toHaveProperty('sharedBy', null)
+  })
+
+  it('revokeShare and supersedeSharesForRotation records carry sharedBy too', async () => {
+    revokeShare.mockResolvedValue({
+      status: 'ok',
+      share: hostRow(USER_U),
+      alreadyTerminal: false,
+    })
+    supersedeOutstandingSharesForRotation.mockResolvedValue([hostRow(null)])
+    const host = buildCredentialSharingHost(MANIFEST)
+
+    const revoked = await host.revokeShare(REVOKE_PARAMS)
+    expect(revoked).toMatchObject({ status: 'ok', share: { sharedBy: USER_U } })
+    const superseded = await host.supersedeSharesForRotation({
+      organizationId: ORG_ID,
+      credentialId: CREDENTIAL_ID,
+      targetFields: null,
+      rotationId: ROTATION_ID,
+    })
+    expect(superseded.supersededShares[0]).toHaveProperty('sharedBy', null)
+  })
+
+  it('findShareByToken and revealShare records carry sharedBy and do no membership lookup', async () => {
+    findExternalShareByTokenHash.mockResolvedValue({
+      status: 'ok',
+      metadata: {
+        share: hostRow(USER_U),
+        credentialName: CREDENTIAL_NAME,
+        credentialProjectId: PROJECT_ID,
+        sharedByDisplayName: DISPLAY_NAME,
+      },
+    })
+    revealExternalShare.mockResolvedValue({
+      status: 'ok',
+      share: hostRow(USER_U),
+      value: 'v',
+      valueFormat: 'scalar',
+      fieldKey: null,
+    })
+    const host = buildCredentialSharingHost(MANIFEST)
+    expect(await host.findShareByToken(VALID_TOKEN)).toMatchObject({ share: { sharedBy: USER_U } })
+    expect(await host.revealShare(VALID_TOKEN)).toMatchObject({ share: { sharedBy: USER_U } })
+    expect(resolveActiveOrgRoleInTx).not.toHaveBeenCalled()
+  })
+})
+
+describe('Story 65.6 AC4: viewer on the list methods', () => {
+  it('no viewer: unchanged admin-equivalent query, no membership lookup, no scoping key', async () => {
+    const host = buildCredentialSharingHost(MANIFEST)
+    await host.listSharesForCredential({ organizationId: ORG_ID, credentialId: CREDENTIAL_ID })
+    expect(resolveActiveOrgRoleInTx).not.toHaveBeenCalled()
+    const params = listSharesForCredential.mock.calls[0]?.[1] as Record<string, unknown>
+    expect(params).not.toHaveProperty('extensionViewerUserId')
+    expect(params).not.toHaveProperty('sharedByUserId')
+  })
+
+  it.each(['admin', 'owner'])('a %s viewer sees every share in scope', async (role) => {
+    resolveActiveOrgRoleInTx.mockResolvedValue(role)
+    const host = buildCredentialSharingHost(MANIFEST)
+    const result = await host.listSharesForOrganization({
+      organizationId: ORG_ID,
+      viewer: { userId: USER_U },
+    })
+    expect(result.total).toBe(1)
+    expect(listSharesForOrganization.mock.calls[0]?.[1]).not.toHaveProperty('extensionViewerUserId')
+  })
+
+  it('a member viewer is scoped to their own shares in both the list and the count query', async () => {
+    resolveActiveOrgRoleInTx.mockResolvedValue('member')
+    const host = buildCredentialSharingHost(MANIFEST)
+    await host.listSharesForCredential({
+      organizationId: ORG_ID,
+      credentialId: CREDENTIAL_ID,
+      status: 'active',
+      viewer: { userId: USER_U },
+    })
+    expect(listSharesForCredential).toHaveBeenCalledWith(
+      FAKE_TX,
+      expect.objectContaining({ status: 'active', extensionViewerUserId: USER_U })
+    )
+    expect(countSharesForCredential).toHaveBeenCalledWith(
+      FAKE_TX,
+      expect.objectContaining({ extensionViewerUserId: USER_U })
+    )
+
+    await host.listSharesForOrganization({ organizationId: ORG_ID, viewer: { userId: USER_U } })
+    expect(countSharesForOrganization).toHaveBeenCalledWith(
+      FAKE_TX,
+      expect.objectContaining({ extensionViewerUserId: USER_U })
+    )
+  })
+
+  it.each([
+    ['is not an active member', null],
+    ['has only the viewer role', 'viewer'],
+  ])('a viewer who %s gets an empty list, never an error, and no query runs', async (_l, role) => {
+    resolveActiveOrgRoleInTx.mockResolvedValue(role)
+    const host = buildCredentialSharingHost(MANIFEST)
+    await expect(
+      host.listSharesForCredential({
+        organizationId: ORG_ID,
+        credentialId: CREDENTIAL_ID,
+        viewer: { userId: USER_U },
+      })
+    ).resolves.toEqual({ status: 'ok', items: [], total: 0 })
+    await expect(
+      host.listSharesForOrganization({ organizationId: ORG_ID, viewer: { userId: USER_U } })
+    ).resolves.toEqual({ status: 'ok', items: [], total: 0 })
+    expect(listSharesForCredential).not.toHaveBeenCalled()
+    expect(listSharesForOrganization).not.toHaveBeenCalled()
+  })
+
+  it('a viewer differing from the ambient request user is a mismatch error; an equal one resolves', async () => {
+    const host = buildCredentialSharingHost(MANIFEST)
+    await expect(
+      runWithRequestContext({ orgId: ORG_ID, userId: USER_U }, () =>
+        host.listSharesForOrganization({ organizationId: ORG_ID, viewer: { userId: USER_V } })
+      )
+    ).rejects.toBeInstanceOf(CredentialSharingActingUserMismatchError)
+    await expect(
+      runWithRequestContext({ orgId: ORG_ID, userId: USER_U }, () =>
+        host.listSharesForOrganization({ organizationId: ORG_ID, viewer: { userId: USER_U } })
+      )
+    ).resolves.toMatchObject({ status: 'ok' })
+  })
+})
+
+describe('Story 65.6 AC5: actor on revokeShare', () => {
+  it('without actor: unchanged (no lookup, no authorization)', async () => {
+    findShareInScope.mockResolvedValue(hostRow(null))
+    const host = buildCredentialSharingHost(MANIFEST)
+    await expect(host.revokeShare(REVOKE_PARAMS)).resolves.toMatchObject({ status: 'ok' })
+    expect(findShareInScope).not.toHaveBeenCalled()
+    expect(resolveActiveOrgRoleInTx).not.toHaveBeenCalled()
+  })
+
+  it('the share sharer (known acting user) may revoke', async () => {
+    findShareInScope.mockResolvedValue(hostRow(USER_U))
+    const host = buildCredentialSharingHost(MANIFEST)
+    await expect(
+      host.revokeShare({ ...REVOKE_PARAMS, actor: { userId: USER_U } })
+    ).resolves.toMatchObject({ status: 'ok', alreadyTerminal: false })
+    expect(writeMachineAuditEntry).toHaveBeenCalledTimes(1)
+  })
+
+  it('the shared_by of a native row may revoke it', async () => {
+    findShareInScope.mockResolvedValue({
+      ...SHARE_ROW,
+      hostCreated: false,
+      actingUserId: null,
+      sharedBy: USER_U,
+    })
+    const host = buildCredentialSharingHost(MANIFEST)
+    await expect(
+      host.revokeShare({ ...REVOKE_PARAMS, actor: { userId: USER_U } })
+    ).resolves.toMatchObject({ status: 'ok' })
+  })
+
+  it.each(['admin', 'owner'])('an org %s may revoke anyone else’s share', async (role) => {
+    findShareInScope.mockResolvedValue(hostRow(USER_U))
+    resolveActiveOrgRoleInTx.mockResolvedValue(role)
+    const host = buildCredentialSharingHost(MANIFEST)
+    await expect(
+      host.revokeShare({ ...REVOKE_PARAMS, actor: { userId: USER_W } })
+    ).resolves.toMatchObject({ status: 'ok' })
+  })
+
+  it('a non-sharer member is rejected before any mutation or audit write', async () => {
+    findShareInScope.mockResolvedValue(hostRow(USER_U))
+    const host = buildCredentialSharingHost(MANIFEST)
+    await expect(
+      host.revokeShare({ ...REVOKE_PARAMS, actor: { userId: USER_W } })
+    ).rejects.toBeInstanceOf(CredentialSharingNotAuthorizedError)
+    expect(revokeShare).not.toHaveBeenCalled()
+    expect(writeMachineAuditEntry).not.toHaveBeenCalled()
+  })
+
+  it('a legacy host row with an unknown acting user is admin/owner only (the provisioner is not the sharer)', async () => {
+    findShareInScope.mockResolvedValue({ ...hostRow(null), sharedBy: CREATED_BY_USER_ID })
+    const host = buildCredentialSharingHost(MANIFEST)
+    await expect(
+      host.revokeShare({ ...REVOKE_PARAMS, actor: { userId: CREATED_BY_USER_ID } })
+    ).rejects.toBeInstanceOf(CredentialSharingNotAuthorizedError)
+    expect(revokeShare).not.toHaveBeenCalled()
+
+    resolveActiveOrgRoleInTx.mockResolvedValue('admin')
+    await expect(
+      host.revokeShare({ ...REVOKE_PARAMS, actor: { userId: CREATED_BY_USER_ID } })
+    ).resolves.toMatchObject({ status: 'ok' })
+  })
+
+  it('an actor who is not an active org member gets the generic invalid error, before the share is looked up', async () => {
+    resolveActiveOrgRoleInTx.mockResolvedValue(null)
+    const host = buildCredentialSharingHost(MANIFEST)
+    await expect(
+      host.revokeShare({ ...REVOKE_PARAMS, actor: { userId: USER_W } })
+    ).rejects.toBeInstanceOf(CredentialSharingActingUserInvalidError)
+    expect(findShareInScope).not.toHaveBeenCalled()
+    expect(revokeShare).not.toHaveBeenCalled()
+  })
+
+  it('an actor differing from the ambient request user is a mismatch error', async () => {
+    const host = buildCredentialSharingHost(MANIFEST)
+    await expect(
+      runWithRequestContext({ orgId: ORG_ID, userId: USER_U }, () =>
+        host.revokeShare({ ...REVOKE_PARAMS, actor: { userId: USER_W } })
+      )
+    ).rejects.toBeInstanceOf(CredentialSharingActingUserMismatchError)
+    expect(findShareInScope).not.toHaveBeenCalled()
+  })
+
+  it('a share not found in scope is not_found, checked before authorization', async () => {
+    findShareInScope.mockResolvedValue(null)
+    const host = buildCredentialSharingHost(MANIFEST)
+    await expect(
+      host.revokeShare({ ...REVOKE_PARAMS, actor: { userId: USER_W } })
+    ).resolves.toEqual({ status: 'not_found' })
+    expect(revokeShare).not.toHaveBeenCalled()
+  })
+
+  it('authorization is evaluated before terminal state: unauthorized + already-terminal is still not-authorized; authorized is the idempotent no-op', async () => {
+    findShareInScope.mockResolvedValue({ ...hostRow(USER_U), status: 'viewed' })
+    revokeShare.mockResolvedValue({
+      status: 'ok',
+      share: { ...hostRow(USER_U), status: 'viewed' },
+      alreadyTerminal: true,
+    })
+    const host = buildCredentialSharingHost(MANIFEST)
+    await expect(
+      host.revokeShare({ ...REVOKE_PARAMS, actor: { userId: USER_W } })
+    ).rejects.toBeInstanceOf(CredentialSharingNotAuthorizedError)
+    await expect(
+      host.revokeShare({ ...REVOKE_PARAMS, actor: { userId: USER_U } })
+    ).resolves.toMatchObject({ status: 'ok', alreadyTerminal: true })
+    expect(writeMachineAuditEntry).not.toHaveBeenCalled()
   })
 })

@@ -100,6 +100,50 @@ export class CredentialSharingNoMachineUserError extends Error {
   }
 }
 
+/**
+ * Story 65.6 — thrown by `revokeShare` when `actor` is neither the share's sharer nor an org
+ * admin/owner, before any mutation or audit write. The message never names the actor, the share or
+ * the org.
+ */
+export class CredentialSharingNotAuthorizedError extends Error {
+  readonly code = 'credential_sharing_not_authorized'
+
+  constructor(methodName: string) {
+    super(`HostServices.credentialSharing.${methodName}() rejected: not authorized for this share`)
+    this.name = 'CredentialSharingNotAuthorizedError'
+  }
+}
+
+/**
+ * Story 65.6 — thrown when an extension-supplied acting user (`actingUserId` on create,
+ * `actor.userId` on revoke) is not an active member of `organizationId`. One identical error for
+ * every cause (not a member, deactivated, member of another org only, unknown id): it is never a
+ * membership oracle and never echoes the id.
+ */
+export class CredentialSharingActingUserInvalidError extends Error {
+  readonly code = 'credential_sharing_acting_user_invalid'
+
+  constructor(methodName: string) {
+    super(`HostServices.credentialSharing.${methodName}() rejected: invalid acting user`)
+    this.name = 'CredentialSharingActingUserInvalidError'
+  }
+}
+
+/**
+ * Story 65.6 — thrown when an extension-supplied user id differs from the user bound to the
+ * ambient request. A mismatch is a bug or a spoof; the host never silently picks one of the two.
+ */
+export class CredentialSharingActingUserMismatchError extends Error {
+  readonly code = 'credential_sharing_acting_user_mismatch'
+
+  constructor(methodName: string) {
+    super(
+      `HostServices.credentialSharing.${methodName}() rejected: acting user does not match the request user`
+    )
+    this.name = 'CredentialSharingActingUserMismatchError'
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Shared data shapes — plain, serializable mirrors of `credential_shares` rows. Deliberately
 // independent of `@project-vault/db`'s schema types (extension-api stays zero-DB-access).
@@ -116,6 +160,13 @@ export type CredentialSharingShareRecord = {
   credentialId: string
   fieldKey: string | null
   attributeKeys: string[] | null
+  /**
+   * Story 65.6 — the human who created the share. A natively created share reports its sharer; a
+   * host-created share reports the validated acting user, or `null` when that user is unknown
+   * (no ambient request user and no `actingUserId`, or the share predates the field). Always
+   * present (never omitted when null). Audit attribution is unaffected: it stays the machine user.
+   */
+  sharedBy: string | null
   recipientType: 'user' | 'external'
   recipientUserId: string | null
   recipientEmail: string | null
@@ -144,6 +195,14 @@ export type CredentialSharingCreateExternalShareParams = {
   expiresAt: string
   fieldKey?: string
   attributeKeys?: string[] | null
+  /**
+   * Story 65.6 — fallback acting user, used ONLY when no request user is bound to the call. Inside
+   * an authenticated request of the same org the ambient user is authoritative and this field, if
+   * present, must equal it (else `CredentialSharingActingUserMismatchError`). Outside a request it
+   * must be an active member of `organizationId` (else `CredentialSharingActingUserInvalidError`).
+   * Omitted and no ambient user: the share is created with an unknown acting user (`sharedBy: null`).
+   */
+  actingUserId?: string
 }
 
 /** The non-`'ok'` failure-status vocabulary for creating an external share — single source of
@@ -201,6 +260,14 @@ export type CredentialSharingRevokeShareParams = {
   projectId: string
   credentialId: string
   shareId: string
+  /**
+   * Story 65.6 — when present, PV's native revoke rule applies: the actor must be the share's
+   * sharer or an org admin/owner, else `CredentialSharingNotAuthorizedError` (thrown before any
+   * mutation). Resolved like `actingUserId` (the ambient request user wins; a differing id is a
+   * mismatch; outside a request the id must be an active org member). A host-created share whose
+   * acting user is unknown can be revoked by an admin/owner only. Omitted: unchanged behaviour.
+   */
+  actor?: { userId: string }
 }
 
 /** AC4 — idempotent-no-op semantics preserved unchanged: revoking an already-terminal share
@@ -226,9 +293,20 @@ export type CredentialSharingSupersedeSharesForRotationResult = {
 // supersedeSharesForRotation's own out-of-request directionality split (never
 // findShareByToken/revealShare's org-resolves-from-token shape, since these two take an
 // org-scoped caller up front). No `sharedByUserId` field anywhere on either params type (Design
-// Decision D, Nestor-confirmed) — the facade has no PV-session identity to scope "my own shares
-// only" by, and always returns admin-equivalent results (every share in scope).
+// Decision D, Nestor-confirmed) — by default the facade returns admin-equivalent results (every
+// share in scope). Story 65.6 adds the optional `viewer`, which applies PV's native visibility
+// (admin/owner: all, member: own) without making the extension's identity a caller-supplied
+// attribution: the host validates it (`CredentialSharingViewer`).
 // ---------------------------------------------------------------------------------------------
+
+/**
+ * Story 65.6 — who is asking, resolved like `actingUserId` on create. An org admin/owner viewer sees
+ * every share in scope; a `member` viewer sees only shares whose sharer is that viewer (a
+ * host-created share whose acting user is unknown is never shown to a member). A viewer who is not
+ * an active member of `organizationId` gets an empty list, never an error. `total` follows the same
+ * rule.
+ */
+export type CredentialSharingViewer = { userId: string }
 
 /** AC8 — mirrors `apps/api`'s own `ListSharesForCredentialParams` minus `orgId` (renamed
  * `organizationId` for facade consistency, matching `createExternalShare`'s own precedent) and
@@ -239,6 +317,8 @@ export type CredentialSharingListParams = {
   status?: CredentialSharingShareStatus
   limit?: number
   offset?: number
+  /** Story 65.6 — PV-native visibility, see `CredentialSharingViewer`. Omitted: admin-equivalent. */
+  viewer?: CredentialSharingViewer
 }
 
 /** AC9 — org-scoped only, no `credentialId` filter: "all outstanding shares this extension's org
@@ -248,6 +328,8 @@ export type CredentialSharingOrgListParams = {
   status?: CredentialSharingShareStatus
   limit?: number
   offset?: number
+  /** Story 65.6 — PV-native visibility, see `CredentialSharingViewer`. Omitted: admin-equivalent. */
+  viewer?: CredentialSharingViewer
 }
 
 /** AC8/AC9 — the same `items`+`total` pagination shape the existing `GET .../shares` route
