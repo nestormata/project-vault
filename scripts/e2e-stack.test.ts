@@ -827,6 +827,8 @@ function delegationGuardFiles() {
   }))
 }
 
+const LOOPBACK_API_BASE = 'http://localhost:1'
+
 describe('Story 71.5 AC-1: the delegation test signer is guarded', () => {
   it('scans the base compose file, the fly manifests, the example env file and the api config', () => {
     const paths = delegationGuardFiles().map((file) => file.path)
@@ -872,7 +874,7 @@ describe('Story 71.5 AC-1: the delegation test signer is guarded', () => {
 
   it('signs a pv-delegation+jwt assertion for the test audience that its public key verifies', () => {
     const token = signDelegationE2eAssertion({
-      apiBase: 'http://localhost:3000',
+      apiBase: LOOPBACK_API_BASE,
       org: 'org_x',
       sub: 'user_x',
       op: 'POST /x',
@@ -897,11 +899,11 @@ describe('Story 71.5 AC-1: the delegation test signer is guarded', () => {
   })
 
   it('refuses to sign when NODE_ENV is production or the target is not loopback', () => {
-    expect(() => assertDelegationSignerAllowed('http://localhost:1', {})).not.toThrow()
+    expect(() => assertDelegationSignerAllowed(LOOPBACK_API_BASE, {})).not.toThrow()
     expect(() => assertDelegationSignerAllowed('http://127.0.0.1:1', {})).not.toThrow()
     expect(() => assertDelegationSignerAllowed('http://[::1]:1', {})).not.toThrow()
     expect(() =>
-      assertDelegationSignerAllowed('http://localhost:1', { NODE_ENV: 'production' })
+      assertDelegationSignerAllowed(LOOPBACK_API_BASE, { NODE_ENV: 'production' })
     ).toThrow(/production/)
     expect(() => assertDelegationSignerAllowed('https://vault.example.com', {})).toThrow(/loopback/)
     expect(() => assertDelegationSignerAllowed('not a url', {})).toThrow(/loopback/)

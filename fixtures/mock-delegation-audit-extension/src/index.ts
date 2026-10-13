@@ -120,13 +120,21 @@ function failure(reply: ApiRouteReply, error: unknown) {
   return { error: { name, code: typeof code === 'string' ? code : null } }
 }
 
+const NOT_DELEGATED_BODY = { error: { name: 'NotDelegatedContext', code: null } }
+
+/** The delegated org id, or null (after setting the 500 status) when the route ran undelegated. */
+function delegatedOrgId(ctx: unknown, reply: ApiRouteReply): string | null {
+  if (!isApiRouteDelegatedContext(ctx as never)) {
+    reply.code(INTERNAL)
+    return null
+  }
+  return (ctx as { delegation: { orgId: string } }).delegation.orgId
+}
+
 function hooksFactory(host?: HostServices): ExtensionHooks {
   const write = async (ctx: unknown, req: { body: unknown }, reply: ApiRouteReply) => {
-    if (!isApiRouteDelegatedContext(ctx as never)) {
-      reply.code(INTERNAL)
-      return { error: { name: 'NotDelegatedContext', code: null } }
-    }
-    const { orgId } = (ctx as { delegation: { orgId: string } }).delegation
+    const orgId = delegatedOrgId(ctx, reply)
+    if (orgId === null) return NOT_DELEGATED_BODY
     try {
       const receipt = await host?.auditEventSource.writeAuditEvent(writeInputFrom(req.body, orgId))
       return { data: receipt }
@@ -135,11 +143,8 @@ function hooksFactory(host?: HostServices): ExtensionHooks {
     }
   }
   const gate = async (ctx: unknown, req: { body: unknown }, reply: ApiRouteReply) => {
-    if (!isApiRouteDelegatedContext(ctx as never)) {
-      reply.code(INTERNAL)
-      return { error: { name: 'NotDelegatedContext', code: null } }
-    }
-    const { orgId } = (ctx as { delegation: { orgId: string } }).delegation
+    const orgId = delegatedOrgId(ctx, reply)
+    if (orgId === null) return NOT_DELEGATED_BODY
     const deny = (req.body as { deny?: unknown } | null)?.deny === true
     if (deny) deniedOrgIds.add(orgId)
     else deniedOrgIds.delete(orgId)
