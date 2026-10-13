@@ -77,7 +77,8 @@ import {
  */
 
 const DB_NAME = 'project_vault_j36_delegated_audit_e2e'
-const PASSWORD = 'j36-delegated-audit-e2e-Password-1'
+// A throwaway per-run credential, generated rather than committed.
+const E2E_PASS_VALUE = `Pw-${randomUUID()}-aA1!`
 const MINUTE = 60
 const DAY = 86_400
 const AUDIT_BASE = '/api/v1/org/audit'
@@ -140,7 +141,7 @@ test.describe.serial('J36 — Epic 71 real-host proof: delegated, idempotent aud
     ownerApi = await playwrightRequest.newContext()
     const owner = await registerAndLoginIsolated(ownerApi, apiBase, {
       email: `j36-owner-${randomUUID()}@example.test`,
-      password: PASSWORD,
+      password: E2E_PASS_VALUE,
       orgName: `J36 Org A ${randomUUID()}`,
     })
     ownerUserId = owner.userId

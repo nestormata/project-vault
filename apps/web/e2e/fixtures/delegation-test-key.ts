@@ -1,11 +1,5 @@
-import {
-  createHash,
-  createPrivateKey,
-  createPublicKey,
-  randomUUID,
-  sign,
-  type KeyObject,
-} from 'node:crypto'
+import { createHash, createPublicKey, randomUUID, sign, type KeyObject } from 'node:crypto'
+import { ed25519PrivateKeyFromSeed } from './handoff-test-key.js'
 
 /**
  * Story 71.5 D3: the TEST-ONLY signer of service-delegated actor assertions for the isolated-stack
@@ -30,20 +24,9 @@ export const DELEGATION_E2E_ISSUER = 'https://app.centralizeme.com'
 export const DELEGATION_E2E_PROVIDER = 'centralizeme-handoff'
 
 const DELEGATION_E2E_SEED = Buffer.alloc(32, 0x61)
-// The fixed DER header of an Ed25519 PKCS#8 private key (RFC 8410); the 32-byte seed follows it.
-const ED25519_PKCS8_PREFIX = Buffer.concat([
-  Buffer.from([0x30, 0x2e]),
-  Buffer.from([0x02, 0x01, 0x00]),
-  Buffer.from([0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70]),
-  Buffer.from([0x04, 0x22, 0x04, 0x20]),
-])
 
 export function delegationE2ePrivateKey(): KeyObject {
-  return createPrivateKey({
-    key: Buffer.concat([ED25519_PKCS8_PREFIX, DELEGATION_E2E_SEED]),
-    format: 'der',
-    type: 'pkcs8',
-  })
+  return ed25519PrivateKeyFromSeed(DELEGATION_E2E_SEED)
 }
 
 /** The public half of the fixed seed, derived at runtime (no key literal in the repository). */
