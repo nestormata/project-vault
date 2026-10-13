@@ -5,8 +5,10 @@ import { stubReply } from '../__tests__/helpers/secure-route-stubs.js'
 import {
   DELEGATION_BURN_DEADLINE_MS,
   DELEGATION_NIL_USER_ID,
+  DELEGATION_EVENT_LIMIT,
   DELEGATION_PRE_BURN_LIMIT,
   delegationBodyStage,
+  delegationEventBucket,
   delegationKidBucket,
   delegationResolveStage,
   delegationSubjectStage,
@@ -80,6 +82,12 @@ describe('constants and the 71-4 seam', () => {
     expect(delegationKidBucket('kid-1')).toEqual({
       userId: 'delegation-kid:kid-1',
       key: 'delegation-pre-burn',
+    })
+    // DW-567 item 1: post-signature rejections spend a bucket apart from the request budget.
+    expect(DELEGATION_EVENT_LIMIT).toEqual({ max: 1200, timeWindowMs: 60_000 })
+    expect(delegationEventBucket('kid-1')).toEqual({
+      userId: 'delegation-kid:kid-1',
+      key: 'delegation-event',
     })
   })
 
