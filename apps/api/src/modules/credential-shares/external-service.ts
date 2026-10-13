@@ -107,6 +107,9 @@ export type CreateExternalShareInput = {
   // Story 20.5 AC-1: see `CreateShareInput.attributeKeys` (service.ts) — identical semantics.
   attributeKeys?: string[] | null
   expiresAt: Date
+  // Story 65.6: set only by the host facade; see `baseShareInsertValues` (service.ts).
+  hostCreated?: boolean
+  actingUserId?: string | null
 }
 
 // The non-'ok' variants are `CredentialShareCreationErrorStatus`, defined once in

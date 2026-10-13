@@ -649,7 +649,11 @@ export const MAX_NAV_ITEM_LABEL_LENGTH = 128
 // (policy row 2). No manifest or hook change; an extension that ignores them behaves as before.
 // Story 65.4 — bumped as a minor (3.34.0 -> 3.35.0): the optional manifest field
 // `anonymousRouteMinResponseMs` (policy row 1). A manifest that omits it behaves exactly as before.
-export const EXTENSION_API_VERSION = '3.35.0'
+// Story 65.6 — bumped as a minor (3.35.0 -> 3.36.0): `CredentialSharingShareRecord.sharedBy`, the
+// optional `actingUserId` / `viewer` / `actor` arguments on the credential-sharing host methods and
+// three new error classes (policy row 1). A caller that passes none of the new arguments behaves
+// exactly as before.
+export const EXTENSION_API_VERSION = '3.36.0'
 
 /**
  * Host-authoritative compatibility range. The extension declares the version it was built

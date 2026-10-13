@@ -11,7 +11,13 @@ import {
   createCredentialTestProject,
   createCredentialViaApi,
 } from '../credentials/credential-route-test-helpers.js'
-import { countSharesForOrganization, listSharesForOrganization } from './service.js'
+import {
+  baseShareInsertValues,
+  countSharesForOrganization,
+  effectiveSharerOf,
+  extensionVisibleSharedBy,
+  listSharesForOrganization,
+} from './service.js'
 
 const { createApp, initVault } = await bootstrapRouteIntegrationTest()
 
@@ -200,5 +206,52 @@ describe('listSharesForOrganization / countSharesForOrganization (AC9)', () => {
 
     expect(firstPage).toHaveLength(1)
     expect(total).toBe(2)
+  })
+})
+
+// Story 65.6 (D2) — the effective-sharer helpers every native rule and the host serializer share.
+describe('effective sharer helpers (Story 65.6)', () => {
+  const PROVISIONER = 'provisioner-user'
+  const ACTING = 'acting-user'
+
+  it('effectiveSharerOf: the acting user when known, else shared_by (native and legacy host rows)', () => {
+    expect(effectiveSharerOf({ sharedBy: PROVISIONER, actingUserId: ACTING })).toBe(ACTING)
+    expect(effectiveSharerOf({ sharedBy: PROVISIONER, actingUserId: null })).toBe(PROVISIONER)
+  })
+
+  it('extensionVisibleSharedBy: native -> shared_by; host -> acting user or null, never the provisioner', () => {
+    expect(
+      extensionVisibleSharedBy({ sharedBy: PROVISIONER, actingUserId: null, hostCreated: false })
+    ).toBe(PROVISIONER)
+    expect(
+      extensionVisibleSharedBy({ sharedBy: PROVISIONER, actingUserId: ACTING, hostCreated: true })
+    ).toBe(ACTING)
+    expect(
+      extensionVisibleSharedBy({ sharedBy: PROVISIONER, actingUserId: null, hostCreated: true })
+    ).toBeNull()
+  })
+
+  it('baseShareInsertValues: a native insert carries neither column; a host insert sets both', () => {
+    const input = {
+      orgId: 'org',
+      credentialId: 'credential',
+      sharedByUserId: PROVISIONER,
+      expiresAt: new Date(),
+    }
+    const native = baseShareInsertValues(input, null, null, 'hash')
+    expect(native).not.toHaveProperty('hostCreated')
+    expect(native).not.toHaveProperty('actingUserId')
+    expect(native.sharedBy).toBe(PROVISIONER)
+
+    const host = baseShareInsertValues(
+      { ...input, hostCreated: true, actingUserId: ACTING },
+      null,
+      null,
+      'hash'
+    )
+    expect(host).toMatchObject({ hostCreated: true, actingUserId: ACTING, sharedBy: PROVISIONER })
+    expect(
+      baseShareInsertValues({ ...input, hostCreated: true }, null, null, 'hash')
+    ).toMatchObject({ hostCreated: true, actingUserId: null })
   })
 })

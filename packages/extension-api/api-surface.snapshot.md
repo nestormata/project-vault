@@ -790,11 +790,59 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - type: `CredentialShareCreationErrorStatus`
 - union-members: `{ status: "credential_not_found"; }`, `{ status: "credential_archived"; }`, `{ status: "unknown_field_key"; field: string; }`, `{ status: "ambiguous_share_scope"; }`, `{ status: "too_many_attribute_keys"; }`, `{ status: "expires_at_invalid"; reason: "past" | "too_far_in_future"; }`, `{ status: "cap_exceeded"; }`
 
+## export `CredentialSharingActingUserInvalidError`
+
+- since: 3.36.0
+- kind: type
+- type: `CredentialSharingActingUserInvalidError`
+- member: `cause?`
+  - since: 3.36.0
+  - type: `unknown`
+- member: `readonly code`
+  - since: 3.36.0
+  - type: `"credential_sharing_acting_user_invalid"`
+- member: `message`
+  - since: 3.36.0
+  - type: `string`
+- member: `name`
+  - since: 3.36.0
+  - type: `string`
+- member: `stack?`
+  - since: 3.36.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+
+## export `CredentialSharingActingUserMismatchError`
+
+- since: 3.36.0
+- kind: type
+- type: `CredentialSharingActingUserMismatchError`
+- member: `cause?`
+  - since: 3.36.0
+  - type: `unknown`
+- member: `readonly code`
+  - since: 3.36.0
+  - type: `"credential_sharing_acting_user_mismatch"`
+- member: `message`
+  - since: 3.36.0
+  - type: `string`
+- member: `name`
+  - since: 3.36.0
+  - type: `string`
+- member: `stack?`
+  - since: 3.36.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+
 ## export `CredentialSharingCreateExternalShareParams`
 
 - since: 3.22.0
 - kind: type
 - type: `CredentialSharingCreateExternalShareParams`
+- member: `actingUserId?`
+  - since: 3.36.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
 - member: `attributeKeys?`
   - since: 3.22.0
   - type: `string[] | null | undefined`
@@ -890,6 +938,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.23.0
   - type: `CredentialSharingShareStatus | undefined`
   - union-members: `undefined`, `"active"`, `"viewed"`, `"revoked"`, `"expired"`, `"superseded"`
+- member: `viewer?`
+  - since: 3.36.0
+  - type: `CredentialSharingViewer | undefined`
+  - union-members: `undefined`, `CredentialSharingViewer`
 
 ## export `CredentialSharingListResult`
 
@@ -928,6 +980,28 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - type: `string | undefined`
   - union-members: `undefined`, `string`
 
+## export `CredentialSharingNotAuthorizedError`
+
+- since: 3.36.0
+- kind: type
+- type: `CredentialSharingNotAuthorizedError`
+- member: `cause?`
+  - since: 3.36.0
+  - type: `unknown`
+- member: `readonly code`
+  - since: 3.36.0
+  - type: `"credential_sharing_not_authorized"`
+- member: `message`
+  - since: 3.36.0
+  - type: `string`
+- member: `name`
+  - since: 3.36.0
+  - type: `string`
+- member: `stack?`
+  - since: 3.36.0
+  - type: `string | undefined`
+  - union-members: `undefined`, `string`
+
 ## export `CredentialSharingOrgListParams`
 
 - since: 3.23.0
@@ -948,6 +1022,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.23.0
   - type: `CredentialSharingShareStatus | undefined`
   - union-members: `undefined`, `"active"`, `"viewed"`, `"revoked"`, `"expired"`, `"superseded"`
+- member: `viewer?`
+  - since: 3.36.0
+  - type: `CredentialSharingViewer | undefined`
+  - union-members: `undefined`, `CredentialSharingViewer`
 
 ## export `CredentialSharingOrgRateLimitedError`
 
@@ -1005,6 +1083,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - since: 3.22.0
 - kind: type
 - type: `CredentialSharingRevokeShareParams`
+- member: `actor?`
+  - since: 3.36.0
+  - type: `{ userId: string; } | undefined`
+  - union-members: `undefined`, `{ userId: string; }`
 - member: `credentialId`
   - since: 3.22.0
   - type: `string`
@@ -1073,6 +1155,10 @@ Generated from `src/index.ts`; update this file and classify the change against 
   - since: 3.22.0
   - type: `string | null`
   - union-members: `null`, `string`
+- member: `sharedBy`
+  - since: 3.36.0
+  - type: `string | null`
+  - union-members: `null`, `string`
 - member: `singleUse`
   - since: 3.22.0
   - type: `boolean`
@@ -1123,6 +1209,15 @@ Generated from `src/index.ts`; update this file and classify the change against 
 - member: `supersededShares`
   - since: 3.22.0
   - type: `CredentialSharingShareRecord[]`
+
+## export `CredentialSharingViewer`
+
+- since: 3.36.0
+- kind: type
+- type: `CredentialSharingViewer`
+- member: `userId`
+  - since: 3.36.0
+  - type: `string`
 
 ## export `defineExtension`
 
@@ -1276,7 +1371,7 @@ Generated from `src/index.ts`; update this file and classify the change against 
 
 - since: 1.0.0
 - kind: value
-- type: `"3.35.0"`
+- type: `"3.36.0"`
 
 ## export `EXTENSION_THEME_CSS_VARS`
 

@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import type { Tx } from '@project-vault/db'
 import { credentialShareNudgeDismissals, credentialShares, users } from '@project-vault/db/schema'
+import { effectiveSharerSql } from './service.js'
 
 // Story 17.3 AC-11/FR125: the "shared — rotation recommended" nudge is computed, never stored as
 // a boolean flag — derived from `credential_shares` plus the new `credential_share_nudge_
@@ -119,7 +120,8 @@ export async function computeRotationRecommendedNudges(
       createdAt: credentialShares.createdAt,
       recipientEmail: credentialShares.recipientEmail,
       recipientUserEmail: users.email,
-      sharedBy: credentialShares.sharedBy,
+      // Story 65.6: the EFFECTIVE sharer (the acting human for a host-created share).
+      sharedBy: effectiveSharerSql,
     })
     .from(credentialShares)
     .leftJoin(users, eq(credentialShares.recipientUserId, users.id))

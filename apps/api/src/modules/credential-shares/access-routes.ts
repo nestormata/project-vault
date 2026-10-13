@@ -10,7 +10,7 @@ import {
   ShareMetadataResponseSchema,
   ShareRevealResponseSchema,
 } from './schema.js'
-import { findShareByToken, revealShare } from './service.js'
+import { effectiveSharerOf, findShareByToken, revealShare } from './service.js'
 
 const SHARE_TOKEN_NOT_FOUND = { code: 'share_not_found', message: 'Share not found' } as const
 
@@ -61,7 +61,7 @@ export function credentialShareAccessRoutes(fastify: FastifyApp): Promise<void> 
         data: {
           credentialId: share.credentialId,
           credentialName,
-          sharedBy: share.sharedBy,
+          sharedBy: effectiveSharerOf(share),
           sharedByEmail,
           fieldKey: share.fieldKey,
           attributeKeys: share.attributeKeys,

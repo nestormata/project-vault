@@ -5,7 +5,10 @@ import { apiKeys, machineUsers } from '@project-vault/db/schema'
 import { AuditEvent, OperationalEvent } from '@project-vault/shared'
 import type { CredentialSharingHost, ExtensionManifest } from '@project-vault/extension-api'
 import {
+  CredentialSharingActingUserInvalidError,
+  CredentialSharingActingUserMismatchError,
   CredentialSharingNoMachineUserError,
+  CredentialSharingNotAuthorizedError,
   CredentialSharingOrgRateLimitedError,
   CredentialSharingRateLimitedError,
 } from '@project-vault/extension-api'
@@ -13,6 +16,8 @@ import type { CredentialShareRow } from '../modules/credential-shares/service.js
 import {
   countSharesForCredential,
   countSharesForOrganization,
+  extensionVisibleSharedBy,
+  findShareInScope,
   listSharesForCredential as listSharesForCredentialService,
   listSharesForOrganization as listSharesForOrganizationService,
   revokeShare as revokeShareService,
@@ -31,9 +36,13 @@ import {
 } from '../modules/credential-shares/external-service.js'
 import { writeMachineAuditEntry } from '../modules/audit/machine-entry.js'
 import { isMachineKeyLive } from '../modules/machine-users/key-validity.js'
+import { resolveActiveOrgRoleInTx } from '../plugins/authenticate.js'
+import type { OrgRole } from '../plugins/require-org-role.js'
 import { operationalLog } from './logger.js'
 import { withMinResponseTime } from './min-response-time.js'
 import { forEachSequential } from './for-each-sequential.js'
+import { getRequestContext } from './request-context.js'
+import { roleRank } from './secure-route.js'
 
 /**
  * Story 20.12 AC5 — a per-extension in-flight cap for every `credentialSharing` method. Distinct
@@ -377,6 +386,122 @@ async function requireMachineUserForExtension(
 }
 
 // -------------------------------------------------------------------------------------------
+// Story 65.6 (D1) — the acting user. Audit attribution stays the machine user (Design Decision A);
+// this is a separate, validated fact about the human who acted through the extension.
+//
+// Resolution order, shared by `createExternalShare` (`actingUserId`), the list methods (`viewer`)
+// and `revokeShare` (`actor`):
+//  1. The ambient request user, usable only when it is bound for THIS org and has a user (an
+//     unlinked delegated actor binds the org but no user: "no ambient user", not an error). The
+//     extension cannot choose it.
+//  2. The extension-supplied id, only when no ambient user is usable, and only if it is an active
+//     member of the org with at least the `member` role. Looked up inside the caller's own
+//     transaction, so a deactivation racing the call cannot slip between check and write.
+//  3. Both present and different: `CredentialSharingActingUserMismatchError`, never a silent pick.
+//  4. Neither: no acting user.
+// -------------------------------------------------------------------------------------------
+
+type ActingUser =
+  | { status: 'none' }
+  | { status: 'invalid' }
+  | { status: 'ok'; userId: string; role: OrgRole | null }
+
+function ambientUserIdFor(organizationId: string): string | undefined {
+  const context = getRequestContext()
+  return context?.orgId === organizationId ? context.userId : undefined
+}
+
+/** `needRole: false` lets an ambient (already authenticated) user skip the membership lookup. */
+async function resolveActingUser(
+  tx: Tx,
+  organizationId: string,
+  suppliedUserId: string | undefined,
+  methodName: string,
+  needRole: boolean
+): Promise<ActingUser> {
+  const ambientUserId = ambientUserIdFor(organizationId)
+  if (ambientUserId && suppliedUserId !== undefined && suppliedUserId !== ambientUserId) {
+    throw new CredentialSharingActingUserMismatchError(methodName)
+  }
+  const userId = ambientUserId ?? suppliedUserId
+  if (userId === undefined) return { status: 'none' }
+  if (ambientUserId && !needRole) return { status: 'ok', userId, role: null }
+
+  const role = await resolveActiveOrgRoleInTx(tx, userId, organizationId)
+  if (!role || roleRank(role) < roleRank('member')) return { status: 'invalid' }
+  return { status: 'ok', userId, role }
+}
+
+function isOrgAdmin(role: OrgRole | null): boolean {
+  return role !== null && roleRank(role) >= roleRank('admin')
+}
+
+/** Create / revoke: an unresolvable acting user is one generic error, whatever the cause. */
+async function requireActingUser(
+  tx: Tx,
+  organizationId: string,
+  suppliedUserId: string | undefined,
+  methodName: string,
+  needRole: boolean
+): Promise<{ userId: string; role: OrgRole | null } | null> {
+  const acting = await resolveActingUser(tx, organizationId, suppliedUserId, methodName, needRole)
+  if (acting.status === 'invalid') throw new CredentialSharingActingUserInvalidError(methodName)
+  return acting.status === 'ok' ? acting : null
+}
+
+type ViewerScope = { status: 'all' } | { status: 'none' } | { status: 'own'; userId: string }
+
+/** List methods: admin/owner sees all, a member only their own, anyone else nothing (no error). */
+async function resolveViewerScope(
+  tx: Tx,
+  organizationId: string,
+  viewer: { userId: string } | undefined,
+  methodName: string
+): Promise<ViewerScope> {
+  if (!viewer) return { status: 'all' }
+  const acting = await resolveActingUser(tx, organizationId, viewer.userId, methodName, true)
+  if (acting.status !== 'ok') return { status: 'none' }
+  return isOrgAdmin(acting.role) ? { status: 'all' } : { status: 'own', userId: acting.userId }
+}
+
+function viewerListFilter(scope: ViewerScope): { extensionViewerUserId?: string } {
+  return scope.status === 'own' ? { extensionViewerUserId: scope.userId } : {}
+}
+
+const EMPTY_SHARE_LIST = { status: 'ok' as const, items: [], total: 0 }
+
+/**
+ * Revoke authority (AC5): resolve the actor first (invalid / mismatch reveal nothing about shares),
+ * then find the share in scope (`not_found` before authorization, so the typed error only exists
+ * for a share the org can see), then authorize: the share's known sharer or an org admin/owner.
+ * Everything runs on the caller's transaction, before any mutation.
+ */
+async function authorizeRevokeAsActor(
+  tx: Tx,
+  params: { organizationId: string; credentialId: string; shareId: string },
+  actor: { userId: string }
+): Promise<{ status: 'not_found' } | null> {
+  const acting = await requireActingUser(
+    tx,
+    params.organizationId,
+    actor.userId,
+    'revokeShare',
+    true
+  )
+  const target = await findShareInScope(tx, {
+    orgId: params.organizationId,
+    credentialId: params.credentialId,
+    shareId: params.shareId,
+  })
+  if (!target) return { status: 'not_found' }
+  const isSharer = acting !== null && extensionVisibleSharedBy(target) === acting.userId
+  if (!isSharer && !isOrgAdmin(acting?.role ?? null)) {
+    throw new CredentialSharingNotAuthorizedError('revokeShare')
+  }
+  return null
+}
+
+// -------------------------------------------------------------------------------------------
 // Serialization — plain, serializable mirror of a CredentialShareRow. tokenHash is NEVER
 // exposed.
 // -------------------------------------------------------------------------------------------
@@ -388,6 +513,8 @@ function serializeShare(share: CredentialShareRow) {
     credentialId: share.credentialId,
     fieldKey: share.fieldKey,
     attributeKeys: share.attributeKeys,
+    // Story 65.6 AC3/AC3b: the single place `sharedBy` is derived; always present, `null` = unknown.
+    sharedBy: extensionVisibleSharedBy(share),
     ...shareRecipientAndTimingFields(share),
     revokedAt: share.revokedAt ? share.revokedAt.toISOString() : null,
     supersededAt: share.supersededAt ? share.supersededAt.toISOString() : null,
@@ -460,11 +587,21 @@ export function buildCredentialSharingHost(
             logger
           )
 
+          const acting = await requireActingUser(
+            tx,
+            params.organizationId,
+            params.actingUserId,
+            'createExternalShare',
+            false
+          )
+
           const result = await createExternalCredentialShare(tx, {
             orgId: params.organizationId,
             projectId: params.projectId,
             credentialId: params.credentialId,
             sharedByUserId: machineUser.sharedByUserId,
+            hostCreated: true,
+            actingUserId: acting?.userId ?? null,
             recipientEmail: params.recipientEmail,
             fieldKey: params.fieldKey,
             attributeKeys: params.attributeKeys,
@@ -579,6 +716,11 @@ export function buildCredentialSharingHost(
             logger
           )
 
+          if (params.actor) {
+            const notFound = await authorizeRevokeAsActor(tx, params, params.actor)
+            if (notFound) return notFound
+          }
+
           const result = await revokeShareService(tx, {
             orgId: params.organizationId,
             credentialId: params.credentialId,
@@ -671,6 +813,13 @@ export function buildCredentialSharingHost(
         hostContext,
         () =>
           withOrg(params.organizationId, async (tx) => {
+            const scope = await resolveViewerScope(
+              tx,
+              params.organizationId,
+              params.viewer,
+              'listSharesForCredential'
+            )
+            if (scope.status === 'none') return EMPTY_SHARE_LIST
             const { limit, offset } = clampShareListPagination(params)
             const listParams = {
               orgId: params.organizationId,
@@ -678,6 +827,7 @@ export function buildCredentialSharingHost(
               status: params.status,
               limit,
               offset,
+              ...viewerListFilter(scope),
             }
             const [items, total] = await Promise.all([
               listSharesForCredentialService(tx, listParams),
@@ -695,12 +845,20 @@ export function buildCredentialSharingHost(
         hostContext,
         () =>
           withOrg(params.organizationId, async (tx) => {
+            const scope = await resolveViewerScope(
+              tx,
+              params.organizationId,
+              params.viewer,
+              'listSharesForOrganization'
+            )
+            if (scope.status === 'none') return EMPTY_SHARE_LIST
             const { limit, offset } = clampShareListPagination(params)
             const listParams = {
               orgId: params.organizationId,
               status: params.status,
               limit,
               offset,
+              ...viewerListFilter(scope),
             }
             const [items, total] = await Promise.all([
               listSharesForOrganizationService(tx, listParams),

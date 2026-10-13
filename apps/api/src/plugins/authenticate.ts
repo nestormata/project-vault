@@ -155,7 +155,21 @@ export async function resolveActiveOrgRole(
   userId: string,
   orgId: string
 ): Promise<'owner' | 'admin' | 'member' | 'viewer' | null> {
-  const memberships = await withOrg(orgId, (tx) => activeMembershipRoleQuery(tx, userId, orgId))
+  return withOrg(orgId, (tx) => resolveActiveOrgRoleInTx(tx, userId, orgId))
+}
+
+/**
+ * Story 65.6 — `resolveActiveOrgRole()`'s query and role parsing, run on the caller's own `tx`
+ * instead of a fresh `withOrg()` transaction. For a caller that must decide and then write inside
+ * ONE transaction (the credential-sharing host's `revokeShare`), so a deactivation racing the
+ * call cannot slip between the membership check and the write.
+ */
+export async function resolveActiveOrgRoleInTx(
+  tx: Tx,
+  userId: string,
+  orgId: string
+): Promise<'owner' | 'admin' | 'member' | 'viewer' | null> {
+  const memberships = await activeMembershipRoleQuery(tx, userId, orgId)
   const membership = memberships[0]
   if (!membership || !isOrgRole(membership.role)) return null
   return membership.role

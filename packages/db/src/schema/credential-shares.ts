@@ -46,6 +46,15 @@ export const credentialShares = pgTable(
     sharedBy: uuid('shared_by')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
+    // Story 65.6 (D2): the validated human who acted through an extension when the share was
+    // created via `HostServices.credentialSharing`. NULL for native rows and for host rows whose
+    // acting human is unknown. `shared_by` stays the machine user's provisioning human for host
+    // rows (audit and rollback compatibility); the effective sharer is
+    // COALESCE(acting_user_id, shared_by) — see `effectiveSharerSql` in service.ts.
+    actingUserId: uuid('acting_user_id').references(() => users.id, { onDelete: 'restrict' }),
+    // Story 65.6 (D2): true for rows created through the host facade. It is the only thing that
+    // separates "host row, human unknown" (extension-visible `sharedBy: null`) from a native row.
+    hostCreated: boolean('host_created').notNull().default(false),
     recipientType: text('recipient_type').notNull(),
     recipientUserId: uuid('recipient_user_id').references(() => users.id, {
       onDelete: 'restrict',

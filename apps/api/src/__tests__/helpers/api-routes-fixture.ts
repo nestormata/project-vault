@@ -26,6 +26,7 @@ export type ApiRoutesFixture = {
       | 'app-hooks-prepend'
       | 'app-hooks-append'
       | 'app-hooks-throw'
+      | 'credential-sharing'
   ) => void
   resetObserved: () => void
   observed: {
