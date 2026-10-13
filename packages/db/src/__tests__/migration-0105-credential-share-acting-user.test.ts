@@ -49,8 +49,13 @@ describe('migration 0105 (credential_shares.acting_user_id + host_created)', () 
   })
 
   it('is idempotent: re-running every statement on a migrated database does not fail', async () => {
-    for (const statement of migrationStatements()) {
-      await expect(superSql.unsafe(statement)).resolves.toBeDefined()
+    // Statements must run in order; chain them instead of awaiting inside a loop.
+    const results = await migrationStatements().reduce<Promise<unknown[]>>(
+      async (previous, statement) => [...(await previous), await superSql.unsafe(statement)],
+      Promise.resolve([])
+    )
+    for (const result of results) {
+      expect(result).toBeDefined()
     }
   })
 

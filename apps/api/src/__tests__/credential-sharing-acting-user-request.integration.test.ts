@@ -143,9 +143,11 @@ describe('Story 65.6 Task 6b — ambient user through a real authenticated M7 ro
   }
 
   it('create without actingUserId records the request user, list scopes to them, revoke honours the sharer rule', async () => {
-    for (const member of [memberOne, memberTwo]) {
-      await addProjectMember(orgId, projectId, member.userId, 'member')
-    }
+    await Promise.all(
+      [memberOne, memberTwo].map((member) =>
+        addProjectMember(orgId, projectId, member.userId, 'member')
+      )
+    )
     await addProjectMember(orgId, projectId, admin.userId, 'admin')
 
     const created = await createAs(memberOne.cookies)

@@ -81,9 +81,11 @@ describe('credentialSharing acting user — real Postgres (Story 65.6)', () => {
     memberOne = await addUserToOrg(app, orgId, 'member-one', { orgRole: 'member' })
     memberTwo = await addUserToOrg(app, orgId, 'member-two', { orgRole: 'member' })
     admin = await addUserToOrg(app, orgId, 'admin', { orgRole: 'admin' })
-    for (const user of [memberOne, memberTwo]) {
-      await addProjectMember(orgId, projectId, user.userId, 'member')
-    }
+    await Promise.all(
+      [memberOne, memberTwo].map((user) =>
+        addProjectMember(orgId, projectId, user.userId, 'member')
+      )
+    )
     await addProjectMember(orgId, projectId, admin.userId, 'admin')
     foreignOwner = await registerOwner(app, 'foreign')
 
@@ -510,11 +512,12 @@ describe('credentialSharing acting user — real Postgres (Story 65.6)', () => {
       expect(asOne.items.map((i) => i.id)).toEqual([one.id])
       expect(asOne.total).toBe(1)
 
-      for (const viewer of [admin, owner]) {
-        const all = await host.listSharesForCredential({
-          ...base,
-          viewer: { userId: viewer.userId },
-        })
+      const privileged = await Promise.all(
+        [admin, owner].map((viewer) =>
+          host.listSharesForCredential({ ...base, viewer: { userId: viewer.userId } })
+        )
+      )
+      for (const all of privileged) {
         expect(all.items.map((i) => i.id).sort()).toEqual([one.id, two.id, unknown.id].sort())
         expect(all.total).toBe(3)
       }
@@ -610,12 +613,14 @@ describe('credentialSharing acting user — real Postgres (Story 65.6)', () => {
       const result = await revokeAs(memberOne.userId, credentialId, mine.id)
       expect(result).toMatchObject({ status: 'ok', alreadyTerminal: false })
 
-      for (const actor of [admin, owner]) {
-        const share = await hostCreate(credentialId, { ambientUserId: memberOne.userId })
-        await expect(revokeAs(actor.userId, credentialId, share.id)).resolves.toMatchObject({
-          status: 'ok',
-          alreadyTerminal: false,
+      const adminOrOwnerResults = await Promise.all(
+        [admin, owner].map(async (actor) => {
+          const share = await hostCreate(credentialId, { ambientUserId: memberOne.userId })
+          return revokeAs(actor.userId, credentialId, share.id)
         })
+      )
+      for (const adminOrOwnerResult of adminOrOwnerResults) {
+        expect(adminOrOwnerResult).toMatchObject({ status: 'ok', alreadyTerminal: false })
       }
       const revokedAudit = (await auditRows(SHARE_REVOKED)).filter(
         (row) => row.resourceId === mine.id
