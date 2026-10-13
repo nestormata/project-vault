@@ -770,6 +770,22 @@ session. The declaration is plain data and is validated at registration:
   `delegation_occurrence_outside_window`, answered before the assertion is burned. The policy applies to that
   route only.
 - A host older than 3.33.0 ignores `actorId` and `occurredAt`; do not rely on them there.
+- A host older than 3.28.0 **silently ignores `idempotencyKey`**: the write succeeds and a retry after a lost
+  response writes a second row. No error tells you. Confirm the host's version before you depend on idempotent delivery.
+
+##### Host version compatibility of the audit-write contract (3.28.0 to 3.36.0)
+
+What a consumer gets in each release, and what an older host does with it. "Ignores" means the field is accepted
+and has no effect.
+
+| Since  | Surface                                                                                                      | An older host                                                                          |
+| ------ | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| 3.28.0 | `AuditEventSourceWriteInput.idempotencyKey`                                                                  | Ignores it: a retry writes a second row.                                               |
+| 3.31.0 | `security.delegation`, `ApiRouteDelegation`, `isApiRouteDelegatedContext` (contract only)                    | A host without the assertion verifier treats the route as a plain session route (401). |
+| 3.33.0 | `actorId`, `occurredAt`, `historicalActorPolicy`, `ApiRouteDelegation.occurredAt` / `actorAttestationReason` | Ignores `actorId` and `occurredAt`; do not rely on the rest there.                     |
+| 3.34.0 | `checkExtensionEmitters`, `assertExtensionEmittersContained`, `checkBackgroundPromisesHandled`               | Package-side helpers; the host is unaffected.                                          |
+| 3.35.0 | `ExtensionManifest.anonymousRouteMinResponseMs`                                                              | Not relied on: confirm the host version first.                                         |
+| 3.36.0 | `CredentialSharingShareRecord.sharedBy`, `viewer` / `actor` / `actingUserId` on credential sharing           | Not relied on: confirm the host version first.                                         |
 
 ```ts
 import type { ApiRoutesDeclaration, ApiRoutesHooks } from '@project-vault/extension-api'
