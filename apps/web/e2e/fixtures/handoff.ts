@@ -85,15 +85,16 @@ export type MintedHandoffToken = { token: string; jti: string }
  */
 export function mintHandoffToken(
   subject: Pick<SeededHandoffUser, 'workosUserId' | 'centralizemeOrganizationId'>,
-  options: { signingKey?: KeyObject; organizationId?: string } = {}
+  options: { signingKey?: KeyObject; organizationId?: string; instanceId?: string } = {}
 ): MintedHandoffToken {
   const issuedAt = Math.floor(Date.now() / 1000)
   const jti = `jti-${randomUUID()}`
+  const instanceId = options.instanceId ?? HANDOFF_E2E_INSTANCE_ID
   const header = { alg: 'EdDSA', typ: 'JWT', kid: HANDOFF_E2E_KID }
   const claims = {
     iss: HANDOFF_E2E_ISSUER,
-    aud: `pv:${HANDOFF_E2E_INSTANCE_ID}`,
-    instanceId: HANDOFF_E2E_INSTANCE_ID,
+    aud: `pv:${instanceId}`,
+    instanceId,
     workosUserId: subject.workosUserId,
     providerName: HANDOFF_E2E_PROVIDER,
     organizationId: options.organizationId ?? subject.centralizemeOrganizationId,

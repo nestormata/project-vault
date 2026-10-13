@@ -145,6 +145,9 @@ export type SpawnIsolatedApiOptions = {
   /** Fixture-specific env vars layered on top of the common isolated-API env (e.g. which
    *  `VAULT_EXTENSIONS_PACKAGE` to load). */
   extraEnv?: Record<string, string>
+  /** Story 71.5: receives every stdout/stderr chunk of the child, for a journey that greps the
+   *  child's logs (e.g. for a leaked secret). Called in addition to the console diagnostics. */
+  onOutput?: (chunk: string) => void
 }
 
 export type IsolatedApiProcess = { process: ChildProcess; port: number }
@@ -212,6 +215,11 @@ async function bootIsolatedApi(
   pipeChildDiagnostics(child, options.logLabel, port)
   const stderrTail = new StderrTail()
   child.stderr?.on('data', (chunk) => stderrTail.push(String(chunk)))
+  if (options.onOutput) {
+    const forward = options.onOutput
+    child.stdout?.on('data', (chunk) => forward(String(chunk)))
+    child.stderr?.on('data', (chunk) => forward(String(chunk)))
+  }
 
   await waitForIsolatedApiReady({
     child,
