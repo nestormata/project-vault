@@ -52,7 +52,7 @@ export type SeededActor = { sub: string; userId: string }
  * and (unless `none`) a membership with the given status. An UNLINKED actor needs no seeding: it
  * is any subject with no `external_identities` row.
  */
-export async function seedActor(
+export function seedActor(
   sql: Sql,
   orgId: string,
   membership: 'active' | 'deactivated' | 'none'
@@ -95,7 +95,7 @@ export type AuditRow = {
   created_at: Date
 }
 
-export async function auditRows(sql: Sql, orgId: string, eventType: string): Promise<AuditRow[]> {
+export function auditRows(sql: Sql, orgId: string, eventType: string): Promise<AuditRow[]> {
   return sql<AuditRow[]>`
     select id, org_id, actor_type, event_type, resource_type, resource_id, payload, created_at
     from audit_log_entries where org_id = ${orgId} and event_type = ${eventType}
