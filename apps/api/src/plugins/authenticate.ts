@@ -155,7 +155,8 @@ export async function resolveActiveOrgRole(
   userId: string,
   orgId: string
 ): Promise<'owner' | 'admin' | 'member' | 'viewer' | null> {
-  return withOrg(orgId, (tx) => resolveActiveOrgRoleInTx(tx, userId, orgId))
+  const role = await withOrg(orgId, (tx) => resolveActiveOrgRoleInTx(tx, userId, orgId))
+  return role
 }
 
 /**
