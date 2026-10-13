@@ -52,6 +52,7 @@ import {
   initIsolatedVault,
   registerAndLoginIsolated,
   spawnIsolatedApiProcess,
+  spawnIsolatedWebProcess,
   stopProcess,
   dropIsolatedDatabase,
 } from '../fixtures/isolated-stack-shared.js'
@@ -78,7 +79,11 @@ import {
 
 const DB_NAME = 'project_vault_j36_delegated_audit_e2e'
 // A throwaway per-run credential, generated rather than committed.
-const E2E_PASS_VALUE = `Pw-${randomUUID()}-aA1!`
+// With J36_KEEP_STACK=1 the run leaves its api and web processes and database up, so a person can
+// open Settings -> Audit on the real delegated rows (Chrome pass); the owner's login value then
+// comes from J36_OWNER_PASS, so nothing secret is ever printed.
+const KEEP_STACK = process.env['J36_KEEP_STACK'] === '1'
+const E2E_PASS_VALUE = process.env['J36_OWNER_PASS'] ?? `Pw-${randomUUID()}-aA1!`
 const MINUTE = 60
 const DAY = 86_400
 const AUDIT_BASE = '/api/v1/org/audit'
@@ -89,9 +94,11 @@ const WWW_AUTHENTICATE = 'www-authenticate'
 
 let sql: postgres.Sql
 let apiBase = ''
+let keptWebPort = 0
 let apiProcess: ChildProcess | undefined
 let ownerApi: APIRequestContext
 let ownerUserId = ''
+const ownerEmail = `j36-owner-${randomUUID()}@example.test`
 let orgA: SeededOrg
 let orgB: SeededOrg
 const childOutput: string[] = []
@@ -114,6 +121,7 @@ test.describe.serial('J36 — Epic 71 real-host proof: delegated, idempotent aud
     ).toBeUndefined()
 
     const webPort = await allocateFreePort()
+    keptWebPort = webPort
     await createIsolatedDatabase(DB_NAME)
     const api = await spawnIsolatedApiProcess({
       dbName: DB_NAME,
@@ -136,11 +144,14 @@ test.describe.serial('J36 — Epic 71 real-host proof: delegated, idempotent aud
     apiProcess = api.process
     apiBase = `http://localhost:${api.port}`
     await initIsolatedVault(api.port, 'j36-delegated-audit-e2e-passphrase')
+    if (KEEP_STACK) {
+      await spawnIsolatedWebProcess({ port: webPort, apiPort: api.port, logLabel: 'web-j36' })
+    }
 
     sql = postgres(withDatabase(superuserDatabaseUrl(), DB_NAME), { max: 2 })
     ownerApi = await playwrightRequest.newContext()
     const owner = await registerAndLoginIsolated(ownerApi, apiBase, {
-      email: `j36-owner-${randomUUID()}@example.test`,
+      email: ownerEmail,
       password: E2E_PASS_VALUE,
       orgName: `J36 Org A ${randomUUID()}`,
     })
@@ -153,6 +164,12 @@ test.describe.serial('J36 — Epic 71 real-host proof: delegated, idempotent aud
   test.afterAll(async () => {
     await ownerApi?.dispose()
     await sql?.end({ timeout: 5 })
+    if (KEEP_STACK) {
+      process.stdout.write(
+        `J36_KEEP_STACK: api ${apiBase}, web http://localhost:${keptWebPort}, owner ${ownerEmail}\n`
+      )
+      return
+    }
     if (apiProcess) await stopProcess(apiProcess)
     await dropIsolatedDatabase(DB_NAME)
   })
