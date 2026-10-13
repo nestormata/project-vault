@@ -5,6 +5,7 @@
   import { importProject, type ImportProjectResult } from '$lib/api/project-export.js'
   import { ApiClientError } from '$lib/api/client.js'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+  import { formatFileSize } from '$lib/utils/format-file-size.js'
   import * as m from '$lib/paraglide/messages.js'
 
   let { children }: { children?: Snippet } = $props()
@@ -49,6 +50,14 @@
     )
     return [...rows, ...unknown]
   }
+
+  // Story 62-4: file-picker display state. Only name/size metadata is read, never the contents.
+  const fileDisplay = $derived(
+    selectedFile ? { name: selectedFile.name, size: formatFileSize(selectedFile.size) } : null
+  )
+  const fileBadType = $derived(
+    selectedFile !== null && !selectedFile.name.toLowerCase().endsWith('.pvexport')
+  )
 
   const countRows = $derived(result ? importedCountRows(result.importedCounts) : [])
 
@@ -152,15 +161,74 @@
       <label class="block text-sm font-medium text-slate-800" for="pvexport-file">
         Export file (.pvexport)
       </label>
-      <input
-        id="pvexport-file"
-        type="file"
-        accept=".pvexport"
-        class="mt-1 block w-full text-sm"
-        onchange={handleFileSelect}
-        required
-        aria-describedby="pvexport-file-help"
-      />
+      <div
+        class="mt-1 flex flex-wrap items-center gap-3 rounded-lg border p-3 {fileBadType
+          ? 'border-red-600 bg-slate-50'
+          : selectedFile
+            ? 'border-solid border-slate-400 bg-slate-50'
+            : 'border-dashed border-slate-300 bg-slate-50'}"
+      >
+        <input
+          id="pvexport-file"
+          type="file"
+          accept=".pvexport"
+          class="peer sr-only"
+          onchange={handleFileSelect}
+          required
+          disabled={importing}
+          aria-invalid={fileBadType ? 'true' : undefined}
+          aria-describedby="pvexport-file-help"
+        />
+        <label
+          for="pvexport-file"
+          aria-hidden="true"
+          aria-disabled={importing}
+          class="inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-400 bg-white px-4 text-sm font-semibold text-slate-900 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-slate-950 {importing
+            ? 'cursor-not-allowed opacity-50'
+            : 'cursor-pointer hover:bg-slate-100'}"
+        >
+          <svg
+            class="h-4 w-4"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            aria-hidden="true"
+          >
+            <path d="M10 13V3m0 0L6 7m4-4 4 4M3 13v3a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3" />
+          </svg>
+          {selectedFile ? m.project_import_file_change() : m.project_import_file_choose()}
+        </label>
+        <span
+          data-file-status
+          aria-hidden="true"
+          class="flex min-w-0 flex-1 items-center gap-1 text-sm text-slate-600"
+        >
+          {#if fileDisplay}
+            <svg
+              class="h-4 w-4 shrink-0 text-emerald-700"
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <path d="m4 10 4 4 8-8" />
+            </svg>
+            <span class="min-w-0 truncate" title="{fileDisplay.name} ({fileDisplay.size})"
+              >{fileDisplay.name} ({fileDisplay.size})</span
+            >
+          {:else}
+            {m.project_import_file_none()}
+          {/if}
+        </span>
+        <span class="sr-only" role="status" aria-live="polite"
+          >{fileDisplay ? m.project_import_file_selected(fileDisplay) : ''}</span
+        >
+      </div>
+      {#if fileBadType}
+        <p role="alert" class="mt-1 text-sm text-red-700">{m.project_import_file_bad_type()}</p>
+      {/if}
       <FormHelpText id="pvexport-file-help" text={m.project_import_file_help()} />
     </div>
 
