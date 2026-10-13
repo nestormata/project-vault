@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { createPublicKey, randomBytes } from 'node:crypto'
+import { createPublicKey, randomBytes, verify } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -8,9 +8,24 @@ import {
   HANDOFF_E2E_ISSUER,
   HANDOFF_E2E_KID,
   HANDOFF_E2E_STUB_DEFAULT_PORT,
+  handoffE2ePrivateKey,
   handoffE2ePublicKeyPem,
 } from '../apps/web/e2e/fixtures/handoff-test-key.js'
+import {
+  DELEGATION_E2E_INSTANCE_ID,
+  DELEGATION_E2E_KID,
+  assertDelegationSignerAllowed,
+  delegationE2ePrivateKey,
+  delegationE2ePublicKeyPem,
+  delegationE2eVerifyKeysJson,
+  signDelegationE2eAssertion,
+} from '../apps/web/e2e/fixtures/delegation-test-key.js'
 import { makeRecipe, workflowRunCommands } from './lib/ci-wiring.js'
+import {
+  findDelegationTestKeyLeaks,
+  pemBody,
+  type GuardMarker,
+} from './lib/delegation-test-key-guard.js'
 
 // The repository root has no YAML dependency; reuse the `yaml` package apps/api already depends on.
 const { parse: parseYaml } = createRequire(resolve(process.cwd(), 'apps/api/package.json'))(
@@ -84,6 +99,17 @@ const REPO_TEXT: Record<string, string> = import.meta.glob(
 // Story 60.6 AC7: production-facing config that must never carry the e2e handoff wiring.
 const PROD_CONFIG_TEXT: Record<string, string> = import.meta.glob(
   ['../fly.*.toml', '../.env.example'],
+  { query: '?raw', import: 'default', eager: true }
+)
+// Story 71.5 AC-1: every file that could carry the delegation test signer into a deployment. The
+// compose files are matched by glob, so a new compose overlay is covered without editing this list.
+const DELEGATION_GUARD_TEXT: Record<string, string> = import.meta.glob(
+  [
+    '../docker-compose*.yml',
+    '../apps/*/Dockerfile',
+    '../Dockerfile.ci',
+    '../apps/api/src/config/env.ts',
+  ],
   { query: '?raw', import: 'default', eager: true }
 )
 // `[e]` makes this a glob: vite:import-glob rejects the bare, extension-less `../Makefile` literal.
@@ -782,5 +808,112 @@ describe('Story 68.10: the mock-ui-pack flavour of the e2e stack', () => {
     const run = runScript(['self-test'], { [FLAVOR_ENV]: MOCK_PACK_FLAVOR })
     expect(run.status, run.stderr).toBe(0)
     expect(run.stdout).toContain(OK_LINE)
+  })
+})
+
+// --- Story 71.5 AC-1: the e2e delegation test signer, guarded ----------------------------------
+
+const DELEGATION_MARKERS: GuardMarker[] = [
+  { label: 'delegation test kid', value: DELEGATION_E2E_KID },
+  { label: 'delegation test instance id', value: DELEGATION_E2E_INSTANCE_ID },
+  { label: 'delegation test public key', value: pemBody(delegationE2ePublicKeyPem()) },
+]
+
+// The fly manifests and the example env file come from the Story 60.6 production-config glob.
+function delegationGuardFiles() {
+  return Object.entries({ ...DELEGATION_GUARD_TEXT, ...PROD_CONFIG_TEXT }).map(([path, text]) => ({
+    path,
+    text,
+  }))
+}
+
+const LOOPBACK_API_BASE = 'http://localhost:1'
+
+describe('Story 71.5 AC-1: the delegation test signer is guarded', () => {
+  it('scans the base compose file, the fly manifests, the example env file and the api config', () => {
+    const paths = delegationGuardFiles().map((file) => file.path)
+    expect(paths).toContain('../docker-compose.yml')
+    expect(paths).toContain('../docker-compose.e2e.yml')
+    expect(paths.some((path) => path.endsWith('.env.example'))).toBe(true)
+    expect(paths.filter((path) => /\/fly[^/]*\.toml$/.test(path)).length).toBeGreaterThanOrEqual(2)
+    expect(paths).toContain('../apps/api/src/config/env.ts')
+  })
+
+  it('keeps the kid, the instance id and the public key out of every production-facing file', () => {
+    expect(findDelegationTestKeyLeaks(delegationGuardFiles(), DELEGATION_MARKERS)).toEqual([])
+  })
+
+  it.each(DELEGATION_MARKERS)(
+    'goes red when the $label is planted in a production-facing file',
+    (marker) => {
+      for (const planted of delegationGuardFiles()) {
+        const leaks = findDelegationTestKeyLeaks(
+          [{ path: planted.path, text: `${planted.text}\nVAULT_X: '${marker.value}'\n` }],
+          DELEGATION_MARKERS
+        )
+        expect(leaks.join('\n')).toContain(`${planted.path} contains the ${marker.label}`)
+      }
+    }
+  )
+
+  it('trusts exactly one ed25519 key, the one the fixed seed derives', () => {
+    expect(createPublicKey(delegationE2ePublicKeyPem()).asymmetricKeyType).toBe('ed25519')
+    expect(JSON.parse(delegationE2eVerifyKeysJson())).toEqual([
+      { kid: DELEGATION_E2E_KID, publicKeyPem: delegationE2ePublicKeyPem() },
+    ])
+  })
+
+  it('shares no seed, kid, instance id or key bytes with the handoff test signer', () => {
+    const exportPkcs8 = (key: ReturnType<typeof handoffE2ePrivateKey>) =>
+      key.export({ format: 'der', type: 'pkcs8' }).toString('hex')
+    expect(exportPkcs8(delegationE2ePrivateKey())).not.toBe(exportPkcs8(handoffE2ePrivateKey()))
+    expect(DELEGATION_E2E_KID).not.toBe(HANDOFF_E2E_KID)
+    expect(DELEGATION_E2E_INSTANCE_ID).not.toBe(HANDOFF_E2E_INSTANCE_ID)
+    expect(pemBody(delegationE2ePublicKeyPem())).not.toBe(pemBody(handoffE2ePublicKeyPem()))
+  })
+
+  it('signs a pv-delegation+jwt assertion for the test audience that its public key verifies', () => {
+    const token = signDelegationE2eAssertion({
+      apiBase: LOOPBACK_API_BASE,
+      org: 'org_x',
+      sub: 'user_x',
+      op: 'POST /x',
+    })
+    const [header, payload, signature] = token.split('.') as [string, string, string]
+    expect(JSON.parse(Buffer.from(header, 'base64url').toString())).toMatchObject({
+      alg: 'EdDSA',
+      typ: 'pv-delegation+jwt',
+      kid: DELEGATION_E2E_KID,
+    })
+    expect(JSON.parse(Buffer.from(payload, 'base64url').toString())).toMatchObject({
+      aud: `pvd:${DELEGATION_E2E_INSTANCE_ID}`,
+    })
+    expect(
+      verify(
+        null,
+        Buffer.from(`${header}.${payload}`),
+        createPublicKey(delegationE2ePublicKeyPem()),
+        Buffer.from(signature, 'base64url')
+      )
+    ).toBe(true)
+  })
+
+  it('refuses to sign when NODE_ENV is production or the target is not loopback', () => {
+    expect(() => assertDelegationSignerAllowed(LOOPBACK_API_BASE, {})).not.toThrow()
+    expect(() => assertDelegationSignerAllowed('http://127.0.0.1:1', {})).not.toThrow()
+    expect(() => assertDelegationSignerAllowed('http://[::1]:1', {})).not.toThrow()
+    expect(() =>
+      assertDelegationSignerAllowed(LOOPBACK_API_BASE, { NODE_ENV: 'production' })
+    ).toThrow(/production/)
+    expect(() => assertDelegationSignerAllowed('https://vault.example.com', {})).toThrow(/loopback/)
+    expect(() => assertDelegationSignerAllowed('not a url', {})).toThrow(/loopback/)
+    expect(() =>
+      signDelegationE2eAssertion({
+        apiBase: 'https://vault.example.com',
+        org: 'o',
+        sub: 's',
+        op: 'POST /x',
+      })
+    ).toThrow(/loopback/)
   })
 })

@@ -71,6 +71,7 @@
     "@project-vault/mock-api-routes-extension": "workspace:*",
     "@project-vault/mock-audit-event-source-extension": "workspace:*",
     "@project-vault/mock-capability-gate-extension": "workspace:*",
+    "@project-vault/mock-delegation-audit-extension": "workspace:*",
     "@project-vault/mock-envelope-extension": "workspace:*",
     "@project-vault/mock-sso-extension": "workspace:*",
     "@project-vault/mock-ui-pack": "workspace:*",

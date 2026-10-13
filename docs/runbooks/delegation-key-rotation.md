@@ -358,7 +358,7 @@ body or a raw assertion id.
 
 | Log event | Meaning |
 | --- | --- |
-| `delegation.event_suppressed` | A post-signature rejection was answered with its typed code but no security-event row was written, because that `kid` is over its limiter budget. One line per request. |
+| `delegation.event_suppressed` | A post-signature rejection was answered with its typed code but no security-event row was written, because that `kid` is over its event budget (1200 rows per minute per `kid`, a bucket apart from the 1200 per minute request budget, so a replayed leaked expired assertion can silence rows but cannot make the real sender's valid requests answer 429). One line per request. |
 | `delegation.security_event_timeout` | The security-event write did not finish within 2 s; the typed response was sent without it. |
 | `delegation.security_event_write_error` | The security-event write failed; the response is unchanged. |
 | `delegation.store_unavailable` | The replay store failed; carries the closed `storeFailure`. |

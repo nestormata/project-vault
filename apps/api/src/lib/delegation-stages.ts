@@ -88,12 +88,24 @@ export function delegationIpBucket(ip: string): { userId: string; key: string } 
 /** Design check 8: per-`kid` budget, spent after a signature verified and before any DB access. */
 export const DELEGATION_PRE_BURN_LIMIT = { max: 1200, timeWindowMs: 60_000 } as const
 
+/**
+ * Story 71.5 (DW-567 item 1): the budget of the security-event writes of post-signature rejections
+ * (`expired`, `wrong_instance`, ...). A bucket apart from `DELEGATION_PRE_BURN_LIMIT`, so a holder
+ * of one leaked, already-expired assertion can exhaust only the event budget (no more rows) and
+ * never the request budget the real sender's valid requests spend.
+ */
+export const DELEGATION_EVENT_LIMIT = { max: 1200, timeWindowMs: 60_000 } as const
+
 const SCHEME = 'PV-Delegation '
 const RETRY_AFTER_SECONDS = 2
 const GENERIC_INVALID = { code: 'delegation_invalid', message: 'Delegation assertion is invalid' }
 
 export function delegationKidBucket(kid: string): { userId: string; key: string } {
   return { userId: `delegation-kid:${kid}`, key: 'delegation-pre-burn' }
+}
+
+export function delegationEventBucket(kid: string): { userId: string; key: string } {
+  return { userId: `delegation-kid:${kid}`, key: 'delegation-event' }
 }
 
 export type DelegationSubjectField = { in: 'body' | 'params'; name: string }
@@ -373,7 +385,7 @@ async function rejectVerification(
   const outcome = OUTCOME_BY_REASON.get(reason) ?? 'malformed'
   const typed = isPreSignatureRejection(reason) ? undefined : POST_SIGNATURE_RESPONSES.get(reason)
   if (!typed) return rejectGeneric(request, reply, routeKey, outcome)
-  const withinBudget = kid !== undefined && consumeUserRateLimit(kidLimit(kid)).allowed
+  const withinBudget = kid !== undefined && consumeUserRateLimit(eventLimit(kid)).allowed
   return reject(
     request,
     reply,
@@ -391,6 +403,10 @@ function hasUnsupportedEncoding(request: FastifyRequest): boolean {
 
 function kidLimit(kid: string) {
   return { ...delegationKidBucket(kid), ...DELEGATION_PRE_BURN_LIMIT }
+}
+
+function eventLimit(kid: string) {
+  return { ...delegationEventBucket(kid), ...DELEGATION_EVENT_LIMIT }
 }
 
 function enforceKidLimit(reply: FastifyReply, kid: string): boolean {

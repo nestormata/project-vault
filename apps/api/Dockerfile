@@ -77,6 +77,12 @@ COPY fixtures/mock-api-routes-extension/package.json ./fixtures/mock-api-routes-
 # frozen-lockfile install needs its manifest. Its dist is built and shipped only behind the opt-in
 # INCLUDE_MOCK_UI_PACK_MODULE build arg below.
 COPY fixtures/mock-ui-pack/package.json ./fixtures/mock-ui-pack/
+# Story 71.5: @project-vault/mock-delegation-audit-extension (the delegated-audit fixture of the
+# real-host proof, journey j36) is a devDependency of apps/api (never a production dep), present in
+# pnpm-lock.yaml, so the frozen-lockfile install needs its manifest. The api's tests and the journey
+# reference it only by string specifier; its dist is built and shipped only behind the opt-in
+# INCLUDE_MOCK_DELEGATION_EXTENSION build arg below (default false everywhere).
+COPY fixtures/mock-delegation-audit-extension/package.json ./fixtures/mock-delegation-audit-extension/
 
 # pnpm >= 11.28 refuses `--frozen-lockfile` when any workspace member recorded in
 # pnpm-lock.yaml lacks its package.json, even if this image never builds that member.
@@ -104,6 +110,7 @@ COPY fixtures/mock-capability-gate-extension ./fixtures/mock-capability-gate-ext
 COPY fixtures/mock-audit-event-source-extension ./fixtures/mock-audit-event-source-extension
 COPY fixtures/mock-ui-panel-extension ./fixtures/mock-ui-panel-extension
 COPY fixtures/mock-ui-pack ./fixtures/mock-ui-pack
+COPY fixtures/mock-delegation-audit-extension ./fixtures/mock-delegation-audit-extension
 
 # Split off from the final `builder` stage (Story 1.13 AC-D1) so the one-shot `migrate` service
 # (docker-compose.yml) doesn't have to build `agent`/`api` just to run a migration. `crypto` is
@@ -173,6 +180,14 @@ RUN if [ "$INCLUDE_MOCK_UI_PACK_MODULE" = "true" ]; then \
       pnpm --filter @project-vault/mock-ui-pack build; \
     fi
 
+# Story 71.5: same opt-in-only pattern for the delegated-audit fixture of the real-host proof (j36).
+# The journey boots its own api process from the workspace, so no compose file sets this; the arg
+# exists so an image CAN carry the fixture for a manual run, and defaults to false everywhere.
+ARG INCLUDE_MOCK_DELEGATION_EXTENSION=false
+RUN if [ "$INCLUDE_MOCK_DELEGATION_EXTENSION" = "true" ]; then \
+      pnpm --filter @project-vault/mock-delegation-audit-extension build; \
+    fi
+
 # Bundle the api and its production deps into a self-contained directory. This runs in its
 # own stage (not in `app-builder`) because `pnpm deploy` prunes the workspace node_modules to
 # production-only in place — the `migrate` service targets `db-builder` directly (Story 1.13
@@ -188,6 +203,7 @@ ARG INCLUDE_MOCK_CAPABILITY_GATE_EXTENSION=false
 ARG INCLUDE_MOCK_AUDIT_EVENT_SOURCE_EXTENSION=false
 ARG INCLUDE_MOCK_UI_PANEL_EXTENSION=false
 ARG INCLUDE_MOCK_UI_PACK_MODULE=false
+ARG INCLUDE_MOCK_DELEGATION_EXTENSION=false
 RUN pnpm --filter @project-vault/api deploy --prod --legacy /app/deploy
 # `tsc` (rootDir src, include src/**/*.ts) also compiles every test and its .d.ts/.map into dist; none
 # of it is imported at runtime (nothing outside *.test.* / __tests__ imports them), so drop it like
@@ -270,6 +286,11 @@ RUN if [ "$INCLUDE_MOCK_UI_PACK_MODULE" = "true" ]; then \
       mkdir -p /app/deploy/node_modules/@project-vault/mock-ui-pack && \
       cp -r /app/fixtures/mock-ui-pack/dist /app/deploy/node_modules/@project-vault/mock-ui-pack/dist && \
       cp /app/fixtures/mock-ui-pack/package.json /app/deploy/node_modules/@project-vault/mock-ui-pack/package.json; \
+    fi
+RUN if [ "$INCLUDE_MOCK_DELEGATION_EXTENSION" = "true" ]; then \
+      mkdir -p /app/deploy/node_modules/@project-vault/mock-delegation-audit-extension && \
+      cp -r /app/fixtures/mock-delegation-audit-extension/dist /app/deploy/node_modules/@project-vault/mock-delegation-audit-extension/dist && \
+      cp /app/fixtures/mock-delegation-audit-extension/package.json /app/deploy/node_modules/@project-vault/mock-delegation-audit-extension/package.json; \
     fi
 
 # node:24-alpine, pinned by digest — see builder stage comment above.

@@ -37,12 +37,17 @@ const ED25519_PKCS8_PREFIX = Buffer.concat([
   Buffer.from([0x04, 0x22, 0x04, 0x20]),
 ])
 
-export function handoffE2ePrivateKey(): KeyObject {
+/** An Ed25519 private key from a 32-byte seed (shared with the delegation test signer). */
+export function ed25519PrivateKeyFromSeed(seed: Buffer): KeyObject {
   return createPrivateKey({
-    key: Buffer.concat([ED25519_PKCS8_PREFIX, HANDOFF_E2E_SEED]),
+    key: Buffer.concat([ED25519_PKCS8_PREFIX, seed]),
     format: 'der',
     type: 'pkcs8',
   })
+}
+
+export function handoffE2ePrivateKey(): KeyObject {
+  return ed25519PrivateKeyFromSeed(HANDOFF_E2E_SEED)
 }
 
 export function handoffE2ePublicKeyPem(): string {

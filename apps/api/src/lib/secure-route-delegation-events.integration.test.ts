@@ -53,7 +53,15 @@ const KID_CORRELATED = 'cm-deleg-test-corr'
 const KID_SUPPRESSED = 'cm-deleg-test-suppressed'
 const KID_BOUNDED = 'cm-deleg-test-bounded'
 const KID_CONCURRENT = 'cm-deleg-test-concurrent'
-const KIDS = [DELEGATION_TEST_KID, KID_CORRELATED, KID_SUPPRESSED, KID_BOUNDED, KID_CONCURRENT]
+const KID_LEAKED = 'cm-deleg-test-leaked'
+const KIDS = [
+  DELEGATION_TEST_KID,
+  KID_CORRELATED,
+  KID_SUPPRESSED,
+  KID_BOUNDED,
+  KID_CONCURRENT,
+  KID_LEAKED,
+]
 
 process.env['VAULT_DELEGATION_VERIFY_KEYS'] = delegationTestVerifyKeysJsonFor(KIDS)
 process.env['VAULT_HANDOFF_INSTANCE_ID'] = DELEGATION_TEST_INSTANCE_ID
@@ -119,13 +127,24 @@ async function eventRows(reason: string, since: Date, kid?: string): Promise<Eve
     .filter((row) => kid === undefined || row.payload['kid'] === kid)
 }
 
-/** Spends all but `leaveSlots` of a kid's per-kid pre-burn budget, as the verifier would. */
+/** Spends all but `leaveSlots` of a kid's per-kid pre-burn (request) budget, as the verifier would. */
 function drainKidBucket(kid: string, leaveSlots: number): void {
-  const bucket = stages.delegationKidBucket(kid)
+  drainBucket(stages.delegationKidBucket(kid), stages.DELEGATION_PRE_BURN_LIMIT, leaveSlots)
+}
+
+/** Spends all but `leaveSlots` of a kid's event budget (the post-signature rejection rows). */
+function drainEventBucket(kid: string, leaveSlots: number): void {
+  drainBucket(stages.delegationEventBucket(kid), stages.DELEGATION_EVENT_LIMIT, leaveSlots)
+}
+
+function drainBucket(
+  bucket: { userId: string; key: string },
+  limit: { max: number; timeWindowMs: number },
+  leaveSlots: number
+): void {
   const sink = { status: () => sink, header: () => sink, send: () => sink }
-  const spend = stages.DELEGATION_PRE_BURN_LIMIT.max - leaveSlots
-  for (let used = 0; used < spend; used += 1) {
-    enforceUserRateLimit({ ...bucket, ...stages.DELEGATION_PRE_BURN_LIMIT, reply: sink as never })
+  for (let used = 0; used < limit.max - leaveSlots; used += 1) {
+    enforceUserRateLimit({ ...bucket, ...limit, reply: sink as never })
   }
 }
 
@@ -193,7 +212,7 @@ describe('Story 71.9 AC-2 — the payload is closed and carries the request id',
 
 describe('Story 71.9 AC-2 — the per-kid limiter runs before a post-signature event is written', () => {
   it('rejects with the typed code but writes no row, and logs the suppression, once the kid is over limit', async () => {
-    drainKidBucket(KID_SUPPRESSED, 0)
+    drainEventBucket(KID_SUPPRESSED, 0)
     const since = new Date()
     const { result, deltas } = await countersAround(() =>
       send({ assertion: expiredFor(KID_SUPPRESSED) })
@@ -216,7 +235,7 @@ describe('Story 71.9 AC-2 — the per-kid limiter runs before a post-signature e
   })
 
   it('writes at most the bucket of rows for a once-valid expired assertion replayed many times', async () => {
-    drainKidBucket(KID_BOUNDED, 5)
+    drainEventBucket(KID_BOUNDED, 5)
     const since = new Date()
     const expired = signDelegationAssertion(
       { org: org.cmOrgId, sub: DELEGATED_ACTOR, op: `POST ${DELEGATED_URL}` },
@@ -234,13 +253,28 @@ describe('Story 71.9 AC-2 — the per-kid limiter runs before a post-signature e
   })
 
   it('bounds the rows for 20 simultaneous valid-signature expired assertions on one kid', async () => {
-    drainKidBucket(KID_CONCURRENT, 5)
+    drainEventBucket(KID_CONCURRENT, 5)
     const since = new Date()
     const responses = await Promise.all(
       Array.from({ length: 20 }, () => send({ assertion: expiredFor(KID_CONCURRENT) }))
     )
     expect(responses.map((res) => res.statusCode)).toEqual(Array.from({ length: 20 }, () => 401))
     expect(await eventRows('expired', since, KID_CONCURRENT)).toHaveLength(5)
+  })
+
+  it('does not let a leaked expired assertion replayed past the request budget starve the next VALID request (DW-567 item 1)', async () => {
+    drainKidBucket(KID_LEAKED, 5)
+    const expired = signDelegationAssertion(
+      { org: org.cmOrgId, sub: DELEGATED_ACTOR, op: `POST ${DELEGATED_URL}` },
+      expiredFor(KID_LEAKED)
+    )
+    const replays = await inSequence(
+      Array.from({ length: 30 }, (_, i) => i),
+      () => send({ token: expired })
+    )
+    expect(new Set(replays.map((res) => res.statusCode))).toEqual(new Set([401]))
+    const valid = await send({ assertion: { header: { kid: KID_LEAKED } } })
+    expect(valid.statusCode).toBe(200)
   })
 
   it('writes no row and does no database work for a pre-signature failure (Decision D-b, DW-539 item 3)', async () => {

@@ -44,6 +44,7 @@ COPY packages/crypto/package.json ./packages/crypto/
 COPY apps/api/package.json ./apps/api/
 COPY fixtures/mock-api-routes-extension/package.json ./fixtures/mock-api-routes-extension/
 COPY fixtures/mock-audit-event-source-extension/package.json ./fixtures/mock-audit-event-source-extension/
+COPY fixtures/mock-delegation-audit-extension/package.json ./fixtures/mock-delegation-audit-extension/
 COPY fixtures/mock-capability-gate-extension/package.json ./fixtures/mock-capability-gate-extension/
 COPY fixtures/mock-sso-extension/package.json ./fixtures/mock-sso-extension/
 COPY fixtures/mock-ui-panel-extension/package.json ./fixtures/mock-ui-panel-extension/
