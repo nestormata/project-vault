@@ -24,6 +24,9 @@ const MOCK_AUDIT_EVENT_SOURCE_EXTENSION_PACKAGE_NAME =
 const MOCK_UI_PANEL_EXTENSION_PACKAGE_NAME = '@project-vault/mock-ui-panel-extension'
 // Story 68.8 Task 6: the M7 apiRoutes fixture extension gets the same guard as the five above.
 const MOCK_API_ROUTES_EXTENSION_PACKAGE_NAME = '@project-vault/mock-api-routes-extension'
+// Story 71.5 D2: the delegated-audit fixture of the real-host proof gets the same guard.
+const MOCK_DELEGATION_AUDIT_EXTENSION_PACKAGE_NAME =
+  '@project-vault/mock-delegation-audit-extension'
 // Story 68.10 AC-8: the mock UI pack (its module pack is loaded by the composed mechanism e2e).
 const MOCK_UI_PACK_PACKAGE_NAME = '@project-vault/mock-ui-pack'
 const REPO_ROOT = resolve(process.cwd(), '../..')
@@ -61,6 +64,11 @@ describe.each([
     'mock-api-routes-extension',
     MOCK_API_ROUTES_EXTENSION_PACKAGE_NAME,
     'fixtures/mock-api-routes-extension/package.json',
+  ],
+  [
+    'mock-delegation-audit-extension',
+    MOCK_DELEGATION_AUDIT_EXTENSION_PACKAGE_NAME,
+    'fixtures/mock-delegation-audit-extension/package.json',
   ],
   ['mock-ui-pack', MOCK_UI_PACK_PACKAGE_NAME, 'fixtures/mock-ui-pack/package.json'],
 ])(
