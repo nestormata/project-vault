@@ -92,8 +92,10 @@ on npm from `v1.5.0`, so it is not published again).
 - **Delegated routes get a default per-IP limiter** (600 requests per minute per client IP, spent in
   `onRequest` before any signature check; over the limit: 429 with `Retry-After`, counted as
   `rate_limited_pre`). A signature-valid rejection is written as a security event only while its key is
-  inside the per-`kid` limiter budget, and the event write has a 2 s deadline. No new environment
-  variable and no migration.
+  inside its own per-`kid` event budget (1200 per minute, a bucket separate from the request budget,
+  so a leaked, already-expired assertion can exhaust only the event writes and never the requests of
+  the real sender), and the event write has a 2 s deadline. No new environment variable and no
+  migration.
 
 ### Fixed
 
