@@ -35,6 +35,8 @@ set -euo pipefail
 umask 077
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/transient-network-error.sh
+source "$ROOT/scripts/lib/transient-network-error.sh"
 cd "$ROOT"
 
 COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.e2e.yml)
@@ -322,6 +324,16 @@ cmd_up() {
   UP_CAPTURE="$(mktemp)"
   trap remove_up_capture EXIT
   compose up --build -d 2>&1 | E2E_CAPTURE="$UP_CAPTURE" redact || status=$?
+  # Story 68.29 (DW-506): ONE bounded retry, only when the failed attempt's output carries a
+  # transient registry / image-pull signature. A build error, lockfile mismatch or port collision
+  # has none and fails on the first attempt. `up --build -d` is idempotent, so the retry is safe.
+  if [[ "$status" -ne 0 ]] && is_transient_network_error "$UP_CAPTURE"; then
+    warn "retrying after transient network error (docker compose up --build, exit $status)"
+    sleep "$TRANSIENT_NETWORK_RETRY_DELAY_SECONDS"
+    status=0
+    : >"$UP_CAPTURE"
+    compose up --build -d 2>&1 | E2E_CAPTURE="$UP_CAPTURE" redact || status=$?
+  fi
   if [[ "$status" -ne 0 ]]; then
     dump_diagnostics
     if grep -q 'port is already allocated' "$UP_CAPTURE"; then

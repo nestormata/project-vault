@@ -39,6 +39,8 @@ FIXTURE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly FIXTURE_DIR
 REPO_ROOT="$(cd "$FIXTURE_DIR/../.." && pwd)"
 readonly REPO_ROOT
+# shellcheck source=scripts/lib/transient-network-error.sh
+source "$REPO_ROOT/scripts/lib/transient-network-error.sh"
 TARBALL="$(realpath "$1")"
 readonly VARIANT="${2:-ok}"
 COMPOSE_MODE=0
@@ -190,7 +192,21 @@ if [[ "$COMPOSE_MODE" == 1 ]]; then
 fi
 
 log "installing into $APP (fresh npm cache, clean env)"
-(cd "$APP" && clean_env "$NODE_BIN" "$NPM_CLI" install --no-audit --no-fund --ignore-scripts --loglevel=error)
+# Story 68.29 (DW-506): ONE bounded retry, only for a transient registry failure (the shared
+# signature list); any other install failure (EUSAGE, a bad spec, a resolution error) fails at once.
+INSTALL_LOG="$WORK/npm-install.log"
+npm_install() {
+  (cd "$APP" && clean_env "$NODE_BIN" "$NPM_CLI" install --no-audit --no-fund --ignore-scripts --loglevel=error) 2>&1 | tee "$INSTALL_LOG"
+}
+if ! npm_install; then
+  if is_transient_network_error "$INSTALL_LOG"; then
+    log "retrying after transient network error (npm install)"
+    sleep "$TRANSIENT_NETWORK_RETRY_DELAY_SECONDS"
+    npm_install
+  else
+    exit 1
+  fi
+fi
 
 readonly INSTALLED="$APP/node_modules/@project-vault/web-host"
 case "$(realpath "$INSTALLED")" in
