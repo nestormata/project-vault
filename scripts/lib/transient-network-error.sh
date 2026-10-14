@@ -8,7 +8,9 @@
 readonly TRANSIENT_NETWORK_RETRY_DELAY_SECONDS="${TRANSIENT_NETWORK_RETRY_DELAY_SECONDS:-15}"
 
 is_transient_network_error() {
+  local capture_file="$1"
   grep -Eiq \
     'TLS handshake timeout|i/o timeout|connection reset|unexpected EOF|toomanyrequests|ETIMEDOUT|ECONNRESET|EAI_AGAIN|failed to resolve source metadata|(received unexpected HTTP status|error response from daemon|status code|HTTP)[^a-z]{0,12}50[234]|50[234] (Bad Gateway|Service Unavailable|Gateway Time-?out)' \
-    -- "$1"
+    -- "$capture_file"
+  return $?
 }
