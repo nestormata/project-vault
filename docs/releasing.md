@@ -184,7 +184,7 @@ only after the downstream consumer has verified the build:
 npm dist-tag add @project-vault/extension-api@X.Y.Z latest
 ```
 
-**Current state (2026-10-14):** npm `latest` is `3.25.0` and `next` is `3.36.0` (published tags:
+**Current state (2026-10-14):** npm `latest` and `next` are both `3.36.0` (promoted to `latest` on 2026-10-14) (published tags:
 `extension-api-v1.1.0`, `-v3.15.0`, `-v3.23.0`, `-v3.24.1`, `-v3.25.0`, `-v3.27.0`, `-v3.29.0`, `-v3.32.0`, `-v3.36.0`). `3.27.0` (Story 68.8,
 M7 `apiRoutes`) was tagged on merge commit `c610e486`, published by run `37088769144` (shasum
 `7f9423e286a678c41a679363ff1d170c90df83df`). `3.29.0` (Story 68.14, app-level `apiRoutes`) was tagged on
