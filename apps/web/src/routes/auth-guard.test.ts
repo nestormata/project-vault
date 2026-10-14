@@ -111,7 +111,7 @@ describe('server auth guard', () => {
     ])
   })
 
-  it('treats auth API outages as unauthenticated instead of throwing', async () => {
+  it('reports an auth API transport failure as unavailable instead of throwing (68-27)', async () => {
     const fetchFn = vi.fn().mockRejectedValue(new Error('API unavailable'))
 
     await expect(
@@ -119,7 +119,7 @@ describe('server auth guard', () => {
         fetchFn,
         cookieHeader: 'access-token=old-access; refresh-token=old-refresh',
       })
-    ).resolves.toEqual({ status: 'unauthenticated' })
+    ).resolves.toEqual({ status: 'unavailable', category: 'transport' })
   })
 
   it('refresh failure returns a calm session-expired redirect reason', async () => {
@@ -166,26 +166,158 @@ describe('server auth guard', () => {
         cookieHeader: '',
       })
     ).resolves.toEqual({ status: 'unauthenticated' })
-    await expect(
-      resolveAuthContext({
-        fetchFn: vi.fn().mockResolvedValue(jsonResponse({}, { status: 503 })),
-        cookieHeader: 'refresh-token=refresh',
-      })
-    ).resolves.toEqual({ status: 'unauthenticated' })
   })
 
-  it('maps refresh network failure to session-expired', async () => {
+  it.each([403, 404, 400])(
+    'keeps a non-retryable %i from /auth/me unauthenticated',
+    async (status) => {
+      await expect(
+        resolveAuthContext({
+          fetchFn: vi.fn().mockResolvedValue(jsonResponse({}, { status })),
+          cookieHeader: 'refresh-token=refresh',
+        })
+      ).resolves.toEqual({ status: 'unauthenticated' })
+    }
+  )
+
+  it.each([
+    [429, 'rate_limited'],
+    [500, 'upstream_error'],
+    [503, 'upstream_error'],
+  ])(
+    'reports /auth/me %i as unavailable (%s), never as signed out (68-27)',
+    async (status, category) => {
+      const fetchFn = vi.fn().mockResolvedValue(jsonResponse({}, { status }))
+      await expect(
+        resolveAuthContext({ fetchFn, cookieHeader: 'access-token=a; refresh-token=refresh' })
+      ).resolves.toEqual({ status: 'unavailable', category })
+      // No refresh attempt: a 429/5xx says nothing about the session.
+      expect(fetchFn).toHaveBeenCalledTimes(1)
+    }
+  )
+
+  it.each([
+    ['120', '120'],
+    ['0', '0'],
+    ['-5', undefined],
+    ['abc', undefined],
+    ['99999999', undefined],
+    ['1e3', undefined],
+    ['120, 130', undefined],
+    ['Wed, 21 Oct 2015 07:28:00 GMT', undefined],
+  ])('sanitizes Retry-After %j to %j', async (header, expected) => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({}, { status: 429, headers: { 'retry-after': header } }))
+    const result = await resolveAuthContext({ fetchFn, cookieHeader: null })
+    expect(result).toEqual({
+      status: 'unavailable',
+      category: 'rate_limited',
+      ...(expected === undefined ? {} : { retryAfter: expected }),
+    })
+  })
+
+  it('passes a future HTTP-date Retry-After through (within 24 h)', async () => {
+    const date = new Date(Date.now() + 60_000).toUTCString()
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({}, { status: 429, headers: { 'retry-after': date } }))
+    await expect(resolveAuthContext({ fetchFn, cookieHeader: null })).resolves.toEqual({
+      status: 'unavailable',
+      category: 'rate_limited',
+      retryAfter: date,
+    })
+  })
+
+  it('maps refresh network failure to unavailable, not session-expired (68-27)', async () => {
     const fetchFn = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({}, { status: 401 }))
       .mockRejectedValueOnce(new Error('offline'))
     await expect(
       resolveAuthContext({ fetchFn, cookieHeader: 'refresh-token=refresh' })
+    ).resolves.toEqual({ status: 'unavailable', category: 'transport' })
+  })
+
+  it.each([401, 403])('maps a rejected refresh (%i) to session-expired', async (status) => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({}, { status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({}, { status }))
+    await expect(
+      resolveAuthContext({ fetchFn, cookieHeader: 'refresh-token=refresh' })
     ).resolves.toEqual({ status: 'unauthenticated', reason: 'session-expired' })
   })
 
   it.each([
-    ['retry network failure', new Error('offline')],
+    [429, 'rate_limited'],
+    [500, 'upstream_error'],
+    [503, 'upstream_error'],
+    [400, 'upstream_error'],
+  ])(
+    'maps an unavailable refresh (%i) to unavailable without a redirect reason',
+    async (status, category) => {
+      const fetchFn = vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse({}, { status: 401 }))
+        .mockResolvedValueOnce(jsonResponse({}, { status }))
+      await expect(
+        resolveAuthContext({ fetchFn, cookieHeader: 'refresh-token=refresh' })
+      ).resolves.toEqual({ status: 'unavailable', category })
+    }
+  )
+
+  it('still forwards rotated cookies when the post-refresh /auth/me is unavailable', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({}, { status: 401 }))
+      .mockResolvedValueOnce(
+        jsonResponse({ data: {} }, { headers: { 'set-cookie': 'refresh-token=rotated; Path=/' } })
+      )
+      .mockResolvedValueOnce(jsonResponse({}, { status: 429, headers: { 'retry-after': '7' } }))
+    const forwarded: string[] = []
+    await expect(
+      resolveAuthContext({
+        fetchFn,
+        cookieHeader: 'refresh-token=refresh',
+        forwardSetCookie: (value) => forwarded.push(value),
+      })
+    ).resolves.toEqual({ status: 'unavailable', category: 'rate_limited', retryAfter: '7' })
+    expect(forwarded).toEqual(['refresh-token=rotated; Path=/'])
+  })
+
+  it.each([
+    [
+      'retry network failure',
+      new Error('offline'),
+      { status: 'unavailable', category: 'transport' },
+    ],
+    [
+      'retry 429',
+      jsonResponse({}, { status: 429 }),
+      { status: 'unavailable', category: 'rate_limited' },
+    ],
+    [
+      'retry 502',
+      jsonResponse({}, { status: 502 }),
+      { status: 'unavailable', category: 'upstream_error' },
+    ],
+  ])(
+    'maps %s after a successful refresh to unavailable (68-27)',
+    async (_label, retryResult, expected) => {
+      const fetchFn = vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse({}, { status: 401 }))
+        .mockResolvedValueOnce(jsonResponse({ data: {} }))
+      if (retryResult instanceof Error) fetchFn.mockRejectedValueOnce(retryResult)
+      else fetchFn.mockResolvedValueOnce(retryResult)
+      await expect(
+        resolveAuthContext({ fetchFn, cookieHeader: 'access-token=old; refresh-token=refresh' })
+      ).resolves.toEqual(expected)
+    }
+  )
+
+  it.each([
     ['retry non-success', jsonResponse({}, { status: 401 })],
     ['retry empty body', jsonResponse({})],
   ])('maps %s after a successful refresh to session-expired', async (_label, retryResult) => {

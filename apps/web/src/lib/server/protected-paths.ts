@@ -28,6 +28,23 @@ export const PV_PROTECTED_PREFIXES: readonly string[] = Object.freeze([
   '/extensions/panels',
 ])
 
+/**
+ * Story 68-27 — PV's own same-origin proxy routes to `apps/api`. The API authenticates every call
+ * itself (`secureRoute`), so the hook's `/auth/me` probe in front of them only duplicates work: a
+ * server `load` that issues N internal `event.fetch('/api/v1/...')` calls paid N extra probes
+ * against the per-user `/auth/me` limiter. Matched on Kit's route id, NEVER on the pathname: a
+ * contributed `+server` under `/api/v1/`, a reroute or a percent-encoded path has a different (or
+ * no) route id and keeps the full guard.
+ */
+export const PV_BACKEND_AUTHENTICATED_ROUTE_IDS: readonly string[] = Object.freeze([
+  '/api/v1/[...path]',
+  '/api/v1/auth/handoff/prepare',
+])
+
+export function isBackendAuthenticatedRoute(routeId: string | null): boolean {
+  return routeId !== null && PV_BACKEND_AUTHENTICATED_ROUTE_IDS.includes(routeId)
+}
+
 /** The guard's own redirect targets: protecting one is a guaranteed redirect loop (Q8). */
 export const GUARD_REDIRECT_TARGETS: readonly string[] = Object.freeze([
   '/login',

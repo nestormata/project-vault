@@ -1,9 +1,18 @@
 import type { AuthUser } from '$lib/api/auth.js'
 import { PV_PROTECTED_PREFIXES, matchesPrefix } from './protected-paths.js'
 
+/** Why the auth API could not answer (Story 68-27). Safe to log: carries no upstream content. */
+export type AuthUnavailableCategory = 'rate_limited' | 'upstream_error' | 'transport'
+
+/**
+ * `unavailable` means the session state is UNKNOWN (the auth API throttled, failed or was
+ * unreachable). It is never a sign-out: callers refuse with a retryable status instead of
+ * redirecting to /login. `retryAfter` is already sanitized (see `sanitizeRetryAfter`).
+ */
 export type AuthGuardResult =
   | { status: 'authenticated'; user: AuthUser }
   | { status: 'unauthenticated'; reason?: 'session-expired' }
+  | { status: 'unavailable'; category: AuthUnavailableCategory; retryAfter?: string }
 
 type ResolveAuthOptions = {
   fetchFn: typeof fetch
@@ -14,6 +23,42 @@ type ResolveAuthOptions = {
 const AUTH_ME_PATH = '/api/v1/auth/me'
 const AUTH_REFRESH_PATH = '/api/v1/auth/refresh'
 const SESSION_EXPIRED_REASON = 'session-expired'
+
+const MAX_RETRY_AFTER_SECONDS = 86_400
+
+/**
+ * Only a bounded delay-seconds integer or a future HTTP-date within 24 h is passed on; anything
+ * else (negative, non-numeric, huge, a past date, a list) is dropped rather than relayed.
+ */
+function sanitizeRetryAfter(value: string | null): string | undefined {
+  if (value === null) return undefined
+  const trimmed = value.trim()
+  if (/^\d{1,6}$/.test(trimmed)) {
+    return Number(trimmed) <= MAX_RETRY_AFTER_SECONDS ? trimmed : undefined
+  }
+  if (!/^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(trimmed))
+    return undefined
+  const delayMs = Date.parse(trimmed) - Date.now()
+  return delayMs > 0 && delayMs <= MAX_RETRY_AFTER_SECONDS * 1000 ? trimmed : undefined
+}
+
+function unavailable(
+  category: AuthUnavailableCategory,
+  retryAfter?: string
+): Extract<AuthGuardResult, { status: 'unavailable' }> {
+  return retryAfter === undefined
+    ? { status: 'unavailable', category }
+    : { status: 'unavailable', category, retryAfter }
+}
+
+/** 429 and every 5xx are retryable upstream refusals; null for any other status. */
+function unavailableFromStatus(response: Response) {
+  if (response.status === 429) {
+    return unavailable('rate_limited', sanitizeRetryAfter(response.headers.get('retry-after')))
+  }
+  if (response.status >= 500) return unavailable('upstream_error')
+  return null
+}
 
 function cookieHeaders(cookieHeader?: string | null) {
   return cookieHeader ? { Cookie: cookieHeader } : undefined
@@ -81,6 +126,22 @@ async function authenticatedResult(response: Response): Promise<AuthGuardResult>
   return user ? { status: 'authenticated', user } : { status: 'unauthenticated' }
 }
 
+const SESSION_EXPIRED: AuthGuardResult = {
+  status: 'unauthenticated',
+  reason: SESSION_EXPIRED_REASON,
+}
+
+/** A refresh the server REJECTED (401/403) ends the session; any other failure is unavailable. */
+function failedRefreshResult(response: Response): AuthGuardResult {
+  if (response.status === 401 || response.status === 403) return SESSION_EXPIRED
+  return unavailableFromStatus(response) ?? unavailable('upstream_error')
+}
+
+/** After a successful refresh, a 401 means the new session is not valid; 429/5xx are unknown. */
+function failedRetryResult(response: Response): AuthGuardResult {
+  return unavailableFromStatus(response) ?? SESSION_EXPIRED
+}
+
 async function refreshAndRetry({
   fetchFn,
   cookieHeader,
@@ -90,9 +151,9 @@ async function refreshAndRetry({
   try {
     refreshResponse = await fetchRefresh(fetchFn, cookieHeader)
   } catch {
-    return { status: 'unauthenticated', reason: SESSION_EXPIRED_REASON }
+    return unavailable('transport')
   }
-  if (!refreshResponse.ok) return { status: 'unauthenticated', reason: SESSION_EXPIRED_REASON }
+  if (!refreshResponse.ok) return failedRefreshResult(refreshResponse)
 
   const setCookieHeaders = getSetCookieHeaders(refreshResponse.headers)
   for (const setCookie of setCookieHeaders) forwardSetCookie?.(setCookie)
@@ -102,14 +163,12 @@ async function refreshAndRetry({
   try {
     retryMeResponse = await fetchMe(fetchFn, retryCookieHeader || cookieHeader)
   } catch {
-    return { status: 'unauthenticated', reason: SESSION_EXPIRED_REASON }
+    return unavailable('transport')
   }
-  if (!retryMeResponse.ok) return { status: 'unauthenticated', reason: SESSION_EXPIRED_REASON }
+  if (!retryMeResponse.ok) return failedRetryResult(retryMeResponse)
 
   const user = await readData<AuthUser>(retryMeResponse)
-  return user
-    ? { status: 'authenticated', user }
-    : { status: 'unauthenticated', reason: SESSION_EXPIRED_REASON }
+  return user ? { status: 'authenticated', user } : SESSION_EXPIRED
 }
 
 export async function resolveAuthContext({
@@ -121,10 +180,11 @@ export async function resolveAuthContext({
   try {
     meResponse = await fetchMe(fetchFn, cookieHeader)
   } catch {
-    return { status: 'unauthenticated' }
+    return unavailable('transport')
   }
   if (meResponse.ok) return authenticatedResult(meResponse)
-  if (meResponse.status !== 401) return { status: 'unauthenticated' }
+  if (meResponse.status !== 401)
+    return unavailableFromStatus(meResponse) ?? { status: 'unauthenticated' }
   if (!hasRefreshCookie(cookieHeader)) return { status: 'unauthenticated' }
   return refreshAndRetry({ fetchFn, cookieHeader, forwardSetCookie })
 }

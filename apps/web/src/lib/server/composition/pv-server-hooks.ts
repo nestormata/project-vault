@@ -5,11 +5,12 @@
 // header-setting point), and "protected?" is answered by `isProtectedRequest` (route-id aware).
 // The AC-5 whole-response oracle proves PV's behaviour is otherwise unchanged.
 import type { Handle } from '@sveltejs/kit'
-import { isAuthPath, resolveAuthContext } from '$lib/server/auth-guard.js'
+import { isAuthPath, resolveAuthContext, type AuthGuardResult } from '$lib/server/auth-guard.js'
 import { getVaultReadiness } from '$lib/api/vault.js'
 import { createServerApiFetch } from '$lib/server/server-api-fetch.js'
 import { paraglideMiddleware } from '$lib/paraglide/server.js'
 import {
+  isBackendAuthenticatedRoute,
   isProtectedRequest,
   type ProtectedPaths,
   type ProtectedRequest,
@@ -50,6 +51,35 @@ function redirectWithCookies(location: string, setCookies: string[]) {
   return appendSetCookies(new Response(null, { status: 303, headers: { location } }), setCookies)
 }
 
+type UnavailableAuth = Extract<AuthGuardResult, { status: 'unavailable' }>
+
+const UNAVAILABLE_MESSAGE = 'Authentication is temporarily unavailable. Please retry.'
+const UNAVAILABLE_HTML =
+  '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Temporarily unavailable</title></head>' +
+  `<body><h1>Temporarily unavailable</h1><p>${UNAVAILABLE_MESSAGE}</p></body></html>`
+
+/**
+ * Story 68-27 — the auth API could not answer (429, 5xx, transport). The session state is unknown,
+ * so a protected request is refused with a retryable status, never redirected to /login. Fixed
+ * body, no upstream content or headers relayed (only the sanitized Retry-After).
+ */
+function authUnavailableResponse(
+  auth: UnavailableAuth,
+  wantsHtml: boolean,
+  setCookies: string[]
+): Response {
+  const headers = new Headers({
+    'cache-control': 'no-store',
+    'content-type': wantsHtml ? 'text/html; charset=utf-8' : 'application/json',
+  })
+  if (auth.retryAfter !== undefined) headers.set('retry-after', auth.retryAfter)
+  const body = wantsHtml
+    ? UNAVAILABLE_HTML
+    : JSON.stringify({ code: 'auth_unavailable', message: UNAVAILABLE_MESSAGE })
+  const status = auth.category === 'rate_limited' ? 429 : 503
+  return appendSetCookies(new Response(body, { status, headers }), setCookies)
+}
+
 export function createPvHandle({ apiBaseUrl, protectedPaths }: PvHandleOptions): Handle {
   const isProtected = (req: ProtectedRequest) => isProtectedRequest(protectedPaths, req)
 
@@ -68,10 +98,37 @@ export function createPvHandle({ apiBaseUrl, protectedPaths }: PvHandleOptions):
       : new Response(null, { status: 303, headers: { location: '/vault' } })
   }
 
+  /** The response that ends the request for this auth outcome, or null to resolve it normally. */
+  function gateForAuth(
+    auth: AuthGuardResult,
+    req: ProtectedRequest,
+    request: Request,
+    setCookies: string[]
+  ): Response | null {
+    if (auth.status === 'unavailable') {
+      const wantsHtml = request.headers.get('accept')?.includes('text/html') === true
+      return isProtected(req) ? authUnavailableResponse(auth, wantsHtml, setCookies) : null
+    }
+    if (auth.status === 'unauthenticated') {
+      if (!isProtected(req)) return null
+      const reason = auth.reason ? `?reason=${auth.reason}` : ''
+      return redirectWithCookies(`/login${reason}`, setCookies)
+    }
+    return isAuthPath(req.pathname) ? redirectWithCookies('/dashboard', setCookies) : null
+  }
+
   const appHandle: Handle = async ({ event, resolve }) => {
     const forwardedSetCookies: string[] = []
     const pathname = event.url.pathname
     const req: ProtectedRequest = { pathname, routeId: event.route?.id ?? null }
+    // Story 68-27: PV's own API proxy routes are authenticated by the API itself; resolving the
+    // session here would only duplicate the call. `locals.user` stays null so nothing downstream
+    // mistakes the absence of a probe for an identity.
+    if (isBackendAuthenticatedRoute(req.routeId)) {
+      event.locals.user = null
+      return resolve(event)
+    }
+
     const apiFetch = createServerApiFetch({ apiBaseUrl: apiBaseUrl() })
 
     const vaultRedirect = await redirectIfVaultUnavailable(apiFetch, req)
@@ -88,14 +145,8 @@ export function createPvHandle({ apiBaseUrl, protectedPaths }: PvHandleOptions):
     // `locals.user` cannot satisfy this gate (AC-7 spoofed-user test).
     event.locals.user = auth.status === 'authenticated' ? auth.user : null
 
-    if (isProtected(req) && auth.status !== 'authenticated') {
-      const reason = auth.reason ? `?reason=${auth.reason}` : ''
-      return redirectWithCookies(`/login${reason}`, forwardedSetCookies)
-    }
-
-    if (isAuthPath(pathname) && auth.status === 'authenticated') {
-      return redirectWithCookies('/dashboard', forwardedSetCookies)
-    }
+    const gate = gateForAuth(auth, req, event.request, forwardedSetCookies)
+    if (gate) return gate
 
     return appendSetCookies(await resolve(event), forwardedSetCookies)
   }
