@@ -34,7 +34,9 @@ function sanitizeRetryAfter(value: string | null): string | undefined {
   if (value === null) return undefined
   const trimmed = value.trim()
   if (/^\d{1,6}$/.test(trimmed)) {
-    return Number(trimmed) <= MAX_RETRY_AFTER_SECONDS ? trimmed : undefined
+    // `0` is dropped: a client honouring it would retry at once and feed the burst.
+    const seconds = Number(trimmed)
+    return seconds >= 1 && seconds <= MAX_RETRY_AFTER_SECONDS ? trimmed : undefined
   }
   if (!/^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(trimmed))
     return undefined
@@ -56,7 +58,9 @@ function unavailableFromStatus(response: Response) {
   if (response.status === 429) {
     return unavailable('rate_limited', sanitizeRetryAfter(response.headers.get('retry-after')))
   }
-  if (response.status >= 500) return unavailable('upstream_error')
+  if (response.status >= 500) {
+    return unavailable('upstream_error', sanitizeRetryAfter(response.headers.get('retry-after')))
+  }
   return null
 }
 

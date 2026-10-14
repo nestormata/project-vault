@@ -198,7 +198,7 @@ describe('server auth guard', () => {
 
   it.each([
     ['120', '120'],
-    ['0', '0'],
+    ['0', undefined],
     ['-5', undefined],
     ['abc', undefined],
     ['99999999', undefined],
@@ -214,6 +214,17 @@ describe('server auth guard', () => {
       status: 'unavailable',
       category: 'rate_limited',
       ...(expected === undefined ? {} : { retryAfter: expected }),
+    })
+  })
+
+  it('passes a sanitized Retry-After on a 5xx too', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({}, { status: 503, headers: { 'retry-after': '30' } }))
+    await expect(resolveAuthContext({ fetchFn, cookieHeader: null })).resolves.toEqual({
+      status: 'unavailable',
+      category: 'upstream_error',
+      retryAfter: '30',
     })
   })
 

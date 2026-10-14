@@ -21,7 +21,7 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
   rejected refresh still redirects to `/login`. No rate limit changed.
 - **Behaviour change for composed hosts:** on those two proxy routes `event.locals.user` is now
   `null`. A contributed handle or `+server` route under `/api/v1/` with its own route id is not
-  affected. Anything that read `locals.user` on the proxy routes must authenticate through the API.
+  affected. Anything that read `locals.user` on the proxy routes must authenticate through the API. A composed host that adds a protected prefix covering `/api/v1/...` is not enforced by the web hook on those two routes either; the API authenticates them.
 
 ## [1.6.0] - 2026-10-13
 
