@@ -39,7 +39,7 @@ Nothing new in this release. The legacy panel surface is still pending removal:
 - Replace them with `ExtensionRequestContext`, `ExtensionActionResult`, composed UI or M7 `apiRoutes`.
 - notice-window-ends: 2027-01-14
 - earliest-removal: 4.0.0
-- Notified: 2026-10-06, the 3.30.0 notice stands; recipient CentralizeMe maintainer.
+- Notified: 2026-10-14, the 3.30.0 notice stands; recipient CentralizeMe maintainer.
 
 ## 3.35.0 — 2026-10-06
 
@@ -67,7 +67,7 @@ Still pending removal, nothing added in this release:
 - Manifest fields: `uiPanelSlots`, `moduleActions`, `navItems`, `moduleDataRoutes`.
 - Hooks: `uiPanel`, `moduleAction`, `moduleData`, plus the `'ui-panel'` capability member.
 - Use instead: `ExtensionRequestContext`, `ExtensionActionResult`, composed UI, M7 `apiRoutes`.
-- Notified: 2026-10-06, earlier 3.30.0 notice stands; recipient CentralizeMe maintainer.
+- Notified: 2026-10-14, earlier 3.30.0 notice stands; recipient CentralizeMe maintainer.
 - earliest-removal: 4.0.0
 - notice-window-ends: 2027-01-14
 
@@ -100,7 +100,7 @@ Nothing new is deprecated. The legacy runtime-UI surface keeps the notice first 
 - Hook side: `uiPanel`, `moduleAction`, `moduleData` and the `'ui-panel'` capability member.
 - Their replacements are the neutral `ExtensionRequestContext` and `ExtensionActionResult` types,
   composed UI and M7 `apiRoutes`.
-- Notified: 2026-10-06, the 3.30.0 notification still applies; recipient CentralizeMe maintainer.
+- Notified: 2026-10-14, the 3.30.0 notification still applies; recipient CentralizeMe maintainer.
 - earliest-removal: 4.0.0
 - notice-window-ends: 2027-01-14
 
@@ -145,7 +145,7 @@ because the marker lint reads the newest entry:
   `moduleAction`, `moduleData` and the `'ui-panel'` capability.
 - Replacement path: composed UI (ADR 0007), the M5 `nav` delta, M7 `apiRoutes`, and the neutral
   `ExtensionRequestContext` and `ExtensionActionResult` types.
-- Notified: 2026-10-06, carried forward from the 3.30.0 notification (CHANGELOG entry 3.30.0); recipient CentralizeMe maintainer. No new notification here.
+- Notified: 2026-10-14, carried forward from the 3.30.0 notification (CHANGELOG entry 3.30.0); recipient CentralizeMe maintainer. No new notification here.
 - earliest-removal: 4.0.0
 - notice-window-ends: 2027-01-14
 
@@ -185,7 +185,7 @@ newest entry, so here it is again in short form.
 - Hooks: `uiPanel`, `moduleAction` and `moduleData`; capability member `'ui-panel'`.
 - Move to: composed UI (ADR 0007), the M5 `nav` delta, M7 `apiRoutes`, and
   `ExtensionRequestContext` / `ExtensionActionResult` for the two context and result types.
-  - Notified: 2026-10-06, per the 3.30.0 notification (CHANGELOG entry 3.30.0).
+  - Notified: 2026-10-14, per the 3.30.0 notification (CHANGELOG entry 3.30.0).
   - earliest-removal: 4.0.0
   - notice-window-ends: 2027-01-14
 
@@ -243,7 +243,7 @@ symbol below keeps working identically for the whole notice window.
   `moduleAction`; the M5 nav delta (`nav`) for `navItems`; M7 `apiRoutes` for `moduleDataRoutes`
   and `moduleData`; `ExtensionRequestContext` and `ExtensionActionResult` for the two context and
   result types.
-  - Notified: 2026-10-06, carried forward from the 3.30.0 notification (CHANGELOG entry 3.30.0, GitHub Release `extension-api-v3.30.0`, issue on `centralizeme-sass`); recipient CentralizeMe maintainer. This entry makes no new notification; the date moves with 3.30.0's real publication date.
+  - Notified: 2026-10-14, carried forward from the 3.30.0 notification (CHANGELOG entry 3.30.0, issue on `CentralizeMe/centralizeme` #145); recipient CentralizeMe maintainer. This entry makes no new notification; the date moves with 3.30.0's real publication date.
   - earliest-removal: 4.0.0 (the next major at time of writing)
   - notice-window-ends: 2027-01-14
 
@@ -259,11 +259,12 @@ symbol below keeps working identically for the whole notice window.
 
 contract-hash: sha256:0b7f7792778480221694d0ae64b3f1e47f8e699225772fad333689245c8f80f1
 
-Clock not started; dates projected (Story 68.11, Phase A). The heading date is the PLANNED
-publication day, not a published fact: the 90-day notice window starts when the maintainer
-publishes this release, and the real dates replace the projected ones in a small follow-up commit
-(`notice-window-ends` may only move later). `notice-window-ends` below is the projected publication
-date + 90 days + a 10-day slack.
+Notice clock started 2026-10-14 (Story 68.30). This version number was never published on its own:
+the markers and neutral types first reached npm in 3.32.0 (2026-10-06), and the formal notice was
+given on 2026-10-14 in an issue on `CentralizeMe/centralizeme` (#145). The heading date is the
+date the 3.30.0 source was planned for, not a publication date. `notice-window-ends` is at least
+90 days after the notice (2026-10-14 + 90 days = 2027-01-12; kept at 2027-01-14, which may only
+move later).
 
 ### Added
 
@@ -302,7 +303,7 @@ working identically for the whole notice window. Removal happens no earlier than
   `navItems` by the M5 nav delta of the UI pack (`nav`); `moduleDataRoutes` and `moduleData` by M7
   `apiRoutes`; `ModuleActionContext` and `ActionResult` by `ExtensionRequestContext` and
   `ExtensionActionResult`.
-  - Notified: 2026-10-06, CHANGELOG entry (this entry), GitHub Release `extension-api-v3.30.0` and an issue on `centralizeme-sass` naming CM story 16-15 as the removal owner; recipient CentralizeMe maintainer (Nestor Mata Cuthbert, who confirmed the 90-day window on 2026-10-04). Projected: the Release and the issue are maintainer-only and not yet opened (Story 68-24 hand-off).
+  - Notified: 2026-10-14, CHANGELOG entry (this entry) and an issue on `CentralizeMe/centralizeme` (#145) naming CM story 16-15 as the removal owner; recipient CentralizeMe maintainer (Nestor Mata Cuthbert, who confirmed the 90-day window on 2026-10-04). First published with the markers: 3.32.0 (2026-10-06).
   - earliest-removal: 4.0.0 (the next major at time of writing)
   - notice-window-ends: 2027-01-14
 
