@@ -9,6 +9,20 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+### Fixed
+
+- **A burst of legitimate reads no longer signs the user out** (Story 68.27, `@project-vault/web-host`).
+  The web server hook resolved the session with `GET /auth/me` for every request, including the
+  same-origin `/api/v1/*` proxy requests that a page's own server loads issue, and it treated a
+  429 or 5xx from `/auth/me` as "signed out" (303 to `/login`). The hook now skips that probe on
+  PV's own API proxy routes (`/api/v1/[...path]`, `/api/v1/auth/handoff/prepare`; the API still
+  authenticates every call), and a throttled or failing auth API answers a protected request with a
+  retryable `429` (with a sanitized `Retry-After`) or `503` instead of a redirect. A genuine 401 or a
+  rejected refresh still redirects to `/login`. No rate limit changed.
+- **Behaviour change for composed hosts:** on those two proxy routes `event.locals.user` is now
+  `null`. A contributed handle or `+server` route under `/api/v1/` with its own route id is not
+  affected. Anything that read `locals.user` on the proxy routes must authenticate through the API.
+
 ## [1.6.0] - 2026-10-13
 
 Container images: `ghcr.io/nestormata/project-vault/{api,migrate,web}:1.6.0`
