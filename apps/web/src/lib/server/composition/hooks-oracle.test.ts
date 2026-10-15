@@ -64,14 +64,20 @@ const PATHS: ReadonlyArray<readonly [string, string | null]> = [
   ['/%68andoff', '/(auth)/handoff'],
 ]
 
-type AuthCase = 'anonymous' | 'authenticated' | 'session-expired'
-const AUTH_CASES: readonly AuthCase[] = ['anonymous', 'authenticated', 'session-expired']
+type AuthCase = 'anonymous' | 'authenticated' | 'session-expired' | 'unavailable'
+const AUTH_CASES: readonly AuthCase[] = [
+  'anonymous',
+  'authenticated',
+  'session-expired',
+  'unavailable',
+]
 const VAULT_CASES = ['ready', 'sealed'] as const
 
 const COOKIES = new Map<AuthCase, string | null>([
   ['anonymous', null],
   ['authenticated', 'session=s1; PARAGLIDE_LOCALE=es'],
   ['session-expired', 'refresh-token=old'],
+  ['unavailable', 'refresh-token=old'],
 ])
 
 function mockAuth(auth: AuthCase) {
@@ -84,6 +90,10 @@ function mockAuth(auth: AuthCase) {
         case 'session-expired':
           forwardSetCookie?.('refresh-token=rotated; Path=/; HttpOnly')
           return { status: 'unauthenticated', reason: 'session-expired' }
+        case 'unavailable':
+          // Story 68-27: 429 from /auth/me. The rotated cookie obtained before the failure is kept.
+          forwardSetCookie?.('refresh-token=rotated; Path=/; HttpOnly')
+          return { status: 'unavailable', category: 'rate_limited', retryAfter: '5' }
         default:
           return { status: 'unauthenticated' }
       }
