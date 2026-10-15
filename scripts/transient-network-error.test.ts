@@ -1,18 +1,19 @@
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /**
  * Story 68.29 (DW-506, Story 68.10 AC-2.10): the bounded retry covers ONLY transient registry /
  * image-pull failures. The signature helper is shared by e2e-stack.sh and the consumer fixture.
  */
-const HELPER = resolve(process.cwd(), 'scripts/lib/transient-network-error.sh')
 
 function classify(output: string): boolean {
   const run = spawnSync(
     'bash',
-    ['-c', 'source "$1" && is_transient_network_error <(printf %s "$OUTPUT")', 'x', HELPER],
+    [
+      '-c',
+      'source scripts/lib/transient-network-error.sh && is_transient_network_error <(printf %s "$OUTPUT")',
+    ],
     { env: { ...process.env, OUTPUT: output } }
   )
   return run.status === 0
