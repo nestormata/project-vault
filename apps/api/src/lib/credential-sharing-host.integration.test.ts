@@ -1,10 +1,15 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { ExtensionManifest } from '@project-vault/extension-api'
-import { CredentialSharingNoMachineUserError } from '@project-vault/extension-api'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import type { CredentialSharingHost, ExtensionManifest } from '@project-vault/extension-api'
+import {
+  CredentialSharingNoMachineUserError,
+  CredentialSharingOrgRateLimitedError,
+} from '@project-vault/extension-api'
+import { OperationalEvent } from '@project-vault/shared'
 import {
   bootstrapRouteIntegrationTest,
   cookieHeader,
 } from '../__tests__/helpers/auth-test-helpers.js'
+import { firstRejection, redeemInBatches } from '../__tests__/helpers/redeem-in-batches.js'
 import { resetVaultForTest } from '../__tests__/helpers/vault-test-cleanup.js'
 import { createMembershipTestHelpers } from '../__tests__/helpers/membership-test-helpers.js'
 import {
@@ -12,6 +17,7 @@ import {
   createCredentialTestProject,
   createCredentialViaApi,
 } from '../modules/credentials/credential-route-test-helpers.js'
+import { flushPendingLosingAttempts } from '../modules/credential-shares/external-service.js'
 import {
   buildCredentialSharingHost,
   __resetCredentialSharingHostRateLimitForTests,
@@ -444,5 +450,136 @@ describe('buildCredentialSharingHost — real-Postgres integration (Story 20.12 
 
     const result = await host.listSharesForOrganization({ organizationId: owner.orgId })
     expect(result).toEqual({ status: 'ok', items: [], total: 0 })
+  })
+
+  describe('Story 65.5 (DW-346): terminal tokens do not charge the org budget', () => {
+    type OrgFixture = { orgId: string; projectId: string; credentialId: string }
+
+    async function setUpOrg(prefix: string): Promise<OrgFixture> {
+      const owner = await registerOwner(app, prefix)
+      const projectId = await createCredentialTestProject(app, owner.cookies, prefix)
+      const credential = await createCredentialViaApi(app, owner.cookies, projectId, {
+        name: `${prefix}-credential`,
+        value: `${prefix}-secret-value`,
+      })
+      await provisionMachineUserForExtension(app, owner.cookies, projectId)
+      return { orgId: owner.orgId, projectId, credentialId: credential.id }
+    }
+
+    async function createShare(host: CredentialSharingHost, org: OrgFixture) {
+      const created = await host.createExternalShare({
+        organizationId: org.orgId,
+        projectId: org.projectId,
+        credentialId: org.credentialId,
+        recipientEmail: RECIPIENT_EMAIL,
+        expiresAt: futureIso(),
+        fieldKey: 'value',
+      })
+      if (created.status !== 'ok') throw new Error(`share creation failed: ${created.status}`)
+      return { token: created.token, shareId: created.share.id }
+    }
+
+    it('a revoked and a viewed token redeemed 100x through both methods never limit an active share of the same org; another org is unaffected', async () => {
+      __resetCredentialSharingHostRateLimitForTests()
+      __resetCredentialSharingOrgRateLimitForTests()
+      const orgX = await setUpOrg('terminal-flood-x')
+      const orgY = await setUpOrg('terminal-flood-y')
+      const host = buildCredentialSharingHost(MANIFEST)
+
+      const revoked = await createShare(host, orgX)
+      await host.revokeShare({
+        organizationId: orgX.orgId,
+        projectId: orgX.projectId,
+        credentialId: orgX.credentialId,
+        shareId: revoked.shareId,
+      })
+      const viewed = await createShare(host, orgX)
+      expect(await host.revealShare(viewed.token)).toMatchObject({ status: 'ok' })
+      const activeFind = await createShare(host, orgX)
+      const activeReveal = await createShare(host, orgX)
+      const otherOrgActive = await createShare(host, orgY)
+      // The setup above charged the org budget for its own active calls; start from an empty window.
+      __resetCredentialSharingOrgRateLimitForTests()
+
+      const burst = 100 // well past both default per-org limits (60 and 30 per window)
+      const terminalFinds = await Promise.all(
+        [revoked.token, viewed.token].map((token) =>
+          redeemInBatches(burst, () => host.findShareByToken(token))
+        )
+      )
+      const terminalReveals = await Promise.all(
+        [revoked.token, viewed.token].map((token) =>
+          redeemInBatches(burst, () => host.revealShare(token))
+        )
+      )
+      for (const settled of [...terminalFinds, ...terminalReveals]) {
+        expect(firstRejection(settled)).toBeUndefined()
+        expect(settled).toHaveLength(burst)
+      }
+      // Outcome to the caller is unchanged: the same terminal answers an under-limit call gives.
+      expect(terminalFinds[0]?.[0]).toMatchObject({
+        status: 'fulfilled',
+        value: { status: 'ok', share: { status: 'revoked' } },
+      })
+      expect(terminalFinds[1]?.[0]).toMatchObject({
+        status: 'fulfilled',
+        value: { status: 'ok', share: { status: 'viewed' } },
+      })
+      expect(terminalReveals[0]?.[0]).toEqual({ status: 'fulfilled', value: { status: 'revoked' } })
+      expect(terminalReveals[1]?.[0]).toEqual({
+        status: 'fulfilled',
+        value: { status: 'already_viewed' },
+      })
+      // Let the 65.4 deferred attempt writes settle before the next assertions.
+      await flushPendingLosingAttempts()
+
+      await expect(host.findShareByToken(activeFind.token)).resolves.toMatchObject({
+        status: 'ok',
+        share: { status: 'active' },
+      })
+      await expect(host.revealShare(activeReveal.token)).resolves.toMatchObject({
+        status: 'ok',
+        value: 'terminal-flood-x-secret-value',
+      })
+      await expect(host.findShareByToken(otherOrgActive.token)).resolves.toMatchObject({
+        status: 'ok',
+      })
+    }, 60_000)
+
+    it('a genuine flood on an ACTIVE share is still limited, with the unchanged event and audit outcome', async () => {
+      __resetCredentialSharingHostRateLimitForTests()
+      __resetCredentialSharingOrgRateLimitForTests()
+      const org = await setUpOrg('active-flood')
+      const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), fatal: vi.fn() }
+      const host = buildCredentialSharingHost(MANIFEST, logger, {
+        orgRateLimits: { findShareByToken: 3 },
+      })
+      const active = await createShare(host, org)
+      __resetCredentialSharingOrgRateLimitForTests()
+      logger.info.mockClear()
+
+      const within = await redeemInBatches(3, () => host.findShareByToken(active.token))
+      expect(firstRejection(within)).toBeUndefined()
+      await expect(host.findShareByToken(active.token)).rejects.toBeInstanceOf(
+        CredentialSharingOrgRateLimitedError
+      )
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: OperationalEvent.CREDENTIAL_SHARING_HOST_ORG_RATE_LIMITED,
+          extensionName: EXTENSION_NAME,
+          organizationId: org.orgId,
+        }),
+        expect.any(String)
+      )
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({
+          organizationId: org.orgId,
+          method: 'findShareByToken',
+          outcome: 'org-rate-limited',
+        }),
+        expect.any(String)
+      )
+    })
   })
 })

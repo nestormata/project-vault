@@ -284,6 +284,19 @@ function isOrgRateLimitError(error: unknown): boolean {
   return error instanceof CredentialSharingOrgRateLimitedError
 }
 
+/**
+ * Story 65.5 (DW-346): only an ACTIVE share is charged to the per-org budget. A terminal share
+ * (revoked, viewed, expired or superseded) still resolves to a row, but it can never be revealed,
+ * so a redemption attempt on it protects nothing the org window exists to protect (a flood against
+ * the org's live shares). Charging it let ONE leaked dead link keep every live share of the org
+ * returning not-found. The status is read from the lookup row, which has already had its lazy
+ * `active -> expired` transition applied, so an active share past `expiresAt` counts as terminal.
+ * What the caller sees is unchanged: the same result a terminal call under the limit always got.
+ */
+function chargesOrgBudget(share: { status: string }): boolean {
+  return share.status === 'active'
+}
+
 function enforceOrgRateLimit(
   methodName: 'findShareByToken' | 'revealShare',
   organizationId: string,
@@ -650,7 +663,9 @@ export function buildCredentialSharingHost(
               if (result.status !== 'ok') return { status: 'not_found' as const }
 
               setOrganizationId(result.metadata.share.orgId)
-              enforceOrgRateLimit('findShareByToken', result.metadata.share.orgId, hostContext)
+              if (chargesOrgBudget(result.metadata.share)) {
+                enforceOrgRateLimit('findShareByToken', result.metadata.share.orgId, hostContext)
+              }
 
               return {
                 status: 'ok' as const,
@@ -685,7 +700,9 @@ export function buildCredentialSharingHost(
             const lookup = await findExternalShareByTokenHash(rawToken)
             if (lookup.status === 'ok') {
               setOrganizationId(lookup.metadata.share.orgId)
-              enforceOrgRateLimit('revealShare', lookup.metadata.share.orgId, hostContext)
+              if (chargesOrgBudget(lookup.metadata.share)) {
+                enforceOrgRateLimit('revealShare', lookup.metadata.share.orgId, hostContext)
+              }
             }
 
             const result = await revealExternalShare(rawToken, hostContext.logger)

@@ -8,6 +8,8 @@ import {
   CredentialSharingOrgRateLimitedError,
   CredentialSharingRateLimitedError,
 } from '@project-vault/extension-api'
+import { OperationalEvent } from '@project-vault/shared'
+import { firstRejection, redeemInBatches } from '../__tests__/helpers/redeem-in-batches.js'
 import { runWithRequestContext } from './request-context.js'
 
 /**
@@ -1463,5 +1465,207 @@ describe('Story 65.6 AC5: actor on revokeShare', () => {
       host.revokeShare({ ...REVOKE_PARAMS, actor: { userId: USER_U } })
     ).resolves.toMatchObject({ status: 'ok', alreadyTerminal: true })
     expect(writeMachineAuditEntry).not.toHaveBeenCalled()
+  })
+})
+
+describe('buildCredentialSharingHost org budget charges only ACTIVE shares (Story 65.5, DW-346)', () => {
+  const TERMINAL_STATUSES = ['revoked', 'viewed', 'expired', 'superseded'] as const
+  const FLOOR_MS = 100
+  const BURST = 100
+  const DEAD_TOKEN = 'dead-token'
+  const ACTIVE_TOKEN = 'active-token'
+  const OTHER_ORG_TOKEN = 'other-token'
+  const BURST_VALUE = 'burst-value'
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function lookupResult(share: Record<string, unknown>) {
+    return {
+      status: 'ok' as const,
+      metadata: {
+        share,
+        credentialName: CREDENTIAL_NAME,
+        credentialProjectId: PROJECT_ID,
+        sharedByDisplayName: DISPLAY_NAME,
+      },
+    }
+  }
+
+  /** Routes the lookup by token: `dead-*` resolve to a terminal share of ORG_ID, `other-*` to an
+   *  active share of another org, anything else to an active share of ORG_ID. */
+  function routeLookups(terminalStatus: (typeof TERMINAL_STATUSES)[number]) {
+    findExternalShareByTokenHash.mockImplementation(async (token: string) => {
+      if (token.startsWith('dead-')) {
+        return lookupResult({ ...SHARE_ROW, status: terminalStatus })
+      }
+      if (token.startsWith('other-')) return lookupResult({ ...SHARE_ROW, orgId: OTHER_ORG_ID })
+      return lookupResult(SHARE_ROW)
+    })
+    revealExternalShare.mockImplementation(async (token: string) => {
+      if (token.startsWith('dead-')) {
+        return { status: terminalStatus === 'viewed' ? 'already_viewed' : terminalStatus }
+      }
+      return {
+        status: 'ok',
+        share: token.startsWith('other-') ? { ...SHARE_ROW, orgId: OTHER_ORG_ID } : SHARE_ROW,
+        value: BURST_VALUE,
+        valueFormat: 'scalar',
+        fieldKey: null,
+      }
+    })
+  }
+
+  const advanceFloor = async () => {
+    await vi.advanceTimersByTimeAsync(FLOOR_MS)
+  }
+
+  describe.each(TERMINAL_STATUSES)('a %s token', (terminalStatus) => {
+    it(`redeemed ${BURST}x through findShareByToken never limits an active share of the same org, and another org is unaffected`, async () => {
+      routeLookups(terminalStatus)
+      const host = buildCredentialSharingHost(
+        MANIFEST,
+        {},
+        { orgRateLimits: { findShareByToken: 2, revealShare: 2 } }
+      )
+
+      const burst = await redeemInBatches(BURST, () => host.findShareByToken(DEAD_TOKEN), {
+        afterBatchStarted: advanceFloor,
+      })
+      expect(firstRejection(burst)).toBeUndefined()
+      expect(burst).toHaveLength(BURST)
+      for (const settled of burst) {
+        expect(settled).toMatchObject({
+          status: 'fulfilled',
+          value: { status: 'ok', share: { status: terminalStatus } },
+        })
+      }
+
+      // The org's active share still resolves, up to the budget active traffic alone is entitled
+      // to, and another org's active share is unaffected.
+      const active = await redeemInBatches(2, () => host.findShareByToken(ACTIVE_TOKEN))
+      expect(firstRejection(active)).toBeUndefined()
+      await expect(host.findShareByToken(OTHER_ORG_TOKEN)).resolves.toMatchObject({ status: 'ok' })
+    })
+
+    it(`redeemed ${BURST}x through revealShare never limits an active share of the same org, and another org is unaffected`, async () => {
+      routeLookups(terminalStatus)
+      const host = buildCredentialSharingHost(
+        MANIFEST,
+        {},
+        { orgRateLimits: { findShareByToken: 2, revealShare: 2 } }
+      )
+
+      const burst = await redeemInBatches(BURST, () => host.revealShare(DEAD_TOKEN), {
+        afterBatchStarted: advanceFloor,
+      })
+      expect(firstRejection(burst)).toBeUndefined()
+      const expected = terminalStatus === 'viewed' ? 'already_viewed' : terminalStatus
+      for (const settled of burst) {
+        expect(settled).toEqual({ status: 'fulfilled', value: { status: expected } })
+      }
+
+      const active = await redeemInBatches(2, () => host.revealShare(ACTIVE_TOKEN))
+      expect(firstRejection(active)).toBeUndefined()
+      await expect(host.revealShare(OTHER_ORG_TOKEN)).resolves.toMatchObject({ status: 'ok' })
+    })
+  })
+
+  it('a genuine flood on ACTIVE shares is still limited, with the same event, fields and audit outcome', async () => {
+    routeLookups('revoked')
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), fatal: vi.fn() }
+    const host = buildCredentialSharingHost(MANIFEST, logger, {
+      orgRateLimits: { findShareByToken: 3 },
+    })
+
+    const burst = await redeemInBatches(3, () => host.findShareByToken(ACTIVE_TOKEN))
+    expect(firstRejection(burst)).toBeUndefined()
+    logger.info.mockClear()
+
+    const limited = host.findShareByToken(ACTIVE_TOKEN)
+    const assertion = expect(limited).rejects.toBeInstanceOf(CredentialSharingOrgRateLimitedError)
+    await advanceFloor()
+    await assertion
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: OperationalEvent.CREDENTIAL_SHARING_HOST_ORG_RATE_LIMITED,
+        extensionName: MANIFEST.name,
+        organizationId: ORG_ID,
+      }),
+      expect.any(String)
+    )
+    const audits = logger.info.mock.calls.filter(
+      ([fields]) => typeof fields === 'object' && fields !== null && 'outcome' in fields
+    )
+    expect(audits).toHaveLength(1)
+    expect(audits[0]?.[0]).toEqual(
+      expect.objectContaining({
+        organizationId: ORG_ID,
+        method: 'findShareByToken',
+        outcome: 'org-rate-limited',
+      })
+    )
+  })
+
+  it('the revealShare flood on ACTIVE shares is still limited per org', async () => {
+    routeLookups('revoked')
+    const host = buildCredentialSharingHost(MANIFEST, {}, { orgRateLimits: { revealShare: 2 } })
+    const burst = await redeemInBatches(2, () => host.revealShare(ACTIVE_TOKEN))
+    expect(firstRejection(burst)).toBeUndefined()
+
+    const limited = host.revealShare(ACTIVE_TOKEN)
+    const assertion = expect(limited).rejects.toBeInstanceOf(CredentialSharingOrgRateLimitedError)
+    await advanceFloor()
+    await assertion
+    // Another org is not affected by the exhausted org.
+    await expect(host.revealShare(OTHER_ORG_TOKEN)).resolves.toMatchObject({ status: 'ok' })
+  })
+
+  it('mixed traffic: terminal calls between active calls do not move the point where the active limit trips', async () => {
+    routeLookups('revoked')
+    const host = buildCredentialSharingHost(
+      MANIFEST,
+      {},
+      { orgRateLimits: { findShareByToken: 3 } }
+    )
+
+    await host.findShareByToken(ACTIVE_TOKEN)
+    const deadOne = host.findShareByToken(DEAD_TOKEN)
+    await advanceFloor()
+    await deadOne
+    await host.findShareByToken(ACTIVE_TOKEN)
+    const deadTwo = host.findShareByToken(DEAD_TOKEN)
+    await advanceFloor()
+    await deadTwo
+    await host.findShareByToken(ACTIVE_TOKEN)
+
+    // Three active calls used the whole budget of 3; the 4th ACTIVE call trips.
+    const limited = host.findShareByToken(ACTIVE_TOKEN)
+    const assertion = expect(limited).rejects.toBeInstanceOf(CredentialSharingOrgRateLimitedError)
+    await advanceFloor()
+    await assertion
+    // A terminal call is still answered while the org is limited for active traffic.
+    const dead = host.findShareByToken(DEAD_TOKEN)
+    await advanceFloor()
+    await expect(dead).resolves.toMatchObject({ status: 'ok', share: { status: 'revoked' } })
+  })
+
+  it('a terminal call is still held to the 65.4 miss floor (timing equalization not regressed)', async () => {
+    routeLookups('revoked')
+    const host = buildCredentialSharingHost(MANIFEST)
+    let settled = false
+    const call = host.findShareByToken(DEAD_TOKEN).then((value) => {
+      settled = true
+      return value
+    })
+    await vi.advanceTimersByTimeAsync(FLOOR_MS - 1)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(call).resolves.toMatchObject({ status: 'ok' })
   })
 })
