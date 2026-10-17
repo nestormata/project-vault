@@ -11,6 +11,14 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Fixed
 
+- **A dead share link can no longer lock every live share of its org out of redemption** (Story 65.5,
+  DW-346). `HostServices.credentialSharing.findShareByToken` and `revealShare` charged the per-org
+  redemption window (60 and 30 per 60 s) for any token that resolved to a row, revoked, viewed,
+  expired and superseded ones included, so one leaked dead link redeemed past the limit made every
+  valid share of that org answer not-found. Only a share that is still active now consumes the org
+  budget. What a caller receives is unchanged (the same terminal answers, no new error), and the
+  org limit, its `CREDENTIAL_SHARING_HOST_ORG_RATE_LIMITED` event and its audit outcome still apply
+  to a flood against live shares. No contract change: `@project-vault/extension-api` is untouched.
 - **A burst of legitimate reads no longer signs the user out** (Story 68.27, `@project-vault/web-host`).
   The web server hook resolved the session with `GET /auth/me` for every request, including the
   same-origin `/api/v1/*` proxy requests that a page's own server loads issue, and it treated a
