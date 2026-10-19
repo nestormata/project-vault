@@ -1,6 +1,6 @@
 # node:24-alpine, pinned by digest for reproducibility (Sonar S8431: tag + digest together
 # is redundant since the digest alone already fixes the exact image).
-FROM node@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS builder
+FROM node@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS builder
 
 RUN npm install -g pnpm@11.28.3 --ignore-scripts
 
@@ -105,7 +105,7 @@ RUN find /app/deploy/node_modules/.pnpm \
   -exec rm -rf {} +
 
 # node:24-alpine, pinned by digest — see builder stage comment above.
-FROM node@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS runner
+FROM node@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS runner
 
 # npm/npx are never invoked at runtime (CMD runs node directly) — dropping them
 # removes their bundled deps (e.g. undici) as a source of image CVEs.

@@ -1,6 +1,6 @@
 # node:24-alpine, pinned by digest for reproducibility (Sonar S8431: tag + digest together
 # is redundant since the digest alone already fixes the exact image).
-FROM node@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS builder
+FROM node@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS builder
 
 # argon2 (packages/crypto) is a native module. node-gyp-build falls back to compiling
 # from source when no bundled prebuild matches this platform, so these tools are
@@ -294,7 +294,7 @@ RUN if [ "$INCLUDE_MOCK_DELEGATION_EXTENSION" = "true" ]; then \
     fi
 
 # node:24-alpine, pinned by digest — see builder stage comment above.
-FROM node@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS runner
+FROM node@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS runner
 
 # Story 9.1 D4/AC-17: pg_dump/pg_restore/psql for encrypted backup & restore — postgresql16-client
 # matches the pinned postgres:16-alpine server version in docker-compose.yml (pg_dump's major
@@ -427,7 +427,7 @@ RUN set -eu; \
 # caching: RELEASE_VERSION changes on every release and may only ever bust this one label layer.
 # It keeps the base image's ENTRYPOINT/CMD (a bare `node`, exits 0 without migrating) exactly as
 # before; callers pass `pnpm --filter @project-vault/db db:migrate` explicitly.
-FROM node@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS migrate
+FROM node@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS migrate
 # npm/npx and corepack are never used here; their bundled deps were a source of gate findings.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
       /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
