@@ -205,7 +205,8 @@ describe('the lint policy through the real ESLint engine (AC-1, AC-4)', () => {
   })
 
   it('is off for the pinned fs-access modules only', async () => {
-    for (const module of FS_ACCESS_MODULES) expect(await fires(module), module).toBe(false)
+    const results = await Promise.all(FS_ACCESS_MODULES.map((module) => fires(module)))
+    expect(results.every((fired) => !fired)).toBe(true)
     expect(await fires('apps/api/src/other/fs-access-helper.ts')).toBe(true)
   })
 })
