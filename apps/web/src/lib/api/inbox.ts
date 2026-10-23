@@ -73,9 +73,9 @@ export async function dismissInboxEntry(fetchFn: typeof fetch, id: string): Prom
     await apiFetch<undefined>(fetchFn, `/api/v1/notifications/inbox/${id}`, { method: 'DELETE' })
     return true
   } catch (error) {
-    // Only a 404 means "no such entry". A dead session redirect, a network failure or a 5xx must
-    // surface as such rather than being swallowed into "not found".
-    if (error instanceof ApiClientError && error.status === 404) return false
+    // A 4xx answer (no such entry, refused) is a definite "not dismissed". A dead session redirect,
+    // a network failure or a 5xx must surface as such rather than being swallowed into "not found".
+    if (error instanceof ApiClientError && error.status < 500) return false
     throw error
   }
 }
