@@ -180,15 +180,11 @@ function throwForFailedRefresh(
   redirect(303, `${resolve('/login')}?reason=session-expired`)
 }
 
-export async function apiFetch<T>(
-  fetchFn: typeof fetch,
-  path: string,
-  init: RequestInit = {}
-): Promise<T> {
+function withJsonDefaults(init: RequestInit): RequestInit {
   // Fastify's default JSON body parser rejects `Content-Type: application/json` paired with an
   // empty body ("Body cannot be empty when content-type is set to 'application/json'"), so only
   // set it when there's actually a body to send.
-  const requestInit: RequestInit = {
+  return {
     ...init,
     credentials: 'include',
     headers: {
@@ -196,10 +192,21 @@ export async function apiFetch<T>(
       ...init.headers,
     },
   }
+}
+
+// The shared request / refresh / retry-once core behind apiFetch and apiFetchBody (Story 62-6);
+// only the response parser differs.
+async function fetchParsedWithRefresh<T>(
+  fetchFn: typeof fetch,
+  path: string,
+  init: RequestInit,
+  parse: (response: Response) => Promise<T>
+): Promise<T> {
+  const requestInit = withJsonDefaults(init)
 
   let response = await fetchFn(path, requestInit)
   try {
-    return await parseApiEnvelope<T>(response)
+    return await parse(response)
   } catch (error) {
     // Access tokens are short-lived while the refresh token remains HttpOnly. Retry only this
     // explicit auth failure, once, and only when the request body can be replayed safely. This
@@ -216,8 +223,32 @@ export async function apiFetch<T>(
     const outcome = await refreshAccessSession(fetchFn)
     if (outcome !== 'refreshed') throwForFailedRefresh(outcome, error, init.signal)
     response = await fetchFn(path, requestInit)
-    return parseApiEnvelope<T>(response)
+    return parse(response)
   }
+}
+
+export function apiFetch<T>(
+  fetchFn: typeof fetch,
+  path: string,
+  init: RequestInit = {}
+): Promise<T> {
+  return fetchParsedWithRefresh(fetchFn, path, init, parseApiEnvelope<T>)
+}
+
+/** Story 62-6 — parses a non-2xx like parseApiEnvelope but returns a 2xx body as-is (no `data`
+ *  unwrap), for endpoints whose pagination fields are siblings of `data` (the audit event list). */
+async function parseApiBody<T>(response: Response): Promise<T> {
+  if (!response.ok) return parseApiEnvelope<T>(response)
+  return (await response.json().catch(() => null)) as T
+}
+
+/** Same refresh/retry contract as apiFetch, but resolves the whole JSON body. */
+export function apiFetchBody<T>(
+  fetchFn: typeof fetch,
+  path: string,
+  init: RequestInit = {}
+): Promise<T> {
+  return fetchParsedWithRefresh(fetchFn, path, init, parseApiBody<T>)
 }
 
 export type RefreshingFetchResult =
@@ -281,4 +312,39 @@ export function buildQuery(params: Record<string, string | number | undefined>):
   }
   const serialized = search.toString()
   return serialized ? `?${serialized}` : ''
+}
+
+/** Story 62-6 — throws the ApiClientError for a non-2xx raw `Response` (error bodies are JSON; an
+ *  unparsable one falls back to `fallbackMessage`). */
+export async function throwForFailedResponse(
+  response: Response,
+  fallbackMessage: string
+): Promise<never> {
+  const body = (await response.json().catch(() => null)) as ApiFailure | null
+  throw new ApiClientError(response.status, body, body?.message ?? fallbackMessage)
+}
+
+/**
+ * Story 62-6 — the browser raw-`Response` fetch for binary / multipart / text endpoints that
+ * apiFetch cannot serve. Refresh-and-retry-once comes from fetchWithSessionRefresh; a dead
+ * session (redirect already latched) throws a stable `session_expired` error instead of resolving
+ * a fake success, and any other non-2xx throws ApiClientError.
+ */
+export async function fetchResponseWithRefresh(
+  fetchFn: typeof fetch,
+  input: string,
+  buildInit: () => RequestInit,
+  fallbackMessage: string
+): Promise<Response> {
+  const result = await fetchWithSessionRefresh(fetchFn, input, buildInit)
+  if (result.kind === 'session_expired') {
+    // `session_expired` is deliberately not a refreshable code, so it can never loop.
+    throw new ApiClientError(
+      401,
+      { code: 'session_expired', message: 'Session expired' },
+      'Session expired'
+    )
+  }
+  if (!result.response.ok) await throwForFailedResponse(result.response, fallbackMessage)
+  return result.response
 }

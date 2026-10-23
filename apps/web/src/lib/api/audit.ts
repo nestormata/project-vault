@@ -1,4 +1,4 @@
-import { apiFetch, ApiClientError } from './client.js'
+import { apiFetch, apiFetchBody, fetchResponseWithRefresh } from './client.js'
 
 // --- Search (AC group B) --------------------------------------------------------------------
 
@@ -50,18 +50,8 @@ export type ListAuditEventsResult = {
 
 // `GET /audit/events`'s response schema puts `page`/`limit`/`total`/`hasNext` as siblings of
 // `data`, not nested inside it (unlike every other paginated endpoint this app's `apiFetch`
-// generic envelope-unwrap assumes) — using `apiFetch` here would silently return just the bare
-// events array and drop the pagination fields this page needs. Read the raw JSON body instead.
-async function fetchJsonEnvelope<T>(fetchFn: typeof fetch, path: string): Promise<T> {
-  const response = await fetchFn(path, { credentials: 'include' })
-  const body = await response.json().catch(() => null)
-  if (!response.ok) {
-    const message = (body as { message?: string } | null)?.message ?? 'Request failed'
-    throw new ApiClientError(response.status, body, message)
-  }
-  return body as T
-}
-
+// generic envelope-unwrap assumes) — `apiFetchBody` shares apiFetch's session-refresh contract but
+// returns the whole JSON body, so the pagination fields survive.
 export function listAuditEvents(fetchFn: typeof fetch, query: ListAuditEventsQuery = {}) {
   const params = new URLSearchParams()
   const filters: Record<string, string | undefined> = {
@@ -79,7 +69,7 @@ export function listAuditEvents(fetchFn: typeof fetch, query: ListAuditEventsQue
   }
   params.set('page', String(query.page ?? 1))
   params.set('limit', String(query.limit ?? 20))
-  return fetchJsonEnvelope<ListAuditEventsResult>(
+  return apiFetchBody<ListAuditEventsResult>(
     fetchFn,
     `/api/v1/org/audit/events?${params.toString()}`
   )
@@ -235,15 +225,16 @@ export async function runAccessReportCsv(
   fetchFn: typeof fetch,
   params: AccessReportParams = {}
 ): Promise<string> {
-  const response = await fetchFn('/api/v1/org/audit/access-report', {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(accessReportBody(params, 'csv')),
-  })
-  if (!response.ok) {
-    const failure = await response.json().catch(() => null)
-    throw new ApiClientError(response.status, failure, failure?.message ?? 'Request failed')
-  }
+  const response = await fetchResponseWithRefresh(
+    fetchFn,
+    '/api/v1/org/audit/access-report',
+    () => ({
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(accessReportBody(params, 'csv')),
+    }),
+    'Request failed'
+  )
   return response.text()
 }

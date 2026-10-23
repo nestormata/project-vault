@@ -57,7 +57,8 @@ describe('getNotificationInbox', () => {
   })
 
   it.each([
-    [jsonResponse({ message: 'nope' }, { status: 500 }), /failed to load/i],
+    // Story 62-6: a non-2xx now keeps its status/code (ApiClientError carrying the server message).
+    [jsonResponse({ message: 'nope' }, { status: 500 }), /nope/i],
     [new Response('', { status: 200 }), /failed to load/i],
   ])('rejects a non-success or empty response', async (response, expected) => {
     await expect(getNotificationInbox(vi.fn().mockResolvedValue(response))).rejects.toThrow(

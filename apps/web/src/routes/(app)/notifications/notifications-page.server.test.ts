@@ -35,6 +35,7 @@ vi.mock('$lib/server/require-user.js', () => ({
   requireUser: vi.fn(),
 }))
 
+import { isRedirect, redirect } from '@sveltejs/kit'
 import { ApiClientError } from '$lib/api/client.js'
 import { requireUser } from '$lib/server/require-user.js'
 import { load, actions } from './+page.server.js'
@@ -441,5 +442,60 @@ describe('notifications +page.server.ts (Story 8.7 AC group H: user dormancy ale
 
       expect(result).toEqual({ success: true, alreadyDeactivated: true })
     })
+  })
+})
+
+// Story 62-6 (T1/T2) — a dead session throws a SvelteKit Redirect from the inbox helpers; no catch
+// may turn it into a 500 or a 422. A 403 from the inbox is now a real ApiClientError and takes the
+// load's quiet empty branch.
+describe('/notifications session redirect (Story 62-6)', () => {
+  const redirectToLogin = () => {
+    redirect(303, '/login?reason=session-expired')
+  }
+
+  beforeEach(() => {
+    getNotificationInboxMock.mockReset()
+    markInboxEntryReadMock.mockReset()
+    markAllInboxReadMock.mockReset()
+    requireUserMock.mockReset()
+    requireUserMock.mockReturnValue({ orgRole: 'member' } as ReturnType<typeof requireUser>)
+  })
+
+  it('load rethrows the redirect instead of a 500', async () => {
+    getNotificationInboxMock.mockImplementation(redirectToLogin)
+
+    const error = await Promise.resolve(load(makeEvent())).catch((e: unknown) => e)
+
+    expect(isRedirect(error)).toBe(true)
+  })
+
+  it('load treats an inbox 403 ApiClientError as an empty inbox', async () => {
+    getNotificationInboxMock.mockRejectedValue(new ApiClientError(403, null, 'Forbidden'))
+
+    const result = expectLoaded(await load(makeEvent()))
+
+    expect(result.notifications).toEqual([])
+  })
+
+  it.each(['markRead', 'markAllRead'] as const)(
+    '%s rethrows the redirect, not fail(422)',
+    async (name) => {
+      markInboxEntryReadMock.mockImplementation(redirectToLogin)
+      markAllInboxReadMock.mockImplementation(redirectToLogin)
+
+      const error = await Promise.resolve(
+        expectAction(actions, name)(actionEvent({ id: 'n1' }))
+      ).catch((e: unknown) => e)
+
+      expect(isRedirect(error)).toBe(true)
+    }
+  )
+
+  it('markRead still returns fail(422) for a non-redirect error', async () => {
+    markInboxEntryReadMock.mockRejectedValue(new ApiClientError(500, null, 'x'))
+
+    const result = await expectAction(actions, 'markRead')(actionEvent({ id: 'n1' }))
+
+    expect(result).toMatchObject({ status: 422 })
   })
 })

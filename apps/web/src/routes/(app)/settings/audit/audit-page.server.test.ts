@@ -10,6 +10,7 @@ vi.mock('$lib/server/require-user.js', () => ({
   requireUser: vi.fn(),
 }))
 
+import { isRedirect, redirect } from '@sveltejs/kit'
 import { ApiClientError } from '$lib/api/client.js'
 import { requireUser } from '$lib/server/require-user.js'
 import { load } from './+page.server.js'
@@ -166,5 +167,26 @@ describe('/settings/audit +page.server.ts', () => {
     if (result.allowed) {
       expect(result.errorMessage).toBe('Provide both actorProvider and actorSubject')
     }
+  })
+})
+
+// Story 62-6 (T1) — a dead session makes listAuditEvents throw a SvelteKit Redirect; the load's
+// catch-all must let it through instead of rendering the honest error state.
+describe('/settings/audit +page.server.ts session redirect (Story 62-6)', () => {
+  beforeEach(() => {
+    listAuditEventsMock.mockReset()
+    requireUserMock.mockReset()
+    requireUserMock.mockReturnValue({ orgRole: 'owner' } as ReturnType<typeof requireUser>)
+  })
+
+  it('rethrows the login redirect instead of returning the error state', async () => {
+    listAuditEventsMock.mockImplementation(() => {
+      redirect(303, '/login?reason=session-expired')
+    })
+
+    const error = await Promise.resolve(load(makeEvent())).catch((e: unknown) => e)
+
+    expect(isRedirect(error)).toBe(true)
+    expect(error).toMatchObject({ status: 303, location: '/login?reason=session-expired' })
   })
 })
