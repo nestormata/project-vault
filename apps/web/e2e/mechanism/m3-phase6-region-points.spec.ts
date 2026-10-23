@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { expect, test, type BrowserContext, type Locator } from '@playwright/test'
+import { expect, test, type BrowserContext } from '@playwright/test'
 import { setPlatformOperatorViaDb } from '../fixtures/db.js'
 import {
   countAuditEvents,
@@ -9,6 +9,7 @@ import {
   expectForeignOriginRejected,
   getPlain,
   open,
+  precedes,
   readWebLog,
   revokeSessionKeepingCookies,
   seedOrgOwner,
@@ -40,16 +41,6 @@ const certsPath = (projectId: string) => `/projects/${projectId}/certificates`
 const plain = (html: string) => html.replaceAll('<!---->', '')
 const runsIn = (html: string): number => Number(/runs=(\d+)/.exec(plain(html))?.[1] ?? Number.NaN)
 const origin = () => process.env['E2E_BASE_URL'] ?? ''
-
-/** True when `first` comes before `second` in the document (DOM order, not paint order). */
-async function precedes(first: Locator, second: Locator): Promise<boolean> {
-  const handle = await second.elementHandle()
-  if (handle === null) return false
-  return first.evaluate(
-    (node, other) => (node.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
-    handle
-  )
-}
 
 test.describe('M3 region points of phase 6 on native layouts, public, platform and list pages', () => {
   test('works: each region shows PV markup beside the fill, the props reach it and nothing mismatches', async ({

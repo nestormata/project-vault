@@ -211,6 +211,12 @@ export default defineUiPack({
         actions: './injections/certificates-header.actions.ts',
       },
     ],
+    // Sub-region points of Story 69.10 (the users panel and the platform settings page): render-only
+    // fills the probe-order e2e uses to prove each lands between the PV sections it targets.
+    'settings.users.machine-dormancy': [{ component: './injections/UsersDormancyFill.svelte' }],
+    'settings.users.table': [{ component: './injections/UsersTableFill.svelte' }],
+    'platform.settings.smtp-server': [{ component: './injections/PlatformSmtpServerFill.svelte' }],
+    'platform.settings.form': [{ component: './injections/PlatformFormFill.svelte' }],
     'shell.head': [{ component: './injections/HeadMarker.svelte' }],
   },
   replacements: {

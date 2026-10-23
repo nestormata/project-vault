@@ -4,6 +4,7 @@ import type {
   APIRequestContext,
   Browser,
   BrowserContext,
+  Locator,
   Page,
   PlaywrightWorkerArgs,
 } from '@playwright/test'
@@ -179,6 +180,16 @@ export function sentinel(label: string): string {
  * click). `firstTarget` is the element the spec interacts with first. */
 export async function open(page: Page, path: string, firstTarget: ReturnType<Page['locator']>) {
   await gotoHydrated(page, path, firstTarget)
+}
+
+/** True when `first` comes before `second` in the document (DOM order, not paint order). */
+export async function precedes(first: Locator, second: Locator): Promise<boolean> {
+  const handle = await second.elementHandle()
+  if (handle === null) return false
+  return first.evaluate(
+    (node, other) => (node.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+    handle
+  )
 }
 
 /** A read-only count of one org's audit rows of one event type (the superuser bypasses RLS; nothing
