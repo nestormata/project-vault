@@ -4,9 +4,11 @@
 // responses of PV's own built server equal the committed snapshot taken from `main`.
 
 /** One rolled-up module of the bundler's output is introduced by `//#region <id>` and closed by
- * `//#endregion`; the bundler prints the NUL of a virtual id as the two characters backslash-zero. */
-const REGION_OPEN = /^\/\/#region (?:\\0|\0)?(virtual:pv-[^\s]+)\s*$/
-const REGION_CLOSE = '//#endregion'
+ * `//#endregion` (rolldown before 1.2), or by a bare `// <id>` comment that the next module's
+ * `// <id>` comment closes (rolldown 1.2.x, vite 8.3.5); the bundler prints the NUL of a virtual id
+ * as the two characters backslash-zero. */
+const REGION_OPEN = /^\/\/(?:#region)? (?:\\0|\0)?(virtual:pv-[^\s]+)\s*$/
+const REGION_CLOSE = /^\/\/(?:#endregion$| )/
 
 // The bundler may hoist an unrelated shared declaration into the same region (`var SvelteMap =
 // globalThis.Map;`), so each shape pins the module's own leading statements, not the region's end.
@@ -39,7 +41,7 @@ export function virtualRegions(files: Readonly<Record<string, string>>): Virtual
       const id = REGION_OPEN.exec(line)?.[1]
       if (id === undefined) continue
       const rest = lines.slice(index + 1)
-      const close = rest.indexOf(REGION_CLOSE)
+      const close = rest.findIndex((text) => REGION_CLOSE.test(text))
       const inner = close === -1 ? rest : rest.slice(0, close)
       const body = inner.map((text) => text.trim()).filter((text) => text !== '')
       found.push({ id, file, body: body.join(' ') })
