@@ -8,14 +8,14 @@
   // guard scans each file).
   let { id, helpId, threshold }: { id: string; helpId: string; threshold: DormancyThresholdSave } =
     $props()
+  // One spread keeps the server-rendered attribute order of the original markup (id, class), which the byte-identical render oracles pin.
+  const attributes = $derived({
+    id,
+    class: 'rounded-xl border border-slate-300 px-3 py-2 text-sm',
+  })
 </script>
 
-<select
-  {id}
-  class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-  bind:value={threshold.choice}
-  aria-describedby={helpId}
->
+<select {...attributes} aria-describedby={helpId} bind:value={threshold.choice}>
   <DormancyThresholdOptions />
 </select>
 <FormHelpText id={helpId} kind="select" />

@@ -38,5 +38,6 @@ export function credentialsFilterHref(
   if (merged.page > 1) params.set('page', String(merged.page))
   if (merged.includeArchived) params.set('includeArchived', 'true')
   const query = params.toString()
-  return `/projects/${projectId}/credentials${query ? `?${query}` : ''}`
+  const suffix = query ? `?${query}` : ''
+  return `/projects/${projectId}/credentials${suffix}`
 }

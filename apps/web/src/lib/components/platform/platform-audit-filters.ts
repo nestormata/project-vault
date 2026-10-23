@@ -5,7 +5,7 @@ import { buildDateRangePart } from '$lib/audit/date-range.js'
 export type AuditSearchFilters = Omit<PlatformAuditFilters, 'page' | 'limit'>
 
 export function hasActiveFilters(filters: AuditSearchFilters | undefined): boolean {
-  return Boolean(filters && Object.values(filters).some((v) => Boolean(v)))
+  return Boolean(filters && Object.values(filters).some(Boolean))
 }
 
 export function filterSummary(filters: Record<string, string | undefined>): string {
