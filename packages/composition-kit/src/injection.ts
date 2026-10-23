@@ -3,7 +3,6 @@
 // action key is not claimed twice, the host can route the behavior). None of them limits what a
 // component, `load` or `action` may import, render or do, and none can refuse an injection that
 // could instead be expressed as a page override (M1) or a component replacement (M4).
-import { readFileSync } from 'node:fs'
 import { posix } from 'node:path'
 import type * as TypeScript from 'typescript'
 import type { MaterializeResult } from './materialize.js'
@@ -12,6 +11,7 @@ import { requirePeer } from './peers.js'
 import type { PointRoute, Registries } from './registry.js'
 import type { Host, Pack } from './sources.js'
 import type { InjectionContribution, UiPackManifest } from './types.js'
+import { readText } from './fs-access.js'
 
 type Ts = typeof TypeScript
 
@@ -153,7 +153,7 @@ class ExportReader {
     if (known !== undefined) return known
     const abs = this.pack.files.get(rel)
     if (abs === undefined) return undefined
-    const info = analyze(this.ts, readFileSync(abs, 'utf8'), rel)
+    const info = analyze(this.ts, readText(abs), rel)
     this.cache.set(rel, info)
     return info
   }
@@ -260,7 +260,7 @@ function defaultActionProblem(ctx: Context, point: string, file: string | null):
 function defaultActionAt(ctx: Context, point: string, hostRel: string): string | null {
   const abs = ctx.host.files.get(hostRel)
   if (abs === undefined) return null
-  const info = analyze(ctx.ts, readFileSync(abs, 'utf8'), hostRel)
+  const info = analyze(ctx.ts, readText(abs), hostRel)
   if (!info.actionKeys.includes('default')) return null
   return (
     `injections.${point}.actions: ${hostRel} exports a default action, and Kit forbids a default ` +

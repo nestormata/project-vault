@@ -1,5 +1,4 @@
 import { randomBytes } from 'node:crypto'
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type * as TypeScript from 'typescript'
@@ -7,6 +6,7 @@ import { manifestPathProblem } from './paths.js'
 import { requirePeer } from './peers.js'
 import { isExactVersion } from './versions.js'
 import type { UiPackManifest } from './types.js'
+import { pathExists, readText, removePath, writeFile } from './fs-access.js'
 
 const SHA256 = /^[0-9a-f]{64}$/
 const KNOWN_KEYS = new Set([
@@ -206,9 +206,9 @@ export interface LoadOptions {
  * with no extra dependency. Loading executes the manifest: it is trusted first-party code
  * (ADR 0007 invariant 0) and the kit adds no sandbox. */
 export async function loadManifest(file: string, options: LoadOptions): Promise<unknown> {
-  if (!existsSync(file)) throw new Error(`manifest not found: ${file}`)
+  if (!pathExists(file)) throw new Error(`manifest not found: ${file}`)
   const extension = extname(file)
-  if (extension === '.json') return JSON.parse(readFileSync(file, 'utf8')) as unknown
+  if (extension === '.json') return JSON.parse(readText(file)) as unknown
   if (extension === '.js' || extension === '.mjs') return defaultExport(file)
   if (extension === '.ts' || extension === '.mts') return loadTypeScript(file, options)
   throw new Error(
@@ -228,15 +228,15 @@ async function defaultExport(file: string): Promise<unknown> {
 
 async function loadTypeScript(file: string, options: LoadOptions): Promise<unknown> {
   const ts = requirePeer<typeof TypeScript>('typescript', options.resolveFrom)
-  const output = ts.transpileModule(readFileSync(file, 'utf8'), {
+  const output = ts.transpileModule(readText(file), {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
     fileName: basename(file),
   })
   const temp = join(dirname(file), `.pv-manifest-${randomBytes(6).toString('hex')}.mjs`)
-  writeFileSync(temp, output.outputText, { mode: 0o600 })
+  writeFile(temp, output.outputText, { mode: 0o600 })
   try {
     return await defaultExport(temp)
   } finally {
-    rmSync(temp, { force: true })
+    removePath(temp)
   }
 }

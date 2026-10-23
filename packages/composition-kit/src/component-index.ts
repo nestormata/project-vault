@@ -1,7 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ReplacementRecord } from './overlay.js'
 import { compareCodeUnits } from './paths.js'
+import { pathExists, readText } from './fs-access.js'
 
 // Story 68.5 AC-9: web-host may ship `manifests/component-index.json` (a registry of its UI modules
 // with a stability signal). The kit reads the minimal shape below, ignores every other field, and
@@ -22,9 +22,9 @@ export interface ComponentIndexRead {
 /** Reads the host's component index, if it ships one. */
 export function readComponentIndex(host: string): ComponentIndexRead {
   const path = join(host, 'manifests', FILE)
-  if (!existsSync(path)) return { notes: [] }
+  if (!pathExists(path)) return { notes: [] }
   try {
-    const raw = JSON.parse(readFileSync(path, 'utf8')) as {
+    const raw = JSON.parse(readText(path)) as {
       schemaVersion?: unknown
       components?: unknown
     }

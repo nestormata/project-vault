@@ -1,6 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { compareCodeUnits } from './paths.js'
+import { pathExists, readText } from './fs-access.js'
 
 // The registries later stories generate and ship in web-host's `manifests/` (68-4 injection
 // points, 68-7 nav ids). The kit reads the minimal shapes below and ignores every other field, so
@@ -46,14 +46,14 @@ export interface Registries {
 }
 
 function readJson(path: string): unknown {
-  return JSON.parse(readFileSync(path, 'utf8')) as unknown
+  return JSON.parse(readText(path)) as unknown
 }
 
 /** A web-host `manifests/<name>` JSON file, or `undefined` when this web-host does not ship it.
  * Throws on invalid JSON (callers report it as a problem). */
 export function readHostManifest(host: string, name: string): unknown {
   const path = join(host, 'manifests', name)
-  return existsSync(path) ? readJson(path) : undefined
+  return pathExists(path) ? readJson(path) : undefined
 }
 
 type Rec = Record<string, unknown>

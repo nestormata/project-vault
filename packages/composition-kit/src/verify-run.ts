@@ -3,9 +3,9 @@
 // vitest's JSON report back. The child environment is built here, so a variable meant for one step
 // (the guards' scan root) can never reach another (CM's own tests) or the caller's own process.
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
+import { pathExists, readText } from './fs-access.js'
 
 export interface VitestAssertion {
   fullName: string
@@ -34,7 +34,7 @@ export function vitestBin(appRoot: string): string | null {
   try {
     const require = createRequire(join(appRoot, 'package.json'))
     const manifest = require.resolve('vitest/package.json')
-    const { bin } = JSON.parse(readFileSync(manifest, 'utf8')) as {
+    const { bin } = JSON.parse(readText(manifest)) as {
       bin?: string | Record<string, string>
     }
     const entry = typeof bin === 'string' ? bin : (bin?.vitest ?? 'vitest.mjs')
@@ -71,9 +71,9 @@ function childEnv(input: RunInput): NodeJS.ProcessEnv {
 }
 
 function readReport(file: string): VitestReport | null {
-  if (!existsSync(file)) return null
+  if (!pathExists(file)) return null
   try {
-    return JSON.parse(readFileSync(file, 'utf8')) as VitestReport
+    return JSON.parse(readText(file)) as VitestReport
   } catch {
     return null
   }

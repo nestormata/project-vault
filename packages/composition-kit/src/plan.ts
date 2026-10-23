@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import type * as TypeScript from 'typescript'
 import { acceptedState, applyAcceptances, type AcceptedEntry } from './accept.js'
@@ -33,6 +32,7 @@ import { protectedPathsFindings, type ProtectedPathsRecord } from './protected-p
 import { guardStage, loadGuardEntries, type LoadedGuardEntries } from './plan-guards.js'
 import { requirePeer } from './peers.js'
 import type { UiPackManifest } from './types.js'
+import { readText } from './fs-access.js'
 
 export { GENERATED_MARKER } from './assemble.js'
 export type { AcceptedEntry } from './accept.js'
@@ -351,7 +351,7 @@ function addPvOriginalTypes(
   host: Host
 ): { problems: string[] } {
   const text = pvOriginalDeclarations(overlay.replacements, (hostPath) =>
-    readFileSync(host.files.get(hostPath) ?? '', 'utf8')
+    readText(host.files.get(hostPath) ?? '')
   )
   if (text === null) return { problems: [] }
   if (files.has(PV_ORIGINAL_TYPES_PATH)) {

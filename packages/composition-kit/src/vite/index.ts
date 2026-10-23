@@ -1,4 +1,3 @@
-import { realpathSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import type { Plugin } from 'vite'
 import { apply } from '../apply.js'
@@ -7,6 +6,7 @@ import { plan, type ComposeOptions } from '../plan.js'
 import type { DevServerLike } from './dev-server.js'
 import { createComposeQueue, type ComposeBatch } from './queue.js'
 import { invalidateVirtualModules } from './virtual-modules.js'
+import { realPath } from '../fs-access.js'
 
 export { pvReplace, PV_ORIGINAL_PREFIX } from './replace.js'
 export type { PvReplaceOptions } from './replace.js'
@@ -44,8 +44,8 @@ function inside(root: string, path: string): boolean {
  * keeps the last good tree, is logged and shown in Vite's error overlay, and recovers on the next
  * good compose. */
 export function pvComposeDev(options: PvComposeDevOptions): Plugin {
-  const packRoot = realpathSync(options.packRoot)
-  const hostRoot = realpathSync(options.hostDir)
+  const packRoot = realPath(options.packRoot)
+  const hostRoot = realPath(options.hostDir)
   const treeKey = resolve(options.appRoot)
   const state: { signatures?: Signatures; failed: boolean } = { failed: false }
   const previous = composedTrees.get(treeKey)

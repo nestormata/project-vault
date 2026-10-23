@@ -46,12 +46,14 @@ function importOnly(path: string): { code: number | null; out: string; err: stri
 
 beforeAll(() => {
   root = realpathSync(mkdtempSync(join(tmpdir(), 'pv-cli-shared-')))
-  const source = readFileSync(join(import.meta.dirname, '..', 'src', 'cli-shared.ts'), 'utf8')
-  const compiled = ts.transpileModule(source, {
-    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-  }).outputText
+  const transpile = (name: string): string =>
+    ts.transpileModule(readFileSync(join(import.meta.dirname, '..', 'src', name), 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    }).outputText
   mkdirSync(join(root, 'pkg', 'dist'), { recursive: true })
-  writeFileSync(join(root, 'pkg', 'dist', 'cli-shared.mjs'), compiled)
+  // cli-shared imports its file access from ./fs-access.js, so the fixture ships both files.
+  writeFileSync(join(root, 'pkg', 'dist', 'cli-shared.mjs'), transpile('cli-shared.ts'))
+  writeFileSync(join(root, 'pkg', 'dist', 'fs-access.js'), transpile('fs-access.ts'))
   entry = join(root, 'pkg', 'dist', 'entry.mjs')
   writeFileSync(
     entry,

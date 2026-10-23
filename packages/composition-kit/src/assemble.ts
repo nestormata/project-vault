@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { posix } from 'node:path'
 import { composedPathOf } from './contributions.js'
 import { composeAppCss } from './css.js'
@@ -8,6 +7,7 @@ import type { FileSource, OverlayResult } from './overlay.js'
 import { compareCodeUnits, normalizePackPath } from './paths.js'
 import { OWNED_DIRECTORIES, type Host, type Pack } from './sources.js'
 import type { UiPackManifest } from './types.js'
+import { readText } from './fs-access.js'
 
 export const GENERATED_MARKER = '.pv-compose-generated'
 const HEADER_TEXT =
@@ -28,7 +28,7 @@ function text(content: string): FileSource {
 
 function textOf(source: FileSource | undefined): string {
   if (source === undefined) return ''
-  return source.kind === 'file' ? readFileSync(source.abs, 'utf8') : source.content.toString('utf8')
+  return source.kind === 'file' ? readText(source.abs) : source.content.toString('utf8')
 }
 
 /** The "do not edit" header in every generated directory. There is deliberately no `.gitignore`
@@ -59,7 +59,7 @@ function messageOverlays(
     .map(([rel, abs]) => ({
       file: rel,
       locale: rel.slice(prefix.length, -'.json'.length),
-      text: readFileSync(abs, 'utf8'),
+      text: readText(abs),
     }))
     .sort((a, b) => compareCodeUnits(a.file, b.file))
 }
@@ -68,10 +68,7 @@ function hostCatalogues(host: Host): Map<string, string> {
   return new Map(
     [...host.files]
       .filter(([rel]) => rel.startsWith('messages/') && rel.endsWith('.json'))
-      .map(([rel, abs]) => [
-        rel.slice('messages/'.length, -'.json'.length),
-        readFileSync(abs, 'utf8'),
-      ])
+      .map(([rel, abs]) => [rel.slice('messages/'.length, -'.json'.length), readText(abs)])
   )
 }
 

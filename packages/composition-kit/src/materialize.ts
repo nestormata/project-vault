@@ -1,8 +1,8 @@
-import { readFileSync } from 'node:fs'
 import { extname, posix } from 'node:path'
 import { sha256Hex } from './hash.js'
 import { findCaseCollisions, isServerOnlyPath } from './paths.js'
 import { applyEdits, scanSpecifiers, type Edit } from './rewrite.js'
+import { readBytes } from './fs-access.js'
 
 export interface MaterializeRoot {
   /** Pack-relative path. */
@@ -180,7 +180,7 @@ class Materializer {
   }
 
   private process(unit: { rel: string; inPlace: boolean }): void {
-    const bytes = readFileSync(this.input.packFiles.get(unit.rel) ?? '')
+    const bytes = readBytes(this.input.packFiles.get(unit.rel) ?? '')
     this.result.reached.add(unit.rel)
     const output = this.rewrittenBytes(unit, bytes)
     if (unit.inPlace) {

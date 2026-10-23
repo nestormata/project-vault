@@ -1,15 +1,3 @@
-import {
-  copyFileSync,
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  realpathSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, parse } from 'node:path'
 import { writeFileAtomic } from './lock.js'
@@ -18,27 +6,39 @@ import type { FileSource } from './overlay.js'
 import { writeReplacementMap } from './replacement-map.js'
 import { OWNED_DIRECTORIES } from './sources.js'
 import type { ComposePlan } from './plan.js'
+import {
+  copyFile,
+  lstatPath,
+  makeDir,
+  makeTempDir,
+  pathExists,
+  readText,
+  realPath,
+  removePath,
+  renamePath,
+  writeFile,
+} from './fs-access.js'
 
 /** Refuses an app root the composer must never delete under (Red Team: the output directory is
  * deleted and rewritten, so it must be a real app directory and its owned children real children). */
 export function appRootProblems(appRoot: string): string[] {
   const problems: string[] = []
-  if (!existsSync(join(appRoot, 'package.json'))) {
+  if (!pathExists(join(appRoot, 'package.json'))) {
     problems.push(
       `${appRoot} is not an app root (no package.json); refusing to write generated directories there.`
     )
     return problems
   }
-  const real = realpathSync(appRoot)
-  if (real === parse(real).root || real === realpathSync(homedir())) {
+  const real = realPath(appRoot)
+  if (real === parse(real).root || real === realPath(homedir())) {
     problems.push(
       `${real} is a filesystem root or a home directory; refusing to write generated directories there.`
     )
   }
   for (const owned of OWNED_DIRECTORIES) {
     const dir = join(appRoot, owned)
-    if (!existsSync(dir)) continue
-    if (lstatSync(dir).isSymbolicLink() || dirname(realpathSync(dir)) !== real) {
+    if (!pathExists(dir)) continue
+    if (lstatPath(dir).isSymbolicLink() || dirname(realPath(dir)) !== real) {
       problems.push(
         `${dir} is not a plain child directory of the app root (symlink or elsewhere); refusing to delete it.`
       )
@@ -48,9 +48,9 @@ export function appRootProblems(appRoot: string): string[] {
 }
 
 function writeSource(path: string, source: FileSource): void {
-  mkdirSync(dirname(path), { recursive: true })
-  if (source.kind === 'file') copyFileSync(source.abs, path)
-  else writeFileSync(path, source.content)
+  makeDir(dirname(path))
+  if (source.kind === 'file') copyFile(source.abs, path)
+  else writeFile(path, source.content)
 }
 
 /** Moves each previous directory aside, then the new one in. On failure only what this call
@@ -59,20 +59,20 @@ function writeSource(path: string, source: FileSource): void {
 export function swapIn(appRoot: string, stage: string): void {
   const moved: string[] = []
   const installed: string[] = []
-  mkdirSync(join(stage, 'old'))
+  makeDir(join(stage, 'old'))
   try {
     for (const owned of OWNED_DIRECTORIES) {
       const current = join(appRoot, owned)
-      if (existsSync(current)) {
-        renameSync(current, join(stage, 'old', owned))
+      if (pathExists(current)) {
+        renamePath(current, join(stage, 'old', owned))
         moved.push(owned)
       }
-      renameSync(join(stage, 'new', owned), current)
+      renamePath(join(stage, 'new', owned), current)
       installed.push(owned)
     }
   } catch (error) {
-    for (const owned of installed) rmSync(join(appRoot, owned), { recursive: true, force: true })
-    for (const owned of moved) renameSync(join(stage, 'old', owned), join(appRoot, owned))
+    for (const owned of installed) removePath(join(appRoot, owned))
+    for (const owned of moved) renamePath(join(stage, 'old', owned), join(appRoot, owned))
     throw error
   }
 }
@@ -83,23 +83,23 @@ export function swapIn(appRoot: string, stage: string): void {
 export function apply(plan: ComposePlan, appRoot: string): void {
   const refused = appRootProblems(appRoot)
   if (refused.length > 0) throw new Error(refused.join('\n'))
-  const stage = mkdtempSync(join(appRoot, '.pv-compose-'), { encoding: 'utf8' })
+  const stage = makeTempDir(join(appRoot, '.pv-compose-'))
   try {
     const fresh = join(stage, 'new')
-    for (const owned of OWNED_DIRECTORIES) mkdirSync(join(fresh, owned), { recursive: true })
+    for (const owned of OWNED_DIRECTORIES) makeDir(join(fresh, owned))
     for (const [dest, source] of plan.files) writeSource(join(fresh, dest), source)
     swapIn(appRoot, stage)
     if (plan.replacementMapText !== undefined) writeReplacementMap(appRoot, plan.replacementMapText)
     if (plan.lockText !== undefined) writeFileAtomic(plan.lockPath, plan.lockText)
   } finally {
-    rmSync(stage, { recursive: true, force: true })
+    removePath(stage)
   }
 }
 
 /** `--accept-host` when the rest of compose still fails: the acceptance is recorded in the
  * committed lock alone, so it is not lost, and nothing else changes. */
 export function persistAcceptances(lockPath: string, entries: readonly PatchEntry[]): boolean {
-  if (!existsSync(lockPath) || entries.length === 0) return false
-  writeFileAtomic(lockPath, patchAcceptances(readFileSync(lockPath, 'utf8'), entries))
+  if (!pathExists(lockPath) || entries.length === 0) return false
+  writeFileAtomic(lockPath, patchAcceptances(readText(lockPath), entries))
   return true
 }

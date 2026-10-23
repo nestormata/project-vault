@@ -2,7 +2,6 @@
 // comes from the web-host; a test guard runs from a scratch copy of the host's PRISTINE guard file
 // and helper closure (a pack that overrides a guard or one of its helpers cannot blind it), with
 // `PV_GUARD_APP_ROOT` pointing at the REAL composed app. A script guard is imported from the host.
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { sha256Hex } from './hash.js'
@@ -16,6 +15,15 @@ import {
   type VitestReport,
   type VitestSuite,
 } from './verify-run.js'
+import {
+  copyFile,
+  makeDir,
+  pathExists,
+  readBytes,
+  readText,
+  removePath,
+  writeFile,
+} from './fs-access.js'
 
 export const GUARD_ROOT_ENV = 'PV_GUARD_APP_ROOT'
 export const EXEMPT_ENV = 'PV_GUARD_EXEMPT_FILES'
@@ -55,14 +63,14 @@ export interface GuardsResult {
 
 export function readRegistry(hostDir: string): { guards?: GuardRegistryEntry[]; problem?: string } {
   const path = join(hostDir, 'manifests', 'guards.json')
-  if (!existsSync(path)) {
+  if (!pathExists(path)) {
     return {
       problem:
         'this web-host does not publish its guard registry (manifests/guards.json); upgrade @project-vault/web-host',
     }
   }
   try {
-    const raw = JSON.parse(readFileSync(path, 'utf8')) as {
+    const raw = JSON.parse(readText(path)) as {
       schemaVersion?: number
       guards?: GuardRegistryEntry[]
     }
@@ -78,12 +86,12 @@ export function readRegistry(hostDir: string): { guards?: GuardRegistryEntry[]; 
 }
 
 function fileHash(path: string): string | null {
-  return existsSync(path) ? sha256Hex(readFileSync(path)) : null
+  return pathExists(path) ? sha256Hex(readBytes(path)) : null
 }
 
 function copyInto(scratch: string, hostDir: string, rel: string): void {
-  mkdirSync(dirname(join(scratch, rel)), { recursive: true })
-  copyFileSync(join(hostDir, rel), join(scratch, rel))
+  makeDir(dirname(join(scratch, rel)))
+  copyFile(join(hostDir, rel), join(scratch, rel))
 }
 
 interface Staged {
@@ -130,18 +138,18 @@ function stageSubject(
   staged: Staged
 ): void {
   const source = join(context.appRoot, file)
-  if (!existsSync(source)) {
+  if (!pathExists(source)) {
     staged.problems.push(`guard ${guard.id}: its subject ${file} is not in the composed tree`)
     return
   }
-  mkdirSync(dirname(join(context.scratch, file)), { recursive: true })
-  copyFileSync(source, join(context.scratch, file))
+  makeDir(dirname(join(context.scratch, file)))
+  copyFile(source, join(context.scratch, file))
 }
 
 /** Copies each test guard and its closure from the host into a fresh scratch directory. */
 function stage(context: StageContext, guards: GuardRegistryEntry[]): Staged {
-  rmSync(context.scratch, { recursive: true, force: true })
-  mkdirSync(context.scratch, { recursive: true })
+  removePath(context.scratch)
+  makeDir(context.scratch)
   const staged: Staged = { testFiles: [], overridden: [], problems: [] }
   const seen = new Set<string>()
   for (const guard of guards.filter((entry) => entry.kind === 'test')) {
@@ -256,7 +264,7 @@ function testGuardOutcomes(
     }
   }
   const config = join(scratch, 'vitest.guards.config.mjs')
-  writeFileSync(config, configText(scratch, staged.testFiles))
+  writeFile(config, configText(scratch, staged.testFiles))
   const run = runVitest({
     bin,
     root: scratch,

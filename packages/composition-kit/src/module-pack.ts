@@ -1,7 +1,7 @@
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { compareCodeUnits } from './paths.js'
+import { pathExists, readText, realPath, statPath } from './fs-access.js'
 
 /**
  * Story 68.14 AC-4 — reads the module pack's `apiRoutes.override` table for `composition.lock.json`.
@@ -64,9 +64,9 @@ function entryOf(manifest: Json): string | undefined {
 
 function readPackageJson(dir: string): { manifest?: Json; problem?: string } {
   const path = join(dir, 'package.json')
-  if (!existsSync(path)) return { problem: `module pack ${dir} has no package.json` }
+  if (!pathExists(path)) return { problem: `module pack ${dir} has no package.json` }
   try {
-    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
+    const parsed: unknown = JSON.parse(readText(path))
     if (isRecord(parsed)) return { manifest: parsed }
   } catch {
     // fall through to the same problem text
@@ -86,11 +86,11 @@ function resolveEntry(dir: string): { path?: string; problem?: string; note?: st
     }
   }
   const candidate = resolve(dir, entry)
-  if (!existsSync(candidate) || !statSync(candidate).isFile()) {
+  if (!pathExists(candidate) || !statPath(candidate).isFile()) {
     return { problem: `module pack ${dir}: entry ${entry} was not found` }
   }
-  const real = realpathSync(candidate)
-  const root = realpathSync(dir)
+  const real = realPath(candidate)
+  const root = realPath(dir)
   if (!real.startsWith(`${root}${sep}`)) {
     return {
       problem: `module pack ${dir}: entry ${entry} resolves outside the module pack directory`,

@@ -1,4 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Plugin } from 'vite'
 import {
@@ -7,6 +6,7 @@ import {
   type CodegenInjection,
 } from '../inject-codegen.js'
 import { registerVirtualModulePrefix } from './virtual-modules.js'
+import { pathExists, readText } from '../fs-access.js'
 
 /** One module per point: `virtual:pv-inject/<point name>`. */
 export const POINT_PREFIX = 'virtual:pv-inject/'
@@ -24,8 +24,8 @@ export interface PvInjectOptions {
 }
 
 function readInjections(path: string): CodegenInjection[] {
-  if (!existsSync(path)) return []
-  const lock = JSON.parse(readFileSync(path, 'utf8')) as { injections?: unknown }
+  if (!pathExists(path)) return []
+  const lock = JSON.parse(readText(path)) as { injections?: unknown }
   return Array.isArray(lock.injections) ? (lock.injections as CodegenInjection[]) : []
 }
 

@@ -1,6 +1,6 @@
-import { statSync } from 'node:fs'
 import { dirname, isAbsolute, join, posix, resolve } from 'node:path'
 import { normalizeFsPath, realPathOf } from './replace-map.js'
+import { statPath } from '../fs-access.js'
 
 // `pv-original:<specifier>` names one of PV's own files by the specifier PV would write: `$lib/...`
 // or a path relative to the importing file. Both are resolved here, directly against the composed
@@ -21,7 +21,7 @@ const TS_SPELLING: readonly (readonly [string, string])[] = [
 
 function isFile(path: string): boolean {
   try {
-    return statSync(path).isFile()
+    return statPath(path).isFile()
   } catch {
     return false
   }

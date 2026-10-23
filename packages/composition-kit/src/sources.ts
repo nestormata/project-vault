@@ -1,10 +1,10 @@
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { validateTuple } from './compat.js'
 import { sha256Hex } from './hash.js'
 import { compareCodeUnits } from './paths.js'
 import { readTree, type Tree, type TreeFile } from './tree.js'
 import type { CompatibilityTuple } from './types.js'
+import { pathExists, readBytes, readText, realPath } from './fs-access.js'
 
 /** The directories of web-host the composer copies, relative to the package root. */
 export const OWNED_DIRECTORIES = [
@@ -43,11 +43,11 @@ function collect(tree: Tree): Map<string, string> {
 /** Locates and reads web-host as data. Never imports code from it. */
 export function loadHost(dir: string): { host?: Host; problems: string[] } {
   const manifestPath = join(dir, 'manifests', 'compatibility.json')
-  if (!existsSync(manifestPath)) {
+  if (!pathExists(manifestPath)) {
     return { problems: [`${dir} is not a web-host package (missing manifests/compatibility.json)`] }
   }
-  const root = realpathSync(dir)
-  const tuple = validateTuple(JSON.parse(readFileSync(manifestPath, 'utf8')) as unknown)
+  const root = realPath(dir)
+  const tuple = validateTuple(JSON.parse(readText(manifestPath)) as unknown)
   const problems = [...tuple.problems]
   const files = new Map<string, string>()
   for (const owned of OWNED_DIRECTORIES) {
@@ -62,8 +62,8 @@ export function loadHost(dir: string): { host?: Host; problems: string[] } {
   }
   if (tuple.tuple === undefined) return { problems }
   const packageJson = join(root, 'package.json')
-  const dependencies = existsSync(packageJson)
-    ? ((JSON.parse(readFileSync(packageJson, 'utf8')) as { dependencies?: Record<string, string> })
+  const dependencies = pathExists(packageJson)
+    ? ((JSON.parse(readText(packageJson)) as { dependencies?: Record<string, string> })
         .dependencies ?? {})
     : {}
   return { host: { dir: root, tuple: tuple.tuple, dependencies, files }, problems }
@@ -86,7 +86,7 @@ export function hasher(): (abs: string) => string {
   return (abs) => {
     const known = cache.get(abs)
     if (known !== undefined) return known
-    const digest = sha256Hex(readFileSync(abs))
+    const digest = sha256Hex(readBytes(abs))
     cache.set(abs, digest)
     return digest
   }

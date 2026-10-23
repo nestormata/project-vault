@@ -2,12 +2,12 @@
 // pack overrode, replaced or removed what they are ABOUT (their subject). PV decides what a subject
 // is and ships it as data (`manifests/test-subjects.json`); the kit never parses PV test code and
 // never excludes a test because a CM file touched it by accident: only an exact subject match counts.
-import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CompositionLock } from './lock.js'
 import { resolveLibTarget } from './overlay.js'
 import { compareCodeUnits } from './paths.js'
 import { loadHost } from './sources.js'
+import { pathExists, readText } from './fs-access.js'
 
 export interface TestSubjects {
   schemaVersion: number
@@ -22,7 +22,7 @@ export function readTestSubjects(hostDir: string): {
   notes: string[]
 } {
   const path = join(hostDir, 'manifests', 'test-subjects.json')
-  if (!existsSync(path)) {
+  if (!pathExists(path)) {
     return {
       problems: [],
       notes: ['host publishes no test-subjects manifest; no PV test was excluded automatically'],
@@ -30,7 +30,7 @@ export function readTestSubjects(hostDir: string): {
   }
   let raw: Partial<TestSubjects>
   try {
-    raw = JSON.parse(readFileSync(path, 'utf8')) as Partial<TestSubjects>
+    raw = JSON.parse(readText(path)) as Partial<TestSubjects>
   } catch {
     return { problems: [`${path} is not valid JSON`], notes: [] }
   }
