@@ -2,6 +2,7 @@
   import { updateMachineKeyDormancyThreshold } from '$lib/api/organization-settings.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import DormancyThresholdOptions from '$lib/components/DormancyThresholdOptions.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import UsersDormancyCard from './UsersDormancyCard.svelte'
 
   // Story 69.10: the machine-key dormancy threshold card as one replaceable region.
@@ -20,7 +21,6 @@
   notice="Changing this is not retroactive: alerts already fired under the old threshold are not reconciled or auto-dismissed when you change this setting."
   label="Dormancy threshold (days)"
   labelFor="dormancy-threshold-select"
-  helpId="machine-dormancy-threshold-help"
   saveLabel="Save"
   save={async (days) =>
     (await updateMachineKeyDormancyThreshold(fetch, orgId, days)).machineKeyDormancyThresholdDays}
@@ -34,6 +34,7 @@
     >
       <DormancyThresholdOptions />
     </select>
+    <FormHelpText id="machine-dormancy-threshold-help" kind="select" />
   {/snippet}
   <InjectionPoint name="settings.users.machine-dormancy" {data} />
 </UsersDormancyCard>

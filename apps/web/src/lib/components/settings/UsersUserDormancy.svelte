@@ -2,6 +2,7 @@
   import { updateUserDormancyThreshold } from '$lib/api/organization-settings.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import DormancyThresholdOptions from '$lib/components/DormancyThresholdOptions.svelte'
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import UsersDormancyCard from './UsersDormancyCard.svelte'
 
   // Story 69.10: the user dormancy threshold card as one replaceable region. Story 8.7 AC-I1/I2/I3 —
@@ -19,7 +20,6 @@
   notice="Changing this threshold does not affect alerts already in your Dormant user alerts inbox."
   label="User dormancy threshold (days)"
   labelFor="user-dormancy-threshold-select"
-  helpId="user-dormancy-threshold-help"
   saveLabel="Save user dormancy threshold"
   save={async (days) =>
     (await updateUserDormancyThreshold(fetch, orgId, days)).userDormancyThresholdDays}
@@ -33,6 +33,7 @@
     >
       <DormancyThresholdOptions />
     </select>
+    <FormHelpText id="user-dormancy-threshold-help" kind="select" />
   {/snippet}
   <InjectionPoint name="settings.users.user-dormancy" {data} />
 </UsersDormancyCard>

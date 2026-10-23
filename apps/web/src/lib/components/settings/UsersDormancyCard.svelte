@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import type { DormancyThresholdDays } from '$lib/api/organization-settings.js'
-  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { DormancyThresholdSave } from './dormancy-threshold-save.svelte.js'
 
   // Story 69.10: the card both dormancy threshold regions of the users page render (machine key and
@@ -15,7 +14,6 @@
     label,
     labelFor,
     select,
-    helpId,
     saveLabel,
     save,
     children,
@@ -26,9 +24,9 @@
     notice: string
     label: string
     labelFor: string
-    /** The `<select>` itself, written statically by the region so its attributes keep their order. */
+    /** The `<select>` and its help text, written by the region so the control and the element its
+     * `aria-describedby` names live in one file (the form-guidance guard scans each file). */
     select: Snippet<[DormancyThresholdSave]>
-    helpId: string
     saveLabel: string
     save: (days: DormancyThresholdDays) => Promise<number>
     children?: Snippet
@@ -44,7 +42,6 @@
   <div class="mt-4 flex flex-wrap items-center gap-3">
     <label class="sr-only" for={labelFor}>{label}</label>
     {@render select(threshold)}
-    <FormHelpText id={helpId} kind="select" />
     <button
       class="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
       type="button"
