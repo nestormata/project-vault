@@ -60,9 +60,17 @@ test.describe('J38 — raw-fetch helpers refresh an expired access cookie', () =
     await context.clearCookies({ name: ACCESS_COOKIE })
     await context.clearCookies({ name: REFRESH_COOKIE })
 
+    const loginNavigations: string[] = []
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame() && new URL(frame.url()).pathname === '/login') {
+        loginNavigations.push(frame.url())
+      }
+    })
+
     await exportButton.click()
 
     await expect(page).toHaveURL(/\/login\?reason=session-expired/)
     await expect(page.getByText('Your session ended. Sign in again to continue.')).toBeVisible()
+    expect(loginNavigations).toHaveLength(1)
   })
 })
