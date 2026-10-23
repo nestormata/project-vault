@@ -265,7 +265,68 @@ const USERS = [
     projects: [],
   },
 ]
+// Story 69.10: platform audit page states a permissive value cannot select (events, empty and
+// filtered lists, inactive and unavailable maintenance status), recorded BEFORE the split.
+const PLATFORM_AUDIT_EVENTS = [
+  {
+    id: 'ev-1',
+    actionType: 'org.suspend',
+    operatorId: 'op-1',
+    targetOrgId: 'org-9',
+    targetUserId: null,
+    ipAddress: '10.0.0.1',
+    timestamp: '2026-10-01T10:00:00.000Z',
+  },
+  {
+    id: 'ev-2',
+    actionType: 'maintenance.activate',
+    operatorId: 'op-2',
+    targetOrgId: null,
+    targetUserId: 'user-3',
+    ipAddress: null,
+    timestamp: '2026-10-02T11:30:00.000Z',
+  },
+]
+const PLATFORM_AUDIT_BASE: Overrides = {
+  ...OWNER_READY,
+  filters: {},
+  events: PLATFORM_AUDIT_EVENTS,
+  total: 2,
+  page: 1,
+  hasNext: false,
+  maintenanceStatus: { active: false },
+}
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
+  '/(app)/platform/audit/+page.svelte': {
+    'audit-events': PLATFORM_AUDIT_BASE,
+    'audit-events-filtered-next': {
+      ...PLATFORM_AUDIT_BASE,
+      filters: { actionType: 'org.suspend', from: '2026-10-01T00:00:00.000Z' },
+      hasNext: true,
+    },
+    'audit-empty': { ...PLATFORM_AUDIT_BASE, events: [], total: 0 },
+    'audit-empty-filtered': {
+      ...PLATFORM_AUDIT_BASE,
+      events: [],
+      total: 0,
+      filters: { operatorId: 'op-1' },
+    },
+    'audit-maintenance-active': {
+      ...PLATFORM_AUDIT_BASE,
+      maintenanceStatus: {
+        active: true,
+        activatedAt: '2026-10-03T09:00:00.000Z',
+        reason: 'storage outage',
+        pendingEntriesCount: 4,
+      },
+    },
+    'audit-status-unavailable': {
+      ...PLATFORM_AUDIT_BASE,
+      maintenanceStatus: null,
+      maintenanceStatusError: 'status unavailable',
+    },
+    'audit-events-error': { ...PLATFORM_AUDIT_BASE, eventsErrorMessage: 'events unavailable' },
+  },
   '/(app)/settings/users/+page.svelte': {
     'users-owner': { ...OWNER_READY, orgRole: 'owner', users: USERS, nativeLoginEnabled: true },
     'users-admin-external-login': {
