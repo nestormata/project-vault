@@ -32,6 +32,7 @@
       database: result.checks.database.status,
       vault: result.checks.vault.status,
       disk: result.checks.disk.status,
-    })}<InjectionPoint name="platform.settings.status-token-test" {data} />
+    })}
   </p>
+  <InjectionPoint name="platform.settings.status-token-test" {data} />
 </RegionFragment>

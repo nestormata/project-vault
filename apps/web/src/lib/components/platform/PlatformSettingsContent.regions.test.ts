@@ -8,13 +8,14 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 const updateSettingsMock = vi.hoisted(() => vi.fn())
 const generateMock = vi.hoisted(() => vi.fn())
+const testTokenMock = vi.hoisted(() => vi.fn())
 vi.mock('$app/state', () => ({ page: { route: { id: '/(app)/platform/settings' }, params: {} } }))
 vi.mock('$lib/api/platform.js', () => ({
   updateSettings: updateSettingsMock,
   generateStatusToken: generateMock,
   rotateStatusToken: vi.fn(),
   revokeStatusToken: vi.fn(),
-  testStatusToken: vi.fn(),
+  testStatusToken: testTokenMock,
 }))
 
 const POINTS = [
@@ -30,6 +31,7 @@ const POINTS = [
   'status-token-reveal',
   'status-token-state',
   'status-token-actions',
+  'status-token-test',
 ].map((name) => `platform.settings.${name}`)
 const fills = Object.fromEntries(POINTS.map((point) => [point, [{ marker: `fill:${point}` }]]))
 const SETTINGS = {
@@ -60,6 +62,7 @@ beforeAll(async () => {
 beforeEach(() => {
   updateSettingsMock.mockReset()
   generateMock.mockReset()
+  testTokenMock.mockReset()
 })
 afterEach(cleanup)
 
@@ -116,6 +119,23 @@ describe('PlatformSettingsContent sub-regions (AC-4 probe order)', () => {
     expect(follows(state, screen.getByRole('button', { name: /generate token/i }))).toBe(true)
     expect(follows(screen.getByRole('button', { name: /generate token/i }), actions)).toBe(true)
     expect(follows(actions, probe('status-token'))).toBe(true)
+  })
+
+  it('status-token-test: after the test result, outside its status paragraph', async () => {
+    testTokenMock.mockResolvedValue({
+      status: 'healthy',
+      checks: { database: { status: 'ok' }, vault: { status: 'ok' }, disk: { status: 'ok' } },
+    })
+    mount()
+    await fireEvent.click(screen.getByRole('button', { name: 'Test' }))
+    const result = (await screen.findByText('Result:', { exact: false })).closest('p')
+    if (result === null) throw new Error('no test result paragraph')
+    const point = probe('status-token-test')
+    // a contribution inside the `<p role="status">` would join its live region and could not hold
+    // block content, so the point is the paragraph's next sibling, before the card's own point
+    expect(result.contains(point)).toBe(false)
+    expect(follows(result, point)).toBe(true)
+    expect(follows(point, probe('status-token'))).toBe(true)
   })
 
   it('shows nothing for a caller who is not a platform operator', () => {
