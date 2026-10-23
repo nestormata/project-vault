@@ -64,3 +64,16 @@ valid when the fault never reaches the process level.
 - Follow-up (not built): host-supplied pool/emitter factories and a supervised `faulted` state
   (option b), and any out-of-process direction (option c) with an ADR 0007 amendment.
 - CentralizeMe adopts the helpers in its own CI (its Story 14-31 adds the listeners).
+
+## Real-process proof (Story 67.2)
+
+`apps/api/src/__tests__/fatal-fault-real-process.integration.test.ts` boots the real
+`apps/api/src/main.ts` as a child process against the test Postgres, with a throwaway extension
+(written into `apps/api/node_modules` by the test, removed afterwards) that leaks a fault on
+`SIGUSR2`: a listener-less `EventEmitter` error, an unhandled rejection, or a terminated
+`pg.Pool`. For each it asserts exit code `1` with no signal, exactly one `process.fatal_fault`
+line (attribution `extension` for the first two, `unattributed` for the pool because a `pg` socket
+teardown has no extension frame), that the error message never reaches the output, and that
+`app.close()` ran (a request in flight when the fault fired still completes, before the exit).
+It runs in the existing `test-api-db` job; run it locally with both DB URLs set via
+`pnpm --filter @project-vault/api exec vitest run src/__tests__/fatal-fault-real-process.integration.test.ts`.
