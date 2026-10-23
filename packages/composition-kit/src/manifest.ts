@@ -6,7 +6,7 @@ import { manifestPathProblem } from './paths.js'
 import { requirePeer } from './peers.js'
 import { isExactVersion } from './versions.js'
 import type { UiPackManifest } from './types.js'
-import { pathExists, readText, removePath, writeFile } from './fs-access.js'
+import { pathExists, readText, removeFile, writeFile } from './fs-access.js'
 
 const SHA256 = /^[0-9a-f]{64}$/
 const KNOWN_KEYS = new Set([
@@ -237,6 +237,6 @@ async function loadTypeScript(file: string, options: LoadOptions): Promise<unkno
   try {
     return await defaultExport(temp)
   } finally {
-    removePath(temp)
+    removeFile(temp)
   }
 }

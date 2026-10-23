@@ -103,6 +103,15 @@ export function removePath(path: string): void {
 }
 
 /**
+ * Removes one file; a missing path is not an error and a directory throws (not recursive).
+ * Reason: only files the kit wrote or recorded in its own lock inside the operator-named app root
+ * (temp files, `verify.lock`, stale composed files).
+ */
+export function removeFile(path: string): void {
+  rmSync(path, { force: true })
+}
+
+/**
  * Renames a path (atomic swap of a staged file or directory).
  * Reason: both ends are inside the same operator-named app root or scratch directory.
  */

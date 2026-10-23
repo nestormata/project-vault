@@ -4,7 +4,7 @@ import { writeFileAtomic } from './lock.js'
 import type { FileSource } from './overlay.js'
 import type { ComposePlan } from './plan.js'
 import { writeReplacementMap } from './replacement-map.js'
-import { copyFile, makeDir, removePath, statPath, writeFile } from './fs-access.js'
+import { copyFile, makeDir, removeFile, statPath, writeFile } from './fs-access.js'
 
 export type Signatures = Map<string, string>
 
@@ -36,7 +36,7 @@ export function applyIncremental(
     else writeFile(target, source.content)
   }
   for (const dest of previous.keys()) {
-    if (!next.has(dest)) removePath(join(appRoot, dest))
+    if (!next.has(dest)) removeFile(join(appRoot, dest))
   }
   if (plan.replacementMapText !== undefined) writeReplacementMap(appRoot, plan.replacementMapText)
   if (plan.lockText !== undefined) writeFileAtomic(plan.lockPath, plan.lockText)

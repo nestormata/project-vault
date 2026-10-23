@@ -14,7 +14,7 @@ import {
   makeDir,
   pathExists,
   readText,
-  removePath,
+  removeFile,
   renamePath,
   statPath,
   writeExclusive,
@@ -323,7 +323,7 @@ export async function extractClassifications(options: ExtractOptions): Promise<E
     writeFile(temp, `${JSON.stringify(entries, null, 2)}\n`)
     renamePath(temp, options.out)
   } catch (error) {
-    removePath(temp)
+    removeFile(temp)
     return failed([`cannot write --out ${options.out}: ${(error as Error).message}`])
   }
   return { ok: true, entries: entries.length, problems: [] }
@@ -338,11 +338,11 @@ export function acquireRunLock(appRoot: string): { release: () => void } | { hel
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       writeExclusive(path, String(process.pid))
-      return { release: () => removePath(path) }
+      return { release: () => removeFile(path) }
     } catch {
       const pid = Number(readText(path))
       if (Number.isInteger(pid) && pid > 0 && isAlive(pid)) return { heldBy: pid }
-      removePath(path)
+      removeFile(path)
     }
   }
   return { heldBy: 0 }
