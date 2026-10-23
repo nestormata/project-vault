@@ -310,7 +310,65 @@ const PLATFORM_SETTINGS = {
   notifications: { defaultSlackWebhook: null },
   instancePolicy: { maxOrgs: 10, maxUsersPerOrg: 50, sessionIdleTimeoutMinutes: 30 },
 }
+// Story 69.10: credentials list states a permissive value cannot select (status classes, archived and
+// rotation badges, tags, and the empty state wording per filter and role), recorded BEFORE the split.
+const CREDENTIAL_ITEMS = [
+  {
+    id: 'c-1',
+    name: 'Stripe key',
+    status: 'active',
+    tags: ['payments', 'prod'],
+    expiresAt: '2026-12-01T00:00:00.000Z',
+    hasDependencies: true,
+    archivedAt: null,
+    activeRotation: { status: 'staged', rotationId: 'rot-1' },
+  },
+  {
+    id: 'c-2',
+    name: 'Old token',
+    status: 'expired',
+    tags: [],
+    expiresAt: null,
+    hasDependencies: false,
+    archivedAt: '2026-09-01T00:00:00.000Z',
+    activeRotation: null,
+  },
+  {
+    id: 'c-3',
+    name: 'Soon token',
+    status: 'expiring',
+    tags: ['db'],
+    expiresAt: '2026-11-01T00:00:00.000Z',
+    hasDependencies: false,
+    archivedAt: null,
+    activeRotation: null,
+  },
+]
+const NO_FILTERS = { q: '', status: '', tags: '', page: 1, includeArchived: false }
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
+  '/(app)/projects/[projectId]/credentials/+page.svelte': {
+    'list-items': {
+      ...OWNER_READY,
+      filters: { ...NO_FILTERS, includeArchived: true },
+      credentials: { items: CREDENTIAL_ITEMS, total: 3 },
+    },
+    'list-empty-filtered': {
+      ...OWNER_READY,
+      filters: { ...NO_FILTERS, q: 'zzz' },
+      credentials: { items: [], total: 0 },
+    },
+    'list-empty-owner': {
+      ...OWNER_READY,
+      filters: NO_FILTERS,
+      credentials: { items: [], total: 0 },
+    },
+    'list-empty-viewer': {
+      ...OWNER_READY,
+      orgRole: 'viewer',
+      filters: NO_FILTERS,
+      credentials: { items: [], total: 0 },
+    },
+  },
   '/(app)/platform/settings/+page.svelte': {
     'settings-token-unconfigured': {
       ...OWNER_READY,
