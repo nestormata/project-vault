@@ -1,4 +1,3 @@
-/* eslint-disable security/detect-non-literal-fs-filename -- test exercises dynamic temp-dir paths */
 // Story 9.9 AC-1/AC-2/AC-6: lightweight, no-Docker-required unit test of docker-entrypoint.sh's
 // chown-then-drop-privileges logic. Runs the real script (`sh docker-entrypoint.sh`) with a
 // stubbed PATH containing fake `chown`/`chmod`/`su-exec` executables so the test can assert on

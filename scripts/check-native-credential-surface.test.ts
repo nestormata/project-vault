@@ -36,7 +36,6 @@ describe('check-native-credential-surface (Story 23.2 AC-19)', () => {
         mkdirSync(full.slice(0, full.lastIndexOf('/')), { recursive: true })
         // full is derived from a freshly created mkdtemp() directory plus a fixed relative path
         // supplied by this test file, not external input.
-        // eslint-disable-next-line security/detect-non-literal-fs-filename
         writeFileSync(full, content)
       }
       return root
@@ -183,18 +182,15 @@ describe('--write CLI mode (Story 40.2)', () => {
       mkdirSync(full.slice(0, full.lastIndexOf('/')), { recursive: true })
       // full is derived from a freshly created mkdtemp() directory plus a fixed relative path
       // supplied by this test file, not external input.
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
       writeFileSync(full, content)
     }
     manifestPath = join(tmpRoot, 'manifest.json')
     // manifestPath is derived from mkdtemp(), not external input.
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
     writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
   }
 
   function readManifest(): SurfaceManifestEntry[] {
     // manifestPath is derived from mkdtemp(), not external input.
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
     return JSON.parse(readFileSync(manifestPath, 'utf-8')) as SurfaceManifestEntry[]
   }
 

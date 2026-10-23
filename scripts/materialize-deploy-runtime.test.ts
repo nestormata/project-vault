@@ -1,4 +1,3 @@
-/* eslint-disable security/detect-non-literal-fs-filename -- all paths are isolated temp fixtures. */
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

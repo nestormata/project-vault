@@ -76,7 +76,6 @@ describe('index.ts — root-only export surface (AC1, AC2)', () => {
   it("package.json's exports map exposes only the root entry point — no hooks/ subpath (AC2 guard)", () => {
     // PACKAGE_JSON_PATH is a fixed, module-relative sibling-file path derived from
     // import.meta.url, not external input.
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
     const packageJson = JSON.parse(readFileSync(PACKAGE_JSON_PATH, 'utf-8')) as {
       exports: Record<string, unknown>
     }

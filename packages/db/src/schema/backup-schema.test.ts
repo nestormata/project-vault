@@ -60,7 +60,6 @@ describe('Story 9.1 platform-operator and backup schema', () => {
       'expected the 0038 platform-operator migration file to exist'
     ).toBeTruthy()
 
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- migrationFile is derived from readdirSync's own listing of the fixed migrations directory, never user input.
     const sql = readFileSync(resolve(migrationsDir, migrationFile as string), 'utf8')
     // Strip SQL line-comments first — this file's own explanatory comments deliberately
     // reference the exact forbidden pattern as documentation of what NOT to do (D1), which would

@@ -1,4 +1,3 @@
-/* eslint-disable security/detect-non-literal-fs-filename -- test exercises dynamic temp-dir paths */
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

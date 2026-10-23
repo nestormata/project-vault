@@ -82,7 +82,6 @@ describe('EXTENSION_API_VERSION', () => {
   it('matches the package.json version field exactly (version-skew guard invariant, AC7)', () => {
     // PACKAGE_JSON_PATH is a fixed, module-relative sibling-file path derived from
     // import.meta.url, not external input.
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
     const packageJson = JSON.parse(readFileSync(PACKAGE_JSON_PATH, 'utf-8')) as { version: string }
     expect(EXTENSION_API_VERSION).toBe(packageJson.version)
   })
