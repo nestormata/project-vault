@@ -63,7 +63,7 @@
     "qrcode": "^1.5.4",
     "undici": "7.29.1",
     "yaml": "^2.9.1",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@project-vault/agent": "workspace:*",
