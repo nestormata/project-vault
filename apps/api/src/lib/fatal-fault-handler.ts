@@ -108,8 +108,9 @@ export function registerFatalFaultHandler(deps: FatalFaultHandlerDeps): () => vo
       const close = deps.close
       // `raceWithTimeout` calls its attempt outside its own try, so a synchronously throwing
       // `close` would reject here and reach `exit(1)` a second time (DW-574 item 1). Calling it
-      // through an async wrapper turns a sync throw into an ordinary rejected attempt.
-      if (close) await raceWithTimeout(async () => close(), closeTimeoutMs)
+      // from a `then` callback turns a sync throw into an ordinary rejected attempt (a plain,
+      // non-async wrapper: an `async` arrow without `await` trips Sonar S7503).
+      if (close) await raceWithTimeout(() => Promise.resolve().then(close), closeTimeoutMs)
     } finally {
       exit(1)
     }
