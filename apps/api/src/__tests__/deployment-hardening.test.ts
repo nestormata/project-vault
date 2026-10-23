@@ -2,10 +2,12 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { DEV_AUTH_DUMMY_PASSWORD_HASH } from '../config/dev-dummy-hash.js'
 
 const root = resolve(__dirname, '../../../../')
 const API_DOCKERFILE_PATH = 'apps/api/Dockerfile'
 const WEB_DOCKERFILE_PATH = 'apps/web/Dockerfile'
+const ENV_EXAMPLE_PATH = '.env.example'
 // Story 64.3: `migrate` is now built on a fresh pinned node base (no longer `FROM db-builder`);
 // the trailing newline keeps this marker from matching the `migrate-deploy` stage.
 const MIGRATE_STAGE_MARKER = ' AS migrate\n'
@@ -18,6 +20,21 @@ const dockerRunCommands = (dockerfile: string) =>
     .split('\n')
     .filter((line) => line.startsWith('RUN '))
     .map((line) => line.slice(4).trim())
+
+// Story 63.2 AC-2: compose interpolates `$name` in an unquoted env-file value, so an unquoted
+// `$argon2id$v=19$...` prints one "variable is not set" warning per `$word` on every command.
+// A value is safe when single-quoted (literal) or when every `$` is written `$$`.
+const interpolatingKeys = (envFile: string) =>
+  envFile
+    .split('\n')
+    .filter((line) => line.trim() !== '' && !line.trim().startsWith('#'))
+    .flatMap((line) => {
+      const eq = line.indexOf('=')
+      const key = line.slice(0, eq)
+      const value = line.slice(eq + 1)
+      if (value.startsWith("'") && value.endsWith("'")) return []
+      return value.replaceAll('$$', '').includes('$') ? [key] : []
+    })
 
 // Story 66.1 AC-9: the 12 production secrets ship blank in the example env file. Dev and test fall
 // back to built-in dev-only values in-app; production (including the docker compose stack) must be
@@ -274,9 +291,26 @@ describe('deployment hardening configuration', () => {
     expect(Number(timeout)).toBeGreaterThanOrEqual(45)
   })
 
+  describe('Story 63.2 AC-2: the example env file does not trigger compose interpolation', () => {
+    it('has no unquoted, unescaped `$` in any value', () => {
+      expect(interpolatingKeys(readRepoFile(ENV_EXAMPLE_PATH))).toEqual([])
+    })
+
+    it('keeps AUTH_DUMMY_PASSWORD_HASH single-quoted and equal to the dev default', () => {
+      const line = readRepoFile(ENV_EXAMPLE_PATH)
+        .split('\n')
+        .find((l) => l.startsWith('AUTH_DUMMY_PASSWORD_HASH='))
+      expect(line).toBe(`AUTH_DUMMY_PASSWORD_HASH='${DEV_AUTH_DUMMY_PASSWORD_HASH}'`)
+    })
+
+    it('flags an unquoted value and accepts quoted or $$-escaped ones', () => {
+      expect(interpolatingKeys("A=$argon2id$v=19\nB='$x$y'\nC=$$x$$y\n# D=$z")).toEqual(['A'])
+    })
+  })
+
   describe('Story 66.1 AC-9: the example env file ships the 12 production secrets blank', () => {
     it('has each production secret exactly once, with an empty value', () => {
-      expect(blankSecretProblems(readRepoFile('.env.example'))).toEqual([])
+      expect(blankSecretProblems(readRepoFile(ENV_EXAMPLE_PATH))).toEqual([])
     })
 
     it('names a key that regains a value or loses its line', () => {
