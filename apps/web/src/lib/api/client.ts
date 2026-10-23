@@ -72,6 +72,13 @@ let refreshInFlight: Promise<RefreshOutcome> | null = null
 // without this a single dead session can trigger the same goto() many times over.
 let redirectingToLogin = false
 
+// The one place that spells the sign-in redirect target (DW-376 item 1). resolve() only accepts a
+// known route/pathname, not a route plus an appended query string — the base path segment is still
+// resolved, only the "?reason=..." suffix is a plain string.
+function sessionExpiredUrl(): string {
+  return `${resolve('/login')}?reason=session-expired`
+}
+
 function redirectToSessionExpired(): void {
   if (redirectingToLogin) return
   redirectingToLogin = true
@@ -83,10 +90,8 @@ function redirectToSessionExpired(): void {
   const reset = () => {
     redirectingToLogin = false
   }
-  // resolve() only accepts a known route/pathname, not a route plus an appended query string —
-  // the base path segment is still resolved, only the "?reason=..." suffix is a plain string.
   // eslint-disable-next-line svelte/no-navigation-without-resolve
-  void goto(`${resolve('/login')}?reason=session-expired`).then(reset, reset)
+  void goto(sessionExpiredUrl()).then(reset, reset)
 }
 
 // Story 61.3 — the refresh answers one of three things. Only a server rejection means the session
@@ -177,7 +182,7 @@ function throwForFailedRefresh(
   // `goto()` (used by redirectToSessionExpired above) is a client-side-only API and would throw
   // if called here. SvelteKit's own `redirect()` is the SSR-safe equivalent — it throws a special
   // value SvelteKit's routing understands and turns into a real 303 response.
-  redirect(303, `${resolve('/login')}?reason=session-expired`)
+  redirect(303, sessionExpiredUrl())
 }
 
 function withJsonDefaults(init: RequestInit): RequestInit {
