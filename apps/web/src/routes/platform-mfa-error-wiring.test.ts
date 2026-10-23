@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 // Story 69.5: each platform page's markup lives in its region component under
-// `$lib/components/platform`, so the wiring is asserted on that file.
+// `$lib/components/platform` (a page that was split into sub-regions: the sub-region that renders
+// the error), so the wiring is asserted on that file.
 const platformPages = [
   {
     ac: 'AC-M1',
@@ -21,8 +22,8 @@ const platformPages = [
   },
   {
     ac: 'AC-M4/AC-M8',
-    path: '../lib/components/platform/PlatformAuditContent.svelte',
-    error: 'data.eventsErrorMessage',
+    path: '../lib/components/platform/PlatformAuditResults.svelte',
+    error: 'errorMessage',
   },
 ] as const
 
@@ -35,9 +36,7 @@ describe('platform MFA error guidance wiring', () => {
       expect(source).toContain(
         "import MfaAwareErrorAlert from '$lib/components/MfaAwareErrorAlert.svelte'"
       )
-      expect(source).toMatch(
-        new RegExp(`<MfaAwareErrorAlert\\s+message=\\{${error.replace('.', '\\.')}\\}`)
-      )
+      expect(source.replace(/\s+/g, ' ')).toContain(`<MfaAwareErrorAlert message={${error}}`)
     }
   )
 })

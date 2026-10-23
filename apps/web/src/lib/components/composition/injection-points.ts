@@ -454,6 +454,11 @@ export interface InjectionPointProps {
   'notifications.home.list': StandardPointProps
   'platform.home.header': StandardPointProps
   'platform.audit.content': StandardPointProps
+  'platform.audit.maintenance': StandardPointProps
+  'platform.audit.maintenance-status': StandardPointProps
+  'platform.audit.results': StandardPointProps
+  'platform.audit.search': StandardPointProps
+  'platform.audit.verify': StandardPointProps
   'platform.backups.content': StandardPointProps
   'platform.settings.content': StandardPointProps
   'platform.settings-orgs.content': StandardPointProps
@@ -907,7 +912,18 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     ]
   ),
   ...regionPoints('StandardPointProps', ['/(app)/platform#page'], ['platform.home.header']),
-  ...regionPoints('StandardPointProps', ['/(app)/platform/audit#page'], ['platform.audit.content']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/platform/audit#page'],
+    [
+      'platform.audit.content',
+      'platform.audit.maintenance-status',
+      'platform.audit.search',
+      'platform.audit.results',
+      'platform.audit.verify',
+      'platform.audit.maintenance',
+    ]
+  ),
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/platform/backups#page'],

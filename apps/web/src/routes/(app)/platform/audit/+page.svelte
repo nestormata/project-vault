@@ -14,7 +14,7 @@
 <InjectionPoint name="platform.audit.before" data={data?.__inject} />
 <InjectionPoint name="platform.audit.header.actions" data={data?.__inject} />
 <!-- @region platform.audit.content -->
-<PlatformAuditContent {data}>
+<PlatformAuditContent pageData={data} data={data.__inject}>
   <InjectionPoint name="platform.audit.content" data={data?.__inject} />
 </PlatformAuditContent>
 <InjectionPoint name="platform.audit.after" data={data?.__inject} />
