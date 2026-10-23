@@ -272,6 +272,42 @@ describe('registerFatalFaultHandler', () => {
     expect(h.exit.mock.calls.every(([code]) => code === 1)).toBe(true)
   })
 
+  it('exits exactly once when close throws synchronously (DW-574 item 1)', async () => {
+    const close = vi.fn((): Promise<unknown> => {
+      throw new Error('sync close failure')
+    })
+    const h = makeHarness({ close })
+    uninstall = h.uninstall
+    const rejections: unknown[] = []
+    const handle = h.fire('uncaughtException', new Error('x'))
+    await handle.catch((error: unknown) => rejections.push(error))
+    // A leaked rejection from the handler would re-enter it through unhandledRejection.
+    expect(rejections).toEqual([])
+    expect(close).toHaveBeenCalledTimes(1)
+    expect(h.exit).toHaveBeenCalledTimes(1)
+    expect(h.exit).toHaveBeenCalledWith(1)
+  })
+
+  it('exits exactly once when close rejects asynchronously', async () => {
+    const h = makeHarness({ close: vi.fn(() => Promise.reject(new Error('async close failure'))) })
+    uninstall = h.uninstall
+    await h.fire('uncaughtException', new Error('x'))
+    expect(h.exit).toHaveBeenCalledTimes(1)
+  })
+
+  it('exits exactly once when close never settles (bounded by closeTimeoutMs)', async () => {
+    vi.useFakeTimers()
+    const h = makeHarness({
+      close: vi.fn(() => new Promise<never>(() => undefined)),
+      closeTimeoutMs: 50,
+    })
+    uninstall = h.uninstall
+    const handle = h.fire('uncaughtException', new Error('x'))
+    await vi.advanceTimersByTimeAsync(60)
+    await handle
+    expect(h.exit).toHaveBeenCalledTimes(1)
+  })
+
   it('uses process.exit by default and never resolves to a continue-serving state', async () => {
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
     const before = new Set(process.listeners('uncaughtException'))

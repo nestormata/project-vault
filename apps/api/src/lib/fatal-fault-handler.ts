@@ -105,7 +105,11 @@ export function registerFatalFaultHandler(deps: FatalFaultHandlerDeps): () => vo
       } catch {
         // a broken logger must not keep the process alive
       }
-      if (deps.close) await raceWithTimeout(deps.close, closeTimeoutMs)
+      const close = deps.close
+      // `raceWithTimeout` calls its attempt outside its own try, so a synchronously throwing
+      // `close` would reject here and reach `exit(1)` a second time (DW-574 item 1). Calling it
+      // through an async wrapper turns a sync throw into an ordinary rejected attempt.
+      if (close) await raceWithTimeout(async () => close(), closeTimeoutMs)
     } finally {
       exit(1)
     }
