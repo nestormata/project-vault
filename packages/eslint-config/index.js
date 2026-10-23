@@ -24,6 +24,33 @@ export const TEST_FILE_GLOBS = [
   '**/__tests__/**',
 ]
 
+// Story 43-26 (Nestor's decision of 2026-10-04, DW-444 / DW-511): `security/detect-non-literal-fs-filename`
+// is purely syntactic (a parameter is never "static", validation does not count), so it cannot
+// be satisfied by code. Policy: (1) off in test files and test helpers, whose paths are fixtures,
+// temp dirs and test-relative paths, never runtime input; (2) off in the pinned `fs-access`
+// modules below, each function of which states a `Reason:`; (3) never silenced inline
+// (scripts/check-fs-filename-policy.ts). Production source elsewhere keeps the rule.
+export const FS_TEST_GLOBS = [
+  ...TEST_FILE_GLOBS,
+  '**/tests/**',
+  '**/test/**',
+  '**/*test-helpers.ts',
+]
+
+// The only modules the lint exemption covers (repo-relative). The guard script fails on any other
+// tracked fs-access module and on a pinned one that is missing, so this is a list, not a loophole.
+export const FS_ACCESS_MODULES = [
+  'apps/api/src/lib/fs-access.ts',
+  'apps/web/guards/fs-access.ts',
+  'packages/api-contract-tests/src/fs-access.ts',
+  'packages/composition-kit/src/fs-access.ts',
+  'packages/crypto/src/fs-access.ts',
+  'scripts/lib/fs-access.ts',
+]
+// Flat-config patterns resolve relative to each package's config, so the config glob is the file
+// name; the repo-relative pin above is what makes the exemption narrow.
+const FS_ACCESS_GLOBS = ['**/fs-access.ts', '**/fs-access.mjs']
+
 // Ledgered carve-out from `no-await-in-loop` (Story 66-17, deferred-work DW-582):
 // apps/api/src/extensions/loader.ts cannot be changed without an extension-api version bump
 // (check-extension-api-version-skew lists it), so its one sequential audit-fanout loop stays until
@@ -158,6 +185,10 @@ export const baseRules = [
     rules: {
       ...security.configs.recommended.rules,
     },
+  },
+  {
+    files: [...FS_TEST_GLOBS, ...FS_ACCESS_GLOBS],
+    rules: { 'security/detect-non-literal-fs-filename': 'off' },
   },
   // Story 66-17 (Epic 66 retro Findings 1 and 8): defect classes that only surfaced on SonarCloud
   // after push (S9382, S5906) or as red nightlies (wall-clock assertions).
