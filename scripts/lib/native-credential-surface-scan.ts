@@ -1,4 +1,4 @@
-import { statSync } from 'node:fs'
+import type { Stats } from 'node:fs'
 import { join, relative } from 'node:path'
 import { listNames, readText, statPath } from './fs-access.js'
 
@@ -101,7 +101,7 @@ function walk(dir: string, out: string[]): void {
   for (const entry of entries) {
     const full = join(dir, entry)
     if (isExcluded(full)) continue
-    let stat: ReturnType<typeof statSync>
+    let stat: Stats
     try {
       stat = statPath(full)
     } catch {
