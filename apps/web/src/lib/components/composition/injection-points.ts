@@ -498,6 +498,13 @@ export interface InjectionPointProps {
   'settings.audit-access-report.report': StandardPointProps
   'settings.audit-forwarding.header': StandardPointProps
   'settings.audit-forwarding.config': StandardPointProps
+  'settings.audit-forwarding.forwarder': StandardPointProps
+  'settings.audit-forwarding.retention': StandardPointProps
+  'settings.audit-forwarding.s3': StandardPointProps
+  'settings.audit-forwarding.s3-credentials': StandardPointProps
+  'settings.audit-forwarding.s3-destination': StandardPointProps
+  'settings.audit-forwarding.type': StandardPointProps
+  'settings.audit-forwarding.webhook': StandardPointProps
   'settings.extensions.header': StandardPointProps
   'settings.extensions.status': StandardPointProps
   'settings.external-identities.header': StandardPointProps
@@ -1034,7 +1041,17 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/settings/audit/forwarding#page'],
-    ['settings.audit-forwarding.header', 'settings.audit-forwarding.config']
+    [
+      'settings.audit-forwarding.header',
+      'settings.audit-forwarding.config',
+      'settings.audit-forwarding.forwarder',
+      'settings.audit-forwarding.type',
+      'settings.audit-forwarding.webhook',
+      'settings.audit-forwarding.s3',
+      'settings.audit-forwarding.s3-destination',
+      'settings.audit-forwarding.s3-credentials',
+      'settings.audit-forwarding.retention',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
