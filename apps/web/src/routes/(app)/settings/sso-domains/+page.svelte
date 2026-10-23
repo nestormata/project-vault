@@ -19,7 +19,13 @@
   </SsoDomainsHeader>
 
   <!-- @region settings.sso-domains.panel -->
-  <SsoDomainsPanel {data}>
+  <SsoDomainsPanel
+    allowed={data.allowed}
+    mfaRequired={data.allowed && data.mfaRequired}
+    errorMessage={data.allowed ? data.errorMessage : null}
+    domains={data.allowed ? data.domains : []}
+    data={data.__inject}
+  >
     <InjectionPoint name="settings.sso-domains.panel" data={data?.__inject} />
   </SsoDomainsPanel>
 </div>

@@ -513,7 +513,9 @@ export interface InjectionPointProps {
   'settings.language.errors': StandardPointProps
   'settings.language.options': StandardPointProps
   'settings.security.header': StandardPointProps
+  'settings.sso-domains.add': StandardPointProps
   'settings.sso-domains.header': StandardPointProps
+  'settings.sso-domains.list': StandardPointProps
   'settings.sso-domains.panel': StandardPointProps
   'settings.themes.header': StandardPointProps
   'settings.themes.selection-error': StandardPointProps
@@ -1076,7 +1078,12 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/settings/sso-domains#page'],
-    ['settings.sso-domains.header', 'settings.sso-domains.panel']
+    [
+      'settings.sso-domains.header',
+      'settings.sso-domains.panel',
+      'settings.sso-domains.add',
+      'settings.sso-domains.list',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
