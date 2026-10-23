@@ -241,7 +241,41 @@ function usage(overrides: Overrides): Overrides {
     ...overrides,
   }
 }
+// Story 69.10: realistic users for the users page, whose rows branch on `status`, project roles and
+// the org role (a permissive value matches none of them). Recorded BEFORE the page's sections were
+// split into sub-region components.
+const USERS = [
+  {
+    userId: 'u-active',
+    email: 'active.member',
+    displayName: 'Active Member',
+    orgRole: 'member',
+    status: 'active',
+    projects: [
+      { projectId: 'p-alpha', projectName: 'Alpha', role: 'owner' },
+      { projectId: 'p-beta', projectName: 'Beta', role: 'viewer' },
+    ],
+  },
+  {
+    userId: 'u-gone',
+    email: 'gone.user',
+    displayName: 'Gone User',
+    orgRole: 'viewer',
+    status: 'deactivated',
+    projects: [],
+  },
+]
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
+  '/(app)/settings/users/+page.svelte': {
+    'users-owner': { ...OWNER_READY, orgRole: 'owner', users: USERS, nativeLoginEnabled: true },
+    'users-admin-external-login': {
+      ...OWNER_READY,
+      orgRole: 'admin',
+      users: USERS,
+      nativeLoginEnabled: false,
+    },
+    'users-empty': { ...OWNER_READY, users: [] },
+  },
   '/(app)/platform/settings/resource-usage/+page.svelte': {
     'usage-rows': { ...OWNER_READY, usage: usage({}), warnings: [] },
     'usage-truncated': {
