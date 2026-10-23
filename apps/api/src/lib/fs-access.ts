@@ -90,8 +90,10 @@ export function openReadNoFollow(path: string): number {
   return openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
 }
 
-/** Closes a descriptor from `openReadNoFollow`.
- * Reason: takes a descriptor, not a path; listed here so key-service has one fs seam. */
+/**
+ * Closes a descriptor from `openReadNoFollow`.
+ * Reason: takes a descriptor, not a path; listed here so key-service has one fs seam.
+ */
 export function closeDescriptor(fd: number): void {
   closeSync(fd)
 }
