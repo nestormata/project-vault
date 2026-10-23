@@ -134,7 +134,8 @@ const ownActions = {
     if (!reason) return fail(422, { error: 'A reason is required to dismiss this alert.' })
     try {
       await dismissSecurityAlert(fetch, alertId, reason)
-    } catch {
+    } catch (err) {
+      if (isRedirect(err)) throw err
       return fail(422, { error: 'Failed to dismiss dormancy alert' })
     }
     return { success: true }

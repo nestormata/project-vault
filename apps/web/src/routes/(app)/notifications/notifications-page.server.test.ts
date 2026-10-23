@@ -457,6 +457,8 @@ describe('/notifications session redirect (Story 62-6)', () => {
     getNotificationInboxMock.mockReset()
     markInboxEntryReadMock.mockReset()
     markAllInboxReadMock.mockReset()
+    dismissInboxEntryMock.mockReset()
+    dismissSecurityAlertMock.mockReset()
     requireUserMock.mockReset()
     requireUserMock.mockReturnValue({ orgRole: 'member' } as ReturnType<typeof requireUser>)
   })
@@ -490,6 +492,26 @@ describe('/notifications session redirect (Story 62-6)', () => {
       expect(isRedirect(error)).toBe(true)
     }
   )
+
+  it('dismiss rethrows the redirect, not fail(404)', async () => {
+    dismissInboxEntryMock.mockImplementation(redirectToLogin)
+
+    const error = await Promise.resolve(
+      expectAction(actions, 'dismiss')(actionEvent({ id: 'n1' }))
+    ).catch((e: unknown) => e)
+
+    expect(isRedirect(error)).toBe(true)
+  })
+
+  it('dismissDormancyAlert rethrows the redirect, not fail(422)', async () => {
+    dismissSecurityAlertMock.mockImplementation(redirectToLogin)
+
+    const error = await Promise.resolve(
+      expectAction(actions, 'dismissDormancyAlert')(actionEvent({ alertId: 'a1', reason: 'why' }))
+    ).catch((e: unknown) => e)
+
+    expect(isRedirect(error)).toBe(true)
+  })
 
   it('markRead still returns fail(422) for a non-redirect error', async () => {
     markInboxEntryReadMock.mockRejectedValue(new ApiClientError(500, null, 'x'))
