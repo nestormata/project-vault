@@ -5,8 +5,8 @@
 // with the same rules as PV's own. This is intentionally a small Svelte-aware scanner rather than a
 // formatter or a general HTML validator. It reports source locations so a reviewer can inspect each
 // result. It imports nothing outside `node:` so the compiled copy runs from a published package.
-import { readFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
+import { readText } from './fs-access.js'
 import { walkSvelte } from './svelte-files.js'
 
 export type FormGuidanceFinding = {
@@ -206,10 +206,7 @@ export function scanFormGuidanceTree(
   labelRoot: string = resolve(srcRoot, '..')
 ): FormGuidanceFinding[] {
   return walkSvelte(resolve(srcRoot)).flatMap((absolute) =>
-    scanFormGuidance(
-      readFileSync(absolute, 'utf8'),
-      relative(labelRoot, absolute).split(sep).join('/')
-    )
+    scanFormGuidance(readText(absolute), relative(labelRoot, absolute).split(sep).join('/'))
   )
 }
 

@@ -38,7 +38,6 @@
 //
 // Ships with web-host (`guards/monolithic-region.js`, registry kind "script"), so `pv-verify` runs
 // the same rule over a composed tree. Imports only `node:`, `svelte/compiler` and the shared walker.
-import { readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import {
   childrenOf,
@@ -48,6 +47,7 @@ import {
   type Node,
   type ParsedMarkup,
 } from './region-markup.js'
+import { readText } from './fs-access.js'
 import { walkSvelte } from './svelte-files.js'
 
 export interface MonolithicFinding {
@@ -474,7 +474,7 @@ export function scanMonolithicRegionsTree(
   const root = resolve(appRoot)
   const sources = new Map<string, string>()
   const files = [...walkSvelte(join(root, 'src'))]
-  for (const absolute of files) sources.set(absolute, readFileSync(absolute, 'utf8'))
+  for (const absolute of files) sources.set(absolute, readText(absolute))
   const ctx = newScanContext(root, (path) => sources.get(path))
   const result: TreeScan = {
     files: 0,

@@ -7,6 +7,7 @@ export default vitestConfig({
     coverage: {
       include: [
         'config/**/*.ts',
+        'guards/fs-access.ts',
         'guards/monolithic-region.ts',
         'guards/region-markup.ts',
         'guards/svelte-files.ts',
