@@ -522,7 +522,11 @@ export interface InjectionPointProps {
   'settings.themes.list': StandardPointProps
   'settings.themes.admin': StandardPointProps
   'settings.users.header': StandardPointProps
+  'settings.users.default-language': StandardPointProps
+  'settings.users.machine-dormancy': StandardPointProps
   'settings.users.management': StandardPointProps
+  'settings.users.table': StandardPointProps
+  'settings.users.user-dormancy': StandardPointProps
   'settings.users-erasure-detail.header': StandardPointProps
   'settings.users-erasure-detail.request': StandardPointProps
   'shares.detail.heading': StandardPointProps
@@ -1098,7 +1102,14 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/settings/users#page'],
-    ['settings.users.header', 'settings.users.management']
+    [
+      'settings.users.header',
+      'settings.users.management',
+      'settings.users.machine-dormancy',
+      'settings.users.user-dormancy',
+      'settings.users.default-language',
+      'settings.users.table',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',

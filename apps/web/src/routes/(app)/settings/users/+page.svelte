@@ -20,7 +20,14 @@
   </UsersHeader>
 
   <!-- @region settings.users.management -->
-  <UsersManagementPanel {data}>
+  <UsersManagementPanel
+    canManage={data.canManage}
+    orgId={data.orgId}
+    orgRole={data.orgRole}
+    users={data.users}
+    nativeLoginEnabled={data.nativeLoginEnabled}
+    data={data.__inject}
+  >
     <InjectionPoint name="settings.users.management" data={data?.__inject} />
   </UsersManagementPanel>
 </div>
