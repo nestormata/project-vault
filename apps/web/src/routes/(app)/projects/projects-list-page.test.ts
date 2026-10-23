@@ -52,6 +52,21 @@ describe('projects list +page.svelte (AC-12)', () => {
   })
 })
 
+// Story 63.2 AC-3: the tag editor explains the comma-separated format, not the generic boilerplate.
+describe('projects list tag help (Story 63.2 AC-3)', () => {
+  it('describes the tags input with format help instead of the boilerplate', () => {
+    render(ProjectsListPage, {
+      props: {
+        data: { ...appLayoutData(), projects: listPage([project]), includeArchived: false },
+      },
+    })
+    const help = document.getElementById('project-tags-help')?.textContent ?? ''
+
+    expect(help).toMatch(/comma/i)
+    expect(help).not.toContain('Enter the value this setting uses. Review it before saving.')
+  })
+})
+
 // Story 18.4 AC-1/AC-4/AC-5: the "Show archived"/"Hide archived" toggle button was the one
 // confirmed root-cause class found by this story's audit (AC-3) of every toggle-style button in
 // the app — unlike every sibling action on this same page (onArchive/onUnarchive/onSaveTags), it

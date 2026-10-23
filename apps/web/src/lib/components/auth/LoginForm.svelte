@@ -243,7 +243,7 @@
         required
         aria-describedby="login-email-help"
       />
-      <FormHelpText id="login-email-help" kind="text" />
+      <FormHelpText id="login-email-help" text={m.form_help_login_email()} />
     </div>
   {/snippet}
 

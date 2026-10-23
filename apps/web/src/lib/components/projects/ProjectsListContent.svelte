@@ -10,6 +10,7 @@
   } from '$lib/components/onboarding/onboarding-logic.js'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import { resolve } from '$app/paths'
+  import { m } from '$lib/paraglide/messages.js'
 
   let {
     projects,
@@ -205,7 +206,7 @@
                     tagInputs = { ...tagInputs, [project.id]: event.currentTarget.value }
                   }}
                 />
-                <FormHelpText id="project-tags-help" kind="text" />
+                <FormHelpText id="project-tags-help" text={m.form_help_project_tags()} />
                 {#if tagErrors[project.id]}
                   <p class="text-sm text-red-700" role="alert">{tagErrors[project.id]}</p>
                 {/if}

@@ -61,7 +61,7 @@
       value={filters?.eventType ?? ''}
       aria-describedby="audit-event-type-help"
     />
-    <FormHelpText id="audit-event-type-help" kind="text" />
+    <FormHelpText id="audit-event-type-help" text={m.form_help_audit_event_type()} />
   </label>
   <label class="flex flex-col text-sm text-slate-700" for="filter-actorId">
     Actor ID
@@ -73,7 +73,7 @@
       value={filters?.actorId ?? ''}
       aria-describedby="audit-actor-help"
     />
-    <FormHelpText id="audit-actor-help" kind="text" />
+    <FormHelpText id="audit-actor-help" text={m.form_help_audit_actor_id()} />
   </label>
   <label class="flex flex-col text-sm text-slate-700" for="filter-actorProvider">
     {m.audit_filter_actor_provider_label()}
@@ -109,7 +109,7 @@
       value={filters?.resourceId ?? ''}
       aria-describedby="audit-resource-help"
     />
-    <FormHelpText id="audit-resource-help" kind="text" />
+    <FormHelpText id="audit-resource-help" text={m.form_help_audit_resource_id()} />
   </label>
   <label class="flex flex-col text-sm text-slate-700" for="filter-projectId">
     Project ID
@@ -121,7 +121,7 @@
       value={filters?.projectId ?? ''}
       aria-describedby="audit-project-help"
     />
-    <FormHelpText id="audit-project-help" kind="text" />
+    <FormHelpText id="audit-project-help" text={m.form_help_audit_project_id()} />
   </label>
   <AuditDateRangeInputs
     clearHref={resolve('/settings/audit')}

@@ -152,7 +152,7 @@
         onblur={() => void applyThemeForEmail(email)}
         aria-describedby="register-email-help"
       />
-      <FormHelpText id="register-email-help" kind="text" />
+      <FormHelpText id="register-email-help" text={m.form_help_register_email()} />
     </div>
     {#if !invitationToken}
       <div class="space-y-2">
@@ -168,7 +168,7 @@
           required
           aria-describedby="register-org-help"
         />
-        <FormHelpText id="register-org-help" kind="text" />
+        <FormHelpText id="register-org-help" text={m.form_help_register_organization()} />
       </div>
     {/if}
     <div class="space-y-2">

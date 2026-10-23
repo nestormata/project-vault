@@ -48,3 +48,21 @@ describe('AuditSearchForm actor provider + subject filter (Story 71-10 AC-4)', (
     expect(await fireEvent.submit(form)).toBe(true)
   })
 })
+
+// Story 63.2 AC-3: no audit search field may carry the generic boilerplate help text.
+describe('AuditSearchForm per-field help (Story 63.2 AC-3)', () => {
+  it.each([
+    ['filter-eventType', /events of this type/i],
+    ['filter-actorId', /user or machine identity/i],
+    ['filter-resourceId', /resource/i],
+    ['filter-projectId', /project/i],
+  ])('%s has specific help, not the generic boilerplate', (id, pattern) => {
+    renderForm()
+    const input = document.getElementById(id) as HTMLInputElement
+    const help = document.getElementById(input.getAttribute('aria-describedby') ?? '')
+    expect(help?.textContent).toMatch(pattern)
+    expect(help?.textContent).not.toContain(
+      'Enter the value this setting uses. Review it before saving.'
+    )
+  })
+})
