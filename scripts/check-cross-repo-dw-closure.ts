@@ -14,10 +14,10 @@
  * Pure, DB-free: a static read of two files (`sprint-status.yaml` here, `deferred-work.md` in the
  * sibling repo).
  */
-import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadSprintStatuses } from './check-story-status-sync.js'
+import { pathExists, readText } from './lib/fs-access.js'
 
 export type CrossRepoDwWarning = {
   dwNumber: string
@@ -117,8 +117,7 @@ function extractStatus(body: string): string | undefined {
 export function scanCrossRepoDwClosure(rootDir: string, cmPath: string): CrossRepoDwScanResult {
   // cmPath is caller-controlled (tests pass a fixture path, production passes a resolved CLI
   // flag/env var/default guess), never user input from an untrusted request.
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
-  if (!existsSync(cmPath)) {
+  if (!pathExists(cmPath)) {
     return {
       warnings: [],
       skipped: true,
@@ -133,8 +132,7 @@ export function scanCrossRepoDwClosure(rootDir: string, cmPath: string): CrossRe
         .map(([key]) => key)
     : []
 
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- see above
-  const content = readFileSync(cmPath, 'utf-8')
+  const content = readText(cmPath)
   const entries = parseDwEntries(content)
 
   const warnings: CrossRepoDwWarning[] = []

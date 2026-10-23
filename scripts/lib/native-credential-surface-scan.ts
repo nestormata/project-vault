@@ -1,5 +1,6 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { statSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import { listNames, readText, statPath } from './fs-access.js'
 
 /**
  * Story 23.2 AC-19 — the native-credential surface is derived by a procedure (five predicates)
@@ -93,7 +94,7 @@ function isTestFile(relPath: string): boolean {
 function walk(dir: string, out: string[]): void {
   let entries: string[]
   try {
-    entries = readdirSync(dir)
+    entries = listNames(dir)
   } catch {
     return
   }
@@ -102,7 +103,7 @@ function walk(dir: string, out: string[]): void {
     if (isExcluded(full)) continue
     let stat: ReturnType<typeof statSync>
     try {
-      stat = statSync(full)
+      stat = statPath(full)
     } catch {
       continue
     }
@@ -128,8 +129,7 @@ export function scanNativeCredentialSurface(repoRoot: string): SurfaceHit[] {
     if (isTestFile(relPath)) continue
     // absPath is derived from a directory walk of this repo's own tracked source tree, not
     // attacker-controlled input.
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
-    const lines = readFileSync(absPath, 'utf-8').split('\n')
+    const lines = readText(absPath).split('\n')
     lines.forEach((lineText, index) => {
       for (const predicate of Object.keys(PREDICATE_PATTERNS) as Predicate[]) {
         if (PREDICATE_PATTERNS[predicate].some((pattern) => pattern.test(lineText))) {
@@ -158,8 +158,7 @@ export function fileWiresNativeLoginGate(repoRoot: string, relPath: string): boo
   let content: string
   try {
     // relPath is manifest-controlled (checked-in JSON, not request input).
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
-    content = readFileSync(absPath, 'utf-8')
+    content = readText(absPath)
   } catch {
     return false
   }

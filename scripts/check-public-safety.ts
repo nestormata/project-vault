@@ -7,9 +7,9 @@
  * for a human review, not proof that a line is malicious or confidential.
  */
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import process from 'node:process'
+import { readText } from './lib/fs-access.js'
 
 export type RiskSeverity = 'critical' | 'high' | 'medium'
 
@@ -473,8 +473,7 @@ export function scanChangedContent(
     let content: string
     try {
       // The path is constrained by git's own non-ignored file list above.
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      content = readFileSync(absolute, 'utf8')
+      content = readText(absolute)
     } catch {
       continue
     }

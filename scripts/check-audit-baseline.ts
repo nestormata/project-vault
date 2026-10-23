@@ -35,9 +35,9 @@
  *
  * Pure, DB-free: a static read of `audit-ci.jsonc` under the given root.
  */
-import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { readText } from './lib/fs-access.js'
 
 export type AuditBaselineViolation = {
   entryKey: string
@@ -107,8 +107,7 @@ function loadAuditCiConfig(
 
   let raw: string
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- root is caller-controlled (tests pass a fixture dir, production passes cwd), never user input
-    raw = readFileSync(auditCiPath, 'utf-8')
+    raw = readText(auditCiPath)
   } catch {
     return {
       violation: { entryKey: '<file>', reason: `audit-ci.jsonc not found at ${auditCiPath}` },
