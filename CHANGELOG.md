@@ -11,6 +11,12 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Fixed
 
+- **Sitewide hygiene** (Story 63.2): authenticated pages no longer open a dead `/api/v1/stream`
+  connection, `.env.example` single-quotes `AUTH_DUMMY_PASSWORD_HASH` so `docker compose` stops
+  printing 16 "variable is not set" warnings, the register, login, project tag and audit search
+  fields show specific help text instead of "Enter the value this setting uses", and the tab is
+  titled "Dashboard | Project Vault" while the first-project onboarding wizard is open.
+
 - **A dead share link can no longer lock every live share of its org out of redemption** (Story 65.5,
   DW-346). `HostServices.credentialSharing.findShareByToken` and `revealShare` charged the per-org
   redemption window (60 and 30 per 60 s) for any token that resolved to a row, revoked, viewed,
