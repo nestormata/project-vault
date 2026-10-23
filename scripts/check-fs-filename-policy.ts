@@ -17,6 +17,7 @@
  */
 import { pathToFileURL } from 'node:url'
 import { FS_ACCESS_MODULES } from '../packages/eslint-config/index.js'
+import { gitGrep, reportFindings } from './lib/git-grep.js'
 import { trustedGit } from './lib/trusted-executable.js'
 
 export type PolicyFinding = { location: string; reason: string }
@@ -32,16 +33,6 @@ const SHIPPED_GUARD_MODULES = ['apps/web/guards/fs-access.ts']
 const FS_ACCESS_NAME = /(^|\/)fs-access\.(ts|mjs)$/
 
 const git = trustedGit
-
-/** `git grep` over tracked files; `''` on no match (exit 1), any other failure surfaces. */
-function gitGrep(repoRoot: string, args: string[]): string {
-  try {
-    return git(repoRoot, ['grep', '--no-color', '-I', ...args])
-  } catch (error) {
-    if ((error as { status?: number }).status === 1) return ''
-    throw error
-  }
-}
 
 function trackedText(repoRoot: string, path: string): string | null {
   const text = gitGrep(repoRoot, ['-h', '-e', '^', '--', `:(literal)${path}`])
@@ -194,11 +185,10 @@ function main(): void {
     )
     return
   }
-  process.stderr.write(
-    `check-fs-filename-policy: ${findings.length} violation(s). Route file access through a pinned fs-access module with a Reason: line (Nestor's 2026-10-04 decision, DW-444/DW-511); a new exemption needs an expert consult plus Nestor's sign-off (AGENTS.md).\n`
+  reportFindings(
+    `check-fs-filename-policy: ${findings.length} violation(s). Route file access through a pinned fs-access module with a Reason: line (Nestor's 2026-10-04 decision, DW-444/DW-511); a new exemption needs an expert consult plus Nestor's sign-off (AGENTS.md).`,
+    findings
   )
-  for (const f of findings) process.stderr.write(`  ${f.location}  ${f.reason}\n`)
-  process.exitCode = 1
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
