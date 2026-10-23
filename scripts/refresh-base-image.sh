@@ -35,7 +35,7 @@ select_image() {
     node)
       REPO="library/node"
       TAG="${BASE_IMAGE_TAG:-24-alpine}"
-      FILES=(apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci)
+      FILES=(apps/api/Dockerfile apps/web/Dockerfile Dockerfile.ci fixtures/mock-ui-pack/docker/web.Dockerfile)
       ;;
     postgres)
       REPO="library/postgres"

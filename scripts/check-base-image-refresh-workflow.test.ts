@@ -18,7 +18,12 @@ const { parse: parseYaml } = createRequire(resolve(process.cwd(), 'apps/api/pack
 const ROOT = resolve(__dirname, '..')
 const WORKFLOW_PATH = '.github/workflows/base-image-refresh.yml'
 const SCRIPT = join(ROOT, 'scripts/refresh-base-image.sh')
-const DOCKERFILES = ['apps/api/Dockerfile', 'apps/web/Dockerfile', 'Dockerfile.ci']
+const DOCKERFILES = [
+  'apps/api/Dockerfile',
+  'apps/web/Dockerfile',
+  'Dockerfile.ci',
+  'fixtures/mock-ui-pack/docker/web.Dockerfile',
+]
 const POSTGRES_DOCKERFILE = 'deploy/fly/db/Dockerfile'
 const ALL_DOCKERFILES = [...DOCKERFILES, POSTGRES_DOCKERFILE]
 
@@ -40,6 +45,7 @@ const REPO_TEXT: Record<string, string> = import.meta.glob(
     '../apps/api/Dockerfil[e]',
     '../apps/web/Dockerfil[e]',
     '../Dockerfile.c[i]',
+    '../fixtures/mock-ui-pack/docker/web.Dockerfil[e]',
   ],
   { query: '?raw', import: 'default', eager: true }
 )
@@ -173,19 +179,19 @@ describe('refresh-base-image.sh', () => {
     return spawnSync('bash', [SCRIPT, ...args], { encoding: 'utf8' })
   }
 
-  it('rewrites all six FROM lines across the three Dockerfiles and leaves the rest intact', () => {
+  it('rewrites all eight FROM lines across the four Dockerfiles and leaves the rest intact', () => {
     const dir = fixture()
     const before = DOCKERFILES.map((file) => readFixture(dir, file))
     const result = run('rewrite', NEW, dir)
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain('rewrote 6 FROM lines')
+    expect(result.stdout).toContain('rewrote 8 FROM lines')
 
     const after = DOCKERFILES.map((file) => readFixture(dir, file))
     for (const text of after) {
       expect(text).not.toContain(OLD)
       expect(text).toContain(NEW)
     }
-    expect(after.join('').split(NEW)).toHaveLength(7)
+    expect(after.join('').split(NEW)).toHaveLength(9)
     expect(after.join('').replaceAll(NEW, OLD)).toBe(before.join(''))
     expect(run('current', dir).stdout.trim()).toBe(NEW)
   })
@@ -238,10 +244,10 @@ describe('refresh-base-image.sh', () => {
     expect(result.stdout).toContain('rewrote 1 FROM lines')
 
     const after = ALL_DOCKERFILES.map((file) => readFixture(dir, file))
-    expect(after.slice(0, 3)).toEqual(before.slice(0, 3))
-    expect(after[3]).toContain(`FROM postgres@${NEW_PG} AS runner`)
-    expect(after[3]).not.toContain(OLD_PG)
-    expect(after[3].replace(NEW_PG, OLD_PG)).toBe(before[3])
+    expect(after.slice(0, DOCKERFILES.length)).toEqual(before.slice(0, DOCKERFILES.length))
+    expect(after[DOCKERFILES.length]).toContain(`FROM postgres@${NEW_PG} AS runner`)
+    expect(after[DOCKERFILES.length]).not.toContain(OLD_PG)
+    expect(after[DOCKERFILES.length].replace(NEW_PG, OLD_PG)).toBe(before[DOCKERFILES.length])
     expect(run('current', '--image', 'postgres', dir).stdout.trim()).toBe(NEW_PG)
     expect(run('current', dir).stdout.trim()).toBe(OLD)
   })

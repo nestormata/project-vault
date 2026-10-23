@@ -11,7 +11,7 @@
 # of image CVEs, so they are removed from the runtime node_modules.
 #
 # node:24-alpine, pinned by digest like PV's images (Sonar S8431: a digest alone fixes the image).
-FROM node@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS builder
+FROM node@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS builder
 
 WORKDIR /app
 
@@ -34,7 +34,7 @@ RUN npm prune --omit=dev --ignore-scripts --loglevel=error \
       node_modules/binaryen node_modules/oxc-minify node_modules/@oxc-minify \
       node_modules/@bytecodealliance node_modules/@inlang/sdk
 
-FROM node@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS runner
+FROM node@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS runner
 
 # npm/npx are never invoked at runtime (CMD runs node directly).
 RUN apk add --no-cache curl \
