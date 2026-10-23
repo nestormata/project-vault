@@ -36,9 +36,7 @@ test.describe('J9 — contextual guidance for every form control', () => {
 
     await page.getByRole('button', { name: 'Español' }).click()
     await expect(
-      page
-        .getByText('Ingresa el valor que usa esta configuración. Revísalo antes de guardar.')
-        .first()
+      page.getByText('Iniciarás sesión con esta dirección de correo.').first()
     ).toBeVisible()
     await expectVisibleFormGuidance(page)
     await expect(page.getByLabel('Correo electrónico')).toHaveValue(/j9-register/)
