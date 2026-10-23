@@ -461,6 +461,19 @@ export interface InjectionPointProps {
   'platform.audit.verify': StandardPointProps
   'platform.backups.content': StandardPointProps
   'platform.settings.content': StandardPointProps
+  'platform.settings.backup': StandardPointProps
+  'platform.settings.form': StandardPointProps
+  'platform.settings.instance-policy': StandardPointProps
+  'platform.settings.notifications': StandardPointProps
+  'platform.settings.save-status': StandardPointProps
+  'platform.settings.smtp': StandardPointProps
+  'platform.settings.smtp-account': StandardPointProps
+  'platform.settings.smtp-server': StandardPointProps
+  'platform.settings.status-token': StandardPointProps
+  'platform.settings.status-token-actions': StandardPointProps
+  'platform.settings.status-token-reveal': StandardPointProps
+  'platform.settings.status-token-state': StandardPointProps
+  'platform.settings.status-token-test': StandardPointProps
   'platform.settings-orgs.content': StandardPointProps
   'platform.settings-resource-usage.content': StandardPointProps
   'platform.upgrade.content': StandardPointProps
@@ -932,7 +945,22 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/platform/settings#page'],
-    ['platform.settings.content']
+    [
+      'platform.settings.content',
+      'platform.settings.form',
+      'platform.settings.save-status',
+      'platform.settings.smtp',
+      'platform.settings.smtp-server',
+      'platform.settings.smtp-account',
+      'platform.settings.backup',
+      'platform.settings.notifications',
+      'platform.settings.instance-policy',
+      'platform.settings.status-token',
+      'platform.settings.status-token-reveal',
+      'platform.settings.status-token-state',
+      'platform.settings.status-token-actions',
+      'platform.settings.status-token-test',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',

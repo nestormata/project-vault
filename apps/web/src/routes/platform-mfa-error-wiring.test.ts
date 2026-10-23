@@ -8,7 +8,7 @@ const platformPages = [
   {
     ac: 'AC-M1',
     path: '../lib/components/platform/PlatformSettingsContent.svelte',
-    error: 'data.errorMessage',
+    error: 'pageData.errorMessage',
   },
   {
     ac: 'AC-M2',

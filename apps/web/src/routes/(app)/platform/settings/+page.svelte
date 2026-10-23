@@ -15,7 +15,7 @@
 <InjectionPoint name="platform.settings.before" data={data?.__inject} />
 <InjectionPoint name="platform.settings.header.actions" data={data?.__inject} />
 <!-- @region platform.settings.content -->
-<PlatformSettingsContent {data}>
+<PlatformSettingsContent pageData={data} data={data.__inject}>
   <InjectionPoint name="platform.settings.content" data={data?.__inject} />
 </PlatformSettingsContent>
 <InjectionPoint name="platform.settings.after" data={data?.__inject} />
