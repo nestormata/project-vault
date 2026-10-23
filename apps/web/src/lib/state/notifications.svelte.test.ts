@@ -1,27 +1,17 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const connectSseMock = vi.hoisted(() => vi.fn())
-const onSseEventMock = vi.hoisted(() => vi.fn())
-
-vi.mock('./sse.svelte.js', () => ({
-  connectSse: connectSseMock,
-  onSseEvent: onSseEventMock,
-}))
-
+import * as notifications from './notifications.svelte.js'
 import {
   decrementUnread,
   getUnreadCount,
   isInitialized,
   markAllReadLocally,
   setInitialUnreadCount,
-  subscribeToInboxEvents,
 } from './notifications.svelte.js'
 
 describe('notifications.svelte.ts', () => {
   beforeEach(() => {
-    connectSseMock.mockReset()
-    onSseEventMock.mockReset()
     setInitialUnreadCount(0)
   })
 
@@ -53,38 +43,17 @@ describe('notifications.svelte.ts', () => {
     expect(getUnreadCount()).toBe(0)
   })
 
-  it('subscribeToInboxEvents connects SSE once and updates the count on inbox events', () => {
-    let inboxHandler: ((event: { unreadCount: number }) => void) | undefined
-    const unsubscribe = vi.fn()
-    onSseEventMock.mockImplementation((_event: string, handler: typeof inboxHandler) => {
-      inboxHandler = handler
-      return unsubscribe
-    })
-    const disconnectSse = vi.fn()
-    connectSseMock.mockReturnValue(disconnectSse)
+  // Story 63.2 AC-1: the api has no /api/v1/stream route, so the inbox never opens an EventSource.
+  it('does not expose an SSE subscription and never opens an EventSource', () => {
+    const eventSource = vi.fn()
+    vi.stubGlobal('EventSource', eventSource)
 
-    const cleanup = subscribeToInboxEvents()
-    inboxHandler?.({ unreadCount: 42 })
+    expect('subscribeToInboxEvents' in notifications).toBe(false)
+    setInitialUnreadCount(3)
+    decrementUnread()
 
-    expect(getUnreadCount()).toBe(42)
-    expect(connectSseMock).toHaveBeenCalledTimes(1)
-
-    cleanup()
-    expect(unsubscribe).toHaveBeenCalled()
-    expect(disconnectSse).toHaveBeenCalled()
-  })
-
-  it('subscribeToInboxEvents reuses the existing SSE connection on a second subscribe (??= branch)', () => {
-    const disconnectSse = vi.fn()
-    connectSseMock.mockReturnValue(disconnectSse)
-    onSseEventMock.mockReturnValue(vi.fn())
-
-    const cleanupFirst = subscribeToInboxEvents()
-    const cleanupSecond = subscribeToInboxEvents()
-
-    expect(connectSseMock).toHaveBeenCalledTimes(1)
-
-    cleanupSecond()
-    cleanupFirst()
+    expect(getUnreadCount()).toBe(2)
+    expect(eventSource).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
   })
 })
