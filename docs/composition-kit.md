@@ -412,6 +412,27 @@ The registry builds them with `regionPoints('<propsType>', [], [...names])`, whi
 every file a pack overrides there changes with the next web-host release. That is the intended signal;
 reconcile it with `pv-compose --accept-host`.
 
+### Sub-regions of the large region components (Epic 69, Story 69-10)
+
+A region component with more than one section is split into sub-region components, each with its own flat
+registered point (`<area>.<page>.<section>`), so a pack can inject between two PV sections without replacing the
+whole region. The sub-regions of the first batch:
+
+| Page                                | Sub-region points                                                                                                                                                                                 |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/settings/users`                   | `settings.users.machine-dormancy`, `.user-dormancy`, `.default-language`, `.table`                                                                                                                |
+| `/settings/audit/forwarding`        | `settings.audit-forwarding.forwarder`, `.type`, `.webhook`, `.s3`, `.s3-destination`, `.s3-credentials`, `.retention`                                                                             |
+| `/settings/sso-domains`             | `settings.sso-domains.add`, `.list`                                                                                                                                                               |
+| `/platform/audit`                   | `platform.audit.maintenance-status`, `.search`, `.results`, `.verify`, `.maintenance`                                                                                                             |
+| `/platform/settings`                | `platform.settings.form`, `.save-status`, `.smtp`, `.smtp-server`, `.smtp-account`, `.backup`, `.notifications`, `.instance-policy`, `.status-token` (+ `-reveal`, `-state`, `-actions`, `-test`) |
+| `/projects/[projectId]/credentials` | `project.credentials.filters`, `.archived-toggle`, `.results`                                                                                                                                     |
+
+A point sits as the last child of its section (written next to the previous node, so no whitespace text node is
+added). Under M4, a replacement that wraps the original through `pv-original:` keeps every sub-region point; a full
+replacement of the region component drops them all, and replacing one sub-region component drops only its own
+points (`scripts/lib/web-host/inner-region-points.test.ts`). `injection-points.json` keeps listing them with their
+host file.
+
 ## Hooks, header policy and protected paths
 
 Story 68-6 (design §8). A pack contributes to every SvelteKit hook without replacing PV's hooks

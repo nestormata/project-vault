@@ -9,6 +9,14 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ## [Unreleased]
 
+### Added
+
+- **Injection points between the sections of six large pages** (Story 69.10, DW-546). The users panel,
+  the audit forwarding page, SSO domains, the platform audit log, the platform system settings and the
+  project credentials list are split into sub-region components, each with its own registered point
+  (`settings.users.table`, `platform.settings.smtp`, `project.credentials.filters`, ...). PV's rendered
+  output is unchanged; `docs/composition-kit.md` lists the points.
+
 ### Fixed
 
 - **A dead share link can no longer lock every live share of its org out of redemption** (Story 65.5,
