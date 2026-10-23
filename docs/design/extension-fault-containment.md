@@ -36,7 +36,9 @@ valid when the fault never reaches the process level.
    `apps/api/src/main.ts`, before `createApp()` runs `loadExtension()`):
    - handles `uncaughtException` and `unhandledRejection` through one once-only path;
    - order: `zeroKeys()`, one `process.fatal_fault` log line, bounded `fastify.close()`
-     (5 s), `process.exit(1)`;
+     (5 s), `process.exit(1)`. Keys are zeroed before the close, so a request still in flight
+     during the (at most 5 s) close window that needs key material fails; this is intentional
+     (after a fatal fault, key material must not outlive the decision to exit);
    - never resumes serving. A second fault during the exit path exits immediately. A failing
      logger, `zeroKeys` or `close` still ends in `exit(1)`;
    - logs only the origin, `error.name` (shape-checked), an allow-listed `error.code`
