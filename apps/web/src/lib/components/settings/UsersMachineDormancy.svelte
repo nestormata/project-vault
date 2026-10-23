@@ -1,9 +1,8 @@
 <script lang="ts">
   import { updateMachineKeyDormancyThreshold } from '$lib/api/organization-settings.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
-  import DormancyThresholdOptions from '$lib/components/DormancyThresholdOptions.svelte'
-  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import UsersDormancyCard from './UsersDormancyCard.svelte'
+  import UsersDormancySelect from './UsersDormancySelect.svelte'
 
   // Story 69.10: the machine-key dormancy threshold card as one replaceable region.
   // AC-4 — Deliberately a "set new value" control, not a pre-populated one: the API only ships a PATCH
@@ -26,15 +25,11 @@
     (await updateMachineKeyDormancyThreshold(fetch, orgId, days)).machineKeyDormancyThresholdDays}
 >
   {#snippet select(threshold)}
-    <select
+    <UsersDormancySelect
       id="dormancy-threshold-select"
-      class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-      bind:value={threshold.choice}
-      aria-describedby="machine-dormancy-threshold-help"
-    >
-      <DormancyThresholdOptions />
-    </select>
-    <FormHelpText id="machine-dormancy-threshold-help" kind="select" />
+      helpId="machine-dormancy-threshold-help"
+      {threshold}
+    />
   {/snippet}
   <InjectionPoint name="settings.users.machine-dormancy" {data} />
 </UsersDormancyCard>

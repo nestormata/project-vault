@@ -1,9 +1,8 @@
 <script lang="ts">
   import { updateUserDormancyThreshold } from '$lib/api/organization-settings.js'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
-  import DormancyThresholdOptions from '$lib/components/DormancyThresholdOptions.svelte'
-  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import UsersDormancyCard from './UsersDormancyCard.svelte'
+  import UsersDormancySelect from './UsersDormancySelect.svelte'
 
   // Story 69.10: the user dormancy threshold card as one replaceable region. Story 8.7 AC-I1/I2/I3 —
   // the sibling "set a new value" control for the `user.dormant` alert threshold, same no-readback
@@ -25,15 +24,11 @@
     (await updateUserDormancyThreshold(fetch, orgId, days)).userDormancyThresholdDays}
 >
   {#snippet select(threshold)}
-    <select
+    <UsersDormancySelect
       id="user-dormancy-threshold-select"
-      class="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-      bind:value={threshold.choice}
-      aria-describedby="user-dormancy-threshold-help"
-    >
-      <DormancyThresholdOptions />
-    </select>
-    <FormHelpText id="user-dormancy-threshold-help" kind="select" />
+      helpId="user-dormancy-threshold-help"
+      {threshold}
+    />
   {/snippet}
   <InjectionPoint name="settings.users.user-dormancy" {data} />
 </UsersDormancyCard>
