@@ -160,30 +160,37 @@ export async function startApiChild(kind: FaultKind): Promise<ApiChild> {
 
   const lines: string[] = []
   const waiters: Array<{ matches: (line: string) => boolean; resolve: (line: string) => void }> = []
-  const lineReader = () => {
-    let pending = ''
-    return (chunk: string) => {
-      pending += chunk
-      const parts = pending.split('\n')
-      pending = parts.pop() ?? ''
-      for (const line of parts) {
-        lines.push(line)
-        for (const waiter of [...waiters]) {
-          if (waiter.matches(line)) {
-            waiters.splice(waiters.indexOf(waiter), 1)
-            waiter.resolve(line)
-          }
-        }
+  const pushLine = (line: string) => {
+    lines.push(line)
+    for (const waiter of [...waiters]) {
+      if (waiter.matches(line)) {
+        waiters.splice(waiters.indexOf(waiter), 1)
+        waiter.resolve(line)
       }
     }
   }
-  child.stdout?.setEncoding('utf8')
-  child.stderr?.setEncoding('utf8')
-  child.stdout?.on('data', lineReader())
-  child.stderr?.on('data', lineReader())
+  const readLines = (stream: NodeJS.ReadableStream | null) => {
+    let pending = ''
+    stream?.setEncoding('utf8')
+    stream?.on('data', (chunk: string) => {
+      pending += chunk
+      const parts = pending.split('\n')
+      pending = parts.pop() ?? ''
+      parts.forEach(pushLine)
+    })
+    // An unterminated last write still counts (the redaction check must see it).
+    stream?.on('end', () => {
+      if (pending !== '') pushLine(pending)
+      pending = ''
+    })
+  }
+  readLines(child.stdout)
+  readLines(child.stderr)
 
+  // `close`, not `exit`: Node may emit `exit` before the stdio pipes are drained, and the
+  // assertions read every line the child wrote (fatal-line count, sentinel redaction).
   const exited = new Promise<ExitInfo>((done) => {
-    child.once('exit', (code, signal) => done({ code, signal }))
+    child.once('close', (code, signal) => done({ code, signal }))
   })
 
   const tail = () =>
@@ -209,10 +216,13 @@ export async function startApiChild(kind: FaultKind): Promise<ApiChild> {
   return { port, process: child, lines, exited, waitForLine, tail }
 }
 
-/** SIGKILLs the child's whole process group; a no-op once it is gone. */
+/**
+ * SIGKILLs the child's whole process group; a no-op once it is gone. Sent even after the leader
+ * exited, so a grandchild still in the group (tsx's esbuild service) is not left behind.
+ */
 export function killApiChild(child: ApiChild | undefined): void {
   const pid = child?.process.pid
-  if (pid === undefined || child?.process.exitCode !== null) return
+  if (pid === undefined) return
   try {
     process.kill(-pid, 'SIGKILL')
   } catch {

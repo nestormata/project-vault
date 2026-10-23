@@ -27,6 +27,9 @@ import {
 
 const BOOT_BOUND_MS = 50_000
 const EXIT_BOUND_MS = 20_000
+// Above the sum of the phase bounds, so a hung phase fails with its own message and log tail
+// rather than vitest's generic 60 s test timeout.
+const TEST_BOUND_MS = BOOT_BOUND_MS + 2 * EXIT_BOUND_MS + 10_000
 
 type Scenario = {
   kind: FaultKind
@@ -113,69 +116,73 @@ describe('fatal fault handler: real API process (Story 67.2)', () => {
   describe.each(SCENARIOS)(
     'leaked $kind fault',
     ({ kind, origin, attribution, errorName, errorCode }) => {
-      it(`exits 1 after one ${attribution} fatal line, closing the server gracefully`, async () => {
-        child = await startApiChild(kind)
-        await withBound(
-          child.waitForLine(
-            (l) => hasEvent(l, OperationalEvent.STARTUP_COMPLETE),
-            'startup.complete'
-          ),
-          BOOT_BOUND_MS,
-          'startup.complete',
-          child.tail
-        )
-        const apiChild = child
+      it(
+        `exits 1 after one ${attribution} fatal line, closing the server gracefully`,
+        async () => {
+          child = await startApiChild(kind)
+          await withBound(
+            child.waitForLine(
+              (l) => hasEvent(l, OperationalEvent.STARTUP_COMPLETE),
+              'startup.complete'
+            ),
+            BOOT_BOUND_MS,
+            'startup.complete',
+            child.tail
+          )
+          const apiChild = child
 
-        // A request that stays in flight until the fault has reached the host's handler.
-        const inflight = startInflightRequest(apiChild.port)
-        await withBound(
-          apiChild.waitForLine((l) => l.includes(INFLIGHT_MARKER), 'in-flight marker'),
-          EXIT_BOUND_MS,
-          'in-flight marker',
-          apiChild.tail
-        )
+          // A request that stays in flight until the fault has reached the host's handler.
+          const inflight = startInflightRequest(apiChild.port)
+          await withBound(
+            apiChild.waitForLine((l) => l.includes(INFLIGHT_MARKER), 'in-flight marker'),
+            EXIT_BOUND_MS,
+            'in-flight marker',
+            apiChild.tail
+          )
 
-        let exitSeenAt: number | undefined
-        let responseSeenAt: number | undefined
-        const order = { n: 0 }
-        void apiChild.exited.then(() => (exitSeenAt = ++order.n))
-        void inflight.then(() => (responseSeenAt = ++order.n))
+          let exitSeenAt: number | undefined
+          let responseSeenAt: number | undefined
+          const order = { n: 0 }
+          void apiChild.exited.then(() => (exitSeenAt = ++order.n))
+          void inflight.then(() => (responseSeenAt = ++order.n))
 
-        apiChild.process.kill('SIGUSR2')
-        const exit = await withBound(apiChild.exited, EXIT_BOUND_MS, 'child exit', apiChild.tail)
-        const response = await inflight
+          apiChild.process.kill('SIGUSR2')
+          const exit = await withBound(apiChild.exited, EXIT_BOUND_MS, 'child exit', apiChild.tail)
+          const response = await inflight
 
-        // Exit: non-zero by the handler, not killed by a signal.
-        expect(exit, apiChild.tail()).toEqual({ code: 1, signal: null })
+          // Exit: non-zero by the handler, not killed by a signal.
+          expect(exit, apiChild.tail()).toEqual({ code: 1, signal: null })
 
-        // Graceful close: the in-flight request completed with a full response, before the exit.
-        expect(response).toEqual({ outcome: 'response', status: 200, body: expect.any(String) })
-        expect(response.outcome === 'response' && JSON.parse(response.body)).toHaveProperty(
-          'status'
-        )
-        expect(responseSeenAt).toBeLessThan(exitSeenAt ?? Number.POSITIVE_INFINITY)
+          // Graceful close: the in-flight request completed with a full response, before the exit.
+          expect(response).toEqual({ outcome: 'response', status: 200, body: expect.any(String) })
+          expect(response.outcome === 'response' && JSON.parse(response.body)).toHaveProperty(
+            'status'
+          )
+          expect(responseSeenAt).toBeLessThan(exitSeenAt ?? Number.POSITIVE_INFINITY)
 
-        // Exactly one attributed fatal line.
-        const fatalLines = apiChild.lines
-          .filter((l) => hasEvent(l, OperationalEvent.PROCESS_FATAL_FAULT))
-          .map((l) => parseJsonLine(l))
-        expect(fatalLines).toHaveLength(1)
-        expect(fatalLines[0]).toMatchObject({
-          level: 'fatal',
-          eventType: OperationalEvent.PROCESS_FATAL_FAULT,
-          origin,
-          errorName,
-          ...(errorCode ? { errorCode } : {}),
-          attribution,
-          extension: attribution === 'extension' ? FIXTURE_MANIFEST_NAME : null,
-        })
+          // Exactly one attributed fatal line.
+          const fatalLines = apiChild.lines
+            .filter((l) => hasEvent(l, OperationalEvent.PROCESS_FATAL_FAULT))
+            .map((l) => parseJsonLine(l))
+          expect(fatalLines).toHaveLength(1)
+          expect(fatalLines[0]).toMatchObject({
+            level: 'fatal',
+            eventType: OperationalEvent.PROCESS_FATAL_FAULT,
+            origin,
+            errorName,
+            ...(errorCode ? { errorCode } : {}),
+            attribution,
+            extension: attribution === 'extension' ? FIXTURE_MANIFEST_NAME : null,
+          })
 
-        // Redaction: the error message never reaches the process output.
-        expect(apiChild.lines.join('\n')).not.toContain(FAULT_SENTINEL)
+          // Redaction: the error message never reaches the process output.
+          expect(apiChild.lines.join('\n')).not.toContain(FAULT_SENTINEL)
 
-        // The listener is gone with the process.
-        expect(await connectRefused(apiChild.port)).toBe(true)
-      })
+          // The listener is gone with the process.
+          expect(await connectRefused(apiChild.port)).toBe(true)
+        },
+        TEST_BOUND_MS
+      )
     }
   )
 })
