@@ -60,10 +60,57 @@ describe('findFsFilenamePolicyViolations (AC-7)', () => {
     ['file-level block directive', `/* eslint-disable ${RULE} */\nreadFileSync(p)\n`],
     ['same-line directive', `readFileSync(p) // eslint-disable-line ${RULE}\n`],
     ['rule name wrapped onto the next line', `/* eslint-disable\n  ${RULE} */\n`],
+    ['inline rule-config comment', `/* eslint ${RULE}: off */\nreadFileSync(p)\n`],
+    ['bare next-line disable (every rule)', '// eslint-disable-next-line\nreadFileSync(p)\n'],
+    ['bare block disable (every rule)', '/* eslint-disable */\nreadFileSync(p)\n'],
+    ['bare disable with only a reason', '// eslint-disable-next-line -- reason\nreadFileSync(p)\n'],
   ])('a %s fails with path:line', (_label, body) => {
     const root = repo({ ...cleanFiles, 'src/a.ts': `export const a = 1\n${body}` })
     const found = findFsFilenamePolicyViolations(root, pins)
     expect(found).toEqual([expect.objectContaining({ location: 'src/a.ts:2' })])
+  })
+
+  it('a wrapped directive in a file whose name holds -<digits>- is still found', () => {
+    const root = repo({ ...cleanFiles, 'src/x-1-y.ts': `/* eslint-disable\n  ${RULE} */\n` })
+    expect(findFsFilenamePolicyViolations(root, pins)).toEqual([
+      expect.objectContaining({ location: 'src/x-1-y.ts:1' }),
+    ])
+  })
+
+  it('a wrapped disable of a different rule is not a finding', () => {
+    const root = repo({ ...cleanFiles, 'src/a.ts': '/* eslint-disable\n  no-console */\n' })
+    expect(findFsFilenamePolicyViolations(root, pins)).toEqual([])
+  })
+
+  it('a package eslint config that names the rule fails (the policy lives in one place)', () => {
+    const root = repo({
+      ...cleanFiles,
+      'packages/x/eslint.config.js': `export default [{ rules: { '${RULE}': 'off' } }]\n`,
+    })
+    expect(findFsFilenamePolicyViolations(root, pins)).toEqual([
+      expect.objectContaining({ location: 'packages/x/eslint.config.js:1' }),
+    ])
+  })
+
+  it.each([
+    ['a re-export', "export { readFileSync as read } from 'node:fs'\n"],
+    ['a default export', 'export default function f(): void {}\n'],
+    ['a class export', 'export class Files {}\n'],
+  ])('a pinned module with %s fails', (_label, extra) => {
+    const root = repo({ ...cleanFiles, [KIT]: `${GOOD_MODULE}${extra}` })
+    expect(findFsFilenamePolicyViolations(root, pins).map((f) => f.location)).toEqual([`${KIT}:10`])
+  })
+
+  it('an export after a plain block comment cannot borrow the Reason: of an earlier export', () => {
+    const borrowed = `${GOOD_MODULE}/* plain\n */\nexport function g(): void {}\n`
+    const root = repo({ ...cleanFiles, [KIT]: borrowed })
+    expect(findFsFilenamePolicyViolations(root, pins).map((f) => f.location)).toEqual([`${KIT}:12`])
+  })
+
+  it('an empty Reason: line does not count', () => {
+    const empty = GOOD_MODULE.replace(/ \* Reason:.*\n/, ' * Reason:\n')
+    const root = repo({ ...cleanFiles, [KIT]: empty })
+    expect(findFsFilenamePolicyViolations(root, pins).map((f) => f.location)).toEqual([`${KIT}:7`])
   })
 
   it('a disable of a different rule is not a finding', () => {
