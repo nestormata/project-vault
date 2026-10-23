@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as notifications from './notifications.svelte.js'
 import {
@@ -13,6 +13,10 @@ import {
 describe('notifications.svelte.ts', () => {
   beforeEach(() => {
     setInitialUnreadCount(0)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('setInitialUnreadCount sets the count and marks initialized', () => {
@@ -54,6 +58,5 @@ describe('notifications.svelte.ts', () => {
 
     expect(getUnreadCount()).toBe(2)
     expect(eventSource).not.toHaveBeenCalled()
-    vi.unstubAllGlobals()
   })
 })
