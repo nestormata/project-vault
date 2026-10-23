@@ -1,5 +1,5 @@
-import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { readFileAt, removeFileAt } from '../../lib/fs-access.js'
 import { S3Client, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import type { BackupDestination } from './config.js'
 import { atomicFileWrite } from './atomic-write.js'
@@ -42,8 +42,7 @@ function filesystemStorage(path: string): BackupStorage {
     },
     async read(filename) {
       try {
-        // eslint-disable-next-line security/detect-non-literal-fs-filename -- see filesystemStorage() comment above.
-        return await readFile(join(path, filename))
+        return await readFileAt(join(path, filename))
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
           throw new BackupNotFoundOnDestinationError(`No backup found with filename ${filename}`)
@@ -53,7 +52,7 @@ function filesystemStorage(path: string): BackupStorage {
     },
     async delete(filename) {
       try {
-        await rm(join(path, filename), { force: true })
+        await removeFileAt(join(path, filename))
       } catch (error) {
         throw new Error(classifyStorageError(error, path).message)
       }

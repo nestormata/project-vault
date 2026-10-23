@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readText } from '../fs-access.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -44,8 +44,7 @@ export type Operation = {
 }
 
 export function loadOpenApiSpec(path: string = OPENAPI_JSON_PATH): OpenApiDocument {
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path defaults to this repo's own generated spec file; only ever overridden by test fixtures.
-  return JSON.parse(readFileSync(path, 'utf-8')) as OpenApiDocument
+  return JSON.parse(readText(path)) as OpenApiDocument
 }
 
 /**

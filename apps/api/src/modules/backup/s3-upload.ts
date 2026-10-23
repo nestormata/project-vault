@@ -1,9 +1,9 @@
-import { readdir, rm, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PutObjectCommand, type S3Client } from '@aws-sdk/client-s3'
 import { env } from '../../config/env.js'
 import { forEachSequential } from '../../lib/for-each-sequential.js'
+import { listNamesAt, removeFileAt, statAt, unlinkAt } from '../../lib/fs-access.js'
 import { atomicFileWrite } from './atomic-write.js'
 
 const DEFAULT_STAGING_DIRNAME = 'vault-backup-staging'
@@ -167,7 +167,7 @@ export async function stageAndUploadToS3(params: {
  */
 async function deleteStagedFileBestEffort(finalStagedPath: string): Promise<void> {
   try {
-    await rm(finalStagedPath, { force: true })
+    await removeFileAt(finalStagedPath)
   } catch {
     // Swallowed deliberately — see doc comment above. Nothing actionable to surface: the
     // orphan-cleanup scan (D3.6/AC-16) will pick this file up within 24h regardless of why this
@@ -186,8 +186,7 @@ export async function cleanupOrphanedStagedFiles(
 ): Promise<{ deleted: number }> {
   let entries: string[]
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- stagingPath is operator-configured (BACKUP_S3_STAGING_PATH) or its os.tmpdir()-based default, never user input.
-    entries = await readdir(stagingPath)
+    entries = await listNamesAt(stagingPath)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { deleted: 0 }
     throw error
@@ -199,11 +198,9 @@ export async function cleanupOrphanedStagedFiles(
     if (!entry.endsWith(STAGED_SUFFIX)) return
     const entryPath = join(stagingPath, entry)
     try {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- entryPath is derived from a readdir() listing of the operator-configured staging path, never user input.
-      const stats = await stat(entryPath)
+      const stats = await statAt(entryPath)
       if (now - stats.mtimeMs <= ORPHAN_MAX_AGE_MS) return
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- see comment above.
-      await unlink(entryPath)
+      await unlinkAt(entryPath)
       deleted += 1
     } catch (error) {
       // D3.10 (adversarial review, medium): two overlapping hourly ticks racing to delete the
@@ -226,8 +223,7 @@ export async function stagingDirectoryUsage(
 ): Promise<{ totalBytes: number; fileCount: number }> {
   let entries: string[]
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- see cleanupOrphanedStagedFiles() comment above.
-    entries = await readdir(stagingPath)
+    entries = await listNamesAt(stagingPath)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { totalBytes: 0, fileCount: 0 }
     throw error
@@ -238,8 +234,7 @@ export async function stagingDirectoryUsage(
   await forEachSequential(entries, async (entry) => {
     if (!entry.endsWith(STAGED_SUFFIX)) return
     try {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- see cleanupOrphanedStagedFiles() comment above.
-      const stats = await stat(join(stagingPath, entry))
+      const stats = await statAt(join(stagingPath, entry))
       totalBytes += stats.size
       fileCount += 1
     } catch (error) {

@@ -1,6 +1,6 @@
-import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { Worker } from 'node:worker_threads'
+import { pathExists } from '../fs-access.js'
 import { encryptBackupBuffer, decryptBackupBuffer, BackupDecryptError } from './backup-crypto.js'
 
 type WorkerAction = 'encrypt' | 'decrypt'
@@ -56,8 +56,7 @@ export async function runBackupCrypto(
   data: Buffer,
   key: Buffer
 ): Promise<Buffer> {
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- WORKER_URL is a fixed, module-relative sibling-file path (not user input).
-  if (existsSync(fileURLToPath(WORKER_URL))) {
+  if (pathExists(fileURLToPath(WORKER_URL))) {
     return runViaWorkerThread(action, data, key)
   }
   return action === 'encrypt' ? encryptBackupBuffer(data, key) : decryptBackupBuffer(data, key)
