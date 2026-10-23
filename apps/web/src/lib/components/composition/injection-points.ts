@@ -485,7 +485,10 @@ export interface InjectionPointProps {
   'project.certificates-new.header': StandardPointProps
   'project.certificates-new.form': StandardPointProps
   'project.credentials.header': StandardPointProps
+  'project.credentials.archived-toggle': StandardPointProps
+  'project.credentials.filters': StandardPointProps
   'project.credentials.list': StandardPointProps
+  'project.credentials.results': StandardPointProps
   'project.credentials-rotate.header': StandardPointProps
   'project.credentials-rotate.form': StandardPointProps
   'project.credentials-rotations-detail.content': StandardPointProps
@@ -1000,7 +1003,13 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/[projectId]/credentials#page'],
-    ['project.credentials.header', 'project.credentials.list']
+    [
+      'project.credentials.header',
+      'project.credentials.list',
+      'project.credentials.filters',
+      'project.credentials.archived-toggle',
+      'project.credentials.results',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
