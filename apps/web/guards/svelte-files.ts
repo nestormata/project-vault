@@ -8,7 +8,7 @@ import { listNames, statPath } from './fs-access.js'
 
 export function walkSvelte(dir: string): string[] {
   const found: string[] = []
-  for (const entry of listNames(dir).sort()) {
+  for (const entry of listNames(dir).sort((a, b) => Number(a > b) - Number(a < b))) {
     if (entry === 'node_modules') continue
     const full = join(dir, entry)
     let stat

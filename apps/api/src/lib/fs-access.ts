@@ -38,7 +38,7 @@ export async function renameAt(from: string, to: string): Promise<void> {
  * Reads a file.
  * Reason: a backup file name joined onto the operator-configured backup directory.
  */
-export async function readFileAt(path: string): Promise<Buffer> {
+export function readFileAt(path: string): Promise<Buffer> {
   return readFile(path)
 }
 
@@ -62,7 +62,7 @@ export async function unlinkAt(path: string): Promise<void> {
  * Lists entry names of a directory.
  * Reason: the operator-configured staging directory (`BACKUP_S3_STAGING_PATH` or its os.tmpdir() default).
  */
-export async function listNamesAt(path: string): Promise<string[]> {
+export function listNamesAt(path: string): Promise<string[]> {
   return readdir(path)
 }
 
@@ -70,7 +70,7 @@ export async function listNamesAt(path: string): Promise<string[]> {
  * Stats a path.
  * Reason: an entry from a listing of the operator-configured staging directory.
  */
-export async function statAt(path: string): Promise<Stats> {
+export function statAt(path: string): Promise<Stats> {
   return stat(path)
 }
 

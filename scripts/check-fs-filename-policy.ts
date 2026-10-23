@@ -32,7 +32,7 @@ const SELF_PATHS = [
   'scripts/check-fs-filename-policy.test.ts',
 ]
 const NEVER_SCANNED = ['_bmad-output/**', '.claude/**']
-const SHIPPED_GUARD_MODULES = ['apps/web/guards/fs-access.ts']
+const SHIPPED_GUARD_MODULES = new Set(['apps/web/guards/fs-access.ts'])
 const FS_ACCESS_NAME = /(^|\/)fs-access\.(ts|mjs)$/
 
 const git = trustedGit
@@ -68,8 +68,10 @@ const DIRECTIVE_CONTEXT_LINES = 2
 const DIRECTIVE_START = /eslint-disable|\/\*\s*eslint\s/
 // A disable that names no rule switches every rule off, this one included. A block comment that
 // ends the line is not counted here: its rule list may wrap onto the next line.
-const BARE_DISABLE =
-  /(?:\/\*\s*eslint-disable(?:-next-line|-line)?\s*(?:\*\/|--)|\/\/\s*eslint-disable(?:-next-line|-line)?\s*(?:--|$))/
+const BARE_BLOCK_DISABLE = /\/\*\s*eslint-disable(?:-next-line|-line)?\s*(?:\*\/|--)/
+const BARE_LINE_DISABLE = /\/\/\s*eslint-disable(?:-next-line|-line)?\s*(?:--|$)/
+const isBareDisable = (text: string): boolean =>
+  BARE_BLOCK_DISABLE.test(text) || BARE_LINE_DISABLE.test(text)
 
 /** Check 1: grep context (-A2) so a directive wrapped over a few lines is still seen. */
 function findInlineDirectives(repoRoot: string): PolicyFinding[] {
@@ -82,7 +84,7 @@ function findInlineDirectives(repoRoot: string): PolicyFinding[] {
     '-e',
     'eslint-disable',
     '-e',
-    '/\\*[[:space:]]*eslint[[:space:]]',
+    String.raw`/\*[[:space:]]*eslint[[:space:]]`,
     '--',
     '.',
     ...excludes,
@@ -98,7 +100,7 @@ function findInlineDirectives(repoRoot: string): PolicyFinding[] {
     if (DIRECTIVE_START.test(row.text)) {
       directive = row
       seen = 0
-      if (BARE_DISABLE.test(row.text)) {
+      if (isBareDisable(row.text)) {
         findings.push({
           location: `${row.path}:${row.line}`,
           reason: `eslint disable without a rule list (switches off ${RULE} too)`,
@@ -213,7 +215,7 @@ function findMissingReasons(repoRoot: string, path: string): PolicyFinding[] {
   return findings
 }
 
-const IMPORT_SPECIFIER = /(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g
+const IMPORT_SPECIFIER = /(?:from|import)[\s(]*['"]([^'"]+)['"]/g
 
 /** Check 4: a shipped-guard module may import only `node:` modules. */
 function findNonNodeImports(repoRoot: string, path: string): PolicyFinding[] {
@@ -241,7 +243,7 @@ export function findFsFilenamePolicyViolations(
     ...findPinProblems(repoRoot, pinned),
     ...present.flatMap((path) => findMissingReasons(repoRoot, path)),
     ...present
-      .filter((path) => SHIPPED_GUARD_MODULES.includes(path))
+      .filter((path) => SHIPPED_GUARD_MODULES.has(path))
       .flatMap((path) => findNonNodeImports(repoRoot, path)),
   ]
 }
