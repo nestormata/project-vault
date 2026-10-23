@@ -26,7 +26,7 @@ const MAIN_PATH = join(API_DIR, 'src/main.ts')
 const FIXTURE_PREFIX = 'pv-fault-fixture-'
 
 function fixtureSource(): string {
-  return `import { EventEmitter } from 'node:events'
+  return String.raw`import { EventEmitter } from 'node:events'
 import { createRequire } from 'node:module'
 
 const KIND = process.env.PV_FAULT_KIND
@@ -76,7 +76,7 @@ const hooksFactory = () => ({
     routes: {
       ${JSON.stringify(`GET ${SLOW_ROUTE}`)}: {
         handler: async (_req, _reply, next) => {
-          process.stdout.write(${JSON.stringify(INFLIGHT_MARKER)} + '\\n')
+          process.stdout.write(${JSON.stringify(INFLIGHT_MARKER)} + '\n')
           await faultSeen
           await new Promise((done) => setTimeout(done, 50))
           return next()
@@ -162,11 +162,10 @@ export async function startApiChild(kind: FaultKind): Promise<ApiChild> {
   const waiters: Array<{ matches: (line: string) => boolean; resolve: (line: string) => void }> = []
   const pushLine = (line: string) => {
     lines.push(line)
-    for (const waiter of [...waiters]) {
-      if (waiter.matches(line)) {
-        waiters.splice(waiters.indexOf(waiter), 1)
-        waiter.resolve(line)
-      }
+    const matched = waiters.filter((waiter) => waiter.matches(line))
+    for (const waiter of matched) {
+      waiters.splice(waiters.indexOf(waiter), 1)
+      waiter.resolve(line)
     }
   }
   const readLines = (stream: NodeJS.ReadableStream | null) => {
