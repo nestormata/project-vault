@@ -296,7 +296,44 @@ const PLATFORM_AUDIT_BASE: Overrides = {
   hasNext: false,
   maintenanceStatus: { active: false },
 }
+// Story 69.10: platform settings states a permissive value cannot select (an unset SMTP password and
+// no backup storage, an unconfigured token, a failed token load), recorded BEFORE the split.
+const PLATFORM_SETTINGS = {
+  smtp: {
+    host: 'smtp.example.test',
+    port: 587,
+    user: 'mailer',
+    from: 'noreply.example',
+    configured: false,
+  },
+  backup: { schedule: '0 2 * * *', retentionCount: 7, storageType: null },
+  notifications: { defaultSlackWebhook: null },
+  instancePolicy: { maxOrgs: 10, maxUsersPerOrg: 50, sessionIdleTimeoutMinutes: 30 },
+}
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
+  '/(app)/platform/settings/+page.svelte': {
+    'settings-token-unconfigured': {
+      ...OWNER_READY,
+      settings: PLATFORM_SETTINGS,
+      statusToken: { configured: false },
+    },
+    'settings-token-configured': {
+      ...OWNER_READY,
+      settings: { ...PLATFORM_SETTINGS, smtp: { ...PLATFORM_SETTINGS.smtp, configured: true } },
+      statusToken: {
+        configured: true,
+        createdAt: '2026-10-01T10:00:00.000Z',
+        lastUsedAt: '2026-10-02T10:00:00.000Z',
+      },
+    },
+    'settings-token-load-failed': {
+      ...OWNER_READY,
+      settings: PLATFORM_SETTINGS,
+      statusToken: null,
+      statusTokenLoadFailed: true,
+    },
+    'settings-load-error': { ...OWNER_READY, settings: null, errorMessage: 'settings unavailable' },
+  },
   '/(app)/platform/audit/+page.svelte': {
     'audit-events': PLATFORM_AUDIT_BASE,
     'audit-events-filtered-next': {
