@@ -1,5 +1,4 @@
-import { isRedirect } from '@sveltejs/kit'
-import { apiFetch, apiFetchBody } from './client.js'
+import { ApiClientError, apiFetch, apiFetchBody } from './client.js'
 
 export type UserMeResponse = {
   userId: string
@@ -74,8 +73,9 @@ export async function dismissInboxEntry(fetchFn: typeof fetch, id: string): Prom
     await apiFetch<undefined>(fetchFn, `/api/v1/notifications/inbox/${id}`, { method: 'DELETE' })
     return true
   } catch (error) {
-    // A dead session redirects to login; never swallow that into "not found".
-    if (isRedirect(error)) throw error
-    return false
+    // Only a 404 means "no such entry". A dead session redirect, a network failure or a 5xx must
+    // surface as such rather than being swallowed into "not found".
+    if (error instanceof ApiClientError && error.status === 404) return false
+    throw error
   }
 }

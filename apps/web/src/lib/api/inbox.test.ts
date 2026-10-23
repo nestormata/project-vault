@@ -118,4 +118,13 @@ describe('inbox mutations', () => {
       )
     ).resolves.toBe(false)
   })
+
+  it('rethrows a network or server failure instead of reporting it as not found', async () => {
+    await expect(
+      dismissInboxEntry(vi.fn().mockRejectedValue(new TypeError('fetch failed')), 'n1')
+    ).rejects.toThrow('fetch failed')
+    await expect(
+      dismissInboxEntry(vi.fn().mockResolvedValue(new Response(null, { status: 500 })), 'n1')
+    ).rejects.toMatchObject({ status: 500 })
+  })
 })
