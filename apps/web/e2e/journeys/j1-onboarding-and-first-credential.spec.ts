@@ -44,6 +44,8 @@ test.describe('J1 — onboarding and first credential', () => {
 
     const onboarding = new OnboardingPage(page)
     await expect(onboarding.dialog()).toBeVisible()
+    // Story 63.2 A4: the tab is titled as the dashboard while the wizard is open, not "Sign in".
+    await expect(page).toHaveTitle('Dashboard | Project Vault')
     await onboarding.completeStep1(projectName)
 
     const credentialName = 'j1-wizard-credential'
@@ -52,6 +54,7 @@ test.describe('J1 — onboarding and first credential', () => {
     await onboarding.completeStep3()
     await expect(onboarding.dialog()).toBeHidden()
     await expect(page).toHaveURL(/\/dashboard/)
+    await expect(page).toHaveTitle('Dashboard | Project Vault')
 
     // The wizard's own Step 2 already proves "create first credential" end to end (a real
     // project-scoped credential, created inline). AC-J1-1 additionally asks the spec to exercise
