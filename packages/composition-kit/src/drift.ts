@@ -1,7 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { diffFiles } from './diff.js'
 import type { DriftItem } from './overlay.js'
+import { pathExists, readBytes } from './fs-access.js'
 
 export interface DriftContext {
   /** `pvRelease` of the web-host being composed. */
@@ -26,15 +26,15 @@ function kindLabel(item: DriftItem): string {
 function previousDiff(item: DriftItem, context: DriftContext): string[] {
   if (context.previousHost === undefined) return []
   const previous = join(context.previousHost, item.hostPath)
-  if (!existsSync(previous)) {
+  if (!pathExists(previous)) {
     return [
       '  --- previous web-host vs new web-host ---',
       '    the previous web-host does not contain this file',
     ]
   }
   const diff = diffFiles(
-    readFileSync(previous),
-    readFileSync(item.hostAbs),
+    readBytes(previous),
+    readBytes(item.hostAbs),
     `previous ${item.hostPath}`,
     `web-host ${item.hostPath}`
   )
@@ -51,8 +51,8 @@ export function driftReport(item: DriftItem, context: DriftContext): string {
     '  --- cm file vs new web-host file (unified diff) ---',
     indent(
       diffFiles(
-        readFileSync(item.cmAbs),
-        readFileSync(item.hostAbs),
+        readBytes(item.cmAbs),
+        readBytes(item.hostAbs),
         `cm ${item.key}`,
         `web-host ${item.hostPath}`
       )

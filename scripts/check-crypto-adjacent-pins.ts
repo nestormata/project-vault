@@ -41,10 +41,10 @@
  * `.github/dependabot.yml`, and `.github/CODEOWNERS` under the given root — no `pnpm list`/`pnpm
  * why`, no network, no live `gh api` calls.
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { CRYPTO_ADJACENT_PACKAGES } from './lib/crypto-adjacent-packages.js'
+import { listNames, readText, statPath } from './lib/fs-access.js'
 
 export type PinViolation = {
   kind: 'pin'
@@ -155,8 +155,7 @@ function resolveGlobToDirs(root: string, glob: string): string[] {
     const base = resolve(root, glob.slice(0, -2))
     let entries: string[]
     try {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- root is caller-controlled (tests pass a fixture dir, production passes cwd), never user input
-      entries = readdirSync(base)
+      entries = listNames(base)
     } catch {
       return []
     }
@@ -164,8 +163,7 @@ function resolveGlobToDirs(root: string, glob: string): string[] {
       .map((name) => resolve(base, name))
       .filter((dir) => {
         try {
-          // eslint-disable-next-line security/detect-non-literal-fs-filename -- see above
-          return statSync(dir).isDirectory()
+          return statPath(dir).isDirectory()
         } catch {
           return false
         }
@@ -182,8 +180,7 @@ export function findWorkspacePackageJsonPaths(root: string): string[] | undefine
 
   let raw: string
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- see above
-    raw = readFileSync(workspaceYamlPath, 'utf-8')
+    raw = readText(workspaceYamlPath)
   } catch {
     return undefined
   }
@@ -198,8 +195,7 @@ export function findWorkspacePackageJsonPaths(root: string): string[] | undefine
   for (const dir of dirs) {
     const candidate = resolve(dir, 'package.json')
     try {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- see above
-      if (statSync(candidate).isFile()) packageJsonPaths.push(candidate)
+      if (statPath(candidate).isFile()) packageJsonPaths.push(candidate)
     } catch {
       // no package.json in this workspace member dir — not an error, just nothing to scan there
     }
@@ -215,8 +211,7 @@ type RawPackageJson = Record<string, unknown>
 
 function loadPackageJson(path: string): RawPackageJson | undefined {
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- see above
-    const raw = readFileSync(path, 'utf-8')
+    const raw = readText(path)
     const parsed: unknown = JSON.parse(raw)
     if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
       return parsed as RawPackageJson
@@ -371,8 +366,7 @@ function scanWorkspaceOverrides(root: string): OverrideViolation[] {
   const workspaceYamlPath = resolve(root, WORKSPACE_YAML_PATH)
   let raw: string
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- see above
-    raw = readFileSync(workspaceYamlPath, 'utf-8')
+    raw = readText(workspaceYamlPath)
   } catch {
     return []
   }
@@ -512,8 +506,7 @@ function scanDependabotCrossCheck(root: string): DependabotCrossCheckViolation[]
   const dependabotPath = resolve(root, DEPENDABOT_YML_PATH)
   let raw: string
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- see above
-    raw = readFileSync(dependabotPath, 'utf-8')
+    raw = readText(dependabotPath)
   } catch {
     return [
       {
@@ -618,8 +611,7 @@ function scanCodeownersCoverage(root: string): CodeownersCoverageViolation[] {
   const codeownersPath = resolve(root, CODEOWNERS_PATH)
   let raw: string
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- see above
-    raw = readFileSync(codeownersPath, 'utf-8')
+    raw = readText(codeownersPath)
   } catch {
     return expectedPaths.map((path) => ({
       kind: CODEOWNERS_COVERAGE,

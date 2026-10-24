@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import {
@@ -19,6 +18,7 @@ import {
   type VerifyOptions,
   type VerifyReport,
 } from './verify.js'
+import { statPath } from './fs-access.js'
 
 const USAGE = `Usage: pv-verify [options]
 
@@ -113,7 +113,7 @@ export function formatReport(report: VerifyReport, explain: boolean): string {
 
 function isDirectory(path: string): boolean {
   try {
-    return statSync(path).isDirectory()
+    return statPath(path).isDirectory()
   } catch {
     return false
   }

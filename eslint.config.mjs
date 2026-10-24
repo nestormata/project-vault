@@ -52,7 +52,6 @@ export default [
     rules: {
       'no-secrets/no-secrets': 'off',
       'sonarjs/no-duplicate-string': 'off',
-      'security/detect-non-literal-fs-filename': 'off',
     },
   },
 ]

@@ -1,9 +1,9 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { writeFileAtomic } from './lock.js'
 import type { Relocated } from './materialize.js'
 import type { ReplacementRecord } from './overlay.js'
 import { compareCodeUnits } from './paths.js'
+import { makeDir, pathExists, readText } from './fs-access.js'
 
 /** Where the composer leaves the map `pvReplace` reads, relative to the app root. Generated on
  * every compose, never committed (the app's `.gitignore` lists `.pv-compose/`), never read by
@@ -47,8 +47,8 @@ export function replacementMapText(
  * every compose; an unchanged map must not look like a change to the dev server's watcher). */
 export function writeReplacementMap(appRoot: string, text: string): boolean {
   const path = join(appRoot, REPLACEMENT_MAP_PATH)
-  if (existsSync(path) && readFileSync(path, 'utf8') === text) return false
-  mkdirSync(dirname(path), { recursive: true })
+  if (pathExists(path) && readText(path) === text) return false
+  makeDir(dirname(path))
   writeFileAtomic(path, text)
   return true
 }

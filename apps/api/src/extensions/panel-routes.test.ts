@@ -1128,7 +1128,6 @@ describe('POST /api/v1/extensions/panels/:slot/actions (Story 25.5)', () => {
     })
 
     it('a structural check: the route handler source never references body.orgId/body.userId/body.projectId', async () => {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- import.meta.url-relative path to this test file's own sibling source, never user input.
       const source = await readFile(
         fileURLToPath(new URL('./panel-routes.ts', import.meta.url)),
         'utf-8'
@@ -1142,7 +1141,6 @@ describe('POST /api/v1/extensions/panels/:slot/actions (Story 25.5)', () => {
     })
 
     it('a structural check: the module-action handler source never references request.orgId/request.userId/request.projectId', async () => {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- import.meta.url-relative path to a fixed sibling source file, never user input.
       const source = await readFile(
         fileURLToPath(new URL('../lib/module-action-handler.ts', import.meta.url)),
         'utf-8'
@@ -1379,7 +1377,6 @@ describe('POST /api/v1/extensions/panels/:slot/actions (Story 25.5)', () => {
     })
 
     it('AC2: rejection happens before any DB lookup or onAction() call — a structural check, the source rejects before extractValidActionBody is reached', async () => {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- import.meta.url-relative path to this test file's own sibling source, never user input.
       const source = await readFile(
         fileURLToPath(new URL('./panel-routes.ts', import.meta.url)),
         'utf-8'

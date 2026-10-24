@@ -2,17 +2,6 @@
 // composed tree. Steps run in a fixed order and a failing step never stops the later ones (one run
 // reports every finding). Nothing here refuses what a pack may do: every check is either PV's own
 // rule applied to the composed files or an integrity check of the composition itself.
-import {
-  closeSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs'
 import { dirname, join } from 'node:path'
 import { compose } from './compose.js'
 import { exclusionConsistencyProblems, exclusionNotes, securityRelevant } from './excluded-tests.js'
@@ -21,6 +10,16 @@ import { compareCodeUnits } from './paths.js'
 import { readLock, type CompositionLock } from './lock.js'
 import { runGuards, type GuardsResult } from './verify-guards.js'
 import { runVitest, suiteFailures, vitestBin, type VitestReport } from './verify-run.js'
+import {
+  makeDir,
+  pathExists,
+  readText,
+  removeFile,
+  renamePath,
+  statPath,
+  writeExclusive,
+  writeFile,
+} from './fs-access.js'
 
 export type VerifyStep = 'guards' | 'tests'
 
@@ -71,7 +70,7 @@ function tamperProblems(appRoot: string, lock: CompositionLock): string[] {
   const recorded = new Map(Object.entries(lock.guardEntries ?? {}))
   const path = join(appRoot, GUARD_ENTRIES_PATH)
   const actual = new Map(
-    Object.entries(sectionHashes(existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}))
+    Object.entries(sectionHashes(pathExists(path) ? JSON.parse(readText(path)) : {}))
   )
   // Every section on either side is compared: one the lock never recorded cannot hide an exemption.
   const differing = [...new Set([...recorded.keys(), ...actual.keys()])]
@@ -86,9 +85,9 @@ function tamperProblems(appRoot: string, lock: CompositionLock): string[] {
 
 function hostRelease(hostDir: string): string | null {
   try {
-    const tuple = JSON.parse(
-      readFileSync(join(hostDir, 'manifests', 'compatibility.json'), 'utf8')
-    ) as { pvRelease?: string }
+    const tuple = JSON.parse(readText(join(hostDir, 'manifests', 'compatibility.json'))) as {
+      pvRelease?: string
+    }
     return tuple.pvRelease ?? null
   } catch {
     return null
@@ -137,7 +136,7 @@ const EXCLUDED_FAILING_HINT =
 /** The app's own Vitest/Vite config file name at the app root (no recursive search), or null. */
 export function findVitestConfig(appRoot: string): string | null {
   const names = CONFIG_STEMS.flatMap((stem) => CONFIG_EXTENSIONS.map((ext) => `${stem}.${ext}`))
-  return names.find((name) => existsSync(join(appRoot, name))) ?? null
+  return names.find((name) => pathExists(join(appRoot, name))) ?? null
 }
 
 function testsStep(options: VerifyOptions, lock: CompositionLock): TestsResult {
@@ -160,7 +159,7 @@ function testsStep(options: VerifyOptions, lock: CompositionLock): TestsResult {
     }
   }
   const dir = join(options.appRoot, '.pv-compose')
-  mkdirSync(dir, { recursive: true })
+  makeDir(dir)
   // The guards' scan root belongs to the guards step only: CM's own tests must not see it.
   const run = runVitest({
     bin,
@@ -288,9 +287,9 @@ export interface ExtractResult {
 }
 
 function outProblem(out: string): string | null {
-  if (existsSync(out) && statSync(out).isDirectory()) return `--out ${out} is a directory`
+  if (pathExists(out) && statPath(out).isDirectory()) return `--out ${out} is a directory`
   const parent = dirname(out)
-  if (!existsSync(parent) || !statSync(parent).isDirectory()) {
+  if (!pathExists(parent) || !statPath(parent).isDirectory()) {
     return `the parent directory does not exist for --out ${out}`
   }
   return null
@@ -299,7 +298,7 @@ function outProblem(out: string): string | null {
 function classificationEntries(appRoot: string): unknown[] {
   const path = join(appRoot, GUARD_ENTRIES_PATH)
   // The preflight proved the file equals the lock; an absent file means no sections at all.
-  const generated = (existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}) as {
+  const generated = (pathExists(path) ? JSON.parse(readText(path)) : {}) as {
     routeClassifications?: { route: string }[]
   }
   return [...(generated.routeClassifications ?? [])].sort((a, b) =>
@@ -321,10 +320,10 @@ export async function extractClassifications(options: ExtractOptions): Promise<E
   const entries = classificationEntries(options.appRoot)
   const temp = `${options.out}.${process.pid}.tmp`
   try {
-    writeFileSync(temp, `${JSON.stringify(entries, null, 2)}\n`)
-    renameSync(temp, options.out)
+    writeFile(temp, `${JSON.stringify(entries, null, 2)}\n`)
+    renamePath(temp, options.out)
   } catch (error) {
-    rmSync(temp, { force: true })
+    removeFile(temp)
     return failed([`cannot write --out ${options.out}: ${(error as Error).message}`])
   }
   return { ok: true, entries: entries.length, problems: [] }
@@ -334,18 +333,16 @@ export async function extractClassifications(options: ExtractOptions): Promise<E
  * process is gone) is replaced. Returns a release function, or the pid that holds the lock. */
 export function acquireRunLock(appRoot: string): { release: () => void } | { heldBy: number } {
   const dir = join(appRoot, '.pv-compose')
-  mkdirSync(dir, { recursive: true })
+  makeDir(dir)
   const path = join(dir, 'verify.lock')
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const fd = openSync(path, 'wx')
-      writeFileSync(fd, String(process.pid))
-      closeSync(fd)
-      return { release: () => rmSync(path, { force: true }) }
+      writeExclusive(path, String(process.pid))
+      return { release: () => removeFile(path) }
     } catch {
-      const pid = Number(readFileSync(path, 'utf8'))
+      const pid = Number(readText(path))
       if (Number.isInteger(pid) && pid > 0 && isAlive(pid)) return { heldBy: pid }
-      rmSync(path, { force: true })
+      removeFile(path)
     }
   }
   return { heldBy: 0 }

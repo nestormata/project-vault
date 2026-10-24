@@ -1,7 +1,6 @@
 // Story 68.9: the composer's guard stage. It loads and validates the pack's guard entries (manifest
 // field `guards`), merges them into the generated data module PV's web guards read, records the
 // per-section hashes the guards verify, and computes `excludedPvTests` from the host's subject map.
-import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   GUARD_ENTRIES_PATH,
@@ -18,6 +17,7 @@ import { normalizePackPath } from './paths.js'
 import type { FileSource, OverlayResult } from './overlay.js'
 import type { Host, Pack } from './sources.js'
 import type { UiPackManifest } from './types.js'
+import { pathExists, readText } from './fs-access.js'
 
 export interface LoadedGuardEntries {
   /** The pack-relative path of the entries file (it is reached, never copied). */
@@ -86,8 +86,8 @@ export interface GuardStage {
 
 function hostEntriesFile(host: Host): unknown {
   const abs = host.files.get(GUARD_ENTRIES_PATH)
-  if (abs === undefined || !existsSync(abs)) return undefined
-  return JSON.parse(readFileSync(abs, 'utf8')) as unknown
+  if (abs === undefined || !pathExists(abs)) return undefined
+  return JSON.parse(readText(abs)) as unknown
 }
 
 /** Writes the generated entries module into the composed file set (only when the pack authored
@@ -152,9 +152,9 @@ function testStage(
  * verify command then runs the pristine PV copy. The lock says so, so a reviewer sees it. */
 function overriddenGuardNotes(input: GuardStageInput): string[] {
   const path = join(input.host.dir, 'manifests', 'guards.json')
-  if (!existsSync(path)) return []
+  if (!pathExists(path)) return []
   try {
-    const registry = JSON.parse(readFileSync(path, 'utf8')) as {
+    const registry = JSON.parse(readText(path)) as {
       guards?: { file?: string; closure?: { file: string }[] }[]
     }
     const changed = new Set([

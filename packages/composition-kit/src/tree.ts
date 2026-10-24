@@ -1,6 +1,6 @@
-import { lstatSync, readdirSync, readlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { compareCodeUnits } from './paths.js'
+import { listDir, lstatPath, readLink } from './fs-access.js'
 
 export interface TreeFile {
   /** Forward-slash path relative to the tree root. */
@@ -25,13 +25,13 @@ export interface ReadTreeOptions {
 
 function walk(root: string, rel: string, options: ReadTreeOptions, into: Tree): void {
   const directory = rel === '' ? root : join(root, rel)
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+  for (const entry of listDir(directory)) {
     const childRel = rel === '' ? entry.name : `${rel}/${entry.name}`
     const abs = join(root, childRel)
     // `node_modules` is a symlink to the workspace's install in a monorepo pack: never entered.
     if (options.skipDirectories?.has(entry.name)) continue
     if (entry.isSymbolicLink()) {
-      into.symlinks.push({ rel: childRel, target: readlinkSync(abs) })
+      into.symlinks.push({ rel: childRel, target: readLink(abs) })
     } else if (entry.isDirectory()) {
       walk(root, childRel, options, into)
     } else if (entry.isFile()) {
@@ -53,7 +53,7 @@ export function readTree(root: string, options: ReadTreeOptions = {}): Tree {
 
 export function existsDirectory(path: string): boolean {
   try {
-    return lstatSync(path).isDirectory()
+    return lstatPath(path).isDirectory()
   } catch {
     return false
   }

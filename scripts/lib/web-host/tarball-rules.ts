@@ -15,6 +15,7 @@ export const REQUIRED_ENTRIES = [
   'manifests/guards.json',
   'manifests/test-subjects.json',
   'guards/form-guidance.js',
+  'guards/fs-access.js',
   'guards/monolithic-region.js',
   'guards/region-markup.js',
   'guards/svelte-files.js',

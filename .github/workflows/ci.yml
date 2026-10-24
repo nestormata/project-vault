@@ -272,6 +272,11 @@ jobs:
           pnpm check-no-sonar-suppressions &&
           pnpm vitest run scripts/check-no-sonar-suppressions.test.ts scripts/lib/trusted-executable.test.ts
 
+      - name: Check fs-filename lint policy (Story 43-26)
+        run: |
+          pnpm check-fs-filename-policy &&
+          pnpm vitest run scripts/check-fs-filename-policy.test.ts
+
       - name: Check lint guards and lint:changed wiring (Story 66-17)
         run: pnpm vitest run scripts/lint-changed-sonar.test.ts scripts/check-shell-positional-params.test.ts scripts/eslint-test-guards-wiring.test.ts
 

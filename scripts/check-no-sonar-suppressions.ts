@@ -18,6 +18,7 @@
  * pre-existing lines, whose sign-off audit is tracked in the deferred-work ledger.
  */
 import { pathToFileURL } from 'node:url'
+import { gitGrep, reportFindings } from './lib/git-grep.js'
 import { trustedGit } from './lib/trusted-executable.js'
 
 export type SuppressionFinding = { location: string; reason: string }
@@ -74,20 +75,6 @@ function splitKeyValue(logical: string): { key: string; value: string } {
   const rawKey = separator?.[1] ?? logical
   const consumed = separator?.[0].length ?? logical.length
   return { key: unescapeKey(rawKey), value: logical.slice(consumed).trim() }
-}
-
-/**
- * `git grep` over tracked work-tree files, or `''` when nothing matches (its exit 1); any other
- * failure surfaces. Every file this guard reads goes through git, so it only ever sees tracked
- * content addressed by repo-relative pathspecs, exactly like the inline-token scan.
- */
-function gitGrep(repoRoot: string, args: string[]): string {
-  try {
-    return git(repoRoot, ['grep', '--no-color', '-I', ...args])
-  } catch (error) {
-    if ((error as { status?: number }).status === 1) return ''
-    throw error
-  }
 }
 
 function readProperties(repoRoot: string): ReturnType<typeof parseProperties> | null {
@@ -176,11 +163,10 @@ function main(): void {
     process.stdout.write('check-no-sonar-suppressions: OK — no Sonar suppressions.\n')
     return
   }
-  process.stderr.write(
-    `check-no-sonar-suppressions: ${findings.length} Sonar suppression(s). Fix the finding for real; a genuine exception needs an expert consult plus Nestor's sign-off (AGENTS.md).\n`
+  reportFindings(
+    `check-no-sonar-suppressions: ${findings.length} Sonar suppression(s). Fix the finding for real; a genuine exception needs an expert consult plus Nestor's sign-off (AGENTS.md).`,
+    findings
   )
-  for (const f of findings) process.stderr.write(`  ${f.location}  ${f.reason}\n`)
-  process.exitCode = 1
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

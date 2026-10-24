@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { REPLACEMENT_MAP_PATH, REPLACEMENT_MAP_VERSION } from '../replacement-map.js'
+import { pathExists, readText, realPath } from '../fs-access.js'
 
 /** One replacement, resolved against the app root: both paths are real, absolute, forward-slash. */
 export interface ResolvedReplacement {
@@ -32,7 +32,7 @@ export function normalizeFsPath(path: string): string {
 
 export function realPathOf(path: string): string {
   try {
-    return normalizeFsPath(realpathSync(path))
+    return normalizeFsPath(realPath(path))
   } catch {
     return normalizeFsPath(resolve(path))
   }
@@ -53,7 +53,7 @@ function relativeProblem(path: unknown): string | null {
 
 function readJson(path: string, what: string): unknown {
   try {
-    return JSON.parse(readFileSync(path, 'utf8')) as unknown
+    return JSON.parse(readText(path)) as unknown
   } catch {
     throw new Error(`pv-replace: ${what} ${path} is not valid JSON; run pv-compose.`)
   }
@@ -61,7 +61,7 @@ function readJson(path: string, what: string): unknown {
 
 /** The targets the committed lock records, or null when there is no lock yet (an early dev run). */
 function lockTargets(lockPath: string): Set<string> | null {
-  if (!existsSync(lockPath)) return null
+  if (!pathExists(lockPath)) return null
   const lock = readJson(lockPath, 'lock') as { replacements?: { target?: string }[] }
   return new Set((lock.replacements ?? []).flatMap((entry) => entry.target ?? []))
 }
@@ -91,7 +91,7 @@ function resolveEntry(appRoot: string, raw: unknown): ResolvedReplacement {
       )
     }
   }
-  if (!existsSync(withAbs)) {
+  if (!pathExists(withAbs)) {
     throw new Error(
       `pv-replace: replacement for ${String(hostRel)} points at missing ${String(withRel)}; run pv-compose.`
     )
@@ -110,9 +110,9 @@ function resolveEntry(appRoot: string, raw: unknown): ResolvedReplacement {
  * one the lock also records. Throws one `pv-replace:` message naming the fix; never returns a
  * partial map, and never prints file contents. */
 export function loadReplacementMap(source: MapSource): LoadedMap {
-  const appRoot = realpathSync(source.appRoot)
+  const appRoot = realPath(source.appRoot)
   const mapPath = source.mapPath ?? join(source.appRoot, REPLACEMENT_MAP_PATH)
-  if (!existsSync(mapPath)) {
+  if (!pathExists(mapPath)) {
     throw new Error(
       `pv-replace: ${mapPath} not found; run pv-compose (a stale or skipped compose would serve PV's original files).`
     )

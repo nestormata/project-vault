@@ -1,4 +1,3 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { unifiedDiff } from './diff.js'
@@ -11,6 +10,7 @@ import type { LockInjection } from './injection.js'
 import type { CompatibilityTuple } from './types.js'
 import type { ProtectedPathsRecord } from './protected-paths.js'
 import type { ApiRouteOverrideLock } from './module-pack.js'
+import { pathExists, readText, renamePath, writeFile } from './fs-access.js'
 
 /** Story 68.14: 2. `apiRouteOverrides` became an array of `{ method, url, mode, replaceSecurity }`
  * objects (it was always `[]` in version 1). A version 1 lock is still read; recomposing rewrites
@@ -195,8 +195,8 @@ function withDerivedDefault(lock: CompositionLock): CompositionLock {
 }
 
 export function readLock(path: string): { lock?: CompositionLock; problem?: string } | null {
-  if (!existsSync(path)) return null
-  return parseLock(readFileSync(path, 'utf8'), path)
+  if (!pathExists(path)) return null
+  return parseLock(readText(path), path)
 }
 
 /** The normative part of a lock, as text, for `--check`. */
@@ -252,6 +252,6 @@ export function lockDifference(committed: CompositionLock, regenerated: Composit
 /** Atomic write: a temp file in the same directory, then rename. */
 export function writeFileAtomic(path: string, content: string): void {
   const temp = join(dirname(path), `.${randomBytes(6).toString('hex')}.tmp`)
-  writeFileSync(temp, content, { mode: 0o644 })
-  renameSync(temp, path)
+  writeFile(temp, content, { mode: 0o644 })
+  renamePath(temp, path)
 }

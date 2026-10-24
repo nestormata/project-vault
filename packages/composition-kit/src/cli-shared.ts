@@ -1,9 +1,9 @@
 // Plumbing shared by the kit's two commands (`pv-compose`, `pv-verify`): the output channel, how the
 // web-host directory is found, the usage-error exit and the run-as-a-script entry.
-import { realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { realPath } from './fs-access.js'
 
 export interface CliIo {
   out: (text: string) => void
@@ -47,7 +47,7 @@ export const NO_HOST_MESSAGE =
 
 function realOrSelf(path: string): string {
   try {
-    return realpathSync(path)
+    return realPath(path)
   } catch {
     return path
   }

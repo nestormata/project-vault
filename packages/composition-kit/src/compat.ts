@@ -1,8 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { CompatibilityTuple } from './types.js'
 import { compareCodeUnits } from './paths.js'
 import { isExactVersion } from './versions.js'
+import { pathExists, readText } from './fs-access.js'
 
 const EXTENSION_API = '@project-vault/extension-api'
 const COMPOSITION_KIT = '@project-vault/composition-kit'
@@ -19,8 +19,8 @@ export function resolveInstalledVersion(fromDir: string, name: string): string |
   let dir = fromDir
   for (;;) {
     const candidate = join(dir, 'node_modules', name, 'package.json')
-    if (existsSync(candidate)) {
-      const version = (JSON.parse(readFileSync(candidate, 'utf8')) as { version?: unknown }).version
+    if (pathExists(candidate)) {
+      const version = (JSON.parse(readText(candidate)) as { version?: unknown }).version
       return typeof version === 'string' ? version : undefined
     }
     const parent = dirname(dir)
@@ -116,7 +116,7 @@ export function checkRuntimeDependencies(
   appRoot: string,
   hostDependencies: Record<string, string>
 ): string[] {
-  const appManifest = JSON.parse(readFileSync(join(appRoot, 'package.json'), 'utf8')) as {
+  const appManifest = JSON.parse(readText(join(appRoot, 'package.json'))) as {
     dependencies?: Record<string, string>
   }
   const appDependencies = new Map(Object.entries(appManifest.dependencies ?? {}))

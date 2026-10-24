@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { ensureDir, renameAt, writeFileAt } from '../../lib/fs-access.js'
 
 /**
  * Story 9.6 D3.2: atomic temp-file + rename write pattern, extracted out of `storage.ts`'s
@@ -17,12 +17,9 @@ export async function atomicFileWrite(
   filename: string,
   data: Buffer
 ): Promise<void> {
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- see module doc comment above.
-  await mkdir(dirPath, { recursive: true })
+  await ensureDir(dirPath)
   const finalPath = join(dirPath, filename)
   const tmpPath = join(dirPath, `.tmp-${randomUUID()}-${filename}`)
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- see module doc comment above.
-  await writeFile(tmpPath, data)
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- see module doc comment above.
-  await rename(tmpPath, finalPath)
+  await writeFileAt(tmpPath, data)
+  await renameAt(tmpPath, finalPath)
 }

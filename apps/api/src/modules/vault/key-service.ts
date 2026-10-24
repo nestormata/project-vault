@@ -1,4 +1,4 @@
-import { lstatSync, openSync, readSync, closeSync, constants, type Stats } from 'node:fs'
+import { readSync, type Stats } from 'node:fs'
 import { resolve } from 'node:path'
 import { getDb } from '@project-vault/db'
 import { vaultState } from '@project-vault/db/schema'
@@ -17,6 +17,7 @@ import {
 } from '@project-vault/crypto'
 import type { EncryptedValue, KeyDerivationParams } from '@project-vault/crypto'
 import { AppError } from '../../lib/errors.js'
+import { closeDescriptor, lstatNoFollow, openReadNoFollow } from '../../lib/fs-access.js'
 import { env } from '../../config/env.js'
 import { timingSafeHeaderTokenMatches } from '../../lib/timing-safe-header-token.js'
 import type { VaultInitRequest, VaultUnsealRequest } from './schema.js'
@@ -101,8 +102,7 @@ function assertWithinKeyDir(resolved: string): void {
 function statRegularFile(resolved: string): Stats {
   let stat: Stats
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- resolved path is constrained to VAULT_KEY_DIR before file access.
-    stat = lstatSync(resolved) // lstat — do NOT follow symlinks
+    stat = lstatNoFollow(resolved) // lstat — do NOT follow symlinks
   } catch {
     throw new AppError('KEY_FILE_NOT_FOUND', 'Cannot read key file at path: <redacted>', 400)
   }
@@ -152,14 +152,13 @@ function readKeyMaterialFile(
   // O_NOFOLLOW prevents an attacker from swapping the file for a symlink between stat and
   // read (Linux). It does NOT prevent a regular-file content swap in that same window —
   // production deployments mitigate that via read-only secrets mounts.
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- validated regular file inside VAULT_KEY_DIR; O_NOFOLLOW hardens the open.
-  const fd = openSync(resolved, constants.O_RDONLY | constants.O_NOFOLLOW)
+  const fd = openReadNoFollow(resolved)
   try {
     const buf = Buffer.alloc(stat.size)
     readSync(fd, buf, 0, stat.size, 0)
     return buf
   } finally {
-    closeSync(fd)
+    closeDescriptor(fd)
   }
 }
 

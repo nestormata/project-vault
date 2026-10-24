@@ -1,16 +1,16 @@
-import { copyFileSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { sha256Hex } from './hash.js'
 import { writeFileAtomic } from './lock.js'
 import type { FileSource } from './overlay.js'
 import type { ComposePlan } from './plan.js'
 import { writeReplacementMap } from './replacement-map.js'
+import { copyFile, makeDir, removeFile, statPath, writeFile } from './fs-access.js'
 
 export type Signatures = Map<string, string>
 
 function signatureOf(source: FileSource): string {
   if (source.kind === 'text') return `text:${sha256Hex(source.content)}`
-  const stat = statSync(source.abs)
+  const stat = statPath(source.abs)
   return `file:${source.abs}:${stat.size}:${stat.mtimeMs}`
 }
 
@@ -31,12 +31,12 @@ export function applyIncremental(
   for (const [dest, source] of plan.files) {
     if (previous.get(dest) === next.get(dest)) continue
     const target = join(appRoot, dest)
-    mkdirSync(dirname(target), { recursive: true })
-    if (source.kind === 'file') copyFileSync(source.abs, target)
-    else writeFileSync(target, source.content)
+    makeDir(dirname(target))
+    if (source.kind === 'file') copyFile(source.abs, target)
+    else writeFile(target, source.content)
   }
   for (const dest of previous.keys()) {
-    if (!next.has(dest)) rmSync(join(appRoot, dest), { force: true })
+    if (!next.has(dest)) removeFile(join(appRoot, dest))
   }
   if (plan.replacementMapText !== undefined) writeReplacementMap(appRoot, plan.replacementMapText)
   if (plan.lockText !== undefined) writeFileAtomic(plan.lockPath, plan.lockText)

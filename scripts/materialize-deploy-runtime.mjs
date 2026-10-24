@@ -1,4 +1,3 @@
-/* eslint-disable security/detect-non-literal-fs-filename -- paths are explicit Docker CLI/test inputs. */
 import {
   cpSync,
   existsSync,

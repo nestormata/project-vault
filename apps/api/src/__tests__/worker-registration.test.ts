@@ -157,7 +157,6 @@ describe('credentials/prune-versions registration (AC-8 R3)', () => {
 
     let checkedAtLeastOne = false
     for (const file of collectTsFiles()) {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
       const source = readFileSync(file, 'utf-8')
       for (const match of source.matchAll(sendNamePattern)) {
         checkedAtLeastOne = true
