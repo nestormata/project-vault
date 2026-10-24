@@ -217,6 +217,12 @@ export default defineUiPack({
     'settings.users.table': [{ component: './injections/UsersTableFill.svelte' }],
     'platform.settings.smtp-server': [{ component: './injections/PlatformSmtpServerFill.svelte' }],
     'platform.settings.form': [{ component: './injections/PlatformFormFill.svelte' }],
+    // Sub-region points of Story 69.11 (batch 2 of the region splits): render-only fills for the
+    // probe-order e2e on four pages an org owner can reach without extra setup.
+    'project.home.results': [{ component: './injections/ProjectsResultsFill.svelte' }],
+    'notifications.home.empty': [{ component: './injections/NotificationsEmptyFill.svelte' }],
+    'project.import.export-key': [{ component: './injections/ProjectImportKeyFill.svelte' }],
+    'project.credentials-new.tags': [{ component: './injections/CredentialTagsFill.svelte' }],
     'shell.head': [{ component: './injections/HeadMarker.svelte' }],
   },
   replacements: {
