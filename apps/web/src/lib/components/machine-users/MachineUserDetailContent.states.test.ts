@@ -59,6 +59,14 @@ beforeAll(async () => {
 }, 60_000)
 
 const mountContent = () => render(Content, { props: { data: pageData } })
+// Every value is pinned as text so the JSON snapshot stays Prettier-stable.
+const asText = (states: Record<string, unknown>): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(states).map(([key, value]) => [
+      key,
+      typeof value === 'string' ? value : JSON.stringify(value),
+    ])
+  )
 const snapshotOf = (container: Element): string => serializeWithoutNoise(container)
 const nameInput = (): HTMLInputElement =>
   document.getElementById('issue-key-name') as HTMLInputElement
@@ -183,7 +191,7 @@ describe('MachineUserDetailContent client states (Story 69.14 pre-split pin)', (
     await waitFor(() => expect(invalidateAllMock).toHaveBeenCalled())
     states['deactivate-ok-args'] = api.deactivateMachineUser.mock.calls.map((call) => call.slice(1))
 
-    await expect(`${JSON.stringify(states, null, 2)}\n`).toMatchFileSnapshot(
+    await expect(`${JSON.stringify(asText(states), null, 2)}\n`).toMatchFileSnapshot(
       './MachineUserDetailContent.states.snapshot.json'
     )
   }, 60_000)

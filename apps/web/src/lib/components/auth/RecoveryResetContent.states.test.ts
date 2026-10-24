@@ -37,6 +37,14 @@ beforeEach(resetScenario)
 afterEach(cleanup)
 
 const mountContent = () => render(Content, { props: {} })
+// Every value is pinned as text so the JSON snapshot stays Prettier-stable.
+const asText = (states: Record<string, unknown>): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(states).map(([key, value]) => [
+      key,
+      typeof value === 'string' ? value : JSON.stringify(value),
+    ])
+  )
 const snapshotOf = (container: Element): string => serializeWithoutNoise(container)
 const password = (): HTMLInputElement =>
   document.getElementById('recovery-new-password') as HTMLInputElement
@@ -168,7 +176,7 @@ describe('RecoveryResetContent states (Story 69.14 pre-split pin)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Continue to login' }))
     states['recovery-codes-goto-after'] = gotoMock.mock.calls
 
-    await expect(`${JSON.stringify(states, null, 2)}\n`).toMatchFileSnapshot(
+    await expect(`${JSON.stringify(asText(states), null, 2)}\n`).toMatchFileSnapshot(
       './RecoveryResetContent.states.snapshot.json'
     )
   }, 60_000)
