@@ -1,9 +1,11 @@
 <script lang="ts">
+  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import * as m from '$lib/paraglide/messages.js'
   import type { ProjectImportFlow } from './project-import-flow.svelte.js'
 
-  // Story 69.11: the styled file picker of the project import form. Only the name and size of the
-  // picked file are read, never its contents.
+  // Story 69.11: the styled file picker of the project import form, with its wrong-type warning and
+  // help text (the help is the input's `aria-describedby` target, so it lives in this file). Only the
+  // name and size of the picked file are read, never its contents.
   let { flow }: { flow: ProjectImportFlow } = $props()
 </script>
 
@@ -72,3 +74,7 @@
     >{flow.fileDisplay ? m.project_import_file_selected(flow.fileDisplay) : ''}</span
   >
 </div>
+{#if flow.fileBadType}
+  <p role="alert" class="mt-1 text-sm text-red-700">{m.project_import_file_bad_type()}</p>
+{/if}
+<FormHelpText id="pvexport-file-help" text={m.project_import_file_help()} />
