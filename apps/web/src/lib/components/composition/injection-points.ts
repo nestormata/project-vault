@@ -459,7 +459,10 @@ export interface InjectionPointProps {
   'platform.audit.results': StandardPointProps
   'platform.audit.search': StandardPointProps
   'platform.audit.verify': StandardPointProps
+  'platform.backups.alerts': StandardPointProps
   'platform.backups.content': StandardPointProps
+  'platform.backups.intro': StandardPointProps
+  'platform.backups.list': StandardPointProps
   'platform.settings.content': StandardPointProps
   'platform.settings.backup': StandardPointProps
   'platform.settings.form': StandardPointProps
@@ -943,7 +946,12 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/platform/backups#page'],
-    ['platform.backups.content']
+    [
+      'platform.backups.content',
+      'platform.backups.intro',
+      'platform.backups.alerts',
+      'platform.backups.list',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
