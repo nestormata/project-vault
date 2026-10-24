@@ -89,7 +89,7 @@ describe('RegisterForm', () => {
 
   // Story 1.20 AC-6: self-signup now always resolves to the generic accepted shape (no
   // userId/orgId), identical whether the submitted email was novel or already registered — the
-  // form must show the generic message, redirect to the same unchanged path, and skip the
+  // form must show nothing of its own, redirect to the same unchanged path, and skip the
   // locale-pending marker (documented, accepted minor UX regression), with no branching that
   // could reintroduce the enumeration oracle at the UI layer.
   const GENERIC_ACCEPTED_MESSAGE =
@@ -99,7 +99,7 @@ describe('RegisterForm', () => {
     ['a novel email', 'alex-novel@example.com'],
     ['an already-registered email', 'alex-taken@example.com'],
   ])(
-    'Story 1.20 AC-6: self-signup with %s shows the generic confirmation and redirects to /login?reason=registered, without pre-seeding a locale marker',
+    'Story 1.20 AC-6: self-signup with %s redirects to /login?reason=registered with no inline message, without pre-seeding a locale marker',
     async (_label, email) => {
       registerMock.mockResolvedValue({ message: GENERIC_ACCEPTED_MESSAGE })
 
@@ -150,7 +150,7 @@ describe('RegisterForm', () => {
       await waitFor(() => expect(gotoMock).toHaveBeenCalledTimes(1))
       outcomes.push({
         goto: gotoMock.mock.calls.map((call) => [...call]),
-        text: (view.container.textContent ?? '').replace(email, ''),
+        text: view.container.textContent ?? '',
       })
       view.unmount()
     }

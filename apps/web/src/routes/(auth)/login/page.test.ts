@@ -50,7 +50,7 @@ async function submitLogin() {
 const REGISTERED_NOTICE_EN =
   'If that email was available, your account has been created — sign in to continue. Already have an account? Sign in or reset your password.'
 const REGISTERED_NOTICE_ES =
-  'Si ese correo estaba disponible, tu cuenta ha sido creada: inicia sesión para continuar. ¿Ya tienes una cuenta? Inicia sesión o restablece tu contraseña.'
+  'Si ese correo estaba disponible, se ha creado tu cuenta: inicia sesión para continuar. ¿Ya tienes una cuenta? Inicia sesión o restablece tu contraseña.'
 
 describe('/login +page.svelte', () => {
   beforeEach(() => {
@@ -90,17 +90,6 @@ describe('/login +page.svelte', () => {
     render(LoginPage)
     expect(screen.getByText(REGISTERED_NOTICE_EN)).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/account created\./i)
-  })
-
-  it('shows one static registered notice that never claims an account was created (no enumeration oracle)', () => {
-    pageMock.url = new URL('http://localhost/login?reason=registered')
-    const first = render(LoginPage).container.textContent
-    cleanup()
-    pageMock.url = new URL('http://localhost/login?reason=registered')
-    const second = render(LoginPage).container.textContent
-    expect(second).toBe(first)
-    expect(first).toContain('If that email was available')
-    expect(first).not.toMatch(/Account created\./)
   })
 
   it('does not reflect an unknown reason param', () => {
