@@ -496,6 +496,7 @@ const EXTENSIONS_ALLOWED = {
   manifest: null,
   healthStatus: 'not_configured',
 }
+
 const NO_FILTERS = { q: '', status: '', tags: '', page: 1, includeArchived: false }
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
   '/(app)/projects/[projectId]/credentials/+page.svelte': {
@@ -684,6 +685,10 @@ const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
     },
     'extensions-load-failed': { ...EXTENSIONS_ALLOWED, healthStatus: 'load_failed' },
     'extensions-not-configured': EXTENSIONS_ALLOWED,
+  },
+  '/(app)/projects/[projectId]/credentials/new/+page.svelte': {
+    'new-credential-member': { ...OWNER_READY, orgRole: 'member', projectId: 'p-1' },
+    'new-credential-viewer': { ...OWNER_READY, orgRole: 'viewer', projectId: 'p-1' },
   },
 }
 
