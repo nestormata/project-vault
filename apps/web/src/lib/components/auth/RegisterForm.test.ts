@@ -124,10 +124,40 @@ describe('RegisterForm', () => {
         })
       )
       await waitFor(() => expect(gotoMock).toHaveBeenCalledWith('/login?reason=registered'))
-      expect((await screen.findByRole('status')).textContent).toContain(GENERIC_ACCEPTED_MESSAGE)
+      expect(screen.queryByRole('status')).toBeNull()
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(document.body.textContent).not.toContain(GENERIC_ACCEPTED_MESSAGE)
       expect(markRegistrationLocalePendingMock).not.toHaveBeenCalled()
     }
   )
+
+  // Story 63.1 AC-3: the observable outcome of a self-signup must not depend on the email.
+  it('Story 63.1 AC-3: novel and already-registered emails produce the identical redirect and page', async () => {
+    registerMock.mockResolvedValue({ message: GENERIC_ACCEPTED_MESSAGE })
+    const outcomes: { goto: unknown[][]; text: string }[] = []
+
+    for (const email of ['alex-novel@example.com', 'alex-taken@example.com']) {
+      gotoMock.mockClear()
+      const view = render(RegisterForm)
+      await fireEvent.input(screen.getByLabelText(/email/i), { target: { value: email } })
+      await fireEvent.input(screen.getByLabelText(/organization name/i), {
+        target: { value: 'Acme' },
+      })
+      await fireEvent.input(screen.getByLabelText(/^password$/i), {
+        target: { value: 'super-secret-password' },
+      })
+      await fireEvent.click(screen.getByRole('button', { name: /create account/i }))
+      await waitFor(() => expect(gotoMock).toHaveBeenCalledTimes(1))
+      outcomes.push({
+        goto: gotoMock.mock.calls.map((call) => [...call]),
+        text: (view.container.textContent ?? '').replace(email, ''),
+      })
+      view.unmount()
+    }
+
+    expect(outcomes[0]?.goto).toEqual([['/login?reason=registered']])
+    expect(outcomes[1]).toEqual(outcomes[0])
+  })
 
   it('hides the org-name field and readonly-locks email when an invitationToken is supplied, redirecting into the project', async () => {
     registerMock.mockResolvedValue({
