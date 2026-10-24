@@ -135,6 +135,7 @@ describe('CredentialsNewForm state (interaction)', () => {
       screen.getAllByPlaceholderText('field name').map((input) => (input as HTMLInputElement).value)
     ).toEqual(keysBefore)
     expect(document.querySelector('input[type="password"], textarea')).toBeTruthy()
+    expect((byId('credential-template') as unknown as HTMLSelectElement).value).toBe('login')
   })
 
   it('submits a single-value secret, then clears the value and navigates to it', async () => {

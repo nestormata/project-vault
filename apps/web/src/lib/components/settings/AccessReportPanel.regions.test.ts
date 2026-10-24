@@ -167,10 +167,10 @@ describe('AccessReportPanel summary and pagination (interaction)', () => {
   it('links previous and next pages keeping the as-of date', () => {
     mount(allowed({ asOf: '2026-10-01', page: 2 }))
     expect(screen.getByRole('link', { name: 'Previous' }).getAttribute('href')).toBe(
-      '?asOf=2026-10-01&page=1'
+      '/settings/audit/access-report?asOf=2026-10-01&page=1'
     )
     expect(screen.getByRole('link', { name: 'Next' }).getAttribute('href')).toBe(
-      '?asOf=2026-10-01&page=3'
+      '/settings/audit/access-report?asOf=2026-10-01&page=3'
     )
   })
 

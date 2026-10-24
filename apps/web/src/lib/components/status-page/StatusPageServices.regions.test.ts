@@ -83,6 +83,8 @@ describe('StatusPageServices sub-regions (probe order)', () => {
     expect(follows(list, screen.getByRole('button', { name: 'Save services' }))).toBe(true)
     expect(follows(screen.getByRole('button', { name: 'Save services' }), save)).toBe(true)
     expect(follows(save, end)).toBe(true)
+    expect(list.previousElementSibling?.tagName).toBe('OL')
+    expect(end.parentElement?.lastElementChild).toBe(end)
     expect(probeCount()).toBe(3)
   })
 

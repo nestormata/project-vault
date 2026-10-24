@@ -100,6 +100,9 @@ describe('CredentialsProjectImportContent sub-regions (probe order)', () => {
     expect(follows(screen.getByRole('button', { name: 'Upload different file' }), actions)).toBe(
       true
     )
+    expect(actions.previousElementSibling).toBe(
+      screen.getByRole('button', { name: 'Upload different file' }).parentElement
+    )
     expect(screen.queryAllByTestId('probe').some((p) => p.textContent?.includes('.upload"'))).toBe(
       false
     )

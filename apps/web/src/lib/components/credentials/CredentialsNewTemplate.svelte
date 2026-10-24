@@ -28,7 +28,11 @@
     class="w-full rounded-xl border border-slate-300 px-3 py-3"
     value={template}
     aria-describedby="credential-template-help"
-    onchange={(event) => onChange(event.currentTarget.value as '' | CredentialTemplate)}
+    onchange={(event) => {
+      const select = event.currentTarget
+      onChange(select.value as '' | CredentialTemplate)
+      select.value = template
+    }}
   >
     <option value="">No template — single value</option>
     {#each CREDENTIAL_TEMPLATES as tpl (tpl)}

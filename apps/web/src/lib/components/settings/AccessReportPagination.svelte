@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths'
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import RegionFragment from '$lib/components/composition/RegionFragment.svelte'
 
@@ -15,30 +16,29 @@
     hasNext: boolean
     data?: Record<string, readonly unknown[]> | undefined
   } = $props()
+
+  const pageQuery = (target: number): string =>
+    `?${asOf ? `asOf=${encodeURIComponent(asOf)}&` : ''}page=${target}`
 </script>
 
 <!-- @region settings.audit-access-report.pagination -->
 <RegionFragment>
   <div class="mt-4 flex justify-center gap-2">
     {#if (page ?? 1) > 1}
-      <!-- eslint-disable svelte/no-navigation-without-resolve -- dynamic query string, not a literal resolve() can type-check (`-next-line` doesn't reach `href` on a multi-line tag) -->
       <a
-        href="?{asOf ? `asOf=${asOf}&` : ''}page={(page ?? 1) - 1}"
+        href="{resolve('/settings/audit/access-report')}{pageQuery((page ?? 1) - 1)}"
         class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
       >
         Previous
       </a>
-      <!-- eslint-enable svelte/no-navigation-without-resolve -->
     {/if}
     {#if hasNext}
-      <!-- eslint-disable svelte/no-navigation-without-resolve -- dynamic query string, not a literal resolve() can type-check (`-next-line` doesn't reach `href` on a multi-line tag) -->
       <a
-        href="?{asOf ? `asOf=${asOf}&` : ''}page={(page ?? 1) + 1}"
+        href="{resolve('/settings/audit/access-report')}{pageQuery((page ?? 1) + 1)}"
         class="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
       >
         Next
       </a>
-      <!-- eslint-enable svelte/no-navigation-without-resolve -->
     {/if}<InjectionPoint name="settings.audit-access-report.pagination" {data} />
   </div>
 </RegionFragment>
