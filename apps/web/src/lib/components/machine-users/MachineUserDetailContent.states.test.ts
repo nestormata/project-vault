@@ -58,7 +58,7 @@ beforeAll(async () => {
   Content = (await import('./MachineUserDetailContent.svelte')).default as unknown as typeof Content
 }, 60_000)
 
-const mountContent = () => render(Content, { props: { data: pageData } })
+const mountContent = () => render(Content, { props: { pageData } })
 // Every value is pinned as text so the JSON snapshot stays Prettier-stable.
 const asText = (states: Record<string, unknown>): Record<string, string> =>
   Object.fromEntries(
