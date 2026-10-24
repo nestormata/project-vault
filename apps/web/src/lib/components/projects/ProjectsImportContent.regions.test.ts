@@ -74,9 +74,7 @@ describe('ProjectsImportContent sub-regions (probe order)', () => {
     expect(follows(byId('export-key-help'), order[2] as Node)).toBe(true)
     expect(follows(byId('project-name-help'), order[3] as Node)).toBe(true)
     expect(follows(screen.getByRole('link', { name: /projects/i }), order[4] as Node)).toBe(true)
-    expect((order[4] as HTMLElement).previousElementSibling).toBe(
-      screen.getByRole('button', { name: 'Import project' }).parentElement
-    )
+    expect((order[4] as HTMLElement).parentElement?.lastElementChild).toBe(order[4])
     expect(probeCount()).toBe(5)
   })
 
@@ -95,7 +93,9 @@ describe('ProjectsImportContent sub-regions (probe order)', () => {
     expect(
       follows(screen.getByRole('link', { name: /projects/i }), probe('project.import.done'))
     ).toBe(true)
-    expect(probe('project.import.done').previousElementSibling).toBe(view.parentElement)
+    expect(probe('project.import.done').parentElement?.lastElementChild).toBe(
+      probe('project.import.done')
+    )
     await fireEvent.click(view)
     expect(api.goto).toHaveBeenCalledWith('/projects/new-1')
   })

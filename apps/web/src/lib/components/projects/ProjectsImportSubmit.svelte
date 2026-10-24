@@ -27,7 +27,6 @@
     </button>
     <a class="text-sm font-medium text-slate-700 underline" href={resolve('/projects')}>
       {m.project_import_back_to_projects()}
-    </a>
+    </a><InjectionPoint name="project.import.submit" {data} />
   </div>
-  <InjectionPoint name="project.import.submit" {data} />
 </RegionFragment>

@@ -30,7 +30,6 @@
       onclick={() => flow.restart()}
     >
       Upload different file
-    </button>
+    </button><InjectionPoint name="project.credentials-import.preview-actions" {data} />
   </div>
-  <InjectionPoint name="project.credentials-import.preview-actions" {data} />
 </RegionFragment>
