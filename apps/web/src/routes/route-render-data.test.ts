@@ -522,8 +522,145 @@ const ROTATE_CASES: Record<string, Overrides> = {
   },
   'rotate-sealed': { ...OWNER_READY, vaultSealed: true, dependencies: null, fieldMeta: null },
 }
+// Story 69-14: credential detail states a permissive value cannot select (the secret value section
+// branches on single vs multi-field secrets, the caller's role on the project, the archived flag and
+// the visible field values; the dependencies section on its list, the staged rotation and each
+// checklist status), recorded BEFORE the two sections were split into sub-region components.
+const DETAIL_PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+const DETAIL_CREDENTIAL_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+const DETAIL_BASE_CREDENTIAL = {
+  id: DETAIL_CREDENTIAL_ID,
+  projectId: DETAIL_PROJECT_ID,
+  orgId: 'org-1',
+  name: 'Stripe key',
+  description: 'Payments secret',
+  tags: ['payments'],
+  expiresAt: '2026-12-01T00:00:00.000Z',
+  rotationSchedule: null,
+  cacheable: true,
+  retentionCount: 10,
+  currentVersionNumber: 2,
+  schemaVersion: 2,
+  createdBy: null,
+  createdAt: '2026-07-01T12:00:00.000Z',
+  updatedAt: '2026-07-01T12:00:00.000Z',
+  archivedAt: null,
+  fields: [{ key: 'value', sensitive: true }],
+  visibleFieldValues: {},
+}
+const DETAIL_MULTI_CREDENTIAL = {
+  ...DETAIL_BASE_CREDENTIAL,
+  name: 'Database login',
+  fields: [
+    { key: 'host', sensitive: false },
+    { key: 'password', sensitive: true },
+    { key: 'token', sensitive: true },
+  ],
+  visibleFieldValues: { host: 'db.internal.example' },
+}
+const DETAIL_ARCHIVED = { archivedAt: '2026-09-01T00:00:00.000Z' }
+const detailChecklist = (status: string, itemId: string) => ({
+  rotationId: 'rot-9',
+  itemId,
+  status,
+  confirmedBy: status === 'confirmed' ? 'user-1' : null,
+  confirmedAt: status === 'confirmed' ? '2026-07-01T12:00:00.000Z' : null,
+})
+const detailDependency = (id: string, overrides: Overrides = {}): Overrides => ({
+  id,
+  credentialId: DETAIL_CREDENTIAL_ID,
+  systemName: `system-${id}`,
+  systemType: 'service',
+  notes: null,
+  linkUrl: null,
+  createdBy: null,
+  archivedAt: null,
+  createdAt: '2026-07-01T12:00:00.000Z',
+  updatedAt: '2026-07-01T12:00:00.000Z',
+  fieldKey: null,
+  checklistStatus: null,
+  ...overrides,
+})
+const DETAIL_DEPENDENCIES = {
+  items: [
+    detailDependency('plain'),
+    detailDependency('scoped', {
+      systemType: 'ci_pipeline',
+      fieldKey: 'password',
+      linkUrl: 'https://ci.example.com/pipelines/1',
+    }),
+    detailDependency('pending', { checklistStatus: detailChecklist('pending', 'i1') }),
+    detailDependency('confirmed', { checklistStatus: detailChecklist('confirmed', 'i2') }),
+    detailDependency('failed', { checklistStatus: detailChecklist('failed', 'i3') }),
+    detailDependency('maxed', {
+      checklistStatus: detailChecklist('max_retries_exceeded', 'i4'),
+    }),
+  ],
+  hasDependencies: true,
+  hasStagedRotation: true,
+}
+const detailPage = (
+  orgRole: string,
+  projectRole: string,
+  overrides: Overrides = {}
+): Overrides => ({
+  ...NEGATIVES_OFF,
+  projectId: DETAIL_PROJECT_ID,
+  credentialId: DETAIL_CREDENTIAL_ID,
+  orgRole,
+  project: { id: DETAIL_PROJECT_ID, name: 'Sample project', role: projectRole, archivedAt: null },
+  origin: 'https://vault.example.com',
+  credential: DETAIL_BASE_CREDENTIAL,
+  dependencies: { items: [], hasDependencies: false, hasStagedRotation: false },
+  versions: [],
+  rotations: [],
+  rotationsPage: 1,
+  rotationsHasMore: false,
+  activeRotationId: null,
+  shares: [],
+  sharesTotal: 0,
+  sharesPage: 1,
+  sharesStatus: null,
+  rotationRecommendedNudges: [],
+  orgMembers: [],
+  ...overrides,
+})
 const NO_FILTERS = { q: '', status: '', tags: '', page: 1, includeArchived: false }
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
+  '/(app)/projects/[projectId]/credentials/[credentialId]/+page.svelte': {
+    'detail-legacy-member': detailPage('member', 'member'),
+    'detail-legacy-viewer': detailPage('viewer', 'viewer'),
+    'detail-legacy-member-project-viewer': detailPage('member', 'viewer'),
+    'detail-legacy-archived-owner': detailPage('owner', 'owner', {
+      credential: { ...DETAIL_BASE_CREDENTIAL, ...DETAIL_ARCHIVED },
+    }),
+    'detail-multi-owner': detailPage('owner', 'owner', { credential: DETAIL_MULTI_CREDENTIAL }),
+    'detail-multi-viewer': detailPage('viewer', 'viewer', { credential: DETAIL_MULTI_CREDENTIAL }),
+    'detail-multi-all-sensitive': detailPage('owner', 'owner', {
+      credential: {
+        ...DETAIL_MULTI_CREDENTIAL,
+        fields: [
+          { key: 'a', sensitive: true },
+          { key: 'b', sensitive: true },
+        ],
+        visibleFieldValues: {},
+      },
+    }),
+    'detail-multi-archived-owner': detailPage('owner', 'owner', {
+      credential: { ...DETAIL_MULTI_CREDENTIAL, ...DETAIL_ARCHIVED },
+      dependencies: DETAIL_DEPENDENCIES,
+    }),
+    'detail-dependencies-staged-member': detailPage('member', 'member', {
+      dependencies: DETAIL_DEPENDENCIES,
+    }),
+    'detail-dependencies-unstaged-multi-owner': detailPage('owner', 'owner', {
+      credential: DETAIL_MULTI_CREDENTIAL,
+      dependencies: { ...DETAIL_DEPENDENCIES, hasStagedRotation: false },
+    }),
+    'detail-dependencies-viewer': detailPage('viewer', 'viewer', {
+      dependencies: DETAIL_DEPENDENCIES,
+    }),
+  },
   [ROTATION_DETAIL_ROUTE]: ROTATION_DETAIL_CASES,
   [ROTATE_ROUTE]: ROTATE_CASES,
   '/(app)/projects/[projectId]/credentials/+page.svelte': {
