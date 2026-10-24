@@ -508,6 +508,10 @@ export interface InjectionPointProps {
   'platform.settings-resource-usage.allocation': StandardPointProps
   'platform.settings-resource-usage.org-table': StandardPointProps
   'platform.upgrade.content': StandardPointProps
+  'platform.upgrade.version': StandardPointProps
+  'platform.upgrade.cli-policy': StandardPointProps
+  'platform.upgrade.procedure': StandardPointProps
+  'platform.upgrade.api-docs': StandardPointProps
   'project.home.header': StandardPointProps
   'project.home.error': StandardPointProps
   'project.home.list': StandardPointProps
@@ -1113,7 +1117,13 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/platform/upgrade#page'],
-    ['platform.upgrade.content']
+    [
+      'platform.upgrade.content',
+      'platform.upgrade.version',
+      'platform.upgrade.cli-policy',
+      'platform.upgrade.procedure',
+      'platform.upgrade.api-docs',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',

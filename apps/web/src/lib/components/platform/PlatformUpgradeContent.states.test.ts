@@ -53,8 +53,7 @@ beforeAll(async () => {
 }, 60_000)
 afterEach(cleanup)
 
-const mountContent = (pageData: Record<string, unknown>) =>
-  render(Content, { props: { data: pageData } })
+const mountContent = (pageData: Record<string, unknown>) => render(Content, { props: { pageData } })
 
 describe('PlatformUpgradeContent states (Story 69.12 pre-split pin)', () => {
   it('renders every state exactly as before the split', async () => {

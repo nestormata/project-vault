@@ -462,9 +462,9 @@ describe('/platform/upgrade +page.svelte', () => {
     })
 
     it('AC-1: neither the page nor the section component uses {@html', () => {
-      // Story 69.5: the page's markup lives in its region component.
+      // Story 69.12: the policy card lives in its own sub-region component.
       const page = readFileSync(
-        resolve(here, '../../../../lib/components/platform/PlatformUpgradeContent.svelte'),
+        resolve(here, '../../../../lib/components/platform/PlatformUpgradeCliPolicy.svelte'),
         'utf-8'
       )
       const section = readFileSync(
