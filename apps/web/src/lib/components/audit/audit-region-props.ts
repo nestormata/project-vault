@@ -11,7 +11,7 @@ type AuditRegionPoint = 'settings.audit.export' | 'settings.audit.verify' | 'set
  * `__inject` map, `pointProps` what the region's injection point receives. */
 export interface AuditRegionProps<N extends AuditRegionPoint> {
   pointProps: InjectionPointExtras<N>
-  data?: Record<string, readonly unknown[]> | undefined
+  data?: Record<string, readonly unknown[]>
 }
 
 export interface AuditExportRegionProps extends AuditRegionProps<'settings.audit.export'> {
