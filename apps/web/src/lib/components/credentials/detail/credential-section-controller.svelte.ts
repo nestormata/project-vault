@@ -20,7 +20,7 @@ export type CredentialSectionSource = {
 export type CredentialSectionRegionProps<C> = {
   controller: C
   pointProps: CredentialPointExtras
-  data?: Record<string, readonly unknown[]> | undefined
+  data?: Record<string, readonly unknown[]>
 }
 
 // Story 69-14: what the Secret value and Dependent systems controllers share. The section hands in a

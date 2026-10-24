@@ -55,10 +55,8 @@ export class AuditQuotaEditor {
   startEdit(row: AuditStorageOrgRow): void {
     this.editingOrgId = row.orgId
     this.quotaUnit = defaultByteInputUnit(row.quotaBytes)
-    this.quotaValue =
-      row.quotaBytes === null
-        ? ''
-        : String(row.quotaBytes / (this.quotaUnit === 'GB' ? 1024 ** 3 : 1024 ** 2))
+    const unitBytes = this.quotaUnit === 'GB' ? 1024 ** 3 : 1024 ** 2
+    this.quotaValue = row.quotaBytes === null ? '' : String(row.quotaBytes / unitBytes)
     this.rateValue = row.writeRatePerMinute === null ? '' : String(row.writeRatePerMinute)
     this.saveError = null
     this.saveMfaError = null

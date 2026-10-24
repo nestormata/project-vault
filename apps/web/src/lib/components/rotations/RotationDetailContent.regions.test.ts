@@ -236,7 +236,7 @@ describe('RotationDetailContent state across sections (interaction)', () => {
     expect(mocks.promoteRotation).toHaveBeenCalledWith(expect.anything(), 'p1', 'c1', 'r1', {
       acknowledgeIncompleteChecklist: true,
     })
-    expect(screen.queryByLabelText(/Retire even though not every system/)).not.toBeNull()
+    expect(screen.getByLabelText(/Retire even though not every system/)).toBeDefined()
   })
 
   it('retire acknowledgement failure lists the pending systems above the point', async () => {

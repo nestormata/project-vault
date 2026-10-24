@@ -29,7 +29,7 @@ export interface RotationSource {
 /** The props every sub-region of the rotation detail page takes. */
 export interface RotationSectionProps {
   controller: RotationController
-  data?: Record<string, readonly unknown[]> | undefined
+  data?: Record<string, readonly unknown[]>
 }
 /** The props of a sub-region that also renders the loaded rotation. */
 export interface RotationDetailSectionProps extends RotationSectionProps {
@@ -368,10 +368,10 @@ export class RotationController {
     this.pollTimer = undefined
   }
 
-  schedulePoll(): void {
+  schedulePoll(status: RotationDetail['status'] | undefined = this.rotation?.status): void {
     this.clearPoll()
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-    if (!this.rotation || !ACTIVE_STATUSES.has(this.rotation.status)) return
+    if (status === undefined || !ACTIVE_STATUSES.has(status)) return
     this.pollTimer = setInterval(() => {
       void this.refetch()
     }, POLL_INTERVAL_MS)
@@ -387,7 +387,6 @@ export class RotationController {
   syncPolling(): void {
     // Re-evaluated whenever `rotation` is reassigned (status transitions in or out of the
     // pollable set, e.g. stale_recovery -> in_progress on resume, or -> completed on complete).
-    void this.rotation?.status
-    this.schedulePoll()
+    this.schedulePoll(this.rotation?.status)
   }
 }
