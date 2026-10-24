@@ -479,6 +479,23 @@ const NOTIFICATIONS_PAGE = {
   dormancyAlerts: [],
   userDormancyAlerts: [],
 }
+// Story 69.11: realistic extension status data. The page switches on `allowed`, `mfaRequired`,
+// `errorMessage`, `manifest` and `healthStatus`, which a permissive value never separates.
+// Recorded BEFORE the status panel was split into sub-region components.
+const EXTENSION_MANIFEST = {
+  name: 'test.mock-extension',
+  apiVersion: '3.30.0',
+  packageVersion: '1.2.3',
+  capabilities: ['capability-gate', 'audit-event-source', 'capability-gate'],
+  loadedAt: '2026-10-04T08:00:00.000Z',
+}
+const EXTENSIONS_ALLOWED = {
+  allowed: true,
+  mfaRequired: false,
+  errorMessage: null,
+  manifest: null,
+  healthStatus: 'not_configured',
+}
 const NO_FILTERS = { q: '', status: '', tags: '', page: 1, includeArchived: false }
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
   '/(app)/projects/[projectId]/credentials/+page.svelte': {
@@ -645,6 +662,28 @@ const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
     'inbox-single-page': NOTIFICATIONS_PAGE,
     'inbox-empty-all': { ...NOTIFICATIONS_PAGE, notifications: [] },
     'inbox-empty-unread': { ...NOTIFICATIONS_PAGE, notifications: [], status: 'unread' },
+  },
+  '/(app)/settings/extensions/+page.svelte': {
+    'extensions-denied': { allowed: false },
+    'extensions-mfa-required': { ...EXTENSIONS_ALLOWED, mfaRequired: true },
+    'extensions-error': { ...EXTENSIONS_ALLOWED, errorMessage: 'status unavailable' },
+    'extensions-loaded': {
+      ...EXTENSIONS_ALLOWED,
+      manifest: EXTENSION_MANIFEST,
+      healthStatus: 'loaded',
+    },
+    'extensions-loaded-bare': {
+      ...EXTENSIONS_ALLOWED,
+      manifest: { ...EXTENSION_MANIFEST, packageVersion: null, capabilities: [] },
+      healthStatus: 'loaded',
+    },
+    'extensions-loaded-audit-only': {
+      ...EXTENSIONS_ALLOWED,
+      manifest: { ...EXTENSION_MANIFEST, capabilities: ['audit-event-source'] },
+      healthStatus: 'loaded',
+    },
+    'extensions-load-failed': { ...EXTENSIONS_ALLOWED, healthStatus: 'load_failed' },
+    'extensions-not-configured': EXTENSIONS_ALLOWED,
   },
 }
 
