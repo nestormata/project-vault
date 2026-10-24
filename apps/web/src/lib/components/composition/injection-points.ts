@@ -462,6 +462,8 @@ export interface InjectionPointProps {
   'health.home.projects': StandardPointProps
   'notifications.home.header': StandardPointProps
   'notifications.home.machine-dormancy': StandardPointProps
+  'notifications.home.machine-dormancy-details': StandardPointProps
+  'notifications.home.machine-dormancy-actions': StandardPointProps
   'notifications.home.user-dormancy': StandardPointProps
   'notifications.home.tabs': StandardPointProps
   'notifications.home.list': StandardPointProps
@@ -1037,6 +1039,8 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     [
       'notifications.home.header',
       'notifications.home.machine-dormancy',
+      'notifications.home.machine-dormancy-details',
+      'notifications.home.machine-dormancy-actions',
       'notifications.home.user-dormancy',
       'notifications.home.tabs',
       'notifications.home.list',
