@@ -497,6 +497,29 @@ const EXTENSIONS_ALLOWED = {
   healthStatus: 'not_configured',
 }
 
+// Story 69.11: realistic external identities and members. The panel's list renders dates and an
+// empty state a permissive value never reaches. Recorded BEFORE the panel was split into
+// sub-region components.
+const EXTERNAL_IDENTITIES = [
+  {
+    id: 'ei-1',
+    email: 'alex@example.com',
+    providerName: 'test.mock-sso-extension',
+    externalSubject: 'alex-sso-subject-123',
+    createdAt: '2026-10-01T10:00:00.000Z',
+  },
+  {
+    id: 'ei-2',
+    email: 'sam@example.com',
+    providerName: 'corp.idp',
+    externalSubject: 'sam-subject',
+    createdAt: '2026-10-02T11:30:00.000Z',
+  },
+]
+const EXTERNAL_IDENTITY_USERS = [
+  { userId: 'u-alex', email: 'alex@example.com' },
+  { userId: 'u-sam', email: 'sam@example.com' },
+]
 const NO_FILTERS = { q: '', status: '', tags: '', page: 1, includeArchived: false }
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
   '/(app)/projects/[projectId]/credentials/+page.svelte': {
@@ -689,6 +712,14 @@ const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
   '/(app)/projects/[projectId]/credentials/new/+page.svelte': {
     'new-credential-member': { ...OWNER_READY, orgRole: 'member', projectId: 'p-1' },
     'new-credential-viewer': { ...OWNER_READY, orgRole: 'viewer', projectId: 'p-1' },
+  },
+  '/(app)/settings/external-identities/+page.svelte': {
+    'identities-linked': {
+      ...OWNER_READY,
+      identities: EXTERNAL_IDENTITIES,
+      orgUsers: EXTERNAL_IDENTITY_USERS,
+    },
+    'identities-empty': { ...OWNER_READY, identities: [], orgUsers: EXTERNAL_IDENTITY_USERS },
   },
 }
 
