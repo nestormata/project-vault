@@ -12,7 +12,7 @@
   }: {
     mfaToken: string
     onExpired: () => void
-    onAuthenticated: () => void | Promise<void>
+    onAuthenticated: () => Promise<void>
     data?: Record<string, readonly unknown[]> | undefined
   } = $props()
 </script>

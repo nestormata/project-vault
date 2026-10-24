@@ -1,6 +1,6 @@
 <script lang="ts">
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
-  import type { ProjectMembersBasePointProps } from '$lib/components/composition/injection-points.js'
+  import type { InjectionPointExtras } from '$lib/components/composition/injection-points.js'
   import RegionFragment from '$lib/components/composition/RegionFragment.svelte'
 
   // Story 69.11: why the last member change (role, removal, ownership transfer) failed.
@@ -10,7 +10,7 @@
     data,
   }: {
     memberError: string | null
-    pointProps: ProjectMembersBasePointProps
+    pointProps: InjectionPointExtras<'project.members.header'>
     data?: Record<string, readonly unknown[]> | undefined
   } = $props()
 </script>

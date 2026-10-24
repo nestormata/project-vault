@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ProjectMember, SettableProjectRole } from '$lib/api/org-users.js'
-  import type { ProjectMembersBasePointProps } from '$lib/components/composition/injection-points.js'
+  import type { InjectionPointExtras } from '$lib/components/composition/injection-points.js'
   import ProjectTeamError from './ProjectTeamError.svelte'
   import ProjectTeamTable from './ProjectTeamTable.svelte'
   import ProjectTeamTransfer from './ProjectTeamTransfer.svelte'
@@ -30,7 +30,7 @@
     onChangeRole: (member: ProjectMember, role: SettableProjectRole) => void
     onRemove: (member: ProjectMember) => void
     onTransfer: () => void
-    pointProps: ProjectMembersBasePointProps
+    pointProps: InjectionPointExtras<'project.members.header'>
     data?: Record<string, readonly unknown[]> | undefined
   } = $props()
 

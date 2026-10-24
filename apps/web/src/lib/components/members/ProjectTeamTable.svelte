@@ -1,6 +1,6 @@
 <script lang="ts">
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
-  import type { ProjectMembersBasePointProps } from '$lib/components/composition/injection-points.js'
+  import type { InjectionPointExtras } from '$lib/components/composition/injection-points.js'
   import type { ProjectMember, SettableProjectRole } from '$lib/api/org-users.js'
   import ProjectTeamMembersTable from './ProjectTeamMembersTable.svelte'
 
@@ -17,7 +17,7 @@
     memberBusyId: string | null
     onChangeRole: (member: ProjectMember, role: SettableProjectRole) => void
     onRemove: (member: ProjectMember) => void
-    pointProps: ProjectMembersBasePointProps
+    pointProps: InjectionPointExtras<'project.members.header'>
     data?: Record<string, readonly unknown[]> | undefined
   } = $props()
 </script>

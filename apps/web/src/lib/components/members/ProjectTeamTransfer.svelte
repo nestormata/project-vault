@@ -1,6 +1,6 @@
 <script lang="ts">
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
-  import type { ProjectMembersBasePointProps } from '$lib/components/composition/injection-points.js'
+  import type { InjectionPointExtras } from '$lib/components/composition/injection-points.js'
   import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
   import type { ProjectMember } from '$lib/api/org-users.js'
 
@@ -18,7 +18,7 @@
     memberBusyId: string | null
     transferTarget: string
     onTransfer: () => void
-    pointProps: ProjectMembersBasePointProps
+    pointProps: InjectionPointExtras<'project.members.header'>
     data?: Record<string, readonly unknown[]> | undefined
   } = $props()
 </script>
