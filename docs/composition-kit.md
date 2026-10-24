@@ -473,6 +473,26 @@ Some of these points render inside a `<form>` (`auth.recovery-detail.password` a
 `type="button"`, or it submits the form. The points never receive typed or revealed values (a password, a TOTP
 code, a revealed secret): their props are `routeId`, `params` and the page's `__inject` data only.
 
+The third batch (Story 69-12) splits the last fourteen region components and turns the OVERSIZE rule on, so no
+region component may hold more than 60 template lines from now on:
+
+| Page                                      | Sub-region points                                                                                                                                                                                                                                                                           |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/settings/audit`                         | `settings.audit.export-form`, `.export-status`, `.export-result`, `.verify-form`, `.verify-error`, `.verify-result`, `.search-event`, `.search-actor`, `.search-resource`, `.search-dates`, `.results-empty`, `.results-rows`, `.results-attribution` (once per row), `.results-pagination` |
+| `/settings/themes`                        | `settings.themes.reload`, `.org-default`                                                                                                                                                                                                                                                    |
+| `/settings/notifications`                 | `settings.notifications.channels-header`, `.channels-head`, `.channels-row` (once per row, viewer flags only, no `preferences`)                                                                                                                                                             |
+| `/projects/new`                           | `project.new.name`, `.slug`, `.description`, `.error`, `.submit`                                                                                                                                                                                                                            |
+| `/projects/[projectId]`                   | `project.detail.export-intro`, `.export-error`, `.export-key` (`{ project }` only; the export key never reaches a point)                                                                                                                                                                    |
+| `/projects/[projectId]/machine-users/new` | `project.machine-users-new.name`, `.role`, `.description`, `.error`, `.submit`                                                                                                                                                                                                              |
+| `/projects/[projectId]/service-endpoints` | `project.service-endpoints.row-status`, `.row-actions` (once per row, inside a cell)                                                                                                                                                                                                        |
+| `/projects/[projectId]/status-page`       | `project.status-page.link-header`, `.link-display` (flags only, never the link)                                                                                                                                                                                                             |
+| `/notifications`                          | `notifications.home.machine-dormancy-details`, `.machine-dormancy-actions` (once per alert)                                                                                                                                                                                                 |
+| `/platform/upgrade`                       | `platform.upgrade.version`, `.cli-policy`, `.procedure`, `.api-docs`                                                                                                                                                                                                                        |
+| `/extensions/panels/[slot]/[...subpath]`  | `extensions.panels-detail.panel`                                                                                                                                                                                                                                                            |
+
+`pnpm check-route-regions` now fails an `OVERSIZE` region component (one constant, `OVERSIZE_ENFORCEMENT`, no component
+list). A new section of a big component therefore needs its own sub-region component.
+
 ## Hooks, header policy and protected paths
 
 Story 68-6 (design §8). A pack contributes to every SvelteKit hook without replacing PV's hooks

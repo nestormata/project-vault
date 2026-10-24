@@ -11,6 +11,13 @@ GitHub Action in [packages/vault-action](packages/vault-action/README.md) is rel
 
 ### Added
 
+- **Injection points between the sections of eleven more large pages, and the size rule is enforced** (Story 69-12,
+  DW-546). The audit log page (export, verify, search, results), themes, notification preferences, new project, new
+  machine user, project export, service endpoints, status page link, machine dormancy alerts, platform upgrade and the
+  extension panel page are split into sub-region components, each with its own registered point (e.g.
+  `settings.audit.export-form`, `project.new.slug`). PV's rendered output is unchanged; `docs/composition-kit.md`
+  lists the points. `pnpm check-route-regions` now fails a region component over 60 template lines.
+
 - **Injection points between the sections of eight more large pages** (Story 69-14, DW-546). The platform
   resource usage and backups pages, the credential secret value and dependent systems sections, the start
   rotation form, the rotation detail page, the machine user detail page and the recovery reset page are split

@@ -285,6 +285,9 @@ export interface InjectionPointProps {
   'project.detail.after': ProjectPointProps
   'project.detail.before': ProjectPointProps
   'project.detail.export': ProjectPointProps
+  'project.detail.export-intro': ProjectPointProps
+  'project.detail.export-error': ProjectPointProps
+  'project.detail.export-key': ProjectPointProps
   'project.detail.header.actions': ProjectPointProps
   'project.detail.not-found': ProjectPointProps
   'project.detail.summary': ProjectPointProps
@@ -348,6 +351,8 @@ export interface InjectionPointProps {
   'project.service-endpoints.header.actions': StandardPointProps
   'project.service-endpoints.not-found': EndpointListPointProps
   'project.service-endpoints.row': EndpointRowPointProps
+  'project.service-endpoints.row-status': EndpointRowPointProps
+  'project.service-endpoints.row-actions': EndpointRowPointProps
   'project.service-endpoints.table': EndpointListPointProps
   'project.services-detail.after': StandardPointProps
   'project.services-detail.before': StandardPointProps
@@ -364,6 +369,8 @@ export interface InjectionPointProps {
   'project.status-page.header': StatusPageAdminPointProps
   'project.status-page.header.actions': StandardPointProps
   'project.status-page.link': StatusPageLinkPointProps
+  'project.status-page.link-header': StatusPageLinkPointProps
+  'project.status-page.link-display': StatusPageLinkPointProps
   'project.status-page.read-only': StatusPageAdminPointProps
   'project.status-page.services': StatusPageAdminPointProps
   'project.status-page.services-list': StatusPageAdminPointProps
@@ -435,10 +442,28 @@ export interface InjectionPointProps {
   'settings.audit.results': SettingsAuditResultsPointProps
   'settings.audit.search': SettingsAuditResultsPointProps
   'settings.audit.verify': SettingsAuditPointProps
+  // Story 69.12: the sub-regions of the settings audit page's export, verify, search and results.
+  'settings.audit.export-form': SettingsAuditPointProps
+  'settings.audit.export-status': SettingsAuditPointProps
+  'settings.audit.export-result': SettingsAuditPointProps
+  'settings.audit.verify-form': SettingsAuditPointProps
+  'settings.audit.verify-error': SettingsAuditPointProps
+  'settings.audit.verify-result': SettingsAuditPointProps
+  'settings.audit.search-event': SettingsAuditResultsPointProps
+  'settings.audit.search-actor': SettingsAuditResultsPointProps
+  'settings.audit.search-resource': SettingsAuditResultsPointProps
+  'settings.audit.search-dates': SettingsAuditResultsPointProps
+  'settings.audit.results-empty': SettingsAuditResultsPointProps
+  'settings.audit.results-rows': SettingsAuditResultsPointProps
+  'settings.audit.results-attribution': SettingsAuditResultsPointProps
+  'settings.audit.results-pagination': SettingsAuditResultsPointProps
   'settings.notifications.channels': NotificationPreferencesPointProps
   'settings.notifications.header': NotificationSettingsPointProps
   'settings.notifications.routing': NotificationRoutingPointProps
   'settings.notifications.test': NotificationSettingsPointProps
+  'settings.notifications.channels-header': NotificationSettingsPointProps
+  'settings.notifications.channels-head': NotificationSettingsPointProps
+  'settings.notifications.channels-row': NotificationSettingsPointProps
   'project.members.access': ProjectMembersPointProps
   'project.members.team-error': ProjectMembersBasePointProps
   'project.members.team-table': ProjectMembersBasePointProps
@@ -458,10 +483,13 @@ export interface InjectionPointProps {
   'credentials.import.header': StandardPointProps
   'credentials.import.projects': StandardPointProps
   'extensions.panels-detail.content': StandardPointProps
+  'extensions.panels-detail.panel': StandardPointProps
   'health.home.header': StandardPointProps
   'health.home.projects': StandardPointProps
   'notifications.home.header': StandardPointProps
   'notifications.home.machine-dormancy': StandardPointProps
+  'notifications.home.machine-dormancy-details': StandardPointProps
+  'notifications.home.machine-dormancy-actions': StandardPointProps
   'notifications.home.user-dormancy': StandardPointProps
   'notifications.home.tabs': StandardPointProps
   'notifications.home.list': StandardPointProps
@@ -508,6 +536,10 @@ export interface InjectionPointProps {
   'platform.settings-resource-usage.allocation': StandardPointProps
   'platform.settings-resource-usage.org-table': StandardPointProps
   'platform.upgrade.content': StandardPointProps
+  'platform.upgrade.version': StandardPointProps
+  'platform.upgrade.cli-policy': StandardPointProps
+  'platform.upgrade.procedure': StandardPointProps
+  'platform.upgrade.api-docs': StandardPointProps
   'project.home.header': StandardPointProps
   'project.home.error': StandardPointProps
   'project.home.list': StandardPointProps
@@ -570,6 +602,11 @@ export interface InjectionPointProps {
   'project.machine-users-detail.summary': StandardPointProps
   'project.machine-users-new.header': StandardPointProps
   'project.machine-users-new.form': StandardPointProps
+  'project.machine-users-new.name': StandardPointProps
+  'project.machine-users-new.role': StandardPointProps
+  'project.machine-users-new.description': StandardPointProps
+  'project.machine-users-new.error': StandardPointProps
+  'project.machine-users-new.submit': StandardPointProps
   'project.services.list': StandardPointProps
   'project.services-detail.content': StandardPointProps
   'project.services-new.header': StandardPointProps
@@ -584,6 +621,11 @@ export interface InjectionPointProps {
   'project.import.submit': StandardPointProps
   'project.new.header': StandardPointProps
   'project.new.form': StandardPointProps
+  'project.new.name': StandardPointProps
+  'project.new.slug': StandardPointProps
+  'project.new.description': StandardPointProps
+  'project.new.error': StandardPointProps
+  'project.new.submit': StandardPointProps
   'project.preview.content': StandardPointProps
   'settings.home.header': StandardPointProps
   'settings.audit-access-report.header': StandardPointProps
@@ -625,6 +667,8 @@ export interface InjectionPointProps {
   'settings.themes.selection-error': StandardPointProps
   'settings.themes.list': StandardPointProps
   'settings.themes.admin': StandardPointProps
+  'settings.themes.reload': StandardPointProps
+  'settings.themes.org-default': StandardPointProps
   'settings.users.header': StandardPointProps
   'settings.users.default-language': StandardPointProps
   'settings.users.machine-dormancy': StandardPointProps
@@ -844,6 +888,9 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     ['/(app)/projects/[projectId]#page'],
     [
       'project.detail.export',
+      'project.detail.export-intro',
+      'project.detail.export-error',
+      'project.detail.export-key',
       'project.detail.not-found',
       'project.detail.summary',
       'project.detail.tiles',
@@ -885,7 +932,11 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'EndpointRowPointProps',
     ['/(app)/projects/[projectId]/service-endpoints#page'],
-    ['project.service-endpoints.row']
+    [
+      'project.service-endpoints.row',
+      'project.service-endpoints.row-status',
+      'project.service-endpoints.row-actions',
+    ]
   ),
   ...regionPoints(
     'EndpointRolePointProps',
@@ -921,7 +972,15 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
       'project.status-page.services-save',
     ]
   ),
-  ...regionPoints('StatusPageLinkPointProps', [STATUS_PAGE_HOST], ['project.status-page.link']),
+  ...regionPoints(
+    'StatusPageLinkPointProps',
+    [STATUS_PAGE_HOST],
+    [
+      'project.status-page.link',
+      'project.status-page.link-header',
+      'project.status-page.link-display',
+    ]
+  ),
   ...regionPoints(
     'StandardPointProps',
     ['/status/[token]#page'],
@@ -956,21 +1015,45 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     [AUDIT_PAGE_HOST],
     [
       'settings.audit.export',
+      'settings.audit.export-form',
+      'settings.audit.export-status',
+      'settings.audit.export-result',
       'settings.audit.header',
       'settings.audit.navigation',
       'settings.audit.notice',
       'settings.audit.verify',
+      'settings.audit.verify-form',
+      'settings.audit.verify-error',
+      'settings.audit.verify-result',
     ]
   ),
   ...regionPoints(
     'SettingsAuditResultsPointProps',
     [AUDIT_PAGE_HOST],
-    ['settings.audit.error', 'settings.audit.results', 'settings.audit.search']
+    [
+      'settings.audit.error',
+      'settings.audit.results',
+      'settings.audit.results-empty',
+      'settings.audit.results-rows',
+      'settings.audit.results-attribution',
+      'settings.audit.results-pagination',
+      'settings.audit.search',
+      'settings.audit.search-event',
+      'settings.audit.search-actor',
+      'settings.audit.search-resource',
+      'settings.audit.search-dates',
+    ]
   ),
   ...regionPoints(
     'NotificationSettingsPointProps',
     [NOTIFICATIONS_PAGE_HOST],
-    ['settings.notifications.header', 'settings.notifications.test']
+    [
+      'settings.notifications.header',
+      'settings.notifications.test',
+      'settings.notifications.channels-header',
+      'settings.notifications.channels-head',
+      'settings.notifications.channels-row',
+    ]
   ),
   ...regionPoints(
     'NotificationPreferencesPointProps',
@@ -1020,7 +1103,7 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/extensions/panels/[slot]/[...subpath]#page'],
-    ['extensions.panels-detail.content']
+    ['extensions.panels-detail.content', 'extensions.panels-detail.panel']
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1033,6 +1116,8 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     [
       'notifications.home.header',
       'notifications.home.machine-dormancy',
+      'notifications.home.machine-dormancy-details',
+      'notifications.home.machine-dormancy-actions',
       'notifications.home.user-dormancy',
       'notifications.home.tabs',
       'notifications.home.list',
@@ -1113,7 +1198,13 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/platform/upgrade#page'],
-    ['platform.upgrade.content']
+    [
+      'platform.upgrade.content',
+      'platform.upgrade.version',
+      'platform.upgrade.cli-policy',
+      'platform.upgrade.procedure',
+      'platform.upgrade.api-docs',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1240,7 +1331,15 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/[projectId]/machine-users/new#page'],
-    ['project.machine-users-new.header', 'project.machine-users-new.form']
+    [
+      'project.machine-users-new.header',
+      'project.machine-users-new.form',
+      'project.machine-users-new.name',
+      'project.machine-users-new.role',
+      'project.machine-users-new.description',
+      'project.machine-users-new.error',
+      'project.machine-users-new.submit',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1274,7 +1373,15 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/new#page'],
-    ['project.new.header', 'project.new.form']
+    [
+      'project.new.header',
+      'project.new.form',
+      'project.new.name',
+      'project.new.slug',
+      'project.new.description',
+      'project.new.error',
+      'project.new.submit',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1361,6 +1468,8 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
       'settings.themes.selection-error',
       'settings.themes.list',
       'settings.themes.admin',
+      'settings.themes.reload',
+      'settings.themes.org-default',
     ]
   ),
   ...regionPoints(

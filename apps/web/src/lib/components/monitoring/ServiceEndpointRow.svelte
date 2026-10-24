@@ -2,16 +2,19 @@
   import InjectionPoint from '$lib/components/composition/InjectionPoint.svelte'
   import type { ProjectPointProps } from '$lib/components/composition/injection-points.js'
   import type { ServiceEndpointDetail } from '$lib/api/service-endpoints.js'
-  import { formatCheckedAt, statusClass } from '$lib/components/dashboard/service-status.js'
+  import { formatCheckedAt } from '$lib/components/dashboard/service-status.js'
   import type { OrgRole } from '$lib/monitoring/permissions.js'
-  import AssetRowActions from './AssetRowActions.svelte'
   import MonitoringPauseControl from './MonitoringPauseControl.svelte'
+  import ServiceEndpointRowActions from './ServiceEndpointRowActions.svelte'
+  import ServiceEndpointRowStatus from './ServiceEndpointRowStatus.svelte'
 
   // Story 69.3: one endpoint row as a replaceable region. The point sits INSIDE the Monitoring cell
   // (a fill must never land between `<tr>` siblings) and renders once per row: its `data` is the
   // page's `__inject` entry, not per row, so a fill that needs per-row data reads
   // `props.endpoint.id`. A contribution at `project.service-endpoints.row` receives
   // `{ project, endpoint, orgRole }`.
+  // Story 69.12: the Status and the edit/delete cells are sub-regions of their own, each with a point
+  // inside its cell.
   let {
     project,
     endpoint,
@@ -55,13 +58,7 @@
       </p>
     </div>
   </td>
-  <td class="px-4 py-3 text-slate-600">
-    <span
-      class={`inline-block rounded-full px-2 py-1 text-xs font-semibold ${statusClass(endpoint.status)}`}
-    >
-      {endpoint.status}
-    </span>
-  </td>
+  <ServiceEndpointRowStatus {project} {endpoint} {orgRole} {data} />
   <td class="px-4 py-3 text-slate-600">
     <p>Checked every {endpoint.checkFrequencyMinutes} min</p>
     <p>Down after {endpoint.downThresholdFailures} consecutive failures</p>
@@ -89,12 +86,6 @@
     />
   </td>
   {#if canManage}
-    <td class="px-4 py-3">
-      <AssetRowActions
-        editHref={`/projects/${projectId}/service-endpoints/${endpoint.id}`}
-        confirmLabel="Confirm delete? This will also resolve any active alerts for it."
-        {onDelete}
-      />
-    </td>
+    <ServiceEndpointRowActions {project} {endpoint} {orgRole} {projectId} {onDelete} {data} />
   {/if}
 </tr>

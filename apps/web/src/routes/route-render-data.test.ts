@@ -930,6 +930,81 @@ const MACHINE_USER_BASE: Overrides = {
   machineUser: MACHINE_USER,
   apiKeys: MACHINE_USER_KEYS,
 }
+// Story 69.12: the settings audit page. A plain-object filters value would turn into a permissive
+// proxy that iterates as empty, so `hasFilters` could never be true: a null-prototype object is
+// passed through as given.
+const nullProto = (value: Overrides): Overrides => Object.assign(Object.create(null), value)
+const AUDIT_ATTRIBUTION_EVENTS = [
+  {
+    id: 'evt-a',
+    eventType: 'credential.access',
+    actorDisplayName: 'Dana Smith',
+    resourceId: 'cred-1',
+    resourceType: 'credential',
+    projectId: 'proj-1',
+    ipAddress: '203.0.113.4',
+    createdAt: '2026-10-01T10:00:00.000Z',
+    attribution: {
+      actor: {
+        kind: 'issuer_attested',
+        provider: 'cm',
+        subject: 'user-1',
+        reason: 'not_current_member',
+      },
+      occurredAt: '2026-10-01T09:00:00.000Z',
+      occurredAtSource: 'delegation_signed',
+    },
+  },
+  {
+    id: 'evt-b',
+    eventType: 'member.invited',
+    actorDisplayName: 'Olivia Owner',
+    resourceId: null,
+    resourceType: null,
+    projectId: null,
+    ipAddress: null,
+    createdAt: '2026-10-01T09:00:00.000Z',
+    attribution: {
+      actor: { kind: 'issuer_attested', provider: 'cm', subject: 'user-2', reason: 'unlinked' },
+      occurredAt: '2026-10-01T08:00:00.000Z',
+      occurredAtSource: 'extension',
+    },
+  },
+  {
+    id: 'evt-c',
+    eventType: 'credential.rotated',
+    actorDisplayName: 'Adam Admin',
+    resourceId: 'cred-2',
+    resourceType: 'credential',
+    projectId: 'proj-2',
+    ipAddress: '198.51.100.7',
+    createdAt: '2026-10-01T08:00:00.000Z',
+    attribution: {
+      actor: { kind: 'pv_verified', provider: 'cm', subject: 'user-3', reason: null },
+      occurredAt: '2026-10-01T08:00:00.500Z',
+    },
+  },
+  {
+    id: 'evt-d',
+    eventType: 'project.import_failed',
+    actorDisplayName: 'Eve Editor',
+    resourceId: null,
+    resourceType: 'project_import',
+    projectId: null,
+    ipAddress: null,
+    createdAt: '2026-10-01T07:00:00.000Z',
+    attribution: {},
+  },
+]
+const AUDIT_PAGE_BASE: Overrides = {
+  ...OWNER_READY,
+  filters: nullProto({}),
+  events: AUDIT_ATTRIBUTION_EVENTS,
+  total: 4,
+  limit: 20,
+  page: 1,
+  hasNext: false,
+}
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
   '/(app)/projects/[projectId]/machine-users/[machineUserId]/+page.svelte': {
     'machine-active-manager': MACHINE_USER_BASE,
@@ -1057,6 +1132,36 @@ const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
       maintenanceStatusError: 'status unavailable',
     },
     'audit-events-error': { ...PLATFORM_AUDIT_BASE, eventsErrorMessage: 'events unavailable' },
+  },
+  '/(app)/settings/audit/+page.svelte': {
+    'audit-attribution-rows': AUDIT_PAGE_BASE,
+    'audit-eight-filters-next': {
+      ...AUDIT_PAGE_BASE,
+      filters: nullProto({
+        eventType: 'credential.access',
+        actorId: 'actor-9',
+        actorProvider: 'cm',
+        actorSubject: 'user-1',
+        resourceId: 'cred-1',
+        projectId: 'proj-1',
+        from: '2026-10-01',
+        to: '2026-10-31',
+      }),
+      page: 2,
+      total: 45,
+      hasNext: true,
+    },
+    'audit-only-from': {
+      ...AUDIT_PAGE_BASE,
+      filters: nullProto({ from: '2026-10-01' }),
+    },
+    'audit-empty-filtered': {
+      ...AUDIT_PAGE_BASE,
+      events: [],
+      total: 0,
+      filters: nullProto({ eventType: 'nothing.here' }),
+    },
+    'audit-error': { ...AUDIT_PAGE_BASE, events: [], total: 0, errorMessage: 'load failed' },
   },
   '/(app)/settings/users/+page.svelte': {
     'users-owner': { ...OWNER_READY, orgRole: 'owner', users: USERS, nativeLoginEnabled: true },

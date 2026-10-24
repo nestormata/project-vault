@@ -26,14 +26,12 @@ const STABLE_MARKER = '@pv-stable'
  * author cannot inject between its sections until each becomes a sub-region component. */
 export const MAX_REGION_COMPONENT_LINES = 60
 /**
- * The single, explicit sequencing switch for the OVERSIZE finding (Nestor's Story 69.6 Q1 decision,
- * 2026-10-05: the decomposition of the 38 region components is split into follow-up stories). While it
- * is `false` an OVERSIZE region is printed and counted but is not a problem. Follow-up stories
- * 69-10, 69-11 and 69-12 split the components in batches; the last one flips this to `true`. It is a
- * switch for the whole rule, never a list of component names: no component is exempt by name.
+ * The OVERSIZE finding is enforced (Story 69.12 turned it on, after stories 69-10, 69-11, 69-14 and
+ * 69-12 split every region component over the limit): a region component over
+ * `MAX_REGION_COMPONENT_LINES` is a problem. It is a switch for the whole rule, never a list of
+ * component names: no component is exempt by name.
  */
-export const OVERSIZE_ENFORCEMENT = false
-export const OVERSIZE_FOLLOW_UP_STORIES = ['69-10', '69-11', '69-12'] as const
+export const OVERSIZE_ENFORCEMENT = true
 
 export type AuditStatus = 'done' | 'MISSING' | 'UNPARSEABLE' | 'OVERSIZE'
 

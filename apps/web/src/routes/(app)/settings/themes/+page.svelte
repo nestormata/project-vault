@@ -91,6 +91,7 @@
     themes={data.themes}
     orgId={data.orgId}
     orgDefaultThemeName={data.orgDefaultThemeName}
+    data={data?.__inject}
   >
     <InjectionPoint name="settings.themes.admin" data={data?.__inject} />
   </ThemesAdminSections>
