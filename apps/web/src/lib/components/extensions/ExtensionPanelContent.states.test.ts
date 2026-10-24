@@ -43,7 +43,7 @@ afterEach(() => {
 })
 
 const mountPanel = (overrides: Partial<typeof baseData>) =>
-  render(Panel, { props: { data: { ...baseData, ...overrides } } })
+  render(Panel, { props: { pageData: { ...baseData, ...overrides } } })
 
 async function actionState(response: unknown): Promise<string> {
   vi.stubGlobal(

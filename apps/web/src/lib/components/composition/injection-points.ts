@@ -462,6 +462,7 @@ export interface InjectionPointProps {
   'credentials.import.header': StandardPointProps
   'credentials.import.projects': StandardPointProps
   'extensions.panels-detail.content': StandardPointProps
+  'extensions.panels-detail.panel': StandardPointProps
   'health.home.header': StandardPointProps
   'health.home.projects': StandardPointProps
   'notifications.home.header': StandardPointProps
@@ -1042,7 +1043,7 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/extensions/panels/[slot]/[...subpath]#page'],
-    ['extensions.panels-detail.content']
+    ['extensions.panels-detail.content', 'extensions.panels-detail.panel']
   ),
   ...regionPoints(
     'StandardPointProps',
