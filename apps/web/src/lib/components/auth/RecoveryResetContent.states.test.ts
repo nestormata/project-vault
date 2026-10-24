@@ -45,7 +45,10 @@ const asText = (states: Record<string, unknown>): Record<string, string> =>
       typeof value === 'string' ? value : JSON.stringify(value),
     ])
   )
-const snapshotOf = (container: Element): string => serializeWithoutNoise(container)
+// Whitespace runs inside text depend on the source indentation, so collapse them like the route
+// render oracles do (route-render-data.test.ts).
+const snapshotOf = (container: Element): string =>
+  serializeWithoutNoise(container).replace(/\s+/g, ' ')
 const password = (): HTMLInputElement =>
   document.getElementById('recovery-new-password') as HTMLInputElement
 const submit = () => fireEvent.submit(password().closest('form') as HTMLFormElement)
