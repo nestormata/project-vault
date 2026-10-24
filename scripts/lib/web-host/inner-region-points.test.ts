@@ -160,3 +160,86 @@ describe('inner region points under an M4 replacement (Story 69.6 AC-5)', () => 
     expect(manifest).toContain("'$lib/components/settings/SsoDomainsHeader.svelte'")
   })
 })
+
+// Story 69.10 (AC-5 users-panel variant): the sub-regions of a split region component. Their points
+// are rendered by the sub-region components the region component imports, so a replacement that
+// wraps the original through `pv-original:` keeps them and a full replacement drops them; replacing
+// one sub-region component drops only its own points. The import closure is derived from the real
+// component sources, never typed.
+const LIB_TEXT: Record<string, string> = import.meta.glob(
+  ['../../../apps/web/src/lib/components/**/*.svelte'],
+  { query: '?raw', import: 'default', eager: true }
+)
+
+function libSource(rel: string): string | undefined {
+  return Object.entries(LIB_TEXT).find(([key]) => key.endsWith(`/apps/web/${rel}`))?.[1]
+}
+
+/** The component and every component it imports, transitively (`src/lib/...` paths). */
+function closure(rel: string, seen = new Set<string>()): Set<string> {
+  if (seen.has(rel)) return seen
+  seen.add(rel)
+  const source = libSource(rel)
+  if (source === undefined) return seen
+  const parsed = parseRegions(source, rel, { requirePoint: false })
+  for (const specifier of parsed.svelteImports.values()) {
+    const next = specifier.startsWith('$lib/')
+      ? posix.join('src/lib', specifier.slice('$lib/'.length))
+      : specifier.startsWith('.')
+        ? posix.join(posix.dirname(rel), specifier)
+        : null
+    if (next !== null && next.endsWith('.svelte')) closure(next, seen)
+  }
+  return seen
+}
+
+/** A sub-region point survives unless a replaced component (without `pv-original:`) reaches its file. */
+function subRegionSurvives(file: string, table: readonly ReplacementEntry[]): boolean {
+  return table.every((entry) => entry.wrapsOriginal || !closure(entry.host).has(file))
+}
+
+const PANEL = 'src/lib/components/settings/UsersManagementPanel.svelte'
+const TABLE_POINT = 'settings.users.table'
+const USERS_SUB_POINTS = [
+  'settings.users.machine-dormancy',
+  'settings.users.user-dormancy',
+  'settings.users.default-language',
+  TABLE_POINT,
+] as const
+
+describe('sub-region points of a split region component under an M4 replacement (Story 69.10)', () => {
+  const { points } = buildInjectionPointsManifest(WEB)
+  const fileOf = (name: string): string => {
+    const entry = points.find((point) => point.name === name)
+    if (entry === undefined) throw new Error(`no manifest entry for ${name}`)
+    return entry.file
+  }
+
+  it('lists every users sub-region point with a host file the panel reaches', () => {
+    const reached = closure(PANEL)
+    for (const name of USERS_SUB_POINTS) {
+      const file = fileOf(name)
+      expect(file.startsWith('src/lib/components/settings/Users')).toBe(true)
+      expect(reached.has(file), `${name} -> ${file}`).toBe(true)
+    }
+  })
+
+  it('positive: a pv-original: wrapper around the panel keeps every sub-region point', () => {
+    for (const name of USERS_SUB_POINTS) {
+      expect(subRegionSurvives(fileOf(name), [{ host: PANEL, wrapsOriginal: true }])).toBe(true)
+    }
+  })
+
+  it('edge: a full replacement of the panel drops every sub-region point', () => {
+    for (const name of USERS_SUB_POINTS) {
+      expect(subRegionSurvives(fileOf(name), [{ host: PANEL, wrapsOriginal: false }])).toBe(false)
+    }
+  })
+
+  it('edge: replacing only the table sub-region drops only the table points', () => {
+    const table = [{ host: fileOf(TABLE_POINT), wrapsOriginal: false }]
+    expect(subRegionSurvives(fileOf(TABLE_POINT), table)).toBe(false)
+    expect(subRegionSurvives(fileOf('settings.users.machine-dormancy'), table)).toBe(true)
+    expect(subRegionSurvives(fileOf('settings.users.default-language'), table)).toBe(true)
+  })
+})

@@ -28,7 +28,7 @@
   </NavLinkRegion>
 
   <!-- @region settings.audit-forwarding.config -->
-  <AuditForwardingPanel {data}>
+  <AuditForwardingPanel allowed={data.allowed} data={data.__inject}>
     <InjectionPoint name="settings.audit-forwarding.config" data={data?.__inject} />
   </AuditForwardingPanel>
 </div>

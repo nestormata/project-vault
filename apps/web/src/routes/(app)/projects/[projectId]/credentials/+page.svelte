@@ -25,7 +25,7 @@
   </CredentialsListHeader>
 
   <!-- @region project.credentials.list -->
-  <CredentialsListContent {data} {canCreate}>
+  <CredentialsListContent pageData={data} {canCreate} data={data.__inject}>
     <InjectionPoint name="project.credentials.list" data={data?.__inject} />
   </CredentialsListContent>
 </section>

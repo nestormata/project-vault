@@ -4,6 +4,10 @@ import { createRawSnippet } from 'svelte'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { serializeWithoutNoise } from '$lib/test/dom.js'
 
+// The data-rich cases added in 69.10 render dates in the runner's local time zone. The snapshot was
+// recorded in America/Panama (UTC-5, no DST), so pin it for any runner (CI runs in UTC).
+process.env.TZ = 'America/Panama'
+
 // Story 69.5 AC-5: the DATA-RICH twin of route-render-snapshot.test.ts. That oracle renders every
 // route file against an EMPTY permissive `data`, so almost no `{#if data.x}` / `{#each}` branch is
 // exercised, and two routes throw. This one renders the same 70 route files against a FULL
@@ -241,7 +245,197 @@ function usage(overrides: Overrides): Overrides {
     ...overrides,
   }
 }
+// Story 69.10: realistic users for the users page, whose rows branch on `status`, project roles and
+// the org role (a permissive value matches none of them). Recorded BEFORE the page's sections were
+// split into sub-region components.
+const USERS = [
+  {
+    userId: 'u-active',
+    email: 'active.member',
+    displayName: 'Active Member',
+    orgRole: 'member',
+    status: 'active',
+    projects: [
+      { projectId: 'p-alpha', projectName: 'Alpha', role: 'owner' },
+      { projectId: 'p-beta', projectName: 'Beta', role: 'viewer' },
+    ],
+  },
+  {
+    userId: 'u-gone',
+    email: 'gone.user',
+    displayName: 'Gone User',
+    orgRole: 'viewer',
+    status: 'deactivated',
+    projects: [],
+  },
+]
+// Story 69.10: platform audit page states a permissive value cannot select (events, empty and
+// filtered lists, inactive and unavailable maintenance status), recorded BEFORE the split.
+const PLATFORM_AUDIT_EVENTS = [
+  {
+    id: 'ev-1',
+    actionType: 'org.suspend',
+    operatorId: 'op-1',
+    targetOrgId: 'org-9',
+    targetUserId: null,
+    ipAddress: '10.0.0.1',
+    timestamp: '2026-10-01T10:00:00.000Z',
+  },
+  {
+    id: 'ev-2',
+    actionType: 'maintenance.activate',
+    operatorId: 'op-2',
+    targetOrgId: null,
+    targetUserId: 'user-3',
+    ipAddress: null,
+    timestamp: '2026-10-02T11:30:00.000Z',
+  },
+]
+const PLATFORM_AUDIT_BASE: Overrides = {
+  ...OWNER_READY,
+  filters: {},
+  events: PLATFORM_AUDIT_EVENTS,
+  total: 2,
+  page: 1,
+  hasNext: false,
+  maintenanceStatus: { active: false },
+}
+// Story 69.10: platform settings states a permissive value cannot select (an unset SMTP password and
+// no backup storage, an unconfigured token, a failed token load), recorded BEFORE the split.
+const PLATFORM_SETTINGS = {
+  smtp: {
+    host: 'smtp.example.test',
+    port: 587,
+    user: 'mailer',
+    from: 'noreply.example',
+    configured: false,
+  },
+  backup: { schedule: '0 2 * * *', retentionCount: 7, storageType: null },
+  notifications: { defaultSlackWebhook: null },
+  instancePolicy: { maxOrgs: 10, maxUsersPerOrg: 50, sessionIdleTimeoutMinutes: 30 },
+}
+// Story 69.10: credentials list states a permissive value cannot select (status classes, archived and
+// rotation badges, tags, and the empty state wording per filter and role), recorded BEFORE the split.
+const CREDENTIAL_ITEMS = [
+  {
+    id: 'c-1',
+    name: 'Stripe key',
+    status: 'active',
+    tags: ['payments', 'prod'],
+    expiresAt: '2026-12-01T00:00:00.000Z',
+    hasDependencies: true,
+    archivedAt: null,
+    activeRotation: { status: 'staged', rotationId: 'rot-1' },
+  },
+  {
+    id: 'c-2',
+    name: 'Old token',
+    status: 'expired',
+    tags: [],
+    expiresAt: null,
+    hasDependencies: false,
+    archivedAt: '2026-09-01T00:00:00.000Z',
+    activeRotation: null,
+  },
+  {
+    id: 'c-3',
+    name: 'Soon token',
+    status: 'expiring',
+    tags: ['db'],
+    expiresAt: '2026-11-01T00:00:00.000Z',
+    hasDependencies: false,
+    archivedAt: null,
+    activeRotation: null,
+  },
+]
+const NO_FILTERS = { q: '', status: '', tags: '', page: 1, includeArchived: false }
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
+  '/(app)/projects/[projectId]/credentials/+page.svelte': {
+    'list-items': {
+      ...OWNER_READY,
+      filters: { ...NO_FILTERS, includeArchived: true },
+      credentials: { items: CREDENTIAL_ITEMS, total: 3 },
+    },
+    'list-empty-filtered': {
+      ...OWNER_READY,
+      filters: { ...NO_FILTERS, q: 'zzz' },
+      credentials: { items: [], total: 0 },
+    },
+    'list-empty-owner': {
+      ...OWNER_READY,
+      filters: NO_FILTERS,
+      credentials: { items: [], total: 0 },
+    },
+    'list-empty-viewer': {
+      ...OWNER_READY,
+      orgRole: 'viewer',
+      filters: NO_FILTERS,
+      credentials: { items: [], total: 0 },
+    },
+  },
+  '/(app)/platform/settings/+page.svelte': {
+    'settings-token-unconfigured': {
+      ...OWNER_READY,
+      settings: PLATFORM_SETTINGS,
+      statusToken: { configured: false },
+    },
+    'settings-token-configured': {
+      ...OWNER_READY,
+      settings: { ...PLATFORM_SETTINGS, smtp: { ...PLATFORM_SETTINGS.smtp, configured: true } },
+      statusToken: {
+        configured: true,
+        createdAt: '2026-10-01T10:00:00.000Z',
+        lastUsedAt: '2026-10-02T10:00:00.000Z',
+      },
+    },
+    'settings-token-load-failed': {
+      ...OWNER_READY,
+      settings: PLATFORM_SETTINGS,
+      statusToken: null,
+      statusTokenLoadFailed: true,
+    },
+    'settings-load-error': { ...OWNER_READY, settings: null, errorMessage: 'settings unavailable' },
+  },
+  '/(app)/platform/audit/+page.svelte': {
+    'audit-events': PLATFORM_AUDIT_BASE,
+    'audit-events-filtered-next': {
+      ...PLATFORM_AUDIT_BASE,
+      filters: { actionType: 'org.suspend', from: '2026-10-01T00:00:00.000Z' },
+      hasNext: true,
+    },
+    'audit-empty': { ...PLATFORM_AUDIT_BASE, events: [], total: 0 },
+    'audit-empty-filtered': {
+      ...PLATFORM_AUDIT_BASE,
+      events: [],
+      total: 0,
+      filters: { operatorId: 'op-1' },
+    },
+    'audit-maintenance-active': {
+      ...PLATFORM_AUDIT_BASE,
+      maintenanceStatus: {
+        active: true,
+        activatedAt: '2026-10-03T09:00:00.000Z',
+        reason: 'storage outage',
+        pendingEntriesCount: 4,
+      },
+    },
+    'audit-status-unavailable': {
+      ...PLATFORM_AUDIT_BASE,
+      maintenanceStatus: null,
+      maintenanceStatusError: 'status unavailable',
+    },
+    'audit-events-error': { ...PLATFORM_AUDIT_BASE, eventsErrorMessage: 'events unavailable' },
+  },
+  '/(app)/settings/users/+page.svelte': {
+    'users-owner': { ...OWNER_READY, orgRole: 'owner', users: USERS, nativeLoginEnabled: true },
+    'users-admin-external-login': {
+      ...OWNER_READY,
+      orgRole: 'admin',
+      users: USERS,
+      nativeLoginEnabled: false,
+    },
+    'users-empty': { ...OWNER_READY, users: [] },
+  },
   '/(app)/platform/settings/resource-usage/+page.svelte': {
     'usage-rows': { ...OWNER_READY, usage: usage({}), warnings: [] },
     'usage-truncated': {

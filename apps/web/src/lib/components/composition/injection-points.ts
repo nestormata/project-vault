@@ -454,8 +454,26 @@ export interface InjectionPointProps {
   'notifications.home.list': StandardPointProps
   'platform.home.header': StandardPointProps
   'platform.audit.content': StandardPointProps
+  'platform.audit.maintenance': StandardPointProps
+  'platform.audit.maintenance-status': StandardPointProps
+  'platform.audit.results': StandardPointProps
+  'platform.audit.search': StandardPointProps
+  'platform.audit.verify': StandardPointProps
   'platform.backups.content': StandardPointProps
   'platform.settings.content': StandardPointProps
+  'platform.settings.backup': StandardPointProps
+  'platform.settings.form': StandardPointProps
+  'platform.settings.instance-policy': StandardPointProps
+  'platform.settings.notifications': StandardPointProps
+  'platform.settings.save-status': StandardPointProps
+  'platform.settings.smtp': StandardPointProps
+  'platform.settings.smtp-account': StandardPointProps
+  'platform.settings.smtp-server': StandardPointProps
+  'platform.settings.status-token': StandardPointProps
+  'platform.settings.status-token-actions': StandardPointProps
+  'platform.settings.status-token-reveal': StandardPointProps
+  'platform.settings.status-token-state': StandardPointProps
+  'platform.settings.status-token-test': StandardPointProps
   'platform.settings-orgs.content': StandardPointProps
   'platform.settings-resource-usage.content': StandardPointProps
   'platform.upgrade.content': StandardPointProps
@@ -467,7 +485,10 @@ export interface InjectionPointProps {
   'project.certificates-new.header': StandardPointProps
   'project.certificates-new.form': StandardPointProps
   'project.credentials.header': StandardPointProps
+  'project.credentials.archived-toggle': StandardPointProps
+  'project.credentials.filters': StandardPointProps
   'project.credentials.list': StandardPointProps
+  'project.credentials.results': StandardPointProps
   'project.credentials-rotate.header': StandardPointProps
   'project.credentials-rotate.form': StandardPointProps
   'project.credentials-rotations-detail.content': StandardPointProps
@@ -498,6 +519,13 @@ export interface InjectionPointProps {
   'settings.audit-access-report.report': StandardPointProps
   'settings.audit-forwarding.header': StandardPointProps
   'settings.audit-forwarding.config': StandardPointProps
+  'settings.audit-forwarding.forwarder': StandardPointProps
+  'settings.audit-forwarding.retention': StandardPointProps
+  'settings.audit-forwarding.s3': StandardPointProps
+  'settings.audit-forwarding.s3-credentials': StandardPointProps
+  'settings.audit-forwarding.s3-destination': StandardPointProps
+  'settings.audit-forwarding.type': StandardPointProps
+  'settings.audit-forwarding.webhook': StandardPointProps
   'settings.extensions.header': StandardPointProps
   'settings.extensions.status': StandardPointProps
   'settings.external-identities.header': StandardPointProps
@@ -506,14 +534,20 @@ export interface InjectionPointProps {
   'settings.language.errors': StandardPointProps
   'settings.language.options': StandardPointProps
   'settings.security.header': StandardPointProps
+  'settings.sso-domains.add': StandardPointProps
   'settings.sso-domains.header': StandardPointProps
+  'settings.sso-domains.list': StandardPointProps
   'settings.sso-domains.panel': StandardPointProps
   'settings.themes.header': StandardPointProps
   'settings.themes.selection-error': StandardPointProps
   'settings.themes.list': StandardPointProps
   'settings.themes.admin': StandardPointProps
   'settings.users.header': StandardPointProps
+  'settings.users.default-language': StandardPointProps
+  'settings.users.machine-dormancy': StandardPointProps
   'settings.users.management': StandardPointProps
+  'settings.users.table': StandardPointProps
+  'settings.users.user-dormancy': StandardPointProps
   'settings.users-erasure-detail.header': StandardPointProps
   'settings.users-erasure-detail.request': StandardPointProps
   'shares.detail.heading': StandardPointProps
@@ -894,7 +928,18 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     ]
   ),
   ...regionPoints('StandardPointProps', ['/(app)/platform#page'], ['platform.home.header']),
-  ...regionPoints('StandardPointProps', ['/(app)/platform/audit#page'], ['platform.audit.content']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(app)/platform/audit#page'],
+    [
+      'platform.audit.content',
+      'platform.audit.maintenance-status',
+      'platform.audit.search',
+      'platform.audit.results',
+      'platform.audit.verify',
+      'platform.audit.maintenance',
+    ]
+  ),
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/platform/backups#page'],
@@ -903,7 +948,22 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/platform/settings#page'],
-    ['platform.settings.content']
+    [
+      'platform.settings.content',
+      'platform.settings.form',
+      'platform.settings.save-status',
+      'platform.settings.smtp',
+      'platform.settings.smtp-server',
+      'platform.settings.smtp-account',
+      'platform.settings.backup',
+      'platform.settings.notifications',
+      'platform.settings.instance-policy',
+      'platform.settings.status-token',
+      'platform.settings.status-token-reveal',
+      'platform.settings.status-token-state',
+      'platform.settings.status-token-actions',
+      'platform.settings.status-token-test',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -943,7 +1003,13 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/[projectId]/credentials#page'],
-    ['project.credentials.header', 'project.credentials.list']
+    [
+      'project.credentials.header',
+      'project.credentials.list',
+      'project.credentials.filters',
+      'project.credentials.archived-toggle',
+      'project.credentials.results',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1034,7 +1100,17 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/settings/audit/forwarding#page'],
-    ['settings.audit-forwarding.header', 'settings.audit-forwarding.config']
+    [
+      'settings.audit-forwarding.header',
+      'settings.audit-forwarding.config',
+      'settings.audit-forwarding.forwarder',
+      'settings.audit-forwarding.type',
+      'settings.audit-forwarding.webhook',
+      'settings.audit-forwarding.s3',
+      'settings.audit-forwarding.s3-destination',
+      'settings.audit-forwarding.s3-credentials',
+      'settings.audit-forwarding.retention',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1059,7 +1135,12 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/settings/sso-domains#page'],
-    ['settings.sso-domains.header', 'settings.sso-domains.panel']
+    [
+      'settings.sso-domains.header',
+      'settings.sso-domains.panel',
+      'settings.sso-domains.add',
+      'settings.sso-domains.list',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
@@ -1074,7 +1155,14 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/settings/users#page'],
-    ['settings.users.header', 'settings.users.management']
+    [
+      'settings.users.header',
+      'settings.users.management',
+      'settings.users.machine-dormancy',
+      'settings.users.user-dormancy',
+      'settings.users.default-language',
+      'settings.users.table',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
