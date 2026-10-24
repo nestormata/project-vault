@@ -285,6 +285,9 @@ export interface InjectionPointProps {
   'project.detail.after': ProjectPointProps
   'project.detail.before': ProjectPointProps
   'project.detail.export': ProjectPointProps
+  'project.detail.export-intro': ProjectPointProps
+  'project.detail.export-error': ProjectPointProps
+  'project.detail.export-key': ProjectPointProps
   'project.detail.header.actions': ProjectPointProps
   'project.detail.not-found': ProjectPointProps
   'project.detail.summary': ProjectPointProps
@@ -859,6 +862,9 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     ['/(app)/projects/[projectId]#page'],
     [
       'project.detail.export',
+      'project.detail.export-intro',
+      'project.detail.export-error',
+      'project.detail.export-key',
       'project.detail.not-found',
       'project.detail.summary',
       'project.detail.tiles',
