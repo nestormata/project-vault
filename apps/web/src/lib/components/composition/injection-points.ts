@@ -605,6 +605,9 @@ export interface InjectionPointProps {
   'auth.layout.footer': StandardPointProps
   'auth.layout.body': StandardPointProps
   'auth.handoff.content': StandardPointProps
+  'auth.handoff.error': StandardPointProps
+  'auth.handoff.mfa': StandardPointProps
+  'auth.handoff.confirm': StandardPointProps
   'auth.invitations-accept.content': StandardPointProps
   'auth.login.heading': StandardPointProps
   'auth.login.reason': StandardPointProps
@@ -1303,7 +1306,11 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     ['/(auth)#layout'],
     ['auth.layout.theme', 'auth.layout.footer', 'auth.layout.body']
   ),
-  ...regionPoints('StandardPointProps', ['/(auth)/handoff#page'], ['auth.handoff.content']),
+  ...regionPoints(
+    'StandardPointProps',
+    ['/(auth)/handoff#page'],
+    ['auth.handoff.content', 'auth.handoff.error', 'auth.handoff.mfa', 'auth.handoff.confirm']
+  ),
   ...regionPoints(
     'StandardPointProps',
     ['/(auth)/invitations/accept#page'],
