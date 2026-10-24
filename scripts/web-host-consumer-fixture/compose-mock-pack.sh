@@ -96,7 +96,7 @@ mock_pack_assert_tsconfig_exclusions() { # excluded
     if (base.length === 0) fail("the expected base excludes are empty", base)
     const tail = exclude.slice(base.length)
     if (JSON.stringify(exclude.slice(0, base.length)) !== JSON.stringify(base)) {
-      fail("the generated base excludes differ from the app's own", { exclude, base })
+      fail("the generated base excludes differ from the app own excludes", { exclude, base })
     }
     if (JSON.stringify(tail) !== JSON.stringify(locked)) {
       fail("the generated trailing entries differ from the lock excludedPvTests", { tail, locked })
