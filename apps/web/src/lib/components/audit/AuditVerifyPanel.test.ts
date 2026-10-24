@@ -10,6 +10,8 @@ vi.mock('$lib/api/audit.js', () => ({
 import { ApiClientError } from '$lib/api/client.js'
 import AuditVerifyPanel from './AuditVerifyPanel.svelte'
 
+const POINT_PROPS = { orgRole: 'owner', allowed: true } as const
+
 afterEach(() => cleanup())
 
 async function fillAndSubmit(from = '2026-06-01', to = '2026-06-30') {
@@ -30,7 +32,7 @@ describe('AuditVerifyPanel (AC group D)', () => {
       verifiedAt: '2026-07-07T00:00:00.000Z',
     })
 
-    render(AuditVerifyPanel)
+    render(AuditVerifyPanel, { props: { pointProps: POINT_PROPS } })
     await fillAndSubmit()
 
     expect(
@@ -49,7 +51,7 @@ describe('AuditVerifyPanel (AC group D)', () => {
       verifiedAt: '2026-07-07T00:00:00.000Z',
     })
 
-    render(AuditVerifyPanel)
+    render(AuditVerifyPanel, { props: { pointProps: POINT_PROPS } })
     await fillAndSubmit()
 
     expect(await screen.findByText(/no audit events in this range/i)).toBeTruthy()
@@ -66,7 +68,7 @@ describe('AuditVerifyPanel (AC group D)', () => {
       verifiedAt: '2026-07-07T00:00:00.000Z',
     })
 
-    render(AuditVerifyPanel)
+    render(AuditVerifyPanel, { props: { pointProps: POINT_PROPS } })
     await fillAndSubmit()
 
     expect(await screen.findByText(/credential\.access/)).toBeTruthy()
@@ -81,7 +83,7 @@ describe('AuditVerifyPanel (AC group D)', () => {
       )
     )
 
-    render(AuditVerifyPanel)
+    render(AuditVerifyPanel, { props: { pointProps: POINT_PROPS } })
     await fillAndSubmit('2026-01-01', '2026-06-01')
 
     expect(await screen.findByText('Please select a range of 90 days or fewer')).toBeTruthy()
@@ -94,7 +96,7 @@ describe('AuditVerifyPanel (AC group D)', () => {
       new ApiClientError(429, { message: 'Too many requests' }, 'Too many requests')
     )
 
-    render(AuditVerifyPanel)
+    render(AuditVerifyPanel, { props: { pointProps: POINT_PROPS } })
     await fillAndSubmit()
 
     expect(await screen.findByText(/doing that too quickly/i)).toBeTruthy()

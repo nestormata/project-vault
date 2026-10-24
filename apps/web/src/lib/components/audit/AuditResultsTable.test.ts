@@ -3,6 +3,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/svelte'
 import AuditResultsTable from './AuditResultsTable.svelte'
 import type { AuditEventItem } from '$lib/api/audit.js'
 
+const POINT_PROPS = { orgRole: 'owner', allowed: true } as never
+
 afterEach(() => cleanup())
 
 const USER_ID = '33333333-3333-4333-8333-333333333333'
@@ -55,6 +57,7 @@ function renderTable(events: AuditEventItem[]) {
       page: 1,
       total: events.length,
       hasNext: false,
+      pointProps: POINT_PROPS,
     },
   })
 }

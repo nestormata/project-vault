@@ -10,6 +10,8 @@ import { serializeWithoutNoise } from '$lib/test/dom.js'
 
 vi.mock('$app/paths', () => ({ resolve: (path: string) => path }))
 
+const POINT_PROPS = { orgRole: 'owner', allowed: true }
+
 let Form: Component<Record<string, unknown>>
 beforeAll(async () => {
   Form = (await import('./AuditSearchForm.svelte')).default as unknown as typeof Form
@@ -34,7 +36,7 @@ const asText = (states: Record<string, unknown>): Record<string, string> =>
     ])
   )
 const mount = (filters: Record<string, string> | undefined, hasFilters = Boolean(filters)) =>
-  render(Form, { props: { filters, hasFilters } })
+  render(Form, { props: { filters, hasFilters, pointProps: POINT_PROPS } })
 const formOf = (container: Element) => container.querySelector('form') as HTMLFormElement
 const typeInto = (label: RegExp | string, value: string) =>
   fireEvent.input(screen.getByLabelText(label), { target: { value } })
@@ -76,7 +78,7 @@ describe('AuditSearchForm states (Story 69.12 pre-split pin)', () => {
     cleanup()
 
     const children = render(Form, {
-      props: { filters: undefined, hasFilters: false },
+      props: { filters: undefined, hasFilters: false, pointProps: POINT_PROPS },
     })
     states['children-absent'] = serializeWithoutNoise(children.container)
 

@@ -16,6 +16,8 @@ vi.mock('$lib/api/audit.js', async () => {
 import { ApiClientError } from '$lib/api/client.js'
 import AuditExportPanel from './AuditExportPanel.svelte'
 
+const POINT_PROPS = { orgRole: 'owner', allowed: true } as const
+
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
@@ -52,7 +54,7 @@ describe('AuditExportPanel (AC group C)', () => {
         completedAt: '2026-07-07T00:01:00.000Z',
       })
 
-    render(AuditExportPanel)
+    render(AuditExportPanel, { props: { pointProps: POINT_PROPS } })
     await startExport()
 
     expect(await screen.findByText(/verifying integrity, then generating export/i)).toBeTruthy()
@@ -76,7 +78,7 @@ describe('AuditExportPanel (AC group C)', () => {
       completedAt: '2026-07-07T00:01:00.000Z',
     })
 
-    render(AuditExportPanel)
+    render(AuditExportPanel, { props: { pointProps: POINT_PROPS } })
     await startExport()
     await vi.advanceTimersByTimeAsync(2000)
 
@@ -96,7 +98,7 @@ describe('AuditExportPanel (AC group C)', () => {
       )
     )
 
-    render(AuditExportPanel)
+    render(AuditExportPanel, { props: { pointProps: POINT_PROPS } })
     await startExport()
 
     expect(
@@ -115,7 +117,7 @@ describe('AuditExportPanel (AC group C)', () => {
       completedAt: null,
     })
 
-    render(AuditExportPanel)
+    render(AuditExportPanel, { props: { pointProps: POINT_PROPS } })
     await startExport()
 
     for (let i = 0; i < 60; i++) {
@@ -145,7 +147,7 @@ describe('AuditExportPanel (AC group C)', () => {
         completedAt: '2026-07-07T00:01:00.000Z',
       })
 
-    render(AuditExportPanel)
+    render(AuditExportPanel, { props: { pointProps: POINT_PROPS } })
     await startExport()
     await vi.advanceTimersByTimeAsync(2000)
 
@@ -157,7 +159,7 @@ describe('AuditExportPanel (AC group C)', () => {
   })
 
   it('blocks export client-side when from/to are blank, with no API call', async () => {
-    render(AuditExportPanel)
+    render(AuditExportPanel, { props: { pointProps: POINT_PROPS } })
 
     await fireEvent.click(screen.getByRole('button', { name: /export csv/i }))
 
@@ -166,7 +168,7 @@ describe('AuditExportPanel (AC group C)', () => {
 
   it('a non-ApiClientError trigger failure shows a generic export-start error', async () => {
     triggerAuditExportMock.mockRejectedValue(new Error('network down'))
-    render(AuditExportPanel)
+    render(AuditExportPanel, { props: { pointProps: POINT_PROPS } })
 
     await startExport()
 
@@ -178,7 +180,7 @@ describe('AuditExportPanel (AC group C)', () => {
     triggerAuditExportMock.mockResolvedValue({ jobId: 'job-5', status: 'pending' })
     getAuditExportStatusMock.mockRejectedValue(new Error('network down'))
 
-    render(AuditExportPanel)
+    render(AuditExportPanel, { props: { pointProps: POINT_PROPS } })
     await startExport()
     await vi.advanceTimersByTimeAsync(2000)
 

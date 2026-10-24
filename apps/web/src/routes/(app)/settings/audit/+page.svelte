@@ -61,7 +61,12 @@
 
     <div class="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <!-- @region settings.audit.search -->
-      <AuditSearchForm filters={data.filters} hasFilters={Boolean(hasFilters)}>
+      <AuditSearchForm
+        filters={data.filters}
+        hasFilters={Boolean(hasFilters)}
+        pointProps={resultsProps}
+        data={data?.__inject}
+      >
         <InjectionPoint name="settings.audit.search" props={resultsProps} data={data?.__inject} />
       </AuditSearchForm><!-- @region settings.audit.results --><AuditResultsTable
         events={data.events}
@@ -70,6 +75,8 @@
         page={data.page}
         total={data.total}
         hasNext={data.hasNext}
+        pointProps={resultsProps}
+        data={data?.__inject}
       >
         <InjectionPoint name="settings.audit.results" props={resultsProps} data={data?.__inject} />
       </AuditResultsTable>
@@ -77,7 +84,7 @@
 
     <!-- @region settings.audit.export -->
     <div class="mt-6">
-      <AuditExportPanel /><InjectionPoint
+      <AuditExportPanel pointProps={roleProps} data={data?.__inject} /><InjectionPoint
         name="settings.audit.export"
         props={roleProps}
         data={data?.__inject}
@@ -85,7 +92,7 @@
     </div>
     <!-- @region settings.audit.verify -->
     <div class="mt-6">
-      <AuditVerifyPanel /><InjectionPoint
+      <AuditVerifyPanel pointProps={roleProps} data={data?.__inject} /><InjectionPoint
         name="settings.audit.verify"
         props={roleProps}
         data={data?.__inject}

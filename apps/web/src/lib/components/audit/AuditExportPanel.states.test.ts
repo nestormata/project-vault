@@ -16,6 +16,8 @@ const api = vi.hoisted(() => ({
 }))
 vi.mock('$lib/api/audit.js', () => api)
 
+const POINT_PROPS = { orgRole: 'owner', allowed: true } as const
+
 let Panel: Component<Record<string, unknown>>
 beforeAll(async () => {
   Panel = (await import('./AuditExportPanel.svelte')).default as unknown as typeof Panel
@@ -67,21 +69,21 @@ describe('AuditExportPanel client states (Story 69.12 pre-split pin)', () => {
   it('renders every interactive state exactly as before the split', async () => {
     const states: Record<string, unknown> = {}
 
-    const initial = render(Panel)
+    const initial = render(Panel, { props: { pointProps: POINT_PROPS } })
     states['initial'] = serializeWithoutNoise(initial.container)
     await fill()
     states['dates-filled'] = serializeWithoutNoise(initial.container)
     reset()
 
     api.triggerAuditExport.mockRejectedValueOnce(new ApiClientError(422, null, 'range too wide'))
-    const apiError = render(Panel)
+    const apiError = render(Panel, { props: { pointProps: POINT_PROPS } })
     await start()
     await screen.findByText('range too wide')
     states['trigger-api-error'] = serializeWithoutNoise(apiError.container)
     reset()
 
     api.triggerAuditExport.mockRejectedValueOnce(new Error('network'))
-    const generic = render(Panel)
+    const generic = render(Panel, { props: { pointProps: POINT_PROPS } })
     await start()
     await screen.findByText('Failed to start export')
     states['trigger-generic-error'] = serializeWithoutNoise(generic.container)
@@ -89,7 +91,7 @@ describe('AuditExportPanel client states (Story 69.12 pre-split pin)', () => {
 
     api.triggerAuditExport.mockResolvedValueOnce({ jobId: 'job-1', status: 'pending' })
     api.getAuditExportStatus.mockResolvedValue(status({ status: 'processing' }))
-    const pending = render(Panel)
+    const pending = render(Panel, { props: { pointProps: POINT_PROPS } })
     await start()
     await screen.findByText(/Verifying integrity/)
     states['pending'] = serializeWithoutNoise(pending.container)
@@ -98,7 +100,7 @@ describe('AuditExportPanel client states (Story 69.12 pre-split pin)', () => {
 
     api.triggerAuditExport.mockResolvedValueOnce({ jobId: 'job-1', status: 'pending' })
     api.getAuditExportStatus.mockResolvedValueOnce(status({ status: 'completed' }))
-    const done = render(Panel)
+    const done = render(Panel, { props: { pointProps: POINT_PROPS } })
     await startPending()
     await vi.advanceTimersByTimeAsync(2000)
     await screen.findByRole('link', { name: 'Download CSV' })
@@ -110,7 +112,7 @@ describe('AuditExportPanel client states (Story 69.12 pre-split pin)', () => {
     api.getAuditExportStatus.mockResolvedValueOnce(
       status({ status: 'failed', integritySummary: { passed: 10, failedCount: 3 } })
     )
-    const failed = render(Panel)
+    const failed = render(Panel, { props: { pointProps: POINT_PROPS } })
     await startPending()
     await vi.advanceTimersByTimeAsync(2000)
     await screen.findByText(/Export failed/)
@@ -119,7 +121,7 @@ describe('AuditExportPanel client states (Story 69.12 pre-split pin)', () => {
 
     api.triggerAuditExport.mockResolvedValueOnce({ jobId: 'job-1', status: 'pending' })
     api.getAuditExportStatus.mockResolvedValueOnce(status({ status: 'failed' }))
-    const failedBare = render(Panel)
+    const failedBare = render(Panel, { props: { pointProps: POINT_PROPS } })
     await startPending()
     await vi.advanceTimersByTimeAsync(2000)
     await screen.findByText(/Export failed/)
@@ -128,7 +130,7 @@ describe('AuditExportPanel client states (Story 69.12 pre-split pin)', () => {
 
     api.triggerAuditExport.mockResolvedValueOnce({ jobId: 'job-1', status: 'pending' })
     api.getAuditExportStatus.mockRejectedValueOnce(new ApiClientError(429, null, 'slow down'))
-    const limited = render(Panel)
+    const limited = render(Panel, { props: { pointProps: POINT_PROPS } })
     await startPending()
     await vi.advanceTimersByTimeAsync(2000)
     await screen.findByText(/temporarily rate-limited/)
@@ -137,7 +139,7 @@ describe('AuditExportPanel client states (Story 69.12 pre-split pin)', () => {
 
     api.triggerAuditExport.mockResolvedValueOnce({ jobId: 'job-1', status: 'pending' })
     api.getAuditExportStatus.mockRejectedValueOnce(new ApiClientError(500, null, 'boom'))
-    const pollApiError = render(Panel)
+    const pollApiError = render(Panel, { props: { pointProps: POINT_PROPS } })
     await startPending()
     await vi.advanceTimersByTimeAsync(2000)
     await screen.findByText('boom')
@@ -146,7 +148,7 @@ describe('AuditExportPanel client states (Story 69.12 pre-split pin)', () => {
 
     api.triggerAuditExport.mockResolvedValueOnce({ jobId: 'job-1', status: 'pending' })
     api.getAuditExportStatus.mockRejectedValueOnce(new Error('network'))
-    const pollGeneric = render(Panel)
+    const pollGeneric = render(Panel, { props: { pointProps: POINT_PROPS } })
     await startPending()
     await vi.advanceTimersByTimeAsync(2000)
     await screen.findByText('Failed to check export status')
@@ -155,7 +157,7 @@ describe('AuditExportPanel client states (Story 69.12 pre-split pin)', () => {
 
     api.triggerAuditExport.mockResolvedValueOnce({ jobId: 'job-1', status: 'pending' })
     api.getAuditExportStatus.mockResolvedValue(status({ status: 'processing' }))
-    const capped = render(Panel)
+    const capped = render(Panel, { props: { pointProps: POINT_PROPS } })
     await startPending()
     await vi.advanceTimersByTimeAsync(2000 * 61)
     await screen.findByText('This export is taking longer than expected.')
@@ -169,7 +171,7 @@ describe('AuditExportPanel client states (Story 69.12 pre-split pin)', () => {
 
     api.triggerAuditExport.mockResolvedValueOnce({ jobId: 'job-1', status: 'pending' })
     api.getAuditExportStatus.mockRejectedValue(new ApiClientError(429, null, 'slow down'))
-    const limitedCap = render(Panel)
+    const limitedCap = render(Panel, { props: { pointProps: POINT_PROPS } })
     await startPending()
     await vi.advanceTimersByTimeAsync(2000 + 4000 * 60)
     await screen.findByText('This export is taking longer than expected.')

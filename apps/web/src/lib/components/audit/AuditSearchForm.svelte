@@ -1,22 +1,33 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { resolve } from '$app/paths'
-  import AuditDateRangeInputs from '$lib/components/audit/AuditDateRangeInputs.svelte'
-  import FormHelpText from '$lib/components/forms/FormHelpText.svelte'
+  import AuditSearchDates from '$lib/components/audit/AuditSearchDates.svelte'
+  import AuditSearchActor from '$lib/components/audit/AuditSearchActor.svelte'
+  import AuditSearchEvent from '$lib/components/audit/AuditSearchEvent.svelte'
+  import AuditSearchResource from '$lib/components/audit/AuditSearchResource.svelte'
   import { buildSearchSubmitHandler } from '$lib/audit/search-form.js'
   import { buildDateRangePart } from '$lib/audit/date-range.js'
   import { m } from '$lib/paraglide/messages.js'
-  import type { SettingsAuditResultsPointProps } from '$lib/components/composition/injection-points.js'
+  import type {
+    InjectionPointExtras,
+    SettingsAuditResultsPointProps,
+  } from '$lib/components/composition/injection-points.js'
 
   // Story 69.4: the Search heading and filter form of the settings audit page. `children` is the
-  // page's `settings.audit.search` injection point, rendered after the form.
+  // page's `settings.audit.search` injection point, rendered after the form. Story 69.12: the form is
+  // four sub-regions (event type, actor, resource and project, dates and submit).
   let {
     filters,
     hasFilters,
+    pointProps,
+    data,
     children,
   }: {
     filters: SettingsAuditResultsPointProps['filters'] | undefined
     hasFilters: boolean
+    pointProps: InjectionPointExtras<'settings.audit.results'>
+    /** The page's `__inject` map, forwarded to every sub-region's point. */
+    data?: Record<string, readonly unknown[]> | undefined
     children?: Snippet
   } = $props()
 
@@ -51,85 +62,18 @@
 
 <h2 class="text-lg font-semibold text-slate-950">Search</h2>
 <form method="GET" class="mt-4 flex flex-wrap items-end gap-3" onsubmit={handleSearchSubmit}>
-  <label class="flex flex-col text-sm text-slate-700" for="filter-eventType">
-    Event type
-    <input
-      id="filter-eventType"
-      name="eventType"
-      type="text"
-      class="rounded-lg border border-slate-300 px-2 py-1"
-      value={filters?.eventType ?? ''}
-      aria-describedby="audit-event-type-help"
-    />
-    <FormHelpText id="audit-event-type-help" text={m.form_help_audit_event_type()} />
-  </label>
-  <label class="flex flex-col text-sm text-slate-700" for="filter-actorId">
-    Actor ID
-    <input
-      id="filter-actorId"
-      name="actorId"
-      type="text"
-      class="rounded-lg border border-slate-300 px-2 py-1"
-      value={filters?.actorId ?? ''}
-      aria-describedby="audit-actor-help"
-    />
-    <FormHelpText id="audit-actor-help" text={m.form_help_audit_actor_id()} />
-  </label>
-  <label class="flex flex-col text-sm text-slate-700" for="filter-actorProvider">
-    {m.audit_filter_actor_provider_label()}
-    <input
-      id="filter-actorProvider"
-      name="actorProvider"
-      type="text"
-      class="rounded-lg border border-slate-300 px-2 py-1"
-      value={filters?.actorProvider ?? ''}
-      aria-describedby="audit-actor-provider-help"
-    />
-    <FormHelpText id="audit-actor-provider-help" text={m.audit_filter_actor_provider_help()} />
-  </label>
-  <label class="flex flex-col text-sm text-slate-700" for="filter-actorSubject">
-    {m.audit_filter_actor_subject_label()}
-    <input
-      id="filter-actorSubject"
-      name="actorSubject"
-      type="text"
-      class="rounded-lg border border-slate-300 px-2 py-1"
-      value={filters?.actorSubject ?? ''}
-      aria-describedby="audit-actor-subject-help"
-    />
-    <FormHelpText id="audit-actor-subject-help" text={m.audit_filter_actor_subject_help()} />
-  </label>
-  <label class="flex flex-col text-sm text-slate-700" for="filter-resourceId">
-    Resource ID
-    <input
-      id="filter-resourceId"
-      name="resourceId"
-      type="text"
-      class="rounded-lg border border-slate-300 px-2 py-1"
-      value={filters?.resourceId ?? ''}
-      aria-describedby="audit-resource-help"
-    />
-    <FormHelpText id="audit-resource-help" text={m.form_help_audit_resource_id()} />
-  </label>
-  <label class="flex flex-col text-sm text-slate-700" for="filter-projectId">
-    Project ID
-    <input
-      id="filter-projectId"
-      name="projectId"
-      type="text"
-      class="rounded-lg border border-slate-300 px-2 py-1"
-      value={filters?.projectId ?? ''}
-      aria-describedby="audit-project-help"
-    />
-    <FormHelpText id="audit-project-help" text={m.form_help_audit_project_id()} />
-  </label>
-  <AuditDateRangeInputs
+  <AuditSearchEvent {filters} {pointProps} {data} />
+  <AuditSearchActor {filters} {pointProps} {data} />
+  <AuditSearchResource {filters} {pointProps} {data} />
+  <AuditSearchDates
     clearHref={resolve('/settings/audit')}
     fromValue={filters?.from ?? ''}
     toValue={filters?.to ?? ''}
     {dateRangeError}
     {hasFilters}
     filterSummaryText={filterSummary(filters ?? {})}
+    {pointProps}
+    {data}
   />
 </form>
 {@render children?.()}

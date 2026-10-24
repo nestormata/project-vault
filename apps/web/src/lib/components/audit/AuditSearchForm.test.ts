@@ -2,10 +2,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte'
 import AuditSearchForm from './AuditSearchForm.svelte'
 
+const POINT_PROPS = { orgRole: 'owner', allowed: true } as never
+
 afterEach(() => cleanup())
 
 function renderForm(filters: Record<string, string> | undefined = undefined) {
-  return render(AuditSearchForm, { props: { filters, hasFilters: Boolean(filters) } })
+  return render(AuditSearchForm, {
+    props: { filters, hasFilters: Boolean(filters), pointProps: POINT_PROPS },
+  })
 }
 
 describe('AuditSearchForm actor provider + subject filter (Story 71-10 AC-4)', () => {

@@ -435,6 +435,21 @@ export interface InjectionPointProps {
   'settings.audit.results': SettingsAuditResultsPointProps
   'settings.audit.search': SettingsAuditResultsPointProps
   'settings.audit.verify': SettingsAuditPointProps
+  // Story 69.12: the sub-regions of the settings audit page's export, verify, search and results.
+  'settings.audit.export-form': SettingsAuditPointProps
+  'settings.audit.export-status': SettingsAuditPointProps
+  'settings.audit.export-result': SettingsAuditPointProps
+  'settings.audit.verify-form': SettingsAuditPointProps
+  'settings.audit.verify-error': SettingsAuditPointProps
+  'settings.audit.verify-result': SettingsAuditPointProps
+  'settings.audit.search-event': SettingsAuditResultsPointProps
+  'settings.audit.search-actor': SettingsAuditResultsPointProps
+  'settings.audit.search-resource': SettingsAuditResultsPointProps
+  'settings.audit.search-dates': SettingsAuditResultsPointProps
+  'settings.audit.results-empty': SettingsAuditResultsPointProps
+  'settings.audit.results-rows': SettingsAuditResultsPointProps
+  'settings.audit.results-attribution': SettingsAuditResultsPointProps
+  'settings.audit.results-pagination': SettingsAuditResultsPointProps
   'settings.notifications.channels': NotificationPreferencesPointProps
   'settings.notifications.header': NotificationSettingsPointProps
   'settings.notifications.routing': NotificationRoutingPointProps
@@ -956,16 +971,34 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
     [AUDIT_PAGE_HOST],
     [
       'settings.audit.export',
+      'settings.audit.export-form',
+      'settings.audit.export-status',
+      'settings.audit.export-result',
       'settings.audit.header',
       'settings.audit.navigation',
       'settings.audit.notice',
       'settings.audit.verify',
+      'settings.audit.verify-form',
+      'settings.audit.verify-error',
+      'settings.audit.verify-result',
     ]
   ),
   ...regionPoints(
     'SettingsAuditResultsPointProps',
     [AUDIT_PAGE_HOST],
-    ['settings.audit.error', 'settings.audit.results', 'settings.audit.search']
+    [
+      'settings.audit.error',
+      'settings.audit.results',
+      'settings.audit.results-empty',
+      'settings.audit.results-rows',
+      'settings.audit.results-attribution',
+      'settings.audit.results-pagination',
+      'settings.audit.search',
+      'settings.audit.search-event',
+      'settings.audit.search-actor',
+      'settings.audit.search-resource',
+      'settings.audit.search-dates',
+    ]
   ),
   ...regionPoints(
     'NotificationSettingsPointProps',

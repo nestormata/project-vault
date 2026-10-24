@@ -12,6 +12,8 @@ process.env.TZ = 'America/Panama'
 
 vi.mock('$app/paths', () => ({ resolve: (path: string) => path }))
 
+const POINT_PROPS = { orgRole: 'owner', allowed: true }
+
 let Table: Component<Record<string, unknown>>
 beforeAll(async () => {
   Table = (await import('./AuditResultsTable.svelte')).default as unknown as typeof Table
@@ -96,6 +98,7 @@ const mount = (overrides: Record<string, unknown> = {}) =>
       page: 1,
       total: 4,
       hasNext: false,
+      pointProps: POINT_PROPS,
       ...overrides,
     },
   })
