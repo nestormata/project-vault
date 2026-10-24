@@ -635,6 +635,8 @@ export interface InjectionPointProps {
   'settings.themes.selection-error': StandardPointProps
   'settings.themes.list': StandardPointProps
   'settings.themes.admin': StandardPointProps
+  'settings.themes.reload': StandardPointProps
+  'settings.themes.org-default': StandardPointProps
   'settings.users.header': StandardPointProps
   'settings.users.default-language': StandardPointProps
   'settings.users.machine-dormancy': StandardPointProps
@@ -1387,6 +1389,8 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
       'settings.themes.selection-error',
       'settings.themes.list',
       'settings.themes.admin',
+      'settings.themes.reload',
+      'settings.themes.org-default',
     ]
   ),
   ...regionPoints(
