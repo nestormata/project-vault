@@ -503,6 +503,13 @@ export interface InjectionPointProps {
   'project.credentials.results': StandardPointProps
   'project.credentials-rotate.header': StandardPointProps
   'project.credentials-rotate.form': StandardPointProps
+  'project.credentials-rotate.actions': StandardPointProps
+  'project.credentials-rotate.dependencies': StandardPointProps
+  'project.credentials-rotate.field-values': StandardPointProps
+  'project.credentials-rotate.fields': StandardPointProps
+  'project.credentials-rotate.notes': StandardPointProps
+  'project.credentials-rotate.same-value-confirm': StandardPointProps
+  'project.credentials-rotate.value': StandardPointProps
   'project.credentials-rotations-detail.content': StandardPointProps
   'project.credentials-import.header': StandardPointProps
   'project.credentials-import.content': StandardPointProps
@@ -1042,7 +1049,17 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/[projectId]/credentials/[credentialId]/rotate#page'],
-    ['project.credentials-rotate.header', 'project.credentials-rotate.form']
+    [
+      'project.credentials-rotate.header',
+      'project.credentials-rotate.form',
+      'project.credentials-rotate.dependencies',
+      'project.credentials-rotate.fields',
+      'project.credentials-rotate.field-values',
+      'project.credentials-rotate.value',
+      'project.credentials-rotate.notes',
+      'project.credentials-rotate.same-value-confirm',
+      'project.credentials-rotate.actions',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',

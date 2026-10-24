@@ -19,7 +19,7 @@
   </CredentialRotateHeader>
 
   <!-- @region project.credentials-rotate.form -->
-  <CredentialRotateForm {data}>
+  <CredentialRotateForm pageData={data} data={data?.__inject}>
     <InjectionPoint name="project.credentials-rotate.form" data={data?.__inject} />
   </CredentialRotateForm>
 </section>
