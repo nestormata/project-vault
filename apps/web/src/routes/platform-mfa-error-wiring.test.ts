@@ -16,6 +16,11 @@ const platformPages = [
     error: 'pageError',
   },
   {
+    ac: 'AC-M2 (create)',
+    path: '../lib/components/platform/PlatformOrgsCreateStatus.svelte',
+    error: 'create.createMfaError',
+  },
+  {
     ac: 'AC-M3',
     path: '../lib/components/platform/PlatformResourceUsageContent.svelte',
     error: 'data.errorMessage',

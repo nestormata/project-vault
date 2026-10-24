@@ -478,6 +478,9 @@ export interface InjectionPointProps {
   'platform.settings.status-token-state': StandardPointProps
   'platform.settings.status-token-test': StandardPointProps
   'platform.settings-orgs.content': StandardPointProps
+  'platform.settings-orgs.list': StandardPointProps
+  'platform.settings-orgs.create-status': StandardPointProps
+  'platform.settings-orgs.create-form': StandardPointProps
   'platform.settings-resource-usage.content': StandardPointProps
   'platform.upgrade.content': StandardPointProps
   'project.home.header': StandardPointProps
@@ -1005,7 +1008,12 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/platform/settings/orgs#page'],
-    ['platform.settings-orgs.content']
+    [
+      'platform.settings-orgs.content',
+      'platform.settings-orgs.list',
+      'platform.settings-orgs.create-status',
+      'platform.settings-orgs.create-form',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
