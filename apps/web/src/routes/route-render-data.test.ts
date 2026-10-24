@@ -435,6 +435,50 @@ const ERASURE_REPORT = {
   retentionJustification: 'Audit rows are kept for compliance',
   auditEventId: 'evt-1',
 }
+// Story 69.11: realistic inbox entries for the notifications page, whose cards branch on severity,
+// alert type, read state and project link, and whose footer branches on the page number. Recorded
+// BEFORE the list was split into sub-region components.
+const INBOX_ENTRIES = [
+  {
+    id: 'n-unread',
+    alertType: 'credential.expiry',
+    severity: 'critical',
+    title: 'Secret expires soon',
+    body: 'The secret expires in 3 days.',
+    projectId: 'p-1',
+    createdAt: '2026-10-04T10:00:00.000Z',
+    readAt: null,
+  },
+  {
+    id: 'n-read',
+    alertType: 'service.down',
+    severity: 'warning',
+    title: 'Service is down',
+    body: 'The health check failed.',
+    projectId: null,
+    createdAt: '2026-10-03T10:00:00.000Z',
+    readAt: '2026-10-03T12:00:00.000Z',
+  },
+  {
+    id: 'n-custom',
+    alertType: 'custom.alert',
+    severity: 'unknown',
+    title: 'Custom alert',
+    body: 'An alert type without a label.',
+    projectId: 'p-2',
+    createdAt: '2026-10-02T10:00:00.000Z',
+    readAt: null,
+  },
+]
+const NOTIFICATIONS_PAGE = {
+  ...OWNER_READY,
+  notifications: INBOX_ENTRIES,
+  status: 'all',
+  page: 1,
+  hasNext: false,
+  dormancyAlerts: [],
+  userDormancyAlerts: [],
+}
 const NO_FILTERS = { q: '', status: '', tags: '', page: 1, includeArchived: false }
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
   '/(app)/projects/[projectId]/credentials/+page.svelte': {
@@ -593,6 +637,14 @@ const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
       state: 'completed',
       report: { ...ERASURE_REPORT, auditEventId: null, piiRetained: [], piiRemoved: [] },
     },
+  },
+  '/(app)/notifications/+page.svelte': {
+    'inbox-first-page': { ...NOTIFICATIONS_PAGE, hasNext: true },
+    'inbox-middle-page': { ...NOTIFICATIONS_PAGE, page: 2, hasNext: true, status: 'read' },
+    'inbox-last-page': { ...NOTIFICATIONS_PAGE, page: 3, status: 'unread' },
+    'inbox-single-page': NOTIFICATIONS_PAGE,
+    'inbox-empty-all': { ...NOTIFICATIONS_PAGE, notifications: [] },
+    'inbox-empty-unread': { ...NOTIFICATIONS_PAGE, notifications: [], status: 'unread' },
   },
 }
 
