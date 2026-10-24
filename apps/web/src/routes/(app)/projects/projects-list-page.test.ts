@@ -60,10 +60,32 @@ describe('projects list tag help (Story 63.2 AC-3)', () => {
         data: { ...appLayoutData(), projects: listPage([project]), includeArchived: false },
       },
     })
-    const help = document.getElementById('project-tags-help')?.textContent ?? ''
+    const input = document.getElementById('project-tags-p1') as HTMLElement
+    const helpId = input.getAttribute('aria-describedby') ?? ''
+    const help = document.getElementById(helpId)?.textContent ?? ''
 
     expect(help).toMatch(/comma/i)
     expect(help).not.toContain('Enter the value this setting uses. Review it before saving.')
+  })
+
+  it('gives every card its own help element so no id repeats on the page (Story 63.3)', () => {
+    render(ProjectsListPage, {
+      props: {
+        data: {
+          ...appLayoutData(),
+          projects: listPage([project, { ...project, id: 'p2', name: 'Billing' }]),
+          includeArchived: false,
+        },
+      },
+    })
+    const describedBy = ['p1', 'p2'].map(
+      (id) => document.getElementById(`project-tags-${id}`)?.getAttribute('aria-describedby') ?? ''
+    )
+
+    expect(describedBy[0]).not.toBe(describedBy[1])
+    for (const helpId of describedBy) {
+      expect(document.querySelectorAll(`[id="${helpId}"]`)).toHaveLength(1)
+    }
   })
 })
 

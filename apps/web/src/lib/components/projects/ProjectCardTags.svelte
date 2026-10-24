@@ -35,12 +35,12 @@
           id={`project-tags-${project.id}`}
           class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
           type="text"
-          aria-describedby="project-tags-help"
+          aria-describedby={`project-tags-help-${project.id}`}
           placeholder="production, api"
           value={actions.tagInputValue(project)}
           oninput={(event) => actions.setTagInput(project, event.currentTarget.value)}
         />
-        <FormHelpText id="project-tags-help" text={m.form_help_project_tags()} />
+        <FormHelpText id={`project-tags-help-${project.id}`} text={m.form_help_project_tags()} />
         {#if actions.tagErrors[project.id]}
           <p class="text-sm text-red-700" role="alert">{actions.tagErrors[project.id]}</p>
         {/if}
