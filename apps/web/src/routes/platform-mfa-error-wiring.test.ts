@@ -17,8 +17,8 @@ const platformPages = [
   },
   {
     ac: 'AC-M3',
-    path: '../lib/components/platform/PlatformResourceUsageContent.svelte',
-    error: 'data.errorMessage',
+    path: '../lib/components/platform/PlatformResourceUsageError.svelte',
+    error: 'errorMessage',
   },
   {
     ac: 'AC-M4/AC-M8',

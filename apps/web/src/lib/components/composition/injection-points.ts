@@ -479,6 +479,15 @@ export interface InjectionPointProps {
   'platform.settings.status-token-test': StandardPointProps
   'platform.settings-orgs.content': StandardPointProps
   'platform.settings-resource-usage.content': StandardPointProps
+  'platform.settings-resource-usage.intro': StandardPointProps
+  'platform.settings-resource-usage.error': StandardPointProps
+  'platform.settings-resource-usage.orgs': StandardPointProps
+  'platform.settings-resource-usage.users': StandardPointProps
+  'platform.settings-resource-usage.audit-entries': StandardPointProps
+  'platform.settings-resource-usage.storage': StandardPointProps
+  'platform.settings-resource-usage.audit-log-storage': StandardPointProps
+  'platform.settings-resource-usage.allocation': StandardPointProps
+  'platform.settings-resource-usage.org-table': StandardPointProps
   'platform.upgrade.content': StandardPointProps
   'project.home.header': StandardPointProps
   'project.home.error': StandardPointProps
@@ -981,7 +990,18 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/platform/settings/resource-usage#page'],
-    ['platform.settings-resource-usage.content']
+    [
+      'platform.settings-resource-usage.content',
+      'platform.settings-resource-usage.intro',
+      'platform.settings-resource-usage.error',
+      'platform.settings-resource-usage.orgs',
+      'platform.settings-resource-usage.users',
+      'platform.settings-resource-usage.audit-entries',
+      'platform.settings-resource-usage.storage',
+      'platform.settings-resource-usage.audit-log-storage',
+      'platform.settings-resource-usage.allocation',
+      'platform.settings-resource-usage.org-table',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
