@@ -617,6 +617,7 @@ const MEMBERS_PAGE = {
   members: PROJECT_MEMBERS,
   invitations: [],
 }
+
 const NO_FILTERS = { q: '', status: '', tags: '', page: 1, includeArchived: false }
 const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
   '/(app)/projects/[projectId]/credentials/+page.svelte': {
@@ -889,6 +890,10 @@ const HANDCRAFTED: Record<string, Record<string, Overrides>> = {
     'members-empty': { ...MEMBERS_PAGE, members: [] },
     'members-no-manage-members': { ...MEMBERS_PAGE, canManageMembers: false },
     'members-read-only': { ...MEMBERS_PAGE, canManage: false, canManageMembers: false },
+  },
+  '/(auth)/handoff/+page.svelte': {
+    'handoff-with-origin': { centralizeMeOrigin: 'https://app.centralizeme.example' },
+    'handoff-without-origin': { centralizeMeOrigin: null },
   },
 }
 
