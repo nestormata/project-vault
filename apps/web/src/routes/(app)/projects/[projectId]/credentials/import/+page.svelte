@@ -20,7 +20,7 @@
   </CredentialsProjectImportHeader>
 
   <!-- @region project.credentials-import.content -->
-  <CredentialsProjectImportContent {data}>
+  <CredentialsProjectImportContent pageData={data} data={data?.__inject}>
     <InjectionPoint name="project.credentials-import.content" data={data?.__inject} />
   </CredentialsProjectImportContent>
 </section>

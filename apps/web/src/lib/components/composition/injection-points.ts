@@ -498,6 +498,12 @@ export interface InjectionPointProps {
   'project.credentials-rotations-detail.content': StandardPointProps
   'project.credentials-import.header': StandardPointProps
   'project.credentials-import.content': StandardPointProps
+  'project.credentials-import.done': StandardPointProps
+  'project.credentials-import.preview-table': StandardPointProps
+  'project.credentials-import.preview-actions': StandardPointProps
+  'project.credentials-import.upload': StandardPointProps
+  'project.credentials-import.error': StandardPointProps
+  'project.credentials-import.back': StandardPointProps
   'project.credentials-new.header': StandardPointProps
   'project.credentials-new.form': StandardPointProps
   'project.credentials-new.name': StandardPointProps
@@ -1055,7 +1061,16 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects/[projectId]/credentials/import#page'],
-    ['project.credentials-import.header', 'project.credentials-import.content']
+    [
+      'project.credentials-import.header',
+      'project.credentials-import.content',
+      'project.credentials-import.done',
+      'project.credentials-import.preview-table',
+      'project.credentials-import.preview-actions',
+      'project.credentials-import.upload',
+      'project.credentials-import.error',
+      'project.credentials-import.back',
+    ]
   ),
   ...regionPoints(
     'StandardPointProps',
