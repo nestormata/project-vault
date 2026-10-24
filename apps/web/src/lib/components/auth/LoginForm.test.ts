@@ -82,6 +82,15 @@ describe('LoginForm', () => {
   })
   afterEach(() => cleanup())
 
+  // Story 63.2 AC-3: static copy, identical for any input (no account-existence hint).
+  it('gives the email field specific help instead of the boilerplate', () => {
+    render(LoginForm, { props: {} })
+    const help = document.getElementById('login-email-help')?.textContent ?? ''
+
+    expect(help).toMatch(/registered/i)
+    expect(help).not.toContain('Enter the value this setting uses. Review it before saving.')
+  })
+
   it('shows the pre-auth language switcher and preserves typed email when switching locale', async () => {
     render(LoginForm, { props: {} })
     const email = screen.getByLabelText(/email/i) as HTMLInputElement

@@ -3,6 +3,7 @@
   import type { Snippet } from 'svelte'
   import OnboardingWizard from '$lib/components/onboarding/OnboardingWizard.svelte'
   import AppShell from '$lib/components/shell/AppShell.svelte'
+  import { m } from '$lib/paraglide/messages.js'
 
   let {
     appliedTheme,
@@ -38,6 +39,13 @@
     children?: Snippet
   } = $props()
 </script>
+
+<!-- Story 63.2 A4: while the wizard replaces the page body, no page owns the tab title. -->
+<svelte:head>
+  {#if !onboardingDone}
+    <title>{m.dashboard_page_title()} | Project Vault</title>
+  {/if}
+</svelte:head>
 
 <div data-theme={appliedTheme ?? undefined}>
   {#if orphanedNoticeVisible}

@@ -6,12 +6,7 @@
   import AppLayoutSearch from '$lib/components/shell/AppLayoutSearch.svelte'
 
   import { invalidateAll } from '$app/navigation'
-  import { onMount, onDestroy } from 'svelte'
-  import {
-    subscribeToInboxEvents,
-    setInitialUnreadCount,
-    getUnreadCount,
-  } from '$lib/state/notifications.svelte.js'
+  import { setInitialUnreadCount, getUnreadCount } from '$lib/state/notifications.svelte.js'
   import { setInitialAppliedTheme, getAppliedTheme } from '$lib/state/theme.svelte.js'
   import {
     readDismissedOrphanedTheme,
@@ -27,7 +22,6 @@
   // below can still flip it locally right after its invalidateAll().
   let onboardingDone = $derived(data.onboardingCompleted)
   let searchOpen = $state(false)
-  let unsubscribeInbox: (() => void) | null = null
 
   $effect(() => {
     setInitialUnreadCount(data.unreadCount ?? 0)
@@ -80,14 +74,6 @@
     await invalidateAll()
     onboardingDone = true
   }
-
-  onMount(() => {
-    unsubscribeInbox = subscribeToInboxEvents()
-  })
-
-  onDestroy(() => {
-    unsubscribeInbox?.()
-  })
 
   const unreadCount = $derived(getUnreadCount())
   const appliedTheme = $derived(getAppliedTheme())

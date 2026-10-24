@@ -51,6 +51,20 @@ describe('RegisterForm', () => {
   })
   afterEach(() => cleanup())
 
+  // Story 63.2 AC-3: static per-field copy (identical for any input, so it cannot hint whether an
+  // address is already registered); never the generic boilerplate.
+  it('gives the email and organization fields specific help instead of the boilerplate', () => {
+    render(RegisterForm)
+    const emailHelp = document.getElementById('register-email-help')?.textContent ?? ''
+    const orgHelp = document.getElementById('register-org-help')?.textContent ?? ''
+
+    expect(emailHelp).toMatch(/sign in/i)
+    expect(orgHelp).toMatch(/organization/i)
+    expect(emailHelp + orgHelp).not.toContain(
+      'Enter the value this setting uses. Review it before saving.'
+    )
+  })
+
   it('shows the pre-auth language switcher and preserves all typed registration fields', async () => {
     render(RegisterForm)
     await fireEvent.input(screen.getByLabelText(/email/i), {

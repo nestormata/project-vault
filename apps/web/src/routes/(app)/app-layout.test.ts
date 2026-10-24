@@ -60,6 +60,45 @@ describe('/(app) +layout.svelte', () => {
     expect(screen.queryByText('protected app content')).toBeNull()
   })
 
+  // Story 63.2 AC-4: the dashboard page (owner of the Dashboard title) is not mounted while the
+  // wizard is open, so the shell must supply the title instead of leaving the previous page's.
+  it('titles the tab "Dashboard | Project Vault" while the onboarding wizard is open', () => {
+    document.title = 'Sign in | Project Vault'
+    render(Layout, {
+      props: {
+        data: appLayoutData({
+          user: onboardingTestUser,
+          onboardingCompleted: false,
+          projects: [onboardingTestProject],
+          importRouteLive: true,
+          unreadCount: 0,
+        }),
+        children: childrenSnippet(),
+      },
+    })
+
+    expect(document.title).toBe('Dashboard | Project Vault')
+    expect(document.head.querySelectorAll('title')).toHaveLength(1)
+  })
+
+  it('adds no title of its own once onboarding is completed', () => {
+    document.title = 'Credentials | Project Vault'
+    render(Layout, {
+      props: {
+        data: appLayoutData({
+          user: onboardingTestUser,
+          onboardingCompleted: true,
+          projects: [],
+          importRouteLive: false,
+          unreadCount: 0,
+        }),
+        children: childrenSnippet(),
+      },
+    })
+
+    expect(document.title).toBe('Credentials | Project Vault')
+  })
+
   it('renders the page children (not the wizard) when onboarding is completed', () => {
     render(Layout, {
       props: {
