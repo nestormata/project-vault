@@ -480,6 +480,7 @@ export interface InjectionPointProps {
   'project.home.header': StandardPointProps
   'project.home.error': StandardPointProps
   'project.home.list': StandardPointProps
+  'project.home.results': StandardPointProps
   'project.certificates.list': StandardPointProps
   'project.certificates-detail.content': StandardPointProps
   'project.certificates-new.header': StandardPointProps
@@ -983,7 +984,7 @@ export const INJECTION_POINTS: readonly InjectionPointDefinition[] = [
   ...regionPoints(
     'StandardPointProps',
     ['/(app)/projects#page'],
-    ['project.home.header', 'project.home.error', 'project.home.list']
+    ['project.home.header', 'project.home.error', 'project.home.list', 'project.home.results']
   ),
   ...regionPoints(
     'StandardPointProps',
