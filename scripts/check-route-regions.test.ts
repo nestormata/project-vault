@@ -12,7 +12,6 @@ import {
   formatTable,
   formatUsesTable,
   OVERSIZE_ENFORCEMENT,
-  OVERSIZE_FOLLOW_UP_STORIES,
 } from './lib/route-regions.js'
 import { useFixtureRoots, writeFixture } from './lib/fixture-test-helpers.js'
 
@@ -199,15 +198,14 @@ describe('route-regions audit: top-level uses and oversize components (69.6 AC-1
     expect(result.problems.join('\n')).toContain('render-only')
   })
 
-  it('reports a region component over 60 template lines as OVERSIZE, a problem only when enforced', () => {
+  it('reports a region component over 60 template lines as OVERSIZE, a problem unless the rule is switched off per call', () => {
     const long = `<div>\n${'  <p>line</p>\n'.repeat(60)}</div>\n`
     const root = webTree({ 'src/lib/components/things/ThingsTable.svelte': long })
-    const reported = auditRouteRegions(root)
+    const reported = auditRouteRegions(root, { enforceOversize: false })
     expect(reported.rows[0]).toMatchObject({ componentLines: 62, status: 'OVERSIZE' })
     expect(reported.oversize).toHaveLength(1)
     expect(reported.problems).toEqual([])
-    const enforced = auditRouteRegions(root, { enforceOversize: true })
-    expect(enforced.problems.join('\n')).toContain('OVERSIZE')
+    expect(auditRouteRegions(root).problems.join('\n')).toContain('OVERSIZE')
     const exactly = `<div>\n${'  <p>line</p>\n'.repeat(58)}</div>\n`
     const ok = auditRouteRegions(
       webTree({ 'src/lib/components/things/ThingsTable.svelte': exactly }),
@@ -219,20 +217,20 @@ describe('route-regions audit: top-level uses and oversize components (69.6 AC-1
     expect(ok.oversize).toEqual([])
   })
 
-  it('the oversize switch is exactly report-only, names its follow-up stories and lists no component', () => {
-    expect(OVERSIZE_ENFORCEMENT).toBe(false)
-    expect(OVERSIZE_FOLLOW_UP_STORIES).toEqual(['69-10', '69-11', '69-12'])
-    const source = ROUTE_REGIONS_SOURCE
-    expect(source).toContain('69-10, 69-11 and 69-12')
-    expect(source).not.toMatch(/allowlist|allow-list|baseline|ignoreList|\.svelte'\s*,\s*'/i)
+  it('the oversize switch is on, names no component and the tree has no OVERSIZE region', () => {
+    expect(OVERSIZE_ENFORCEMENT).toBe(true)
+    expect(ROUTE_REGIONS_SOURCE).not.toMatch(
+      /allowlist|allow-list|baseline|ignoreList|\.svelte'\s*,\s*'/i
+    )
+    expect(auditRouteRegions(join(import.meta.dirname, '../apps/web')).oversize).toEqual([])
   })
 
-  it('the CLI prints the report-only OVERSIZE summary and still exits 0', () => {
+  it('the CLI fails an OVERSIZE region component', () => {
     const sink = io()
     const long = `<div>\n${'  <p>line</p>\n'.repeat(60)}</div>\n`
     const root = webTree({ 'src/lib/components/things/ThingsTable.svelte': long })
-    expect(run(['--web', root], sink.io)).toBe(0)
-    expect(sink.out.join('')).toContain('report-only until stories 69-10, 69-11, 69-12')
+    expect(run(['--web', root], sink.io)).toBe(1)
+    expect(sink.err.join('') + sink.out.join('')).toContain('OVERSIZE')
   })
 
   it('prints a uses table with the fixed columns', () => {
